@@ -1,5 +1,5 @@
 /**
- * Integration tests for MCPTokenStorage.storeTokens() and MCPTokenStorage.getTokens().
+ * Integration tests for MCPTokenStorage.storeTokens() and getTokensWithAuthority().
  *
  * Uses InMemoryTokenStore to exercise encrypt/decrypt round-trips, expiry calculation,
  * refresh callback wiring, and ReauthenticationRequiredError paths.
@@ -41,6 +41,30 @@ jest.mock('@librechat/data-schemas', () => ({
   encryptV2: jest.fn(async (val: string) => `enc:${val}`),
   decryptV2: jest.fn(async (val: string) => val.replace(/^enc:/, '')),
 }));
+
+const passthroughRefreshAuthorityLifecycle: NonNullable<
+  Parameters<typeof MCPTokenStorage.forceRefreshTokens>[0]['refreshAuthorityLifecycle']
+> = {
+  exchange: async (action) => await action(),
+  store: async (_tokens, action) => await action(),
+  accept: async () => undefined,
+};
+
+function getTokensWithAuthority(params: Parameters<typeof MCPTokenStorage.getTokens>[0]) {
+  return MCPTokenStorage.getTokens({
+    refreshAuthorityLifecycle: passthroughRefreshAuthorityLifecycle,
+    ...params,
+  });
+}
+
+function forceRefreshTokensWithAuthority(
+  params: Parameters<typeof MCPTokenStorage.forceRefreshTokens>[0],
+) {
+  return MCPTokenStorage.forceRefreshTokens({
+    refreshAuthorityLifecycle: passthroughRefreshAuthorityLifecycle,
+    ...params,
+  });
+}
 
 describe('MCPTokenStorage', () => {
   let store: InMemoryTokenStore;
@@ -964,7 +988,7 @@ describe('MCPTokenStorage', () => {
         expiresIn: 3600,
       });
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1012,7 +1036,7 @@ describe('MCPTokenStorage', () => {
       }) as typeof store.findToken;
 
       await expect(
-        MCPTokenStorage.getTokens({
+        getTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: interleavedFind,
@@ -1036,7 +1060,7 @@ describe('MCPTokenStorage', () => {
         expiresIn: 86400,
       });
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1054,7 +1078,7 @@ describe('MCPTokenStorage', () => {
         expiresIn: 3600,
       });
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1073,7 +1097,7 @@ describe('MCPTokenStorage', () => {
       });
 
       await expect(
-        MCPTokenStorage.getTokens({
+        getTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
@@ -1083,7 +1107,7 @@ describe('MCPTokenStorage', () => {
 
     it('should throw ReauthenticationRequiredError when missing and no refresh', async () => {
       await expect(
-        MCPTokenStorage.getTokens({
+        getTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
@@ -1115,7 +1139,7 @@ describe('MCPTokenStorage', () => {
         expires_at: Date.now() + 3600000,
       });
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1151,7 +1175,7 @@ describe('MCPTokenStorage', () => {
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('refresh failed'));
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1179,7 +1203,7 @@ describe('MCPTokenStorage', () => {
         expiresIn: 86400,
       });
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1204,7 +1228,7 @@ describe('MCPTokenStorage', () => {
         expiresIn: 86400,
       });
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1244,7 +1268,7 @@ describe('MCPTokenStorage', () => {
         expires_in: 3600,
       });
 
-      await MCPTokenStorage.getTokens({
+      await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1282,7 +1306,7 @@ describe('MCPTokenStorage', () => {
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('unauthorized_client'));
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1323,7 +1347,7 @@ describe('MCPTokenStorage', () => {
       const refreshTokens = jest.fn().mockRejectedValue(new Error('invalid_client'));
 
       await expect(
-        MCPTokenStorage.getTokens({
+        getTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
@@ -1373,7 +1397,7 @@ describe('MCPTokenStorage', () => {
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('invalid_client'));
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1414,7 +1438,7 @@ describe('MCPTokenStorage', () => {
       const refreshTokens = jest.fn().mockRejectedValue(new Error('client not found'));
 
       await expect(
-        MCPTokenStorage.getTokens({
+        getTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
@@ -1459,7 +1483,7 @@ describe('MCPTokenStorage', () => {
       const refreshTokens = jest.fn().mockRejectedValue(new Error('INVALID_CLIENT'));
 
       await expect(
-        MCPTokenStorage.getTokens({
+        getTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
@@ -1490,7 +1514,7 @@ describe('MCPTokenStorage', () => {
       const failingDeleteTokens = jest.fn().mockRejectedValue(new Error('DB connection lost'));
 
       await expect(
-        MCPTokenStorage.getTokens({
+        getTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
@@ -1514,6 +1538,91 @@ describe('MCPTokenStorage', () => {
       });
     });
 
+    it('fails closed before refresh exchange when no authority lifecycle is issued', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:rt',
+        expiresIn: 86400,
+      });
+      const refreshTokens = jest.fn().mockResolvedValue({
+        access_token: 'unproved-access-token',
+        refresh_token: 'unproved-refresh-token',
+        token_type: 'Bearer',
+      });
+
+      await expect(
+        MCPTokenStorage.forceRefreshTokens({
+          userId: 'u1',
+          serverName: 'srv1',
+          findToken: store.findToken,
+          createToken: store.createToken,
+          updateToken: store.updateToken,
+          deleteTokens: store.deleteTokens,
+          refreshTokens,
+        }),
+      ).rejects.toThrow('MCP refresh authority lifecycle is required');
+
+      expect(refreshTokens).not.toHaveBeenCalled();
+    });
+
+    it('deletes only the refreshed generation when post-store authority is revoked', async () => {
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:srv1',
+        token: 'enc:old-access-token',
+        expiresIn: -1,
+      });
+      await createBoundToken(store, {
+        userId: 'u1',
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:srv1:refresh',
+        token: 'enc:old-refresh-token',
+        expiresIn: 86400,
+      });
+      const deleteTokens = jest.fn(store.deleteTokens);
+      let rejectedGeneration: string | undefined;
+
+      const result = await forceRefreshTokensWithAuthority({
+        userId: 'u1',
+        serverName: 'srv1',
+        findToken: store.findToken,
+        createToken: store.createToken,
+        updateToken: store.updateToken,
+        deleteTokens,
+        refreshTokens: jest.fn().mockResolvedValue({
+          access_token: 'new-access-token',
+          refresh_token: 'new-refresh-token',
+          token_type: 'Bearer',
+        }),
+        refreshAuthorityLifecycle: {
+          exchange: async (action) => await action(),
+          store: async (_tokens, action) => await action(),
+          accept: async (tokens) => {
+            rejectedGeneration = tokens.credential_set_id;
+            throw new Error('authority revoked after refresh storage');
+          },
+        },
+      });
+
+      expect(result).toBeNull();
+      expect(rejectedGeneration).toEqual(expect.any(String));
+      expect(deleteTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ metadataCredentialSetId: rejectedGeneration }),
+      );
+      expect(
+        store.getAll().filter((record) => {
+          const generation =
+            record.metadata instanceof Map
+              ? record.metadata.get('credential_set_id')
+              : record.metadata?.credential_set_id;
+          return generation === rejectedGeneration;
+        }),
+      ).toHaveLength(0);
+    });
+
     it('fails closed before invoking refresh for legacy client metadata', async () => {
       await createBoundToken(store, {
         userId: 'u1',
@@ -1532,7 +1641,7 @@ describe('MCPTokenStorage', () => {
       const refreshTokens = jest.fn();
 
       await expect(
-        MCPTokenStorage.forceRefreshTokens({
+        forceRefreshTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
@@ -1574,7 +1683,7 @@ describe('MCPTokenStorage', () => {
       const refreshTokens = jest.fn();
 
       await expect(
-        MCPTokenStorage.forceRefreshTokens({
+        forceRefreshTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: interleavedFind,
@@ -1619,7 +1728,7 @@ describe('MCPTokenStorage', () => {
       const staleCreateToken = jest.fn(store.createToken);
       const staleUpdateToken = jest.fn(store.updateToken);
 
-      const staleRefresh = MCPTokenStorage.forceRefreshTokens({
+      const staleRefresh = forceRefreshTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1686,7 +1795,7 @@ describe('MCPTokenStorage', () => {
         ]),
       );
       await expect(
-        MCPTokenStorage.getTokens({
+        getTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
@@ -1729,7 +1838,7 @@ describe('MCPTokenStorage', () => {
         return await refreshResponse;
       });
       const deleteTokens = jest.fn(store.deleteTokens);
-      const staleRefresh = MCPTokenStorage.forceRefreshTokens({
+      const staleRefresh = forceRefreshTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1773,7 +1882,7 @@ describe('MCPTokenStorage', () => {
         expect.objectContaining({ metadataCredentialSetId: credentialSetId }),
       );
       await expect(
-        MCPTokenStorage.getTokens({
+        getTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
@@ -1813,7 +1922,7 @@ describe('MCPTokenStorage', () => {
         obtained_at: Date.now(),
       });
 
-      const result = await MCPTokenStorage.forceRefreshTokens({
+      const result = await forceRefreshTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1881,7 +1990,7 @@ describe('MCPTokenStorage', () => {
 
       const refreshTokens = jest.fn();
 
-      const result = await MCPTokenStorage.forceRefreshTokens({
+      const result = await forceRefreshTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1904,7 +2013,7 @@ describe('MCPTokenStorage', () => {
 
       const refreshTokens = jest.fn().mockRejectedValue(new Error('network blew up'));
 
-      const result = await MCPTokenStorage.forceRefreshTokens({
+      const result = await forceRefreshTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -1937,7 +2046,7 @@ describe('MCPTokenStorage', () => {
       const refreshTokens = jest.fn().mockRejectedValue(new Error('invalid_client'));
 
       await expect(
-        MCPTokenStorage.forceRefreshTokens({
+        forceRefreshTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,
@@ -2028,9 +2137,9 @@ describe('MCPTokenStorage', () => {
       );
 
       const params = refreshParams(refreshTokens, 'coalesce-srv');
-      const first = MCPTokenStorage.forceRefreshTokens(params);
-      const second = MCPTokenStorage.forceRefreshTokens(params);
-      const third = MCPTokenStorage.forceRefreshTokens(params);
+      const first = forceRefreshTokensWithAuthority(params);
+      const second = forceRefreshTokensWithAuthority(params);
+      const third = forceRefreshTokensWithAuthority(params);
 
       await waitFor(() => refreshTokens.mock.calls.length > 0);
       resolveRefresh(rotatedTokens(2));
@@ -2072,13 +2181,13 @@ describe('MCPTokenStorage', () => {
         return store.findToken(filter as Parameters<InMemoryTokenStore['findToken']>[0]);
       }) as TokenMethods['findToken'];
 
-      const silentRefresh = MCPTokenStorage.forceRefreshTokens({
+      const silentRefresh = forceRefreshTokensWithAuthority({
         ...refreshParams(refreshTokens, 'join-srv'),
         findToken,
       });
       await waitFor(() => refreshTokens.mock.calls.length === 1);
 
-      const expiredRead = MCPTokenStorage.getTokens({
+      const expiredRead = getTokensWithAuthority({
         ...refreshParams(refreshTokens, 'join-srv'),
         findToken,
       });
@@ -2119,7 +2228,7 @@ describe('MCPTokenStorage', () => {
 
       const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(3));
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         ...refreshParams(refreshTokens, 'snapshot-srv'),
         findToken,
       });
@@ -2188,7 +2297,7 @@ describe('MCPTokenStorage', () => {
       const createToken = jest.fn(store.createToken);
       const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(3));
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         ...refreshParams(refreshTokens, 'late-access-srv'),
         findToken,
         createToken,
@@ -2213,10 +2322,10 @@ describe('MCPTokenStorage', () => {
         .mockResolvedValueOnce(rotatedTokens(3));
 
       const params = refreshParams(refreshTokens, 'sequential-srv');
-      const first = await MCPTokenStorage.forceRefreshTokens(params);
+      const first = await forceRefreshTokensWithAuthority(params);
       expect(first!.access_token).toBe('at-2');
 
-      const second = await MCPTokenStorage.forceRefreshTokens(params);
+      const second = await forceRefreshTokensWithAuthority(params);
       expect(second!.access_token).toBe('at-3');
 
       expect(refreshTokens).toHaveBeenCalledTimes(2);
@@ -2242,8 +2351,8 @@ describe('MCPTokenStorage', () => {
           }),
       );
 
-      const first = MCPTokenStorage.forceRefreshTokens(refreshParams(refreshFirst, 'multi-a'));
-      const second = MCPTokenStorage.forceRefreshTokens(refreshParams(refreshSecond, 'multi-b'));
+      const first = forceRefreshTokensWithAuthority(refreshParams(refreshFirst, 'multi-a'));
+      const second = forceRefreshTokensWithAuthority(refreshParams(refreshSecond, 'multi-b'));
 
       await waitFor(
         () => refreshFirst.mock.calls.length === 1 && refreshSecond.mock.calls.length === 1,
@@ -2267,11 +2376,11 @@ describe('MCPTokenStorage', () => {
           }),
       );
       const params = refreshParams(refreshTokens, 'scoped-srv');
-      const first = MCPTokenStorage.forceRefreshTokens({
+      const first = forceRefreshTokensWithAuthority({
         ...params,
         singleFlightScope: 'binding-a',
       });
-      const second = MCPTokenStorage.forceRefreshTokens({
+      const second = forceRefreshTokensWithAuthority({
         ...params,
         singleFlightScope: 'binding-b',
       });
@@ -2296,8 +2405,8 @@ describe('MCPTokenStorage', () => {
       );
 
       const params = refreshParams(refreshTokens, 'fail-srv');
-      const first = MCPTokenStorage.forceRefreshTokens(params);
-      const second = MCPTokenStorage.forceRefreshTokens(params);
+      const first = forceRefreshTokensWithAuthority(params);
+      const second = forceRefreshTokensWithAuthority(params);
 
       await waitFor(() => refreshTokens.mock.calls.length === 1);
       rejectRefresh(new Error('network blew up'));
@@ -2306,7 +2415,7 @@ describe('MCPTokenStorage', () => {
       await expect(second).resolves.toBeNull();
 
       refreshTokens.mockResolvedValueOnce(rotatedTokens(2));
-      const third = await MCPTokenStorage.forceRefreshTokens(params);
+      const third = await forceRefreshTokensWithAuthority(params);
       expect(third!.access_token).toBe('at-2');
       expect(refreshTokens).toHaveBeenCalledTimes(2);
     });
@@ -2329,14 +2438,14 @@ describe('MCPTokenStorage', () => {
           .mockResolvedValueOnce(rotatedTokens(2));
 
         const params = refreshParams(refreshTokens, 'stall-srv');
-        const stalled = MCPTokenStorage.forceRefreshTokens(params);
+        const stalled = forceRefreshTokensWithAuthority(params);
         await waitFor(() => refreshTokens.mock.calls.length === 1);
 
         jest.advanceTimersByTime(MCPTokenStorage.INFLIGHT_REFRESH_STALE_MS + 1);
         /** The stale abort settles the stalled execution, which frees the slot. */
         await expect(stalled).resolves.toBeNull();
 
-        const fresh = await MCPTokenStorage.forceRefreshTokens(params);
+        const fresh = await forceRefreshTokensWithAuthority(params);
         expect(fresh!.access_token).toBe('at-2');
         expect(refreshTokens).toHaveBeenCalledTimes(2);
       } finally {
@@ -2363,7 +2472,7 @@ describe('MCPTokenStorage', () => {
         }) as TokenMethods['findToken'];
 
         const refreshTokens = jest.fn();
-        const stalled = MCPTokenStorage.forceRefreshTokens({
+        const stalled = forceRefreshTokensWithAuthority({
           ...refreshParams(refreshTokens, 'wake-srv'),
           findToken,
         });
@@ -2392,7 +2501,7 @@ describe('MCPTokenStorage', () => {
       const onRefreshSuccess = jest.fn().mockResolvedValue(undefined);
 
       const controller = new AbortController();
-      const initiator = MCPTokenStorage.forceRefreshTokens({
+      const initiator = forceRefreshTokensWithAuthority({
         ...refreshParams(refreshTokens, 'hook-srv'),
         signal: controller.signal,
         onRefreshSuccess,
@@ -2436,12 +2545,12 @@ describe('MCPTokenStorage', () => {
 
       const params = refreshParams(refreshTokens, 'abort-srv');
       const controller = new AbortController();
-      const initiator = MCPTokenStorage.forceRefreshTokens({
+      const initiator = forceRefreshTokensWithAuthority({
         ...params,
         signal: controller.signal,
       });
       await waitFor(() => refreshTokens.mock.calls.length === 1);
-      const joiner = MCPTokenStorage.forceRefreshTokens(params);
+      const joiner = forceRefreshTokensWithAuthority(params);
 
       controller.abort();
       await expect(initiator).resolves.toBeNull();
@@ -2464,11 +2573,11 @@ describe('MCPTokenStorage', () => {
       );
 
       const params = refreshParams(refreshTokens, 'joiner-abort-srv');
-      const initiator = MCPTokenStorage.forceRefreshTokens(params);
+      const initiator = forceRefreshTokensWithAuthority(params);
       await waitFor(() => refreshTokens.mock.calls.length === 1);
 
       const controller = new AbortController();
-      const joiner = MCPTokenStorage.forceRefreshTokens({
+      const joiner = forceRefreshTokensWithAuthority({
         ...params,
         signal: controller.signal,
       });
@@ -2497,8 +2606,8 @@ describe('MCPTokenStorage', () => {
         ...refreshParams(refreshTokens, 'reauth-srv'),
         deleteTokens: store.deleteTokens,
       };
-      const first = MCPTokenStorage.forceRefreshTokens(params);
-      const second = MCPTokenStorage.forceRefreshTokens(params);
+      const first = forceRefreshTokensWithAuthority(params);
+      const second = forceRefreshTokensWithAuthority(params);
 
       await waitFor(() => refreshTokens.mock.calls.length === 1);
       rejectRefresh(new Error('invalid_client'));
@@ -2523,7 +2632,7 @@ describe('MCPTokenStorage', () => {
         clientInfo: { client_id: 'cid', client_secret: 'sec' },
       });
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -2566,7 +2675,7 @@ describe('MCPTokenStorage', () => {
         metadata: newBindingMetadata,
       });
 
-      const result = await MCPTokenStorage.getTokens({
+      const result = await getTokensWithAuthority({
         userId: 'u1',
         serverName: 'srv1',
         findToken: store.findToken,
@@ -2644,7 +2753,7 @@ describe('MCPTokenStorage', () => {
         }),
       ).resolves.toBeNull();
       await expect(
-        MCPTokenStorage.getTokens({
+        getTokensWithAuthority({
           userId: 'u1',
           serverName: 'srv1',
           findToken: store.findToken,

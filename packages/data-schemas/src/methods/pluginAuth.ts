@@ -1,3 +1,4 @@
+import { Constants } from 'librechat-data-provider';
 import type { DeleteResult, Model } from 'mongoose';
 import type {
   FindPluginAuthsByKeysParams,
@@ -6,6 +7,11 @@ import type {
   FindPluginAuthParams,
   IPluginAuth,
 } from '~/types';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
+
+function isMCPPluginKey(pluginKey: string | undefined): boolean {
+  return pluginKey?.startsWith(Constants.mcp_prefix) ?? false;
+}
 
 // Factory function that takes mongoose instance and returns the methods
 export function createPluginAuthMethods(mongoose: typeof import('mongoose')): {
@@ -32,6 +38,7 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')): {
   }: DeletePluginAuthParams) => Promise<DeleteResult>;
   deleteAllUserPluginAuths: (userId: string) => Promise<DeleteResult>;
 } {
+  const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
   /**
    * Finds a single plugin auth entry by userId and authField (and optionally pluginKey)
    */
@@ -88,20 +95,21 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')): {
     value,
   }: UpdatePluginAuthParams): Promise<IPluginAuth> {
     try {
-      const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
-      const existingAuth = await PluginAuth.findOne({
-        userId,
-        pluginKey,
-        authField,
-      }).lean<IPluginAuth>();
+      const write = async (): Promise<IPluginAuth> => {
+        const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
+        const existingAuth = await PluginAuth.findOne({
+          userId,
+          pluginKey,
+          authField,
+        }).lean<IPluginAuth>();
 
-      if (existingAuth) {
-        return await PluginAuth.findOneAndUpdate(
-          { userId, pluginKey, authField },
-          { $set: { value } },
-          { new: true, upsert: true },
-        ).lean<IPluginAuth>();
-      } else {
+        if (existingAuth) {
+          return await PluginAuth.findOneAndUpdate(
+            { userId, pluginKey, authField },
+            { $set: { value } },
+            { new: true, upsert: true },
+          ).lean<IPluginAuth>();
+        }
         const newPluginAuth = await new PluginAuth({
           userId,
           authField,
@@ -110,7 +118,11 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')): {
         });
         await newPluginAuth.save();
         return newPluginAuth.toObject();
+      };
+      if (!isMCPPluginKey(pluginKey)) {
+        return await write();
       }
+      return (await authorityMutationGate.mutateMCPAuthority(write)).result;
     } catch (error) {
       throw new Error(
         `Failed to update plugin auth: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -128,20 +140,29 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')): {
     all = false,
   }: DeletePluginAuthParams): Promise<DeleteResult> {
     try {
-      const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
-      if (all) {
-        const filter: DeletePluginAuthParams = { userId };
-        if (pluginKey) {
-          filter.pluginKey = pluginKey;
-        }
-        return await PluginAuth.deleteMany(filter);
-      }
-
       if (!authField) {
-        throw new Error('authField is required when all is false');
+        if (!all) {
+          throw new Error('authField is required when all is false');
+        }
       }
-
-      return await PluginAuth.deleteOne({ userId, authField });
+      if (!all && !pluginKey) {
+        throw new Error('pluginKey is required when all is false');
+      }
+      const write = async (): Promise<DeleteResult> => {
+        const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
+        if (all) {
+          return await PluginAuth.deleteMany({
+            userId,
+            ...(pluginKey && { pluginKey }),
+          });
+        }
+        return await PluginAuth.deleteOne({ userId, authField, pluginKey });
+      };
+      const affectsMCPAuthority = pluginKey === undefined || isMCPPluginKey(pluginKey);
+      if (!affectsMCPAuthority) {
+        return await write();
+      }
+      return (await authorityMutationGate.mutateMCPAuthority(write)).result;
     } catch (error) {
       throw new Error(
         `Failed to delete plugin auth: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -155,7 +176,11 @@ export function createPluginAuthMethods(mongoose: typeof import('mongoose')): {
   async function deleteAllUserPluginAuths(userId: string): Promise<DeleteResult> {
     try {
       const PluginAuth: Model<IPluginAuth> = mongoose.models.PluginAuth;
-      return await PluginAuth.deleteMany({ userId });
+      return (
+        await authorityMutationGate.mutateMCPAuthority(
+          async () => await PluginAuth.deleteMany({ userId }),
+        )
+      ).result;
     } catch (error) {
       throw new Error(
         `Failed to delete all user plugin auths: ${error instanceof Error ? error.message : 'Unknown error'}`,

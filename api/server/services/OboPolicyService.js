@@ -26,17 +26,20 @@ function createOboTrustChecker() {
     if (!isDbSourced({ source, dbId })) {
       return true;
     }
-    return isOboConfigStillTrusted({
-      authorId: author,
-      getUserRoleByAuthorId: async (userId) => {
-        const user = await db.findUser({ _id: userId }, 'role');
-        return user?.role;
-      },
-      getRolePermissions: async (roleName) => {
-        const role = await db.getRoleByName(roleName);
-        return role?.permissions;
-      },
+    const { snapshot } = await db.readStableSnapshot(async () => {
+      return await isOboConfigStillTrusted({
+        authorId: author,
+        getUserRoleByAuthorId: async (userId) => {
+          const user = await db.findUser({ _id: userId }, 'role');
+          return user?.role;
+        },
+        getRolePermissions: async (roleName) => {
+          const [role] = await db.findRolesByNames([roleName], 'name permissions');
+          return role?.permissions;
+        },
+      });
     });
+    return snapshot;
   };
 }
 

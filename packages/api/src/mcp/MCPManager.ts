@@ -4,6 +4,7 @@ import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { MCPToolCatalogScope, MCPToolCatalogScopeInput } from './catalog';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
@@ -18,7 +19,13 @@ import {
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
   requiresUserScopedConnection,
+  shouldDetectRuntimeOAuth,
 } from './utils';
+import {
+  createMCPToolCatalogSecurityPolicyIdentity,
+  isMCPToolCatalogFingerprintAvailable,
+  matchesMCPConnectionProvenance,
+} from './catalog';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
@@ -48,6 +55,23 @@ function createOboToolCallErrorMessage(
   }
 
   return `${logPrefix} ${error.userMessage} Cannot execute tool ${toolName}. ${failureSuffix}`;
+}
+
+function matchesIssuedConnectionProvenance(
+  provenance: t.MCPConnectionProvenance | null | undefined,
+  scope: MCPToolCatalogScope,
+  authorizationKind: t.MCPConnectionProvenance['authorizationKind'],
+): boolean {
+  return (
+    provenance != null &&
+    provenance.authorizationKind === authorizationKind &&
+    provenance.scope.tenant === scope.tenant &&
+    provenance.scope.principal === scope.principal &&
+    provenance.scope.server === scope.server &&
+    provenance.scope.policy === scope.policy &&
+    provenance.scope.config === scope.config &&
+    provenance.scope.credentials === scope.credentials
+  );
 }
 
 class OAuthRecoveryTakeoverRequired extends Error {}
@@ -223,27 +247,58 @@ export class MCPManager extends UserConnectionManager {
     } & Omit<t.OAuthConnectionOptions, 'useOAuth' | 'user' | 'flowManager'>,
   ): Promise<MCPConnection> {
     const userId = args.user?.id;
-    const effectiveConfig =
-      args.serverConfig ??
-      (userId
-        ? await MCPServersRegistry.getInstance().getServerConfig(args.serverName, userId)
-        : undefined);
+    const sourceConfig = args.serverConfig;
+    const effectiveConfig = args.effectiveServerConfig;
+    const securityPolicy = args.securityPolicy;
+    const authorityScope = args.oauthAuthorityScope;
+    const authorizationKind = args.authorityAuthorizationKind;
+    if (!sourceConfig || !effectiveConfig || !securityPolicy) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `Proof-bound connection input is required for server ${args.serverName}`,
+      );
+    }
 
-    if (effectiveConfig && userId && requiresUserScopedConnection(effectiveConfig)) {
+    if (userId && requiresUserScopedConnection(sourceConfig)) {
       return this.getUserConnection({
         ...args,
-        serverConfig: effectiveConfig,
+        serverConfig: sourceConfig,
       } as Parameters<typeof this.getUserConnection>[0]);
     }
 
     //the get method checks if the config is still valid as app level
     const existingAppConnection = await this.appConnections!.get(args.serverName);
     if (existingAppConnection) {
-      return existingAppConnection;
+      if (!userId || !isMCPToolCatalogFingerprintAvailable()) {
+        return existingAppConnection;
+      }
+      const appProvenance = existingAppConnection.getDiscoveryProvenance();
+      const appConnectionMatchesPrincipal =
+        authorityScope && authorizationKind
+          ? matchesIssuedConnectionProvenance(appProvenance, authorityScope, authorizationKind)
+          : matchesMCPConnectionProvenance(appProvenance, {
+              tenantId: args.user?.tenantId ?? null,
+              userId,
+              serverName: args.serverName,
+              serverConfig: sourceConfig,
+              effectiveServerConfig: effectiveConfig,
+              securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+                allowedDomains: securityPolicy.allowedDomains,
+                allowedAddresses: securityPolicy.allowedAddresses,
+              }),
+              authorizationIdentity: 'none',
+            });
+      if (appConnectionMatchesPrincipal) {
+        return existingAppConnection;
+      }
+      return this.getIsolatedUserConnection({
+        ...args,
+        serverConfig: sourceConfig,
+      } as Parameters<typeof this.getUserConnection>[0]);
     } else if (userId) {
       return this.getUserConnection({
         ...args,
-        serverConfig: effectiveConfig,
+        serverConfig: sourceConfig,
       } as Parameters<typeof this.getUserConnection>[0]);
     } else {
       throw new McpError(
@@ -261,30 +316,17 @@ export class MCPManager extends UserConnectionManager {
   public async discoverServerTools(args: t.ToolDiscoveryOptions): Promise<t.ToolDiscoveryResult> {
     const { serverName, user } = args;
     const logPrefix = user?.id ? `[MCP][User: ${user.id}][${serverName}]` : `[MCP][${serverName}]`;
-
-    try {
-      const existingAppConnection = await this.appConnections?.get(serverName);
-      if (existingAppConnection && (await existingAppConnection.isConnected())) {
-        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot();
-        return {
-          tools: snapshot.complete ? snapshot.tools : null,
-          oauthRequired: false,
-          oauthUrl: null,
-        };
-      }
-    } catch {
-      logger.debug(`${logPrefix} [Discovery] App connection not available, trying discovery mode`);
-    }
-
-    const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
-      serverName,
-      user?.id,
-      args.configServers,
-    );
-
-    if (!serverConfig) {
-      logger.warn(`${logPrefix} [Discovery] Server config not found`);
-      return { tools: null, oauthRequired: false, oauthUrl: null };
+    const tenantId = user?.tenantId ?? null;
+    const serverConfig = args.serverConfig;
+    const effectiveServerConfig = args.effectiveServerConfig;
+    const securityPolicy = args.securityPolicy;
+    const authorityScope = args.oauthAuthorityScope;
+    const authorizationKind = args.authorityAuthorizationKind;
+    if (!serverConfig || !effectiveServerConfig || !securityPolicy) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} [Discovery] Proof-bound discovery input is required`,
+      );
     }
 
     const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(
@@ -295,32 +337,64 @@ export class MCPManager extends UserConnectionManager {
       logger.warn(
         `${logPrefix} [Discovery] Request body field(s) required to resolve runtime MCP placeholders: ${missingBodyFields.join(', ')}`,
       );
-      return { tools: null, oauthRequired: false, oauthUrl: null };
+      return { tools: null, oauthRequired: false, oauthUrl: null, provenance: null };
     }
 
-    const registry = MCPServersRegistry.getInstance();
-    const { allowedDomains, allowedAddresses, useSSRFProtection } =
-      await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
-    await this.assertResolvedRuntimeConfigAllowed({
-      config: serverConfig,
-      user,
-      customUserVars: args.customUserVars,
-      requestBody: args.requestBody,
-      graphTokenResolver: args.graphTokenResolver,
-      allowedDomains,
-      allowedAddresses,
+    await this.assertExactRuntimeConfigAllowed({
+      effectiveConfig: effectiveServerConfig,
+      securityPolicy,
       logPrefix: `${logPrefix} [Discovery]`,
     });
+
+    try {
+      const existingAppConnection = await this.appConnections?.get(serverName);
+      if (existingAppConnection && (await existingAppConnection.isConnected())) {
+        const appProvenance = existingAppConnection.getDiscoveryProvenance();
+        const appConnectionMatchesScope =
+          authorityScope && authorizationKind
+            ? matchesIssuedConnectionProvenance(appProvenance, authorityScope, authorizationKind)
+            : !isMCPToolCatalogFingerprintAvailable() ||
+              matchesMCPConnectionProvenance(appProvenance, {
+                tenantId,
+                userId: user?.id ?? '__app__',
+                serverName,
+                serverConfig,
+                effectiveServerConfig,
+                securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+                  allowedDomains: securityPolicy.allowedDomains,
+                  allowedAddresses: securityPolicy.allowedAddresses,
+                }),
+                customUserVars: args.customUserVars,
+                authorizationIdentity: 'none',
+              });
+        if (appConnectionMatchesScope) {
+          const tools = await existingAppConnection.fetchTools();
+          return {
+            tools,
+            oauthRequired: false,
+            oauthUrl: null,
+            provenance: existingAppConnection.getDiscoveryProvenance?.() ?? null,
+          };
+        }
+        logger.debug(
+          `${logPrefix} [Discovery] Shared connection scope differs; using isolated discovery`,
+        );
+      }
+    } catch {
+      logger.debug(`${logPrefix} [Discovery] App connection not available, trying discovery mode`);
+    }
 
     const useOAuth = requiresOAuthMachinery(serverConfig);
     const dbSourced = isUserSourced(serverConfig);
     const basic: t.BasicConnectionOptions = {
       dbSourced,
       serverName,
-      serverConfig,
-      useSSRFProtection,
-      allowedDomains,
-      allowedAddresses,
+      serverConfig: effectiveServerConfig,
+      declarativeServerConfig: serverConfig,
+      skipEnvProcessing: true,
+      useSSRFProtection: securityPolicy.useSSRFProtection,
+      allowedDomains: securityPolicy.allowedDomains,
+      allowedAddresses: securityPolicy.allowedAddresses,
     };
 
     const finalizeDiscoveryResult = async (
@@ -337,6 +411,7 @@ export class MCPManager extends UserConnectionManager {
         tools: result.tools,
         oauthRequired: result.oauthRequired,
         oauthUrl: result.oauthUrl,
+        provenance: result.provenance,
       };
     };
 
@@ -345,15 +420,18 @@ export class MCPManager extends UserConnectionManager {
         user: args.user,
         customUserVars: args.customUserVars,
         requestBody: args.requestBody,
-        graphTokenResolver: args.graphTokenResolver,
+        effectiveServerConfig,
+        securityPolicy,
         connectionTimeout: args.connectionTimeout,
+        oauthAuthorityScope: authorityScope,
+        authorityAuthorizationKind: authorizationKind,
       });
       return finalizeDiscoveryResult(result);
     }
 
     if (!user || !args.flowManager) {
       logger.warn(`${logPrefix} [Discovery] OAuth server requires user and flowManager`);
-      return { tools: null, oauthRequired: true, oauthUrl: null };
+      return { tools: null, oauthRequired: true, oauthUrl: null, provenance: null };
     }
 
     const result = await MCPConnectionFactory.discoverTools(basic, {
@@ -365,10 +443,14 @@ export class MCPManager extends UserConnectionManager {
       oauthStart: args.oauthStart,
       customUserVars: args.customUserVars,
       requestBody: args.requestBody,
-      graphTokenResolver: args.graphTokenResolver,
+      effectiveServerConfig,
+      securityPolicy,
       connectionTimeout: args.connectionTimeout,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
+      refreshAuthorityLifecycle: args.refreshAuthorityLifecycle,
+      oauthAuthorityScope: args.oauthAuthorityScope,
+      authorityAuthorizationKind: authorizationKind,
     });
 
     return finalizeDiscoveryResult(result);
@@ -418,13 +500,51 @@ export class MCPManager extends UserConnectionManager {
     userId: string,
     serverName: string,
     serverConfig?: t.ParsedServerConfig,
+  ): Promise<{ tools: t.LCAvailableTools | null; publicationGeneration?: string }> {
+    const result = await this.getServerToolFunctionsResult(
+      userId,
+      serverName,
+      undefined,
+      serverConfig,
+    );
+    return result
+      ? { tools: result.tools, publicationGeneration: result.publicationGeneration }
+      : { tools: null };
+  }
+
+  public async getServerToolFunctionsWithProvenance(
+    userId: string,
+    serverName: string,
+    expectedScope: MCPToolCatalogScopeInput,
   ): Promise<{
-    tools: t.LCAvailableTools | null;
+    tools: t.LCAvailableTools;
+    provenance: ReturnType<MCPConnection['getDiscoveryProvenance']>;
+  } | null> {
+    const result = await this.getServerToolFunctionsResult(
+      userId,
+      serverName,
+      expectedScope,
+      expectedScope.serverConfig,
+    );
+    return result ? { tools: result.tools, provenance: result.provenance } : null;
+  }
+
+  private async getServerToolFunctionsResult(
+    userId: string,
+    serverName: string,
+    expectedScope?: MCPToolCatalogScopeInput,
+    serverConfig?: t.ParsedServerConfig,
+  ): Promise<{
+    tools: t.LCAvailableTools;
+    provenance: ReturnType<MCPConnection['getDiscoveryProvenance']>;
     publicationGeneration?: string;
-  }> {
+  } | null> {
     try {
       const registry = MCPServersRegistry.getInstance();
-      const effectiveConfig = serverConfig ?? (await registry.getServerConfig(serverName, userId));
+      const effectiveConfig =
+        serverConfig ??
+        expectedScope?.serverConfig ??
+        (await registry.getServerConfig(serverName, userId));
       const useAppConnection =
         effectiveConfig != null &&
         canUseAppConnection(effectiveConfig) &&
@@ -432,9 +552,22 @@ export class MCPManager extends UserConnectionManager {
       const existingAppConnection = useAppConnection
         ? await this.appConnections?.get(serverName)
         : null;
-      if (existingAppConnection != null) {
+      if (existingAppConnection) {
+        const provenance = existingAppConnection.getDiscoveryProvenance?.() ?? null;
+        const runtimeOAuthRequiresPostValidation =
+          expectedScope != null &&
+          provenance?.authorizationKind === 'oauth' &&
+          shouldDetectRuntimeOAuth(expectedScope.serverConfig);
+        if (
+          expectedScope &&
+          !runtimeOAuthRequiresPostValidation &&
+          !matchesMCPConnectionProvenance(provenance, expectedScope)
+        ) {
+          return null;
+        }
         return {
           tools: await MCPServerInspector.getToolFunctions(serverName, existingAppConnection),
+          provenance,
         };
       }
 
@@ -443,22 +576,25 @@ export class MCPManager extends UserConnectionManager {
         const userConnections = this.getUserConnections(userId);
         const connection = userConnections?.get(serverName);
         if (!connection) {
-          return { tools: null };
+          return null;
         }
 
         if (effectiveConfig == null) {
-          await this.disconnectUserConnection(userId, serverName);
-          return { tools: null };
+          await this.disconnectUserConnection(userId, serverName, connection);
+          return null;
         }
         const connectionConfigGeneration = this.getToolConfigGeneration(connection);
-        const effectiveConfigGeneration = getMCPAppToolsPublicationGeneration(effectiveConfig);
+        const effectiveConfigGeneration = getMCPAppToolsPublicationGeneration(
+          effectiveConfig,
+          effectiveConfig,
+        );
         if (
           connectionConfigGeneration != null &&
           effectiveConfigGeneration != null &&
           connectionConfigGeneration !== effectiveConfigGeneration
         ) {
-          await this.disconnectUserConnection(userId, serverName);
-          return { tools: null };
+          await this.disconnectUserConnection(userId, serverName, connection);
+          return null;
         }
         const publicationGeneration = this.getToolPublicationGeneration(connection);
         const currentGeneration = await getMCPToolsChangedGeneration({ userId, serverName });
@@ -467,8 +603,8 @@ export class MCPManager extends UserConnectionManager {
           currentGeneration != null &&
           publicationGeneration !== currentGeneration
         ) {
-          await this.disconnectUserConnection(userId, serverName);
-          return { tools: null };
+          await this.disconnectUserConnection(userId, serverName, connection);
+          return null;
         }
 
         this.retainConnection(connection);
@@ -481,6 +617,19 @@ export class MCPManager extends UserConnectionManager {
         }
 
         try {
+          const provenance = connection.getDiscoveryProvenance?.() ?? null;
+          const runtimeOAuthRequiresPostValidation =
+            expectedScope != null &&
+            provenance?.authorizationKind === 'oauth' &&
+            shouldDetectRuntimeOAuth(expectedScope.serverConfig);
+          if (
+            expectedScope &&
+            !runtimeOAuthRequiresPostValidation &&
+            !matchesMCPConnectionProvenance(provenance, expectedScope)
+          ) {
+            await this.disconnectUserConnection(userId, serverName, connection);
+            return null;
+          }
           const tools = await MCPServerInspector.getToolFunctions(serverName, connection);
           const generationAfterFetch = await getMCPToolsChangedGeneration({ userId, serverName });
           if (
@@ -488,10 +637,10 @@ export class MCPManager extends UserConnectionManager {
             generationAfterFetch != null &&
             publicationGeneration !== generationAfterFetch
           ) {
-            await this.disconnectUserConnection(userId, serverName);
-            return { tools: null };
+            await this.disconnectUserConnection(userId, serverName, connection);
+            return null;
           }
-          return { tools, publicationGeneration };
+          return { tools, provenance, publicationGeneration };
         } finally {
           await this.releaseConnection(connection);
         }
@@ -501,7 +650,7 @@ export class MCPManager extends UserConnectionManager {
         `[getServerToolFunctions] Error getting tool functions for server ${serverName}`,
         error,
       );
-      return { tools: null };
+      return null;
     }
   }
 
@@ -774,6 +923,8 @@ Please follow these instructions when using tools from the respective MCP server
     user,
     serverName,
     serverConfig: providedConfig,
+    effectiveServerConfig,
+    securityPolicy,
     toolName,
     provider,
     toolArguments,
@@ -788,11 +939,19 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver,
     oboTokenResolver,
     oboTrustChecker,
+    oauthAuthorityScope,
+    authorityAuthorizationKind,
+    refreshAuthorityLifecycle,
+    bindWithCurrentAuthority,
+    beforeExecute,
+    executeWithCurrentAuthority,
   }: {
     user?: IUser;
     serverName: string;
     /** Pre-resolved config from tool creation context — avoids readThrough TTL and cross-tenant issues */
     serverConfig?: t.ParsedServerConfig;
+    effectiveServerConfig?: t.MCPOptions;
+    securityPolicy?: t.UserConnectionContext['securityPolicy'];
     toolName: string;
     provider: t.Provider;
     toolArguments?: Record<string, unknown>;
@@ -807,9 +966,38 @@ Please follow these instructions when using tools from the respective MCP server
     graphTokenResolver?: GraphTokenResolver;
     oboTokenResolver?: OboTokenResolver;
     oboTrustChecker?: OboTrustChecker;
+    oauthAuthorityScope?: MCPToolCatalogScope;
+    authorityAuthorizationKind?: t.MCPConnectionProvenance['authorizationKind'];
+    refreshAuthorityLifecycle?: t.MCPRefreshAuthorityLifecycle;
+    bindWithCurrentAuthority?: <Result>(bind: () => Promise<Result>) => Promise<Result>;
+    beforeExecute?: (context: {
+      connectionProvenance: t.MCPConnectionProvenance | null;
+      serverConfig: t.ParsedServerConfig;
+    }) => Promise<void>;
+    executeWithCurrentAuthority?: <Result>(
+      execute: () => Promise<Result>,
+      context: {
+        connectionProvenance: t.MCPConnectionProvenance | null;
+        serverConfig: t.ParsedServerConfig;
+      },
+    ) => Promise<Result>;
   }): Promise<t.FormattedToolResponse> {
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
+    const authorityInputs = [
+      effectiveServerConfig,
+      securityPolicy,
+      oauthAuthorityScope,
+      authorityAuthorizationKind,
+    ];
+    const hasAnyAuthorityInput = authorityInputs.some((value) => value != null);
+    const proofBound = providedConfig != null && authorityInputs.every((value) => value != null);
+    if (hasAnyAuthorityInput && !proofBound) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Incomplete proof-bound tool execution input.`,
+      );
+    }
     this.bindRequestScopedConnectionStore(requestScopedConnections);
     let recoveryTakeoverConsumed = false;
     while (true) {
@@ -857,22 +1045,31 @@ Please follow these instructions when using tools from the respective MCP server
       try {
         let awaitedCheckoutRecovery: Promise<void> | undefined;
         while (true) {
-          connection = await this.getConnection({
-            serverName,
-            user,
-            flowManager,
-            tokenMethods,
-            oauthStart,
-            oauthEnd,
-            oboTokenResolver,
-            oboTrustChecker,
-            graphTokenResolver,
-            signal: options?.signal,
-            customUserVars,
-            requestBody,
-            requestScopedConnections,
-            serverConfig: providedConfig,
-          });
+          const bind = async () =>
+            await this.getConnection({
+              serverName,
+              user,
+              flowManager,
+              tokenMethods,
+              oauthStart,
+              oauthEnd,
+              oboTokenResolver,
+              oboTrustChecker,
+              graphTokenResolver,
+              signal: options?.signal,
+              customUserVars,
+              requestBody,
+              requestScopedConnections,
+              serverConfig: providedConfig,
+              effectiveServerConfig,
+              securityPolicy,
+              oauthAuthorityScope,
+              authorityAuthorizationKind,
+              refreshAuthorityLifecycle,
+            });
+          connection = bindWithCurrentAuthority
+            ? await bindWithCurrentAuthority(bind)
+            : await bind();
           retainConnectionLease();
           const checkoutRecovery = this.oauthRecoveries.get(connection);
           if (!checkoutRecovery || checkoutRecovery.promise === awaitedCheckoutRecovery) {
@@ -911,6 +1108,7 @@ Please follow these instructions when using tools from the respective MCP server
         const connectionCheckError = connectionIsActive
           ? undefined
           : connection.getLastConnectionCheckError();
+        const activeConnection = connection;
 
         if (
           !connectionIsActive &&
@@ -935,197 +1133,233 @@ Please follow these instructions when using tools from the respective MCP server
         const ephemeralConnection = !!userId && requiresEphemeralUserConnection(rawConfig);
         disposeAfterCall = ephemeralConnection && !requestScopedConnections;
 
-        /** Plugin-authored placeholders must not resolve against the user's Graph token. */
-        const graphProcessedConfig =
-          isDbSourced || isPluginSourced(rawConfig)
-            ? (rawConfig as t.MCPOptions)
-            : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
-                user,
-                graphTokenResolver,
-                scopes: process.env.GRAPH_API_SCOPES,
-              });
-        const currentOptions = processMCPEnv({
-          user,
-          body: requestBody,
-          dbSourced: isDbSourced,
-          options: graphProcessedConfig,
-          customUserVars,
-        });
+        let currentOptions: t.ParsedServerConfig;
+        if (proofBound) {
+          currentOptions = effectiveServerConfig!;
+        } else {
+          /** Plugin-authored placeholders must not resolve against the user's Graph token. */
+          const graphProcessedConfig =
+            isDbSourced || isPluginSourced(rawConfig)
+              ? (rawConfig as t.MCPOptions)
+              : await preProcessGraphTokens(rawConfig as t.MCPOptions, {
+                  user,
+                  graphTokenResolver,
+                  scopes: process.env.GRAPH_API_SCOPES,
+                });
+          currentOptions = processMCPEnv({
+            user,
+            body: requestBody,
+            dbSourced: isDbSourced,
+            options: graphProcessedConfig,
+            customUserVars,
+          }) as t.ParsedServerConfig;
+        }
 
-        const resolvedHeaders: Record<string, string> =
-          'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
+        const executionContext = {
+          connectionProvenance: activeConnection.getDiscoveryProvenance?.() ?? null,
+          serverConfig: rawConfig,
+        };
+        const execute = async (): Promise<t.MCPToolCallResponse> => {
+          const resolvedHeaders: Record<string, string> =
+            'headers' in currentOptions ? { ...(currentOptions.headers || {}) } : {};
 
-        /** Refresh OBO token on each tool call to ensure it's current */
-        const oboConfig = rawConfig.obo;
-        if (oboConfig && oboTokenResolver && user) {
-          const oboTrusted = oboTrustChecker
-            ? await oboTrustChecker({
-                source: rawConfig.source,
-                author: rawConfig.author,
-                dbId: rawConfig.dbId,
-              })
-            : true;
-          if (!oboTrusted) {
-            logger.warn(
-              `${logPrefix} OBO config not trusted (author lacks ${PermissionTypes.MCP_SERVERS}.${Permissions.CONFIGURE_OBO}); refusing to mint a downstream token`,
-            );
-            throw new McpError(
-              ErrorCode.InternalError,
-              `${logPrefix} OBO is not permitted for server "${serverName}". The user who configured it no longer has permission to use OBO.`,
-            );
-          }
-          let oboTokens: MCPOAuthTokens;
-          try {
-            oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
-          } catch (error) {
-            if (error instanceof OboTokenResolutionError) {
+          /** Refresh OBO token on each tool call to ensure it's current */
+          const oboConfig = rawConfig.obo;
+          if (oboConfig && oboTokenResolver && user) {
+            if (isDbSourced && !oboTrustChecker) {
               throw new McpError(
-                ErrorCode.InternalError,
-                createOboToolCallErrorMessage(logPrefix, toolName, error),
+                ErrorCode.InvalidRequest,
+                `${logPrefix} OBO author trust proof is required for user-authored server "${serverName}".`,
               );
             }
-            throw error;
+            const oboTrusted = oboTrustChecker
+              ? await oboTrustChecker({
+                  source: rawConfig.source,
+                  author: rawConfig.author,
+                  dbId: rawConfig.dbId,
+                })
+              : true;
+            if (!oboTrusted) {
+              logger.warn(
+                `${logPrefix} OBO config not trusted (author lacks ${PermissionTypes.MCP_SERVERS}.${Permissions.CONFIGURE_OBO}); refusing to mint a downstream token`,
+              );
+              throw new McpError(
+                ErrorCode.InternalError,
+                `${logPrefix} OBO is not permitted for server "${serverName}". The user who configured it no longer has permission to use OBO.`,
+              );
+            }
+            let oboTokens: MCPOAuthTokens;
+            try {
+              oboTokens = await resolveOboToken(user, oboConfig, oboTokenResolver);
+            } catch (error) {
+              if (error instanceof OboTokenResolutionError) {
+                throw new McpError(
+                  ErrorCode.InternalError,
+                  createOboToolCallErrorMessage(logPrefix, toolName, error),
+                );
+              }
+              throw error;
+            }
+
+            if (!oboTokens.access_token) {
+              throw new McpError(
+                ErrorCode.InternalError,
+                `${logPrefix} OBO token refresh failed. Cannot execute tool ${toolName}. Re-authenticate the user and retry.`,
+              );
+            }
+            resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
+          }
+          if (
+            userId &&
+            user &&
+            oauthStart &&
+            flowManager &&
+            (isOAuthServer(currentOptions) || activeConnection.usesOAuth())
+          ) {
+            const resolvedPolicy = proofBound
+              ? securityPolicy!
+              : await registry.resolveAllowlists({
+                  userId,
+                  role: user?.role,
+                  tenantId: user?.tenantId ?? null,
+                });
+            attachSharedOAuthHandler = (relay) =>
+              MCPConnectionFactory.attachRequestOAuthHandler(
+                {
+                  serverName,
+                  serverConfig: currentOptions,
+                  declarativeServerConfig: rawConfig,
+                  dbSourced: isDbSourced,
+                  skipEnvProcessing: true,
+                  useSSRFProtection: resolvedPolicy.useSSRFProtection,
+                  allowedDomains: resolvedPolicy.allowedDomains,
+                  allowedAddresses: resolvedPolicy.allowedAddresses,
+                },
+                {
+                  useOAuth: true,
+                  user,
+                  flowManager,
+                  tokenMethods,
+                  oauthStart: relay.start,
+                  oauthEnd: relay.end,
+                  customUserVars,
+                  requestBody,
+                  effectiveServerConfig,
+                  securityPolicy,
+                  oauthAuthorityScope,
+                  authorityAuthorizationKind,
+                  refreshAuthorityLifecycle,
+                },
+                activeConnection,
+              );
           }
 
-          if (!oboTokens.access_token) {
-            throw new McpError(
-              ErrorCode.InternalError,
-              `${logPrefix} OBO token refresh failed. Cannot execute tool ${toolName}. Re-authenticate the user and retry.`,
-            );
+          activeConnection.setRequestHeaders(resolvedHeaders);
+
+          if (!connectionIsActive) {
+            const requestOAuthHandler = attachSharedOAuthHandler;
+            if (!requestOAuthHandler || !userId) {
+              throw new McpError(
+                ErrorCode.InternalError,
+                `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
+              );
+            }
+
+            try {
+              await waitForRecoveryWithoutLease(() =>
+                this.recoverOAuthConnection(
+                  connection!,
+                  connectionCheckError,
+                  serverName,
+                  userId,
+                  requestOAuthHandler,
+                  oauthStart,
+                  oauthEnd,
+                  flowManager,
+                  options?.signal,
+                  !recoveryTakeoverConsumed,
+                ),
+              );
+            } catch (recoveryError) {
+              if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
+                throw recoveryError;
+              }
+              if (options?.signal?.aborted) {
+                throw recoveryError;
+              }
+              logger.warn(
+                `${logPrefix}[${toolName}] Connection-check OAuth recovery failed`,
+                recoveryError,
+              );
+              throw connectionCheckError;
+            }
           }
-          resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
-        }
-        if (
-          userId &&
-          user &&
-          oauthStart &&
-          flowManager &&
-          (isOAuthServer(currentOptions) || connection.usesOAuth())
-        ) {
-          const { allowedDomains, allowedAddresses, useSSRFProtection } =
-            await registry.resolveAllowlists({ userId, role: user?.role });
-          attachSharedOAuthHandler = (relay) =>
-            MCPConnectionFactory.attachRequestOAuthHandler(
+
+          const requestTool = () =>
+            activeConnection.client.request(
               {
-                serverName,
-                serverConfig: currentOptions,
-                dbSourced: isDbSourced,
-                skipEnvProcessing: true,
-                useSSRFProtection,
-                allowedDomains,
-                allowedAddresses,
+                method: 'tools/call',
+                params: {
+                  name: toolName,
+                  arguments: toolArguments,
+                },
               },
+              CallToolResultSchema,
               {
-                useOAuth: true,
-                user,
-                flowManager,
-                tokenMethods,
-                oauthStart: relay.start,
-                oauthEnd: relay.end,
-                customUserVars,
-                requestBody,
+                timeout: activeConnection.timeout,
+                resetTimeoutOnProgress: true,
+                ...options,
               },
-              connection!,
             );
-        }
 
-        connection.setRequestHeaders(resolvedHeaders);
-
-        if (!connectionIsActive) {
-          const requestOAuthHandler = attachSharedOAuthHandler;
-          if (!requestOAuthHandler || !userId) {
-            throw new McpError(
-              ErrorCode.InternalError,
-              `${logPrefix} Connection is not active. Cannot execute tool ${toolName}.`,
-            );
-          }
-
+          let result: Awaited<ReturnType<typeof requestTool>>;
           try {
-            await waitForRecoveryWithoutLease(() =>
-              this.recoverOAuthConnection(
-                connection!,
-                connectionCheckError,
-                serverName,
-                userId,
-                requestOAuthHandler,
-                oauthStart,
-                oauthEnd,
-                flowManager,
-                options?.signal,
-                !recoveryTakeoverConsumed,
-              ),
-            );
-          } catch (recoveryError) {
-            if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
-              throw recoveryError;
+            result = await requestTool();
+          } catch (error) {
+            const requestOAuthHandler = attachSharedOAuthHandler;
+            if (!requestOAuthHandler || !userId) {
+              throw error;
             }
-            if (options?.signal?.aborted) {
-              throw recoveryError;
+
+            if (!activeConnection.isOAuthAuthenticationError(error)) {
+              throw error;
             }
-            logger.warn(
-              `${logPrefix}[${toolName}] Connection-check OAuth recovery failed`,
-              recoveryError,
-            );
-            throw connectionCheckError;
-          }
-        }
 
-        const requestTool = () =>
-          connection!.client.request(
-            {
-              method: 'tools/call',
-              params: {
-                name: toolName,
-                arguments: toolArguments,
-              },
-            },
-            CallToolResultSchema,
-            {
-              timeout: connection!.timeout,
-              resetTimeoutOnProgress: true,
-              ...options,
-            },
-          );
-
-        let result: Awaited<ReturnType<typeof requestTool>>;
-        try {
-          result = await requestTool();
-        } catch (error) {
-          const requestOAuthHandler = attachSharedOAuthHandler;
-          if (!requestOAuthHandler || !userId) {
-            throw error;
-          }
-
-          if (!connection.isOAuthAuthenticationError(error)) {
-            throw error;
-          }
-
-          try {
-            await waitForRecoveryWithoutLease(() =>
-              this.recoverOAuthConnection(
-                connection!,
-                error,
-                serverName,
-                userId,
-                requestOAuthHandler,
-                oauthStart,
-                oauthEnd,
-                flowManager,
-                options?.signal,
-                !recoveryTakeoverConsumed,
-              ),
-            );
-          } catch (recoveryError) {
-            if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
-              throw recoveryError;
+            try {
+              await waitForRecoveryWithoutLease(() =>
+                this.recoverOAuthConnection(
+                  connection!,
+                  error,
+                  serverName,
+                  userId,
+                  requestOAuthHandler,
+                  oauthStart,
+                  oauthEnd,
+                  flowManager,
+                  options?.signal,
+                  !recoveryTakeoverConsumed,
+                ),
+              );
+            } catch (recoveryError) {
+              if (recoveryError instanceof OAuthRecoveryTakeoverRequired) {
+                throw recoveryError;
+              }
+              if (options?.signal?.aborted) {
+                throw recoveryError;
+              }
+              logger.warn(`${logPrefix}[${toolName}] Runtime OAuth recovery failed`, recoveryError);
+              throw error;
             }
-            if (options?.signal?.aborted) {
-              throw recoveryError;
-            }
-            logger.warn(`${logPrefix}[${toolName}] Runtime OAuth recovery failed`, recoveryError);
-            throw error;
+            result = await requestTool();
           }
-          result = await requestTool();
+          return result as t.MCPToolCallResponse;
+        };
+        let result: t.MCPToolCallResponse;
+        if (executeWithCurrentAuthority) {
+          result = await executeWithCurrentAuthority(execute, executionContext);
+        } else {
+          await beforeExecute?.(executionContext);
+          result = await execute();
         }
         const hasPersistentUserConnections =
           !!userId && (this.userConnections.get(userId)?.size ?? 0) > 0;
@@ -1133,7 +1367,7 @@ Please follow these instructions when using tools from the respective MCP server
           await this.updateUserLastActivity(userId);
         }
         this.checkIdleConnections();
-        return formatToolContent(result as t.MCPToolCallResponse, provider);
+        return formatToolContent(result, provider);
       } catch (error) {
         if (error instanceof OAuthRecoveryTakeoverRequired) {
           recoveryTakeoverConsumed = true;
@@ -1153,6 +1387,14 @@ Please follow these instructions when using tools from the respective MCP server
             connection,
             `${logPrefix}[${toolName}] Ephemeral connection`,
           );
+        } else if (userId && connection) {
+          try {
+            await this.releaseDetachedUserConnection(userId, serverName, connection);
+          } catch (disconnectError) {
+            logger.warn(`${logPrefix}[${toolName}] Failed to release detached connection`, {
+              error: disconnectError,
+            });
+          }
         }
       }
     }

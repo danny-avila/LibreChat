@@ -1,13 +1,18 @@
 import { Types } from 'mongoose';
-import { logger, encryptV2, decryptV2, createMethods } from '@librechat/data-schemas';
 import {
   ResourceType,
   AccessRoleIds,
   PrincipalType,
   PermissionBits,
 } from 'librechat-data-provider';
+import {
+  logger,
+  encryptV2,
+  decryptV2,
+  createMethods,
+  getMCPAuthorityConsistencyModule,
+} from '@librechat/data-schemas';
 import type { AllMethods, MCPServerDocument } from '@librechat/data-schemas';
-
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import { MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
@@ -201,6 +206,16 @@ function getChangedOAuthSecretBindingFields(
   return fields.filter(([, existing, updated]) => existing !== updated).map(([field]) => field);
 }
 
+function mergeObjectIds(...idGroups: readonly Types.ObjectId[][]): Types.ObjectId[] {
+  const idsByValue = new Map<string, Types.ObjectId>();
+  for (const idGroup of idGroups) {
+    for (const id of idGroup) {
+      idsByValue.set(id.toString(), id);
+    }
+  }
+  return Array.from(idsByValue.values());
+}
+
 /**
  * DB backed config storage
  * Handles CRUD Methods of dynamic mcp servers
@@ -209,6 +224,7 @@ function getChangedOAuthSecretBindingFields(
 export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
   private _dbMethods: AllMethods;
   private _aclService: AccessControlService;
+  private _authority: ReturnType<typeof getMCPAuthorityConsistencyModule>;
 
   constructor(mongoose: typeof import('mongoose')) {
     if (!mongoose) {
@@ -216,6 +232,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     }
     this._dbMethods = createMethods(mongoose);
     this._aclService = new AccessControlService(mongoose);
+    this._authority = getMCPAuthorityConsistencyModule(mongoose);
   }
 
   /**
@@ -224,22 +241,39 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @param userId - The user ID (optional - if not provided, checks publicly accessible agents)
    * @returns true if user has VIEW access to at least one agent that has this MCP server
    */
-  private async hasAccessViaAgent(serverName: string, userId?: string): Promise<boolean> {
+  private async hasAccessViaAgent(
+    serverName: string,
+    userId?: string,
+    fresh = false,
+  ): Promise<boolean> {
     let accessibleAgentIds: Types.ObjectId[];
 
     if (!userId) {
-      /** Publicly accessible agents */
-      accessibleAgentIds = await this._aclService.findPubliclyAccessibleResources({
-        resourceType: ResourceType.AGENT,
-        requiredPermissions: PermissionBits.VIEW,
-      });
+      accessibleAgentIds = mergeObjectIds(
+        ...(await Promise.all(
+          [ResourceType.AGENT, ResourceType.REMOTE_AGENT].map(
+            async (resourceType) =>
+              await this._aclService.findPubliclyAccessibleResources({
+                resourceType,
+                requiredPermissions: PermissionBits.VIEW,
+              }),
+          ),
+        )),
+      );
     } else {
-      /** User-accessible agents */
-      accessibleAgentIds = await this._aclService.findAccessibleResources({
-        userId,
-        requiredPermissions: PermissionBits.VIEW,
-        resourceType: ResourceType.AGENT,
-      });
+      const principalsList = await this._aclService.getUserPrincipals({ userId, fresh });
+      accessibleAgentIds = mergeObjectIds(
+        ...(await Promise.all(
+          [ResourceType.AGENT, ResourceType.REMOTE_AGENT].map(
+            async (resourceType) =>
+              await this._aclService.findAccessibleResourcesForPrincipals({
+                principalsList,
+                requiredPermissions: PermissionBits.VIEW,
+                resourceType,
+              }),
+          ),
+        )),
+      );
     }
 
     if (accessibleAgentIds.length === 0) {
@@ -286,18 +320,21 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     const transformedConfig = this.transformUserApiKeyConfig(sanitizedConfig);
     /** Encrypted config before storing in database */
     const encryptedConfig = await this.encryptConfig(transformedConfig);
-    const createdServer = await this._dbMethods.createMCPServer({
-      config: encryptedConfig,
-      author: userId,
-      reservedServerNames,
-    });
-    await this._aclService.grantPermission({
-      principalType: PrincipalType.USER,
-      principalId: userId,
-      resourceType: ResourceType.MCPSERVER,
-      resourceId: createdServer._id,
-      accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
-      grantedBy: userId,
+    const { result: createdServer } = await this._authority.mutateMCPAuthority(async () => {
+      const server = await this._dbMethods.createMCPServer({
+        config: encryptedConfig,
+        author: userId,
+        reservedServerNames,
+      });
+      await this._aclService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: server._id,
+        accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
+        grantedBy: userId,
+      });
+      return server;
     });
     return {
       serverName: createdServer.serverName,
@@ -427,6 +464,23 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @returns The parsed server config or undefined if not found. If accessed via agent, consumeOnly will be true.
    */
   public async get(serverName: string, userId?: string): Promise<ParsedServerConfig | undefined> {
+    return await this.getWithAuthority(serverName, userId, false);
+  }
+
+  public async getFresh(
+    serverName: string,
+    userId?: string,
+    role?: string,
+  ): Promise<ParsedServerConfig | undefined> {
+    return await this.getWithAuthority(serverName, userId, true, role);
+  }
+
+  private async getWithAuthority(
+    serverName: string,
+    userId: string | undefined,
+    fresh: boolean,
+    role?: string,
+  ): Promise<ParsedServerConfig | undefined> {
     const server = await this._dbMethods.findMCPServerByServerName(serverName);
     if (!server) return undefined;
 
@@ -457,6 +511,8 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
     const userHasDirectAccess = await this._aclService.checkPermission({
       userId,
+      role,
+      fresh,
       resourceType: ResourceType.MCPSERVER,
       requiredPermission: PermissionBits.VIEW,
       resourceId: server._id,
@@ -470,7 +526,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     }
 
     /** Check agent access (user can VIEW an agent that has this MCP server) */
-    const hasAgentAccess = await this.hasAccessViaAgent(serverName, userId);
+    const hasAgentAccess = await this.hasAccessViaAgent(serverName, userId, fresh);
     if (hasAgentAccess) {
       logger.debug(
         `[ServerConfigsDB.get] user ${userId} accessing ${serverName} via agent (consumeOnly)`,
@@ -484,6 +540,66 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     return undefined;
   }
 
+  public async getAccessibleServerNamesFresh(userId?: string, role?: string): Promise<string[]> {
+    let directlyAccessibleMCPIds: Types.ObjectId[] = [];
+    let accessibleAgentIds: Types.ObjectId[] = [];
+    if (!userId) {
+      const [directIds, agentIds, remoteAgentIds] = await Promise.all([
+        this._aclService.findPubliclyAccessibleResources({
+          resourceType: ResourceType.MCPSERVER,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
+        this._aclService.findPubliclyAccessibleResources({
+          resourceType: ResourceType.AGENT,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
+        this._aclService.findPubliclyAccessibleResources({
+          resourceType: ResourceType.REMOTE_AGENT,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
+      ]);
+      directlyAccessibleMCPIds = directIds;
+      accessibleAgentIds = mergeObjectIds(agentIds, remoteAgentIds);
+    } else {
+      const principalsList = await this._aclService.getUserPrincipals({
+        userId,
+        role,
+        fresh: true,
+      });
+      const [directIds, agentIds, remoteAgentIds] = await Promise.all([
+        this._aclService.findAccessibleResourcesForPrincipals({
+          principalsList,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceType: ResourceType.MCPSERVER,
+        }),
+        this._aclService.findAccessibleResourcesForPrincipals({
+          principalsList,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceType: ResourceType.AGENT,
+        }),
+        this._aclService.findAccessibleResourcesForPrincipals({
+          principalsList,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceType: ResourceType.REMOTE_AGENT,
+        }),
+      ]);
+      directlyAccessibleMCPIds = directIds;
+      accessibleAgentIds = mergeObjectIds(agentIds, remoteAgentIds);
+    }
+    const [agentNames, directResults] = await Promise.all([
+      accessibleAgentIds.length > 0
+        ? this._dbMethods.getMCPServerNamesByAgentIds(accessibleAgentIds)
+        : Promise.resolve([]),
+      this._dbMethods.getListMCPServersByIds({ ids: directlyAccessibleMCPIds, limit: null }),
+    ]);
+    return [
+      ...new Set([
+        ...agentNames,
+        ...(directResults.data ?? []).map((server: MCPServerDocument) => server.serverName),
+      ]),
+    ];
+  }
+
   /**
    * Return all DB stored configs (scoped by user Id if provided)
    * @param userId optional user id. if not provided only publicly shared mcp configs will be returned
@@ -495,7 +611,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
 
     if (!userId) {
       logger.debug(`[ServerConfigsDB.getAll] fetching all publicly shared mcp servers`);
-      [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
+      const [directIds, agentIds, remoteAgentIds] = await Promise.all([
         this._aclService.findPubliclyAccessibleResources({
           resourceType: ResourceType.MCPSERVER,
           requiredPermissions: PermissionBits.VIEW,
@@ -504,13 +620,19 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           resourceType: ResourceType.AGENT,
           requiredPermissions: PermissionBits.VIEW,
         }),
+        this._aclService.findPubliclyAccessibleResources({
+          resourceType: ResourceType.REMOTE_AGENT,
+          requiredPermissions: PermissionBits.VIEW,
+        }),
       ]);
+      directlyAccessibleMCPIds = directIds;
+      accessibleAgentIds = mergeObjectIds(agentIds, remoteAgentIds);
     } else {
       logger.debug(
         `[ServerConfigsDB.getAll] fetching mcp servers directly shared with the user with ID: ${userId}`,
       );
       const principalsList = await this._aclService.getUserPrincipals({ userId, role });
-      [directlyAccessibleMCPIds, accessibleAgentIds] = await Promise.all([
+      const [directIds, agentIds, remoteAgentIds] = await Promise.all([
         this._aclService.findAccessibleResourcesForPrincipals({
           principalsList,
           requiredPermissions: PermissionBits.VIEW,
@@ -521,7 +643,14 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           requiredPermissions: PermissionBits.VIEW,
           resourceType: ResourceType.AGENT,
         }),
+        this._aclService.findAccessibleResourcesForPrincipals({
+          principalsList,
+          requiredPermissions: PermissionBits.VIEW,
+          resourceType: ResourceType.REMOTE_AGENT,
+        }),
       ]);
+      directlyAccessibleMCPIds = directIds;
+      accessibleAgentIds = mergeObjectIds(agentIds, remoteAgentIds);
     }
 
     const agentMCPServerNamesPromise: Promise<string[]> =
@@ -530,6 +659,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
         : Promise.resolve([]);
     const directResultsPromise = this._dbMethods.getListMCPServersByIds({
       ids: directlyAccessibleMCPIds,
+      limit: null,
     });
     const [agentMCPServerNames, directResults] = await Promise.all([
       agentMCPServerNamesPromise,

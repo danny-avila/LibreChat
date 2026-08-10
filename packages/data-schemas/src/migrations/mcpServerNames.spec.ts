@@ -42,6 +42,16 @@ describe('backfillMCPServerNormalizedNames', () => {
       { serverName: 'selected/server', normalizedServerName: 'selected_server' },
     ]);
     expect(await collection.indexExists('normalizedServerName_1_tenantId_1')).toBe(true);
+    const normalizedIndex = (await collection.listIndexes().toArray()).find(
+      (index) => index.name === 'normalizedServerName_1_tenantId_1',
+    );
+    expect(normalizedIndex).toEqual(
+      expect.objectContaining({
+        key: { normalizedServerName: 1, tenantId: 1 },
+      }),
+    );
+    expect(normalizedIndex).not.toHaveProperty('unique');
+    expect(normalizedIndex).not.toHaveProperty('partialFilterExpression');
 
     await expect(backfillMCPServerNormalizedNames(mongoose.connection)).resolves.toEqual({
       scanned: 3,
@@ -66,15 +76,47 @@ describe('backfillMCPServerNormalizedNames', () => {
     expect(await collection.indexExists('normalizedServerName_1_tenantId_1')).toBe(false);
   });
 
-  test('pins both migration scans to primary with majority read concern', async () => {
+  test('replaces the prerelease unique normalized-name index with a portable lookup index', async () => {
+    const collection = mongoose.connection.db!.collection('mcpservers');
+    await collection.insertOne({
+      serverName: 'selected-server',
+      normalizedServerName: 'selected-server',
+      tenantId: 'tenant-a',
+    });
+    await collection.createIndex(
+      { normalizedServerName: 1, tenantId: 1 },
+      {
+        name: 'normalizedServerName_1_tenantId_1',
+        unique: true,
+        partialFilterExpression: { normalizedServerName: { $exists: true } },
+      },
+    );
+
+    await backfillMCPServerNormalizedNames(mongoose.connection);
+
+    const normalizedIndex = (await collection.listIndexes().toArray()).find(
+      (index) => index.name === 'normalizedServerName_1_tenantId_1',
+    );
+    expect(normalizedIndex).toEqual(
+      expect.objectContaining({
+        key: { normalizedServerName: 1, tenantId: 1 },
+      }),
+    );
+    expect(normalizedIndex).not.toHaveProperty('unique');
+    expect(normalizedIndex).not.toHaveProperty('partialFilterExpression');
+  });
+
+  test('uses portable updateOne writes after one primary majority scan', async () => {
     const collection = mongoose.connection.db!.collection('mcpservers');
     await collection.insertOne({ serverName: 'selected server', tenantId: 'tenant-a' });
     const findSpy = jest.spyOn(mongoose.mongo.Collection.prototype, 'find');
+    const updateOneSpy = jest.spyOn(mongoose.mongo.Collection.prototype, 'updateOne');
+    const bulkWriteSpy = jest.spyOn(mongoose.mongo.Collection.prototype, 'bulkWrite');
 
     try {
       await backfillMCPServerNormalizedNames(mongoose.connection);
 
-      expect(findSpy).toHaveBeenCalledTimes(2);
+      expect(findSpy).toHaveBeenCalledTimes(1);
       expect(
         findSpy.mock.calls.every(
           ([, options]) =>
@@ -83,8 +125,12 @@ describe('backfillMCPServerNormalizedNames', () => {
             options.readConcern.level === 'majority',
         ),
       ).toBe(true);
+      expect(updateOneSpy).toHaveBeenCalledTimes(1);
+      expect(bulkWriteSpy).not.toHaveBeenCalled();
     } finally {
       findSpy.mockRestore();
+      updateOneSpy.mockRestore();
+      bulkWriteSpy.mockRestore();
     }
   });
 });

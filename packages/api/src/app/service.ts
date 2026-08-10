@@ -38,12 +38,14 @@ export interface AppConfigServiceDeps {
   /** Fetch applicable DB config overrides for a set of principals. */
   getApplicableConfigs: (
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
+    options?: { paths?: string[]; includeInactive?: boolean },
   ) => Promise<IConfig[]>;
   /** Resolve full principal list (user + role + groups) from userId/role. */
   getUserPrincipals: (params: {
     userId: string | Types.ObjectId;
     role?: string | null;
     idOnTheSource?: string | null;
+    fresh?: boolean;
   }) => Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>>;
   /** TTL in ms for per-user/role merged config caches. Defaults to 60 000. */
   overrideCacheTtl?: number;
@@ -55,6 +57,12 @@ export interface GetAppConfigOptions {
   idOnTheSource?: string | null;
   tenantId?: string;
   refresh?: boolean;
+  /** Bypass only the merged principal override cache without reloading YAML/base config. */
+  refreshOverrides?: boolean;
+  /** Restrict fresh override reads to MCP configuration and policy fields. */
+  mcpOnly?: boolean;
+  /** Propagate principal/override lookup failures instead of falling back to base config. */
+  failClosed?: boolean;
   /** When true, return only the YAML-derived base config — no DB override queries. */
   baseOnly?: boolean;
 }
@@ -65,6 +73,11 @@ export interface AppConfigUserLike {
   role?: string;
   tenantId?: string;
   idOnTheSource?: string | null;
+}
+
+export interface MCPAppConfigSnapshot {
+  config: AppConfig;
+  sourceDocuments: IConfig[];
 }
 
 export function getAppConfigOptionsFromUser(
@@ -118,6 +131,7 @@ function overrideCacheKey(role?: string, userId?: string, tenantId?: string): st
 
 export function createAppConfigService(deps: AppConfigServiceDeps): {
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
+  getMCPAppConfigSnapshot: (options?: GetAppConfigOptions) => Promise<MCPAppConfigSnapshot>;
   clearAppConfigCache: () => Promise<void>;
   clearOverrideCache: (tenantId?: string) => Promise<void>;
 } {
@@ -137,11 +151,18 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     role?: string,
     userId?: string,
     idOnTheSource?: string | null,
+    fresh = false,
   ): Promise<Array<{ principalType: string; principalId?: string | Types.ObjectId }>> {
     if (userId) {
-      const params: { userId: string; role?: string | null; idOnTheSource?: string | null } = {
+      const params: {
+        userId: string;
+        role?: string | null;
+        idOnTheSource?: string | null;
+        fresh?: boolean;
+      } = {
         userId,
         role,
+        ...(fresh && { fresh: true }),
       };
       if (idOnTheSource !== undefined) {
         params.idOnTheSource = idOnTheSource;
@@ -178,6 +199,36 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
     return baseConfig;
   }
 
+  async function resolveMCPAppConfigSnapshot(
+    baseConfig: AppConfig,
+    options: GetAppConfigOptions,
+  ): Promise<MCPAppConfigSnapshot> {
+    const { role, userId, idOnTheSource, tenantId } = options;
+    if (!tenantId && !getTenantId() && isStrictOverrideMode()) {
+      throw new Error('MCP authority resolution requires a tenant in strict isolation mode.');
+    }
+    const principals = await buildPrincipals(role, userId, idOnTheSource, true);
+    const sourceDocuments = await getApplicableConfigs(principals, {
+      paths: ['mcpServers', 'mcpSettings'],
+      includeInactive: true,
+    });
+    const activeDocuments = sourceDocuments.filter((document) => document.isActive);
+    return {
+      config:
+        activeDocuments.length === 0
+          ? { ...baseConfig }
+          : mergeConfigOverrides(baseConfig, activeDocuments),
+      sourceDocuments,
+    };
+  }
+
+  async function getMCPAppConfigSnapshot(
+    options: GetAppConfigOptions = {},
+  ): Promise<MCPAppConfigSnapshot> {
+    const baseConfig = await ensureBaseConfig(options.refresh);
+    return await resolveMCPAppConfigSnapshot(baseConfig, options);
+  }
+
   /**
    * Get the app configuration, optionally merged with DB overrides for the given principal.
    *
@@ -190,7 +241,17 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * Use this for startup, auth strategies, and other pre-tenant code paths.
    */
   async function getAppConfig(options: GetAppConfigOptions = {}): Promise<AppConfig> {
-    const { role, userId, idOnTheSource, tenantId, refresh, baseOnly } = options;
+    const {
+      role,
+      userId,
+      idOnTheSource,
+      tenantId,
+      refresh,
+      refreshOverrides,
+      mcpOnly,
+      failClosed,
+      baseOnly,
+    } = options;
 
     const baseConfig = await ensureBaseConfig(refresh);
 
@@ -198,20 +259,36 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       return baseConfig;
     }
 
+    if (mcpOnly) {
+      try {
+        return (await resolveMCPAppConfigSnapshot(baseConfig, options)).config;
+      } catch (error) {
+        logger.error('[getAppConfig] Error resolving MCP config overrides:', error);
+        if (failClosed) {
+          throw error;
+        }
+        return baseConfig;
+      }
+    }
+
     const cacheKey = overrideCacheKey(role, userId, tenantId);
-    if (!refresh) {
+    if (!refresh && !refreshOverrides) {
       const cachedMerged = (await cache.get(cacheKey)) as AppConfig | undefined;
       if (cachedMerged) {
         return cachedMerged;
       }
     }
 
-    const principals = await buildPrincipals(role, userId, idOnTheSource).catch(
-      (error: unknown) => {
-        logger.error('[getAppConfig] Error building principals, falling back to base:', error);
-        return null;
-      },
-    );
+    let principals: Awaited<ReturnType<typeof buildPrincipals>> | null;
+    try {
+      principals = await buildPrincipals(role, userId, idOnTheSource, refreshOverrides === true);
+    } catch (error) {
+      logger.error('[getAppConfig] Error building principals, falling back to base:', error);
+      if (failClosed) {
+        throw error;
+      }
+      principals = null;
+    }
     if (principals === null) {
       return baseConfig;
     }
@@ -246,6 +323,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
       return merged;
     } catch (error) {
       logger.error('[getAppConfig] Error resolving config overrides, falling back to base:', error);
+      if (failClosed) {
+        throw error;
+      }
       return baseConfig;
     }
   }
@@ -307,6 +387,7 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
 
   return {
     getAppConfig,
+    getMCPAppConfigSnapshot,
     clearAppConfigCache,
     clearOverrideCache,
   };

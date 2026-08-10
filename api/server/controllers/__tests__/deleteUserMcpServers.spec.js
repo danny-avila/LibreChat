@@ -17,7 +17,7 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 const mongoose = require('mongoose');
-const { mcpServerSchema } = require('@librechat/data-schemas');
+const { mcpServerSchema, getMCPAuthorityConsistencyModule } = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   ResourceType,
@@ -350,9 +350,13 @@ describe('deleteUserMcpServers', () => {
     mockGetMCPManager.mockReturnValue({
       disconnectUserConnection: jest.fn().mockResolvedValue(undefined),
     });
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const before = await consistency.getMCPAuthorityConsistencyStatus();
 
     await deleteUserMcpServers(userId.toString());
 
+    const after = await consistency.getMCPAuthorityConsistencyStatus();
+    expect(after.generation).toBe(before.generation + 2);
     expect(await MCPServer.findById(aclServer._id)).toBeNull();
     expect(await MCPServer.findById(legacyServer._id)).toBeNull();
   });

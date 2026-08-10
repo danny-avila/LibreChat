@@ -17,6 +17,8 @@ const {
   getCachedAppServerTools,
   getNextAppToolsPublicationRevision,
   setCachedAppServerTools,
+  getCachedMCPServerCatalog,
+  setCachedMCPServerCatalog,
   runWithGlobalCacheLock,
   invalidateCachedTools,
 } = require('../getCachedTools');
@@ -50,6 +52,43 @@ describe('MCP tool cache', () => {
 
   it('keeps the legacy user key available for non-generation callers', () => {
     expect(ToolCacheKeys.MCP_SERVER('user123', 'github')).toBe('tools:mcp:user123:github');
+  });
+
+  it('uses opaque tenant-scoped keys for proof-bound catalogs', () => {
+    const first = ToolCacheKeys.MCP_CATALOG('user123', 'github', 'tenant-a');
+    const second = ToolCacheKeys.MCP_CATALOG('user123', 'github', 'tenant-b');
+
+    expect(first).toMatch(/^tools:mcp:catalog:v1:/);
+    expect(first).not.toContain('tenant-a');
+    expect(first).not.toContain('user123');
+    expect(first).not.toContain('github');
+    expect(first).not.toBe(second);
+  });
+
+  it('keeps proof-bound catalogs separate from raw generation-addressed tools', async () => {
+    const catalog = { metadata: { version: 1 }, tools: { scoped: {} } };
+    mockCache.get.mockResolvedValue(catalog);
+    mockCache.set.mockResolvedValue(true);
+
+    await expect(
+      getCachedMCPServerCatalog({
+        userId: 'user123',
+        serverName: 'github',
+        tenantId: 'tenant-a',
+      }),
+    ).resolves.toBe(catalog);
+    await expect(
+      setCachedMCPServerCatalog(catalog, {
+        userId: 'user123',
+        serverName: 'github',
+        tenantId: 'tenant-a',
+      }),
+    ).resolves.toBe(true);
+
+    const key = ToolCacheKeys.MCP_CATALOG('user123', 'github', 'tenant-a');
+    expect(mockCache.get).toHaveBeenCalledWith(key);
+    expect(mockCache.set).toHaveBeenCalledWith(key, catalog, Time.TWELVE_HOURS);
+    expect(key).not.toBe(ToolCacheKeys.MCP_SERVER('user123', 'github', 'config-v2'));
   });
 
   it('gets and sets static global tools without touching MCP slices', async () => {
@@ -426,6 +465,9 @@ describe('MCP tool cache', () => {
     );
     expect(mockCache.set.mock.calls[1][2]).toBeGreaterThanOrEqual(Time.ONE_DAY);
     expect(mockCache.delete).toHaveBeenCalledWith(ToolCacheKeys.MCP_SERVER('user1', 'github'));
+    expect(mockCache.delete).toHaveBeenCalledWith(
+      ToolCacheKeys.MCP_CATALOG('user1', 'github', null),
+    );
     expect(mockCache.set.mock.invocationCallOrder[1]).toBeLessThan(
       mockCache.delete.mock.invocationCallOrder[0],
     );

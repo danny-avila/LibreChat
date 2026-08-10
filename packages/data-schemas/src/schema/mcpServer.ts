@@ -39,13 +39,7 @@ mcpServerSchema.pre('validate', function () {
 });
 
 mcpServerSchema.index({ serverName: 1, tenantId: 1 }, { unique: true });
-mcpServerSchema.index(
-  { normalizedServerName: 1, tenantId: 1 },
-  {
-    unique: true,
-    partialFilterExpression: { normalizedServerName: { $exists: true } },
-  },
-);
+mcpServerSchema.index({ normalizedServerName: 1, tenantId: 1 });
 mcpServerSchema.index({ updatedAt: -1, _id: 1 });
 
 export default mcpServerSchema;

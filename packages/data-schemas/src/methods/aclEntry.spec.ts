@@ -6,13 +6,16 @@ import {
   PrincipalModel,
   PermissionBits,
 } from 'librechat-data-provider';
+import type { MCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import type * as t from '~/types';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { createAclEntryMethods, permissionBitSupersets } from './aclEntry';
 import aclEntrySchema from '~/schema/aclEntry';
 
 let mongoServer: MongoMemoryServer;
 let AclEntry: mongoose.Model<t.IAclEntry>;
 let methods: ReturnType<typeof createAclEntryMethods>;
+let consistency: MCPAuthorityConsistencyModule;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -20,6 +23,7 @@ beforeAll(async () => {
   AclEntry = mongoose.models.AclEntry || mongoose.model('AclEntry', aclEntrySchema);
   methods = createAclEntryMethods(mongoose);
   await mongoose.connect(mongoUri);
+  consistency = getMCPAuthorityConsistencyModule(mongoose);
 });
 
 afterAll(async () => {
@@ -37,6 +41,39 @@ describe('AclEntry Model Tests', () => {
   const groupId = new mongoose.Types.ObjectId();
   const resourceId = new mongoose.Types.ObjectId();
   const grantedById = new mongoose.Types.ObjectId();
+
+  test('publishes generations only for ACL resources used by MCP authority', async () => {
+    await consistency.initializeMCPAuthorityConsistency();
+    await methods.grantPermission(
+      PrincipalType.USER,
+      userId,
+      ResourceType.PROMPTGROUP,
+      resourceId,
+      PermissionBits.VIEW,
+      grantedById,
+    );
+    await expect(consistency.assertGeneration(0)).resolves.toBeUndefined();
+
+    await methods.grantPermission(
+      PrincipalType.USER,
+      userId,
+      ResourceType.MCPSERVER,
+      resourceId,
+      PermissionBits.VIEW,
+      grantedById,
+    );
+    await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();
+
+    await methods.grantPermission(
+      PrincipalType.USER,
+      userId,
+      ResourceType.REMOTE_AGENT,
+      resourceId,
+      PermissionBits.VIEW,
+      grantedById,
+    );
+    await expect(consistency.assertGeneration(2)).resolves.toBeUndefined();
+  });
 
   describe('Permission Grant and Query', () => {
     test('should grant permission to a user', async () => {

@@ -1,6 +1,11 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import type { MCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import type * as t from '~/types';
+import {
+  createMCPAuthorityConsistencyModule,
+  type MCPAuthorityConsistencyFence,
+} from './mcpAuthority/consistency';
 import { createTokenMethods } from './token';
 import tokenSchema from '~/schema/token';
 
@@ -14,6 +19,7 @@ jest.mock('~/config/winston', () => ({
 let mongoServer: MongoMemoryServer;
 let Token: mongoose.Model<t.IToken>;
 let methods: ReturnType<typeof createTokenMethods>;
+let consistency: MCPAuthorityConsistencyModule;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -23,7 +29,12 @@ beforeAll(async () => {
   /** Register models */
   Token = mongoose.models.Token || mongoose.model<t.IToken>('Token', tokenSchema);
 
-  /** Initialize methods */
+  consistency = createMCPAuthorityConsistencyModule({
+    collection:
+      mongoose.connection.collection<MCPAuthorityConsistencyFence>('mcpAuthorityConsistency'),
+    now: () => new Date('2026-08-07T12:00:00.000Z'),
+    createOwnerId: () => new mongoose.Types.ObjectId().toHexString(),
+  });
   methods = createTokenMethods(mongoose);
 });
 
@@ -37,6 +48,46 @@ beforeEach(async () => {
 });
 
 describe('Token Methods - Detailed Tests', () => {
+  test('publishes generations only for operations that can affect MCP OAuth tokens', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    await consistency.initializeMCPAuthorityConsistency();
+
+    await methods.createToken({
+      token: 'reset-secret',
+      userId,
+      type: 'password_reset',
+      expiresIn: 3600,
+    });
+    await expect(consistency.assertGeneration(0)).resolves.toBeUndefined();
+
+    await methods.createToken({
+      token: 'mcp-secret',
+      userId,
+      type: 'mcp_oauth',
+      identifier: 'mcp:database',
+      expiresIn: 3600,
+    });
+    await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();
+
+    await methods.updateToken(
+      { userId, type: 'mcp_oauth', identifier: 'mcp:database' },
+      { token: 'rotated-mcp-secret' },
+    );
+    await expect(consistency.assertGeneration(2)).resolves.toBeUndefined();
+
+    await methods.deleteTokens({ userId });
+    await expect(consistency.assertGeneration(3)).resolves.toBeUndefined();
+  });
+
+  test('declares the compound MCP authorization identity lookup index', () => {
+    expect(tokenSchema.indexes().map(([fields]) => fields)).toContainEqual({
+      userId: 1,
+      type: 1,
+      identifier: 1,
+      tenantId: 1,
+    });
+  });
+
   describe('createToken', () => {
     test('should create a token with correct expiry time', async () => {
       const userId = new mongoose.Types.ObjectId();
@@ -400,6 +451,93 @@ describe('Token Methods - Detailed Tests', () => {
       expect(found).toBeDefined();
       expect(found?.token).toBe('combined-3'); // Most recent
       expect(found?.createdAt).toBeDefined();
+    });
+  });
+
+  describe('findTokens', () => {
+    test('batches MCP authorization records through compound indexed selectors', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      await Token.create([
+        {
+          token: 'docs-secret',
+          userId,
+          type: 'mcp_oauth_client',
+          identifier: 'mcp:docs:client',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'search-secret',
+          userId,
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:search:refresh',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'unrelated-secret',
+          userId,
+          type: 'password_reset',
+          identifier: 'unrelated',
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const records = await methods.findTokens!({
+        userId: userId.toString(),
+        type: { $in: ['mcp_oauth_client', 'mcp_oauth_refresh', 'mcp_oauth'] },
+        identifier: { $in: ['mcp:docs:client', 'mcp:search:refresh'] },
+      });
+
+      expect(records).toHaveLength(2);
+      expect(records.map((record) => record.identifier).sort()).toEqual([
+        'mcp:docs:client',
+        'mcp:search:refresh',
+      ]);
+      expect(records.every((record) => !('token' in record))).toBe(true);
+    });
+
+    test('rejects an empty batch selector instead of matching every token', async () => {
+      await expect(methods.findTokens!({})).rejects.toThrow(
+        'At least one query parameter must be provided',
+      );
+    });
+
+    test('returns duplicate identities newest-first without exposing token secrets', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const identifier = 'mcp:duplicate';
+      await Token.create([
+        {
+          token: 'old-secret',
+          userId,
+          type: 'mcp_oauth',
+          identifier,
+          metadata: { credential_set_id: 'grant-old' },
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          expiresAt: new Date('2027-01-01T00:00:00.000Z'),
+        },
+        {
+          token: 'new-secret',
+          userId,
+          type: 'mcp_oauth',
+          identifier,
+          metadata: { credential_set_id: 'grant-new', private_hint: 'do-not-project' },
+          createdAt: new Date('2026-02-01T00:00:00.000Z'),
+          expiresAt: new Date('2027-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      const records = await methods.findTokens!({
+        userId: userId.toString(),
+        type: 'mcp_oauth',
+        identifier,
+      });
+
+      expect(records).toHaveLength(2);
+      expect(records[0]?.metadata).toMatchObject({ credential_set_id: 'grant-new' });
+      expect(records[0]?.metadata).not.toHaveProperty('private_hint');
+      expect(records.every((record) => !('token' in record))).toBe(true);
     });
   });
 

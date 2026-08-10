@@ -10,6 +10,7 @@ const mockGetAllServerConfigs = jest.fn();
 const mockUserCanUseMCPServers = jest.fn();
 
 jest.mock('~/server/services/Config', () => ({
+  getScopedMCPServerTools: jest.fn(),
   getCachedTools: jest.fn().mockResolvedValue({
     web_search: true,
     execute_code: true,
@@ -80,6 +81,7 @@ const {
 } = require('./v1');
 
 const { getMCPServersRegistry } = require('~/config');
+const { grantPermission } = require('~/server/services/PermissionService');
 
 let Agent;
 
@@ -547,6 +549,74 @@ describe('MCP Tool Authorization', () => {
       const agentInDb = await Agent.findOne({ id: agent.id });
       expect(agentInDb.mcpServerNames).toContain('authorizedServer');
       expect(agentInDb.mcpServerNames).not.toContain('forbiddenServer');
+    });
+
+    test('publishes an MCP-linked agent only after both owner ACLs are granted', async () => {
+      const consistency =
+        require('@librechat/data-schemas').getMCPAuthorityConsistencyModule(mongoose);
+      await consistency.initializeMCPAuthorityConsistency();
+      const before = await consistency.getMCPAuthorityConsistencyStatus();
+      let releaseGrants;
+      let grantStarted;
+      const started = new Promise((resolve) => {
+        grantStarted = resolve;
+      });
+      const blocked = new Promise((resolve) => {
+        releaseGrants = resolve;
+      });
+      grantPermission.mockImplementation(async () => {
+        grantStarted();
+        await blocked;
+      });
+      mockReq.body = {
+        provider: 'openai',
+        model: 'gpt-4',
+        name: 'Atomic MCP Agent',
+        tools: [`tool${d}authorizedServer`],
+      };
+
+      const create = createAgentHandler(mockReq, mockRes);
+      await started;
+
+      await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+        dirty: true,
+        generation: before.generation,
+      });
+      await expect(Agent.findOne({ name: 'Atomic MCP Agent' })).resolves.toBeTruthy();
+      releaseGrants();
+      await create;
+      await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+        dirty: false,
+        generation: before.generation + 1,
+      });
+      expect(grantPermission).toHaveBeenCalledTimes(2);
+      grantPermission.mockResolvedValue(undefined);
+    });
+
+    test('fails closed when an MCP-linked agent owner ACL cannot be granted', async () => {
+      const consistency =
+        require('@librechat/data-schemas').getMCPAuthorityConsistencyModule(mongoose);
+      await consistency.initializeMCPAuthorityConsistency();
+      grantPermission.mockRejectedValue(new Error('owner role unavailable'));
+      mockReq.body = {
+        provider: 'openai',
+        model: 'gpt-4',
+        name: 'Unpublished MCP Agent',
+        tools: [`tool${d}authorizedServer`],
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockRes.status).not.toHaveBeenCalledWith(201);
+      const status = await consistency.getMCPAuthorityConsistencyStatus();
+      expect(status).toMatchObject({ dirty: true });
+      await Agent.deleteMany({ name: 'Unpublished MCP Agent' });
+      await consistency.reconcileMCPAuthorityConsistency({
+        expectedGeneration: status.generation,
+        expectedOwnerId: status.ownerId,
+      });
+      grantPermission.mockResolvedValue(undefined);
     });
   });
 

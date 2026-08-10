@@ -10,6 +10,8 @@ import {
   EToolResources,
   Constants,
   actionDelimiter,
+  AUTH_USER_DOC_BY_ID_PREFIX,
+  CacheKeys,
 } from 'librechat-data-provider';
 import type {
   UpdateWithAggregationPipeline,
@@ -18,6 +20,7 @@ import type {
   UpdateQuery,
 } from 'mongoose';
 import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { createAgentMethods, type AgentMethods } from './agent';
 import { createAclEntryMethods } from './aclEntry';
 import { createModels } from '~/models';
@@ -134,6 +137,38 @@ afterAll(async () => {
 describe('Agent Methods', () => {
   beforeEach(() => {
     externalSkillIds.clear();
+  });
+
+  describe('MCP authority consistency', () => {
+    beforeEach(async () => {
+      await Agent.deleteMany({});
+    });
+
+    test('publishes only for agent writes that change MCP authority inputs', async () => {
+      const consistency = getMCPAuthorityConsistencyModule(mongoose);
+      const initial = await consistency.initializeMCPAuthorityConsistency();
+      const { agentId, authorId } = createTestIds();
+
+      await createAgent({
+        id: agentId,
+        name: 'Unlinked Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await expect(consistency.assertGeneration(initial.generation)).resolves.toBeUndefined();
+
+      await updateAgent({ id: agentId }, { name: 'Still Unlinked' });
+      await expect(consistency.assertGeneration(initial.generation)).resolves.toBeUndefined();
+
+      await updateAgent(
+        { id: agentId },
+        { tools: [`search${Constants.mcp_delimiter}authority-server`] },
+      );
+      await expect(consistency.assertGeneration(initial.generation)).rejects.toMatchObject({
+        reason: 'generation_changed',
+      });
+    });
   });
 
   describe('Agent Resource File Operations', () => {
@@ -1091,6 +1126,222 @@ describe('Agent Methods', () => {
       expect(
         user2After!.favorites!.some((f: Record<string, unknown>) => f.agentId === agentId),
       ).toBe(false);
+    });
+
+    test('invalidates cached auth-user documents after pruning favorites', async () => {
+      const previousCacheMode = process.env.AUTH_USER_CACHE_MODE;
+      process.env.AUTH_USER_CACHE_MODE = 'on';
+      const agentId = `agent_${uuidv4()}`;
+      const userId = new mongoose.Types.ObjectId();
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId.toString()}`;
+      const cache = {
+        get: jest.fn(async (key: string) =>
+          key === indexKey ? ['cached-auth-user-document'] : undefined,
+        ),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => undefined),
+      };
+      const cachedMethods = createAgentMethods(mongoose, {
+        removeAllPermissions: async () => undefined,
+        getActions,
+        getSoleOwnedResourceIds: async () => [],
+        getCache: jest.fn((key) => (key === CacheKeys.AUTH_USER_DOC ? cache : undefined)),
+      });
+      await createAgent({
+        id: agentId,
+        name: 'Cached Favorite Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await User.create({
+        _id: userId,
+        name: 'Cached User',
+        email: `cached-${uuidv4()}@example.com`,
+        provider: 'openid',
+        favorites: [{ agentId }],
+      });
+
+      try {
+        await cachedMethods.deleteAgent({ id: agentId });
+      } finally {
+        if (previousCacheMode === undefined) {
+          delete process.env.AUTH_USER_CACHE_MODE;
+        } else {
+          process.env.AUTH_USER_CACHE_MODE = previousCacheMode;
+        }
+      }
+
+      expect(cache.get).toHaveBeenCalledWith(indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('cached-auth-user-document');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+
+    test('atomically identifies each user whose favorite is pruned before invalidating cache', async () => {
+      const previousCacheMode = process.env.AUTH_USER_CACHE_MODE;
+      process.env.AUTH_USER_CACHE_MODE = 'on';
+      const agentId = `agent_${uuidv4()}`;
+      const userId = new mongoose.Types.ObjectId();
+      const cache = {
+        get: jest.fn(async () => ['cached-auth-user-document']),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => undefined),
+      };
+      const findOneAndUpdateSpy = jest.spyOn(User, 'findOneAndUpdate');
+      const cachedMethods = createAgentMethods(mongoose, {
+        removeAllPermissions: async () => undefined,
+        getActions,
+        getSoleOwnedResourceIds: async () => [],
+        getCache: jest.fn((key) => (key === CacheKeys.AUTH_USER_DOC ? cache : undefined)),
+      });
+      await createAgent({
+        id: agentId,
+        name: 'Atomic Favorite Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await User.create({
+        _id: userId,
+        name: 'Atomic Favorite User',
+        email: `atomic-favorite-${uuidv4()}@example.com`,
+        provider: 'openid',
+        favorites: [{ agentId }],
+      });
+
+      try {
+        await cachedMethods.deleteAgent({ id: agentId });
+        expect(findOneAndUpdateSpy).toHaveBeenCalledWith(
+          { 'favorites.agentId': { $in: [agentId] } },
+          { $pull: { favorites: { agentId: { $in: [agentId] } } } },
+          expect.objectContaining({ new: true }),
+        );
+        expect(cache.delete).toHaveBeenCalledWith('cached-auth-user-document');
+      } finally {
+        findOneAndUpdateSpy.mockRestore();
+        if (previousCacheMode === undefined) {
+          delete process.env.AUTH_USER_CACHE_MODE;
+        } else {
+          process.env.AUTH_USER_CACHE_MODE = previousCacheMode;
+        }
+      }
+    });
+
+    test('invalidates a pruned user before a later favorite cleanup query fails', async () => {
+      const previousCacheMode = process.env.AUTH_USER_CACHE_MODE;
+      process.env.AUTH_USER_CACHE_MODE = 'on';
+      const agentId = `agent_${uuidv4()}`;
+      const userId = new mongoose.Types.ObjectId();
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId.toString()}`;
+      const cache = {
+        get: jest.fn(async (key: string) =>
+          key === indexKey ? ['cached-auth-user-document'] : undefined,
+        ),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => undefined),
+      };
+      const originalFindOneAndUpdate = User.findOneAndUpdate.bind(User);
+      const findOneAndUpdateSpy = jest.spyOn(User, 'findOneAndUpdate');
+      findOneAndUpdateSpy
+        .mockImplementationOnce(originalFindOneAndUpdate)
+        .mockImplementationOnce(() => {
+          throw new Error('simulated later favorite cleanup failure');
+        });
+      const cachedMethods = createAgentMethods(mongoose, {
+        removeAllPermissions: async () => undefined,
+        getActions,
+        getSoleOwnedResourceIds: async () => [],
+        getCache: jest.fn((key) => (key === CacheKeys.AUTH_USER_DOC ? cache : undefined)),
+      });
+      await createAgent({
+        id: agentId,
+        name: 'Partially Pruned Favorite Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await User.create({
+        _id: userId,
+        name: 'Partially Pruned Favorite User',
+        email: `partially-pruned-${uuidv4()}@example.com`,
+        provider: 'openid',
+        favorites: [{ agentId }],
+      });
+
+      try {
+        await cachedMethods.deleteAgent({ id: agentId });
+        expect((await User.findById(userId).lean())?.favorites).toHaveLength(0);
+        expect(cache.get).toHaveBeenCalledWith(indexKey);
+        expect(cache.delete).toHaveBeenCalledWith('cached-auth-user-document');
+        expect(cache.delete).toHaveBeenCalledWith(indexKey);
+      } finally {
+        findOneAndUpdateSpy.mockRestore();
+        if (previousCacheMode === undefined) {
+          delete process.env.AUTH_USER_CACHE_MODE;
+        } else {
+          process.env.AUTH_USER_CACHE_MODE = previousCacheMode;
+        }
+      }
+    });
+
+    test('publishes the authority deletion before pruning user favorites', async () => {
+      const previousCacheMode = process.env.AUTH_USER_CACHE_MODE;
+      process.env.AUTH_USER_CACHE_MODE = 'on';
+      const agentId = `agent_${uuidv4()}`;
+      const userId = new mongoose.Types.ObjectId();
+      let releaseCacheRead!: () => void;
+      let cacheReadStarted!: () => void;
+      const cacheRead = new Promise<void>((resolve) => {
+        cacheReadStarted = resolve;
+      });
+      const cacheRelease = new Promise<void>((resolve) => {
+        releaseCacheRead = resolve;
+      });
+      const cache = {
+        get: jest.fn(async () => {
+          cacheReadStarted();
+          await cacheRelease;
+          return [];
+        }),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => undefined),
+      };
+      const cachedMethods = createAgentMethods(mongoose, {
+        removeAllPermissions: async () => undefined,
+        getActions,
+        getSoleOwnedResourceIds: async () => [],
+        getCache: jest.fn((key) => (key === CacheKeys.AUTH_USER_DOC ? cache : undefined)),
+      });
+      await createAgent({
+        id: agentId,
+        name: 'Post-Publish Favorite Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+      });
+      await User.create({
+        _id: userId,
+        name: 'Post-Publish Favorite User',
+        email: `post-publish-${uuidv4()}@example.com`,
+        provider: 'openid',
+        favorites: [{ agentId }],
+      });
+
+      const pendingDelete = cachedMethods.deleteAgent({ id: agentId });
+      try {
+        await cacheRead;
+        await expect(
+          getMCPAuthorityConsistencyModule(mongoose).getMCPAuthorityConsistencyStatus(),
+        ).resolves.toMatchObject({ dirty: false });
+      } finally {
+        releaseCacheRead();
+        await pendingDelete;
+        if (previousCacheMode === undefined) {
+          delete process.env.AUTH_USER_CACHE_MODE;
+        } else {
+          process.env.AUTH_USER_CACHE_MODE = previousCacheMode;
+        }
+      }
     });
 
     test('should preserve other agents in database when one agent is deleted', async () => {

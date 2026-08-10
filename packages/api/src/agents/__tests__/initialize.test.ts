@@ -2456,4 +2456,32 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
 
     expect(result.accessibleMcpServerNames).toEqual(['db_only_server', rawServerName]);
   });
+
+  it.each([
+    ['named selection', `search${Constants.mcp_delimiter}foo_mcp_bar`],
+    ['mcp_all selection', `${Constants.mcp_all}${Constants.mcp_delimiter}foo_mcp_bar`],
+  ])('fetches the complete DB name set for a delimiter-bearing %s', async (_label, selection) => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = [selection];
+    const getAccessibleMcpServerNames = jest.fn(async () => ['foo_mcp_bar']);
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      { ...db, getAccessibleMcpServerNames },
+    );
+
+    expect(getAccessibleMcpServerNames).toHaveBeenCalledWith(req.user?.id, req.user?.role);
+    expect(result.accessibleMcpServerNames).toEqual(['foo_mcp_bar']);
+    expect(loadTools).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibleMcpServerNames: ['foo_mcp_bar'] }),
+    );
+  });
 });

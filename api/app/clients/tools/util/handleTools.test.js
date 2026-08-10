@@ -48,7 +48,7 @@ jest.mock('~/server/services/Config', () => ({
       },
     },
   }),
-  getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
+  getScopedMCPServerTools: (...args) => mockGetMCPServerTools(...args),
 }));
 
 jest.mock('~/server/services/MCP', () => ({
@@ -377,9 +377,13 @@ describe('Tool Handlers', () => {
 
       expect(result.loadedTools).toEqual([{ name: 'loaded-mcp-tool' }]);
       expect(mockGetMCPServerTools).toHaveBeenCalledWith(
-        fakeUser._id.toString(),
-        serverName,
-        serverConfig,
+        expect.objectContaining({
+          user: expect.objectContaining({ id: fakeUser._id.toString() }),
+          serverName,
+          serverConfig,
+          findToken: expect.any(Function),
+          findPluginAuthsByKeys: expect.any(Function),
+        }),
       );
       expect(mockCreateMCPTool).toHaveBeenCalledWith(
         expect.objectContaining({

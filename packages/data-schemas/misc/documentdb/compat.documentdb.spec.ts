@@ -14,8 +14,10 @@ import type * as t from '~/types';
 import {
   createMCPAuthorityMethods,
   createMCPAuthorityBootRevision,
+  createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
+  createMCPAuthorityUserSourceRevision,
 } from '~/methods/mcpAuthority';
 import { decrementTagCounts } from '~/methods/conversationTag';
 import { tenantStorage } from '~/config/tenantContext';
@@ -207,7 +209,7 @@ describeLive('Amazon DocumentDB live compatibility', () => {
       expect(typeof supported).toBe('boolean');
     });
 
-    it('executes the bounded MCP authority snapshot transaction', async () => {
+    it('executes the generation-fenced MCP authority proof', async () => {
       const tenantId = `authority-tenant-${runId}`;
       const roleName = `AUTHORITY_${runId}`;
       const serverName = `authority-server-${runId}`;
@@ -219,7 +221,7 @@ describeLive('Amazon DocumentDB live compatibility', () => {
       const agentIds = Array.from({ length: 3 }, () => new mongoose.Types.ObjectId());
       try {
         await tenantStorage.run({ tenantId, userId: userId.toHexString() }, async () => {
-          await models.User.create({
+          const authorityUser = await models.User.create({
             _id: userId,
             name: 'DocumentDB authority probe',
             email: testEmail('authority'),
@@ -280,9 +282,18 @@ describeLive('Amazon DocumentDB live compatibility', () => {
             createdAt: server.createdAt,
             updatedAt: server.updatedAt,
           });
+          const configs = await models.Config.find({
+            principalType: PrincipalType.USER,
+            principalId: userId.toHexString(),
+          }).lean();
+          const configSourceRevision = createMCPAuthorityConfigSourceRevision(boot.digest, configs);
           const proof = await methods.resolveMCPAuthorityProof({
             userId: userId.toHexString(),
             tenantId,
+            expectedUserSourceRevision: createMCPAuthorityUserSourceRevision({
+              ...authorityUser.toObject(),
+              id: userId.toHexString(),
+            }),
             boot,
             targets: [
               {
@@ -290,6 +301,7 @@ describeLive('Amazon DocumentDB live compatibility', () => {
                 source: 'database',
                 databaseId: serverId.toHexString(),
                 sourceRevision,
+                configSourceRevision,
                 expectedCredentialRevision: createMCPAuthorityCredentialRevision([], []),
                 expectedOAuthGrantGeneration: null,
                 resolvedConfig: server.config,
@@ -299,7 +311,7 @@ describeLive('Amazon DocumentDB live compatibility', () => {
           expect(proof.servers[0].linkedAgentIds).toHaveLength(agentIds.length);
           await methods.assertMCPAuthorityProofsCurrent({ proofs: proof, boot });
         });
-        capabilities['MCP authority snapshot'] = 'supported';
+        capabilities['MCP authority generation fence'] = 'supported';
       } finally {
         await Promise.all([
           getDb().collection('aclentries').deleteMany({ resourceId: serverId }),

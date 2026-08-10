@@ -1,5 +1,9 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
+import {
+  createMCPConnectionProvenance,
+  createMCPToolCatalogSecurityPolicyIdentity,
+} from '~/mcp/catalog';
 import { getMCPAppToolsPublicationGeneration, setMCPToolsChangedHandler } from '~/mcp/toolsChanged';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
@@ -86,6 +90,23 @@ describe('ConnectionsRepository', () => {
       refreshToolList: jest.fn().mockResolvedValue(undefined),
       createdAt: Date.now(),
       isStale: jest.fn().mockReturnValue(false),
+      getDiscoveryProvenance: jest.fn(() =>
+        createMCPConnectionProvenance(
+          {
+            tenantId: null,
+            userId: '__app__',
+            serverName: 'server1',
+            serverConfig: mockServerConfigs.server1,
+            effectiveServerConfig: mockServerConfigs.server1,
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+              allowedDomains: mockGetAllowedDomains(),
+              allowedAddresses: mockGetAllowedAddresses(),
+            }),
+            authorizationIdentity: 'none',
+          },
+          'app',
+        ),
+      ),
       /* A real connection is an EventEmitter and the repository subscribes to it. */
       on: jest.fn(),
       removeAllListeners: jest.fn(),
@@ -372,6 +393,114 @@ describe('ConnectionsRepository', () => {
       expect(mockConnection.removeAllListeners).toHaveBeenCalledWith('toolsChanged');
       expect(mockConnection.dispose).toHaveBeenCalled();
       expect(repository['connections'].has('server1')).toBe(false);
+    });
+
+    it.each(['policy tightening', 'environment secret rotation'])(
+      'disconnects a process-local connection after %s',
+      async (change) => {
+        const originalCredsKey = process.env.CREDS_KEY;
+        const originalEnvSecret = process.env.MCP_REPOSITORY_TEST_SECRET;
+        process.env.CREDS_KEY = 'repository-provenance-key';
+        process.env.MCP_REPOSITORY_TEST_SECRET = 'old-secret';
+        const config = {
+          type: 'stdio',
+          command: 'test',
+          args: [],
+          env: { API_KEY: '${MCP_REPOSITORY_TEST_SECRET}' },
+        } satisfies t.ParsedServerConfig;
+        mockServerConfigs.server1 = config;
+        const provenance = createMCPConnectionProvenance(
+          {
+            tenantId: null,
+            userId: '__app__',
+            serverName: 'server1',
+            serverConfig: config,
+            effectiveServerConfig: { ...config, env: { API_KEY: 'old-secret' } },
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+              allowedDomains: null,
+              allowedAddresses: null,
+            }),
+            authorizationIdentity: 'none',
+          },
+          'app',
+        );
+        const staleConnection = {
+          isConnected: jest.fn().mockResolvedValue(true),
+          disconnect: jest.fn().mockResolvedValue(undefined),
+          dispose: jest.fn().mockResolvedValue(undefined),
+          isStale: jest.fn().mockReturnValue(false),
+          getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+        } as unknown as jest.Mocked<MCPConnection>;
+        repository['connections'].set('server1', staleConnection);
+
+        if (change === 'policy tightening') {
+          mockGetAllowedDomains.mockReturnValue(['new.example.com']);
+        } else {
+          process.env.MCP_REPOSITORY_TEST_SECRET = 'new-secret';
+        }
+
+        await repository.get('server1');
+
+        expect(staleConnection.dispose).toHaveBeenCalled();
+        expect(MCPConnectionFactory.create).toHaveBeenCalled();
+        mockGetAllowedDomains.mockReturnValue(null);
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+        if (originalEnvSecret == null) {
+          delete process.env.MCP_REPOSITORY_TEST_SECRET;
+        } else {
+          process.env.MCP_REPOSITORY_TEST_SECRET = originalEnvSecret;
+        }
+      },
+    );
+
+    it('keeps global app connections isolated from tenant-specific policy resolution', async () => {
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'repository-cross-tenant-key';
+      const config = mockServerConfigs.server1;
+      const provenance = createMCPConnectionProvenance(
+        {
+          tenantId: null,
+          userId: '__app__',
+          serverName: 'server1',
+          serverConfig: config,
+          effectiveServerConfig: config,
+          securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+            allowedDomains: null,
+            allowedAddresses: null,
+          }),
+          authorizationIdentity: 'none',
+        },
+        'app',
+      );
+      const sharedConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+        disconnect: jest.fn().mockResolvedValue(undefined),
+        dispose: jest.fn().mockResolvedValue(undefined),
+        isStale: jest.fn().mockReturnValue(false),
+        getDiscoveryProvenance: jest.fn().mockReturnValue(provenance),
+      } as unknown as jest.Mocked<MCPConnection>;
+      repository['connections'].set('server1', sharedConnection);
+      mockRegistry.resolveAllowlists.mockResolvedValue({
+        allowedDomains: ['tenant-only.example.com'],
+        allowedAddresses: null,
+        useSSRFProtection: false,
+      });
+
+      try {
+        await expect(repository.get('server1')).resolves.toBe(sharedConnection);
+        expect(sharedConnection.disconnect).not.toHaveBeenCalled();
+        expect(mockRegistry.resolveAllowlists).not.toHaveBeenCalled();
+      } finally {
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
     });
     //todo revist later when async getAll(): in packages/api/src/mcp/ConnectionsRepository.ts is refactored
     it.skip('should throw error for non-existent server configuration', async () => {

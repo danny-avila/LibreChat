@@ -1,5 +1,10 @@
 import { Types } from 'mongoose';
-import { PrincipalType, PrincipalModel, PermissionBits } from 'librechat-data-provider';
+import {
+  ResourceType,
+  PrincipalType,
+  PrincipalModel,
+  PermissionBits,
+} from 'librechat-data-provider';
 import type {
   AnyBulkWriteOperation,
   ClientSession,
@@ -8,6 +13,10 @@ import type {
   Model,
 } from 'mongoose';
 import type { AclEntry, IAclEntry } from '~/types';
+import {
+  getMCPAuthorityConsistencyModule,
+  runMCPAuthorityMutation,
+} from './mcpAuthority/consistency';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { MAX_PERM_BITS } from '~/common/permissions';
 
@@ -19,6 +28,93 @@ import { MAX_PERM_BITS } from '~/common/permissions';
 const EMPTY_SUPERSETS: readonly number[] = Object.freeze([]);
 
 const supersetCache = new Map<number, readonly number[]>();
+
+function isMCPAuthorityResourceType(resourceType: string): boolean {
+  return (
+    resourceType === ResourceType.MCPSERVER ||
+    resourceType === ResourceType.AGENT ||
+    resourceType === ResourceType.REMOTE_AGENT
+  );
+}
+
+function resourceFilterCanAffectMCPAuthority(filter: Record<string, unknown>): boolean {
+  const selector = filter.resourceType;
+  if (typeof selector === 'string') {
+    return isMCPAuthorityResourceType(selector);
+  }
+  if (selector && typeof selector === 'object' && '$in' in selector) {
+    const values = (selector as { $in?: unknown }).$in;
+    if (Array.isArray(values)) {
+      return values.some((value) => typeof value !== 'string' || isMCPAuthorityResourceType(value));
+    }
+  }
+  return true;
+}
+
+function updateCanSetMCPAuthorityResource(update: unknown): boolean {
+  if (!update || typeof update !== 'object' || Array.isArray(update)) {
+    return true;
+  }
+  const record = update as Record<string, unknown>;
+  const direct = record.resourceType;
+  if (typeof direct === 'string' && isMCPAuthorityResourceType(direct)) {
+    return true;
+  }
+  for (const operator of ['$set', '$setOnInsert'] as const) {
+    const payload = record[operator];
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      'resourceType' in payload &&
+      typeof payload.resourceType === 'string' &&
+      isMCPAuthorityResourceType(payload.resourceType)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function bulkOperationCanAffectMCPAuthority(operation: AnyBulkWriteOperation<AclEntry>): boolean {
+  if ('insertOne' in operation) {
+    return isMCPAuthorityResourceType(operation.insertOne.document.resourceType);
+  }
+  if ('replaceOne' in operation) {
+    return (
+      resourceFilterCanAffectMCPAuthority(operation.replaceOne.filter as Record<string, unknown>) ||
+      isMCPAuthorityResourceType(operation.replaceOne.replacement.resourceType)
+    );
+  }
+  if ('updateOne' in operation) {
+    return (
+      resourceFilterCanAffectMCPAuthority(operation.updateOne.filter as Record<string, unknown>) ||
+      updateCanSetMCPAuthorityResource(operation.updateOne.update)
+    );
+  }
+  if ('updateMany' in operation) {
+    return (
+      resourceFilterCanAffectMCPAuthority(operation.updateMany.filter as Record<string, unknown>) ||
+      updateCanSetMCPAuthorityResource(operation.updateMany.update)
+    );
+  }
+  if ('deleteOne' in operation) {
+    return resourceFilterCanAffectMCPAuthority(
+      operation.deleteOne.filter as Record<string, unknown>,
+    );
+  }
+  if ('deleteMany' in operation) {
+    return resourceFilterCanAffectMCPAuthority(
+      operation.deleteMany.filter as Record<string, unknown>,
+    );
+  }
+  return true;
+}
+
+function assertNoOpenAuthorityTransaction(session: ClientSession | undefined): void {
+  if (session?.inTransaction()) {
+    throw new Error('MCP authority ACL mutations cannot join a caller-owned transaction');
+  }
+}
 
 /**
  * Enumerates every `permBits` value (in the range `[0, MAX_PERM_BITS]`) whose
@@ -157,6 +253,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     resourceTypes: string | string[],
   ) => Promise<Types.ObjectId[]>;
 } {
+  const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
   /**
    * Find ACL entries for a specific principal (user or group)
    * @param principalType - The type of principal ('user', 'group')
@@ -615,12 +712,46 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     hasPermission,
     getEffectivePermissions,
     getEffectivePermissionsForResources,
-    grantPermission,
-    revokePermission,
-    modifyPermissionBits,
+    grantPermission: async (...args) => {
+      if (!isMCPAuthorityResourceType(args[2])) {
+        return await grantPermission(...args);
+      }
+      assertNoOpenAuthorityTransaction(args[6]);
+      return await runMCPAuthorityMutation(authorityMutationGate, () => grantPermission(...args));
+    },
+    revokePermission: async (...args) => {
+      if (!isMCPAuthorityResourceType(args[2])) {
+        return await revokePermission(...args);
+      }
+      assertNoOpenAuthorityTransaction(args[4]);
+      return await runMCPAuthorityMutation(authorityMutationGate, () => revokePermission(...args));
+    },
+    modifyPermissionBits: async (...args) => {
+      if (!isMCPAuthorityResourceType(args[2])) {
+        return await modifyPermissionBits(...args);
+      }
+      assertNoOpenAuthorityTransaction(args[6]);
+      return await runMCPAuthorityMutation(authorityMutationGate, () =>
+        modifyPermissionBits(...args),
+      );
+    },
     findAccessibleResources,
-    deleteAclEntries,
-    bulkWriteAclEntries,
+    deleteAclEntries: async (...args) => {
+      if (!resourceFilterCanAffectMCPAuthority(args[0])) {
+        return await deleteAclEntries(...args);
+      }
+      assertNoOpenAuthorityTransaction(args[1]?.session);
+      return await runMCPAuthorityMutation(authorityMutationGate, () => deleteAclEntries(...args));
+    },
+    bulkWriteAclEntries: async (...args) => {
+      if (!args[0].some(bulkOperationCanAffectMCPAuthority)) {
+        return await bulkWriteAclEntries(...args);
+      }
+      assertNoOpenAuthorityTransaction(args[1]?.session);
+      return await runMCPAuthorityMutation(authorityMutationGate, () =>
+        bulkWriteAclEntries(...args),
+      );
+    },
     findPublicResourceIds,
     aggregateAclEntries,
     getSoleOwnedResourceIds,

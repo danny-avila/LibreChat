@@ -564,6 +564,32 @@ describe('MCPServerInspector', () => {
       expect(result).toEqual({});
     });
 
+    it('preserves normalized output schemas and annotations for catalog persistence', async () => {
+      mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
+        complete: true,
+        tools: [
+          {
+            name: 'file_read',
+            inputSchema: { type: 'object', properties: {} },
+            outputSchema: {
+              $schema: 'https://json-schema.org/draft/2020-12/schema',
+              type: 'object',
+              properties: { content: { type: 'string' } },
+            },
+            annotations: { readOnlyHint: true },
+          },
+        ],
+      });
+
+      const result = await MCPServerInspector.getToolFunctions('my_server', mockConnection);
+
+      expect(result.file_read_mcp_my_server.function.outputSchema).toEqual({
+        type: 'object',
+        properties: { content: { type: 'string' } },
+      });
+      expect(result.file_read_mcp_my_server.function.annotations).toEqual({ readOnlyHint: true });
+    });
+
     it('builds keys with the normalized server name (model-facing contract)', async () => {
       mockConnection.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
         complete: true,

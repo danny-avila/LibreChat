@@ -1,16 +1,24 @@
 const { logger } = require('@librechat/data-schemas');
 const {
   getMissingCustomUserVars,
+  MCPServerInspector,
   requiresEphemeralUserConnection,
   getMissingRuntimeBodyPlaceholderFields,
+  shouldDetectRuntimeOAuth,
 } = require('@librechat/api');
-const { CacheKeys, Constants } = require('librechat-data-provider');
+const { CacheKeys } = require('librechat-data-provider');
 const { getMCPManager, getMCPServersRegistry, getFlowStateManager } = require('~/config');
-const { findToken, createToken, updateToken, deleteTokens } = require('~/models');
+const { findToken, findTokens, createToken, updateToken, deleteTokens } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
 const { getMCPToolsCacheGeneration, updateMCPServerTools } = require('~/server/services/Config');
+const {
+  createMCPRefreshAuthorityLifecycle,
+  resolveCurrentMCPDiscoveryScope,
+  resolveCurrentMCPToolAuthority,
+} = require('~/server/services/MCPDiscoveryScope');
+const { getMCPAuthorityResolver } = require('~/server/services/MCPAuthority');
 const { getLogStores } = require('~/cache');
 
 const MCP_REINITIALIZE_FAILURE_REASONS = {
@@ -36,7 +44,6 @@ const MCP_REINITIALIZE_FAILURE_REASONS = {
  * @param {() => Promise<void>} [params.oauthEnd]
  * @param {import('@librechat/api').RequestBody} [params.requestBody]
  * @param {import('@librechat/api').RequestScopedMCPConnectionStore} [params.requestScopedConnections]
- * @param {Record<string, Record<string, string>>} [params.userMCPAuthMap]
  */
 async function reinitMCPServer({
   user,
@@ -44,7 +51,6 @@ async function reinitMCPServer({
   forceNew,
   serverName,
   configServers,
-  userMCPAuthMap,
   connectionTimeout,
   returnOnOAuth = true,
   oauthStart: _oauthStart,
@@ -53,6 +59,7 @@ async function reinitMCPServer({
   requestBody,
   requestScopedConnections,
   oauthEnd,
+  authorityResolution,
 }) {
   /** @type {MCPConnection | null} */
   let connection = null;
@@ -65,12 +72,47 @@ async function reinitMCPServer({
   let oauthUrl = null;
   let oauthExpiresAt;
   let ephemeralServer = false;
+  let discoveryProvenance = null;
+  let authorityScope = null;
+  let discoveryScopeRejected = false;
   let publicationGeneration;
+  let mcpManager;
+  let bindAuthority;
 
   try {
     const registry = getMCPServersRegistry();
-    serverConfig =
-      serverConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers));
+    bindAuthority = authorityResolution;
+    if (!bindAuthority) {
+      serverConfig =
+        serverConfig ?? (await registry.getServerConfig(serverName, user?.id, configServers));
+      bindAuthority = await resolveCurrentMCPToolAuthority({
+        user,
+        serverName,
+        requestBody,
+        oauthRequiredHint:
+          serverConfig?.requiresOAuth === true || shouldDetectRuntimeOAuth(serverConfig ?? {}),
+        allowMissingAuthorization: true,
+        allowMissingCredentials: true,
+        bounded: true,
+        expectedServerConfig: serverConfig,
+      });
+    }
+    if (!bindAuthority) {
+      logger.warn(`[MCP Reinitialize] Current bind authority is unavailable for ${serverName}`);
+      return {
+        availableTools: null,
+        success: false,
+        message: `MCP server '${serverName}' authority changed; retry required`,
+        failureReason: MCP_REINITIALIZE_FAILURE_REASONS.INITIALIZATION_FAILED,
+        oauthRequired: false,
+        serverName,
+        oauthUrl: null,
+        tools: null,
+      };
+    }
+    let bindParsedConfig = bindAuthority.parsedConfig;
+    user = bindParsedConfig.actor.user;
+    serverConfig = bindParsedConfig.sourceConfig;
     ephemeralServer = serverConfig ? requiresEphemeralUserConnection(serverConfig) : false;
     if (serverConfig?.inspectionFailed) {
       if (serverConfig.source === 'config') {
@@ -92,8 +134,37 @@ async function reinitMCPServer({
           `[MCP Reinitialize] Server ${serverName} had failed inspection, attempting reinspection`,
         );
         try {
-          const storageLocation = serverConfig.source === 'user' ? 'DB' : 'CACHE';
-          await registry.reinspectServer(serverName, storageLocation, user?.id);
+          const inspectedConfig = await getMCPAuthorityResolver().useIssuedResolution(
+            bindAuthority,
+            async (current) => {
+              const parsedConfig = current.parsedConfig;
+              const { inspectionFailed: _, ...configForInspection } = parsedConfig.effectiveConfig;
+              return await MCPServerInspector.inspect(
+                parsedConfig.serverName,
+                configForInspection,
+                undefined,
+                parsedConfig.securityPolicy.allowedDomains,
+                parsedConfig.securityPolicy.allowedAddresses,
+              );
+            },
+          );
+          bindAuthority = await resolveCurrentMCPToolAuthority({
+            user,
+            serverName,
+            requestBody,
+            oauthRequiredHint: inspectedConfig.requiresOAuth === true,
+            allowMissingAuthorization: true,
+            allowMissingCredentials: true,
+            bounded: true,
+            expectedServerConfig: serverConfig,
+            materializedEffectiveConfig: inspectedConfig,
+          });
+          if (!bindAuthority) {
+            throw new Error(`Current MCP bind authority changed for ${serverName}`);
+          }
+          bindParsedConfig = bindAuthority.parsedConfig;
+          user = bindParsedConfig.actor.user;
+          serverConfig = bindParsedConfig.sourceConfig;
           logger.info(`[MCP Reinitialize] Reinspection succeeded for server: ${serverName}`);
         } catch (reinspectError) {
           logger.error(
@@ -114,7 +185,7 @@ async function reinitMCPServer({
       }
     }
 
-    const customUserVars = userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+    const customUserVars = bindParsedConfig.customUserVars;
 
     const missingUserVars = getMissingCustomUserVars(serverConfig ?? {}, customUserVars);
     if (missingUserVars.length > 0) {
@@ -165,16 +236,14 @@ async function reinitMCPServer({
     }
 
     const flowManager = _flowManager ?? getFlowStateManager(getLogStores(CacheKeys.FLOWS));
-    const mcpManager = getMCPManager();
-    const tokenMethods = { findToken, updateToken, createToken, deleteTokens };
-
+    mcpManager = getMCPManager();
+    const tokenMethods = { findToken, findTokens, updateToken, createToken, deleteTokens };
     if (!ephemeralServer) {
       publicationGeneration = await getMCPToolsCacheGeneration({
         userId: user.id,
         serverName,
       });
     }
-
     const oauthStart =
       _oauthStart ??
       (async (authURL, options) => {
@@ -190,25 +259,39 @@ async function reinitMCPServer({
       });
 
     try {
-      connection = await mcpManager.getConnection({
-        user,
-        signal,
-        forceNew,
-        oauthStart,
-        serverName,
-        flowManager,
-        tokenMethods,
-        returnOnOAuth,
-        oauthEnd,
-        customUserVars,
-        requestBody,
-        requestScopedConnections,
-        connectionTimeout,
-        serverConfig,
-        graphTokenResolver: getGraphApiToken,
-        oboTokenResolver: exchangeOboToken,
-        oboTrustChecker: createOboTrustChecker(),
-      });
+      connection = await getMCPAuthorityResolver().useIssuedResolution(
+        bindAuthority,
+        async (current) => {
+          const parsedConfig = current.parsedConfig;
+          return await mcpManager.getConnection({
+            user: parsedConfig.actor.user,
+            signal,
+            forceNew,
+            oauthStart,
+            serverName: parsedConfig.serverName,
+            flowManager,
+            tokenMethods,
+            returnOnOAuth,
+            oauthEnd,
+            customUserVars: parsedConfig.customUserVars,
+            requestBody,
+            requestScopedConnections,
+            connectionTimeout,
+            serverConfig: parsedConfig.sourceConfig,
+            effectiveServerConfig: parsedConfig.effectiveConfig,
+            securityPolicy: parsedConfig.securityPolicy,
+            oauthAuthorityScope: parsedConfig.catalogScope,
+            authorityAuthorizationKind: parsedConfig.authorization.kind,
+            refreshAuthorityLifecycle: createMCPRefreshAuthorityLifecycle({
+              authority: bindAuthority,
+              requestBody,
+            }),
+            graphTokenResolver: getGraphApiToken,
+            oboTokenResolver: exchangeOboToken,
+            oboTrustChecker: createOboTrustChecker(),
+          });
+        },
+      );
 
       logger.info(`[MCP Reinitialize] Successfully established connection for ${serverName}`);
     } catch (err) {
@@ -231,24 +314,42 @@ async function reinitMCPServer({
         oauthRequired = true;
 
         try {
-          const discoveryResult = await mcpManager.discoverServerTools({
-            user,
-            signal,
-            serverName,
-            flowManager,
-            tokenMethods,
-            oauthStart,
-            customUserVars,
-            requestBody,
-            connectionTimeout,
-            configServers,
-            graphTokenResolver: getGraphApiToken,
-            oboTokenResolver: exchangeOboToken,
-            oboTrustChecker: createOboTrustChecker(),
-          });
+          const discoveryResult = await getMCPAuthorityResolver().useIssuedResolution(
+            bindAuthority,
+            async (current) => {
+              const parsedConfig = current.parsedConfig;
+              return await mcpManager.discoverServerTools({
+                user: parsedConfig.actor.user,
+                signal,
+                serverName: parsedConfig.serverName,
+                flowManager,
+                tokenMethods,
+                oauthStart,
+                customUserVars: parsedConfig.customUserVars,
+                requestBody,
+                connectionTimeout,
+                configServers: {
+                  [parsedConfig.serverName]: parsedConfig.sourceConfig,
+                },
+                graphTokenResolver: getGraphApiToken,
+                oboTokenResolver: exchangeOboToken,
+                oboTrustChecker: createOboTrustChecker(),
+                serverConfig: parsedConfig.sourceConfig,
+                effectiveServerConfig: parsedConfig.effectiveConfig,
+                securityPolicy: parsedConfig.securityPolicy,
+                oauthAuthorityScope: parsedConfig.catalogScope,
+                authorityAuthorizationKind: parsedConfig.authorization.kind,
+                refreshAuthorityLifecycle: createMCPRefreshAuthorityLifecycle({
+                  authority: bindAuthority,
+                  requestBody,
+                }),
+              });
+            },
+          );
 
-          if (discoveryResult.tools && discoveryResult.tools.length > 0) {
+          if (Array.isArray(discoveryResult.tools)) {
             tools = discoveryResult.tools;
+            discoveryProvenance = discoveryResult.provenance ?? null;
             logger.info(
               `[MCP Reinitialize] Discovered ${tools.length} tools for ${serverName} without full auth`,
             );
@@ -268,15 +369,19 @@ async function reinitMCPServer({
 
     if (connection && !oauthRequired) {
       publicationGeneration =
-        mcpManager.getToolPublicationGeneration(connection) ?? publicationGeneration;
-      let snapshot;
-      if (typeof connection.fetchOrderedToolsSnapshot === 'function') {
-        snapshot = await connection.fetchOrderedToolsSnapshot();
-      } else if (typeof connection.fetchToolsSnapshot === 'function') {
-        snapshot = await connection.fetchToolsSnapshot();
-      } else {
-        snapshot = { tools: await connection.fetchTools(), complete: true };
-      }
+        mcpManager.getToolPublicationGeneration?.(connection) ?? publicationGeneration;
+      const snapshot = await getMCPAuthorityResolver().useIssuedResolution(
+        bindAuthority,
+        async () => {
+          if (typeof connection.fetchOrderedToolsSnapshot === 'function') {
+            return await connection.fetchOrderedToolsSnapshot();
+          }
+          if (typeof connection.fetchToolsSnapshot === 'function') {
+            return await connection.fetchToolsSnapshot();
+          }
+          return { tools: await connection.fetchTools(), complete: true };
+        },
+      );
       if (snapshot.complete) {
         tools = snapshot.tools;
       } else {
@@ -284,6 +389,7 @@ async function reinitMCPServer({
           `[MCP Reinitialize] Preserving cached tools for ${serverName} because tools/list returned an incomplete snapshot`,
         );
       }
+      discoveryProvenance = connection.getDiscoveryProvenance?.() ?? null;
     }
 
     if (tools && !ephemeralServer && publicationGeneration) {
@@ -300,15 +406,58 @@ async function reinitMCPServer({
     }
 
     if (tools) {
-      availableTools = await updateMCPServerTools({
-        userId: user.id,
+      const currentScope = await resolveCurrentMCPDiscoveryScope({
+        user,
         serverName,
-        tools,
         serverConfig,
-        ...(publicationGeneration && { publicationGeneration }),
+        customUserVars,
+        requestBody,
+        schemas: tools,
+        discoveryProvenance,
+        oauthRequiredHint: oauthRequired,
       });
-      if (availableTools == null) {
+      if (!currentScope) {
+        discoveryScopeRejected = true;
         tools = null;
+        if (
+          connection &&
+          discoveryProvenance?.principalKind !== 'app' &&
+          typeof mcpManager.disconnectUserConnection === 'function'
+        ) {
+          try {
+            await mcpManager.disconnectUserConnection(user.id, serverName, connection);
+          } catch (error) {
+            logger.warn(
+              `[MCP Reinitialize] Failed to disconnect stale user connection for ${serverName}`,
+              error,
+            );
+          }
+        }
+      } else {
+        authorityScope = currentScope.parsedConfig.catalogScope ?? null;
+        availableTools = await getMCPAuthorityResolver().useIssuedResolution(
+          currentScope,
+          async (current) => {
+            const parsedConfig = current.parsedConfig;
+            return await updateMCPServerTools({
+              tenantId: parsedConfig.actor.tenantId,
+              userId: parsedConfig.actor.userId,
+              serverName: parsedConfig.serverName,
+              tools: current.schemas,
+              serverConfig: parsedConfig.sourceConfig,
+              customUserVars: parsedConfig.customUserVars,
+              role: parsedConfig.actor.user.role,
+              authorizationIdentity: parsedConfig.authorization.identity,
+              authorizationKind: parsedConfig.authorization.kind,
+              persistCatalog: parsedConfig.authorization.identity != null,
+              discoveryProvenance: parsedConfig.discoveryProvenance,
+              ...(publicationGeneration && { publicationGeneration }),
+            });
+          },
+        );
+        if (availableTools == null) {
+          tools = null;
+        }
       }
     }
 
@@ -317,6 +466,9 @@ async function reinitMCPServer({
     );
 
     const getResponseMessage = () => {
+      if (discoveryScopeRejected) {
+        return `MCP server '${serverName}' discovery scope changed; retry required`;
+      }
       if (oauthRequired && tools && tools.length > 0) {
         return `MCP server '${serverName}' tools discovered, OAuth required for execution`;
       }
@@ -329,9 +481,13 @@ async function reinitMCPServer({
       return `Failed to reinitialize MCP server '${serverName}'`;
     };
 
-    const success = Boolean(
-      (connection && !oauthRequired) || (oauthRequired && oauthUrl) || (tools && tools.length > 0),
-    );
+    const success =
+      !discoveryScopeRejected &&
+      Boolean(
+        (connection && !oauthRequired) ||
+          (oauthRequired && oauthUrl) ||
+          (tools && tools.length > 0),
+      );
     let failureReason;
     if (!success) {
       failureReason = oauthRequired
@@ -340,6 +496,8 @@ async function reinitMCPServer({
     }
     const result = {
       availableTools,
+      authorityScope,
+      discoveryProvenance,
       success,
       message: getResponseMessage(),
       failureReason,
@@ -369,6 +527,15 @@ async function reinitMCPServer({
         await connection.dispose();
       } catch (error) {
         logger.warn(`[MCP Reinitialize] Failed to dispose ephemeral server ${serverName}`, error);
+      }
+    } else if (connection && typeof mcpManager?.releaseDetachedUserConnection === 'function') {
+      try {
+        await mcpManager.releaseDetachedUserConnection(user.id, serverName, connection);
+      } catch (error) {
+        logger.warn(
+          `[MCP Reinitialize] Failed to release detached connection for ${serverName}`,
+          error,
+        );
       }
     }
   }

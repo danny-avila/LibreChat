@@ -1,3 +1,4 @@
+const { getTenantId } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const {
   cacheConfig,
@@ -20,4 +21,16 @@ const store = createMCPCatalogStore({
   getCache: () => getLogStores(CacheKeys.TOOL_CACHE),
 });
 
-module.exports = { ToolCacheKeys, ...store };
+const withTenant = (options = {}) => ({
+  ...options,
+  tenantId: options.tenantId ?? getTenantId?.() ?? null,
+});
+
+module.exports = {
+  ToolCacheKeys,
+  ...store,
+  getCachedMCPServerCatalog: (options) => store.getCachedMCPServerCatalog(withTenant(options)),
+  setCachedMCPServerCatalog: (catalog, options) =>
+    store.setCachedMCPServerCatalog(catalog, withTenant(options)),
+  invalidateCachedTools: (options) => store.invalidateCachedTools(withTenant(options)),
+};

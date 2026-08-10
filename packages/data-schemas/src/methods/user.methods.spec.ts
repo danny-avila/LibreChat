@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } from 'librechat-data-provider';
+import type { MCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import type * as t from '~/types';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import balanceSchema from '~/schema/balance';
 import { createUserMethods } from './user';
 import userSchema from '~/schema/user';
@@ -15,6 +17,7 @@ let mongoServer: MongoMemoryServer;
 let User: mongoose.Model<t.IUser>;
 let Balance: mongoose.Model<t.IBalance>;
 let methods: ReturnType<typeof createUserMethods>;
+let consistency: MCPAuthorityConsistencyModule;
 
 const ORIGINAL_AUTH_USER_CACHE_ENV = {
   AUTH_USER_CACHE_MODE: process.env.AUTH_USER_CACHE_MODE,
@@ -45,6 +48,7 @@ beforeAll(async () => {
 
   /** Initialize methods */
   methods = createUserMethods(mongoose);
+  consistency = getMCPAuthorityConsistencyModule(mongoose);
 });
 
 afterAll(async () => {
@@ -107,6 +111,34 @@ describe('User schema indexes', () => {
 });
 
 describe('User Methods - Database Tests', () => {
+  test('publishes generations for user placeholders, identity, and role mutations', async () => {
+    const user = await User.create({
+      name: 'Authority User',
+      email: 'authority@example.com',
+      provider: 'local',
+      role: 'USER',
+    });
+    await consistency.initializeMCPAuthorityConsistency();
+
+    await methods.updateUser(user._id.toString(), { avatar: 'avatar.png' });
+    await expect(consistency.assertGeneration(0)).resolves.toBeUndefined();
+
+    await methods.updateUser(user._id.toString(), { email: 'updated-authority@example.com' });
+    await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();
+
+    await methods.updateUser(user._id.toString(), { name: 'Updated Authority User' });
+    await expect(consistency.assertGeneration(2)).resolves.toBeUndefined();
+
+    await methods.updateUser(user._id.toString(), { role: 'ADMIN' });
+    await expect(consistency.assertGeneration(3)).resolves.toBeUndefined();
+
+    await methods.acceptTerms(user._id.toString());
+    await expect(consistency.assertGeneration(4)).resolves.toBeUndefined();
+
+    await methods.deleteUserById(user._id.toString());
+    await expect(consistency.assertGeneration(5)).resolves.toBeUndefined();
+  });
+
   describe('findUser', () => {
     test('should find user by exact email', async () => {
       await User.create({
@@ -371,6 +403,46 @@ describe('User Methods - Database Tests', () => {
       expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-a');
       expect(cache.delete).toHaveBeenCalledWith('auth-cache-key-b');
       expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+
+    test('publishes authority updates before waiting for auth cache invalidation', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({
+        name: 'Publication Order User',
+        email: 'publication-order@example.com',
+        provider: 'local',
+        role: 'USER',
+      });
+      await consistency.initializeMCPAuthorityConsistency();
+      const before = await consistency.getMCPAuthorityConsistencyStatus();
+      let releaseCacheRead!: (keys: string[]) => void;
+      let cacheReadStarted!: () => void;
+      const cacheRead = new Promise<void>((resolve) => {
+        cacheReadStarted = resolve;
+      });
+      const cache = {
+        get: jest.fn().mockImplementation(
+          async () =>
+            await new Promise<string[]>((resolve) => {
+              releaseCacheRead = resolve;
+              cacheReadStarted();
+            }),
+        ),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      const update = methodsWithCache.updateUser(user._id.toString(), { role: 'ADMIN' });
+      await cacheRead;
+
+      await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+        dirty: false,
+        generation: before.generation + 1,
+      });
+      releaseCacheRead([]);
+      await expect(update).resolves.toMatchObject({ role: 'ADMIN' });
     });
 
     test('should invalidate cached auth user documents on delete', async () => {

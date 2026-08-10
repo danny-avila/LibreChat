@@ -77,7 +77,7 @@ export interface ActionToolDefinition {
 export interface LoadToolDefinitionsDeps {
   /** Gets MCP server tools - first checks cache, then initializes server if needed */
   getOrFetchMCPServerTools: (userId: string, serverName: string) => Promise<MCPServerTools | null>;
-  /** Bypasses a non-empty stale catalog when it does not contain a selected tool. */
+  /** Fetches a cold server catalog after the initial lookup returns null. */
   refreshMCPServerTools?: (userId: string, serverName: string) => Promise<MCPServerTools | null>;
   /** Checks if a tool name is a known built-in tool */
   isBuiltInTool: (toolName: string) => boolean;
@@ -153,6 +153,7 @@ export async function loadToolDefinitions(
   }
 
   const mcpServerToolsCache = new Map<string, MCPServerTools>();
+  const readyServerNames = new Set<string>();
   const refreshedServerNames = new Set<string>();
   /** Parsed key segment → the RAW server name it resolved to (direct-first). */
   const resolvedServerNames = new Map<string, string>();
@@ -238,6 +239,9 @@ export async function loadToolDefinitions(
         }
       }
       mcpServerToolsCache.set(parsed, fetched || {});
+      if (fetched != null) {
+        readyServerNames.add(parsed);
+      }
       resolvedServerNames.set(parsed, resolvedName);
     }
 
@@ -247,14 +251,15 @@ export async function loadToolDefinitions(
       continue;
     }
 
-    const selectedToolMissing = isMCPAllPlaceholder(toolName)
-      ? Object.keys(serverTools).length === 0
-      : !serverTools[toolName]?.function;
+    const selectedToolMissing =
+      !readyServerNames.has(parsed) &&
+      (isMCPAllPlaceholder(toolName) || !serverTools[toolName]?.function);
     if (selectedToolMissing && refreshMCPServerTools && !refreshedServerNames.has(serverName)) {
       refreshedServerNames.add(serverName);
       const refreshedTools = await refreshMCPServerTools(userId, serverName);
       if (refreshedTools != null) {
         mcpServerToolsCache.set(parsed, refreshedTools);
+        readyServerNames.add(parsed);
         serverTools = refreshedTools;
       }
     }

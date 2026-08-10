@@ -104,21 +104,34 @@ import { createConfigMethods, type ConfigMethods } from './config';
 import {
   createMCPAuthorityMethods,
   MCPAuthorityProofError,
+  MCP_AUTHORITY_PROOF_COLLECTIONS,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
+  createMCPAuthorityUserSourceRevision,
   digestMCPAuthorityValue,
   type MCPAuthorityMethods,
   type MCPAuthorityMethodHooks,
   type MCPAuthorityConfigSourceDocument,
   type MCPAuthorityCredentialSourceDocument,
+  type MCPAuthorityUserSourceDocument,
 } from './mcpAuthority';
+export { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
+export {
+  MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS,
+  MCP_AUTHORITY_USER_SOURCE_FIELDS,
+} from './mcpAuthority/classification';
+export type {
+  MCPAuthorityConsistencyReconciliation,
+  MCPAuthorityConsistencyStatus,
+} from './mcpAuthority/consistency';
 
 export {
   RoleConflictError,
   MCPAuthorityProofError,
+  MCP_AUTHORITY_PROOF_COLLECTIONS,
   MAX_MCP_AUTHORITY_TARGETS,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
   DEFAULT_SESSION_EXPIRY,
@@ -126,6 +139,7 @@ export {
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
+  createMCPAuthorityUserSourceRevision,
   digestMCPAuthorityValue,
 };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
@@ -272,8 +286,11 @@ export function createMethods(
     getActions: actionMethods.getActions,
     getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
     isExternalSkillId: deps.isExternalSkillId,
+    getCache: deps.getCache,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
+  const mcpAuthorityMethods = createMCPAuthorityMethods(mongoose);
+  const pluginAuthMethods = createPluginAuthMethods(mongoose);
 
   return {
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
@@ -293,7 +310,7 @@ export function createMethods(
     ...systemGrantMethods,
     ...createAuditLogMethods(mongoose),
     ...createShareMethods(mongoose),
-    ...createPluginAuthMethods(mongoose),
+    ...pluginAuthMethods,
     /* Tier 1 */
     ...actionMethods,
     ...createAssistantMethods(mongoose),
@@ -318,7 +335,7 @@ export function createMethods(
     /* Config */
     ...createConfigMethods(mongoose),
     /* MCP authority proofs */
-    ...createMCPAuthorityMethods(mongoose),
+    ...mcpAuthorityMethods,
   };
 }
 
@@ -376,4 +393,5 @@ export type {
   MCPAuthorityMethodHooks,
   MCPAuthorityConfigSourceDocument,
   MCPAuthorityCredentialSourceDocument,
+  MCPAuthorityUserSourceDocument,
 };

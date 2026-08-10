@@ -3,6 +3,10 @@ import { normalizeServerName } from 'librechat-data-provider';
 import type { Model, RootFilterQuery, Types } from 'mongoose';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { MCPServerDocument } from '../types';
+import {
+  getMCPAuthorityConsistencyModule,
+  runMCPAuthorityMutation,
+} from './mcpAuthority/consistency';
 import logger from '~/config/winston';
 
 const NORMALIZED_LIMIT_DEFAULT = 20;
@@ -77,7 +81,9 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
     updateData: { config?: MCPOptions },
   ) => Promise<MCPServerDocument | null>;
   deleteMCPServer: (serverName: string) => Promise<MCPServerDocument | null>;
+  deleteMCPServers: (serverNames: readonly string[]) => Promise<number>;
 } {
+  const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
   /**
    * Finds the next available server name by checking DB and reserved-name collisions.
    * If baseName is taken or reserved, returns baseName-2, baseName-3, etc.
@@ -344,6 +350,15 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
     return await MCPServer.findOneAndDelete({ serverName }).lean<MCPServerDocument>();
   }
 
+  async function deleteMCPServers(serverNames: readonly string[]): Promise<number> {
+    if (serverNames.length === 0) {
+      return 0;
+    }
+    const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
+    const result = await MCPServer.deleteMany({ serverName: { $in: serverNames } });
+    return result.deletedCount;
+  }
+
   /**
    * Get MCP servers by their serverName strings
    * @param names - Array of serverName strings to fetch
@@ -363,14 +378,19 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
   }
 
   return {
-    createMCPServer,
+    createMCPServer: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => createMCPServer(...args)),
     findMCPServerByServerName,
     findMCPServerByObjectId,
     findMCPServersByAuthor,
     getListMCPServersByIds,
     getListMCPServersByNames,
-    updateMCPServer,
-    deleteMCPServer,
+    updateMCPServer: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => updateMCPServer(...args)),
+    deleteMCPServer: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => deleteMCPServer(...args)),
+    deleteMCPServers: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, () => deleteMCPServers(...args)),
   };
 }
 

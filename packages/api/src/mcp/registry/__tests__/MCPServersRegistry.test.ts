@@ -184,6 +184,46 @@ describe('MCPServersRegistry', () => {
   });
 
   describe('addServer', () => {
+    it('preserves plugin provenance through inspection and cache storage', async () => {
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+
+      const result = await registry.addServer(
+        'plugin_runtime_server',
+        {
+          type: 'streamable-http',
+          url: 'https://plugin.example.com/mcp',
+          source: 'plugin',
+        } as t.ParsedServerConfig,
+        'CACHE',
+      );
+
+      expect(inspectSpy).toHaveBeenCalledWith(
+        'plugin_runtime_server',
+        expect.objectContaining({ source: 'plugin' }),
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(result.config.source).toBe('plugin');
+      await expect(registry.getServerConfig('plugin_runtime_server')).resolves.toMatchObject({
+        source: 'plugin',
+      });
+    });
+
+    it('preserves plugin provenance in recovery stubs', async () => {
+      const result = await registry.addServerStub(
+        'plugin_recovery_server',
+        {
+          type: 'streamable-http',
+          url: 'https://plugin.example.com/mcp',
+          source: 'plugin',
+        } as t.ParsedServerConfig,
+        'CACHE',
+      );
+
+      expect(result.config).toMatchObject({ source: 'plugin', inspectionFailed: true });
+    });
+
     it('should pass user source to inspector before storing DB servers', async () => {
       const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
 
@@ -298,6 +338,13 @@ describe('MCPServersRegistry', () => {
         allowedAddresses: null,
         useSSRFProtection: false,
       });
+    });
+
+    it('fails closed when the catalog security policy cannot be resolved', async () => {
+      const resolver = jest.fn().mockRejectedValue(new Error('DB down'));
+      const reg = createWith(['yaml.com'], null, resolver);
+
+      await expect(reg.resolveCatalogSecurityPolicy({ userId: 'u1' })).rejects.toThrow('DB down');
     });
 
     it('inspects against the resolved (admin-panel) allowlist, not the YAML base', async () => {
@@ -562,6 +609,38 @@ describe('MCPServersRegistry', () => {
         expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(1); // Still 1
       });
 
+      it('bypasses the process-local read-through cache for authoritative validation', async () => {
+        const oldConfig = {
+          ...testParsedConfig,
+          source: 'user' as const,
+          title: 'Old config',
+        };
+        const newConfig = { ...oldConfig, title: 'Rotated config' };
+        const dbRepoGetAllSpy = jest
+          .spyOn(registry['dbConfigsRepo'], 'getAll')
+          .mockResolvedValueOnce({ rotating: oldConfig })
+          .mockResolvedValue({ rotating: newConfig });
+        const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
+        const cacheRepoGetAllFreshSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAllFresh');
+
+        await expect(registry.getAllServerConfigs('user123')).resolves.toMatchObject({
+          rotating: { title: 'Old config' },
+        });
+        await expect(registry.getAllServerConfigs('user123')).resolves.toMatchObject({
+          rotating: { title: 'Old config' },
+        });
+        await expect(registry.getAllServerConfigsFresh('user123')).resolves.toMatchObject({
+          rotating: { title: 'Rotated config' },
+        });
+        await expect(registry.getAllServerConfigs('user123')).resolves.toMatchObject({
+          rotating: { title: 'Old config' },
+        });
+
+        expect(dbRepoGetAllSpy).toHaveBeenCalledTimes(2);
+        expect(cacheRepoGetAllSpy).toHaveBeenCalledTimes(1);
+        expect(cacheRepoGetAllFreshSpy).toHaveBeenCalledTimes(1);
+      });
+
       it('should use different cache keys for different userIds', async () => {
         // Spy on the cache repository getAll method
         const cacheRepoGetAllSpy = jest.spyOn(registry['cacheConfigsRepo'], 'getAll');
@@ -593,6 +672,110 @@ describe('MCPServersRegistry', () => {
       source: 'yaml',
       updatedAt: FIXED_TIME,
     }) as t.ParsedServerConfig;
+
+    it('propagates authoritative config-cache failures in fail-closed mode', async () => {
+      const error = new Error('config cache unavailable');
+      const cacheGetAllFresh = jest
+        .spyOn(registry['configCacheRepo'], 'getAllFresh')
+        .mockRejectedValueOnce(error);
+
+      await expect(
+        registry.ensureConfigServers(
+          {
+            override: {
+              type: 'streamable-http',
+              url: 'https://override.example.com/mcp',
+            },
+          },
+          { failClosed: true },
+        ),
+      ).rejects.toBe(error);
+
+      cacheGetAllFresh.mockRejectedValueOnce(undefined);
+      await expect(
+        registry.ensureConfigServers(
+          {
+            override: {
+              type: 'streamable-http',
+              url: 'https://override.example.com/mcp',
+            },
+          },
+          { failClosed: true },
+        ),
+      ).rejects.toThrow('The MCP Config-tier config repository fresh read failed');
+    });
+
+    it('uses the authoritative config-tier snapshot during strict validation', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://override.example.com/mcp',
+      };
+      const allowlists = { allowedDomains: null, allowedAddresses: null };
+      jest.mocked(MCPServerInspector.inspect).mockClear();
+      const cacheKey = registry['configCacheKey']('override', rawConfig, allowlists);
+      const staleConfig: t.ParsedServerConfig = {
+        ...rawConfig,
+        source: 'config',
+        title: 'Stale replica',
+      };
+      const currentConfig: t.ParsedServerConfig = {
+        ...rawConfig,
+        source: 'config',
+        title: 'Current replica',
+      };
+      const cacheGet = jest
+        .spyOn(registry['configCacheRepo'], 'get')
+        .mockResolvedValue(staleConfig);
+      jest
+        .spyOn(registry['configCacheRepo'], 'getAllFresh')
+        .mockResolvedValue({ [cacheKey]: currentConfig });
+      jest.mocked(MCPServerInspector.inspect).mockClear();
+
+      await expect(
+        registry.ensureConfigServers({ override: rawConfig }, { failClosed: true, allowlists }),
+      ).resolves.toEqual({ override: currentConfig });
+      expect(cacheGet).not.toHaveBeenCalled();
+    });
+
+    it('does not inspect a missing config server during cache-only authority validation', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://authority.example.com/mcp',
+      };
+      const allowlists = { allowedDomains: null, allowedAddresses: null };
+
+      await expect(
+        registry.ensureConfigServers(
+          { authority: rawConfig },
+          { failClosed: true, initializeMissing: false, allowlists },
+        ),
+      ).resolves.toEqual({});
+      expect(MCPServerInspector.inspect).not.toHaveBeenCalled();
+    });
+
+    it('uses a fresh cached config without inspection during cache-only authority validation', async () => {
+      const rawConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://authority.example.com/mcp',
+      };
+      const allowlists = { allowedDomains: null, allowedAddresses: null };
+      const cacheKey = registry['configCacheKey']('authority', rawConfig, allowlists);
+      const currentConfig: t.ParsedServerConfig = {
+        ...rawConfig,
+        source: 'config',
+      };
+      jest
+        .spyOn(registry['configCacheRepo'], 'getAllFresh')
+        .mockResolvedValue({ [cacheKey]: currentConfig });
+
+      await expect(
+        registry.ensureConfigServers(
+          { authority: rawConfig },
+          { failClosed: true, initializeMissing: false, allowlists },
+        ),
+      ).resolves.toEqual({ authority: currentConfig });
+      expect(MCPServerInspector.inspect).not.toHaveBeenCalled();
+    });
 
     it('flows config-tier override on a YAML-defined server through to getAllServerConfigs', async () => {
       await registry['cacheConfigsRepo'].add('langfuse-docs', yamlLangfuseConfig);
@@ -793,6 +976,32 @@ describe('MCPServersRegistry', () => {
 
       expect(inspectSpy).not.toHaveBeenCalled();
       expect(result['langfuse-docs']).toBeUndefined();
+    });
+
+    it('returns a verified YAML server during cache-only authority resolution', async () => {
+      const yamlSeed: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://langfuse.com/api/public/mcp',
+        requiresOAuth: false,
+        source: 'yaml',
+        updatedAt: FIXED_TIME,
+      };
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlSeed);
+      jest.mocked(MCPServerInspector.inspect).mockClear();
+
+      await expect(
+        registry.ensureConfigServers(
+          {
+            'langfuse-docs': {
+              type: 'streamable-http',
+              url: yamlSeed.url,
+              requiresOAuth: false,
+            },
+          },
+          { failClosed: true, initializeMissing: false },
+        ),
+      ).resolves.toEqual({ 'langfuse-docs': yamlSeed });
+      expect(MCPServerInspector.inspect).not.toHaveBeenCalled();
     });
 
     it('runs lazy-init for YAML server with admin override', async () => {

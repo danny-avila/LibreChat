@@ -1,9 +1,13 @@
 const path = require('path');
 const mongoose = require('mongoose');
-const { User } = require('@librechat/data-schemas').createModels(mongoose);
+const { CacheKeys } = require('librechat-data-provider');
+const { createModels, getMCPAuthorityConsistencyModule } = require('@librechat/data-schemas');
+const { User } = createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const getLogStores = require('~/cache/getLogStores');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
+const resetTermsAcceptance = require('./reset-terms-operation');
 
 (async () => {
   await connect();
@@ -21,10 +25,12 @@ const connect = require('./connect');
   }
 
   try {
-    const result = await User.updateMany(
-      {},
-      { $set: { termsAccepted: false, termsAcceptedAt: null } },
-    );
+    const authority = getMCPAuthorityConsistencyModule(mongoose);
+    const result = await resetTermsAcceptance({
+      userModel: User,
+      authority,
+      authUserCache: getLogStores(CacheKeys.AUTH_USER_DOC),
+    });
     console.green(`Updated ${result.modifiedCount} user(s).`);
   } catch (error) {
     console.red('Error resetting terms acceptance:', error);

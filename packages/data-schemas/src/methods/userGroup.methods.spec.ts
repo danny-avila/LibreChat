@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { createUserGroupMethods } from './userGroup';
 import groupSchema from '~/schema/group';
 import userSchema from '~/schema/user';
@@ -40,6 +41,41 @@ beforeEach(async () => {
 });
 
 describe('UserGroup Methods - Detailed Tests', () => {
+  describe('MCP authority consistency', () => {
+    test('publishes a new generation after a group mutation', async () => {
+      const consistency = getMCPAuthorityConsistencyModule(mongoose);
+      const before = await consistency.initializeMCPAuthorityConsistency();
+
+      await methods.createGroup({
+        name: 'Authority Group',
+        source: 'local',
+        memberIds: ['member-1'],
+      });
+
+      await expect(consistency.assertGeneration(before.generation)).rejects.toMatchObject({
+        reason: 'generation_changed',
+      });
+    });
+
+    test('rejects authority mutations inside caller-owned transactions without dirtying the fence', async () => {
+      const consistency = getMCPAuthorityConsistencyModule(mongoose);
+      const before = await consistency.initializeMCPAuthorityConsistency();
+      const session = await mongoose.startSession();
+      session.startTransaction();
+
+      await expect(
+        methods.createGroup(
+          { name: 'Transactional Authority Group', source: 'local', memberIds: ['member-1'] },
+          session,
+        ),
+      ).rejects.toThrow('cannot join a caller-owned transaction');
+
+      await session.abortTransaction();
+      await session.endSession();
+      await expect(consistency.assertGeneration(before.generation)).resolves.toBeUndefined();
+    });
+  });
+
   describe('findGroupById', () => {
     test('should find group by ObjectId', async () => {
       const group = await Group.create({

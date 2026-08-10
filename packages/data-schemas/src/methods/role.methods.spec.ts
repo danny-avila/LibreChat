@@ -9,6 +9,7 @@ import {
   CacheKeys,
 } from 'librechat-data-provider';
 import type { IRole, IUser, RolePermissions } from '..';
+import { getMCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import { _resetStrictCache } from '../models/plugins/tenantIsolation';
 import { tenantStorage } from '~/config/tenantContext';
 import { createRoleMethods } from './role';
@@ -42,6 +43,7 @@ let updateUsersRoleByIds: ReturnType<typeof createRoleMethods>['updateUsersRoleB
 let listUsersByRole: ReturnType<typeof createRoleMethods>['listUsersByRole'];
 let countUsersByRole: ReturnType<typeof createRoleMethods>['countUsersByRole'];
 let updateRoleByName: ReturnType<typeof createRoleMethods>['updateRoleByName'];
+let renameRoleByName: ReturnType<typeof createRoleMethods>['renameRoleByName'];
 let listRoles: ReturnType<typeof createRoleMethods>['listRoles'];
 let countRoles: ReturnType<typeof createRoleMethods>['countRoles'];
 let mongoServer: MongoMemoryServer;
@@ -61,6 +63,7 @@ beforeAll(async () => {
   createRoleByName = methods.createRoleByName;
   deleteRoleByName = methods.deleteRoleByName;
   updateRoleByName = methods.updateRoleByName;
+  renameRoleByName = methods.renameRoleByName;
   updateUsersByRole = methods.updateUsersByRole;
   updateUsersRoleByIds = methods.updateUsersRoleByIds;
   listUsersByRole = methods.listUsersByRole;
@@ -232,6 +235,17 @@ describe('updateAccessPermissions', () => {
     });
     const role = await Role.findOne({ name: 'NON_EXISTENT_ROLE' });
     expect(role).toBeNull();
+  });
+
+  it('propagates storage failures to the caller', async () => {
+    const storageError = new Error('role store unavailable');
+    mockCache.get.mockRejectedValueOnce(storageError);
+
+    await expect(
+      updateAccessPermissions(SystemRoles.USER, {
+        [PermissionTypes.PROMPTS]: { CREATE: true },
+      }),
+    ).rejects.toThrow('role store unavailable');
   });
 
   it('should update only specified permissions', async () => {
@@ -488,6 +502,26 @@ describe('updateAccessPermissions', () => {
 });
 
 describe('initializeRoles', () => {
+  it('keeps general startup available when a previous authority writer left the fence dirty', async () => {
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    await expect(
+      consistency.mutateMCPAuthority(async () => {
+        throw new Error('simulated writer crash');
+      }),
+    ).rejects.toThrow('simulated writer crash');
+    const dirty = await consistency.getMCPAuthorityConsistencyStatus();
+
+    try {
+      await expect(initializeRoles()).resolves.toBeUndefined();
+      await expect(Role.countDocuments()).resolves.toBe(0);
+    } finally {
+      await consistency.reconcileMCPAuthorityConsistency({
+        expectedGeneration: dirty.generation,
+        expectedOwnerId: dirty.ownerId!,
+      });
+    }
+  });
+
   beforeEach(async () => {
     await Role.deleteMany({});
   });
@@ -942,6 +976,43 @@ describe('deleteRoleByName', () => {
       `${AUTH_USER_DOC_BY_ID_PREFIX}:${bob._id.toString()}`,
     );
   });
+
+  it('publishes role deletion before waiting for auth cache invalidation', async () => {
+    process.env.AUTH_USER_CACHE_MODE = 'on';
+    await createRoleByName({ name: 'editor' });
+    const user = await User.create({
+      name: 'Alice',
+      email: 'alice@test.com',
+      role: 'editor',
+      username: 'alice',
+    });
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    let releaseCache: (() => void) | undefined;
+    let signalCacheStarted: (() => void) | undefined;
+    const cacheStarted = new Promise<void>((resolve) => {
+      signalCacheStarted = resolve;
+    });
+    const cacheRelease = new Promise<void>((resolve) => {
+      releaseCache = resolve;
+    });
+    mockCache.get.mockImplementation(async () => {
+      signalCacheStarted?.();
+      await cacheRelease;
+      return [];
+    });
+
+    const deletion = deleteRoleByName('editor');
+    await cacheStarted;
+
+    await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+      dirty: false,
+    });
+    await expect(Role.findOne({ name: 'editor' }).lean()).resolves.toBeNull();
+    await expect(User.findById(user._id).lean()).resolves.toMatchObject({ role: SystemRoles.USER });
+
+    releaseCache?.();
+    await expect(deletion).resolves.toMatchObject({ name: 'editor' });
+  });
 });
 
 describe('updateRoleByName - cache on rename', () => {
@@ -970,6 +1041,63 @@ describe('updateRoleByName - cache on rename', () => {
       expect.objectContaining({ name: 'editor', description: 'Updated desc' }),
     );
     expect(mockCache.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a duplicate rename conflict without leaving MCP authority dirty', async () => {
+    await createRoleByName({ name: 'editor' });
+    await createRoleByName({ name: 'viewer' });
+    await Role.syncIndexes();
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+
+    await expect(updateRoleByName('editor', { name: 'viewer' })).rejects.toBeInstanceOf(Error);
+    await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+      dirty: false,
+    });
+  });
+
+  it('keeps the authority fence clean when cache publication fails after a role update', async () => {
+    await createRoleByName({ name: 'editor', description: 'Before' });
+    mockCache.set.mockRejectedValueOnce(new Error('redis unavailable'));
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+
+    await expect(updateRoleByName('editor', { description: 'After' })).resolves.toMatchObject({
+      name: 'editor',
+      description: 'After',
+    });
+    await expect(Role.findOne({ name: 'editor' }).lean()).resolves.toMatchObject({
+      description: 'After',
+    });
+    await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+      dirty: false,
+    });
+  });
+});
+
+describe('renameRoleByName', () => {
+  it('publishes the role document and every member migration in one generation', async () => {
+    await Role.create({ name: 'editor', permissions: {} });
+    const user = await User.create({
+      name: 'Role Member',
+      email: 'role-member@test.com',
+      role: 'editor',
+    });
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const before = await consistency.initializeMCPAuthorityConsistency();
+
+    const renamed = await renameRoleByName('editor', {
+      name: 'senior-editor',
+      description: 'Renamed atomically',
+    });
+
+    expect(renamed).toMatchObject({
+      name: 'senior-editor',
+      description: 'Renamed atomically',
+    });
+    await expect(Role.findOne({ name: 'editor' })).resolves.toBeNull();
+    await expect(User.findById(user._id).lean()).resolves.toMatchObject({
+      role: 'senior-editor',
+    });
+    await expect(consistency.assertGeneration(before.generation + 1)).resolves.toBeUndefined();
   });
 });
 
@@ -1262,5 +1390,32 @@ describe('createRoleByName - duplicate key race', () => {
     await expect(createRoleByName({ name: 'editor2' })).rejects.toThrow(/already exists/);
 
     insertSpy.mockRestore();
+  });
+});
+
+describe('MCP authority consistency', () => {
+  it('publishes a new generation after a role mutation', async () => {
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const before = await consistency.initializeMCPAuthorityConsistency();
+
+    await createRoleByName({
+      name: 'mcp-authority-role',
+      permissions: { MCP_SERVERS: { USE: true } } as RolePermissions,
+    });
+
+    await expect(consistency.assertGeneration(before.generation)).rejects.toMatchObject({
+      reason: 'generation_changed',
+    });
+  });
+
+  it('publishes a new generation when a missing system role is created lazily', async () => {
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const before = await consistency.initializeMCPAuthorityConsistency();
+
+    await getRoleByName(SystemRoles.USER);
+
+    await expect(consistency.assertGeneration(before.generation)).rejects.toMatchObject({
+      reason: 'generation_changed',
+    });
   });
 });

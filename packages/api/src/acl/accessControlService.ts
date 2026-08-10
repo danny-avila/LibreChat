@@ -133,14 +133,16 @@ export class AccessControlService {
     role,
     resourceType,
     requiredPermissions,
+    fresh,
   }: {
     userId: string | Types.ObjectId;
     role?: string;
     resourceType: string;
     requiredPermissions: number;
+    fresh?: boolean;
   }): Promise<Types.ObjectId[]> {
     try {
-      const principalsList = await this.getUserPrincipals({ userId, role });
+      const principalsList = await this.getUserPrincipals({ userId, role, fresh });
       return await this.findAccessibleResourcesForPrincipals({
         principalsList,
         resourceType,
@@ -161,11 +163,13 @@ export class AccessControlService {
   public async getUserPrincipals({
     userId,
     role,
+    fresh,
   }: {
     userId: string | Types.ObjectId;
     role?: string;
+    fresh?: boolean;
   }): Promise<ResolvedPrincipal[]> {
-    return await this._dbMethods.getUserPrincipals({ userId, role });
+    return await this._dbMethods.getUserPrincipals({ userId, role, fresh });
   }
 
   public async findAccessibleResourcesForPrincipals({
@@ -349,12 +353,14 @@ export class AccessControlService {
     resourceType,
     resourceId,
     requiredPermission,
+    fresh,
   }: {
     userId: string;
     role?: string | null;
     resourceType: ResourceType;
     resourceId: string | Types.ObjectId;
     requiredPermission: number;
+    fresh?: boolean;
   }): Promise<boolean> {
     try {
       if (typeof requiredPermission !== 'number' || requiredPermission < 1) {
@@ -364,7 +370,7 @@ export class AccessControlService {
       this.validateResourceType(resourceType);
 
       // Get all principals for the user (user + groups + public)
-      const principals = await this._dbMethods.getUserPrincipals({ userId, role });
+      const principals = await this._dbMethods.getUserPrincipals({ userId, role, fresh });
 
       if (principals.length === 0) {
         return false;

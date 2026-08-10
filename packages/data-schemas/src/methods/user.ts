@@ -6,8 +6,21 @@ import {
 } from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
 import type { CacheStore } from '~/types';
+import {
+  getMCPAuthorityConsistencyModule,
+  runMCPAuthorityMutation,
+} from './mcpAuthority/consistency';
+import { MCP_AUTHORITY_USER_SOURCE_FIELDS } from './mcpAuthority/classification';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
+
+const MCP_AUTHORITY_USER_FIELDS = new Set<keyof IUser>([...MCP_AUTHORITY_USER_SOURCE_FIELDS]);
+
+function userUpdateAffectsMCPAuthority(updateData: Partial<IUser>): boolean {
+  return Object.keys(updateData).some((field) =>
+    MCP_AUTHORITY_USER_FIELDS.has(field as keyof IUser),
+  );
+}
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
@@ -124,6 +137,7 @@ export function createUserMethods(
   ) => Promise<IUser | null>;
   toggleUserMemories: (userId: string, memoriesEnabled: boolean) => Promise<IUser | null>;
 } {
+  const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
   /**
    * Normalizes email fields in search criteria to lowercase and trimmed.
    * Handles both direct email fields and $or arrays containing email conditions.
@@ -258,7 +272,11 @@ export function createUserMethods(
   /**
    * Update a user with new data without overwriting existing properties.
    */
-  async function updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {
+  async function updateUser(
+    userId: string,
+    updateData: Partial<IUser>,
+    invalidateCache = true,
+  ): Promise<IUser | null> {
     const User = mongoose.models.User;
     const updateOperation = {
       $set: updateData,
@@ -268,7 +286,9 @@ export function createUserMethods(
       new: true,
       runValidators: true,
     }).lean<IUser>();
-    await invalidateAuthUserDocCache(userId);
+    if (invalidateCache) {
+      await invalidateAuthUserDocCache(userId);
+    }
     return updated;
   }
 
@@ -307,7 +327,7 @@ export function createUserMethods(
    * updates are used instead of an aggregation pipeline with $$NOW, which
    * Amazon DocumentDB rejects.
    */
-  async function acceptTerms(userId: string): Promise<IUser | null> {
+  async function acceptTerms(userId: string, invalidateCache = true): Promise<IUser | null> {
     const User = mongoose.models.User;
     const maxAttempts = 3;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -317,7 +337,9 @@ export function createUserMethods(
         { new: true, runValidators: true },
       ).lean<IUser>();
       if (firstAcceptance) {
-        await invalidateAuthUserDocCache(userId);
+        if (invalidateCache) {
+          await invalidateAuthUserDocCache(userId);
+        }
         return firstAcceptance;
       }
       const reacceptance = await User.findOneAndUpdate(
@@ -326,7 +348,9 @@ export function createUserMethods(
         { new: true, runValidators: true },
       ).lean<IUser>();
       if (reacceptance) {
-        await invalidateAuthUserDocCache(userId);
+        if (invalidateCache) {
+          await invalidateAuthUserDocCache(userId);
+        }
         return reacceptance;
       }
       const exists = await User.exists({ _id: userId });
@@ -355,14 +379,16 @@ export function createUserMethods(
   /**
    * Delete a user by their unique ID.
    */
-  async function deleteUserById(userId: string): Promise<UserDeleteResult> {
+  async function deleteUserById(userId: string, invalidateCache = true): Promise<UserDeleteResult> {
     try {
       const User = mongoose.models.User;
       const result = await User.deleteOne({ _id: userId });
       if (result.deletedCount === 0) {
         return { deletedCount: 0, message: 'No user found with that ID.' };
       }
-      await invalidateAuthUserDocCache(userId);
+      if (invalidateCache) {
+        await invalidateAuthUserDocCache(userId);
+      }
       return { deletedCount: result.deletedCount, message: 'User was deleted successfully.' };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -599,12 +625,37 @@ export function createUserMethods(
     findUsers,
     countUsers,
     createUser,
-    updateUser,
-    acceptTerms,
+    updateUser: async (...args) => {
+      if (!userUpdateAffectsMCPAuthority(args[1])) {
+        return await updateUser(...args);
+      }
+      return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+        const updated = await updateUser(...args, false);
+        authorityMutationGate.scheduleMCPAuthorityPostPublication(async () =>
+          invalidateAuthUserDocCache(args[0]),
+        );
+        return updated;
+      });
+    },
+    acceptTerms: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, async () => {
+        const updated = await acceptTerms(...args, false);
+        authorityMutationGate.scheduleMCPAuthorityPostPublication(async () =>
+          invalidateAuthUserDocCache(args[0]),
+        );
+        return updated;
+      }),
     searchUsers,
     getUserById,
     generateToken,
-    deleteUserById,
+    deleteUserById: async (...args) =>
+      await runMCPAuthorityMutation(authorityMutationGate, async () => {
+        const deleted = await deleteUserById(...args, false);
+        authorityMutationGate.scheduleMCPAuthorityPostPublication(async () =>
+          invalidateAuthUserDocCache(args[0]),
+        );
+        return deleted;
+      }),
     updateUserPlugins,
     toggleUserMemories,
   };

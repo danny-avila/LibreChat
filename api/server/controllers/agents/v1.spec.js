@@ -13,6 +13,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
 // Only mock the dependencies that are not database-related
 jest.mock('~/server/services/Config', () => ({
+  getScopedMCPServerTools: jest.fn(),
   getCachedTools: jest.fn().mockResolvedValue({
     web_search: true,
     execute_code: true,

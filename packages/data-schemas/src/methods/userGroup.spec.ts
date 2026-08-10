@@ -2,6 +2,10 @@ import mongoose, { Types } from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type * as t from '~/types';
+import {
+  getMCPAuthorityConsistencyModule,
+  type MCPAuthorityConsistencyFence,
+} from './mcpAuthority/consistency';
 import { tenantStorage } from '~/config/tenantContext';
 import { createUserGroupMethods } from './userGroup';
 import groupSchema from '~/schema/group';
@@ -184,6 +188,29 @@ describe('userGroup methods', () => {
       expect(group.name).toBe('New Group');
       expect(group._id).toBeDefined();
     });
+
+    it('publishes the authority fence cleanly before reporting a duplicate identity', async () => {
+      await methods.createGroup({
+        name: 'Existing Entra Group',
+        source: 'entra',
+        idOnTheSource: 'duplicate-entra-group',
+      });
+
+      try {
+        await expect(
+          methods.createGroup({
+            name: 'Duplicate Entra Group',
+            source: 'entra',
+            idOnTheSource: 'duplicate-entra-group',
+          }),
+        ).rejects.toMatchObject({ code: 11000 });
+        await expect(
+          getMCPAuthorityConsistencyModule(mongoose).getMCPAuthorityConsistencyStatus(),
+        ).resolves.toMatchObject({ dirty: false });
+      } finally {
+        await mongoose.connection.collection('mcpAuthorityConsistency').deleteMany({});
+      }
+    });
   });
 
   describe('upsertGroupByExternalId', () => {
@@ -238,6 +265,44 @@ describe('userGroup methods', () => {
       await expect(methods.addUserToGroup(new Types.ObjectId(), group._id)).rejects.toThrow(
         /User not found/,
       );
+      await expect(
+        getMCPAuthorityConsistencyModule(mongoose).getMCPAuthorityConsistencyStatus(),
+      ).resolves.toMatchObject({ dirty: false });
+    });
+
+    it('resolves the current external identity after waiting for an authority writer', async () => {
+      const user = await createTestUser({ idOnTheSource: 'identity-before-wait' });
+      const group = await Group.create({
+        name: 'Identity Race Team',
+        source: 'entra',
+        idOnTheSource: 'identity-race-group',
+        memberIds: [],
+      });
+      const authority = getMCPAuthorityConsistencyModule(mongoose);
+      let releaseWriter!: () => void;
+      let writerEntered!: () => void;
+      const writerReady = new Promise<void>((resolve) => {
+        writerEntered = resolve;
+      });
+      const writerRelease = new Promise<void>((resolve) => {
+        releaseWriter = resolve;
+      });
+      const writer = authority.mutateMCPAuthority(async () => {
+        writerEntered();
+        await writerRelease;
+        await User.updateOne({ _id: user._id }, { $set: { idOnTheSource: 'identity-after-wait' } });
+      });
+      await writerReady;
+
+      const pendingMembership = methods.addUserToGroup(user._id, group._id);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      releaseWriter();
+      await writer;
+      await pendingMembership;
+
+      const updatedGroup = await Group.findById(group._id).lean();
+      expect(updatedGroup?.memberIds).toContain('identity-after-wait');
+      expect(updatedGroup?.memberIds).not.toContain('identity-before-wait');
     });
   });
 
@@ -271,6 +336,40 @@ describe('userGroup methods', () => {
 
       const { group: updatedGroup } = await methods.removeUserFromGroup(user._id, group._id);
       expect(updatedGroup!.memberIds).toEqual(['other-user']);
+    });
+
+    it('resolves the current external identity after waiting for an authority writer', async () => {
+      const user = await createTestUser({ idOnTheSource: 'identity-before-wait' });
+      const group = await Group.create({
+        name: 'Identity Removal Race Team',
+        source: 'entra',
+        idOnTheSource: 'identity-removal-race-group',
+        memberIds: ['identity-after-wait'],
+      });
+      const authority = getMCPAuthorityConsistencyModule(mongoose);
+      let releaseWriter!: () => void;
+      let writerEntered!: () => void;
+      const writerReady = new Promise<void>((resolve) => {
+        writerEntered = resolve;
+      });
+      const writerRelease = new Promise<void>((resolve) => {
+        releaseWriter = resolve;
+      });
+      const writer = authority.mutateMCPAuthority(async () => {
+        writerEntered();
+        await writerRelease;
+        await User.updateOne({ _id: user._id }, { $set: { idOnTheSource: 'identity-after-wait' } });
+      });
+      await writerReady;
+
+      const pendingRemoval = methods.removeUserFromGroup(user._id, group._id);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      releaseWriter();
+      await writer;
+      await pendingRemoval;
+
+      const updatedGroup = await Group.findById(group._id).lean();
+      expect(updatedGroup?.memberIds).not.toContain('identity-after-wait');
     });
   });
 
@@ -537,6 +636,31 @@ describe('userGroup methods', () => {
       expect(cache.set).toHaveBeenCalledWith('cache-ext-1', [group._id.toString()]);
     });
 
+    it('bypasses cached group memberships for authoritative principal reads', async () => {
+      const user = await createTestUser({ idOnTheSource: 'fresh-ext-1' });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'fresh-ext-1',
+      };
+
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+      const group = await Group.create({
+        name: 'Fresh Team',
+        source: 'entra',
+        idOnTheSource: 'fresh-grp-1',
+        memberIds: ['fresh-ext-1'],
+      });
+
+      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+      expect(
+        groupPrincipalIds(await cachedMethods.getUserPrincipals({ ...params, fresh: true })),
+      ).toEqual([group._id.toString()]);
+      expect(cache.set).toHaveBeenCalledTimes(1);
+    });
+
     it('caches empty memberships and hydrates group ids as ObjectIds', async () => {
       const user = await createTestUser({ idOnTheSource: 'cache-ext-empty' });
       const cache = createFakeCache();
@@ -657,6 +781,52 @@ describe('userGroup methods', () => {
 
       await cachedMethods.deleteGroup(group._id);
       expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
+    });
+
+    it('publishes a nested Entra membership sync before invalidating the principals cache', async () => {
+      const user = await createTestUser({ idOnTheSource: 'post-publish-ext' });
+      const group = await Group.create({
+        name: 'Post-publish Team',
+        source: 'entra',
+        idOnTheSource: 'post-publish-group',
+        memberIds: [],
+      });
+      const cache = createFakeCache();
+      const cachedMethods = createCachedMethods(cache);
+      const params = {
+        userId: user._id.toString(),
+        role: SystemRoles.USER,
+        idOnTheSource: 'post-publish-ext',
+      };
+      await cachedMethods.getUserPrincipals(params);
+      let releaseInvalidation!: () => void;
+      let invalidationStarted!: () => void;
+      const invalidationReady = new Promise<void>((resolve) => {
+        invalidationStarted = resolve;
+      });
+      const invalidationRelease = new Promise<void>((resolve) => {
+        releaseInvalidation = resolve;
+      });
+      cache.delete.mockImplementation(async (cacheKey: string) => {
+        invalidationStarted();
+        await invalidationRelease;
+        return cache.store.delete(cacheKey);
+      });
+
+      const pendingSync = cachedMethods.syncUserEntraGroups(user._id, [
+        { id: 'post-publish-group', name: 'Post-publish Team' },
+      ]);
+      await invalidationReady;
+
+      await expect(
+        getMCPAuthorityConsistencyModule(mongoose).getMCPAuthorityConsistencyStatus(),
+      ).resolves.toMatchObject({ dirty: false });
+      await expect(Group.findById(group._id).lean()).resolves.toMatchObject({
+        memberIds: ['post-publish-ext'],
+      });
+
+      releaseInvalidation();
+      await expect(pendingSync).resolves.toMatchObject({ addedGroups: [expect.any(Object)] });
     });
 
     it('invalidates member keys extracted from bulk membership updates', async () => {
@@ -957,42 +1127,6 @@ describe('userGroup methods', () => {
       expect(groupPrincipalIds(await parkedRead)).toEqual([]);
     });
 
-    it('defers invalidation for transactional writes until the session ends', async () => {
-      const user = await createTestUser({ idOnTheSource: 'txn-ext-1' });
-      const group = await Group.create({
-        name: 'Transactional Team',
-        source: 'entra',
-        idOnTheSource: 'txn-grp-1',
-        memberIds: [],
-      });
-      const cache = createFakeCache();
-      const cachedMethods = createCachedMethods(cache);
-      const params = {
-        userId: user._id.toString(),
-        role: SystemRoles.USER,
-        idOnTheSource: 'txn-ext-1',
-      };
-
-      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
-
-      const session = await mongoose.startSession();
-      session.startTransaction();
-      await cachedMethods.addUserToGroup(user._id, group._id, session);
-
-      /** Mid-transaction: no invalidation, reads keep the pre-commit membership */
-      expect(cache.delete).not.toHaveBeenCalled();
-      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
-
-      await session.commitTransaction();
-      await session.endSession();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-
-      expect(cache.delete).toHaveBeenCalledWith('txn-ext-1');
-      expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
-        group._id.toString(),
-      ]);
-    });
-
     it('caches and invalidates under tenant-scoped keys within a tenant context', async () => {
       const user = await createTestUser({ idOnTheSource: 'tenant-ext-1' });
       const group = await Group.create({
@@ -1022,34 +1156,6 @@ describe('userGroup methods', () => {
       expect(cache.store.has('tenant-ext-1:tenant-a')).toBe(false);
       expect(cache.delete).toHaveBeenCalledWith('tenant-ext-1:tenant-a');
       expect(cache.delete).toHaveBeenCalledWith('tenant-ext-1');
-    });
-
-    it('keeps tenant scoping for invalidations deferred past the transaction', async () => {
-      const user = await createTestUser({ idOnTheSource: 'txn-tenant-ext-1' });
-      const group = await Group.create({
-        name: 'Tenant Transactional Team',
-        source: 'entra',
-        idOnTheSource: 'txn-tenant-grp-1',
-        memberIds: [],
-      });
-      const cache = createFakeCache();
-      const cachedMethods = createCachedMethods(cache);
-
-      let session!: mongoose.ClientSession;
-      await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
-        session = await mongoose.startSession();
-        session.startTransaction();
-        await cachedMethods.addUserToGroup(user._id, group._id, session);
-      });
-      expect(cache.delete).not.toHaveBeenCalled();
-
-      /** Session ends outside the tenant context; the snapshot must preserve it */
-      await session.commitTransaction();
-      await session.endSession();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-
-      expect(cache.delete).toHaveBeenCalledWith('txn-tenant-ext-1:tenant-b');
-      expect(cache.delete).toHaveBeenCalledWith('txn-tenant-ext-1');
     });
 
     it('runs a delayed second invalidation to evict cross-process stale rewrites', async () => {
@@ -1181,36 +1287,6 @@ describe('userGroup methods', () => {
       readSpy.mockRestore();
     });
 
-    it('coalesces deferred invalidations into one session listener', async () => {
-      const user = await createTestUser({ idOnTheSource: 'coalesce-ext-1' });
-      const groups = await Group.create(
-        Array.from({ length: 12 }, (_, index) => ({
-          name: `Coalesce Team ${index}`,
-          source: 'entra' as const,
-          idOnTheSource: `coalesce-grp-${index}`,
-          memberIds: [],
-        })),
-      );
-      const cache = createFakeCache();
-      const cachedMethods = createCachedMethods(cache);
-
-      const session = await mongoose.startSession();
-      session.startTransaction();
-      const baseListenerCount = session.listenerCount('ended');
-      for (const group of groups) {
-        await cachedMethods.addUserToGroup(user._id, group._id, session);
-      }
-      expect(session.listenerCount('ended')).toBe(baseListenerCount + 1);
-      expect(cache.delete).not.toHaveBeenCalled();
-
-      await session.commitTransaction();
-      await session.endSession();
-      await new Promise((resolve) => setTimeout(resolve, 20));
-
-      expect(cache.delete).toHaveBeenCalledWith('coalesce-ext-1');
-      expect(cache.delete.mock.calls.length).toBeGreaterThanOrEqual(groups.length);
-    });
-
     it('clears the cache for aggregation-pipeline bulk updates touching memberIds', async () => {
       await Group.create({
         name: 'Pipeline Team',
@@ -1251,6 +1327,39 @@ describe('userGroup methods', () => {
   });
 
   describe('syncUserEntraGroups', () => {
+    it('reads the current external identity only after entering the authority fence', async () => {
+      const user = await createTestUser({ idOnTheSource: 'superseded-user-ext' });
+      const consistency = getMCPAuthorityConsistencyModule(mongoose);
+      await consistency.initializeMCPAuthorityConsistency();
+      const fenceCollection =
+        mongoose.connection.collection<MCPAuthorityConsistencyFence>('mcpAuthorityConsistency');
+      const acquireFence = fenceCollection.findOneAndUpdate.bind(fenceCollection);
+      const acquisitionSpy = jest
+        .spyOn(fenceCollection, 'findOneAndUpdate')
+        .mockImplementationOnce(async (filter, update) => {
+          await User.collection.updateOne(
+            { _id: user._id },
+            { $set: { idOnTheSource: 'current-user-ext' } },
+          );
+          return await acquireFence(filter, update, {
+            returnDocument: 'after',
+            writeConcern: { w: 'majority' },
+          });
+        });
+
+      try {
+        await methods.syncUserEntraGroups(user._id, [
+          { id: 'entra-current', name: 'Current Entra Group' },
+        ]);
+      } finally {
+        acquisitionSpy.mockRestore();
+      }
+
+      const group = await Group.findOne({ idOnTheSource: 'entra-current' }).lean();
+      expect(group?.memberIds).toContain('current-user-ext');
+      expect(group?.memberIds).not.toContain('superseded-user-ext');
+    });
+
     it('creates new groups and adds user as member', async () => {
       const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
 
@@ -1265,6 +1374,33 @@ describe('userGroup methods', () => {
       const groups = await Group.find({ source: 'entra' });
       expect(groups).toHaveLength(2);
       expect(groups.every((g) => g.memberIds!.includes('user-ext-1'))).toBe(true);
+    });
+
+    it('adopts a concurrently created external group without dirtying the authority fence', async () => {
+      const user = await createTestUser({ idOnTheSource: 'race-user-ext' });
+      const saveSpy = jest.spyOn(Group.prototype, 'save').mockImplementationOnce(async () => {
+        await Group.collection.insertOne({
+          name: 'Concurrent Entra Group',
+          source: 'entra',
+          idOnTheSource: 'entra-race',
+          memberIds: [],
+        });
+        throw Object.assign(new Error('E11000 duplicate key error'), { code: 11000 });
+      });
+
+      try {
+        const { addedGroups } = await methods.syncUserEntraGroups(user._id, [
+          { id: 'entra-race', name: 'Concurrent Entra Group' },
+        ]);
+        expect(addedGroups).toHaveLength(1);
+        expect(addedGroups[0].memberIds).toContain('race-user-ext');
+        await expect(
+          getMCPAuthorityConsistencyModule(mongoose).getMCPAuthorityConsistencyStatus(),
+        ).resolves.toMatchObject({ dirty: false });
+      } finally {
+        saveSpy.mockRestore();
+        await mongoose.connection.collection('mcpAuthorityConsistency').deleteMany({});
+      }
     });
 
     it('adds user to existing group they are not a member of', async () => {

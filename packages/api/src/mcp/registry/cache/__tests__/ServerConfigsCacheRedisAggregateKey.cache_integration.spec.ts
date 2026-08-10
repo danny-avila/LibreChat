@@ -332,5 +332,14 @@ describe('ServerConfigsCacheRedisAggregateKey Integration Tests', () => {
       expect(Object.keys(result).length).toBe(1);
       cacheGetSpy.mockRestore();
     });
+
+    it('bypasses the process-local snapshot for authoritative reads', async () => {
+      await cache.add('server1', mockConfig1);
+      await cache.getAll();
+      await cache['cache'].set('__all__', { server2: mockConfig2 });
+
+      await expect(cache.getAll()).resolves.toEqual({ server1: expect.any(Object) });
+      await expect(cache.getAllFresh()).resolves.toEqual({ server2: mockConfig2 });
+    });
   });
 });

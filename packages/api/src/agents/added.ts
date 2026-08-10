@@ -56,12 +56,30 @@ export interface LoadAddedAgentDeps {
     serverName: string,
     serverConfig?: ParsedServerConfig,
   ) => Promise<Record<string, unknown> | null>;
+  getScopedMCPServerTools?: (params: {
+    user: { id: string; role?: string; tenantId?: string | null };
+    serverName: string;
+    serverConfig?: NonNullable<AppConfig['mcpConfig']>[string];
+  }) => Promise<Record<string, unknown> | null>;
 }
 
 interface LoadAddedAgentParams {
-  req: { user?: { id?: string }; config?: Record<string, unknown> };
+  req: {
+    user?: { id?: string; role?: string; tenantId?: string | null };
+    config?: Record<string, unknown>;
+  };
   conversation: TConversation | null;
   primaryAgent?: Agent | null;
+}
+
+async function loadMCPServerTools(
+  deps: LoadAddedAgentDeps,
+  params: Parameters<NonNullable<LoadAddedAgentDeps['getScopedMCPServerTools']>>[0],
+): Promise<Record<string, unknown> | null> {
+  if (deps.getScopedMCPServerTools) {
+    return deps.getScopedMCPServerTools(params);
+  }
+  return deps.getMCPServerTools(params.user.id, params.serverName);
 }
 
 /**
@@ -227,7 +245,11 @@ export async function loadAddedAgent(
     const serverTools =
       overlayConfig && requiresEphemeralUserConnection(overlayConfig)
         ? null
-        : await deps.getMCPServerTools(userId, mcpServer, overlayConfig);
+        : await loadMCPServerTools(deps, {
+            user: { id: userId, role: req.user?.role, tenantId: req.user?.tenantId },
+            serverName: mcpServer,
+            serverConfig: overlayConfig,
+          });
     if (!serverTools) {
       tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
       addedServers.add(mcpServer);

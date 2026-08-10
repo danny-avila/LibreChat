@@ -94,6 +94,7 @@ const { createAgent, createSkill, updateAgent } = require('~/models');
 const db = require('~/models');
 
 jest.spyOn(logger, 'warn').mockImplementation(() => {});
+jest.spyOn(logger, 'error').mockImplementation(() => {});
 
 const PRIMARY_ID = 'agent_primary';
 const TARGET_ID = 'agent_target';

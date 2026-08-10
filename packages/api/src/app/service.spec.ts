@@ -105,6 +105,22 @@ describe('createAppConfigService', () => {
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
     });
 
+    it('propagates principal lookup failures when failClosed is true', async () => {
+      const error = new Error('principal store unavailable');
+      const deps = createDeps({ getUserPrincipals: jest.fn().mockRejectedValue(error) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(getAppConfig({ userId: 'uid1', failClosed: true })).rejects.toBe(error);
+    });
+
+    it('propagates override lookup failures when failClosed is true', async () => {
+      const error = new Error('override store unavailable');
+      const deps = createDeps({ getApplicableConfigs: jest.fn().mockRejectedValue(error) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(getAppConfig({ userId: 'uid1', failClosed: true })).rejects.toBe(error);
+    });
+
     it('queries DB for applicable configs', async () => {
       const deps = createDeps();
       const { getAppConfig } = createAppConfigService(deps);
@@ -453,6 +469,75 @@ describe('createAppConfigService', () => {
       await getAppConfig({ role: 'ADMIN' });
 
       expect(deps.getUserPrincipals).not.toHaveBeenCalled();
+    });
+
+    it('uses a projected uncached authority read without reloading base config or poisoning cache', async () => {
+      const deps = createDeps({
+        getApplicableConfigs: jest.fn().mockResolvedValue([]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const first = await getAppConfig({
+        role: 'USER',
+        userId: 'uid1',
+        refreshOverrides: true,
+        mcpOnly: true,
+      });
+      const second = await getAppConfig({
+        role: 'USER',
+        userId: 'uid1',
+        refreshOverrides: true,
+        mcpOnly: true,
+      });
+
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
+      expect(deps.getUserPrincipals).toHaveBeenCalledTimes(2);
+      expect(deps.getUserPrincipals).toHaveBeenCalledWith({
+        userId: 'uid1',
+        role: 'USER',
+        fresh: true,
+      });
+      expect(deps.getApplicableConfigs).toHaveBeenCalledWith(expect.any(Array), {
+        paths: ['mcpServers', 'mcpSettings'],
+        includeInactive: true,
+      });
+      expect(deps._cache.set).toHaveBeenCalledTimes(1);
+      expect(first).not.toBe(deps._baseConfig);
+      expect(second).not.toBe(first);
+    });
+
+    it('returns active and inactive MCP source documents from the effective-config read', async () => {
+      const activeConfig = {
+        _id: 'config-a',
+        principalType: 'role',
+        principalId: 'USER',
+        priority: 10,
+        isActive: true,
+        configVersion: 1,
+        tombstones: [],
+        overrides: { mcpServers: { active: { type: 'sse', url: 'https://active.test' } } },
+      };
+      const inactiveConfig = {
+        ...activeConfig,
+        _id: 'config-b',
+        priority: 20,
+        isActive: false,
+        overrides: { mcpServers: { inactive: { type: 'sse', url: 'https://inactive.test' } } },
+      };
+      const deps = createDeps({
+        getApplicableConfigs: jest.fn().mockResolvedValue([activeConfig, inactiveConfig]),
+      });
+      const { getMCPAppConfigSnapshot } = createAppConfigService(deps);
+
+      const snapshot = await getMCPAppConfigSnapshot({
+        role: 'USER',
+        userId: 'uid1',
+      });
+
+      expect(snapshot.sourceDocuments).toEqual([activeConfig, inactiveConfig]);
+      expect(snapshot.config.mcpConfig).toEqual({
+        active: { type: 'sse', url: 'https://active.test' },
+      });
     });
   });
 

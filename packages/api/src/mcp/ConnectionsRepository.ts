@@ -1,6 +1,11 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
 import {
+  createMCPToolCatalogSecurityPolicyIdentity,
+  isMCPToolCatalogFingerprintAvailable,
+  matchesMCPConnectionProvenance,
+} from './catalog';
+import {
   cancelMCPToolsChanged,
   getMCPAppToolsPublicationGeneration,
   notifyMCPToolsChanged,
@@ -9,6 +14,7 @@ import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { canUseAppConnection, isUserSourced } from './utils';
 import { MCPConnection } from './connection';
+import { processMCPEnv } from '~/utils/env';
 
 const CONNECT_CONCURRENCY = 3;
 
@@ -99,6 +105,22 @@ export class ConnectionsRepository {
       await this.disconnectConnection(serverName);
       return null;
     }
+    const registry = MCPServersRegistry.getInstance();
+    const policy =
+      this.ownerId == null
+        ? {
+            allowedDomains: registry.getAllowedDomains(),
+            allowedAddresses: registry.getAllowedAddresses(),
+            useSSRFProtection: registry.shouldEnableSSRFProtection(),
+          }
+        : await registry.resolveAllowlists({
+            userId: this.ownerId,
+            role: this.oauthOpts?.user?.role,
+            tenantId: this.oauthOpts?.user?.tenantId ?? null,
+          });
+    const { allowedDomains, allowedAddresses, useSSRFProtection } = policy;
+    const publicationGeneration =
+      this.ownerId === undefined ? getMCPAppToolsPublicationGeneration(serverConfig) : undefined;
     if (existingConnection) {
       // Check if config was cached/updated since connection was created
       if (serverConfig.updatedAt && existingConnection.isStale(serverConfig.updatedAt)) {
@@ -113,17 +135,18 @@ export class ConnectionsRepository {
         // Disconnect stale connection
         await this.disconnectConnection(serverName);
         // Fall through to create new connection
-      } else if (await existingConnection.isConnected()) {
+      } else if (
+        (await existingConnection.isConnected()) &&
+        this.isConnectionProvenanceCurrent(existingConnection, serverName, serverConfig, {
+          allowedDomains,
+          allowedAddresses,
+        })
+      ) {
         return existingConnection;
       } else {
         await this.disconnectConnection(serverName);
       }
     }
-    const registry = MCPServersRegistry.getInstance();
-    const { allowedDomains, allowedAddresses, useSSRFProtection } =
-      await registry.resolveAllowlists({ userId: this.ownerId });
-    const publicationGeneration =
-      this.ownerId === undefined ? getMCPAppToolsPublicationGeneration(serverConfig) : undefined;
     const connection = await MCPConnectionFactory.create(
       {
         serverName,
@@ -189,6 +212,29 @@ export class ConnectionsRepository {
       }
     }
     return connection;
+  }
+
+  private isConnectionProvenanceCurrent(
+    connection: MCPConnection,
+    serverName: string,
+    serverConfig: t.ParsedServerConfig,
+    policy: { allowedDomains?: string[] | null; allowedAddresses?: string[] | null },
+  ): boolean {
+    if (!isMCPToolCatalogFingerprintAvailable()) {
+      return true;
+    }
+    return matchesMCPConnectionProvenance(connection.getDiscoveryProvenance(), {
+      tenantId: null,
+      userId: this.ownerId ?? '__app__',
+      serverName,
+      serverConfig,
+      effectiveServerConfig: processMCPEnv({
+        options: serverConfig,
+        dbSourced: isUserSourced(serverConfig),
+      }),
+      securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity(policy),
+      authorizationIdentity: 'none',
+    });
   }
 
   /** Gets or creates connections for multiple servers concurrently */

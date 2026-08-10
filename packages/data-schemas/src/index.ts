@@ -30,12 +30,17 @@ export {
   MAX_AUDIT_VERIFY_ROWS,
   MAX_TOOL_FAVORITES,
   MCPAuthorityProofError,
+  MCP_AUTHORITY_PROOF_COLLECTIONS,
+  MCP_AUTHORITY_USER_PLACEHOLDER_FIELDS,
+  MCP_AUTHORITY_USER_SOURCE_FIELDS,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
+  createMCPAuthorityUserSourceRevision,
   digestMCPAuthorityValue,
+  getMCPAuthorityConsistencyModule,
 } from './methods';
 export { FAVORITE_ITEM_TYPES } from './types/favorite';
 export type * from './types';
@@ -66,7 +71,10 @@ export {
 export type { TenantContext } from './config/tenantContext';
 export {
   MCPServerNameMigrationError,
+  MCPAuthorityReadinessError,
+  assertMCPAuthorityReadiness,
   createMCPAuthorityLookupIndexes,
+  createMCPAuthorityProofCollections,
   dropSupersededTenantIndexes,
   dropSupersededPromptGroupIndexes,
   backfillMCPServerNormalizedNames,

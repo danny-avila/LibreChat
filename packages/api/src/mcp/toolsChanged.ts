@@ -31,12 +31,15 @@ function sortConfigValue(value: StableConfigValue): StableConfigValue {
 }
 
 /** Returns a stable token for the connection-relevant portion of an MCP config. */
-export function getMCPAppToolsPublicationGeneration(config: ParsedServerConfig): string {
+export function getMCPAppToolsPublicationGeneration(
+  config: ParsedServerConfig,
+  effectiveConfig?: MCPOptions,
+): string {
   /** App replicas can resolve the same stored config through different process environments during
    * a rolling deployment. Address the catalog by the effective runtime config so an old replica's
    * live connection cannot publish into the new replica's slice. DB-sourced configs deliberately
    * remain literal because processMCPEnv derives that rule from dbId. */
-  const runtimeConfig = processMCPEnv({ options: config });
+  const runtimeConfig = effectiveConfig ?? processMCPEnv({ options: config });
   const parsedConfig = MCPOptionsSchema.parse(runtimeConfig) as StableConfigValue;
   return createHash('sha256')
     .update(JSON.stringify(sortConfigValue(parsedConfig)))

@@ -2,7 +2,6 @@ import { z } from 'zod';
 import {
   Tools,
   SSEOptionsSchema,
-  MCPOptionsSchema,
   MCPServersSchema,
   StdioOptionsSchema,
   WebSocketOptionsSchema,
@@ -14,11 +13,17 @@ import type {
   ImageContent,
   AudioContent,
   TextContent,
+  ResourceLink,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
-import type { LCTool } from '@librechat/agents';
+import type {
+  MCPOptions,
+  ParsedServerConfig,
+  MCPConnectionProvenance,
+  MCPToolCatalogScope,
+} from '~/mcp/provenance';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
@@ -29,15 +34,7 @@ export type StdioOptions = z.infer<typeof StdioOptionsSchema>;
 export type WebSocketOptions = z.infer<typeof WebSocketOptionsSchema>;
 export type SSEOptions = z.infer<typeof SSEOptionsSchema>;
 export type StreamableHTTPOptions = z.infer<typeof StreamableHTTPOptionsSchema>;
-export type MCPOptions = z.infer<typeof MCPOptionsSchema> & {
-  customUserVars?: Record<
-    string,
-    {
-      title: string;
-      description: string;
-    }
-  >;
-};
+export type { LCAvailableTools, LCFunctionTool, MCPOptions } from '~/mcp/provenance';
 export type MCPServers = z.infer<typeof MCPServersSchema>;
 export interface MCPResource {
   uri: string;
@@ -46,12 +43,7 @@ export interface MCPResource {
   mimeType?: string;
 }
 
-export interface LCFunctionTool {
-  type: 'function';
-  ['function']: LCTool;
-}
-
-export type LCAvailableTools = Record<string, LCFunctionTool>;
+export type { MCPConnectionProvenance, MCPToolCatalogScope } from '~/mcp/provenance';
 export type LCManifestTool = TPlugin;
 export type LCToolManifest = TPlugin[];
 export interface MCPPrompt {
@@ -66,8 +58,13 @@ export type OAuthHandledSource = 'silent-refresh' | 'interactive';
 
 export type MCPTool = Tool;
 export type MCPToolListResponse = ListToolsResult;
-export type ToolContentPart = TextContent | ImageContent | EmbeddedResource | AudioContent;
-export type { TextContent, ImageContent, EmbeddedResource, AudioContent };
+export type ToolContentPart =
+  | TextContent
+  | ImageContent
+  | EmbeddedResource
+  | AudioContent
+  | ResourceLink;
+export type { TextContent, ImageContent, EmbeddedResource, AudioContent, ResourceLink };
 export type MCPToolCallResponse =
   | undefined
   | {
@@ -154,31 +151,7 @@ export type FormattedToolResponse = FormattedContentResult;
  * - `'config'` — admin-defined via Config override, full trust, lazy init
  * - `'user'`   — user-provided via UI, sandboxed (restricted placeholder resolution)
  */
-export type MCPServerSource = 'yaml' | 'config' | 'user' | 'plugin';
-
-export type ParsedServerConfig = MCPOptions & {
-  url?: string;
-  requiresOAuth?: boolean;
-  oauthMetadata?: Record<string, unknown> | null;
-  capabilities?: string;
-  tools?: string;
-  toolFunctions?: LCAvailableTools;
-  initDuration?: number;
-  updatedAt?: number;
-  dbId?: string;
-  /** Origin of this server definition — determines trust level and placeholder resolution */
-  source?: MCPServerSource;
-  /** True if access is only via agent (not directly shared with user) */
-  consumeOnly?: boolean;
-  /** True when inspection failed at startup; the server is known but not fully initialized */
-  inspectionFailed?: boolean;
-  /**
-   * User-id of the creating user (DB-sourced configs only). Used at runtime to gate
-   * OBO token exchanges by re-checking the author's CONFIGURE_OBO permission, so a
-   * stored config remains safe if the author's role is downgraded.
-   */
-  author?: string;
-};
+export type { MCPServerSource, ParsedServerConfig } from '~/mcp/provenance';
 
 export type AddServerResult = {
   serverName: string;
@@ -188,6 +161,8 @@ export type AddServerResult = {
 export interface BasicConnectionOptions {
   serverName: string;
   serverConfig: MCPOptions;
+  /** Internal pre-Graph declarative config retained for provenance fingerprints. */
+  declarativeServerConfig?: MCPOptions;
   useSSRFProtection?: boolean;
   allowedDomains?: string[] | null;
   /** Admin exemption list of host:port pairs that bypass the SSRF private-IP block */
@@ -204,10 +179,24 @@ export interface BasicConnectionOptions {
 export interface UserConnectionContext {
   user?: IUser;
   customUserVars?: Record<string, string>;
+  /** Exact post-placeholder config issued by the host authority resolver. */
+  effectiveServerConfig?: ParsedServerConfig;
+  /** Exact SSRF policy issued with the resolved server config. */
+  securityPolicy?: {
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+    useSSRFProtection: boolean;
+  };
   requestBody?: RequestBody;
   requestScopedConnections?: RequestScopedMCPConnectionStore;
   graphTokenResolver?: GraphTokenResolver;
   connectionTimeout?: number;
+  /** Authority captured by the host before an interactive OAuth flow starts. */
+  oauthAuthorityScope?: MCPToolCatalogScope;
+  /** Authorization mode bound to the issued authority scope. */
+  authorityAuthorizationKind?: MCPConnectionProvenance['authorizationKind'];
+  /** Staged authority fences for refresh-token exchange, persistence, and acceptance. */
+  refreshAuthorityLifecycle?: MCPRefreshAuthorityLifecycle;
 }
 
 export interface RequestScopedMCPConnectionStore {
@@ -234,6 +223,12 @@ export interface OAuthConnectionOptions extends UserConnectionContext {
   oboTrustChecker?: OboTrustChecker;
 }
 
+export interface MCPRefreshAuthorityLifecycle {
+  exchange<Result>(action: () => Promise<Result>): Promise<Result>;
+  store<Result>(tokens: o.MCPOAuthTokens, action: () => Promise<Result>): Promise<Result>;
+  accept(tokens: o.MCPOAuthTokens): Promise<void>;
+}
+
 /** Options accepted by UserConnectionManager.getUserConnection. OAuth fields are optional. */
 export interface UserMCPConnectionOptions extends UserConnectionContext {
   serverName: string;
@@ -252,6 +247,9 @@ export interface UserMCPConnectionOptions extends UserConnectionContext {
 
 export interface ToolDiscoveryOptions {
   serverName: string;
+  serverConfig?: ParsedServerConfig;
+  effectiveServerConfig?: ParsedServerConfig;
+  securityPolicy?: UserConnectionContext['securityPolicy'];
   user?: IUser;
   flowManager?: FlowStateManager<o.MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
@@ -265,10 +263,14 @@ export interface ToolDiscoveryOptions {
   configServers?: Record<string, ParsedServerConfig>;
   oboTokenResolver?: OboTokenResolver;
   oboTrustChecker?: OboTrustChecker;
+  refreshAuthorityLifecycle?: MCPRefreshAuthorityLifecycle;
+  oauthAuthorityScope?: MCPToolCatalogScope;
+  authorityAuthorizationKind?: MCPConnectionProvenance['authorizationKind'];
 }
 
 export interface ToolDiscoveryResult {
   tools: Tool[] | null;
   oauthRequired: boolean;
   oauthUrl: string | null;
+  provenance: MCPConnectionProvenance | null;
 }

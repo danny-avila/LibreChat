@@ -10,6 +10,7 @@ import {
   TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
+import { AccessControlService } from '~/acl/accessControlService';
 
 type ServerConfigsDBType = import('../db/ServerConfigsDB').ServerConfigsDB;
 type MCPOAuthHandlerType = typeof import('~/mcp/oauth').MCPOAuthHandler;
@@ -24,6 +25,7 @@ let MCPOAuthHandler: MCPOAuthHandlerType;
 let createModels: CreateModelsType;
 let createMethods: CreateMethodsType;
 let RoleBits: RoleBitsType;
+let getMCPAuthorityConsistencyModule: typeof import('@librechat/data-schemas').getMCPAuthorityConsistencyModule;
 
 // Test data helpers
 const createSSEConfig = (
@@ -53,6 +55,7 @@ beforeAll(async () => {
   createModels = dataSchemas.createModels;
   createMethods = dataSchemas.createMethods;
   RoleBits = dataSchemas.RoleBits;
+  getMCPAuthorityConsistencyModule = dataSchemas.getMCPAuthorityConsistencyModule;
 
   // Mock logger after import (suppress logs during tests)
   jest.spyOn(dataSchemas.logger, 'error').mockReturnValue(dataSchemas.logger);
@@ -152,6 +155,76 @@ describe('ServerConfigsDB', () => {
       expect(aclEntry!.resourceId.toString()).toBe(result.config.dbId);
       // OWNER role has VIEW | EDIT | DELETE | SHARE = 15
       expect(aclEntry!.permBits).toBe(RoleBits.OWNER);
+    });
+
+    it('publishes a created server only after its owner ACL is granted', async () => {
+      const consistency = getMCPAuthorityConsistencyModule(mongoose);
+      await consistency.initializeMCPAuthorityConsistency();
+      const before = await consistency.getMCPAuthorityConsistencyStatus();
+      const aclService = (serverConfigsDB as unknown as { _aclService: AccessControlService })
+        ._aclService;
+      const grantPermission = aclService.grantPermission.bind(aclService);
+      let releaseGrant!: () => void;
+      let grantStarted!: () => void;
+      const started = new Promise<void>((resolve) => {
+        grantStarted = resolve;
+      });
+      const blocked = new Promise<void>((resolve) => {
+        releaseGrant = resolve;
+      });
+      const grantSpy = jest
+        .spyOn(aclService, 'grantPermission')
+        .mockImplementation(async (args) => {
+          grantStarted();
+          await blocked;
+          return await grantPermission(args);
+        });
+
+      const add = serverConfigsDB.add('temp-name', createSSEConfig('Atomic Owner Server'), userId);
+      await started;
+
+      await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+        dirty: true,
+        generation: before.generation,
+      });
+      await expect(mongoose.models.MCPServer.findOne({ author: userId })).resolves.toBeTruthy();
+      await expect(
+        mongoose.models.AclEntry.findOne({ resourceType: ResourceType.MCPSERVER }),
+      ).resolves.toBeNull();
+
+      releaseGrant();
+      await expect(add).resolves.toMatchObject({ serverName: 'atomic-owner-server' });
+      await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+        dirty: false,
+        generation: before.generation + 1,
+      });
+      grantSpy.mockRestore();
+    });
+
+    it('leaves authority unavailable when a created server owner ACL fails', async () => {
+      const consistency = getMCPAuthorityConsistencyModule(mongoose);
+      await consistency.initializeMCPAuthorityConsistency();
+      const aclService = (serverConfigsDB as unknown as { _aclService: AccessControlService })
+        ._aclService;
+      const grantSpy = jest
+        .spyOn(aclService, 'grantPermission')
+        .mockRejectedValue(new Error('owner role unavailable'));
+
+      await expect(
+        serverConfigsDB.add('temp-name', createSSEConfig('Unpublished Server'), userId),
+      ).rejects.toThrow('owner role unavailable');
+      const status = await consistency.getMCPAuthorityConsistencyStatus();
+      expect(status).toMatchObject({ dirty: true });
+      expect(status.ownerId).toBeDefined();
+      if (!status.ownerId) {
+        throw new Error('Expected failed server publication to retain its authority owner');
+      }
+      await mongoose.models.MCPServer.deleteMany({ author: userId });
+      await consistency.reconcileMCPAuthorityConsistency({
+        expectedGeneration: status.generation,
+        expectedOwnerId: status.ownerId,
+      });
+      grantSpy.mockRestore();
     });
 
     it('should include dbId and updatedAt in returned config', async () => {
@@ -1118,6 +1191,40 @@ describe('ServerConfigsDB', () => {
         expect(result).toBeDefined();
         expect(result?.consumeOnly).toBe(true);
       });
+
+      it('should return server with consumeOnly when accessible via public remote agent', async () => {
+        const created = await serverConfigsDB.add(
+          'temp-name',
+          createSSEConfig('Remote Agent MCP Server'),
+          userId,
+        );
+        const agent = await mongoose.models.Agent.create({
+          id: 'public-remote-agent-id',
+          name: 'Public Remote Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(userId),
+          mcpServerNames: [created.serverName],
+        });
+        await mongoose.models.AclEntry.create({
+          principalType: PrincipalType.PUBLIC,
+          resourceType: ResourceType.REMOTE_AGENT,
+          resourceId: agent._id,
+          permBits: PermissionBits.VIEW,
+          grantedBy: new mongoose.Types.ObjectId(userId),
+        });
+
+        await expect(serverConfigsDB.get(created.serverName)).resolves.toMatchObject({
+          title: 'Remote Agent MCP Server',
+          consumeOnly: true,
+        });
+        await expect(serverConfigsDB.getAccessibleServerNamesFresh()).resolves.toContain(
+          created.serverName,
+        );
+        await expect(serverConfigsDB.getAll()).resolves.toMatchObject({
+          [created.serverName]: { consumeOnly: true },
+        });
+      });
     });
 
     describe('user direct access', () => {
@@ -1201,6 +1308,46 @@ describe('ServerConfigsDB', () => {
         expect(result).toBeDefined();
         expect(result?.consumeOnly).toBe(true);
         expect(result?.title).toBe('Agent Accessible Server');
+      });
+
+      it('should return server when user has access via a remote agent', async () => {
+        const created = await serverConfigsDB.add(
+          'temp-name',
+          createSSEConfig('Remote Agent Accessible Server'),
+          userId,
+        );
+        const agent = await mongoose.models.Agent.create({
+          id: 'remote-agent-for-user2',
+          name: 'Remote Agent for User 2',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(userId),
+          mcpServerNames: [created.serverName],
+        });
+        const remoteAgentRole = await mongoose.models.AccessRole.findOne({
+          accessRoleId: AccessRoleIds.REMOTE_AGENT_VIEWER,
+        });
+        await mongoose.models.AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: new mongoose.Types.ObjectId(userId2),
+          resourceType: ResourceType.REMOTE_AGENT,
+          resourceId: agent._id,
+          permBits: PermissionBits.VIEW,
+          roleId: remoteAgentRole!._id,
+          grantedBy: new mongoose.Types.ObjectId(userId),
+        });
+
+        await expect(serverConfigsDB.getFresh(created.serverName, userId2)).resolves.toMatchObject({
+          title: 'Remote Agent Accessible Server',
+          consumeOnly: true,
+        });
+        await expect(serverConfigsDB.getAccessibleServerNamesFresh(userId2)).resolves.toContain(
+          created.serverName,
+        );
+        await expect(serverConfigsDB.getAll(userId2)).resolves.toMatchObject({
+          [created.serverName]: { consumeOnly: true },
+        });
       });
 
       it('should prefer direct access over agent access (no consumeOnly)', async () => {
@@ -1600,6 +1747,26 @@ describe('ServerConfigsDB', () => {
       const result = await serverConfigsDB.get(created.serverName, userId2);
       expect(result).toBeDefined();
       expect(result?.consumeOnly).toBe(true);
+    });
+  });
+
+  describe('getAccessibleServerNamesFresh()', () => {
+    it('returns every directly accessible server without applying repository pagination', async () => {
+      const serverNames = await Promise.all(
+        Array.from({ length: 21 }, async (_value, index) => {
+          const created = await serverConfigsDB.add(
+            `temp-${index}`,
+            createSSEConfig(`Fresh Direct Server ${index}`),
+            userId,
+          );
+          return created.serverName;
+        }),
+      );
+
+      const result = await serverConfigsDB.getAccessibleServerNamesFresh(userId);
+
+      expect(result).toHaveLength(21);
+      expect(new Set(result)).toEqual(new Set(serverNames));
     });
   });
 

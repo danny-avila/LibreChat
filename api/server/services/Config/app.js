@@ -20,34 +20,29 @@ const loadBaseConfig = async () => {
   return AppService({ config, paths, systemTools });
 };
 
-const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfigService({
-  loadBaseConfig,
-  setCachedTools,
-  getCache: getLogStores,
-  cacheKeys: CacheKeys,
-  getApplicableConfigs: db.getApplicableConfigs,
-  getUserPrincipals: db.getUserPrincipals,
-});
+const { getAppConfig, getMCPAppConfigSnapshot, clearAppConfigCache, clearOverrideCache } =
+  createAppConfigService({
+    loadBaseConfig,
+    setCachedTools,
+    getCache: getLogStores,
+    cacheKeys: CacheKeys,
+    getApplicableConfigs: (principals, options) =>
+      db.getApplicableConfigs(principals, undefined, options),
+    getUserPrincipals: db.getUserPrincipals,
+  });
 
 /**
  * Invalidate all config-related caches after an admin config mutation.
- * Clears the base config, per-principal override caches, tool caches,
- * and the MCP config-source server cache.
+ * Clears mutable override/tool caches while preserving the boot YAML snapshot.
  * @param {string} [tenantId] - Optional tenant ID to scope override cache clearing.
  */
 async function invalidateConfigCaches(tenantId) {
   const results = await Promise.allSettled([
-    clearAppConfigCache(),
     clearOverrideCache(tenantId),
     invalidateCachedTools({ invalidateGlobal: true }),
     clearMcpConfigCache(),
   ]);
-  const labels = [
-    'clearAppConfigCache',
-    'clearOverrideCache',
-    'invalidateCachedTools',
-    'clearMcpConfigCache',
-  ];
+  const labels = ['clearOverrideCache', 'invalidateCachedTools', 'clearMcpConfigCache'];
   for (let i = 0; i < results.length; i++) {
     if (results[i].status === 'rejected') {
       logger.error(`[invalidateConfigCaches] ${labels[i]} failed:`, results[i].reason);
@@ -57,6 +52,7 @@ async function invalidateConfigCaches(tenantId) {
 
 module.exports = {
   getAppConfig,
+  getMCPAppConfigSnapshot,
   clearAppConfigCache,
   invalidateConfigCaches,
 };

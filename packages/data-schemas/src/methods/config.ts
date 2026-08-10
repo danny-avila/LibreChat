@@ -3,6 +3,10 @@ import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import type { FilterQuery, Model, ClientSession } from 'mongoose';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { IConfig } from '~/types';
+import {
+  getMCPAuthorityConsistencyModule,
+  runMCPAuthorityMutation,
+} from './mcpAuthority/consistency';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
 import { escapeRegExp } from '~/utils/string';
 
@@ -29,6 +33,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   getApplicableConfigs: (
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     session?: ClientSession,
+    options?: { paths?: string[]; includeInactive?: boolean },
   ) => Promise<IConfig[]>;
   upsertConfig: (
     principalType: PrincipalType,
@@ -75,6 +80,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
 } {
+  const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
   async function findConfigByPrincipal(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -112,6 +118,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
   async function getApplicableConfigs(
     principals?: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     session?: ClientSession,
+    options?: { paths?: string[]; includeInactive?: boolean },
   ): Promise<IConfig[]> {
     const Config = mongoose.models.Config as Model<IConfig>;
 
@@ -133,13 +140,28 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
       }
     }
 
-    return await Config.find({
+    const query = Config.find({
       $or: principalsQuery,
-      isActive: true,
+      ...(options?.includeInactive ? {} : { isActive: true }),
     })
       .sort({ priority: 1 })
-      .session(session ?? null)
-      .lean<IConfig[]>();
+      .session(session ?? null);
+    if (options?.paths?.length) {
+      query.select([
+        '_id',
+        'principalType',
+        'principalId',
+        'principalModel',
+        'priority',
+        'isActive',
+        'configVersion',
+        'tombstones',
+        'tenantId',
+        'updatedAt',
+        ...options.paths.map((path) => `overrides.${path}`),
+      ]);
+    }
+    return await query.lean<IConfig[]>();
   }
 
   async function upsertConfig(
@@ -344,16 +366,44 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     );
   }
 
+  function assertNoOpenTransaction(session: ClientSession | undefined): void {
+    if (session?.inTransaction()) {
+      throw new Error('Config authority mutations cannot join a caller-owned transaction');
+    }
+  }
+
   return {
     listAllConfigs,
     findConfigByPrincipal,
     getApplicableConfigs,
-    upsertConfig,
-    patchConfigFields,
-    tombstoneConfigField,
-    unsetConfigField,
-    deleteConfig,
-    toggleConfigActive,
+    upsertConfig: async (...args) => {
+      assertNoOpenTransaction(args[5]);
+      return await runMCPAuthorityMutation(authorityMutationGate, () => upsertConfig(...args));
+    },
+    patchConfigFields: async (...args) => {
+      assertNoOpenTransaction(args[5]);
+      return await runMCPAuthorityMutation(authorityMutationGate, () => patchConfigFields(...args));
+    },
+    tombstoneConfigField: async (...args) => {
+      assertNoOpenTransaction(args[5]);
+      return await runMCPAuthorityMutation(authorityMutationGate, () =>
+        tombstoneConfigField(...args),
+      );
+    },
+    unsetConfigField: async (...args) => {
+      assertNoOpenTransaction(args[3]);
+      return await runMCPAuthorityMutation(authorityMutationGate, () => unsetConfigField(...args));
+    },
+    deleteConfig: async (...args) => {
+      assertNoOpenTransaction(args[2]);
+      return await runMCPAuthorityMutation(authorityMutationGate, () => deleteConfig(...args));
+    },
+    toggleConfigActive: async (...args) => {
+      assertNoOpenTransaction(args[3]);
+      return await runMCPAuthorityMutation(authorityMutationGate, () =>
+        toggleConfigActive(...args),
+      );
+    },
   };
 }
 

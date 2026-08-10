@@ -17,6 +17,19 @@ jest.mock('@librechat/data-schemas', () => ({
     info: jest.fn(),
     warn: jest.fn(),
   },
+  tenantStorage: {
+    run: jest.fn((_store, action) => action()),
+  },
+  assertMCPAuthorityReadiness: jest.fn(),
+}));
+
+jest.mock('~/models', () => ({
+  initializeMCPAuthorityConsistency: jest.fn(),
+}));
+
+jest.mock('./MCPAuthority', () => ({
+  initializeMCPAuthority: jest.fn(),
+  setMCPAvailability: jest.fn((availability) => availability),
 }));
 
 const mockGetDeploymentPluginMcpServers = jest.fn();
@@ -87,7 +100,11 @@ jest.mock('~/config', () => ({
 const { logger } = require('@librechat/data-schemas');
 const initializeMCPs = require('./initializeMCPs');
 
-const pluginServer = { type: 'streamable-http', url: 'https://plugin.example.com/mcp' };
+const pluginServer = {
+  type: 'streamable-http',
+  url: 'https://plugin.example.com/mcp',
+  source: 'plugin',
+};
 
 describe('initializeMCPs plugin server merge', () => {
   beforeEach(() => {
@@ -113,6 +130,32 @@ describe('initializeMCPs plugin server merge', () => {
     await initializeMCPs();
 
     expect(Object.keys(managerConfig()).sort()).toEqual(['pluginServer', 'yamlServer']);
+  });
+
+  it('binds plugin servers into the immutable authority boot config', async () => {
+    const rawYamlServer = { type: 'stdio', command: 'operator-owned' };
+    mockGetAppConfig.mockResolvedValue({
+      config: {
+        version: '1.3.13',
+        mcpServers: { yamlServer: rawYamlServer },
+        mcpSettings: { allowedDomains: ['plugin.example.com'] },
+      },
+      mcpConfig: { yamlServer: rawYamlServer },
+    });
+    mockGetDeploymentPluginMcpServers.mockReturnValue({ pluginServer });
+
+    await initializeMCPs();
+
+    const { initializeMCPAuthority } = require('./MCPAuthority');
+    expect(initializeMCPAuthority).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: {
+          version: '1.3.13',
+          mcpServers: { yamlServer: rawYamlServer, pluginServer },
+          mcpSettings: { allowedDomains: ['plugin.example.com'] },
+        },
+      }),
+    );
   });
 
   it('leaves the configured servers untouched when no plugins contribute', async () => {

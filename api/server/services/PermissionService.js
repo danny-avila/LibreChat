@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const { isEnabled } = require('@librechat/api');
 const {
   getTransactionSupport,
+  getMCPAuthorityConsistencyModule,
   tenantStorage,
   getTenantId,
   logger,
@@ -533,6 +534,9 @@ const performEntraGroupMembershipSync = async (user, accessToken, session = null
     if (!entraIdPrincipalFeatureEnabled(user) || !accessToken || !user.idOnTheSource) {
       return;
     }
+    if (session?.inTransaction()) {
+      throw new Error('MCP authority group sync cannot join a caller-owned transaction');
+    }
 
     // Step 1: Get all group IDs user should be member of
     const memberGroupIds = await getUserEntraGroups(accessToken, user.openidId);
@@ -562,26 +566,12 @@ const performEntraGroupMembershipSync = async (user, accessToken, session = null
       `[PermissionService.syncUserEntraGroupMemberships] Syncing ${allGroupIds.length} groups for user ${user._id}`,
     );
 
-    // Step 2: Try to add user to existing groups (fast operation)
-    const addResult = await db.bulkUpdateGroups(
-      {
-        idOnTheSource: { $in: allGroupIds },
-        source: 'entra',
-        memberIds: { $ne: user.idOnTheSource },
-      },
-      { $addToSet: { memberIds: user.idOnTheSource } },
-      sessionOptions,
-    );
-
-    logger.debug(
-      `[PermissionService.syncUserEntraGroupMemberships] Added user to ${addResult.modifiedCount || 0} existing groups`,
-    );
-
-    // Step 3: Find which groups don't exist in DB using db layer
+    // Step 2: Find which groups don't exist in DB using db layer
     const existingGroups = await db.findGroupsByExternalIds(allGroupIds, 'entra', session);
     const existingGroupIds = new Set(existingGroups.map((g) => g.idOnTheSource));
 
     const missingGroupIds = allGroupIds.filter((id) => !existingGroupIds.has(id));
+    let groupDetails = [];
 
     if (missingGroupIds.length > 0) {
       logger.info(
@@ -589,49 +579,8 @@ const performEntraGroupMembershipSync = async (user, accessToken, session = null
       );
 
       // Step 4: Fetch details only for missing groups (optimized batch request)
-      const groupDetails = await getEntraGroupDetailsBatch(
-        accessToken,
-        user.openidId,
-        missingGroupIds,
-      );
-
-      if (groupDetails.length > 0) {
-        logger.info(
-          `[PermissionService.syncUserEntraGroupMemberships] Creating ${groupDetails.length} new groups`,
-        );
-
-        // Step 5: Upsert missing groups (race-safe by design)
-        // Use upsertGroupByExternalId for each group to handle concurrent creates gracefully
-        const upsertPromises = groupDetails.map((group) =>
-          db.upsertGroupByExternalId(
-            group.id,
-            'entra',
-            {
-              name: group.name,
-              email: group.email,
-              description: group.description,
-            },
-            session,
-          ),
-        );
-
-        await Promise.all(upsertPromises);
-
-        // Step 6: Add user to all newly created/upserted groups
-        await db.bulkUpdateGroups(
-          {
-            idOnTheSource: { $in: missingGroupIds },
-            source: 'entra',
-            memberIds: { $ne: user.idOnTheSource },
-          },
-          { $addToSet: { memberIds: user.idOnTheSource } },
-          sessionOptions,
-        );
-
-        logger.info(
-          `[PermissionService.syncUserEntraGroupMemberships] Successfully created/updated ${groupDetails.length} groups`,
-        );
-      } else {
+      groupDetails = await getEntraGroupDetailsBatch(accessToken, user.openidId, missingGroupIds);
+      if (groupDetails.length === 0) {
         logger.warn(
           `[PermissionService.syncUserEntraGroupMemberships] Could not fetch details for ${missingGroupIds.length} missing groups`,
         );
@@ -642,19 +591,65 @@ const performEntraGroupMembershipSync = async (user, accessToken, session = null
       );
     }
 
-    // Step 7: Remove user from Entra groups they're no longer member of
-    const removeResult = await db.bulkUpdateGroups(
-      {
-        source: 'entra',
-        memberIds: user.idOnTheSource,
-        idOnTheSource: { $nin: allGroupIds },
-      },
-      { $pullAll: { memberIds: [user.idOnTheSource] } },
-      sessionOptions,
-    );
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const { result } = await consistency.mutateMCPAuthority(async () => {
+      const currentUser = await db.findUser({ _id: user._id }, '_id idOnTheSource');
+      if (!currentUser?.idOnTheSource) {
+        throw new Error('Entra user identity is no longer available');
+      }
+      const currentSourceId = currentUser.idOnTheSource;
+      if (groupDetails.length > 0) {
+        logger.info(
+          `[PermissionService.syncUserEntraGroupMemberships] Creating ${groupDetails.length} new groups`,
+        );
+        await Promise.all(
+          groupDetails.map((group) =>
+            db.upsertGroupByExternalId(
+              group.id,
+              'entra',
+              {
+                name: group.name,
+                email: group.email,
+                description: group.description,
+              },
+              session,
+            ),
+          ),
+        );
+      }
+
+      const addResult = await db.bulkUpdateGroups(
+        {
+          idOnTheSource: { $in: allGroupIds },
+          source: 'entra',
+          memberIds: { $ne: currentSourceId },
+        },
+        { $addToSet: { memberIds: currentSourceId } },
+        sessionOptions,
+      );
+      const removeResult = await db.bulkUpdateGroups(
+        {
+          source: 'entra',
+          memberIds: currentSourceId,
+          idOnTheSource: { $nin: allGroupIds },
+        },
+        { $pullAll: { memberIds: [currentSourceId] } },
+        sessionOptions,
+      );
+      return { addResult, removeResult };
+    });
 
     logger.debug(
-      `[PermissionService.syncUserEntraGroupMemberships] Removed user from ${removeResult.modifiedCount || 0} groups`,
+      `[PermissionService.syncUserEntraGroupMemberships] Added user to ${result.addResult.modifiedCount || 0} groups`,
+    );
+    if (groupDetails.length > 0) {
+      logger.info(
+        `[PermissionService.syncUserEntraGroupMemberships] Successfully created/updated ${groupDetails.length} groups`,
+      );
+    }
+
+    logger.debug(
+      `[PermissionService.syncUserEntraGroupMemberships] Removed user from ${result.removeResult.modifiedCount || 0} groups`,
     );
 
     logger.info(
@@ -717,31 +712,44 @@ const hasPublicPermission = async ({ resourceType, resourceId, requiredPermissio
  * @param {mongoose.ClientSession} [params.session] - Optional MongoDB session for transactions
  * @returns {Promise<Object>} Results object with granted, updated, revoked arrays and error details
  */
-const bulkUpdateResourcePermissions = async ({
+const validateBulkUpdateResourcePermissionsInput = ({
+  updatedPrincipals,
+  revokedPrincipals,
+  resourceId,
+}) => {
+  if (updatedPrincipals !== undefined && !Array.isArray(updatedPrincipals)) {
+    throw new Error('updatedPrincipals must be an array');
+  }
+  if (revokedPrincipals !== undefined && !Array.isArray(revokedPrincipals)) {
+    throw new Error('revokedPrincipals must be an array');
+  }
+  if (!resourceId || !mongoose.Types.ObjectId.isValid(resourceId)) {
+    throw new Error(`Invalid resource ID: ${resourceId}`);
+  }
+};
+
+const bulkUpdateResourcePermissionsInternal = async ({
   resourceType,
   resourceId,
   updatedPrincipals = [],
   revokedPrincipals = [],
   grantedBy,
   session,
+  mcpAuthorityMutation = false,
 }) => {
-  const supportsTransactions = await getTransactionSupport(mongoose, transactionSupportCache);
+  const supportsTransactions = mcpAuthorityMutation
+    ? false
+    : await getTransactionSupport(mongoose, transactionSupportCache);
   transactionSupportCache = supportsTransactions;
   let localSession = session;
   let shouldEndSession = false;
 
   try {
-    if (!Array.isArray(updatedPrincipals)) {
-      throw new Error('updatedPrincipals must be an array');
-    }
-
-    if (!Array.isArray(revokedPrincipals)) {
-      throw new Error('revokedPrincipals must be an array');
-    }
-
-    if (!resourceId || !mongoose.Types.ObjectId.isValid(resourceId)) {
-      throw new Error(`Invalid resource ID: ${resourceId}`);
-    }
+    validateBulkUpdateResourcePermissionsInput({
+      updatedPrincipals,
+      revokedPrincipals,
+      resourceId,
+    });
 
     if (!localSession && supportsTransactions) {
       localSession = await mongoose.startSession();
@@ -948,6 +956,30 @@ const bulkUpdateResourcePermissions = async ({
       localSession.endSession();
     }
   }
+};
+
+const bulkUpdateResourcePermissions = async (params) => {
+  const affectsMCPAuthority =
+    params.resourceType === ResourceType.MCPSERVER ||
+    params.resourceType === ResourceType.AGENT ||
+    params.resourceType === ResourceType.REMOTE_AGENT;
+  if (!affectsMCPAuthority) {
+    return await bulkUpdateResourcePermissionsInternal(params);
+  }
+  try {
+    validateBulkUpdateResourcePermissionsInput(params);
+  } catch (error) {
+    logger.error(`[PermissionService.bulkUpdateResourcePermissions] Error: ${error.message}`);
+    throw error;
+  }
+  if (params.session?.inTransaction()) {
+    throw new Error('MCP authority permission changes cannot join a caller-owned transaction');
+  }
+  return (
+    await db.mutateMCPAuthority(async () =>
+      bulkUpdateResourcePermissionsInternal({ ...params, mcpAuthorityMutation: true }),
+    )
+  ).result;
 };
 
 /**

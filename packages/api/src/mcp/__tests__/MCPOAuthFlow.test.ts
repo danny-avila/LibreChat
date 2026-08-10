@@ -10,7 +10,12 @@ import { createHash } from 'crypto';
 import { TokenExchangeMethodEnum } from 'librechat-data-provider';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
-import { createOAuthMCPServer, MockKeyv, InMemoryTokenStore } from './helpers/oauthTestServer';
+import {
+  MockKeyv,
+  InMemoryTokenStore,
+  createOAuthMCPServer,
+  passthroughRefreshAuthorityLifecycle,
+} from './helpers/oauthTestServer';
 import { MCPTokenStorage, MCPOAuthHandler } from '~/mcp/oauth';
 import { FlowStateManager } from '~/flow/manager';
 
@@ -332,6 +337,7 @@ describe('MCP OAuth Flow — Real HTTP Server', () => {
           createToken: tokenStore.createToken,
           updateToken: tokenStore.updateToken,
           refreshTokens: refreshCallback,
+          refreshAuthorityLifecycle: passthroughRefreshAuthorityLifecycle,
         });
 
         expect(refreshed).not.toBeNull();

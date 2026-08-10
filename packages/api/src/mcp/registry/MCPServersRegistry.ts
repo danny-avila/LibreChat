@@ -8,6 +8,10 @@ import {
   APP_CACHE_NAMESPACE,
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
+import {
+  serializeMCPToolCatalogConfigContext,
+  withMCPToolCatalogConfigContext,
+} from '~/mcp/catalog';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
@@ -73,6 +77,16 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return true;
 }
 
+function storedServerSource(
+  config: t.MCPOptions,
+  storageLocation: 'CACHE' | 'DB',
+): t.MCPServerSource {
+  if (storageLocation === 'DB') {
+    return 'user';
+  }
+  return 'source' in config && config.source === 'plugin' ? 'plugin' : 'yaml';
+}
+
 const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
   const raw = process.env.MCP_INIT_TIMEOUT_MS;
   if (raw == null) {
@@ -86,6 +100,8 @@ const CONFIG_SERVER_INIT_TIMEOUT_MS = (() => {
 export interface MCPAllowlistContext {
   userId?: string;
   role?: string;
+  tenantId?: string | null;
+  refresh?: boolean;
 }
 
 /**
@@ -256,6 +272,20 @@ export class MCPServersRegistry {
     };
   }
 
+  /** Resolves the current catalog policy without falling back across an unavailable scope. */
+  public async resolveCatalogSecurityPolicy(ctx?: MCPAllowlistContext): Promise<{
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+  }> {
+    if (!this.allowlistResolver) {
+      return {
+        allowedDomains: this.allowedDomains,
+        allowedAddresses: this.allowedAddresses,
+      };
+    }
+    return await this.allowlistResolver(ctx);
+  }
+
   /**
    * Returns the config for a single server, mirroring the precedence used by
    * getAllServerConfigs so list views and single-server lookups agree on
@@ -307,6 +337,28 @@ export class MCPServersRegistry {
     return baseConfig != null && deepEqual(baseConfig, effectiveConfig);
   }
 
+  /** Reads one DB-backed server and its ACL directly without registry read-through caches. */
+  public async getUserServerConfigFresh(
+    serverName: string,
+    userId?: string,
+    role?: string,
+  ): Promise<t.ParsedServerConfig | undefined> {
+    if (!this.dbConfigsRepo.getFresh) {
+      throw new Error('The MCP DB repository does not support authoritative targeted reads');
+    }
+    return await this.dbConfigsRepo.getFresh(serverName, userId, role);
+  }
+
+  public async getAccessibleUserServerNamesFresh(
+    userId?: string,
+    role?: string,
+  ): Promise<string[]> {
+    if (!this.dbConfigsRepo.getAccessibleServerNamesFresh) {
+      throw new Error('The MCP DB repository does not support authoritative name reads');
+    }
+    return await this.dbConfigsRepo.getAccessibleServerNamesFresh(userId, role);
+  }
+
   /**
    * Returns the full server config map after merging YAML cache, Config-tier overrides,
    * and User-DB entries.
@@ -324,10 +376,46 @@ export class MCPServersRegistry {
     configServers?: Record<string, t.ParsedServerConfig>,
     role?: string,
   ): Promise<Record<string, t.ParsedServerConfig>> {
-    if (configServers == null || !Object.keys(configServers).length) {
-      return this.getBaseServerConfigs(userId, role);
-    }
     const base = await this.getBaseServerConfigs(userId, role);
+    return this.mergeConfigServerOverrides(base, configServers);
+  }
+
+  /** Bypasses process-local read-through caches for post-discovery scope validation. */
+  public async getAllServerConfigsFresh(
+    userId?: string,
+    configServers?: Record<string, t.ParsedServerConfig>,
+    role?: string,
+  ): Promise<Record<string, t.ParsedServerConfig>> {
+    const [dbConfigs, yamlConfigs] = await Promise.all([
+      this.dbConfigsRepo.getAll(userId, role),
+      this.getAllRepositoryConfigsFresh(this.cacheConfigsRepo, 'YAML'),
+    ]);
+    this.warnOnOperatorManagedNameCollisions(yamlConfigs, dbConfigs, 'YAML');
+    const base = { ...dbConfigs, ...yamlConfigs };
+    return this.mergeConfigServerOverrides(base, configServers);
+  }
+
+  private async getAllRepositoryConfigsFresh(
+    repository: IServerConfigsRepositoryInterface,
+    source: string,
+  ): Promise<Record<string, t.ParsedServerConfig>> {
+    if (!repository.getAllFresh) {
+      throw new Error(`The MCP ${source} config repository does not support authoritative reads`);
+    }
+    try {
+      return await repository.getAllFresh();
+    } catch (error) {
+      throw error ?? new Error(`The MCP ${source} config repository fresh read failed`);
+    }
+  }
+
+  private mergeConfigServerOverrides(
+    base: Record<string, t.ParsedServerConfig>,
+    configServers?: Record<string, t.ParsedServerConfig>,
+  ): Record<string, t.ParsedServerConfig> {
+    if (configServers == null || !Object.keys(configServers).length) {
+      return base;
+    }
     const result: Record<string, t.ParsedServerConfig> = { ...base };
     for (const [name, override] of Object.entries(configServers)) {
       if (result[name]?.source === 'user') {
@@ -401,7 +489,14 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true, source: 'yaml' };
+    const source = storedServerSource(config, storageLocation);
+    const stubConfig: t.ParsedServerConfig = {
+      ...serializeMCPToolCatalogConfigContext(
+        withMCPToolCatalogConfigContext(config as t.ParsedServerConfig),
+      ),
+      inspectionFailed: true,
+      source,
+    };
     const result = await configRepo.add(serverName, stubConfig, userId);
     await this.invalidateServerReadCaches(result.serverName, userId);
     this.resetYamlServerNamesMemo();
@@ -416,7 +511,7 @@ export class MCPServersRegistry {
     reservedServerNames?: Iterable<string>,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const source = storedServerSource(config, storageLocation);
     const configForInspection = { ...config, source } as t.ParsedServerConfig;
     const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
@@ -436,7 +531,7 @@ export class MCPServersRegistry {
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
     const tagged = {
-      ...parsedConfig,
+      ...serializeMCPToolCatalogConfigContext(parsedConfig),
       source,
     };
     const result =
@@ -494,7 +589,10 @@ export class MCPServersRegistry {
       throw new MCPInspectionFailedError(serverName, error as Error);
     }
 
-    const updatedConfig = { ...parsedConfig, updatedAt: Date.now() };
+    const updatedConfig = {
+      ...serializeMCPToolCatalogConfigContext(parsedConfig),
+      updatedAt: Date.now(),
+    };
     await configRepo.update(serverName, updatedConfig, userId);
     await this.invalidateServerReadCaches(serverName, userId);
     return { serverName, config: updatedConfig };
@@ -512,7 +610,7 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const source = storedServerSource(config, storageLocation);
 
     // Merge existing admin API key if not provided in update (needed for inspection)
     let configForInspection = { ...config };
@@ -557,7 +655,7 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
-    await configRepo.update(serverName, parsedConfig, userId);
+    await configRepo.update(serverName, serializeMCPToolCatalogConfigContext(parsedConfig), userId);
     await this.invalidateServerReadCaches(serverName, userId);
     return parsedConfig;
   }
@@ -587,6 +685,11 @@ export class MCPServersRegistry {
    */
   public async ensureConfigServers(
     resolvedMcpConfig: Record<string, t.MCPOptions>,
+    options?: {
+      failClosed?: boolean;
+      initializeMissing?: boolean;
+      allowlists?: ResolvedMCPAllowlists;
+    },
   ): Promise<Record<string, t.ParsedServerConfig>> {
     if (!resolvedMcpConfig || Object.keys(resolvedMcpConfig).length === 0) {
       return {};
@@ -597,30 +700,76 @@ export class MCPServersRegistry {
     // Config-source servers are admin-defined with no acting user; resolve the effective
     // allowlists once at tenant scope and fold them into each config-cache key so a tenant
     // whose allowlist rejects a URL cannot poison the shared key for a tenant that allows it.
-    const { allowedDomains, allowedAddresses } = await this.resolveAllowlists();
-    const allowlists: ResolvedMCPAllowlists = { allowedDomains, allowedAddresses };
+    const allowlists = options?.allowlists ?? (await this.resolveAllowlists());
 
-    /** Single snapshot of the YAML cache for the whole pass: in the Redis aggregate-key backend, every per-name get() reads and deserializes the full map, so N concurrent per-server lookups would issue N full-map reads. The snapshot also keeps the unchanged-YAML comparison consistent against one view of YAML across all entries. */
-    const yamlSnapshot = await this.cacheConfigsRepo.getAll();
+    /** Single snapshots keep the pass internally consistent and avoid N aggregate-map reads. Strict validation bypasses both repositories' process-local snapshots. */
+    let yamlSnapshot: Record<string, t.ParsedServerConfig>;
+    let configCacheSnapshot: Record<string, t.ParsedServerConfig> | undefined;
+    if (options?.failClosed) {
+      [yamlSnapshot, configCacheSnapshot] = await Promise.all([
+        this.getAllRepositoryConfigsFresh(this.cacheConfigsRepo, 'YAML'),
+        this.getAllRepositoryConfigsFresh(this.configCacheRepo, 'Config-tier'),
+      ]);
+    } else {
+      yamlSnapshot = await this.cacheConfigsRepo.getAll();
+    }
 
     const settled = await Promise.allSettled(
       Object.entries(resolvedMcpConfig).map(async ([serverName, rawConfig]) => {
         if (this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
+          if (options?.initializeMissing === false) {
+            result[serverName] = yamlSnapshot[serverName];
+          }
           return;
         }
-        const parsed = await this.ensureSingleConfigServer(serverName, rawConfig, allowlists);
+        const parsed = await this.ensureSingleConfigServer(
+          serverName,
+          rawConfig,
+          allowlists,
+          configCacheSnapshot,
+          options?.initializeMissing !== false,
+        );
         if (parsed) {
           result[serverName] = parsed;
         }
       }),
     );
+    let firstError: unknown;
+    let hadRejection = false;
     for (const outcome of settled) {
       if (outcome.status === 'rejected') {
+        hadRejection = true;
         logger.error('[MCPServersRegistry][ensureConfigServers] Unexpected error:', outcome.reason);
+        firstError ??= outcome.reason;
       }
+    }
+    if (options?.failClosed && hadRejection) {
+      throw firstError ?? new Error('MCP config-server resolution failed without an error reason');
     }
 
     return result;
+  }
+
+  /** Activates one exact Config-tier input without rereading config or allowlist state. */
+  public async activateIssuedConfigServer(
+    serverName: string,
+    rawConfig: t.MCPOptions,
+    allowlists: ResolvedMCPAllowlists,
+  ): Promise<t.ParsedServerConfig | undefined> {
+    const cacheKey = this.configCacheKey(serverName, rawConfig, allowlists);
+    const pending = this.pendingConfigInits.get(cacheKey);
+    if (pending) {
+      return await pending;
+    }
+    const activation = this.lazyInitConfigServer(cacheKey, serverName, rawConfig, allowlists);
+    this.pendingConfigInits.set(cacheKey, activation);
+    try {
+      return await activation;
+    } finally {
+      if (this.pendingConfigInits.get(cacheKey) === activation) {
+        this.pendingConfigInits.delete(cacheKey);
+      }
+    }
   }
 
   /**
@@ -658,17 +807,30 @@ export class MCPServersRegistry {
     serverName: string,
     rawConfig: t.MCPOptions,
     allowlists: ResolvedMCPAllowlists,
+    cacheSnapshot?: Record<string, t.ParsedServerConfig>,
+    initializeMissing = true,
   ): Promise<t.ParsedServerConfig | undefined> {
     const cacheKey = this.configCacheKey(serverName, rawConfig, allowlists);
 
-    const cached = await this.configCacheRepo.get(cacheKey);
+    const cached = cacheSnapshot
+      ? cacheSnapshot[cacheKey]
+      : await this.configCacheRepo.get(cacheKey);
     if (cached) {
       const isStaleStub =
         cached.inspectionFailed && Date.now() - (cached.updatedAt ?? 0) > CONFIG_STUB_RETRY_MS;
-      if (!isStaleStub) {
+      if (!cached.inspectionFailed) {
         return cached;
       }
-      logger.info(`[MCP][config][${serverName}] Retrying stale failure stub`);
+      if (!isStaleStub && initializeMissing) {
+        return cached;
+      }
+      if (initializeMissing) {
+        logger.info(`[MCP][config][${serverName}] Retrying stale failure stub`);
+      }
+    }
+
+    if (!initializeMissing) {
+      return undefined;
     }
 
     const pending = this.pendingConfigInits.get(cacheKey);
@@ -717,7 +879,10 @@ export class MCPServersRegistry {
         `${prefix} Server initialization timed out`,
       );
 
-      const parsedConfig: t.ParsedServerConfig = { ...inspected, source: 'config' };
+      const parsedConfig: t.ParsedServerConfig = {
+        ...serializeMCPToolCatalogConfigContext(inspected),
+        source: 'config',
+      };
       await this.upsertConfigCache(cacheKey, parsedConfig);
 
       logger.info(
@@ -729,7 +894,9 @@ export class MCPServersRegistry {
       logger.error(`${prefix} Failed to initialize:`, error);
 
       const stubConfig: t.ParsedServerConfig = {
-        ...rawConfig,
+        ...serializeMCPToolCatalogConfigContext(
+          withMCPToolCatalogConfigContext(rawConfig as t.ParsedServerConfig),
+        ),
         inspectionFailed: true,
         source: 'config',
         updatedAt: Date.now(),

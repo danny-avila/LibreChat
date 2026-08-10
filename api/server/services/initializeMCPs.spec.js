@@ -11,6 +11,10 @@
  * users tried to create MCP servers via the UI.
  */
 
+const mockAssertMCPAuthorityReadiness = jest.fn();
+const mockInitializeMCPAuthorityConsistency = jest.fn();
+const mockSetMCPAvailability = jest.fn((availability) => availability);
+
 // Mock dependencies before imports
 jest.mock('mongoose', () => ({
   connection: { readyState: 1 },
@@ -23,6 +27,14 @@ jest.mock('@librechat/data-schemas', () => ({
     info: jest.fn(),
     warn: jest.fn(),
   },
+  tenantStorage: {
+    run: jest.fn((_store, action) => action()),
+  },
+  assertMCPAuthorityReadiness: (...args) => mockAssertMCPAuthorityReadiness(...args),
+}));
+
+jest.mock('~/models', () => ({
+  initializeMCPAuthorityConsistency: (...args) => mockInitializeMCPAuthorityConsistency(...args),
 }));
 
 // Mock config functions
@@ -45,6 +57,7 @@ jest.mock('./Config', () => ({
 // Mock MCP singletons
 const mockCreateMCPServersRegistry = jest.fn();
 const mockCreateMCPManager = jest.fn();
+const mockInitializeMCPAuthority = jest.fn();
 const mockMCPManagerInstance = {
   connectAppServers: jest.fn(),
   disconnectAppServers: jest.fn(),
@@ -58,6 +71,10 @@ jest.mock('~/config', () => ({
   get createMCPManager() {
     return mockCreateMCPManager;
   },
+}));
+jest.mock('./MCPAuthority', () => ({
+  initializeMCPAuthority: (...args) => mockInitializeMCPAuthority(...args),
+  setMCPAvailability: (...args) => mockSetMCPAvailability(...args),
 }));
 
 const mockSetMCPToolsChangedHandler = jest.fn();
@@ -113,6 +130,7 @@ const initializeMCPs = require('./initializeMCPs');
 describe('initializeMCPs', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED;
 
     // Default: successful initialization
     mockCreateMCPServersRegistry.mockReturnValue(undefined);
@@ -122,9 +140,113 @@ describe('initializeMCPs', () => {
     mockMCPManagerInstance.disconnectAppServers.mockResolvedValue(undefined);
     mockSyncStaticTools.mockResolvedValue(undefined);
     mockMergeAppTools.mockResolvedValue(undefined);
+    mockInitializeMCPAuthority.mockReturnValue(undefined);
+    mockAssertMCPAuthorityReadiness.mockResolvedValue({ scannedServers: 0, indexes: [] });
+    mockInitializeMCPAuthorityConsistency.mockResolvedValue({ generation: 0 });
+  });
+
+  describe('MCP authority readiness', () => {
+    it('keeps inert MCP infrastructure available when authority prerequisites are unavailable', async () => {
+      mockAssertMCPAuthorityReadiness.mockRejectedValue(new Error('missing authority index'));
+      mockGetAppConfig.mockResolvedValue({ mcpConfig: null });
+
+      await expect(initializeMCPs({ validateAuthorityReadiness: true })).resolves.toBeUndefined();
+
+      expect(mockAssertMCPAuthorityReadiness).toHaveBeenCalledWith(require('mongoose').connection, {
+        cosmosStrongConsistencyConfirmed: false,
+      });
+      expect(mockInitializeMCPAuthorityConsistency).not.toHaveBeenCalled();
+      expect(mockSetMCPAvailability).toHaveBeenCalledWith({
+        available: false,
+        reason: 'prerequisite_missing',
+        message: 'missing authority index',
+        retryable: false,
+      });
+      expect(mockInitializeMCPAuthority).not.toHaveBeenCalled();
+      expect(mockCreateMCPServersRegistry).toHaveBeenCalledWith(
+        expect.anything(),
+        undefined,
+        undefined,
+        expect.any(Function),
+      );
+      expect(mockCreateMCPManager).toHaveBeenCalledWith({});
+      expect(mockMergeAppTools).not.toHaveBeenCalled();
+    });
+
+    it('initializes the consistency fence only after schema readiness succeeds', async () => {
+      const appConfig = { config: { version: '1.3.0' }, mcpConfig: null };
+      mockGetAppConfig.mockResolvedValue(appConfig);
+
+      await initializeMCPs({ validateAuthorityReadiness: true });
+
+      expect(mockAssertMCPAuthorityReadiness.mock.invocationCallOrder[0]).toBeLessThan(
+        mockInitializeMCPAuthorityConsistency.mock.invocationCallOrder[0],
+      );
+      expect(mockInitializeMCPAuthorityConsistency.mock.invocationCallOrder[0]).toBeLessThan(
+        mockInitializeMCPAuthority.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('validates rollout prerequisites before initializing production fences', async () => {
+      const appConfig = { config: { version: '1.3.0' }, mcpConfig: null };
+      mockGetAppConfig.mockResolvedValue(appConfig);
+
+      await initializeMCPs({ validateAuthorityReadiness: true });
+
+      expect(mockAssertMCPAuthorityReadiness).toHaveBeenCalledWith(require('mongoose').connection, {
+        cosmosStrongConsistencyConfirmed: false,
+      });
+      expect(mockAssertMCPAuthorityReadiness.mock.invocationCallOrder[0]).toBeLessThan(
+        mockInitializeMCPAuthority.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('passes the explicit Cosmos Strong-consistency acknowledgement to readiness', async () => {
+      process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED = 'true';
+      mockGetAppConfig.mockResolvedValue({ config: { version: '1.3.0' }, mcpConfig: null });
+
+      try {
+        await initializeMCPs({ validateAuthorityReadiness: true });
+
+        expect(mockAssertMCPAuthorityReadiness).toHaveBeenCalledWith(
+          require('mongoose').connection,
+          { cosmosStrongConsistencyConfirmed: true },
+        );
+      } finally {
+        delete process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED;
+      }
+    });
+
+    it('records a stable unavailable state instead of stopping general startup', async () => {
+      mockAssertMCPAuthorityReadiness.mockRejectedValue(new Error('missing index'));
+
+      await expect(initializeMCPs({ validateAuthorityReadiness: true })).resolves.toBeUndefined();
+
+      expect(mockGetAppConfig).not.toHaveBeenCalled();
+      expect(mockInitializeMCPAuthority).not.toHaveBeenCalled();
+      expect(mockSetMCPAvailability).toHaveBeenCalledWith(
+        expect.objectContaining({
+          available: false,
+          reason: 'prerequisite_missing',
+          message: 'missing index',
+        }),
+      );
+    });
   });
 
   describe('MCPServersRegistry initialization', () => {
+    it('initializes the mandatory authority resolver from the base config', async () => {
+      const appConfig = {
+        config: { version: '1.3.0', mcpServers: {} },
+        mcpConfig: null,
+      };
+      mockGetAppConfig.mockResolvedValue(appConfig);
+
+      await initializeMCPs();
+
+      expect(mockInitializeMCPAuthority).toHaveBeenCalledWith(appConfig);
+    });
+
     it('should ALWAYS initialize MCPServersRegistry even without configured servers', async () => {
       mockGetAppConfig.mockResolvedValue({
         mcpConfig: null, // No configured servers
@@ -197,6 +319,18 @@ describe('initializeMCPs', () => {
         allowedDomains: ['merged.com'],
         allowedAddresses: ['10.0.0.0/8'],
       });
+    });
+
+    it('requests fail-closed app config resolution for fresh policy validation', async () => {
+      mockGetAppConfig.mockResolvedValue({ mcpConfig: null, mcpSettings: {} });
+      await initializeMCPs();
+      const resolver = mockCreateMCPServersRegistry.mock.calls[0][3];
+
+      await resolver({ userId: 'u1', role: 'ADMIN', refresh: true });
+
+      expect(mockGetAppConfig).toHaveBeenLastCalledWith(
+        expect.objectContaining({ refresh: true, failClosed: true }),
+      );
     });
 
     it('should throw and log error if MCPServersRegistry initialization fails', async () => {

@@ -9,6 +9,7 @@ import type {
 } from '@librechat/data-schemas';
 import type { OAuthTokens, OAuthClientInformation } from '@modelcontextprotocol/sdk/shared/auth.js';
 import type { MCPOAuthTokens, ExtendedOAuthTokens, OAuthStoredClientMetadata } from './types';
+import type { MCPRefreshAuthorityLifecycle } from '~/mcp/types';
 import { isInvalidClientMessage } from '~/mcp/utils';
 import { isSystemUserId } from '~/mcp/enum';
 
@@ -80,6 +81,7 @@ interface GetTokensParams {
   onRefreshSuccess?: (tokens: MCPOAuthTokens) => Promise<void>;
   /** Separates in-flight redemptions for the same named server under different OAuth bindings. */
   singleFlightScope?: string;
+  refreshAuthorityLifecycle?: MCPRefreshAuthorityLifecycle;
 }
 
 /**
@@ -749,6 +751,11 @@ export class MCPTokenStorage {
   ): Promise<MCPOAuthTokens | null> {
     const { userId, serverName, refreshTokens, createToken, signal, singleFlightScope } = params;
     const logPrefix = this.getLogPrefix(userId, serverName);
+    const refreshAuthorityLifecycle = params.refreshAuthorityLifecycle;
+
+    if (!refreshAuthorityLifecycle) {
+      throw new Error('MCP refresh authority lifecycle is required');
+    }
 
     const refreshKey = `${getTenantId() ?? ''}:${userId}:${serverName}:${singleFlightScope ?? ''}`;
     const inflight = this.inflightRefreshes.get(refreshKey);
@@ -779,6 +786,7 @@ export class MCPTokenStorage {
       ...params,
       refreshTokens,
       createToken,
+      refreshAuthorityLifecycle,
       signal: executionController.signal,
     }).finally(() => {
       clearTimeout(staleTimer);
@@ -867,11 +875,13 @@ export class MCPTokenStorage {
     refreshTokens,
     existingAccessToken,
     onRefreshSuccess,
+    refreshAuthorityLifecycle,
     signal,
   }: GetTokensParams & {
     existingAccessToken?: IToken | null;
     refreshTokens: NonNullable<GetTokensParams['refreshTokens']>;
     createToken: NonNullable<GetTokensParams['createToken']>;
+    refreshAuthorityLifecycle: NonNullable<GetTokensParams['refreshAuthorityLifecycle']>;
     /** Internal stale-abort signal owned by `forceRefreshTokens` — never a caller's. */
     signal: AbortSignal;
   }): Promise<MCPOAuthTokens | null> {
@@ -893,8 +903,8 @@ export class MCPTokenStorage {
     try {
       logger.info(`${logPrefix} Attempting to refresh token`);
 
-      let clientInfo;
-      let clientInfoData;
+      let clientInfo: OAuthClientInformation | undefined;
+      let clientInfoData: IToken | null = null;
       let storedClientMetadata: Partial<OAuthStoredClientMetadata> | undefined;
       let storedTokenEndpoint: string | undefined;
       let storedAuthMethods: string[] | undefined;
@@ -909,10 +919,10 @@ export class MCPTokenStorage {
         });
         if (clientInfoData) {
           const decryptedClientInfo = await decryptV2(clientInfoData.token);
-          clientInfo = JSON.parse(decryptedClientInfo);
+          clientInfo = JSON.parse(decryptedClientInfo) as OAuthClientInformation;
           logger.debug(`${logPrefix} Retrieved client info:`, {
-            client_id: clientInfo.client_id,
-            has_client_secret: !!clientInfo.client_secret,
+            client_id: clientInfo?.client_id,
+            has_client_secret: !!clientInfo?.client_secret,
           });
 
           if (clientInfoData.metadata) {
@@ -972,7 +982,8 @@ export class MCPTokenStorage {
         throw new Error('Token refresh aborted before reaching the token endpoint');
       }
 
-      const newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
+      const exchange = async () => await refreshTokens(decryptedRefreshToken, metadata, signal);
+      const newTokens = await refreshAuthorityLifecycle.exchange(exchange);
 
       logger.debug(`${logPrefix} Refresh completed`, {
         has_new_access_token: !!newTokens.access_token,
@@ -983,23 +994,41 @@ export class MCPTokenStorage {
 
       // Store the refreshed tokens (handles both create and update)
       // Pass existing token state to avoid duplicate DB calls
-      const storedTokens = await this.storeTokens({
-        userId,
-        serverName,
-        tokens: newTokens,
-        createToken,
-        updateToken,
-        deleteTokens,
-        findToken,
-        clientInfo,
-        existingTokens: {
-          accessToken: existingAccessToken ?? undefined,
-          refreshToken: refreshTokenData,
-          clientInfoToken: clientInfoData,
-        },
-        metadata: storedClientMetadata,
-        expectedCredentialSetId: refreshCredentialSetId,
-      });
+      const store = async () =>
+        await this.storeTokens({
+          userId,
+          serverName,
+          tokens: newTokens,
+          createToken,
+          updateToken,
+          deleteTokens,
+          findToken,
+          clientInfo,
+          existingTokens: {
+            accessToken: existingAccessToken ?? undefined,
+            refreshToken: refreshTokenData,
+            clientInfoToken: clientInfoData,
+          },
+          metadata: storedClientMetadata,
+          expectedCredentialSetId: refreshCredentialSetId,
+        });
+      const storedTokens = await refreshAuthorityLifecycle.store(newTokens, store);
+      try {
+        await refreshAuthorityLifecycle.accept(storedTokens);
+      } catch (authorityError) {
+        const storedCredentialSetId = storedTokens.credential_set_id;
+        if (deleteTokens && storedCredentialSetId) {
+          try {
+            await deleteTokens({ userId, metadataCredentialSetId: storedCredentialSetId });
+          } catch (cleanupError) {
+            logger.warn(`${logPrefix} Failed to remove rejected refreshed credentials`, {
+              error: cleanupError,
+              credentialSetId: storedCredentialSetId,
+            });
+          }
+        }
+        throw authorityError;
+      }
 
       if (onRefreshSuccess) {
         try {
@@ -1071,6 +1100,7 @@ export class MCPTokenStorage {
     deleteTokens,
     refreshTokens,
     singleFlightScope,
+    refreshAuthorityLifecycle,
   }: GetTokensParams): Promise<MCPOAuthTokens | null> {
     const logPrefix = this.getLogPrefix(userId, serverName);
 
@@ -1119,6 +1149,7 @@ export class MCPTokenStorage {
           deleteTokens,
           refreshTokens,
           singleFlightScope,
+          refreshAuthorityLifecycle,
           existingAccessToken: accessTokenData,
         });
       }

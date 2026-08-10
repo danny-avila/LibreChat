@@ -1,4 +1,5 @@
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js';
+import type { MCPToolCatalogScope } from '~/mcp/provenance';
 import type { FlowMetadata } from '~/flow/types';
 
 export interface OAuthMetadata {
@@ -117,6 +118,8 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   reusedClientCredentialSetId?: string;
   /** Tenant context captured at flow initiation for callback replay (SameSite cookies unavailable on cross-origin redirects) */
   tenantId?: string;
+  /** MCP authority that authorized creation of this OAuth attempt. */
+  authorityScope?: MCPToolCatalogScope;
 }
 
 export interface MCPOAuthTokens extends OAuthTokens {

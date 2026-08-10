@@ -1,12 +1,18 @@
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
+import type { MCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import type { IConfig } from '~/types';
+import {
+  createMCPAuthorityConsistencyModule,
+  type MCPAuthorityConsistencyFence,
+} from './mcpAuthority/consistency';
 import { createConfigMethods } from './config';
 import configSchema from '~/schema/config';
 
 let mongoServer: MongoMemoryServer;
 let methods: ReturnType<typeof createConfigMethods>;
+let consistency: MCPAuthorityConsistencyModule;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -15,6 +21,12 @@ beforeAll(async () => {
     mongoose.model<IConfig>('Config', configSchema);
   }
   await mongoose.models.Config.init();
+  consistency = createMCPAuthorityConsistencyModule({
+    collection:
+      mongoose.connection.collection<MCPAuthorityConsistencyFence>('mcpAuthorityConsistency'),
+    now: () => new Date('2026-08-07T12:00:00.000Z'),
+    createOwnerId: () => new Types.ObjectId().toHexString(),
+  });
   methods = createConfigMethods(mongoose);
 });
 
@@ -25,6 +37,17 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.models.Config.deleteMany({});
+  await mongoose.connection.collection('mcpAuthorityConsistency').deleteMany({});
+});
+
+test('publishes one authority generation for each Config mutation', async () => {
+  await consistency.initializeMCPAuthorityConsistency();
+
+  await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
+  await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();
+
+  await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false);
+  await expect(consistency.assertGeneration(2)).resolves.toBeUndefined();
 });
 
 describe('upsertConfig tombstone preservation', () => {
@@ -232,6 +255,44 @@ describe('getApplicableConfigs', () => {
     ]);
 
     expect(configs).toHaveLength(1);
+  });
+
+  it('returns active and inactive projected MCP source generations with timestamps', async () => {
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      '__base__',
+      PrincipalModel.ROLE,
+      {
+        mcpServers: { base: { type: 'sse', url: 'https://base.example/mcp' } },
+        interface: { modelSelect: true },
+      },
+      0,
+    );
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      {
+        mcpServers: { admin: { type: 'sse', url: 'https://admin.example/mcp' } },
+        interface: { modelSelect: false },
+      },
+      10,
+    );
+    await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false);
+
+    const configs = await methods.getApplicableConfigs(
+      [{ principalType: PrincipalType.ROLE, principalId: 'admin' }],
+      undefined,
+      { paths: ['mcpServers', 'mcpSettings'], includeInactive: true },
+    );
+
+    expect(configs).toHaveLength(2);
+    expect(configs.map((config) => config.isActive)).toEqual([true, false]);
+    expect(configs.every((config) => config._id && config.updatedAt instanceof Date)).toBe(true);
+    expect(configs[0].overrides?.mcpServers).toBeDefined();
+    expect(configs[0].overrides?.interface).toBeUndefined();
+    expect(configs[1].overrides?.mcpServers).toBeDefined();
+    expect(configs[1].overrides?.interface).toBeUndefined();
   });
 });
 

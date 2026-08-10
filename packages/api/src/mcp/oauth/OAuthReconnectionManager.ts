@@ -1,5 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type {
+  MCPConnectionProvenance,
+  MCPToolCatalogScope,
+  ParsedServerConfig,
+} from '~/mcp/provenance';
+import type { UserConnectionContext } from '~/mcp/types';
+import type { MCPConnection } from '~/mcp/connection';
 import type { MCPOAuthTokens } from './types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { OAuthReconnectionTracker } from './OAuthReconnectionTracker';
@@ -9,12 +16,45 @@ import { MCPManager } from '~/mcp/MCPManager';
 const DEFAULT_CONNECTION_TIMEOUT_MS = 10_000; // ms
 const RECONNECT_STAGGER_MS = 500; // ms between each server reconnection
 
+export interface OAuthReconnectAuthority {
+  user: IUser;
+  serverConfig: ParsedServerConfig;
+  effectiveServerConfig: ParsedServerConfig;
+  securityPolicy: NonNullable<UserConnectionContext['securityPolicy']>;
+  customUserVars?: Record<string, string>;
+  oauthAuthorityScope: MCPToolCatalogScope;
+  authorityAuthorizationKind: MCPConnectionProvenance['authorizationKind'];
+  refreshAuthorityLifecycle: NonNullable<UserConnectionContext['refreshAuthorityLifecycle']>;
+  bind<Result>(action: () => Promise<Result>): Promise<Result>;
+}
+
+export interface OAuthReconnectActor {
+  userId: string;
+  tenantId?: string;
+  user: IUser;
+}
+
+export type OAuthReconnectActorInput = string | OAuthReconnectActor;
+
+function normalizeReconnectActor(input: OAuthReconnectActorInput): OAuthReconnectActor {
+  if (typeof input !== 'string') {
+    return input;
+  }
+  return { userId: input, user: { id: input } as IUser };
+}
+
+export type ResolveOAuthReconnectAuthority = (
+  actor: OAuthReconnectActor,
+  serverName: string,
+) => Promise<OAuthReconnectAuthority | null>;
+
 export class OAuthReconnectionManager {
   private static instance: OAuthReconnectionManager | null = null;
 
   protected readonly flowManager: FlowStateManager<MCPOAuthTokens | null>;
   protected readonly tokenMethods: TokenMethods;
   private readonly mcpManager: MCPManager | null;
+  private readonly resolveAuthority?: ResolveOAuthReconnectAuthority;
 
   private readonly reconnectionsTracker: OAuthReconnectionTracker;
 
@@ -29,12 +69,18 @@ export class OAuthReconnectionManager {
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     tokenMethods: TokenMethods,
     reconnections?: OAuthReconnectionTracker,
+    resolveAuthority?: ResolveOAuthReconnectAuthority,
   ): Promise<OAuthReconnectionManager> {
     if (OAuthReconnectionManager.instance != null) {
       throw new Error('OAuthReconnectionManager already initialized');
     }
 
-    const manager = new OAuthReconnectionManager(flowManager, tokenMethods, reconnections);
+    const manager = new OAuthReconnectionManager(
+      flowManager,
+      tokenMethods,
+      reconnections,
+      resolveAuthority,
+    );
     OAuthReconnectionManager.instance = manager;
 
     return manager;
@@ -44,10 +90,12 @@ export class OAuthReconnectionManager {
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     tokenMethods: TokenMethods,
     reconnections?: OAuthReconnectionTracker,
+    resolveAuthority?: ResolveOAuthReconnectAuthority,
   ) {
     this.flowManager = flowManager;
     this.tokenMethods = tokenMethods;
     this.reconnectionsTracker = reconnections ?? new OAuthReconnectionTracker();
+    this.resolveAuthority = resolveAuthority;
 
     try {
       this.mcpManager = MCPManager.getInstance();
@@ -62,7 +110,9 @@ export class OAuthReconnectionManager {
     return this.reconnectionsTracker.isStillReconnecting(userId, serverName);
   }
 
-  public async reconnectServers(userId: string): Promise<void> {
+  public async reconnectServers(actorInput: OAuthReconnectActorInput): Promise<void> {
+    const actor = normalizeReconnectActor(actorInput);
+    const { userId } = actor;
     // Check if MCPManager is available
     if (this.mcpManager == null) {
       logger.warn(
@@ -89,9 +139,9 @@ export class OAuthReconnectionManager {
     for (let i = 0; i < serversToReconnect.length; i++) {
       const serverName = serversToReconnect[i];
       if (i === 0) {
-        this.safeTryReconnect(userId, serverName);
+        this.safeTryReconnect(actor, serverName);
       } else {
-        setTimeout(() => this.safeTryReconnect(userId, serverName), i * RECONNECT_STAGGER_MS);
+        setTimeout(() => this.safeTryReconnect(actor, serverName), i * RECONNECT_STAGGER_MS);
       }
     }
   }
@@ -104,8 +154,9 @@ export class OAuthReconnectionManager {
    * `RECONNECTION_TIMEOUT_MS` window if an error escapes
    * {@link tryReconnect}'s internal try/catch.
    */
-  private safeTryReconnect(userId: string, serverName: string): void {
-    this.tryReconnect(userId, serverName).catch((error) => {
+  private safeTryReconnect(actor: OAuthReconnectActor, serverName: string): void {
+    this.tryReconnect(actor, serverName).catch((error) => {
+      const { userId } = actor;
       logger.error(
         `[OAuthReconnectionManager][User: ${userId}][${serverName}] Unexpected reconnect error`,
         error,
@@ -117,21 +168,25 @@ export class OAuthReconnectionManager {
   private cleanupOnFailedReconnect(userId: string, serverName: string): void {
     this.reconnectionsTracker.setFailed(userId, serverName);
     this.reconnectionsTracker.removeActive(userId, serverName);
-    this.mcpManager?.disconnectUserConnection(userId, serverName);
   }
 
   /**
    * Attempts to reconnect a single OAuth MCP server.
    * @returns true if reconnection succeeded, false otherwise.
    */
-  public async reconnectServer(userId: string, serverName: string): Promise<boolean> {
+  public async reconnectServer(
+    actorInput: OAuthReconnectActorInput,
+    serverName: string,
+  ): Promise<boolean> {
     if (this.mcpManager == null) {
       return false;
     }
 
+    const actor = normalizeReconnectActor(actorInput);
+    const { userId } = actor;
     this.reconnectionsTracker.setActive(userId, serverName);
     try {
-      await this.tryReconnect(userId, serverName);
+      await this.tryReconnect(actor, serverName);
       return !this.reconnectionsTracker.isFailed(userId, serverName);
     } catch {
       return false;
@@ -143,43 +198,79 @@ export class OAuthReconnectionManager {
     this.reconnectionsTracker.removeActive(userId, serverName);
   }
 
-  private async tryReconnect(userId: string, serverName: string) {
+  private async tryReconnect(actor: OAuthReconnectActor, serverName: string) {
     if (this.mcpManager == null) {
       return;
     }
 
+    const { userId } = actor;
     const logPrefix = `[tryReconnectOAuthMCPServer][User: ${userId}][${serverName}]`;
 
     logger.info(`${logPrefix} Attempting reconnection`);
 
+    let connection: MCPConnection | undefined;
+    let connected = false;
     try {
-      const config = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
+      const authority = this.resolveAuthority
+        ? await this.resolveAuthority(actor, serverName)
+        : null;
+      if (this.resolveAuthority && !authority) {
+        throw new Error('Current MCP reconnect authority is unavailable');
+      }
+      const config =
+        authority?.serverConfig ??
+        (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
 
       // attempt to get connection (this will use existing tokens and refresh if needed)
-      const connection = await this.mcpManager.getUserConnection({
-        serverName,
-        user: { id: userId } as IUser,
-        flowManager: this.flowManager,
-        tokenMethods: this.tokenMethods,
-        // don't force new connection, let it reuse existing or create new as needed
-        forceNew: false,
-        // set a reasonable timeout for reconnection attempts
-        connectionTimeout: config?.initTimeout ?? DEFAULT_CONNECTION_TIMEOUT_MS,
-        // don't trigger OAuth flow during reconnection
-        returnOnOAuth: true,
-      });
+      const reconnect = async () =>
+        await this.mcpManager!.getUserConnection({
+          serverName,
+          user: authority?.user ?? actor.user,
+          flowManager: this.flowManager,
+          tokenMethods: this.tokenMethods,
+          serverConfig: authority?.serverConfig,
+          effectiveServerConfig: authority?.effectiveServerConfig,
+          securityPolicy: authority?.securityPolicy,
+          customUserVars: authority?.customUserVars,
+          oauthAuthorityScope: authority?.oauthAuthorityScope,
+          authorityAuthorizationKind: authority?.authorityAuthorizationKind,
+          refreshAuthorityLifecycle: authority?.refreshAuthorityLifecycle,
+          // don't force new connection, let it reuse existing or create new as needed
+          forceNew: false,
+          // set a reasonable timeout for reconnection attempts
+          connectionTimeout: config?.initTimeout ?? DEFAULT_CONNECTION_TIMEOUT_MS,
+          // don't trigger OAuth flow during reconnection
+          returnOnOAuth: true,
+        });
+      connection = authority ? await authority.bind(reconnect) : await reconnect();
 
-      if (connection && (await connection.isConnected())) {
+      connected = connection != null && (await connection.isConnected());
+      if (connected) {
         logger.info(`${logPrefix} Successfully reconnected`);
         this.clearReconnection(userId, serverName);
       } else {
         logger.warn(`${logPrefix} Failed to reconnect`);
-        await connection?.disconnect();
-        this.cleanupOnFailedReconnect(userId, serverName);
       }
     } catch (error) {
       logger.warn(`${logPrefix} Failed to reconnect: ${error}`);
-      this.cleanupOnFailedReconnect(userId, serverName);
+    } finally {
+      if (!connected) {
+        this.cleanupOnFailedReconnect(userId, serverName);
+        if (connection) {
+          try {
+            await this.mcpManager.disconnectUserConnection(userId, serverName, connection);
+          } catch (error) {
+            logger.warn(`${logPrefix} Failed to disconnect rejected reconnection`, error);
+          }
+        }
+      }
+      if (connection && typeof this.mcpManager.releaseDetachedUserConnection === 'function') {
+        try {
+          await this.mcpManager.releaseDetachedUserConnection(userId, serverName, connection);
+        } catch (error) {
+          logger.warn(`${logPrefix} Failed to release detached reconnection`, error);
+        }
+      }
     }
   }
 
@@ -231,7 +322,7 @@ export class OAuthReconnectionManager {
     // if the access token is expired or TTL-deleted, fall back to refresh token
     const refreshToken = await this.tokenMethods.findToken({
       userId,
-      type: 'mcp_oauth',
+      type: 'mcp_oauth_refresh',
       identifier: `mcp:${serverName}:refresh`,
     });
 

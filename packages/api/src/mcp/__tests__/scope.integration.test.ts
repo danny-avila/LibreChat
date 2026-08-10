@@ -6,7 +6,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { IUser } from '@librechat/data-schemas';
 import type { Socket } from 'net';
-import type { ParsedServerConfig, RequestScopedMCPConnectionStore } from '~/mcp/types';
+import type {
+  MCPToolCatalogScope,
+  ParsedServerConfig,
+  RequestScopedMCPConnectionStore,
+} from '~/mcp/types';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPRequestContext } from '~/mcp/request';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
@@ -52,6 +56,11 @@ interface RequestScopedTestServer {
   toolCallCount: () => number;
   observedRunIds: () => string[];
 }
+
+type RequestScopedServerConfig = ParsedServerConfig & {
+  type: 'streamable-http';
+  headers: Record<string, string>;
+};
 
 function trackSockets(httpServer: http.Server): () => Promise<void> {
   const sockets = new Set<Socket>();
@@ -140,6 +149,14 @@ async function createRequestScopedTestServer(): Promise<RequestScopedTestServer>
 
 const user = { id: 'scale-user', role: 'USER' } as unknown as IUser;
 const flowManager = {} as FlowStateManager<MCPOAuthTokens | null>;
+const authorityScope: MCPToolCatalogScope = {
+  tenant: 'tenant-revision',
+  principal: 'principal-revision',
+  server: 'server-revision',
+  policy: 'policy-revision',
+  config: 'config-revision',
+  credentials: 'credential-revision',
+};
 
 function createManager(): MCPManager {
   const manager = new MCPManager();
@@ -150,7 +167,7 @@ function createManager(): MCPManager {
   return manager;
 }
 
-function createServerConfig(url: string): ParsedServerConfig {
+function createServerConfig(url: string): RequestScopedServerConfig {
   return {
     type: 'streamable-http',
     url,
@@ -170,7 +187,7 @@ function callEcho({
   serverName = 'request-scoped',
 }: {
   manager: MCPManager;
-  config: ParsedServerConfig;
+  config: RequestScopedServerConfig;
   requestScopedConnections: RequestScopedMCPConnectionStore;
   runId: string;
   value: string;
@@ -180,6 +197,17 @@ function callEcho({
     user,
     serverName,
     serverConfig: config,
+    effectiveServerConfig: {
+      ...config,
+      headers: { 'X-Run-Id': runId },
+    },
+    securityPolicy: {
+      allowedDomains: null,
+      allowedAddresses: null,
+      useSSRFProtection: false,
+    },
+    oauthAuthorityScope: authorityScope,
+    authorityAuthorizationKind: 'none',
     toolName: 'echo',
     provider: 'openai',
     toolArguments: { value },

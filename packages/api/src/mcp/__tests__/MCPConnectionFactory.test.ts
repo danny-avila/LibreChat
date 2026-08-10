@@ -3,8 +3,13 @@ import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from '~/mcp/oauth';
 import type * as t from '~/mcp/types';
+import {
+  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+  createMCPToolCatalogSecurityPolicyIdentity,
+  matchesMCPConnectionProvenance,
+} from '~/mcp/catalog';
+import { MCPOAuthHandler, MCPTokenStorage, resolveOboToken } from '~/mcp/oauth';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { MCPOAuthHandler, MCPTokenStorage } from '~/mcp/oauth';
 import { preProcessGraphTokens } from '~/utils/graph';
 import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnection } from '~/mcp/connection';
@@ -134,6 +139,7 @@ describe('MCPConnectionFactory', () => {
       removeListener: jest.fn().mockReturnValue(mockConnectionInstance),
       emit: jest.fn(),
       dispose: jest.fn().mockResolvedValue(undefined),
+      getDiscoveryProvenance: jest.fn().mockReturnValue(null),
     } as unknown as jest.Mocked<MCPConnection>;
 
     mockMCPConnection.mockImplementation(() => mockConnectionInstance);
@@ -323,8 +329,208 @@ describe('MCPConnectionFactory', () => {
         useSSRFProtection: false,
         allowedAddresses: undefined,
         ephemeralConnection: false,
+        provenance: null,
       });
       expect(mockConnectionInstance.connect).toHaveBeenCalled();
+    });
+
+    it('keeps app connection provenance reusable across tenant request contexts', async () => {
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'app-provenance-tenant-test-key';
+      mockTenantStorage.getStore.mockReturnValue({ tenantId: 'tenant-a' });
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      try {
+        await MCPConnectionFactory.create({
+          serverName: 'shared-server',
+          serverConfig: mockServerConfig,
+        });
+
+        const provenance = mockMCPConnection.mock.calls[0]?.[0].provenance;
+        mockTenantStorage.getStore.mockReturnValue({ tenantId: 'tenant-b' });
+
+        expect(provenance).toEqual(
+          expect.objectContaining({ principalKind: 'app', authorizationKind: 'none' }),
+        );
+        expect(
+          matchesMCPConnectionProvenance(provenance, {
+            tenantId: 'tenant-b',
+            userId: 'user-from-tenant-b',
+            serverName: 'shared-server',
+            serverConfig: mockServerConfig as t.ParsedServerConfig,
+            effectiveServerConfig: mockServerConfig as t.ParsedServerConfig,
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+              allowedDomains: undefined,
+              allowedAddresses: undefined,
+            }),
+            authorizationIdentity: 'none',
+          }),
+        ).toBe(true);
+        expect(
+          matchesMCPConnectionProvenance(provenance, {
+            tenantId: 'tenant-b',
+            userId: 'user-from-tenant-b',
+            serverName: 'shared-server',
+            serverConfig: mockServerConfig as t.ParsedServerConfig,
+            effectiveServerConfig: mockServerConfig as t.ParsedServerConfig,
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+              allowedDomains: ['tenant-b-only.example.com'],
+              allowedAddresses: undefined,
+            }),
+            authorizationIdentity: 'none',
+          }),
+        ).toBe(false);
+      } finally {
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
+    });
+
+    it('creates lifecycle provenance for OBO connections without making them catalog eligible', async () => {
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'obo-provenance-test-key';
+      const oboConfig = {
+        type: 'streamable-http',
+        url: 'https://obo.example.com/mcp',
+        requiresOAuth: false,
+        obo: { scopes: 'api://mcp/.default' },
+      } satisfies t.ParsedServerConfig;
+      mockProcessMCPEnv.mockReturnValue(oboConfig);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      (resolveOboToken as jest.MockedFunction<typeof resolveOboToken>).mockResolvedValue({
+        access_token: 'obo-access-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+      });
+
+      try {
+        await MCPConnectionFactory.create(
+          { serverName: 'obo-server', serverConfig: oboConfig },
+          {
+            useOAuth: true,
+            user: mockUser,
+            flowManager: mockFlowManager,
+            tokenMethods: {} as TokenMethods,
+            oboTokenResolver: jest.fn(),
+          },
+        );
+
+        const provenance = mockMCPConnection.mock.calls[0]?.[0].provenance;
+        expect(provenance).toEqual(
+          expect.objectContaining({ principalKind: 'user', authorizationKind: 'obo' }),
+        );
+        expect(
+          matchesMCPConnectionProvenance(provenance, {
+            tenantId: null,
+            userId: mockUser!.id,
+            serverName: 'obo-server',
+            serverConfig: oboConfig,
+            effectiveServerConfig: oboConfig,
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({}),
+            authorizationIdentity: MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+          }),
+        ).toBe(true);
+      } finally {
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
+    });
+
+    it('stamps non-OAuth custom-variable connections with user provenance', async () => {
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'non-oauth-user-provenance-test-key';
+      mockTenantStorage.getStore.mockReturnValue({ tenantId: 'tenant-user' });
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      try {
+        await MCPConnectionFactory.create(
+          { serverName: 'private-server', serverConfig: mockServerConfig },
+          { user: mockUser, customUserVars: { API_KEY: 'resolved-value' } },
+        );
+
+        const provenance = mockMCPConnection.mock.calls[0]?.[0].provenance;
+        expect(provenance).toEqual(
+          expect.objectContaining({ principalKind: 'user', authorizationKind: 'none' }),
+        );
+        expect(
+          matchesMCPConnectionProvenance(provenance, {
+            tenantId: 'tenant-user',
+            userId: 'user123',
+            serverName: 'private-server',
+            serverConfig: mockServerConfig as t.ParsedServerConfig,
+            effectiveServerConfig: mockServerConfig as t.ParsedServerConfig,
+            securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+              allowedDomains: undefined,
+              allowedAddresses: undefined,
+            }),
+            customUserVars: { API_KEY: 'resolved-value' },
+            authorizationIdentity: 'none',
+          }),
+        ).toBe(true);
+      } finally {
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
+    });
+
+    it('keeps Graph-token resolution out of the declarative provenance fingerprint', async () => {
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'graph-provenance-test-key';
+      const declarativeConfig = {
+        type: 'streamable-http',
+        url: 'https://graph.example.com/mcp',
+        headers: { Authorization: 'Bearer {{LIBRECHAT_GRAPH_ACCESS_TOKEN}}' },
+      } satisfies t.ParsedServerConfig;
+      const effectiveConfig = {
+        ...declarativeConfig,
+        headers: { Authorization: 'Bearer graph-token-a' },
+      } satisfies t.ParsedServerConfig;
+      mockPreProcessGraphTokens.mockResolvedValue(effectiveConfig);
+      mockProcessMCPEnv.mockReturnValue(effectiveConfig);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      try {
+        await MCPConnectionFactory.create(
+          { serverName: 'graph-server', serverConfig: declarativeConfig },
+          { user: mockUser, graphTokenResolver: jest.fn() },
+        );
+
+        const provenance = mockMCPConnection.mock.calls[0]?.[0].provenance;
+        const scope = {
+          tenantId: null,
+          userId: mockUser!.id,
+          serverName: 'graph-server',
+          serverConfig: declarativeConfig,
+          effectiveServerConfig: effectiveConfig,
+          securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({}),
+          authorizationIdentity: 'none',
+        };
+        expect(matchesMCPConnectionProvenance(provenance, scope)).toBe(true);
+        expect(
+          matchesMCPConnectionProvenance(provenance, {
+            ...scope,
+            effectiveServerConfig: {
+              ...effectiveConfig,
+              headers: { Authorization: 'Bearer graph-token-b' },
+            },
+          }),
+        ).toBe(false);
+      } finally {
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
     });
 
     it('should pre-process Graph placeholders before connection config resolution', async () => {
@@ -445,7 +651,48 @@ describe('MCPConnectionFactory', () => {
         useSSRFProtection: false,
         allowedAddresses: undefined,
         ephemeralConnection: false,
+        provenance: null,
       });
+    });
+
+    it('marks connection provenance with the effective OAuth authorization kind', async () => {
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'oauth-authorization-kind-key';
+      const mockTokens: MCPOAuthTokens = {
+        access_token: 'access123',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        credential_set_id: 'oauth-generation',
+      };
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(mockTokens);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+
+      try {
+        await MCPConnectionFactory.create(
+          { serverName: 'test-server', serverConfig: mockServerConfig },
+          {
+            useOAuth: true,
+            user: mockUser,
+            flowManager: mockFlowManager,
+            tokenMethods: {
+              findToken: jest.fn(),
+              createToken: jest.fn(),
+              updateToken: jest.fn(),
+              deleteTokens: jest.fn(),
+            },
+          },
+        );
+
+        expect(mockMCPConnection.mock.calls[0]?.[0].provenance).toEqual(
+          expect.objectContaining({ principalKind: 'user', authorizationKind: 'oauth' }),
+        );
+      } finally {
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
     });
 
     it('should tenant-scope mcp_get_tokens flow locks', async () => {
@@ -827,6 +1074,7 @@ describe('MCPConnectionFactory', () => {
         useSSRFProtection: false,
         allowedAddresses: undefined,
         ephemeralConnection: false,
+        provenance: null,
       });
       expect(mockLogger.debug).toHaveBeenCalledWith(
         expect.stringContaining('No existing tokens found or error loading tokens'),
@@ -845,6 +1093,14 @@ describe('MCPConnectionFactory', () => {
           type: 'sse' as const,
         } as t.SSEOptions,
       };
+      const oauthAuthorityScope = {
+        tenant: 'tenant-revision',
+        principal: 'principal-revision',
+        server: 'server-revision',
+        policy: 'policy-revision',
+        config: 'config-revision',
+        credentials: 'credential-revision',
+      };
 
       const oauthOptions = {
         useOAuth: true as const,
@@ -858,6 +1114,7 @@ describe('MCPConnectionFactory', () => {
           updateToken: jest.fn(),
           deleteTokens: jest.fn(),
         },
+        oauthAuthorityScope,
       };
 
       const mockFlowData = {
@@ -914,7 +1171,11 @@ describe('MCPConnectionFactory', () => {
       expect(mockFlowManager.initFlow).toHaveBeenCalledWith(
         'flow123',
         'mcp_oauth',
-        expect.objectContaining({ ...mockFlowData.flowMetadata, tenantId: 'test-tenant' }),
+        expect.objectContaining({
+          ...mockFlowData.flowMetadata,
+          tenantId: 'test-tenant',
+          authorityScope: oauthAuthorityScope,
+        }),
       );
       const initCallOrder = mockFlowManager.initFlow.mock.invocationCallOrder[0];
       const oauthStartCallOrder = (oauthOptions.oauthStart as jest.Mock).mock
@@ -4099,6 +4360,37 @@ describe('MCPConnectionFactory', () => {
       expect(result.tools).toBeNull();
       expect(result.connection).toBeNull();
       expect(result.oauthRequired).toBe(false);
+    });
+
+    it('should preserve an authoritative empty unauthenticated discovery and provenance', async () => {
+      class EmptyUnauthenticatedDiscoveryFactory extends MCPConnectionFactory {
+        protected override async attemptUnauthenticatedToolListing() {
+          return [];
+        }
+      }
+
+      const originalCredsKey = process.env.CREDS_KEY;
+      process.env.CREDS_KEY = 'empty-discovery-provenance-test-key';
+      mockConnectionInstance.connect.mockRejectedValue(new Error('Connection failed'));
+      mockConnectionInstance.isConnected.mockResolvedValue(false);
+      mockConnectionInstance.disconnect = jest.fn().mockResolvedValue(undefined);
+
+      try {
+        const result = await EmptyUnauthenticatedDiscoveryFactory.discoverTools({
+          serverName: 'empty-server',
+          serverConfig: mockServerConfig,
+        });
+
+        expect(result.tools).toEqual([]);
+        expect(result.connection).toBeNull();
+        expect(result.provenance).toEqual(expect.objectContaining({ principalKind: 'app' }));
+      } finally {
+        if (originalCredsKey == null) {
+          delete process.env.CREDS_KEY;
+        } else {
+          process.env.CREDS_KEY = originalCredsKey;
+        }
+      }
     });
 
     it('should handle disconnect errors gracefully during cleanup', async () => {

@@ -1,9 +1,12 @@
 import { Types } from 'mongoose';
-import { AsyncLocalStorage } from 'async_hooks';
 import { CacheKeys, PrincipalType } from 'librechat-data-provider';
 import type { TPrincipalSearchResult } from 'librechat-data-provider';
 import type { Model, ClientSession, FilterQuery } from 'mongoose';
 import type { CacheStore, IGroup, IRole, IUser } from '~/types';
+import {
+  getMCPAuthorityConsistencyModule,
+  runMCPAuthorityMutation,
+} from './mcpAuthority/consistency';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { scopedCacheKey } from '~/config/tenantContext';
 import { escapeRegExp } from '~/utils/string';
@@ -23,48 +26,12 @@ const INVALIDATION_CLEAR_THRESHOLD = 1000;
 /** Fallback delay for the second invalidation pass when the store sets none. */
 const DEFAULT_STALE_EVICTION_DELAY_MS = 3000;
 
+function isDuplicateKeyError(error: unknown): error is Error & { code: 11000 } {
+  return error !== null && typeof error === 'object' && 'code' in error && error.code === 11000;
+}
+
 const isCachedGroupId = (value: unknown): value is string =>
   typeof value === 'string' && isValidObjectIdString(value);
-
-type DeferredInvalidation = {
-  /** ALS snapshot (tenant scoping) captured where the mutation ran. */
-  run: (invalidate: () => Promise<void>) => Promise<void>;
-  invalidate: () => Promise<void>;
-};
-
-/** One queue (and one `ended` listener) per session, so many mutations in one transaction
- * cannot trip the emitter's max-listeners warning. Weak keys drop abandoned sessions. */
-const sessionInvalidations = new WeakMap<ClientSession, DeferredInvalidation[]>();
-
-/**
- * Runs cache invalidation immediately, or defers it to session end for transactional
- * writes. Mid-transaction invalidation would let concurrent readers re-cache pre-commit
- * state with no later correction; deferring keeps the existing entry serving the
- * still-committed old memberships until the transaction commits or aborts.
- */
-function runAfterTransaction(
-  session: ClientSession | undefined,
-  invalidate: () => Promise<void>,
-): Promise<void> {
-  if (!session?.inTransaction()) {
-    return invalidate();
-  }
-  const deferred: DeferredInvalidation = { run: AsyncLocalStorage.snapshot(), invalidate };
-  const queue = sessionInvalidations.get(session);
-  if (queue) {
-    queue.push(deferred);
-    return Promise.resolve();
-  }
-  const newQueue: DeferredInvalidation[] = [deferred];
-  sessionInvalidations.set(session, newQueue);
-  session.once('ended', () => {
-    sessionInvalidations.delete(session);
-    for (const entry of newQueue) {
-      entry.run(entry.invalidate).catch(() => undefined);
-    }
-  });
-  return Promise.resolve();
-}
 
 /** Extracts member ids referenced by a group update; indeterminate when they cannot be enumerated. */
 function collectMemberIdsFromGroupUpdate(update: Record<string, unknown>): {
@@ -193,6 +160,7 @@ export function createUserGroupMethods(
       userId: string | Types.ObjectId;
       role?: string | null;
       idOnTheSource?: string | null;
+      fresh?: boolean;
     },
     session?: ClientSession,
   ) => Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>>;
@@ -240,6 +208,14 @@ export function createUserGroupMethods(
     session?: ClientSession,
   ) => Promise<IGroup | null>;
 } {
+  const authorityMutationGate = getMCPAuthorityConsistencyModule(mongoose);
+
+  function assertNoOpenAuthorityTransaction(session: ClientSession | undefined): void {
+    if (session?.inTransaction()) {
+      throw new Error('MCP authority group mutations cannot join a caller-owned transaction');
+    }
+  }
+
   const getPrincipalsCache = (): CacheStore | undefined =>
     deps.getCache?.(CacheKeys.USER_PRINCIPALS);
 
@@ -289,7 +265,11 @@ export function createUserGroupMethods(
   async function getMemberGroupIds(
     memberId: string,
     session?: ClientSession,
+    fresh = false,
   ): Promise<Types.ObjectId[]> {
+    if (fresh) {
+      return queryGroupIds(memberId, session, true);
+    }
     const cache = session ? undefined : getPrincipalsCache();
     if (!cache) {
       return queryGroupIds(memberId, session);
@@ -619,13 +599,29 @@ export function createUserGroupMethods(
    * @returns The created group
    */
   async function createGroup(groupData: Partial<IGroup>, session?: ClientSession): Promise<IGroup> {
+    assertNoOpenAuthorityTransaction(session);
     const Group = mongoose.models.Group as Model<IGroup>;
-    const options = session ? { session } : {};
-    const group = await Group.create([groupData], options).then((groups) => groups[0]);
-    await runAfterTransaction(session, () =>
-      invalidateMemberGroupsCache(groupData.memberIds ?? []),
-    );
-    return group;
+    const group = new Group(groupData);
+    await group.validate();
+    const mutation = await authorityMutationGate.mutateMCPAuthority(async () => {
+      try {
+        await group.save(session ? { session } : undefined);
+        const memberIds = [...(groupData.memberIds ?? [])];
+        authorityMutationGate.scheduleMCPAuthorityPostPublication(
+          async () => await invalidateMemberGroupsCache(memberIds),
+        );
+        return { kind: 'created', group } as const;
+      } catch (error) {
+        if (!isDuplicateKeyError(error)) {
+          throw error;
+        }
+        return { kind: 'duplicate', error } as const;
+      }
+    });
+    if (mutation.result.kind === 'duplicate') {
+      throw mutation.result.error;
+    }
+    return mutation.result.group;
   }
 
   /**
@@ -642,29 +638,33 @@ export function createUserGroupMethods(
     updateData: Partial<IGroup>,
     session?: ClientSession,
   ): Promise<IGroup | null> {
-    const Group = mongoose.models.Group as Model<IGroup>;
-    const options = {
-      new: true,
-      upsert: true,
-      ...(session ? { session } : {}),
-    };
+    assertNoOpenAuthorityTransaction(session);
+    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const Group = mongoose.models.Group as Model<IGroup>;
+      const options = {
+        new: true,
+        upsert: true,
+        ...(session ? { session } : {}),
+      };
 
-    if (updateData.memberIds === undefined) {
-      return await Group.findOneAndUpdate({ idOnTheSource, source }, { $set: updateData }, options);
-    }
-    /** Atomic pre-image (`new: false`) so members added concurrently before the $set are invalidated too. */
-    const previous = await Group.findOneAndUpdate(
-      { idOnTheSource, source },
-      { $set: updateData },
-      { ...options, new: false },
-    ).lean<IGroup>();
-    await runAfterTransaction(session, () =>
-      invalidateMemberGroupsCache([
-        ...(previous?.memberIds ?? []),
-        ...(updateData.memberIds ?? []),
-      ]),
-    );
-    return await findGroupByExternalId(idOnTheSource, source, {}, session);
+      if (updateData.memberIds === undefined) {
+        return await Group.findOneAndUpdate(
+          { idOnTheSource, source },
+          { $set: updateData },
+          options,
+        );
+      }
+      const previous = await Group.findOneAndUpdate(
+        { idOnTheSource, source },
+        { $set: updateData },
+        { ...options, new: false },
+      ).lean<IGroup>();
+      const affectedMemberIds = [...(previous?.memberIds ?? []), ...(updateData.memberIds ?? [])];
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache(affectedMemberIds),
+      );
+      return await findGroupByExternalId(idOnTheSource, source, {}, session);
+    });
   }
 
   /**
@@ -682,28 +682,34 @@ export function createUserGroupMethods(
     groupId: string | Types.ObjectId,
     session?: ClientSession,
   ): Promise<{ user: IUser; group: IGroup | null }> {
+    assertNoOpenAuthorityTransaction(session);
     const User = mongoose.models.User as Model<IUser>;
     const Group = mongoose.models.Group as Model<IGroup>;
 
-    const options = { new: true, ...(session ? { session } : {}) };
-
-    const user = await User.findById(userId, 'idOnTheSource', options).lean<{
-      idOnTheSource?: string;
-      _id: Types.ObjectId;
-    }>();
-    if (!user) {
+    const result = await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const options = { new: true, ...(session ? { session } : {}) };
+      const user = await User.findById(userId, 'idOnTheSource', options).lean<{
+        idOnTheSource?: string;
+        _id: Types.ObjectId;
+      }>();
+      if (!user) {
+        return null;
+      }
+      const userIdOnTheSource = user.idOnTheSource || userId.toString();
+      const updatedGroup = await Group.findByIdAndUpdate(
+        groupId,
+        { $addToSet: { memberIds: userIdOnTheSource } },
+        options,
+      ).lean<IGroup>();
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache([userIdOnTheSource]),
+      );
+      return { user: user as IUser, group: updatedGroup };
+    });
+    if (!result) {
       throw new Error(`User not found: ${userId}`);
     }
-
-    const userIdOnTheSource = user.idOnTheSource || userId.toString();
-    const updatedGroup = await Group.findByIdAndUpdate(
-      groupId,
-      { $addToSet: { memberIds: userIdOnTheSource } },
-      options,
-    ).lean<IGroup>();
-    await runAfterTransaction(session, () => invalidateMemberGroupsCache([userIdOnTheSource]));
-
-    return { user: user as IUser, group: updatedGroup };
+    return result;
   }
 
   /**
@@ -721,28 +727,34 @@ export function createUserGroupMethods(
     groupId: string | Types.ObjectId,
     session?: ClientSession,
   ): Promise<{ user: IUser; group: IGroup | null }> {
+    assertNoOpenAuthorityTransaction(session);
     const User = mongoose.models.User as Model<IUser>;
     const Group = mongoose.models.Group as Model<IGroup>;
 
-    const options = { new: true, ...(session ? { session } : {}) };
-
-    const user = await User.findById(userId, 'idOnTheSource', options).lean<{
-      idOnTheSource?: string;
-      _id: Types.ObjectId;
-    }>();
-    if (!user) {
+    const result = await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const options = { new: true, ...(session ? { session } : {}) };
+      const user = await User.findById(userId, 'idOnTheSource', options).lean<{
+        idOnTheSource?: string;
+        _id: Types.ObjectId;
+      }>();
+      if (!user) {
+        return null;
+      }
+      const userIdOnTheSource = user.idOnTheSource || userId.toString();
+      const updatedGroup = await Group.findByIdAndUpdate(
+        groupId,
+        { $pullAll: { memberIds: [userIdOnTheSource] } },
+        options,
+      ).lean<IGroup>();
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache([userIdOnTheSource]),
+      );
+      return { user: user as IUser, group: updatedGroup };
+    });
+    if (!result) {
       throw new Error(`User not found: ${userId}`);
     }
-
-    const userIdOnTheSource = user.idOnTheSource || userId.toString();
-    const updatedGroup = await Group.findByIdAndUpdate(
-      groupId,
-      { $pullAll: { memberIds: [userIdOnTheSource] } },
-      options,
-    ).lean<IGroup>();
-    await runAfterTransaction(session, () => invalidateMemberGroupsCache([userIdOnTheSource]));
-
-    return { user: user as IUser, group: updatedGroup };
+    return result;
   }
 
   /**
@@ -796,10 +808,11 @@ export function createUserGroupMethods(
       userId: string | Types.ObjectId;
       role?: string | null;
       idOnTheSource?: string | null;
+      fresh?: boolean;
     },
     session?: ClientSession,
   ): Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>> {
-    const { userId, role, idOnTheSource } = params;
+    const { userId, role, idOnTheSource, fresh } = params;
     /** `userId` must be an `ObjectId` for USER principal since ACL entries store `ObjectId`s */
     const userObjectId = typeof userId === 'string' ? new Types.ObjectId(userId) : userId;
     const principals: Array<{
@@ -832,7 +845,7 @@ export function createUserGroupMethods(
 
     /** `memberIds` stores `idOnTheSource` for external users, else the raw user id. */
     const memberId = memberIdOnTheSource || userId.toString();
-    const groupIds = await getMemberGroupIds(memberId, session);
+    const groupIds = await getMemberGroupIds(memberId, session, fresh === true);
     for (const groupId of groupIds) {
       principals.push({ principalType: PrincipalType.GROUP, principalId: groupId });
     }
@@ -858,91 +871,116 @@ export function createUserGroupMethods(
     addedGroups: IGroup[];
     removedGroups: IGroup[];
   }> {
+    assertNoOpenAuthorityTransaction(session);
     const User = mongoose.models.User as Model<IUser>;
     const Group = mongoose.models.Group as Model<IGroup>;
 
-    const query = User.findById(userId, { idOnTheSource: 1 });
-    if (session) {
-      query.session(session);
-    }
-    const user = await query.lean<{ idOnTheSource?: string; _id: Types.ObjectId }>();
+    const mutation = await authorityMutationGate.mutateMCPAuthority(async () => {
+      const query = User.findById(userId, { idOnTheSource: 1 });
+      if (session) {
+        query.session(session);
+      }
+      const user = await query.lean<{ idOnTheSource?: string; _id: Types.ObjectId }>();
 
-    if (!user) {
+      if (!user) {
+        return { userMissing: true } as const;
+      }
+
+      /** Get user's idOnTheSource for storing in group.memberIds */
+      const userIdOnTheSource = user.idOnTheSource || userId.toString();
+
+      const entraIdMap = new Map<string, boolean>();
+      const addedGroups: IGroup[] = [];
+      const removedGroups: IGroup[] = [];
+
+      for (const entraGroup of entraGroups) {
+        entraIdMap.set(entraGroup.id, true);
+
+        let group = await findGroupByExternalId(entraGroup.id, 'entra', {}, session);
+        let created = false;
+
+        if (!group) {
+          try {
+            group = await createGroup(
+              {
+                name: entraGroup.name,
+                description: entraGroup.description,
+                email: entraGroup.email,
+                idOnTheSource: entraGroup.id,
+                source: 'entra',
+                memberIds: [userIdOnTheSource],
+              },
+              session,
+            );
+            created = true;
+          } catch (error) {
+            if (!isDuplicateKeyError(error)) {
+              throw error;
+            }
+            group = await findGroupByExternalId(entraGroup.id, 'entra', {}, session);
+            if (!group) {
+              return { duplicateConflict: error } as const;
+            }
+          }
+        }
+        if (created) {
+          addedGroups.push(group);
+        } else if (!group.memberIds?.includes(userIdOnTheSource)) {
+          const { group: updatedGroup } = await addUserToGroup(userId, group._id, session);
+          if (updatedGroup) {
+            addedGroups.push(updatedGroup);
+          }
+        }
+      }
+
+      const groupsQuery = Group.find(
+        { source: 'entra', memberIds: userIdOnTheSource },
+        { _id: 1, idOnTheSource: 1 },
+      );
+      if (session) {
+        groupsQuery.session(session);
+      }
+      const existingGroups = await groupsQuery.lean<
+        Array<{
+          _id: Types.ObjectId;
+          idOnTheSource?: string;
+        }>
+      >();
+
+      for (const group of existingGroups) {
+        if (group.idOnTheSource && !entraIdMap.has(group.idOnTheSource)) {
+          const { group: removedGroup } = await removeUserFromGroup(userId, group._id, session);
+          if (removedGroup) {
+            removedGroups.push(removedGroup);
+          }
+        }
+      }
+
+      const userQuery = User.findById(userId);
+      if (session) {
+        userQuery.session(session);
+      }
+      const updatedUser = await userQuery.lean<IUser>();
+
+      if (!updatedUser) {
+        throw new Error(`User not found after update: ${userId}`);
+      }
+
+      return {
+        value: {
+          user: updatedUser,
+          addedGroups,
+          removedGroups,
+        },
+      } as const;
+    });
+    if ('userMissing' in mutation.result) {
       throw new Error(`User not found: ${userId}`);
     }
-
-    /** Get user's idOnTheSource for storing in group.memberIds */
-    const userIdOnTheSource = user.idOnTheSource || userId.toString();
-
-    const entraIdMap = new Map<string, boolean>();
-    const addedGroups: IGroup[] = [];
-    const removedGroups: IGroup[] = [];
-
-    for (const entraGroup of entraGroups) {
-      entraIdMap.set(entraGroup.id, true);
-
-      let group = await findGroupByExternalId(entraGroup.id, 'entra', {}, session);
-
-      if (!group) {
-        group = await createGroup(
-          {
-            name: entraGroup.name,
-            description: entraGroup.description,
-            email: entraGroup.email,
-            idOnTheSource: entraGroup.id,
-            source: 'entra',
-            memberIds: [userIdOnTheSource],
-          },
-          session,
-        );
-
-        addedGroups.push(group);
-      } else if (!group.memberIds?.includes(userIdOnTheSource)) {
-        const { group: updatedGroup } = await addUserToGroup(userId, group._id, session);
-        if (updatedGroup) {
-          addedGroups.push(updatedGroup);
-        }
-      }
+    if ('duplicateConflict' in mutation.result) {
+      throw mutation.result.duplicateConflict;
     }
-
-    const groupsQuery = Group.find(
-      { source: 'entra', memberIds: userIdOnTheSource },
-      { _id: 1, idOnTheSource: 1 },
-    );
-    if (session) {
-      groupsQuery.session(session);
-    }
-    const existingGroups = await groupsQuery.lean<
-      Array<{
-        _id: Types.ObjectId;
-        idOnTheSource?: string;
-      }>
-    >();
-
-    for (const group of existingGroups) {
-      if (group.idOnTheSource && !entraIdMap.has(group.idOnTheSource)) {
-        const { group: removedGroup } = await removeUserFromGroup(userId, group._id, session);
-        if (removedGroup) {
-          removedGroups.push(removedGroup);
-        }
-      }
-    }
-
-    const userQuery = User.findById(userId);
-    if (session) {
-      userQuery.session(session);
-    }
-    const updatedUser = await userQuery.lean<IUser>();
-
-    if (!updatedUser) {
-      throw new Error(`User not found after update: ${userId}`);
-    }
-
-    return {
-      user: updatedUser,
-      addedGroups,
-      removedGroups,
-    };
+    return mutation.result.value;
   }
 
   /**
@@ -1156,9 +1194,13 @@ export function createUserGroupMethods(
    * @param userId - The user ID (or ObjectId) of the member to remove
    */
   async function removeUserFromAllGroups(userId: string | Types.ObjectId): Promise<void> {
-    const Group = mongoose.models.Group as Model<IGroup>;
-    await Group.updateMany({ memberIds: userId }, { $pullAll: { memberIds: [userId] } });
-    await invalidateMemberGroupsCache([userId]);
+    await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const Group = mongoose.models.Group as Model<IGroup>;
+      await Group.updateMany({ memberIds: userId }, { $pullAll: { memberIds: [userId] } });
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache([userId]),
+      );
+    });
   }
 
   /**
@@ -1187,30 +1229,33 @@ export function createUserGroupMethods(
     data: Record<string, unknown>,
     session?: ClientSession,
   ): Promise<IGroup | null> {
-    const Group = mongoose.models.Group as Model<IGroup>;
-    const options = { new: true, ...(session ? { session } : {}) };
-    if (data.memberIds === undefined) {
-      return Group.findByIdAndUpdate(groupId, { $set: data }, options).lean<IGroup>();
-    }
-    /** Atomic pre-image (`new: false`) so members added concurrently before the $set are invalidated too. */
-    const previous = await Group.findByIdAndUpdate(
-      groupId,
-      { $set: data },
-      {
-        ...options,
-        new: false,
-      },
-    ).lean<IGroup>();
-    const nextMemberIds = Array.isArray(data.memberIds)
-      ? data.memberIds.filter(
-          (memberId): memberId is string | Types.ObjectId =>
-            typeof memberId === 'string' || memberId instanceof Types.ObjectId,
-        )
-      : [];
-    await runAfterTransaction(session, () =>
-      invalidateMemberGroupsCache([...(previous?.memberIds ?? []), ...nextMemberIds]),
-    );
-    return previous ? await findGroupById(groupId, {}, session) : null;
+    assertNoOpenAuthorityTransaction(session);
+    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const Group = mongoose.models.Group as Model<IGroup>;
+      const options = { new: true, ...(session ? { session } : {}) };
+      if (data.memberIds === undefined) {
+        return Group.findByIdAndUpdate(groupId, { $set: data }, options).lean<IGroup>();
+      }
+      const previous = await Group.findByIdAndUpdate(
+        groupId,
+        { $set: data },
+        {
+          ...options,
+          new: false,
+        },
+      ).lean<IGroup>();
+      const nextMemberIds = Array.isArray(data.memberIds)
+        ? data.memberIds.filter(
+            (memberId): memberId is string | Types.ObjectId =>
+              typeof memberId === 'string' || memberId instanceof Types.ObjectId,
+          )
+        : [];
+      const affectedMemberIds = [...(previous?.memberIds ?? []), ...nextMemberIds];
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache(affectedMemberIds),
+      );
+      return previous ? await findGroupById(groupId, {}, session) : null;
+    });
   }
 
   /**
@@ -1224,18 +1269,23 @@ export function createUserGroupMethods(
     update: Record<string, unknown>,
     options?: { session?: ClientSession },
   ): Promise<import('mongoose').UpdateWriteOpResult> {
-    const Group = mongoose.models.Group as Model<IGroup>;
-    const result = await Group.updateMany(filter, update, options || {});
-    if (result.modifiedCount === 0 && result.upsertedCount === 0) {
+    assertNoOpenAuthorityTransaction(options?.session);
+    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const Group = mongoose.models.Group as Model<IGroup>;
+      const result = await Group.updateMany(filter, update, options || {});
+      if (result.modifiedCount === 0 && result.upsertedCount === 0) {
+        return result;
+      }
+      const { memberIds, indeterminate } = collectMemberIdsFromGroupUpdate(update);
+      if (indeterminate) {
+        authorityMutationGate.scheduleMCPAuthorityPostPublication(clearMemberGroupsCache);
+      } else if (memberIds.length > 0) {
+        authorityMutationGate.scheduleMCPAuthorityPostPublication(
+          async () => await invalidateMemberGroupsCache(memberIds),
+        );
+      }
       return result;
-    }
-    const { memberIds, indeterminate } = collectMemberIdsFromGroupUpdate(update);
-    if (indeterminate) {
-      await runAfterTransaction(options?.session, () => clearMemberGroupsCache());
-    } else if (memberIds.length > 0) {
-      await runAfterTransaction(options?.session, () => invalidateMemberGroupsCache(memberIds));
-    }
-    return result;
+    });
   }
 
   function buildGroupQuery(filter: {
@@ -1303,11 +1353,17 @@ export function createUserGroupMethods(
     groupId: string | Types.ObjectId,
     session?: ClientSession,
   ): Promise<IGroup | null> {
-    const Group = mongoose.models.Group as Model<IGroup>;
-    const options = session ? { session } : {};
-    const group = await Group.findByIdAndDelete(groupId, options).lean<IGroup>();
-    await runAfterTransaction(session, () => invalidateMemberGroupsCache(group?.memberIds ?? []));
-    return group;
+    assertNoOpenAuthorityTransaction(session);
+    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const Group = mongoose.models.Group as Model<IGroup>;
+      const options = session ? { session } : {};
+      const group = await Group.findByIdAndDelete(groupId, options).lean<IGroup>();
+      const memberIds = [...(group?.memberIds ?? [])];
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache(memberIds),
+      );
+      return group;
+    });
   }
 
   /**
@@ -1322,15 +1378,20 @@ export function createUserGroupMethods(
     memberId: string,
     session?: ClientSession,
   ): Promise<IGroup | null> {
-    const Group = mongoose.models.Group as Model<IGroup>;
-    const options = { new: true, ...(session ? { session } : {}) };
-    const group = await Group.findByIdAndUpdate(
-      groupId,
-      { $pull: { memberIds: memberId } },
-      options,
-    ).lean<IGroup>();
-    await runAfterTransaction(session, () => invalidateMemberGroupsCache([memberId]));
-    return group;
+    assertNoOpenAuthorityTransaction(session);
+    return await runMCPAuthorityMutation(authorityMutationGate, async () => {
+      const Group = mongoose.models.Group as Model<IGroup>;
+      const options = { new: true, ...(session ? { session } : {}) };
+      const group = await Group.findByIdAndUpdate(
+        groupId,
+        { $pull: { memberIds: memberId } },
+        options,
+      ).lean<IGroup>();
+      authorityMutationGate.scheduleMCPAuthorityPostPublication(
+        async () => await invalidateMemberGroupsCache([memberId]),
+      );
+      return group;
+    });
   }
 
   return {

@@ -13,7 +13,14 @@ import type {
 } from '~/mcp/oauth';
 import type { OboTokenResolver, OboTrustChecker } from '~/mcp/oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
+import type { MCPConnectionProvenance } from './types';
 import type * as t from './types';
+import {
+  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+  createMCPConnectionProvenance,
+  createMCPToolCatalogSecurityPolicyIdentity,
+  isMCPToolCatalogFingerprintAvailable,
+} from './catalog';
 import {
   MCPTokenStorage,
   MCPOAuthHandler,
@@ -21,7 +28,12 @@ import {
   ReauthenticationRequiredError,
   resolveOboToken,
 } from '~/mcp/oauth';
-import { sanitizeUrlForLogging, isClientRejectionMessage, isOAuthServer } from './utils';
+import {
+  sanitizeUrlForLogging,
+  isClientRejectionMessage,
+  isUserSourced,
+  isOAuthServer,
+} from './utils';
 import { PENDING_STALE_MS, normalizeExpiresAt } from '~/flow/manager';
 import { isOAuthAuthenticationError } from './errors';
 import { preProcessGraphTokens } from '~/utils/graph';
@@ -35,6 +47,7 @@ export interface ToolDiscoveryResult {
   connection: MCPConnection | null;
   oauthRequired: boolean;
   oauthUrl: string | null;
+  provenance: MCPConnectionProvenance | null;
 }
 
 type OAuthRequiredEvent = {
@@ -55,12 +68,14 @@ type OAuthRecoveryPhase = 'silent-refresh' | 'interactive' | 'terminal';
 export class MCPConnectionFactory {
   protected readonly serverName: string;
   protected readonly serverConfig: t.MCPOptions;
+  protected readonly declarativeServerConfig: t.MCPOptions;
   protected readonly logPrefix: string;
   protected readonly useOAuth: boolean;
   protected readonly useSSRFProtection: boolean;
   protected readonly allowedDomains?: string[] | null;
   protected readonly allowedAddresses?: string[] | null;
   protected readonly ephemeralConnection: boolean;
+  protected readonly customUserVars?: Record<string, string>;
 
   // OAuth-related properties (only set when useOAuth is true)
   protected readonly userId?: string;
@@ -72,6 +87,9 @@ export class MCPConnectionFactory {
   protected oauthEnd?: () => Promise<void>;
   protected returnOnOAuth?: boolean;
   protected readonly connectionTimeout?: number;
+  protected readonly oauthAuthorityScope?: t.OAuthConnectionOptions['oauthAuthorityScope'];
+  protected readonly authorityAuthorizationKind?: t.UserConnectionContext['authorityAuthorizationKind'];
+  protected readonly refreshAuthorityLifecycle?: t.UserConnectionContext['refreshAuthorityLifecycle'];
   protected readonly oboTokenResolver?: OboTokenResolver;
   protected readonly oboTrustChecker?: OboTrustChecker;
   private connectionReady = false;
@@ -153,7 +171,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ): Promise<t.BasicConnectionOptions> {
-    if (basic.dbSourced || !options?.graphTokenResolver) {
+    if (basic.skipEnvProcessing || basic.dbSourced || !options?.graphTokenResolver) {
       return basic;
     }
 
@@ -163,7 +181,13 @@ export class MCPConnectionFactory {
       scopes: process.env.GRAPH_API_SCOPES,
     });
 
-    return serverConfig === basic.serverConfig ? basic : { ...basic, serverConfig };
+    return serverConfig === basic.serverConfig
+      ? basic
+      : {
+          ...basic,
+          declarativeServerConfig: basic.declarativeServerConfig ?? basic.serverConfig,
+          serverConfig,
+        };
   }
 
   protected async discoverToolsInternal(): Promise<ToolDiscoveryResult> {
@@ -184,6 +208,7 @@ export class MCPConnectionFactory {
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
       ephemeralConnection: this.ephemeralConnection,
+      provenance: this.createDiscoveryProvenance(oauthTokens),
     });
 
     const oauthHandler = () => {
@@ -214,6 +239,7 @@ export class MCPConnectionFactory {
           connection,
           oauthRequired: false,
           oauthUrl: null,
+          provenance: connection.getDiscoveryProvenance(),
         };
       }
     } catch {
@@ -226,7 +252,7 @@ export class MCPConnectionFactory {
     try {
       const tools = await this.attemptUnauthenticatedToolListing();
       connection.removeListener('oauthRequired', oauthHandler);
-      if (tools && tools.length > 0) {
+      if (Array.isArray(tools)) {
         logger.info(
           `${this.logPrefix} [Discovery] Successfully discovered ${tools.length} tools without auth`,
         );
@@ -235,7 +261,13 @@ export class MCPConnectionFactory {
         } catch {
           // Ignore cleanup errors
         }
-        return { tools, connection: null, oauthRequired, oauthUrl };
+        return {
+          tools,
+          connection: null,
+          oauthRequired,
+          oauthUrl,
+          provenance: this.createDiscoveryProvenance(null),
+        };
       }
       MCPConnection.decrementCycleCount(this.serverName);
     } catch (listError) {
@@ -251,7 +283,7 @@ export class MCPConnectionFactory {
       // Ignore cleanup errors
     }
 
-    return { tools: null, connection: null, oauthRequired, oauthUrl };
+    return { tools: null, connection: null, oauthRequired, oauthUrl, provenance: null };
   }
 
   protected async attemptUnauthenticatedToolListing(): Promise<Tool[] | null> {
@@ -301,6 +333,7 @@ export class MCPConnectionFactory {
     basic: t.BasicConnectionOptions,
     options?: t.OAuthConnectionOptions | t.UserConnectionContext,
   ) {
+    this.declarativeServerConfig = basic.declarativeServerConfig ?? basic.serverConfig;
     this.serverConfig = basic.skipEnvProcessing
       ? basic.serverConfig
       : processMCPEnv({
@@ -315,18 +348,22 @@ export class MCPConnectionFactory {
     this.allowedDomains = basic.allowedDomains;
     this.allowedAddresses = basic.allowedAddresses;
     this.ephemeralConnection = basic.ephemeralConnection === true;
+    this.customUserVars = options?.customUserVars;
     this.connectionTimeout = options?.connectionTimeout;
+    this.oauthAuthorityScope = options?.oauthAuthorityScope;
+    this.authorityAuthorizationKind = options?.authorityAuthorizationKind;
+    this.refreshAuthorityLifecycle = options?.refreshAuthorityLifecycle;
     this.tenantContext = tenantStorage?.getStore?.();
-    this.tenantId = this.tenantContext?.tenantId ?? getTenantId();
+    this.tenantId = options?.user?.tenantId ?? this.tenantContext?.tenantId ?? getTenantId();
     this.logPrefix = options?.user
       ? `[MCP][${basic.serverName}][${options.user.id}]`
       : `[MCP][${basic.serverName}]`;
 
     this.user = options?.user;
+    this.userId = options?.user?.id;
 
     if (options != null && 'useOAuth' in options) {
       this.useOAuth = true;
-      this.userId = options.user?.id;
       this.flowManager = options.flowManager;
       this.tokenMethods = options.tokenMethods;
       this.signal = options.signal;
@@ -340,19 +377,69 @@ export class MCPConnectionFactory {
     }
   }
 
+  private createDiscoveryProvenance(
+    oauthTokens: MCPOAuthTokens | null,
+  ): MCPConnectionProvenance | null {
+    const principalKind = this.userId ? 'user' : 'app';
+    if (this.oauthAuthorityScope && this.authorityAuthorizationKind) {
+      return {
+        version: 1,
+        scope: this.oauthAuthorityScope,
+        principalKind,
+        authorizationKind: this.authorityAuthorizationKind,
+      };
+    }
+    if (!isMCPToolCatalogFingerprintAvailable()) {
+      return null;
+    }
+    let authorizationIdentity: string | null = 'none';
+    let authorizationKind: MCPConnectionProvenance['authorizationKind'] = 'none';
+    if (this.usesObo) {
+      authorizationIdentity = MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY;
+      authorizationKind = 'obo';
+    } else if (this.useOAuth) {
+      authorizationIdentity = oauthTokens?.credential_set_id ?? (oauthTokens ? null : 'none');
+      authorizationKind = 'oauth';
+    }
+    if (authorizationIdentity == null) {
+      return null;
+    }
+    return createMCPConnectionProvenance(
+      {
+        tenantId: principalKind === 'app' ? null : (this.tenantId ?? null),
+        userId: this.userId ?? '__app__',
+        serverName: this.serverName,
+        serverConfig: this.declarativeServerConfig as t.ParsedServerConfig,
+        effectiveServerConfig: this.serverConfig,
+        securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+          allowedDomains: this.allowedDomains,
+          allowedAddresses: this.allowedAddresses,
+        }),
+        customUserVars: this.customUserVars,
+        authorizationIdentity,
+      },
+      principalKind,
+      authorizationKind,
+    );
+  }
+
   /** Resolves OBO tokens when the server config specifies obo, returns null otherwise */
   protected async getOboTokens(): Promise<MCPOAuthTokens | null> {
     const oboConfig = this.serverConfig.obo;
+    const provenanceConfig = this.declarativeServerConfig as t.ParsedServerConfig;
     if (!oboConfig || !this.oboTokenResolver || !this.user) {
       return null;
     }
 
+    if (isUserSourced(provenanceConfig) && !this.oboTrustChecker) {
+      throw new Error(`${this.logPrefix} OBO author trust proof is required`);
+    }
+
     if (this.oboTrustChecker) {
-      const config = this.serverConfig as t.ParsedServerConfig;
       const trusted = await this.oboTrustChecker({
-        source: config.source,
-        author: config.author,
-        dbId: config.dbId,
+        source: provenanceConfig.source,
+        author: provenanceConfig.author,
+        dbId: provenanceConfig.dbId,
       });
       if (!trusted) {
         logger.warn(
@@ -413,6 +500,7 @@ export class MCPConnectionFactory {
       useSSRFProtection: this.useSSRFProtection,
       allowedAddresses: this.allowedAddresses,
       ephemeralConnection: this.ephemeralConnection,
+      provenance: this.createDiscoveryProvenance(oauthTokens),
     });
 
     let cleanupOAuthHandlers: (() => void) | null = null;
@@ -579,6 +667,8 @@ export class MCPConnectionFactory {
           oauth?.token_url,
           oauth?.token_exchange_method,
           oauth?.token_endpoint_auth_methods_supported,
+          this.oauthAuthorityScope,
+          this.authorityAuthorizationKind,
         ]),
       )
       .digest('base64url');
@@ -604,6 +694,7 @@ export class MCPConnectionFactory {
               deleteTokens: this.tokenMethods!.deleteTokens,
               refreshTokens: this.createRefreshTokensFunction(),
               singleFlightScope: this.getOAuthBindingDigest(),
+              refreshAuthorityLifecycle: this.refreshAuthorityLifecycle,
             }),
           );
         },
@@ -786,6 +877,7 @@ export class MCPConnectionFactory {
           deleteTokens: this.tokenMethods!.deleteTokens,
           refreshTokens: this.createRefreshTokensFunction(),
           singleFlightScope,
+          refreshAuthorityLifecycle: this.refreshAuthorityLifecycle,
           signal,
           /**
            * Drop any previously cached `mcp_get_tokens` result so the next
@@ -911,6 +1003,23 @@ export class MCPConnectionFactory {
       );
       return false;
     }
+  }
+
+  private isCurrentAuthorityOAuthFlow(meta: MCPOAuthFlowMetadata | undefined): boolean {
+    const expected = this.oauthAuthorityScope;
+    if (!expected) {
+      return meta?.authorityScope == null;
+    }
+    const actual = meta?.authorityScope;
+    return (
+      actual != null &&
+      actual.tenant === expected.tenant &&
+      actual.principal === expected.principal &&
+      actual.server === expected.server &&
+      actual.policy === expected.policy &&
+      actual.config === expected.config &&
+      actual.credentials === expected.credentials
+    );
   }
 
   private getOAuthRequiredStatusCode(data: OAuthRequiredEvent): number | undefined {
@@ -1052,7 +1161,11 @@ export class MCPConnectionFactory {
               : Infinity;
             const flowMeta = existingFlow.metadata as MCPOAuthFlowMetadata | undefined;
 
-            if (pendingAge < PENDING_STALE_MS && this.isCurrentServerOAuthFlow(flowMeta)) {
+            if (
+              pendingAge < PENDING_STALE_MS &&
+              this.isCurrentServerOAuthFlow(flowMeta) &&
+              this.isCurrentAuthorityOAuthFlow(flowMeta)
+            ) {
               logger.debug(
                 `${this.logPrefix} Recent PENDING OAuth flow exists (${Math.round(pendingAge / 1000)}s old), skipping new initiation`,
               );
@@ -1110,7 +1223,12 @@ export class MCPConnectionFactory {
           }
 
           // Store flow state BEFORE redirecting so the callback can find it
-          const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
+          const metadataWithUrl = {
+            ...flowMetadata,
+            authorizationUrl,
+            tenantId: this.tenantId,
+            authorityScope: this.oauthAuthorityScope,
+          };
           await this.flowManager!.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
           await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager!);
 
@@ -1406,7 +1524,11 @@ export class MCPConnectionFactory {
             ? Date.now() - existingFlow.createdAt
             : Infinity;
 
-          if (pendingAge < PENDING_STALE_MS && this.isCurrentServerOAuthFlow(flowMeta)) {
+          if (
+            pendingAge < PENDING_STALE_MS &&
+            this.isCurrentServerOAuthFlow(flowMeta) &&
+            this.isCurrentAuthorityOAuthFlow(flowMeta)
+          ) {
             logger.debug(
               `${this.logPrefix} Found recent PENDING OAuth flow (${Math.round(pendingAge / 1000)}s old), joining instead of creating new one`,
             );
@@ -1461,7 +1583,8 @@ export class MCPConnectionFactory {
             completedAge <= PENDING_STALE_MS &&
             cachedTokens !== undefined &&
             !isTokenExpired &&
-            this.isCurrentServerOAuthFlow(flowMeta)
+            this.isCurrentServerOAuthFlow(flowMeta) &&
+            this.isCurrentAuthorityOAuthFlow(flowMeta)
           ) {
             logger.debug(
               `${this.logPrefix} Found non-stale COMPLETED OAuth flow, reusing cached tokens`,
@@ -1515,7 +1638,12 @@ export class MCPConnectionFactory {
       reusedClientCredentialSetId = flowMetadata.reusedClientCredentialSetId;
 
       // Store flow state BEFORE redirecting so the callback can find it
-      const metadataWithUrl = { ...flowMetadata, authorizationUrl, tenantId: this.tenantId };
+      const metadataWithUrl = {
+        ...flowMetadata,
+        authorizationUrl,
+        tenantId: this.tenantId,
+        authorityScope: this.oauthAuthorityScope,
+      };
       await this.flowManager.initFlow(newFlowId, 'mcp_oauth', metadataWithUrl);
       await MCPOAuthHandler.storeStateMapping(flowMetadata.state, newFlowId, this.flowManager);
 

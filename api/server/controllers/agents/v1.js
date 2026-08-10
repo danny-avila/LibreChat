@@ -74,6 +74,49 @@ const getSafeModelParameters = (modelParameters) => {
 };
 const hasEditBit = (permission) => (permission & PermissionBits.EDIT) === PermissionBits.EDIT;
 
+const grantAgentOwnerPermissions = async (agent, userId) => {
+  await grantPermission({
+    principalType: PrincipalType.USER,
+    principalId: userId,
+    resourceType: ResourceType.AGENT,
+    resourceId: agent._id,
+    accessRoleId: AccessRoleIds.AGENT_OWNER,
+    grantedBy: userId,
+  });
+  await grantPermission({
+    principalType: PrincipalType.USER,
+    principalId: userId,
+    resourceType: ResourceType.REMOTE_AGENT,
+    resourceId: agent._id,
+    accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
+    grantedBy: userId,
+  });
+};
+
+const createAgentWithOwnerPermissions = async (agentData, userId, logPrefix) => {
+  if (agentData.mcpServerNames?.length > 0) {
+    const { result } = await db.mutateMCPAuthority(async () => {
+      const agent = await db.createAgent(agentData);
+      await grantAgentOwnerPermissions(agent, userId);
+      return agent;
+    });
+    logger.debug(`${logPrefix} Granted owner permissions to user ${userId} for agent ${result.id}`);
+    return result;
+  }
+
+  const agent = await db.createAgent(agentData);
+  try {
+    await grantAgentOwnerPermissions(agent, userId);
+    logger.debug(`${logPrefix} Granted owner permissions to user ${userId} for agent ${agent.id}`);
+  } catch (permissionError) {
+    logger.error(
+      `${logPrefix} Failed to grant owner permissions for agent ${agent.id}:`,
+      permissionError,
+    );
+  }
+  return agent;
+};
+
 const sanitizeViewerSkillScope = (agent, accessibleSkillSet) => {
   const skillScopeEnabled = agent.skills_enabled === true;
   delete agent.skills_enabled;
@@ -504,36 +547,7 @@ const createAgentHandler = async (req, res) => {
       agentData.mcpServerNames = Array.from(resolvedServerNames);
     }
 
-    const agent = await db.createAgent(agentData);
-
-    try {
-      await Promise.all([
-        grantPermission({
-          principalType: PrincipalType.USER,
-          principalId: userId,
-          resourceType: ResourceType.AGENT,
-          resourceId: agent._id,
-          accessRoleId: AccessRoleIds.AGENT_OWNER,
-          grantedBy: userId,
-        }),
-        grantPermission({
-          principalType: PrincipalType.USER,
-          principalId: userId,
-          resourceType: ResourceType.REMOTE_AGENT,
-          resourceId: agent._id,
-          accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
-          grantedBy: userId,
-        }),
-      ]);
-      logger.debug(
-        `[createAgent] Granted owner permissions to user ${userId} for agent ${agent.id}`,
-      );
-    } catch (permissionError) {
-      logger.error(
-        `[createAgent] Failed to grant owner permissions for agent ${agent.id}:`,
-        permissionError,
-      );
-    }
+    const agent = await createAgentWithOwnerPermissions(agentData, userId, '[createAgent]');
 
     res.status(201).json(agent);
   } catch (error) {
@@ -1079,36 +1093,11 @@ const duplicateAgentHandler = async (req, res) => {
       });
     }
 
-    const newAgent = await db.createAgent(newAgentData);
-
-    try {
-      await Promise.all([
-        grantPermission({
-          principalType: PrincipalType.USER,
-          principalId: userId,
-          resourceType: ResourceType.AGENT,
-          resourceId: newAgent._id,
-          accessRoleId: AccessRoleIds.AGENT_OWNER,
-          grantedBy: userId,
-        }),
-        grantPermission({
-          principalType: PrincipalType.USER,
-          principalId: userId,
-          resourceType: ResourceType.REMOTE_AGENT,
-          resourceId: newAgent._id,
-          accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
-          grantedBy: userId,
-        }),
-      ]);
-      logger.debug(
-        `[duplicateAgent] Granted owner permissions to user ${userId} for duplicated agent ${newAgent.id}`,
-      );
-    } catch (permissionError) {
-      logger.error(
-        `[duplicateAgent] Failed to grant owner permissions for duplicated agent ${newAgent.id}:`,
-        permissionError,
-      );
-    }
+    const newAgent = await createAgentWithOwnerPermissions(
+      newAgentData,
+      userId,
+      '[duplicateAgent]',
+    );
 
     return res.status(201).json({
       agent: newAgent,

@@ -1,7 +1,10 @@
 const mockRegistry = {
   ensureConfigServers: jest.fn(),
   getAllServerConfigs: jest.fn(),
+  getAllServerConfigsFresh: jest.fn(),
 };
+const mockResolveCurrentMCPToolAuthority = jest.fn();
+const mockGetRoleByName = jest.fn();
 
 jest.mock('~/config', () => ({
   getMCPServersRegistry: jest.fn(() => mockRegistry),
@@ -15,14 +18,24 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-jest.mock('~/server/services/Config', () => ({
-  getAppConfig: jest.fn(),
-  setCachedTools: jest.fn(),
-  getCachedTools: jest.fn(),
-  getMCPServerTools: jest.fn(),
-  cacheMCPServerTools: jest.fn(),
-  loadCustomConfig: jest.fn(),
-}));
+jest.mock('~/server/services/Config', () => {
+  const getAppConfig = jest.fn();
+  return {
+    getAppConfig,
+    getMCPAppConfigSnapshot: jest.fn(async (options) => ({
+      config: await getAppConfig(options),
+      sourceDocuments: [],
+    })),
+    setCachedTools: jest.fn(),
+    getCachedTools: jest.fn(),
+    getMCPServerTools: jest.fn(),
+    cacheMCPServerTools: jest.fn().mockResolvedValue(),
+    getMCPServerCatalog: jest
+      .fn()
+      .mockResolvedValue({ status: 'pending_activation', reason: 'cold' }),
+    loadCustomConfig: jest.fn(),
+  };
+});
 
 jest.mock('@librechat/api', () => ({
   /** Pure helpers (normalizeServerName, splitMCPToolKey, schema utils, ...)
@@ -55,7 +68,12 @@ jest.mock('~/models', () => ({
   findToken: jest.fn(),
   createToken: jest.fn(),
   updateToken: jest.fn(),
+  getRoleByName: mockGetRoleByName,
   findPluginAuthsByKeys: jest.fn(),
+  findRolesByNames: jest.fn(async ([roleName]) => {
+    const role = await mockGetRoleByName(roleName);
+    return role ? [role] : [];
+  }),
 }));
 jest.mock('~/server/services/GraphTokenService', () => ({
   getGraphApiToken: jest.fn(),
@@ -68,6 +86,71 @@ jest.mock('~/server/services/OboPolicyService', () => ({
 }));
 jest.mock('~/server/services/Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
+}));
+jest.mock('~/server/services/MCPDiscoveryScope', () => ({
+  createMCPRefreshAuthorityLifecycle: () => ({
+    exchange: async (action) => await action(),
+    store: async (_tokens, action) => await action(),
+    accept: async () => undefined,
+  }),
+  matchesMCPToolAuthorityScope: (left, right) =>
+    left == null || right == null || JSON.stringify(left) === JSON.stringify(right),
+  resolveCurrentMCPToolAuthority: async (...args) => {
+    const authority = await mockResolveCurrentMCPToolAuthority(...args);
+    if (authority == null) {
+      return authority;
+    }
+    if (authority.parsedConfig) {
+      return authority;
+    }
+    const request = args[0] ?? {};
+    const sourceConfig = authority.serverConfig ?? request.expectedServerConfig ?? {};
+    const catalogScope =
+      authority.catalogScope ??
+      (request.schemas != null
+        ? {
+            tenant: 'tenant-revision',
+            principal: 'principal-revision',
+            server: 'server-revision',
+            policy: 'policy-revision',
+            config: 'config-revision',
+            credentials: 'credential-revision',
+          }
+        : null);
+    return {
+      parsedConfig: {
+        actor: {
+          userId: authority.user?.id,
+          tenantId: 'tenant-1',
+          user: { ...authority.user, role: authority.user?.role ?? 'USER' },
+        },
+        serverName: authority.serverName,
+        sourceConfig,
+        effectiveConfig: sourceConfig,
+        securityPolicy: authority.securityPolicy ?? {
+          allowedDomains: null,
+          allowedAddresses: null,
+        },
+        customUserVars: authority.customUserVars,
+        authorization: {
+          kind: authority.authorizationIdentity === 'none' ? 'none' : 'oauth',
+          identity: authority.authorizationIdentity ?? 'none',
+          credentialSetId: null,
+          generation: null,
+        },
+        catalogScope,
+      },
+      schemas: request.schemas ?? null,
+      authorityProof: { revision: 'test-proof' },
+    };
+  },
+}));
+jest.mock('~/server/services/MCPAuthority', () => ({
+  getMCPAuthorityResolver: () => ({
+    bindWithCurrentAuthority: async (_resolution, action) => await action(),
+    executeWithCurrentAuthority: async (_resolution, action) => await action(),
+    useIssuedResolution: async (resolution, action) => await action(resolution),
+  }),
 }));
 
 const { Constants } = require('librechat-data-provider');
@@ -87,6 +170,7 @@ const {
   resolveConfigServers,
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
+  resolveAllMcpConfigsFresh,
   resolveMcpServerContext,
   resolveCollisionAuditNames,
 } = require('../MCP');
@@ -355,6 +439,52 @@ describe('resolveAllMcpConfigs', () => {
 
     await expect(resolveAllMcpConfigs('u1', { id: 'u1' })).rejects.toThrow('mongo down');
   });
+
+  it('forces fresh app and registry reads for post-discovery validation', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { cfg_srv: {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({ cfg_srv: { name: 'cfg_srv' } });
+    mockRegistry.getAllServerConfigsFresh.mockResolvedValue({
+      cfg_srv: { name: 'cfg_srv' },
+    });
+
+    await expect(resolveAllMcpConfigsFresh('u1', { id: 'u1', role: 'user' })).resolves.toEqual({
+      cfg_srv: { name: 'cfg_srv' },
+    });
+
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'u1',
+        role: 'user',
+        failClosed: true,
+      }),
+    );
+    expect(mockRegistry.ensureConfigServers).toHaveBeenCalledWith(
+      { cfg_srv: {} },
+      {
+        failClosed: true,
+        allowlists: {
+          allowedAddresses: undefined,
+          allowedDomains: undefined,
+        },
+      },
+    );
+    expect(mockRegistry.getAllServerConfigsFresh).toHaveBeenCalledWith(
+      'u1',
+      { cfg_srv: { name: 'cfg_srv' } },
+      'user',
+    );
+    expect(mockRegistry.getAllServerConfigs).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when config-server resolution is unavailable during a fresh read', async () => {
+    getAppConfig.mockResolvedValue({ mcpConfig: { cfg_srv: {} } });
+    mockRegistry.ensureConfigServers.mockRejectedValue(new Error('registry unavailable'));
+
+    await expect(resolveAllMcpConfigsFresh('u1', { id: 'u1' })).rejects.toThrow(
+      'registry unavailable',
+    );
+    expect(mockRegistry.getAllServerConfigsFresh).not.toHaveBeenCalled();
+  });
 });
 
 describe('healMcpToolNames', () => {
@@ -507,7 +637,26 @@ describe('resolveCollisionAuditNames', () => {
 });
 
 describe('createMCPTool', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    const { Permissions, PermissionTypes } = require('librechat-data-provider');
+    mockGetRoleByName.mockResolvedValue({
+      permissions: {
+        [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true },
+      },
+    });
+    mockResolveCurrentMCPToolAuthority.mockImplementation(
+      async ({ user, serverName, expectedServerConfig }) => ({
+        user,
+        serverName,
+        serverConfig: expectedServerConfig ?? {},
+        customUserVars: undefined,
+        authorizationIdentity: 'none',
+        catalogScope: null,
+        securityPolicy: { allowedDomains: null, allowedAddresses: null },
+      }),
+    );
+  });
 
   const rawServerName = 'Connector: Company';
   const legacyToolKey = `search${Constants.mcp_delimiter}${rawServerName}`;

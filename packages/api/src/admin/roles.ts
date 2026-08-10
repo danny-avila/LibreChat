@@ -95,6 +95,7 @@ export interface AdminRolesDeps {
   getRoleByName: (name: string, fields?: string | string[] | null) => Promise<IRole | null>;
   createRoleByName: (roleData: Partial<IRole>) => Promise<IRole>;
   updateRoleByName: (name: string, updates: Partial<IRole>) => Promise<IRole | null>;
+  renameRoleByName: (name: string, updates: Partial<IRole>) => Promise<IRole | null>;
   updateAccessPermissions: (
     name: string,
     perms: Record<string, Record<string, boolean>>,
@@ -106,9 +107,6 @@ export interface AdminRolesDeps {
     fields?: string | string[] | null,
   ) => Promise<IUser | null>;
   updateUser: (userId: string, data: Partial<IUser>) => Promise<IUser | null>;
-  updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
-  findUserIdsByRole: (roleName: string) => Promise<string[]>;
-  updateUsersRoleByIds: (userIds: string[], newRole: string) => Promise<void>;
   listUsersByRole: (
     roleName: string,
     options?: { limit?: number; offset?: number },
@@ -156,13 +154,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     getRoleByName,
     createRoleByName,
     updateRoleByName,
+    renameRoleByName,
     updateAccessPermissions,
     deleteRoleByName,
     findUser,
     updateUser,
-    updateUsersByRole,
-    findUserIdsByRole,
-    updateUsersRoleByIds,
     listUsersByRole,
     countUsersByRole,
     deleteConfig,
@@ -275,50 +271,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     }
   }
 
-  async function rollbackMigratedUsers(
-    migratedIds: string[],
-    currentName: string,
-    newName: string,
-  ): Promise<void> {
-    if (migratedIds.length === 0) {
-      return;
-    }
-    try {
-      await updateUsersRoleByIds(migratedIds, currentName);
-    } catch (rollbackError) {
-      logger.error(
-        `[adminRoles] CRITICAL: rename rollback failed — ${migratedIds.length} users have dangling role "${newName}": [${migratedIds.join(', ')}]`,
-        rollbackError,
-      );
-    }
-  }
-
-  /**
-   * Renames a role by migrating users to the new name and updating the role document.
-   *
-   * The ID snapshot from `findUserIdsByRole` is a point-in-time read. Users assigned
-   * to `currentName` between the snapshot and the bulk `updateUsersByRole` write will
-   * be moved to `newName` but will NOT be reverted on rollback. This window is narrow
-   * and only relevant under concurrent admin operations during a rename.
-   */
   async function renameRole(
     currentName: string,
     newName: string,
     extraUpdates?: Partial<IRole>,
   ): Promise<IRole | null> {
-    const migratedIds = await findUserIdsByRole(currentName);
-    await updateUsersByRole(currentName, newName);
-    try {
-      const updates: Partial<IRole> = { name: newName, ...extraUpdates };
-      const role = await updateRoleByName(currentName, updates);
-      if (!role) {
-        await rollbackMigratedUsers(migratedIds, currentName, newName);
-      }
-      return role;
-    } catch (error) {
-      await rollbackMigratedUsers(migratedIds, currentName, newName);
-      throw error;
-    }
+    return await renameRoleByName(currentName, { name: newName, ...extraUpdates });
   }
 
   async function updateRoleHandler(req: ServerRequest, res: Response) {

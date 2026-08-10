@@ -1,5 +1,10 @@
 const mongoose = require('mongoose');
-const { RoleBits, createModels, tenantStorage } = require('@librechat/data-schemas');
+const {
+  RoleBits,
+  createModels,
+  tenantStorage,
+  getMCPAuthorityConsistencyModule,
+} = require('@librechat/data-schemas');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   ResourceType,
@@ -92,6 +97,33 @@ describe('PermissionService', () => {
   const resourceId = new mongoose.Types.ObjectId();
   const grantedById = new mongoose.Types.ObjectId();
   const roleResourceId = new mongoose.Types.ObjectId();
+
+  test('publishes remote-agent permission batches without dirtying on invalid input', async () => {
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    await consistency.initializeMCPAuthorityConsistency();
+    const before = await consistency.getMCPAuthorityConsistencyStatus();
+
+    await bulkUpdateResourcePermissions({
+      resourceType: ResourceType.REMOTE_AGENT,
+      resourceId,
+      updatedPrincipals: [],
+      revokedPrincipals: [],
+      grantedBy: grantedById,
+    });
+
+    await expect(consistency.assertGeneration(before.generation + 1)).resolves.toBeUndefined();
+
+    await expect(
+      bulkUpdateResourcePermissions({
+        resourceType: ResourceType.REMOTE_AGENT,
+        resourceId,
+        updatedPrincipals: null,
+        revokedPrincipals: [],
+        grantedBy: grantedById,
+      }),
+    ).rejects.toThrow('updatedPrincipals must be an array');
+    await expect(consistency.assertGeneration(before.generation + 1)).resolves.toBeUndefined();
+  });
 
   describe('grantPermission', () => {
     test('should grant permission to a user with a role', async () => {
@@ -2129,7 +2161,7 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
     entraIdPrincipalFeatureEnabled,
     getUserEntraGroups,
   } = require('~/server/services/GraphApiService');
-  const { Group } = require('~/db/models');
+  const { Group, User } = require('~/db/models');
 
   const userEntraId = 'entra-user-001';
   const user = {
@@ -2140,6 +2172,15 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
 
   beforeEach(async () => {
     await Group.deleteMany({});
+    await User.deleteMany({});
+    const storedUser = await User.create({
+      name: 'Entra Sync User',
+      email: 'entra-sync@example.com',
+      provider: 'openid',
+      openidId: user.openidId,
+      idOnTheSource: user.idOnTheSource,
+    });
+    user._id = storedUser._id;
     entraIdPrincipalFeatureEnabled.mockReturnValue(true);
   });
 
@@ -2175,6 +2216,42 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
     expect(groups[2].memberIds).toContain(userEntraId);
   });
 
+  it('uses the current Entra identity after acquiring the authority fence', async () => {
+    const currentEntraId = 'entra-user-current';
+    await Group.create({
+      name: 'Current Identity Group',
+      source: 'entra',
+      idOnTheSource: 'entra-current-group',
+      memberIds: [],
+    });
+    getUserEntraGroups.mockResolvedValue(['entra-current-group']);
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    await consistency.initializeMCPAuthorityConsistency();
+    let releaseMutation;
+    let mutationStarted;
+    const started = new Promise((resolve) => {
+      mutationStarted = resolve;
+    });
+    const blocked = new Promise((resolve) => {
+      releaseMutation = resolve;
+    });
+    const writer = consistency.mutateMCPAuthority(async () => {
+      mutationStarted();
+      await blocked;
+    });
+    await started;
+
+    const sync = syncUserEntraGroupMemberships(user, 'fake-access-token');
+    await User.updateOne({ _id: user._id }, { $set: { idOnTheSource: currentEntraId } });
+    releaseMutation();
+    await writer;
+    await sync;
+
+    const group = await Group.findOne({ idOnTheSource: 'entra-current-group' }).lean();
+    expect(group.memberIds).toContain(currentEntraId);
+    expect(group.memberIds).not.toContain(userEntraId);
+  });
+
   it('establishes the user tenant context for the sync when tenantId is present', async () => {
     const { getTenantId } = require('@librechat/data-schemas');
     const observed = [];
@@ -2187,6 +2264,23 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
     await syncUserEntraGroupMemberships(user, 'fake-token');
 
     expect(observed).toEqual(['tenant-42', undefined]);
+  });
+
+  it('rejects an active caller transaction before dirtying MCP authority', async () => {
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    await consistency.initializeMCPAuthorityConsistency();
+    const before = await consistency.getMCPAuthorityConsistencyStatus();
+    getUserEntraGroups.mockClear();
+
+    await syncUserEntraGroupMemberships(user, 'fake-token', {
+      inTransaction: () => true,
+    });
+
+    expect(getUserEntraGroups).not.toHaveBeenCalled();
+    await expect(consistency.getMCPAuthorityConsistencyStatus()).resolves.toMatchObject({
+      dirty: false,
+      generation: before.generation,
+    });
   });
 
   it('should not modify groups when API returns empty list (early return)', async () => {
@@ -2293,7 +2387,12 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
       },
     ]);
 
+    const consistency = getMCPAuthorityConsistencyModule(mongoose);
+    const before = await consistency.getMCPAuthorityConsistencyStatus();
+
     await syncUserEntraGroupMemberships(user, 'fake-token');
+
+    const after = await consistency.getMCPAuthorityConsistencyStatus();
 
     // Verify ALL three groups now have the user as member
     const groupA = await Group.findOne({ idOnTheSource: 'entra-group-a' }).lean();
@@ -2305,6 +2404,7 @@ describe('syncUserEntraGroupMemberships - $pullAll on Group.memberIds', () => {
     expect(groupC).toBeTruthy();
     expect(groupC.memberIds).toContain(userEntraId);
     expect(groupC.name).toBe('Group C');
+    expect(after.generation).toBe(before.generation + 1);
 
     // Reset mock
     getEntraGroupDetailsBatch.mockResolvedValue([]);

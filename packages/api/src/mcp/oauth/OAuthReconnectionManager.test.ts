@@ -62,6 +62,7 @@ describe('OAuthReconnectionManager', () => {
       getUserConnection: jest.fn(),
       getUserConnections: jest.fn(),
       disconnectUserConnection: jest.fn(),
+      releaseDetachedUserConnection: jest.fn(),
     } as unknown as jest.Mocked<MCPManager>;
 
     (MCPManager.getInstance as jest.Mock).mockReturnValue(mockMCPManager);
@@ -219,6 +220,11 @@ describe('OAuthReconnectionManager', () => {
         connectionTimeout: 5000,
         returnOnOAuth: true,
       });
+      expect(mockMCPManager.releaseDetachedUserConnection).toHaveBeenCalledWith(
+        userId,
+        'server3',
+        mockNewConnection,
+      );
 
       // Verify successful reconnection cleared the states
       expect(reconnectionTracker.isFailed(userId, 'server3')).toBe(false);
@@ -251,7 +257,7 @@ describe('OAuthReconnectionManager', () => {
       // Verify failure handling
       expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
-      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
+      expect(mockMCPManager.disconnectUserConnection).not.toHaveBeenCalled();
     });
 
     it('should not reconnect servers with expired tokens and no refresh token', async () => {
@@ -316,6 +322,11 @@ describe('OAuthReconnectionManager', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 100));
 
+      expect(tokenMethods.findToken).toHaveBeenCalledWith({
+        userId,
+        type: 'mcp_oauth_refresh',
+        identifier: 'mcp:server1:refresh',
+      });
       expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith(
         expect.objectContaining({ serverName: 'server1' }),
       );
@@ -374,8 +385,16 @@ describe('OAuthReconnectionManager', () => {
         isConnected: jest.fn().mockResolvedValue(false),
         disconnect: jest.fn(),
       };
+      const newerPrimary = { disconnect: jest.fn() };
       mockMCPManager.getUserConnection.mockResolvedValue(
         mockConnection as unknown as MCPConnection,
+      );
+      mockMCPManager.disconnectUserConnection.mockImplementation(
+        async (_userId, _server, owner) => {
+          if (!owner) {
+            await newerPrimary.disconnect();
+          }
+        },
       );
       (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(
         {} as unknown as MCPOptions,
@@ -387,10 +406,20 @@ describe('OAuthReconnectionManager', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // Verify failure handling
-      expect(mockConnection.disconnect).toHaveBeenCalled();
+      expect(mockConnection.disconnect).not.toHaveBeenCalled();
       expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
-      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
+      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(
+        userId,
+        'server1',
+        mockConnection,
+      );
+      expect(newerPrimary.disconnect).not.toHaveBeenCalled();
+      expect(mockMCPManager.releaseDetachedUserConnection).toHaveBeenCalledWith(
+        userId,
+        'server1',
+        mockConnection,
+      );
     });
 
     it('should handle MCPManager not available gracefully', async () => {
@@ -482,6 +511,89 @@ describe('OAuthReconnectionManager', () => {
 
       const result = await managerWithoutMCP.reconnectServer(userId, serverName);
       expect(result).toBe(false);
+    });
+
+    it('binds the exact authority config and scope without a stale registry read', async () => {
+      const userId = 'user-123';
+      const serverName = 'server1';
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://example.com/mcp',
+        initTimeout: 4321,
+      } as MCPOptions;
+      const effectiveServerConfig = {
+        ...serverConfig,
+        url: 'https://resolved.example.com/mcp',
+      };
+      const securityPolicy = {
+        useSSRFProtection: true,
+        allowedDomains: ['resolved.example.com'],
+        allowedAddresses: null,
+      };
+      const oauthAuthorityScope = {
+        tenant: 'tenant',
+        principal: 'principal',
+        server: 'server',
+        policy: 'policy',
+        config: 'config',
+        credentials: 'credentials',
+      };
+      const bind = jest.fn(async <Result>(action: () => Promise<Result>) => await action());
+      const resolveAuthority = jest.fn().mockResolvedValue({
+        user: { id: userId, role: 'USER' },
+        serverConfig,
+        effectiveServerConfig,
+        securityPolicy,
+        customUserVars: { API_KEY: 'secret' },
+        oauthAuthorityScope,
+        authorityAuthorizationKind: 'oauth',
+        bind,
+      });
+      const authorityManager = new OAuthReconnectionManager(
+        flowManager,
+        tokenMethods,
+        reconnectionTracker,
+        resolveAuthority,
+      );
+      const connection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      mockMCPManager.getUserConnection.mockResolvedValue(connection);
+
+      await expect(authorityManager.reconnectServer(userId, serverName)).resolves.toBe(true);
+
+      expect(resolveAuthority).toHaveBeenCalledWith({ userId, user: { id: userId } }, serverName);
+      expect(bind).toHaveBeenCalledTimes(1);
+      expect(mockRegistryInstance.getServerConfig).not.toHaveBeenCalled();
+      expect(mockMCPManager.getUserConnection).toHaveBeenCalledWith({
+        serverName,
+        user: { id: userId, role: 'USER' },
+        flowManager,
+        tokenMethods,
+        serverConfig,
+        effectiveServerConfig,
+        securityPolicy,
+        customUserVars: { API_KEY: 'secret' },
+        oauthAuthorityScope,
+        authorityAuthorizationKind: 'oauth',
+        forceNew: false,
+        connectionTimeout: 4321,
+        returnOnOAuth: true,
+      });
+    });
+
+    it('fails closed before reading config or connecting when reconnect authority is unavailable', async () => {
+      const authorityManager = new OAuthReconnectionManager(
+        flowManager,
+        tokenMethods,
+        reconnectionTracker,
+        jest.fn().mockResolvedValue(null),
+      );
+
+      await expect(authorityManager.reconnectServer('user-123', 'server1')).resolves.toBe(false);
+
+      expect(mockRegistryInstance.getServerConfig).not.toHaveBeenCalled();
+      expect(mockMCPManager.getUserConnection).not.toHaveBeenCalled();
     });
   });
 
@@ -592,7 +704,7 @@ describe('OAuthReconnectionManager', () => {
       expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Failed to reconnect'));
       expect(reconnectionTracker.isActive(userId, 'server1')).toBe(false);
       expect(reconnectionTracker.isFailed(userId, 'server1')).toBe(true);
-      expect(mockMCPManager.disconnectUserConnection).toHaveBeenCalledWith(userId, 'server1');
+      expect(mockMCPManager.disconnectUserConnection).not.toHaveBeenCalled();
     });
   });
 

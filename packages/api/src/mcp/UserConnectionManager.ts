@@ -1,34 +1,75 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import type { MCPAuthorizationTokenBatchFinder, MCPToolCatalogScopeInput } from './catalog';
 import type * as t from './types';
+import {
+  MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY,
+  createMCPConnectionProvenance,
+  createMCPToolCatalogSecurityPolicyIdentity,
+  getMCPAuthorizationIdentity,
+  isMCPToolCatalogFingerprintAvailable,
+  matchesMCPConnectionProvenance,
+} from './catalog';
+import {
+  getMissingRuntimeBodyPlaceholderFields,
+  hasRuntimeUrlPlaceholders,
+  isUserSourced,
+  isOAuthServer,
+  requiresEphemeralUserConnection,
+  requiresOAuthMachinery,
+  shouldDetectRuntimeOAuth,
+} from './utils';
 import {
   cancelMCPToolsChanged,
   getMCPAppToolsPublicationGeneration,
   getMCPToolsChangedGeneration,
   notifyMCPToolsChanged,
   renewMCPToolsChangedGeneration,
-} from '~/mcp/toolsChanged';
-import {
-  getMissingRuntimeBodyPlaceholderFields,
-  hasRuntimeUrlPlaceholders,
-  isUserSourced,
-  requiresEphemeralUserConnection,
-  requiresOAuthMachinery,
-} from './utils';
+} from './toolsChanged';
+import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~/utils/graph';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from '~/mcp/oauth/pending';
-import { preProcessGraphTokens } from '~/utils/graph';
 import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isMCPDomainAllowed } from '~/auth/domain';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
+type ConnectionScopeContext = Pick<
+  t.UserMCPConnectionOptions,
+  | 'serverName'
+  | 'user'
+  | 'customUserVars'
+  | 'requestBody'
+  | 'graphTokenResolver'
+  | 'tokenMethods'
+  | 'oboTokenResolver'
+  | 'effectiveServerConfig'
+  | 'securityPolicy'
+  | 'oauthAuthorityScope'
+  | 'authorityAuthorizationKind'
+> & { userId: string };
+
 type PendingConnection = {
   promise: Promise<MCPConnection>;
   oauth: OAuthLifecycleRelay;
+  config?: t.ParsedServerConfig;
+  context: ConnectionScopeContext;
+  authority?: {
+    scope: t.MCPToolCatalogScope;
+    authorizationKind: t.MCPConnectionProvenance['authorizationKind'];
+  };
+};
+
+type DetachedConnectionLease = {
+  teardown?: Promise<void>;
+};
+
+type RequestPendingScope = {
+  scope: t.MCPToolCatalogScope;
+  authorizationKind: t.MCPConnectionProvenance['authorizationKind'];
 };
 
 type ConnectionCreationGuard = { cancelled: boolean };
@@ -45,10 +86,17 @@ export abstract class UserConnectionManager {
   public appConnections: ConnectionsRepository | null = null;
   // Connections per userId -> serverName -> connection
   protected userConnections: Map<string, Map<string, MCPConnection>> = new Map();
+  /** Concurrent force-new results that callers own until explicit or idle cleanup. */
+  protected detachedUserConnections: Map<
+    string,
+    Map<string, Map<MCPConnection, DetachedConnectionLease>>
+  > = new Map();
+
   /** Last activity timestamp for users (not per server) */
   protected userLastActivity: Map<string, number> = new Map();
   /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
   protected pendingConnections: Map<string, PendingConnection> = new Map();
+  protected requestPendingScopes: WeakMap<Promise<unknown>, RequestPendingScope> = new WeakMap();
   private readonly connectionBorrowers = new WeakMap<MCPConnection, number>();
   private readonly connectionBorrowerDrainWaiters = new WeakMap<MCPConnection, Set<() => void>>();
   private readonly deferredConnectionDisposalHolds = new WeakMap<MCPConnection, number>();
@@ -94,6 +142,32 @@ export abstract class UserConnectionManager {
       }
     });
     return result;
+  }
+
+  private getConnectionCreationQueueKey(
+    lockKey: string,
+    scope?: t.MCPToolCatalogScope | null,
+    authorizationKind?: t.MCPConnectionProvenance['authorizationKind'],
+  ): string {
+    if (!scope || !authorizationKind) {
+      return lockKey;
+    }
+    return [
+      lockKey,
+      authorizationKind,
+      scope.tenant,
+      scope.principal,
+      scope.server,
+      scope.policy,
+      scope.config,
+      scope.credentials,
+    ].join(':');
+  }
+
+  private async disposeConnection(connection: MCPConnection): Promise<void> {
+    connection.removeAllListeners?.('toolsChanged');
+    const teardown = connection.dispose?.() ?? connection.disconnect();
+    await teardown;
   }
 
   private registerConnectionCreation(key: string, guard: ConnectionCreationGuard): void {
@@ -194,21 +268,75 @@ export abstract class UserConnectionManager {
     if (!this.lostToolPublicationLeases.has(connection)) {
       return;
     }
-    await this.disconnectUserConnection(userId, serverName, creationGuard);
+    await this.disconnectUserConnection(userId, serverName, undefined, creationGuard);
     throw new Error(`[MCP][User: ${userId}][${serverName}] Publication lease is no longer current`);
   }
 
   /** Gets or creates a connection for a specific user, coalescing concurrent attempts */
   public async getUserConnection(opts: t.UserMCPConnectionOptions): Promise<MCPConnection> {
+    return this.getUserConnectionInternal(opts, false);
+  }
+
+  /** Creates a tenant-policy-isolated connection for an otherwise app-owned server. */
+  protected async getIsolatedUserConnection(
+    opts: t.UserMCPConnectionOptions,
+  ): Promise<MCPConnection> {
+    return this.getUserConnectionInternal(opts, true);
+  }
+
+  private async getUserConnectionInternal(
+    opts: t.UserMCPConnectionOptions,
+    allowAppLevelServer: boolean,
+    returnDetached = false,
+    creationScope?: RequestPendingScope,
+  ): Promise<MCPConnection> {
     const { serverName, forceNew, user } = opts;
     const userId = user?.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
     }
+    if (!allowAppLevelServer && (await this.appConnections!.has(serverName))) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `[MCP][User: ${userId}] Trying to create user-specific connection for app-level server "${serverName}"`,
+      );
+    }
 
+    const authorityInputs = [
+      opts.effectiveServerConfig,
+      opts.securityPolicy,
+      opts.oauthAuthorityScope,
+      opts.authorityAuthorizationKind,
+    ];
+    const hasAnyAuthorityInput = authorityInputs.some((value) => value != null);
+    const proofBound = opts.serverConfig != null && authorityInputs.every((value) => value != null);
+    if (hasAnyAuthorityInput && !proofBound) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `[MCP][User: ${userId}][${serverName}] Incomplete proof-bound connection input.`,
+      );
+    }
     const config =
       opts.serverConfig ??
       (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
+    const effectiveServerConfig = opts.effectiveServerConfig;
+    const securityPolicy = opts.securityPolicy;
+    const oauthAuthorityScope = opts.oauthAuthorityScope;
+    const authorityAuthorizationKind = opts.authorityAuthorizationKind;
+    const connectionScopeContext: ConnectionScopeContext = {
+      userId,
+      serverName,
+      user,
+      customUserVars: opts.customUserVars,
+      requestBody: opts.requestBody,
+      graphTokenResolver: opts.graphTokenResolver,
+      tokenMethods: opts.tokenMethods,
+      oboTokenResolver: opts.oboTokenResolver,
+      effectiveServerConfig,
+      securityPolicy,
+      oauthAuthorityScope,
+      authorityAuthorizationKind,
+    };
     const missingBodyFields = config
       ? getMissingRuntimeBodyPlaceholderFields(config, opts.requestBody)
       : [];
@@ -247,8 +375,20 @@ export abstract class UserConnectionManager {
             recovery = this.getActiveConnectionRecovery(existing);
           }
           if (connected) {
-            logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`);
-            return existing;
+            const provenanceCurrent =
+              !proofBound ||
+              (await this.isConnectionProvenanceCurrent(
+                existing,
+                config,
+                connectionScopeContext,
+                true,
+              ));
+            if (provenanceCurrent) {
+              logger.debug(
+                `[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`,
+              );
+              return existing;
+            }
           }
           requestScopedConnections.connections.delete(requestConnectionKey);
           await this.disposeEvictedConnection(existing, `[MCP][User: ${userId}][${serverName}]`);
@@ -258,7 +398,17 @@ export abstract class UserConnectionManager {
       const pending = requestScopedConnections.pending.get(requestConnectionKey) as
         | Promise<MCPConnection>
         | undefined;
-      if (pending) {
+      const pendingScope = pending ? this.requestPendingScopes.get(pending) : undefined;
+      const pendingMatches = proofBound
+        ? pendingScope != null &&
+          this.matchesIssuedScope(
+            pendingScope.scope,
+            pendingScope.authorizationKind,
+            oauthAuthorityScope!,
+            authorityAuthorizationKind!,
+          )
+        : true;
+      if (pending && pendingMatches) {
         logger.debug(
           `[MCP][User: ${userId}][${serverName}] Joining in-flight request-scoped connection attempt`,
         );
@@ -290,6 +440,12 @@ export abstract class UserConnectionManager {
         requestConnectionKey,
         connectionPromise as Promise<unknown>,
       );
+      if (proofBound) {
+        this.requestPendingScopes.set(connectionPromise, {
+          scope: oauthAuthorityScope!,
+          authorizationKind: authorityAuthorizationKind!,
+        });
+      }
 
       try {
         return await connectionPromise;
@@ -304,19 +460,91 @@ export abstract class UserConnectionManager {
     const clearCooldown = forceNew === true;
 
     const lockKey = `${userId}:${serverName}`;
-
     if (!forceNewConnection) {
       const pending = this.pendingConnections.get(lockKey);
       if (pending) {
-        logger.debug(`[MCP][User: ${userId}][${serverName}] Joining in-flight connection attempt`);
-        await pending.oauth.add({
-          oauthStart: opts.oauthStart,
-          oauthEnd: opts.oauthEnd,
-          flowManager: opts.flowManager,
-          userId,
-          serverName,
-        });
-        return pending.promise;
+        let pendingMatches = false;
+        let requestedCreationScope = proofBound
+          ? {
+              scope: oauthAuthorityScope!,
+              authorizationKind: authorityAuthorizationKind!,
+            }
+          : undefined;
+        if (proofBound) {
+          pendingMatches =
+            pending.authority != null &&
+            this.matchesIssuedScope(
+              pending.authority.scope,
+              pending.authority.authorizationKind,
+              oauthAuthorityScope!,
+              authorityAuthorizationKind!,
+            );
+        } else {
+          const [pendingScope, requestedScope] = await Promise.all([
+            pending.config
+              ? this.resolveCurrentConnectionScope(pending.config, pending.context)
+              : null,
+            config ? this.resolveCurrentConnectionScope(config, connectionScopeContext) : null,
+          ]);
+          const pendingProvenance = pendingScope
+            ? createMCPConnectionProvenance(pendingScope, 'user')
+            : null;
+          const requestedProvenance = requestedScope
+            ? createMCPConnectionProvenance(requestedScope, 'user')
+            : null;
+          requestedCreationScope = requestedProvenance
+            ? {
+                scope: requestedProvenance.scope,
+                authorizationKind: requestedProvenance.authorizationKind,
+              }
+            : undefined;
+          pendingMatches =
+            pendingProvenance != null &&
+            requestedScope != null &&
+            matchesMCPConnectionProvenance(pendingProvenance, requestedScope);
+        }
+        if (pendingMatches) {
+          logger.debug(
+            `[MCP][User: ${userId}][${serverName}] Joining in-flight connection attempt`,
+          );
+          await pending.oauth.add({
+            oauthStart: opts.oauthStart,
+            oauthEnd: opts.oauthEnd,
+            flowManager: opts.flowManager,
+            userId,
+            serverName,
+          });
+          const connection = await pending.promise;
+          if (this.userConnections.get(userId)?.get(serverName) !== connection) {
+            logger.info(
+              `[MCP][User: ${userId}][${serverName}] Joined connection became caller-owned; creating an isolated result`,
+            );
+            return this.getUserConnectionInternal(
+              { ...opts, serverConfig: config, forceNew: true },
+              allowAppLevelServer,
+              true,
+              requestedCreationScope,
+            );
+          }
+          const provenanceCurrent = await this.isConnectionProvenanceCurrent(
+            connection,
+            config!,
+            connectionScopeContext,
+            proofBound,
+          );
+          if (provenanceCurrent) {
+            return connection;
+          }
+        }
+        logger.info(
+          `[MCP][User: ${userId}][${serverName}] In-flight connection scope changed; creating an isolated replacement`,
+        );
+        return this.getUserConnectionInternal(
+          { ...opts, serverConfig: config, forceNew: true },
+          allowAppLevelServer,
+          false,
+          requestedCreationScope,
+        );
       }
     }
 
@@ -340,15 +568,37 @@ export abstract class UserConnectionManager {
         userId,
         clearCooldown,
         creationGuard,
+        returnDetached,
       );
+    const resolvedCreationScope =
+      creationScope ??
+      (proofBound
+        ? {
+            scope: oauthAuthorityScope!,
+            authorizationKind: authorityAuthorizationKind!,
+          }
+        : null);
+    const creationQueueKey = this.getConnectionCreationQueueKey(
+      lockKey,
+      resolvedCreationScope?.scope,
+      resolvedCreationScope?.authorizationKind,
+    );
     const connectionPromise = !ephemeralConnection
-      ? this.runWithForceNewConnectionQueue(lockKey, createConnection)
+      ? this.runWithForceNewConnectionQueue(creationQueueKey, createConnection)
       : createConnection();
 
     if (!forceNewConnection) {
       this.pendingConnections.set(lockKey, {
         promise: connectionPromise,
         oauth: pendingOAuth,
+        config,
+        context: connectionScopeContext,
+        authority: proofBound
+          ? {
+              scope: oauthAuthorityScope!,
+              authorizationKind: authorityAuthorizationKind!,
+            }
+          : undefined,
       });
     }
 
@@ -384,23 +634,36 @@ export abstract class UserConnectionManager {
       graphTokenResolver,
       ephemeralConnection = false,
       serverConfig: providedConfig,
+      effectiveServerConfig,
+      securityPolicy,
+      oauthAuthorityScope,
+      authorityAuthorizationKind,
+      refreshAuthorityLifecycle,
     }: t.UserMCPConnectionOptions,
     userId: string,
     clearCooldown: boolean,
     creationGuard?: ConnectionCreationGuard,
+    returnDetached = false,
   ): Promise<MCPConnection> {
     if (creationGuard?.cancelled) {
       throw new Error(
         `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
       );
     }
-    if (await this.appConnections!.has(serverName)) {
+    const authorityInputs = [
+      effectiveServerConfig,
+      securityPolicy,
+      oauthAuthorityScope,
+      authorityAuthorizationKind,
+    ];
+    const hasAnyAuthorityInput = authorityInputs.some((value) => value != null);
+    const proofBound = providedConfig != null && authorityInputs.every((value) => value != null);
+    if (hasAnyAuthorityInput && !proofBound) {
       throw new McpError(
         ErrorCode.InvalidRequest,
-        `[MCP][User: ${userId}] Trying to create user-specific connection for app-level server "${serverName}"`,
+        `[MCP][User: ${userId}][${serverName}] Incomplete proof-bound connection input.`,
       );
     }
-
     const config =
       providedConfig ??
       (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
@@ -413,11 +676,11 @@ export abstract class UserConnectionManager {
 
     const userServerMap = this.userConnections.get(userId);
     let connection = userServerMap?.get(serverName);
-    if (forceNew && connection && !ephemeralConnection) {
+    if (forceNew && connection && !ephemeralConnection && !returnDetached) {
       logger.info(
         `[MCP][User: ${userId}][${serverName}] Disposing existing connection before forced replacement`,
       );
-      await this.disconnectUserConnection(userId, serverName, creationGuard);
+      await this.disconnectUserConnection(userId, serverName, undefined, creationGuard);
       connection = undefined;
     } else if (forceNew) {
       connection = undefined;
@@ -430,7 +693,9 @@ export abstract class UserConnectionManager {
     const existingPublicationGeneration = connection
       ? this.toolPublicationGenerations.get(connection)
       : undefined;
-    const configGeneration = config ? getMCPAppToolsPublicationGeneration(config) : undefined;
+    const configGeneration = config
+      ? getMCPAppToolsPublicationGeneration(config, proofBound ? effectiveServerConfig : undefined)
+      : undefined;
     const existingConfigGeneration = connection
       ? this.toolConfigGenerations.get(connection)
       : undefined;
@@ -443,7 +708,7 @@ export abstract class UserConnectionManager {
       logger.info(
         `[MCP][User: ${userId}][${serverName}] Config identity changed, disconnecting stale connection`,
       );
-      await this.disconnectUserConnection(userId, serverName, creationGuard);
+      await this.disconnectUserConnection(userId, serverName, undefined, creationGuard);
       connection = undefined;
     }
     if (
@@ -455,7 +720,7 @@ export abstract class UserConnectionManager {
       logger.info(
         `[MCP][User: ${userId}][${serverName}] Cache generation changed, disconnecting stale connection`,
       );
-      await this.disconnectUserConnection(userId, serverName, creationGuard);
+      await this.disconnectUserConnection(userId, serverName, undefined, creationGuard);
       connection = undefined;
     }
 
@@ -477,7 +742,7 @@ export abstract class UserConnectionManager {
             `[MCP][User: ${userId}][${serverName}] Config was updated, evicting stale connection`,
           );
         }
-        await this.disconnectUserConnection(userId, serverName, creationGuard);
+        await this.disconnectUserConnection(userId, serverName, connection, creationGuard);
         connection = undefined;
       } else {
         const activeRecovery = this.getActiveConnectionRecovery(connection);
@@ -494,25 +759,50 @@ export abstract class UserConnectionManager {
           recovery = this.getActiveConnectionRecovery(connection);
         }
         if (connected) {
-          logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
-          await this.updateUserLastActivity(userId);
-          await this.assertToolPublicationLeaseCurrent(
+          const provenanceCurrent = await this.isConnectionProvenanceCurrent(
             connection,
-            userId,
-            serverName,
-            creationGuard,
+            config,
+            {
+              userId,
+              serverName,
+              user,
+              customUserVars,
+              requestBody,
+              graphTokenResolver,
+              tokenMethods,
+              oboTokenResolver,
+              effectiveServerConfig,
+              securityPolicy,
+              oauthAuthorityScope,
+              authorityAuthorizationKind,
+            },
+            proofBound,
           );
-          if (creationGuard?.cancelled) {
-            throw new Error(
-              `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
+          if (provenanceCurrent) {
+            logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
+            await this.updateUserLastActivity(userId);
+            await this.assertToolPublicationLeaseCurrent(
+              connection,
+              userId,
+              serverName,
+              creationGuard,
             );
+            if (creationGuard?.cancelled) {
+              throw new Error(
+                `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
+              );
+            }
+            return connection;
           }
-          return connection;
+          logger.info(
+            `[MCP][User: ${userId}][${serverName}] Connection scope changed, disconnecting stale connection`,
+          );
+        } else {
+          logger.warn(
+            `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
+          );
         }
-        logger.warn(
-          `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
-        );
-        await this.disconnectUserConnection(userId, serverName, creationGuard);
+        await this.disconnectUserConnection(userId, serverName, undefined, creationGuard);
         connection = undefined;
       }
     }
@@ -527,32 +817,30 @@ export abstract class UserConnectionManager {
 
     // If no valid connection exists, create a new one
     logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
+    const connectionToReplace = this.userConnections.get(userId)?.get(serverName);
 
     try {
-      const runtimeConfig = await this.applyRuntimeOAuthDetection({
+      const {
+        runtimeConfig,
+        useSSRFProtection,
+        allowedDomains,
+        allowedAddresses,
+        proofBound: usesIssuedRuntime,
+      } = await this.resolveConnectionRuntimeInput({
         config,
         user,
         customUserVars,
         requestBody,
         graphTokenResolver,
-      });
-      const registry = MCPServersRegistry.getInstance();
-      const { allowedDomains, allowedAddresses, useSSRFProtection } =
-        await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
-      await this.assertResolvedRuntimeConfigAllowed({
-        config: runtimeConfig,
-        user,
-        customUserVars,
-        requestBody,
-        graphTokenResolver,
-        allowedDomains,
-        allowedAddresses,
-        logPrefix: `[MCP][User: ${userId}][${serverName}]`,
+        effectiveServerConfig,
+        securityPolicy,
       });
       const basic: t.BasicConnectionOptions = {
         serverConfig: runtimeConfig,
+        declarativeServerConfig: usesIssuedRuntime ? config : undefined,
         serverName: serverName,
-        dbSourced: isUserSourced(runtimeConfig),
+        dbSourced: isUserSourced(config),
+        skipEnvProcessing: usesIssuedRuntime,
         useSSRFProtection,
         allowedDomains,
         allowedAddresses,
@@ -584,6 +872,11 @@ export abstract class UserConnectionManager {
           returnOnOAuth: returnOnOAuth,
           requestBody: requestBody,
           connectionTimeout: connectionTimeout,
+          oauthAuthorityScope,
+          authorityAuthorizationKind,
+          refreshAuthorityLifecycle,
+          effectiveServerConfig,
+          securityPolicy,
         };
       } else {
         connectionOptions = {
@@ -592,6 +885,11 @@ export abstract class UserConnectionManager {
           requestBody,
           graphTokenResolver,
           connectionTimeout,
+          oauthAuthorityScope,
+          authorityAuthorizationKind,
+          refreshAuthorityLifecycle,
+          effectiveServerConfig,
+          securityPolicy,
         };
       }
 
@@ -610,7 +908,7 @@ export abstract class UserConnectionManager {
         this.toolConfigGenerations.set(connection, configGeneration);
       }
 
-      connection.on('toolsChanged', (tools: t.MCPTool[], publicationRevision?: string) => {
+      connection.on?.('toolsChanged', (tools: t.MCPTool[], publicationRevision?: string) => {
         void notifyMCPToolsChanged({
           tools,
           userId,
@@ -626,16 +924,11 @@ export abstract class UserConnectionManager {
       }
 
       if (!ephemeralConnection) {
-        await connection.refreshToolList();
-        if (creationGuard?.cancelled) {
-          throw new Error(
-            `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
-          );
+        if (returnDetached) {
+          this.trackDetachedUserConnection(userId, serverName, connection);
+        } else {
+          await this.trackUserConnection(userId, serverName, connection, connectionToReplace);
         }
-        if (!this.userConnections.has(userId)) {
-          this.userConnections.set(userId, new Map());
-        }
-        this.userConnections.get(userId)?.set(serverName, connection);
       }
 
       logger.info(`[MCP][User: ${userId}][${serverName}] Connection successfully established`);
@@ -652,19 +945,138 @@ export abstract class UserConnectionManager {
     } catch (error) {
       logger.error(`[MCP][User: ${userId}][${serverName}] Failed to establish connection`, error);
       // Ensure partial connection state is cleaned up if initialization fails
-      connection?.removeAllListeners?.('toolsChanged');
-      await connection?.dispose().catch((disconnectError) => {
-        logger.error(
-          `[MCP][User: ${userId}][${serverName}] Error during cleanup after failed connection`,
-          disconnectError,
-        );
-      });
-      // Ensure cleanup even if connection attempt fails
-      if (connection && this.userConnections.get(userId)?.get(serverName) === connection) {
-        this.removeUserConnection(userId, serverName);
+      if (connection) {
+        await this.disposeConnection(connection).catch((disconnectError) => {
+          logger.error(
+            `[MCP][User: ${userId}][${serverName}] Error during cleanup after failed connection`,
+            disconnectError,
+          );
+        });
+      }
+      if (connection) {
+        this.removeUserConnectionIfOwned(userId, serverName, connection);
       }
       throw error; // Re-throw the error to the caller
     }
+  }
+
+  private async resolveCurrentConnectionScope(
+    config: t.ParsedServerConfig,
+    context: ConnectionScopeContext,
+    discoveryProvenance?: t.MCPConnectionProvenance | null,
+  ): Promise<MCPToolCatalogScopeInput | null> {
+    if (!isMCPToolCatalogFingerprintAvailable()) {
+      return null;
+    }
+    const {
+      userId,
+      serverName,
+      user,
+      customUserVars,
+      requestBody,
+      graphTokenResolver,
+      tokenMethods,
+      oboTokenResolver,
+    } = context;
+    const runtimeOAuthDetected =
+      discoveryProvenance?.authorizationKind === 'oauth' && shouldDetectRuntimeOAuth(config);
+    const provenanceServerConfig = runtimeOAuthDetected
+      ? { ...config, requiresOAuth: true }
+      : config;
+    const configuredOAuth = isOAuthServer(provenanceServerConfig);
+    if (configuredOAuth && !tokenMethods?.findToken) {
+      return null;
+    }
+    const batchTokenMethods = tokenMethods as
+      | { findTokens?: MCPAuthorizationTokenBatchFinder }
+      | undefined;
+    const usesObo = config.obo != null && oboTokenResolver != null && user != null;
+    let authorizationIdentity: string | null = 'none';
+    if (usesObo) {
+      authorizationIdentity = MCP_OBO_CONNECTION_AUTHORIZATION_IDENTITY;
+    } else if (configuredOAuth) {
+      authorizationIdentity = await getMCPAuthorizationIdentity({
+        userId,
+        serverName,
+        findToken: tokenMethods!.findToken!,
+        findTokens: batchTokenMethods?.findTokens,
+      });
+    }
+    if (authorizationIdentity == null) {
+      return null;
+    }
+    const registry = MCPServersRegistry.getInstance();
+    const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
+      userId,
+      role: user?.role,
+      tenantId: user?.tenantId ?? getTenantId() ?? null,
+    });
+    const effectiveServerConfig = await this.resolveRuntimeConfig({
+      config: provenanceServerConfig,
+      user,
+      customUserVars,
+      requestBody,
+      graphTokenResolver,
+    });
+    return {
+      tenantId: user?.tenantId ?? getTenantId() ?? null,
+      userId,
+      serverName,
+      serverConfig: provenanceServerConfig,
+      effectiveServerConfig,
+      securityPolicyIdentity: createMCPToolCatalogSecurityPolicyIdentity({
+        allowedDomains,
+        allowedAddresses,
+      }),
+      customUserVars,
+      authorizationIdentity,
+    };
+  }
+
+  private async isConnectionProvenanceCurrent(
+    connection: MCPConnection,
+    config: t.ParsedServerConfig,
+    context: ConnectionScopeContext,
+    proofBound = false,
+  ): Promise<boolean> {
+    const provenance = connection.getDiscoveryProvenance?.() ?? null;
+    if (proofBound) {
+      const scope = context.oauthAuthorityScope;
+      const authorizationKind = context.authorityAuthorizationKind;
+      return (
+        provenance != null &&
+        scope != null &&
+        authorizationKind != null &&
+        this.matchesIssuedScope(
+          provenance.scope,
+          provenance.authorizationKind,
+          scope,
+          authorizationKind,
+        )
+      );
+    }
+    if (!isMCPToolCatalogFingerprintAvailable()) {
+      return true;
+    }
+    const scope = await this.resolveCurrentConnectionScope(config, context, provenance);
+    return scope != null && matchesMCPConnectionProvenance(provenance, scope);
+  }
+
+  private matchesIssuedScope(
+    left: t.MCPToolCatalogScope,
+    leftAuthorizationKind: t.MCPConnectionProvenance['authorizationKind'],
+    right: t.MCPToolCatalogScope,
+    rightAuthorizationKind: t.MCPConnectionProvenance['authorizationKind'],
+  ): boolean {
+    return (
+      leftAuthorizationKind === rightAuthorizationKind &&
+      left.tenant === right.tenant &&
+      left.principal === right.principal &&
+      left.server === right.server &&
+      left.policy === right.policy &&
+      left.config === right.config &&
+      left.credentials === right.credentials
+    );
   }
 
   /**
@@ -754,6 +1166,115 @@ export abstract class UserConnectionManager {
     return resolvedConfig;
   }
 
+  protected async assertExactRuntimeConfigAllowed({
+    effectiveConfig,
+    securityPolicy,
+    logPrefix,
+  }: {
+    effectiveConfig: t.ParsedServerConfig;
+    securityPolicy: NonNullable<t.UserConnectionContext['securityPolicy']>;
+    logPrefix: string;
+  }): Promise<void> {
+    if (mcpOptionsContainGraphTokenPlaceholder(effectiveConfig)) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Graph credentials were not materialized by the MCP authority resolver.`,
+      );
+    }
+    if (!effectiveConfig.url) {
+      return;
+    }
+    if (hasRuntimeUrlPlaceholders(effectiveConfig)) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Runtime URL still contains unresolved MCP placeholders after resolution.`,
+      );
+    }
+    if (
+      !(await isMCPDomainAllowed(
+        effectiveConfig,
+        securityPolicy.allowedDomains,
+        securityPolicy.allowedAddresses,
+      ))
+    ) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `${logPrefix} Resolved MCP server URL is not allowed by the configured domain policy.`,
+      );
+    }
+  }
+
+  private async resolveConnectionRuntimeInput({
+    config,
+    user,
+    customUserVars,
+    requestBody,
+    graphTokenResolver,
+    effectiveServerConfig,
+    securityPolicy,
+  }: {
+    config: t.ParsedServerConfig;
+    user?: t.UserMCPConnectionOptions['user'];
+    customUserVars?: Record<string, string>;
+    requestBody?: t.UserMCPConnectionOptions['requestBody'];
+    graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
+    effectiveServerConfig?: t.ParsedServerConfig;
+    securityPolicy?: t.UserConnectionContext['securityPolicy'];
+  }): Promise<{
+    runtimeConfig: t.MCPOptions;
+    useSSRFProtection: boolean;
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+    proofBound: boolean;
+  }> {
+    if (effectiveServerConfig && securityPolicy) {
+      await this.assertExactRuntimeConfigAllowed({
+        effectiveConfig: effectiveServerConfig,
+        securityPolicy,
+        logPrefix: `[MCP][User: ${user?.id}][${config.url}]`,
+      });
+      return {
+        runtimeConfig: effectiveServerConfig,
+        useSSRFProtection: securityPolicy.useSSRFProtection,
+        allowedDomains: securityPolicy.allowedDomains,
+        allowedAddresses: securityPolicy.allowedAddresses,
+        proofBound: true,
+      };
+    }
+
+    const runtimeConfig = await this.applyRuntimeOAuthDetection({
+      config,
+      user,
+      customUserVars,
+      requestBody,
+      graphTokenResolver,
+    });
+    const registry = MCPServersRegistry.getInstance();
+    const { allowedDomains, allowedAddresses, useSSRFProtection } =
+      await registry.resolveAllowlists({
+        userId: user?.id,
+        role: user?.role,
+        tenantId: user?.tenantId ?? getTenantId() ?? null,
+      });
+    await this.assertResolvedRuntimeConfigAllowed({
+      config: runtimeConfig,
+      user,
+      customUserVars,
+      requestBody,
+      graphTokenResolver,
+      allowedDomains,
+      allowedAddresses,
+      logPrefix: `[MCP][User: ${user?.id}][${config.url}]`,
+    });
+    return {
+      runtimeConfig,
+      useSSRFProtection,
+      allowedDomains,
+      allowedAddresses,
+      proofBound: false,
+    };
+  }
+
   private async applyRuntimeOAuthDetection({
     config,
     user,
@@ -767,11 +1288,7 @@ export abstract class UserConnectionManager {
     requestBody?: t.UserMCPConnectionOptions['requestBody'];
     graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
   }): Promise<t.ParsedServerConfig> {
-    if (
-      config.requiresOAuth != null ||
-      (config.apiKey != null && config.oauth == null) ||
-      !hasRuntimeUrlPlaceholders(config)
-    ) {
+    if (!shouldDetectRuntimeOAuth(config)) {
       return config;
     }
 
@@ -794,6 +1311,7 @@ export abstract class UserConnectionManager {
     const { allowedDomains, allowedAddresses } = await registry.resolveAllowlists({
       userId: user?.id,
       role: user?.role,
+      tenantId: user?.tenantId ?? getTenantId() ?? null,
     });
     const allowed = await isMCPDomainAllowed(resolvedConfig, allowedDomains, allowedAddresses);
     if (!allowed) {
@@ -828,12 +1346,144 @@ export abstract class UserConnectionManager {
       userMap.delete(serverName);
       if (userMap.size === 0) {
         this.userConnections.delete(userId);
-        // Only remove user activity timestamp if all connections are gone
-        this.userLastActivity.delete(userId);
+        if (!this.detachedUserConnections.has(userId)) {
+          this.userLastActivity.delete(userId);
+        }
       }
     }
 
     logger.debug(`[MCP][User: ${userId}][${serverName}] Removed connection entry.`);
+  }
+
+  private removeUserConnectionIfOwned(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+  ): void {
+    if (this.userConnections.get(userId)?.get(serverName) !== connection) {
+      return;
+    }
+    this.removeUserConnection(userId, serverName);
+  }
+
+  private trackDetachedUserConnection(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+  ): void {
+    let serverMap = this.detachedUserConnections.get(userId);
+    if (!serverMap) {
+      serverMap = new Map();
+      this.detachedUserConnections.set(userId, serverMap);
+    }
+    let connections = serverMap.get(serverName);
+    if (!connections) {
+      connections = new Map();
+      serverMap.set(serverName, connections);
+    }
+    connections.set(connection, {});
+  }
+
+  private removeDetachedUserConnection(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+    expectedLease?: DetachedConnectionLease,
+  ): void {
+    const serverMap = this.detachedUserConnections.get(userId);
+    if (!serverMap) {
+      return;
+    }
+    const connections = serverMap.get(serverName);
+    if (!connections) {
+      return;
+    }
+    const lease = connections.get(connection);
+    if (!lease || (expectedLease && lease !== expectedLease)) {
+      return;
+    }
+    connections.delete(connection);
+    if (connections.size === 0) {
+      serverMap.delete(serverName);
+    }
+    if (serverMap.size === 0) {
+      this.detachedUserConnections.delete(userId);
+      if (!this.userConnections.has(userId)) {
+        this.userLastActivity.delete(userId);
+      }
+    }
+  }
+
+  /** Releases a concurrent force-new result without disturbing the connection that owns the slot. */
+  public async releaseDetachedUserConnection(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+  ): Promise<boolean> {
+    return this.closeDetachedUserConnection(userId, serverName, connection);
+  }
+
+  private async closeDetachedUserConnection(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+  ): Promise<boolean> {
+    const lease = this.detachedUserConnections.get(userId)?.get(serverName)?.get(connection);
+    if (!lease) {
+      return false;
+    }
+    if (lease.teardown) {
+      await lease.teardown;
+      return true;
+    }
+    const teardown = this.disposeConnection(connection);
+    lease.teardown = teardown;
+    try {
+      await teardown;
+      this.removeDetachedUserConnection(userId, serverName, connection, lease);
+      return true;
+    } catch (error) {
+      if (lease.teardown === teardown) {
+        lease.teardown = undefined;
+      }
+      throw error;
+    }
+  }
+
+  private async trackUserConnection(
+    userId: string,
+    serverName: string,
+    connection: MCPConnection,
+    expectedConnection?: MCPConnection,
+  ): Promise<void> {
+    let userMap = this.userConnections.get(userId);
+    if (!userMap) {
+      userMap = new Map();
+      this.userConnections.set(userId, userMap);
+    }
+    const displacedConnection = userMap.get(serverName);
+    if (displacedConnection !== expectedConnection) {
+      this.trackDetachedUserConnection(userId, serverName, connection);
+      logger.info(
+        `[MCP][User: ${userId}][${serverName}] Returning concurrent scoped connection with detached lifecycle`,
+      );
+      return;
+    }
+    userMap.set(serverName, connection);
+    if (!displacedConnection || displacedConnection === connection) {
+      return;
+    }
+    try {
+      await this.disposeEvictedConnection(
+        displacedConnection,
+        `[MCP][User: ${userId}][${serverName}]`,
+      );
+    } catch (error) {
+      logger.warn(
+        `[MCP][User: ${userId}][${serverName}] Failed to disconnect displaced scoped connection`,
+        error,
+      );
+    }
   }
 
   protected retainConnection(connection: MCPConnection): void {
@@ -934,42 +1584,92 @@ export abstract class UserConnectionManager {
       return;
     }
     this.deferredConnectionDisposals.delete(connection);
-    await this.disposeConnection(connection, logPrefix);
+    await this.disposeEvictedConnectionNow(connection, logPrefix);
   }
 
-  private async disposeConnection(connection: MCPConnection, logPrefix: string): Promise<void> {
+  private async disposeEvictedConnectionNow(
+    connection: MCPConnection,
+    logPrefix: string,
+  ): Promise<void> {
     try {
-      await connection.dispose();
+      const teardown = connection.dispose?.() ?? connection.disconnect();
+      await teardown;
     } catch (error) {
       logger.warn(`${logPrefix} Failed to dispose evicted connection`, error);
     }
   }
 
-  /** Disconnects and removes a specific user connection */
+  /** Disconnects and removes a specific user connection. */
   public async disconnectUserConnection(
     userId: string,
     serverName: string,
+    expectedConnection?: MCPConnection,
     preservedCreation?: ConnectionCreationGuard,
   ): Promise<void> {
-    const pendingKey = `${userId}:${serverName}`;
-    const pending = this.pendingConnections.get(pendingKey);
-    this.cancelConnectionCreations(pendingKey, preservedCreation);
-    if (pending && preservedCreation == null) {
-      this.pendingConnections.delete(pendingKey);
-    }
+    const lockKey = `${userId}:${serverName}`;
+    this.cancelConnectionCreations(lockKey, preservedCreation);
     const userMap = this.userConnections.get(userId);
     const connection = userMap?.get(serverName);
+    if (expectedConnection && connection !== expectedConnection) {
+      await this.closeDetachedUserConnection(userId, serverName, expectedConnection);
+      return;
+    }
+    if (!expectedConnection && preservedCreation == null) {
+      this.pendingConnections.delete(lockKey);
+    }
     try {
       if (connection) {
         const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
         logger.info(`${logPrefix} Disconnecting...`);
         connection.removeAllListeners?.('toolsChanged');
-        this.removeUserConnection(userId, serverName);
+        this.removeUserConnectionIfOwned(userId, serverName, connection);
         await this.disposeEvictedConnection(connection, logPrefix);
+      }
+      if (expectedConnection) {
+        return;
+      }
+      const detachedConnections = Array.from(
+        this.detachedUserConnections.get(userId)?.get(serverName)?.keys() ?? [],
+      );
+      for (const detachedConnection of detachedConnections) {
+        await this.closeDetachedUserConnection(userId, serverName, detachedConnection);
       }
     } finally {
       await cancelMCPToolsChanged({ userId, serverName });
     }
+  }
+
+  /** Disconnects only the connection that produced the rejected discovery result. */
+  public async disconnectUserConnectionIfProvenanceMatches(
+    userId: string,
+    serverName: string,
+    expectedProvenance: t.MCPConnectionProvenance | null,
+  ): Promise<void> {
+    const connection = this.userConnections.get(userId)?.get(serverName);
+    const currentProvenance = connection?.getDiscoveryProvenance() ?? null;
+    if (!connection || !this.hasSameConnectionProvenance(currentProvenance, expectedProvenance)) {
+      return;
+    }
+    await this.disconnectUserConnection(userId, serverName, connection);
+  }
+
+  private hasSameConnectionProvenance(
+    left: t.MCPConnectionProvenance | null,
+    right: t.MCPConnectionProvenance | null,
+  ): boolean {
+    return (
+      left != null &&
+      right != null &&
+      left.version === right.version &&
+      left.principalKind === right.principalKind &&
+      left.authorizationKind === right.authorizationKind &&
+      left.scope.tenant === right.scope.tenant &&
+      left.scope.principal === right.scope.principal &&
+      left.scope.server === right.scope.server &&
+      left.scope.policy === right.scope.policy &&
+      left.scope.config === right.scope.config &&
+      left.scope.credentials === right.scope.credentials
+    );
   }
 
   /** Disconnects and removes all connections for a specific user */
@@ -990,18 +1690,24 @@ export abstract class UserConnectionManager {
       }
     }
     const userMap = this.userConnections.get(userId);
+    const detachedServerMap = this.detachedUserConnections.get(userId);
     const disconnectPromises: Promise<void>[] = [];
-    if (userMap) {
+    if (userMap || detachedServerMap) {
       logger.info(`[MCP][User: ${userId}] Disconnecting all servers...`);
-      const userServers = Array.from(userMap.keys());
+      const userServers = new Set([
+        ...(userMap?.keys() ?? []),
+        ...(detachedServerMap?.keys() ?? []),
+      ]);
       for (const serverName of userServers) {
         disconnectPromises.push(
-          this.disconnectUserConnection(userId, serverName, preservedCreation).catch((error) => {
-            logger.error(
-              `[MCP][User: ${userId}][${serverName}] Error during disconnection:`,
-              error,
-            );
-          }),
+          this.disconnectUserConnection(userId, serverName, undefined, preservedCreation).catch(
+            (error) => {
+              logger.error(
+                `[MCP][User: ${userId}][${serverName}] Error during disconnection:`,
+                error,
+              );
+            },
+          ),
         );
       }
       await Promise.allSettled(disconnectPromises);
@@ -1049,8 +1755,16 @@ export abstract class UserConnectionManager {
     for (const serverMap of this.userConnections.values()) {
       totalConnections += serverMap.size;
     }
+    for (const serverMap of this.detachedUserConnections.values()) {
+      for (const connections of serverMap.values()) {
+        totalConnections += connections.size;
+      }
+    }
     return {
-      trackedUsers: this.userConnections.size,
+      trackedUsers: new Set([
+        ...this.userConnections.keys(),
+        ...this.detachedUserConnections.keys(),
+      ]).size,
       totalConnections,
       activityEntries: this.userLastActivity.size,
       appConnectionCount: this.appConnections?.getConnectionCount() ?? 0,

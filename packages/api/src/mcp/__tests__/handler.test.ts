@@ -1798,6 +1798,145 @@ describe('MCPOAuthHandler - Configurable OAuth Metadata', () => {
       );
     });
 
+    it('runs token exchange and flow completion inside their exact authority fences', async () => {
+      const events: string[] = [];
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          metadata: {
+            serverName: 'test-server',
+            serverUrl: 'https://example.com/mcp',
+            codeVerifier: 'test-verifier',
+            clientInfo: {},
+            metadata: {},
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlow: jest.fn(async () => {
+          events.push('complete');
+          return true;
+        }),
+        failFlow: jest.fn(),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+      mockExchangeAuthorization.mockImplementation(async () => {
+        events.push('exchange');
+        return { access_token: 'test-token', token_type: 'Bearer', expires_in: 3600 };
+      });
+      const persistBeforeComplete = jest.fn(async (tokens: MCPOAuthTokens) => {
+        events.push('persist');
+        return tokens;
+      });
+
+      await MCPOAuthHandler.completeOAuthFlow(
+        'test-flow-id',
+        'test-auth-code',
+        mockFlowManager,
+        {},
+        persistBeforeComplete,
+        {
+          exchange: async (action) => {
+            events.push('exchange-fence');
+            return await action();
+          },
+          complete: async (action) => {
+            events.push('complete-fence');
+            return await action();
+          },
+        },
+      );
+
+      expect(events).toEqual([
+        'exchange-fence',
+        'exchange',
+        'persist',
+        'complete-fence',
+        'complete',
+      ]);
+    });
+
+    it('does not exchange or persist tokens when the exchange authority fence rejects', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          metadata: {
+            serverName: 'test-server',
+            serverUrl: 'https://example.com/mcp',
+            codeVerifier: 'test-verifier',
+            clientInfo: {},
+            metadata: {},
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlow: jest.fn(),
+        failFlow: jest.fn(),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+      const persistBeforeComplete = jest.fn();
+
+      await expect(
+        MCPOAuthHandler.completeOAuthFlow(
+          'test-flow-id',
+          'test-auth-code',
+          mockFlowManager,
+          {},
+          persistBeforeComplete,
+          {
+            exchange: async () => {
+              throw new Error('revoked');
+            },
+          },
+        ),
+      ).rejects.toThrow('revoked');
+
+      expect(mockExchangeAuthorization).not.toHaveBeenCalled();
+      expect(persistBeforeComplete).not.toHaveBeenCalled();
+      expect(mockFlowManager.completeFlow).not.toHaveBeenCalled();
+      expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
+        'test-flow-id',
+        'mcp_oauth',
+        expect.objectContaining({ message: 'revoked' }),
+      );
+    });
+
+    it('does not wake the OAuth flow when the post-store authority fence rejects', async () => {
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          metadata: {
+            serverName: 'test-server',
+            serverUrl: 'https://example.com/mcp',
+            codeVerifier: 'test-verifier',
+            clientInfo: {},
+            metadata: {},
+          } as MCPOAuthFlowMetadata,
+        }),
+        completeFlow: jest.fn(),
+        failFlow: jest.fn(),
+      } as unknown as FlowStateManager<MCPOAuthTokens>;
+      mockExchangeAuthorization.mockResolvedValue({
+        access_token: 'test-token',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      });
+      const persistBeforeComplete = jest.fn(async (tokens: MCPOAuthTokens) => tokens);
+
+      await expect(
+        MCPOAuthHandler.completeOAuthFlow(
+          'test-flow-id',
+          'test-auth-code',
+          mockFlowManager,
+          {},
+          persistBeforeComplete,
+          {
+            complete: async () => {
+              throw new Error('revoked-after-store');
+            },
+          },
+        ),
+      ).rejects.toThrow('revoked-after-store');
+
+      expect(persistBeforeComplete).toHaveBeenCalledTimes(1);
+      expect(mockFlowManager.completeFlow).not.toHaveBeenCalled();
+      expect(mockFlowManager.failFlow).toHaveBeenCalled();
+    });
+
     it('passes headers to token refresh', async () => {
       mockDiscoverAuthorizationServerMetadata.mockImplementation(async (_, options) => {
         await options?.fetchFn?.('http://example.com/.well-known/oauth-authorization-server', {});

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { logger } = require('@librechat/data-schemas');
+const { logger, tenantStorage, assertMCPAuthorityReadiness } = require('@librechat/data-schemas');
 const {
   registerShutdownTask,
   setMCPToolsChangedHandler,
@@ -15,17 +15,46 @@ const {
   getNextAppToolsPublicationRevision,
   updateMCPServerTools,
 } = require('./Config/mcp');
+const { initializeMCPAuthority, setMCPAvailability } = require('./MCPAuthority');
 const { createMCPServersRegistry, createMCPManager } = require('~/config');
+const db = require('~/models');
+
+function unavailableFromReadiness(error) {
+  return {
+    available: false,
+    reason:
+      error && typeof error === 'object' && typeof error.reason === 'string'
+        ? error.reason
+        : 'prerequisite_missing',
+    message: error instanceof Error ? error.message : 'MCP authority prerequisites are unavailable',
+    retryable: error && typeof error === 'object' && error.retryable === true,
+  };
+}
+
+async function initializeUnavailableMCPRuntime() {
+  createMCPServersRegistry(mongoose, undefined, undefined, resolveMCPAllowlists);
+  await createMCPManager({});
+}
 
 /**
  * Resolves the current request's effective MCP allowlists from the merged (tenant-scoped)
  * config. The registry calls this per inspection/connection so admin-panel `mcpSettings`
  * overrides are honored without a restart. Tenant comes from the ALS context inside
  * `getAppConfig`; `userId`/`role` pick up user/role-scoped overrides when an actor exists.
- * @param {{ userId?: string, role?: string }} [ctx]
+ * @param {{ userId?: string, role?: string, tenantId?: string | null, refresh?: boolean }} [ctx]
  */
 async function resolveMCPAllowlists(ctx) {
-  const appConfig = await getAppConfig({ role: ctx?.role, userId: ctx?.userId });
+  const resolve = () =>
+    getAppConfig({
+      role: ctx?.role,
+      userId: ctx?.userId,
+      tenantId: ctx?.tenantId ?? undefined,
+      refresh: ctx?.refresh,
+      failClosed: ctx?.refresh,
+    });
+  const appConfig = Object.prototype.hasOwnProperty.call(ctx ?? {}, 'tenantId')
+    ? await tenantStorage.run({ tenantId: ctx.tenantId ?? undefined }, resolve)
+    : await resolve();
   return {
     allowedDomains: appConfig?.mcpSettings?.allowedDomains,
     allowedAddresses: appConfig?.mcpSettings?.allowedAddresses,
@@ -93,12 +122,51 @@ function withPluginServers(configured) {
   return merged;
 }
 
+function withPluginAuthorityConfig(appConfig, mcpServers) {
+  const immutableConfig = appConfig?.config ?? {};
+  const pluginServers = Object.fromEntries(
+    Object.entries(mcpServers ?? {}).filter(([, config]) => config?.source === 'plugin'),
+  );
+  if (Object.keys(pluginServers).length === 0) {
+    return appConfig;
+  }
+  return {
+    ...appConfig,
+    config: {
+      ...immutableConfig,
+      mcpServers: {
+        ...(immutableConfig.mcpServers ?? {}),
+        ...pluginServers,
+      },
+    },
+  };
+}
+
 /**
  * Initialize MCP servers
  */
-async function initializeMCPs() {
+async function initializeMCPs(options = {}) {
+  const validateAuthorityReadiness =
+    process.env.NODE_ENV !== 'test' || options.validateAuthorityReadiness === true;
+  if (validateAuthorityReadiness) {
+    try {
+      await assertMCPAuthorityReadiness(mongoose.connection, {
+        cosmosStrongConsistencyConfirmed:
+          process.env.MCP_AUTHORITY_COSMOS_STRONG_CONSISTENCY_CONFIRMED === 'true',
+      });
+      await db.initializeMCPAuthorityConsistency();
+    } catch (error) {
+      const unavailable = setMCPAvailability(unavailableFromReadiness(error));
+      logger.error(
+        `[MCP] Authority unavailable (${unavailable.reason}): ${unavailable.message}. Run \`npm run migrate:mcp-authority\` after reconciling any interrupted authority mutation.`,
+      );
+      await initializeUnavailableMCPRuntime();
+      return;
+    }
+  }
   const appConfig = await getAppConfig({ baseOnly: true });
   const mcpServers = withPluginServers(appConfig.mcpConfig);
+  initializeMCPAuthority(withPluginAuthorityConfig(appConfig, mcpServers));
 
   try {
     createMCPServersRegistry(

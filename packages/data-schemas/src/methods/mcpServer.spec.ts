@@ -1,20 +1,32 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { MCPOptions } from 'librechat-data-provider';
+import type { MCPAuthorityConsistencyModule } from './mcpAuthority/consistency';
 import type * as t from '~/types';
+import {
+  createMCPAuthorityConsistencyModule,
+  type MCPAuthorityConsistencyFence,
+} from './mcpAuthority/consistency';
 import { createMCPServerMethods } from './mcpServer';
 import mcpServerSchema from '~/schema/mcpServer';
 
 let mongoServer: MongoMemoryServer;
 let MCPServer: mongoose.Model<t.MCPServerDocument>;
 let methods: ReturnType<typeof createMCPServerMethods>;
+let consistency: MCPAuthorityConsistencyModule;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
   MCPServer = mongoose.models.MCPServer || mongoose.model('MCPServer', mcpServerSchema);
-  methods = createMCPServerMethods(mongoose);
   await mongoose.connect(mongoUri);
+  consistency = createMCPAuthorityConsistencyModule({
+    collection:
+      mongoose.connection.collection<MCPAuthorityConsistencyFence>('mcpAuthorityConsistency'),
+    now: () => new Date('2026-08-07T12:00:00.000Z'),
+    createOwnerId: () => new mongoose.Types.ObjectId().toHexString(),
+  });
+  methods = createMCPServerMethods(mongoose);
 });
 
 afterAll(async () => {
@@ -35,6 +47,24 @@ describe('MCPServer Model Tests', () => {
     url: 'https://example.com/mcp',
     ...(title && { title }),
     ...(description && { description }),
+  });
+
+  test('publishes one authority generation for each MCP server mutation', async () => {
+    await consistency.initializeMCPAuthorityConsistency();
+
+    const server = await methods.createMCPServer({
+      config: createSSEConfig('Generation Test'),
+      author: authorId,
+    });
+    await expect(consistency.assertGeneration(1)).resolves.toBeUndefined();
+
+    await methods.updateMCPServer(server.serverName, {
+      config: createSSEConfig('Generation Test Updated'),
+    });
+    await expect(consistency.assertGeneration(2)).resolves.toBeUndefined();
+
+    await methods.deleteMCPServer(server.serverName);
+    await expect(consistency.assertGeneration(3)).resolves.toBeUndefined();
   });
 
   describe('createMCPServer', () => {
@@ -640,6 +670,28 @@ describe('MCPServer Model Tests', () => {
   });
 
   describe('deleteMCPServer', () => {
+    test('deletes a batch under one authority generation', async () => {
+      const first = await methods.createMCPServer({
+        config: createSSEConfig('Batch Delete One'),
+        author: authorId,
+      });
+      const second = await methods.createMCPServer({
+        config: createSSEConfig('Batch Delete Two'),
+        author: authorId,
+      });
+      const before = await consistency.getMCPAuthorityConsistencyStatus();
+
+      await expect(methods.deleteMCPServers([first.serverName, second.serverName])).resolves.toBe(
+        2,
+      );
+
+      const after = await consistency.getMCPAuthorityConsistencyStatus();
+      expect(after.generation).toBe(before.generation + 1);
+      await expect(
+        MCPServer.countDocuments({ _id: { $in: [first._id, second._id] } }),
+      ).resolves.toBe(0);
+    });
+
     test('should delete existing server', async () => {
       const created = await methods.createMCPServer({
         config: createSSEConfig('Delete Test'),
