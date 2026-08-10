@@ -19,6 +19,8 @@ export const SAFETY_POLL_INTERVAL_MS = 60_000;
 /** Fixed lookback overlap re-scanned by the safety poll with idempotent upserts. */
 export const SAFETY_POLL_LOOKBACK_MS = 60_000;
 export const SWEEP_INTERVAL_MS = 3_600_000;
+/** Age past which the projector's reconciliation pass deletes outbox rows. */
+export const OUTBOX_RETENTION_HOURS = 24;
 export const LEASE_TTL_MS = 30_000;
 export const LEASE_RENEW_MS = 10_000;
 

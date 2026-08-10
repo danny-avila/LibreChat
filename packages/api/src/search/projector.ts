@@ -11,6 +11,16 @@ import type { ProjectionSourceReader, SourceCursor } from './source';
 import type { ProjectedKey } from './writer';
 import type { Lease } from './lease';
 import {
+  DEFAULT_EMBEDDING_SPACE,
+  DRAIN_INTERVAL_MS,
+  OUTBOX_RETENTION_HOURS,
+  SAFETY_POLL_INTERVAL_MS,
+  SAFETY_POLL_LOOKBACK_MS,
+  STANDBY_MAX_RETRY_MS,
+  STANDBY_RETRY_MS,
+  SWEEP_INTERVAL_MS,
+} from './constants';
+import {
   clearFailure,
   currentVersionSnapshot,
   missingFromProjection,
@@ -22,17 +32,8 @@ import {
   tombstoneDocument,
   upsertDocument,
 } from './writer';
-import {
-  DEFAULT_EMBEDDING_SPACE,
-  DRAIN_INTERVAL_MS,
-  SAFETY_POLL_INTERVAL_MS,
-  SAFETY_POLL_LOOKBACK_MS,
-  STANDBY_MAX_RETRY_MS,
-  STANDBY_RETRY_MS,
-  SWEEP_INTERVAL_MS,
-} from './constants';
+import { acquireLease, assertLeaseEpoch } from './lease';
 import { withTransaction } from './pool';
-import { acquireLease } from './lease';
 import { contentHash } from './hash';
 
 const KINDS: readonly SearchKind[] = ['message', 'conversation', 'shared-link'];
@@ -139,11 +140,20 @@ export class Projector {
    */
   private reconciling = false;
   /**
-   * Per kind: whether the next poll should re-scan the trailing lookback window.
-   * True at startup and after a pass that caught up, so a fresh pass always
-   * overlaps; false mid-pass, so a backlog advances strictly forward.
+   * Per kind: where a scan pass still in progress resumes.
+   *
+   * Held in memory rather than persisted, because the stored cursor only ever
+   * advances (see `writePollCursor`): a fresh pass re-enters the trailing
+   * lookback window *behind* the persisted high-water mark, and once that window
+   * holds more than one page, the rewound page's end position is refused by the
+   * forward-only guard. Resuming from this map keeps the pass walking the window
+   * to completion instead of snapping back to the high-water mark and skipping
+   * the window's tail (pinned by `finishes a multi-page lookback window instead
+   * of snapping back to the high-water mark`). Cleared once a pass catches up —
+   * the next pass starts fresh and overlaps again — and lost with the process or
+   * the lease, which only costs an idempotent re-scan.
    */
-  private readonly overlapNextPoll = new Map<SearchKind, boolean>();
+  private readonly scanResume = new Map<SearchKind, SourceCursor>();
 
   constructor(deps: ProjectorDeps, queue: EventQueue) {
     this.deps = deps;
@@ -188,16 +198,21 @@ export class Projector {
     source: ProjectionSource | undefined,
     sourceReadAt: Date,
   ): Promise<'projected' | 'tombstoned' | 'skipped'> {
-    if (!source) {
+    /**
+     * An absent source is a deletion; an *unfinished* source is treated the same
+     * way. Partial assistant rows are rewritten at finalize, so projecting one
+     * makes a half-written generation searchable and embeds the same turn twice
+     * — and a record that was projected before it reopened (resume, HITL) must
+     * not keep serving its old text either. `tombstoneDocument` is a conditional
+     * UPDATE: it buries an existing row and creates nothing for a record that
+     * was never projected, which matters because streaming holds an unfinished
+     * row per in-flight message (pinned by `tombstones a projected message that
+     * reopens as unfinished, then revives it at finalize` and `never projects an
+     * unfinished assistant row, and projects it once finalized`).
+     */
+    if (!source || source.unfinished) {
       const result = await tombstoneDocument(client, epoch, key, new Date(), sourceReadAt);
       return result.applied ? 'tombstoned' : 'skipped';
-    }
-    /**
-     * Partial assistant rows are rewritten at finalize. Projecting them makes a
-     * half-written generation searchable and embeds the same turn twice.
-     */
-    if (source.unfinished) {
-      return 'skipped';
     }
     const result = await upsertDocument(client, epoch, source, this.space, sourceReadAt);
     return result.applied ? 'projected' : 'skipped';
@@ -273,15 +288,19 @@ export class Projector {
   /**
    * Where the next scan of this kind starts.
    *
-   * The stored cursor only ever advances. The lookback overlap is applied here,
-   * at read time, and only when the previous pass caught up — that is what makes
-   * a new pass re-scan the trailing window without letting a *backlogged* pass
-   * rewind onto records it already read. `updatedAt` is generated application
-   * side, so cross-pod clock skew plus read-before-commit visibility means a
-   * write stamped `T - epsilon` can land after the scan passed `T`; re-scanning
-   * that window with idempotent upserts is what makes such a row recoverable.
+   * A pass still in progress resumes from its in-memory position, so the
+   * persisted cursor is only consulted when a fresh pass begins — and a fresh
+   * pass always applies the lookback overlap. `updatedAt` is generated
+   * application side, so cross-pod clock skew plus read-before-commit visibility
+   * means a write stamped `T - epsilon` can land after the scan passed `T`;
+   * re-scanning that window with idempotent upserts is what makes such a row
+   * recoverable.
    */
   private async readPollCursor(kind: SearchKind): Promise<SourceCursor | null> {
+    const resume = this.scanResume.get(kind);
+    if (resume) {
+      return resume;
+    }
     const { rows } = await this.deps.pool.query<{
       updated_at: Date | null;
       record_id: string | null;
@@ -301,9 +320,6 @@ export class Projector {
      */
     if (row.updated_at == null) {
       return { updatedAt: null, recordId: row.record_id, id: row.mongo_id ?? '' };
-    }
-    if (this.overlapNextPoll.get(kind) === false) {
-      return { updatedAt: row.updated_at, recordId: row.record_id, id: row.mongo_id ?? '' };
     }
     /**
      * An empty record id makes the keyset tiebreak match everything at the
@@ -367,20 +383,34 @@ export class Projector {
       const readAt = new Date();
       const page = await this.deps.source.scan(kind, from, this.scanBatch);
       /**
-       * A short page means this pass drained the backlog, so the next one starts
-       * a fresh catch-up pass and re-enters the overlap window.
+       * A short page means this pass drained the backlog: the next poll starts a
+       * fresh pass and re-enters the overlap window. A full page keeps the pass
+       * alive at its in-memory position, which the persisted cursor cannot carry
+       * while the pass is still inside the overlap window behind it.
        */
-      this.overlapNextPoll.set(kind, page.sources.length < this.scanBatch);
+      if (page.sources.length < this.scanBatch) {
+        this.scanResume.delete(kind);
+      } else if (page.cursor) {
+        this.scanResume.set(kind, page.cursor);
+      }
       if (page.sources.length === 0) {
         continue;
       }
 
       for (const source of page.sources) {
-        if (source.unfinished) {
-          continue;
-        }
         try {
           const result = await withTransaction(this.deps.pool, async (client) => {
+            /**
+             * An unfinished source must not stay searchable under its old text:
+             * `tombstoneDocument` is a conditional UPDATE, so a record that was
+             * projected before it reopened is buried, and one that was never
+             * projected — every in-flight streaming message — creates no row
+             * (pinned by `buries a reopened message the poll discovers without
+             * creating rows for in-flight ones`).
+             */
+            if (source.unfinished) {
+              return tombstoneDocument(client, epoch, source, new Date(), readAt);
+            }
             const outcome = await upsertDocument(client, epoch, source, this.space, readAt);
             /**
              * The poll is the only path that can rescue a quarantined record: the
@@ -410,9 +440,10 @@ export class Projector {
   /**
    * Walks the projection and makes each window agree with the source.
    *
-   * Two repairs, from one read. Keys the source no longer has are tombstoned, and
+   * Three repairs, from one read. Keys the source no longer has are tombstoned;
+   * live rows whose source has reopened as unfinished are tombstoned too; and
    * rows whose stored `content_hash` no longer matches the source are re-projected
-   * — the second is what makes reconciliation a repair rather than only an
+   * — the last is what makes reconciliation a repair rather than only an
    * add-and-remove. A re-import that overwrites an existing conversation carries a
    * historic `updatedAt`, so it sorts behind the forward poll cursor forever, and
    * the row is present in the projection, so no backfill claims it either: without
@@ -452,13 +483,25 @@ export class Projector {
 
         const missing: SearchRecordKey[] = [];
         const drifted: ProjectionSource[] = [];
+        const reopened: ProjectionSource[] = [];
         for (const key of window) {
           const source = byKey.get(recordKeyString(key));
           if (!source) {
             missing.push(key);
             continue;
           }
-          if (!source.unfinished && contentHash(source) !== key.contentHash) {
+          /**
+           * The window holds only live rows, so an unfinished source here is a
+           * *reopened* record: it was projected once and its old text is still
+           * searchable. Buried like a deletion — never left in place — and the
+           * finalize upsert revives it (pinned by `buries a reopened message
+           * reconciliation finds behind the poll cursor`).
+           */
+          if (source.unfinished) {
+            reopened.push(source);
+            continue;
+          }
+          if (contentHash(source) !== key.contentHash) {
             drifted.push(source);
           }
         }
@@ -466,6 +509,7 @@ export class Projector {
         tombstoned += await withTransaction(this.deps.pool, (client) =>
           sweepMissing(client, epoch, kind, snapshot, missing, new Date(), readAt),
         );
+        tombstoned += await this.tombstoneReopened(reopened, epoch, readAt);
         refreshed += await this.project(drifted, epoch, readAt, 'refresh a drifted record');
       } catch (error) {
         logger.error('[chatSearch] reconciliation failed for a key window', error);
@@ -481,6 +525,28 @@ export class Projector {
       }
       after = window[window.length - 1];
     }
+  }
+
+  /** Buries live rows whose source has reopened, one transaction at a time. */
+  private async tombstoneReopened(
+    sources: readonly ProjectionSource[],
+    epoch: number,
+    sourceReadAt: Date,
+  ): Promise<number> {
+    let applied = 0;
+    for (const source of sources) {
+      try {
+        const result = await withTransaction(this.deps.pool, (client) =>
+          tombstoneDocument(client, epoch, source, new Date(), sourceReadAt),
+        );
+        if (result.applied) {
+          applied++;
+        }
+      } catch (error) {
+        logger.error('[chatSearch] reconciliation failed to bury a reopened record', error);
+      }
+    }
+    return applied;
   }
 
   /** Upserts a batch one transaction at a time, counting what actually landed. */
@@ -556,6 +622,25 @@ export class Projector {
   }
 
   /**
+   * Time-based outbox retention. Nothing else deletes outbox rows — both writer
+   * sites only insert — so without this trim the table grows without bound.
+   * Rows are dropped purely by age, whether or not a downstream target has
+   * applied them (pinned by `trims outbox rows past the retention window and
+   * keeps the rest`); `outbox_enqueued_idx` keeps the delete a range scan.
+   */
+  private async trimOutbox(epoch: number): Promise<number> {
+    return withTransaction(this.deps.pool, async (client) => {
+      await assertLeaseEpoch(client, epoch);
+      const result = await client.query(
+        `DELETE FROM chat_search.outbox
+          WHERE enqueued_at < now() - make_interval(hours => $1)`,
+        [OUTBOX_RETENTION_HOURS],
+      );
+      return result.rowCount ?? 0;
+    });
+  }
+
+  /**
    * Full reconciliation, in both directions and in bounded steps.
    *
    * Deliberately not per-row run-ID stamping: that would rewrite every
@@ -595,6 +680,11 @@ export class Projector {
         if (backfilled > 0) {
           logger.info(`[chatSearch] reconciliation backfilled ${backfilled} ${kind} records`);
         }
+      }
+
+      const trimmed = await this.trimOutbox(epoch);
+      if (trimmed > 0) {
+        logger.info(`[chatSearch] trimmed ${trimmed} outbox rows past the retention window`);
       }
       return tombstoned;
     } finally {
@@ -764,6 +854,7 @@ export class Projector {
       clearInterval(timer);
     }
     this.timers = [];
+    this.scanResume.clear();
     const lease = this.lease;
     this.lease = null;
     await lease?.release();

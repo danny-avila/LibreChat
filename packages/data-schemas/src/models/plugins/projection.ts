@@ -97,7 +97,15 @@ function toEvent(
   { kind, primaryKey }: Pick<SearchSyncOptions, 'kind' | 'primaryKey'>,
   op: SearchEventOp,
 ): SearchEventInput | null {
-  const recordId = doc?.[primaryKey];
+  /**
+   * Legacy records can lack the primary key entirely — shared links predating
+   * `shareId` are the live case — so the Mongo `_id` stands in. The projection
+   * source applies the same fallback, which is what keeps the event key, the
+   * tombstone key and the projected record id one identity (pinned by `keys the
+   * event by the Mongo _id when the record carries no shareId` and `projects two
+   * legacy shared links that carry no shareId as distinct records`).
+   */
+  const recordId = doc?.[primaryKey] ?? doc?._id;
   const userId = doc?.user;
   if (recordId == null || userId == null) {
     return null;
@@ -257,10 +265,29 @@ export function applySearchSync(schema: Schema, options: SearchSyncOptions): voi
     run(work, next, 'deleteOne');
   });
 
+  schema.pre<KeyedQuery>('findOneAndUpdate', function (next) {
+    run(captureQueryKey(this), next, 'findOneAndUpdate key');
+  });
+
   /**
-   * `saveConvo` issues `findOneAndUpdate` with `includeResultMetadata: true`, so
-   * the hook receives the raw `{ value, ok, lastErrorObject }` wrapper instead of
-   * the document. Unwrap `value` so the seam covers that path too.
+   * Four result shapes reach this hook. A hydrated Document, a full `.lean()`
+   * object, and `saveConvo`'s `includeResultMetadata` wrapper
+   * `{ value, ok, lastErrorObject }` all carry the document; a
+   * projection-narrowed result — `updateToolCallResult` selects only
+   * `unfinished` — carries no key at all. Only the first can be told apart by
+   * type, so the rest are told apart by what they hold: a `value` property marks
+   * the wrapper, and a document without its primary key falls back to the key
+   * captured before the write, exactly as `updateOne` resolves it (pinned by
+   * `enqueues through a lean findOneAndUpdate result` and `enqueues through a
+   * projection-narrowed lean findOneAndUpdate`). A null result matched nothing
+   * and enqueues nothing. The keyless fallback enqueues without the sink fan-out:
+   * a sink needs a whole document, which is precisely what that shape lacks.
+   *
+   * The narrowed shape still carries `_id`, which is deliberately *not* used
+   * here: for any record with a real primary key the `_id` is a second identity,
+   * and an event keyed by it names a row the projection does not have. The
+   * captured key resolves through the same fallback chain as every other path,
+   * so it and only it stays consistent.
    */
   schema.post(
     'findOneAndUpdate',
@@ -268,66 +295,87 @@ export function applySearchSync(schema: Schema, options: SearchSyncOptions): voi
       res: SearchSyncDocument | { value?: SearchSyncDocument | null } | null,
       next: CallbackWithoutResultAndOptionalError,
     ) {
-      const doc =
-        res instanceof mongoose.Document
-          ? (res as unknown as SearchSyncDocument)
-          : ((res as { value?: SearchSyncDocument | null } | null)?.value ?? null);
-      run(onUpsert(doc, 'findOneAndUpdate'), next, 'findOneAndUpdate');
+      let doc: SearchSyncDocument | null;
+      if (res instanceof mongoose.Document) {
+        doc = res as unknown as SearchSyncDocument;
+      } else if (res != null && 'value' in res) {
+        doc = (res as { value?: SearchSyncDocument | null }).value ?? null;
+      } else {
+        doc = res as SearchSyncDocument | null;
+      }
+      if (doc == null) {
+        next();
+        return;
+      }
+      if (doc[primaryKey] != null) {
+        run(onUpsert(doc, 'findOneAndUpdate'), next, 'findOneAndUpdate');
+        return;
+      }
+      run(enqueue((this as KeyedQuery)[RESOLVED_KEY], 'upsert'), next, 'findOneAndUpdate');
     },
   );
 
+  const resolveManyKeys = async (query: ManyKeyedQuery): Promise<readonly SearchSyncDocument[]> => {
+    const model = query.model as Model<SearchSyncDocument>;
+    const docs = await model
+      .find(query.getQuery() as FilterQuery<unknown>)
+      .select(`${primaryKey} user tenantId`)
+      .limit(DELETE_MANY_EVENT_CAP + 1)
+      .lean<SearchSyncDocument[]>();
+
+    if (docs.length > DELETE_MANY_EVENT_CAP) {
+      logger.warn(
+        `[searchSync] deleteMany on ${kind} exceeded ${DELETE_MANY_EVENT_CAP} keys; ` +
+          'leaving the remainder to the reconciliation sweep',
+      );
+    }
+    return docs.slice(0, DELETE_MANY_EVENT_CAP);
+  };
+
   /**
-   * `deleteMany` never yields documents, so the affected keys are resolved before
-   * the delete runs — but their tombstones are enqueued in the post hook, after
-   * the deletion succeeded, exactly as `deleteOne` orders it. Enqueued before the
-   * delete, a projector drain landing in that window re-reads the still-live
-   * documents, re-upserts them and consumes the events, leaving deleted content
-   * projected until reconciliation (pinned by `enqueues deleteMany tombstones
-   * only after the deletion is applied`). Bounded on purpose: past the cap the
-   * sweep is cheaper and more reliable than a synchronous fan-out on the caller's
-   * request.
+   * `deleteMany` never yields documents, so everything that needs them runs
+   * before the delete: the affected keys are resolved here (bounded on purpose —
+   * past the cap the sweep is cheaper and more reliable than a synchronous
+   * fan-out on the caller's request), and the sinks are invoked here, because a
+   * sink is a direct writer that re-reads the affected primary keys from Mongo
+   * with these conditions and finds nothing once the delete has landed (pinned
+   * by `fans deleteMany out to sinks while the documents are still readable` and
+   * `deletes each removed document from Meili on deleteMany`).
    */
   schema.pre<ManyKeyedQuery>('deleteMany', function (next) {
     const work = (async () => {
-      if (!searchEnqueueEnabled()) {
-        this[RESOLVED_KEYS] = [];
-        return;
-      }
-      const model = this.model as Model<SearchSyncDocument>;
-      const docs = await model
-        .find(this.getQuery() as FilterQuery<unknown>)
-        .select(`${primaryKey} user tenantId`)
-        .limit(DELETE_MANY_EVENT_CAP + 1)
-        .lean<SearchSyncDocument[]>();
-
-      if (docs.length > DELETE_MANY_EVENT_CAP) {
-        logger.warn(
-          `[searchSync] deleteMany on ${kind} exceeded ${DELETE_MANY_EVENT_CAP} keys; ` +
-            'leaving the remainder to the reconciliation sweep',
-        );
-      }
-      this[RESOLVED_KEYS] = docs.slice(0, DELETE_MANY_EVENT_CAP);
+      this[RESOLVED_KEYS] = searchEnqueueEnabled() ? await resolveManyKeys(this) : [];
+      await fanOut(sinks, (sink) => sink.removeMany(this.getQuery() as FilterQuery<unknown>));
     })();
     run(work, next, 'deleteMany keys');
   });
 
+  /**
+   * The tombstone events wait for the post hook, after the deletion succeeded,
+   * exactly as `deleteOne` orders it. Enqueued before the delete, a projector
+   * drain landing in that window re-reads the still-live documents, re-upserts
+   * them and consumes the events, leaving deleted content projected until
+   * reconciliation (pinned by `enqueues deleteMany tombstones only after the
+   * deletion is applied`).
+   */
   schema.post<ManyKeyedQuery>('deleteMany', function (result, next) {
     const docs = this[RESOLVED_KEYS] ?? [];
-    const conditions = this.getQuery() as FilterQuery<unknown>;
-    const work = (async () => {
-      if (docs.length > 0 && !changedNothing(result)) {
-        const events: SearchEventInput[] = [];
-        for (const doc of docs) {
-          const event = toEvent(doc, options, 'tombstone');
-          if (event) {
-            events.push(event);
-          }
-        }
-        await enqueueSearchEvents(mongoose, events);
+    if (docs.length === 0 || changedNothing(result)) {
+      next();
+      return;
+    }
+    const events: SearchEventInput[] = [];
+    for (const doc of docs) {
+      const event = toEvent(doc, options, 'tombstone');
+      if (event) {
+        events.push(event);
       }
-      await fanOut(sinks, (sink) => sink.removeMany(conditions));
-    })();
-    run(work, next, 'deleteMany');
+    }
+    run(
+      enqueueSearchEvents(mongoose, events).then(() => undefined),
+      next,
+      'deleteMany',
+    );
   });
 }
 

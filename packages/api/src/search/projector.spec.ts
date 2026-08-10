@@ -294,6 +294,59 @@ describePg('projector', () => {
       expect(rows[0].body).toBe('finalized late');
     });
 
+    it('tombstones a projected message that reopens as unfinished, then revives it at finalize', async () => {
+      await models.Message.create({
+        messageId: 'm-reopen',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'first final answer',
+        isCreatedByUser: false,
+      });
+      await projector.drain();
+      expect((await projected())[0].deleted_at).toBeNull();
+
+      await models.Message.updateOne(
+        { messageId: 'm-reopen', user: 'alice' },
+        { unfinished: true },
+      );
+      const outcome = await projector.drain();
+
+      expect(outcome.tombstoned).toBe(1);
+      const buried = await projected();
+      expect(buried[0].deleted_at).not.toBeNull();
+      expect(buried[0].body).toBe('');
+
+      await models.Message.updateOne(
+        { messageId: 'm-reopen', user: 'alice' },
+        { unfinished: false, text: 'second final answer' },
+      );
+      await projector.drain();
+
+      const revived = await projected();
+      expect(revived[0].deleted_at).toBeNull();
+      expect(revived[0].body).toBe('second final answer');
+    });
+
+    /**
+     * Legacy shared links can carry no `shareId` at all. Keyed by an empty
+     * record id they would collide on one PostgreSQL primary key, so the seam
+     * and the source agree on the Mongo `_id` as the fallback identity.
+     */
+    it('projects two legacy shared links that carry no shareId as distinct records', async () => {
+      const links = await models.SharedLink.create([
+        { conversationId: 'c1', user: 'alice', title: 'first legacy link' },
+        { conversationId: 'c2', user: 'alice', title: 'second legacy link' },
+      ]);
+
+      const outcome = await projector.drain();
+
+      expect(outcome.projected).toBe(2);
+      const { rows } = await pool.query<{ record_id: string; title: string }>(
+        "SELECT record_id, title FROM chat_search.documents WHERE kind = 'shared-link' ORDER BY title",
+      );
+      expect(rows.map((row) => row.record_id)).toEqual(links.map((link) => String(link._id)));
+    });
+
     /**
      * A recycled record id must not project one principal's content under
      * another's scope, so the source read is filtered by the event's owner.
@@ -542,6 +595,118 @@ describePg('projector', () => {
       expect(await projected()).toHaveLength(0);
     });
 
+    it('buries a reopened message the poll discovers without creating rows for in-flight ones', async () => {
+      await models.Message.create({
+        messageId: 'm-poll-reopen',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'searchable text',
+        isCreatedByUser: false,
+      });
+      await projector.drain();
+      expect((await projected())[0].deleted_at).toBeNull();
+
+      /** Reopened through a bulk path: no hook fires and no event is enqueued. */
+      await models.Message.collection.updateOne(
+        { messageId: 'm-poll-reopen' },
+        { $set: { unfinished: true, updatedAt: new Date() } },
+      );
+      await models.Message.create({
+        messageId: 'm-inflight',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'half a token stream',
+        unfinished: true,
+        isCreatedByUser: false,
+      });
+      await models.SearchEvent.deleteMany({});
+
+      await projector.safetyPoll();
+
+      const rows = await projected();
+      expect(rows.map((row) => row.record_id)).toEqual(['m-poll-reopen']);
+      expect(rows[0].deleted_at).not.toBeNull();
+      expect(rows[0].body).toBe('');
+    });
+
+    /**
+     * Once the lookback window holds more than one page, the rewound page's end
+     * position cannot be persisted — the stored cursor only moves forward — so
+     * without an in-memory continuation the next poll resumes from the old
+     * high-water mark and the tail of the window is never re-scanned. A write
+     * stamped into that tail by a skewed clock then stays invisible to the poll
+     * until reconciliation.
+     */
+    it('finishes a multi-page lookback window instead of snapping back to the high-water mark', async () => {
+      await projector.stop();
+      projector = new Projector(
+        {
+          pool,
+          mongoose,
+          source: createMongoSourceReader(mongoose),
+          batches: { scan: 2 },
+          startupCatchUp: false,
+        },
+        {
+          readSearchEvents: (limit) => readSearchEvents(mongoose, limit),
+          deleteSearchEvents: (ids) =>
+            deleteSearchEvents(mongoose, ids as mongoose.Types.ObjectId[]),
+          dedupeSearchEvents,
+        },
+      );
+      if (!(await projector.start())) {
+        throw new Error('failed to acquire the projector lease for the test');
+      }
+
+      const base = Date.parse('2026-03-01T00:00:00.000Z');
+      const at = (seconds: number) => new Date(base + seconds * 1_000);
+      await models.Message.collection.insertMany(
+        (
+          [
+            ['m-ol-a', 0],
+            ['m-ol-b', 10],
+            ['m-ol-c', 20],
+            ['m-ol-d', 30],
+          ] as const
+        ).map(([messageId, seconds]) => ({
+          messageId,
+          conversationId: 'c1',
+          user: 'alice',
+          text: 'inside the lookback window',
+          isCreatedByUser: true,
+          createdAt: at(seconds),
+          updatedAt: at(seconds),
+        })),
+      );
+
+      /** Catch up: the cursor lands on m-ol-d and the next pass re-enters the overlap. */
+      await projector.safetyPoll();
+      await projector.safetyPoll();
+      await projector.safetyPoll();
+      expect((await projected()).map((row) => row.record_id)).toEqual([
+        'm-ol-a',
+        'm-ol-b',
+        'm-ol-c',
+        'm-ol-d',
+      ]);
+
+      /** The late write: stamped inside the window, beyond the first overlap page. */
+      await models.Message.collection.insertOne({
+        messageId: 'm-ol-late',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'stamped into the past by a skewed clock',
+        isCreatedByUser: true,
+        createdAt: at(15),
+        updatedAt: at(15),
+      });
+
+      await projector.safetyPoll();
+      await projector.safetyPoll();
+
+      expect((await projected()).map((row) => row.record_id)).toContain('m-ol-late');
+    });
+
     /**
      * Record ids are only unique per user and tenant: two users importing the
      * same export hold documents sharing a conversation id *and* an `updatedAt`.
@@ -714,6 +879,80 @@ describePg('projector', () => {
       const rows = await projected();
       expect(rows[0].deleted_at).toBeNull();
       expect(rows[0].body).toBe('still here');
+    });
+
+    it('buries a reopened message reconciliation finds behind the poll cursor', async () => {
+      await models.Message.create({
+        messageId: 'm-rec-reopen',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'stale searchable text',
+        isCreatedByUser: false,
+      });
+      await projector.drain();
+      expect((await projected())[0].deleted_at).toBeNull();
+
+      /** Reopened with a historic timestamp, so the forward poll can never see it. */
+      await models.Message.collection.updateOne(
+        { messageId: 'm-rec-reopen' },
+        { $set: { unfinished: true, updatedAt: new Date('2020-01-01T00:00:00Z') } },
+      );
+      await pool.query(
+        `INSERT INTO chat_search.poll_cursor (kind, updated_at, record_id, scanned_at)
+         VALUES ('message', now(), 'zzz', now())
+         ON CONFLICT (kind) DO UPDATE SET updated_at = now(), record_id = 'zzz'`,
+      );
+
+      const tombstoned = await projector.reconcile();
+
+      expect(tombstoned).toBe(1);
+      const rows = await projected();
+      expect(rows[0].deleted_at).not.toBeNull();
+      expect(rows[0].body).toBe('');
+    });
+
+    it('backfills legacy no-shareId links the queue never carried', async () => {
+      await models.SharedLink.collection.insertMany([
+        {
+          conversationId: 'c1',
+          user: 'alice',
+          title: 'legacy import a',
+          createdAt: new Date('2020-01-01T00:00:00Z'),
+          updatedAt: new Date('2020-01-01T00:00:00Z'),
+        },
+        {
+          conversationId: 'c2',
+          user: 'alice',
+          title: 'legacy import b',
+          createdAt: new Date('2020-01-01T00:00:00Z'),
+          updatedAt: new Date('2020-01-01T00:00:00Z'),
+        },
+      ]);
+
+      await projector.reconcile();
+
+      const { rows } = await pool.query<{ record_id: string }>(
+        "SELECT record_id FROM chat_search.documents WHERE kind = 'shared-link' AND deleted_at IS NULL",
+      );
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((row) => row.record_id)).size).toBe(2);
+    });
+
+    it('trims outbox rows past the retention window and keeps the rest', async () => {
+      await pool.query(
+        `INSERT INTO chat_search.outbox
+           (tenant_id, user_id, kind, record_id, projection_version, op, enqueued_at)
+         VALUES
+           ('__BASE__', 'alice', 'message', 'm-outbox-stale', 1, 'upsert', now() - interval '25 hours'),
+           ('__BASE__', 'alice', 'message', 'm-outbox-fresh', 2, 'upsert', now())`,
+      );
+
+      await projector.reconcile();
+
+      const { rows } = await pool.query<{ record_id: string }>(
+        'SELECT record_id FROM chat_search.outbox ORDER BY record_id',
+      );
+      expect(rows.map((row) => row.record_id)).toEqual(['m-outbox-fresh']);
     });
 
     it('skips an unfinished record when backfilling', async () => {

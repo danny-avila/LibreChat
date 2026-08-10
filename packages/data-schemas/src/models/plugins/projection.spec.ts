@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import type { Model } from 'mongoose';
+import type { FilterQuery, Model } from 'mongoose';
+import type { SearchSink } from '~/models/plugins/projection';
 import type { ISearchEvent } from '~/schema/searchevent';
+import { applySearchSync } from '~/models/plugins/projection';
 import { BASE_TENANT_ID } from '~/config/tenantContext';
 import { dedupeSearchEvents } from '~/search/events';
 import { createModels } from '~/models';
@@ -296,6 +298,60 @@ describe('search-sync projection plugin', () => {
       expect(findOne).not.toHaveBeenCalled();
       expect(await drain(models.SearchEvent)).toEqual([]);
     });
+
+    it('enqueues through a lean findOneAndUpdate result (the updateSharedLink shape)', async () => {
+      await models.SharedLink.create({
+        shareId: 's-lean',
+        conversationId: 'c1',
+        user: 'u1',
+        title: 'Shared',
+      });
+      await models.SearchEvent.deleteMany({});
+
+      await models.SharedLink.findOneAndUpdate(
+        { shareId: 's-lean', user: 'u1' },
+        { $set: { title: 'Renamed' } },
+        { new: true, upsert: false, runValidators: true },
+      ).lean();
+
+      expect(await drain(models.SearchEvent)).toEqual([
+        {
+          tenantId: BASE_TENANT_ID,
+          userId: 'u1',
+          kind: 'shared-link',
+          recordId: 's-lean',
+          op: 'upsert',
+        },
+      ]);
+    });
+
+    it('enqueues through a projection-narrowed lean findOneAndUpdate (the updateToolCallResult shape)', async () => {
+      await models.Message.findOneAndUpdate(
+        { messageId: 'm-edit', user: 'u1', conversationId: 'c1' },
+        { $set: { text: 'tool result attached' } },
+        { new: true, projection: { unfinished: 1 } },
+      ).lean();
+
+      expect(await drain(models.SearchEvent)).toEqual([
+        {
+          tenantId: BASE_TENANT_ID,
+          userId: 'u1',
+          kind: 'message',
+          recordId: 'm-edit',
+          op: 'upsert',
+        },
+      ]);
+    });
+
+    it('enqueues nothing when a lean findOneAndUpdate matches no document', async () => {
+      await models.Message.findOneAndUpdate(
+        { messageId: 'm-absent', user: 'u1' },
+        { $set: { text: 'never lands' } },
+        { new: true },
+      ).lean();
+
+      expect(await drain(models.SearchEvent)).toEqual([]);
+    });
   });
 
   describe('Meilisearch as an optional sink', () => {
@@ -374,6 +430,105 @@ describe('search-sync projection plugin', () => {
       await message.deleteOne();
 
       expect(mockDeleteDocument).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The Meilisearch sink resolves the affected primary keys by re-querying
+     * Mongo with the deleteMany conditions, so it only works while the
+     * documents still exist. Fanned out after the delete, the lookup returns
+     * nothing and Meilisearch retains every deleted document forever.
+     */
+    it('deletes each removed document from Meili on deleteMany', async () => {
+      process.env.MEILI_WRITES_ENABLED = 'true';
+      await models.Message.create([
+        { messageId: 'd1', conversationId: 'c1', user: 'u1', text: 'a', isCreatedByUser: true },
+        { messageId: 'd2', conversationId: 'c1', user: 'u1', text: 'b', isCreatedByUser: true },
+      ]);
+      mockDeleteDocument.mockClear();
+
+      await models.Message.deleteMany({ conversationId: 'c1' });
+
+      expect(mockDeleteDocument.mock.calls.map((call) => call[0]).sort()).toEqual(['d1', 'd2']);
+    });
+  });
+
+  describe('deleteMany sink ordering', () => {
+    type ProbeDocument = { noteId?: string; user?: string; text?: string };
+    const liveDocsSeen: number[] = [];
+    let Probe: Model<ProbeDocument>;
+
+    beforeAll(() => {
+      const probeSchema = new mongoose.Schema<ProbeDocument>({
+        noteId: String,
+        user: String,
+        text: String,
+      });
+      const probeSink: SearchSink = {
+        name: 'probe',
+        isEnabled: () => true,
+        upsert: async () => undefined,
+        remove: async () => undefined,
+        async removeMany(conditions: FilterQuery<unknown>): Promise<void> {
+          const docs = await Probe.find(conditions).lean();
+          liveDocsSeen.push(docs.length);
+        },
+      };
+      applySearchSync(probeSchema, {
+        mongoose,
+        kind: 'message',
+        primaryKey: 'noteId',
+        sinks: [probeSink],
+      });
+      Probe = mongoose.model<ProbeDocument>('SinkOrderingProbe', probeSchema);
+    });
+
+    it('fans deleteMany out to sinks while the documents are still readable', async () => {
+      await Probe.create([
+        { noteId: 'n1', user: 'u1', text: 'a' },
+        { noteId: 'n2', user: 'u1', text: 'b' },
+      ]);
+      liveDocsSeen.length = 0;
+
+      await Probe.deleteMany({ user: 'u1' });
+
+      expect(liveDocsSeen).toEqual([2]);
+      expect(await Probe.countDocuments({})).toBe(0);
+    });
+  });
+
+  describe('legacy shared links without a shareId', () => {
+    it('keys the event by the Mongo _id when the record carries no shareId', async () => {
+      const link = await models.SharedLink.create({
+        conversationId: 'c1',
+        user: 'u1',
+        title: 'Legacy',
+      });
+
+      expect(await drain(models.SearchEvent)).toEqual([
+        {
+          tenantId: BASE_TENANT_ID,
+          userId: 'u1',
+          kind: 'shared-link',
+          recordId: String(link._id),
+          op: 'upsert',
+        },
+      ]);
+    });
+
+    it('keys deleteMany tombstones for no-shareId links by their Mongo _ids', async () => {
+      const links = await models.SharedLink.create([
+        { conversationId: 'c1', user: 'u1', title: 'first' },
+        { conversationId: 'c2', user: 'u1', title: 'second' },
+      ]);
+      await models.SearchEvent.deleteMany({});
+
+      await models.SharedLink.deleteMany({ user: 'u1' });
+
+      const events = await drain(models.SearchEvent);
+      expect(events.every((event) => event.op === 'tombstone')).toBe(true);
+      expect(events.map((event) => event.recordId).sort()).toEqual(
+        links.map((link) => String(link._id)).sort(),
+      );
     });
   });
 
