@@ -142,15 +142,25 @@ export function lastVisibleContentIdx(
 ): number {
   const parts = content ?? [];
   let last = parts.length - 1;
-  while (last >= 0) {
-    const tail = parts[last];
-    if (!isVisibleContentPart(tail)) {
-      last -= 1;
-    } else {
-      break;
+  while (last >= 0 && last in parts) {
+    if (isVisibleContentPart(parts[last])) {
+      return last;
+    }
+    last -= 1;
+  }
+  if (last < 0) {
+    return -1;
+  }
+  /** Phase slices retain absolute indices as true holes. Jump between their
+   *  defined slots instead of walking the whole message-length index space. */
+  const definedIndices = Object.keys(parts);
+  for (let i = definedIndices.length - 1; i >= 0; i -= 1) {
+    const index = Number(definedIndices[i]);
+    if (index <= last && isVisibleContentPart(parts[index])) {
+      return index;
     }
   }
-  return last;
+  return -1;
 }
 
 /**

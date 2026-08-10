@@ -101,6 +101,9 @@ describe('lastVisibleContentIdx', () => {
 
   it('skips sparse trailing slots used by phase slices', () => {
     expect(lastVisibleContentIdx([undefined, tool, undefined, undefined])).toBe(1);
+    const sparse = new Array<TMessageContentParts | undefined>(10_000);
+    sparse[1] = tool;
+    expect(lastVisibleContentIdx(sparse)).toBe(1);
   });
 });
 
