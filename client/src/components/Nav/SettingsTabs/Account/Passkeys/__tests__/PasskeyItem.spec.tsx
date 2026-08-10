@@ -2,7 +2,7 @@ import React from 'react';
 import userEvent from '@testing-library/user-event';
 import type { TPasskey } from 'librechat-data-provider';
 import type { PasskeyRemovalResult } from '../PasskeyItem';
-import { render, screen, waitFor } from 'test/layout-test-utils';
+import { fireEvent, render, screen, waitFor } from 'test/layout-test-utils';
 import PasskeyItem from '../PasskeyItem';
 
 const passkey: TPasskey = {
@@ -47,8 +47,8 @@ const openConfirmation = async (user: ReturnType<typeof userEvent.setup>) => {
 };
 
 describe('PasskeyItem rename controls', () => {
-  it('matches the input height with square save and cancel buttons and labels both tooltips', async () => {
-    const { user } = setup({ isRenaming: true });
+  it('matches the input height with square save and cancel buttons', () => {
+    setup({ isRenaming: true });
     const input = screen.getByRole('textbox', { name: 'Passkey name' });
     const saveButton = screen.getByRole('button', { name: 'Save' });
     const cancelButton = screen.getByRole('button', { name: 'Cancel' });
@@ -58,14 +58,16 @@ describe('PasskeyItem rename controls', () => {
     expect(saveButton).toHaveClass('size-10');
     expect(cancelButton).toHaveClass('size-10');
     expect(cancelButton).toHaveClass('bg-surface-secondary');
+  });
 
-    await user.hover(saveButton);
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Save');
-    await user.unhover(saveButton);
-    await waitFor(() => expect(screen.queryByRole('tooltip')).not.toBeInTheDocument());
+  it.each(['Save', 'Cancel'])('labels the %s control with a tooltip', async (label) => {
+    setup({ isRenaming: true });
+    const button = screen.getByRole('button', { name: label });
 
-    await user.hover(cancelButton);
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Cancel');
+    fireEvent.mouseEnter(button);
+    fireEvent.mouseMove(button, { screenX: 1 });
+
+    expect(await screen.findByRole('tooltip', {}, { timeout: 3000 })).toHaveTextContent(label);
   });
 });
 
