@@ -868,7 +868,23 @@ const initializeClient = async ({
     if (!agent.subagents?.enabled) return [];
     const memberIds = Array.from(
       new Set((agent.subagents.graphs ?? []).flatMap((graph) => graph.agent_ids ?? [])),
-    );
+    ).filter((memberId) => memberId !== primaryConfig.id && !agentConfigs.has(memberId));
+    const stagedMemberIds = memberIds.filter((memberId) => !subagentGraphIds.has(memberId));
+    if (subagentGraphIds.size + stagedMemberIds.length > MAX_SUBAGENT_GRAPH_NODES) {
+      logger.warn('[initializeClient] Subagent graph node limit exceeded', {
+        agentId: stagedMemberIds[0],
+        primaryAgentId: primaryConfig.id,
+        loadedSubagentCount: subagentGraphIds.size,
+        stagedSubagentCount: stagedMemberIds.length,
+        maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+      });
+      throw new Error(
+        `Subagent graph exceeds the maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents.`,
+      );
+    }
+    for (const memberId of stagedMemberIds) {
+      subagentGraphIds.add(memberId);
+    }
     const memberMetadata = await Promise.all(memberIds.map(loadSubagentMetadata));
     return memberMetadata.filter(Boolean);
   };

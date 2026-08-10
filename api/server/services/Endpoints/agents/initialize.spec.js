@@ -1629,6 +1629,65 @@ describe('initializeClient — subagent loading', () => {
     expect(agentClientArgs).toBeUndefined();
   });
 
+  it('bounds capability metadata reads across lazy graph teams', async () => {
+    const firstChildId = 'agent_lazy_graph_cap_first';
+    const secondChildId = 'agent_lazy_graph_cap_second';
+    const firstMemberIds = Array.from({ length: 32 }, (_, index) => `agent_cap_first_${index}`);
+    const secondMemberIds = Array.from({ length: 17 }, (_, index) => `agent_cap_second_${index}`);
+    const makeGraph = (type, memberIds) => ({
+      type,
+      name: type,
+      description: type,
+      agent_ids: memberIds,
+      edges: memberIds.slice(0, -1).map((memberId, index) => ({
+        from: memberId,
+        to: memberIds[index + 1],
+        edgeType: 'direct',
+      })),
+      entry_agent_id: memberIds[0],
+      result_agent_id: memberIds.at(-1),
+    });
+    await createViewableAgent(firstChildId, {
+      enabled: true,
+      allowSelf: false,
+      graphs: [makeGraph('first_capability_team', firstMemberIds)],
+    });
+    await createViewableAgent(secondChildId, {
+      enabled: true,
+      allowSelf: false,
+      graphs: [makeGraph('second_capability_team', secondMemberIds)],
+    });
+    await Promise.all(
+      [...firstMemberIds, ...secondMemberIds].map((memberId) => createViewableAgent(memberId)),
+    );
+    const primaryConfig = makePrimaryConfig({
+      subagents: {
+        enabled: true,
+        allowSelf: false,
+        agent_ids: [firstChildId, secondChildId],
+      },
+    });
+    mockInitializeAgent.mockResolvedValue(primaryConfig);
+
+    await expect(
+      initializeClient({
+        req: makeSubagentReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toThrow(`maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents`);
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[initializeClient] Subagent graph node limit exceeded',
+      expect.objectContaining({
+        loadedSubagentCount: 34,
+        stagedSubagentCount: secondMemberIds.length,
+        maxSubagentGraphNodes: MAX_SUBAGENT_GRAPH_NODES,
+      }),
+    );
+  });
+
   it('rejects a branching DAG that exceeds expanded descriptor capacity', async () => {
     const width = 3;
     const layers = Array.from({ length: MAX_SUBAGENT_DEPTH }, (_, level) =>
