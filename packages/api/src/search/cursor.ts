@@ -9,27 +9,18 @@ import { CURSOR_VERSION } from './constants';
  * scope — that is re-derived from the request context on every page — and never
  * carry watermark or arm state.
  *
- * Two shapes, because the two paths have genuinely different problems:
- *
- *  - **Keyset** `{v, primary, secondary}` on the PostgreSQL-only conversation
- *    and shared-link paths, where a deterministic `(sortField, record_id)`
- *    ordering exists and live pagination is gap-free.
- *  - **Snapshot** `{v, snapshotId, offset, queryHash}` on the fused message
- *    path, where it does not. Fused rank positions are not stable keys:
- *    projections re-rank both arms between pages, so live keyset pagination over
- *    RRF cannot produce gap-free pages at any depth. Freezing the candidate list
- *    once and paging within it is what buys stable ordering.
+ * One shape, `{v, snapshotId, offset, queryHash}`, because fused rank positions
+ * are not stable keys: projections re-rank both arms between pages, so live
+ * keyset pagination over RRF cannot produce gap-free pages at any depth.
+ * Freezing the candidate list once and paging within it is what buys stable
+ * ordering. The conversation and shared-link listings never mint a cursor here
+ * at all — they resolve one candidate window and page it in the primary store,
+ * which owns the sort.
  *
  * The snapshot id alone is not an authorization token: the snapshot records the
  * scope that created it, and a page request whose re-derived scope differs is
  * rejected even with a perfectly valid signature.
  */
-export type KeysetCursor = Readonly<{
-  v: number;
-  primary: string;
-  secondary: string;
-}>;
-
 export type SnapshotCursor = Readonly<{
   v: number;
   snapshotId: string;
@@ -37,9 +28,7 @@ export type SnapshotCursor = Readonly<{
   queryHash: string;
 }>;
 
-export type CursorPayload = KeysetCursor | SnapshotCursor;
-
-export type DecodedCursor<T extends CursorPayload> =
+export type DecodedCursor<T extends SnapshotCursor> =
   | { status: 'ok'; payload: T }
   | { status: 'absent' }
   /**
@@ -85,12 +74,12 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
-export function encodeCursor(payload: CursorPayload, secret: string): string {
+export function encodeCursor(payload: SnapshotCursor, secret: string): string {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
   return `${body}.${sign(secret, body)}`;
 }
 
-export function decodeCursor<T extends CursorPayload>(
+export function decodeCursor<T extends SnapshotCursor>(
   token: string | undefined,
   secret: string,
 ): DecodedCursor<T> {
