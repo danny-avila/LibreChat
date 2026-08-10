@@ -1824,6 +1824,64 @@ describe('MCPManager', () => {
       const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
       expect(methods).toContain('resources/read');
     });
+
+    const templateOnlyRequest = (uriTemplate: string) =>
+      jest.fn().mockImplementation((req: { method: string }) => {
+        if (req.method === 'resources/list') {
+          return Promise.resolve({ resources: [] });
+        }
+        if (req.method === 'resources/templates/list') {
+          return Promise.resolve({ resourceTemplates: [{ uriTemplate }] });
+        }
+        return Promise.resolve({ contents: [] });
+      });
+
+    const templateCases: Array<{ uriTemplate: string; uri: string; allowed: boolean }> = [
+      { uriTemplate: 'files://root{/id}', uri: 'files://root/private/secret', allowed: false },
+      { uriTemplate: 'files://root{/id}', uri: 'files://root/42', allowed: true },
+      { uriTemplate: 'files://root{/id}', uri: 'files://root/a,b', allowed: true },
+      { uriTemplate: 'files://root{/id*}', uri: 'files://root/a/b/c', allowed: true },
+      { uriTemplate: 'files://root{/a,b}', uri: 'files://root/x/y', allowed: true },
+      { uriTemplate: 'files://root{/a,b}', uri: 'files://root/x/y/z', allowed: false },
+      { uriTemplate: 'files://root{/id}/meta', uri: 'files://root/a/meta', allowed: true },
+      { uriTemplate: 'files://root{/id}/meta', uri: 'files://root/a/b/meta', allowed: false },
+      { uriTemplate: 'file://docs{+path}', uri: 'file://docs/deep/nested/x', allowed: true },
+      { uriTemplate: 'file://docs{+path}', uri: 'file://docs/%2e%2e%2fsecret', allowed: false },
+      { uriTemplate: 'x://a{.fmt}', uri: 'x://a.json', allowed: true },
+      { uriTemplate: 'x://a{.fmt}', uri: 'x://a.json.bak', allowed: true },
+      { uriTemplate: 'search://items?q={q}', uri: 'search://items?q=foo', allowed: true },
+      {
+        uriTemplate: 'search://items?q={q}',
+        uri: 'search://items?q=foo&admin=true',
+        allowed: false,
+      },
+      { uriTemplate: 'db://items/{id}', uri: 'db://items/42', allowed: true },
+    ];
+
+    it.each(templateCases)(
+      'template $uriTemplate authorizes $uri: $allowed',
+      async ({ uriTemplate, uri, allowed }) => {
+        const request = templateOnlyRequest(uriTemplate);
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        jest.spyOn(manager, 'getConnection').mockResolvedValue(buildConnection(request));
+
+        const read = manager.readResource({
+          userId: 'user-123',
+          serverName: 'srv',
+          uri,
+          user: mockUser as IUser,
+        });
+
+        if (allowed) {
+          await read;
+        } else {
+          await expect(read).rejects.toThrow(/not advertised/);
+        }
+
+        const methods = request.mock.calls.map((c) => (c[0] as { method: string }).method);
+        expect(methods.includes('resources/read')).toBe(allowed);
+      },
+    );
   });
 
   describe('getConnection', () => {

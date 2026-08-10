@@ -33,6 +33,7 @@
       let innerFrameBlobUrl = null;
       let innerFrameNavigated = false;
       let readyInterval = null;
+      let navPolicyApplied = false;
       const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
 
       // Default to same-origin. When the sandbox is served from a dedicated origin, the parent
@@ -105,6 +106,7 @@
 
       function createInnerFrame(params) {
         const { html, csp, permissions } = params;
+        applyNavigationPolicy(csp);
 
         if (innerFrameBlobUrl) {
           URL.revokeObjectURL(innerFrameBlobUrl);
@@ -202,6 +204,21 @@
         const policy = buildCspPolicy(effective);
         if (!policy) return '';
         return '<meta http-equiv="Content-Security-Policy" content="' + escapeAttr(policy) + '">';
+      }
+
+      // The inner navigable is bound by this document's frame-src (and by the copy the blob doc
+      // inherits), which is what stops an allow-scripts app from swapping in a remote document
+      // that would still satisfy the contentWindow source check. Widened only to the resource's
+      // declared frameDomains so nested iframes keep working; applied once, since policies are
+      // additive and a second policy would intersect with the first.
+      function applyNavigationPolicy(csp) {
+        if (navPolicyApplied) return;
+        navPolicyApplied = true;
+        const frameDomains = toDomainList(csp && typeof csp === 'object' ? csp.frameDomains : null);
+        const meta = document.createElement('meta');
+        meta.httpEquiv = 'Content-Security-Policy';
+        meta.content = ('frame-src blob: ' + frameDomains).trim();
+        document.head.appendChild(meta);
       }
 
       function buildCspPolicy(csp) {

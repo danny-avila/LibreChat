@@ -1201,13 +1201,25 @@ Please follow these instructions when using tools from the respective MCP server
         // Variable names declared in this expansion (operator + `:prefix`/`*explode` modifiers
         // stripped), used to constrain query expansions to their declared keys rather than an
         // open query string.
-        const keys = expr
+        const varSpecs = expr
           .replace(/^[+#./;?&]/, '')
           .split(',')
-          .map((name) => name.split(/[:*]/)[0].trim())
+          .map((spec) => spec.trim())
+          .filter(Boolean);
+        const keys = varSpecs
+          .map((spec) => spec.split(/[:*]/)[0].trim())
           .filter(Boolean)
           .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
           .join('|');
+        // RFC 6570 3.2.5/3.2.6: each defined variable contributes exactly one prefixed component,
+        // so a non-exploded expression can never expand past its declared variable count.
+        const exploded = varSpecs.some((spec) => spec.endsWith('*'));
+        const bounded = (unit: string) => {
+          if (exploded) {
+            return `(?:${unit})+`;
+          }
+          return varSpecs.length > 1 ? `(?:${unit}){1,${varSpecs.length}}` : unit;
+        };
         switch (op) {
           case '+': // reserved expansion: may legitimately include "/"
             pattern += '[^?#]+';
@@ -1216,10 +1228,10 @@ Please follow these instructions when using tools from the respective MCP server
             pattern += '#[^\\s]*';
             break;
           case '/': // path segments
-            pattern += '(?:/[^/?#]+)+';
+            pattern += bounded('/[^/?#]+');
             break;
           case '.': // label(s)
-            pattern += '(?:\\.[^/?#]+)+';
+            pattern += bounded('\\.[^/?#]+');
             break;
           case ';': // path-style params
             pattern += '(?:;[^/?#]+)+';

@@ -87,21 +87,45 @@ const SENSITIVE_SHARED_FILE_FIELDS = new Set([
   'metadata',
 ]);
 
+/** Drops `_meta` from a copied MCP content block and its embedded resource. */
+function sanitizeSharedContentPart(part: unknown): unknown {
+  if (!part || typeof part !== 'object' || Array.isArray(part)) {
+    return part;
+  }
+  const { _meta: _partMeta, ...rest } = part as Record<string, unknown>;
+  const resource = rest.resource;
+  if (resource && typeof resource === 'object' && !Array.isArray(resource)) {
+    const { _meta: _resourceMeta, ...resourceRest } = resource as Record<string, unknown>;
+    rest.resource = resourceRest;
+  }
+  return rest;
+}
+
 /**
  * The MCP tool result `_meta` is carried on a UI resource as `resultMeta` for the App Bridge to
  * hydrate from, but it is intentionally kept out of the model-visible result and must not become
  * part of a public shared transcript. MCP apps never render in a shared view anyway, so drop it.
+ * The resource's own `_meta` (and that of every block in the copied tool result) is the same kind
+ * of free-form server-controlled bag and is dropped for the same reason; the shared view renders
+ * from the explicit `csp`/`permissions` fields, never from `_meta`.
  */
 function sanitizeSharedUIResource(resource: unknown): unknown {
   if (!resource || typeof resource !== 'object' || Array.isArray(resource)) {
     return resource;
   }
-  const { resultMeta: _resultMeta, ...rest } = resource as Record<string, unknown>;
+  const {
+    resultMeta: _resultMeta,
+    _meta: _resourceMeta,
+    ...rest
+  } = resource as Record<string, unknown>;
+  if (Array.isArray(rest.content)) {
+    rest.content = rest.content.map(sanitizeSharedContentPart);
+  }
   return rest;
 }
 
 /** ui_resources is stored either as a bare array or as the `{ data: UIResource[] }` artifact
- * shape; redact resultMeta in both so it never reaches a shared transcript. */
+ * shape; sanitize both so redacted fields never reach a shared transcript. */
 function sanitizeSharedUIResources(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(sanitizeSharedUIResource);

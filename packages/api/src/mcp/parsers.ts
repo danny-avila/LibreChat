@@ -231,13 +231,17 @@ export function formatToolContent(
     enableApps?: boolean;
   },
 ): t.FormattedContentResult {
-  if (!RECOGNIZED_PROVIDERS.has(provider)) {
+  const isRecognizedProvider = RECOGNIZED_PROVIDERS.has(provider);
+  // Truthiness, not != null: an empty resourceUri/serverName/toolName cannot address an app, and a
+  // single predicate keeps this gate and the synthesis below from drifting apart.
+  const hasSyntheticApp = !!(metadata?.resourceUri && metadata.serverName && metadata.toolName);
+  const hasApp =
+    metadata?.enableApps !== false && (hasSyntheticApp || resultHasRenderableUiResource(result));
+  if (!isRecognizedProvider && !hasApp) {
     return [parseAsString(result), undefined];
   }
 
   const content = result?.content ?? [];
-  const hasSyntheticApp =
-    metadata?.resourceUri != null && metadata.serverName != null && metadata.toolName != null;
   if (!content.length && !hasSyntheticApp) {
     return ['(No response)', undefined];
   }
@@ -264,6 +268,10 @@ export function formatToolContent(
         return;
       }
       assertImageDataWithinLimit(item);
+      if (!isRecognizedProvider) {
+        currentTextBlock += (currentTextBlock ? '\n\n' : '') + JSON.stringify(item, null, 2);
+        return;
+      }
       const formatter = imageFormatters.default as t.ImageFormatter;
       const formattedImage = formatter(item);
 
@@ -277,9 +285,14 @@ export function formatToolContent(
       // scope with apps disabled fall through to plain resource text rather than an unrenderable
       // or admin-suppressed app marker.
       const isUiResource = metadata?.enableApps !== false && isRenderableUiResource(item);
+      const isUnprofiledDeclaredApp =
+        isUiResource &&
+        hasSyntheticApp &&
+        item.resource.uri === metadata?.resourceUri &&
+        !(item.resource.mimeType ?? '').includes('profile=mcp-app');
       const resourceText: string[] = [];
 
-      if (isUiResource) {
+      if (isUiResource && !isUnprofiledDeclaredApp) {
         const baseHash =
           'text' in item.resource && item.resource.text && typeof item.resource.text === 'string'
             ? item.resource.text
@@ -319,7 +332,12 @@ export function formatToolContent(
         uiResources.push(uiResource);
         resourceText.push(`UI Resource ID: ${resourceId}`);
         resourceText.push(`UI Resource Marker: \\ui{${resourceId}}`);
-      } else if ('text' in item.resource && item.resource.text != null && item.resource.text) {
+      } else if (
+        !isUnprofiledDeclaredApp &&
+        'text' in item.resource &&
+        item.resource.text != null &&
+        item.resource.text
+      ) {
         resourceText.push(`Resource Text: ${item.resource.text}`);
       }
 
@@ -350,8 +368,15 @@ export function formatToolContent(
   // synthesize it unless the result already returned that exact resource. A secondary ui://
   // resource in the result must not suppress the declared app.
   const declaredAppAlreadyReturned =
-    metadata?.resourceUri != null && uiResources.some((r) => r.uri === metadata.resourceUri);
+    metadata?.resourceUri != null &&
+    uiResources.some(
+      (r) => r.uri === metadata.resourceUri && (r.mimeType ?? '').includes('profile=mcp-app'),
+    );
+  // Gated on the per-request apps setting for the same reason the embedded path is: a scope with
+  // apps disabled must not get a synthesized app either.
   if (
+    hasSyntheticApp &&
+    metadata?.enableApps !== false &&
     metadata?.resourceUri &&
     metadata.serverName &&
     metadata.toolName &&
@@ -371,7 +396,7 @@ export function formatToolContent(
       serverName: metadata.serverName,
       toolName: metadata.toolName,
       structuredContent: result?.structuredContent,
-      content: result?.content,
+      content: sharedResultContent,
       csp: metadata.csp,
       permissions: metadata.permissions,
       toolArgs: metadata.toolArgs,

@@ -464,6 +464,32 @@ describe('formatToolContent', () => {
       expect(content).not.toContain('UI Resource Marker:');
     });
 
+    it('does not synthesize the tool-declared app when apps are disabled for the scope', () => {
+      const result: t.MCPToolCallResponse = { content: [{ type: 'text', text: 'done' }] };
+
+      const [content, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+        resourceUri: 'ui://app',
+        enableApps: false,
+      });
+
+      expect(artifacts?.ui_resources).toBeUndefined();
+      expect(content).toBe('done');
+    });
+
+    it('does not synthesize an app for an empty declared resourceUri', () => {
+      const result: t.MCPToolCallResponse = { content: [{ type: 'text', text: 'done' }] };
+
+      const [, artifacts] = formatToolContent(result, 'openai', {
+        serverName: 'srv',
+        toolName: 'do_thing',
+        resourceUri: '',
+      });
+
+      expect(artifacts?.ui_resources).toBeUndefined();
+    });
+
     it('gives embedded ui:// resources distinct ids per tool result payload', () => {
       const resourceIdFor = (sc: Record<string, unknown>) =>
         formatToolContent(
@@ -706,6 +732,238 @@ describe('formatToolContent', () => {
       const [content, artifacts] = formatToolContent(result, 'google');
       expect(content).toBe('Response with metadata');
       expect(artifacts).toBeUndefined();
+    });
+  });
+
+  describe('MCP apps on unrecognized providers', () => {
+    it('extracts an embedded app resource instead of dumping its html into the model text', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          { type: 'text', text: 'ok' },
+          {
+            type: 'resource',
+            resource: {
+              uri: 'ui://s/app',
+              mimeType: 'text/html;profile=mcp-app',
+              text: '<html>SECRET_BODY</html>',
+            },
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'vertexai' as t.Provider, {
+        serverName: 's',
+        toolName: 't',
+        toolArgs: { a: 1 },
+      });
+
+      const data = artifacts?.ui_resources?.data ?? [];
+      expect(data).toHaveLength(1);
+      expect(data[0]).toMatchObject({ uri: 'ui://s/app', serverName: 's', toolName: 't' });
+      expect(data[0].content).toEqual(expect.any(Array));
+      expect(content).toMatch(/UI Resource Marker: \\ui\{[a-f0-9]{10}\}/);
+      expect(content).not.toContain('SECRET_BODY');
+    });
+
+    it('synthesizes the tool-declared app for an unrecognized provider', () => {
+      const [, artifacts] = formatToolContent(
+        { content: [{ type: 'text', text: 'done' }] },
+        'vertexai' as t.Provider,
+        { serverName: 's', toolName: 't', resourceUri: 'ui://s/app' },
+      );
+
+      expect(artifacts?.ui_resources?.data).toMatchObject([
+        { uri: 'ui://s/app', mimeType: 'text/html;profile=mcp-app' },
+      ]);
+    });
+
+    it('keeps the plain string output when apps are disabled for the scope', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://app', mimeType: 'text/html;profile=mcp-app', text: '<p>hi</p>' },
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'vertexai' as t.Provider, {
+        serverName: 's',
+        toolName: 't',
+        enableApps: false,
+      });
+
+      expect(artifacts).toBeUndefined();
+      expect(content).toBe('<p>hi</p>\nResource URI: ui://app\nType: text/html;profile=mcp-app');
+    });
+
+    it('leaves images stringified in the text when an app widens the extraction path', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          { type: 'image', data: 'base64data', mimeType: 'image/png' },
+          {
+            type: 'resource',
+            resource: { uri: 'ui://app', mimeType: 'text/html;profile=mcp-app', text: '<p>a</p>' },
+          },
+        ],
+      };
+
+      const [content, artifacts] = formatToolContent(result, 'vertexai' as t.Provider, {
+        serverName: 's',
+        toolName: 't',
+      });
+
+      expect(artifacts?.ui_resources).toBeDefined();
+      expect(artifacts?.content).toBeUndefined();
+      expect(content).toContain('base64data');
+    });
+
+    it('extracts a non-app ui:// resource without app-bridge metadata', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://s/doc', mimeType: 'text/html', text: '<p>doc</p>' },
+          },
+        ],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'vertexai' as t.Provider, {
+        serverName: 's',
+        toolName: 't',
+      });
+
+      const resource = artifacts?.ui_resources?.data?.[0];
+      expect(resource).toMatchObject({ uri: 'ui://s/doc', mimeType: 'text/html' });
+      expect(resource?.serverName).toBeUndefined();
+      expect(resource?.toolName).toBeUndefined();
+      expect(resource?.content).toBeUndefined();
+    });
+  });
+
+  describe('un-profiled echo of the tool-declared app uri', () => {
+    const echoResult = (resource: Record<string, unknown>): t.MCPToolCallResponse => ({
+      content: [{ type: 'resource', resource } as t.ToolContentPart],
+    });
+
+    const appMetadata = { serverName: 'srv', toolName: 'do_thing', resourceUri: 'ui://app' };
+
+    it('drops the static echo and renders only the declared app', () => {
+      const [content, artifacts] = formatToolContent(
+        echoResult({ uri: 'ui://app', mimeType: 'text/html', text: '<p>static</p>' }),
+        'openai',
+        appMetadata,
+      );
+
+      const data = artifacts?.ui_resources?.data ?? [];
+      expect(data).toHaveLength(1);
+      expect(data[0]).toMatchObject({
+        uri: 'ui://app',
+        mimeType: 'text/html;profile=mcp-app',
+        serverName: 'srv',
+        toolName: 'do_thing',
+      });
+      expect(content.match(/UI Resource Marker:/g)).toHaveLength(1);
+      expect(content).toContain('Resource URI: ui://app');
+      expect(content).not.toContain('Resource Text:');
+      expect(content).not.toContain('<p>static</p>');
+    });
+
+    it('drops the echo when its mime type is omitted entirely', () => {
+      const [content, artifacts] = formatToolContent(
+        echoResult({ uri: 'ui://app', text: '<p>static</p>' }),
+        'openai',
+        appMetadata,
+      );
+
+      const data = artifacts?.ui_resources?.data ?? [];
+      expect(data).toHaveLength(1);
+      expect(data[0]).toMatchObject({ uri: 'ui://app', mimeType: 'text/html;profile=mcp-app' });
+      expect(content).not.toContain('<p>static</p>');
+    });
+
+    it('renders the declared app when the echo carries no body at all', () => {
+      const [, artifacts] = formatToolContent(
+        echoResult({ uri: 'ui://app', mimeType: 'text/html' }),
+        'openai',
+        appMetadata,
+      );
+
+      const data = artifacts?.ui_resources?.data ?? [];
+      expect(data).toHaveLength(1);
+      expect(data[0]).toMatchObject({
+        uri: 'ui://app',
+        mimeType: 'text/html;profile=mcp-app',
+        serverName: 'srv',
+        toolName: 'do_thing',
+      });
+    });
+
+    it('produces the same artifact on an unrecognized provider', () => {
+      const resource = { uri: 'ui://app', mimeType: 'text/html', text: '<p>static</p>' };
+      const [, recognized] = formatToolContent(echoResult(resource), 'openai', appMetadata);
+      const [, unrecognized] = formatToolContent(
+        echoResult(resource),
+        'vertexai' as t.Provider,
+        appMetadata,
+      );
+
+      expect(unrecognized?.ui_resources).toEqual(recognized?.ui_resources);
+    });
+
+    it('keeps a different un-profiled ui:// resource alongside the declared app', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://chart', mimeType: 'text/html', text: '<p>chart</p>' },
+          },
+        ],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai', appMetadata);
+
+      const data = artifacts?.ui_resources?.data ?? [];
+      expect(data).toHaveLength(2);
+      const chart = data.find((resource) => resource.uri === 'ui://chart');
+      expect(chart).toMatchObject({ mimeType: 'text/html' });
+      expect(chart?.serverName).toBeUndefined();
+      expect(chart?.toolName).toBeUndefined();
+      expect(data.some((resource) => resource.uri === 'ui://app')).toBe(true);
+    });
+
+    it('does not persist an embedded body on the synthesized app', () => {
+      const body = 'A'.repeat(5000);
+      const [, artifacts] = formatToolContent(
+        echoResult({ uri: 'ui://app', mimeType: 'text/html', text: body }),
+        'openai',
+        appMetadata,
+      );
+
+      const snapshot = JSON.stringify(artifacts?.ui_resources?.data?.[0]?.content ?? []);
+      expect(snapshot).not.toContain(body);
+      expect(snapshot).toContain('ui://app');
+    });
+
+    it('does not persist a sibling app body on the synthesized app', () => {
+      const body = 'B'.repeat(5000);
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://chart', mimeType: 'text/html;profile=mcp-app', text: body },
+          },
+        ],
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai', appMetadata);
+
+      const synthetic = artifacts?.ui_resources?.data?.find(
+        (resource) => resource.uri === 'ui://app',
+      );
+      const snapshot = JSON.stringify(synthetic?.content ?? []);
+      expect(snapshot).not.toContain(body);
+      expect(snapshot).toContain('ui://chart');
     });
   });
 });
