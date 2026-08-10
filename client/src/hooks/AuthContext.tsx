@@ -98,7 +98,11 @@ const AuthContextProvider = ({
       }, 50),
     [navigate, setUser, setQueriesEnabled],
   );
-  const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
+  const setErrorAfterTimeout = useCallback(
+    (error: string | number | boolean | null) => setError(error as string | undefined),
+    [],
+  );
+  const doSetError = useTimeout({ callback: setErrorAfterTimeout });
 
   const loginUser = useLoginUserMutation({
     onSuccess: (data: t.TLoginResponse) => {
@@ -171,9 +175,12 @@ const AuthContextProvider = ({
 
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
 
-  const login = (data: t.TLoginUser) => {
-    loginUser.mutate(data);
-  };
+  const login = useCallback(
+    (data: t.TLoginUser) => {
+      loginUser.mutate(data);
+    },
+    [loginUser],
+  );
 
   const silentRefresh = useCallback(() => {
     if (authConfig?.test === true) {
@@ -252,6 +259,7 @@ const AuthContextProvider = ({
     navigate,
     silentRefresh,
     setUserContext,
+    doSetError,
   ]);
 
   useEffect(() => {
@@ -297,6 +305,8 @@ const AuthContextProvider = ({
       isCustomRole,
       userRoleName,
       customRole,
+      login,
+      logout,
     ],
   );
 
