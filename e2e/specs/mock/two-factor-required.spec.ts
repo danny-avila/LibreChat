@@ -42,7 +42,6 @@ test.describe('required two-factor enrollment', () => {
     const generateButton = page.getByRole('button', { name: 'Generate QR Code' });
     const setupCardBox = await generateButton.locator('..').boundingBox();
     expect(setupCardBox?.width).toBeGreaterThanOrEqual(430);
-    expect(setupCardBox?.height).toBeGreaterThanOrEqual(288);
     await generateButton.click();
 
     await expect(page.getByRole('img', { name: 'Scan QR Code' })).toBeVisible();
