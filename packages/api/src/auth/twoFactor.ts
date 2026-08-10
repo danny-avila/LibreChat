@@ -70,7 +70,7 @@ export function verifyTwoFactorSetupToken(
 }
 
 export function requireTwoFactorSetupToken(
-  req: Request<Record<string, never>, never, TwoFactorSetupBody>,
+  req: Request,
   res: Response,
   next: NextFunction,
 ): Response | void {
@@ -78,7 +78,8 @@ export function requireTwoFactorSetupToken(
     return res.status(403).json({ message: 'Two-factor authentication setup is not required' });
   }
 
-  const userId = verifyTwoFactorSetupToken(req.body?.tempToken, process.env.JWT_SECRET);
+  const tempToken = (req.body as TwoFactorSetupBody | undefined)?.tempToken;
+  const userId = verifyTwoFactorSetupToken(tempToken, process.env.JWT_SECRET);
   if (!userId) {
     return res.status(401).json({ message: 'Invalid or expired two-factor setup token' });
   }
