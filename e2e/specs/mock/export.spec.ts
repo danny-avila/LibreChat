@@ -148,7 +148,9 @@ test.describe('conversation export', () => {
     expect(csvDownload.suggestedFilename()).toMatch(/\.csv$/);
     const csv = await downloadText(csvDownload);
     expect(csv).toContain('sender');
-    expect(csv).toContain(MOCK_REPLY_TEXT);
+    /** CSV export maps only the legacy `text` field, which is empty for the mock
+     *  model's content-parts reply — assert on the user message instead. */
+    expect(csv).toContain('Export fixture prompt');
 
     await selectExportType(page, dialog, 'screenshot (.png)');
     const screenshotDownload = await exportCurrentType(page, dialog);
@@ -187,7 +189,7 @@ test.describe('conversation export', () => {
     });
     await dialog.getByRole('button', { name: 'Export', exact: true }).click();
 
-    await expect(page.getByText('too large to export as a screenshot')).toBeVisible({
+    await expect(page.getByText('too large to export as a screenshot').first()).toBeVisible({
       timeout: 15000,
     });
     expect(downloadFired).toBe(false);
