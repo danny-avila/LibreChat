@@ -460,9 +460,7 @@ const ContentParts = memo(function ContentParts({
   if (phaseSegments != null) {
     const relativeGlobalLastContentIdx = lastVisibleContentIdx(content ?? []);
     const globalLastContentIdx =
-      relativeGlobalLastContentIdx < 0
-        ? -1
-        : relativeGlobalLastContentIdx + contentIndexOffset;
+      relativeGlobalLastContentIdx < 0 ? -1 : relativeGlobalLastContentIdx + contentIndexOffset;
     const renderSegment = (
       segmentContent: Array<TMessageContentParts | undefined>,
       segmentStartIndex: number,

@@ -13,7 +13,13 @@ jest.mock('~/utils', () => ({
 
 jest.mock('~/Providers', () => ({
   MessageContext: {
-    Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    Provider: ({
+      children,
+      value,
+    }: {
+      children: React.ReactElement<{ idx?: number }>;
+      value: { partIndex: number };
+    }) => React.cloneElement(children, { idx: value.partIndex }),
   },
   SearchContext: {
     Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -341,10 +347,7 @@ describe('ContentParts — activity phase state', () => {
       />,
     );
 
-    expect(screen.getByTestId('activity-phase-group')).toHaveAttribute(
-      'data-show-cursor',
-      'true',
-    );
+    expect(screen.getByTestId('activity-phase-group')).toHaveAttribute('data-show-cursor', 'true');
   });
 
   it('carries the absolute index offset into a parallel phase segment', () => {

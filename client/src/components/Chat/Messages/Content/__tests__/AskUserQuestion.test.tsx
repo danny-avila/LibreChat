@@ -45,11 +45,7 @@ jest.mock('~/Providers/ChatContext', () => ({
 const tree = (key: string) => (
   <RecoilRoot>
     <ApprovalProvider>
-      <AskUserQuestion
-        key={key}
-        actionId="ask-1"
-        question={{ question: 'Which environment?' }}
-      />
+      <AskUserQuestion key={key} actionId="ask-1" question={{ question: 'Which environment?' }} />
     </ApprovalProvider>
   </RecoilRoot>
 );

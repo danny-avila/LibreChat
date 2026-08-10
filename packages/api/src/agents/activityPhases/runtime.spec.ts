@@ -259,9 +259,7 @@ describe('createActivityPhaseWiring', () => {
     await flushDetached();
     expect(generatePhase).toHaveBeenCalledTimes(1);
     expect(generatedActivities).toHaveLength(2);
-    expect(generatedActivities?.[0]?.entries?.[0]?.toolName).toBe(
-      'lc_transfer_to_billing_agent',
-    );
+    expect(generatedActivities?.[0]?.entries?.[0]?.toolName).toBe('lc_transfer_to_billing_agent');
   });
 
   it('keeps reasoning attached to an unphased parallel tool batch', async () => {

@@ -15,7 +15,7 @@ describe('ActivityPhaseGroup', () => {
   test('renders a streaming cursor after an active tail phase', () => {
     const { container } = render(
       <ActivityPhaseGroup labelPart={labelPart} hasContent showCursor>
-        <div>phase content</div>
+        <div data-testid="phase-content" />
       </ActivityPhaseGroup>,
     );
 
