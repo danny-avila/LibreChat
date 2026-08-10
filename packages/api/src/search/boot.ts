@@ -147,7 +147,19 @@ async function startProjector(
     },
   );
 
-  await projector.start();
+  /**
+   * A startup that throws — an unreachable database, a missing lease table —
+   * returns no handle, so nothing downstream can ever end this pool; it is
+   * closed here or its clients and timers outlive the failure for the life of
+   * the process (pinned by `leaves no writer connection behind when the
+   * projector fails to start`).
+   */
+  try {
+    await projector.start();
+  } catch (error) {
+    await pool.end().catch(() => undefined);
+    throw error;
+  }
   return Object.freeze({ projector, pool });
 }
 
@@ -165,11 +177,22 @@ export async function startChatSearch(options: ChatSearchStackOptions): Promise<
    * URL set, no reader URL — projecting against a schema nobody migrated.
    * Supplying a provisioning connection is the operator saying "migrate this",
    * and it is the only signal that means that.
+   *
+   * A provisioning attempt that *fails* gates the projector: an older or
+   * half-provisioned database can still hold a usable lease table, so starting
+   * anyway would project against a schema whose pending migration did not apply
+   * (pinned by `does not start the projector when an attempted migration
+   * fails`). The out-of-band path — no migrate URL configured — never throws
+   * here and proceeds as before. The reader is still built either way: a failed
+   * provisioning of the projector's database must not take down a search
+   * backend that does not depend on it.
    */
   let migrated: readonly string[] = [];
+  let provisioned = true;
   try {
     migrated = await provisionSchema();
   } catch (error) {
+    provisioned = false;
     logger.error(
       '[chatSearch] schema provisioning failed; projection will not run until it succeeds',
       error,
@@ -189,10 +212,12 @@ export async function startChatSearch(options: ChatSearchStackOptions): Promise<
   }
 
   let projection: ProjectorHandle | null = null;
-  try {
-    projection = await startProjector(options.mongoose);
-  } catch (error) {
-    logger.error('[chatSearch] failed to start the projector; projection will not run', error);
+  if (provisioned) {
+    try {
+      projection = await startProjector(options.mongoose);
+    } catch (error) {
+      logger.error('[chatSearch] failed to start the projector; projection will not run', error);
+    }
   }
 
   if (!chatSearch) {

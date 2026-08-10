@@ -62,12 +62,25 @@ export async function withTransaction<T>(
  * the transaction and nothing leaks onto the pooled connection after release.
  * The `Scope` is branded, so an absent or unbranded value fails here rather than
  * reaching the server and silently returning zero rows.
+ *
+ * Setting the two GUCs is the whole of what this does, and on their own they
+ * isolate nothing. The policies that read them are granted `TO
+ * chat_search_reader`; a connection authenticated as anything else is filtered by
+ * some other policy or by none. The projector's role matches
+ * `documents_writer_all`, which is `USING (true)`, and a superuser bypasses row
+ * security entirely — either would carry this scope and still return every row.
+ *
+ * Nothing here checks which role authenticated, so the connection string is the
+ * control: a pool used for request paths must be the reader's
+ * (`CHAT_SEARCH_DATABASE_URL`), never the projector's (`CHAT_SEARCH_WRITER_URL`)
+ * and never the provisioning connection.
  */
 export async function applyScope(client: SearchClient, scope: Scope): Promise<void> {
   const statement = scopeGucStatement(scope);
   await client.query(statement.text, [...statement.values]);
 }
 
+/** Scope plus a transaction, with the role caveat on `applyScope` applying whole. */
 export function withScope<T>(
   pool: SearchPool,
   scope: Scope,

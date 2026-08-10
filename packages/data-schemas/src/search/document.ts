@@ -1,6 +1,7 @@
 import _ from 'lodash';
 import { parseTextParts } from 'librechat-data-provider';
-import type { FilterQuery, Schema } from 'mongoose';
+import type { Document, FilterQuery, Schema } from 'mongoose';
+import type { IMessage } from '~/types';
 import { buildRetentionVisibilityFilter, legacyPermanentExpirationFilter } from '~/utils/retention';
 
 /**
@@ -17,7 +18,7 @@ export type SearchableDocument = {
   content?: unknown;
   conversationId?: unknown;
   $isDefault?: (path: string) => boolean;
-  $locals?: Record<string, unknown>;
+  $locals?: Document['$locals'];
 };
 
 const EXPLICIT_TEMPORARY_FLAG_KEY = 'meiliExplicitTemporaryFlag';
@@ -42,10 +43,13 @@ export const hasActiveExpiration = (expiredAt?: Date | null): boolean =>
  * and `$locals` carries the pre-save answer into post hooks after Mongoose has
  * already mutated document state.
  */
-export const hasExplicitTemporaryFlag = (doc: SearchableDocument): boolean =>
-  typeof doc.$locals?.[EXPLICIT_TEMPORARY_FLAG_KEY] === 'boolean'
-    ? (doc.$locals[EXPLICIT_TEMPORARY_FLAG_KEY] as boolean)
-    : doc.isTemporary != null && doc.$isDefault?.('isTemporary') === false;
+export const hasExplicitTemporaryFlag = (doc: SearchableDocument): boolean => {
+  const captured = doc.$locals?.[EXPLICIT_TEMPORARY_FLAG_KEY];
+  if (typeof captured === 'boolean') {
+    return captured;
+  }
+  return doc.isTemporary != null && doc.$isDefault?.('isTemporary') === false;
+};
 
 export const captureExplicitTemporaryFlag = (doc: SearchableDocument): void => {
   if (!doc.$locals) {
@@ -128,11 +132,22 @@ export const normalizeSearchText = (value: string): string =>
 export const escapeConversationId = (conversationId: string): string =>
   conversationId.replace(/\|/g, '--');
 
+/**
+ * A serialized document reduced to its indexable attributes. The attribute list
+ * is per-model configuration resolved at runtime, so unlisted keys stay open
+ * while the fields this module rewrites keep their schema types.
+ */
+export type IndexablePayload = Partial<Pick<IMessage, 'conversationId' | 'text' | 'content'>> & {
+  [attribute: string]: unknown;
+};
+
 export const preprocessObjectForIndex = (
-  source: Record<string, unknown>,
+  source: IndexablePayload,
   attributesToIndex: readonly string[],
-): Record<string, unknown> => {
-  const object = _.omitBy(_.pick(source, attributesToIndex), (_v, key) => key.startsWith('$'));
+): IndexablePayload => {
+  const object: IndexablePayload = _.omitBy(_.pick(source, attributesToIndex), (_v, key) =>
+    key.startsWith('$'),
+  );
 
   if (typeof object.conversationId === 'string' && object.conversationId.includes('|')) {
     object.conversationId = escapeConversationId(object.conversationId);

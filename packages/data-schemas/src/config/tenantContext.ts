@@ -48,11 +48,16 @@ export function normalizeTenantId(tenantId?: string | null): string {
  *
  * What the brand is not is a capability token. `createScope` is exported, so any
  * caller already holding a tenant and a user id can mint a valid scope, and a
- * branded value can be copied. Holding a `Scope` therefore says the value is
- * well-formed, never that its bearer was authorized for it. RLS is the
- * enforcement boundary; above it the discipline is that request paths take scope
- * from the ambient request context via `resolveScope()` instead of calling
- * `createScope()` with ids read off the request.
+ * spread copies the symbol key along with the rest. Holding a `Scope` therefore
+ * says the value is well-formed, never that its bearer was authorized for it.
+ * RLS is the enforcement boundary; above it the discipline is that request paths
+ * take scope from the ambient request context via `resolveScope()` instead of
+ * calling `createScope()` with ids read off the request.
+ *
+ * The half that is enforced rather than asserted is covered by the `scope brand`
+ * cases in `tenantContext.spec.ts`: a structurally identical unbranded object is
+ * refused, an absent one is refused rather than widened, and the value handed
+ * back is frozen.
  *
  * Each tier renders this same value in its own dialect — PostgreSQL `$n`
  * predicates plus RLS session GUCs, ClickHouse `{name:Type}` bindings — but none
@@ -104,8 +109,13 @@ export function createScope(input: { tenantId?: string | null; userId?: string |
 
 /**
  * Resolves scope from the ALS context — never from a query, body, or cursor
- * field. Throws when no request context is active, which is what makes a
- * background (`runAsSystem`) invocation fail rather than widen.
+ * field. Two separate refusals stand between a background caller and a scope: no
+ * active context at all fails here, and a `runAsSystem()` context fails inside
+ * `createScope`, which rejects the system tenant outright. Neither widens.
+ *
+ * Both refusals are exercised by the `resolveScope` cases in
+ * `tenantContext.spec.ts`, alongside the tenantless context that resolves onto
+ * the base tenant rather than failing.
  */
 export function resolveScope(): Scope {
   const store = tenantStorage.getStore();

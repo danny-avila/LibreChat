@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { createModels } from '@librechat/data-schemas';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import type { SourceCursor } from './source';
 import { createMongoSourceReader } from './source';
 
 /**
@@ -257,9 +258,43 @@ describe('mongo source reader projection shape', () => {
 
     const first = await reader().scan('message', null, 2);
     expect(first.sources.map((source) => source.recordId)).toEqual(['m-notime-a', 'm-notime-b']);
-    expect(first.cursor).toEqual({ updatedAt: null, recordId: 'm-notime-b' });
+    expect(first.cursor).toMatchObject({ updatedAt: null, recordId: 'm-notime-b' });
+    expect(first.cursor?.id).toMatch(/^[0-9a-f]{24}$/);
 
     const second = await reader().scan('message', first.cursor, 2);
     expect(second.sources.map((source) => source.recordId)).toEqual(['m-timed']);
+  });
+
+  /**
+   * Record ids are only unique together with user and tenant, so an equal
+   * `(updatedAt, recordId)` group — two users importing the same export — can
+   * span a page boundary. The `_id` tiebreak is what lets the resume admit the
+   * group's unreturned members instead of `$gt`-ing past all of them.
+   */
+  it('walks an equal-timestamp duplicate-id group without skipping members', async () => {
+    const stamp = new Date('2020-01-01T00:00:00Z');
+    for (const user of ['alice', 'bob', 'carol']) {
+      await models.Conversation.collection.insertOne({
+        conversationId: 'c-shared',
+        user,
+        title: 'imported',
+        endpoint: 'openAI',
+        createdAt: stamp,
+        updatedAt: stamp,
+      });
+    }
+
+    const seen: string[] = [];
+    let cursor: SourceCursor | null = null;
+    for (let page = 0; page < 5; page++) {
+      const result = await reader().scan('conversation', cursor, 1);
+      if (result.sources.length === 0) {
+        break;
+      }
+      seen.push(...result.sources.map((source) => source.userId));
+      cursor = result.cursor;
+    }
+
+    expect(seen.sort()).toEqual(['alice', 'bob', 'carol']);
   });
 });

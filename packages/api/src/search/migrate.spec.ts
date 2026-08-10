@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
+import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
-import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'crypto';
 import type { PoolClient } from 'pg';
 import type { SearchPool } from './types';
 import {
@@ -73,6 +73,22 @@ describe('migration files', () => {
   });
 });
 
+/** Both are deleted by SASLprep, RFC 3454 Table B.1. */
+const SOFT_HYPHEN = '\u00AD';
+const ZERO_WIDTH_JOINER = '\u200D';
+
+/**
+ * One password, spelled two ways. The first is what an operator sets: a
+ * decomposed o-umlaut, a no-break space and a soft hyphen, so all three SASLprep
+ * steps have something to do. The second is what SASLprep makes of it, and it is
+ * what every client actually hashes.
+ *
+ * An ASCII password cannot distinguish a SASLprepped derivation from a raw one,
+ * which is why this pair exists rather than a passphrase.
+ */
+const MARKED_PASSWORD = `wo\u0308rd\u00A0with${SOFT_HYPHEN}marks`;
+const PREPPED_PASSWORD = 'w\u00F6rd withmarks';
+
 describe('role credentials', () => {
   const OLD_ENV = process.env;
 
@@ -100,38 +116,72 @@ describe('role credentials', () => {
     };
     expect(() => assertRoleCredentialsConfigured()).not.toThrow();
   });
+
+  /**
+   * The one prohibited class an operator reaches by accident: a secret read from
+   * a file arrives with its trailing newline. `pg` normalizes such a password and
+   * libpq refuses to, so whichever verifier is stored locks one of them out.
+   */
+  it('refuses a control character, naming the class and the variable', () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: 'supplied',
+      CHAT_SEARCH_WRITER_PASSWORD: 'read-from-a-file\n',
+      CHAT_SEARCH_READER_PASSWORD: 'supplied',
+    };
+    expect(() => assertRoleCredentialsConfigured()).toThrow(
+      /CHAT_SEARCH_WRITER_PASSWORD contains a control character \(U\+0000-U\+001F/,
+    );
+  });
+
+  /**
+   * The one Table B.1 range `pg` does not strip: libpq maps U+1D173–U+1D17A to
+   * nothing, `pg` hashes it, so the two clients derive different bytes from the
+   * same password and no stored verifier satisfies both. Refused like the
+   * control characters above rather than mapped, because the verifier this
+   * module derives has to agree with `pg` byte for byte.
+   */
+  it('refuses the musical format controls the clients disagree over', () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: 'note\u{1D173}bar\u{1D17A}',
+      CHAT_SEARCH_WRITER_PASSWORD: 'supplied',
+      CHAT_SEARCH_READER_PASSWORD: 'supplied',
+    };
+    expect(() => assertRoleCredentialsConfigured()).toThrow(
+      /CHAT_SEARCH_OWNER_PASSWORD contains a musical format control \(U\+1D173-U\+1D17A\)/,
+    );
+  });
+
+  it('refuses a password SASLprep deletes down to nothing', () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: 'supplied',
+      CHAT_SEARCH_WRITER_PASSWORD: 'supplied',
+      CHAT_SEARCH_READER_PASSWORD: SOFT_HYPHEN + ZERO_WIDTH_JOINER,
+    };
+    expect(() => assertRoleCredentialsConfigured()).toThrow(
+      /CHAT_SEARCH_READER_PASSWORD is empty once SASLprep removes/,
+    );
+  });
 });
 
 const SCRAM_VERIFIER = /^SCRAM-SHA-256\$(\d+):([\w+/=]+)\$([\w+/=]+):([\w+/=]+)$/;
 
+/**
+ * Shape only. Whether the keys inside are the *right* keys is not decidable from
+ * here — re-deriving them with the same algorithm the code under test uses would
+ * agree with any derivation, including one that skips SASLprep and locks every
+ * client out. That question is settled by logging in, further down.
+ */
 describe('role password verifiers', () => {
-  const PASSWORD = 'correct horse battery staple';
-
   it('carries no trace of the cleartext and salts every derivation separately', () => {
-    const verifier = scramSha256Verifier(PASSWORD);
+    const verifier = scramSha256Verifier(MARKED_PASSWORD);
     expect(verifier).toMatch(SCRAM_VERIFIER);
-    expect(verifier).not.toContain(PASSWORD);
+    expect(verifier).not.toContain(MARKED_PASSWORD);
+    expect(verifier).not.toContain(PREPPED_PASSWORD);
     expect(Number(SCRAM_VERIFIER.exec(verifier)?.[1])).toBeGreaterThanOrEqual(4096);
-    expect(scramSha256Verifier(PASSWORD)).not.toBe(verifier);
-  });
-
-  /** The two keys PostgreSQL checks an authentication attempt against, in order. */
-  it('publishes the StoredKey and the ServerKey for the salt it chose', () => {
-    const parsed = SCRAM_VERIFIER.exec(scramSha256Verifier(PASSWORD));
-    expect(parsed).not.toBeNull();
-    const [, iterations, salt, storedKey, serverKey] = parsed ?? [];
-    const saltedPassword = pbkdf2Sync(
-      PASSWORD,
-      Buffer.from(salt, 'base64'),
-      Number(iterations),
-      32,
-      'sha256',
-    );
-    const clientKey = createHmac('sha256', saltedPassword).update('Client Key').digest();
-    expect(createHash('sha256').update(clientKey).digest('base64')).toBe(storedKey);
-    expect(createHmac('sha256', saltedPassword).update('Server Key').digest('base64')).toBe(
-      serverKey,
-    );
+    expect(scramSha256Verifier(MARKED_PASSWORD)).not.toBe(verifier);
   });
 });
 
@@ -304,15 +354,31 @@ const PROVISION_DB = 'provision';
  * names in a cluster-global namespace, so a literal here is a working credential
  * on every shared development and CI server this suite has ever run against, and
  * one published in the repository at that.
+ *
+ * The marks on the end put the production path — `applyRolePasswords`, then a
+ * real login — over a password SASLprep rewrites, which is the case that used to
+ * produce a role nothing could authenticate as.
  */
-const PROVISION_PASSWORD = randomBytes(24).toString('base64url');
+const PROVISION_PASSWORD = `${randomBytes(18).toString('base64url')}${MARKED_PASSWORD}`;
+/**
+ * Stamped into every role this file creates, so teardown can tell a role this run
+ * made from one that was already on the server, and two runs against one cluster
+ * do not collide.
+ */
+const RUN_ID = randomBytes(4).toString('hex');
 /** A non-superuser role that is not one of the three the migrations manage. */
-const BOOTSTRAP_ROLE = 'chat_search_test_bootstrap';
+const BOOTSTRAP_ROLE = `chat_search_test_bootstrap_${RUN_ID}`;
+/** Owned entirely by the SASLprep suite below: created, used, and dropped there. */
+const SASLPREP_ROLE = `chat_search_test_saslprep_${RUN_ID}`;
 
 /** A connection that survives the database being dropped from under it. */
-function rolePool(database: string, role: string): SearchPool {
+function rolePool(
+  database: string,
+  role: string,
+  password: string = PROVISION_PASSWORD,
+): SearchPool {
   const pool = new Pool({
-    connectionString: roleDatabaseUrl(database, role, PROVISION_PASSWORD),
+    connectionString: roleDatabaseUrl(database, role, password),
     max: 1,
     connectionTimeoutMillis: 5_000,
   });
@@ -321,33 +387,34 @@ function rolePool(database: string, role: string): SearchPool {
 }
 
 /**
- * Roles outlive the databases these suites create, so the run takes them with it
- * however it ends. A role still owning objects in another suite's database
- * cannot be dropped; clearing its password is what stops a login surviving the
- * run in that case.
+ * Roles outlive the databases these suites create, so the run takes its own with
+ * it however it ends — and only its own. Every name here carries this run's id,
+ * which no role the suite did not create can have.
+ *
+ * The three managed roles are deliberately absent. They are production names in
+ * a cluster-global namespace, so dropping them — or clearing their passwords —
+ * takes the credentials off any deployment sharing this server, which is the
+ * same blast radius as leaving one behind, pointed the other way. The password
+ * this run gives them is random and never written down, so nothing usable
+ * survives it; what does survive is a rotated credential, and no teardown can
+ * undo that. Only role names that differ per deployment can, which is the
+ * arrangement `warnOnForeignManagedRoles` already asks an operator for.
  */
-async function removeClusterRoles(): Promise<void> {
+async function dropRolesThisRunCreated(): Promise<void> {
   if (!TEST_URL) {
     return;
   }
   const admin = new Pool({ connectionString: TEST_URL, max: 1 });
   try {
-    for (const role of [...MANAGED_ROLES, BOOTSTRAP_ROLE]) {
-      const dropped = await admin
-        .query(`DROP ROLE IF EXISTS ${role}`)
-        .then(() => true)
-        .catch(() => false);
-      if (dropped) {
-        continue;
-      }
-      await admin.query(`ALTER ROLE ${role} WITH PASSWORD NULL`).catch(() => undefined);
+    for (const role of [BOOTSTRAP_ROLE, SASLPREP_ROLE]) {
+      await admin.query(`DROP ROLE IF EXISTS ${role}`).catch(() => undefined);
     }
   } finally {
     await admin.end().catch(() => undefined);
   }
 }
 
-afterAll(removeClusterRoles);
+afterAll(dropRolesThisRunCreated);
 
 /** Every statement and bind value the runner puts on the wire, in order. */
 function recordingPool(database: string, sent: string[]): SearchPool {
@@ -463,6 +530,86 @@ describePg('provisioning from an empty database', () => {
   }, 60_000);
 });
 
+const SASLPREP_DB = 'saslprep';
+
+/**
+ * The verifier is derived here and checked by the server, so the two have to
+ * agree on what the password *is* before either touches PBKDF2. PostgreSQL used
+ * to settle that: `PASSWORD '<cleartext>'` ran the string through `pg_saslprep`
+ * server-side. A verifier is stored exactly as supplied, so sending one moves
+ * that step into this codebase, where it was missing.
+ *
+ * Nothing in the provisioning path notices when it goes wrong. `ALTER ROLE`
+ * succeeds, the role has LOGIN and a password, and the failure surfaces as
+ * `28P01` from some pod at connect time.
+ *
+ * This suite creates and drops a role of its own rather than borrowing one of
+ * the three production names, which are cluster-global and may belong to a
+ * deployment sharing the server.
+ */
+describePg('a role password the client rewrites before hashing', () => {
+  let pool: SearchPool;
+  const opened: SearchPool[] = [];
+
+  const connectAs = (password: string): SearchPool => {
+    const connection = rolePool(SASLPREP_DB, SASLPREP_ROLE, password);
+    opened.push(connection);
+    return connection;
+  };
+
+  beforeAll(async () => {
+    pool = await createIsolatedDatabase(SASLPREP_DB);
+    await pool.query(
+      `DO $$ BEGIN
+         BEGIN CREATE ROLE ${SASLPREP_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS;
+         EXCEPTION WHEN duplicate_object THEN NULL; END;
+       END $$`,
+    );
+    /** Exactly the statement `applyRolePasswords` issues, for a role it does not manage. */
+    const { rows } = await pool.query<{ statement: string }>(
+      'SELECT format($1, $2::text, $3::text) AS statement',
+      ['ALTER ROLE %I WITH LOGIN PASSWORD %L', SASLPREP_ROLE, scramSha256Verifier(MARKED_PASSWORD)],
+    );
+    await pool.query(rows[0].statement);
+  }, 60_000);
+
+  afterAll(async () => {
+    for (const connection of opened) {
+      await connection.end().catch(() => undefined);
+    }
+    if (pool) {
+      await pool.query(`DROP ROLE IF EXISTS ${SASLPREP_ROLE}`).catch(() => undefined);
+      await dropIsolatedDatabase(pool, SASLPREP_DB);
+    }
+  });
+
+  it('authenticates over TCP with a password every client rewrites before hashing', async () => {
+    const { rows } = await connectAs(MARKED_PASSWORD).query<{ role: string }>(
+      'SELECT current_user AS role',
+    );
+    expect(rows[0].role).toBe(SASLPREP_ROLE);
+  }, 60_000);
+
+  /**
+   * The same login, spelled the way SASLprep leaves it. Both strings reach
+   * PBKDF2 as one, so a verifier that admits one and refuses the other was
+   * derived from something other than the prepped form.
+   */
+  it('accepts the prepped spelling of that password as the same password', async () => {
+    const { rows } = await connectAs(PREPPED_PASSWORD).query<{ role: string }>(
+      'SELECT current_user AS role',
+    );
+    expect(rows[0].role).toBe(SASLPREP_ROLE);
+  }, 60_000);
+
+  /** Without this the two above would pass just as well against a `trust` HBA. */
+  it('rejects a password that is neither', async () => {
+    await expect(connectAs(`${MARKED_PASSWORD}x`).query('SELECT 1')).rejects.toThrow(
+      /password authentication failed/,
+    );
+  }, 60_000);
+});
+
 const PREFLIGHT_DB = 'preflight';
 
 describePg('provisioning preflight', () => {
@@ -570,9 +717,16 @@ const EXTENSION_DB = 'extschema';
 const EXTENSION_SCHEMA = 'extensions';
 
 describePg('provisioning against extensions installed elsewhere', () => {
+  const OLD_ENV = process.env;
   let pool: SearchPool;
 
   beforeAll(async () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: PROVISION_PASSWORD,
+      CHAT_SEARCH_WRITER_PASSWORD: PROVISION_PASSWORD,
+      CHAT_SEARCH_READER_PASSWORD: PROVISION_PASSWORD,
+    };
     pool = await createIsolatedDatabase(EXTENSION_DB);
     await pool.query(`CREATE SCHEMA ${EXTENSION_SCHEMA}`);
     for (const extension of REQUIRED_EXTENSIONS) {
@@ -581,6 +735,7 @@ describePg('provisioning against extensions installed elsewhere', () => {
   }, 60_000);
 
   afterAll(async () => {
+    process.env = OLD_ENV;
     if (pool) {
       await dropIsolatedDatabase(pool, EXTENSION_DB);
     }
@@ -590,42 +745,61 @@ describePg('provisioning against extensions installed elsewhere', () => {
    * Both extensions are present, so a check matching on `extname` alone sees
    * nothing to say. The schema they are in is the whole problem: the types and
    * operator classes they own resolve through `search_path` and nothing else,
-   * and the application roles connect without one.
+   * and the application roles connect without one. Provisioning has to hand
+   * them one, or the first `::vector` cast a role runs fails at runtime.
    */
-  it('names the extension and the schema it is in before applying anything', async () => {
-    const warn = jest.spyOn(logger, 'warn');
+  it('lets the reader resolve extension types over its own connection', async () => {
     await expect(migrate(pool)).resolves.toContain('001_schema.sql');
+    await applyRolePasswords(pool);
 
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        `pg_trgm (schema ${EXTENSION_SCHEMA}) and vector (schema ${EXTENSION_SCHEMA}) are ` +
-          'installed outside the search_path',
-      ),
+    const { rows: settings } = await pool.query<{ rolname: string; setconfig: string[] }>(
+      `SELECT r.rolname, s.setconfig
+         FROM pg_db_role_setting s
+         JOIN pg_roles r ON r.oid = s.setrole
+         JOIN pg_database d ON d.oid = s.setdatabase
+        WHERE d.datname = current_database() AND r.rolname = ANY($1::text[])
+        ORDER BY r.rolname`,
+      [[...MANAGED_ROLES]],
     );
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('chat_search_reader'));
+    expect(settings.map((row) => row.rolname)).toEqual([...MANAGED_ROLES].sort());
+    for (const row of settings) {
+      expect(row.setconfig.join(';')).toContain(EXTENSION_SCHEMA);
+    }
+
+    const asReader = rolePool(EXTENSION_DB, READER_ROLE);
+    try {
+      const { rows } = await asReader.query<{ vec: string }>(
+        "SELECT '[1,2,3]'::vector::text AS vec",
+      );
+      expect(rows[0].vec).toBe('[1,2,3]');
+    } finally {
+      await asReader.end().catch(() => undefined);
+    }
   }, 60_000);
 
-  it('says nothing once the extension schema is one the connection searches', async () => {
+  /**
+   * `002_roles.sql` is checksum-tracked and never reruns, so it cannot be what
+   * repairs a hand-edited role. Extension access is asserted by every run
+   * instead, like the passwords: the run below applies no migration files at
+   * all and still puts the reader's search_path back.
+   */
+  it('reasserts role access on a run with nothing left to apply', async () => {
     await pool.query(
-      `ALTER DATABASE chat_search_test_${EXTENSION_DB} SET search_path TO public, ${EXTENSION_SCHEMA}`,
+      `ALTER ROLE ${READER_ROLE} IN DATABASE chat_search_test_${EXTENSION_DB} SET search_path = public`,
     );
-    await pool.query('DELETE FROM chat_search.migrations');
+    await expect(migrate(pool)).resolves.toEqual([]);
 
-    const warn = jest.spyOn(logger, 'warn');
-    const searching = new Pool({ connectionString: isolatedDatabaseUrl(EXTENSION_DB), max: 1 });
+    const asReader = rolePool(EXTENSION_DB, READER_ROLE);
     try {
-      await expect(migrate(searching)).resolves.toContain('001_schema.sql');
+      const { rows } = await asReader.query<{ search_path: string }>('SHOW search_path');
+      expect(rows[0].search_path).toBe(`pg_catalog, chat_search, ${EXTENSION_SCHEMA}`);
     } finally {
-      await searching.end().catch(() => undefined);
+      await asReader.end().catch(() => undefined);
     }
-    expect(warn).not.toHaveBeenCalledWith(
-      expect.stringContaining('installed outside the search_path'),
-    );
   }, 60_000);
 
   /** USAGE is not what resolves the objects, but without it nothing can. */
   it('refuses outright when the extension schema is one it may not use', async () => {
-    await pool.query(`ALTER DATABASE chat_search_test_${EXTENSION_DB} RESET search_path`);
     await pool.query(
       `DO $$ BEGIN
          BEGIN CREATE ROLE ${BOOTSTRAP_ROLE} LOGIN CREATEROLE;

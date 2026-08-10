@@ -5,21 +5,31 @@ import {
   normalizeSearchText,
   effectiveTemporaryFlag,
 } from '@librechat/data-schemas';
-import type { Model } from 'mongoose';
+import type { IConversation, IMessage, ISharedLink } from '@librechat/data-schemas';
+import type { FilterQuery, Model, Types } from 'mongoose';
 import type { ProjectionSource, SearchKind, SearchRecordKey } from './types';
 
 /**
- * Position in the `(updatedAt, recordId)` scan.
+ * Position in the `(updatedAt, recordId, _id)` scan.
  *
  * `updatedAt` is nullable because the collection contains records that have none:
  * imports preserve historic or absent timestamps, and Mongo sorts a missing field
  * ahead of every date. A cursor that cannot represent "still inside the
  * untimestamped region" cannot leave it — the scan returns the same first page
  * forever and never reaches anything with a timestamp at all.
+ *
+ * `id` is the Mongo `_id` of the last row read, as its hex string, and it is the
+ * component that makes the position globally unique: record ids are only unique
+ * together with user and tenant, so an equal `(updatedAt, recordId)` group —
+ * two users importing the same export — can span a page boundary, and a resume
+ * without the tiebreak skips every unreturned member of the group (pinned by
+ * `walks an equal-timestamp duplicate-id group without skipping members`).
+ * Empty means "no tiebreak": resume admits the whole equal-key group.
  */
 export type SourceCursor = Readonly<{
   updatedAt: Date | null;
   recordId: string;
+  id: string;
 }>;
 
 export type ScanPage = Readonly<{
@@ -52,19 +62,42 @@ export interface ProjectionSourceReader {
   keys(kind: SearchKind, batchSize: number): AsyncGenerator<readonly SearchRecordKey[]>;
 }
 
-type MongoModels = {
-  Message: Model<Record<string, unknown>>;
-  Conversation: Model<Record<string, unknown>>;
-  SharedLink: Model<Record<string, unknown>>;
-};
+/**
+ * A lean source document as the projector reads it: the union of the projected
+ * fields across the three kinds, each keeping its schema type. `.lean()` skips
+ * hydration, so every field is optional — legacy and imported documents are
+ * missing several — and the accessors below narrow at runtime rather than trust
+ * the declaration.
+ */
+export type SourceDocument = Partial<
+  Pick<
+    IMessage,
+    | 'messageId'
+    | 'conversationId'
+    | 'user'
+    | 'tenantId'
+    | 'text'
+    | 'content'
+    | 'unfinished'
+    | 'isTemporary'
+    | 'expiredAt'
+    | 'createdAt'
+    | 'updatedAt'
+  > &
+    Pick<IConversation, 'title' | 'tags' | 'isArchived' | 'chatProjectId'> &
+    Pick<ISharedLink, 'shareId'>
+> & { _id?: Types.ObjectId };
 
-const KIND_MODEL: Readonly<Record<SearchKind, keyof MongoModels>> = Object.freeze({
+type SourceModelName = 'Message' | 'Conversation' | 'SharedLink';
+type SourceIdField = 'messageId' | 'conversationId' | 'shareId';
+
+const KIND_MODEL: Readonly<Record<SearchKind, SourceModelName>> = Object.freeze({
   message: 'Message',
   conversation: 'Conversation',
   'shared-link': 'SharedLink',
 });
 
-const KIND_ID: Readonly<Record<SearchKind, string>> = Object.freeze({
+const KIND_ID: Readonly<Record<SearchKind, SourceIdField>> = Object.freeze({
   message: 'messageId',
   conversation: 'conversationId',
   'shared-link': 'shareId',
@@ -79,27 +112,42 @@ function asString(value: unknown): string {
 }
 
 /**
- * Where the `(updatedAt, recordId)` scan resumes.
+ * Where the `(updatedAt, recordId, _id)` scan resumes.
  *
  * Two shapes, because the sort has two regions. Inside the untimestamped region
  * the tiebreak is the record id alone, and the predicate must also admit
  * everything that *does* carry a timestamp so the scan can leave that region at
  * all. `{ updatedAt: null }` matches a stored null and an absent field alike,
  * which is exactly the set being paged.
+ *
+ * Each region carries the `_id` arm as its final tiebreak: `_id` is globally
+ * unique where the record id is not, so a page ending inside an equal-key group
+ * resumes with the group's unreturned members instead of skipping them.
  */
-function scanResumeFilter(id: string, from: SourceCursor | null): Record<string, unknown> {
+function scanResumeFilter(
+  id: SourceIdField,
+  from: SourceCursor | null,
+  toObjectId: (hex: string) => Types.ObjectId,
+): FilterQuery<SourceDocument> {
   if (from == null) {
     return {};
   }
+  const idArm = (shared: FilterQuery<SourceDocument>): FilterQuery<SourceDocument>[] =>
+    from.id === '' ? [] : [{ ...shared, [id]: from.recordId, _id: { $gt: toObjectId(from.id) } }];
   if (from.updatedAt == null) {
     return {
-      $or: [{ updatedAt: null, [id]: { $gt: from.recordId } }, { updatedAt: { $ne: null } }],
+      $or: [
+        { updatedAt: null, [id]: { $gt: from.recordId } },
+        ...idArm({ updatedAt: null }),
+        { updatedAt: { $ne: null } },
+      ],
     };
   }
   return {
     $or: [
       { updatedAt: { $gt: from.updatedAt } },
       { updatedAt: from.updatedAt, [id]: { $gt: from.recordId } },
+      ...idArm({ updatedAt: from.updatedAt }),
     ],
   };
 }
@@ -123,15 +171,12 @@ function scanResumeFilter(id: string, from: SourceCursor | null): Record<string,
  * refuses — so it consumes a slot in the bounded candidate set and hides a real
  * match ranked below it.
  */
-export function toProjectionSource(
-  kind: SearchKind,
-  doc: Record<string, unknown>,
-): ProjectionSource {
+export function toProjectionSource(kind: SearchKind, doc: SourceDocument): ProjectionSource {
   const recordId = asString(doc[KIND_ID[kind]]);
   const body = kind === 'message' ? (flattenContent(doc.content) ?? asString(doc.text)) : '';
 
   return {
-    tenantId: normalizeTenantId(doc.tenantId as string | null | undefined),
+    tenantId: normalizeTenantId(doc.tenantId),
     userId: asString(doc.user),
     kind,
     recordId,
@@ -144,7 +189,7 @@ export function toProjectionSource(
     isArchived: doc.isArchived === true,
     projectId: typeof doc.chatProjectId === 'string' ? doc.chatProjectId : null,
     isTemporary: effectiveTemporaryFlag({
-      isTemporary: doc.isTemporary as boolean | null | undefined,
+      isTemporary: doc.isTemporary,
       expiredAt: asDate(doc.expiredAt),
     }),
     sourceCreatedAt: asDate(doc.createdAt),
@@ -174,13 +219,14 @@ const PROJECTION_FIELDS =
 export function createMongoSourceReader(
   mongoose: typeof import('mongoose'),
 ): ProjectionSourceReader {
-  const modelFor = (kind: SearchKind): Model<Record<string, unknown>> => {
-    const model = mongoose.models[KIND_MODEL[kind]] as Model<Record<string, unknown>> | undefined;
+  const modelFor = (kind: SearchKind): Model<SourceDocument> => {
+    const model = mongoose.models[KIND_MODEL[kind]] as Model<SourceDocument> | undefined;
     if (!model) {
       throw new Error(`[chatSearch] model ${KIND_MODEL[kind]} is not registered`);
     }
     return model;
   };
+  const toObjectId = (hex: string): Types.ObjectId => new mongoose.Types.ObjectId(hex);
 
   return {
     async read(kind, keys) {
@@ -192,7 +238,7 @@ export function createMongoSourceReader(
         model
           .find({ [KIND_ID[kind]]: { $in: keys.map((key) => key.recordId) } })
           .select(PROJECTION_FIELDS)
-          .lean<Array<Record<string, unknown>>>()
+          .lean<SourceDocument[]>()
           .exec(),
       );
 
@@ -218,20 +264,21 @@ export function createMongoSourceReader(
     async scan(kind, from, limit) {
       const model = modelFor(kind);
       const id = KIND_ID[kind];
-      const filter = scanResumeFilter(id, from);
+      const filter = scanResumeFilter(id, from, toObjectId);
 
       const docs = await runAsSystem(() =>
         model
           .find(filter)
           .select(PROJECTION_FIELDS)
-          .sort({ updatedAt: 1, [id]: 1 })
+          .sort({ updatedAt: 1, [id]: 1, _id: 1 })
           .limit(limit)
-          .lean<Array<Record<string, unknown>>>()
+          .lean<SourceDocument[]>()
           .exec(),
       );
 
       const sources = docs.map((doc) => toProjectionSource(kind, doc));
       const last = sources[sources.length - 1];
+      const lastId = docs[docs.length - 1]?._id;
       /**
        * The cursor advances on the record id even when the page ended on an
        * untimestamped row. Returning the previous cursor there — the only way to
@@ -241,7 +288,11 @@ export function createMongoSourceReader(
       return {
         sources,
         cursor: last
-          ? { updatedAt: last.sourceUpdatedAt, recordId: last.recordId }
+          ? {
+              updatedAt: last.sourceUpdatedAt,
+              recordId: last.recordId,
+              id: lastId ? String(lastId) : '',
+            }
           : (from ?? null),
       };
     },
@@ -260,16 +311,16 @@ export function createMongoSourceReader(
     async *keys(kind, batchSize) {
       const model = modelFor(kind);
       const id = KIND_ID[kind];
-      let cursor: unknown = null;
+      let cursor: Types.ObjectId | null = null;
       for (;;) {
-        const filter = cursor == null ? {} : { _id: { $gt: cursor } };
+        const filter: FilterQuery<SourceDocument> = cursor == null ? {} : { _id: { $gt: cursor } };
         const docs = await runAsSystem(() =>
           model
             .find(filter)
             .select(`_id ${id} user tenantId`)
             .sort({ _id: 1 })
             .limit(batchSize)
-            .lean<Array<Record<string, unknown>>>()
+            .lean<SourceDocument[]>()
             .exec(),
         );
 
@@ -277,12 +328,16 @@ export function createMongoSourceReader(
           return;
         }
         yield docs.map((doc) => ({
-          tenantId: normalizeTenantId(doc.tenantId as string | null | undefined),
+          tenantId: normalizeTenantId(doc.tenantId),
           userId: asString(doc.user),
           kind,
           recordId: asString(doc[id]),
         }));
-        cursor = docs[docs.length - 1]._id;
+        const lastId = docs[docs.length - 1]._id;
+        if (!lastId) {
+          return;
+        }
+        cursor = lastId;
       }
     },
   };
