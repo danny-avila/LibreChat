@@ -56,8 +56,7 @@ export const MAX_TOOL_RESULT_CHARS = 250_000;
  * stack, path, environment name or value, credential, native constructor,
  * `$new`, or bridge internal may ever be interpolated into these.
  */
-export const UNCOMPILED_CLIENT_MESSAGE =
-  'The selected BAML model is not compiled for this server.';
+export const UNCOMPILED_CLIENT_MESSAGE = 'The selected BAML model is not compiled for this server.';
 export const TRANSPORT_FAILED_MESSAGE = 'BAML provider request failed.';
 export const TRANSPORT_TIMEOUT_MESSAGE = 'BAML provider request timed out.';
 export const TRANSCRIPT_TOO_LARGE_MESSAGE =
@@ -86,6 +85,87 @@ export interface WireTurnPlan {
   readonly reply: string | null;
   readonly tools: readonly WireToolSelection[];
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isWireArgument = (value: unknown): value is string | number | boolean | null =>
+  value === null ||
+  typeof value === 'string' ||
+  typeof value === 'boolean' ||
+  (typeof value === 'number' && Number.isFinite(value));
+
+const isWireToolSelection = (value: unknown): value is WireToolSelection =>
+  isRecord(value) &&
+  typeof value.name === 'string' &&
+  isRecord(value.args) &&
+  Object.values(value.args).every(isWireArgument);
+
+/**
+ * Worker messages are runtime input even though both ends share TypeScript
+ * declarations. Validate the structured-clone payload before treating it as a
+ * generated turn; malformed partials are model parse failures, not empty text.
+ */
+export const isWireTurnPlan = (value: unknown): value is WireTurnPlan =>
+  isRecord(value) &&
+  (typeof value.reply === 'string' || value.reply === null) &&
+  Array.isArray(value.tools) &&
+  value.tools.every(isWireToolSelection);
+
+export interface PartialTextCursor {
+  readonly emitted: string;
+  readonly terminal: boolean;
+}
+
+export type PartialTextEmission =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'failure'; readonly failure: WireFailure };
+
+export interface PartialTextStep {
+  readonly cursor: PartialTextCursor;
+  readonly emission?: PartialTextEmission;
+}
+
+/** Creates request-local state for one cumulative BAML stream. */
+export const createPartialTextCursor = (): PartialTextCursor => ({
+  emitted: '',
+  terminal: false,
+});
+
+const terminalParseFailure = (cursor: PartialTextCursor, message: string): PartialTextStep => ({
+  cursor: { emitted: cursor.emitted, terminal: true },
+  emission: { kind: 'failure', failure: { code: 'parse_error', message } },
+});
+
+/**
+ * Advances one cumulative text snapshot.
+ *
+ * Only strict string-prefix growth emits text. Duplicate/null/tool snapshots
+ * emit nothing, while structural invalidity or retraction/divergence emits one
+ * terminal parse failure. Once terminal, queued snapshots are ignored.
+ */
+export const consumeCumulativeTextSnapshot = (
+  cursor: PartialTextCursor,
+  snapshot: unknown,
+): PartialTextStep => {
+  if (cursor.terminal) {
+    return { cursor };
+  }
+  if (!isWireTurnPlan(snapshot)) {
+    return terminalParseFailure(cursor, PARSE_ERROR_MESSAGE);
+  }
+  if (snapshot.tools.length > 0 || snapshot.reply === null || snapshot.reply === cursor.emitted) {
+    return { cursor };
+  }
+  if (!snapshot.reply.startsWith(cursor.emitted)) {
+    return terminalParseFailure(cursor, DIVERGENT_PARTIAL_MESSAGE);
+  }
+
+  return {
+    cursor: { emitted: snapshot.reply, terminal: false },
+    emission: { kind: 'text', text: snapshot.reply.slice(cursor.emitted.length) },
+  };
+};
 
 /**
  * `message` is the stable public text. `detail` is native error text for the
