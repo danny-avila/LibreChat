@@ -19,6 +19,7 @@ initializeRuntimeFromBytecode(_inlinedbaml.BYTECODE);
 setTypeMap(_TYPE_MAP);
 
 export * as baml from "./baml/index.js";
+export * as host from "./host/index.js";
 export * as spike from "./spike/index.js";
 export * as toolloop from "./toolloop/index.js";
 export * as vendor from "./vendor/index.js";

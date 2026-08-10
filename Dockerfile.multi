@@ -20,6 +20,14 @@ ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 
 WORKDIR /app
 RUN apk --no-cache add curl
+# gcompat is required by the BAML native bridge, and the reason is an upstream
+# packaging bug rather than a preference: the artifact published as
+# `@boundaryml/baml-bridge-linux-x64-musl` is not actually a musl build. Its
+# `.node` binary requests `ld-linux-x86-64.so.2`, `libc.so.6` and
+# `libgcc_s.so.1` — all glibc — which Alpine does not have, so the loader
+# reports the misleading "Cannot find native binding". gcompat supplies the
+# shim. Remove this once upstream ships a genuinely musl-linked artifact.
+RUN apk --no-cache add gcompat
 RUN npm config set fetch-retry-maxtimeout 600000 && \
     npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 15000
@@ -30,6 +38,12 @@ COPY packages/data-schemas/package*.json ./packages/data-schemas/
 COPY packages/client/package*.json ./packages/client/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
+# `packages/api` and `api` depend on @librechat/agents as a vendored tarball
+# (`file:../vendor/librechat-agents-*.tgz`) while the BAML provider port is
+# unpublished. npm resolves that path during `npm ci`, so the tarball must be
+# present in EVERY stage that installs — both the full `base` install and the
+# `--omit=dev` install in the final stage, which share this ancestor.
+COPY vendor ./vendor
 
 # Install all dependencies for every build
 FROM base-min AS base
@@ -60,6 +74,16 @@ WORKDIR /app/packages/data-schemas
 COPY packages/data-schemas ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 RUN npm run build
+
+# Compile the generated BAML SDK.
+# `baml_sdk/` is committed (see .gitignore) precisely so this stage needs only
+# `tsc` — the `baml` CLI is a host tool and is not installed in the image. Run
+# `npm run generate:baml` on a workstation when a `.baml` file changes; the
+# image only ever compiles what is already checked in.
+FROM base AS baml-build
+WORKDIR /app
+COPY baml_ts ./baml_ts
+RUN npx tsc -p baml_ts/tsconfig.json
 
 # Build `api` package
 FROM base AS api-package-build
@@ -114,6 +138,19 @@ COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist
 COPY --from=client-build /app/client/dist ./client/dist
+# The BAML host adapter is ESM (`.mjs`) and therefore not emitted by tsdown,
+# which builds the TypeScript entries only — so it ships as source, the way
+# packages/client/src already does. Its import of `baml_ts/dist` is relative
+# (`../../../../baml_ts/dist/index.js`), so both paths must exist for it to
+# resolve. The native bridge itself is a regular `dependency` and survives
+# `npm ci --omit=dev`; musl targets exist for x64 and arm64.
+COPY --from=baml-build /app/baml_ts/dist ./baml_ts/dist
+# The generated SDK is ESM and says so in ITS OWN package.json (`"type":"module"`).
+# Without this file Node walks up to /app/package.json, finds no `type`, and
+# reparses index.js as ESM with a MODULE_TYPELESS_PACKAGE_JSON warning — working
+# by accident, on syntax detection, rather than by declaration.
+COPY baml_ts/package.json ./baml_ts/package.json
+COPY packages/api/src/baml ./packages/api/src/baml
 # Propagate build metadata into runtime env so /api/config can expose it.
 # Declared here (after the heavy install/copy steps) so that commit/date
 # changing on every CI run does not bust the cache for those layers.
