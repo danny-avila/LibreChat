@@ -898,14 +898,19 @@ const initializeClient = async ({
    * setup, so this intentionally remains request-scoped until AI-1597 gives
    * child execution a durable runtime context.
    */
-  const initializeLazySubagent = async ({ agentId, configId, context, lazyChildren }) => {
-    throwIfAborted(context.signal);
-    const agent = await waitForAbort(db.getAgentWithVersionCount({ id: agentId }), context.signal);
+  const initializeLoadedSubagent = async ({
+    agent,
+    agentId,
+    configId,
+    context,
+    lazyChildren,
+    viewAccessChecked = false,
+  }) => {
     throwIfAborted(context.signal);
     if (!agent || getLazySubagentConfigId(agent) !== configId) {
       throw new Error(`Subagent ${agentId} changed before it could be initialized.`);
     }
-    if (!(await hasSubagentViewAccess(agent, agentId, context.signal))) {
+    if (!viewAccessChecked && !(await hasSubagentViewAccess(agent, agentId, context.signal))) {
       throw new Error(`You no longer have access to subagent ${agentId}.`);
     }
     const validation = await waitForAbort(
@@ -981,6 +986,11 @@ const initializeClient = async ({
     agentToolContexts.set(agentId, buildAgentToolContext({ agent, config }));
     endpointTokenConfigByAgentId.set(agentId, config.endpointTokenConfig);
     return config;
+  };
+  const initializeLazySubagent = async ({ agentId, configId, context, lazyChildren }) => {
+    throwIfAborted(context.signal);
+    const agent = await waitForAbort(db.getAgentWithVersionCount({ id: agentId }), context.signal);
+    return initializeLoadedSubagent({ agent, agentId, configId, context, lazyChildren });
   };
 
   const buildLazySubagentDescriptors = async (agent, depth = 0, ancestors = new Set()) => {
@@ -1100,14 +1110,19 @@ const initializeClient = async ({
     if (skippedAgentIds.has(memberId)) return null;
     assertSubagentGraphRoom(memberId);
     subagentGraphIds.add(memberId);
-    const metadata = await loadSubagentMetadata(memberId);
-    if (!metadata) return null;
+    const agent = await waitForAbort(db.getAgentWithVersionCount({ id: memberId }), signal);
+    if (!agent || !(await hasSubagentViewAccess(agent, memberId, signal))) {
+      skippedAgentIds.add(memberId);
+      return null;
+    }
     try {
-      const config = await initializeLazySubagent({
-        agentId: metadata.id,
-        configId: metadata.configId,
+      const config = await initializeLoadedSubagent({
+        agent,
+        agentId: memberId,
+        configId: getLazySubagentConfigId(agent),
         context: { signal },
         lazyChildren: [],
+        viewAccessChecked: true,
       });
       graphMemberConfigsById.set(memberId, config);
       return config;

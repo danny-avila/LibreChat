@@ -14,6 +14,10 @@ const mockRecordCollectedUsage = jest
 const mockGetBalanceConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockGetTransactionsConfig = jest.fn().mockReturnValue({ enabled: true });
 const mockResolveMemoryAvailability = jest.fn().mockResolvedValue(true);
+const mockBuildAgentScopedContext = jest.fn().mockResolvedValue(new Map());
+const mockBuildAgentContextAttachmentsByAgentId = jest.fn().mockReturnValue(new Map());
+const mockBuildInlineMemoryContext = jest.fn().mockResolvedValue('');
+const mockApplyContextToAgent = jest.fn().mockResolvedValue(undefined);
 const mockInitialSessions = new Map([['execute_code', { session_id: 'seeded' }]]);
 class MockAgentRunEnvelopeError extends TypeError {
   constructor(message) {
@@ -111,6 +115,11 @@ jest.mock('@librechat/api', () => ({
   createRun: jest.fn().mockResolvedValue({
     processStream: mockProcessStream,
   }),
+  applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
+  buildAgentScopedContext: (...args) => mockBuildAgentScopedContext(...args),
+  buildInlineMemoryContext: (...args) => mockBuildInlineMemoryContext(...args),
+  buildAgentContextAttachmentsByAgentId: (...args) =>
+    mockBuildAgentContextAttachmentsByAgentId(...args),
   createChunk: jest.fn().mockReturnValue({}),
   buildToolSet: jest.fn().mockReturnValue(new Set()),
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
@@ -180,6 +189,14 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/server/controllers/ModelController', () => ({
   getModelsConfig: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('~/server/services/MCP', () => ({
+  resolveConfigServers: jest.fn().mockResolvedValue({}),
+}));
+
+jest.mock('~/config', () => ({
+  getMCPManager: jest.fn().mockReturnValue({}),
 }));
 
 jest.mock('~/server/services/Files/permissions', () => ({
@@ -257,6 +274,7 @@ jest.mock('~/models', () => ({
   getMultiplier: mockGetMultiplier,
   getCacheMultiplier: mockGetCacheMultiplier,
   getConvoFiles: jest.fn().mockResolvedValue([]),
+  getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   getConvo: jest.fn().mockResolvedValue(null),
 }));
 
@@ -315,12 +333,16 @@ describe('OpenAIChatCompletionController', () => {
     };
     initializeAgent.mockResolvedValueOnce(primaryConfig);
     const memberTokenConfig = { 'custom-model': { prompt: 7 } };
-    resolveSubagentGraphs.mockImplementationOnce(async (_params, deps) => {
-      deps.onAgentInitialized(
-        'agent-graph-member',
-        { id: 'agent-graph-member' },
-        { id: 'agent-graph-member', endpointTokenConfig: memberTokenConfig },
-      );
+    const memberConfig = {
+      id: 'agent-graph-member',
+      endpointTokenConfig: memberTokenConfig,
+      agentContextAttachments: [{ file_id: 'member-file' }],
+    };
+    resolveSubagentGraphs.mockImplementationOnce(async ({ rootConfigs }, deps) => {
+      rootConfigs[0].subagentGraphConfigs = [
+        { definition: { type: 'team' }, memberConfigs: [memberConfig] },
+      ];
+      deps.onAgentInitialized('agent-graph-member', { id: 'agent-graph-member' }, memberConfig);
     });
     req.config.endpoints.agents.capabilities = ['subagents'];
 
@@ -342,6 +364,19 @@ describe('OpenAIChatCompletionController', () => {
     );
     expect(mockResolveMemoryAvailability).toHaveBeenCalledWith(
       expect.objectContaining({ enabledCapabilities: expect.any(Set), user: req.user }),
+    );
+    expect(mockBuildAgentContextAttachmentsByAgentId).toHaveBeenCalledWith([
+      primaryConfig,
+      memberConfig,
+    ]);
+    expect(mockBuildAgentScopedContext).toHaveBeenCalledWith(
+      expect.objectContaining({ agentIds: ['agent-123', 'agent-graph-member'] }),
+    );
+    expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: memberConfig, agentId: 'agent-graph-member' }),
+    );
+    expect(mockBuildInlineMemoryContext).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: memberConfig, memoryAvailable: true }),
     );
     const { createRun } = require('@librechat/api');
     expect(createRun).toHaveBeenCalledWith(

@@ -17,6 +17,7 @@ const {
   AgentRunEnvelopeError,
   createAgentRunEnvelope,
   buildAgentScopedContext,
+  buildInlineMemoryContext,
   buildAgentContextAttachmentsByAgentId,
   createSafeUser,
   initializeAgent,
@@ -641,16 +642,25 @@ const executeResponse = async (envelope, { req, res }) => {
     const configServers = await resolveConfigServers(req);
 
     await Promise.all(
-      contextAgents.map((runAgent) =>
-        applyContextToAgent({
+      contextAgents.map(async (runAgent) => {
+        const memoryContext = await buildInlineMemoryContext({
+          agent: runAgent,
+          req,
+          userId: principal.userId,
+          memoryAvailable,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+        return applyContextToAgent({
           agent: runAgent,
           agentId: runAgent.id,
           logger,
           mcpManager,
           configServers,
-          sharedRunContext: agentScopedContext.get(runAgent.id) ?? '',
-        }),
-      ),
+          sharedRunContext: [memoryContext, agentScopedContext.get(runAgent.id)]
+            .filter(Boolean)
+            .join('\n\n'),
+        });
+      }),
     );
 
     // Determine if streaming is enabled (check both request and agent config)

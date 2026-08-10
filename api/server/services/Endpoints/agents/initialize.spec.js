@@ -1441,6 +1441,7 @@ describe('initializeClient — subagent loading', () => {
       await memberReleases.get(agent.id)?.promise;
       return makeSubagentConfig(agent.id);
     });
+    const getAgentWithVersionCount = jest.spyOn(db, 'getAgentWithVersionCount');
 
     const initialization = initializeClient({
       req: makeSubagentReq(),
@@ -1456,6 +1457,11 @@ describe('initializeClient — subagent loading', () => {
     await initialization;
 
     expect(agentClientArgs.agent.subagentGraphConfigs[0].memberConfigs).toHaveLength(2);
+    for (const memberId of memberIds) {
+      expect(
+        getAgentWithVersionCount.mock.calls.filter(([query]) => query.id === memberId),
+      ).toHaveLength(1);
+    }
   });
 
   it('reuses the primary config when the parent is a graph member', async () => {

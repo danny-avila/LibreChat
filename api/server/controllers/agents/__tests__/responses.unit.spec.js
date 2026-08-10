@@ -81,6 +81,7 @@ const mockCanAuthorSkillFiles = jest.fn(
 const mockGetSkillToolDeps = jest.fn(() => ({}));
 const mockBuildAgentScopedContext = jest.fn().mockResolvedValue(new Map());
 const mockBuildAgentContextAttachmentsByAgentId = jest.fn().mockReturnValue(new Map());
+const mockBuildInlineMemoryContext = jest.fn().mockResolvedValue('');
 const mockApplyContextToAgent = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('nanoid', () => ({
@@ -122,6 +123,7 @@ jest.mock('@librechat/api', () => ({
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
   buildAgentScopedContext: (...args) => mockBuildAgentScopedContext(...args),
+  buildInlineMemoryContext: (...args) => mockBuildInlineMemoryContext(...args),
   buildAgentContextAttachmentsByAgentId: (...args) =>
     mockBuildAgentContextAttachmentsByAgentId(...args),
   scopeSkillIds: jest.fn().mockImplementation((ids) => ids),
@@ -316,6 +318,7 @@ jest.mock('~/models', () => ({
   getMultiplier: mockGetMultiplier,
   getCacheMultiplier: mockGetCacheMultiplier,
   getConvoFiles: jest.fn().mockResolvedValue([]),
+  getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   saveConvo: jest.fn().mockResolvedValue({}),
   getConvo: jest.fn().mockResolvedValue(null),
 }));
@@ -407,6 +410,9 @@ describe('createResponse controller', () => {
     );
     expect(mockApplyContextToAgent).toHaveBeenCalledWith(
       expect.objectContaining({ agent: memberConfig, agentId: 'agent-graph-member' }),
+    );
+    expect(mockBuildInlineMemoryContext).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: memberConfig, memoryAvailable: true }),
     );
     const usageParams = mockRecordCollectedUsage.mock.calls[0][1];
     expect(usageParams.endpointTokenConfig).toBe(primaryConfig.endpointTokenConfig);

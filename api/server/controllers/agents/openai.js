@@ -12,8 +12,12 @@ const {
   writeSSE,
   createRun,
   createChunk,
+  applyContextToAgent,
   buildToolSet,
   buildInitialToolSessions,
+  buildAgentScopedContext,
+  buildInlineMemoryContext,
+  buildAgentContextAttachmentsByAgentId,
   AgentRunEnvelopeError,
   createAgentRunEnvelope,
   loadSkillStates,
@@ -69,6 +73,8 @@ const {
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
+const { resolveConfigServers } = require('~/server/services/MCP');
+const { getMCPManager } = require('~/config');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
 
@@ -783,6 +789,43 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     const userMCPAuthMap = discoveredMCPAuthMap ?? primaryConfig.userMCPAuthMap;
 
     const runAgents = [primaryConfig, ...handoffAgentConfigs.values()];
+    const contextAgentsById = new Map(runAgents.map((runAgent) => [runAgent.id, runAgent]));
+    for (const runAgent of runAgents) {
+      for (const graph of runAgent.subagentGraphConfigs ?? []) {
+        for (const memberConfig of graph.memberConfigs) {
+          contextAgentsById.set(memberConfig.id, memberConfig);
+        }
+      }
+    }
+    const contextAgents = [...contextAgentsById.values()];
+    const agentScopedContext = await buildAgentScopedContext({
+      agentIds: contextAgents.map(({ id }) => id),
+      attachmentsByAgentId: buildAgentContextAttachmentsByAgentId(contextAgents),
+      req,
+    });
+    const mcpManager = getMCPManager();
+    const configServers = await resolveConfigServers(req);
+    await Promise.all(
+      contextAgents.map(async (runAgent) => {
+        const memoryContext = await buildInlineMemoryContext({
+          agent: runAgent,
+          req,
+          userId,
+          memoryAvailable,
+          getFormattedMemories: db.getFormattedMemories,
+        });
+        return applyContextToAgent({
+          agent: runAgent,
+          agentId: runAgent.id,
+          logger,
+          mcpManager,
+          configServers,
+          sharedRunContext: [memoryContext, agentScopedContext.get(runAgent.id)]
+            .filter(Boolean)
+            .join('\n\n'),
+        });
+      }),
+    );
     const initialSessions = buildInitialToolSessions({ agents: runAgents });
 
     const run = await createRun({
