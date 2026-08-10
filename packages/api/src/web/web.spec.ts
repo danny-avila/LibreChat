@@ -24,6 +24,12 @@ const mockResolveHostnameSSRF = jest.fn().mockResolvedValue(false);
 jest.mock('../auth', () => ({
   isSSRFTarget: (...args: unknown[]) => mockIsSSRFTarget(...args),
   resolveHostnameSSRF: (...args: unknown[]) => mockResolveHostnameSSRF(...args),
+  getEffectivePort: (protocol: string, port?: string) => {
+    if (port) {
+      return port;
+    }
+    return protocol === 'https:' ? '443' : '80';
+  },
 }));
 
 describe('web.ts', () => {
@@ -353,13 +359,67 @@ describe('web.ts', () => {
         expect(result.authenticated).toBe(true);
         expect(result.authResult.tavilySearchUrl).toBe('https://tenant-search.example/search');
         expect(result.authResult.tavilyExtractUrl).toBe('https://tenant-extract.example/extract');
-        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('tenant-search.example');
-        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('tenant-extract.example');
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith(
+          'tenant-search.example',
+          undefined,
+          '443',
+        );
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith(
+          'tenant-extract.example',
+          undefined,
+          '443',
+        );
         expect(result.authTypes).toEqual([
           ['providers', AuthType.USER_PROVIDED],
           ['scrapers', AuthType.USER_PROVIDED],
           ['rerankers', AuthType.SYSTEM_DEFINED],
         ]);
+      } finally {
+        process.env = originalEnv;
+      }
+    });
+
+    it('threads allowedAddresses and the effective port into the SSRF preflight for user-provided URLs', async () => {
+      mockIsSSRFTarget.mockClear();
+      mockResolveHostnameSSRF.mockClear();
+      mockIsSSRFTarget.mockReturnValue(false);
+      mockResolveHostnameSSRF.mockResolvedValue(false);
+
+      const originalEnv = process.env;
+      try {
+        process.env = { ...originalEnv };
+        delete process.env.SEARXNG_INSTANCE_URL;
+
+        const searxngConfig = {
+          searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}',
+          searchProvider: 'searxng' as SearchProviders,
+          rerankerType: 'none' as RerankerTypes,
+          allowedAddresses: ['localhost:8888'],
+        } as TWebSearchConfig;
+
+        mockLoadAuthValues.mockImplementation(({ authFields }) => {
+          const result: Record<string, string> = {};
+          authFields.forEach((field: string) => {
+            if (field === 'SEARXNG_INSTANCE_URL') {
+              result[field] = 'http://localhost:8888';
+            }
+          });
+          return Promise.resolve(result);
+        });
+
+        const result = await loadWebSearchAuth({
+          userId,
+          webSearchConfig: searxngConfig,
+          loadAuthValues: mockLoadAuthValues,
+        });
+
+        expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost', ['localhost:8888'], '8888');
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith(
+          'localhost',
+          ['localhost:8888'],
+          '8888',
+        );
+        expect(result.authResult.searxngInstanceUrl).toBe('http://localhost:8888');
       } finally {
         process.env = originalEnv;
       }
@@ -1675,7 +1735,7 @@ describe('web.ts', () => {
       });
 
       expect(result.authResult.jinaApiUrl).toBeUndefined();
-      expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost');
+      expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost', undefined, '8080');
     });
 
     it('should block user-provided firecrawlApiUrl resolving to private IP', async () => {
@@ -1832,7 +1892,7 @@ describe('web.ts', () => {
         expect(result.authResult.tavilySearchUrl).toBeUndefined();
         expect(result.authResult.searchProvider).toBe('tavily');
         expect(result.authenticated).toBe(true);
-        expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost');
+        expect(mockIsSSRFTarget).toHaveBeenCalledWith('localhost', undefined, '8080');
       } finally {
         process.env = originalEnv;
       }
@@ -1880,7 +1940,11 @@ describe('web.ts', () => {
         expect(result.authResult.tavilyExtractUrl).toBeUndefined();
         expect(result.authResult.scraperProvider).toBe('tavily');
         expect(result.authenticated).toBe(true);
-        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith('extract.internal-service.com');
+        expect(mockResolveHostnameSSRF).toHaveBeenCalledWith(
+          'extract.internal-service.com',
+          undefined,
+          '443',
+        );
       } finally {
         process.env = originalEnv;
       }

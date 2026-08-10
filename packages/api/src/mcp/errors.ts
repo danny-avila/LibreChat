@@ -10,6 +10,47 @@ export const MCPErrorCodes = {
 
 export type MCPErrorCode = (typeof MCPErrorCodes)[keyof typeof MCPErrorCodes];
 
+interface OAuthErrorLike {
+  code?: number;
+  status?: number;
+  statusCode?: number;
+  message?: string;
+}
+
+const OAUTH_HTTP_STATUS_PATTERN =
+  /(?:\bhttp\s+(?:401|403)\b|\bnon-2\d\d\s+status\s+code\s*\((?:401|403)\)|^(?:error:\s*)?(?:401|403)\b|\bunauthorized\s*\(\s*401\s*\)|\bforbidden\s*\(\s*403\s*\))/i;
+const MISSING_AUTHORIZATION_PATTERN = /\bno authorization (?:headers?|values?)\b/i;
+
+/** Detects HTTP authentication failures and OAuth protocol errors without matching unrelated IDs. */
+export function isOAuthAuthenticationError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const candidate = error as OAuthErrorLike;
+  if (
+    [candidate.status, candidate.statusCode, candidate.code].some(
+      (status) => status === 401 || status === 403,
+    )
+  ) {
+    return true;
+  }
+
+  if (typeof candidate.message !== 'string') {
+    return false;
+  }
+
+  const message = candidate.message.toLowerCase();
+  return (
+    OAUTH_HTTP_STATUS_PATTERN.test(message) ||
+    message.includes('invalid_token') ||
+    message.includes('invalid_grant') ||
+    message.includes('insufficient_scope') ||
+    message.includes('authentication required') ||
+    MISSING_AUTHORIZATION_PATTERN.test(message)
+  );
+}
+
 /**
  * Custom error for MCP domain restriction violations.
  * Thrown when a user attempts to connect to an MCP server whose domain is not in the allowlist.

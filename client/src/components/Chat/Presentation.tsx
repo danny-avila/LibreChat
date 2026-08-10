@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { FileSources, LocalStorageKeys } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
@@ -6,10 +6,11 @@ import useResetArtifactsOnConversationChange from '~/hooks/Artifacts/useResetArt
 import DragDropWrapper from '~/components/Chat/Input/Files/DragDropWrapper';
 import { EditorProvider, ArtifactsProvider } from '~/Providers';
 import { useDeleteFilesMutation } from '~/data-provider';
-import Artifacts from '~/components/Artifacts/Artifacts';
 import { SidePanelGroup } from '~/components/SidePanel';
 import { useSetFilesToDelete } from '~/hooks';
 import store from '~/store';
+
+const Artifacts = lazy(() => import('~/components/Artifacts/Artifacts'));
 
 export default function Presentation({ children }: { children: React.ReactNode }) {
   const artifacts = useRecoilValue(store.artifactsState);
@@ -67,7 +68,9 @@ export default function Presentation({ children }: { children: React.ReactNode }
       return (
         <ArtifactsProvider>
           <EditorProvider>
-            <Artifacts />
+            <Suspense fallback={null}>
+              <Artifacts />
+            </Suspense>
           </EditorProvider>
         </ArtifactsProvider>
       );
