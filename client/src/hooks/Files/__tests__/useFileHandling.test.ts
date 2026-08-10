@@ -126,6 +126,24 @@ describe('useFileHandling', () => {
   const loadHook = async () => (await import('../useFileHandling')).default;
 
   describe('endpointOverride', () => {
+    it('clears the loading state when file validation throws', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockValidateFiles.mockImplementationOnce(() => {
+        throw new Error('invalid file config');
+      });
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([new File(['hello'], 'test.txt', { type: 'text/plain' })]);
+      });
+
+      expect(mockSetFilesLoading).toHaveBeenCalledWith(false);
+      expect(mockMutate).not.toHaveBeenCalled();
+      consoleError.mockRestore();
+    });
+
     it('uploads non-HEIC images without running HEIC conversion', async () => {
       const useFileHandling = await loadHook();
       const { result } = renderHook(() => useFileHandling());

@@ -22,10 +22,10 @@ import {
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
+import { cn, getModelSpec, hasIncompleteFiles, removeFocusRings } from '~/utils';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
-import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import InterruptSteerButton from './InterruptSteerButton';
 import DuringRunSendButton from './DuringRunSendButton';
 import { useGetStartupConfig } from '~/data-provider';
@@ -59,7 +59,6 @@ interface ChatFormProps {
   setFiles: FileSetter;
   conversation: TConversation | null;
   isSubmitting: boolean;
-  filesLoading: boolean;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
   handleStopGenerating: (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -73,7 +72,6 @@ const ChatForm = memo(function ChatForm({
   setFiles,
   conversation,
   isSubmitting,
-  filesLoading,
   setFilesLoading,
   newConversation,
   handleStopGenerating,
@@ -123,6 +121,7 @@ const ChatForm = memo(function ChatForm({
     [conversation?.spec, startupConfig],
   );
   const hideBadgeRow = modelSpec?.hideBadgeRow === true;
+  const filesLoading = useMemo(() => hasIncompleteFiles(files), [files]);
   const conversationId = useMemo(
     () => conversation?.conversationId ?? Constants.NEW_CONVO,
     [conversation?.conversationId],
@@ -726,7 +725,6 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
     setFiles,
     conversation,
     isSubmitting,
-    filesLoading,
     setFilesLoading,
     newConversation,
     handleStopGenerating,
@@ -785,7 +783,6 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
       setFiles={setFiles}
       conversation={stableConversation}
       isSubmitting={isSubmitting}
-      filesLoading={filesLoading}
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}
       handleStopGenerating={stableHandleStop}

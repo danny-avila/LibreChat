@@ -27,6 +27,15 @@ import type { ExtendedFile } from '~/common';
 
 export const partialTypes = ['text/x-'];
 
+export function hasIncompleteFiles(files: Map<string, ExtendedFile>): boolean {
+  for (const file of files.values()) {
+    if (file.progress < 1) {
+      return true;
+    }
+  }
+  return false;
+}
+
 const textDocument = {
   paths: TextPaths,
   fill: '#FF5588',
