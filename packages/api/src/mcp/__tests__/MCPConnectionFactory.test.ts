@@ -210,6 +210,95 @@ describe('MCPConnectionFactory', () => {
     }
   });
 
+  it('aborts only the local waiter for a shared OAuth flow', async () => {
+    const abortController = new AbortController();
+    const abortReason = new Error('owner request aborted');
+    const sseConfig = {
+      url: 'https://api.example.com/mcp',
+      type: 'sse' as const,
+      requiresOAuth: true,
+    } as t.SSEOptions;
+    const pendingTokens = new Promise<MCPOAuthTokens | null>(() => undefined);
+    const oauthStart = jest.fn().mockResolvedValue(undefined);
+
+    mockProcessMCPEnv.mockReturnValue(sseConfig);
+    mockFlowManager.getFlowState.mockResolvedValue({
+      status: 'PENDING',
+      type: 'mcp_oauth',
+      metadata: {
+        authorizationUrl: 'https://auth.example.com/pending',
+        serverUrl: sseConfig.url,
+      },
+      createdAt: Date.now(),
+    });
+    mockFlowManager.createFlow.mockReturnValue(pendingTokens);
+
+    const factory = new InspectableMCPConnectionFactory(
+      { serverName: 'test-server', serverConfig: sseConfig },
+      {
+        useOAuth: true,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        oauthStart,
+        signal: abortController.signal,
+      },
+    );
+
+    const resultPromise = factory.handleOAuthRequiredForTest();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockFlowManager.createFlow).toHaveBeenCalledWith('user123:test-server', 'mcp_oauth', {});
+
+    abortController.abort(abortReason);
+
+    await expect(resultPromise).resolves.toEqual(
+      expect.objectContaining({ tokens: null, error: abortReason }),
+    );
+    expect(mockFlowManager.deleteFlow).not.toHaveBeenCalled();
+  });
+
+  it('observes the shared flow after an already-aborted local wait', async () => {
+    const abortController = new AbortController();
+    const abortReason = new Error('request already aborted');
+    const sseConfig = {
+      url: 'https://api.example.com/mcp',
+      type: 'sse' as const,
+      requiresOAuth: true,
+    } as t.SSEOptions;
+    let rejectSharedFlow: ((error: Error) => void) | undefined;
+    const sharedFlow = new Promise<MCPOAuthTokens | null>((_resolve, reject) => {
+      rejectSharedFlow = reject;
+    });
+
+    abortController.abort(abortReason);
+    mockProcessMCPEnv.mockReturnValue(sseConfig);
+    mockFlowManager.getFlowState.mockResolvedValue({
+      status: 'PENDING',
+      type: 'mcp_oauth',
+      metadata: { authorizationUrl: 'https://auth.example.com/pending' },
+      createdAt: Date.now(),
+    });
+    mockFlowManager.createFlow.mockReturnValue(sharedFlow);
+
+    const factory = new InspectableMCPConnectionFactory(
+      { serverName: 'test-server', serverConfig: sseConfig },
+      {
+        useOAuth: true,
+        user: mockUser,
+        flowManager: mockFlowManager,
+        signal: abortController.signal,
+      },
+    );
+
+    await expect(factory.handleOAuthRequiredForTest()).resolves.toEqual(
+      expect.objectContaining({ tokens: null, error: abortReason }),
+    );
+
+    rejectSharedFlow?.(new Error('shared flow later failed'));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockFlowManager.deleteFlow).not.toHaveBeenCalled();
+  });
+
   describe('static create method', () => {
     it('should create a basic connection without OAuth', async () => {
       const basicOptions = {
@@ -1253,12 +1342,7 @@ describe('MCPConnectionFactory', () => {
       expect(initCallOrder).toBeLessThan(createCallOrder);
 
       // createFlow should receive {} since initFlow already persisted metadata
-      expect(mockFlowManager.createFlow).toHaveBeenCalledWith(
-        'flow123',
-        'mcp_oauth',
-        {},
-        undefined,
-      );
+      expect(mockFlowManager.createFlow).toHaveBeenCalledWith('flow123', 'mcp_oauth', {});
     });
 
     it('should delete stale flow and create new OAuth flow when existing flow is COMPLETED', async () => {
@@ -1345,7 +1429,6 @@ describe('MCPConnectionFactory', () => {
         'user123:test-server',
         'mcp_oauth',
         {},
-        undefined,
       );
     });
 
