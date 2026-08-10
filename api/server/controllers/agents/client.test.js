@@ -3190,7 +3190,7 @@ describe('AgentClient - titleConvo', () => {
       mockAgent.subagentGraphConfigs = [
         {
           definition: { type: 'review_team' },
-          memberConfigs: [graphMember],
+          memberConfigs: [mockAgent, graphMember],
         },
       ];
       client.agentConfigs = new Map();

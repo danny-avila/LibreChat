@@ -1826,11 +1826,13 @@ class AgentClient extends BaseClient {
     const wrappedLazyDescriptors = new WeakSet();
     const wrapLazyResolvers = (configs) => {
       const pending = [...configs];
+      const visitedConfigs = new WeakSet();
       for (let index = 0; index < pending.length; index++) {
         const config = pending[index];
-        if (!config) {
+        if (!config || visitedConfigs.has(config)) {
           continue;
         }
+        visitedConfigs.add(config);
         pending.push(...(config.subagentAgentConfigs ?? []));
         for (const graph of config.subagentGraphConfigs ?? []) {
           pending.push(...graph.memberConfigs);

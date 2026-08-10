@@ -868,7 +868,10 @@ const initializeClient = async ({
     if (!agent.subagents?.enabled) return [];
     const memberIds = Array.from(
       new Set((agent.subagents.graphs ?? []).flatMap((graph) => graph.agent_ids ?? [])),
-    ).filter((memberId) => memberId !== primaryConfig.id && !agentConfigs.has(memberId));
+    ).filter(
+      (memberId) =>
+        memberId !== agent.id && memberId !== primaryConfig.id && !agentConfigs.has(memberId),
+    );
     const stagedMemberIds = memberIds.filter((memberId) => !subagentGraphIds.has(memberId));
     if (subagentGraphIds.size + stagedMemberIds.length > MAX_SUBAGENT_GRAPH_NODES) {
       logger.warn('[initializeClient] Subagent graph node limit exceeded', {
@@ -1061,7 +1064,8 @@ const initializeClient = async ({
             lazyChildren,
           }).then(async (config) => {
             config.subagentAgentConfigs = eagerChildren;
-            await resolveGraphSubagentsFor(config);
+            graphMemberConfigsById.set(config.id, config);
+            await resolveGraphSubagentsFor(config, context.signal);
             return config;
           }),
       });
@@ -1088,7 +1092,8 @@ const initializeClient = async ({
     rootSubagentConfigs.filter((config) => config?.id).map((config) => [config.id, config]),
   );
   const initializeGraphMember = createConcurrencyLimiter(SUBAGENT_GRAPH_LOAD_CONCURRENCY);
-  const loadGraphMember = async (memberId) => {
+  const loadGraphMember = async (memberId, graphSignal = signal) => {
+    throwIfAborted(graphSignal);
     const cached = graphMemberConfigsById.get(memberId);
     if (cached) return cached;
     if (skippedAgentIds.has(memberId)) return null;
@@ -1100,7 +1105,7 @@ const initializeClient = async ({
       const config = await initializeLazySubagent({
         agentId: metadata.id,
         configId: metadata.configId,
-        context: { signal },
+        context: { signal: graphSignal },
         lazyChildren: [],
       });
       graphMemberConfigsById.set(memberId, config);
@@ -1115,7 +1120,8 @@ const initializeClient = async ({
     }
   };
 
-  async function resolveGraphSubagentsFor(config) {
+  async function resolveGraphSubagentsFor(config, graphSignal = signal) {
+    throwIfAborted(graphSignal);
     const definitions =
       subagentsCapabilityEnabled && config.subagents?.enabled === true
         ? (config.subagents.graphs ?? [])
@@ -1141,8 +1147,11 @@ const initializeClient = async ({
         subagentGraphIds.add(memberId);
       }
       const memberConfigs = await Promise.all(
-        memberIds.map((memberId) => initializeGraphMember(() => loadGraphMember(memberId))),
+        memberIds.map((memberId) =>
+          initializeGraphMember(() => loadGraphMember(memberId, graphSignal)),
+        ),
       );
+      throwIfAborted(graphSignal);
       if (memberConfigs.some((member) => member == null)) {
         logger.warn('[initializeClient] Skipping incomplete graph subagent', {
           parentAgentId: config.id,

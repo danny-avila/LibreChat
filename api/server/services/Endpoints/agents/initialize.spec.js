@@ -1237,9 +1237,9 @@ describe('initializeClient — subagent loading', () => {
       type: 'lazy_team',
       name: 'Lazy team',
       description: 'Loads with its selected parent',
-      agent_ids: [memberId],
-      edges: [],
-      entry_agent_id: memberId,
+      agent_ids: [childId, memberId],
+      edges: [{ from: childId, to: memberId, edgeType: 'direct' }],
+      entry_agent_id: childId,
       result_agent_id: memberId,
     };
     await createViewableAgent(childId, {
@@ -1299,10 +1299,59 @@ describe('initializeClient — subagent loading', () => {
     expect(resolvedChild.subagentGraphConfigs).toEqual([
       {
         definition,
-        memberConfigs: [expect.objectContaining({ id: memberId })],
+        memberConfigs: [resolvedChild, expect.objectContaining({ id: memberId })],
       },
     ]);
     expect(userMCPAuthMap).toEqual(memberMCPAuthMap);
+  });
+
+  it('aborts lazy graph member initialization with the descriptor signal', async () => {
+    const childId = 'agent_lazy_cancel_parent';
+    const memberId = 'agent_lazy_cancel_member';
+    const definition = {
+      type: 'lazy_cancel_team',
+      name: 'Lazy cancel team',
+      description: 'Stops member initialization with its selected parent',
+      agent_ids: [memberId],
+      edges: [],
+      entry_agent_id: memberId,
+      result_agent_id: memberId,
+    };
+    await createViewableAgent(childId, {
+      enabled: true,
+      allowSelf: false,
+      graphs: [definition],
+    });
+    await createViewableAgent(memberId);
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: [childId] },
+    });
+    const memberInitialization = deferred();
+    const memberStarted = deferred();
+    mockInitializeAgent.mockImplementation(({ agent }) => {
+      if (agent.id === PRIMARY_ID) return Promise.resolve(primaryConfig);
+      if (agent.id === childId) {
+        return Promise.resolve({ ...makeSubagentConfig(childId), subagents: agent.subagents });
+      }
+      memberStarted.resolve();
+      return memberInitialization.promise;
+    });
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const controller = new AbortController();
+    const resolution = agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+      signal: controller.signal,
+    });
+    await memberStarted.promise;
+    controller.abort(new Error('cancelled graph resolution'));
+
+    await expect(resolution).rejects.toThrow('cancelled graph resolution');
+    memberInitialization.resolve(makeSubagentConfig(memberId));
   });
 
   it('loads independent graph members concurrently', async () => {
