@@ -850,6 +850,7 @@ function enqueueSubagentChildren(
   agent: SubagentTreeNode,
   pending: Array<SubagentTreeNode | null | undefined>,
   visited: ReadonlySet<string>,
+  includeLazyDescriptors = true,
   includeCapabilityMetadata = true,
 ): void {
   for (const child of agent.subagentAgentConfigs ?? []) {
@@ -857,9 +858,11 @@ function enqueueSubagentChildren(
       pending.push(child);
     }
   }
-  for (const child of agent.lazySubagentConfigs ?? []) {
-    if (!visited.has(child.id)) {
-      pending.push(child);
+  if (includeLazyDescriptors) {
+    for (const child of agent.lazySubagentConfigs ?? []) {
+      if (!visited.has(child.id)) {
+        pending.push(child);
+      }
     }
   }
   if (includeCapabilityMetadata) {
@@ -1591,7 +1594,7 @@ export async function createRun({
         }
       }
     }
-    enqueueSubagentChildren(config, pendingConfigs, visitedConfigIds, false);
+    enqueueSubagentChildren(config, pendingConfigs, visitedConfigIds, false, false);
   }
   for (const agent of agents) {
     const agentInput = buildAgentInput(agent);

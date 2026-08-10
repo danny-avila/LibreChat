@@ -1191,6 +1191,7 @@ describe('subagentConfigs', () => {
   });
 
   it('builds lazy graph inputs from initialized members instead of capability metadata', async () => {
+    const childId = 'agent_lazy_capability_parent';
     const memberId = 'agent_lazy_capability_member';
     const metadata = makeAgent({ id: memberId, codeEnvAvailable: true });
     const initializedMember = makeAgent({
@@ -1203,18 +1204,23 @@ describe('subagentConfigs', () => {
       type: 'capability_team',
       name: 'Capability team',
       description: 'Uses the initialized member runtime',
-      agent_ids: [memberId],
-      edges: [],
-      entry_agent_id: memberId,
+      agent_ids: [childId, memberId],
+      edges: [{ from: childId, to: memberId, edgeType: 'direct' as const }],
+      entry_agent_id: childId,
       result_agent_id: memberId,
     };
-    const resolve = jest.fn().mockResolvedValue(
-      makeAgent({
-        id: 'agent_lazy_capability_parent',
+    const resolve = jest.fn().mockImplementation(async () => {
+      const initializedChild = makeAgent({
+        id: childId,
+        toolDefinitions: [{ name: 'child_tool' }],
+        toolRegistry: new Map([['child_tool', { name: 'child_tool' }]]),
         subagents: { enabled: true, allowSelf: false, graphs: [definition] },
-        subagentGraphConfigs: [{ definition, memberConfigs: [initializedMember] }],
-      }),
-    );
+      });
+      initializedChild.subagentGraphConfigs = [
+        { definition, memberConfigs: [initializedChild, initializedMember] },
+      ];
+      return initializedChild;
+    });
     const agents = await callAndCapture({
       agents: [
         makeAgent({
@@ -1222,14 +1228,14 @@ describe('subagentConfigs', () => {
           subagents: {
             enabled: true,
             allowSelf: false,
-            agent_ids: ['agent_lazy_capability_parent'],
+            agent_ids: [childId],
           },
           lazySubagentConfigs: [
             {
-              id: 'agent_lazy_capability_parent',
+              id: childId,
               name: 'Lazy capability parent',
               description: 'Resolves its team on selection',
-              configId: 'agent_lazy_capability_parent:1:fingerprint',
+              configId: `${childId}:1:fingerprint`,
               subagentGraphMemberMetadata: [metadata],
               resolve,
             },
@@ -1242,10 +1248,12 @@ describe('subagentConfigs', () => {
       lazyConfig.resolveAgentInputs as (context: never) => Promise<Record<string, unknown>>
     )({ signal: new AbortController().signal } as never);
     const graphConfig = (resolvedInputs.subagentConfigs as Array<Record<string, unknown>>)[0];
-    const memberInput = (graphConfig.agents as Array<Record<string, unknown>>)[0];
+    const memberInputs = graphConfig.agents as Array<Record<string, unknown>>;
 
-    expect(memberInput.toolDefinitions).toEqual([{ name: 'initialized_tool' }]);
-    expect(memberInput.toolRegistry).toEqual(
+    expect(memberInputs[0].toolDefinitions).toEqual([{ name: 'child_tool' }]);
+    expect(memberInputs[0].toolRegistry).toEqual(new Map([['child_tool', { name: 'child_tool' }]]));
+    expect(memberInputs[1].toolDefinitions).toEqual([{ name: 'initialized_tool' }]);
+    expect(memberInputs[1].toolRegistry).toEqual(
       new Map([['initialized_tool', { name: 'initialized_tool' }]]),
     );
   });
