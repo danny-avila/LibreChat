@@ -104,7 +104,7 @@ jobs:
       image_tag: ${{ steps.tag.outputs.value }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 2
 
@@ -127,11 +127,11 @@ jobs:
 
       - name: Set up Docker Buildx
         if: steps.changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
         if: steps.changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -139,7 +139,7 @@ jobs:
 
       - name: Build and push image
         if: steps.changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .do/gitnexus
           file: .do/gitnexus/Dockerfile
@@ -162,7 +162,7 @@ jobs:
       pull-requests: write # post deploy-complete comments on PR command dispatches
     steps:
       - name: Checkout deploy config
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           sparse-checkout: .do/gitnexus
           fetch-depth: 1
@@ -181,7 +181,7 @@ jobs:
       # artifact name directly avoids the whole mess.
       - name: Resolve indexes to serve
         id: resolve
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const serve = []; // [{ name, artifactName, runId }]
@@ -505,7 +505,7 @@ jobs:
       # PR that asked for a fresh index gets a reply.
       - name: Comment on PR — deploy complete
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           MATRIX: ${{ steps.resolve.outputs.matrix }}
           TRIGGER_RUN_ID: ${{ github.event.workflow_run.id }}

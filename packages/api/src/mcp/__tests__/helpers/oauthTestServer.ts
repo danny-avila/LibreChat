@@ -70,6 +70,10 @@ export interface OAuthTestServerOptions {
   scopesSupported?: string[];
   /** When true, /authorize and /token reject requests that omit the MCP resource parameter. */
   requireResourceParameter?: boolean;
+  /** Number of refresh-grant access tokens the MCP resource should reject after issuance. */
+  rejectRefreshTokens?: number;
+  /** Optional test hook for controlling echo-tool completion. */
+  echoHandler?: (message: string) => string | Promise<string>;
 }
 
 export interface OAuthTokenRequestRecord {
@@ -136,6 +140,8 @@ export async function createOAuthMCPServer(
     requiredScopes = [],
     scopesSupported = [...new Set([...tokenScopes, ...requiredScopes])],
     requireResourceParameter = false,
+    rejectRefreshTokens = 0,
+    echoHandler,
   } = options;
 
   const sessions = new Map<string, StreamableHTTPServerTransport>();
@@ -157,6 +163,7 @@ export async function createOAuthMCPServer(
     }
   >();
   const registeredClients = new Map<string, { client_id: string; client_secret: string }>();
+  let rejectedRefreshTokensRemaining = rejectRefreshTokens;
 
   let port = 0;
   const getBaseUrl = () => `http://127.0.0.1:${port}`;
@@ -410,7 +417,11 @@ export async function createOAuthMCPServer(
         const scopes = params.has('scope')
           ? parseScopes(params.get('scope'))
           : (refreshTokenScopes.get(refreshToken) ?? tokenScopes);
-        issuedTokens.add(newAccessToken);
+        if (rejectedRefreshTokensRemaining > 0) {
+          rejectedRefreshTokensRemaining -= 1;
+        } else {
+          issuedTokens.add(newAccessToken);
+        }
         tokenIssueTimes.set(newAccessToken, Date.now());
         accessTokenScopes.set(newAccessToken, scopes);
 
@@ -475,9 +486,10 @@ export async function createOAuthMCPServer(
         sessionIdGenerator: () => randomUUID(),
       });
       const mcp = new McpServer({ name: 'oauth-test-server', version: '0.0.1' });
-      mcp.tool('echo', { message: z.string() }, async (args) => ({
-        content: [{ type: 'text' as const, text: `echo: ${args.message}` }],
-      }));
+      mcp.tool('echo', { message: z.string() }, async (args) => {
+        const text = echoHandler ? await echoHandler(args.message) : `echo: ${args.message}`;
+        return { content: [{ type: 'text' as const, text }] };
+      });
       await mcp.connect(transport);
     }
 

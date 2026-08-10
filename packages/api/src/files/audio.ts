@@ -29,8 +29,13 @@ export async function processAudioFile({
       size: file.size,
     };
 
-    const [provider, sttSchema] = await sttService.getProviderSchema(req);
-    const text = await sttService.sttRequest(provider, sttSchema, { audioBuffer, audioFile });
+    const [provider, sttSchema, allowedAddresses] = await sttService.getProviderSchema(req);
+    const text = await sttService.sttRequest(
+      provider,
+      sttSchema,
+      { audioBuffer, audioFile },
+      allowedAddresses,
+    );
 
     return {
       text,

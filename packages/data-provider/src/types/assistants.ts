@@ -304,6 +304,19 @@ export type Agent = {
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
+  /**
+   * Whether the requesting user holds EDIT on this agent, so a single VIEW-scoped fetch can
+   * serve consumers that only need the editable subset instead of issuing a second full
+   * paginated walk under an EDIT-scoped cache key.
+   *
+   * Set by the list endpoint only; single-agent responses omit it. Treat absence as unknown
+   * and fail open (`isEditable !== false`), never as `false`, since a client on an older
+   * server would otherwise see an empty list rather than too many rows.
+   *
+   * Reflects the caller's ACL grant. The `MANAGE_AGENTS` capability bypasses ACL on write,
+   * so a capability holder can edit agents this flag reports as not editable.
+   */
+  isEditable?: boolean;
   version?: number;
   category?: string;
   support_contact?: SupportContact;

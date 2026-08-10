@@ -179,7 +179,9 @@ test.describe('core chat loop', () => {
 
     const firstAssistantMessage = messagesView(page).locator('.message-render').nth(1);
     await firstAssistantMessage.hover();
-    const regenerateButton = firstAssistantMessage.locator('button[title="Regenerate"]').last();
+    const regenerateButton = firstAssistantMessage
+      .getByRole('button', { name: 'Regenerate', exact: true })
+      .last();
     await expect(regenerateButton).toBeVisible();
 
     const [regenerateResponse] = await Promise.all([
@@ -215,7 +217,9 @@ test.describe('core chat loop', () => {
     // turn does not belong to.
     const firstAssistant = messagesView(page).locator('.message-render').nth(1);
     await firstAssistant.hover();
-    const regenInitial = firstAssistant.locator('button[title="Regenerate"]').last();
+    const regenInitial = firstAssistant
+      .getByRole('button', { name: 'Regenerate', exact: true })
+      .last();
     await expect(regenInitial).toBeVisible();
     [response] = await Promise.all([
       page.waitForResponse(isAgentsStream, { timeout: 30000 }),
@@ -235,7 +239,9 @@ test.describe('core chat loop', () => {
     // original thread; the view must stay put.
     const latestAssistant = messagesView(page).locator('.message-render').last();
     await latestAssistant.hover();
-    const regenLatest = latestAssistant.locator('button[title="Regenerate"]').last();
+    const regenLatest = latestAssistant
+      .getByRole('button', { name: 'Regenerate', exact: true })
+      .last();
     await expect(regenLatest).toBeVisible();
     [response] = await Promise.all([
       page.waitForResponse(isAgentsStream, { timeout: 30000 }),
@@ -276,7 +282,9 @@ test.describe('core chat loop', () => {
     // forks a fresh root branch that does not contain the later turns.
     const earlyAssistant = messagesView(page).locator('.message-render').nth(1);
     await earlyAssistant.hover();
-    const regenEarly = earlyAssistant.locator('button[title="Regenerate"]').last();
+    const regenEarly = earlyAssistant
+      .getByRole('button', { name: 'Regenerate', exact: true })
+      .last();
     await expect(regenEarly).toBeVisible();
     let [response] = await Promise.all([
       page.waitForResponse(isAgentsStream, { timeout: 30000 }),
@@ -299,7 +307,7 @@ test.describe('core chat loop', () => {
     // long original thread; it must stay intact.
     const lateAssistant = messagesView(page).locator('.message-render').last();
     await lateAssistant.hover();
-    const regenLate = lateAssistant.locator('button[title="Regenerate"]').last();
+    const regenLate = lateAssistant.getByRole('button', { name: 'Regenerate', exact: true }).last();
     await expect(regenLate).toBeVisible();
     [response] = await Promise.all([
       page.waitForResponse(isAgentsStream, { timeout: 30000 }),

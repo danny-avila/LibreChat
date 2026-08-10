@@ -60,6 +60,10 @@ bower_components/
 *.d.ts
 !vite-env.d.ts
 
+# api/ is JS and resolves the `~` alias through api/jsconfig.json; a tsconfig.json
+# here shadows it (tooling sometimes creates an empty one) and breaks e2e resolution
+api/tsconfig.json
+
 # AI
 .clineignore
 .cursor
@@ -92,6 +96,7 @@ src/style - official.css
 /e2e/benchmarks/.test-results/
 /e2e/.generated/
 /e2e/playwright-report/
+/e2e/playwright-report-bombadil/
 /playwright/.cache/
 .DS_Store
 *.code-workspace

@@ -53,7 +53,7 @@ const Dropdown: FC<DropdownProps> = ({
           <ListboxButton
             data-testid={testId}
             className={cn(
-              'relative inline-flex items-center justify-between rounded-md border-gray-50 bg-white py-2 pl-3 pr-8 text-black transition-all duration-100 ease-in-out hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 dark:focus:ring-white dark:focus:ring-offset-gray-700',
+              'relative inline-flex items-center justify-between rounded-md border-border-light bg-surface-secondary py-2 pl-3 pr-8 text-text-primary transition-all duration-100 ease-in-out hover:bg-surface-hover',
               'w-auto',
               className,
             )}
@@ -70,7 +70,7 @@ const Dropdown: FC<DropdownProps> = ({
                 viewBox="0 0 24 24"
                 strokeWidth="2"
                 stroke="currentColor"
-                className="h-4 w-5 rotate-0 transform text-black transition-transform duration-300 ease-in-out dark:text-gray-50"
+                className="h-4 w-5 rotate-0 transform text-text-primary transition-transform duration-300 ease-in-out"
               >
                 <polyline points="6 9 12 15 18 9"></polyline>
               </svg>
@@ -83,7 +83,7 @@ const Dropdown: FC<DropdownProps> = ({
           >
             <ListboxOptions
               className={cn(
-                'absolute z-50 mt-1 flex flex-col items-start gap-1 overflow-auto rounded-lg border border-gray-300 bg-white p-1.5 text-gray-700 shadow-lg transition-opacity focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white',
+                'absolute z-50 mt-1 flex flex-col items-start gap-1 overflow-auto rounded-lg border border-border-medium bg-surface-secondary p-1.5 text-text-primary shadow-lg transition-opacity focus:outline-none',
                 sizeClasses,
                 className,
               )}
@@ -94,7 +94,7 @@ const Dropdown: FC<DropdownProps> = ({
                   key={index}
                   value={item}
                   className={cn(
-                    'relative cursor-pointer select-none rounded border-gray-300 bg-white py-2.5 pl-3 pr-3 text-sm text-gray-700 hover:bg-gray-100 dark:border-gray-300 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600',
+                    'relative cursor-pointer select-none rounded border-border-medium bg-surface-secondary py-2.5 pl-3 pr-3 text-sm text-text-primary hover:bg-surface-hover',
                   )}
                   style={{ width: '100%' }}
                   data-theme={getValue(item)}

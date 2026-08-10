@@ -18,6 +18,7 @@ import {
   getRuntimeBodyPlaceholderFields,
   getMissingRuntimeBodyPlaceholderFields,
   isUserSourced,
+  validateMCPServerConfig,
   requiresEphemeralUserConnection,
 } from '~/mcp/utils';
 
@@ -846,6 +847,29 @@ describe('getMissingRuntimeBodyPlaceholderFields', () => {
         url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
       }),
     ).toEqual([]);
+  });
+});
+
+describe('validateMCPServerConfig', () => {
+  it('preserves server-managed metadata on a valid effective config', () => {
+    const config = {
+      type: 'streamable-http' as const,
+      url: 'https://example.com/mcp',
+      source: 'config' as const,
+      dbId: 'server-123',
+    };
+
+    expect(validateMCPServerConfig(config)).toBe(config);
+    expect(validateMCPServerConfig(config)).toMatchObject({
+      source: 'config',
+      dbId: 'server-123',
+    });
+  });
+
+  it('rejects an incomplete effective config', () => {
+    expect(() => validateMCPServerConfig({ type: 'streamable-http' })).toThrow(
+      'Invalid effective MCP server configuration',
+    );
   });
 });
 

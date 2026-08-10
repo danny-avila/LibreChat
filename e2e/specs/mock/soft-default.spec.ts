@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { TStartupConfig } from 'librechat-data-provider';
 import type { Page } from '@playwright/test';
+import { getPrimaryE2EUser } from '../../setup/users.mock';
+import { cleanupAgent } from './agents.helpers';
 import {
   NEW_CHAT_PATH,
   getAccessToken,
@@ -12,6 +14,9 @@ import {
 
 /** Label of the `softDefault: true` spec in e2e/config/librechat.e2e.yaml. */
 const SOFT_DEFAULT_LABEL = 'E2E Soft Default';
+
+/** Name (URL identity) of the `softDefault: true` spec in e2e/config/librechat.e2e.yaml. */
+const SOFT_DEFAULT_NAME = 'e2e-soft-default';
 
 /** Ephemeral endpoint from e2e/config/librechat.e2e.yaml with no mirroring spec. */
 const EPHEMERAL_ENDPOINT = { label: 'Mock Provider C', model: 'mock-model-c' };
@@ -32,7 +37,7 @@ type AgentResponse = {
   name?: string | null;
 };
 
-async function createAgent(page: Page, name: string): Promise<AgentResponse> {
+async function createAgent(page: Page, name: string, description?: string): Promise<AgentResponse> {
   const token = await getAccessToken(page);
   return requestJson<AgentResponse>(page, {
     path: '/api/agents',
@@ -40,6 +45,7 @@ async function createAgent(page: Page, name: string): Promise<AgentResponse> {
     method: 'POST',
     body: {
       name,
+      ...(description ? { description } : {}),
       provider: 'Mock Provider A',
       model: 'mock-model-a',
       model_parameters: {},
@@ -225,5 +231,83 @@ test.describe('soft default model spec', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
     await expect(modelTrigger(page)).not.toHaveText('Select a model');
+  });
+
+  // Regression: two tabs share localStorage — one on the soft default spec, one on a
+  // configured agent. Refreshing the agent tab stamps the agent as the last setup; a
+  // cold load of `/c/new?spec=<name>` then carried only the spec NAME while the
+  // endpoint and agent_id resurfaced from storage, rendering a chimera (spec chip over
+  // an agent landing/composer). A spec named in the URL must resolve to its full preset.
+  test('a spec named in the URL wins over a previously selected agent on a cold load', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await startFresh(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    const agentName = uniqueName('E2E URL Spec Agent');
+    const agentDescription = 'Powered by E2E Mock';
+    await createAgent(page, agentName, agentDescription);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectAgent(page, agentName);
+
+    // Mirrors refreshing the agent tab: the restored selection is re-stamped as the
+    // last conversation setup.
+    await page.reload({ timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(agentName, { timeout: 15000 });
+
+    await page.goto(`${NEW_CHAT_PATH}?spec=${SOFT_DEFAULT_NAME}`, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    const main = page.getByRole('main');
+    const composer = page.getByRole('textbox', { name: 'Message input' });
+    const user = getPrimaryE2EUser();
+    await expect(composer).toHaveAttribute('placeholder', /Mock Provider A/, { timeout: 15000 });
+    await expect(main).toContainText(user.name, { timeout: 15000 });
+    await expect(main).not.toContainText(agentName);
+    await expect(main).not.toContainText(agentDescription);
+
+    // The mixed state used to be written back to localStorage; a follow-up cold load
+    // of a plain New Chat must stay on the spec, not resurrect the agent.
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+    await expect(main).not.toContainText(agentName);
+  });
+
+  // Regression: a stored agent selection can outlive the agent itself (deletion here;
+  // switching orgs that share browser storage behaves the same, since the other org's
+  // agent id never resolves). The dead pick used to keep suppressing the soft default
+  // and strand a cold New Chat on the agents endpoint with nothing selected. Once the
+  // agent list loads without the stored id, the pick is residue and the soft default
+  // must re-arm.
+  test('a stored agent that no longer exists yields to the soft default on a cold load', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await startFresh(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    const agentName = uniqueName('E2E Stale Agent');
+    const agent = await createAgent(page, agentName);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectAgent(page, agentName);
+
+    await page.reload({ timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(agentName, { timeout: 15000 });
+
+    await cleanupAgent(page, agent.id);
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+    await expect(modelTrigger(page)).not.toHaveText('Select a model');
+
+    // A live selection must still outrank the soft default after the fix: recreate,
+    // select, and confirm the carry-forward behavior is intact on a cold load.
+    const survivorName = uniqueName('E2E Live Agent');
+    await createAgent(page, survivorName);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectAgent(page, survivorName);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(survivorName, { timeout: 15000 });
   });
 });

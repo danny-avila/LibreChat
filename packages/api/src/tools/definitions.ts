@@ -6,7 +6,12 @@
  */
 
 import { Providers } from '@librechat/agents';
-import { isActionTool, splitMCPToolKey, buildServerNameAliases } from 'librechat-data-provider';
+import {
+  Constants,
+  isActionTool,
+  splitMCPToolKey,
+  buildServerNameAliases,
+} from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ToolDefinition } from './classification';
@@ -72,6 +77,8 @@ export interface ActionToolDefinition {
 export interface LoadToolDefinitionsDeps {
   /** Gets MCP server tools - first checks cache, then initializes server if needed */
   getOrFetchMCPServerTools: (userId: string, serverName: string) => Promise<MCPServerTools | null>;
+  /** Bypasses a non-empty stale catalog when it does not contain a selected tool. */
+  refreshMCPServerTools?: (userId: string, serverName: string) => Promise<MCPServerTools | null>;
   /** Checks if a tool name is a known built-in tool */
   isBuiltInTool: (toolName: string) => boolean;
   /** Loads action tool definitions (schemas) from OpenAPI specs */
@@ -85,9 +92,14 @@ export interface LoadToolDefinitionsResult {
   toolDefinitions: (ToolDefinition | LCTool)[];
   toolRegistry: LCToolRegistry;
   hasDeferredTools: boolean;
+  mcpResolution: {
+    expectedToolCount: number;
+    resolvedToolCount: number;
+  };
 }
 
 const mcpToolPattern = /_mcp_/;
+const mcpServerPinPrefix = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
 
 /**
  * Loads tool definitions without creating tool instances.
@@ -110,7 +122,12 @@ export async function loadToolDefinitions(
     rawServerNames,
     accessibleServerNames,
   } = params;
-  const { getOrFetchMCPServerTools, isBuiltInTool, getActionToolDefinitions } = deps;
+  const {
+    getOrFetchMCPServerTools,
+    refreshMCPServerTools,
+    isBuiltInTool,
+    getActionToolDefinitions,
+  } = deps;
   const serverNameAliases = buildServerNameAliases(rawServerNames ?? []);
 
   const isGoogle = provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
@@ -128,6 +145,7 @@ export async function loadToolDefinitions(
     toolDefinitions: [],
     toolRegistry: new Map(),
     hasDeferredTools: false,
+    mcpResolution: { expectedToolCount: 0, resolvedToolCount: 0 },
   };
 
   if (!tools || tools.length === 0) {
@@ -135,12 +153,15 @@ export async function loadToolDefinitions(
   }
 
   const mcpServerToolsCache = new Map<string, MCPServerTools>();
+  const refreshedServerNames = new Set<string>();
   /** Parsed key segment → the RAW server name it resolved to (direct-first). */
   const resolvedServerNames = new Map<string, string>();
   const mcpToolDefs: ToolDefinition[] = [];
   const builtInToolDefs: ToolDefinition[] = [];
   let actionToolDefs: ToolDefinition[] = [];
   const actionToolNames: string[] = [];
+  let expectedMCPToolCount = 0;
+  let resolvedMCPToolCount = 0;
 
   for (const toolName of tools) {
     if (isActionTool(toolName)) {
@@ -177,6 +198,12 @@ export async function loadToolDefinitions(
       }
       continue;
     }
+
+    if (toolName.startsWith(mcpServerPinPrefix)) {
+      continue;
+    }
+
+    expectedMCPToolCount++;
 
     /** Keys carry the normalized server name (raw in pre-normalization data),
      *  so both spellings resolve the boundary. Resolution is DIRECT-FIRST: a
@@ -215,9 +242,21 @@ export async function loadToolDefinitions(
     }
 
     const serverName = resolvedServerNames.get(parsed) ?? parsed;
-    const serverTools = mcpServerToolsCache.get(parsed);
+    let serverTools = mcpServerToolsCache.get(parsed);
     if (!serverTools) {
       continue;
+    }
+
+    const selectedToolMissing = isMCPAllPlaceholder(toolName)
+      ? Object.keys(serverTools).length === 0
+      : !serverTools[toolName]?.function;
+    if (selectedToolMissing && refreshMCPServerTools && !refreshedServerNames.has(serverName)) {
+      refreshedServerNames.add(serverName);
+      const refreshedTools = await refreshMCPServerTools(userId, serverName);
+      if (refreshedTools != null) {
+        mcpServerToolsCache.set(parsed, refreshedTools);
+        serverTools = refreshedTools;
+      }
     }
 
     if (isMCPAllPlaceholder(toolName)) {
@@ -229,6 +268,7 @@ export async function loadToolDefinitions(
             parameters: buildMcpParameters(toolDef.function.parameters),
             serverName,
           });
+          resolvedMCPToolCount++;
         }
       }
       continue;
@@ -242,6 +282,7 @@ export async function loadToolDefinitions(
         parameters: buildMcpParameters(toolDef.function.parameters),
         serverName,
       });
+      resolvedMCPToolCount++;
     }
   }
 
@@ -309,5 +350,9 @@ export async function loadToolDefinitions(
     toolDefinitions: allDefinitions,
     toolRegistry,
     hasDeferredTools,
+    mcpResolution: {
+      expectedToolCount: expectedMCPToolCount,
+      resolvedToolCount: resolvedMCPToolCount,
+    },
   };
 }
