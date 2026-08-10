@@ -249,6 +249,8 @@ export function ThemeProvider({
   const [legacyThemeRGB, setLegacyThemeRGB] = useState<IThemeRGB | undefined>(
     initialThemeState.current.legacyColors,
   );
+  const legacyThemeRGBRef = useRef(legacyThemeRGB);
+  legacyThemeRGBRef.current = legacyThemeRGB;
   const themeDefinitionRef = useRef(themeDefinition);
   themeDefinitionRef.current = themeDefinition;
   const [themeName, setThemeNameState] = useState<string | undefined>(
@@ -345,6 +347,7 @@ export function ThemeProvider({
     }
     themeDefinitionRef.current = definition;
     setThemeDefinitionState(definition);
+    legacyThemeRGBRef.current = undefined;
     setLegacyThemeRGB(undefined);
     writeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
     writeStorage(THEME_COLORS_KEY);
@@ -361,6 +364,7 @@ export function ThemeProvider({
     const legacyColors = definition?.modes.light?.colors;
     themeDefinitionRef.current = definition;
     setThemeDefinitionState(definition);
+    legacyThemeRGBRef.current = legacyColors;
     setLegacyThemeRGB(legacyColors);
     setThemeNameState(definition?.name);
     themeNameRef.current = definition?.name;
@@ -385,6 +389,7 @@ export function ThemeProvider({
     themeDefinitionRef.current = renamedDefinition;
     setThemeDefinitionState(renamedDefinition);
     writeStorage(THEME_DEFINITION_KEY, JSON.stringify(renamedDefinition));
+    writeStorage(THEME_SOURCE_KEY, legacyThemeRGBRef.current ? 'legacy' : 'definition');
   }, []);
 
   useEffect(() => {
@@ -396,6 +401,9 @@ export function ThemeProvider({
     const previous = previousThemeProps.current;
     const definitionChanged = propThemeDefinition !== previous.themeDefinition;
     const legacyColorsChanged = propThemeRGB !== previous.themeRGB;
+    const switchedToLegacyColors =
+      definitionChanged && !propThemeDefinition && propThemeRGB !== undefined;
+    let clearedControlledDefinition = false;
 
     if (definitionChanged || legacyColorsChanged) {
       if (propThemeDefinition) {
@@ -409,10 +417,16 @@ export function ThemeProvider({
       } else if (controlledThemeActive.current) {
         setThemeDefinition(undefined);
         controlledThemeActive.current = false;
+        clearedControlledDefinition = true;
       }
     }
 
-    if (!propThemeDefinition && propThemeName !== previous.themeName) {
+    if (
+      !propThemeDefinition &&
+      (propThemeName !== previous.themeName ||
+        switchedToLegacyColors ||
+        clearedControlledDefinition)
+    ) {
       setThemeName(propThemeName);
     }
     if (initialTheme !== previous.initialTheme && initialTheme && isAppearanceMode(initialTheme)) {

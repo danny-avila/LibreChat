@@ -272,6 +272,37 @@ describe('ThemeProvider', () => {
     expect(document.documentElement.style.getPropertyValue('--text-primary')).not.toBe('');
   });
 
+  it('preserves legacy provenance when a migrated stored theme is renamed', async () => {
+    document.documentElement.style.setProperty('--text-primary', '9 9 9');
+    localStorage.setItem('theme-colors', JSON.stringify({ 'rgb-accent-primary': '1 2 3' }));
+
+    const { unmount } = render(
+      <ThemeProvider initialTheme="light">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    act(() => screen.getByRole('button', { name: 'Rename' }).click());
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('renamed');
+    });
+    expect(localStorage.getItem('theme-source')).toBe('legacy');
+
+    unmount();
+    render(
+      <ThemeProvider initialTheme="light">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('renamed');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
+    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe('9 9 9');
+  });
+
   it('keeps the active definition name synchronized across reloads', async () => {
     render(
       <ThemeProvider
@@ -331,6 +362,62 @@ describe('ThemeProvider', () => {
     });
     expect(document.documentElement).not.toHaveAttribute('data-theme');
     expect(localStorage.getItem('theme-definition')).toBeNull();
+  });
+
+  it('retains a controlled theme name when only controlled colors are removed', async () => {
+    const colors = { 'rgb-accent-primary': '1 2 3' };
+    const { rerender } = render(
+      <ThemeProvider initialTheme="light" themeName="brand" themeRGB={colors}>
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('brand');
+    });
+    rerender(
+      <ThemeProvider initialTheme="light" themeName="brand">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('brand')).toBeInTheDocument();
+    });
+    expect(document.documentElement).not.toHaveAttribute('data-theme');
+    expect(localStorage.getItem('theme-definition')).toBeNull();
+    expect(localStorage.getItem('theme-name')).toBe('brand');
+  });
+
+  it('reapplies an unchanged legacy name when switching away from a definition', async () => {
+    const definition = {
+      version: 1 as const,
+      name: 'native',
+      modes: { light: { colors: { 'rgb-accent-primary': '1 2 3' } } },
+    };
+    const legacyColors = { 'rgb-accent-primary': '4 5 6' };
+    const { rerender } = render(
+      <ThemeProvider initialTheme="light" themeName="brand" themeDefinition={definition}>
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('native');
+    });
+    rerender(
+      <ThemeProvider initialTheme="light" themeName="brand" themeRGB={legacyColors}>
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('brand');
+    });
+    expect(screen.getByText('brand')).toBeInTheDocument();
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('4 5 6');
+    expect(localStorage.getItem('theme-name')).toBe('brand');
+    expect(localStorage.getItem('theme-source')).toBe('legacy');
   });
 
   it('synchronizes valid definition props while ignoring invalid replacements', async () => {
