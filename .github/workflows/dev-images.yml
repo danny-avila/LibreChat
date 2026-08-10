@@ -17,6 +17,9 @@ on:
       - 'Dockerfile.multi'
       - '.dockerignore'
       - '!**.md'
+      # Deployment skills are Markdown the image ships (skill/<name>/SKILL.md);
+      # re-include them after the !**.md exclusion — later patterns win.
+      - 'skill/**/*.md'
 
 permissions:
   contents: read

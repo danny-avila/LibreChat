@@ -68,6 +68,7 @@ jobs:
             dockerfile:
               - 'Dockerfile'
               - '.dockerignore'
+              - '.github/workflows/docker-smoke.yml'
 
       - name: Set up Docker Buildx
         if: github.event_name == 'workflow_dispatch' || steps.paths.outputs.dockerfile == 'true'
