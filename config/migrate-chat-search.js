@@ -1,10 +1,5 @@
 const path = require('path');
-const {
-  migrate,
-  applyRolePasswords,
-  assertRoleSeparation,
-  createSearchPool,
-} = require('@librechat/api');
+const { provisionChatSearch, createSearchPool } = require('@librechat/api');
 
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
@@ -18,6 +13,10 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
  * cannot be one of the chat_search roles, which are created by these migrations
  * and have no password until this finishes. `migrate()` names whichever of those
  * it hits, before issuing any DDL.
+ *
+ * All three CHAT_SEARCH_*_PASSWORD variables are required before anything runs:
+ * a provisioning run that created LOGIN roles and only then discovered a missing
+ * password would leave roles nothing can authenticate as, and report success.
  *
  * Role names are server-wide, so one PostgreSQL server serves one deployment;
  * `migrate()` warns when it finds the roles already present on a server while
@@ -47,37 +46,27 @@ async function main() {
   });
 
   try {
-    const applied = await migrate(pool);
+    /**
+     * The sequence — credentials before any DDL, migrations, verifier-hashed
+     * passwords, then a read-back of the separation the files promise — lives in
+     * `provisionChatSearch`, where it is tested; this script only prints.
+     */
+    const { applied, updated } = await provisionChatSearch(pool);
     console.log(
       applied.length > 0
         ? `Applied ${applied.length} migration(s): ${applied.join(', ')}`
         : 'Schema is already up to date.',
     );
-
-    const updated = await applyRolePasswords(pool);
     console.log(
-      updated.length > 0
-        ? `Set the password for: ${updated.join(', ')}`
-        : 'No role passwords in the environment; roles keep whatever password they already had.',
-    );
-    if (updated.length > 0) {
-      console.log(
+      `Set the password for: ${updated.join(', ')}.\n` +
         'Passwords were hashed here and sent as SCRAM-SHA-256 verifiers, so none of them\n' +
-          'reached the server in the clear or could be written to its statement log.',
-      );
-    }
-
-    /**
-     * Read back what the database actually looks like rather than trusting that
-     * the files above did what they say. This throws, so a run that reaches this
-     * point and returns is a run whose separation held at the moment it finished
-     * — nothing keeps it holding afterwards.
-     */
-    await assertRoleSeparation(pool);
+        'reached the server in the clear or could be written to its statement log.',
+    );
     console.log(
-      'Role separation verified: no application role is a superuser or BYPASSRLS, every\n' +
-        'relation in chat_search is owned by chat_search_owner, and the request reader holds\n' +
-        'nothing beyond SELECT on documents and embeddings.',
+      'Role separation verified: no application role is a superuser, BYPASSRLS, CREATEROLE\n' +
+        'or CREATEDB, every relation in chat_search is owned by chat_search_owner, the\n' +
+        'request reader holds nothing beyond SELECT on documents and embeddings, and the\n' +
+        'row-security policies on those tables are exactly the migrated set.',
     );
   } finally {
     await pool.end().catch(() => undefined);

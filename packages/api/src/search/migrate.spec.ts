@@ -8,6 +8,7 @@ import {
   assertRoleCredentialsConfigured,
   MANAGED_ROLES,
   migrate,
+  provisionChatSearch,
   readMigrations,
   REQUIRED_EXTENSIONS,
   scramSha256Verifier,
@@ -873,5 +874,59 @@ describePg('provisioning a database whose roles the cluster already has', () => 
     warn.mockClear();
     await migrate(pool);
     expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('already exist on this server'));
+  }, 60_000);
+});
+
+const COMPOSE_DB = 'compose';
+
+describePg('provisioning composition', () => {
+  const OLD_ENV = process.env;
+  let pool: SearchPool;
+
+  beforeAll(async () => {
+    pool = await createIsolatedDatabase(COMPOSE_DB);
+  }, 60_000);
+
+  afterAll(async () => {
+    process.env = OLD_ENV;
+    if (pool) {
+      await dropIsolatedDatabase(pool, COMPOSE_DB);
+    }
+  });
+
+  /**
+   * The order is the point: a run that created LOGIN roles and only then
+   * discovered a missing password would leave roles nothing can authenticate
+   * as, and still report success. The refusal has to land before any DDL.
+   */
+  it('refuses to touch the database until every credential is supplied', async () => {
+    process.env = { ...OLD_ENV };
+    delete process.env.CHAT_SEARCH_OWNER_PASSWORD;
+    delete process.env.CHAT_SEARCH_WRITER_PASSWORD;
+    delete process.env.CHAT_SEARCH_READER_PASSWORD;
+
+    await expect(provisionChatSearch(pool)).rejects.toThrow(/missing required role credentials/);
+
+    const { rows } = await pool.query<{ present: boolean }>(
+      "SELECT to_regclass('chat_search.migrations') IS NOT NULL AS present",
+    );
+    expect(rows[0].present).toBe(false);
+  });
+
+  /**
+   * Resolving is itself the separation proof: the last thing the composition
+   * does is read the role and policy state back and throw on any violation.
+   */
+  it('provisions end to end behind the one composition call', async () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: PROVISION_PASSWORD,
+      CHAT_SEARCH_WRITER_PASSWORD: PROVISION_PASSWORD,
+      CHAT_SEARCH_READER_PASSWORD: PROVISION_PASSWORD,
+    };
+
+    const result = await provisionChatSearch(pool);
+    expect(result.applied).toContain('001_schema.sql');
+    expect([...result.updated].sort()).toEqual([...MANAGED_ROLES].sort());
   }, 60_000);
 });

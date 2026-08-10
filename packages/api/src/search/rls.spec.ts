@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { createScope } from '@librechat/data-schemas';
 import type { Scope } from '@librechat/data-schemas';
 import type { SearchClient, SearchPool } from './types';
@@ -233,6 +234,42 @@ describePg('chat_search row level security', () => {
       } finally {
         await pool.query(`REVOKE INSERT ON chat_search.documents FROM ${READER_ROLE}`);
       }
+    });
+  });
+
+  /**
+   * Attribute drift is audited on a throwaway role, never on the managed trio:
+   * role attributes are cluster-global, and flipping CREATEROLE on the real
+   * reader would race every parallel suite's clean-gate assertion. The
+   * throwaway proves the query catches each drifted attribute; the clean-gate
+   * test above proves the default audit covers the managed names.
+   */
+  describe('role attribute drift', () => {
+    const DRIFT_ROLE = `chat_search_test_drift_${randomBytes(4).toString('hex')}`;
+
+    afterEach(async () => {
+      await pool.query(`DROP ROLE IF EXISTS ${DRIFT_ROLE}`);
+    });
+
+    it('catches CREATEROLE, whose holder could rotate the writer password', async () => {
+      await pool.query(`CREATE ROLE ${DRIFT_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS CREATEROLE`);
+      await expect(findRoleViolations(pool, [DRIFT_ROLE])).resolves.toEqual([
+        { role: DRIFT_ROLE, problem: 'has CREATEROLE' },
+      ]);
+    });
+
+    it('catches CREATEDB', async () => {
+      await pool.query(`CREATE ROLE ${DRIFT_ROLE} LOGIN NOSUPERUSER NOBYPASSRLS CREATEDB`);
+      await expect(findRoleViolations(pool, [DRIFT_ROLE])).resolves.toEqual([
+        { role: DRIFT_ROLE, problem: 'has CREATEDB' },
+      ]);
+    });
+
+    it('catches a role stripped of LOGIN', async () => {
+      await pool.query(`CREATE ROLE ${DRIFT_ROLE} NOLOGIN NOSUPERUSER NOBYPASSRLS`);
+      await expect(findRoleViolations(pool, [DRIFT_ROLE])).resolves.toEqual([
+        { role: DRIFT_ROLE, problem: 'cannot LOGIN' },
+      ]);
     });
   });
 
