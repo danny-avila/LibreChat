@@ -4053,6 +4053,9 @@ export class RedisJobStore implements IJobStoreV2 {
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
+      activityPhaseSnapshot: data.activityPhaseSnapshot
+        ? JSON.parse(data.activityPhaseSnapshot)
+        : undefined,
       /** The owning replica's seal capability. `serializeJob` writes every
        *  boolean generically, but this mapper is explicit — omitting it here
        *  drops the flag on every read, so the steer route would compute

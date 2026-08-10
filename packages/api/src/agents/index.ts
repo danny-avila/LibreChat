@@ -42,4 +42,5 @@ export * from './hitl';
 export * from './hooks';
 export * from './steering';
 export * from './activityLabels';
+export * from './activityPhases';
 export * from './toolValidation';

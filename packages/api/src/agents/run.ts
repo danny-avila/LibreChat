@@ -1184,6 +1184,7 @@ export async function createRun({
   subagentUsageSink,
   steering,
   activityLabel,
+  activityPhase,
   hitlCapable = false,
   toolInputValidationErrors,
   streaming = true,
@@ -1262,6 +1263,8 @@ export async function createRun({
    * the hook returns immediately and generates off the critical path.
    */
   activityLabel?: { hook: HookCallback<'PostToolBatch'> };
+  /** Run-wide parent phase collector; registered after child batch labels. */
+  activityPhase?: { hook: HookCallback<'PostToolBatch'> };
   /**
    * Whether the caller implements the HITL pause/resume lifecycle (inspects
    * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
@@ -1630,6 +1633,10 @@ export async function createRun({
   if (activityLabel != null) {
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolBatch', { hooks: [activityLabel.hook] });
+  }
+  if (activityPhase != null) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolBatch', { hooks: [activityPhase.hook] });
   }
   if (steering != null && isSteeringSupported()) {
     hooks = hooks ?? new HookRegistry();

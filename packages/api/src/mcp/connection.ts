@@ -27,6 +27,7 @@ import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { reserveMCPToolsChangedRevision } from './toolsChanged';
 import { isOAuthServer, sanitizeUrlForLogging } from './utils';
+import { isOAuthAuthenticationError } from './errors';
 import { runOutsideTracing } from '~/utils/tracing';
 import { isAddressAllowed } from '~/auth/domain';
 import { withTimeout } from '~/utils/promise';
@@ -1153,6 +1154,7 @@ export class MCPConnection extends EventEmitter {
   private readonly userId?: string;
   private lastPingTime: number;
   private lastConnectionCheckAt: number = 0;
+  private lastConnectionCheckError?: unknown;
   private oauthTokens?: MCPOAuthTokens | null;
   private requestHeaders?: Record<string, string> | null;
   private oauthRequired = false;
@@ -1785,6 +1787,7 @@ export class MCPConnection extends EventEmitter {
     this.on('connectionChange', (state: t.ConnectionState) => {
       this.connectionState = state;
       if (state === 'connected') {
+        this.lastConnectionCheckError = undefined;
         const isReconnect = this.hasConnected;
         this.hasConnected = true;
         this.toolListRefreshSuspended = false;
@@ -2122,7 +2125,7 @@ export class MCPConnection extends EventEmitter {
         }
 
         // Check if it's an OAuth authentication error
-        if (this.isOAuthError(error)) {
+        if (isOAuthAuthenticationError(error)) {
           logger.warn(`${this.getLogPrefix()} OAuth authentication required`);
           this.oauthRequired = true;
           const serverUrl = this.url;
@@ -2318,9 +2321,12 @@ export class MCPConnection extends EventEmitter {
       }
 
       // Check if it's an OAuth authentication error
-      if (this.isOAuthError(error)) {
+      if (isOAuthAuthenticationError(error)) {
         logger.warn(`${this.getLogPrefix()} OAuth authentication error detected`);
+        this.lastConnectionCheckError = error;
+        this.connectionState = 'error';
         this.emit('oauthError', error);
+        return;
       }
 
       /**
@@ -2652,6 +2658,7 @@ export class MCPConnection extends EventEmitter {
       return true;
     }
     this.lastConnectionCheckAt = now;
+    this.lastConnectionCheckError = undefined;
 
     try {
       // Try ping first as it's the lightest check
@@ -2668,6 +2675,7 @@ export class MCPConnection extends EventEmitter {
           (error as Error)?.message.includes('method not found'));
 
       if (!pingUnsupported) {
+        this.lastConnectionCheckError = error;
         logger.error(`${this.getLogPrefix()} Ping failed:`, error);
         return false;
       }
@@ -2700,6 +2708,7 @@ export class MCPConnection extends EventEmitter {
         }
       } catch (capabilityError) {
         // If capability check fails, the connection is likely broken
+        this.lastConnectionCheckError = capabilityError;
         logger.error(`${this.getLogPrefix()} Connection verification failed:`, capabilityError);
         return false;
       }
@@ -2715,6 +2724,14 @@ export class MCPConnection extends EventEmitter {
     return isOAuthServer(this.options);
   }
 
+  public isOAuthAuthenticationError(error: unknown): boolean {
+    return isOAuthAuthenticationError(error);
+  }
+
+  public getLastConnectionCheckError(): unknown {
+    return this.lastConnectionCheckError;
+  }
+
   /**
    * Check if this connection is stale compared to config update time.
    * A connection is stale if it was created before the config was updated.
@@ -2724,47 +2741,6 @@ export class MCPConnection extends EventEmitter {
    */
   public isStale(configUpdatedAt: number): boolean {
     return this.createdAt < configUpdatedAt;
-  }
-
-  private isOAuthError(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
-
-    // Check for error code
-    if ('code' in error) {
-      const code = (error as { code?: number }).code;
-      if (code === 401 || code === 403) {
-        return true;
-      }
-    }
-
-    // Check message for various auth error indicators
-    if ('message' in error && typeof error.message === 'string') {
-      const message = error.message.toLowerCase();
-      // Check for 401 status
-      if (message.includes('401') || message.includes('non-200 status code (401)')) {
-        return true;
-      }
-      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
-      if (message.includes('invalid_token')) {
-        return true;
-      }
-      // Check for invalid_grant (OAuth servers return this for expired/revoked grants)
-      if (message.includes('invalid_grant')) {
-        return true;
-      }
-      // Check for authentication required
-      if (message.includes('authentication required') || message.includes('unauthorized')) {
-        return true;
-      }
-      // Check for missing authorization values (e.g., Amazon Ads MCP returns HTTP 400 with this)
-      if (message.includes('no authorization')) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   /**

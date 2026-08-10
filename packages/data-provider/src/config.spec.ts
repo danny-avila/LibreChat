@@ -377,6 +377,10 @@ describe('allowedAddressesSchema', () => {
       ['[fc00::1]:8080', 'IPv6 unique-local with port'],
       ['[fd00::1]:8080', 'IPv6 unique-local with port'],
       ['[fe80::1]:8080', 'IPv6 link-local with port'],
+      ['[::ffff:10.0.0.5]:8080', 'IPv4-mapped IPv6 of a private address'],
+      ['[64:ff9b::a00:1]:8080', 'NAT64 embedding private 10.0.0.1'],
+      ['[2002:a00:1::]:8080', '6to4 embedding private 10.0.0.1'],
+      ['[2001::ffff:f5ff:fffe]:8080', 'Teredo embedding a private address'],
     ])('accepts "%s" (%s)', (entry) => {
       expect(allowedAddressesSchema.parse([entry])).toEqual([entry]);
     });
@@ -398,6 +402,8 @@ describe('allowedAddressesSchema', () => {
       ['https://internal.example', 'https URL'],
       ['ws://10.0.0.5', 'ws URL'],
       ['10.0.0.0/24', 'CIDR range'],
+      ['[64:ff9b::808:808]:8080', 'NAT64 embedding public 8.8.8.8'],
+      ['[2002:808:808::]:8080', '6to4 embedding public 8.8.8.8'],
       ['/path', 'leading slash / path'],
       ['10.0.0.5/api', 'embedded path'],
       ['localhost', 'bare hostname'],

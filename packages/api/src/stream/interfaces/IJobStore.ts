@@ -1,5 +1,6 @@
 import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
+import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
 
 /**
@@ -89,6 +90,8 @@ export interface SerializableJobData {
    * the discovered tool schemas.
    */
   discoveredTools?: string[];
+  /** Bounded collector state for continuing a phase across HITL resume. */
+  activityPhaseSnapshot?: ActivityPhaseSnapshot;
   /**
    * Whether the replica that OWNS this generation can seal mid-stream
    * (`PreemptBoundary` wiring). Recorded at createJob because the steer route
@@ -257,6 +260,7 @@ export type JobMetadataPatch = Partial<
     | 'isTemporary'
     | 'promptTokens'
     | 'discoveredTools'
+    | 'activityPhaseSnapshot'
     | 'preemptCapable'
     | 'generationProtocolVersion'
   >

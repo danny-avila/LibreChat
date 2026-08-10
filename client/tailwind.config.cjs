@@ -2,6 +2,7 @@
 const {
   createTailwindColors,
 } = require('../packages/client/src/theme/utils/createTailwindColors.js');
+const libreChatTailwindPreset = require('../packages/client/tailwind.preset.cjs');
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -12,6 +13,7 @@ module.exports = {
   ],
   // darkMode: 'class',
   darkMode: ['class'],
+  presets: [libreChatTailwindPreset],
   theme: {
     fontFamily: {
       sans: ['Inter', 'sans-serif'],

@@ -636,6 +636,8 @@ export type TMessageContentParts =
       type: ContentTypes.TEXT;
       text?: string | TextData;
       tool_call_ids?: string[];
+      /** Open Responses semantic channel for assistant text. */
+      phase?: 'commentary' | 'final_answer';
     } & ContentMetadata)
   | ({
       type: ContentTypes.TOOL_CALL;
@@ -655,7 +657,13 @@ export type TMessageContentParts =
        *  never sent to the model (stripped before payload formatting). */
       type: ContentTypes.ACTIVITY_LABEL;
       activity_label?: string;
+      /** Missing means the legacy/per-batch activity label. */
+      activity_label_type?: 'phase';
       tool_call_ids?: string[];
+      /** Parent phase bounds and telemetry. */
+      activity_start_index?: number;
+      activity_count?: number;
+      agent_ids?: string[];
       /** ok = all tools succeeded, failed = all failed, partial = mixed. */
       status?: 'ok' | 'partial' | 'failed';
       pending?: boolean;

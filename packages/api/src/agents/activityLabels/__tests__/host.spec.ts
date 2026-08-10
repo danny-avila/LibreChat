@@ -3,6 +3,7 @@ import type { EndpointDbMethods, ServerRequest } from '~/types';
 import {
   mapCollectedMetadataToUsage,
   resolveActivityConfig,
+  resolveActivityPhaseConfig,
   resolveActivityLabelModel,
 } from '../host';
 
@@ -120,6 +121,52 @@ describe('resolveActivityConfig', () => {
       'agents',
     );
     expect(config.model).toBe('shared-model');
+  });
+});
+
+describe('resolveActivityPhaseConfig', () => {
+  it('is independently opt-in and inherits activity model/endpoint tuning', () => {
+    const config = resolveActivityPhaseConfig(
+      appConfig({
+        openAI: {
+          activityLabel: true,
+          activityModel: 'batch-model',
+          activityEndpoint: 'anthropic',
+        },
+      }),
+      'openAI',
+    );
+    expect(config).toMatchObject({
+      enabled: false,
+      model: 'batch-model',
+      endpoint: 'anthropic',
+    });
+  });
+
+  it('prefers dedicated phase settings and reuses activityCharLimit', () => {
+    const config = resolveActivityPhaseConfig(
+      appConfig({
+        openAI: {
+          activityPhaseLabel: true,
+          activityPhaseModel: 'phase-model',
+          activityModel: 'batch-model',
+          activityPhaseEndpoint: 'google',
+          activityEndpoint: 'anthropic',
+          activityPhasePrompt: 'phase prompt',
+          activityPhaseMaxPerRun: 3,
+          activityCharLimit: 240,
+        },
+      }),
+      'openAI',
+    );
+    expect(config).toEqual({
+      enabled: true,
+      model: 'phase-model',
+      endpoint: 'google',
+      prompt: 'phase prompt',
+      maxPerRun: 3,
+      charLimit: 240,
+    });
   });
 });
 

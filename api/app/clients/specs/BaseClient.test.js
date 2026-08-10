@@ -1,4 +1,4 @@
-const { Constants } = require('librechat-data-provider');
+const { Constants, ContentTypes } = require('librechat-data-provider');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
 function deferred() {
@@ -1795,6 +1795,54 @@ describe('BaseClient', () => {
       );
       expect(userSave[0].text).toBe('Just a question');
       expect(userSave[0].quotes).toBeUndefined();
+    });
+  });
+
+  describe('mergeEditedContent phase boundaries', () => {
+    test('does not merge commentary into a final answer', () => {
+      const existing = [
+        { type: ContentTypes.TEXT, text: 'Checked the deployment. ', phase: 'commentary' },
+      ];
+      const completion = [
+        { type: ContentTypes.TEXT, text: 'Everything is healthy.', phase: 'final_answer' },
+        {
+          type: ContentTypes.ACTIVITY_LABEL,
+          activity_label_type: 'phase',
+          activity_start_index: 0,
+          activity_label: 'Verified deployment health',
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.TEXT)).toEqual([
+        existing[0],
+        completion[0],
+        { ...completion[1], activity_start_index: 1 },
+      ]);
+    });
+
+    test.each([
+      [undefined, 'commentary'],
+      ['commentary', undefined],
+    ])('does not merge phased and unphased text (%s → %s)', (existingPhase, completionPhase) => {
+      const existing = [
+        {
+          type: ContentTypes.TEXT,
+          text: 'Retained text. ',
+          ...(existingPhase != null && { phase: existingPhase }),
+        },
+      ];
+      const completion = [
+        {
+          type: ContentTypes.TEXT,
+          text: 'New text.',
+          ...(completionPhase != null && { phase: completionPhase }),
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.TEXT)).toEqual([
+        existing[0],
+        completion[0],
+      ]);
     });
   });
 });

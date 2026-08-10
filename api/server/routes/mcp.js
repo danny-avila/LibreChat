@@ -825,7 +825,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       }
 
       let mcpManager;
-      let userConnection;
       try {
         mcpManager = getMCPManager(flowState.userId);
         logger.debug(`[MCP OAuth] Attempting to reconnect ${serverName} with new OAuth tokens`);
@@ -833,65 +832,69 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
         if (callbackUser) {
           const user = callbackUser;
           const reconnectAuthority = await validateStoredOAuthAuthority(user);
-          userConnection = await runStoredAuthorityFence(async () =>
-            getMCPAuthorityResolver().useIssuedResolution(reconnectAuthority, async (current) => {
-              const parsedConfig = current.parsedConfig;
-              return await mcpManager.getUserConnection({
-                user: parsedConfig.actor.user,
-                serverName: parsedConfig.serverName,
-                flowManager,
-                serverConfig: parsedConfig.sourceConfig,
-                effectiveServerConfig: parsedConfig.effectiveConfig,
-                securityPolicy: parsedConfig.securityPolicy,
-                customUserVars: parsedConfig.customUserVars,
-                oauthAuthorityScope: parsedConfig.catalogScope,
-                authorityAuthorizationKind: parsedConfig.authorization.kind,
-                refreshAuthorityLifecycle: createMCPRefreshAuthorityLifecycle({
-                  authority: reconnectAuthority,
-                }),
-                tokenMethods: {
-                  findToken: db.findToken,
-                  findTokens: db.findTokens,
-                  updateToken: db.updateToken,
-                  createToken: db.createToken,
-                  deleteTokens: db.deleteTokens,
-                },
-              });
-            }),
-          );
+          const { snapshot, publicationGeneration, discoveryProvenance } =
+            await runStoredAuthorityFence(async () =>
+              getMCPAuthorityResolver().useIssuedResolution(reconnectAuthority, async (current) => {
+                const parsedConfig = current.parsedConfig;
+                return await mcpManager.withUserConnectionLease(
+                  {
+                    user: parsedConfig.actor.user,
+                    serverName: parsedConfig.serverName,
+                    flowManager,
+                    serverConfig: parsedConfig.sourceConfig,
+                    effectiveServerConfig: parsedConfig.effectiveConfig,
+                    securityPolicy: parsedConfig.securityPolicy,
+                    customUserVars: parsedConfig.customUserVars,
+                    oauthAuthorityScope: parsedConfig.catalogScope,
+                    authorityAuthorizationKind: parsedConfig.authorization.kind,
+                    refreshAuthorityLifecycle: createMCPRefreshAuthorityLifecycle({
+                      authority: reconnectAuthority,
+                    }),
+                    tokenMethods: {
+                      findToken: db.findToken,
+                      findTokens: db.findTokens,
+                      updateToken: db.updateToken,
+                      createToken: db.createToken,
+                      deleteTokens: db.deleteTokens,
+                    },
+                  },
+                  async (userConnection) => {
+                    logger.info(
+                      `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
+                    );
 
-          logger.info(
-            `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
-          );
+                    const oauthReconnectionManager = getOAuthReconnectionManager();
+                    oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
 
-          const oauthReconnectionManager = getOAuthReconnectionManager();
-          oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
+                    let snapshot;
+                    if (typeof userConnection.fetchOrderedToolsSnapshot === 'function') {
+                      snapshot = await userConnection.fetchOrderedToolsSnapshot();
+                    } else if (typeof userConnection.fetchToolsSnapshot === 'function') {
+                      snapshot = await userConnection.fetchToolsSnapshot();
+                    } else {
+                      snapshot = { tools: await userConnection.fetchTools(), complete: true };
+                    }
+                    return {
+                      snapshot,
+                      publicationGeneration:
+                        mcpManager.getToolPublicationGeneration?.(userConnection),
+                      discoveryProvenance: userConnection.getDiscoveryProvenance?.() ?? null,
+                    };
+                  },
+                );
+              }),
+            );
 
-          const catalogAuthority = await validateStoredOAuthAuthority(user);
-          const snapshot = await runStoredAuthorityFence(async () =>
-            getMCPAuthorityResolver().useIssuedResolution(catalogAuthority, async () => {
-              if (typeof userConnection.fetchOrderedToolsSnapshot === 'function') {
-                return await userConnection.fetchOrderedToolsSnapshot();
-              }
-              if (typeof userConnection.fetchToolsSnapshot === 'function') {
-                return await userConnection.fetchToolsSnapshot();
-              }
-              return { tools: await userConnection.fetchTools(), complete: true };
-            }),
-          );
           if (!snapshot.complete) {
             logger.warn(
               `[MCP OAuth] Preserving cached tools for ${serverName} because tools/list returned an incomplete snapshot`,
             );
           } else {
-            const tools = snapshot.tools;
-            const publicationGeneration = mcpManager.getToolPublicationGeneration?.(userConnection);
-            const discoveryProvenance = userConnection.getDiscoveryProvenance?.() ?? null;
             const currentScope = await resolveCurrentMCPDiscoveryScope({
               user,
               serverName,
               serverConfig: reconnectAuthority.parsedConfig.sourceConfig,
-              schemas: tools,
+              schemas: snapshot.tools,
               discoveryProvenance,
               oauthRequiredHint: true,
             });
@@ -918,8 +921,12 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
               logger.warn(
                 `[MCP OAuth] Skipping stale discovery result for ${serverName} after callback`,
               );
-              if (typeof mcpManager.disconnectUserConnection === 'function') {
-                await mcpManager.disconnectUserConnection(user.id, serverName, userConnection);
+              if (typeof mcpManager.disconnectUserConnectionIfProvenanceMatches === 'function') {
+                await mcpManager.disconnectUserConnectionIfProvenanceMatches(
+                  user.id,
+                  serverName,
+                  discoveryProvenance,
+                );
               }
             }
           }
@@ -934,22 +941,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           `[MCP OAuth] Failed to reconnect ${serverName} after OAuth, but tokens are saved:`,
           error,
         );
-      } finally {
-        if (
-          callbackUser &&
-          userConnection &&
-          typeof mcpManager?.releaseDetachedUserConnection === 'function'
-        ) {
-          try {
-            await mcpManager.releaseDetachedUserConnection(
-              callbackUser.id,
-              serverName,
-              userConnection,
-            );
-          } catch (error) {
-            logger.warn(`[MCP OAuth] Failed to release detached ${serverName} connection`, error);
-          }
-        }
       }
 
       /** ID of the flow that the tool/connection is waiting for */

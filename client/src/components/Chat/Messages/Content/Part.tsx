@@ -67,6 +67,7 @@ const Part = memo(function Part({
   if (askUserQuestion) {
     return (
       <AskUserQuestion
+        key={askUserQuestion.ask_user_question.actionId}
         actionId={askUserQuestion.ask_user_question.actionId}
         question={askUserQuestion.ask_user_question.question}
       />

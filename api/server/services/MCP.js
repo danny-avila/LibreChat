@@ -737,24 +737,6 @@ function createOAuthEnd({ res, stepId, toolCall, streamId = null, jobCreatedAt }
 }
 
 /**
- * @param {object} params
- * @param {string} params.userId - The ID of the user.
- * @param {string} params.serverName - The name of the server.
- * @param {string} params.toolName - The name of the tool.
- * @param {string} [params.tenantId] - The tenant ID for the current request.
- * @param {FlowStateManager<any>} params.flowManager - The flow manager instance.
- */
-function createAbortHandler({ userId, serverName, toolName, tenantId, flowManager }) {
-  return function () {
-    logger.info(`[MCP][User: ${userId}][${serverName}][${toolName}] Tool call aborted`);
-    const flowId = getOAuthFlowId(userId, serverName, tenantId);
-    // Clean up both mcp_oauth and mcp_get_tokens flows
-    flowManager.failFlow(flowId, 'mcp_oauth', new Error('Tool call aborted'));
-    flowManager.failFlow(flowId, 'mcp_get_tokens', new Error('Tool call aborted'));
-  };
-}
-
-/**
  * @param {Object} params
  * @param {() => Promise<void>} params.runStepEmitter
  * @param {(authURL: string, options?: { expiresAt?: number }) => Promise<void>} params.runStepDeltaEmitter
@@ -825,67 +807,44 @@ async function reconnectServer({
     serverName,
   });
 
-  // Set up abort handler to clean up OAuth flows if request is aborted
-  const tenantId = user?.tenantId ?? getTenantId();
-  const oauthFlowId = getOAuthFlowId(user.id, serverName, tenantId);
-  const abortHandler = () => {
-    logger.info(
-      `[MCP][User: ${user.id}][${serverName}] Tool loading aborted, cleaning up OAuth flows`,
-    );
-    // Clean up both mcp_oauth and mcp_get_tokens flows
-    flowManager.failFlow(oauthFlowId, 'mcp_oauth', new Error('Tool loading aborted'));
-    flowManager.failFlow(oauthFlowId, 'mcp_get_tokens', new Error('Tool loading aborted'));
-  };
-
-  if (signal) {
-    signal.addEventListener('abort', abortHandler, { once: true });
-  }
-
-  try {
-    const runStepEmitter = createRunStepEmitter({
-      res,
-      index,
-      runId,
-      stepId,
-      toolCall,
-      streamId,
-      jobCreatedAt,
-    });
-    const runStepDeltaEmitter = createRunStepDeltaEmitter({
-      res,
-      stepId,
-      toolCall,
-      streamId,
-      jobCreatedAt,
-    });
-    const callback = createOAuthCallback({ runStepEmitter, runStepDeltaEmitter });
-    const oauthStart = createOAuthStart({
-      res,
-      flowId,
-      callback,
-      flowManager,
-    });
-    return await reinitMCPServer({
-      authorityResolution,
-      user,
-      signal,
-      serverName,
-      configServers,
-      oauthStart,
-      flowManager,
-      userMCPAuthMap,
-      requestBody,
-      requestScopedConnections,
-      forceNew: true,
-      returnOnOAuth: false,
-      connectionTimeout: Time.THIRTY_SECONDS,
-    });
-  } finally {
-    // Clean up abort handler to prevent memory leaks
-    if (signal) {
-      signal.removeEventListener('abort', abortHandler);
-    }
-  }
+  const runStepEmitter = createRunStepEmitter({
+    res,
+    index,
+    runId,
+    stepId,
+    toolCall,
+    streamId,
+    jobCreatedAt,
+  });
+  const runStepDeltaEmitter = createRunStepDeltaEmitter({
+    res,
+    stepId,
+    toolCall,
+    streamId,
+    jobCreatedAt,
+  });
+  const callback = createOAuthCallback({ runStepEmitter, runStepDeltaEmitter });
+  const oauthStart = createOAuthStart({
+    res,
+    flowId,
+    callback,
+    flowManager,
+  });
+  return await reinitMCPServer({
+    authorityResolution,
+    user,
+    signal,
+    serverName,
+    configServers,
+    oauthStart,
+    flowManager,
+    userMCPAuthMap,
+    requestBody,
+    requestScopedConnections,
+    forceNew: true,
+    returnOnOAuth: false,
+    connectionTimeout: Time.THIRTY_SECONDS,
+  });
 }
 
 /**
@@ -1359,11 +1318,6 @@ function createToolInstance({
   const _call = async (toolArguments, config) => {
     const requestedUser = config?.configurable?.user ?? capturedUser;
     const userId = requestedUser?.id || config?.configurable?.user_id || capturedUser?.id;
-    /** @type {ReturnType<typeof createAbortHandler>} */
-    let abortHandler = null;
-    /** @type {AbortSignal} */
-    let derivedSignal = null;
-
     try {
       const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
       const requestBody = config?.configurable?.requestBody ?? capturedRequestBody;
@@ -1394,7 +1348,7 @@ function createToolInstance({
       }
       const flowsCache = getLogStores(CacheKeys.FLOWS);
       const flowManager = getFlowStateManager(flowsCache);
-      derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
+      const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
@@ -1418,12 +1372,6 @@ function createToolInstance({
         streamId,
         jobCreatedAt,
       });
-
-      if (derivedSignal) {
-        const tenantId = config?.configurable?.user?.tenantId ?? getTenantId();
-        abortHandler = createAbortHandler({ userId, serverName, toolName, tenantId, flowManager });
-        derivedSignal.addEventListener('abort', abortHandler, { once: true });
-      }
 
       const result = await mcpManager.callTool({
         serverName,
@@ -1525,11 +1473,6 @@ function createToolInstance({
       throw new Error(
         `[MCP][${serverName}][${toolName}] tool call failed${error?.message ? `: ${error?.message}` : '.'}`,
       );
-    } finally {
-      // Clean up abort handler to prevent memory leaks
-      if (abortHandler && derivedSignal) {
-        derivedSignal.removeEventListener('abort', abortHandler);
-      }
     }
   };
 

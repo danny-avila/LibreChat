@@ -475,6 +475,11 @@ const mockStableOAuthAuthorityPhases = (
   };
 };
 
+const createLeasedMcpManager = (connection, overrides = {}) => ({
+  ...overrides,
+  withUserConnectionLease: jest.fn((_options, useConnection) => useConnection(connection)),
+});
+
 describe('MCP Routes', () => {
   let app;
   let mongoServer;
@@ -1408,11 +1413,9 @@ describe('MCP Routes', () => {
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
 
-      const mockMcpManager = {
-        getUserConnection: jest.fn().mockResolvedValue({
-          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
-        }),
-      };
+      const mockMcpManager = createLeasedMcpManager({
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
+      });
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
         clearReconnection: jest.fn(),
@@ -1474,11 +1477,9 @@ describe('MCP Routes', () => {
         MCPTokenStorage.storeTokens.mockResolvedValue();
         mockRegistryInstance.getServerConfig.mockResolvedValue({});
 
-        const mockMcpManager = {
-          getUserConnection: jest.fn().mockResolvedValue({
-            fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
-          }),
-        };
+        const mockMcpManager = createLeasedMcpManager({
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
+        });
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
         require('~/config').getOAuthReconnectionManager.mockReturnValue({
           clearReconnection: jest.fn(),
@@ -1536,11 +1537,7 @@ describe('MCP Routes', () => {
         const fetchOrderedToolsSnapshot = jest
           .fn()
           .mockResolvedValue({ tools: fetchedTools, complete: true });
-        const mockMcpManager = {
-          getUserConnection: jest.fn().mockResolvedValue({
-            fetchOrderedToolsSnapshot,
-          }),
-        };
+        const mockMcpManager = createLeasedMcpManager({ fetchOrderedToolsSnapshot });
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
         require('~/config').getOAuthReconnectionManager.mockReturnValue({
           clearReconnection: jest.fn(),
@@ -1559,8 +1556,10 @@ describe('MCP Routes', () => {
           role: undefined,
           tenantId: undefined,
         });
-        expect(mockMcpManager.getUserConnection).toHaveBeenCalledWith(
+        expect(fetchOrderedToolsSnapshot).toHaveBeenCalledTimes(1);
+        expect(mockMcpManager.withUserConnectionLease).toHaveBeenCalledWith(
           expect.objectContaining({ serverConfig: mergedServerConfig }),
+          expect.any(Function),
         );
         expect(updateMCPServerTools).toHaveBeenCalledWith({
           tenantId: null,
@@ -1600,11 +1599,11 @@ describe('MCP Routes', () => {
         mockResolveAllMcpConfigs.mockResolvedValueOnce({
           'test-server': { type: 'streamable-http', url: 'https://mcp.example.com' },
         });
-        require('~/config').getMCPManager.mockReturnValue({
-          getUserConnection: jest.fn().mockResolvedValue({
+        require('~/config').getMCPManager.mockReturnValue(
+          createLeasedMcpManager({
             fetchTools: jest.fn().mockResolvedValue(fetchedTools),
           }),
-        });
+        );
         require('~/config').getOAuthReconnectionManager.mockReturnValue({
           clearReconnection: jest.fn(),
         });
@@ -1647,10 +1646,12 @@ describe('MCP Routes', () => {
               .mockResolvedValue([{ name: 'search', inputSchema: { type: 'object' } }]),
             getDiscoveryProvenance: jest.fn().mockReturnValue(discoveryProvenance),
           };
-          const mcpManager = {
-            getUserConnection: jest.fn().mockResolvedValue(userConnection),
-            disconnectUserConnection: jest.fn().mockResolvedValue(undefined),
-          };
+          const disconnectUserConnectionIfProvenanceMatches = jest
+            .fn()
+            .mockResolvedValue(undefined);
+          const mcpManager = createLeasedMcpManager(userConnection, {
+            disconnectUserConnectionIfProvenanceMatches,
+          });
 
           getLogStores.mockReturnValue({});
           require('~/config').getFlowStateManager.mockReturnValue(flowManager);
@@ -1700,10 +1701,10 @@ describe('MCP Routes', () => {
             oauthRequiredHint: true,
           });
           expect(updateMCPServerTools).not.toHaveBeenCalled();
-          expect(mcpManager.disconnectUserConnection).toHaveBeenCalledWith(
+          expect(disconnectUserConnectionIfProvenanceMatches).toHaveBeenCalledWith(
             'test-user-id',
             'test-server',
-            userConnection,
+            discoveryProvenance,
           );
         },
       );
@@ -1753,13 +1754,9 @@ describe('MCP Routes', () => {
           [`mcp_test-server`]: { LITELLM_KEY: 'sk-real-user-key' },
         });
 
-        const mockMcpManager = {
-          getUserConnection: jest.fn().mockResolvedValue({
-            fetchToolsSnapshot: jest
-              .fn()
-              .mockResolvedValue({ tools: fetchedTools, complete: true }),
-          }),
-        };
+        const mockMcpManager = createLeasedMcpManager({
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: fetchedTools, complete: true }),
+        });
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
         require('~/config').getOAuthReconnectionManager.mockReturnValue({
           clearReconnection: jest.fn(),
@@ -1777,8 +1774,9 @@ describe('MCP Routes', () => {
           servers: ['test-server'],
           findPluginAuthsByKeys: require('~/models').findPluginAuthsByKeys,
         });
-        expect(mockMcpManager.getUserConnection).toHaveBeenCalledWith(
+        expect(mockMcpManager.withUserConnectionLease).toHaveBeenCalledWith(
           expect.objectContaining({ customUserVars: { LITELLM_KEY: 'sk-real-user-key' } }),
+          expect.any(Function),
         );
       });
 
@@ -1821,13 +1819,9 @@ describe('MCP Routes', () => {
         mockRegistryInstance.getServerConfig.mockResolvedValue({});
         require('@librechat/api').getUserMCPAuthMap.mockClear();
 
-        const mockMcpManager = {
-          getUserConnection: jest.fn().mockResolvedValue({
-            fetchToolsSnapshot: jest
-              .fn()
-              .mockResolvedValue({ tools: fetchedTools, complete: true }),
-          }),
-        };
+        const mockMcpManager = createLeasedMcpManager({
+          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: fetchedTools, complete: true }),
+        });
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
         require('~/config').getOAuthReconnectionManager.mockReturnValue({
           clearReconnection: jest.fn(),
@@ -1841,8 +1835,9 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(302);
         expect(require('@librechat/api').getUserMCPAuthMap).not.toHaveBeenCalled();
-        expect(mockMcpManager.getUserConnection).toHaveBeenCalledWith(
+        expect(mockMcpManager.withUserConnectionLease).toHaveBeenCalledWith(
           expect.objectContaining({ customUserVars: undefined }),
+          expect.any(Function),
         );
       });
 
@@ -1958,7 +1953,9 @@ describe('MCP Routes', () => {
         }),
       };
       const mockMcpManager = {
-        getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
+        withUserConnectionLease: jest.fn((_options, useConnection) =>
+          useConnection(mockUserConnection),
+        ),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -2006,7 +2003,7 @@ describe('MCP Routes', () => {
       );
       const storeInvocation = MCPTokenStorage.storeTokens.mock.invocationCallOrder[0];
       const flowCompletionInvocation = mockFlowManager.completeFlow.mock.invocationCallOrder[0];
-      const connectInvocation = mockMcpManager.getUserConnection.mock.invocationCallOrder[0];
+      const connectInvocation = mockMcpManager.withUserConnectionLease.mock.invocationCallOrder[0];
       expect(storeInvocation).toBeLessThan(flowCompletionInvocation);
       expect(storeInvocation).toBeLessThan(connectInvocation);
       expect(mockFlowManager.completeFlow).toHaveBeenCalledWith(
@@ -2058,11 +2055,11 @@ describe('MCP Routes', () => {
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
         clearReconnection: jest.fn(),
       });
-      require('~/config').getMCPManager.mockReturnValue({
-        getUserConnection: jest.fn().mockResolvedValue({
+      require('~/config').getMCPManager.mockReturnValue(
+        createLeasedMcpManager({
           fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
-      });
+      );
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
       getCachedTools.mockResolvedValue({});
       setCachedTools.mockResolvedValue();
@@ -2138,11 +2135,11 @@ describe('MCP Routes', () => {
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
         clearReconnection: jest.fn(),
       });
-      require('~/config').getMCPManager.mockReturnValue({
-        getUserConnection: jest.fn().mockResolvedValue({
+      require('~/config').getMCPManager.mockReturnValue(
+        createLeasedMcpManager({
           fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
-      });
+      );
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
       getCachedTools.mockResolvedValue({});
       setCachedTools.mockResolvedValue();
@@ -2205,11 +2202,11 @@ describe('MCP Routes', () => {
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
         clearReconnection: jest.fn(),
       });
-      require('~/config').getMCPManager.mockReturnValue({
-        getUserConnection: jest.fn().mockResolvedValue({
+      require('~/config').getMCPManager.mockReturnValue(
+        createLeasedMcpManager({
           fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
-      });
+      );
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
       getCachedTools.mockResolvedValue({});
       setCachedTools.mockResolvedValue();
@@ -2268,11 +2265,11 @@ describe('MCP Routes', () => {
       require('~/config').getOAuthReconnectionManager.mockReturnValue({
         clearReconnection: jest.fn(),
       });
-      require('~/config').getMCPManager.mockReturnValue({
-        getUserConnection: jest.fn().mockResolvedValue({
+      require('~/config').getMCPManager.mockReturnValue(
+        createLeasedMcpManager({
           fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
         }),
-      });
+      );
       const { getCachedTools, setCachedTools } = require('~/server/services/Config');
       getCachedTools.mockResolvedValue({});
       setCachedTools.mockResolvedValue();
@@ -2400,7 +2397,7 @@ describe('MCP Routes', () => {
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
       const mockMcpManager = {
-        getUserConnection: jest.fn().mockRejectedValue(new Error('Reconnection failed')),
+        withUserConnectionLease: jest.fn().mockRejectedValue(new Error('Reconnection failed')),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -2458,7 +2455,7 @@ describe('MCP Routes', () => {
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
       const mockMcpManager = {
-        getUserConnection: jest.fn(),
+        withUserConnectionLease: jest.fn(),
       };
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
@@ -2477,7 +2474,7 @@ describe('MCP Routes', () => {
       expect(response.status).toBe(302);
       expect(response.headers.location).toBe(`${basePath}/oauth/error?error=callback_failed`);
       expect(mockFlowManager.completeFlow).not.toHaveBeenCalled();
-      expect(mockMcpManager.getUserConnection).not.toHaveBeenCalled();
+      expect(mockMcpManager.withUserConnectionLease).not.toHaveBeenCalled();
     });
 
     it('should use original flow state credentials when storing tokens', async () => {
@@ -2526,9 +2523,7 @@ describe('MCP Routes', () => {
       const mockUserConnection = {
         fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
       };
-      const mockMcpManager = {
-        getUserConnection: jest.fn().mockResolvedValue(mockUserConnection),
-      };
+      const mockMcpManager = createLeasedMcpManager(mockUserConnection);
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
       require('~/config').getOAuthReconnectionManager = jest.fn().mockReturnValue({
         clearReconnection: jest.fn(),
@@ -3713,11 +3708,9 @@ describe('MCP Routes', () => {
       };
       require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
 
-      const mockMcpManager = {
-        getUserConnection: jest.fn().mockResolvedValue({
-          fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
-        }),
-      };
+      const mockMcpManager = createLeasedMcpManager({
+        fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
+      });
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
       const flowId = 'test-user-id:test-server';
@@ -3773,15 +3766,15 @@ describe('MCP Routes', () => {
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
 
-      const mockMcpManager = {
-        getUserConnection: jest.fn().mockResolvedValue({
+      const mockMcpManager = createLeasedMcpManager(
+        {
           fetchToolsSnapshot: jest.fn().mockResolvedValue({
             tools: [{ name: 'test-tool', description: 'Test tool' }],
             complete: true,
           }),
-        }),
-        getToolPublicationGeneration: jest.fn().mockReturnValue('oauth-connection-generation'),
-      };
+        },
+        { getToolPublicationGeneration: jest.fn().mockReturnValue('oauth-connection-generation') },
+      );
       require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
 
       const flowId = 'test-user-id:test-server';
@@ -3835,15 +3828,19 @@ describe('MCP Routes', () => {
       mockOAuthCompletion(mockTokens);
       MCPTokenStorage.storeTokens.mockResolvedValue();
       mockRegistryInstance.getServerConfig.mockResolvedValue({});
-      require('~/config').getMCPManager.mockReturnValue({
-        getUserConnection: jest.fn().mockResolvedValue({
-          fetchToolsSnapshot: jest.fn().mockResolvedValue({
-            tools: [{ name: 'partial-tool', description: 'Only the first page' }],
-            complete: false,
-          }),
-        }),
-        getToolPublicationGeneration: jest.fn().mockReturnValue('oauth-connection-generation'),
-      });
+      require('~/config').getMCPManager.mockReturnValue(
+        createLeasedMcpManager(
+          {
+            fetchToolsSnapshot: jest.fn().mockResolvedValue({
+              tools: [{ name: 'partial-tool', description: 'Only the first page' }],
+              complete: false,
+            }),
+          },
+          {
+            getToolPublicationGeneration: jest.fn().mockReturnValue('oauth-connection-generation'),
+          },
+        ),
+      );
 
       const flowId = 'test-user-id:test-server';
       const csrfToken = generateTestCsrfToken(flowId);
@@ -3931,12 +3928,8 @@ describe('MCP Routes', () => {
         fetchTools: jest.fn().mockResolvedValue([]),
         getDiscoveryProvenance: jest.fn().mockReturnValue(null),
       };
-      const getUserConnection = jest.fn().mockResolvedValue(userConnection);
-      const releaseDetachedUserConnection = jest.fn().mockResolvedValue(false);
-      require('~/config').getMCPManager.mockReturnValue({
-        getUserConnection,
-        releaseDetachedUserConnection,
-      });
+      const mcpManager = createLeasedMcpManager(userConnection);
+      require('~/config').getMCPManager.mockReturnValue(mcpManager);
 
       const response = await request(app)
         .get(`/api/mcp/test-server/oauth/callback?code=test-code&state=${flowId}`)
@@ -3947,7 +3940,7 @@ describe('MCP Routes', () => {
         { tenantId: 'tenant-abc' },
         expect.any(Function),
       );
-      expect(getUserConnection).toHaveBeenCalledWith(
+      expect(mcpManager.withUserConnectionLease).toHaveBeenCalledWith(
         expect.objectContaining({
           user: {
             id: 'user123',
@@ -3956,13 +3949,9 @@ describe('MCP Routes', () => {
             idOnTheSource: null,
           },
         }),
+        expect.any(Function),
       );
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalled();
-      expect(releaseDetachedUserConnection).toHaveBeenCalledWith(
-        'user123',
-        'test-server',
-        userConnection,
-      );
 
       const basePath = getBasePath();
       expect(response.headers.location).toContain(`${basePath}/oauth/success`);

@@ -65,7 +65,7 @@ jest.mock('~/utils', () => ({
       : name,
   /** Real implementations: the group header resolves its text through these,
    *  so stubbing them out would hide the header logic under test. */
-  getActivityLabelPart: jest.requireActual('~/utils/activityLabels').getActivityLabelPart,
+  getBatchActivityLabelPart: jest.requireActual('~/utils/activityLabels').getBatchActivityLabelPart,
   getActivityLabelText: jest.requireActual('~/utils/activityLabels').getActivityLabelText,
 }));
 

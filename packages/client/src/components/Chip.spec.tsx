@@ -29,4 +29,21 @@ describe('Chip', () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
     expect(onParentClick).not.toHaveBeenCalled();
   });
+
+  it('exposes theme-owned shape and density recipes', () => {
+    render(
+      <Chip size="theme" shape="theme" onRemove={jest.fn()} removeLabel="Remove theme">
+        Themeable
+      </Chip>,
+    );
+
+    expect(screen.getByText('Themeable').parentElement).toHaveClass(
+      'h-theme-control',
+      'rounded-theme-control',
+      'gap-theme-compact',
+    );
+    expect(screen.getByRole('button', { name: 'Remove theme' })).toHaveClass(
+      'rounded-theme-control-round',
+    );
+  });
 });

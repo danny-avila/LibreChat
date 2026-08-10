@@ -162,6 +162,30 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
     AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
     expect(ctx.contentParts).toEqual([textPart('a'), textPart('b')]);
   });
+
+  it('rebases phase bounds across skill prepends and sequential filtering', () => {
+    const reasoning = { type: ContentTypes.THINK, think: 'checking' };
+    const activityTool = toolCallPart('activity-tool');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Resolved the session issue',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+    };
+    const final = textPart('final');
+    const previousParts = [reasoning, activityTool, phase, final];
+    const skillCard = toolCallPart('manual-skill');
+    const ctx = {
+      options: { agent: { hide_sequential_outputs: true } },
+      contentParts: [skillCard, ...previousParts],
+    };
+
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(ctx.contentParts).toEqual([skillCard, activityTool, phase, final]);
+    expect(phase.activity_start_index).toBe(1);
+  });
 });
 
 describe('AgentClient - startup telemetry', () => {

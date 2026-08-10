@@ -19,6 +19,7 @@ import {
 } from '~/mcp/catalog';
 import { MCPTokenStorage, MCPOAuthHandler, ReauthenticationRequiredError } from '~/mcp/oauth';
 import { MockKeyv, createOAuthMCPServer } from './helpers/oauthTestServer';
+import { OAuthLifecycleRelay } from '~/mcp/oauth/pending';
 import { FlowStateManager } from '~/flow/manager';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -92,6 +93,44 @@ describe('MCP OAuth Race Condition Fixes', () => {
         },
         'user',
       );
+
+    it('does not overwrite a newer prompt while inspecting stored flow state', async () => {
+      const ownerOAuthStart = jest.fn().mockResolvedValue(undefined);
+      const waiterOAuthStart = jest.fn().mockResolvedValue(undefined);
+      let resolveFlow: ((flow: object) => void) | undefined;
+      const flowManager = {
+        getFlowState: jest.fn(
+          () =>
+            new Promise<object>((resolve) => {
+              resolveFlow = resolve;
+            }),
+        ),
+      };
+      const relay = new OAuthLifecycleRelay({
+        oauthStart: ownerOAuthStart,
+        logPrefix: '[MCP][test]',
+      });
+
+      await relay.start('https://auth.example.com/old');
+      const addWaiter = relay.add({
+        oauthStart: waiterOAuthStart,
+        flowManager: flowManager as never,
+        userId: 'user-1',
+        serverName: 'test-server',
+      });
+
+      expect(flowManager.getFlowState).toHaveBeenCalledTimes(1);
+      await relay.start('https://auth.example.com/new');
+      resolveFlow?.({
+        createdAt: Date.now(),
+        metadata: { authorizationUrl: 'https://auth.example.com/old' },
+        status: 'PENDING',
+      });
+      await addWaiter;
+
+      expect(waiterOAuthStart).toHaveBeenCalledTimes(1);
+      expect(waiterOAuthStart).toHaveBeenCalledWith('https://auth.example.com/new', undefined);
+    });
 
     it('should return the same pending promise for concurrent getUserConnection calls', async () => {
       const { UserConnectionManager } = await import('~/mcp/UserConnectionManager');
@@ -335,6 +374,9 @@ describe('MCP OAuth Race Condition Fixes', () => {
             await oauthOptions.oauthStart?.(authorizationUrl);
           }
           await connectionReleased;
+          if (oauthOptions && 'oauthEnd' in oauthOptions) {
+            await oauthOptions.oauthEnd?.();
+          }
           return mockConnection as never;
         });
 
@@ -355,12 +397,14 @@ describe('MCP OAuth Race Condition Fixes', () => {
         await flowManager.initFlow(`${user.id}:${serverName}`, 'mcp_oauth', { authorizationUrl });
 
         const firstOAuthStart = jest.fn().mockResolvedValue(undefined);
+        const firstOAuthEnd = jest.fn().mockRejectedValue(new Error('owner response is stale'));
         const firstConnection = manager.getUserConnection({
           serverName,
           user: user as never,
           flowManager: flowManager as never,
           tokenMethods: tokenMethods as never,
           oauthStart: firstOAuthStart,
+          oauthEnd: firstOAuthEnd,
         });
         for (let i = 0; i < 20 && firstOAuthStart.mock.calls.length === 0; i++) {
           await new Promise((resolve) => setTimeout(resolve, 5));
@@ -368,22 +412,30 @@ describe('MCP OAuth Race Condition Fixes', () => {
         expect(firstOAuthStart).toHaveBeenCalledWith(authorizationUrl, undefined);
 
         const joinedOAuthStart = jest.fn().mockResolvedValue(undefined);
+        const joinedOAuthEnd = jest.fn().mockResolvedValue(undefined);
         const joinedConnection = manager.getUserConnection({
           serverName,
           user: user as never,
           flowManager: flowManager as never,
           tokenMethods: tokenMethods as never,
           oauthStart: joinedOAuthStart,
+          oauthEnd: joinedOAuthEnd,
         });
+
+        for (let i = 0; i < 20 && joinedOAuthStart.mock.calls.length === 0; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+        expect(joinedOAuthStart).toHaveBeenCalledWith(
+          authorizationUrl,
+          expect.objectContaining({ expiresAt: expect.any(Number) }),
+        );
 
         releaseConnection();
         const [conn1, conn2] = await Promise.all([firstConnection, joinedConnection]);
 
         expect(conn1).toBe(conn2);
-        expect(joinedOAuthStart).toHaveBeenCalledWith(
-          authorizationUrl,
-          expect.objectContaining({ expiresAt: expect.any(Number) }),
-        );
+        expect(firstOAuthEnd).toHaveBeenCalledTimes(1);
+        expect(joinedOAuthEnd).toHaveBeenCalledTimes(1);
         expect(createSpy).toHaveBeenCalledTimes(1);
       } finally {
         releaseConnection();

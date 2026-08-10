@@ -34,6 +34,7 @@ const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
 const STEER_LATE_REPLY_MARKER = 'E2E_STEER_LATE_REPLY:';
 const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
+const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
@@ -68,6 +69,7 @@ const STEER_LATE_FINAL_TEXT = 'E2E steer late reply done';
 const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
 const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
+const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const ORDERED_CHUNK_DELAY_MS = 2;
 const ORDERED_REPLY_PIECES = 64;
@@ -1148,6 +1150,41 @@ function activityReplyResponses(label, toolNames) {
   };
 }
 
+/**
+ * Pause a real agent run at the ask_user_question tool. The resume controller
+ * rebuilds the graph with an empty input-message list, so the test hook selects
+ * its ordinary mock reply for the resumed model turn. This deliberately tests
+ * the production checkpoint/resume seam rather than simulating a pause in the
+ * browser fixture.
+ */
+function askUserQuestionResponses(label, toolNames) {
+  if (!toolNames.has(ASK_USER_QUESTION_TOOL_NAME)) {
+    return {
+      responses: [
+        `E2E ask user question unavailable: ${ASK_USER_QUESTION_TOOL_NAME} was not advertised.`,
+      ],
+    };
+  }
+  return {
+    responses: [''],
+    toolCalls: [
+      {
+        id: `call_e2e_ask_user_question_${label}`,
+        name: ASK_USER_QUESTION_TOOL_NAME,
+        args: {
+          question: `Which environment should Bombadil use for ${label}?`,
+          description: 'This deterministic pause exercises the HITL answer and resume lifecycle.',
+          options: [
+            { label: 'Staging', value: 'staging' },
+            { label: 'Production', value: 'production' },
+          ],
+        },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
 function findLastToolMessageText(messages, requiredToken) {
   for (let index = (messages ?? []).length - 1; index >= 0; index--) {
     const message = messages[index];
@@ -2021,6 +2058,11 @@ function resolveResponses({ graph, messages, text, toolNames }) {
   const activityLabel = getMarkerValue(text, ACTIVITY_REPLY_MARKER);
   if (activityLabel) {
     return activityReplyResponses(activityLabel, toolNames);
+  }
+
+  const askUserQuestionLabel = getMarkerValue(text, ASK_USER_QUESTION_MARKER);
+  if (askUserQuestionLabel) {
+    return askUserQuestionResponses(askUserQuestionLabel, toolNames);
   }
 
   if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {

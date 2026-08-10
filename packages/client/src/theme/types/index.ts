@@ -249,3 +249,39 @@ export interface Theme {
   name: string;
   colors: IThemeRGB;
 }
+
+export type ThemeMode = 'light' | 'dark';
+
+export interface IThemeAppearance {
+  controlRadius: string;
+  roundControlRadius: string;
+  surfaceRadius: string;
+  largeSurfaceRadius: string;
+  controlHeight: string;
+  spaceCompact: string;
+  spaceNormal: string;
+  fontFamily: string;
+  elevationSurface: string;
+  motionFast: string;
+  motionNormal: string;
+}
+
+export interface ThemeModeDefinition {
+  colors?: IThemeRGB;
+  appearance?: Partial<IThemeAppearance>;
+}
+
+/** Versioned, data-only theme input. Missing values resolve against LibreChat defaults. */
+export interface ThemeDefinition {
+  version: 1;
+  name: string;
+  modes: Partial<Record<ThemeMode, ThemeModeDefinition>>;
+}
+
+export interface ResolvedThemeDefinition {
+  version: 1;
+  name: string;
+  mode: ThemeMode;
+  colors: Required<IThemeRGB>;
+  appearance: IThemeAppearance;
+}
