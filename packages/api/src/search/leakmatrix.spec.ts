@@ -18,6 +18,15 @@ import { READER_ROLE } from './roles';
 import { fuseByRrf } from './fusion';
 
 /**
+ * A single assertion from `unknown`, kept in one place: these tests hand the
+ * runtime checks a value the type system already rejects, to prove the checks
+ * catch it anyway.
+ */
+function forge<T>(value: unknown): T {
+  return value as T;
+}
+
+/**
  * LEAK MATRIX — PostgreSQL half.
  *
  * {exact, trigram, FTS, vector} x {messages, conversations, shared-links},
@@ -340,19 +349,19 @@ describePg('leak matrix (PostgreSQL)', () => {
      * must fail before any SQL is emitted.
      */
     it.each(ARM_NAMES)('refuses to emit the %s arm from a forged scoped query', (arm) => {
-      const forged = {
+      const forged = forge<ReturnType<typeof scopedQuery>>({
         text: 'true',
         values: [],
         nextIndex: 1,
         scope: { tenantId: 'tenant-a', userId: 'user-1' },
         kind: 'message',
-      } as unknown as ReturnType<typeof scopedQuery>;
+      });
 
       expect(() => rawArmBuilders[arm](forged)).toThrow(/no Scope supplied/);
     });
 
     it('refuses to build a scoped query from an unbranded scope', () => {
-      const forged = { tenantId: 'tenant-a', userId: 'user-1' } as unknown as Scope;
+      const forged = forge<Scope>({ tenantId: 'tenant-a', userId: 'user-1' });
       expect(() => scopedQuery(forged, 'message')).toThrow(/no Scope supplied/);
     });
 

@@ -15,6 +15,15 @@ const asScope = (tenantId: string, userId: string): Scope => createScope({ tenan
 /** Everything a caller could put on a hand-rolled scope except the brand itself. */
 type ScopeShaped = Partial<Scope> & { predicateSql?: string };
 
+/**
+ * A single assertion from `unknown`, kept in one place: these tests hand the
+ * runtime checks a value the type system already rejects, to prove the checks
+ * catch it anyway.
+ */
+function forge<T>(value: unknown): T {
+  return value as T;
+}
+
 describe('scope resolution', () => {
   it('normalizes an absent tenant to the base sentinel before failing closed', async () => {
     await tenantStorage.run({ userId: 'alice' }, async () => {
@@ -87,21 +96,21 @@ describe('PostgreSQL scope rendering', () => {
   });
 
   it('refuses an unbranded scope object', () => {
-    const forged = { tenantId: 'acme', userId: 'alice' } as unknown as Scope;
+    const forged = forge<Scope>({ tenantId: 'acme', userId: 'alice' });
     expect(() => scopedQuery(forged, 'message')).toThrow(/no Scope supplied/);
   });
 
   it('refuses a scope-shaped object carrying a permissive predicate', () => {
-    const forged = {
+    const forged = forge<Scope>({
       tenantId: 'acme',
       userId: 'alice',
       predicateSql: '1 = 1',
-    } as unknown as Scope;
+    });
     expect(() => scopedQuery(forged, 'message')).toThrow(/no Scope supplied/);
   });
 
   it('refuses an unknown record kind', () => {
-    expect(() => scopedQuery(asScope('acme', 'alice'), 'files' as unknown as 'message')).toThrow(
+    expect(() => scopedQuery(asScope('acme', 'alice'), forge<'message'>('files'))).toThrow(
       /not a searchable record kind/,
     );
   });

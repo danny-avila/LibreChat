@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { createScope } from '@librechat/data-schemas';
+import type { MeiliSearchFn, MeiliSearchParams } from './meili';
 import { chatSearchConfigured, createChatSearch } from './service';
 import { PostgresChatSearch } from './search';
 import { MeiliChatSearch } from './meili';
@@ -89,7 +90,7 @@ describe('chat search backend selection', () => {
       process.env.MEILI_MASTER_KEY = 'key';
     });
 
-    const backendFor = (meiliSearch: unknown) =>
+    const backendFor = (meiliSearch: MeiliSearchFn) =>
       new MeiliChatSearch({ mongoose: { models: { Conversation: { meiliSearch } } } });
 
     it('is ready when the index answers', async () => {
@@ -137,12 +138,12 @@ describe('chat search backend selection', () => {
 
     const scope = () => createScope({ tenantId: 'acme', userId: 'alice' });
 
-    const backendWith = (capture: (params: Record<string, unknown>) => void) =>
+    const backendWith = (capture: (params: MeiliSearchParams) => void) =>
       new MeiliChatSearch({
         mongoose: {
           models: {
             Conversation: {
-              meiliSearch: async (_query: string, params: Record<string, unknown>) => {
+              meiliSearch: async (_query: string, params: MeiliSearchParams) => {
                 capture(params);
                 return { hits: [{ conversationId: 'c1' }] };
               },
@@ -181,7 +182,7 @@ describe('chat search backend selection', () => {
     });
 
     it('still sends only the user predicate, so the index is never asked the impossible', async () => {
-      let sent: Record<string, unknown> = {};
+      let sent: MeiliSearchParams = {};
       const backend = backendWith((params) => {
         sent = params;
       });

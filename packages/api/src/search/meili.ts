@@ -24,18 +24,38 @@ import type {
  * and authorizes every hit against the primary store, so a stale index can cost
  * recall but never visibility.
  */
-type MeiliHit = Readonly<{
+export type MeiliHit = Readonly<{
   conversationId?: unknown;
   messageId?: unknown;
 }>;
 
+/** The only parameters this adapter ever sends; the honest slice of Meilisearch's own. */
+export type MeiliSearchParams = Readonly<{
+  filter?: string;
+  limit?: number;
+}>;
+
+export type MeiliSearchFn = (
+  query: string,
+  params: MeiliSearchParams,
+  populate?: boolean,
+) => Promise<{ hits?: readonly MeiliHit[] }>;
+
 type MeiliSearchable = {
-  meiliSearch(
-    query: string,
-    params: Record<string, unknown>,
-    populate?: boolean,
-  ): Promise<{ hits?: readonly MeiliHit[] }>;
+  meiliSearch: MeiliSearchFn;
 };
+
+/**
+ * What the registry may hold under a name: a Mongoose model, of whose statics
+ * this adapter reads exactly one. `modelName` is here because every Mongoose
+ * model carries it, which is what lets the real module's registry satisfy this
+ * shape structurally; a model that never had the Meilisearch statics attached
+ * simply fails the `meiliSearch` probe in `model()`.
+ */
+export type MeiliRegisteredModel = Readonly<{
+  modelName?: string;
+  meiliSearch?: MeiliSearchFn;
+}>;
 
 /**
  * All this backend needs of Mongoose: the registry the Meilisearch statics were
@@ -43,7 +63,7 @@ type MeiliSearchable = {
  * failure paths can be exercised without a live Meilisearch to fail against.
  */
 export type MeiliModelRegistry = Readonly<{
-  models: Readonly<Record<string, unknown>>;
+  models: Readonly<Record<string, MeiliRegisteredModel | undefined>>;
 }>;
 
 export type MeiliChatSearchDeps = Readonly<{
@@ -124,9 +144,7 @@ export class MeiliChatSearch implements ChatSearch {
   }
 
   private model(target: SearchTarget): MeiliSearchable | null {
-    const registered = this.deps.mongoose.models[TARGET_MODEL[target]] as
-      | Partial<MeiliSearchable>
-      | undefined;
+    const registered = this.deps.mongoose.models[TARGET_MODEL[target]];
     if (!registered || typeof registered.meiliSearch !== 'function') {
       return null;
     }
