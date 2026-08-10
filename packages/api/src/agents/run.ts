@@ -820,7 +820,7 @@ function createLazySubagentConfig(
       if (context.signal.aborted) {
         throw context.signal.reason ?? new Error('Subagent resolution was aborted.');
       }
-      const childInputs = buildIsolatedSubagentInputs(resolvedChild, toInput);
+      const childInputs = buildIsolatedAgentInputs(resolvedChild, toInput);
       const resolutionState: SubagentBuildState = {
         configCount: 1,
         rootAgentIds: [resolvedChild.id],
@@ -1118,7 +1118,7 @@ function buildSubagentConfigs(
     const childDepth = depth + 1;
     assertSubagentDepth(childDepth, child.id);
     countSubagentConfig(state);
-    const childInputs = buildIsolatedSubagentInputs(child, toInput);
+    const childInputs = buildIsolatedAgentInputs(child, toInput);
     /**
      * Recursively resolve the child's own spawn targets so multi-level
      * delegation (A → B → C) works. Without this, a child whose own
