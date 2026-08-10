@@ -1479,28 +1479,31 @@ class AgentClient extends BaseClient {
                 resolvedPending.push(...graph.memberConfigs);
               }
             }
-            await Promise.all(
-              resolvedAgents.map((agent) => {
-                const existing = runtimeAgentPreparations.get(agent);
-                if (existing) {
-                  return existing;
-                }
-                const pending = buildAgentScopedContext({
-                  agentIds: [agent.id],
-                  attachmentsByAgentId: buildAgentContextAttachmentsByAgentId([agent]),
-                  sharedRunAttachmentIds,
-                  req: this.options.req,
-                  tokenCountFn: (text) => countTokens(text),
-                }).then((lateScopedContext) =>
-                  prepareRuntimeAgent(
-                    { agent, agentId: agent.id },
-                    lateScopedContext.get(agent.id),
-                  ),
-                );
-                runtimeAgentPreparations.set(agent, pending);
-                return pending;
-              }),
+            const unpreparedAgents = resolvedAgents.filter(
+              (agent) => !runtimeAgentPreparations.has(agent),
             );
+            if (unpreparedAgents.length > 0) {
+              const pending = buildAgentScopedContext({
+                agentIds: unpreparedAgents.map((agent) => agent.id),
+                attachmentsByAgentId: buildAgentContextAttachmentsByAgentId(unpreparedAgents),
+                sharedRunAttachmentIds,
+                req: this.options.req,
+                tokenCountFn: (text) => countTokens(text),
+              }).then((lateScopedContext) =>
+                Promise.all(
+                  unpreparedAgents.map((agent) =>
+                    prepareRuntimeAgent(
+                      { agent, agentId: agent.id },
+                      lateScopedContext.get(agent.id),
+                    ),
+                  ),
+                ),
+              );
+              for (const agent of unpreparedAgents) {
+                runtimeAgentPreparations.set(agent, pending);
+              }
+            }
+            await Promise.all(resolvedAgents.map((agent) => runtimeAgentPreparations.get(agent)));
             wrapLazyResolvers(resolvedAgents);
             return resolved;
           };
