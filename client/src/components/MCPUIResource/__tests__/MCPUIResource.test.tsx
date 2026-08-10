@@ -17,6 +17,7 @@ jest.mock('~/hooks', () => ({
 }));
 jest.mock('~/hooks/MCP', () => ({
   useAppBridge: jest.fn(),
+  useMCPAppFrame: jest.requireActual('~/hooks/MCP/useMCPAppFrame').useMCPAppFrame,
 }));
 
 jest.mock('~/utils/mcpApps', () => ({
@@ -26,9 +27,16 @@ jest.mock('~/utils/mcpApps', () => ({
       ? Buffer.from(r.blob, 'base64').toString('utf-8')
       : undefined),
   isMcpAppResource: (r) =>
-    !!(r && r.toolName && r.serverName) && (r.mimeType ?? '').includes('profile=mcp-app'),
+    !!(r && r.toolName && r.serverName) &&
+    jest.requireActual('librechat-data-provider').isMcpAppMimeType(r.mimeType),
   buildAppToolResult: jest.fn(),
   getMCPSandboxUrl: () => 'http://localhost/sandbox',
+  getResourceKey: (r: any) => r?.resourceId || r?.uri || '',
+  clampAppViewHeight: (height?: number, bounds?: { min?: number; max?: number }) =>
+    typeof height === 'number' && Number.isFinite(height) && height > 0
+      ? Math.min(Math.max(Math.round(height), bounds?.min ?? 80), bounds?.max ?? 4000)
+      : undefined,
+  MAX_CAROUSEL_VIEW_HEIGHT: 720,
   callMCPAppTool: jest.fn(),
   readMCPResource: jest.fn(),
   fetchMCPResourceHtml: jest.fn(),
@@ -60,6 +68,7 @@ describe('MCPUIResource', () => {
     const translations: Record<string, string> = {
       com_ui_ui_resource_not_found: `UI resource ${values?.[0]} not found`,
       com_ui_ui_resource_error: `Error rendering UI resource: ${values?.[0]}`,
+      com_ui_mcp_app_frame_title: `MCP App: ${values?.[0]}`,
     };
     return translations[key] || key;
   };

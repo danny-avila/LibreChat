@@ -2,75 +2,48 @@ import React, { useState } from 'react';
 import { Button } from '@librechat/client';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { UIResource } from 'librechat-data-provider';
-import {
-  getMCPSandboxUrl,
-  buildAppToolResult,
-  isMcpAppResource,
-  getInlineResourceHtml,
-  clampAppViewHeight,
-} from '~/utils/mcpApps';
-import { useIsMessagesViewReadOnly } from '~/Providers';
-import { useAppBridge } from '~/hooks/MCP';
+import { getResourceKey, MAX_CAROUSEL_VIEW_HEIGHT } from '~/utils/mcpApps';
+import { MCPAppFrame } from '~/components/MCPUIResource/MCPAppFrame';
+import { useAppBridge, useMCPAppFrame } from '~/hooks/MCP';
 import { useLocalize } from '~/hooks';
 
 interface UIResourceCarouselProps {
   uiResources: UIResource[];
 }
 
-const SPINNER_TIMEOUT_MS = 10_000;
+const DEFAULT_CARD_HEIGHT = 360;
+const CARD_WIDTH = 230;
 
 function MCPAppCard({
   resource,
   onHeightChange,
+  onTornDown,
 }: {
   resource: UIResource;
   onHeightChange?: (height: number) => void;
+  onTornDown?: () => void;
 }) {
-  const iframeRef = React.useRef<HTMLIFrameElement>(null);
   const localize = useLocalize();
-  const readOnly = useIsMessagesViewReadOnly();
-  const [loaded, setLoaded] = useState(false);
-  const [timedOut, setTimedOut] = useState(false);
-  const [tornDown, setTornDown] = useState(false);
-  const sandboxUrl = React.useMemo(() => getMCPSandboxUrl(), []);
-  const inlineHtml = React.useMemo(() => getInlineResourceHtml(resource), [resource]);
+  const frame = useMCPAppFrame(resource, {
+    defaultHeight: DEFAULT_CARD_HEIGHT,
+    maxHeight: MAX_CAROUSEL_VIEW_HEIGHT,
+    onHeightChange,
+    onTornDown,
+  });
 
-  React.useEffect(() => {
-    if (loaded) {
-      return;
-    }
-    const timer = setTimeout(() => setTimedOut(true), SPINNER_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [loaded]);
-
-  const toolResult = React.useMemo(() => buildAppToolResult(resource), [resource]);
-
-  const handleSizeChanged = React.useCallback(
-    (params: { height?: number; width?: number }) => {
-      const clamped = clampAppViewHeight(params.height);
-      if (clamped != null) {
-        setLoaded(true);
-        onHeightChange?.(clamped);
-      }
-    },
-    [onHeightChange],
-  );
-
-  useAppBridge(
-    iframeRef,
+  useAppBridge({
+    iframeRef: frame.iframeRef,
     resource,
-    resource.toolArgs as Record<string, unknown> | undefined,
-    toolResult,
-    handleSizeChanged,
-    () => setLoaded(true),
-    () => setTornDown(true),
-  );
+    toolArgs: frame.toolArgs,
+    toolResult: frame.toolResult,
+    active: frame.active,
+    onSizeChanged: frame.onSizeChanged,
+    onLoaded: frame.onLoaded,
+    onTeardown: frame.onTeardown,
+    onFailed: frame.onFailed,
+  });
 
-  if (tornDown) {
-    return null;
-  }
-
-  if (isMcpAppResource(resource) && !inlineHtml && readOnly) {
+  if (frame.kind === 'unavailable') {
     return (
       <div className="flex h-full w-full items-center justify-center rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-center text-sm text-text-secondary">
         {localize('com_ui_mcp_app_shared_unavailable')}
@@ -78,39 +51,14 @@ function MCPAppCard({
     );
   }
 
-  if (isMcpAppResource(resource)) {
-    return (
-      <>
-        {!loaded && !timedOut && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border-light bg-surface-secondary text-sm text-text-secondary">
-            {localize('com_ui_loading_interactive_view')}
-          </div>
-        )}
-        {timedOut && !loaded && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-border-light bg-surface-secondary text-sm text-text-secondary">
-            {localize('com_ui_mcp_app_failed_to_load')}
-          </div>
-        )}
-        <iframe
-          ref={iframeRef}
-          data-sandbox-url={sandboxUrl}
-          sandbox="allow-scripts allow-forms"
-          style={{
-            width: '100%',
-            height: '100%',
-            border: 'none',
-            opacity: loaded ? 1 : 0,
-          }}
-          title={`MCP App: ${resource.toolName ?? ''}`}
-        />
-      </>
-    );
+  if (frame.kind === 'app') {
+    return <MCPAppFrame frame={frame} resource={resource} centered />;
   }
 
-  if (inlineHtml) {
+  if (frame.kind === 'static') {
     return (
       <iframe
-        srcDoc={inlineHtml}
+        srcDoc={frame.inlineHtml}
         sandbox=""
         style={{ width: '100%', height: '100%', border: 'none' }}
         title={resource.uri}
@@ -126,12 +74,42 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const [isContainerHovered, setIsContainerHovered] = useState(false);
-  const [cardHeights, setCardHeights] = useState<Record<number, number>>({});
+  // Keyed by resource identity, never by index: a removed resource would otherwise hand its measured
+  // height and its render state to whichever resource reconciles onto its index.
+  const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
+  const [tornDownKeys, setTornDownKeys] = useState<ReadonlySet<string>>(() => new Set());
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
 
-  const handleCardHeightChange = React.useCallback((index: number, newHeight: number) => {
-    setCardHeights((prev) => ({ ...prev, [index]: newHeight }));
+  const handleCardHeightChange = React.useCallback((key: string, newHeight: number) => {
+    setCardHeights((prev) => (prev[key] === newHeight ? prev : { ...prev, [key]: newHeight }));
   }, []);
+
+  const handleCardTornDown = React.useCallback((key: string) => {
+    setTornDownKeys((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  }, []);
+
+  const visibleResources = React.useMemo(
+    () => uiResources.filter((resource) => !tornDownKeys.has(getResourceKey(resource))),
+    [uiResources, tornDownKeys],
+  );
+
+  React.useEffect(() => {
+    const live = new Set(uiResources.map(getResourceKey));
+    setCardHeights((prev) => {
+      const kept = Object.keys(prev).filter((key) => live.has(key));
+      if (kept.length === Object.keys(prev).length) {
+        return prev;
+      }
+      return Object.fromEntries(kept.map((key) => [key, prev[key]]));
+    });
+    setTornDownKeys((prev) => {
+      if (prev.size === 0) {
+        return prev;
+      }
+      const kept = new Set([...prev].filter((key) => live.has(key)));
+      return kept.size === prev.size ? prev : kept;
+    });
+  }, [uiResources]);
 
   const handleScroll = React.useCallback(() => {
     if (!scrollContainerRef.current) return;
@@ -156,6 +134,8 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
     });
   }, []);
 
+  // The visible set is a dependency: the arrows are computed from scroll geometry, so a card that
+  // was torn down (or added) leaves showRightArrow stale-true with nothing left to scroll to.
   React.useEffect(() => {
     const container = scrollContainerRef.current;
     if (container) {
@@ -163,9 +143,9 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
       handleScroll();
       return () => container.removeEventListener('scroll', handleScroll);
     }
-  }, [handleScroll]);
+  }, [handleScroll, visibleResources]);
 
-  if (uiResources.length === 0) {
+  if (visibleResources.length === 0) {
     return null;
   }
 
@@ -205,24 +185,29 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
         ref={scrollContainerRef}
         className="hide-scrollbar flex gap-4 overflow-x-auto scroll-smooth"
       >
-        {uiResources.map((uiResource, index) => {
-          const cardHeight = cardHeights[index] ?? 360;
-          const width = 230;
+        {visibleResources.map((uiResource, index) => {
+          const key = getResourceKey(uiResource);
+          const cardHeight = cardHeights[key] ?? DEFAULT_CARD_HEIGHT;
 
           return (
             <div
-              key={index}
+              key={key}
               className="flex-shrink-0 transform-gpu transition-all duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-5"
               style={{
-                width: `${width}px`,
+                width: `${CARD_WIDTH}px`,
+                // Definite so the iframe's height:100% resolves, with a floor so a card that never
+                // reports a size is not revealed at the 150px iframe default.
                 height: `${cardHeight}px`,
+                minHeight: `${DEFAULT_CARD_HEIGHT}px`,
+                overflow: 'hidden',
                 animationDelay: `${index * 100}ms`,
               }}
             >
               <div className="relative flex h-full flex-col">
                 <MCPAppCard
                   resource={uiResource}
-                  onHeightChange={(h) => handleCardHeightChange(index, h)}
+                  onHeightChange={(height) => handleCardHeightChange(key, height)}
+                  onTornDown={() => handleCardTornDown(key)}
                 />
               </div>
             </div>

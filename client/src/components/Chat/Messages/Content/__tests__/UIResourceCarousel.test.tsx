@@ -1,11 +1,13 @@
 import '@testing-library/jest-dom';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { UIResource } from 'librechat-data-provider';
 import UIResourceCarousel from '~/components/Chat/Messages/Content/UIResourceCarousel';
 import { useIsMessagesViewReadOnly } from '~/Providers';
+import { useAppBridge } from '~/hooks/MCP';
 
 jest.mock('~/hooks/MCP', () => ({
   useAppBridge: jest.fn(),
+  useMCPAppFrame: jest.requireActual('~/hooks/MCP/useMCPAppFrame').useMCPAppFrame,
 }));
 
 jest.mock('~/Providers', () => ({
@@ -19,13 +21,31 @@ jest.mock('~/utils/mcpApps', () => ({
       ? Buffer.from(r.blob, 'base64').toString('utf-8')
       : undefined),
   isMcpAppResource: (r) =>
-    !!(r && r.toolName && r.serverName) && (r.mimeType ?? '').includes('profile=mcp-app'),
+    !!(r && r.toolName && r.serverName) &&
+    jest.requireActual('librechat-data-provider').isMcpAppMimeType(r.mimeType),
   buildAppToolResult: jest.fn(),
   getMCPSandboxUrl: () => 'http://localhost/sandbox',
+  getResourceKey: (r: UIResource) => r.resourceId || r.uri,
+  clampAppViewHeight: (height?: number, bounds?: { min?: number; max?: number }) =>
+    typeof height === 'number' && Number.isFinite(height) && height > 0
+      ? Math.min(Math.max(Math.round(height), bounds?.min ?? 80), bounds?.max ?? 4000)
+      : undefined,
+  MAX_CAROUSEL_VIEW_HEIGHT: 720,
   callMCPAppTool: jest.fn(),
   readMCPResource: jest.fn(),
   fetchMCPResourceHtml: jest.fn(),
 }));
+
+type BridgeParams = {
+  resource: UIResource;
+  onSizeChanged: (params: { height?: number }) => void;
+  onTeardown?: () => void;
+  active?: boolean;
+};
+
+const bridgeCalls: BridgeParams[] = [];
+const bridgeFor = (resourceId: string) =>
+  bridgeCalls.filter((call) => call.resource.resourceId === resourceId).at(-1) as BridgeParams;
 
 const mockScrollTo = jest.fn();
 Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
@@ -46,6 +66,10 @@ describe('UIResourceCarousel', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    bridgeCalls.length = 0;
+    (useAppBridge as jest.Mock).mockImplementation((params: BridgeParams) => {
+      bridgeCalls.push(params);
+    });
     (useIsMessagesViewReadOnly as jest.Mock).mockReturnValue(false);
     Object.defineProperty(HTMLElement.prototype, 'scrollLeft', { configurable: true, value: 0 });
     Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
@@ -162,6 +186,79 @@ describe('UIResourceCarousel', () => {
         width: '230px',
         height: '360px',
       });
+    });
+  });
+
+  describe('teardown', () => {
+    const cardFor = (container: HTMLElement, index: number) =>
+      container.querySelectorAll('.hide-scrollbar > div')[index] as HTMLElement;
+
+    it('drops a torn-down card from the layout and leaves its neighbours intact', () => {
+      const [a, b, c] = [1, 2, 3].map(makeResource);
+      const { container } = render(<UIResourceCarousel uiResources={[a, b, c]} />);
+
+      act(() => {
+        bridgeFor('r1').onSizeChanged({ height: 400 });
+        bridgeFor('r2').onSizeChanged({ height: 500 });
+        bridgeFor('r3').onSizeChanged({ height: 600 });
+      });
+      expect(container.querySelectorAll('.hide-scrollbar > div')).toHaveLength(3);
+
+      act(() => bridgeFor('r2').onTeardown?.());
+
+      const cards = container.querySelectorAll('.hide-scrollbar > div');
+      expect(cards).toHaveLength(2);
+      expect(cards[0]).toHaveStyle({ height: '400px' });
+      expect(cards[1]).toHaveStyle({ height: '600px' });
+      expect(cards[1].querySelector('iframe[data-sandbox-url]')).toBeInTheDocument();
+    });
+
+    it('does not hand a removed resource state to the resource that survives it', () => {
+      const [a, b] = [1, 2].map(makeResource);
+      const { container, rerender } = render(<UIResourceCarousel uiResources={[a, b]} />);
+
+      act(() => {
+        bridgeFor('r1').onSizeChanged({ height: 700 });
+        bridgeFor('r2').onSizeChanged({ height: 420 });
+      });
+
+      rerender(<UIResourceCarousel uiResources={[b]} />);
+
+      const cards = container.querySelectorAll('.hide-scrollbar > div');
+      expect(cards).toHaveLength(1);
+      expect(cards[0]).toHaveStyle({ height: '420px' });
+    });
+
+    it('clamps a slide to the carousel maximum and never below the default', () => {
+      const { container } = render(<UIResourceCarousel uiResources={[makeResource(1)]} />);
+      act(() => bridgeFor('r1').onSizeChanged({ height: 700 }));
+      expect(cardFor(container, 0)).toHaveStyle({ height: '700px', overflow: 'hidden' });
+      act(() => bridgeFor('r1').onSizeChanged({ height: 10_000 }));
+      expect(cardFor(container, 0)).toHaveStyle({ height: '720px', minHeight: '360px' });
+    });
+
+    it('renders nothing once every card is torn down', () => {
+      const { container } = render(<UIResourceCarousel uiResources={[makeResource(1)]} />);
+      act(() => bridgeFor('r1').onTeardown?.());
+      expect(container.firstChild).toBeNull();
+    });
+
+    it('recomputes the arrows when the visible set changes', async () => {
+      Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+        configurable: true,
+        value: 1000,
+      });
+      const { container } = render(<UIResourceCarousel uiResources={[1, 2].map(makeResource)} />);
+      expect(screen.getByLabelText('Scroll right')).toBeInTheDocument();
+
+      Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+        configurable: true,
+        value: 500,
+      });
+      act(() => bridgeFor('r2').onTeardown?.());
+
+      await waitFor(() => expect(screen.queryByLabelText('Scroll right')).not.toBeInTheDocument());
+      expect(container.querySelectorAll('.hide-scrollbar > div')).toHaveLength(1);
     });
   });
 

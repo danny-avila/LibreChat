@@ -1,14 +1,8 @@
-import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
-import {
-  getMCPSandboxUrl,
-  buildAppToolResult,
-  isMcpAppResource,
-  getInlineResourceHtml,
-  clampAppViewHeight,
-} from '~/utils/mcpApps';
+import React from 'react';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
-import { useOptionalMessagesConversation, useIsMessagesViewReadOnly } from '~/Providers';
-import { useAppBridge } from '~/hooks/MCP';
+import { useOptionalMessagesConversation } from '~/Providers';
+import { useAppBridge, useMCPAppFrame } from '~/hooks/MCP';
+import { MCPAppFrame } from './MCPAppFrame';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
 
@@ -21,59 +15,30 @@ interface MCPUIResourceProps {
 }
 
 const EMPTY_RESOURCE = { resourceId: '', uri: '' };
-const SPINNER_TIMEOUT_MS = 10_000;
+const DEFAULT_HEIGHT = 200;
 
 export function MCPUIResource(props: MCPUIResourceProps) {
   const { resourceId } = props.node.properties;
   const localize = useLocalize();
-  const readOnly = useIsMessagesViewReadOnly();
   const { conversationId } = useOptionalMessagesConversation() ?? {};
   const conversationResourceMap = useConversationUIResources(conversationId ?? undefined);
   const uiResource = conversationResourceMap.get(resourceId ?? '');
 
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [timedOut, setTimedOut] = useState(false);
-  const [tornDown, setTornDown] = useState(false);
-  const [height, setHeight] = useState<number | undefined>(undefined);
-  const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
-  const inlineHtml = useMemo(
-    () => (uiResource ? getInlineResourceHtml(uiResource) : undefined),
-    [uiResource],
-  );
+  const frame = useMCPAppFrame(uiResource, { defaultHeight: DEFAULT_HEIGHT });
 
-  useEffect(() => {
-    if (loaded) {
-      return;
-    }
-    const timer = setTimeout(() => setTimedOut(true), SPINNER_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [loaded]);
+  useAppBridge({
+    iframeRef: frame.iframeRef,
+    resource: uiResource ?? EMPTY_RESOURCE,
+    toolArgs: frame.toolArgs,
+    toolResult: frame.toolResult,
+    active: frame.active,
+    onSizeChanged: frame.onSizeChanged,
+    onLoaded: frame.onLoaded,
+    onTeardown: frame.onTeardown,
+    onFailed: frame.onFailed,
+  });
 
-  const toolResult = useMemo(
-    () => (uiResource ? buildAppToolResult(uiResource) : undefined),
-    [uiResource],
-  );
-
-  const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
-    const clamped = clampAppViewHeight(params.height);
-    if (clamped != null) {
-      setHeight(clamped);
-      setLoaded(true);
-    }
-  }, []);
-
-  useAppBridge(
-    iframeRef,
-    uiResource ?? EMPTY_RESOURCE,
-    uiResource?.toolArgs as Record<string, unknown> | undefined,
-    toolResult,
-    handleSizeChanged,
-    () => setLoaded(true),
-    () => setTornDown(true),
-  );
-
-  if (tornDown) {
+  if (frame.status === 'tornDown') {
     return null;
   }
 
@@ -88,50 +53,29 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   }
 
   try {
-    if (isMcpAppResource(uiResource) && !inlineHtml && readOnly) {
+    if (frame.kind === 'unavailable') {
       return (
         <span className="mx-1 inline-flex w-full items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 align-middle text-sm text-text-secondary">
           {localize('com_ui_mcp_app_shared_unavailable')}
         </span>
       );
     }
-    if (isMcpAppResource(uiResource)) {
+    if (frame.kind === 'app') {
       return (
         <span
-          className="relative mx-1 inline-block w-full align-middle"
-          style={height ? { height } : { minHeight: '200px' }}
+          className="relative mx-1 inline-block w-full overflow-hidden align-middle"
+          style={{ height: frame.height, minHeight: DEFAULT_HEIGHT }}
         >
-          {!loaded && !timedOut && (
-            <div className="absolute inset-0 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
-              {localize('com_ui_loading_interactive_view')}
-            </div>
-          )}
-          {timedOut && !loaded && (
-            <div className="absolute inset-0 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
-              {localize('com_ui_mcp_app_failed_to_load')}
-            </div>
-          )}
-          <iframe
-            ref={iframeRef}
-            data-sandbox-url={sandboxUrl}
-            sandbox="allow-scripts allow-forms"
-            style={{
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              opacity: loaded ? 1 : 0,
-            }}
-            title={`MCP App: ${uiResource.toolName ?? ''}`}
-          />
+          <MCPAppFrame frame={frame} resource={uiResource} />
         </span>
       );
     }
 
-    if (inlineHtml) {
+    if (frame.kind === 'static') {
       return (
         <span className="mx-1 inline-block w-full align-middle">
           <iframe
-            srcDoc={inlineHtml}
+            srcDoc={frame.inlineHtml}
             sandbox=""
             style={{ width: '100%', minHeight: '200px', border: 'none' }}
             title={uiResource.uri}

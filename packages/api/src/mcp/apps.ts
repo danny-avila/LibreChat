@@ -3,6 +3,7 @@
  * imports the ESM-only `@modelcontextprotocol/ext-apps` package.
  */
 
+import { MCP_APP_MIME_TYPE } from 'librechat-data-provider';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
@@ -22,7 +23,7 @@ interface McpUiToolMeta {
 
 export const RESOURCE_URI_META_KEY = 'ui/resourceUri';
 
-export const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
+export const RESOURCE_MIME_TYPE = MCP_APP_MIME_TYPE;
 
 export function getToolUiResourceUri(tool: ToolWithMeta): string | undefined {
   const uiMeta = tool._meta?.ui as McpUiToolMeta | undefined;

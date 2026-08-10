@@ -1,6 +1,7 @@
 import { isIP } from 'node:net';
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
+import { MCP_UI_EXTENSION_ID } from 'librechat-data-provider';
 import { fetch as undiciFetch, Agent, ProxyAgent } from 'undici';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
@@ -1319,7 +1320,7 @@ export class MCPConnection extends EventEmitter {
     // instance/tenant is enforced downstream (UI-resource attachment + app endpoints), never by
     // withholding the handshake capability, so a scoped opt-in still reaches a capable server.
     const capabilities: ClientCapabilities = {
-      extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [RESOURCE_MIME_TYPE] } },
+      extensions: { [MCP_UI_EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } },
     };
     this.client = new Client(
       {

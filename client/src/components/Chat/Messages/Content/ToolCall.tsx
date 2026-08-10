@@ -1,27 +1,20 @@
-import React, { useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { TriangleAlert } from 'lucide-react';
 import {
   Constants,
-  Tools,
   dataService,
   actionDelimiter,
   actionDomainSeparator,
   splitToolCallName,
 } from 'librechat-data-provider';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
-import {
-  getMCPSandboxUrl,
-  buildAppToolResult,
-  isMcpAppResource,
-  getInlineResourceHtml,
-  clampAppViewHeight,
-} from '~/utils/mcpApps';
-import { useMCPIconMap, useAppBridge, useMCPServerNames } from '~/hooks/MCP';
+import { useMCPIconMap, useAppBridge, useMCPAppFrame, useMCPServerNames } from '~/hooks/MCP';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
+import { MCPAppFrame } from '~/components/MCPUIResource/MCPAppFrame';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
-import { useIsMessagesViewReadOnly } from '~/Providers';
+import { selectToolCallUIResources } from '~/utils/mcpApps';
 import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
@@ -29,7 +22,7 @@ import ProgressText from './ProgressText';
 import { logger } from '~/utils';
 import store from '~/store';
 
-const SPINNER_TIMEOUT_MS = 10_000;
+const DEFAULT_APP_VIEW_HEIGHT = 320;
 
 const MCPAppView = React.memo(function MCPAppView({
   app,
@@ -39,67 +32,40 @@ const MCPAppView = React.memo(function MCPAppView({
   args: string | Record<string, unknown>;
 }) {
   const localize = useLocalize();
-  const readOnly = useIsMessagesViewReadOnly();
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState<number | undefined>(undefined);
-  const [loaded, setLoaded] = useState(false);
-  const [timedOut, setTimedOut] = useState(false);
-  const [tornDown, setTornDown] = useState(false);
-  const sandboxUrl = useMemo(() => getMCPSandboxUrl(), []);
-  const inlineHtml = useMemo(() => getInlineResourceHtml(app), [app]);
+  const frame = useMCPAppFrame(app, {
+    defaultHeight: DEFAULT_APP_VIEW_HEIGHT,
+    toolArgs: args,
+  });
 
-  useEffect(() => {
-    if (loaded) return;
-    const timer = setTimeout(() => setTimedOut(true), SPINNER_TIMEOUT_MS);
-    return () => clearTimeout(timer);
-  }, [loaded]);
+  useAppBridge({
+    iframeRef: frame.iframeRef,
+    resource: app,
+    toolArgs: frame.toolArgs,
+    toolResult: frame.toolResult,
+    active: frame.active,
+    onSizeChanged: frame.onSizeChanged,
+    onLoaded: frame.onLoaded,
+    onTeardown: frame.onTeardown,
+    onFailed: frame.onFailed,
+  });
 
-  const toolArgs = useMemo(() => {
-    try {
-      return typeof args === 'string' ? JSON.parse(args) : args;
-    } catch {
-      return undefined;
-    }
-  }, [args]);
-
-  const toolResult = useMemo(() => buildAppToolResult(app), [app]);
-
-  const handleSizeChanged = useCallback((params: { height?: number; width?: number }) => {
-    const clamped = clampAppViewHeight(params.height);
-    if (clamped != null) {
-      setHeight(clamped);
-      setLoaded(true);
-    }
-  }, []);
-
-  useAppBridge(
-    iframeRef,
-    app,
-    toolArgs,
-    toolResult,
-    handleSizeChanged,
-    () => setLoaded(true),
-    () => setTornDown(true),
-  );
-
-  if (tornDown) {
+  if (frame.status === 'tornDown') {
     return null;
   }
 
-  const isAppBacked = isMcpAppResource(app);
   // Read-only views don't fetch app HTML, so a resourceUri-only app shows a placeholder.
-  if (isAppBacked && !inlineHtml && readOnly) {
+  if (frame.kind === 'unavailable') {
     return (
       <div className="my-2 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
         {localize('com_ui_mcp_app_shared_unavailable')}
       </div>
     );
   }
-  if (!isAppBacked && inlineHtml) {
+  if (frame.kind === 'static') {
     return (
       <div className="my-2">
         <iframe
-          srcDoc={inlineHtml}
+          srcDoc={frame.inlineHtml}
           sandbox=""
           style={{ width: '100%', minHeight: '200px', border: 'none' }}
           title={app.uri}
@@ -109,44 +75,11 @@ const MCPAppView = React.memo(function MCPAppView({
   }
 
   return (
-    <div className="relative my-2" style={height ? { height } : { minHeight: 100 }}>
-      {!loaded && !timedOut && (
-        <div className="absolute inset-0 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
-          <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-            />
-          </svg>
-          {localize('com_ui_loading_interactive_view')}
-        </div>
-      )}
-      {timedOut && !loaded && (
-        <div className="absolute inset-0 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
-          {localize('com_ui_mcp_app_failed_to_load')}
-        </div>
-      )}
-      <iframe
-        ref={iframeRef}
-        data-sandbox-url={sandboxUrl}
-        sandbox="allow-scripts allow-forms"
-        style={{
-          width: '100%',
-          height: '100%',
-          border: 'none',
-          opacity: loaded ? 1 : 0,
-        }}
-        title={`MCP App: ${app.toolName ?? ''}`}
-      />
+    <div
+      className="relative my-2 overflow-hidden"
+      style={{ height: frame.height, minHeight: DEFAULT_APP_VIEW_HEIGHT }}
+    >
+      <MCPAppFrame frame={frame} resource={app} spinner />
     </div>
   );
 });
@@ -292,17 +225,7 @@ export default function ToolCall({
     [args, output],
   );
 
-  const mcpApps = useMemo(() => {
-    const uiResources: UIResource[] =
-      attachments
-        ?.filter((a) => a.type === Tools.ui_resources)
-        .flatMap((a) => (a[Tools.ui_resources] ?? []) as UIResource[]) ?? [];
-    return uiResources.filter(
-      (r) =>
-        isMcpAppResource(r) ||
-        (getInlineResourceHtml(r) != null && (r.mimeType ?? 'text/html').includes('html')),
-    );
-  }, [attachments]);
+  const mcpApps = useMemo(() => selectToolCallUIResources(attachments), [attachments]);
 
   const authDomain = useMemo(() => {
     return parsedAuthUrl?.hostname ?? '';

@@ -1,14 +1,8 @@
+import { RE2JS } from 're2js';
 import pick from 'lodash/pick';
 import { logger } from '@librechat/data-schemas';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
-import {
-  CallToolResultSchema,
-  ReadResourceResultSchema,
-  ListResourcesResultSchema,
-  ListResourceTemplatesResultSchema,
-  ErrorCode,
-  McpError,
-} from '@modelcontextprotocol/sdk/types.js';
+import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type {
   ListResourcesResult,
   ListResourceTemplatesResult,
@@ -86,11 +80,14 @@ export class MCPManager extends UserConnectionManager {
    */
   private readonly advertisedResourceCache = new Map<
     string,
-    { uris: Set<string>; templates: RegExp[] }
+    { uris: Set<string>; templates: RE2JS[]; complete: boolean }
   >();
 
   private readonly advertisedResourceConnStamp = new Map<string, string>();
   private static readonly RESOURCE_LIST_MAX_PAGES = 20;
+  private static readonly RESOURCE_LIST_MAX_ENTRIES = 5000;
+  /** RFC 6570 §2.2 reserves these expression operators; a template using one is not matchable here. */
+  private static readonly RESERVED_TEMPLATE_OPERATOR = /^[=,!@|]/;
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -779,6 +776,9 @@ Please follow these instructions when using tools from the respective MCP server
 
       connection.setRequestHeaders(resolvedHeaders);
 
+      // Deliberately `request` rather than `client.callTool`: the typed wrapper also enforces the
+      // tool's `outputSchema` and rejects `execution.taskSupport: required` tools, which would turn
+      // a server-side schema mismatch into a host-side tool failure.
       const result = await connection.client.request(
         {
           method: 'tools/call',
@@ -1006,23 +1006,49 @@ Please follow these instructions when using tools from the respective MCP server
 
     await this.assertResourceReadable(connection, `${serverName}:${userId}`, uri, logPrefix);
 
-    const result = await connection.client.request(
-      {
-        method: 'resources/read',
-        params: { uri },
-      },
-      ReadResourceResultSchema,
-      { timeout: connection.timeout },
-    );
-
-    return result;
+    return connection.client.readResource({ uri }, { timeout: connection.timeout });
   }
 
   /**
-   * Authorizes an app-driven `resources/read`. App UI resources (`ui://`) are always allowed;
-   * any other URI must be one the server actually advertises (an exact `resources/list` entry or
-   * a `resources/templates/list` match), so a sandboxed app cannot exfiltrate unrelated resources
-   * the host connection can otherwise reach. Fails closed when the advertised set is unavailable.
+   * True when any tool on this connection declares `uri` as its UI resource. Connection-wide rather
+   * than per-tool because apps.mdx scopes an app's privileges to the same server connection, and
+   * needed in addition to the advertised set because servers MAY omit UI-only resources from
+   * `resources/list`. A `tools/list` failure denies (and stays retryable: `populateToolCaches` never
+   * caches an empty tool set, so the next read re-fetches).
+   */
+  private async isToolDeclaredUiResource(
+    connection: MCPConnection,
+    cacheKey: string,
+    uri: string,
+  ): Promise<boolean> {
+    try {
+      if (!this.isToolCacheFresh(cacheKey, connection)) {
+        await this.populateToolCaches(connection, cacheKey);
+      }
+    } catch (error) {
+      logger.warn(
+        `[MCP][${cacheKey}] Could not list tools to authorize UI resource "${uri}"; denying.`,
+        error,
+      );
+      return false;
+    }
+    const declared = this.resourceUriCache.get(cacheKey);
+    if (!declared) {
+      return false;
+    }
+    for (const meta of declared.values()) {
+      if (meta.uri === uri) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Authorizes an app-driven `resources/read`. The URI must either be declared as a tool's UI
+   * resource on this connection or be one the server actually advertises (an exact `resources/list`
+   * entry or a `resources/templates/list` match), so a sandboxed app cannot exfiltrate unrelated
+   * resources the host connection can otherwise reach. Fails closed when neither is available.
    */
   private async assertResourceReadable(
     connection: MCPConnection,
@@ -1030,10 +1056,16 @@ Please follow these instructions when using tools from the respective MCP server
     uri: string,
     logPrefix: string,
   ): Promise<void> {
-    if (uri.startsWith('ui://')) {
+    // Check order is load-bearing: tool-declared, then the exact advertised URI, then the
+    // canonicalized template match. Canonicalization must stay below the exact check, or an
+    // advertised URI carrying a bare `%` (`db://100%`) fails to decode and becomes unreadable.
+    if (
+      uri.startsWith('ui://') &&
+      (await this.isToolDeclaredUiResource(connection, cacheKey, uri))
+    ) {
       return;
     }
-    let advertised: { uris: Set<string>; templates: RegExp[] };
+    let advertised: { uris: Set<string>; templates: RE2JS[]; complete: boolean };
     try {
       advertised = await this.getAdvertisedResources(connection, cacheKey);
     } catch (error) {
@@ -1054,21 +1086,53 @@ Please follow these instructions when using tools from the respective MCP server
     const canonicalUri = MCPManager.canonicalizeUri(uri);
     if (
       canonicalUri != null &&
-      advertised.templates.some((pattern) => pattern.test(canonicalUri))
+      advertised.templates.some((pattern) => pattern.matches(canonicalUri))
     ) {
       return;
     }
+    // A truncated snapshot must not deny with a claim the server never made.
+    const truncated = advertised.complete
+      ? ''
+      : ' The advertised resource list could not be fully enumerated.';
     throw new McpError(
       ErrorCode.InvalidRequest,
-      `${logPrefix} Resource "${uri}" is not advertised by the server and cannot be read by an app.`,
+      `${logPrefix} Resource "${uri}" is not advertised by the server and cannot be read by an app.${truncated}`,
     );
+  }
+
+  /**
+   * Walks one cursor-paginated advertisement list. Returns false when the snapshot it produced is
+   * partial (page cap or entry cap reached), so a denial can report that rather than imply the
+   * server does not advertise the resource. An empty-string `nextCursor` ends pagination: treating
+   * it as a next page re-requests page one until the cap and truncates the snapshot instead.
+   */
+  private static async collectAdvertisedPages<T>(
+    fetchPage: (cursor?: string) => Promise<{ items: T[]; nextCursor?: string }>,
+    collect: (item: T) => void,
+    count: () => number,
+  ): Promise<boolean> {
+    let cursor: string | undefined;
+    for (let page = 0; page < MCPManager.RESOURCE_LIST_MAX_PAGES; page++) {
+      const { items, nextCursor } = await fetchPage(cursor);
+      for (const item of items) {
+        if (count() >= MCPManager.RESOURCE_LIST_MAX_ENTRIES) {
+          return false;
+        }
+        collect(item);
+      }
+      if (!nextCursor) {
+        return true;
+      }
+      cursor = nextCursor;
+    }
+    return false;
   }
 
   /** Snapshots (and caches per connection) the resource URIs and URI templates a server advertises. */
   private async getAdvertisedResources(
     connection: MCPConnection,
     cacheKey: string,
-  ): Promise<{ uris: Set<string>; templates: RegExp[] }> {
+  ): Promise<{ uris: Set<string>; templates: RE2JS[]; complete: boolean }> {
     const cached = this.advertisedResourceCache.get(cacheKey);
     if (
       cached &&
@@ -1078,65 +1142,66 @@ Please follow these instructions when using tools from the respective MCP server
     }
 
     const uris = new Set<string>();
-    let cursor: string | undefined;
-    // A template-only server may not implement resources/list; treat its failure as an empty
-    // concrete list so advertised templates below are still collected and can authorize reads.
-    try {
-      for (let page = 0; page < MCPManager.RESOURCE_LIST_MAX_PAGES; page++) {
-        const result: ListResourcesResult = await connection.client.request(
-          { method: 'resources/list', params: cursor != null ? { cursor } : {} },
-          ListResourcesResultSchema,
-          { timeout: connection.timeout },
+    const templates: RE2JS[] = [];
+    let complete = true;
+    // The handshake capabilities say whether the server has resources at all, so a server declaring
+    // none advertises an empty (and complete) set instead of being probed. Capabilities are unknown
+    // only before initialize resolves, where asking is harmless: a failed call still denies.
+    const capabilities = connection.client.getServerCapabilities?.();
+    if (capabilities == null || capabilities.resources != null) {
+      // A template-only server may not implement resources/list; treat its failure as an empty
+      // concrete list so advertised templates below are still collected and can authorize reads.
+      try {
+        complete = await MCPManager.collectAdvertisedPages(
+          async (cursor) => {
+            const result: ListResourcesResult = await connection.client.listResources(
+              cursor != null ? { cursor } : {},
+              { timeout: connection.timeout },
+            );
+            return { items: result.resources, nextCursor: result.nextCursor };
+          },
+          (resource) => uris.add(resource.uri),
+          () => uris.size,
         );
-        for (const resource of result.resources) {
-          uris.add(resource.uri);
-        }
-        if (result.nextCursor == null) {
-          break;
-        }
-        cursor = result.nextCursor;
+      } catch (error) {
+        complete = false;
+        logger.debug(`[MCP][${cacheKey}] resources/list unavailable; using templates only.`, error);
       }
-    } catch (error) {
-      logger.debug(`[MCP][${cacheKey}] resources/list unavailable; using templates only.`, error);
+
+      try {
+        const templatesComplete = await MCPManager.collectAdvertisedPages(
+          async (cursor) => {
+            const result: ListResourceTemplatesResult =
+              await connection.client.listResourceTemplates(cursor != null ? { cursor } : {}, {
+                timeout: connection.timeout,
+              });
+            return { items: result.resourceTemplates, nextCursor: result.nextCursor };
+          },
+          (template) => {
+            const pattern = MCPManager.compileUriTemplate(template.uriTemplate);
+            if (pattern) {
+              templates.push(pattern);
+            }
+          },
+          () => templates.length,
+        );
+        complete = complete && templatesComplete;
+      } catch (error) {
+        complete = false;
+        logger.debug(
+          `[MCP][${cacheKey}] resources/templates/list unavailable; skipping templates.`,
+          error,
+        );
+      }
     }
 
-    const templates: RegExp[] = [];
-    try {
-      cursor = undefined;
-      for (let page = 0; page < MCPManager.RESOURCE_LIST_MAX_PAGES; page++) {
-        const result: ListResourceTemplatesResult = await connection.client.request(
-          { method: 'resources/templates/list', params: cursor != null ? { cursor } : {} },
-          ListResourceTemplatesResultSchema,
-          { timeout: connection.timeout },
-        );
-        for (const template of result.resourceTemplates) {
-          // Compile templates in the same decoded space the requested URI is canonicalized into,
-          // so matching is encoding-agnostic; fall back to the raw template if it is not valid
-          // percent-encoding.
-          let templateStr = template.uriTemplate;
-          try {
-            templateStr = decodeURIComponent(templateStr);
-          } catch {
-            /* keep raw template */
-          }
-          const pattern = MCPManager.uriTemplateToRegExp(templateStr);
-          if (pattern) {
-            templates.push(pattern);
-          }
-        }
-        if (result.nextCursor == null) {
-          break;
-        }
-        cursor = result.nextCursor;
-      }
-    } catch (error) {
-      logger.debug(
-        `[MCP][${cacheKey}] resources/templates/list unavailable; skipping templates.`,
-        error,
+    if (!complete) {
+      logger.warn(
+        `[MCP][${cacheKey}] Advertised resource snapshot is incomplete; resources outside the snapshot will be denied for this connection.`,
       );
     }
 
-    const entry = { uris, templates };
+    const entry = { uris, templates, complete };
     this.advertisedResourceCache.set(cacheKey, entry);
     this.advertisedResourceConnStamp.set(cacheKey, this.resourceConnStamp(connection));
     return entry;
@@ -1177,8 +1242,18 @@ Please follow these instructions when using tools from the respective MCP server
   /**
    * Converts an RFC 6570 resource URI template into an anchored matcher. Simple expansions match a
    * single path segment; reserved/operator expansions (`{+x}`, `{#x}`, `{/x}`, ...) may span `/`.
+   *
+   * Compiled with RE2 rather than the native engine because both halves are attacker-supplied (a
+   * server advertises the template, the sandboxed app supplies the URI) and adjacent expressions
+   * produce adjacent unbounded classes by construction, so no character-class tightening can make
+   * `{a}{b}{c}...` safe on a backtracking engine (measured: tens of seconds on one request).
+   *
+   * The SDK's `UriTemplate.match()` is deliberately not used in its place: it admits `&` inside a
+   * simple value (so `?q={q}` authorizes `?q=foo&admin=true`), maps `+`/`#` to an unbounded class,
+   * implements no `;` operator, and builds its `RegExp` inside `match()` where no linear-time engine
+   * can be substituted.
    */
-  private static uriTemplateToRegExp(template: string): RegExp | null {
+  private static compileUriTemplate(template: string): RE2JS | null {
     try {
       let pattern = '';
       for (let i = 0; i < template.length; ) {
@@ -1197,6 +1272,10 @@ Please follow these instructions when using tools from the respective MCP server
         // because this regex is the allow-list for app-driven resources/read, a query/fragment
         // template must not authorize unrelated reads or path traversal.
         const expr = template.slice(i + 1, end);
+        // Reserved operators have no defined expansion, so nothing they could authorize is knowable.
+        if (MCPManager.RESERVED_TEMPLATE_OPERATOR.test(expr)) {
+          return null;
+        }
         const op = expr[0] ?? '';
         // Variable names declared in this expansion (operator + `:prefix`/`*explode` modifiers
         // stripped), used to constrain query expansions to their declared keys rather than an
@@ -1211,9 +1290,15 @@ Please follow these instructions when using tools from the respective MCP server
           .filter(Boolean)
           .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
           .join('|');
+        // No declared name means no value this expression could recover, so `{?}`, `{&}`, `{}` and
+        // `{*}` authorize nothing rather than falling back to an open query string.
+        if (!keys) {
+          return null;
+        }
         // RFC 6570 3.2.5/3.2.6: each defined variable contributes exactly one prefixed component,
         // so a non-exploded expression can never expand past its declared variable count.
         const exploded = varSpecs.some((spec) => spec.endsWith('*'));
+        const quantified = exploded || varSpecs.length > 1;
         const bounded = (unit: string) => {
           if (exploded) {
             return `(?:${unit})+`;
@@ -1230,17 +1315,19 @@ Please follow these instructions when using tools from the respective MCP server
           case '/': // path segments
             pattern += bounded('/[^/?#]+');
             break;
-          case '.': // label(s)
-            pattern += bounded('\\.[^/?#]+');
+          case '.': // label(s): the repeated unit must exclude its own delimiter, or one repetition
+            // swallows the rest; a single unquantified label keeps the wider class.
+            pattern += quantified ? bounded('\\.[^/?#.]+') : '\\.[^/?#]+';
             break;
-          case ';': // path-style params
-            pattern += '(?:;[^/?#]+)+';
+          case ';': // path-style params: pinned to the declared names and bounded by their count,
+            // with a value class excluding `;` so one value cannot swallow `;admin=true`.
+            pattern += bounded(`;(?:${keys})(?:=[^/?#;&]*)?`);
             break;
           case '?': // query: only the declared parameter names, in any order
-            pattern += keys ? `\\?(?:${keys})=[^#&]*(?:&(?:${keys})=[^#&]*)*` : '\\?[^#]*';
+            pattern += `\\?(?:${keys})=[^#&]*(?:&(?:${keys})=[^#&]*)*`;
             break;
           case '&': // query continuation: only the declared parameter names
-            pattern += keys ? `(?:&(?:${keys})=[^#&]*)+` : '&[^#]*';
+            pattern += `(?:&(?:${keys})=[^#&]*)+`;
             break;
           default: // simple expansion: a single value. RFC 6570 percent-encodes reserved chars,
             // so a real value never contains a raw `&` or `=`; excluding them stops a query value
@@ -1249,7 +1336,9 @@ Please follow these instructions when using tools from the respective MCP server
         }
         i = end + 1;
       }
-      return new RegExp(`^${pattern}$`);
+      // A pattern RE2 refuses to compile (an oversized varSpec list, for instance) throws
+      // RE2JSSyntaxException here and fails closed as a null matcher.
+      return RE2JS.compile(`^${pattern}$`);
     } catch {
       return null;
     }
@@ -1297,16 +1386,9 @@ Please follow these instructions when using tools from the respective MCP server
       );
     }
 
-    const result = await connection.client.request(
-      {
-        method: 'resources/list',
-        params: cursor != null ? { cursor } : {},
-      },
-      ListResourcesResultSchema,
-      { timeout: connection.timeout },
-    );
-
-    return result;
+    return connection.client.listResources(cursor != null ? { cursor } : {}, {
+      timeout: connection.timeout,
+    });
   }
 
   async listResourceTemplates({
@@ -1347,16 +1429,9 @@ Please follow these instructions when using tools from the respective MCP server
       );
     }
 
-    const result = await connection.client.request(
-      {
-        method: 'resources/templates/list',
-        params: cursor != null ? { cursor } : {},
-      },
-      ListResourceTemplatesResultSchema,
-      { timeout: connection.timeout },
-    );
-
-    return result;
+    return connection.client.listResourceTemplates(cursor != null ? { cursor } : {}, {
+      timeout: connection.timeout,
+    });
   }
 
   /**
@@ -1421,7 +1496,9 @@ Please follow these instructions when using tools from the respective MCP server
       );
     }
 
-    const result = await connection.client.request(
+    // Same reason as callTool: the typed wrapper adds outputSchema enforcement this proxy must not
+    // impose on an app follow-up call.
+    return connection.client.request(
       {
         method: 'tools/call',
         params: {
@@ -1432,7 +1509,5 @@ Please follow these instructions when using tools from the respective MCP server
       CallToolResultSchema,
       { timeout: connection.timeout, resetTimeoutOnProgress: true },
     );
-
-    return result;
   }
 }

@@ -31,9 +31,16 @@ jest.mock('~/utils/mcpApps', () => ({
       ? Buffer.from(r.blob, 'base64').toString('utf-8')
       : undefined),
   isMcpAppResource: (r) =>
-    !!(r && r.toolName && r.serverName) && (r.mimeType ?? '').includes('profile=mcp-app'),
+    !!(r && r.toolName && r.serverName) &&
+    jest.requireActual('librechat-data-provider').isMcpAppMimeType(r.mimeType),
   buildAppToolResult: jest.fn(),
   getMCPSandboxUrl: () => 'http://localhost/sandbox',
+  getResourceKey: (r: any) => r?.resourceId || r?.uri || '',
+  clampAppViewHeight: (height?: number, bounds?: { min?: number; max?: number }) =>
+    typeof height === 'number' && Number.isFinite(height) && height > 0
+      ? Math.min(Math.max(Math.round(height), bounds?.min ?? 80), bounds?.max ?? 4000)
+      : undefined,
+  MAX_CAROUSEL_VIEW_HEIGHT: 720,
   callMCPAppTool: jest.fn(),
   readMCPResource: jest.fn(),
   fetchMCPResourceHtml: jest.fn(),
@@ -41,6 +48,7 @@ jest.mock('~/utils/mcpApps', () => ({
 
 jest.mock('~/hooks/MCP', () => ({
   useAppBridge: jest.fn(),
+  useMCPAppFrame: jest.requireActual('~/hooks/MCP/useMCPAppFrame').useMCPAppFrame,
   useMCPIconMap: () => new Map(),
 }));
 

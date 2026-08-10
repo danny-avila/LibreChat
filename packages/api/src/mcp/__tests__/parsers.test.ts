@@ -1,3 +1,5 @@
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
+import { isMcpAppMimeType, MCP_APP_MIME_TYPE } from 'librechat-data-provider';
 import type * as t from '../types';
 import { formatToolContent } from '../parsers';
 
@@ -329,11 +331,19 @@ describe('formatToolContent', () => {
         toolName: 'do_thing',
         structuredContent: { count: 3 },
       });
-      // The shared result snapshot keeps the resource reference but not its body (see the
-      // no-duplication test below); the app's own html stays on the resource itself.
+      // The shared result snapshot keeps the resource reference and an empty carrier key but not the
+      // body (see the no-duplication test below); the app's own html stays on the resource itself.
+      // The empty key is required: a resource with neither text nor blob fails CallToolResultSchema,
+      // so the app bridge would reject the whole result instead of dispatching ontoolresult.
       expect(uiResourceArtifact?.content).toEqual([
-        { type: 'resource', resource: { uri: 'ui://app', mimeType: 'text/html;profile=mcp-app' } },
+        {
+          type: 'resource',
+          resource: { uri: 'ui://app', mimeType: 'text/html;profile=mcp-app', text: '' },
+        },
       ]);
+      expect(CallToolResultSchema.safeParse({ content: uiResourceArtifact?.content }).success).toBe(
+        true,
+      );
       expect(uiResourceArtifact?.text).toBe('<p>hi</p>');
     });
 
@@ -625,11 +635,30 @@ describe('formatToolContent', () => {
               mimeType: 'text/html;profile=mcp-app',
               text: '<svg>graph</svg>',
               resourceId: expect.any(String),
-              content: expect.any(Array),
             },
           ],
         },
       });
+    });
+
+    it('does not attach bridge fields to an app-profile resource with no server or tool context', () => {
+      const result: t.MCPToolCallResponse = {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://graph', mimeType: MCP_APP_MIME_TYPE, text: '<p>g</p>' },
+          },
+        ],
+        structuredContent: { a: 1 },
+      };
+
+      const [, artifacts] = formatToolContent(result, 'openai', { toolName: 'do_thing' });
+      const uiResource = artifacts?.ui_resources?.data?.[0];
+
+      expect(uiResource?.serverName).toBeUndefined();
+      expect(uiResource?.toolName).toBeUndefined();
+      expect(uiResource?.content).toBeUndefined();
+      expect(uiResource?.structuredContent).toBeUndefined();
     });
   });
 
@@ -794,7 +823,10 @@ describe('formatToolContent', () => {
       });
 
       expect(artifacts).toBeUndefined();
-      expect(content).toBe('<p>hi</p>\nResource URI: ui://app\nType: text/html;profile=mcp-app');
+      // Suppressing the app must not paste a whole untrusted HTML document into model context: the
+      // pre-apps baseline never carried one, and the document is meant for the sandbox.
+      expect(content).toBe('Resource URI: ui://app\nType: text/html;profile=mcp-app');
+      expect(content).not.toContain('<p>hi</p>');
     });
 
     it('leaves images stringified in the text when an app widens the extraction path', () => {
@@ -965,5 +997,237 @@ describe('formatToolContent', () => {
       expect(snapshot).not.toContain(body);
       expect(snapshot).toContain('ui://chart');
     });
+  });
+});
+
+describe('shared result snapshot', () => {
+  const appMeta = { serverName: 'srv', toolName: 'do_thing' };
+
+  const snapshotOf = (
+    result: t.MCPToolCallResponse,
+    metadata: Parameters<typeof formatToolContent>[2] = appMeta,
+  ) => {
+    const [, artifacts] = formatToolContent(result, 'openai', metadata);
+    return artifacts?.ui_resources?.data?.[0]?.content;
+  };
+
+  const appView = (text: string) => ({
+    type: 'resource' as const,
+    resource: { uri: 'ui://app', mimeType: MCP_APP_MIME_TYPE, text },
+  });
+
+  const schemaCases: Array<{ name: string; result: t.MCPToolCallResponse; metadata?: object }> = [
+    { name: 'app view with text', result: { content: [appView('<p>hi</p>')] } },
+    {
+      name: 'app view with blob',
+      result: {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://app', mimeType: MCP_APP_MIME_TYPE, blob: 'YmluYXJ5' },
+          },
+        ],
+      },
+    },
+    {
+      name: 'app view plus a file resource',
+      result: {
+        content: [
+          appView('<p>hi</p>'),
+          {
+            type: 'resource',
+            resource: { uri: 'file://report', mimeType: 'text/plain', text: 'row,1' },
+          },
+        ],
+      },
+    },
+    {
+      name: 'synthesized declared app',
+      result: { content: [{ type: 'text', text: 'done' }] },
+      metadata: { ...appMeta, resourceUri: 'ui://app' },
+    },
+  ];
+
+  // An emptied carrier key keeps the snapshot a valid CallToolResult. Deleting it instead makes the
+  // app's own CallToolResultSchema parse fail, so ontoolresult never fires for the whole result.
+  it.each(schemaCases)('stays a valid CallToolResult: $name', ({ result, metadata }) => {
+    const content = snapshotOf(
+      result,
+      (metadata ?? appMeta) as Parameters<typeof formatToolContent>[2],
+    );
+    expect(CallToolResultSchema.safeParse({ content }).success).toBe(true);
+  });
+
+  it('empties the ui:// carrier key in the snapshot while the top level keeps the body', () => {
+    const [, artifacts] = formatToolContent(
+      {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://app', mimeType: MCP_APP_MIME_TYPE, blob: 'YmluYXJ5' },
+          },
+        ],
+      },
+      'openai',
+      appMeta,
+    );
+
+    const uiResource = artifacts?.ui_resources?.data?.[0];
+    expect(uiResource?.blob).toBe('YmluYXJ5');
+    expect(uiResource?.content).toEqual([
+      {
+        type: 'resource',
+        resource: { uri: 'ui://app', mimeType: MCP_APP_MIME_TYPE, blob: '' },
+      },
+    ]);
+  });
+
+  it.each([
+    { uri: 'file://report', mimeType: 'text/plain', text: 'row,1' },
+    { uri: 'db://items/1', mimeType: 'application/json', text: '{"a":1}' },
+    { uri: 'custom://thing', mimeType: 'text/plain', text: 'payload' },
+  ])('preserves a non-UI body in the snapshot: $uri', (resource) => {
+    const content = snapshotOf({ content: [appView('<p>hi</p>'), { type: 'resource', resource }] });
+    expect(content?.[1]).toEqual({ type: 'resource', resource });
+  });
+
+  it('preserves a non-UI blob body in the snapshot', () => {
+    const resource = {
+      uri: 'file://report.bin',
+      mimeType: 'application/octet-stream',
+      blob: 'YQ==',
+    };
+    const content = snapshotOf({ content: [appView('<p>hi</p>'), { type: 'resource', resource }] });
+    expect(content?.[1]).toEqual({ type: 'resource', resource });
+  });
+});
+
+describe('ui:// resource identity and rendering', () => {
+  const appMeta = { serverName: 'srv', toolName: 'do_thing' };
+
+  it('gives two ui:// resources with identical html distinct ids', () => {
+    const html = '<p>same</p>';
+    const [, artifacts] = formatToolContent(
+      {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://a', mimeType: MCP_APP_MIME_TYPE, text: html },
+          },
+          {
+            type: 'resource',
+            resource: { uri: 'ui://b', mimeType: MCP_APP_MIME_TYPE, text: html },
+          },
+        ],
+      },
+      'openai',
+      appMeta,
+    );
+
+    const ids = (artifacts?.ui_resources?.data ?? []).map((resource) => resource.resourceId);
+    expect(ids).toHaveLength(2);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('does not emit a marker for a static ui:// view with no body', () => {
+    const [content, artifacts] = formatToolContent(
+      {
+        content: [
+          { type: 'resource', resource: { uri: 'ui://static', mimeType: 'text/html', text: '' } },
+        ],
+      },
+      'openai',
+    );
+
+    expect(artifacts).toBeUndefined();
+    expect(content).not.toContain('\\ui{');
+    expect(content).toContain('Resource URI: ui://static');
+  });
+
+  it('suppresses the ui:// document body when apps are disabled for the scope', () => {
+    const [content, artifacts] = formatToolContent(
+      {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'ui://app', mimeType: MCP_APP_MIME_TYPE, text: '<html>doc</html>' },
+          },
+        ],
+      },
+      'openai',
+      { ...appMeta, enableApps: false },
+    );
+
+    expect(artifacts).toBeUndefined();
+    expect(content).toContain('Resource URI: ui://app');
+    expect(content).not.toContain('<html>doc</html>');
+    expect(content).not.toContain('Resource Text:');
+    expect(content).not.toContain('\\ui{');
+  });
+
+  it('still surfaces a non-ui:// html resource body', () => {
+    const [content] = formatToolContent(
+      {
+        content: [
+          {
+            type: 'resource',
+            resource: { uri: 'file://page.html', mimeType: 'text/html', text: '<p>page</p>' },
+          },
+        ],
+      },
+      'openai',
+    );
+
+    expect(content).toContain('Resource Text: <p>page</p>');
+  });
+});
+
+describe('isMcpAppMimeType', () => {
+  const accepted = [
+    MCP_APP_MIME_TYPE,
+    'text/html; profile=mcp-app',
+    'text/html;charset=utf-8;profile=mcp-app',
+    'text/html;profile=mcp-app;charset=utf-8',
+    'text/html;profile="mcp-app"',
+    'TEXT/HTML; PROFILE=mcp-app',
+  ];
+  const rejected = [
+    'application/xhtml+xml;profile=mcp-app',
+    'text/htmlx;profile=mcp-app',
+    'image/svg+xml;profile=mcp-app',
+    'text/html',
+    'text/html;xprofile=mcp-app',
+    'text/html;profile=mcp-app-evil',
+    undefined,
+    null,
+    42 as unknown as string,
+  ];
+
+  it.each(accepted)('accepts %s', (mimeType) => {
+    expect(isMcpAppMimeType(mimeType)).toBe(true);
+  });
+
+  it.each(rejected)('rejects %s', (mimeType) => {
+    expect(isMcpAppMimeType(mimeType as string | undefined)).toBe(false);
+  });
+
+  // The bridge payload the server attaches and the App Bridge the client starts must be decided by
+  // the same predicate, or one side persists fields the other never reads. Scoped to lower-case
+  // spellings: the tier-1 `includes('html')` gate this path runs first is case-sensitive, so an
+  // upper-case media type is dropped before classification on both sides.
+  it.each([
+    ...accepted.filter((mimeType) => mimeType === mimeType.toLowerCase()),
+    'text/html',
+    'text/html;xprofile=mcp-app',
+  ])('attaches bridge fields exactly when the profile matches: %s', (mimeType) => {
+    const [, artifacts] = formatToolContent(
+      {
+        content: [{ type: 'resource', resource: { uri: 'ui://app', mimeType, text: '<p>a</p>' } }],
+      },
+      'openai',
+      { serverName: 'srv', toolName: 'do_thing' },
+    );
+    const uiResource = artifacts?.ui_resources?.data?.[0];
+    expect(!!uiResource?.serverName).toBe(isMcpAppMimeType(mimeType));
   });
 });

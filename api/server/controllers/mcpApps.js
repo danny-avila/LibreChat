@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, Constants } = require('librechat-data-provider');
@@ -158,10 +159,108 @@ const appToolCall = async (req, res) => {
   }
 };
 
-/** @route GET /api/mcp/sandbox */
-const serveMCPSandbox = async (_req, res) => {
+const MAX_CSP_DOMAINS = 32;
+const MAX_CSP_PARAM_LENGTH = 4096;
+/** Replaced on the way out so the proxy can refuse to build a frame it has no response policy for. */
+const CSP_APPLIED_PLACEHOLDER = '/*__CSP_APPLIED__*/';
+const CSP_APPLIED_MARKER = 'window.__MCP_SANDBOX_CSP_APPLIED = true;';
+
+const SANDBOX_PATH = path.resolve(
+  __dirname,
+  '..',
+  '..',
+  '..',
+  'client',
+  'public',
+  'mcp-sandbox.html',
+);
+
+/**
+ * CSP3 host-source shape: optional http(s)/ws(s) scheme, optional wildcard subdomain prefix,
+ * hostname characters, optional port (numeric or `*`), optional path. Rejects CSP keywords, schemes
+ * with no host, and injection attempts.
+ *
+ * Keep in sync with `APP_LINK_HOST_PATTERN` in `client/src/utils/mcpApps.ts`: the host authorizes an
+ * `openLink` only for declared sources this filter also emits into the enforced policy, so anything
+ * the matcher accepts must be accepted here too.
+ */
+const SAFE_HOST_RE =
+  /^(?:(?:https?|wss?):\/\/)?(?:\*\.)?[a-zA-Z0-9][a-zA-Z0-9\-.]*(?::(?:\d{1,5}|\*))?(?:\/[^\s;,'"?#]*)?$/i;
+
+const toDomainList = (value) => {
+  if (!Array.isArray(value)) {
+    return '';
+  }
+  // Trim before testing and emit the trimmed form: joining the raw entry would put its surrounding
+  // whitespace (a newline, for instance) into the header.
+  return value
+    .map((domain) => (typeof domain === 'string' ? domain.trim() : ''))
+    .filter((domain) => domain && SAFE_HOST_RE.test(domain))
+    .slice(0, MAX_CSP_DOMAINS)
+    .join(' ');
+};
+
+const buildCspPolicy = (csp, strictCsp) => {
+  const resourceDomains = toDomainList(csp.resourceDomains);
+  const connectDomains = toDomainList(csp.connectDomains) || "'none'";
+  const frameDomains = toDomainList(csp.frameDomains);
+
+  const scriptSrc = strictCsp
+    ? "script-src 'unsafe-inline' " + resourceDomains
+    : "script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: " + resourceDomains;
+
+  return [
+    "default-src 'none'",
+    scriptSrc.trim(),
+    ("style-src 'unsafe-inline' " + resourceDomains).trim(),
+    'connect-src ' + connectDomains,
+    // form-action does not fall back to default-src, so with allow-forms a form could post to
+    // any origin; bound it to the declared egress allowlist ('none' when none is declared).
+    'form-action ' + connectDomains,
+    ('img-src data: blob: ' + resourceDomains).trim(),
+    ('media-src ' + (resourceDomains || "'none'")).trim(),
+    ('font-src ' + (resourceDomains || "'none'")).trim(),
+    // The app document is installed by navigating the inner frame to a blob URL, so blob: is
+    // unconditional: the spec's sample emits frame-src 'none' only because it installs the document
+    // with document.write into about:blank. frameDomains widens it to declared nested iframes.
+    ('frame-src blob: ' + frameDomains).trim(),
+    // Workers are created from blob URLs and inherit this policy, which default-src 'none' blocks.
+    ('worker-src blob: ' + resourceDomains).trim(),
+    "object-src 'none'",
+    'base-uri ' + (toDomainList(csp.baseUriDomains) || "'self'"),
+  ].join('; ');
+};
+
+/** An unparseable, oversized, or repeated `csp` param yields the restrictive default policy. */
+const parseCspParam = (raw) => {
+  if (typeof raw !== 'string' || raw.length === 0 || raw.length > MAX_CSP_PARAM_LENGTH) {
+    return {};
+  }
   try {
-    res.setHeader('Content-Type', 'text/html');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed;
+  } catch (error) {
+    logger.debug('[serveMCPSandbox] Ignoring unparseable csp parameter', error);
+    return {};
+  }
+};
+
+let cachedSandboxHtml = null;
+const readSandboxHtml = () => {
+  if (cachedSandboxHtml == null) {
+    cachedSandboxHtml = fs.readFileSync(SANDBOX_PATH, 'utf8');
+  }
+  return cachedSandboxHtml;
+};
+
+/** @route GET /api/mcp/sandbox */
+const serveMCPSandbox = async (req, res) => {
+  try {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    // Required, not merely hygienic: the per-resource policy below varies per request.
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
@@ -176,34 +275,28 @@ const serveMCPSandbox = async (_req, res) => {
       .split(/[\s,]+/)
       .filter((token) => /^https?:\/\/[a-zA-Z0-9][a-zA-Z0-9.-]*(?::\d{1,5})?$/.test(token))
       .join(' ');
+    const ancestorsPolicy = ancestors
+      ? `frame-ancestors 'self' ${ancestors}`
+      : "frame-ancestors 'self'";
     if (ancestors) {
-      res.setHeader('Content-Security-Policy', `frame-ancestors 'self' ${ancestors}`);
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     } else {
-      res.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
       res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
       res.setHeader('X-Frame-Options', 'SAMEORIGIN');
     }
 
-    const sandboxPath = path.resolve(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      'client',
-      'public',
-      'mcp-sandbox.html',
-    );
-    return res.sendFile(sandboxPath, (error) => {
-      if (error) {
-        logger.error('[serveMCPSandbox] Error:', error);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Failed to load MCP sandbox' });
-        }
-      }
-    });
+    const query = req?.query ?? {};
+    const resourcePolicy = buildCspPolicy(parseCspParam(query.csp), query.strictCsp === '1');
+    // frame-ancestors stays its own policy: CSP3 excludes it from the meta-element path, and
+    // multiple policies intersect, so the resource policy cannot loosen it.
+    res.setHeader('Content-Security-Policy', [ancestorsPolicy, resourcePolicy]);
+
+    return res.send(readSandboxHtml().replace(CSP_APPLIED_PLACEHOLDER, CSP_APPLIED_MARKER));
   } catch (error) {
     logger.error('[serveMCPSandbox] Error:', error);
+    if (res.headersSent) {
+      return res.end();
+    }
     return res.status(500).json({ error: 'Failed to load MCP sandbox' });
   }
 };

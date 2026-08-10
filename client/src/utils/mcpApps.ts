@@ -1,5 +1,5 @@
-import { request, apiBaseUrl } from 'librechat-data-provider';
-import type { UIResource } from 'librechat-data-provider';
+import { Tools, request, apiBaseUrl, isMcpAppMimeType } from 'librechat-data-provider';
+import type { TAttachment, UIResource } from 'librechat-data-provider';
 
 export type AppToolResult = {
   content: unknown[];
@@ -14,11 +14,9 @@ export type AppToolResult = {
  * resources are static and must render through a srcDoc iframe instead.
  */
 export function isMcpAppResource(resource: UIResource): boolean {
-  return (
-    !!resource.toolName &&
-    !!resource.serverName &&
-    (resource.mimeType ?? '').includes('profile=mcp-app')
-  );
+  // Shared with the server's app-backed classification so the two sides cannot drift: a substring
+  // test here accepted mime types the parser refuses to attach bridge fields to.
+  return !!resource.toolName && !!resource.serverName && isMcpAppMimeType(resource.mimeType);
 }
 
 /**
@@ -64,6 +62,62 @@ export function getMCPSandboxUrl(): string {
   } catch {
     return base;
   }
+}
+
+/**
+ * Must match `MAX_CSP_PARAM_LENGTH` in `serveMCPSandbox` (`api/server/controllers/mcpApps.js`), which
+ * falls back to the restrictive default policy for anything longer.
+ */
+export const MAX_SANDBOX_CSP_PARAM_LENGTH = 4096;
+
+/**
+ * The sandbox document's per-resource CSP is delivered as a response header on the sandbox URL, so
+ * the declared domains have to be on the URL before the document loads; the blob app document
+ * inherits that policy. Returns the csp that actually reached the response boundary, which is what
+ * bounds the app: a declaration the route would reject is dropped here too, so the host cannot
+ * authorize a link against domains the enforced policy never received.
+ */
+export function withSandboxCsp(
+  sandboxUrl: string,
+  csp: UIResource['csp'],
+): { url: string; applied: UIResource['csp'] } {
+  if (!csp) {
+    return { url: sandboxUrl, applied: undefined };
+  }
+  try {
+    const serialized = JSON.stringify(csp);
+    if (serialized.length > MAX_SANDBOX_CSP_PARAM_LENGTH) {
+      return { url: sandboxUrl, applied: undefined };
+    }
+    const url = new URL(sandboxUrl, window.location.origin);
+    url.searchParams.set('csp', serialized);
+    return { url: url.toString(), applied: csp };
+  } catch {
+    return { url: sandboxUrl, applied: undefined };
+  }
+}
+
+/**
+ * Stable identity for a UI resource across re-renders. Keying render state by array index lets a
+ * removed resource hand its loaded/torn-down state and measured height to whichever resource
+ * reconciles onto its index.
+ */
+export function getResourceKey(resource: UIResource): string {
+  return resource.resourceId || resource.uri;
+}
+
+/** UI resources on a tool call that this host can render: app-backed views, plus inert static HTML. */
+export function selectToolCallUIResources(attachments?: TAttachment[]): UIResource[] {
+  const uiResources: UIResource[] =
+    attachments
+      ?.filter((attachment) => attachment.type === Tools.ui_resources)
+      .flatMap((attachment) => (attachment[Tools.ui_resources] ?? []) as UIResource[]) ?? [];
+  return uiResources.filter(
+    (resource) =>
+      isMcpAppResource(resource) ||
+      (getInlineResourceHtml(resource) != null &&
+        (resource.mimeType ?? 'text/html').includes('html')),
+  );
 }
 
 export async function callMCPAppTool(
@@ -117,16 +171,40 @@ export function decodeBase64Utf8(b64: string): string {
  */
 export const MAX_APP_VIEW_HEIGHT = 4000;
 
+/**
+ * Lower bound for an app-requested iframe height. A few-pixel height hides the app behind its own
+ * chrome with no way for the user to recover it.
+ */
+export const MIN_APP_VIEW_HEIGHT = 80;
+
+/** Upper bound for a carousel slide, which scrolls horizontally in a fixed-height row. */
+export const MAX_CAROUSEL_VIEW_HEIGHT = 720;
+
 /** Clamps an app-reported height, returning undefined when it is not a usable positive number. */
-export function clampAppViewHeight(height?: number): number | undefined {
+export function clampAppViewHeight(
+  height?: number,
+  bounds?: { min?: number; max?: number },
+): number | undefined {
   if (typeof height !== 'number' || !Number.isFinite(height) || height <= 0) {
     return undefined;
   }
-  return Math.min(Math.round(height), MAX_APP_VIEW_HEIGHT);
+  const min = bounds?.min ?? MIN_APP_VIEW_HEIGHT;
+  const max = bounds?.max ?? MAX_APP_VIEW_HEIGHT;
+  return Math.min(Math.max(Math.round(height), min), max);
 }
 
+/**
+ * CSP3 §6.6.2.2 host-source grammar, minus the scheme-less form. `scheme-part` is required because
+ * the app document has an opaque origin, so §6.7.2.8's "same scheme as the protected resource" rule
+ * has no stable answer; `path-part` is rejected because the sandbox filter drops path-bearing
+ * entries, so accepting one here would authorize a link the sandbox policy never granted.
+ *
+ * Keep in sync with `SAFE_HOST_RE` in `serveMCPSandbox` (`api/server/controllers/mcpApps.js`):
+ * `isAllowedAppLink` must authorize a strict subset of what the browser grants the same declared
+ * source list inside the sandbox, and every deviation from CSP3 here narrows.
+ */
 const APP_LINK_HOST_PATTERN =
-  /^(?:(https?|wss?):\/\/)?(\*\.)?([a-zA-Z0-9][a-zA-Z0-9.-]*)(?::(\d{1,5}))?$/;
+  /^(https?|wss?):\/\/(\*\.)?([a-zA-Z0-9](?:[a-zA-Z0-9\-.]*[a-zA-Z0-9])?)(?::(\d{1,5}|\*))?$/i;
 
 const DEFAULT_PORTS: Record<string, string> = { 'http:': '80', 'https:': '443' };
 
@@ -134,11 +212,18 @@ function effectivePort(url: URL): string {
   return url.port || DEFAULT_PORTS[url.protocol] || '';
 }
 
+/** IPv6 hosts arrive bracketed from `URL`; IPv4 is four decimal labels. CSP3 §6.7.2.10 step 1
+ * compares host-parts label by label, so an address literal can never match a wildcard and only
+ * ever matches itself: refuse both rather than reason about `0x7f.1` style spellings. */
+function isAddressLiteral(hostname: string): boolean {
+  return hostname.startsWith('[') || /^\d+(?:\.\d+)*$/.test(hostname);
+}
+
 /**
- * Matches a URL against one declared CSP source. A declared scheme or port narrows the match the
- * same way it would inside the sandbox CSP, so `https://api.example.com:443` must not authorize
- * `http://api.example.com:8080`. An entry with no scheme/port matches either scheme and any port,
- * mirroring CSP host-source semantics.
+ * Matches a URL against one declared CSP source, following CSP3 §6.7.2.8-11: the scheme must match
+ * exactly (no `http`→`https` widening in either direction), an absent `port-part` matches only the
+ * scheme's default port, `port-part = '*'` matches any port, and `*.example.com` requires at least
+ * one subdomain label so it never covers the apex.
  */
 function urlMatchesDeclaredSource(url: URL, entry: string): boolean {
   const match = APP_LINK_HOST_PATTERN.exec(entry.trim());
@@ -147,24 +232,33 @@ function urlMatchesDeclaredSource(url: URL, entry: string): boolean {
   }
   const [, declaredScheme, wildcard, declaredHost, declaredPort] = match;
 
-  if (declaredScheme) {
-    const scheme = declaredScheme.toLowerCase();
-    // ws(s) declarations are for sockets, not navigable links.
-    if (scheme !== 'http' && scheme !== 'https') {
-      return false;
-    }
-    if (url.protocol !== `${scheme}:`) {
-      return false;
-    }
+  // ws(s) declarations are for sockets, not navigable links.
+  const scheme = declaredScheme.toLowerCase();
+  if (scheme !== 'http' && scheme !== 'https') {
+    return false;
+  }
+  if (url.protocol !== `${scheme}:`) {
+    return false;
   }
 
-  if (declaredPort && effectivePort(url) !== declaredPort) {
+  if (
+    declaredPort !== '*' &&
+    effectivePort(url) !== (declaredPort || DEFAULT_PORTS[`${scheme}:`])
+  ) {
     return false;
   }
 
   const host = url.hostname.toLowerCase();
   const target = declaredHost.toLowerCase();
-  return wildcard ? host === target || host.endsWith(`.${target}`) : host === target;
+  // CSP3 compares host-parts label by label, so a trailing dot yields an empty final label that
+  // matches nothing; refuse it rather than normalize it into the apex.
+  if (!host || host.endsWith('.') || isAddressLiteral(host)) {
+    return false;
+  }
+  if (!wildcard) {
+    return host === target;
+  }
+  return host.length > target.length + 1 && host.endsWith(`.${target}`);
 }
 
 /**
@@ -234,9 +328,9 @@ export async function fetchMCPResourceHtml(
   // for the requested URI (preferring the MCP App profile) rather than trusting response order;
   // otherwise the wrong document renders under the wrong CSP and permissions.
   const item =
-    contents.find((c) => c.uri === uri && (c.mimeType ?? '').includes('profile=mcp-app')) ??
+    contents.find((c) => c.uri === uri && isMcpAppMimeType(c.mimeType)) ??
     contents.find((c) => c.uri === uri) ??
-    contents.find((c) => (c.mimeType ?? '').includes('profile=mcp-app')) ??
+    contents.find((c) => isMcpAppMimeType(c.mimeType)) ??
     contents[0];
   const uiMeta = item?._meta?.ui;
   let html = item?.text ?? '';

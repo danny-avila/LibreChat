@@ -38,6 +38,7 @@ jest.mock('~/hooks/MCP', () => {
   return {
     useMCPIconMap: () => new Map(),
     useAppBridge: jest.fn(),
+    useMCPAppFrame: jest.requireActual('~/hooks/MCP/useMCPAppFrame').useMCPAppFrame,
     useMCPServerNames: () => mcpServerNames,
   };
 });
