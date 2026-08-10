@@ -888,6 +888,60 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       expect(mockedGetFileStream).not.toHaveBeenCalled();
     });
 
+    it('should apply Claude document restrictions through an OpenAI-compatible gateway', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockDocFile(
+        1,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'report.xlsx',
+      );
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.OPENAI, model: 'anthropic/claude-sonnet-4-6' },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(0);
+      expect(result.files).toHaveLength(0);
+      expect(mockedGetFileStream).not.toHaveBeenCalled();
+    });
+
+    it('should retain XLSX support for non-Claude OpenAI models', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockDocFile(
+        1,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'report.xlsx',
+      );
+      const mockContent = Buffer.from('xlsx-content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.OPENAI, model: 'gpt-5.4' },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toMatchObject([
+        {
+          type: 'file',
+          file: {
+            filename: 'report.xlsx',
+            file_data: `data:${file.type};base64,${mockContent}`,
+          },
+        },
+      ]);
+      expect(result.files).toEqual([file]);
+      expect(mockedGetFileStream).toHaveBeenCalledTimes(1);
+    });
+
     it('should still encode supported Anthropic documents when mixed with unsupported ones', async () => {
       const req = createMockRequest(30) as ServerRequest;
       const docxFile = createMockDocFile(1, 'application/vnd.ms-excel', 'sheet.xls');

@@ -187,8 +187,8 @@ function Avatar() {
             <>
               <div
                 className={cn(
-                  'relative overflow-hidden rounded-full ring-4 ring-gray-200 transition-all dark:ring-gray-700',
-                  isDragging && 'cursor-move ring-blue-500 dark:ring-blue-400',
+                  'relative overflow-hidden rounded-full ring-4 ring-border-light transition-all',
+                  isDragging && 'cursor-move ring-ring-primary',
                 )}
                 onMouseDown={() => setIsDragging(true)}
                 onMouseUp={() => setIsDragging(false)}
@@ -286,7 +286,7 @@ function Avatar() {
                 </div>
 
                 {/* Helper Text */}
-                <p className="text-center text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-center text-xs text-text-tertiary">
                   {localize('com_ui_editor_instructions')}
                 </p>
               </div>
@@ -320,7 +320,7 @@ function Avatar() {
             </>
           ) : (
             <div
-              className="flex h-72 w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-transparent transition-colors hover:border-gray-400 dark:border-gray-600 dark:hover:border-gray-500"
+              className="flex h-72 w-full flex-col items-center justify-center rounded-lg border-2 border-dashed border-border-medium bg-transparent transition-colors hover:border-border-heavy"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               role="button"
@@ -334,7 +334,7 @@ function Avatar() {
               }}
               aria-label={localize('com_ui_upload_avatar_label')}
             >
-              <FileImage className="mb-4 size-16 text-gray-400" />
+              <FileImage className="mb-4 size-16 text-text-tertiary" />
               <p className="mb-2 text-center text-sm font-medium text-text-primary">
                 {localize('com_ui_drag_drop')}
               </p>

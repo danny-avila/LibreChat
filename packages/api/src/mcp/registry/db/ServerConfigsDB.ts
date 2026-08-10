@@ -95,6 +95,19 @@ function sanitizeUserManagedOAuthConfig(config: ParsedServerConfig): ParsedServe
   };
 }
 
+/** Normalizes legacy values that predate the current runtime config schemas. */
+function normalizePersistedConfig(config: ParsedServerConfig): ParsedServerConfig {
+  const persistedConfig = config as ParsedServerConfig & {
+    headers?: Record<string, string> | null;
+  };
+  if (persistedConfig.headers !== null) {
+    return config;
+  }
+
+  const { headers: _legacyNullHeaders, ...normalizedConfig } = persistedConfig;
+  return normalizedConfig as ParsedServerConfig;
+}
+
 function normalizeOAuthUrl(value?: string): string | undefined {
   if (!value) {
     return value;
@@ -577,7 +590,9 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       updatedAt: serverDBDoc.updatedAt?.getTime(),
       ...(authorId ? { author: authorId } : {}),
     };
-    return sanitizeUserManagedOAuthConfig(await this.decryptConfig(config));
+    return sanitizeUserManagedOAuthConfig(
+      await this.decryptConfig(normalizePersistedConfig(config)),
+    );
   }
 
   /**

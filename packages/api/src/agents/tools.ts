@@ -181,7 +181,8 @@ const SKILL_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
     },
     content: {
       type: 'string',
-      description: 'Complete file contents.',
+      description:
+        'Complete file contents. Keep a single call well under the streamed tool-argument limit (64 KB by default); build larger files incrementally with edit_file.',
     },
     overwrite: {
       type: 'boolean',
@@ -202,7 +203,8 @@ const CODE_CREATE_FILE_PARAMETERS: LCTool['parameters'] = Object.freeze({
     },
     content: {
       type: 'string',
-      description: 'Complete file contents.',
+      description:
+        'Complete file contents. Keep a single call well under the streamed tool-argument limit (64 KB by default); build larger files incrementally with edit_file.',
     },
     overwrite: {
       type: 'boolean',
@@ -295,7 +297,9 @@ const CODE_CREATE_FILE_DESCRIPTION = `Create a new file, or overwrite an existin
 
 Use for new files and full rewrites where the change is larger than half the file. Requires overwrite: true to replace existing files. Refuses otherwise.
 
-Targets code-execution sandbox paths. Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.`;
+Targets code-execution sandbox paths. Prefer /mnt/data/{file} for files that should remain available to later sandbox calls.
+
+Very long content can exceed the streamed tool-argument limit (64 KB by default) and fail the call. For large files, create the file with its first section, then extend it with edit_file.`;
 
 const SKILL_EDIT_FILE_DESCRIPTION = `Apply targeted text replacements to an existing file.
 

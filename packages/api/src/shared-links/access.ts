@@ -147,7 +147,7 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
       });
 
       if (!hasAccess) {
-        res.status(403).json({ message: 'You do not have permission to view this shared link' });
+        res.status(403).end();
         return;
       }
 

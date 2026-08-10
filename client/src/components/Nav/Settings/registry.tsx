@@ -33,6 +33,7 @@ import { DeleteCache } from '../SettingsTabs/Data/DeleteCache';
 import { RevokeKeys } from '../SettingsTabs/Data/RevokeKeys';
 import { ClearChats } from '../SettingsTabs/Data/ClearChats';
 import { TokenCredits, AutoRefill } from './BillingControls';
+import AdminPanel from '../SettingsTabs/General/AdminPanel';
 import SharedLinks from '../SettingsTabs/Data/SharedLinks';
 import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
@@ -124,6 +125,16 @@ export const registry: SettingEntry[] = [
       localizationKey: 'com_nav_keep_screen_awake',
       switchId: 'keepScreenAwake',
     }),
+  },
+  // General · Admin
+  {
+    id: 'adminPanel',
+    tab: GENERAL,
+    section: 'admin',
+    labelKey: 'com_ui_admin_panel',
+    keywords: ['admin', 'panel', 'dashboard'],
+    Component: AdminPanel,
+    show: (ctx) => ctx.adminPanelURL !== '',
   },
 
   // Chat · Sending

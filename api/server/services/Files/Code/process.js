@@ -29,6 +29,7 @@ const {
   inferMimeType,
   EToolResources,
   EModelEndpoint,
+  ErrorTypes,
   mergeFileConfig,
   getEndpointFileConfig,
 } = require('librechat-data-provider');
@@ -784,10 +785,8 @@ async function getSessionInfo(ref, req) {
     });
 
     return response.data?.lastModified;
-  } catch (error) {
-    logger.debug(
-      `[getSessionInfo] session lookup failed (treating as cache miss): ${error?.message ?? String(error)}`,
-    );
+  } catch (_error) {
+    logger.debug('[getSessionInfo] session lookup failed (treating as cache miss)');
     return null;
   }
 }
@@ -825,6 +824,53 @@ const appendVisibleCodeFileContext = (toolContext, contextLine) => {
   }
 
   return `- Note: The following files are available in the "${Tools.execute_code}" tool environment:${contextLine}`;
+};
+
+class CodeResourceRecoveryError extends Error {
+  constructor({ required, primed, failed }) {
+    super(JSON.stringify({ type: ErrorTypes.RESOURCE_RECOVERY_REQUIRED }));
+    this.name = 'CodeResourceRecoveryError';
+    this.code = ErrorTypes.RESOURCE_RECOVERY_REQUIRED;
+    this.status = 409;
+    this.statusCode = 409;
+    this.details = { required, primed, failed };
+    this.required = required;
+    this.primed = primed;
+    this.failed = failed;
+  }
+}
+
+const getPrimingCorrelation = (req) => ({
+  requestId: req?.requestId ?? req?.id ?? 'unknown',
+  runId: req?.body?.messageId ?? req?.body?.conversationId ?? 'unknown',
+});
+
+const getReuploadFailureCategory = (error) => {
+  const status =
+    error?.response?.status ??
+    error?.statusCode ??
+    error?.status ??
+    error?.$metadata?.httpStatusCode;
+  const code = error?.code ?? error?.name;
+  if (
+    status === 404 ||
+    code === 'NoSuchKey' ||
+    code === 'NotFound' ||
+    code === 'BlobNotFound' ||
+    code === 'ResourceNotFound'
+  ) {
+    return 'missing_backing_object';
+  }
+  if (
+    status === 401 ||
+    status === 403 ||
+    code === 'AccessDenied' ||
+    code === 'AccessDeniedException' ||
+    code === 'Forbidden'
+  ) {
+    return 'resource_access_denied';
+  }
+  return 'reupload_failed';
 };
 
 /**
@@ -888,6 +934,8 @@ const primeFiles = async (options) => {
    * paths taken, and the final dispatch summary in one trace. */
   let skippedNoRef = 0;
   let reuploadFailures = 0;
+  let requiredCodeFiles = 0;
+  const reuploadFailureCategories = new Set();
 
   for (let i = 0; i < dbFiles.length; i++) {
     const file = dbFiles[i];
@@ -898,11 +946,10 @@ const primeFiles = async (options) => {
     const ref = file.metadata?.codeEnvRef;
     if (!ref) {
       skippedNoRef += 1;
-      logger.debug(
-        `[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref filename=${file.filename}`,
-      );
+      logger.debug(`[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref`);
       continue;
     }
+    requiredCodeFiles += 1;
     const session_id = ref.storage_session_id;
     const id = ref.file_id;
 
@@ -1010,9 +1057,12 @@ const primeFiles = async (options) => {
         );
       } catch (error) {
         reuploadFailures += 1;
+        const failureCategory = getReuploadFailureCategory(error);
+        reuploadFailureCategories.add(failureCategory);
+        const { requestId, runId } = getPrimingCorrelation(req);
         logger.error(
-          `[primeCodeFiles] file=${file.file_id} path=reupload-failed session=${session_id}: ${error.message}`,
-          error,
+          `[primeCodeFiles] reupload-failed requestId=${requestId} runId=${runId} ` +
+            `category=${failureCategory}`,
         );
       }
     };
@@ -1043,10 +1093,31 @@ const primeFiles = async (options) => {
   /* Dispatch summary — emitted unconditionally so a single grep on
    * `[primeCodeFiles] out` always shows the final state, not only
    * the per-path trail leading up to it. */
+  const primedCodeFiles = files.length;
+  const allRequiredResourcesFailed =
+    requiredCodeFiles > 0 && primedCodeFiles === 0 && reuploadFailures === requiredCodeFiles;
+  const { requestId, runId } = getPrimingCorrelation(req);
   logger.debug(
     `[primeCodeFiles] out: returned=${files.length} ` +
-      `skippedNoRef=${skippedNoRef} reuploadFailures=${reuploadFailures}`,
+      `required=${requiredCodeFiles} skippedNoRef=${skippedNoRef} reuploadFailures=${reuploadFailures}`,
   );
+
+  if (allRequiredResourcesFailed) {
+    const failureCategory =
+      reuploadFailureCategories.size === 1
+        ? Array.from(reuploadFailureCategories)[0]
+        : 'mixed_reupload_failure';
+    logger.warn(
+      `[primeCodeFiles] resource-recovery-required requestId=${requestId} runId=${runId} ` +
+        `required=${requiredCodeFiles} primed=${primedCodeFiles} failed=${reuploadFailures} ` +
+        `category=${failureCategory}`,
+    );
+    throw new CodeResourceRecoveryError({
+      required: requiredCodeFiles,
+      primed: primedCodeFiles,
+      failed: reuploadFailures,
+    });
+  }
 
   return { files, toolContext };
 };
@@ -1457,6 +1528,7 @@ async function writeSandboxFile({
 }
 
 module.exports = {
+  CodeResourceRecoveryError,
   primeFiles,
   checkIfActive,
   getSessionInfo,

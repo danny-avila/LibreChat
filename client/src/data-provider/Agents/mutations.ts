@@ -31,6 +31,18 @@ const hasEdgeWithAgent = (data: unknown, agentId: string): boolean => {
 };
 
 /**
+ * Mutation responses omit list-only `isEditable`. When merging into a cached list
+ * row, keep the ACL flag the list endpoint set rather than inferring it from
+ * write success (`MANAGE_AGENTS` can PATCH agents the ACL marks non-editable).
+ */
+const mergeAgentListRow = (previous: t.Agent, next: t.Agent): t.Agent => {
+  if (previous.isEditable === undefined) {
+    return next;
+  }
+  return { ...next, isEditable: previous.isEditable };
+};
+
+/**
  * Create a new agent
  */
 export const useCreateAgentMutation = (
@@ -47,7 +59,12 @@ export const useCreateAgentMutation = (
           if (!listRes) {
             return options?.onSuccess?.(newAgent, variables, context);
           }
-          const currentAgents = [newAgent, ...JSON.parse(JSON.stringify(listRes.data))];
+          /** The create succeeded, so the caller can edit it. Mutation responses carry no
+           *  `isEditable`; without this the cached row loses the field the list sets. */
+          const currentAgents = [
+            { ...newAgent, isEditable: true },
+            ...JSON.parse(JSON.stringify(listRes.data)),
+          ];
 
           queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, key], {
             ...listRes,
@@ -94,7 +111,7 @@ export const useUpdateAgentMutation = (
               ...listRes,
               data: listRes.data.map((agent) => {
                 if (agent.id === variables.agent_id) {
-                  return updatedAgent;
+                  return mergeAgentListRow(agent, updatedAgent);
                 }
                 return agent;
               }),
@@ -186,7 +203,9 @@ export const useDuplicateAgentMutation = (
           keys.forEach((key) => {
             const listRes = queryClient.getQueryData<t.AgentListResponse>([QueryKeys.agents, key]);
             if (listRes) {
-              const currentAgents = [agent, ...listRes.data];
+              /** Duplicating grants the caller ownership, so the new row is editable.
+               *  The response omits list-only `isEditable`; see `mergeAgentListRow`. */
+              const currentAgents = [{ ...agent, isEditable: true }, ...listRes.data];
               queryClient.setQueryData<t.AgentListResponse>([QueryKeys.agents, key], {
                 ...listRes,
                 data: currentAgents,
@@ -235,7 +254,7 @@ export const useUploadAgentAvatarMutation = (
             ...listRes,
             data: listRes.data.map((agent) => {
               if (agent.id === variables.agent_id) {
-                return updatedAgent;
+                return mergeAgentListRow(agent, updatedAgent);
               }
               return agent;
             }),
@@ -286,7 +305,7 @@ export const useUpdateAgentAction = (
             ...listRes,
             data: listRes.data.map((agent) => {
               if (agent.id === variables.agent_id) {
-                return updatedAgent;
+                return mergeAgentListRow(agent, updatedAgent);
               }
               return agent;
             }),
@@ -422,7 +441,7 @@ export const useRevertAgentVersionMutation = (
                 ...listRes,
                 data: listRes.data.map((agent) => {
                   if (agent.id === variables.agent_id) {
-                    return revertedAgent;
+                    return mergeAgentListRow(agent, revertedAgent);
                   }
                   return agent;
                 }),

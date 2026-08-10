@@ -8,6 +8,7 @@ export * from './json';
 export * from './capabilities';
 export * from './auth';
 export {
+  requestContextMiddleware,
   tenantContextMiddleware,
   restoreTenantContextFromReq,
   resolveRequestTenantId,

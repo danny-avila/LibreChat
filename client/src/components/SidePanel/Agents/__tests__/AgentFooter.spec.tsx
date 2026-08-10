@@ -157,6 +157,14 @@ jest.mock('../DuplicateAgent', () => ({
 
 jest.mock('@librechat/client', () => ({
   Spinner: () => <div data-testid="spinner" />,
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 jest.mock('~/components/Sharing', () => ({
@@ -335,6 +343,7 @@ describe('AgentFooter', () => {
       });
 
       render(<AgentFooter {...defaultProps} />);
+      expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument();
       expect(screen.getByText('Create')).toBeInTheDocument();
       expect(screen.queryByTestId('version-button')).not.toBeInTheDocument();
       expect(screen.queryByTestId('delete-button')).not.toBeInTheDocument();

@@ -160,7 +160,7 @@ export default function FileAuthoringCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={toggleCode}
@@ -204,7 +204,7 @@ export default function FileAuthoringCall({
                 <pre
                   className={cn(
                     'max-h-[300px] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2.5 font-mono text-xs',
-                    hasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                    hasError ? 'text-status-error' : 'text-text-primary',
                   )}
                 >
                   {output}

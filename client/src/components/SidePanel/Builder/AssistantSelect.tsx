@@ -17,6 +17,8 @@ import type {
   AssistantsEndpoint,
   AssistantCreateParams,
 } from 'librechat-data-provider';
+import type { UseMutationResult } from '@tanstack/react-query';
+import type { UseFormReset } from 'react-hook-form';
 import type {
   Actions,
   ExtendedFile,
@@ -24,8 +26,6 @@ import type {
   TAssistantOption,
   LastSelectedModels,
 } from '~/common';
-import type { UseMutationResult } from '@tanstack/react-query';
-import type { UseFormReset } from 'react-hook-form';
 import { useListAssistantsQuery } from '~/data-provider';
 import { useLocalize, useLocalStorage } from '~/hooks';
 import { cn, createDropdownSetter } from '~/utils';
@@ -286,7 +286,7 @@ export default function AssistantSelect({
       optionsClass="hover:bg-gray-20/50 dark:border-gray-700"
       optionsListClass="rounded-lg shadow-lg dark:bg-gray-850 dark:border-gray-700 dark:last:border"
       currentValueClass={cn(
-        'text-md font-semibold text-gray-900 dark:text-white',
+        'text-base font-semibold text-gray-900 dark:text-white',
         value === '' ? 'text-gray-500' : '',
       )}
       className={cn(

@@ -12,6 +12,7 @@ import type { ServerRequest } from '~/types';
 import { validateAgentModel as defaultValidateAgentModel } from './validation';
 import { initializeAgent as defaultInitializeAgent } from './initialize';
 import { createEdgeCollector, filterOrphanedEdges } from './edges';
+import { isFatalAgentInitializationError } from './errors';
 import { createSequentialChainEdges } from './chain';
 
 /**
@@ -327,6 +328,9 @@ export async function discoverConnectedAgents(
         collectEdges(agent.edges);
       }
     } catch (err) {
+      if (isFatalAgentInitializationError(err)) {
+        throw err;
+      }
       logger.error(`[discoverConnectedAgents] Error processing agent ${agentId}:`, err);
       markSkipped(agentId);
     }
@@ -341,6 +345,9 @@ export async function discoverConnectedAgents(
       try {
         await processAgent(agentId);
       } catch (err) {
+        if (isFatalAgentInitializationError(err)) {
+          throw err;
+        }
         logger.error(`[discoverConnectedAgents] Error processing chain agent ${agentId}:`, err);
         markSkipped(agentId);
       }

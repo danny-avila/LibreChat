@@ -54,152 +54,7 @@ jest.mock('@librechat/data-schemas', () => {
 // primitives. The real implementation is covered by packages/api tenant.spec.ts.
 jest.mock('@librechat/api', () => {
   const { tenantStorage } = require('@librechat/data-schemas');
-  const normalizeAuthLogValue = (value) => {
-    if (value == null) {
-      return undefined;
-    }
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        const normalized = normalizeAuthLogValue(entry);
-        if (normalized) {
-          return normalized;
-        }
-      }
-      return undefined;
-    }
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      return trimmed || undefined;
-    }
-    if (typeof value === 'number' || typeof value === 'boolean') {
-      return String(value);
-    }
-    return undefined;
-  };
-  const normalizeAuthLogContextValue = (value) => {
-    if (value == null) {
-      return undefined;
-    }
-    if (Array.isArray(value)) {
-      const values = value
-        .map((entry) => normalizeAuthLogValue(entry))
-        .filter((entry) => entry !== undefined);
-      return values.length > 0 ? values : undefined;
-    }
-    if (typeof value === 'string') {
-      return normalizeAuthLogValue(value);
-    }
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : undefined;
-    }
-    if (typeof value === 'boolean') {
-      return value;
-    }
-    return undefined;
-  };
-  const getAuthFailureField = (source, field) => {
-    if (!source) {
-      return undefined;
-    }
-    if (typeof source === 'string') {
-      return field === 'message' ? source : undefined;
-    }
-    if (typeof source === 'object') {
-      try {
-        return source[field];
-      } catch {
-        return undefined;
-      }
-    }
-    return undefined;
-  };
-  const getAuthFailureReason = (err, info, fallback = 'Unauthorized') =>
-    normalizeAuthLogValue(getAuthFailureField(info, 'message')) ??
-    normalizeAuthLogValue(getAuthFailureField(err, 'message')) ??
-    fallback;
-  const getAuthFailureErrorName = (err, info) =>
-    normalizeAuthLogValue(getAuthFailureField(info, 'name')) ??
-    normalizeAuthLogValue(getAuthFailureField(err, 'name'));
-  const getSafeTokenProvider = (tokenProvider) => {
-    const normalized = normalizeAuthLogValue(tokenProvider);
-    if (!normalized) {
-      return undefined;
-    }
-    return normalized === 'openid' || normalized === 'librechat' ? normalized : 'other';
-  };
-  const normalizeRoutePath = (path) => {
-    if (typeof path === 'string') {
-      return normalizeAuthLogValue(path);
-    }
-    if (Array.isArray(path)) {
-      for (const entry of path) {
-        const normalized = normalizeRoutePath(entry);
-        if (normalized) {
-          return normalized;
-        }
-      }
-    }
-    return undefined;
-  };
-  const joinRoutePath = (baseUrl, routePath) => {
-    const normalizedRoute = routePath === '/' ? '' : routePath;
-    if (!baseUrl) {
-      return normalizedRoute || '/';
-    }
-    if (!normalizedRoute) {
-      return baseUrl;
-    }
-    return `${baseUrl.replace(/\/$/, '')}/${normalizedRoute.replace(/^\//, '')}`;
-  };
-  const bucketConcretePath = (path) => {
-    const queryless = path?.split('?')[0];
-    if (!queryless) {
-      return undefined;
-    }
-    const segments = queryless.split('/').filter(Boolean);
-    if (segments.length === 0) {
-      return '/';
-    }
-    if (segments[0] === 'api' && segments[1]) {
-      return `/${segments.slice(0, 2).join('/')}`;
-    }
-    return `/${segments[0]}`;
-  };
-  const getRequestPath = (req) => {
-    const baseUrl = normalizeAuthLogValue(req.baseUrl);
-    const routePath = normalizeRoutePath(req.route?.path);
-    if (routePath) {
-      return joinRoutePath(baseUrl, routePath);
-    }
-    if (baseUrl) {
-      return baseUrl;
-    }
-    const path =
-      normalizeAuthLogValue(req.path) ?? normalizeAuthLogValue(req.originalUrl ?? req.url);
-    return bucketConcretePath(path);
-  };
-  const compactAuthLogContext = (log) =>
-    Object.fromEntries(
-      Object.entries(log)
-        .map(([key, value]) => [key, normalizeAuthLogContextValue(value)])
-        .filter(([, value]) => value !== undefined),
-    );
-  const buildSafeAuthLogContext = (req, authState, extra = {}) =>
-    compactAuthLogContext({
-      ...extra,
-      request_id:
-        normalizeAuthLogValue(req.requestId) ??
-        normalizeAuthLogValue(req.id) ??
-        normalizeAuthLogValue(req.headers?.['x-request-id']) ??
-        normalizeAuthLogValue(req.headers?.['x-correlation-id']),
-      method: normalizeAuthLogValue(req.method),
-      path: getRequestPath(req),
-      token_provider: getSafeTokenProvider(authState.tokenProvider),
-      openid_reuse_enabled: authState.openidReuseEnabled,
-      openid_jwt_available: authState.openidJwtAvailable,
-      has_openid_reuse_user_id: authState.hasOpenIdReuseUserId,
-    });
-  const formatAuthLogMessage = (message, context) => `${message} ${JSON.stringify(context)}`;
+  const actualApi = jest.requireActual('@librechat/api');
   const normalizeContextValue = (value) => {
     const trimmed = value?.trim?.();
     return trimmed || undefined;
@@ -214,10 +69,8 @@ jest.mock('@librechat/api', () => {
   return {
     isEnabled: jest.fn(() => false),
     recordRumProxyRequest: jest.fn(),
-    getAuthFailureReason,
-    getAuthFailureErrorName,
-    buildSafeAuthLogContext,
-    formatAuthLogMessage,
+    getAuthFailureReasonCategory: actualApi.getAuthFailureReasonCategory,
+    buildSafeAuthLogContext: actualApi.buildSafeAuthLogContext,
     maybeRefreshCloudFrontAuthCookiesMiddleware: jest.fn((req, res, next) => next()),
     tenantContextMiddleware: (req, res, next) => {
       const context = {
@@ -371,15 +224,17 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(res.status).toHaveBeenCalledWith(401);
     expect(getTenantId()).toBeUndefined();
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] Authentication failed after all strategies'),
       expect.objectContaining({
+        message: '[requireJwtAuth] Authentication failed after all strategies',
+        event_name: 'jwt_auth_rejected',
         primary_strategy: 'jwt',
         fallback_attempted: false,
         fallback_succeeded: false,
         attempted_strategies: ['jwt'],
         final_strategy: 'jwt',
-        reason: 'Unauthorized',
-        status: 401,
+        reason_category: 'missing_or_unrecognized_token',
+        recovery_classification: 'terminal_rejection',
+        response_status: 401,
       }),
     );
     expect(logger.warn).not.toHaveBeenCalled();
@@ -393,6 +248,7 @@ describe('requireJwtAuth tenant context chaining', () => {
       method: 'GET',
       path: '/api/messages',
       headers: {
+        authorization: 'Bearer valid-openid-token',
         cookie: `token_provider=openid; openid_user_id=${signedOpenIdUserCookie('user-jwt')}`,
       },
       _mockStrategies: {
@@ -413,40 +269,40 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(req.authStrategy).toBe('jwt');
     expect(res.status).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] OpenID JWT auth failed; trying fallback'),
       expect.objectContaining({
+        message: '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+        event_name: 'jwt_auth_fallback_attempt',
         request_id: 'req-expired-success',
-        method: 'GET',
-        path: '/api/messages',
+        request_method: 'GET',
+        request_path: '/api/messages',
         token_provider: 'openid',
+        token_source: 'bearer',
         openid_reuse_enabled: true,
         openid_jwt_available: true,
         has_openid_reuse_user_id: true,
         primary_strategy: 'openidJwt',
         fallback_strategy: 'jwt',
         fallback_attempted: true,
-        reason: 'jwt expired',
-        error_name: 'TokenExpiredError',
-        status: 401,
+        reason_category: 'expired_jwt',
+        recovery_classification: 'fallback_attempted',
+        strategy_status: 401,
       }),
     );
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure'),
       expect.objectContaining({
+        message: '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure',
+        event_name: 'jwt_auth_recovered',
         request_id: 'req-expired-success',
         auth_strategy: 'jwt',
         primary_strategy: 'openidJwt',
         fallback_strategy: 'jwt',
         fallback_attempted: true,
         fallback_succeeded: true,
-        primary_failure_reason: 'jwt expired',
-        reason: 'jwt expired',
-        error_name: 'TokenExpiredError',
+        primary_failure_reason_category: 'expired_jwt',
+        recovery_classification: 'fallback_succeeded',
       }),
     );
-    expect(logger.debug.mock.calls[0][0]).toContain('"reason":"jwt expired"');
-    expect(logger.debug.mock.calls[0][0]).toContain('"fallback_attempted":true');
-    expect(logger.debug.mock.calls[1][0]).toContain('"fallback_succeeded":true');
+    expect(JSON.stringify(logger.debug.mock.calls)).not.toContain('jwt expired');
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
@@ -491,20 +347,20 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(req.authStrategy).toBe('jwt');
     expect(res.status).not.toHaveBeenCalled();
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] OpenID JWT auth failed; trying fallback'),
       expect.objectContaining({
+        message: '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
         request_id: 'req-malformed-info',
         fallback_attempted: true,
-        reason: 'Unauthorized',
-        status: 401,
+        reason_category: 'missing_or_unrecognized_token',
+        strategy_status: 401,
       }),
     );
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure'),
       expect.objectContaining({
+        message: '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure',
         request_id: 'req-malformed-info',
         fallback_succeeded: true,
-        primary_failure_reason: 'Unauthorized',
+        primary_failure_reason_category: 'missing_or_unrecognized_token',
       }),
     );
   });
@@ -540,23 +396,24 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] OpenID JWT auth failed; trying fallback'),
       expect.objectContaining({
+        message: '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
+        event_name: 'jwt_auth_fallback_attempt',
         request_id: 'req-expired-fail',
-        method: 'POST',
-        path: '/api/ask',
+        request_method: 'POST',
+        request_path: '/api/ask',
         fallback_attempted: true,
-        reason: 'jwt expired',
-        error_name: 'TokenExpiredError',
-        status: 401,
+        reason_category: 'expired_jwt',
+        strategy_status: 401,
       }),
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] Authentication failed after all strategies'),
       expect.objectContaining({
+        message: '[requireJwtAuth] Authentication failed after all strategies',
+        event_name: 'jwt_auth_rejected',
         request_id: 'req-expired-fail',
-        method: 'POST',
-        path: '/api/ask',
+        request_method: 'POST',
+        request_path: '/api/ask',
         token_provider: 'openid',
         attempted_strategies: ['openidJwt', 'jwt'],
         final_strategy: 'jwt',
@@ -564,24 +421,23 @@ describe('requireJwtAuth tenant context chaining', () => {
         fallback_strategy: 'jwt',
         fallback_attempted: true,
         fallback_succeeded: false,
-        // The real openidJwt failure is surfaced alongside the fallback's reason so a
-        // reused-token failure is not misattributed to the `jwt` fallback's error (#14311).
-        primary_failure_reason: 'jwt expired',
-        primary_failure_error_name: 'TokenExpiredError',
-        reason: 'invalid signature',
-        error_name: 'JsonWebTokenError',
-        status: 401,
+        primary_failure_reason_category: 'expired_jwt',
+        reason_category: 'malformed_jwt',
+        recovery_classification: 'terminal_rejection',
+        response_status: 401,
       }),
     );
-    expect(logger.warn.mock.calls[0][0]).toContain('"reason":"invalid signature"');
-    expect(logger.warn.mock.calls[0][0]).toContain('"primary_failure_reason":"jwt expired"');
-    expect(logger.warn.mock.calls[0][0]).toContain('"path":"/api/ask"');
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('invalid signature');
   });
 
-  it('does not fall back to OpenID JWT for bearer-only reuse requests', () => {
+  it('attributes malformed bearer rejections as structured 401s without an OpenID fallback', () => {
     isEnabled.mockReturnValue(true);
     mockRegisteredStrategies.add('openidJwt');
     const req = mockReq(undefined, {
+      id: 'malformed-bearer-401',
+      method: 'GET',
+      originalUrl: '/api/banner?access_token=not-logged',
+      headers: { authorization: 'Bearer malformed-token' },
       _mockStrategies: {
         jwt: { user: false, info: { message: 'invalid signature' }, status: 401 },
         openidJwt: { user: { tenantId: 'tenant-openid', role: 'user' } },
@@ -601,6 +457,20 @@ describe('requireJwtAuth tenant context chaining', () => {
       { session: false },
       expect.any(Function),
     );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event_name: 'jwt_auth_rejected',
+        request_id: 'malformed-bearer-401',
+        request_method: 'GET',
+        request_path: '/api/banner',
+        token_source: 'bearer',
+        reason_category: 'malformed_jwt',
+        recovery_classification: 'terminal_rejection',
+        response_status: 401,
+      }),
+    );
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('malformed-token');
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain('invalid signature');
   });
 
   it('uses OpenID JWT before LibreChat JWT when the OpenID cookie is present', async () => {
@@ -658,25 +528,24 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(next).toHaveBeenCalled();
     expect(req.authStrategy).toBe('jwt');
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] OpenID JWT auth failed; trying fallback'),
       expect.objectContaining({
+        message: '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
         request_id: 'req-mismatch-success',
         primary_strategy: 'openidJwt',
         fallback_strategy: 'jwt',
         fallback_attempted: true,
-        reason: 'openid user-id mismatch',
-        status: 401,
+        reason_category: 'principal_mismatch',
+        strategy_status: 401,
       }),
     );
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure'),
       expect.objectContaining({
+        message: '[requireJwtAuth] JWT fallback succeeded after OpenID JWT failure',
         request_id: 'req-mismatch-success',
         auth_strategy: 'jwt',
         fallback_attempted: true,
         fallback_succeeded: true,
-        primary_failure_reason: 'openid user-id mismatch',
-        reason: 'openid user-id mismatch',
+        primary_failure_reason_category: 'principal_mismatch',
       }),
     );
     expect(logger.warn).not.toHaveBeenCalled();
@@ -705,24 +574,25 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(logger.debug).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] OpenID JWT auth failed; trying fallback'),
       expect.objectContaining({
+        message: '[requireJwtAuth] OpenID JWT auth failed; trying fallback',
         request_id: 'req-mismatch-fail',
         fallback_attempted: true,
-        reason: 'openid user-id mismatch',
-        status: 401,
+        reason_category: 'principal_mismatch',
+        strategy_status: 401,
       }),
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('[requireJwtAuth] Authentication failed after all strategies'),
       expect.objectContaining({
+        message: '[requireJwtAuth] Authentication failed after all strategies',
         request_id: 'req-mismatch-fail',
         attempted_strategies: ['openidJwt', 'jwt'],
         final_strategy: 'jwt',
         fallback_attempted: true,
         fallback_succeeded: false,
-        reason: 'Unauthorized',
-        status: 401,
+        primary_failure_reason_category: 'principal_mismatch',
+        reason_category: 'missing_or_unrecognized_token',
+        response_status: 401,
       }),
     );
   });

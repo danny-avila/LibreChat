@@ -1882,7 +1882,6 @@
   "com_ui_steer_in_flight": "Sterowniczy",
   "com_ui_steer_paused_queued": "Agent czeka na Twoją recenzję — zamiast tego Twoja wiadomość została umieszczona w kolejce",
   "com_ui_steer_retry": "Spróbuj ponownie sterować",
-  "com_ui_steer_run_ended_queued": "Odpowiedź została zakończona, więc komunikat sterujący jest umieszczany w kolejce jako kontynuacja",
   "com_ui_steer_send": "Steruj bieżącą reakcją",
   "com_ui_steered_info": "Dodano tę wiadomość podczas generowania odpowiedzi, więc została ona wstawiona do odpowiedzi w tym momencie.",
   "com_ui_stop": "Stop",

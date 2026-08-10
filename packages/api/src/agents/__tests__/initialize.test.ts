@@ -33,7 +33,13 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Providers } from '@librechat/agents';
-import { Constants, EModelEndpoint, EToolResources, Tools } from 'librechat-data-provider';
+import {
+  Constants,
+  ErrorTypes,
+  EModelEndpoint,
+  EToolResources,
+  Tools,
+} from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
@@ -1505,6 +1511,93 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(definedNames).not.toContain('mcp__broken__tool');
   });
 
+  it('does not retry a resource recovery failure when execute_code is skill-added', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const resourceRecoveryError = Object.assign(new Error('resource recovery required'), {
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      status: 409,
+      statusCode: 409,
+    });
+    loadTools.mockRejectedValue(resourceRecoveryError);
+
+    const getSkillByName = buildGetSkillByName(
+      'code-skill',
+      [Tools.execute_code],
+      skillId,
+      req.user!.id,
+    );
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['code-skill'],
+        },
+        { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+      ),
+    ).rejects.toBe(resourceRecoveryError);
+
+    expect(loadTools).toHaveBeenCalledTimes(1);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', Tools.execute_code]);
+  });
+
+  it('still retries when only skill-added tools expect unavailable MCP tools', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const expectedMCPError = Object.assign(new Error('expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadTools.mockRejectedValueOnce(expectedMCPError).mockResolvedValueOnce({
+      tools: [],
+      toolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: [{ name: 'web_search', description: '', parameters: {} }],
+      hasDeferredTools: false,
+      actionsEnabled: undefined,
+    });
+
+    const getSkillByName = buildGetSkillByName(
+      'mcp-skill',
+      ['mcp__warehouse__query'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['mcp-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'mcp__warehouse__query']);
+    expect(loadTools.mock.calls[1][0].tools).toEqual(['web_search']);
+    expect(result.toolDefinitions?.map((definition) => definition.name)).toContain('web_search');
+  });
+
   it('falls back to host-provided skill authoring tools when BOTH loadTools calls return undefined', async () => {
     /* Worst-case silent-failure path: production loaders catch errors
        and return undefined. If the agent's own tools fail to load AND
@@ -2170,6 +2263,86 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
      * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
      * empty-guard is exercised by data-schemas tests. */
     expect(getUserCodeFiles).not.toHaveBeenCalled();
+  });
+
+  it('skips the thread walk when parentMessageId is an empty string', async () => {
+    /* An empty anchor can never match a parent chain, so walking the
+     * conversation only buys an unbounded read whose result is discarded.
+     * `req.body.parentMessageId` reaches this layer unnormalized. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([]);
+    const getConvoFiles = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: '',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles },
+    );
+
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(mockGetThreadData).not.toHaveBeenCalled();
+    /* The conversation read is unconditional and must survive the guard. */
+    expect(getConvoFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches the convo-file read and the thread walk concurrently', async () => {
+    /* Both reads gate the model call, so serializing them costs
+     * time-to-first-token on every turn. Holding BOTH unresolved is what
+     * makes this fail under either ordering: whichever runs first blocks,
+     * and the second is never dispatched.
+     *
+     * DELETE this test, do not repair it, if the thread walk ever gains a
+     * data dependency on the convo file ids — serializing becomes correct. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    let releaseConvoFiles!: (fileIds: string[]) => void;
+    let releaseMessages!: (messages: Array<{ messageId: string }>) => void;
+    const getConvoFiles = jest
+      .fn()
+      .mockReturnValue(new Promise<string[]>((resolve) => (releaseConvoFiles = resolve)));
+    const getMessages = jest
+      .fn()
+      .mockReturnValue(
+        new Promise<Array<{ messageId: string }>>((resolve) => (releaseMessages = resolve)),
+      );
+
+    const initialized = initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getConvoFiles, getMessages },
+    );
+
+    /* Drain pending microtasks so the mocked chain runs up to the first
+     * genuinely-pending await. */
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(getConvoFiles).toHaveBeenCalledTimes(1);
+    expect(getMessages).toHaveBeenCalledTimes(1);
+
+    releaseConvoFiles([]);
+    releaseMessages([]);
+    await initialized;
   });
 });
 
