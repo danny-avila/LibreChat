@@ -70,8 +70,13 @@ const FAVORITE_MODIFIER = isMacPlatform ? '\u2318' : 'Ctrl';
  *  split view mounts one palette per pane, and a shared id would point the
  *  secondary combobox's `aria-controls` and `aria-activedescendant` at the
  *  primary pane's list. */
-const rowElementId = (index: number, key: string) =>
-  `palette-row-${index}-${key.replace(/[^\w:-]/g, '_')}`;
+const rowElementId = (index: number, key: string) => {
+  let encodedKey = '';
+  for (let i = 0; i < key.length; i++) {
+    encodedKey += key.charCodeAt(i).toString(16).padStart(4, '0');
+  }
+  return `palette-row-${index}-${encodedKey}`;
+};
 
 const SECTION_LABEL: Record<PaletteSection, TranslationKeys> = {
   tool: 'com_ui_composer_tools',
