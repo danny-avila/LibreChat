@@ -194,9 +194,8 @@ jobs:
       # The changed-file lint above never loads a changed root config: a
       # config-only PR matches no lintable files, so even a malformed
       # eslint.config.mjs would pass. When the config changes, gate on it
-      # loading and applying cleanly to representative sources, then sweep
-      # the whole tree for information. The sweep is report-only until the
-      # pre-existing backlog is burned down (70 errors at time of wiring).
+      # loading and applying cleanly to representative sources, then run the
+      # full-tree regression gate below.
       # Directory args, not `npm run lint`: the root brace-expansion@^5
       # override breaks minimatch@3's brace expansion, so that script's
       # braced glob crashes on a clean install; dir args never brace-expand.
@@ -208,15 +207,55 @@ jobs:
           npx eslint --config eslint.config.mjs \
             api/server/index.js client/src/main.jsx packages/api/src/index.ts
 
-      - name: Full ESLint sweep on config changes (report only)
+      # Full-tree sweep that gates on regression, not cleanliness: the tree
+      # carries a pre-existing lint backlog (70 errors at time of wiring), so
+      # requiring a clean sweep would fail config PRs on unrelated debt.
+      # Instead, lint the same tree under the PR's config and under the base
+      # ref's config and fail only when the PR's config produces more
+      # diagnostics for some (file, rule) pair — on an identical tree, any
+      # delta is attributable to the config change alone. If the base config
+      # cannot run against this tree, the comparison is skipped and the load
+      # gate above is the only hard check.
+      - name: ESLint full-sweep regression gate on config changes
+        id: eslint_sweep
         if: always() && steps.paths.outputs.eslint_config == 'true'
         continue-on-error: true
         run: |
-          if npx eslint api client packages; then
-            echo "Full sweep: clean"
-          else
-            echo "::notice title=Full ESLint sweep::Problems found (see log above). Report-only — not a gate."
+          npx eslint api client packages -f json -o "$RUNNER_TEMP/eslint-head.json" || true
+          if [ ! -s "$RUNNER_TEMP/eslint-head.json" ]; then
+            echo "::error title=ESLint sweep::Head-config sweep produced no report — ESLint likely crashed under the new config."
+            exit 1
           fi
+
+          BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
+          if ! git show "$BASE_SHA:eslint.config.mjs" > eslint.config.base.mjs 2>/dev/null; then
+            echo "::notice title=ESLint sweep::No eslint.config.mjs at base ref; skipping regression comparison."
+            exit 0
+          fi
+          npx eslint --config eslint.config.base.mjs api client packages -f json -o "$RUNNER_TEMP/eslint-base.json" || true
+          rm -f eslint.config.base.mjs
+          if [ ! -s "$RUNNER_TEMP/eslint-base.json" ]; then
+            echo "::notice title=ESLint sweep::Base config cannot run against this tree; skipping regression comparison."
+            exit 0
+          fi
+
+          fingerprints() {
+            jq -r '.[] | .filePath as $f | .messages[] | "\($f) \(.ruleId // "parse-error")"' "$1" | sort | uniq -c
+          }
+          fingerprints "$RUNNER_TEMP/eslint-head.json" > "$RUNNER_TEMP/head.fp"
+          fingerprints "$RUNNER_TEMP/eslint-base.json" > "$RUNNER_TEMP/base.fp"
+
+          REGRESSIONS=$(awk '
+            NR==FNR { base[$2 " " $3] = $1; next }
+            { if ($1 > base[$2 " " $3] + 0) printf "%s  %s: %d -> %d\n", $2, $3, base[$2 " " $3] + 0, $1 }
+          ' "$RUNNER_TEMP/base.fp" "$RUNNER_TEMP/head.fp")
+
+          if [ -n "$REGRESSIONS" ]; then
+            echo "::error title=ESLint config regression::The config change introduces new diagnostics (file  rule: base -> head):"
+            echo "$REGRESSIONS"
+            exit 1
+          fi
+          echo "No new diagnostics versus the base config."
 
       - name: Restore data-provider build cache
         if: always() && steps.paths.outputs.config == 'true'
@@ -648,6 +687,7 @@ jobs:
           INSTALL_DEPENDENCIES_OUTCOME: ${{ steps.install_dependencies.outcome }}
           ESLINT_OUTCOME: ${{ steps.eslint.outcome }}
           ESLINT_CONFIG_OUTCOME: ${{ steps.eslint_config.outcome }}
+          ESLINT_SWEEP_OUTCOME: ${{ steps.eslint_sweep.outcome }}
           PRETTIER_OUTCOME: ${{ steps.prettier.outcome }}
           IMPORT_SORT_OUTCOME: ${{ steps.import_sort.outcome }}
           CACHE_DATA_PROVIDER_OUTCOME: ${{ steps.cache-data-provider.outcome }}
@@ -684,6 +724,7 @@ jobs:
           record_failure "Dependency installation" "$INSTALL_DEPENDENCIES_OUTCOME"
           record_failure "ESLint" "$ESLINT_OUTCOME"
           record_failure "ESLint config validation" "$ESLINT_CONFIG_OUTCOME"
+          record_failure "ESLint config regression sweep" "$ESLINT_SWEEP_OUTCOME"
           record_failure "Prettier" "$PRETTIER_OUTCOME"
           record_failure "Import sorting" "$IMPORT_SORT_OUTCOME"
           record_failure "Config data-provider cache" "$CACHE_DATA_PROVIDER_OUTCOME"
