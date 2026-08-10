@@ -6,7 +6,7 @@ import type { SearchPool } from './types';
 import {
   applyRolePasswords,
   assertRoleCredentialsConfigured,
-  MANAGED_ROLES,
+  managedRoleNames,
   migrate,
   provisionChatSearch,
   readMigrations,
@@ -22,7 +22,13 @@ import {
   roleDatabaseUrl,
   TEST_URL,
 } from './pg.helper';
-import { findRoleViolations, READER_ROLE, WRITER_ROLE } from './roles';
+import {
+  chatSearchRolePrefix,
+  findRoleViolations,
+  managedRoles,
+  READER_ROLE,
+  WRITER_ROLE,
+} from './roles';
 
 /** Prose in a migration is not executable SQL; assertions target statements only. */
 const statementsOf = (sql: string): string => sql.replace(/--[^\n]*/g, '');
@@ -183,6 +189,62 @@ describe('role password verifiers', () => {
     expect(verifier).not.toContain(PREPPED_PASSWORD);
     expect(Number(SCRAM_VERIFIER.exec(verifier)?.[1])).toBeGreaterThanOrEqual(4096);
     expect(scramSha256Verifier(MARKED_PASSWORD)).not.toBe(verifier);
+  });
+});
+
+describe('role prefix', () => {
+  const OLD_ENV = process.env;
+
+  afterEach(() => {
+    process.env = OLD_ENV;
+  });
+
+  it('applies the prefix to every managed name', () => {
+    process.env = { ...OLD_ENV, CHAT_SEARCH_ROLE_PREFIX: 'alpha_' };
+    expect(managedRoleNames()).toEqual([
+      'alpha_chat_search_owner',
+      'alpha_chat_search_writer',
+      'alpha_chat_search_reader',
+    ]);
+  });
+
+  it('resolves the prefix through a named variable, as REDIS_KEY_PREFIX_VAR does', () => {
+    process.env = { ...OLD_ENV, DEPLOY_ID: 'beta_', CHAT_SEARCH_ROLE_PREFIX_VAR: 'DEPLOY_ID' };
+    expect(managedRoles().reader).toBe('beta_chat_search_reader');
+  });
+
+  it('refuses both variables at once', () => {
+    process.env = { ...OLD_ENV, CHAT_SEARCH_ROLE_PREFIX: 'a_', CHAT_SEARCH_ROLE_PREFIX_VAR: 'X' };
+    expect(() => chatSearchRolePrefix()).toThrow(/Only either/);
+  });
+
+  it('refuses a prefix that is not a safe lowercase identifier', () => {
+    process.env = { ...OLD_ENV, CHAT_SEARCH_ROLE_PREFIX: 'Staging-1' };
+    expect(() => chatSearchRolePrefix()).toThrow(/not a safe PostgreSQL identifier/);
+  });
+
+  it('refuses a prefix that would push a name past the identifier limit', () => {
+    process.env = { ...OLD_ENV, CHAT_SEARCH_ROLE_PREFIX: 'x'.repeat(50) };
+    expect(() => chatSearchRolePrefix()).toThrow(/identifier limit/);
+  });
+
+  /**
+   * The rendered text is what gets applied and checksummed, so the prefix has
+   * to reach every role identifier in every file — a single missed occurrence
+   * would grant or audit the wrong principal — and two prefixes must never
+   * produce the same checksum, which is what makes a later prefix change
+   * surface as drift instead of a silent second set of roles.
+   */
+  it('renders the prefix into every migration file that names a role', () => {
+    process.env = { ...OLD_ENV, CHAT_SEARCH_ROLE_PREFIX: 'alpha_' };
+    const rendered = readMigrations();
+    for (const migration of rendered) {
+      expect(migration.sql).not.toMatch(/\bchat_search_(owner|writer|reader)\b/);
+    }
+
+    process.env = { ...OLD_ENV };
+    const bare = readMigrations();
+    expect(bare.map((m) => m.checksum)).not.toEqual(rendered.map((m) => m.checksum));
   });
 });
 
@@ -369,6 +431,9 @@ const PROVISION_PASSWORD = `${randomBytes(18).toString('base64url')}${MARKED_PAS
 const RUN_ID = randomBytes(4).toString('hex');
 /** A non-superuser role that is not one of the three the migrations manage. */
 const BOOTSTRAP_ROLE = `chat_search_test_bootstrap_${RUN_ID}`;
+/** Run-scoped deployment prefixes, so the isolation suite's roles are this run's own. */
+const PREFIX_A = `p${RUN_ID}a_`;
+const PREFIX_B = `p${RUN_ID}b_`;
 /** Owned entirely by the SASLprep suite below: created, used, and dropped there. */
 const SASLPREP_ROLE = `chat_search_test_saslprep_${RUN_ID}`;
 
@@ -407,7 +472,12 @@ async function dropRolesThisRunCreated(): Promise<void> {
   }
   const admin = new Pool({ connectionString: TEST_URL, max: 1 });
   try {
-    for (const role of [BOOTSTRAP_ROLE, SASLPREP_ROLE]) {
+    const prefixed = [PREFIX_A, PREFIX_B].flatMap((prefix) => [
+      `${prefix}chat_search_owner`,
+      `${prefix}chat_search_writer`,
+      `${prefix}chat_search_reader`,
+    ]);
+    for (const role of [BOOTSTRAP_ROLE, SASLPREP_ROLE, ...prefixed]) {
       await admin.query(`DROP ROLE IF EXISTS ${role}`).catch(() => undefined);
     }
   } finally {
@@ -642,7 +712,7 @@ describePg('provisioning preflight', () => {
   });
 
   it('lists the roles the migrations create and the extensions they need', () => {
-    expect(MANAGED_ROLES).toEqual([
+    expect(managedRoleNames()).toEqual([
       'chat_search_owner',
       'chat_search_writer',
       'chat_search_reader',
@@ -760,9 +830,9 @@ describePg('provisioning against extensions installed elsewhere', () => {
          JOIN pg_database d ON d.oid = s.setdatabase
         WHERE d.datname = current_database() AND r.rolname = ANY($1::text[])
         ORDER BY r.rolname`,
-      [[...MANAGED_ROLES]],
+      [[...managedRoleNames()]],
     );
-    expect(settings.map((row) => row.rolname)).toEqual([...MANAGED_ROLES].sort());
+    expect(settings.map((row) => row.rolname)).toEqual([...managedRoleNames()].sort());
     for (const row of settings) {
       expect(row.setconfig.join(';')).toContain(EXTENSION_SCHEMA);
     }
@@ -841,7 +911,7 @@ describePg('provisioning a database whose roles the cluster already has', () => 
 
   beforeAll(async () => {
     pool = await createIsolatedDatabase(FOREIGN_ROLE_DB);
-    for (const role of MANAGED_ROLES) {
+    for (const role of managedRoleNames()) {
       await pool.query(
         `DO $$ BEGIN
            BEGIN CREATE ROLE ${role} LOGIN NOSUPERUSER NOBYPASSRLS;
@@ -927,6 +997,72 @@ describePg('provisioning composition', () => {
 
     const result = await provisionChatSearch(pool);
     expect(result.applied).toContain('001_schema.sql');
-    expect([...result.updated].sort()).toEqual([...MANAGED_ROLES].sort());
+    expect([...result.updated].sort()).toEqual([...managedRoleNames()].sort());
   }, 60_000);
+});
+
+const PREFIXED_A_DB = 'prefixa';
+const PREFIXED_B_DB = 'prefixb';
+const SECOND_PASSWORD = `${PROVISION_PASSWORD}-second`;
+
+describePg('role prefix provisioning', () => {
+  const OLD_ENV = process.env;
+  let alpha: SearchPool;
+  let beta: SearchPool;
+
+  afterAll(async () => {
+    process.env = OLD_ENV;
+    if (alpha) {
+      await dropIsolatedDatabase(alpha, PREFIXED_A_DB);
+    }
+    if (beta) {
+      await dropIsolatedDatabase(beta, PREFIXED_B_DB);
+    }
+  });
+
+  /**
+   * The scenario the prefix exists for. One cluster, two databases, two
+   * prefixes, two password sets: provisioning the second deployment must not
+   * rotate the first's credentials — the exact failure shared names guarantee —
+   * and the first's reader must hold no reach into the second's database.
+   */
+  it('provisions two deployments on one cluster without sharing credentials', async () => {
+    alpha = await createIsolatedDatabase(PREFIXED_A_DB);
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_ROLE_PREFIX: PREFIX_A,
+      CHAT_SEARCH_OWNER_PASSWORD: PROVISION_PASSWORD,
+      CHAT_SEARCH_WRITER_PASSWORD: PROVISION_PASSWORD,
+      CHAT_SEARCH_READER_PASSWORD: PROVISION_PASSWORD,
+    };
+    await provisionChatSearch(alpha);
+    await expect(findRoleViolations(alpha)).resolves.toEqual([]);
+
+    beta = await createIsolatedDatabase(PREFIXED_B_DB);
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_ROLE_PREFIX: PREFIX_B,
+      CHAT_SEARCH_OWNER_PASSWORD: SECOND_PASSWORD,
+      CHAT_SEARCH_WRITER_PASSWORD: SECOND_PASSWORD,
+      CHAT_SEARCH_READER_PASSWORD: SECOND_PASSWORD,
+    };
+    await provisionChatSearch(beta);
+
+    const asAlphaReader = rolePool(PREFIXED_A_DB, `${PREFIX_A}chat_search_reader`);
+    try {
+      const { rows } = await asAlphaReader.query<{ who: string }>('SELECT current_user AS who');
+      expect(rows[0].who).toBe(`${PREFIX_A}chat_search_reader`);
+    } finally {
+      await asAlphaReader.end().catch(() => undefined);
+    }
+
+    const crossing = rolePool(PREFIXED_B_DB, `${PREFIX_A}chat_search_reader`);
+    try {
+      await expect(crossing.query('SELECT count(*) FROM chat_search.documents')).rejects.toThrow(
+        /permission denied/,
+      );
+    } finally {
+      await crossing.end().catch(() => undefined);
+    }
+  }, 180_000);
 });
