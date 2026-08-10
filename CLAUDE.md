@@ -86,6 +86,7 @@ The source code for `@librechat/agents` (major backend dependency, same team) is
 - JSDoc only for complex/non-obvious logic or intellisense on public APIs.
 - Single-line JSDoc for brief docs, multi-line for complex cases.
 - Avoid standalone `//` comments unless absolutely necessary.
+- A comment asserting a guarantee, invariant, or security property must name the test that proves it. Without such a test, describe the mechanism instead of promising the outcome — what the code does, not what it cannot allow. Words like "always", "never", "on every run", and "cannot" are the ones that go stale first, so re-read them against the implementation whenever either changes.
 
 ### Import Order
 

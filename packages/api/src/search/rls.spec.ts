@@ -235,4 +235,74 @@ describePg('chat_search row level security', () => {
       }
     });
   });
+
+  /**
+   * Permissive policies combine with OR, so the flags alone prove nothing: a
+   * table can have RLS enabled, forced, and a second policy that hands every
+   * row to PUBLIC. The gate has to read `pg_policy` itself — these three are
+   * the drift shapes it must catch, each restored to the migrated state after.
+   */
+  describe('policy audit', () => {
+    it('audits the live policy set, not just the RLS flags', async () => {
+      await pool.query(
+        'CREATE POLICY gate_probe_leak ON chat_search.documents FOR SELECT TO PUBLIC USING (true)',
+      );
+      try {
+        await expect(findRoleViolations(pool)).resolves.toEqual([
+          {
+            role: 'PUBLIC',
+            problem:
+              'is reachable through unexpected policy gate_probe_leak on chat_search.documents',
+          },
+        ]);
+      } finally {
+        await pool.query('DROP POLICY gate_probe_leak ON chat_search.documents');
+      }
+    });
+
+    it('catches an expected policy whose predicate was rewritten', async () => {
+      await pool.query('DROP POLICY documents_reader_scope ON chat_search.documents');
+      await pool.query(
+        `CREATE POLICY documents_reader_scope ON chat_search.documents
+           FOR SELECT TO ${READER_ROLE} USING (true)`,
+      );
+      try {
+        await expect(findRoleViolations(pool)).resolves.toEqual([
+          {
+            role: 'chat_search_owner',
+            problem: expect.stringContaining(
+              'policy documents.documents_reader_scope has USING true',
+            ),
+          },
+        ]);
+      } finally {
+        await pool.query('DROP POLICY documents_reader_scope ON chat_search.documents');
+        await pool.query(
+          `CREATE POLICY documents_reader_scope ON chat_search.documents
+             FOR SELECT TO ${READER_ROLE}
+             USING (
+               tenant_id = nullif(current_setting('chat_search.tenant_id', true), '')
+               AND user_id = nullif(current_setting('chat_search.user_id', true), '')
+             )`,
+        );
+      }
+    });
+
+    it('catches a dropped policy', async () => {
+      await pool.query('DROP POLICY embeddings_writer_all ON chat_search.embeddings');
+      try {
+        await expect(findRoleViolations(pool)).resolves.toEqual([
+          {
+            role: 'chat_search_owner',
+            problem: 'policy embeddings.embeddings_writer_all is missing',
+          },
+        ]);
+      } finally {
+        await pool.query(
+          `CREATE POLICY embeddings_writer_all ON chat_search.embeddings
+             FOR ALL TO chat_search_writer USING (true) WITH CHECK (true)`,
+        );
+      }
+    });
+  });
 });

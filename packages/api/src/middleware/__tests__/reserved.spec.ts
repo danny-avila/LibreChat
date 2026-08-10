@@ -1,5 +1,6 @@
 import { getTenantId, RESERVED_TENANT_IDS, BASE_TENANT_ID, logger } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
+import type { IUser } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types/http';
 import { preAuthTenantMiddleware } from '../preAuthTenant';
 import { tenantContextMiddleware } from '../tenant';
@@ -14,24 +15,28 @@ jest.mock('@librechat/data-schemas', () => ({
   },
 }));
 
-type MockResponse = {
-  status: jest.Mock;
-  json: jest.Mock;
-};
-
-function mockRes(): MockResponse {
-  return {
+function mockRes(): Response {
+  const res: Partial<Response> = {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
   };
+  return res as Response;
 }
+
+/**
+ * Only the fields each middleware reads. A real `Request`/`ServerRequest`
+ * satisfies both, so the assertion at each call site narrows a supertype rather
+ * than inventing a shape the compiler cannot check.
+ */
+type PreAuthRequest = Partial<Request>;
+type AuthenticatedRequest = Omit<Partial<ServerRequest>, 'user'> & { user?: Partial<IUser> };
 
 function runPreAuth(headerValue: string): {
   tenantId: string | undefined;
   nextCalls: number;
-  res: MockResponse;
+  res: Response;
 } {
-  const req = {
+  const req: PreAuthRequest = {
     headers: { 'x-tenant-id': headerValue },
     ip: '10.0.0.1',
     path: '/api/auth/register',
@@ -45,13 +50,16 @@ function runPreAuth(headerValue: string): {
     tenantId = getTenantId();
   };
 
-  preAuthTenantMiddleware(req as unknown as Request, res as unknown as Response, next);
+  preAuthTenantMiddleware(req as Request, res as Response, next);
 
   return { tenantId, nextCalls, res };
 }
 
-function runAuthenticated(tenantId: string): { nextCalls: number; res: MockResponse } {
-  const req = { headers: {}, user: { id: 'user-1', tenantId, role: 'user' } };
+function runAuthenticated(tenantId: string): { nextCalls: number; res: Response } {
+  const req: AuthenticatedRequest = {
+    headers: {},
+    user: { id: 'user-1', tenantId, role: 'user' },
+  };
   const res = mockRes();
 
   let nextCalls = 0;
@@ -59,7 +67,7 @@ function runAuthenticated(tenantId: string): { nextCalls: number; res: MockRespo
     nextCalls += 1;
   };
 
-  tenantContextMiddleware(req as unknown as ServerRequest, res as unknown as Response, next);
+  tenantContextMiddleware(req as ServerRequest, res as Response, next);
 
   return { nextCalls, res };
 }
