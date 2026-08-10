@@ -811,6 +811,7 @@ function createLazySubagentConfig(
   agentsEConfig: Partial<TAgentsEndpoint> | undefined,
   ancestors: Set<string>,
   depth: number,
+  prebuiltGraphInputs?: ReadonlyMap<string, AgentInputs>,
 ): SubagentConfig {
   return {
     type: child.id,
@@ -842,6 +843,7 @@ function createLazySubagentConfig(
         agentsEConfig,
         ancestors,
         depth,
+        prebuiltGraphInputs,
       );
       if (grandchildConfigs.length > 0) {
         childInputs.subagentConfigs = grandchildConfigs;
@@ -1141,7 +1143,14 @@ function buildSubagentConfigs(
     assertSubagentDepth(childDepth, child.id);
     countSubagentConfig(state);
     configs.push(
-      createLazySubagentConfig(child, toInput, agentsEConfig, nextAncestors, childDepth),
+      createLazySubagentConfig(
+        child,
+        toInput,
+        agentsEConfig,
+        nextAncestors,
+        childDepth,
+        prebuiltGraphInputs,
+      ),
     );
   }
 
@@ -1550,6 +1559,9 @@ export async function createRun({
       continue;
     }
     visitedConfigIds.add(config.id);
+    if (!prebuiltGraphInputs.has(config.id)) {
+      prebuiltGraphInputs.set(config.id, buildIsolatedAgentInputs(config, buildAgentInput));
+    }
     for (const graph of config.subagentGraphConfigs ?? []) {
       for (const member of graph.memberConfigs) {
         if (!prebuiltGraphInputs.has(member.id)) {

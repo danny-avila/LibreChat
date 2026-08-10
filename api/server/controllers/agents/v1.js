@@ -9,6 +9,7 @@ const {
   findShadowedServerNames,
   agentCreateSchema,
   agentUpdateSchema,
+  agentSubagentsSchema,
   refreshListAvatars,
   collectEdgeAgentIds,
   replaceEdgeSourceId,
@@ -224,6 +225,9 @@ const replaceSubagentGraphAgentId = (subagents, sourceAgentId, targetAgentId) =>
     })),
   };
 };
+
+const replaceAndValidateSubagentGraphAgentId = (subagents, sourceAgentId, targetAgentId) =>
+  agentSubagentsSchema.parse(replaceSubagentGraphAgentId(subagents, sourceAgentId, targetAgentId));
 
 /**
  * Validates saved-agent spawn targets more strictly than top-level edges: both
@@ -550,7 +554,11 @@ const createAgentHandler = async (req, res) => {
     const { id: userId, role: userRole } = req.user;
     agentData.id = `agent_${nanoid()}`;
     agentData.edges = replaceEdgeSourceId(agentData.edges, '', agentData.id);
-    agentData.subagents = replaceSubagentGraphAgentId(agentData.subagents, '', agentData.id);
+    agentData.subagents = replaceAndValidateSubagentGraphAgentId(
+      agentData.subagents,
+      '',
+      agentData.id,
+    );
 
     if (agentData.tool_resources) {
       await pruneToolResourceFileIdsForAgent({
@@ -860,7 +868,7 @@ const updateAgentHandler = async (req, res) => {
       updateData.edges = replaceEdgeSourceId(updateData.edges, '', id);
     }
     if (updateData.subagents !== undefined) {
-      updateData.subagents = replaceSubagentGraphAgentId(updateData.subagents, '', id);
+      updateData.subagents = replaceAndValidateSubagentGraphAgentId(updateData.subagents, '', id);
     }
 
     if (updateData.edges?.length) {
@@ -1125,8 +1133,16 @@ const duplicateAgentHandler = async (req, res) => {
     }
     newAgentData.edges = replaceEdgeSourceId(newAgentData.edges, id, newAgentId);
     newAgentData.edges = replaceEdgeSourceId(newAgentData.edges, '', newAgentId);
-    newAgentData.subagents = replaceSubagentGraphAgentId(newAgentData.subagents, id, newAgentId);
-    newAgentData.subagents = replaceSubagentGraphAgentId(newAgentData.subagents, '', newAgentId);
+    newAgentData.subagents = replaceAndValidateSubagentGraphAgentId(
+      newAgentData.subagents,
+      id,
+      newAgentId,
+    );
+    newAgentData.subagents = replaceAndValidateSubagentGraphAgentId(
+      newAgentData.subagents,
+      '',
+      newAgentId,
+    );
 
     if (newAgentData.edges?.length) {
       const { missing, unauthorized } = await validateEdgeAgentReferences(

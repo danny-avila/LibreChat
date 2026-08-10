@@ -901,6 +901,38 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.tools).not.toContain(Tools.execute_code);
     });
 
+    test('rejects graph topology that becomes invalid after self-placeholder rewrite', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: { agents: { capabilities: ['subagents'] } },
+      };
+      mockReq.body = {
+        subagents: {
+          enabled: true,
+          allowSelf: false,
+          graphs: [
+            {
+              type: 'collapsed_team',
+              name: 'Collapsed team',
+              description: 'Becomes invalid after placeholder replacement',
+              agent_ids: ['', existingAgentId],
+              edges: [{ from: '', to: existingAgentId, edgeType: 'direct' }],
+              entry_agent_id: '',
+              result_agent_id: existingAgentId,
+            },
+          ],
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(400);
+      expect(mockRes.json).toHaveBeenCalledWith(
+        expect.objectContaining({ error: 'Invalid request data' }),
+      );
+    });
+
     test('should sanitize corrupt numeric model_parameters on update', async () => {
       mockReq.user.id = existingAgentAuthorId.toString();
       mockReq.params.id = existingAgentId;
