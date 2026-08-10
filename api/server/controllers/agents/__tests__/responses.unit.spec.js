@@ -916,7 +916,9 @@ describe('createResponse controller', () => {
       await createResponse(req, res);
 
       const onSubagentUsage = api.createSubagentUsageSink.mock.calls.at(-1)[1];
-      const aggregatorHandlers = api.createAggregatorEventHandlers.mock.results.at(-1).value;
+      const aggregatorHandlers =
+        api.createAggregatorEventHandlers.mock.results.at(-1)?.value ??
+        api.createResponsesEventHandlers.mock.results.at(-1)?.value.handlers;
       onSubagentUsage({ input_tokens: 25, output_tokens: 10 });
 
       expect(aggregatorHandlers.on_chat_model_end.handle).toHaveBeenCalledWith(
