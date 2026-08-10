@@ -642,7 +642,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
                 stepKinds.set(step.id, { kind, phase, captureContext: false });
                 close(phase, true);
               } else {
-                if (phase == null) {
+                if (phase == null && step.groupId == null) {
                   addPendingReasoning(step.agentId ?? 'root');
                 }
                 const closesPhase =

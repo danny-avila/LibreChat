@@ -219,6 +219,94 @@ describe('createActivityPhaseWiring', () => {
     expect(parts.some((part) => part.activity_label_type === 'phase')).toBe(false);
   });
 
+  it('keeps reasoning attached to an unphased parallel tool batch', async () => {
+    const parts: LooseContentPart[] = [];
+    const generatePhase = jest.fn(async () => ({ label: 'unused' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_REASONING_DELTA]: { handle: jest.fn() },
+    });
+
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'lane-reasoning',
+        agentId: 'agent-a',
+        groupId: 'lane-a',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'think' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    handlers?.[GraphEvents.ON_REASONING_DELTA]?.handle(
+      GraphEvents.ON_REASONING_DELTA,
+      {
+        id: 'lane-reasoning',
+        delta: { content: { type: ContentTypes.THINK, think: 'Checked the lane input.' } },
+      },
+      undefined,
+      undefined,
+    );
+    parts.push({ type: ContentTypes.THINK, think: 'Checked the lane input.' });
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'lane-text',
+        agentId: 'agent-a',
+        groupId: 'lane-a',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+
+    expect(wiring.snapshot()).toMatchObject({
+      activityCount: 0,
+      pendingReasoning: [{ key: 'agent-a', text: 'Checked the lane input.' }],
+    });
+
+    parts.push({ type: ContentTypes.TEXT, text: 'I will inspect the tool result.' });
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } });
+    await wiring.hook(
+      { ...batch('tool-1'), executingAgentId: 'agent-a' },
+      new AbortController().signal,
+    );
+    expect(wiring.snapshot()).toMatchObject({
+      activityCount: 1,
+      activities: [expect.objectContaining({ thinkingExcerpts: ['Checked the lane input.'] })],
+      pendingReasoning: [],
+    });
+
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'root-text',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    await flushDetached();
+    expect(generatePhase).not.toHaveBeenCalled();
+    expect(parts.some((part) => part.activity_label_type === 'phase')).toBe(false);
+  });
+
   it('anchors parallel standalone reasoning to each lane content part', async () => {
     const parts: LooseContentPart[] = [];
     const stepIndexes = new Map([
