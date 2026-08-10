@@ -435,6 +435,8 @@ type LazySubagentAgent = Pick<
   configId: string;
   subagentAgentConfigs?: RunAgent[];
   lazySubagentConfigs?: LazySubagentAgent[];
+  /** Lightweight graph-member metadata used only by run-wide capability gates. */
+  subagentGraphMemberMetadata?: SubagentTreeNode[];
   resolve: (context: SubagentResolveContext) => Promise<RunAgent>;
 };
 
@@ -450,6 +452,7 @@ type SubagentTreeNode = Pick<
 > & {
   subagentAgentConfigs?: SubagentTreeNode[];
   lazySubagentConfigs?: SubagentTreeNode[];
+  subagentGraphMemberMetadata?: SubagentTreeNode[];
   subagentGraphConfigs?: Array<{ memberConfigs: SubagentTreeNode[] }>;
 };
 
@@ -856,6 +859,11 @@ function enqueueSubagentChildren(
   for (const child of agent.lazySubagentConfigs ?? []) {
     if (!visited.has(child.id)) {
       pending.push(child);
+    }
+  }
+  for (const member of agent.subagentGraphMemberMetadata ?? []) {
+    if (!visited.has(member.id)) {
+      pending.push(member);
     }
   }
   for (const graph of agent.subagentGraphConfigs ?? []) {

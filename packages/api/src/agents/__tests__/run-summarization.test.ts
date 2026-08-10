@@ -2184,6 +2184,40 @@ describe('toolOutputReferences gating', () => {
     expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
   });
 
+  it('enables code runtime gates from a lazy graph member metadata descriptor', async () => {
+    const signal = new AbortController().signal;
+    const graphMember = makeAgent({
+      id: 'agent_lazy_graph_member',
+      codeEnvAvailable: true,
+      statefulCodeSessions: true,
+    });
+    const lazyChild = {
+      ...makeAgent({ id: 'agent_lazy_child', codeEnvAvailable: false }),
+      configId: 'agent_lazy_child:v1',
+      subagentGraphMemberMetadata: [graphMember],
+      resolve: jest.fn(),
+    };
+    await createRun({
+      agents: [
+        makeAgent({
+          id: 'agent_parent',
+          codeEnvAvailable: false,
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_lazy_child'] },
+          lazySubagentConfigs: [lazyChild],
+        }),
+      ] as never,
+      signal,
+      streaming: true,
+      streamUsage: true,
+    });
+
+    const createMock = Run.create as jest.Mock;
+    const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
+    expect(callArgs.toolExecution).toEqual({ sandbox: { statefulSessions: true } });
+    expect(lazyChild.resolve).not.toHaveBeenCalled();
+  });
+
   it('terminates and omits toolOutputReferences for a cyclic agent tree with no codeenv', async () => {
     /**
      * Cycle safety: `A → B → A`, neither has `codeEnvAvailable`. The

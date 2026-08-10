@@ -642,6 +642,7 @@ const initializeClient = async ({
   if (updatedMCPAuthMap) {
     userMCPAuthMap = updatedMCPAuthMap;
   }
+  userMCPAuthMap ??= {};
   for (const [agentId, config] of agentConfigs) {
     if (agentToolContexts.has(agentId)) {
       continue;
@@ -817,6 +818,15 @@ const initializeClient = async ({
     }
   };
 
+  const loadGraphMemberCapabilityMetadata = async (agent) => {
+    if (!agent.subagents?.enabled) return [];
+    const memberIds = Array.from(
+      new Set((agent.subagents.graphs ?? []).flatMap((graph) => graph.agent_ids ?? [])),
+    );
+    const memberMetadata = await Promise.all(memberIds.map(loadSubagentMetadata));
+    return memberMetadata.filter(Boolean);
+  };
+
   /**
    * Resolves the selected descriptor inside the foreground request. The
    * legacy initializer requires request/response objects for tool and MCP
@@ -900,6 +910,9 @@ const initializeClient = async ({
     );
     throwIfAborted(context.signal);
     config.lazySubagentConfigs = lazyChildren;
+    if (config.userMCPAuthMap) {
+      Object.assign(userMCPAuthMap, config.userMCPAuthMap);
+    }
     agentToolContexts.set(agentId, buildAgentToolContext({ agent, config }));
     endpointTokenConfigByAgentId.set(agentId, config.endpointTokenConfig);
     return config;
@@ -960,6 +973,7 @@ const initializeClient = async ({
       );
       const lazyChildren = childDescriptors.filter((child) => child.configId);
       const eagerChildren = childDescriptors.filter((child) => !child.configId);
+      const subagentGraphMemberMetadata = await loadGraphMemberCapabilityMetadata(metadata);
       descriptors.push({
         id: metadata.id,
         name: metadata.name,
@@ -975,6 +989,7 @@ const initializeClient = async ({
         includeReasoningHistory: metadata.includeReasoningHistory,
         lazySubagentConfigs: lazyChildren,
         subagentAgentConfigs: eagerChildren,
+        subagentGraphMemberMetadata,
         resolve: async (context) =>
           initializeLazySubagent({
             agentId: metadata.id,
@@ -1026,9 +1041,6 @@ const initializeClient = async ({
         lazyChildren: [],
       });
       graphMemberConfigsById.set(memberId, config);
-      if (config.userMCPAuthMap) {
-        userMCPAuthMap = { ...userMCPAuthMap, ...config.userMCPAuthMap };
-      }
       return config;
     } catch (error) {
       if (isFatalAgentInitializationError(error)) {

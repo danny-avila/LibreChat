@@ -1165,27 +1165,52 @@ describe('initializeClient — subagent loading', () => {
       allowSelf: false,
       graphs: [definition],
     });
-    await createViewableAgent(memberId);
+    const memberAgent = await createAgent({
+      id: memberId,
+      name: memberId,
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['execute_code'],
+      stateful_code_sessions: true,
+    });
+    await grantView(memberAgent);
     const primaryConfig = makePrimaryConfig({
       subagents: { enabled: true, allowSelf: false, agent_ids: [childId] },
     });
+    const memberMCPAuthMap = { late_server: { token: 'late_token' } };
     mockInitializeAgent.mockImplementation(({ agent }) =>
       Promise.resolve(
         agent.id === PRIMARY_ID
           ? primaryConfig
-          : { ...makeSubagentConfig(agent.id), subagents: agent.subagents },
+          : {
+              ...makeSubagentConfig(agent.id),
+              subagents: agent.subagents,
+              ...(agent.id === memberId ? { userMCPAuthMap: memberMCPAuthMap } : {}),
+            },
       ),
     );
 
-    await initializeClient({
-      req: makeSubagentReq(),
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
+    const { userMCPAuthMap } = await initializeClient({
+      req,
       res: {},
       signal: new AbortController().signal,
       endpointOption: makeEndpointOption(),
     });
 
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
-    const resolvedChild = await agentClientArgs.agent.lazySubagentConfigs[0].resolve({
+    const descriptor = agentClientArgs.agent.lazySubagentConfigs[0];
+    expect(descriptor.subagentGraphMemberMetadata).toEqual([
+      expect.objectContaining({
+        id: memberId,
+        codeEnvAvailable: true,
+        statefulCodeSessions: true,
+      }),
+    ]);
+    expect(userMCPAuthMap).toEqual({});
+    const resolvedChild = await descriptor.resolve({
       signal: new AbortController().signal,
     });
     expect(mockInitializeAgent).toHaveBeenCalledTimes(3);
@@ -1195,6 +1220,7 @@ describe('initializeClient — subagent loading', () => {
         memberConfigs: [expect.objectContaining({ id: memberId })],
       },
     ]);
+    expect(userMCPAuthMap).toEqual(memberMCPAuthMap);
   });
 
   it('loads independent graph members concurrently', async () => {
