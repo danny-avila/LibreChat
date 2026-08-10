@@ -8,7 +8,9 @@ const mockResetPasswordController = jest.fn((req, res) => res.status(204).end())
 
 jest.mock('@librechat/api', () => ({
   createSetBalanceConfig: jest.fn(() => (req, res, next) => next()),
+  requireTwoFactorSetupToken: jest.fn((req, res, next) => next()),
   forceRefreshCloudFrontAuthCookies: jest.fn(),
+  blockTwoFactorDisableWhenRequired: jest.fn((req, res, next) => next()),
 }));
 
 jest.mock('~/server/controllers/AuthController', () => ({
@@ -29,6 +31,7 @@ jest.mock('~/server/controllers/TwoFactorController', () => ({
 
 jest.mock('~/server/controllers/auth/TwoFactorAuthController', () => ({
   verify2FAWithTempToken: jest.fn((req, res) => res.status(204).end()),
+  confirm2FASetupWithTempToken: jest.fn((req, res) => res.status(204).end()),
 }));
 
 jest.mock('~/server/controllers/auth/LogoutController', () => ({

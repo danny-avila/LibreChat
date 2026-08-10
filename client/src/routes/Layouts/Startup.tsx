@@ -12,6 +12,7 @@ const headerMap: Record<string, TranslationKeys> = {
   '/forgot-password': 'com_auth_reset_password',
   '/reset-password': 'com_auth_reset_password',
   '/login/2fa': 'com_auth_verify_your_identity',
+  '/login/2fa/setup': 'com_auth_two_factor_setup_required',
 };
 
 export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: boolean }) {

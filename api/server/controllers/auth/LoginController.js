@@ -1,4 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
+const { isEnabled, generateTwoFactorSetupToken } = require('@librechat/api');
 const { generate2FATempToken } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
 
@@ -11,6 +12,18 @@ const loginController = async (req, res) => {
     if (req.user.twoFactorEnabled) {
       const tempToken = generate2FATempToken(req.user._id);
       return res.status(200).json({ twoFAPending: true, tempToken });
+    }
+
+    if (isEnabled(process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION)) {
+      const tempToken = generateTwoFactorSetupToken(
+        req.user._id.toString(),
+        process.env.JWT_SECRET,
+      );
+      return res.status(200).json({
+        twoFAPending: true,
+        twoFASetupRequired: true,
+        tempToken,
+      });
     }
 
     const { password: _p, totpSecret: _t, __v, ...user } = req.user;

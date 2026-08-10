@@ -1329,6 +1329,18 @@ export function enableTwoFactor(payload?: t.TEnable2FARequest): Promise<t.TEnabl
   return request.post(endpoints.enableTwoFactor(), payload);
 }
 
+export function enableTwoFactorSetup(
+  payload: t.TEnable2FASetupRequest,
+): Promise<t.TEnable2FAResponse> {
+  return request.post(endpoints.enableTwoFactorSetup(), payload);
+}
+
+export function confirmTwoFactorSetup(
+  payload: t.TConfirm2FASetupRequest,
+): Promise<t.TConfirm2FASetupResponse> {
+  return request.post(endpoints.confirmTwoFactorSetup(), payload);
+}
+
 export function verifyTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
   return request.post(endpoints.verifyTwoFactor(), payload);
 }

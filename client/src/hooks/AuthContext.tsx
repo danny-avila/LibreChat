@@ -8,8 +8,8 @@ import {
   createContext,
 } from 'react';
 import { debounce } from 'lodash';
-import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import {
   apiBaseUrl,
   SystemRoles,
@@ -102,7 +102,11 @@ const AuthContextProvider = ({
 
   const loginUser = useLoginUserMutation({
     onSuccess: (data: t.TLoginResponse) => {
-      const { user, token, twoFAPending, tempToken } = data;
+      const { user, token, twoFAPending, twoFASetupRequired, tempToken } = data;
+      if (twoFASetupRequired) {
+        navigate(`/login/2fa/setup?tempToken=${tempToken}`, { replace: true });
+        return;
+      }
       if (twoFAPending) {
         navigate(`/login/2fa?tempToken=${tempToken}`, { replace: true });
         return;

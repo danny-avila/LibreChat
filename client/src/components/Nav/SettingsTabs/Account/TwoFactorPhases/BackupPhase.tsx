@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Download } from 'lucide-react';
-import { Button, Label } from '@librechat/client';
+import { Button } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 const fadeAnimation = {
@@ -29,7 +29,9 @@ export const BackupPhase: React.FC<BackupPhaseProps> = ({
 
   return (
     <motion.div {...fadeAnimation} className="space-y-6">
-      <Label className="break-keep text-sm">{localize('com_ui_download_backup_tooltip')}</Label>
+      <p className="break-keep text-sm text-text-primary">
+        {localize('com_ui_download_backup_tooltip')}
+      </p>
       <div className="grid grid-cols-2 gap-4 rounded-xl bg-surface-secondary p-6">
         {backupCodes.map((code, index) => (
           <motion.div

@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
-import { Button, Label, SecretInput } from '@librechat/client';
+import { Button, SecretInput } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 const fadeAnimation = {
@@ -30,12 +30,10 @@ export const QRPhase: React.FC<QRPhaseProps> = ({ secret, otpauthUrl, onNext }) 
           animate={{ scale: 1, opacity: 1 }}
           className="rounded-2xl bg-surface-fixed p-4 shadow-lg"
         >
-          <QRCodeSVG value={otpauthUrl} size={240} />
+          <QRCodeSVG value={otpauthUrl} size={240} title={localize('com_ui_2fa_scan_qr')} />
         </motion.div>
         <div className="w-full space-y-3">
-          <Label className="text-sm font-medium text-text-secondary">
-            {localize('com_ui_secret_key')}
-          </Label>
+          <p className="text-sm font-medium text-text-secondary">{localize('com_ui_secret_key')}</p>
           <SecretInput
             value={secret}
             readOnly

@@ -1,12 +1,13 @@
 const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
+const { confirmTwoFactorSetup } = require('@librechat/api');
 const {
   verifyTOTP,
   getTOTPSecret,
   verifyBackupCode,
 } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { getUserById } = require('~/models');
+const { getUserById, updateUser } = require('~/models');
 
 /**
  * Verifies the 2FA code during login using a temporary token.
@@ -58,4 +59,42 @@ const verify2FAWithTempToken = async (req, res) => {
   }
 };
 
-module.exports = { verify2FAWithTempToken };
+/**
+ * Confirms required 2FA enrollment after a setup token has been validated.
+ */
+const confirm2FASetupWithTempToken = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Invalid or expired two-factor setup token' });
+    }
+
+    const result = await confirmTwoFactorSetup(userId, req.body?.token, {
+      getUserById,
+      getTOTPSecret,
+      verifyTOTP,
+      updateUser,
+    });
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+
+    const userData = result.user.toObject ? result.user.toObject() : { ...result.user };
+    delete userData.__v;
+    delete userData.password;
+    delete userData.totpSecret;
+    delete userData.backupCodes;
+    delete userData.pendingTotpSecret;
+    delete userData.pendingBackupCodes;
+    userData.id = result.user._id.toString();
+    userData.twoFactorEnabled = true;
+
+    const authToken = await setAuthTokens(result.user._id, res, null, req);
+    return res.status(200).json({ token: authToken, user: userData });
+  } catch (err) {
+    logger.error('[confirm2FASetupWithTempToken]', err);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+};
+
+module.exports = { verify2FAWithTempToken, confirm2FASetupWithTempToken };

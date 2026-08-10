@@ -1,7 +1,12 @@
 /**
  * @jest-environment jsdom
  */
-import { buildLoginRedirectUrl, getSharedLinks } from '../src/api-endpoints';
+import {
+  getSharedLinks,
+  buildLoginRedirectUrl,
+  enableTwoFactorSetup,
+  confirmTwoFactorSetup,
+} from '../src/api-endpoints';
 
 describe('buildLoginRedirectUrl', () => {
   afterEach(() => {
@@ -86,5 +91,12 @@ describe('getSharedLinks', () => {
     expect(result).toBe(
       '/api/share?pageSize=25&sortBy=createdAt&sortDirection=desc&search=100%25%20ready%20%26%20waiting&cursor=2030-01-01T00%3A00%3A00.000Z',
     );
+  });
+});
+
+describe('required two-factor setup endpoints', () => {
+  it('uses the purpose-specific setup paths', () => {
+    expect(enableTwoFactorSetup()).toBe('/api/auth/2fa/setup');
+    expect(confirmTwoFactorSetup()).toBe('/api/auth/2fa/setup/confirm');
   });
 });

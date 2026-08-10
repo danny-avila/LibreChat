@@ -1643,6 +1643,7 @@ export type TStartupConfig = {
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
   passwordResetEnabled: boolean;
+  twoFactorAuthenticationRequired?: boolean;
   emailEnabled: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;

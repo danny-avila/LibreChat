@@ -592,6 +592,7 @@ export type TLoginResponse = {
   token?: string;
   user?: TUser;
   twoFAPending?: boolean;
+  twoFASetupRequired?: boolean;
   tempToken?: string;
 };
 
@@ -607,6 +608,20 @@ export type TEnable2FAResponse = {
   otpauthUrl: string;
   backupCodes: string[];
   message?: string;
+};
+
+export type TEnable2FASetupRequest = {
+  tempToken: string;
+};
+
+export type TConfirm2FASetupRequest = {
+  tempToken: string;
+  token: string;
+};
+
+export type TConfirm2FASetupResponse = {
+  token: string;
+  user: TUser;
 };
 
 export type TVerify2FARequest = TOTPVerificationPayload;

@@ -180,3 +180,18 @@ export const useVerifyTwoFactorTempMutation = (
     },
   );
 };
+
+export const useEnableTwoFactorSetupMutation = (): UseMutationResult<
+  t.TEnable2FAResponse,
+  unknown,
+  t.TEnable2FASetupRequest,
+  unknown
+> => useMutation((payload: t.TEnable2FASetupRequest) => dataService.enableTwoFactorSetup(payload));
+
+export const useConfirmTwoFactorSetupMutation = (): UseMutationResult<
+  t.TConfirm2FASetupResponse,
+  unknown,
+  t.TConfirm2FASetupRequest,
+  unknown
+> =>
+  useMutation((payload: t.TConfirm2FASetupRequest) => dataService.confirmTwoFactorSetup(payload));

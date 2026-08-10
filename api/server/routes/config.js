@@ -96,6 +96,7 @@ function buildPreLoginPayload() {
       !!process.env.EMAIL_PASSWORD &&
       !!process.env.EMAIL_FROM,
     passwordResetEnabled,
+    twoFactorAuthenticationRequired: isEnabled(process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION),
   };
 
   const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);

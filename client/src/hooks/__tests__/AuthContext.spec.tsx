@@ -2,13 +2,11 @@
  * @jest-environment @happy-dom/jest-environment
  */
 import React from 'react';
-import { render, act } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-
+import { render, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TAuthConfig } from '~/common';
-
 import { AuthContextProvider, useAuthContext } from '../AuthContext';
 import { SESSION_KEY } from '~/utils';
 
@@ -117,7 +115,49 @@ function renderProviderLive() {
   );
 }
 
-describe('AuthContextProvider — login onError redirect handling', () => {
+describe('AuthContextProvider two-factor login handoff', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    window.history.replaceState({}, '', '/login');
+  });
+
+  afterEach(() => {
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('routes unenrolled users to required setup', () => {
+    renderProvider();
+
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({
+        twoFAPending: true,
+        twoFASetupRequired: true,
+        tempToken: 'setup-token',
+      });
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/login/2fa/setup?tempToken=setup-token', {
+      replace: true,
+    });
+  });
+
+  it('keeps enrolled users on the existing verification route', () => {
+    renderProvider();
+
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({
+        twoFAPending: true,
+        tempToken: 'challenge-token',
+      });
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/login/2fa?tempToken=challenge-token', {
+      replace: true,
+    });
+  });
+});
+
+describe('AuthContextProvider: login onError redirect handling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     window.history.replaceState({}, '', '/login');
