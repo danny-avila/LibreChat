@@ -16,6 +16,7 @@ const THEME_KEY = 'color-theme';
 const THEME_COLORS_KEY = 'theme-colors';
 const THEME_NAME_KEY = 'theme-name';
 const THEME_DEFINITION_KEY = 'theme-definition';
+const THEME_SOURCE_KEY = 'theme-source';
 const themeModes = ['light', 'dark', 'system'] as const;
 
 type AppearanceMode = (typeof themeModes)[number];
@@ -148,6 +149,7 @@ const getInitialTheme = (): AppearanceMode => {
 
 const getStoredThemeState = (): InitialThemeState => {
   let legacyColors: IThemeRGB | undefined;
+  const storedSource = readStorage(THEME_SOURCE_KEY);
   const storedColors = readStorage(THEME_COLORS_KEY);
   if (storedColors) {
     try {
@@ -165,7 +167,10 @@ const getStoredThemeState = (): InitialThemeState => {
     try {
       const parsed: unknown = JSON.parse(storedDefinition);
       if (isValidThemeDefinition(parsed)) {
-        return { definition: parsed, legacyColors };
+        return {
+          definition: parsed,
+          legacyColors: storedSource === 'legacy' ? parsed.modes.light?.colors : undefined,
+        };
       }
     } catch {
       // Fall through to the legacy storage adapter.
@@ -316,6 +321,7 @@ export function ThemeProvider({
 
     writeStorage(THEME_DEFINITION_KEY, JSON.stringify(definition));
     writeStorage(THEME_NAME_KEY, definition.name);
+    writeStorage(THEME_SOURCE_KEY, legacyDefinition ? 'legacy' : 'definition');
     writeStorage(
       THEME_COLORS_KEY,
       !propThemeDefinition && legacyDefinition
@@ -342,6 +348,7 @@ export function ThemeProvider({
     setLegacyThemeRGB(undefined);
     writeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
     writeStorage(THEME_COLORS_KEY);
+    writeStorage(THEME_SOURCE_KEY, definition ? 'definition' : undefined);
     setThemeNameState(definition?.name);
     themeNameRef.current = definition?.name;
     writeStorage(THEME_NAME_KEY, definition?.name);
@@ -360,6 +367,7 @@ export function ThemeProvider({
     writeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
     writeStorage(THEME_NAME_KEY, definition?.name);
     writeStorage(THEME_COLORS_KEY, legacyColors ? JSON.stringify(legacyColors) : undefined);
+    writeStorage(THEME_SOURCE_KEY, definition ? 'legacy' : undefined);
   }, []);
 
   const setThemeName = useCallback((name?: string) => {

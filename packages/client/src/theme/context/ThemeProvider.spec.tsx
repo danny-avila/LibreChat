@@ -103,6 +103,7 @@ describe('ThemeProvider', () => {
     });
     expect(screen.getByText('definition-name')).toBeInTheDocument();
     expect(localStorage.getItem('theme-name')).toBe('definition-name');
+    expect(localStorage.getItem('theme-source')).toBe('definition');
   });
 
   it('keeps valid legacy overrides when another token is malformed', async () => {
@@ -125,6 +126,7 @@ describe('ThemeProvider', () => {
     expect(JSON.parse(localStorage.getItem('theme-colors') ?? '{}')).toEqual({
       'rgb-accent-primary': '1 2 3',
     });
+    expect(localStorage.getItem('theme-source')).toBe('legacy');
   });
 
   it('resets only theme-owned properties', async () => {
@@ -150,6 +152,7 @@ describe('ThemeProvider', () => {
     expect(document.documentElement.style.getPropertyValue('--markdown-font-size')).toBe('18px');
     expect(localStorage.getItem('theme-definition')).toBeNull();
     expect(localStorage.getItem('theme-name')).toBeNull();
+    expect(localStorage.getItem('theme-source')).toBeNull();
   });
 
   it('does not remove host theme variables when no custom theme is active', async () => {
@@ -228,6 +231,7 @@ describe('ThemeProvider', () => {
       'rgb-accent-primary': '1 2 3',
     });
     expect(localStorage.getItem('color-theme')).toBe('light');
+    expect(localStorage.getItem('theme-source')).toBe('legacy');
 
     unmount();
     document.documentElement.removeAttribute('style');
@@ -242,6 +246,30 @@ describe('ThemeProvider', () => {
       expect(document.documentElement.dataset.theme).toBe('legacy');
     });
     expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
+  });
+
+  it('does not let stale legacy storage downgrade an authoritative definition', async () => {
+    localStorage.setItem(
+      'theme-definition',
+      JSON.stringify({
+        version: 1,
+        name: 'native',
+        modes: { light: { colors: { 'rgb-accent-primary': '1 2 3' } } },
+      }),
+    );
+    localStorage.setItem('theme-colors', JSON.stringify({ 'rgb-accent-primary': '7 8 9' }));
+
+    render(
+      <ThemeProvider initialTheme="light">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('native');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
+    expect(document.documentElement.style.getPropertyValue('--text-primary')).not.toBe('');
   });
 
   it('keeps the active definition name synchronized across reloads', async () => {
@@ -482,5 +510,6 @@ describe('ThemeProvider', () => {
 
     expect(localStorage.getItem('theme-definition')).toBeNull();
     expect(localStorage.getItem('theme-colors')).toBeNull();
+    expect(localStorage.getItem('theme-source')).toBeNull();
   });
 });
