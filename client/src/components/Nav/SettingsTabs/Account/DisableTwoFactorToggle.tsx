@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from '@librechat/client';
+import { Button, TooltipAnchor } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
 interface DisableTwoFactorToggleProps {
@@ -18,6 +18,21 @@ export const DisableTwoFactorToggle: React.FC<DisableTwoFactorToggleProps> = ({
   buttonRef,
 }) => {
   const localize = useLocalize();
+  const isDisableBlockedByPolicy = enabled && required === true;
+  const buttonLabel = enabled ? localize('com_ui_2fa_disable') : localize('com_ui_2fa_enable');
+  const actionButton = (
+    <Button
+      ref={buttonRef}
+      variant={enabled ? 'destructive' : 'outline'}
+      onClick={onChange}
+      disabled={disabled || isDisableBlockedByPolicy}
+      className={isDisableBlockedByPolicy ? 'cursor-not-allowed' : undefined}
+      aria-haspopup="dialog"
+      aria-controls="two-factor-authentication-dialog"
+    >
+      {buttonLabel}
+    </Button>
+  );
 
   return (
     <div className="flex items-center justify-between">
@@ -25,21 +40,17 @@ export const DisableTwoFactorToggle: React.FC<DisableTwoFactorToggleProps> = ({
         <span className="text-sm text-text-primary">{localize('com_nav_2fa')}</span>
       </div>
       <div className="flex items-center gap-3">
-        {required && enabled ? (
-          <span className="rounded-full bg-status-info-subtle px-3 py-1 text-sm font-medium text-text-primary">
-            {localize('com_ui_2fa_required')}
-          </span>
+        {isDisableBlockedByPolicy ? (
+          <TooltipAnchor
+            description={localize('com_ui_2fa_required')}
+            aria-label={`${buttonLabel}: ${localize('com_ui_2fa_required')}`}
+            tabIndex={0}
+            data-testid="required-2fa-disable-control"
+            className="inline-flex cursor-not-allowed rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2"
+            render={<span>{actionButton}</span>}
+          />
         ) : (
-          <Button
-            ref={buttonRef}
-            variant={enabled ? 'destructive' : 'outline'}
-            onClick={onChange}
-            disabled={disabled}
-            aria-haspopup="dialog"
-            aria-controls="two-factor-authentication-dialog"
-          >
-            {enabled ? localize('com_ui_2fa_disable') : localize('com_ui_2fa_enable')}
-          </Button>
+          actionButton
         )}
       </div>
     </div>

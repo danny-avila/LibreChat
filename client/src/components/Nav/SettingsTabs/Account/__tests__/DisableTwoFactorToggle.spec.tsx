@@ -2,7 +2,7 @@
  * @jest-environment @happy-dom/jest-environment
  */
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { DisableTwoFactorToggle } from '../DisableTwoFactorToggle';
 
 jest.mock('~/hooks', () => ({
@@ -10,16 +10,28 @@ jest.mock('~/hooks', () => ({
 }));
 
 describe('DisableTwoFactorToggle', () => {
-  it('shows a non-interactive policy status when 2FA is required', () => {
-    render(<DisableTwoFactorToggle enabled={true} required={true} onChange={jest.fn()} />);
+  it('shows a disabled control with the policy reason when 2FA is required', async () => {
+    const onChange = jest.fn();
+    render(<DisableTwoFactorToggle enabled={true} required={true} onChange={onChange} />);
 
-    expect(screen.getByText('com_ui_2fa_required')).toHaveClass('text-text-primary');
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    const button = screen.getByRole('button', { name: 'com_ui_2fa_disable' });
+    const tooltipTrigger = screen.getByTestId('required-2fa-disable-control');
+
+    expect(button).toBeDisabled();
+    expect(button).toHaveClass('cursor-not-allowed');
+    expect(tooltipTrigger).toHaveClass('cursor-not-allowed');
+    expect(tooltipTrigger).toHaveAttribute('tabindex', '0');
+
+    fireEvent.mouseEnter(tooltipTrigger);
+    fireEvent.mouseMove(tooltipTrigger, { screenX: 1 });
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('com_ui_2fa_required');
+    fireEvent.click(button);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('keeps the disable control when the deployment policy is optional', () => {
     render(<DisableTwoFactorToggle enabled={true} required={false} onChange={jest.fn()} />);
 
-    expect(screen.getByRole('button', { name: 'com_ui_2fa_disable' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'com_ui_2fa_disable' })).toBeEnabled();
   });
 });
