@@ -3,7 +3,7 @@ import path from 'path';
 import { logger } from '@librechat/data-schemas';
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'crypto';
 import type { SearchClient, SearchPool } from './types';
-import { assertRoleSeparation } from './roles';
+import { assertRoleSeparation, managedRoles } from './roles';
 import { withTransaction } from './pool';
 
 /** Serializes concurrent migration runners across pods. */
@@ -28,13 +28,24 @@ export function migrationsDir(): string {
   return process.env.CHAT_SEARCH_MIGRATIONS_DIR ?? path.join(__dirname, 'migrations');
 }
 
+/**
+ * Migration SQL is written against the base role names and rendered here with
+ * the deployment prefix applied, so one set of files serves every deployment.
+ * The checksum covers the *rendered* text: the prefix is part of what was
+ * applied, and a run under a different prefix is drift, not a re-run.
+ */
 export function readMigrations(dir: string = migrationsDir()): Migration[] {
+  const names = managedRoles();
   return fs
     .readdirSync(dir)
     .filter((filename) => filename.endsWith('.sql'))
     .sort()
     .map((filename) => {
-      const sql = fs.readFileSync(path.join(dir, filename), 'utf8');
+      const sql = fs
+        .readFileSync(path.join(dir, filename), 'utf8')
+        .replace(/\bchat_search_owner\b/g, names.owner)
+        .replace(/\bchat_search_writer\b/g, names.writer)
+        .replace(/\bchat_search_reader\b/g, names.reader);
       return { filename, checksum: createHash('sha256').update(sql).digest('hex'), sql };
     });
 }
@@ -80,11 +91,10 @@ const ROLE_MIGRATION = '002_roles.sql';
 /** The file that issues `CREATE EXTENSION`, which is superuser-only for these two. */
 const SCHEMA_MIGRATION = '001_schema.sql';
 
-export const MANAGED_ROLES: readonly string[] = Object.freeze([
-  'chat_search_owner',
-  'chat_search_writer',
-  'chat_search_reader',
-]);
+export function managedRoleNames(): readonly string[] {
+  const names = managedRoles();
+  return Object.freeze([names.owner, names.writer, names.reader]);
+}
 
 /**
  * Neither is a trusted extension, so a non-superuser cannot install either one
@@ -162,7 +172,7 @@ async function assertCanProvision(
             ARRAY(SELECT rolname::text FROM pg_roles
                    WHERE rolname = ANY($2::text[])) AS existing_managed_roles
        FROM pg_roles WHERE rolname = current_user`,
-    [[...REQUIRED_EXTENSIONS], [...MANAGED_ROLES]],
+    [[...REQUIRED_EXTENSIONS], [...managedRoleNames()]],
   );
   const state = rows[0];
   if (!state) {
@@ -176,7 +186,7 @@ async function assertCanProvision(
    * managed role also fails the checks below, and "you are not a superuser" sends
    * an operator looking for a grant that would not have helped.
    */
-  if (rolesPending && MANAGED_ROLES.includes(state.role)) {
+  if (rolesPending && managedRoleNames().includes(state.role)) {
     throw new Error(
       `[chatSearch] ${ROLE_MIGRATION} creates and then restricts ${state.role}, so it cannot be ` +
         'applied by that role. Point CHAT_SEARCH_MIGRATE_URL at an existing administrative role ' +
@@ -259,7 +269,7 @@ async function provisionExtensionAccess(client: SearchClient): Promise<void> {
                    ORDER BY 1) AS schemas,
             ARRAY(SELECT rolname::text FROM pg_roles
                    WHERE rolname = ANY($2::text[]) ORDER BY 1) AS roles`,
-    [[...REQUIRED_EXTENSIONS], [...MANAGED_ROLES]],
+    [[...REQUIRED_EXTENSIONS], [...managedRoleNames()]],
   );
   const state = rows[0];
   if (!state || state.roles.length === 0) {
@@ -351,7 +361,9 @@ export async function migrate(pool: SearchPool): Promise<readonly string[]> {
       if (previous != null) {
         throw new Error(
           `[chatSearch] migration ${migration.filename} changed after it was applied ` +
-            '(checksum drift); add a new migration instead of editing an applied one',
+            '(checksum drift). Either an applied file was edited — add a new migration instead — ' +
+            'or CHAT_SEARCH_ROLE_PREFIX changed: the prefix is rendered into the applied SQL, ' +
+            'so a provisioned database keeps the prefix it was provisioned with.',
         );
       }
       await client.query('BEGIN');
@@ -377,11 +389,15 @@ export async function migrate(pool: SearchPool): Promise<readonly string[]> {
   }
 }
 
-const ROLE_PASSWORD_ENV: Readonly<Record<string, string>> = Object.freeze({
-  chat_search_owner: 'CHAT_SEARCH_OWNER_PASSWORD',
-  chat_search_writer: 'CHAT_SEARCH_WRITER_PASSWORD',
-  chat_search_reader: 'CHAT_SEARCH_READER_PASSWORD',
-});
+/** Env keys stay fixed across deployments; only the role names carry the prefix. */
+function rolePasswordPairs(): ReadonlyArray<[role: string, envKey: string]> {
+  const names = managedRoles();
+  return [
+    [names.owner, 'CHAT_SEARCH_OWNER_PASSWORD'],
+    [names.writer, 'CHAT_SEARCH_WRITER_PASSWORD'],
+    [names.reader, 'CHAT_SEARCH_READER_PASSWORD'],
+  ];
+}
 
 /** PostgreSQL's own default. Every login pays this cost, so it is not raised idly. */
 const SCRAM_ITERATIONS = 4096;
@@ -526,7 +542,7 @@ function assertUsablePassword(envKey: string, password: string): void {
 export async function applyRolePasswords(pool: SearchPool): Promise<readonly string[]> {
   const updated: string[] = [];
   await withTransaction(pool, async (client) => {
-    for (const [role, envKey] of Object.entries(ROLE_PASSWORD_ENV)) {
+    for (const [role, envKey] of rolePasswordPairs()) {
       const password = process.env[envKey];
       if (!password) {
         continue;
@@ -556,7 +572,7 @@ export async function applyRolePasswords(pool: SearchPool): Promise<readonly str
 export function assertRoleCredentialsConfigured(): void {
   const missing: string[] = [];
   const supplied: [envKey: string, password: string][] = [];
-  for (const envKey of Object.values(ROLE_PASSWORD_ENV)) {
+  for (const [, envKey] of rolePasswordPairs()) {
     const password = process.env[envKey];
     if (!password) {
       missing.push(envKey);

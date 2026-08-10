@@ -1,10 +1,79 @@
 import type { SearchPool } from './types';
 
+/**
+ * Base role names. Deployment-facing code never uses these directly: the names
+ * a database actually carries come from `managedRoles()`, which applies the
+ * deployment prefix. Only the prefix machinery and the specs that run without
+ * one touch the bases.
+ */
 export const OWNER_ROLE = 'chat_search_owner';
 export const WRITER_ROLE = 'chat_search_writer';
 export const READER_ROLE = 'chat_search_reader';
 
-const APPLICATION_ROLES = [OWNER_ROLE, WRITER_ROLE, READER_ROLE] as const;
+/** PostgreSQL truncates identifiers past NAMEDATALEN-1 silently; refuse instead. */
+const MAX_IDENTIFIER_LENGTH = 63;
+const LONGEST_BASE_ROLE = WRITER_ROLE;
+const IDENTIFIER_SAFE = /^[a-z_][a-z0-9_]*$/;
+
+/**
+ * Deployment prefix for the cluster-global role names, following the
+ * `REDIS_KEY_PREFIX` / `REDIS_KEY_PREFIX_VAR` convention: set the prefix
+ * directly, or name another environment variable that carries it — never both.
+ *
+ * Role names are the one cluster-global thing these migrations create. Two
+ * deployments sharing a PostgreSQL cluster under one set of names would rotate
+ * each other's credentials on every provisioning run, and the surviving
+ * credential could read both databases. A per-deployment prefix gives each its
+ * own principals; `migrate.spec.ts` proves the isolation in 'provisions two
+ * deployments on one cluster without sharing credentials'.
+ *
+ * Lowercase identifier characters only: the prefix lands in migration SQL as a
+ * raw identifier, where anything else would fold, quote, or truncate silently.
+ */
+export function chatSearchRolePrefix(): string {
+  const direct = process.env.CHAT_SEARCH_ROLE_PREFIX;
+  const indirection = process.env.CHAT_SEARCH_ROLE_PREFIX_VAR;
+  if (direct && indirection) {
+    throw new Error(
+      '[chatSearch] Only either CHAT_SEARCH_ROLE_PREFIX_VAR or CHAT_SEARCH_ROLE_PREFIX can be set.',
+    );
+  }
+  const prefix = direct ?? (indirection ? process.env[indirection] : undefined) ?? '';
+  if (prefix === '') {
+    return '';
+  }
+  if (!IDENTIFIER_SAFE.test(prefix)) {
+    throw new Error(
+      `[chatSearch] role prefix ${JSON.stringify(prefix)} is not a safe PostgreSQL identifier ` +
+        'prefix: lowercase letters, digits and underscores only, not starting with a digit ' +
+        '(it is spliced into migration SQL as a raw identifier).',
+    );
+  }
+  if (prefix.length + LONGEST_BASE_ROLE.length > MAX_IDENTIFIER_LENGTH) {
+    throw new Error(
+      `[chatSearch] role prefix ${JSON.stringify(prefix)} is too long: ` +
+        `"${prefix}${LONGEST_BASE_ROLE}" exceeds PostgreSQL's ${MAX_IDENTIFIER_LENGTH}-character ` +
+        'identifier limit, past which names are truncated silently.',
+    );
+  }
+  return prefix;
+}
+
+export type ManagedRoleNames = Readonly<{
+  owner: string;
+  writer: string;
+  reader: string;
+}>;
+
+/** The names this deployment's roles actually carry, prefix applied. */
+export function managedRoles(): ManagedRoleNames {
+  const prefix = chatSearchRolePrefix();
+  return Object.freeze({
+    owner: `${prefix}${OWNER_ROLE}`,
+    writer: `${prefix}${WRITER_ROLE}`,
+    reader: `${prefix}${READER_ROLE}`,
+  });
+}
 
 /**
  * The reader's entire allowance, stated as an allow-list because the complement
@@ -49,24 +118,26 @@ type ExpectedPolicy = {
  * have. `rls.spec.ts` pins the round trip in 'audits the live policy set, not
  * just the RLS flags'.
  */
-const EXPECTED_POLICIES: readonly ExpectedPolicy[] = RLS_TABLES.flatMap((table) => [
-  {
-    table,
-    name: `${table}_reader_scope`,
-    command: 'r',
-    roles: [READER_ROLE],
-    using: READER_SCOPE_QUAL,
-    withCheck: null,
-  },
-  {
-    table,
-    name: `${table}_writer_all`,
-    command: '*',
-    roles: [WRITER_ROLE],
-    using: 'true',
-    withCheck: 'true',
-  },
-]);
+function expectedPolicies(names: ManagedRoleNames): readonly ExpectedPolicy[] {
+  return RLS_TABLES.flatMap((table) => [
+    {
+      table,
+      name: `${table}_reader_scope`,
+      command: 'r',
+      roles: [names.reader],
+      using: READER_SCOPE_QUAL,
+      withCheck: null,
+    },
+    {
+      table,
+      name: `${table}_writer_all`,
+      command: '*',
+      roles: [names.writer],
+      using: 'true',
+      withCheck: 'true',
+    },
+  ]);
+}
 
 export type RoleViolation = {
   role: string;
@@ -96,8 +167,10 @@ export type RoleViolation = {
  */
 export async function findRoleViolations(
   pool: SearchPool,
-  roles: readonly string[] = APPLICATION_ROLES,
+  roles?: readonly string[],
 ): Promise<readonly RoleViolation[]> {
+  const names = managedRoles();
+  const audited = roles ?? [names.owner, names.writer, names.reader];
   const violations: RoleViolation[] = [];
 
   /**
@@ -119,7 +192,7 @@ export async function findRoleViolations(
   }>(
     `SELECT rolname, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolcanlogin
        FROM pg_roles WHERE rolname = ANY($1::text[])`,
-    [[...roles]],
+    [[...audited]],
   );
 
   const seen = new Set<string>();
@@ -141,7 +214,7 @@ export async function findRoleViolations(
       violations.push({ role: row.rolname, problem: 'cannot LOGIN' });
     }
   }
-  for (const role of roles) {
+  for (const role of audited) {
     if (!seen.has(role)) {
       violations.push({ role, problem: 'does not exist' });
     }
@@ -157,10 +230,10 @@ export async function findRoleViolations(
     [[...GRANTABLE_RELKINDS]],
   );
   for (const row of ownerRows) {
-    if (row.owner !== OWNER_ROLE) {
+    if (row.owner !== names.owner) {
       violations.push({
         role: row.owner,
-        problem: `owns chat_search.${row.relname} (must be ${OWNER_ROLE})`,
+        problem: `owns chat_search.${row.relname} (must be ${names.owner})`,
       });
     }
   }
@@ -188,7 +261,7 @@ export async function findRoleViolations(
                  AND a.privilege_type = 'SELECT'
                  AND c.relname = ANY($3::text[]))
       ORDER BY c.relname, grantee, a.privilege_type`,
-    [[...GRANTABLE_RELKINDS], READER_ROLE, [...READER_SERVING_TABLES]],
+    [[...GRANTABLE_RELKINDS], names.reader, [...READER_SERVING_TABLES]],
   );
   for (const row of grantRows) {
     violations.push({
@@ -212,18 +285,21 @@ export async function findRoleViolations(
   for (const row of rlsRows) {
     rlsSeen.add(row.relname);
     if (!row.relrowsecurity) {
-      violations.push({ role: OWNER_ROLE, problem: `chat_search.${row.relname} has RLS disabled` });
+      violations.push({
+        role: names.owner,
+        problem: `chat_search.${row.relname} has RLS disabled`,
+      });
     }
     if (!row.relforcerowsecurity) {
       violations.push({
-        role: OWNER_ROLE,
+        role: names.owner,
         problem: `chat_search.${row.relname} does not FORCE RLS`,
       });
     }
   }
   for (const table of RLS_TABLES) {
     if (!rlsSeen.has(table)) {
-      violations.push({ role: OWNER_ROLE, problem: `chat_search.${table} is missing` });
+      violations.push({ role: names.owner, problem: `chat_search.${table} is missing` });
     }
   }
 
@@ -247,7 +323,8 @@ export async function findRoleViolations(
       WHERE n.nspname = 'chat_search'
       ORDER BY c.relname, p.polname`,
   );
-  const expectedByKey = new Map(EXPECTED_POLICIES.map((p) => [`${p.table}.${p.name}`, p]));
+  const expected = expectedPolicies(names);
+  const expectedByKey = new Map(expected.map((p) => [`${p.table}.${p.name}`, p]));
   const seenPolicies = new Set<string>();
   for (const row of policyRows) {
     const key = `${row.relname}.${row.polname}`;
@@ -281,13 +358,13 @@ export async function findRoleViolations(
       );
     }
     for (const problem of drift) {
-      violations.push({ role: OWNER_ROLE, problem: `policy ${key} ${problem}` });
+      violations.push({ role: names.owner, problem: `policy ${key} ${problem}` });
     }
   }
-  for (const expected of EXPECTED_POLICIES) {
-    const key = `${expected.table}.${expected.name}`;
-    if (rlsSeen.has(expected.table) && !seenPolicies.has(key)) {
-      violations.push({ role: OWNER_ROLE, problem: `policy ${key} is missing` });
+  for (const policy of expected) {
+    const key = `${policy.table}.${policy.name}`;
+    if (rlsSeen.has(policy.table) && !seenPolicies.has(key)) {
+      violations.push({ role: names.owner, problem: `policy ${key} is missing` });
     }
   }
 

@@ -97,6 +97,7 @@ services:
       CHAT_SEARCH_OWNER_PASSWORD: ${CHAT_SEARCH_OWNER_PASSWORD:?set in search/.env, see .env.example}
       CHAT_SEARCH_WRITER_PASSWORD: ${CHAT_SEARCH_WRITER_PASSWORD:?set in search/.env, see .env.example}
       CHAT_SEARCH_READER_PASSWORD: ${CHAT_SEARCH_READER_PASSWORD:?set in search/.env, see .env.example}
+      CHAT_SEARCH_ROLE_PREFIX: ${CHAT_SEARCH_ROLE_PREFIX:-}
     ports:
       - "${CHAT_SEARCH_DB_HOST_PORT:-5435}:5432"
     volumes:
