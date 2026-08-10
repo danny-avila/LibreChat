@@ -28,6 +28,79 @@ function getSources(config: SkillSyncConfig | undefined) {
   return Array.isArray(sources) ? sources : [];
 }
 
+function hasAnySources(config: SkillSyncConfig | undefined): boolean {
+  if (getSources(config).length > 0) {
+    return true;
+  }
+  if (config?.gitlab?.enabled && config.gitlab.sources.length > 0) {
+    return true;
+  }
+  if (config?.bitbucket?.enabled && config.bitbucket.sources.length > 0) {
+    return true;
+  }
+  if (config?.azuredevops?.enabled && config.azuredevops.sources.length > 0) {
+    return true;
+  }
+  return false;
+}
+
+function hasAnyEnabled(config: SkillSyncConfig | undefined): boolean {
+  if (config?.github?.enabled && getSources(config).length > 0) {
+    return true;
+  }
+  if (config?.gitlab?.enabled && config.gitlab.sources.length > 0) {
+    return true;
+  }
+  if (config?.bitbucket?.enabled && config.bitbucket.sources.length > 0) {
+    return true;
+  }
+  if (config?.azuredevops?.enabled && config.azuredevops.sources.length > 0) {
+    return true;
+  }
+  return false;
+}
+
+function getMinIntervalMinutes(config: SkillSyncConfig | undefined): number {
+  const intervals: number[] = [];
+  if (config?.github?.enabled) {
+    intervals.push(config.github.intervalMinutes ?? 60);
+  }
+  if (config?.gitlab?.enabled) {
+    intervals.push(config.gitlab.intervalMinutes ?? 60);
+  }
+  if (config?.bitbucket?.enabled) {
+    intervals.push(config.bitbucket.intervalMinutes ?? 60);
+  }
+  if (config?.azuredevops?.enabled) {
+    intervals.push(config.azuredevops.intervalMinutes ?? 60);
+  }
+  return intervals.length > 0 ? Math.min(...intervals) : 60;
+}
+
+function shouldRunOnStartup(config: SkillSyncConfig | undefined): boolean {
+  if (config?.github?.enabled && config.github.runOnStartup && getSources(config).length > 0) {
+    return true;
+  }
+  if (config?.gitlab?.enabled && config.gitlab.runOnStartup && config.gitlab.sources.length > 0) {
+    return true;
+  }
+  if (
+    config?.bitbucket?.enabled &&
+    config.bitbucket.runOnStartup &&
+    config.bitbucket.sources.length > 0
+  ) {
+    return true;
+  }
+  if (
+    config?.azuredevops?.enabled &&
+    config.azuredevops.runOnStartup &&
+    config.azuredevops.sources.length > 0
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function startGitHubSkillSyncScheduler(params: {
   getConfig: () => MaybePromise<SkillSyncConfig | undefined>;
   runner: GitHubSkillSyncRunner;
@@ -48,21 +121,20 @@ export function startGitHubSkillSyncScheduler(params: {
     if (stopped) {
       return;
     }
-    const delayMs = normalizeIntervalMinutes(config?.github?.intervalMinutes) * 60 * 1000;
+    const delayMs = normalizeIntervalMinutes(getMinIntervalMinutes(config)) * 60 * 1000;
     timer = setTimeout(tick, delayMs);
     timer.unref?.();
   };
 
   const runIfEnabled = async () => {
     const config = await getConfig();
-    const github = config?.github;
-    if (!github?.enabled || getSources(config).length === 0) {
+    if (!hasAnyEnabled(config)) {
       return config;
     }
     try {
       await params.runner.runOnce();
     } catch (error) {
-      logger.error('[GitHubSkillSync] Scheduled run failed:', error);
+      logger.error('[SkillSync] Scheduled run failed:', error);
     }
     return getConfig();
   };
@@ -87,9 +159,9 @@ export function startGitHubSkillSyncScheduler(params: {
 
   void (async () => {
     const config = await getConfig();
-    if (config?.github?.enabled && config.github.runOnStartup && getSources(config).length > 0) {
+    if (shouldRunOnStartup(config)) {
       void params.runner.runOnce().catch((error) => {
-        logger.error('[GitHubSkillSync] Scheduled startup run failed:', error);
+        logger.error('[SkillSync] Scheduled startup run failed:', error);
       });
     }
     scheduleNext(config);

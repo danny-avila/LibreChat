@@ -72,9 +72,12 @@ export interface ISkill {
    * Provenance of this skill's canonical definition.
    * - `inline` — authored inside LibreChat.
    * - `github` — mirrored from a configured GitHub skill sync source.
+   * - `gitlab` — mirrored from a configured GitLab skill sync source.
+   * - `bitbucket` — mirrored from a configured Bitbucket skill sync source.
+   * - `azuredevops` — mirrored from a configured Azure DevOps skill sync source.
    * - `notion` — reserved for future external sync integrations.
    */
-  source: 'inline' | 'github' | 'notion';
+  source: 'inline' | 'github' | 'gitlab' | 'bitbucket' | 'azuredevops' | 'notion';
   /**
    * Provenance payload keyed by `source`, including upstream identifiers
    * such as GitHub source id, path, and commit/blob SHAs.
