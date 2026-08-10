@@ -35,10 +35,9 @@ RUN apk --no-cache add curl
 #
 # KNOWN RISK: the binary wants symbols up to GLIBC_2.34 and gcompat is a partial
 # ABI shim, not a glibc implementation — a path not exercised here could still
-# fail. What IS exercised, in-image: a full two-turn tool loop against a live
-# provider over HTTPS + SSE (scripts/baml-host/run.mjs). The lower-risk
-# alternative is a glibc base image, where the correctly-built -gnu artifact is
-# used and none of this applies.
+# fail. The release gate executes the compiled package runtime in this image
+# against a loopback provider. The lower-risk alternative is a glibc base image,
+# where the correctly-built -gnu artifact is used and none of this applies.
 RUN apk --no-cache add gcompat
 RUN npm config set fetch-retry-maxtimeout 600000 && \
     npm config set fetch-retries 5 && \
@@ -86,16 +85,6 @@ WORKDIR /app/packages/data-schemas
 COPY packages/data-schemas ./
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 RUN npm run build
-
-# Compile the generated BAML SDK.
-# `baml_sdk/` is committed (see .gitignore) precisely so this stage needs only
-# `tsc` — the `baml` CLI is a host tool and is not installed in the image. Run
-# `npm run generate:baml` on a workstation when a `.baml` file changes; the
-# image only ever compiles what is already checked in.
-FROM base AS baml-build
-WORKDIR /app
-COPY baml_ts ./baml_ts
-RUN npx tsc -p baml_ts/tsconfig.json
 
 # Build `api` package
 FROM base AS api-package-build
@@ -150,19 +139,10 @@ COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist
 COPY --from=client-build /app/client/dist ./client/dist
-# The BAML host adapter is ESM (`.mjs`) and therefore not emitted by tsdown,
-# which builds the TypeScript entries only — so it ships as source, the way
-# packages/client/src already does. Its import of `baml_ts/dist` is relative
-# (`../../../../baml_ts/dist/index.js`), so both paths must exist for it to
-# resolve. The native bridge itself is a regular `dependency` and survives
-# `npm ci --omit=dev`; musl targets exist for x64 and arm64.
-COPY --from=baml-build /app/baml_ts/dist ./baml_ts/dist
-# The generated SDK is ESM and says so in ITS OWN package.json (`"type":"module"`).
-# Without this file Node walks up to /app/package.json, finds no `type`, and
-# reparses index.js as ESM with a MODULE_TYPELESS_PACKAGE_JSON warning — working
-# by accident, on syntax detection, rather than by declaration.
-COPY baml_ts/package.json ./baml_ts/package.json
-COPY packages/api/src/baml ./packages/api/src/baml
+# BAML is package-owned: runtime.mjs is the lazy parent facade and worker.mjs
+# contains the bundled generated graph. The only external runtime artifact is
+# the exactly pinned native bridge installed above. No root probe SDK or source
+# adapter is copied into the production image.
 # Propagate build metadata into runtime env so /api/config can expose it.
 # Declared here (after the heavy install/copy steps) so that commit/date
 # changing on every CI run does not bust the cache for those layers.

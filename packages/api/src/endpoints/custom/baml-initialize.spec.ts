@@ -65,7 +65,7 @@ const initParams = (appConfig: AppConfig, endpoint: string, model: string) => ({
 
 const staticTokenConfig = {
   OpenRouter: { context: 131072, prompt: 0.03, completion: 0.17 },
-  OpenRouterFast: { context: 131072, prompt: 0.029, completion: 0.14 },
+  OpenRouterFast: { context: 131072, prompt: 0.03, completion: 0.13 },
 };
 
 describe('BAML custom initialization', () => {
@@ -133,7 +133,7 @@ describe('BAML custom initialization', () => {
 
       expect(result.endpointTokenConfig).toEqual(staticTokenConfig);
       expect(result.endpointTokenConfig?.OpenRouter.prompt).toBe(0.03);
-      expect(result.endpointTokenConfig?.OpenRouterFast.prompt).toBe(0.029);
+      expect(result.endpointTokenConfig?.OpenRouterFast.prompt).toBe(0.03);
     });
 
     it('has no entry for a case-mismatched key', async () => {
@@ -157,7 +157,10 @@ describe('BAML custom initialization', () => {
     it('gates fetched-token-config reads off for BAML and for static config', () => {
       expect(shouldReadFetchedTokenConfig(bamlEndpointConfig(), 'Team-BAML')).toBe(false);
       expect(
-        shouldReadFetchedTokenConfig(bamlEndpointConfig({ tokenConfig: staticTokenConfig }), 'Team-BAML'),
+        shouldReadFetchedTokenConfig(
+          bamlEndpointConfig({ tokenConfig: staticTokenConfig }),
+          'Team-BAML',
+        ),
       ).toBe(false);
       expect(
         shouldReadFetchedTokenConfig(

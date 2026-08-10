@@ -488,8 +488,8 @@ endpoints:
           completion: 0.17
         OpenRouterFast:
           context: 131072
-          prompt: 0.029
-          completion: 0.14
+          prompt: 0.03
+          completion: 0.13
 ```
 
 The actual `librechat.example.yaml` entry also documents the compiled client's

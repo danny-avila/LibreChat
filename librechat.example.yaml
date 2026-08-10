@@ -439,6 +439,10 @@ endpoints:
   #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
+  #   # Custom endpoints are authorized by their exact public name, never by
+  #   # their internal provider discriminator.
+  #   allowedProviders:
+  #     - 'Team-BAML'
   #   # Off-by-default capabilities you can add to the list above:
   #   # - "run_in_background": opted-in tools gain a `run_in_background` param so the model can dispatch them detached and poll via `check_background_task`.
   #   # - "tool_intents": opted-in tools (native tools by default) gain an `intent` param — one model-written sentence per call, streamed into the tool-call arguments. Backend groundwork today: the chat UI renders it as each call's live status label in an upcoming release; opt tools in per agent via `tool_options[tool].describe_intent`.
@@ -538,6 +542,35 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
   custom:
+    # BAML compiled endpoint
+    # The compiled clients, not this YAML entry, own provider transport and credentials:
+    #   OPENROUTER_API_KEY: authoritative provider credential
+    #   BAML_OPENROUTER_BASE_URL: authoritative provider base URL
+    #   production base URL: https://openrouter.ai/api/v1
+    #   OpenRouter: openai/gpt-oss-120b, FreePoolBackoff, max_retries: 4
+    #   OpenRouterFast: openai/gpt-oss-20b, FastPoolBackoff, max_retries: 2
+    # Prices below are USD per one million tokens, checked against OpenRouter's
+    # models API on 2026-08-10. No API key, base URL, or headers belong here.
+    - name: 'Team-BAML'
+      provider: 'baml'
+      models:
+        default:
+          - 'OpenRouter'
+          - 'OpenRouterFast'
+        fetch: false
+      tokenConfig:
+        OpenRouter:
+          context: 131072
+          prompt: 0.03
+          completion: 0.17
+        OpenRouterFast:
+          context: 131072
+          prompt: 0.03
+          completion: 0.13
+      customParams:
+        defaultParamsEndpoint: 'baml'
+      modelDisplayLabel: 'Team BAML'
+
     # Anthropic-compatible Example (native `/v1/messages` API)
     # Set `provider: anthropic` to use the native Anthropic client instead of the
     # default OpenAI-compatible one — for Anthropic itself or Anthropic-compatible

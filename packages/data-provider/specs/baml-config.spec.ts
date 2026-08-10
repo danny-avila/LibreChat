@@ -57,9 +57,9 @@ describe('BAML custom-endpoint grammar', () => {
         ...validBaml,
         ...(defaultParamsEndpoint === undefined ? {} : { customParams: { defaultParamsEndpoint } }),
       } as Record<string, unknown>);
-      expect((endpoint.customParams as { defaultParamsEndpoint: string }).defaultParamsEndpoint).toBe(
-        Providers.BAML,
-      );
+      expect(
+        (endpoint.customParams as { defaultParamsEndpoint: string }).defaultParamsEndpoint,
+      ).toBe(Providers.BAML);
     }
   });
 
