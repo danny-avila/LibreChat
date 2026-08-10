@@ -4,26 +4,26 @@ import { ClassProp } from 'class-variance-authority/types';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '~/utils';
 
-const buttonVariants: (
-  props?:
-    | ({
-        variant?:
-          | 'default'
-          | 'link'
-          | 'submit'
-          | 'outline'
-          | 'subtle'
-          | 'destructive'
-          | 'secondary'
-          | 'ghost'
-          | null
-          | undefined;
-        size?: 'default' | 'icon' | 'sm' | 'lg' | 'theme' | null | undefined;
-        shape?: 'default' | 'theme' | null | undefined;
-      } & ClassProp)
-    | undefined,
-) => string = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap text-sm font-medium ring-offset-surface-primary transition-colors duration-theme-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+type ButtonVariantOptions =
+  | ({
+      variant?:
+        | 'default'
+        | 'link'
+        | 'submit'
+        | 'outline'
+        | 'subtle'
+        | 'destructive'
+        | 'secondary'
+        | 'ghost'
+        | null
+        | undefined;
+      size?: 'default' | 'icon' | 'sm' | 'lg' | 'theme' | null | undefined;
+      shape?: 'default' | 'theme' | null | undefined;
+    } & ClassProp)
+  | undefined;
+
+const buttonVariantRecipe = cva(
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium ring-offset-surface-primary transition-colors duration-theme-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
   {
     variants: {
       variant: {
@@ -49,15 +49,28 @@ const buttonVariants: (
       shape: {
         default: 'rounded-lg',
         theme: 'rounded-theme-control',
+        unset: '',
       },
     },
+    compoundVariants: [
+      {
+        variant: 'subtle',
+        shape: 'unset',
+        class: 'rounded-xl',
+      },
+    ],
     defaultVariants: {
       variant: 'default',
       size: 'default',
-      shape: 'default',
+      shape: 'unset',
     },
   },
 );
+
+const buttonVariants: (props?: ButtonVariantOptions) => string = (props) =>
+  buttonVariantRecipe(
+    props == null ? props : { ...props, shape: props.shape == null ? 'unset' : props.shape },
+  );
 
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
@@ -70,15 +83,10 @@ const Button: React.ForwardRefExoticComponent<
 > = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, shape, asChild = false, type = 'button', ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
-    const preservesSubtleShape = variant === 'subtle' && shape == null;
     return (
       <Comp
         type={asChild ? undefined : type}
-        className={cn(
-          buttonVariants({ variant, size, shape: preservesSubtleShape ? null : shape }),
-          preservesSubtleShape && 'rounded-xl',
-          className,
-        )}
+        className={cn(buttonVariants({ variant, size, shape, className }))}
         ref={ref}
         {...props}
       />

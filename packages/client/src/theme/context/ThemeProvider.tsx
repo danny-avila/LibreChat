@@ -236,7 +236,17 @@ export function ThemeProvider({
         legacyColors: definition.modes.light?.colors,
       };
     } else {
-      initialThemeState.current = getStoredThemeState();
+      const storedThemeState = getStoredThemeState();
+      initialThemeState.current =
+        propThemeName !== undefined && storedThemeState.definition
+          ? {
+              ...storedThemeState,
+              definition: {
+                ...storedThemeState.definition,
+                name: propThemeName.trim() || 'custom',
+              },
+            }
+          : storedThemeState;
     }
   }
 
@@ -315,7 +325,11 @@ export function ThemeProvider({
         : undefined;
     const definition = validPropDefinition ?? legacyDefinition;
     if (!definition) {
-      if (propThemeName && !themeDefinition) {
+      if (propThemeName !== undefined && themeDefinition) {
+        writeStorage(THEME_DEFINITION_KEY, JSON.stringify(themeDefinition));
+        writeStorage(THEME_NAME_KEY, themeDefinition.name);
+        writeStorage(THEME_SOURCE_KEY, legacyThemeRGB ? 'legacy' : 'definition');
+      } else if (propThemeName && !themeDefinition) {
         writeStorage(THEME_NAME_KEY, propThemeName);
       }
       return;
@@ -330,7 +344,14 @@ export function ThemeProvider({
         ? JSON.stringify(legacyDefinition.modes.light?.colors ?? {})
         : undefined,
     );
-  }, [initialTheme, propThemeDefinition, propThemeName, propThemeRGB, themeDefinition]);
+  }, [
+    initialTheme,
+    legacyThemeRGB,
+    propThemeDefinition,
+    propThemeName,
+    propThemeRGB,
+    themeDefinition,
+  ]);
 
   const setTheme = useCallback((newTheme: string) => {
     if (!isAppearanceMode(newTheme)) {

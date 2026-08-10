@@ -272,6 +272,62 @@ describe('ThemeProvider', () => {
     expect(document.documentElement.style.getPropertyValue('--text-primary')).not.toBe('');
   });
 
+  it('applies a name-only prop over a stored definition', async () => {
+    localStorage.setItem(
+      'theme-definition',
+      JSON.stringify({
+        version: 1,
+        name: 'stored',
+        modes: { light: { colors: { 'rgb-accent-primary': '1 2 3' } } },
+      }),
+    );
+
+    render(
+      <ThemeProvider initialTheme="light" themeName="brand">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('brand');
+    });
+    expect(screen.getByText('brand')).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toMatchObject({
+      name: 'brand',
+    });
+    expect(localStorage.getItem('theme-name')).toBe('brand');
+    expect(localStorage.getItem('theme-source')).toBe('definition');
+  });
+
+  it('keeps a name-only prop over migrated storage partial after remount', async () => {
+    document.documentElement.style.setProperty('--text-primary', '9 9 9');
+    localStorage.setItem('theme-colors', JSON.stringify({ 'rgb-accent-primary': '1 2 3' }));
+
+    const { unmount } = render(
+      <ThemeProvider initialTheme="light" themeName="brand">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('brand');
+    });
+    expect(localStorage.getItem('theme-source')).toBe('legacy');
+
+    unmount();
+    render(
+      <ThemeProvider initialTheme="light">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('brand');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
+    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe('9 9 9');
+  });
+
   it('preserves legacy provenance when a migrated stored theme is renamed', async () => {
     document.documentElement.style.setProperty('--text-primary', '9 9 9');
     localStorage.setItem('theme-colors', JSON.stringify({ 'rgb-accent-primary': '1 2 3' }));

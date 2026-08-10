@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 import { render, screen } from '@testing-library/react';
-import { Button } from './Button';
+import { Button, buttonVariants } from './Button';
 
 describe('Button', () => {
   it('exposes theme-owned shape and density recipes', () => {
@@ -32,5 +32,14 @@ describe('Button', () => {
 
     expect(button).toHaveClass('rounded-theme-control');
     expect(button).not.toHaveClass('rounded-xl');
+  });
+
+  it('preserves subtle geometry through the exported variant helper', () => {
+    expect(buttonVariants({ variant: 'subtle' })).toContain('rounded-xl');
+    expect(buttonVariants({ variant: 'subtle', shape: null })).toContain('rounded-xl');
+
+    const themedSubtle = buttonVariants({ variant: 'subtle', shape: 'theme' });
+    expect(themedSubtle).toContain('rounded-theme-control');
+    expect(themedSubtle).not.toContain('rounded-xl');
   });
 });
