@@ -1272,6 +1272,66 @@ describe('initializeClient — subagent loading', () => {
     memberInitialization.resolve(makeSubagentConfig(memberId));
   });
 
+  it('coalesces shared graph member initialization across parallel lazy resolutions', async () => {
+    const childIds = ['agent_lazy_shared_parent_a', 'agent_lazy_shared_parent_b'];
+    const memberId = 'agent_lazy_shared_member';
+    for (const childId of childIds) {
+      await createViewableAgent(childId, {
+        enabled: true,
+        allowSelf: false,
+        graphs: [
+          {
+            type: `shared_team_${childId}`,
+            name: `Shared team ${childId}`,
+            description: 'Loads one shared member',
+            agent_ids: [memberId],
+            edges: [],
+            entry_agent_id: memberId,
+            result_agent_id: memberId,
+          },
+        ],
+      });
+    }
+    await createViewableAgent(memberId);
+    const primaryConfig = makePrimaryConfig({
+      subagents: { enabled: true, allowSelf: false, agent_ids: childIds },
+    });
+    const memberStarted = deferred();
+    const memberRelease = deferred();
+    mockInitializeAgent.mockImplementation(async ({ agent }) => {
+      if (agent.id === PRIMARY_ID) return primaryConfig;
+      if (childIds.includes(agent.id)) {
+        return { ...makeSubagentConfig(agent.id), subagents: agent.subagents };
+      }
+      memberStarted.resolve();
+      await memberRelease.promise;
+      return makeSubagentConfig(memberId);
+    });
+
+    await initializeClient({
+      req: makeSubagentReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const resolutions = agentClientArgs.agent.lazySubagentConfigs.map((descriptor) =>
+      descriptor.resolve({ signal: new AbortController().signal }),
+    );
+    await memberStarted.promise;
+    memberRelease.resolve();
+    const resolvedChildren = await Promise.all(resolutions);
+
+    expect(
+      mockInitializeAgent.mock.calls.filter(([{ agent }]) => agent.id === memberId),
+    ).toHaveLength(1);
+    expect(resolvedChildren).toHaveLength(2);
+    expect(
+      resolvedChildren.every(
+        (child) => child.subagentGraphConfigs[0].memberConfigs[0].id === memberId,
+      ),
+    ).toBe(true);
+  });
+
   it('loads independent graph members concurrently', async () => {
     const memberIds = ['agent_graph_parallel_a', 'agent_graph_parallel_b'];
     for (const memberId of memberIds) {

@@ -1044,9 +1044,10 @@ const initializeClient = async ({
   const graphMemberConfigsById = new Map(
     rootSubagentConfigs.filter((config) => config?.id).map((config) => [config.id, config]),
   );
+  const graphMemberLoadsById = new Map();
   const initializeGraphMember = createConcurrencyLimiter(SUBAGENT_GRAPH_LOAD_CONCURRENCY);
-  const loadGraphMember = async (memberId, graphSignal = signal) => {
-    throwIfAborted(graphSignal);
+  const loadGraphMemberOnce = async (memberId) => {
+    throwIfAborted(signal);
     const cached = graphMemberConfigsById.get(memberId);
     if (cached) return cached;
     if (skippedAgentIds.has(memberId)) return null;
@@ -1058,7 +1059,7 @@ const initializeClient = async ({
       const config = await initializeLazySubagent({
         agentId: metadata.id,
         configId: metadata.configId,
-        context: { signal: graphSignal },
+        context: { signal },
         lazyChildren: [],
       });
       graphMemberConfigsById.set(memberId, config);
@@ -1071,6 +1072,29 @@ const initializeClient = async ({
       skippedAgentIds.add(memberId);
       return null;
     }
+  };
+  const loadGraphMember = async (memberId, graphSignal = signal) => {
+    throwIfAborted(graphSignal);
+    const cached = graphMemberConfigsById.get(memberId);
+    if (cached) return cached;
+    let pending = graphMemberLoadsById.get(memberId);
+    if (!pending) {
+      pending = loadGraphMemberOnce(memberId);
+      graphMemberLoadsById.set(memberId, pending);
+      pending.then(
+        () => {
+          if (graphMemberLoadsById.get(memberId) === pending) {
+            graphMemberLoadsById.delete(memberId);
+          }
+        },
+        () => {
+          if (graphMemberLoadsById.get(memberId) === pending) {
+            graphMemberLoadsById.delete(memberId);
+          }
+        },
+      );
+    }
+    return waitForAbort(pending, graphSignal);
   };
 
   async function resolveGraphSubagentsFor(config, graphSignal = signal) {
