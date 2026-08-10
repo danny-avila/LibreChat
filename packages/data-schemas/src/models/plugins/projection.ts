@@ -55,7 +55,14 @@ const SEARCH_SYNC_APPLIED = Symbol.for('librechat:searchSync');
 /** Where a query hands the key it resolved to its own post hook. */
 const RESOLVED_KEY = Symbol.for('librechat:searchSyncKey');
 
+/** Where a `deleteMany` hands the keys it resolved to its own post hook. */
+const RESOLVED_KEYS = Symbol.for('librechat:searchSyncKeys');
+
 type KeyedQuery = Query<unknown, unknown> & { [RESOLVED_KEY]?: SearchSyncDocument | null };
+
+type ManyKeyedQuery = Query<unknown, unknown> & {
+  [RESOLVED_KEYS]?: readonly SearchSyncDocument[];
+};
 
 /**
  * Whether a write result says nothing was touched.
@@ -271,29 +278,46 @@ export function applySearchSync(schema: Schema, options: SearchSyncOptions): voi
 
   /**
    * `deleteMany` never yields documents, so the affected keys are resolved before
-   * the delete runs. Bounded on purpose: past the cap the sweep is cheaper and
-   * more reliable than a synchronous fan-out on the caller's request.
+   * the delete runs — but their tombstones are enqueued in the post hook, after
+   * the deletion succeeded, exactly as `deleteOne` orders it. Enqueued before the
+   * delete, a projector drain landing in that window re-reads the still-live
+   * documents, re-upserts them and consumes the events, leaving deleted content
+   * projected until reconciliation (pinned by `enqueues deleteMany tombstones
+   * only after the deletion is applied`). Bounded on purpose: past the cap the
+   * sweep is cheaper and more reliable than a synchronous fan-out on the caller's
+   * request.
    */
-  schema.pre('deleteMany', function (this: Query<unknown, unknown>, next) {
+  schema.pre<ManyKeyedQuery>('deleteMany', function (next) {
+    const work = (async () => {
+      if (!searchEnqueueEnabled()) {
+        this[RESOLVED_KEYS] = [];
+        return;
+      }
+      const model = this.model as Model<SearchSyncDocument>;
+      const docs = await model
+        .find(this.getQuery() as FilterQuery<unknown>)
+        .select(`${primaryKey} user tenantId`)
+        .limit(DELETE_MANY_EVENT_CAP + 1)
+        .lean<SearchSyncDocument[]>();
+
+      if (docs.length > DELETE_MANY_EVENT_CAP) {
+        logger.warn(
+          `[searchSync] deleteMany on ${kind} exceeded ${DELETE_MANY_EVENT_CAP} keys; ` +
+            'leaving the remainder to the reconciliation sweep',
+        );
+      }
+      this[RESOLVED_KEYS] = docs.slice(0, DELETE_MANY_EVENT_CAP);
+    })();
+    run(work, next, 'deleteMany keys');
+  });
+
+  schema.post<ManyKeyedQuery>('deleteMany', function (result, next) {
+    const docs = this[RESOLVED_KEYS] ?? [];
     const conditions = this.getQuery() as FilterQuery<unknown>;
     const work = (async () => {
-      if (searchEnqueueEnabled()) {
-        const model = this.model as Model<SearchSyncDocument>;
-        const docs = await model
-          .find(conditions)
-          .select(`${primaryKey} user tenantId`)
-          .limit(DELETE_MANY_EVENT_CAP + 1)
-          .lean<SearchSyncDocument[]>();
-
-        if (docs.length > DELETE_MANY_EVENT_CAP) {
-          logger.warn(
-            `[searchSync] deleteMany on ${kind} exceeded ${DELETE_MANY_EVENT_CAP} keys; ` +
-              'leaving the remainder to the reconciliation sweep',
-          );
-        }
-
+      if (docs.length > 0 && !changedNothing(result)) {
         const events: SearchEventInput[] = [];
-        for (const doc of docs.slice(0, DELETE_MANY_EVENT_CAP)) {
+        for (const doc of docs) {
           const event = toEvent(doc, options, 'tombstone');
           if (event) {
             events.push(event);

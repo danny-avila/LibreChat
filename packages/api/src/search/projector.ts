@@ -130,6 +130,15 @@ export class Projector {
   private standbyTimer: NodeJS.Timeout | null = null;
   private standbyDelayMs = STANDBY_RETRY_MS;
   /**
+   * Serializes full reconciliation across its two entry paths — the interval
+   * timer and the untracked startup catch-up. The timer's own `inFlight` flag
+   * only covers invocations it started itself, so on an install whose first
+   * full pass outlasts `sweepMs` the timer would otherwise begin a second
+   * complete scan concurrently (pinned by `does not start a second
+   * reconciliation while one is in flight`).
+   */
+  private reconciling = false;
+  /**
    * Per kind: whether the next poll should re-scan the trailing lookback window.
    * True at startup and after a pass that caught up, so a fresh pass always
    * overlaps; false mid-pass, so a backlog advances strictly forward.
@@ -276,7 +285,10 @@ export class Projector {
     const { rows } = await this.deps.pool.query<{
       updated_at: Date | null;
       record_id: string | null;
-    }>('SELECT updated_at, record_id FROM chat_search.poll_cursor WHERE kind = $1', [kind]);
+      mongo_id: string | null;
+    }>('SELECT updated_at, record_id, mongo_id FROM chat_search.poll_cursor WHERE kind = $1', [
+      kind,
+    ]);
     const row = rows[0];
     if (!row || row.record_id == null) {
       return null;
@@ -288,17 +300,21 @@ export class Projector {
      * every pass and never reach a timestamped record.
      */
     if (row.updated_at == null) {
-      return { updatedAt: null, recordId: row.record_id };
+      return { updatedAt: null, recordId: row.record_id, id: row.mongo_id ?? '' };
     }
     if (this.overlapNextPoll.get(kind) === false) {
-      return { updatedAt: row.updated_at, recordId: row.record_id };
+      return { updatedAt: row.updated_at, recordId: row.record_id, id: row.mongo_id ?? '' };
     }
     /**
      * An empty record id makes the keyset tiebreak match everything at the
      * rewound instant, so the overlap window is entered whole rather than
      * clipped by a record id that belongs to a different timestamp.
      */
-    return { updatedAt: new Date(row.updated_at.getTime() - this.lookbackMs), recordId: '' };
+    return {
+      updatedAt: new Date(row.updated_at.getTime() - this.lookbackMs),
+      recordId: '',
+      id: '',
+    };
   }
 
   /**
@@ -318,17 +334,23 @@ export class Projector {
        * `-infinity` stands in for the untimestamped region so the row comparison
        * stays total. A literal NULL in a row comparison yields NULL, the guard
        * fails, and the cursor would never advance out of that region at all.
+       * `mongo_id` is the third keyset component: record ids are only unique per
+       * user and tenant, so a page boundary inside an equal `(updated_at,
+       * record_id)` group needs it to advance without skipping the rest of the
+       * group.
        */
-      `INSERT INTO chat_search.poll_cursor (kind, updated_at, record_id, scanned_at)
-       VALUES ($1, $2, $3, now())
+      `INSERT INTO chat_search.poll_cursor (kind, updated_at, record_id, mongo_id, scanned_at)
+       VALUES ($1, $2, $3, $4, now())
        ON CONFLICT (kind) DO UPDATE SET
          updated_at = excluded.updated_at,
          record_id = excluded.record_id,
+         mongo_id = excluded.mongo_id,
          scanned_at = now()
-       WHERE (COALESCE(excluded.updated_at, '-infinity'::timestamptz), excluded.record_id)
+       WHERE (COALESCE(excluded.updated_at, '-infinity'::timestamptz), excluded.record_id,
+              excluded.mongo_id)
            > (COALESCE(chat_search.poll_cursor.updated_at, '-infinity'::timestamptz),
-              chat_search.poll_cursor.record_id)`,
-      [kind, cursor.updatedAt, cursor.recordId],
+              chat_search.poll_cursor.record_id, chat_search.poll_cursor.mongo_id)`,
+      [kind, cursor.updatedAt, cursor.recordId, cursor.id],
     );
   }
 
@@ -442,7 +464,7 @@ export class Projector {
         }
 
         tombstoned += await withTransaction(this.deps.pool, (client) =>
-          sweepMissing(client, epoch, kind, snapshot, missing),
+          sweepMissing(client, epoch, kind, snapshot, missing, new Date(), readAt),
         );
         refreshed += await this.project(drifted, epoch, readAt, 'refresh a drifted record');
       } catch (error) {
@@ -471,9 +493,19 @@ export class Projector {
     let applied = 0;
     for (const source of sources) {
       try {
-        const result = await withTransaction(this.deps.pool, (client) =>
-          upsertDocument(client, epoch, source, this.space, sourceReadAt),
-        );
+        const result = await withTransaction(this.deps.pool, async (client) => {
+          const outcome = await upsertDocument(client, epoch, source, this.space, sourceReadAt);
+          /**
+           * For a record outside the safety poll's moving window — historic and
+           * untimestamped imports above all — reconciliation is the only path
+           * that ever re-reads it, so it must clear the failure row the same way
+           * the poll does. Left in place, a quarantine outlives the repair and
+           * the drain keeps discarding every later event for the record (pinned
+           * by `clears a quarantine once reconciliation repairs the record`).
+           */
+          await clearFailure(client, source);
+          return outcome;
+        });
         if (result.applied) {
           applied++;
         }
@@ -539,25 +571,35 @@ export class Projector {
     if (epoch == null) {
       return 0;
     }
-
-    let tombstoned = 0;
-    for (const kind of KINDS) {
-      const snapshot = await withTransaction(this.deps.pool, (client) =>
-        currentVersionSnapshot(client),
-      );
-
-      const walk = await this.reconcileWindows(kind, epoch, snapshot);
-      tombstoned += walk.tombstoned;
-      if (walk.refreshed > 0) {
-        logger.info(`[chatSearch] reconciliation refreshed ${walk.refreshed} drifted ${kind} rows`);
-      }
-
-      const backfilled = await this.backfillMissing(kind, epoch);
-      if (backfilled > 0) {
-        logger.info(`[chatSearch] reconciliation backfilled ${backfilled} ${kind} records`);
-      }
+    if (this.reconciling) {
+      return 0;
     }
-    return tombstoned;
+    this.reconciling = true;
+
+    try {
+      let tombstoned = 0;
+      for (const kind of KINDS) {
+        const snapshot = await withTransaction(this.deps.pool, (client) =>
+          currentVersionSnapshot(client),
+        );
+
+        const walk = await this.reconcileWindows(kind, epoch, snapshot);
+        tombstoned += walk.tombstoned;
+        if (walk.refreshed > 0) {
+          logger.info(
+            `[chatSearch] reconciliation refreshed ${walk.refreshed} drifted ${kind} rows`,
+          );
+        }
+
+        const backfilled = await this.backfillMissing(kind, epoch);
+        if (backfilled > 0) {
+          logger.info(`[chatSearch] reconciliation backfilled ${backfilled} ${kind} records`);
+        }
+      }
+      return tombstoned;
+    } finally {
+      this.reconciling = false;
+    }
   }
 
   private schedule(fn: () => Promise<unknown>, intervalMs: number, label: string): void {
@@ -629,12 +671,29 @@ export class Projector {
     if (this.startupCatchUp) {
       void this.catchUp();
     }
+    /**
+     * A renewal that *throws* — the dedicated lease connection was interrupted —
+     * is treated exactly like one that returns false. Left to the generic
+     * scheduler's catch, the pod would stay marked running with a dead lease and
+     * never attempt a fresh connection, stopping projection permanently on a
+     * single-pod deployment (pinned by `re-enters standby and re-acquires after
+     * a lease renewal failure`). The relinquish is best-effort for the same
+     * reason the renewal failed; standby re-acquisition opens a new connection.
+     */
     this.schedule(
       async () => {
-        const held = await this.lease?.renew();
+        let held: boolean | undefined;
+        try {
+          held = await this.lease?.renew();
+        } catch (error) {
+          logger.warn('[chatSearch] projector lease renewal failed; standing by', error);
+          held = false;
+        }
         if (held === false) {
           logger.warn('[chatSearch] projector lease lost; standing by');
-          await this.relinquish();
+          await this.relinquish().catch((error) =>
+            logger.warn('[chatSearch] projector teardown failed after a lost lease', error),
+          );
           this.scheduleStandby();
         }
       },
@@ -693,15 +752,21 @@ export class Projector {
     }
   }
 
-  /** Tears the loops down without giving up on ever leading again. */
+  /**
+   * Tears the loops down without giving up on ever leading again. The lease slot
+   * is cleared before the release is awaited, so a release rejected by a broken
+   * connection still leaves this pod a clean standby rather than a phantom
+   * leader.
+   */
   private async relinquish(): Promise<void> {
     this.running = false;
     for (const timer of this.timers) {
       clearInterval(timer);
     }
     this.timers = [];
-    await this.lease?.release();
+    const lease = this.lease;
     this.lease = null;
+    await lease?.release();
   }
 
   async stop(): Promise<void> {

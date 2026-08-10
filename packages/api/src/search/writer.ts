@@ -84,6 +84,12 @@ export type UpsertResult = Readonly<{
  *    re-read is a true no-op: no update, no version, no outbox row. A tombstoned
  *    row is exempt, since reviving one is a real change even when its content
  *    hash matches.
+ *
+ * Absent source timestamps — legacy and imported records carry none — are
+ * coalesced to `-infinity` here rather than passed through: an explicit NULL
+ * bypasses the columns' defaults and violates their NOT NULL constraints, which
+ * would fail the same record on every drain, poll and reconciliation pass until
+ * it quarantines (pinned by `projects a source that carries no timestamps`).
  */
 export async function upsertDocument(
   client: SearchClient,
@@ -125,8 +131,10 @@ export async function upsertDocument(
          expires_at, projection_version, source_read_at, content_hash,
          embedding_input_hash, deleted_at, updated_at
        )
-       SELECT $1, $2, $3, $4, $5, $6, $7, $8::text[], $9, $10, $11, $12, $13, $14,
-              v.version, $17, $15, $16, NULL, now()
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8::text[], $9, $10, $11,
+              COALESCE($12, '-infinity'::timestamptz),
+              COALESCE($13, '-infinity'::timestamptz),
+              $14, v.version, $17, $15, $16, NULL, now()
          FROM v
        ON CONFLICT (tenant_id, user_id, kind, record_id) DO UPDATE SET
          conversation_id = excluded.conversation_id,
@@ -346,6 +354,13 @@ export async function writeEmbedding(
  * exactly those keys, so neither this statement's parameters nor the caller's
  * memory scale with the size of a user's history. Every key carries its own
  * tenant and user, so a sweep can never widen past the rows it was handed.
+ *
+ * `sourceReadAt` — when the sweep observed the records absent — is written onto
+ * each tombstone, advancing the same source-read fence `upsertDocument`
+ * compares against. Without it a delayed pass that read a record before its
+ * deletion could commit after this sweep and revive the deleted content (pinned
+ * by `records the sweep read time so a stale concurrent upsert cannot revive
+ * the row`).
  */
 export async function sweepMissing(
   client: SearchClient,
@@ -354,6 +369,7 @@ export async function sweepMissing(
   versionSnapshot: number,
   missing: readonly SearchRecordKey[],
   now: Date = new Date(),
+  sourceReadAt: Date = now,
 ): Promise<number> {
   if (missing.length === 0) {
     return 0;
@@ -378,7 +394,8 @@ export async function sweepMissing(
      upd AS (
        UPDATE chat_search.documents d
           SET title = '', body = '', tags = '{}'::text[],
-              deleted_at = $6, projection_version = v.version, updated_at = now()
+              deleted_at = $6, projection_version = v.version,
+              source_read_at = $7, updated_at = now()
          FROM v, victims
         WHERE d.tenant_id = victims.tenant_id AND d.user_id = victims.user_id
           AND d.kind = $4 AND d.record_id = victims.record_id
@@ -401,6 +418,7 @@ export async function sweepMissing(
       kind,
       versionSnapshot,
       now,
+      sourceReadAt,
     ],
   );
   return result.rowCount ?? 0;

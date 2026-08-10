@@ -136,7 +136,19 @@ async function startProjector(
     },
   );
 
-  await projector.start();
+  /**
+   * A startup that throws — an unreachable database, a missing lease table —
+   * returns no handle, so nothing downstream can ever end this pool; it is
+   * closed here or its clients and timers outlive the failure for the life of
+   * the process (pinned by `leaves no writer connection behind when the
+   * projector fails to start`).
+   */
+  try {
+    await projector.start();
+  } catch (error) {
+    await pool.end().catch(() => undefined);
+    throw error;
+  }
   return Object.freeze({ projector, pool });
 }
 
@@ -152,6 +164,13 @@ export async function startChatSearch(options: ChatSearchStackOptions): Promise<
    * Gated on the migrate URL alone, deliberately. Supplying a provisioning
    * connection is the operator saying "migrate this", and it is the only signal
    * that means that.
+   *
+   * A provisioning attempt that *fails* gates the projector: an older or
+   * half-provisioned database can still hold a usable lease table, so starting
+   * anyway would project against a schema whose pending migration did not apply
+   * (pinned by `does not start the projector when an attempted migration
+   * fails`). The out-of-band path — no migrate URL configured — never throws
+   * here and proceeds as before.
    */
   let migrated: readonly string[] = [];
   try {
@@ -161,6 +180,11 @@ export async function startChatSearch(options: ChatSearchStackOptions): Promise<
       '[chatSearch] schema provisioning failed; projection will not run until it succeeds',
       error,
     );
+    return Object.freeze({
+      migrated,
+      isProjecting: (): boolean => false,
+      stop: async (): Promise<void> => undefined,
+    });
   }
 
   let projection: ProjectorHandle | null = null;

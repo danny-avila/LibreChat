@@ -143,4 +143,75 @@ describePg('chat search composition root', () => {
       await stack.stop();
     }
   }, 60_000);
+
+  /**
+   * Configuring the migrate URL is the operator saying "migrate this". When that
+   * attempt fails, the database may be half-provisioned or behind — yet an older
+   * schema can still hold a usable lease table, so an unconditional start would
+   * project against a schema whose pending migration did not apply.
+   */
+  it('does not start the projector when an attempted migration fails', async () => {
+    const provisioned = await startChatSearch({ mongoose });
+    await provisioned.stop();
+
+    process.env.CHAT_SEARCH_MIGRATE_URL = isolatedDatabaseUrl('boot_absent');
+
+    const stack = await startChatSearch({ mongoose });
+    try {
+      expect(stack.migrated).toEqual([]);
+      expect(stack.isProjecting()).toBe(false);
+    } finally {
+      await stack.stop();
+    }
+  }, 120_000);
+
+  /** The out-of-band path: no migrate URL is not a failed migration. */
+  it('projects out of band when the schema exists and no migrate URL is set', async () => {
+    const provisioned = await startChatSearch({ mongoose });
+    await provisioned.stop();
+
+    delete process.env.CHAT_SEARCH_MIGRATE_URL;
+
+    const stack = await startChatSearch({ mongoose });
+    try {
+      expect(stack.migrated).toEqual([]);
+      expect(stack.isProjecting()).toBe(true);
+    } finally {
+      await stack.stop();
+    }
+  }, 120_000);
+
+  /**
+   * A projector that fails to start returns no handle, so nothing downstream
+   * can end its pool; unless startup closes it on that error path, its clients
+   * and timers survive for the life of the process.
+   */
+  it('leaves no writer connection behind when the projector fails to start', async () => {
+    await admin.query('DROP SCHEMA IF EXISTS chat_search CASCADE');
+    delete process.env.CHAT_SEARCH_MIGRATE_URL;
+
+    const stack = await startChatSearch({ mongoose });
+    try {
+      expect(stack.isProjecting()).toBe(false);
+
+      const projectorConnections = async () =>
+        Number(
+          (
+            await admin.query<{ count: string }>(
+              `SELECT count(*) AS count FROM pg_stat_activity
+                WHERE datname = current_database()
+                  AND application_name = 'librechat-chat-search-projector'`,
+            )
+          ).rows[0].count,
+        );
+
+      const deadline = Date.now() + 10_000;
+      while ((await projectorConnections()) > 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      expect(await projectorConnections()).toBe(0);
+    } finally {
+      await stack.stop();
+    }
+  }, 60_000);
 });

@@ -65,7 +65,10 @@ describe('search-sync projection plugin', () => {
     process.env.CHAT_SEARCH_ENABLED = 'true';
     process.env.MEILI_WRITES_ENABLED = 'false';
     jest.clearAllMocks();
-    await models.SearchEvent.deleteMany({});
+    /**
+     * The queue is cleared last: `deleteMany` on the models fires the seam's
+     * tombstone hook, which writes into `searchevents`.
+     */
     await models.Message.deleteMany({});
     await models.Conversation.deleteMany({});
     await models.SharedLink.deleteMany({});
@@ -156,6 +159,48 @@ describe('search-sync projection plugin', () => {
       const events = await drain(models.SearchEvent);
       expect(events.every((e) => e.op === 'tombstone')).toBe(true);
       expect(events.map((e) => e.recordId).sort()).toEqual(['d1', 'd2']);
+    });
+
+    /**
+     * Tombstones visible while the documents still exist are tombstones a
+     * projector drain can consume and overwrite: it re-reads the still-live
+     * documents, re-upserts them, and deletes the events — and bulk delete paths
+     * never enqueue again. The keys are resolved before the delete, but nothing
+     * may reach the queue until the deletion has been applied.
+     */
+    it('enqueues deleteMany tombstones only after the deletion is applied', async () => {
+      await models.Message.create([
+        { messageId: 'd1', conversationId: 'c1', user: 'u1', text: 'a', isCreatedByUser: true },
+        { messageId: 'd2', conversationId: 'c1', user: 'u1', text: 'b', isCreatedByUser: true },
+      ]);
+      await models.SearchEvent.deleteMany({});
+
+      const collectionDelete = models.Message.collection.deleteMany.bind(models.Message.collection);
+      let queuedWhenDeleteRan = -1;
+      const deleteSpy = jest
+        .spyOn(models.Message.collection, 'deleteMany')
+        .mockImplementation(async (filter, options) => {
+          queuedWhenDeleteRan = await models.SearchEvent.countDocuments({});
+          return collectionDelete(filter, options);
+        });
+
+      try {
+        await models.Message.deleteMany({ conversationId: 'c1' });
+
+        expect(deleteSpy).toHaveBeenCalledTimes(1);
+        expect(queuedWhenDeleteRan).toBe(0);
+        const events = await drain(models.SearchEvent);
+        expect(events.every((e) => e.op === 'tombstone')).toBe(true);
+        expect(events.map((e) => e.recordId).sort()).toEqual(['d1', 'd2']);
+      } finally {
+        deleteSpy.mockRestore();
+      }
+    });
+
+    it('enqueues no deleteMany tombstones when nothing matched', async () => {
+      await models.Message.deleteMany({ conversationId: 'c-absent' });
+
+      expect(await drain(models.SearchEvent)).toEqual([]);
     });
 
     it('costs the write path nothing when chat search is disabled', async () => {

@@ -191,6 +191,30 @@ describePg('projector', () => {
       expect(rows).toHaveLength(1);
     });
 
+    /**
+     * Imported and legacy records can carry no timestamps at all. They must
+     * project rather than fail the NOT NULL timestamp columns on every pass and
+     * eventually quarantine.
+     */
+    it('projects a legacy record that has no timestamps at all', async () => {
+      await models.Message.collection.insertOne({
+        messageId: 'm-untimed',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'imported without timestamps',
+        isCreatedByUser: true,
+      });
+      await enqueueSearchEvents(mongoose, [
+        { tenantId: null, userId: 'alice', kind: 'message', recordId: 'm-untimed', op: 'upsert' },
+      ]);
+
+      const outcome = await projector.drain();
+
+      expect(outcome).toMatchObject({ projected: 1, failed: 0 });
+      const rows = await projected();
+      expect(rows[0].body).toBe('imported without timestamps');
+    });
+
     it('tombstones a record the source no longer has', async () => {
       await models.Message.create({
         messageId: 'm1',
@@ -519,6 +543,56 @@ describePg('projector', () => {
     });
 
     /**
+     * Record ids are only unique per user and tenant: two users importing the
+     * same export hold documents sharing a conversation id *and* an `updatedAt`.
+     * The persisted cursor must carry a globally unique tiebreak, or the pass
+     * after a page boundary inside that group resumes past its unreturned
+     * members and the poll never visits them.
+     */
+    it('visits every member of an equal-key group across persisted page boundaries', async () => {
+      await projector.stop();
+      projector = new Projector(
+        {
+          pool,
+          mongoose,
+          source: createMongoSourceReader(mongoose),
+          batches: { scan: 1 },
+          startupCatchUp: false,
+        },
+        {
+          readSearchEvents: (limit) => readSearchEvents(mongoose, limit),
+          deleteSearchEvents: (ids) =>
+            deleteSearchEvents(mongoose, ids as mongoose.Types.ObjectId[]),
+          dedupeSearchEvents,
+        },
+      );
+      if (!(await projector.start())) {
+        throw new Error('failed to acquire the projector lease for the test');
+      }
+
+      const stamp = new Date('2026-03-01T00:00:00.000Z');
+      await models.Conversation.collection.insertMany(
+        ['alice', 'bob', 'carol'].map((user) => ({
+          conversationId: 'c-shared',
+          user,
+          title: 'imported',
+          endpoint: 'openAI',
+          createdAt: stamp,
+          updatedAt: stamp,
+        })),
+      );
+
+      for (let pass = 0; pass < 4; pass++) {
+        await projector.safetyPoll();
+      }
+
+      const { rows } = await pool.query<{ user_id: string }>(
+        "SELECT user_id FROM chat_search.documents WHERE kind = 'conversation' ORDER BY user_id",
+      );
+      expect(rows.map((row) => row.user_id)).toEqual(['alice', 'bob', 'carol']);
+    });
+
+    /**
      * Application-generated timestamps collide constantly on bulk writes. A bare
      * `updatedAt > T` resume drops every row sharing the boundary instant.
      */
@@ -784,6 +858,117 @@ describePg('projector', () => {
 
       expect(await outboxCount()).toBe(before);
     });
+
+    /**
+     * A record outside the poll's moving window — historic imports above all —
+     * has reconciliation as its only recovery path. A repair that leaves the
+     * quarantine row behind repairs nothing: the drain keeps discarding every
+     * later event for the record.
+     */
+    it('clears a quarantine once reconciliation repairs the record', async () => {
+      const key = {
+        tenantId: '__BASE__',
+        userId: 'alice',
+        kind: 'message' as const,
+        recordId: 'm-quarantined',
+      };
+      await models.Message.collection.insertOne({
+        messageId: 'm-quarantined',
+        conversationId: 'c1',
+        user: 'alice',
+        text: 'repaired offline',
+        isCreatedByUser: true,
+        createdAt: new Date('2020-01-01T00:00:00Z'),
+        updatedAt: new Date('2020-01-01T00:00:00Z'),
+      });
+      /** The cursor has long since moved past 2020, so the poll cannot rescue it. */
+      await pool.query(
+        `INSERT INTO chat_search.poll_cursor (kind, updated_at, record_id, scanned_at)
+         VALUES ('message', now(), 'zzz', now())
+         ON CONFLICT (kind) DO UPDATE SET updated_at = now(), record_id = 'zzz'`,
+      );
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await withTransaction(pool, (client) => recordFailure(client, key, new Error('boom')));
+      }
+      const before = await withTransaction(pool, (client) => quarantinedKeys(client, [key]));
+      expect(before.size).toBe(1);
+
+      await projector.reconcile();
+
+      const after = await withTransaction(pool, (client) => quarantinedKeys(client, [key]));
+      expect(after.size).toBe(0);
+
+      await models.Message.collection.updateOne(
+        { messageId: 'm-quarantined' },
+        { $set: { text: 'edited after the repair' } },
+      );
+      await enqueueSearchEvents(mongoose, [
+        {
+          tenantId: null,
+          userId: 'alice',
+          kind: 'message',
+          recordId: 'm-quarantined',
+          op: 'upsert',
+        },
+      ]);
+      const outcome = await projector.drain();
+
+      expect(outcome).toMatchObject({ projected: 1, skipped: 0 });
+      const rows = await projected();
+      expect(rows[0].body).toBe('edited after the repair');
+    });
+
+    /**
+     * The interval timer's own in-flight flag covers only invocations it started
+     * itself, not the untracked startup catch-up — so on an install whose first
+     * full pass outlasts the sweep interval, both entry paths must share one
+     * guard or the whole keyspace is scanned twice concurrently.
+     */
+    it('does not start a second reconciliation while one is in flight', async () => {
+      await projector.stop();
+      const reader = createMongoSourceReader(mongoose);
+      let keyScans = 0;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const source: typeof reader = {
+        ...reader,
+        keys(kind, batchSize) {
+          keyScans++;
+          const inner = reader.keys(kind, batchSize);
+          return (async function* () {
+            await gate;
+            yield* inner;
+          })();
+        },
+      };
+      projector = new Projector(
+        { pool, mongoose, source, startupCatchUp: false },
+        {
+          readSearchEvents: (limit) => readSearchEvents(mongoose, limit),
+          deleteSearchEvents: (ids) =>
+            deleteSearchEvents(mongoose, ids as mongoose.Types.ObjectId[]),
+          dedupeSearchEvents,
+        },
+      );
+      if (!(await projector.start())) {
+        throw new Error('failed to acquire the projector lease for the test');
+      }
+
+      const first = projector.reconcile();
+      await waitFor(() => keyScans === 1, 10_000);
+
+      expect(await projector.reconcile()).toBe(0);
+      expect(keyScans).toBe(1);
+
+      release();
+      await first;
+      expect(keyScans).toBe(3);
+
+      await projector.reconcile();
+      expect(keyScans).toBe(6);
+    }, 30_000);
   });
 
   /**
@@ -880,6 +1065,45 @@ describePg('projector', () => {
         await standby.stop();
       }
     }, 30_000);
+
+    /**
+     * A renewal that throws — the dedicated lease connection interrupted — must
+     * be handled like a renewal that returned false. Left only to the generic
+     * timer catch, the pod stays marked running with a dead lease and a
+     * single-pod deployment stops projecting until a restart.
+     */
+    it('re-enters standby and re-acquires after a lease renewal failure', async () => {
+      await projector.stop();
+      projector = new Projector(
+        {
+          pool,
+          mongoose,
+          source: createMongoSourceReader(mongoose),
+          startupCatchUp: false,
+          intervals: { drainMs: 500, safetyPollMs: 3_600_000, sweepMs: 3_600_000 },
+        },
+        {
+          readSearchEvents: (limit) => readSearchEvents(mongoose, limit),
+          deleteSearchEvents: (ids) =>
+            deleteSearchEvents(mongoose, ids as mongoose.Types.ObjectId[]),
+          dedupeSearchEvents,
+        },
+      );
+      if (!(await projector.start())) {
+        throw new Error('failed to acquire the projector lease for the test');
+      }
+
+      /** Makes the next renewal reject, as a dropped connection would. */
+      await pool.query('ALTER TABLE chat_search.lease RENAME TO lease_interrupted');
+      try {
+        await waitFor(() => !projector.isLeader, 20_000);
+      } finally {
+        await pool.query('ALTER TABLE chat_search.lease_interrupted RENAME TO lease');
+      }
+
+      await waitFor(() => projector.isLeader, 30_000);
+      expect(projector.epoch).not.toBeNull();
+    }, 60_000);
 
     it('projects nothing while it does not hold the lease', async () => {
       await projector.stop();

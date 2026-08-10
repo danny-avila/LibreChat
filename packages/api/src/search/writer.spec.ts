@@ -190,6 +190,30 @@ describePg('projector write path', () => {
       expect(edited.embeddingStale).toBe(true);
     });
 
+    /**
+     * Legacy and imported records carry no timestamps. Passed through as NULLs
+     * they would bypass the columns' `-infinity` defaults, violate NOT NULL, and
+     * fail the same record on every drain, poll and reconciliation pass.
+     */
+    it('projects a source that carries no timestamps', async () => {
+      const result = await withTransaction(pool, (client) =>
+        upsertDocument(
+          client,
+          lease.epoch,
+          sourceOf({ sourceCreatedAt: null, sourceUpdatedAt: null }),
+          DEFAULT_EMBEDDING_SPACE,
+        ),
+      );
+      expect(result.applied).toBe(true);
+
+      const { rows } = await pool.query<{ created: boolean; updated: boolean }>(
+        `SELECT source_created_at = '-infinity'::timestamptz AS created,
+                source_updated_at = '-infinity'::timestamptz AS updated
+           FROM chat_search.documents`,
+      );
+      expect(rows).toEqual([{ created: true, updated: true }]);
+    });
+
     it('resurrects a tombstoned row when the source reappears', async () => {
       await withTransaction(pool, (client) =>
         upsertDocument(client, lease.epoch, sourceOf(), DEFAULT_EMBEDDING_SPACE),
@@ -596,6 +620,45 @@ describePg('projector write path', () => {
         'SELECT deleted_at FROM chat_search.documents',
       );
       expect(rows[0].deleted_at).toBeNull();
+    });
+
+    /**
+     * The sweep observes an absence, and that observation has a read time like
+     * any other. If the tombstone does not record it, a concurrent pass that
+     * read the record before its deletion — but commits after the sweep — passes
+     * the source-read comparison against the row's old timestamp and revives
+     * deleted content.
+     */
+    it('records the sweep read time so a stale concurrent upsert cannot revive the row', async () => {
+      const readBeforeDelete = new Date('2026-03-01T10:00:00Z');
+      const staleRead = new Date('2026-03-01T10:00:05Z');
+      const sweepRead = new Date('2026-03-01T10:00:10Z');
+      await withTransaction(pool, (client) =>
+        upsertDocument(client, lease.epoch, sourceOf(), DEFAULT_EMBEDDING_SPACE, readBeforeDelete),
+      );
+      const snapshot = await withTransaction(pool, (client) => currentVersionSnapshot(client));
+
+      const swept = await withTransaction(pool, (client) =>
+        sweepMissing(client, lease.epoch, 'message', snapshot, [KEY], new Date(), sweepRead),
+      );
+      expect(swept).toBe(1);
+
+      const stale = await withTransaction(pool, (client) =>
+        upsertDocument(
+          client,
+          lease.epoch,
+          sourceOf({ body: 'read before the delete, committed after the sweep' }),
+          DEFAULT_EMBEDDING_SPACE,
+          staleRead,
+        ),
+      );
+
+      expect(stale.applied).toBe(false);
+      const { rows } = await pool.query<{ deleted_at: Date | null; body: string }>(
+        'SELECT deleted_at, body FROM chat_search.documents',
+      );
+      expect(rows[0].deleted_at).not.toBeNull();
+      expect(rows[0].body).toBe('');
     });
 
     it('never reaches another user in the same tenant', async () => {
