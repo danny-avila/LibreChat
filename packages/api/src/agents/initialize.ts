@@ -1381,9 +1381,6 @@ export async function initializeAgent(
   if (options.configOptions) {
     (agent.model_parameters as Record<string, unknown>).configuration = options.configOptions;
   }
-  if (isBamlInitializeResult(options)) {
-    setAgentRuntimeOptions(agent, options.runtimeOptions);
-  }
 
   if (agent.instructions && agent.instructions !== '') {
     const resolvedInstructions = replaceSpecialVars({
@@ -1564,6 +1561,17 @@ export async function initializeAgent(
     primedCodeFiles,
     endpointTokenConfig: options.endpointTokenConfig,
   };
+
+  /**
+   * Attached to the RETURNED object, not the mutated `agent` param above:
+   * `initializedAgent` is built by spreading `agent`, and `Object.defineProperty`'s
+   * `enumerable: false` symbol-keyed carrier is exactly what a spread skips.
+   * `createRun` reads it off this same returned/stored config — see the "last
+   * possible moment" merge in `~/agents/run`.
+   */
+  if (isBamlInitializeResult(options)) {
+    setAgentRuntimeOptions(initializedAgent, options.runtimeOptions);
+  }
 
   return initializedAgent;
 }

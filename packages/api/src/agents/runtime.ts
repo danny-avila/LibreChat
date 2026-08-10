@@ -1,3 +1,10 @@
+// Side-effect import: registers `ChatBAML` on the agents SDK's provider
+// registry (`registerChatModel(Providers.BAML, ChatBAML)`, in that package's
+// own `llm/baml/index.ts`). Without it `createRun` rejects every BAML turn
+// with "Unsupported LLM provider: baml" — the lightweight class registration
+// the plan calls for, kept separate from the native runtime: this module has
+// no dynamic import and never touches the bridge.
+import '@librechat/agents/baml';
 import type { BamlFunctionSet } from '@librechat/agents/baml';
 
 /**
@@ -41,7 +48,9 @@ export const setAgentRuntimeOptions = <T extends object>(
   return agent;
 };
 
-export const getAgentRuntimeOptions = (agent: object | undefined | null): AgentRuntimeOptions | undefined =>
+export const getAgentRuntimeOptions = (
+  agent: object | undefined | null,
+): AgentRuntimeOptions | undefined =>
   (agent as RuntimeCarrier | null | undefined)?.[RUNTIME_CARRIER];
 
 /** Exposed so tests can assert the key is absent from every serialized surface. */
