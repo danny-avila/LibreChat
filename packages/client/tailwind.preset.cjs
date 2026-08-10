@@ -20,7 +20,8 @@ module.exports = {
         'theme-surface-lg': 'var(--theme-large-surface-radius, 1.5rem)',
       },
       boxShadow: {
-        'theme-surface': 'var(--theme-elevation-surface, 0 10px 15px -3px rgb(0 0 0 / 0.1))',
+        'theme-surface':
+          'var(--theme-elevation-surface, 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1))',
       },
       transitionDuration: {
         'theme-fast': 'var(--theme-motion-fast, 150ms)',

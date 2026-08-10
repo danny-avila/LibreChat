@@ -541,9 +541,9 @@ function App() {
 }
 ```
 
-**Important**: Props passed to ThemeProvider override stored values and remain synchronized when they
-change. Only pass theme props when the parent should control those values; otherwise use the context
-setters and allow stored preferences to remain authoritative.
+**Important**: The `themeDefinition`, `themeRGB`, and `themeName` props override stored values and
+remain synchronized when they change. Only pass theme props when the parent should control those
+values; otherwise use the context setters and allow stored preferences to remain authoritative.
 
 ## Contributing
 
