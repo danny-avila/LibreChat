@@ -11,6 +11,7 @@ import type {
   WorkerMessage,
   WorkerRequest,
 } from './protocol';
+import { isAbort, isParseFailure, isTransport, messageOf } from './classify';
 import { assertManifestIsCallable, compiledClients } from './manifest';
 import {
   MODEL_ERROR_MESSAGE,
@@ -53,65 +54,6 @@ const post = (message: WorkerMessage): void => {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
-
-const messageOf = (error: unknown): string => {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return isRecord(error) && typeof error.message === 'string' ? error.message : String(error);
-};
-
-const classNameOf = (error: unknown): string =>
-  isRecord(error) && typeof error.className === 'string' ? error.className : '';
-
-/**
- * `baml.errors.LlmClient` straddles the line: it covers both a genuinely failed
- * request AND a request that succeeded but whose body did not match the return
- * type. The second is the model writing something unparseable — a per-turn
- * failure, not a transport fault — and rejecting for it would take down a turn
- * the contract says should surface as a value. The class name alone cannot
- * separate them, so the coercion shape is matched.
- */
-const TRANSPORT_CLASSES = new Set([
-  'baml.errors.Io',
-  'baml.errors.LlmClient',
-  'baml.errors.Timeout',
-]);
-
-/**
- * Retry exhaustion arrives as `baml.errors.DevOther` — the orchestrator's own
- * catch-all — rather than as the underlying `LlmClient` error, so the class name
- * alone would misfile a provider outage as a model failure. The orchestrator's
- * message is the discriminator, matched as a literal substring: no `RegExp` is
- * ever constructed from runtime text here.
- */
-const ORCHESTRATION_EXHAUSTED = 'All orchestration steps failed';
-
-/**
- * A literal test, never a constructed one: building a `RegExp` from a client or
- * model name would let a name containing `[` make the classifier itself throw.
- */
-const COERCION_FAILURE = /Expected .+, got /;
-
-const isAbort = (error: unknown, ctx: BamlCallContext | null): boolean => {
-  if (ctx?.aborted === true) {
-    return true;
-  }
-  const name = error instanceof Error ? error.name : '';
-  return name === 'AbortError' || classNameOf(error).includes('Cancelled');
-};
-
-const isParseFailure = (error: unknown): boolean => COERCION_FAILURE.test(messageOf(error));
-
-const isTransport = (error: unknown): boolean => {
-  if (isParseFailure(error)) {
-    return false;
-  }
-  return (
-    TRANSPORT_CLASSES.has(classNameOf(error)) ||
-    messageOf(error).includes(ORCHESTRATION_EXHAUSTED)
-  );
-};
 
 const failure = (code: WireFailure['code'], message: string, detail?: string): WireFailure =>
   detail == null ? { code, message } : { code, message, detail };
@@ -246,7 +188,7 @@ const start = async (request: StartRequest): Promise<void> => {
     await (request.mode === 'call' ? runCall(request, ctx) : runStream(request, ctx));
   } catch (error) {
     const detail = messageOf(error);
-    if (isAbort(error, ctx)) {
+    if (isAbort(error, ctx.aborted === true)) {
       post({ type: 'rejection', operationId, rejection: rejection('abort', 'aborted', detail) });
       return;
     }
