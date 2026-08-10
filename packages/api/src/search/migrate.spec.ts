@@ -134,6 +134,25 @@ describe('role credentials', () => {
     );
   });
 
+  /**
+   * The one Table B.1 range `pg` does not strip: libpq maps U+1D173–U+1D17A to
+   * nothing, `pg` hashes it, so the two clients derive different bytes from the
+   * same password and no stored verifier satisfies both. Refused like the
+   * control characters above rather than mapped, because the verifier this
+   * module derives has to agree with `pg` byte for byte.
+   */
+  it('refuses the musical format controls the clients disagree over', () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: 'note\u{1D173}bar\u{1D17A}',
+      CHAT_SEARCH_WRITER_PASSWORD: 'supplied',
+      CHAT_SEARCH_READER_PASSWORD: 'supplied',
+    };
+    expect(() => assertRoleCredentialsConfigured()).toThrow(
+      /CHAT_SEARCH_OWNER_PASSWORD contains a musical format control \(U\+1D173-U\+1D17A\)/,
+    );
+  });
+
   it('refuses a password SASLprep deletes down to nothing', () => {
     process.env = {
       ...OLD_ENV,
@@ -698,9 +717,16 @@ const EXTENSION_DB = 'extschema';
 const EXTENSION_SCHEMA = 'extensions';
 
 describePg('provisioning against extensions installed elsewhere', () => {
+  const OLD_ENV = process.env;
   let pool: SearchPool;
 
   beforeAll(async () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: PROVISION_PASSWORD,
+      CHAT_SEARCH_WRITER_PASSWORD: PROVISION_PASSWORD,
+      CHAT_SEARCH_READER_PASSWORD: PROVISION_PASSWORD,
+    };
     pool = await createIsolatedDatabase(EXTENSION_DB);
     await pool.query(`CREATE SCHEMA ${EXTENSION_SCHEMA}`);
     for (const extension of REQUIRED_EXTENSIONS) {
@@ -709,6 +735,7 @@ describePg('provisioning against extensions installed elsewhere', () => {
   }, 60_000);
 
   afterAll(async () => {
+    process.env = OLD_ENV;
     if (pool) {
       await dropIsolatedDatabase(pool, EXTENSION_DB);
     }
@@ -718,42 +745,61 @@ describePg('provisioning against extensions installed elsewhere', () => {
    * Both extensions are present, so a check matching on `extname` alone sees
    * nothing to say. The schema they are in is the whole problem: the types and
    * operator classes they own resolve through `search_path` and nothing else,
-   * and the application roles connect without one.
+   * and the application roles connect without one. Provisioning has to hand
+   * them one, or the first `::vector` cast a role runs fails at runtime.
    */
-  it('names the extension and the schema it is in before applying anything', async () => {
-    const warn = jest.spyOn(logger, 'warn');
+  it('lets the reader resolve extension types over its own connection', async () => {
     await expect(migrate(pool)).resolves.toContain('001_schema.sql');
+    await applyRolePasswords(pool);
 
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        `pg_trgm (schema ${EXTENSION_SCHEMA}) and vector (schema ${EXTENSION_SCHEMA}) are ` +
-          'installed outside the search_path',
-      ),
+    const { rows: settings } = await pool.query<{ rolname: string; setconfig: string[] }>(
+      `SELECT r.rolname, s.setconfig
+         FROM pg_db_role_setting s
+         JOIN pg_roles r ON r.oid = s.setrole
+         JOIN pg_database d ON d.oid = s.setdatabase
+        WHERE d.datname = current_database() AND r.rolname = ANY($1::text[])
+        ORDER BY r.rolname`,
+      [[...MANAGED_ROLES]],
     );
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('chat_search_reader'));
+    expect(settings.map((row) => row.rolname)).toEqual([...MANAGED_ROLES].sort());
+    for (const row of settings) {
+      expect(row.setconfig.join(';')).toContain(EXTENSION_SCHEMA);
+    }
+
+    const asReader = rolePool(EXTENSION_DB, READER_ROLE);
+    try {
+      const { rows } = await asReader.query<{ vec: string }>(
+        "SELECT '[1,2,3]'::vector::text AS vec",
+      );
+      expect(rows[0].vec).toBe('[1,2,3]');
+    } finally {
+      await asReader.end().catch(() => undefined);
+    }
   }, 60_000);
 
-  it('says nothing once the extension schema is one the connection searches', async () => {
+  /**
+   * `002_roles.sql` is checksum-tracked and never reruns, so it cannot be what
+   * repairs a hand-edited role. Extension access is asserted by every run
+   * instead, like the passwords: the run below applies no migration files at
+   * all and still puts the reader's search_path back.
+   */
+  it('reasserts role access on a run with nothing left to apply', async () => {
     await pool.query(
-      `ALTER DATABASE chat_search_test_${EXTENSION_DB} SET search_path TO public, ${EXTENSION_SCHEMA}`,
+      `ALTER ROLE ${READER_ROLE} IN DATABASE chat_search_test_${EXTENSION_DB} SET search_path = public`,
     );
-    await pool.query('DELETE FROM chat_search.migrations');
+    await expect(migrate(pool)).resolves.toEqual([]);
 
-    const warn = jest.spyOn(logger, 'warn');
-    const searching = new Pool({ connectionString: isolatedDatabaseUrl(EXTENSION_DB), max: 1 });
+    const asReader = rolePool(EXTENSION_DB, READER_ROLE);
     try {
-      await expect(migrate(searching)).resolves.toContain('001_schema.sql');
+      const { rows } = await asReader.query<{ search_path: string }>('SHOW search_path');
+      expect(rows[0].search_path).toBe(`pg_catalog, chat_search, ${EXTENSION_SCHEMA}`);
     } finally {
-      await searching.end().catch(() => undefined);
+      await asReader.end().catch(() => undefined);
     }
-    expect(warn).not.toHaveBeenCalledWith(
-      expect.stringContaining('installed outside the search_path'),
-    );
   }, 60_000);
 
   /** USAGE is not what resolves the objects, but without it nothing can. */
   it('refuses outright when the extension schema is one it may not use', async () => {
-    await pool.query(`ALTER DATABASE chat_search_test_${EXTENSION_DB} RESET search_path`);
     await pool.query(
       `DO $$ BEGIN
          BEGIN CREATE ROLE ${BOOTSTRAP_ROLE} LOGIN CREATEROLE;

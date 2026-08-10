@@ -138,9 +138,7 @@ async function assertCanProvision(
     is_superuser: boolean;
     can_create_in_database: boolean;
     schema_exists: boolean;
-    search_path: string[];
     missing_extensions: string[] | null;
-    offpath_extensions: ExtensionPlacement[] | null;
     unusable_extensions: ExtensionPlacement[] | null;
     existing_managed_roles: string[] | null;
   }>(
@@ -156,11 +154,8 @@ async function assertCanProvision(
             rolsuper AS is_superuser,
             has_database_privilege(current_database(), 'CREATE') AS can_create_in_database,
             to_regnamespace('chat_search') IS NOT NULL AS schema_exists,
-            current_schemas(true)::text[] AS search_path,
             ARRAY(SELECT unnest($1::text[])
                    EXCEPT SELECT name FROM required) AS missing_extensions,
-            (SELECT json_agg(json_build_object('name', name, 'schema', schema) ORDER BY name)
-               FROM required WHERE NOT searched) AS offpath_extensions,
             (SELECT json_agg(json_build_object('name', name, 'schema', schema) ORDER BY name)
                FROM required WHERE NOT searched AND NOT usable) AS unusable_extensions,
             ARRAY(SELECT rolname::text FROM pg_roles
@@ -225,37 +220,84 @@ async function assertCanProvision(
     );
   }
 
-  warnOnUnsearchedExtensions(schemaPending, state.offpath_extensions ?? [], state.search_path);
   warnOnForeignManagedRoles(rolesPending, state.existing_managed_roles ?? []);
 }
 
 /**
- * An extension is only half-found by name. `CREATE EXTENSION IF NOT EXISTS` is
- * satisfied by the name alone and will not install a second copy, while the
- * types and operator classes it owns resolve through `search_path` and nothing
- * else — USAGE on the schema is necessary and not sufficient. `001_schema.sql`
- * puts the extension schemas on the path for its own run, so provisioning
- * succeeds; the application roles get no such help and their queries cast to
- * `vector` and order by `<=>`, so the placement is named here while an operator
- * is still watching.
+ * Makes the schemas of the required extensions reachable by the application
+ * roles, on every run rather than once at apply time.
+ *
+ * An extension is only half-found by name: the types and operator classes it
+ * owns resolve through `search_path` and nothing else — USAGE on the schema is
+ * necessary and not sufficient. `001_schema.sql` puts the extension schemas on
+ * the path for its own session and resets it; the application roles get no such
+ * help, and their queries cast to `vector` and order by `<=>`. So each run
+ * grants USAGE on every schema holding a required extension and pins each
+ * managed role's `search_path` for this database to `pg_catalog, chat_search`
+ * plus those schemas.
+ *
+ * Both statements are idempotent, and the settings are asserted rather than
+ * merged: a hand-edited `search_path` on a managed role is overwritten by the
+ * next run, the same posture `applyRolePasswords` takes toward these roles'
+ * passwords. `migrate.spec.ts` proves the runtime effect in 'lets the reader
+ * resolve extension types over its own connection' and the reassertion in
+ * 'reasserts role access on a run with nothing left to apply'.
  */
-function warnOnUnsearchedExtensions(
-  schemaPending: boolean,
-  offPath: readonly ExtensionPlacement[],
-  searchPath: readonly string[],
-): void {
-  if (!schemaPending || offPath.length === 0) {
+async function provisionExtensionAccess(client: SearchClient): Promise<void> {
+  const { rows } = await client.query<{
+    database: string;
+    schemas: string[];
+    roles: string[];
+  }>(
+    `SELECT current_database()::text AS database,
+            ARRAY(SELECT DISTINCT n.nspname::text
+                    FROM pg_extension e
+                    JOIN pg_namespace n ON n.oid = e.extnamespace
+                   WHERE e.extname = ANY($1::text[])
+                     AND n.nspname NOT IN ('pg_catalog', 'chat_search')
+                   ORDER BY 1) AS schemas,
+            ARRAY(SELECT rolname::text FROM pg_roles
+                   WHERE rolname = ANY($2::text[]) ORDER BY 1) AS roles`,
+    [[...REQUIRED_EXTENSIONS], [...MANAGED_ROLES]],
+  );
+  const state = rows[0];
+  if (!state || state.roles.length === 0) {
     return;
   }
-  const placements = offPath.map((ext) => `${ext.name} (schema ${ext.schema})`).join(' and ');
-  logger.warn(
-    `[chatSearch] ${placements} ${offPath.length === 1 ? 'is' : 'are'} installed outside the ` +
-      `search_path of this connection (${searchPath.join(', ')}). ${SCHEMA_MIGRATION} resolves ` +
-      'them for its own run, but the application roles do not inherit that: give ' +
-      `${MANAGED_ROLES.join(', ')} a search_path covering that schema ` +
-      '(ALTER ROLE <role> IN DATABASE <database> SET search_path = ...), or reinstall the ' +
-      'extension into a schema they already search.',
+  const searchPath = ['pg_catalog', 'chat_search', ...state.schemas];
+  const pathSlots = searchPath.map(() => '%I').join(', ');
+  try {
+    for (const role of state.roles) {
+      for (const schema of state.schemas) {
+        await execFormat(client, 'GRANT USAGE ON SCHEMA %I TO %I', [schema, role]);
+      }
+      await execFormat(client, `ALTER ROLE %I IN DATABASE %I SET search_path = ${pathSlots}`, [
+        role,
+        state.database,
+        ...searchPath,
+      ]);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      '[chatSearch] could not give the application roles access to the extension ' +
+        `schemas (${state.schemas.join(', ') || 'none'}): ${message}. The migration connection ` +
+        'must be able to GRANT USAGE on those schemas and ALTER the managed roles.',
+    );
+  }
+}
+
+/** Identifier quoting is delegated to the server's own `format()`, as in `applyRolePasswords`. */
+async function execFormat(
+  client: SearchClient,
+  template: string,
+  identifiers: readonly string[],
+): Promise<void> {
+  const { rows } = await client.query<{ statement: string }>(
+    'SELECT format($1, VARIADIC $2::text[]) AS statement',
+    [template, [...identifiers]],
   );
+  await client.query(rows[0].statement);
 }
 
 /**
@@ -326,6 +368,7 @@ export async function migrate(pool: SearchPool): Promise<readonly string[]> {
       applied.push(migration.filename);
       logger.info(`[chatSearch] applied migration ${migration.filename}`);
     }
+    await provisionExtensionAccess(client);
     return applied;
   } finally {
     await client.query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_ID]).catch(() => undefined);
@@ -347,9 +390,15 @@ const SHA256_BYTES = 32;
 /** RFC 3454 Table C.1.2, the non-ASCII spaces SASLprep folds onto U+0020. */
 const NON_ASCII_SPACE = /[\u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]/g;
 /**
- * RFC 3454 Table B.1, "commonly mapped to nothing". The set contains zero-width
- * joiners and variation selectors on purpose — they combine with their
- * neighbours, which is precisely why the RFC strips them.
+ * RFC 3454 Table B.1, "commonly mapped to nothing", as `pg` implements it in
+ * `lib/crypto/sasl.js` — which is the Basic Multilingual Plane members only.
+ * The set contains zero-width joiners and variation selectors on purpose — they
+ * combine with their neighbours, which is precisely why the RFC strips them.
+ *
+ * The table's one supplementary-plane range, U+1D173–U+1D17A, is deliberately
+ * absent: `pg` leaves those characters in and hashes them, libpq strips them,
+ * and this expression has to reproduce `pg`. `assertUsablePassword` refuses
+ * passwords containing them instead — see `DIVERGENT_MUSICAL_CONTROLS`.
  */
 const MAPPED_TO_NOTHING =
   // eslint-disable-next-line no-misleading-character-class
@@ -408,13 +457,22 @@ export function scramSha256Verifier(password: string): string {
   );
 }
 
+/**
+ * RFC 3454 Table B.1's supplementary-plane range, the musical format controls.
+ * libpq strips them before hashing; `pg` (whose Table B.1 stops at the BMP,
+ * see `MAPPED_TO_NOTHING`) hashes them as-is. Two clients, two byte sequences,
+ * no verifier that satisfies both — the same shape as the control-character
+ * class below, so it gets the same treatment: refused at provisioning time.
+ */
+const DIVERGENT_MUSICAL_CONTROLS = /[\u{1D173}-\u{1D17A}]/u;
+
 /** RFC 4013 §2.3 prohibits every one of these outright. */
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/;
 
 /**
- * Refuses the two passwords that cannot be provisioned into a working login,
- * before a verifier no client will ever match is stored for one of them.
+ * Refuses the three password classes that cannot be provisioned into a working
+ * login, before a verifier no client will ever match is stored for one of them.
  *
  * A control character is where `pg` and libpq part company: libpq's SASLprep
  * rejects the string and falls back to hashing it unchanged, while `pg` has no
@@ -422,10 +480,22 @@ const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/;
  * both clients. The class is also the one an operator hits by accident — a
  * secret read from a file arrives with the trailing newline attached.
  *
+ * A musical format control (U+1D173–U+1D17A) splits the clients the other way:
+ * libpq maps it to nothing per Table B.1, `pg` hashes it as-is. A verifier
+ * derived either way locks out the other client, and the one this module could
+ * store would leave `psql` unable to log in with the operator's own password.
+ *
  * A password made entirely of characters SASLprep deletes preps to the empty
  * string, which `pg` refuses to send at all.
  */
 function assertUsablePassword(envKey: string, password: string): void {
+  if (DIVERGENT_MUSICAL_CONTROLS.test(password)) {
+    throw new Error(
+      `[chatSearch] ${envKey} contains a musical format control (U+1D173-U+1D17A). PostgreSQL ` +
+        'clients disagree over SASLprep for these characters — libpq removes them, node-pg ' +
+        'hashes them — so no stored password can satisfy all of them.',
+    );
+  }
   if (CONTROL_CHARACTERS.test(password)) {
     throw new Error(
       `[chatSearch] ${envKey} contains a control character (U+0000-U+001F, U+007F-U+009F). ` +
