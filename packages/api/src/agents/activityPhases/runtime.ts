@@ -551,6 +551,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     if (input.agentId != null || input.entries.length === 0 || deps.abortSignal?.aborted) {
       return {};
     }
+    /** A top-level handoff is intentionally one logical phase activity. The
+     *  child-label hook skips it because a transfer card cannot join a tool
+     *  group; the parent phase can contain that card and should summarize the
+     *  material agent transition. `input.agentId` above still excludes nested
+     *  subagent internals. */
     const reasoningKey = input.executingAgentId ?? 'root';
     const reasoning = pendingReasoning.get(reasoningKey)?.text.trim();
     const ids = new Set(input.entries.map((entry) => entry.toolUseId));

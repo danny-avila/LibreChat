@@ -84,6 +84,10 @@ interface ApprovalContextValue {
   getStatus: (actionId: string) => ActionStatus;
   /** Set an action's submission status (driven by the cards' submit via `useResumeSubmit`). */
   setStatus: (actionId: string, status: ActionStatus) => void;
+  /** Restore a free-form question answer after transient phase-slice remounts. */
+  getAskAnswerDraft: (actionId: string) => string;
+  /** Retain a free-form question answer for this response message's lifetime. */
+  setAskAnswerDraft: (actionId: string, answer: string) => void;
 }
 
 const ApprovalContext = createContext<ApprovalContextValue | null>(null);
@@ -107,6 +111,8 @@ const FALLBACK: ApprovalContextValue = {
   isReady: () => false,
   getStatus: () => 'idle',
   setStatus: () => undefined,
+  getAskAnswerDraft: () => '',
+  setAskAnswerDraft: () => undefined,
 };
 
 const isExpiredError = (error: unknown): boolean => {
@@ -136,6 +142,7 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
    *  never propagate past the memoized value). */
   const decisionsRef = useRef(new Map<string, Map<string, Agents.ToolApprovalResolution>>());
   const registeredRef = useRef(new Map<string, Set<string>>());
+  const askAnswerDraftsRef = useRef(new Map<string, string>());
   const [version, bump] = useState(0);
   const rerender = useCallback(() => bump((v) => v + 1), []);
   const [statusByAction, setStatusByAction] = useState<Record<string, ActionStatus>>({});
@@ -239,6 +246,19 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
     setStatusByAction((prev) => ({ ...prev, [actionId]: status }));
   }, []);
 
+  const getAskAnswerDraft = useCallback(
+    (actionId: string) => askAnswerDraftsRef.current.get(actionId) ?? '',
+    [],
+  );
+
+  const setAskAnswerDraft = useCallback((actionId: string, answer: string) => {
+    if (answer.length === 0) {
+      askAnswerDraftsRef.current.delete(actionId);
+      return;
+    }
+    askAnswerDraftsRef.current.set(actionId, answer);
+  }, []);
+
   const value = useMemo<ApprovalContextValue>(
     () => ({
       version,
@@ -252,6 +272,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       isReady,
       getStatus,
       setStatus,
+      getAskAnswerDraft,
+      setAskAnswerDraft,
     }),
     [
       version,
@@ -265,6 +287,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       isReady,
       getStatus,
       setStatus,
+      getAskAnswerDraft,
+      setAskAnswerDraft,
     ],
   );
 

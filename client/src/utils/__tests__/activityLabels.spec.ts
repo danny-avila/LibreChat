@@ -122,6 +122,8 @@ describe('groupActivityPhases', () => {
     expect(segments).toHaveLength(3);
     expect(segments?.[1]).toMatchObject({ type: 'phase', labelIndex: 3 });
     if (segments?.[1]?.type === 'phase') {
+      expect(segments[1].content).toHaveLength(3);
+      expect(0 in segments[1].content).toBe(false);
       expect(segments[1].content[0]).toBeUndefined();
       expect(segments[1].content[1]).toBe(tool);
       expect(segments[1].content[2]).toBe(tool);

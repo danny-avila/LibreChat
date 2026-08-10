@@ -18,6 +18,16 @@ export type ActivityPhaseSegment =
       hasContent: boolean;
     };
 
+function isVisibleContentPart(part: TMessageContentParts | undefined): boolean {
+  return (
+    part != null &&
+    !(
+      part.type === ContentTypes.ACTIVITY_LABEL &&
+      getActivityLabelText(getActivityLabelPart(part)).length === 0
+    )
+  );
+}
+
 export function isPhaseActivityLabel(part: ActivityLabelPart | undefined): boolean {
   return part?.activity_label_type === 'phase';
 }
@@ -78,8 +88,22 @@ export function groupActivityPhases(
 
   const segments: ActivityPhaseSegment[] = [];
   let cursor = 0;
-  const sliceSparse = (start: number, end: number) =>
-    content.map((part, index) => (index >= start && index < end ? part : undefined));
+  /** True holes preserve absolute indices while array iteration visits only
+   *  this segment's parts. Building disjoint ranges keeps partitioning linear
+   *  even when an operator raises the per-run phase cap. */
+  const sliceSparse = (start: number, end: number) => {
+    const sparse = new Array<TMessageContentParts | undefined>(end);
+    let hasContent = false;
+    for (let index = start; index < end; index += 1) {
+      const part = content[index];
+      if (part === undefined) {
+        continue;
+      }
+      sparse[index] = part;
+      hasContent ||= isVisibleContentPart(part);
+    }
+    return { content: sparse, hasContent };
+  };
   for (const { part, index } of completed) {
     if (!part) continue;
     const start = Math.max(
@@ -87,20 +111,20 @@ export function groupActivityPhases(
       Math.min(index, Math.max(0, part.activity_start_index ?? index)),
     );
     if (start > cursor) {
-      segments.push({ type: 'content', content: sliceSparse(cursor, start) });
+      segments.push({ type: 'content', content: sliceSparse(cursor, start).content });
     }
-    const phaseContent = sliceSparse(start, index);
+    const phase = sliceSparse(start, index);
     segments.push({
       type: 'phase',
-      content: phaseContent,
+      content: phase.content,
       labelPart: part,
       labelIndex: index,
-      hasContent: lastVisibleContentIdx(phaseContent) >= 0,
+      hasContent: phase.hasContent,
     });
     cursor = index + 1;
   }
   if (cursor < content.length) {
-    segments.push({ type: 'content', content: sliceSparse(cursor, content.length) });
+    segments.push({ type: 'content', content: sliceSparse(cursor, content.length).content });
   }
   return segments;
 }
@@ -120,12 +144,7 @@ export function lastVisibleContentIdx(
   let last = parts.length - 1;
   while (last >= 0) {
     const tail = parts[last];
-    if (tail == null) {
-      last -= 1;
-    } else if (
-      tail.type === ContentTypes.ACTIVITY_LABEL &&
-      getActivityLabelText(getActivityLabelPart(tail)).length === 0
-    ) {
+    if (!isVisibleContentPart(tail)) {
       last -= 1;
     } else {
       break;

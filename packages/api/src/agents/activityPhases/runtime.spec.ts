@@ -219,6 +219,51 @@ describe('createActivityPhaseWiring', () => {
     expect(parts.some((part) => part.activity_label_type === 'phase')).toBe(false);
   });
 
+  it('counts a top-level handoff as a logical phase activity', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'handoff-1' } },
+    ];
+    let generatedActivities: GenerateActivityPhasePayload['activities'] | undefined;
+    const generatePhase = jest.fn(async (payload: GenerateActivityPhasePayload) => {
+      generatedActivities = payload.activities;
+      return { label: 'Transferred ownership and verified the account state' };
+    });
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    const handoff = batch('handoff-1');
+    handoff.entries[0].toolName = 'lc_transfer_to_billing_agent';
+    await wiring.hook(handoff, new AbortController().signal);
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'final-step',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    await flushDetached();
+    expect(generatePhase).toHaveBeenCalledTimes(1);
+    expect(generatedActivities).toHaveLength(2);
+    expect(generatedActivities?.[0]?.entries?.[0]?.toolName).toBe(
+      'lc_transfer_to_billing_agent',
+    );
+  });
+
   it('keeps reasoning attached to an unphased parallel tool batch', async () => {
     const parts: LooseContentPart[] = [];
     const generatePhase = jest.fn(async () => ({ label: 'unused' }));
