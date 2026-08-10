@@ -35,6 +35,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
+          # Full history is load-bearing: changed-file steps diff against the
+          # PR base and the ESLint regression gate reads the base ref's
+          # config via git show — a shallow checkout breaks both.
           fetch-depth: 0
 
       - name: Detect affected checks
@@ -211,51 +214,77 @@ jobs:
       # carries a pre-existing lint backlog (70 errors at time of wiring), so
       # requiring a clean sweep would fail config PRs on unrelated debt.
       # Instead, lint the same tree under the PR's config and under the base
-      # ref's config and fail only when the PR's config produces more
-      # diagnostics for some (file, rule) pair — on an identical tree, any
-      # delta is attributable to the config change alone. If the base config
-      # cannot run against this tree, the comparison is skipped and the load
-      # gate above is the only hard check.
+      # ref's config and fail when the PR's config (a) stops linting files
+      # the base config covered — the signature of a mis-scoped ignores — or
+      # (b) produces more diagnostics for some (file, rule, severity) triple.
+      # On an identical tree, any delta is attributable to the config change
+      # alone. Severity is part of the key so a warn->error escalation must
+      # land with the tree clean for that rule; downgrades and fixes are
+      # never penalized.
       - name: ESLint full-sweep regression gate on config changes
         id: eslint_sweep
         if: always() && steps.paths.outputs.eslint_config == 'true'
         continue-on-error: true
         run: |
-          npx eslint api client packages -f json -o "$RUNNER_TEMP/eslint-head.json" || true
+          npx eslint --config eslint.config.mjs api client packages -f json -o "$RUNNER_TEMP/eslint-head.json" || true
           if [ ! -s "$RUNNER_TEMP/eslint-head.json" ]; then
             echo "::error title=ESLint sweep::Head-config sweep produced no report — ESLint likely crashed under the new config."
             exit 1
           fi
 
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
+          if ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "::error title=ESLint sweep::Base commit is unavailable — this gate requires the checkout above to keep fetch-depth: 0."
+            exit 1
+          fi
+          # The base config is written to the repo root, not $RUNNER_TEMP:
+          # flat-config files/ignores patterns and plugin imports resolve
+          # relative to the config's own directory, so a temp-dir copy would
+          # scope to nothing and the comparison would pass vacuously.
+          trap 'rm -f eslint.config.base.mjs' EXIT
           if ! git show "$BASE_SHA:eslint.config.mjs" > eslint.config.base.mjs 2>/dev/null; then
             echo "::notice title=ESLint sweep::No eslint.config.mjs at base ref; skipping regression comparison."
             exit 0
           fi
           npx eslint --config eslint.config.base.mjs api client packages -f json -o "$RUNNER_TEMP/eslint-base.json" || true
-          rm -f eslint.config.base.mjs
           if [ ! -s "$RUNNER_TEMP/eslint-base.json" ]; then
             echo "::notice title=ESLint sweep::Base config cannot run against this tree; skipping regression comparison."
             exit 0
           fi
 
+          jq -r '.[].filePath' "$RUNNER_TEMP/eslint-head.json" | sort > "$RUNNER_TEMP/head.files"
+          jq -r '.[].filePath' "$RUNNER_TEMP/eslint-base.json" | sort > "$RUNNER_TEMP/base.files"
+          LOST=$(comm -23 "$RUNNER_TEMP/base.files" "$RUNNER_TEMP/head.files")
+          if [ -n "$LOST" ]; then
+            LOST_COUNT=$(printf '%s\n' "$LOST" | wc -l)
+            echo "::error title=ESLint coverage regression::The config change stops linting $LOST_COUNT file(s) the base config covered (showing up to 20):"
+            printf '%s\n' "$LOST" | head -20
+            exit 1
+          fi
+
           fingerprints() {
-            jq -r '.[] | .filePath as $f | .messages[] | "\($f) \(.ruleId // "parse-error")"' "$1" | sort | uniq -c
+            jq -r '.[] | .filePath as $f | .messages[] | "\($f)\t\(.ruleId // "parse-error")\t\(.severity)"' "$1" |
+              sort | uniq -c | sed -E 's/^ *([0-9]+) /\1\t/'
           }
           fingerprints "$RUNNER_TEMP/eslint-head.json" > "$RUNNER_TEMP/head.fp"
           fingerprints "$RUNNER_TEMP/eslint-base.json" > "$RUNNER_TEMP/base.fp"
 
-          REGRESSIONS=$(awk '
-            NR==FNR { base[$2 " " $3] = $1; next }
-            { if ($1 > base[$2 " " $3] + 0) printf "%s  %s: %d -> %d\n", $2, $3, base[$2 " " $3] + 0, $1 }
+          REGRESSIONS=$(awk -F'\t' '
+            NR==FNR { base[$2 FS $3 FS $4] = $1; next }
+            {
+              if ($1 > base[$2 FS $3 FS $4] + 0) {
+                sev = ($4 == 2) ? "error" : "warn"
+                printf "%s  %s (%s): %d -> %d\n", $2, $3, sev, base[$2 FS $3 FS $4] + 0, $1
+              }
+            }
           ' "$RUNNER_TEMP/base.fp" "$RUNNER_TEMP/head.fp")
 
           if [ -n "$REGRESSIONS" ]; then
-            echo "::error title=ESLint config regression::The config change introduces new diagnostics (file  rule: base -> head):"
+            echo "::error title=ESLint config regression::The config change introduces new diagnostics (file  rule (severity): base -> head):"
             echo "$REGRESSIONS"
             exit 1
           fi
-          echo "No new diagnostics versus the base config."
+          echo "No coverage loss and no new diagnostics versus the base config."
 
       - name: Restore data-provider build cache
         if: always() && steps.paths.outputs.config == 'true'
