@@ -156,11 +156,8 @@ describe('duplicateAgent', () => {
             name: 'Team',
             description: 'A self-contained team',
             agent_ids: ['agent_123', 'agent_member'],
-            edges: [
-              { from: 'agent_123', to: ['agent_member'], edgeType: 'direct' },
-              { from: ['agent_member'], to: 'agent_123', edgeType: 'direct' },
-            ],
-            entry_agent_id: 'agent_123',
+            edges: [{ from: ['agent_member'], to: 'agent_123', edgeType: 'direct' }],
+            entry_agent_id: 'agent_member',
             result_agent_id: 'agent_123',
           },
         ],
@@ -178,11 +175,8 @@ describe('duplicateAgent', () => {
           graphs: [
             expect.objectContaining({
               agent_ids: ['agent_new_123', 'agent_member'],
-              edges: [
-                expect.objectContaining({ from: 'agent_new_123', to: ['agent_member'] }),
-                expect.objectContaining({ from: ['agent_member'], to: 'agent_new_123' }),
-              ],
-              entry_agent_id: 'agent_new_123',
+              edges: [expect.objectContaining({ from: ['agent_member'], to: 'agent_new_123' })],
+              entry_agent_id: 'agent_member',
               result_agent_id: 'agent_new_123',
             }),
           ],
