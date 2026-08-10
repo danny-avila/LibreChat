@@ -75,8 +75,8 @@ jest.mock('../Container', () => ({
 
 jest.mock('../Part', () => ({
   __esModule: true,
-  default: ({ part }: { part: TMessageContentParts }) => (
-    <div data-testid={`real-part-${part.type}`} />
+  default: ({ part, idx }: { part: TMessageContentParts; idx: number }) => (
+    <div data-testid={`real-part-${part.type}`} data-index={idx} />
   ),
 }));
 
@@ -85,13 +85,15 @@ jest.mock('../ParallelContent', () => ({
    *  renderer does for its sequential stretches, so the wiring is testable. */
   ParallelContentRenderer: ({
     content,
+    contentIndexOffset = 0,
     renderResumeAttribution,
   }: {
     content?: Array<TMessageContentParts | undefined>;
+    contentIndexOffset?: number;
     renderResumeAttribution?: (idx: number) => React.ReactNode;
   }) => (
-    <div data-testid="parallel-renderer">
-      {content?.map((_, idx) => renderResumeAttribution?.(idx))}
+    <div data-testid="parallel-renderer" data-index-offset={contentIndexOffset}>
+      {content?.map((_, idx) => renderResumeAttribution?.(idx + contentIndexOffset))}
     </div>
   ),
 }));
@@ -306,10 +308,43 @@ describe('ContentParts — post-steer author re-attribution', () => {
 
     expect(screen.getByTestId('activity-phase-group')).toBeTruthy();
     expect(screen.getAllByTestId('author-header')).toHaveLength(1);
+    expect(screen.getAllByTestId(`real-part-${ContentTypes.TEXT}`)[1]).toHaveAttribute(
+      'data-index',
+      '2',
+    );
   });
 });
 
 describe('ContentParts — activity phase state', () => {
+  it('carries the absolute index offset into a parallel phase segment', () => {
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Compared both agent results',
+      activity_label_type: 'phase',
+      activity_start_index: 1,
+      activity_count: 2,
+      pending: false,
+    } as unknown as TMessageContentParts;
+    const parallel = {
+      type: ContentTypes.TEXT,
+      text: 'lane result',
+      groupId: 1,
+    } as unknown as TMessageContentParts;
+
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[
+          { type: ContentTypes.TEXT, text: 'before' } as unknown as TMessageContentParts,
+          parallel,
+          phase,
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId('parallel-renderer')).toHaveAttribute('data-index-offset', '1');
+  });
+
   it('retains a tool-group expansion override when a completed phase remounts the group', () => {
     jest.mocked(groupSequentialToolCalls).mockImplementation((parts) => {
       const toolParts = parts.filter(({ part }) => part.type === ContentTypes.TOOL_CALL);

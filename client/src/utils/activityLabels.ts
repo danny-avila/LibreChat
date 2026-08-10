@@ -9,10 +9,15 @@ type ActivityLabelPart = Extract<TMessageContentParts, { type: ContentTypes.ACTI
 };
 
 export type ActivityPhaseSegment =
-  | { type: 'content'; content: Array<TMessageContentParts | undefined> }
+  | {
+      type: 'content';
+      content: Array<TMessageContentParts | undefined>;
+      startIndex: number;
+    }
   | {
       type: 'phase';
       content: Array<TMessageContentParts | undefined>;
+      startIndex: number;
       labelPart: ActivityLabelPart;
       labelIndex: number;
       hasContent: boolean;
@@ -64,7 +69,7 @@ export function getActivityLabelText(part: ActivityLabelPart | undefined): strin
 
 /**
  * Partitions completed phase markers into collapsed parent groups while
- * retaining absolute indices through sparse content arrays. Empty/pending
+ * carrying absolute start offsets alongside dense content slices. Empty/pending
  * markers deliberately return no phase segment, preserving feature-off UI.
  */
 export function groupActivityPhases(
@@ -88,21 +93,15 @@ export function groupActivityPhases(
 
   const segments: ActivityPhaseSegment[] = [];
   let cursor = 0;
-  /** True holes preserve absolute indices while array iteration visits only
-   *  this segment's parts. Building disjoint ranges keeps partitioning linear
-   *  even when an operator raises the per-run phase cap. */
-  const sliceSparse = (start: number, end: number) => {
-    const sparse = new Array<TMessageContentParts | undefined>(end);
-    let hasContent = false;
-    for (let index = start; index < end; index += 1) {
-      const part = content[index];
-      if (part === undefined) {
-        continue;
-      }
-      sparse[index] = part;
-      hasContent ||= isVisibleContentPart(part);
-    }
-    return { content: sparse, hasContent };
+  /** Dense, disjoint slices copy every part at most once. `startIndex` carries
+   *  the absolute transcript position into the recursive renderer. */
+  const slice = (start: number, end: number) => {
+    const segmentContent = content.slice(start, end);
+    return {
+      content: segmentContent,
+      startIndex: start,
+      hasContent: segmentContent.some(isVisibleContentPart),
+    };
   };
   for (const { part, index } of completed) {
     if (!part) continue;
@@ -111,12 +110,18 @@ export function groupActivityPhases(
       Math.min(index, Math.max(0, part.activity_start_index ?? index)),
     );
     if (start > cursor) {
-      segments.push({ type: 'content', content: sliceSparse(cursor, start).content });
+      const adjacent = slice(cursor, start);
+      segments.push({
+        type: 'content',
+        content: adjacent.content,
+        startIndex: adjacent.startIndex,
+      });
     }
-    const phase = sliceSparse(start, index);
+    const phase = slice(start, index);
     segments.push({
       type: 'phase',
       content: phase.content,
+      startIndex: phase.startIndex,
       labelPart: part,
       labelIndex: index,
       hasContent: phase.hasContent,
@@ -124,7 +129,12 @@ export function groupActivityPhases(
     cursor = index + 1;
   }
   if (cursor < content.length) {
-    segments.push({ type: 'content', content: sliceSparse(cursor, content.length).content });
+    const adjacent = slice(cursor, content.length);
+    segments.push({
+      type: 'content',
+      content: adjacent.content,
+      startIndex: adjacent.startIndex,
+    });
   }
   return segments;
 }
@@ -151,8 +161,8 @@ export function lastVisibleContentIdx(
   if (last < 0) {
     return -1;
   }
-  /** Phase slices retain absolute indices as true holes. Jump between their
-   *  defined slots instead of walking the whole message-length index space. */
+  /** Streaming/resume arrays can retain absolute indices as true holes. Jump
+   *  between defined slots instead of walking the whole index space. */
   const definedIndices = Object.keys(parts);
   for (let i = definedIndices.length - 1; i >= 0; i -= 1) {
     const index = Number(definedIndices[i]);

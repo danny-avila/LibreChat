@@ -99,7 +99,7 @@ describe('lastVisibleContentIdx', () => {
     expect(lastVisibleContentIdx(undefined)).toBe(-1);
   });
 
-  it('skips sparse trailing slots used by phase slices', () => {
+  it('skips large sparse trailing gaps', () => {
     expect(lastVisibleContentIdx([undefined, tool, undefined, undefined])).toBe(1);
     const sparse = new Array<TMessageContentParts | undefined>(10_000);
     sparse[1] = tool;
@@ -114,7 +114,7 @@ describe('groupActivityPhases', () => {
     tool_call: { id: 't1', name: 'web_search', args: '{}', output: 'ok' },
   } as unknown as TMessageContentParts;
 
-  it('keeps absolute indices while consuming a completed parent marker', () => {
+  it('carries absolute offsets while consuming a completed parent marker', () => {
     const phase = labelPart({ activity_label: 'Compared both release paths', pending: false });
     Object.assign(phase, {
       activity_label_type: 'phase',
@@ -123,14 +123,9 @@ describe('groupActivityPhases', () => {
     });
     const segments = groupActivityPhases([text, tool, tool, phase as never, text]);
     expect(segments).toHaveLength(3);
-    expect(segments?.[1]).toMatchObject({ type: 'phase', labelIndex: 3 });
+    expect(segments?.[1]).toMatchObject({ type: 'phase', labelIndex: 3, startIndex: 1 });
     if (segments?.[1]?.type === 'phase') {
-      expect(segments[1].content).toHaveLength(3);
-      expect(0 in segments[1].content).toBe(false);
-      expect(segments[1].content[0]).toBeUndefined();
-      expect(segments[1].content[1]).toBe(tool);
-      expect(segments[1].content[2]).toBe(tool);
-      expect(segments[1].content[3]).toBeUndefined();
+      expect(segments[1].content).toEqual([tool, tool]);
     }
   });
 

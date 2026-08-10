@@ -1,0 +1,23 @@
+import { ContentTypes } from 'librechat-data-provider';
+import type { TMessageContentParts } from 'librechat-data-provider';
+import { groupParallelContent } from '../ParallelContent';
+
+describe('groupParallelContent', () => {
+  test('reports absolute indices for a dense phase segment', () => {
+    const sequential = {
+      type: ContentTypes.TEXT,
+      text: 'before lanes',
+    } as unknown as TMessageContentParts;
+    const parallel = {
+      type: ContentTypes.TEXT,
+      text: 'lane result',
+      groupId: 1,
+      agentId: 'agent-1',
+    } as unknown as TMessageContentParts;
+
+    const grouped = groupParallelContent([sequential, parallel], 4);
+
+    expect(grouped.sequentialParts).toEqual([{ part: sequential, idx: 4 }]);
+    expect(grouped.parallelSections[0]?.columns[0]?.parts).toEqual([{ part: parallel, idx: 5 }]);
+  });
+});

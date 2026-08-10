@@ -35,6 +35,7 @@ export type ParallelSection = {
  */
 export function groupParallelContent(
   content: Array<TMessageContentParts | undefined> | undefined,
+  contentIndexOffset = 0,
 ): { parallelSections: ParallelSection[]; sequentialParts: PartWithIndex[] } {
   if (!content) {
     return { parallelSections: [], sequentialParts: [] };
@@ -45,10 +46,11 @@ export function groupParallelContent(
   const placeholderAgents = new Map<number, Set<string>>();
   const noGroup: PartWithIndex[] = [];
 
-  content.forEach((part, idx) => {
+  content.forEach((part, localIdx) => {
     if (!part) {
       return;
     }
+    const idx = localIdx + contentIndexOffset;
 
     // Read metadata directly from content part (TMessageContentParts includes ContentMetadata)
     const { groupId } = part;
@@ -226,6 +228,8 @@ type ParallelContentRendererProps = {
    */
   renderResumeAttribution?: (idx: number) => React.ReactNode;
   showDecorations?: boolean;
+  /** Absolute transcript index represented by `content[0]` in a phase slice. */
+  contentIndexOffset?: number;
 };
 
 /**
@@ -243,16 +247,19 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   renderPart,
   renderResumeAttribution,
   showDecorations = true,
+  contentIndexOffset = 0,
 }: ParallelContentRendererProps) {
   const { parallelSections, sequentialParts } = useMemo(
-    () => groupParallelContent(content),
-    [content],
+    () => groupParallelContent(content, contentIndexOffset),
+    [content, contentIndexOffset],
   );
 
   /** Same walk-back as `ContentParts`: a trailing BLANK label reservation is
    *  filtered out of every lane, so counting it as last would leave NO
    *  rendered part with the last-part cursor until the label fills. */
-  const lastContentIdx = lastVisibleContentIdx(content);
+  const relativeLastContentIdx = lastVisibleContentIdx(content);
+  const lastContentIdx =
+    relativeLastContentIdx < 0 ? -1 : relativeLastContentIdx + contentIndexOffset;
 
   // Split sequential parts into before/after parallel sections
   const { before, after } = useMemo(() => {

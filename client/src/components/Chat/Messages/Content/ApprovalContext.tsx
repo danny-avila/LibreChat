@@ -174,7 +174,7 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       }
       /** Keep the decision for the provider's message-scoped lifetime. A
        *  phase label can resolve while an approval card is visible, moving
-       *  that card through a sparse render slice; its transient unmount must
+       *  that card through a nested phase segment; its transient unmount must
        *  not erase the user's selection. Unregistered decisions are excluded
        *  from submit/readiness and disappear with this provider. */
       rerender();
