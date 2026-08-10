@@ -5,6 +5,7 @@ import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'libre
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
 import type { ExtendedFile } from '~/common';
+import { claimQueuedIntent, releaseQueuedIntent } from '~/utils/queueIntent';
 import useUpdateFiles from '~/hooks/Files/useUpdateFiles';
 import useSteering from '../useSteering';
 import store from '~/store';
@@ -1316,6 +1317,25 @@ describe('useSteering', () => {
         result.current.steering.submitSteer('reseeded');
       });
       expect(result.current.chips.filter((chip) => chip.steerId === 'srv-3')).toHaveLength(1);
+    });
+
+    it('leaves a queued row untouched while an edit or remove handoff owns it', () => {
+      const { result } = setupWithState();
+      act(() => {
+        result.current.steering.enqueue('claimed handoff');
+      });
+      const queued = result.current.queue[0];
+      expect(claimQueuedIntent(queued.id)).toBe(true);
+
+      try {
+        act(() => {
+          result.current.steering.sendQueuedNow(queued);
+        });
+        expect(result.current.queue).toEqual([queued]);
+        expect(mockMutate).not.toHaveBeenCalled();
+      } finally {
+        releaseQueuedIntent(queued.id);
+      }
     });
 
     it('restores the queued item (same id, original slot) when sendNow refuses', () => {

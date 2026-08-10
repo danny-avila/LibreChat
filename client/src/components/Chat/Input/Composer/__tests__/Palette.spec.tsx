@@ -320,7 +320,9 @@ describe('Palette', () => {
     it('starts on the first row that can be chosen, never on a header', () => {
       renderPalette();
       const input = screen.getByTestId('composer-palette-search');
-      expect(input.getAttribute('aria-activedescendant')).toBe('palette-row-0-local:provider');
+      expect(input.getAttribute('aria-activedescendant')).toBe(
+        'palette-row-0-006c006f00630061006c003a00700072006f00760069006400650072',
+      );
     });
 
     /* An id that names nothing is the failure mode here: screen readers lose
@@ -339,13 +341,55 @@ describe('Palette', () => {
       expect(pointsAtSomething()).toBe(true);
     });
 
+    it('supports malformed surrogate keys and keeps punctuation-distinct row ids unique', () => {
+      const loneHighSurrogateKey = 'mcp:\ud800';
+      const loneLowSurrogateKey = 'mcp:\udc00';
+      renderPalette({
+        canAttach: false,
+        entries: [
+          entry({ key: 'mcp:foo.bar', itemType: 'mcp', itemId: 'foo.bar', section: 'mcp' }),
+          entry({ key: 'mcp:foo_bar', itemType: 'mcp', itemId: 'foo_bar', section: 'mcp' }),
+          entry({
+            key: loneHighSurrogateKey,
+            itemType: 'mcp',
+            itemId: '\ud800',
+            section: 'mcp',
+          }),
+          entry({
+            key: loneLowSurrogateKey,
+            itemType: 'mcp',
+            itemId: '\udc00',
+            section: 'mcp',
+          }),
+        ],
+      });
+      const input = screen.getByTestId('composer-palette-search');
+      const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-row-key]'));
+      const findRow = (key: string) => rows.find((row) => row.dataset.rowKey === key);
+      const dotted = findRow('mcp:foo.bar');
+      const underscored = findRow('mcp:foo_bar');
+      const loneHighSurrogate = findRow(loneHighSurrogateKey);
+      const loneLowSurrogate = findRow(loneLowSurrogateKey);
+
+      expect(dotted?.id).toBeTruthy();
+      expect(underscored?.id).toBeTruthy();
+      expect(loneHighSurrogate?.id).toBeTruthy();
+      expect(loneLowSurrogate?.id).toBeTruthy();
+      expect(dotted?.id).not.toBe(underscored?.id);
+      expect(loneHighSurrogate?.id).not.toBe(loneLowSurrogate?.id);
+      expect(input).toHaveAttribute('aria-activedescendant', dotted?.id);
+
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      expect(input).toHaveAttribute('aria-activedescendant', underscored?.id);
+    });
+
     it('keeps the highlight on a row that moved rather than on its old position', () => {
       mockFavoriteKeys = [];
       renderPalette({ canAttach: false });
       const input = screen.getByTestId('composer-palette-search');
       fireEvent.keyDown(input, { key: 'ArrowDown' });
       const moved = input.getAttribute('aria-activedescendant');
-      expect(moved).toBe('palette-row-0-execute_code');
+      expect(moved).toBe('palette-row-0-0065007800650063007500740065005f0063006f00640065');
 
       /* Starring it lifts the row into favourites without changing the row
          count, which is exactly the case a positional highlight got wrong. */

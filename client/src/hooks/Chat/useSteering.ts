@@ -23,7 +23,7 @@ import {
   findLiveAskUserQuestion,
   insertQueuedOrigin,
 } from '~/utils';
-import { acquireQueueSendLock, releaseQueueSendLock } from '~/utils/queueIntent';
+import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '~/utils/queueIntent';
 import { markComposerFilesTaken } from '~/utils/composerFiles';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useSetFilesToDelete } from '~/hooks/Files';
@@ -1407,6 +1407,9 @@ export default function useSteering({
    *  boundary; it only means something on the live-run path. */
   const sendQueuedNow = useCallback(
     (item: QueuedMessage, opts?: { preempt?: boolean }) => {
+      if (hasQueuedIntent(item.id)) {
+        return;
+      }
       /** In answer mode (and any other submission-owned non-steerable state)
        * there is no immediate path. Refuse before touching queue state so a
        * stale/direct caller cannot perform the old remove-and-restore no-op. */
