@@ -2096,6 +2096,16 @@ describe('resolveAgentTokenConfig', () => {
     );
   });
 
+  it('observes a selected lazy subagent added after the resolver is created', () => {
+    const byAgentId = new Map([['primary', primary]]);
+    const resolveForUsage = (agentId: string) =>
+      resolveAgentTokenConfig({ agentId, byAgentId, fallback: primary });
+
+    byAgentId.set('lazy-subagent', subagent);
+
+    expect(resolveForUsage('lazy-subagent')).toBe(subagent);
+  });
+
   it('returns undefined for a known agent with no configured rates (built-in pricing)', () => {
     /** A known non-custom agent (e.g. a normal OpenAI agent) is recorded with an
      *  undefined config; it must NOT inherit the custom-primary rates. */

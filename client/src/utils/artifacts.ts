@@ -6,6 +6,7 @@ import type {
 } from '@codesandbox/sandpack-react';
 import type { TStartupConfig, TAttachment, TFile } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
+import { MERMAID_ARTIFACT_TYPE } from '~/common/artifacts';
 
 const artifactFilename = {
   'application/vnd.react': 'App.tsx',
@@ -284,7 +285,7 @@ export const TOOL_ARTIFACT_TYPES = {
   HTML: 'text/html',
   REACT: 'application/vnd.react',
   MARKDOWN: 'text/markdown',
-  MERMAID: 'application/vnd.mermaid',
+  MERMAID: MERMAID_ARTIFACT_TYPE,
   PLAIN_TEXT: 'text/plain',
   CODE: 'application/vnd.code',
   /* Office-format rich previews. The backend renders the binary file as a

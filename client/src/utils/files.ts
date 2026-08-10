@@ -439,3 +439,12 @@ export function sortPagesByRelevance(
   }
   return [...pages].sort((a, b) => (pageRelevance[b] || 0) - (pageRelevance[a] || 0));
 }
+
+/**
+ * Collapses whitespace runs to underscores so export filenames come out
+ * identical across all export formats: `export-from-json`'s default formatter
+ * only replaces the first whitespace run, while direct downloads replace none.
+ */
+export function normalizeExportFilename(filename: string): string {
+  return filename.replace(/\s+/g, '_');
+}

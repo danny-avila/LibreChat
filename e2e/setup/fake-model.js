@@ -34,9 +34,13 @@ const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
 const STEER_LATE_REPLY_MARKER = 'E2E_STEER_LATE_REPLY:';
 const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
+const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_MERMAID_ARTIFACT_REPLY';
+const LARGE_MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_LARGE_MERMAID_ARTIFACT_REPLY';
+const HTML_ARTIFACT_REPLY_MARKER = 'E2E_HTML_ARTIFACT_REPLY';
 const BACKGROUND_DISPATCH_MARKER = 'E2E_BACKGROUND_DISPATCH:';
 const BACKGROUND_COLLECT_MARKER = 'E2E_BACKGROUND_COLLECT:';
 const TOOL_APPROVAL_MARKER = 'E2E_TOOL_APPROVAL:';
@@ -65,6 +69,7 @@ const STEER_LATE_FINAL_TEXT = 'E2E steer late reply done';
 const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
 const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
+const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
 const ORDERED_CHUNK_DELAY_MS = 2;
 const ORDERED_REPLY_PIECES = 64;
@@ -376,6 +381,37 @@ function quoteAssertionResponses({ messages, text }) {
 }
 
 function replyResponses(text) {
+  if (text.includes(LARGE_MERMAID_ARTIFACT_REPLY_MARKER)) {
+    const diagram = ['```mermaid', 'flowchart TB'];
+    for (let index = 0; index < 180; index++) {
+      diagram.push(`N${index}["Processing stage ${index} with representative content"]`);
+      if (index > 0) {
+        diagram.push(`N${index - 1} --> N${index}`);
+      }
+    }
+    diagram.push('```');
+
+    return { responses: [diagram.join('\n')], sleep: 0 };
+  }
+
+  if (text.includes(MERMAID_ARTIFACT_REPLY_MARKER)) {
+    return {
+      responses: [['```mermaid', 'flowchart LR', 'A[Start] --> B[Finish]', '```'].join('\n')],
+    };
+  }
+
+  if (text.includes(HTML_ARTIFACT_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          ':::artifact{identifier="e2e-html" type="text/html" title="E2E HTML Artifact"}',
+          '<h1>HTML sandbox fixture</h1>',
+          ':::',
+        ].join('\n'),
+      ],
+    };
+  }
+
   if (text.includes(MARKDOWN_REPLY_MARKER)) {
     return {
       responses: [
@@ -1108,6 +1144,41 @@ function activityReplyResponses(label, toolNames) {
         id: `call_e2e_activity_beta_${label}`,
         name: toolName,
         args: { fact: `activity beta ${label}` },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
+/**
+ * Pause a real agent run at the ask_user_question tool. The resume controller
+ * rebuilds the graph with an empty input-message list, so the test hook selects
+ * its ordinary mock reply for the resumed model turn. This deliberately tests
+ * the production checkpoint/resume seam rather than simulating a pause in the
+ * browser fixture.
+ */
+function askUserQuestionResponses(label, toolNames) {
+  if (!toolNames.has(ASK_USER_QUESTION_TOOL_NAME)) {
+    return {
+      responses: [
+        `E2E ask user question unavailable: ${ASK_USER_QUESTION_TOOL_NAME} was not advertised.`,
+      ],
+    };
+  }
+  return {
+    responses: [''],
+    toolCalls: [
+      {
+        id: `call_e2e_ask_user_question_${label}`,
+        name: ASK_USER_QUESTION_TOOL_NAME,
+        args: {
+          question: `Which environment should Bombadil use for ${label}?`,
+          description: 'This deterministic pause exercises the HITL answer and resume lifecycle.',
+          options: [
+            { label: 'Staging', value: 'staging' },
+            { label: 'Production', value: 'production' },
+          ],
+        },
         type: 'tool_call',
       },
     ],
@@ -1987,6 +2058,11 @@ function resolveResponses({ graph, messages, text, toolNames }) {
   const activityLabel = getMarkerValue(text, ACTIVITY_REPLY_MARKER);
   if (activityLabel) {
     return activityReplyResponses(activityLabel, toolNames);
+  }
+
+  const askUserQuestionLabel = getMarkerValue(text, ASK_USER_QUESTION_MARKER);
+  if (askUserQuestionLabel) {
+    return askUserQuestionResponses(askUserQuestionLabel, toolNames);
   }
 
   if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {

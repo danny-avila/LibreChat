@@ -1,16 +1,17 @@
 /**
  * Tests for MCPConnection error detection methods.
  *
- * These tests use standalone implementations that mirror the private methods in MCPConnection.
- * This approach was chosen because MCPConnection requires complex dependencies (Client, transport)
- * that are difficult to mock properly. The standalone implementations are kept in sync with
- * the actual implementation in connection.ts.
+ * Rate-limit and SSE tests use standalone implementations that mirror private methods in
+ * MCPConnection. OAuth classification exercises the production helper shared by the connection
+ * and factory.
  *
  * Alternative approaches considered:
  * 1. Reflection/type casting - fragile and breaks with refactoring
  * 2. Protected methods with test subclass - changes public API for testing
  * 3. Integration tests - tested separately in the full MCP test suite
  */
+import { isOAuthAuthenticationError } from '~/mcp/errors';
+
 describe('MCPConnection Error Detection', () => {
   /**
    * Standalone implementation of isRateLimitError for testing.
@@ -38,52 +39,6 @@ describe('MCPConnection Error Detection', () => {
         message.includes('rate limit') ||
         message.includes('too many requests')
       ) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Standalone implementation of isOAuthError for testing.
-   * This mirrors the private method in MCPConnection (connection.ts).
-   * Keep in sync with the actual implementation.
-   */
-  function isOAuthError(error: unknown): boolean {
-    if (!error || typeof error !== 'object') {
-      return false;
-    }
-
-    // Check for error code
-    if ('code' in error) {
-      const code = (error as { code?: number }).code;
-      if (code === 401 || code === 403) {
-        return true;
-      }
-    }
-
-    // Check message for various auth error indicators
-    if ('message' in error && typeof error.message === 'string') {
-      const message = error.message.toLowerCase();
-      // Check for 401 status
-      if (message.includes('401') || message.includes('non-200 status code (401)')) {
-        return true;
-      }
-      // Check for invalid_grant (OAuth servers return this for expired/revoked grants)
-      if (message.includes('invalid_grant')) {
-        return true;
-      }
-      // Check for invalid_token (OAuth servers return this for expired/revoked tokens)
-      if (message.includes('invalid_token')) {
-        return true;
-      }
-      // Check for authentication required
-      if (message.includes('authentication required') || message.includes('unauthorized')) {
-        return true;
-      }
-      // Check for missing authorization values (e.g., Amazon Ads MCP returns HTTP 400 with this)
-      if (message.includes('no authorization')) {
         return true;
       }
     }
@@ -142,30 +97,36 @@ describe('MCPConnection Error Detection', () => {
     });
   });
 
-  describe('isOAuthError', () => {
-    it('should detect OAuth error by code 401', () => {
-      const error = { code: 401, message: 'Unauthorized' };
-      expect(isOAuthError(error)).toBe(true);
+  describe('isOAuthAuthenticationError', () => {
+    it.each([
+      { code: 401, message: 'Unauthorized' },
+      { status: 403, message: 'Forbidden' },
+      { statusCode: 401, message: 'Authentication required' },
+      { message: 'Error POSTing to endpoint (HTTP 401): Unauthorized' },
+      { message: 'Error POSTing to endpoint (HTTP 403): Forbidden' },
+      { message: 'Non-200 status code (403)' },
+      { message: '403 Forbidden' },
+      { message: 'Unauthorized (401)' },
+      { message: 'Forbidden (403)' },
+      { message: 'The server rejected the token with insufficient_scope' },
+    ])('should detect OAuth authentication error %#', (error) => {
+      expect(isOAuthAuthenticationError(error)).toBe(true);
     });
 
-    it('should detect OAuth error by code 403', () => {
-      const error = { code: 403, message: 'Forbidden' };
-      expect(isOAuthError(error)).toBe(true);
-    });
-
-    it('should detect OAuth error by message containing 401', () => {
-      const error = { message: 'Error POSTing to endpoint (HTTP 401): Unauthorized' };
-      expect(isOAuthError(error)).toBe(true);
-    });
-
-    it('should not detect OAuth error for 429 rate limit', () => {
-      const error = { code: 429, message: 'Too many requests' };
-      expect(isOAuthError(error)).toBe(false);
+    it.each([
+      { code: 429, message: 'Too many requests' },
+      { message: 'Customer 401 not found' },
+      { message: 'Order 403 is unavailable' },
+      { message: 'User is unauthorized to delete this record' },
+      { message: 'No authorization to delete this record' },
+      { code: 400, message: 'Bad request: missing required field' },
+    ])('should ignore non-authentication error %#', (error) => {
+      expect(isOAuthAuthenticationError(error)).toBe(false);
     });
 
     it('should detect OAuth error for invalid_token', () => {
       const error = { message: 'The access token is invalid_token or expired' };
-      expect(isOAuthError(error)).toBe(true);
+      expect(isOAuthAuthenticationError(error)).toBe(true);
     });
 
     it('should detect OAuth error for invalid_grant', () => {
@@ -173,7 +134,7 @@ describe('MCPConnection Error Detection', () => {
         message:
           'Streamable HTTP error: Error POSTing to endpoint: {"error":"invalid_grant","error_description":"The provided authorization grant is invalid, expired, or revoked"}',
       };
-      expect(isOAuthError(error)).toBe(true);
+      expect(isOAuthAuthenticationError(error)).toBe(true);
     });
 
     it('should detect OAuth error for "no authorization" in message (HTTP 400)', () => {
@@ -181,17 +142,12 @@ describe('MCPConnection Error Detection', () => {
         message:
           'Either no authorization values are specified or it could not be derived from the request',
       };
-      expect(isOAuthError(error)).toBe(true);
+      expect(isOAuthAuthenticationError(error)).toBe(true);
     });
 
     it('should detect OAuth error for "No authorization" with different casing', () => {
       const error = { message: 'No Authorization header provided' };
-      expect(isOAuthError(error)).toBe(true);
-    });
-
-    it('should not detect OAuth error for unrelated 400 errors', () => {
-      const error = { code: 400, message: 'Bad request: missing required field' };
-      expect(isOAuthError(error)).toBe(false);
+      expect(isOAuthAuthenticationError(error)).toBe(true);
     });
   });
 
@@ -202,10 +158,10 @@ describe('MCPConnection Error Detection', () => {
 
       // Rate limit error should be detected as rate limit, not OAuth
       expect(isRateLimitError(rateLimitError)).toBe(true);
-      expect(isOAuthError(rateLimitError)).toBe(false);
+      expect(isOAuthAuthenticationError(rateLimitError)).toBe(false);
 
       // OAuth error should be detected as OAuth, not rate limit
-      expect(isOAuthError(oauthError)).toBe(true);
+      expect(isOAuthAuthenticationError(oauthError)).toBe(true);
       expect(isRateLimitError(oauthError)).toBe(false);
     });
   });

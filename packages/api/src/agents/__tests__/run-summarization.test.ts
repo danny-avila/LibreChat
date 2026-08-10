@@ -1046,6 +1046,88 @@ describe('subagentConfigs', () => {
     expect(configs[0].self).toBeUndefined();
   });
 
+  it('adds explicit lazy subagent descriptors without eager agent inputs', async () => {
+    const resolve = jest
+      .fn()
+      .mockResolvedValue(
+        makeAgent({ id: 'agent_child', name: 'Researcher', description: 'Deep web research' }),
+      );
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          lazySubagentConfigs: [
+            {
+              id: 'agent_child',
+              name: 'Researcher',
+              description: 'Deep web research',
+              configId: 'agent_child:3:fingerprint',
+              resolve,
+            },
+          ],
+        }),
+      ],
+    });
+    const configs = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(configs).toHaveLength(1);
+    expect(configs[0]).toMatchObject({
+      type: 'agent_child',
+      configId: 'agent_child:3:fingerprint',
+      allowNested: true,
+    });
+    expect(configs[0].agentInputs).toBeUndefined();
+    expect(configs[0].resolveAgentInputs).toBeInstanceOf(Function);
+    expect(resolve).not.toHaveBeenCalled();
+
+    const childInputs = await (
+      configs[0].resolveAgentInputs as (context: never) => Promise<{
+        name?: string;
+      }>
+    )({ signal: new AbortController().signal } as never);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(childInputs.name).toBe('Researcher');
+  });
+
+  it('uses a fresh expansion budget for each lazy descriptor resolution', async () => {
+    const nestedDescriptors = Array.from({ length: 99 }, (_, index) => ({
+      id: `agent_nested_${index}`,
+      name: `Nested ${index}`,
+      description: 'Nested lazy child',
+      configId: `agent_nested_${index}:1:fingerprint`,
+      resolve: jest.fn(),
+    }));
+    const resolve = jest.fn().mockResolvedValue(
+      makeAgent({
+        id: 'agent_child',
+        subagents: { enabled: true, allowSelf: false },
+        lazySubagentConfigs: nestedDescriptors,
+      }),
+    );
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          lazySubagentConfigs: [
+            {
+              id: 'agent_child',
+              name: 'Child',
+              description: 'Lazy child',
+              configId: 'agent_child:1:fingerprint',
+              resolve,
+            },
+          ],
+        }),
+      ],
+    });
+    const resolveAgentInputs = (agents[0].subagentConfigs as Array<Record<string, unknown>>)[0]
+      .resolveAgentInputs as (context: never) => Promise<unknown>;
+    const context = { signal: new AbortController().signal } as never;
+
+    await expect(resolveAgentInputs(context)).resolves.toBeDefined();
+    await expect(resolveAgentInputs(context)).resolves.toBeDefined();
+    expect(resolve).toHaveBeenCalledTimes(2);
+  });
+
   it('preserves explicit nested subagents across the SDK child graph boundary', async () => {
     const grandchild = makeAgent({ id: 'agent_grandchild', name: 'Grandchild' });
     const child = makeAgent({

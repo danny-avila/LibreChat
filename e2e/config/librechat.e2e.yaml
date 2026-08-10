@@ -211,3 +211,13 @@ modelSpecs:
       preset:
         endpoint: 'Mock Provider A'
         model: 'mock-model-a'
+
+    # Focused Bombadil HITL fixture. The fake model calls ask_user_question
+    # only for the explicit E2E marker, so enabling the tool here cannot make
+    # unrelated mock conversations pause.
+    - name: 'e2e-hitl'
+      label: 'E2E HITL'
+      askUserQuestion: true
+      preset:
+        endpoint: 'Mock Provider A'
+        model: 'mock-model-a'

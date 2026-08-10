@@ -6,6 +6,7 @@ interface TestAgent {
   id: string;
   statefulCodeSessions?: boolean;
   subagentAgentConfigs?: Array<TestAgent | null>;
+  lazySubagentConfigs?: Array<TestAgent | null>;
 }
 
 function agent(
@@ -36,6 +37,10 @@ describe('anyAgentHasStatefulSessions', () => {
     const grandchild = agent('c', true);
     const child = agent('b', false, [grandchild]);
     expect(walk([agent('a', false, [child])])).toBe(true);
+  });
+
+  it('includes inert lazy descriptors when deciding whether to prewarm', () => {
+    expect(walk([{ id: 'a', lazySubagentConfigs: [agent('lazy-child', true)] }])).toBe(true);
   });
 
   it('tolerates null entries and cycles in the subagent graph', () => {
