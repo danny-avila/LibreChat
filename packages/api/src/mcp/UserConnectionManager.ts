@@ -1,7 +1,5 @@
-import { logger, getTenantId } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import type { MCPOAuthFlowMetadata } from '~/mcp/oauth';
-import type { FlowState } from '~/flow/types';
 import type * as t from './types';
 import {
   cancelMCPToolsChanged,
@@ -18,31 +16,19 @@ import {
   requiresOAuthMachinery,
 } from './utils';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
-import { detectOAuthRequirement, MCPOAuthHandler } from '~/mcp/oauth';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
+import { OAuthLifecycleRelay } from '~/mcp/oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
+import { detectOAuthRequirement } from '~/mcp/oauth';
 import { isMCPDomainAllowed } from '~/auth/domain';
-import { PENDING_STALE_MS } from '~/flow/manager';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
-type PendingOAuthStart = {
-  authURL: string;
-  options?: t.OAuthStartOptions;
-};
-
-type PendingOAuthState = {
-  oauthStarts: Set<t.OAuthStartHandler>;
-  emittedAuthUrls: WeakMap<t.OAuthStartHandler, string>;
-  primaryOAuthStart?: t.OAuthStartHandler;
-  lastOAuthStart?: PendingOAuthStart;
-};
-
 type PendingConnection = {
   promise: Promise<MCPConnection>;
-  oauth: PendingOAuthState;
+  oauth: OAuthLifecycleRelay;
 };
 
 type ConnectionCreationGuard = { cancelled: boolean };
@@ -63,6 +49,10 @@ export abstract class UserConnectionManager {
   protected userLastActivity: Map<string, number> = new Map();
   /** In-flight connection promises keyed by `userId:serverName` — coalesces concurrent attempts */
   protected pendingConnections: Map<string, PendingConnection> = new Map();
+  private readonly connectionBorrowers = new WeakMap<MCPConnection, number>();
+  private readonly connectionBorrowerDrainWaiters = new WeakMap<MCPConnection, Set<() => void>>();
+  private readonly deferredConnectionDisposalHolds = new WeakMap<MCPConnection, number>();
+  private readonly deferredConnectionDisposals = new WeakMap<MCPConnection, string>();
   /** All durable creations, including forced replacements, visible to mutation teardown. */
   private readonly activeConnectionCreations: Map<string, Set<ConnectionCreationGuard>> = new Map();
   /** Serializes explicit durable replacements without coalescing their callers. */
@@ -233,24 +223,35 @@ export abstract class UserConnectionManager {
       ? opts.requestScopedConnections
       : undefined;
     if (requestScopedConnections) {
+      this.bindRequestScopedConnectionStore(requestScopedConnections);
       const requestConnectionKey = `${userId}:${serverName}`;
       const existing = requestScopedConnections.connections.get(requestConnectionKey) as
         | MCPConnection
         | undefined;
       if (existing) {
         if (!config || (config.updatedAt && existing.isStale(config.updatedAt))) {
-          await existing.disconnect().catch((error) => {
-            logger.warn(
-              `[MCP][User: ${userId}][${serverName}] Failed to disconnect stale request-scoped connection`,
-              error,
-            );
-          });
           requestScopedConnections.connections.delete(requestConnectionKey);
-        } else if (await existing.isConnected()) {
-          logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`);
-          return existing;
+          await this.disposeEvictedConnection(existing, `[MCP][User: ${userId}][${serverName}]`);
         } else {
+          const activeRecovery = this.getActiveConnectionRecovery(existing);
+          let awaitedRecovery = activeRecovery;
+          if (activeRecovery) {
+            await this.waitForConnectionRecovery(activeRecovery, opts.signal);
+          }
+          let connected = await existing.isConnected();
+          let recovery = this.getActiveConnectionRecovery(existing);
+          while (recovery && recovery !== awaitedRecovery) {
+            awaitedRecovery = recovery;
+            await this.waitForConnectionRecovery(recovery, opts.signal);
+            connected = await existing.isConnected();
+            recovery = this.getActiveConnectionRecovery(existing);
+          }
+          if (connected) {
+            logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing request-scoped connection`);
+            return existing;
+          }
           requestScopedConnections.connections.delete(requestConnectionKey);
+          await this.disposeEvictedConnection(existing, `[MCP][User: ${userId}][${serverName}]`);
         }
       }
 
@@ -264,14 +265,19 @@ export abstract class UserConnectionManager {
         return pending;
       }
 
-      const pendingOAuth = this.createPendingOAuthState(opts.oauthStart);
+      const pendingOAuth = new OAuthLifecycleRelay({
+        oauthStart: opts.oauthStart,
+        oauthEnd: opts.oauthEnd,
+        logPrefix: `[MCP][User: ${userId}][${serverName}]`,
+      });
       const connectionPromise = this.createUserConnectionInternal(
         {
           ...opts,
           forceNew: true,
           ephemeralConnection: true,
           serverConfig: config,
-          oauthStart: this.createPendingOAuthStart(serverName, userId, pendingOAuth),
+          oauthStart: pendingOAuth.start,
+          oauthEnd: pendingOAuth.end,
         },
         userId,
         forceNew === true,
@@ -303,12 +309,22 @@ export abstract class UserConnectionManager {
       const pending = this.pendingConnections.get(lockKey);
       if (pending) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Joining in-flight connection attempt`);
-        await this.addPendingOAuthStart(pending.oauth, opts, userId);
+        await pending.oauth.add({
+          oauthStart: opts.oauthStart,
+          oauthEnd: opts.oauthEnd,
+          flowManager: opts.flowManager,
+          userId,
+          serverName,
+        });
         return pending.promise;
       }
     }
 
-    const pendingOAuth = this.createPendingOAuthState(opts.oauthStart);
+    const pendingOAuth = new OAuthLifecycleRelay({
+      oauthStart: opts.oauthStart,
+      oauthEnd: opts.oauthEnd,
+      logPrefix: `[MCP][User: ${userId}][${serverName}]`,
+    });
     const creationGuard: ConnectionCreationGuard = { cancelled: false };
     this.registerConnectionCreation(lockKey, creationGuard);
     const createConnection = () =>
@@ -318,7 +334,8 @@ export abstract class UserConnectionManager {
           forceNew: forceNewConnection,
           ephemeralConnection,
           serverConfig: config,
-          oauthStart: this.createPendingOAuthStart(serverName, userId, pendingOAuth),
+          oauthStart: pendingOAuth.start,
+          oauthEnd: pendingOAuth.end,
         },
         userId,
         clearCooldown,
@@ -345,170 +362,6 @@ export abstract class UserConnectionManager {
       ) {
         this.pendingConnections.delete(lockKey);
       }
-    }
-  }
-
-  private createPendingOAuthState(oauthStart?: t.OAuthStartHandler): PendingOAuthState {
-    return {
-      oauthStarts: oauthStart ? new Set([oauthStart]) : new Set(),
-      emittedAuthUrls: new WeakMap<t.OAuthStartHandler, string>(),
-      primaryOAuthStart: oauthStart,
-    };
-  }
-
-  private createPendingOAuthStart(
-    serverName: string,
-    userId: string,
-    pendingOAuth: PendingOAuthState,
-  ): t.OAuthStartHandler {
-    return async (authURL, options) => {
-      pendingOAuth.lastOAuthStart = { authURL, options };
-
-      let primaryError: unknown;
-      const oauthStarts = Array.from(pendingOAuth.oauthStarts);
-      for (const oauthStart of oauthStarts) {
-        try {
-          await this.emitPendingOAuthStart(pendingOAuth, oauthStart, authURL, options);
-        } catch (error) {
-          if (oauthStart === pendingOAuth.primaryOAuthStart) {
-            primaryError = error;
-          } else {
-            logger.warn(
-              `[MCP][User: ${userId}][${serverName}] Failed to notify joined OAuth listener`,
-              error,
-            );
-          }
-        }
-      }
-
-      if (primaryError) {
-        throw primaryError;
-      }
-    };
-  }
-
-  private async addPendingOAuthStart(
-    pendingOAuth: PendingOAuthState,
-    opts: t.UserMCPConnectionOptions,
-    userId: string,
-  ): Promise<void> {
-    const { oauthStart, serverName } = opts;
-    if (typeof oauthStart !== 'function') {
-      return;
-    }
-
-    pendingOAuth.oauthStarts.add(oauthStart);
-    const lastOAuthStart = pendingOAuth.lastOAuthStart;
-    if (lastOAuthStart) {
-      try {
-        const pendingOAuthStart =
-          lastOAuthStart.options?.expiresAt == null
-            ? await this.getFlowPendingOAuthStart(opts, userId)
-            : undefined;
-        const replayOAuthStart =
-          pendingOAuthStart?.authURL === lastOAuthStart.authURL
-            ? pendingOAuthStart
-            : lastOAuthStart;
-        await this.emitPendingOAuthStart(
-          pendingOAuth,
-          oauthStart,
-          replayOAuthStart.authURL,
-          replayOAuthStart.options,
-        );
-      } catch (error) {
-        logger.warn(
-          `[MCP][User: ${userId}][${serverName}] Failed to re-issue pending OAuth URL`,
-          error,
-        );
-      }
-      return;
-    }
-
-    await this.reissuePendingOAuthStart(opts, userId, pendingOAuth);
-  }
-
-  private async emitPendingOAuthStart(
-    pendingOAuth: PendingOAuthState,
-    oauthStart: t.OAuthStartHandler,
-    authURL: string,
-    options?: t.OAuthStartOptions,
-  ): Promise<void> {
-    if (pendingOAuth.emittedAuthUrls.get(oauthStart) === authURL) {
-      return;
-    }
-    pendingOAuth.emittedAuthUrls.set(oauthStart, authURL);
-    await oauthStart(authURL, options);
-  }
-
-  private getPendingOAuthStart(flow: FlowState | null | undefined): PendingOAuthStart | undefined {
-    if (flow?.status !== 'PENDING') {
-      return undefined;
-    }
-
-    const expiresAt = flow.createdAt + PENDING_STALE_MS;
-    if (expiresAt <= Date.now()) {
-      return undefined;
-    }
-
-    const metadata = flow.metadata as MCPOAuthFlowMetadata | undefined;
-    const authorizationUrl = metadata?.authorizationUrl;
-    if (!authorizationUrl) {
-      return undefined;
-    }
-
-    return { authURL: authorizationUrl, options: { expiresAt } };
-  }
-
-  private async getFlowPendingOAuthStart(
-    { flowManager, serverName }: Pick<t.UserMCPConnectionOptions, 'flowManager' | 'serverName'>,
-    userId: string,
-  ): Promise<PendingOAuthStart | undefined> {
-    if (!flowManager) {
-      return undefined;
-    }
-
-    const flowId = MCPOAuthHandler.generateFlowId(userId, serverName, getTenantId());
-    const existingFlow = await flowManager.getFlowState(flowId, 'mcp_oauth');
-    return this.getPendingOAuthStart(existingFlow);
-  }
-
-  private async reissuePendingOAuthStart(
-    { flowManager, oauthStart, serverName }: t.UserMCPConnectionOptions,
-    userId: string,
-    pendingOAuth?: PendingOAuthState,
-  ): Promise<void> {
-    if (!flowManager || typeof oauthStart !== 'function') {
-      return;
-    }
-
-    try {
-      const pendingOAuthStart = await this.getFlowPendingOAuthStart(
-        { flowManager, serverName },
-        userId,
-      );
-      if (!pendingOAuthStart) {
-        return;
-      }
-
-      logger.info(
-        `[MCP][User: ${userId}][${serverName}] Re-issuing stored authorization URL while joining in-flight connection`,
-      );
-      if (pendingOAuth) {
-        pendingOAuth.lastOAuthStart = pendingOAuthStart;
-        await this.emitPendingOAuthStart(
-          pendingOAuth,
-          oauthStart,
-          pendingOAuthStart.authURL,
-          pendingOAuthStart.options,
-        );
-      } else {
-        await oauthStart(pendingOAuthStart.authURL, pendingOAuthStart.options);
-      }
-    } catch (error) {
-      logger.warn(
-        `[MCP][User: ${userId}][${serverName}] Failed to re-issue pending OAuth URL`,
-        error,
-      );
     }
   }
 
@@ -621,22 +474,41 @@ export abstract class UserConnectionManager {
       if (!config || (config.updatedAt && connection.isStale(config.updatedAt))) {
         if (config) {
           logger.info(
-            `[MCP][User: ${userId}][${serverName}] Config was updated, disconnecting stale connection`,
+            `[MCP][User: ${userId}][${serverName}] Config was updated, evicting stale connection`,
           );
         }
         await this.disconnectUserConnection(userId, serverName, creationGuard);
         connection = undefined;
-      } else if (await connection.isConnected()) {
-        logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
-        await this.updateUserLastActivity(userId);
-        await this.assertToolPublicationLeaseCurrent(connection, userId, serverName, creationGuard);
-        if (creationGuard?.cancelled) {
-          throw new Error(
-            `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
-          );
-        }
-        return connection;
       } else {
+        const activeRecovery = this.getActiveConnectionRecovery(connection);
+        let awaitedRecovery = activeRecovery;
+        if (activeRecovery) {
+          await this.waitForConnectionRecovery(activeRecovery, signal);
+        }
+        let connected = await connection.isConnected();
+        let recovery = this.getActiveConnectionRecovery(connection);
+        while (recovery && recovery !== awaitedRecovery) {
+          awaitedRecovery = recovery;
+          await this.waitForConnectionRecovery(recovery, signal);
+          connected = await connection.isConnected();
+          recovery = this.getActiveConnectionRecovery(connection);
+        }
+        if (connected) {
+          logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
+          await this.updateUserLastActivity(userId);
+          await this.assertToolPublicationLeaseCurrent(
+            connection,
+            userId,
+            serverName,
+            creationGuard,
+          );
+          if (creationGuard?.cancelled) {
+            throw new Error(
+              `[MCP][User: ${userId}][${serverName}] Connection creation was cancelled during teardown`,
+            );
+          }
+          return connection;
+        }
         logger.warn(
           `[MCP][User: ${userId}][${serverName}] Found existing but disconnected connection object. Cleaning up.`,
         );
@@ -964,6 +836,115 @@ export abstract class UserConnectionManager {
     logger.debug(`[MCP][User: ${userId}][${serverName}] Removed connection entry.`);
   }
 
+  protected retainConnection(connection: MCPConnection): void {
+    const borrowers = this.connectionBorrowers.get(connection) ?? 0;
+    this.connectionBorrowers.set(connection, borrowers + 1);
+  }
+
+  protected getActiveConnectionRecovery(_connection: MCPConnection): Promise<void> | undefined {
+    return undefined;
+  }
+
+  protected waitForConnectionRecovery(
+    recovery: Promise<void>,
+    _signal?: AbortSignal,
+  ): Promise<void> {
+    return recovery;
+  }
+
+  protected holdDeferredConnectionDisposal(connection: MCPConnection): void {
+    const holds = this.deferredConnectionDisposalHolds.get(connection) ?? 0;
+    this.deferredConnectionDisposalHolds.set(connection, holds + 1);
+  }
+
+  protected async releaseDeferredConnectionDisposal(connection: MCPConnection): Promise<void> {
+    const holds = this.deferredConnectionDisposalHolds.get(connection) ?? 0;
+    if (holds > 1) {
+      this.deferredConnectionDisposalHolds.set(connection, holds - 1);
+      return;
+    }
+    this.deferredConnectionDisposalHolds.delete(connection);
+    await this.finalizeDeferredConnectionDisposal(connection);
+  }
+
+  protected async releaseConnection(connection: MCPConnection): Promise<void> {
+    const borrowers = this.connectionBorrowers.get(connection) ?? 0;
+    if (borrowers > 1) {
+      this.connectionBorrowers.set(connection, borrowers - 1);
+      return;
+    }
+
+    this.connectionBorrowers.delete(connection);
+    await this.finalizeDeferredConnectionDisposal(connection);
+
+    const drainWaiters = this.connectionBorrowerDrainWaiters.get(connection);
+    if (drainWaiters) {
+      this.connectionBorrowerDrainWaiters.delete(connection);
+      for (const resolve of drainWaiters) {
+        resolve();
+      }
+    }
+  }
+
+  protected waitForConnectionBorrowersToDrain(connection: MCPConnection): Promise<void> {
+    if ((this.connectionBorrowers.get(connection) ?? 0) === 0) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      const drainWaiters = this.connectionBorrowerDrainWaiters.get(connection) ?? new Set();
+      drainWaiters.add(resolve);
+      this.connectionBorrowerDrainWaiters.set(connection, drainWaiters);
+    });
+  }
+
+  protected bindRequestScopedConnectionStore(
+    requestScopedConnections?: t.RequestScopedMCPConnectionStore,
+  ): void {
+    if (!requestScopedConnections || requestScopedConnections.disposeConnection) {
+      return;
+    }
+
+    requestScopedConnections.disposeConnection = async (connectionKey, connection) => {
+      await this.disposeEvictedConnection(
+        connection as MCPConnection,
+        `[MCP][Request-scoped: ${connectionKey}]`,
+      );
+    };
+  }
+
+  protected async disposeEvictedConnection(
+    connection: MCPConnection,
+    logPrefix: string,
+  ): Promise<void> {
+    this.deferredConnectionDisposals.set(connection, logPrefix);
+    await this.finalizeDeferredConnectionDisposal(connection);
+  }
+
+  private async finalizeDeferredConnectionDisposal(connection: MCPConnection): Promise<void> {
+    if (
+      (this.connectionBorrowers.get(connection) ?? 0) > 0 ||
+      (this.deferredConnectionDisposalHolds.get(connection) ?? 0) > 0
+    ) {
+      return;
+    }
+
+    const logPrefix = this.deferredConnectionDisposals.get(connection);
+    if (!logPrefix) {
+      return;
+    }
+    this.deferredConnectionDisposals.delete(connection);
+    await this.disposeConnection(connection, logPrefix);
+  }
+
+  private async disposeConnection(connection: MCPConnection, logPrefix: string): Promise<void> {
+    try {
+      await connection.dispose();
+    } catch (error) {
+      logger.warn(`${logPrefix} Failed to dispose evicted connection`, error);
+    }
+  }
+
   /** Disconnects and removes a specific user connection */
   public async disconnectUserConnection(
     userId: string,
@@ -980,10 +961,11 @@ export abstract class UserConnectionManager {
     const connection = userMap?.get(serverName);
     try {
       if (connection) {
-        logger.info(`[MCP][User: ${userId}][${serverName}] Disconnecting...`);
+        const logPrefix = `[MCP][User: ${userId}][${serverName}]`;
+        logger.info(`${logPrefix} Disconnecting...`);
         connection.removeAllListeners?.('toolsChanged');
         this.removeUserConnection(userId, serverName);
-        await connection.dispose();
+        await this.disposeEvictedConnection(connection, logPrefix);
       }
     } finally {
       await cancelMCPToolsChanged({ userId, serverName });
