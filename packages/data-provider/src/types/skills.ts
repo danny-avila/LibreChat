@@ -120,8 +120,8 @@ export type TSkillWarning = {
  * - `description` is the "when to use this skill" sentence. Highest-leverage
  *   field for trigger accuracy; a short/vague one causes undertriggering.
  * - `frontmatter` is the structured YAML bag minus `name`/`description`
- *   (those live as top-level columns). Validated strictly against a known
- *   key set server-side.
+ *   (those live as top-level columns). Known keys receive value validation;
+ *   unknown keys are retained and reported as non-blocking warnings.
  * - `source`/`sourceMetadata` identify whether the row is user-authored,
  *   deployment-provided, or mirrored from an external source such as GitHub.
  */
