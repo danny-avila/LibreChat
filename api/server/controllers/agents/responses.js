@@ -57,7 +57,11 @@ const {
   createToolEndCallback,
   agentLogHandlerObj,
 } = require('~/server/controllers/agents/callbacks');
-const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
+const {
+  loadAgentTools,
+  loadToolsForExecution,
+  isFatalAgentInitializationError,
+} = require('~/server/services/ToolService');
 const {
   findAccessibleResources,
   getEffectivePermissions,
@@ -112,6 +116,9 @@ function createToolLoader(signal, definitionsOnly = true) {
         streamId: null,
       });
     } catch (error) {
+      if (isFatalAgentInitializationError(error)) {
+        throw error;
+      }
       logger.error('Error loading tools for agent ' + agentId, error);
     }
   };
@@ -622,7 +629,9 @@ const executeResponse = async (envelope, { req, res }) => {
       return sendResponsesErrorResponse(
         res,
         400,
-        `Message contains a ${piiHit.label}. Remove it and try again.`,
+        piiHit.misconfigured
+          ? 'Message filtering is misconfigured; contact your administrator.'
+          : `Message contains a ${piiHit.label}. Remove it and try again.`,
         'invalid_request',
         'message_filter_pii_block',
       );
@@ -1084,7 +1093,12 @@ const executeResponse = async (envelope, { req, res }) => {
           ? error.status
           : 500;
       const errorType = statusCode >= 400 && statusCode < 500 ? 'invalid_request' : 'server_error';
-      sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);
+      const errorCode = typeof error?.code === 'string' ? error.code : undefined;
+      if (errorCode === undefined) {
+        sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);
+      } else {
+        sendResponsesErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
+      }
     }
   }
 };

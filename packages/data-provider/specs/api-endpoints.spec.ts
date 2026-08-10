@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import { buildLoginRedirectUrl } from '../src/api-endpoints';
+import { buildLoginRedirectUrl, getSharedLinks } from '../src/api-endpoints';
 
 describe('buildLoginRedirectUrl', () => {
   afterEach(() => {
@@ -70,5 +70,21 @@ describe('buildLoginRedirectUrl', () => {
     const result = buildLoginRedirectUrl('/c/loginhistory', '', '');
     expect(result).toContain('redirect_to=');
     expect(decodeURIComponent(result.split('redirect_to=')[1])).toBe('/c/loginhistory');
+  });
+});
+
+describe('getSharedLinks', () => {
+  it('encodes search and cursor values exactly once', () => {
+    const result = getSharedLinks(
+      25,
+      'createdAt',
+      'desc',
+      '100% ready & waiting',
+      '2030-01-01T00:00:00.000Z',
+    );
+
+    expect(result).toBe(
+      '/api/share?pageSize=25&sortBy=createdAt&sortDirection=desc&search=100%25%20ready%20%26%20waiting&cursor=2030-01-01T00%3A00%3A00.000Z',
+    );
   });
 });

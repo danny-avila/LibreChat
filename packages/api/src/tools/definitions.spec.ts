@@ -385,6 +385,138 @@ describe('definitions.ts', () => {
     });
 
     describe('MCP tool definitions with server name variants', () => {
+      it('treats a server pin with no selected tools as intentionally empty', async () => {
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: ['sys__server__sys_mcp_warehouse'],
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(mockGetOrFetchMCPServerTools).not.toHaveBeenCalled();
+        expect(result.toolDefinitions).toEqual([]);
+        expect(result.mcpResolution).toEqual({ expectedToolCount: 0, resolvedToolCount: 0 });
+      });
+
+      it('refreshes a non-empty server catalog once when the selected tool is missing', async () => {
+        const selectedTool = 'run_query_mcp_warehouse';
+        const staleTools = {
+          list_sources_mcp_warehouse: {
+            function: {
+              name: 'list_sources_mcp_warehouse',
+              description: 'List databases',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+        const refreshedTools = {
+          ...staleTools,
+          [selectedTool]: {
+            function: {
+              name: selectedTool,
+              description: 'Run a read-only query',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+        const refreshMCPServerTools = jest.fn().mockResolvedValue(refreshedTools);
+        mockGetOrFetchMCPServerTools.mockResolvedValue(staleTools);
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [selectedTool],
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            refreshMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(refreshMCPServerTools).toHaveBeenCalledTimes(1);
+        expect(refreshMCPServerTools).toHaveBeenCalledWith('user-123', 'warehouse');
+        expect(result.toolDefinitions).toEqual([
+          expect.objectContaining({ name: selectedTool, serverName: 'warehouse' }),
+        ]);
+        expect(result.mcpResolution).toEqual({ expectedToolCount: 1, resolvedToolCount: 1 });
+      });
+
+      it('refreshes an empty server catalog once when a selected tool is expected', async () => {
+        const selectedTool = 'run_query_mcp_warehouse';
+        const refreshedTools = {
+          [selectedTool]: {
+            function: {
+              name: selectedTool,
+              description: 'Run a read-only query',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+        const refreshMCPServerTools = jest.fn().mockResolvedValue(refreshedTools);
+        mockGetOrFetchMCPServerTools.mockResolvedValue({});
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [selectedTool],
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            refreshMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(refreshMCPServerTools).toHaveBeenCalledTimes(1);
+        expect(result.toolDefinitions).toEqual([
+          expect.objectContaining({ name: selectedTool, serverName: 'warehouse' }),
+        ]);
+        expect(result.mcpResolution).toEqual({ expectedToolCount: 1, resolvedToolCount: 1 });
+      });
+
+      it('refreshes an empty server catalog once when all server tools are expected', async () => {
+        const wildcardTool = 'sys__all__sys_mcp_warehouse';
+        const refreshedTool = 'run_query_mcp_warehouse';
+        const refreshedTools = {
+          [refreshedTool]: {
+            function: {
+              name: refreshedTool,
+              description: 'Run a read-only query',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+        const refreshMCPServerTools = jest.fn().mockResolvedValue(refreshedTools);
+        mockGetOrFetchMCPServerTools.mockResolvedValue({});
+
+        const result = await loadToolDefinitions(
+          {
+            userId: 'user-123',
+            agentId: 'agent-123',
+            tools: [wildcardTool],
+          },
+          {
+            getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+            refreshMCPServerTools,
+            isBuiltInTool: mockIsBuiltInTool,
+          },
+        );
+
+        expect(refreshMCPServerTools).toHaveBeenCalledTimes(1);
+        expect(result.toolDefinitions).toEqual([
+          expect.objectContaining({ name: refreshedTool, serverName: 'warehouse' }),
+        ]);
+        expect(result.mcpResolution).toEqual({ expectedToolCount: 1, resolvedToolCount: 1 });
+      });
+
       it('should load MCP tools with underscored server names (server_one)', async () => {
         const mockServerTools = {
           list_items_mcp_server_one: {

@@ -16,8 +16,8 @@ const Image = ({
   source?: FileSources;
 }) => {
   return (
-    <div className="group relative inline-block text-sm text-black/70 dark:text-white/90">
-      <div className="relative overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-600">
+    <div className="group relative inline-block text-sm text-text-secondary">
+      <div className="relative overflow-hidden rounded-2xl border border-border-medium">
         <ImagePreview source={source} imageBase64={imageBase64} url={url} progress={progress} />
       </div>
       <RemoveFile onRemove={onDelete} />

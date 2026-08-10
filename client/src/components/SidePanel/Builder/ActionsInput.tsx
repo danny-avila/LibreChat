@@ -1,5 +1,5 @@
-import debounce from 'lodash/debounce';
 import { useState, useEffect } from 'react';
+import debounce from 'lodash/debounce';
 import { useFormContext } from 'react-hook-form';
 import { Spinner, useToastContext } from '@librechat/client';
 import {
@@ -17,8 +17,8 @@ import type {
 import type { ActionAuthForm, ActionWithNullableMetadata } from '~/common';
 import type { Spec } from './ActionsTable';
 import ActionCallback from '~/components/SidePanel/Builder/ActionCallback';
-import { useAssistantsMapContext } from '~/Providers';
 import { ActionsTable, columns } from './ActionsTable';
+import { useAssistantsMapContext } from '~/Providers';
 import { useUpdateAction } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -236,7 +236,7 @@ export default function ActionsInput({
           </div>
           */}
         </div>
-        <div className="border-token-border-medium bg-token-surface-primary hover:border-token-border-hover mb-4 w-full overflow-hidden rounded-lg border ring-0">
+        <div className="border-token-border-medium mb-4 w-full overflow-hidden rounded-lg border bg-surface-primary ring-0 hover:border-border-heavy">
           <div className="relative">
             <textarea
               id="schemaInput"
@@ -274,7 +274,7 @@ export default function ActionsInput({
             {localize('com_ui_privacy_policy_url')}
           </label>
         </div>
-        <div className="border-token-border-medium bg-token-surface-primary hover:border-token-border-hover flex h-9 w-full rounded-lg border">
+        <div className="border-token-border-medium flex h-9 w-full rounded-lg border bg-surface-primary hover:border-border-heavy">
           <input
             type="text"
             placeholder="https://api.example-weather-app.com/privacy"
@@ -286,7 +286,7 @@ export default function ActionsInput({
         <button
           disabled={!functions || !functions.length}
           onClick={saveAction}
-          className="focus:shadow-outline mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0 disabled:bg-green-400"
+          className="mt-1 flex min-w-[100px] items-center justify-center rounded bg-green-500 px-4 py-2 font-semibold text-white hover:bg-green-400 focus:border-green-500 focus:outline-none focus:ring-0 disabled:bg-green-400"
           type="button"
         >
           {submitContext()}

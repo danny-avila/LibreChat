@@ -49,6 +49,7 @@ const {
   loadAgentTools,
   loadToolsForExecution,
   getAccessibleMcpServerNames,
+  isFatalAgentInitializationError,
 } = require('~/server/services/ToolService');
 const {
   findAccessibleResources,
@@ -102,6 +103,9 @@ function createToolLoader(signal, definitionsOnly = true) {
         streamId: null, // No resumable stream for OpenAI compat
       });
     } catch (error) {
+      if (isFatalAgentInitializationError(error)) {
+        throw error;
+      }
       logger.error('Error loading tools for agent ' + agentId, error);
     }
   };
@@ -189,7 +193,9 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
     return sendErrorResponse(
       res,
       400,
-      `Message contains a ${piiHit.label}. Remove it and try again.`,
+      piiHit.misconfigured
+        ? 'Message filtering is misconfigured; contact your administrator.'
+        : `Message contains a ${piiHit.label}. Remove it and try again.`,
       'invalid_request_error',
       'message_filter_pii_block',
     );
@@ -885,7 +891,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           : 500;
       const errorType =
         statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';
-      sendErrorResponse(res, statusCode, errorMessage, errorType);
+      const errorCode = typeof error?.code === 'string' ? error.code : null;
+      sendErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
     }
   }
 };

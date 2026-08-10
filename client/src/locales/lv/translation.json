@@ -1890,7 +1890,6 @@
   "com_ui_steer_in_flight": "Vadīšana",
   "com_ui_steer_paused_queued": "Aģents gaida jūsu atsauksmi — jūsu ziņojums tika ievietots rindā",
   "com_ui_steer_retry": "Atkārtot vadīšanu",
-  "com_ui_steer_run_ended_queued": "Atbilde ir nosūtīta, tāpēc šis vadības ziņojums tiek ievietots rindā kā turpmākais pasākums",
   "com_ui_steer_send": "Vadīt pašreizējo atbildi",
   "com_ui_steered_info": "Jūs pievienojāt šo ziņojumu, kamēr tika ģenerēta atbilde, tāpēc tas tika iekļauts atbildē šajā vietā.",
   "com_ui_stop": "Apstāties",

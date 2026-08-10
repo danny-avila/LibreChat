@@ -33,3 +33,4 @@ endpoints:
       - actions
       - tools
       - tool_intents
+      - subagents

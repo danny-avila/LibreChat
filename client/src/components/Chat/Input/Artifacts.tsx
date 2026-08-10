@@ -5,6 +5,7 @@ import { WandSparkles, ChevronDown } from 'lucide-react';
 import { ArtifactModes, defaultAgentCapabilities } from 'librechat-data-provider';
 import { useLocalize, useAgentCapabilities } from '~/hooks';
 import { useBadgeRowContext } from '~/Providers';
+import { badgeAccents } from './accents';
 import { cn } from '~/utils';
 
 interface ArtifactsToggleState {
@@ -88,11 +89,11 @@ function Artifacts() {
   return (
     <div className="flex">
       <CheckboxButton
-        className={cn('max-w-fit', isEnabled && 'rounded-r-none border-r-0')}
+        className={cn(isEnabled && 'rounded-r-none border-r-0')}
         checked={isEnabled}
         setValue={handleToggle}
         label={localize('com_ui_artifacts')}
-        isCheckedClassName="border-amber-600/40 bg-amber-500/10 hover:bg-amber-700/10"
+        isCheckedClassName={badgeAccents.amber}
         icon={<WandSparkles className="icon-md" aria-hidden="true" />}
       />
 
@@ -101,7 +102,7 @@ function Artifacts() {
           <Ariakit.MenuButton
             className={cn(
               'w-7 rounded-l-none rounded-r-full border-b border-l-0 border-r border-t border-border-light md:w-6',
-              'border-amber-600/40 bg-amber-500/10 hover:bg-amber-700/10',
+              badgeAccents.amber,
               'transition-colors',
             )}
             onClick={handleMenuButtonClick}

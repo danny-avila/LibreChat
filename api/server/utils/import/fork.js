@@ -379,6 +379,14 @@ function stripSharedFileIds(message) {
   return sanitized;
 }
 
+/** Compares a client-held share revision against the stored one, tolerating the
+ * Date/ISO-string round trip through JSON. */
+function isSameRevision(storedUpdatedAt, clientRevision) {
+  const stored = new Date(storedUpdatedAt ?? 0).getTime();
+  const client = new Date(clientRevision).getTime();
+  return Number.isFinite(stored) && Number.isFinite(client) && stored === client;
+}
+
 /**
  * Forks a shared (sanitized) conversation into a fresh conversation owned by the requesting user.
  * Only the anonymized, allowlisted message fields returned by `getSharedMessages` are cloned,
@@ -390,6 +398,7 @@ function stripSharedFileIds(message) {
  * @param {string} [params.userRole] - The role of the requesting user, used to resolve the default model.
  * @param {string} [params.userTenantId] - Tenant of the requesting user. `canAccessSharedLink` runs this handler under the share owner's tenant so the share resolves, so the copy must be persisted (and its config/retention resolved) under the requesting user's tenant or it would be invisible (404) when they open it normally.
  * @param {number} [params.targetMessageIndex] - Index, within the shared payload, of the message at the tip of the branch the viewer has active. When set, only the direct path to that message is cloned so the fork continues the branch that was actually shown rather than the newest sibling. An index is used (not id or `createdAt`) because shared ids are re-anonymized per request while `getSharedMessages` returns a deterministic, stable order, so the same index resolves to the same message on the server.
+ * @param {string} [params.shareRevision] - `updatedAt` of the payload the viewer is forking from. A shareId now survives an update, so an owner republishing between the GET and the fork would silently shift `targetMessageIndex` onto a different branch; a mismatch is rejected instead of cloning content the viewer never saw.
  * @param {boolean} [params.snapshotFiles] - When `false`, file/attachment metadata is omitted from the cloned messages, mirroring the GET share route so the global shared-file kill switch is honored.
  * @param {(userId: string, interfaceConfig?: object) => ImportBatchBuilder} [params.builderFactory] - Optional factory function for creating an ImportBatchBuilder instance.
  * @param {(options: object) => Promise<object>} [params.loadAppConfig] - Resolves the app config; injectable for tests. Called inside the requesting user's tenant context so retention policy is read from the viewer's tenant, not the share owner's.
@@ -402,6 +411,7 @@ async function forkSharedConversation({
   userRole,
   userTenantId,
   targetMessageIndex,
+  shareRevision,
   snapshotFiles,
   builderFactory = createImportBatchBuilder,
   loadAppConfig = getAppConfig,
@@ -414,17 +424,31 @@ async function forkSharedConversation({
     return null;
   }
 
+  // The index below is positional against the payload the viewer holds, and the
+  // shareId no longer rotates on update, so a republish between the GET and this
+  // request would resolve it against different messages. Reject rather than fork
+  // a branch the viewer never saw.
+  if (shareRevision != null && !isSameRevision(share.updatedAt, shareRevision)) {
+    const error = new Error('Shared link was updated');
+    error.code = 'SHARE_REVISION_MISMATCH';
+    throw error;
+  }
+
   /**
    * The shared payload includes sibling branches. Reduce to the direct path of
    * the viewer's active message so the fork continues exactly the branch that
    * was shown; without this the default branch selection lands on the newest
    * sibling. The active tip is located by its index in the shared payload, which
-   * `getSharedMessages` returns in a deterministic order (stored ref-array order)
-   * — unlike ids (re-anonymized per request) or `createdAt` (can collide). Falls
+   * `getSharedMessages` returns in a deterministic order (stored ref-array order),
+   * unlike ids (re-anonymized per request) or `createdAt` (can collide). Falls
    * back to the full set when the index is absent or out of range.
    */
   let sourceMessages = share.messages;
   if (
+    // A positional target only means something against the payload the caller read;
+    // with no revision proving which one that was, fall back to the whole share
+    // rather than resolving the index against a snapshot they never saw.
+    shareRevision != null &&
     Number.isInteger(targetMessageIndex) &&
     targetMessageIndex >= 0 &&
     targetMessageIndex < share.messages.length

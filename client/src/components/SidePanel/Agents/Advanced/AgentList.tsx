@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { X, PlusCircle } from 'lucide-react';
-import { ControlCombobox } from '@librechat/client';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { Button, ControlCombobox } from '@librechat/client';
 import type { Agent, TMessage } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { OptionWithIcon } from '~/common';
@@ -83,7 +83,7 @@ export function AddAgentSelect({ options, onSelect, placeholder, ariaLabel }: Ad
       selectPlaceholder={placeholder}
       searchPlaceholder={localize('com_ui_agent_var', { 0: localize('com_ui_search') })}
       items={options}
-      className="h-9 w-full border-dashed border-border-heavy text-center text-text-secondary hover:text-text-primary"
+      className="h-9 w-full border-dashed border-border-light text-center text-text-secondary hover:text-text-primary"
       containerClassName="px-0"
       SelectIcon={<PlusCircle size={16} className="text-text-secondary" />}
     />
@@ -134,14 +134,15 @@ interface RemoveButtonProps {
 /** Ghost remove (×) button shared by agent rows. */
 export function RemoveButton({ onClick, label }: RemoveButtonProps) {
   return (
-    <button
-      type="button"
-      className="flex-shrink-0 rounded-lg p-1 text-text-secondary transition hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+    <Button
+      variant="ghost"
+      size="icon"
+      className="size-auto flex-shrink-0 p-1 text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
       onClick={onClick}
       aria-label={label}
     >
       <X size={16} aria-hidden="true" />
-    </button>
+    </Button>
   );
 }
 

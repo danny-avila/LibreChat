@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
+import { Button } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
@@ -344,9 +345,10 @@ export default function ToolCallGroup({
 
   return (
     <div className="mb-2 mt-1" ref={rootRef}>
-      <button
+      <Button
+        variant="ghost"
         type="button"
-        className="inline-flex w-full items-center gap-2 py-1 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+        className="inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-text-secondary hover:bg-transparent hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy focus-visible:ring-offset-0"
         onClick={handleToggle}
         aria-expanded={isExpanded}
         aria-label={groupLabel}
@@ -360,7 +362,7 @@ export default function ToolCallGroup({
           <div
             className={cn(
               'flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary',
-              !allCompleted && isSubmitting && 'animate-pulse text-primary',
+              !allCompleted && isSubmitting && 'animate-pulse text-text-primary',
             )}
             aria-hidden="true"
           >
@@ -376,10 +378,11 @@ export default function ToolCallGroup({
         )}
         <span
           className={cn(
-            'tool-status-text font-medium',
+            'tool-status-text min-w-0 truncate font-medium',
             activityFailed && 'text-amber-600 dark:text-amber-400',
           )}
           role="status"
+          title={groupLabel}
         >
           {groupLabel}
         </span>
@@ -387,7 +390,9 @@ export default function ToolCallGroup({
          *   questions) — every entry deduplicates to the same token, which
          *   adds noise without info. Mixed groups keep the summary. */}
         {toolNameSummary && !allSubagents && !allAskQuestions && (
-          <span className="text-xs font-normal text-text-secondary">— {toolNameSummary}</span>
+          <span className="min-w-0 max-w-[40%] truncate text-xs font-normal text-text-secondary">
+            · {toolNameSummary}
+          </span>
         )}
         <ChevronDown
           className={cn(
@@ -396,7 +401,7 @@ export default function ToolCallGroup({
           )}
           aria-hidden="true"
         />
-      </button>
+      </Button>
       <div
         style={expandStyle}
         onTransitionEnd={handleTransitionEnd}

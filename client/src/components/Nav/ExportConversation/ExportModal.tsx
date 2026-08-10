@@ -1,5 +1,5 @@
-import filenamify from 'filenamify';
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import filenamify from 'filenamify';
 import {
   Input,
   Label,
@@ -11,6 +11,7 @@ import {
 } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import { useLocalize, useExportConversation } from '~/hooks';
+import { normalizeExportFilename } from '~/utils';
 
 const TYPE_OPTIONS = [
   { value: 'screenshot', label: 'screenshot (.png)' },
@@ -72,7 +73,7 @@ export default function ExportModal({
 
   const { exportConversation } = useExportConversation({
     conversation,
-    filename: filenamify(filename),
+    filename: normalizeExportFilename(filenamify(filename)),
     type,
     includeOptions,
     exportBranches,
@@ -126,15 +127,15 @@ export default function ExportModal({
                       onCheckedChange={setIncludeOptions}
                       aria-labelledby="includeOptions-label"
                     />
-                    <label
+                    <Label
                       id="includeOptions-label"
                       htmlFor="includeOptions"
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
                       {exportOptionsSupport
                         ? localize('com_nav_export_include_endpoint_options')
                         : localize('com_nav_not_supported')}
-                    </label>
+                    </Label>
                   </div>
                 </div>
               </div>
@@ -150,15 +151,15 @@ export default function ExportModal({
                     onCheckedChange={setExportBranches}
                     aria-labelledby="exportBranches-label"
                   />
-                  <label
+                  <Label
                     id="exportBranches-label"
                     htmlFor="exportBranches"
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
                     {exportBranchesSupport
                       ? localize('com_nav_export_all_message_branches')
                       : localize('com_nav_not_supported')}
-                  </label>
+                  </Label>
                 </div>
               </div>
               {type === 'json' ? (
@@ -173,13 +174,13 @@ export default function ExportModal({
                       onCheckedChange={setRecursive}
                       aria-labelledby="recursive-label"
                     />
-                    <label
+                    <Label
                       id="recursive-label"
                       htmlFor="recursive"
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-gray-50"
+                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
                       {localize('com_nav_export_recursive')}
-                    </label>
+                    </Label>
                   </div>
                 </div>
               ) : null}

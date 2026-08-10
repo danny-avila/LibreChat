@@ -40,6 +40,7 @@ import useGetConversation from './Conversations/useGetConversation';
 import useAssistantListMap from './Assistants/useAssistantListMap';
 import { useResetChatBadges } from './useChatBadges';
 import { useApplyModelSpecEffects } from './Agents';
+import { useAgentsMapContext } from '~/Providers';
 import { usePauseGlobalAudio } from './Audio';
 import { useHasAccess } from '~/hooks';
 import store from '~/store';
@@ -57,6 +58,7 @@ const useNewConvo = (index = 0) => {
   const saveBadgesState = useRecoilValue<boolean>(store.saveBadgesState);
   const setSubmission = useSetRecoilState<TSubmission | null>(store.submissionByIndex(index));
   const { data: endpointsConfig = {} as TEndpointsConfig } = useGetEndpointsQuery();
+  const agentsMap = useAgentsMapContext();
 
   const hasAgentAccess = useHasAccess({
     permissionType: PermissionTypes.AGENTS,
@@ -330,7 +332,7 @@ const useNewConvo = (index = 0) => {
       };
 
       let preset = _preset;
-      const result = getDefaultModelSpec(startupConfig, endpointsConfig);
+      const result = getDefaultModelSpec(startupConfig, endpointsConfig, agentsMap);
       const defaultModelSpec = result?.default ?? result?.last ?? result?.softDefault;
       const shouldApplyModelSpec =
         result?.softDefault != null
@@ -390,6 +392,7 @@ const useNewConvo = (index = 0) => {
     [
       files,
       setFiles,
+      agentsMap,
       saveDrafts,
       mutateAsync,
       resetBadges,

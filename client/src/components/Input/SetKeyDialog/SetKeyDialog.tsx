@@ -22,10 +22,10 @@ import type { TDialogProps } from '~/common';
 import { useUserKey, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import CustomConfig from './CustomEndpoint';
+import BedrockConfig from './BedrockConfig';
 import GoogleConfig from './GoogleConfig';
 import OpenAIConfig from './OpenAIConfig';
 import OtherConfig from './OtherConfig';
-import BedrockConfig from './BedrockConfig';
 import HelpText from './HelpText';
 import { logger } from '~/utils';
 
@@ -136,7 +136,7 @@ const RevokeKeysButton = ({
               variant="destructive"
               onClick={onClick}
               disabled={isLoading}
-              className="bg-destructive text-white transition-all duration-200 hover:bg-destructive/80"
+              className="bg-surface-destructive text-white transition-all duration-200 hover:bg-surface-destructive-hover"
             >
               {isLoading ? <Spinner /> : localize('com_ui_revoke')}
             </Button>
@@ -373,7 +373,7 @@ const SetKeyDialog = ({
           </OGDialogTitle>
         </OGDialogHeader>
         <div className="grid w-full items-center gap-2 py-4">
-          <small className="text-red-600">
+          <small className="text-text-destructive">
             {expiryTime === 'never'
               ? localize('com_endpoint_config_key_never_expires')
               : `${localize('com_endpoint_config_key_encryption')} ${new Date(
