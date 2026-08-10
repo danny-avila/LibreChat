@@ -105,4 +105,50 @@ describe('theme registry', () => {
       'Invalid appearance value for fontFamily: 42',
     ]);
   });
+
+  it.each([
+    [
+      'mode collection arrays',
+      { version: 1, name: 'invalid', modes: [] },
+      'Theme modes must be an object',
+    ],
+    [
+      'mode arrays',
+      { version: 1, name: 'invalid', modes: { light: [] } },
+      'Theme mode light must be an object',
+    ],
+    [
+      'null modes',
+      { version: 1, name: 'invalid', modes: { light: null } },
+      'Theme mode light must be an object',
+    ],
+    [
+      'color arrays',
+      { version: 1, name: 'invalid', modes: { light: { colors: [] } } },
+      'Theme colors for light must be an object',
+    ],
+    [
+      'appearance arrays',
+      { version: 1, name: 'invalid', modes: { light: { appearance: [] } } },
+      'Theme appearance for light must be an object',
+    ],
+    [
+      'unknown modes',
+      { version: 1, name: 'invalid', modes: { sepia: {} } },
+      'Unknown theme mode: sepia',
+    ],
+    [
+      'unknown top-level fields',
+      { version: 1, name: 'invalid', modes: {}, css: ':root {}' },
+      'Unknown theme field: css',
+    ],
+    [
+      'unknown mode fields',
+      { version: 1, name: 'invalid', modes: { light: { appearence: {} } } },
+      'Unknown light theme field: appearence',
+    ],
+  ])('rejects malformed runtime %s', (_label, definition, expectedError) => {
+    expect(validateThemeDefinition(definition as ThemeDefinition)).toContain(expectedError);
+    expect(() => resolveTheme(definition as ThemeDefinition, 'light')).toThrow(TypeError);
+  });
 });

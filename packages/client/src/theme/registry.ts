@@ -70,6 +70,18 @@ const isLength = (value: unknown): value is string =>
 const isDuration = (value: unknown): value is string =>
   typeof value === 'string' && cssDurationPattern.test(value);
 
+const isPlainRecord = (value: unknown): value is Record<string, unknown> => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === null || prototype.constructor?.name === 'Object';
+  } catch {
+    return false;
+  }
+};
+
 const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => boolean> = {
   controlRadius: isLength,
   roundControlRadius: isLength,
@@ -89,44 +101,79 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => b
 export function validateThemeDefinition(theme: ThemeDefinition): string[] {
   const errors: string[] = [];
 
+  if (!isPlainRecord(theme)) {
+    return ['Theme definition must be an object'];
+  }
+
+  Object.keys(theme).forEach((key) => {
+    if (key !== 'version' && key !== 'name' && key !== 'modes') {
+      errors.push(`Unknown theme field: ${key}`);
+    }
+  });
+
   if (theme.version !== THEME_VERSION) {
     errors.push(`Unsupported theme version: ${theme.version}`);
   }
   if (typeof theme.name !== 'string' || !theme.name.trim()) {
     errors.push('Theme name is required');
   }
-  if (typeof theme.modes !== 'object' || theme.modes === null) {
+  if (!isPlainRecord(theme.modes)) {
     errors.push('Theme modes must be an object');
     return errors;
   }
 
+  Object.keys(theme.modes).forEach((mode) => {
+    if (mode !== 'light' && mode !== 'dark') {
+      errors.push(`Unknown theme mode: ${mode}`);
+    }
+  });
+
   (['light', 'dark'] as const).forEach((mode) => {
     const definition = theme.modes[mode];
-    if (!definition) {
+    if (definition === undefined) {
       return;
     }
 
-    Object.entries(definition.colors ?? {}).forEach(([key, value]) => {
-      if (!themeColorTokens.includes(key as keyof IThemeRGB)) {
-        errors.push(`Unknown color token: ${key}`);
-        return;
-      }
-      if (value !== undefined && !isRGB(value)) {
-        errors.push(`Invalid RGB value for ${key}: ${value}`);
+    if (!isPlainRecord(definition)) {
+      errors.push(`Theme mode ${mode} must be an object`);
+      return;
+    }
+
+    Object.keys(definition).forEach((key) => {
+      if (key !== 'colors' && key !== 'appearance') {
+        errors.push(`Unknown ${mode} theme field: ${key}`);
       }
     });
 
-    Object.entries(definition.appearance ?? {}).forEach(([key, value]) => {
-      const appearanceKey = key as keyof IThemeAppearance;
-      const validator = appearanceValidators[appearanceKey];
-      if (!validator) {
-        errors.push(`Unknown appearance token: ${key}`);
-        return;
-      }
-      if (value !== undefined && !validator(value)) {
-        errors.push(`Invalid appearance value for ${key}: ${value}`);
-      }
-    });
+    if (definition.colors !== undefined && !isPlainRecord(definition.colors)) {
+      errors.push(`Theme colors for ${mode} must be an object`);
+    } else {
+      Object.entries(definition.colors ?? {}).forEach(([key, value]) => {
+        if (!themeColorTokens.includes(key as keyof IThemeRGB)) {
+          errors.push(`Unknown color token: ${key}`);
+          return;
+        }
+        if (value !== undefined && !isRGB(value)) {
+          errors.push(`Invalid RGB value for ${key}: ${value}`);
+        }
+      });
+    }
+
+    if (definition.appearance !== undefined && !isPlainRecord(definition.appearance)) {
+      errors.push(`Theme appearance for ${mode} must be an object`);
+    } else {
+      Object.entries(definition.appearance ?? {}).forEach(([key, value]) => {
+        const appearanceKey = key as keyof IThemeAppearance;
+        const validator = appearanceValidators[appearanceKey];
+        if (!validator) {
+          errors.push(`Unknown appearance token: ${key}`);
+          return;
+        }
+        if (value !== undefined && !validator(value)) {
+          errors.push(`Invalid appearance value for ${key}: ${value}`);
+        }
+      });
+    }
   });
 
   return errors;

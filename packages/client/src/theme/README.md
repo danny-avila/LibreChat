@@ -75,7 +75,8 @@ The theme system operates in three layers:
 
 - Prefer the versioned `themeDefinition` prop; the legacy `themeRGB` prop remains supported
 - Overrides CSS variables with bare `R G B` channel triplets
-- Resolves missing values against the bundled light/dark defaults
+- Resolves missing `themeDefinition` values against the bundled light/dark defaults
+- Leaves colors omitted by legacy `themeRGB` unset so consumer CSS continues to cascade
 
 ## Basic Usage
 
@@ -540,7 +541,9 @@ function App() {
 }
 ```
 
-**Important**: Props passed to ThemeProvider will override stored values on initial mount. Only pass props when you explicitly want to override the user's saved preferences.
+**Important**: Props passed to ThemeProvider override stored values and remain synchronized when they
+change. Only pass theme props when the parent should control those values; otherwise use the context
+setters and allow stored preferences to remain authoritative.
 
 ## Contributing
 

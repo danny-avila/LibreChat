@@ -128,7 +128,9 @@ describe('ThemeProvider', () => {
   });
 
   it('resets only theme-owned properties', async () => {
+    document.documentElement.style.setProperty('--text-primary', '9 9 9', 'important');
     document.documentElement.style.setProperty('--markdown-font-size', '18px');
+    document.documentElement.dataset.theme = 'host';
     render(
       <ThemeProvider initialTheme="light" themeRGB={{ 'rgb-accent-primary': '1 2 3' }}>
         <Controls />
@@ -143,9 +145,67 @@ describe('ThemeProvider', () => {
     await waitFor(() => {
       expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('');
     });
+    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe('9 9 9');
+    expect(document.documentElement.dataset.theme).toBe('host');
     expect(document.documentElement.style.getPropertyValue('--markdown-font-size')).toBe('18px');
     expect(localStorage.getItem('theme-definition')).toBeNull();
     expect(localStorage.getItem('theme-name')).toBeNull();
+  });
+
+  it('does not remove host theme variables when no custom theme is active', async () => {
+    document.documentElement.style.setProperty('--text-primary', '9 9 9');
+    document.documentElement.dataset.theme = 'host';
+
+    const { unmount } = render(
+      <ThemeProvider initialTheme="light">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement).toHaveClass('light');
+    });
+    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe('9 9 9');
+    expect(document.documentElement.dataset.theme).toBe('host');
+
+    unmount();
+
+    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe('9 9 9');
+    expect(document.documentElement.dataset.theme).toBe('host');
+    expect(document.documentElement).not.toHaveClass('light');
+  });
+
+  it('restores host theme values and classes when the provider unmounts', async () => {
+    document.documentElement.style.setProperty('--accent-primary', '9 9 9');
+    document.documentElement.dataset.theme = 'host';
+    document.documentElement.classList.add('dark');
+
+    const { unmount } = render(
+      <ThemeProvider
+        initialTheme="light"
+        themeDefinition={{
+          version: 1,
+          name: 'embedded',
+          modes: { light: { colors: { 'rgb-accent-primary': '1 2 3' } } },
+        }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('embedded');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
+    expect(document.documentElement).toHaveClass('light');
+    expect(document.documentElement).not.toHaveClass('dark');
+
+    unmount();
+
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('9 9 9');
+    expect(document.documentElement.dataset.theme).toBe('host');
+    expect(document.documentElement).toHaveClass('dark');
+    expect(document.documentElement).not.toHaveClass('light');
   });
 
   it('persists legacy prop overrides for later mounts', async () => {
@@ -206,6 +266,93 @@ describe('ThemeProvider', () => {
     expect(localStorage.getItem('theme-name')).toBe('renamed');
   });
 
+  it('synchronizes legacy theme props after mount and restores the host when removed', async () => {
+    document.documentElement.style.setProperty('--accent-primary', '9 9 9');
+    const firstColors = { 'rgb-accent-primary': '1 2 3' };
+    const secondColors = { 'rgb-accent-primary': '4 5 6' };
+    const { rerender } = render(
+      <ThemeProvider initialTheme="light" themeName="first" themeRGB={firstColors}>
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('first');
+    });
+    rerender(
+      <ThemeProvider initialTheme="dark" themeName="second" themeRGB={secondColors}>
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('second');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('4 5 6');
+    expect(document.documentElement).toHaveClass('dark');
+    expect(JSON.parse(localStorage.getItem('theme-colors') ?? '{}')).toEqual(secondColors);
+
+    rerender(
+      <ThemeProvider initialTheme="dark">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('9 9 9');
+    });
+    expect(document.documentElement).not.toHaveAttribute('data-theme');
+    expect(localStorage.getItem('theme-definition')).toBeNull();
+  });
+
+  it('synchronizes valid definition props while ignoring invalid replacements', async () => {
+    const { rerender } = render(
+      <ThemeProvider
+        initialTheme="light"
+        themeDefinition={{
+          version: 1,
+          name: 'first',
+          modes: { light: { colors: { 'rgb-accent-primary': '1 2 3' } } },
+        }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    rerender(
+      <ThemeProvider
+        initialTheme="light"
+        themeDefinition={{
+          version: 1,
+          name: 'second',
+          modes: { light: { colors: { 'rgb-accent-primary': '4 5 6' } } },
+        }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('second');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('4 5 6');
+
+    rerender(
+      <ThemeProvider
+        initialTheme="light"
+        themeDefinition={{ version: 1, name: 'invalid', modes: { light: [] as never } }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    expect(document.documentElement.dataset.theme).toBe('second');
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('4 5 6');
+    expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toMatchObject({
+      name: 'second',
+    });
+  });
+
   it('coordinates batched legacy color and name updates', async () => {
     render(
       <ThemeProvider
@@ -255,7 +402,7 @@ describe('ThemeProvider', () => {
     });
   });
 
-  it('keeps a valid stored theme when a prop definition is invalid', async () => {
+  it('keeps a valid stored theme when an invalid prop definition is added or removed', async () => {
     const storedDefinition = {
       version: 1 as const,
       name: 'stored',
@@ -264,7 +411,7 @@ describe('ThemeProvider', () => {
     localStorage.setItem('theme-definition', JSON.stringify(storedDefinition));
     localStorage.setItem('theme-name', 'stored');
 
-    render(
+    const { rerender } = render(
       <ThemeProvider
         initialTheme="light"
         themeDefinition={{
@@ -283,6 +430,16 @@ describe('ThemeProvider', () => {
     expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('9 8 7');
     expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toEqual(storedDefinition);
     expect(localStorage.getItem('theme-name')).toBe('stored');
+
+    rerender(
+      <ThemeProvider initialTheme="light">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    expect(document.documentElement.dataset.theme).toBe('stored');
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('9 8 7');
+    expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toEqual(storedDefinition);
   });
 
   it('uses a stable identity when a legacy consumer clears an active theme name', async () => {
