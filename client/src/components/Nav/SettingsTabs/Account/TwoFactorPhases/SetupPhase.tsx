@@ -23,8 +23,8 @@ export const SetupPhase: React.FC<SetupPhaseProps> = ({ isGenerating, onGenerate
 
   return (
     <motion.div {...fadeAnimation} className="space-y-6 text-text-primary">
-      <div className="rounded-xl bg-surface-secondary p-6">
-        <h3 className="mb-4 flex justify-center text-lg font-medium text-text-primary">
+      <div className="flex min-h-72 flex-col justify-center rounded-xl bg-surface-secondary p-8 sm:-mx-4 sm:p-10">
+        <h3 className="mb-6 flex justify-center text-lg font-medium text-text-primary">
           {localize('com_ui_2fa_account_security')}
         </h3>
         <Button

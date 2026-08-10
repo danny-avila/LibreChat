@@ -39,7 +39,11 @@ test.describe('required two-factor enrollment', () => {
     await page.getByRole('button', { name: 'Continue' }).click();
 
     await expect(page).toHaveURL(/\/login\/2fa\/setup\?tempToken=setup-token$/);
-    await page.getByRole('button', { name: 'Generate QR Code' }).click();
+    const generateButton = page.getByRole('button', { name: 'Generate QR Code' });
+    const setupCardBox = await generateButton.locator('..').boundingBox();
+    expect(setupCardBox?.width).toBeGreaterThanOrEqual(430);
+    expect(setupCardBox?.height).toBeGreaterThanOrEqual(288);
+    await generateButton.click();
 
     await expect(page.getByRole('img', { name: 'Scan QR Code' })).toBeVisible();
     await expect(page.getByLabel('Secret Key')).toHaveValue('ABC123');
