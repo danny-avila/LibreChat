@@ -132,8 +132,10 @@ export function useSubmitToolApprovalMutation() {
 
 export interface SubmitAskAnswerParams extends ResumeAgentFields {
   actionId: string;
-  /** Free-form answer to the agent's ask-user question. */
-  answer: string;
+  /** Free-form answer for a legacy single-question pause. */
+  answer?: string;
+  /** Answers keyed by question id for a batched pause. */
+  answers?: Record<string, string>;
 }
 
 /**
@@ -141,11 +143,12 @@ export interface SubmitAskAnswerParams extends ResumeAgentFields {
  * POSTs to the shared resume route; the continuation streams over the existing SSE.
  */
 export const submitAskAnswer = async (params: SubmitAskAnswerParams): Promise<ResumeResponse> => {
-  const { actionId, answer, ...fields } = params;
+  const { actionId, answer, answers, ...fields } = params;
   return postGenerationRequest<ResumeResponse>(`${apiBaseUrl()}/api/agents/chat/resume`, {
     ...buildResumeBase(fields),
     actionId,
-    answer,
+    ...(answer != null && { answer }),
+    ...(answers != null && { answers }),
   });
 };
 

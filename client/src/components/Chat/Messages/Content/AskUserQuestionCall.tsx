@@ -1,5 +1,10 @@
 import { MessageCircleQuestion, TriangleAlert } from 'lucide-react';
-import { getSubmittedAskAnswer, parseAskUserQuestionArgs } from '~/utils/approval';
+import {
+  getSubmittedAskAnswer,
+  parseAskUserQuestionArgs,
+  parseAskUserQuestionsArgs,
+} from '~/utils/approval';
+import type { Agents } from 'librechat-data-provider';
 import AskUserQuestionProgress from './AskUserQuestionProgress';
 import EmptyText from './Parts/EmptyText';
 import { useLocalize } from '~/hooks';
@@ -29,6 +34,7 @@ export default function AskUserQuestionCall({
 }) {
   const localize = useLocalize();
   const question = parseAskUserQuestionArgs(args);
+  const batch = parseAskUserQuestionsArgs(args);
   /**
    * The part's own output arrives from the server only at finalize, and the
    * streaming handler's message copy can overwrite the optimistic store stamp
@@ -36,7 +42,24 @@ export default function AskUserQuestionCall({
    * Q&A record never blinks out while the resumed segment streams.
    */
   const effectiveOutput = output.length > 0 ? output : (getSubmittedAskAnswer(toolCallId) ?? '');
-  const answered = effectiveOutput.length > 0 && !failed;
+  const batchAnswers = (() => {
+    if (batch == null || effectiveOutput.length === 0) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(effectiveOutput) as { answers?: unknown };
+      return parsed.answers != null && typeof parsed.answers === 'object'
+        ? (parsed.answers as Record<string, string>)
+        : null;
+    } catch {
+      return null;
+    }
+  })();
+  const answered =
+    !failed &&
+    (batch != null
+      ? batch.questions.every((item) => typeof batchAnswers?.[item.id] === 'string')
+      : effectiveOutput.length > 0);
 
   /**
    * While the turn is live and unanswered, the INTERACTIVE card (rendered from
@@ -64,6 +87,57 @@ export default function AskUserQuestionCall({
         <EmptyText />
       </Container>
     ) : null;
+
+  if (batch != null) {
+    let statusLabel = localize('com_ui_asking');
+    if (failed) {
+      statusLabel = localize('com_ui_question_failed');
+    } else if (answered) {
+      statusLabel = localize('com_ui_asked');
+    }
+    return (
+      <>
+        <div className="my-2 flex w-full flex-col rounded-lg border border-border-light bg-surface-secondary">
+          <div className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-text-secondary">
+            {failed ? (
+              <TriangleAlert className="h-4 w-4 text-text-warning" aria-hidden="true" />
+            ) : (
+              <MessageCircleQuestion className="h-4 w-4" aria-hidden="true" />
+            )}
+            {statusLabel}
+          </div>
+          <div className="px-3 pb-3">
+            {batch.questions.map((item, index) => {
+              const answer = batchAnswers?.[item.id];
+              return (
+                <div key={item.id} className={index > 0 ? 'border-t border-border-light pt-3' : ''}>
+                  {item.header != null && (
+                    <p className="text-xs font-medium text-text-secondary">{item.header}</p>
+                  )}
+                  <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
+                    {item.question}
+                  </p>
+                  {typeof answer === 'string' ? (
+                    <p className="mt-1 text-sm text-text-primary [overflow-wrap:anywhere]">
+                      <span className="font-medium text-text-secondary">
+                        {localize('com_ui_you_answered')}
+                      </span>{' '}
+                      {formatAnswerLabel(item, answer)}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-sm italic text-text-secondary">
+                      {localize('com_ui_question_unanswered')}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {resumingCursor}
+      </>
+    );
+  }
 
   if (failed) {
     return (
@@ -98,17 +172,8 @@ export default function AskUserQuestionCall({
    * such a value into fragments that relabel as options the user never
    * picked. When any segment misses, show the raw answer untouched.
    */
-  const exactLabel = question?.options?.find((option) => option.value === effectiveOutput)?.label;
-  const mappedMultiLabel = (() => {
-    if (exactLabel != null || question?.multiSelect !== true || question.options == null) {
-      return null;
-    }
-    const labels = effectiveOutput
-      .split(', ')
-      .map((segment) => question.options?.find((option) => option.value === segment)?.label);
-    return labels.every((label) => label != null) ? labels.join(', ') : null;
-  })();
-  const answerLabel = exactLabel ?? mappedMultiLabel ?? effectiveOutput;
+  const answerLabel =
+    question == null ? effectiveOutput : formatAnswerLabel(question, effectiveOutput);
 
   return (
     <>
@@ -141,4 +206,15 @@ export default function AskUserQuestionCall({
       {resumingCursor}
     </>
   );
+}
+
+function formatAnswerLabel(question: Agents.AskUserQuestionRequest, answer: string): string {
+  const exactLabel = question.options?.find((option) => option.value === answer)?.label;
+  if (exactLabel != null || question.multiSelect !== true || question.options == null) {
+    return exactLabel ?? answer;
+  }
+  const labels = answer
+    .split(', ')
+    .map((segment) => question.options?.find((option) => option.value === segment)?.label);
+  return labels.every((label) => label != null) ? labels.join(', ') : answer;
 }

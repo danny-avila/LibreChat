@@ -24,6 +24,10 @@ jest.mock('~/utils/approval', () => ({
     }
     return args ?? null;
   },
+  parseAskUserQuestionsArgs: (args: string | Record<string, unknown> | undefined) => {
+    const parsed = typeof args === 'string' ? JSON.parse(args) : args;
+    return Array.isArray(parsed?.questions) ? parsed : null;
+  },
 }));
 
 jest.mock('../AskUserQuestionProgress', () => ({
@@ -112,5 +116,30 @@ describe('AskUserQuestionCall', () => {
     expect(screen.getByText('You answered:')).toBeInTheDocument();
     expect(screen.getByText(output)).toBeInTheDocument();
     expect(screen.queryByText("Question wasn't shown")).not.toBeInTheDocument();
+  });
+
+  test('renders each question and answer from one completed batch', () => {
+    render(
+      <AskUserQuestionCall
+        args={JSON.stringify({
+          questions: [
+            {
+              id: 'environment',
+              header: 'Environment',
+              question: 'Where should this run?',
+              options: [{ label: 'Staging', value: 'staging' }],
+            },
+            { id: 'window', question: 'Which window?' },
+          ],
+        })}
+        output={JSON.stringify({ answers: { environment: 'staging', window: '7d' } })}
+      />,
+    );
+
+    expect(screen.getByText('Environment')).toBeInTheDocument();
+    expect(screen.getByText('Where should this run?')).toBeInTheDocument();
+    expect(screen.getByText('Staging')).toBeInTheDocument();
+    expect(screen.getByText('Which window?')).toBeInTheDocument();
+    expect(screen.getByText('7d')).toBeInTheDocument();
   });
 });

@@ -70,6 +70,7 @@ const Part = memo(function Part({
         key={askUserQuestion.ask_user_question.actionId}
         actionId={askUserQuestion.ask_user_question.actionId}
         question={askUserQuestion.ask_user_question.question}
+        questions={askUserQuestion.ask_user_question.questions}
       />
     );
   }

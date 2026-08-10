@@ -9,6 +9,7 @@ import type { Agents } from 'librechat-data-provider';
 import {
   mapToolApprovalResolutions,
   mapAskUserAnswer,
+  mapAskUserAnswers,
   findUndecidedToolCalls,
   findDisallowedDecisions,
   findIncompleteDecisions,
@@ -67,6 +68,14 @@ describe('mapToolApprovalResolutions', () => {
 describe('mapAskUserAnswer', () => {
   test('passes the answer through unchanged', () => {
     expect(mapAskUserAnswer({ answer: 'staging' })).toEqual({ answer: 'staging' });
+  });
+});
+
+describe('mapAskUserAnswers', () => {
+  it('preserves answers keyed by question id', () => {
+    expect(mapAskUserAnswers({ answers: { environment: 'staging', window: '7d' } })).toEqual({
+      answers: { environment: 'staging', window: '7d' },
+    });
   });
 });
 
@@ -463,6 +472,22 @@ describe('attachAskUserQuestionAnswer', () => {
       attachAskUserQuestionAnswer(content as never, question as never, 'x', 'tc_missing'),
     ).toBe(content);
   });
+
+  it('stamps batched args and structured answers onto one ask tool call', () => {
+    const request = {
+      questions: [
+        { id: 'environment', question: 'Which env?' },
+        { id: 'window', question: 'Which window?' },
+      ],
+    };
+    const output = JSON.stringify({ answers: { environment: 'staging', window: '7d' } });
+    const next = attachAskUserQuestionAnswer([askPart()] as never, request, output);
+    const toolCall = (next[0] as { tool_call: { args: string; output: string } }).tool_call;
+    expect(JSON.parse(toolCall.args)).toEqual(request);
+    expect(JSON.parse(toolCall.output)).toEqual({
+      answers: { environment: 'staging', window: '7d' },
+    });
+  });
 });
 
 describe('attachAskUserQuestionArgs (pause-time stamp)', () => {
@@ -499,5 +524,21 @@ describe('attachAskUserQuestionArgs (pause-time stamp)', () => {
       question,
     );
     expect((next[1] as { tool_call: { args: string } }).tool_call.args).toBe('');
+  });
+
+  it('stamps the complete batched request at pause time', () => {
+    const content = [
+      { type: 'tool_call', tool_call: { id: 'tc1', name: 'ask_user_question', args: '' } },
+    ];
+    const request = {
+      questions: [
+        { id: 'environment', question: 'Which env?' },
+        { id: 'window', question: 'Which window?' },
+      ],
+    };
+    const next = attachAskUserQuestionArgs(content as never, request);
+    expect(JSON.parse((next[0] as { tool_call: { args: string } }).tool_call.args)).toEqual(
+      request,
+    );
   });
 });

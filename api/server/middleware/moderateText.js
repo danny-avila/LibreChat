@@ -32,6 +32,13 @@ async function moderateText(req, res, next) {
     if (safeText.length > 0) {
       inputs.push(safeText);
     }
+    if (req.body.answers != null && typeof req.body.answers === 'object') {
+      for (const answer of Object.values(req.body.answers)) {
+        if (typeof answer === 'string' && answer.length > 0) {
+          inputs.push(answer);
+        }
+      }
+    }
     const quotes = getReferencedQuotes(req.body.quotes);
     if (quotes != null) {
       inputs.push(...quotes);

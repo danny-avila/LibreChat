@@ -3,6 +3,7 @@ import type {
   ToolApprovalDecision,
   ToolApprovalDecisionMap,
   AskUserQuestionResolution,
+  AskUserQuestionsResolution,
   EventHandler,
   RunStep,
 } from '@librechat/agents';
@@ -55,6 +56,13 @@ export function mapAskUserAnswer(
   resolution: Agents.AskUserQuestionResolution,
 ): AskUserQuestionResolution {
   return { answer: resolution.answer };
+}
+
+/** Translate batched ask-user wire answers into the SDK's resume value. */
+export function mapAskUserAnswers(
+  resolution: Agents.AskUserQuestionsResolution,
+): AskUserQuestionsResolution {
+  return { answers: resolution.answers };
 }
 
 /**
@@ -350,8 +358,8 @@ export function attachAskUserQuestionAnswer<
   TPart extends { type?: string; tool_call?: { id?: string; name?: string; output?: unknown } },
 >(
   content: TPart[],
-  question: Agents.AskUserQuestionRequest,
-  answer: string,
+  request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest,
+  output: string,
   toolCallId?: string,
 ): TPart[] {
   const index = findAskPartIndex(
@@ -368,8 +376,8 @@ export function attachAskUserQuestionAnswer<
     ...part,
     tool_call: {
       ...part.tool_call,
-      args: JSON.stringify(question),
-      output: answer,
+      args: JSON.stringify(request),
+      output,
       progress: 1,
     },
   };
@@ -391,7 +399,11 @@ export function attachAskUserQuestionArgs<
     type?: string;
     tool_call?: { id?: string; name?: string; args?: unknown; output?: unknown };
   },
->(content: TPart[], question: Agents.AskUserQuestionRequest, toolCallId?: string): TPart[] {
+>(
+  content: TPart[],
+  request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest,
+  toolCallId?: string,
+): TPart[] {
   const index = findAskPartIndex(content, toolCallId, (part) => {
     const toolCall = part.tool_call;
     const hasArgs =
@@ -406,6 +418,6 @@ export function attachAskUserQuestionArgs<
   }
   const part = content[index];
   const next = [...content];
-  next[index] = { ...part, tool_call: { ...part.tool_call, args: JSON.stringify(question) } };
+  next[index] = { ...part, tool_call: { ...part.tool_call, args: JSON.stringify(request) } };
   return next;
 }

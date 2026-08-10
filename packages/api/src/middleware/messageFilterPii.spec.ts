@@ -115,6 +115,15 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
+  it('rejects a batched ask-user answer containing a blocked token', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {},
+      { answers: { environment: 'staging', credentials: `the key is ${SK}` } },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
   it('rejects a tool-approval decision responseText containing a blocked token', () => {
     const { capturedRes, nextCalls } = runMiddleware(
       {},
