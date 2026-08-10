@@ -1,3 +1,4 @@
+import Keyv from 'keyv';
 import { createScope } from '@librechat/data-schemas';
 import type { Scope } from '@librechat/data-schemas';
 import type { SearchPool } from './types';
@@ -6,6 +7,7 @@ import {
   hashQuery,
   decodeCursor,
   encodeCursor,
+  createKeyvSnapshotStore,
   createMemorySnapshotStore,
   SNAPSHOT_STORE_CAPACITY,
 } from './cursor';
@@ -207,6 +209,43 @@ describePg('PostgresChatSearch', () => {
       });
       expect(paged.nextCursor).not.toBeNull();
       expect(stored).toHaveLength(1);
+    });
+
+    /**
+     * The multi-pod property. Per-instance stores are what a horizontally
+     * scaled deployment must not run: the second instance misses the snapshot,
+     * re-runs, and serves page one again under a fresh cursor — a loop, not a
+     * shifted page. The first half pins that failure; the second half pins the
+     * shared store curing it, over a real Keyv cache.
+     */
+    it('continues pagination on a second instance through a shared snapshot store', async () => {
+      const request = { target: 'messages' as const, scope: ALICE, query: 'quarterly', limit: 5 };
+      const instance = (snapshots?: ReturnType<typeof createMemorySnapshotStore>) =>
+        new PostgresChatSearch({
+          pool,
+          resolveScope: () => scope,
+          cursorSecret: SECRET,
+          ...(snapshots ? { snapshots } : {}),
+        });
+
+      const isolatedFirst = await instance().search(request);
+      const isolatedSecond = await instance().search({
+        ...request,
+        cursor: isolatedFirst.nextCursor ?? undefined,
+      });
+      expect(isolatedSecond.hits.map((hit) => hit.recordId)).toEqual(
+        isolatedFirst.hits.map((hit) => hit.recordId),
+      );
+
+      const shared = createKeyvSnapshotStore(new Keyv());
+      const first = await instance(shared).search(request);
+      expect(first.nextCursor).not.toBeNull();
+      const second = await instance(shared).search({ ...request, cursor: first.nextCursor! });
+      expect(second.hits.length).toBeGreaterThan(0);
+      const firstIds = new Set(first.hits.map((hit) => hit.recordId));
+      for (const hit of second.hits) {
+        expect(firstIds.has(hit.recordId)).toBe(false);
+      }
     });
 
     it('ends with a null cursor once the snapshot is exhausted', async () => {

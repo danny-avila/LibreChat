@@ -1,9 +1,35 @@
 import { logger, resolveScope } from '@librechat/data-schemas';
 import type { ChatSearch, SearchPool } from './types';
+import type { SnapshotStore } from './cursor';
 import type { QueryEmbedder } from './search';
+import { createKeyvSnapshotStore, createMemorySnapshotStore } from './cursor';
 import { MeiliChatSearch, meiliSearchConfigured } from './meili';
+import { cacheConfig, standardCache } from '../cache';
 import { PostgresChatSearch } from './search';
 import { createSearchPool } from './pool';
+
+/**
+ * Not a `CacheKeys` member on purpose: the namespace is internal to chat-search
+ * pagination, never operator-tuned, and the enum is the shared app-config
+ * surface.
+ */
+const SNAPSHOT_CACHE_NAMESPACE = 'CHAT_SEARCH_SNAPSHOTS';
+
+/**
+ * Pagination snapshots live in the shared cache whenever Redis is configured:
+ * the in-process store is per-pod, and a next-page request that lands on a
+ * different pod would miss its snapshot and serve page one again under a fresh
+ * cursor. Without Redis the bounded in-process store remains and single-pod
+ * behaviour is unchanged. The shared-store property is pinned in
+ * `search.spec.ts`, 'continues pagination on a second instance through a
+ * shared snapshot store'.
+ */
+function productionSnapshotStore(): SnapshotStore {
+  if (!cacheConfig.USE_REDIS) {
+    return createMemorySnapshotStore();
+  }
+  return createKeyvSnapshotStore(standardCache(SNAPSHOT_CACHE_NAMESPACE));
+}
 
 /**
  * Boot-time construction of the request-path search backend.
@@ -87,6 +113,7 @@ export function createChatSearch(options: ChatSearchOptions = {}): ChatSearchRun
      */
     resolveScope,
     embedder: options.embedder,
+    snapshots: productionSnapshotStore(),
   });
 
   logger.info('[chatSearch] PostgreSQL chat search is enabled');

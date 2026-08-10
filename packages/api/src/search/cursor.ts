@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import type { Scope } from '@librechat/data-schemas';
+import type Keyv from 'keyv';
 import type { SearchTarget, SortDirection, SortField } from './types';
 import { CURSOR_VERSION } from './constants';
 
@@ -148,11 +149,13 @@ export const SNAPSHOT_STORE_CAPACITY = 1_000;
 /**
  * Process-local snapshot store, bounded.
  *
- * Adequate for a single pod; a multi-pod deployment supplies a shared
- * (Redis-backed) implementation instead. A miss is never an error — the search
- * re-runs and re-snapshots — so the degraded behaviour of this default under
- * multiple pods is a slightly shifted page, not a failure, and that is also what
- * makes evicting under pressure safe.
+ * For a single process only: on a multi-instance deployment a next-page request
+ * that lands elsewhere misses the snapshot, re-runs, and serves page one again
+ * under a fresh cursor — 'continues pagination on a second instance through a
+ * shared snapshot store' in `search.spec.ts` pins exactly that repeat, which is
+ * why `createChatSearch` swaps in the Keyv store below whenever Redis is
+ * configured. A miss is still never an error — the search re-runs and
+ * re-snapshots — which is what makes evicting under pressure safe.
  *
  * The bound is a real one. Sweeping expired entries alone bounds nothing: a burst
  * of searches inside one TTL window is entirely *live*, so nothing is eligible and
@@ -198,6 +201,28 @@ export function createMemorySnapshotStore(
       if (entries.size > capacity) {
         evict();
       }
+    },
+  };
+}
+
+/**
+ * Snapshot store over a Keyv cache, which is how a multi-instance deployment
+ * shares pagination state. The memory store above is per-process: a next-page
+ * request that lands on a different pod misses the snapshot there, and the
+ * search re-runs from page one under a fresh cursor — a loop, not a shifted
+ * page. Behind a shared cache every pod reads the same snapshot. TTL is passed
+ * per entry, and capacity is the backing store's own eviction rather than a
+ * count bound here. `search.spec.ts` pins the property in 'continues pagination
+ * on a second instance through a shared snapshot store'.
+ */
+export function createKeyvSnapshotStore(cache: Keyv<Snapshot>): SnapshotStore {
+  return {
+    async get(snapshotId) {
+      const snapshot = await cache.get(snapshotId);
+      return snapshot ?? null;
+    },
+    async set(snapshotId, snapshot, ttlMs) {
+      await cache.set(snapshotId, snapshot, ttlMs);
     },
   };
 }
