@@ -602,6 +602,13 @@ endpoints:
       # activityPrompt: 'Write a 5-9 word past-tense label...'
       # activityMaxPerRun: 20           # cost cap per response
       # activityCharLimit: 600          # per-entry prompt truncation
+      # Parent phase summaries are an independent opt-in. They collapse 2+
+      # logical activities before the answer into one run-level summary.
+      # activityPhaseLabel: true
+      # activityPhaseModel: 'claude-3-5-haiku' # falls back to activity/title/run model
+      # activityPhaseEndpoint: 'anthropic'     # falls back to activity/run endpoint
+      # activityPhasePrompt: 'Summarize the completed agent phase...'
+      # activityPhaseMaxPerRun: 5               # cost cap per response
       modelDisplayLabel: 'Claude (Compatible)'
 
     # Groq Example

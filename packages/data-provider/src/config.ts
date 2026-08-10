@@ -677,6 +677,16 @@ export const baseEndpointSchema = z.object({
   activityMaxPerRun: z.number().int().positive().optional(),
   /** Per-entry truncation of tool input/output in the label prompt. Default 600. */
   activityCharLimit: z.number().int().positive().optional(),
+  /** Generates one parent summary for each run phase containing 2+ activities. */
+  activityPhaseLabel: z.boolean().optional(),
+  /** Model used for phase summaries. Defaults to activityModel, titleModel, then the run model. */
+  activityPhaseModel: z.string().optional(),
+  /** Endpoint whose credentials the phase summary model uses. Defaults to activityEndpoint. */
+  activityPhaseEndpoint: z.string().optional(),
+  /** Overrides the dedicated phase-summary system prompt. */
+  activityPhasePrompt: z.string().optional(),
+  /** Cost cap: maximum phase summaries generated per run. Default 5. */
+  activityPhaseMaxPerRun: z.number().int().positive().optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
 });
@@ -1122,6 +1132,11 @@ export const azureEndpointSchema = z
         activityPrompt: true,
         activityMaxPerRun: true,
         activityCharLimit: true,
+        activityPhaseLabel: true,
+        activityPhaseModel: true,
+        activityPhaseEndpoint: true,
+        activityPhasePrompt: true,
+        activityPhaseMaxPerRun: true,
       })
       .partial(),
   );

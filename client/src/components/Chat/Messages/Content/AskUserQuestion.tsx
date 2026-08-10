@@ -2,7 +2,7 @@ import { useContext, useMemo, useState } from 'react';
 import { ChevronUp, TriangleAlert } from 'lucide-react';
 import { Button, TextareaAutosize } from '@librechat/client';
 import type { Agents } from 'librechat-data-provider';
-import { useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
+import { useApprovalContext, useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import { ChatContext } from '~/Providers/ChatContext';
 import { splitOtherOption } from '~/utils/approval';
@@ -25,9 +25,10 @@ export default function AskUserQuestion({
   question: Agents.AskUserQuestionRequest;
 }) {
   const localize = useLocalize();
+  const { getAskAnswerDraft, setAskAnswerDraft } = useApprovalContext();
   const { getAskStatus } = useAskSubmitStatus();
   const { submitAskAnswer } = useResumeSubmit();
-  const [answer, setAnswer] = useState('');
+  const [answer, setAnswer] = useState(() => getAskAnswerDraft(actionId));
   const [localChecked, setLocalChecked] = useState<number[]>([]);
   /**
    * The composer popover is the primary answer surface — while it's VISIBLE
@@ -152,7 +153,10 @@ export default function AskUserQuestion({
       <TextareaAutosize
         value={answer}
         disabled={locked}
-        onChange={(e) => setAnswer(e.target.value)}
+        onChange={(e) => {
+          setAnswer(e.target.value);
+          setAskAnswerDraft(actionId, e.target.value);
+        }}
         minRows={2}
         maxRows={12}
         placeholder={otherLabel ?? localize('com_ui_your_answer')}

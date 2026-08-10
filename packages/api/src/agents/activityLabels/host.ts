@@ -11,6 +11,16 @@ import { resolveConfigHeaders } from '~/utils/headers';
 import { omitTitleOptions } from '~/agents/client';
 import { createSafeUser } from '~/utils/env';
 
+/** Additive phase fields may precede the rebuilt data-provider artifact in a
+ *  package-local typecheck, so keep the endpoint view structural here. */
+type ActivityEndpoint = TEndpoint & {
+  activityPhaseLabel?: boolean;
+  activityPhaseModel?: string;
+  activityPhaseEndpoint?: string;
+  activityPhasePrompt?: string;
+  activityPhaseMaxPerRun?: number;
+};
+
 /** Cache-token details in the LangChain-standard normalized shape. */
 interface CacheTokenDetails {
   cache_read?: number;
@@ -134,6 +144,16 @@ export interface ResolvedActivityConfig {
   charLimit?: number;
 }
 
+/** Effective parent activity-phase settings for one endpoint. */
+export interface ResolvedActivityPhaseConfig {
+  enabled: boolean;
+  model?: string;
+  endpoint?: string;
+  prompt?: string;
+  maxPerRun?: number;
+  charLimit?: number;
+}
+
 /**
  * Reads the per-endpoint `activity*` settings, mirroring how titles resolve
  * theirs: an `endpoints.all` block wins over the named endpoint, which wins
@@ -149,17 +169,17 @@ export interface ResolvedActivityConfig {
  * `titleModel` fallback. Global still wins per field, so a real
  * `all.activityLabel` keeps overriding the endpoint.
  */
-function pickEndpointField<K extends keyof TEndpoint>(
+function pickEndpointField<K extends keyof ActivityEndpoint>(
   appConfig: AppConfig | undefined,
   endpoint: string,
-  customEndpointConfig: Partial<TEndpoint> | undefined,
+  customEndpointConfig: Partial<ActivityEndpoint> | undefined,
   key: K,
   publicEndpoint?: string,
-): TEndpoint[K] | undefined {
+): ActivityEndpoint[K] | undefined {
   const endpoints = appConfig?.endpoints as
-    | (Record<string, TEndpoint | undefined> & { all?: TEndpoint })
+    | (Record<string, ActivityEndpoint | undefined> & { all?: ActivityEndpoint })
     | undefined;
-  const all = endpoints?.all as Partial<TEndpoint> | undefined;
+  const all = endpoints?.all as Partial<ActivityEndpoint> | undefined;
   /** The PUBLIC endpoint the request came in on, when it differs from the
    *  backing provider. `initializeAgent` rewrites `agent.endpoint` to the
    *  provider (an agents-endpoint run backed by OpenAI reads `openAI`), so
@@ -169,9 +189,11 @@ function pickEndpointField<K extends keyof TEndpoint>(
    *  mirroring how request-path options resolve. */
   const publicBlock =
     publicEndpoint != null && publicEndpoint !== endpoint
-      ? (endpoints?.[publicEndpoint] as Partial<TEndpoint> | undefined)
+      ? (endpoints?.[publicEndpoint] as Partial<ActivityEndpoint> | undefined)
       : undefined;
-  const named = (endpoints?.[endpoint] ?? customEndpointConfig) as Partial<TEndpoint> | undefined;
+  const named = (endpoints?.[endpoint] ?? customEndpointConfig) as
+    | Partial<ActivityEndpoint>
+    | undefined;
   return all?.[key] ?? publicBlock?.[key] ?? named?.[key];
 }
 
@@ -181,7 +203,7 @@ export function resolveActivityConfig(
   customEndpointConfig?: Partial<TEndpoint>,
   publicEndpoint?: string,
 ): ResolvedActivityConfig {
-  const pick = <K extends keyof TEndpoint>(key: K): TEndpoint[K] | undefined =>
+  const pick = <K extends keyof ActivityEndpoint>(key: K): ActivityEndpoint[K] | undefined =>
     pickEndpointField(appConfig, endpoint, customEndpointConfig, key, publicEndpoint);
   return {
     enabled: pick('activityLabel') === true,
@@ -191,6 +213,24 @@ export function resolveActivityConfig(
     maxPerRun: pick('activityMaxPerRun'),
     charLimit: pick('activityCharLimit'),
     /** `titleModel` is the documented fallback below, not a field here. */
+  };
+}
+
+export function resolveActivityPhaseConfig(
+  appConfig: AppConfig | undefined,
+  endpoint: string,
+  customEndpointConfig?: Partial<TEndpoint>,
+  publicEndpoint?: string,
+): ResolvedActivityPhaseConfig {
+  const pick = <K extends keyof ActivityEndpoint>(key: K): ActivityEndpoint[K] | undefined =>
+    pickEndpointField(appConfig, endpoint, customEndpointConfig, key, publicEndpoint);
+  return {
+    enabled: pick('activityPhaseLabel') === true,
+    model: pick('activityPhaseModel') ?? pick('activityModel'),
+    endpoint: pick('activityPhaseEndpoint') ?? pick('activityEndpoint'),
+    prompt: pick('activityPhasePrompt'),
+    maxPerRun: pick('activityPhaseMaxPerRun'),
+    charLimit: pick('activityCharLimit'),
   };
 }
 
@@ -208,16 +248,24 @@ export async function resolveActivityLabelModel({
   publicEndpoint,
   ids,
   db,
-}: ResolveActivityLabelModelParams): Promise<ActivityLabelLLM> {
+  phase = false,
+}: ResolveActivityLabelModelParams & { phase?: boolean }): Promise<ActivityLabelLLM> {
   const appConfig = req.config as AppConfig | undefined;
   const agentEndpoint = agent.endpoint ?? '';
   let providerConfig = getProviderConfig({ provider: agentEndpoint, appConfig });
-  const activity = resolveActivityConfig(
-    appConfig,
-    agentEndpoint,
-    providerConfig.customEndpointConfig,
-    publicEndpoint,
-  );
+  const activity = phase
+    ? resolveActivityPhaseConfig(
+        appConfig,
+        agentEndpoint,
+        providerConfig.customEndpointConfig,
+        publicEndpoint,
+      )
+    : resolveActivityConfig(
+        appConfig,
+        agentEndpoint,
+        providerConfig.customEndpointConfig,
+        publicEndpoint,
+      );
 
   /**
    * Captured from the ORIGINATING endpoint, before any `activityEndpoint`
@@ -383,6 +431,13 @@ export async function resolveActivityLabelModel({
     endpointTokenConfig: options.endpointTokenConfig,
     sameEndpoint: endpoint === agentEndpoint,
   };
+}
+
+/** Phase-model resolution shares credentials and sanitization with child labels. */
+export function resolveActivityPhaseLabelModel(
+  params: ResolveActivityLabelModelParams,
+): Promise<ActivityLabelLLM> {
+  return resolveActivityLabelModel({ ...params, phase: true });
 }
 
 /**

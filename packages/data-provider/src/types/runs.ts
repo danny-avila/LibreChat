@@ -83,9 +83,9 @@ export enum SteerEvents {
 
 /**
  * Activity-label event names. `on_activity_label` streams to live clients
- * when a tool-batch label part is claimed (deterministic counts) and again
- * when the fast-model label resolves; reconnecting clients recover applied
- * labels from `aggregatedContent` like any other content part.
+ * when a tool-batch or parent-phase label part is claimed and again when the
+ * fast-model label resolves; reconnecting clients recover applied labels
+ * from `aggregatedContent` like any other content part.
  */
 export enum ActivityLabelEvents {
   ON_ACTIVITY_LABEL = 'on_activity_label',
@@ -98,7 +98,12 @@ export type TActivityLabelEvent = {
   part: {
     type: ContentTypes.ACTIVITY_LABEL;
     [ContentTypes.ACTIVITY_LABEL]: string;
+    /** Missing means a per-batch activity label. */
+    activity_label_type?: 'phase';
     tool_call_ids?: string[];
+    activity_start_index?: number;
+    activity_count?: number;
+    agent_ids?: string[];
     counts?: {
       searches: number;
       reads: number;
@@ -230,8 +235,8 @@ export type TTokenUsageEvent = {
   /** Non-primary buckets fold into session cost/totals but not the live
    *  context gauge: hidden sequential-agent calls (`sequential`), summary
    *  passes (`summarization`), isolated subagent runs (`subagent`), and
-   *  fast-model activity headers (`activity-label`) */
-  usage_type?: 'summarization' | 'subagent' | 'sequential' | 'activity-label';
+   *  fast-model activity headers (`activity-label`, `activity-phase`) */
+  usage_type?: 'summarization' | 'subagent' | 'sequential' | 'activity-label' | 'activity-phase';
   runId?: string;
   /** Per-run emission sequence; keeps identical payloads from distinct model calls unique */
   seq?: number;
