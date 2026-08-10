@@ -1268,11 +1268,11 @@ class BaseClient {
     const lastIndex = existingContent.length - 1;
     const lastExisting = existingContent[lastIndex];
     const firstNew = newCompletion[0];
+    /** Phased and legacy/unphased text are distinct semantic streams. Merging
+     *  either direction would stamp retained text with the wrong phase. */
     const textPhaseCompatible =
       editedType !== ContentTypes.TEXT ||
-      lastExisting?.phase == null ||
-      firstNew?.phase == null ||
-      lastExisting.phase === firstNew.phase;
+      (lastExisting?.phase ?? null) === (firstNew?.phase ?? null);
     const mergesFirstPart =
       (editedType === ContentTypes.TEXT || editedType === ContentTypes.THINK) &&
       lastExisting?.type === firstNew?.type &&

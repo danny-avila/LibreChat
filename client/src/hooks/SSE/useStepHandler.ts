@@ -360,11 +360,11 @@ export default function useStepHandler({
         const existingType = existingPart?.type;
         const existingPhase =
           existingPart?.type === ContentTypes.TEXT ? existingPart.phase : undefined;
+        /** Match final assembly: phased and legacy/unphased text cannot share
+         *  a content part because the phase controls client grouping. */
         const phaseCompatible =
           incomingContentType !== ContentTypes.TEXT ||
-          incomingPhase == null ||
-          existingPhase == null ||
-          incomingPhase === existingPhase;
+          (incomingPhase ?? null) === (existingPhase ?? null);
         if (existingType === incomingContentType && phaseCompatible) {
           return targetIndex;
         }

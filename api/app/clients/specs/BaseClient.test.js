@@ -1819,5 +1819,30 @@ describe('BaseClient', () => {
         { ...completion[1], activity_start_index: 1 },
       ]);
     });
+
+    test.each([
+      [undefined, 'commentary'],
+      ['commentary', undefined],
+    ])('does not merge phased and unphased text (%s → %s)', (existingPhase, completionPhase) => {
+      const existing = [
+        {
+          type: ContentTypes.TEXT,
+          text: 'Retained text. ',
+          ...(existingPhase != null && { phase: existingPhase }),
+        },
+      ];
+      const completion = [
+        {
+          type: ContentTypes.TEXT,
+          text: 'New text.',
+          ...(completionPhase != null && { phase: completionPhase }),
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.TEXT)).toEqual([
+        existing[0],
+        completion[0],
+      ]);
+    });
   });
 });

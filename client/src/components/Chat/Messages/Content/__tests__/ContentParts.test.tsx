@@ -61,8 +61,10 @@ jest.mock('../ToolCallGroup', () => ({
 
 jest.mock('../ActivityPhaseGroup', () => ({
   __esModule: true,
-  default: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="activity-phase-group">{children}</div>
+  default: ({ children, showCursor }: { children: React.ReactNode; showCursor?: boolean }) => (
+    <div data-testid="activity-phase-group" data-show-cursor={String(showCursor === true)}>
+      {children}
+    </div>
   ),
 }));
 
@@ -316,6 +318,35 @@ describe('ContentParts — post-steer author re-attribution', () => {
 });
 
 describe('ContentParts — activity phase state', () => {
+  it('keeps a streaming cursor when a completed phase marker is the visible tail', () => {
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Compared both search results',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_count: 2,
+      pending: false,
+    } as unknown as TMessageContentParts;
+
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[
+          { type: ContentTypes.TEXT, text: 'working' } as unknown as TMessageContentParts,
+          phase,
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    expect(screen.getByTestId('activity-phase-group')).toHaveAttribute(
+      'data-show-cursor',
+      'true',
+    );
+  });
+
   it('carries the absolute index offset into a parallel phase segment', () => {
     const phase = {
       type: ContentTypes.ACTIVITY_LABEL,

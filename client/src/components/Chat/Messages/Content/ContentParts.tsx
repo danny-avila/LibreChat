@@ -505,6 +505,11 @@ const ContentParts = memo(function ContentParts({
                 key={`activity-phase-${messageId}-${segment.labelIndex}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
+                showCursor={
+                  isLast &&
+                  effectiveIsSubmitting &&
+                  segment.labelIndex + contentIndexOffset === globalLastContentIdx
+                }
               >
                 {renderSegment(
                   segment.content,
