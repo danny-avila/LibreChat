@@ -1,8 +1,6 @@
 import '@testing-library/jest-dom';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { ThemeProvider, useTheme } from './ThemeProvider';
-import { defaultTheme } from '../themes/default';
-import { darkTheme } from '../themes/dark';
 
 const matchMedia = (matches: boolean): MediaQueryList =>
   ({
@@ -26,6 +24,22 @@ function Controls() {
       <button onClick={() => setThemeName('renamed')}>Rename</button>
       <button onClick={() => setThemeName(undefined)}>Clear name</button>
       <button onClick={() => setThemeRGB({ 'rgb-accent-primary': '4 5 6' })}>Set legacy</button>
+      <button
+        onClick={() => {
+          setThemeRGB({ 'rgb-accent-primary': '7 8 9' });
+          setThemeName('batched');
+        }}
+      >
+        Batch legacy
+      </button>
+      <button
+        onClick={() => {
+          setThemeName('name-first');
+          setThemeRGB({ 'rgb-accent-primary': '10 11 12' });
+        }}
+      >
+        Batch name first
+      </button>
       <button onClick={() => setThemeDefinition(undefined)}>Clear definition</button>
       <button onClick={resetTheme}>Reset</button>
     </>
@@ -41,7 +55,8 @@ beforeEach(() => {
 });
 
 describe('ThemeProvider', () => {
-  it('adapts legacy RGB props into a complete mode-aware definition', async () => {
+  it('preserves CSS fallbacks for colors omitted by legacy RGB props', async () => {
+    document.documentElement.style.setProperty('--text-primary', '9 9 9');
     render(
       <ThemeProvider
         initialTheme="light"
@@ -57,9 +72,7 @@ describe('ThemeProvider', () => {
     });
     expect(screen.getByText('legacy')).toBeInTheDocument();
     expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
-    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe(
-      defaultTheme['rgb-text-primary'],
-    );
+    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe('9 9 9');
 
     act(() => screen.getByRole('button', { name: 'Dark' }).click());
 
@@ -67,9 +80,7 @@ describe('ThemeProvider', () => {
       expect(document.documentElement).toHaveClass('dark');
     });
     expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
-    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe(
-      darkTheme['rgb-text-primary'],
-    );
+    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe('9 9 9');
   });
 
   it('keeps theme definition identity authoritative over legacy naming', async () => {
@@ -110,9 +121,7 @@ describe('ThemeProvider', () => {
     await waitFor(() => {
       expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('1 2 3');
     });
-    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe(
-      defaultTheme['rgb-text-primary'],
-    );
+    expect(document.documentElement.style.getPropertyValue('--text-primary')).toBe('');
     expect(JSON.parse(localStorage.getItem('theme-colors') ?? '{}')).toEqual({
       'rgb-accent-primary': '1 2 3',
     });
@@ -195,6 +204,85 @@ describe('ThemeProvider', () => {
       name: 'renamed',
     });
     expect(localStorage.getItem('theme-name')).toBe('renamed');
+  });
+
+  it('coordinates batched legacy color and name updates', async () => {
+    render(
+      <ThemeProvider
+        initialTheme="light"
+        themeName="legacy"
+        themeRGB={{ 'rgb-accent-primary': '1 2 3' }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    act(() => screen.getByRole('button', { name: 'Batch legacy' }).click());
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('batched');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('7 8 9');
+    expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toMatchObject({
+      name: 'batched',
+      modes: {
+        light: { colors: { 'rgb-accent-primary': '7 8 9' } },
+      },
+    });
+    expect(JSON.parse(localStorage.getItem('theme-colors') ?? '{}')).toEqual({
+      'rgb-accent-primary': '7 8 9',
+    });
+  });
+
+  it('coordinates batched legacy name and color updates when no definition is active', async () => {
+    render(
+      <ThemeProvider initialTheme="light">
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    act(() => screen.getByRole('button', { name: 'Batch name first' }).click());
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('name-first');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('10 11 12');
+    expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toMatchObject({
+      name: 'name-first',
+      modes: {
+        light: { colors: { 'rgb-accent-primary': '10 11 12' } },
+      },
+    });
+  });
+
+  it('keeps a valid stored theme when a prop definition is invalid', async () => {
+    const storedDefinition = {
+      version: 1 as const,
+      name: 'stored',
+      modes: { light: { colors: { 'rgb-accent-primary': '9 8 7' } } },
+    };
+    localStorage.setItem('theme-definition', JSON.stringify(storedDefinition));
+    localStorage.setItem('theme-name', 'stored');
+
+    render(
+      <ThemeProvider
+        initialTheme="light"
+        themeDefinition={{
+          version: 1,
+          name: 'invalid',
+          modes: { light: { colors: { 'rgb-accent-primary': 'not-rgb' } } },
+        }}
+      >
+        <Controls />
+      </ThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('stored');
+    });
+    expect(document.documentElement.style.getPropertyValue('--accent-primary')).toBe('9 8 7');
+    expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toEqual(storedDefinition);
+    expect(localStorage.getItem('theme-name')).toBe('stored');
   });
 
   it('uses a stable identity when a legacy consumer clears an active theme name', async () => {

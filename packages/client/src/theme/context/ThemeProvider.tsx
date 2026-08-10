@@ -8,11 +8,9 @@ import React, {
   useState,
 } from 'react';
 import { JSX } from 'react/jsx-runtime';
-
 import type { IThemeRGB, ThemeDefinition, ThemeMode } from '../types';
-
+import applyTheme, { applyResolvedTheme, clearAppliedTheme } from '../utils/applyTheme';
 import { fromLegacyTheme, resolveTheme, validateThemeDefinition } from '../registry';
-import { applyResolvedTheme, clearAppliedTheme } from '../utils/applyTheme';
 
 const THEME_KEY = 'color-theme';
 const THEME_COLORS_KEY = 'theme-colors';
@@ -21,6 +19,11 @@ const THEME_DEFINITION_KEY = 'theme-definition';
 const themeModes = ['light', 'dark', 'system'] as const;
 
 type AppearanceMode = (typeof themeModes)[number];
+
+type InitialThemeState = {
+  definition?: ThemeDefinition;
+  legacyColors?: IThemeRGB;
+};
 
 type ThemeContextType = {
   theme: AppearanceMode;
@@ -124,33 +127,40 @@ const getInitialTheme = (): AppearanceMode => {
   return stored && isAppearanceMode(stored) ? stored : 'system';
 };
 
-const getStoredThemeDefinition = (): ThemeDefinition | undefined => {
+const getStoredThemeState = (): InitialThemeState => {
+  let legacyColors: IThemeRGB | undefined;
+  const storedColors = readStorage(THEME_COLORS_KEY);
+  if (storedColors) {
+    try {
+      const parsed: unknown = JSON.parse(storedColors);
+      if (isValidThemeColors(parsed)) {
+        legacyColors = fromLegacyTheme(parsed).modes.light?.colors;
+      }
+    } catch {
+      // Invalid legacy data is ignored.
+    }
+  }
+
   const storedDefinition = readStorage(THEME_DEFINITION_KEY);
   if (storedDefinition) {
     try {
       const parsed: unknown = JSON.parse(storedDefinition);
       if (isValidThemeDefinition(parsed)) {
-        return parsed;
+        return { definition: parsed, legacyColors };
       }
     } catch {
       // Fall through to the legacy storage adapter.
     }
   }
 
-  const storedColors = readStorage(THEME_COLORS_KEY);
-  if (!storedColors) {
-    return undefined;
+  if (!legacyColors) {
+    return {};
   }
 
-  try {
-    const parsed: unknown = JSON.parse(storedColors);
-    if (isValidThemeColors(parsed)) {
-      return fromLegacyTheme(parsed, readStorage(THEME_NAME_KEY) ?? 'custom');
-    }
-  } catch {
-    // Invalid legacy data is ignored.
-  }
-  return undefined;
+  return {
+    definition: fromLegacyTheme(legacyColors, readStorage(THEME_NAME_KEY) ?? 'custom'),
+    legacyColors,
+  };
 };
 
 const getInitialThemeName = (): string | undefined => readStorage(THEME_NAME_KEY) ?? undefined;
@@ -162,21 +172,37 @@ export function ThemeProvider({
   themeName: propThemeName,
   initialTheme,
 }: ThemeProviderProps): JSX.Element {
+  const initialThemeState = useRef<InitialThemeState | undefined>(undefined);
+  if (!initialThemeState.current) {
+    if (propThemeDefinition && isValidThemeDefinition(propThemeDefinition)) {
+      initialThemeState.current = { definition: propThemeDefinition };
+    } else if (!propThemeDefinition && propThemeRGB) {
+      const definition = fromLegacyTheme(propThemeRGB, propThemeName);
+      initialThemeState.current = {
+        definition,
+        legacyColors: definition.modes.light?.colors,
+      };
+    } else {
+      initialThemeState.current = getStoredThemeState();
+    }
+  }
+
   const [theme, setThemeState] = useState<AppearanceMode>(() =>
     initialTheme && isAppearanceMode(initialTheme) ? initialTheme : getInitialTheme(),
   );
-  const [themeDefinition, setThemeDefinitionState] = useState<ThemeDefinition | undefined>(() => {
-    if (propThemeDefinition) {
-      return propThemeDefinition;
-    }
-    if (propThemeRGB) {
-      return fromLegacyTheme(propThemeRGB, propThemeName);
-    }
-    return getStoredThemeDefinition();
-  });
+  const [themeDefinition, setThemeDefinitionState] = useState<ThemeDefinition | undefined>(
+    initialThemeState.current.definition,
+  );
+  const [legacyThemeRGB, setLegacyThemeRGB] = useState<IThemeRGB | undefined>(
+    initialThemeState.current.legacyColors,
+  );
+  const themeDefinitionRef = useRef(themeDefinition);
+  themeDefinitionRef.current = themeDefinition;
   const [themeName, setThemeNameState] = useState<string | undefined>(
     themeDefinition?.name ?? propThemeName ?? getInitialThemeName,
   );
+  const themeNameRef = useRef(themeName);
+  themeNameRef.current = themeName;
   const persistedInitialProps = useRef(false);
 
   useEffect(() => {
@@ -189,10 +215,19 @@ export function ThemeProvider({
       writeStorage(THEME_KEY, initialTheme);
     }
 
-    const legacyDefinition = propThemeRGB
-      ? fromLegacyTheme(propThemeRGB, propThemeName)
-      : undefined;
-    const definition = propThemeDefinition ?? legacyDefinition;
+    const validPropDefinition =
+      propThemeDefinition && isValidThemeDefinition(propThemeDefinition)
+        ? propThemeDefinition
+        : undefined;
+    if (propThemeDefinition && !validPropDefinition) {
+      return;
+    }
+
+    const legacyDefinition =
+      !propThemeDefinition && propThemeRGB
+        ? fromLegacyTheme(propThemeRGB, propThemeName)
+        : undefined;
+    const definition = validPropDefinition ?? legacyDefinition;
     if (!definition) {
       if (propThemeName && !themeDefinition) {
         writeStorage(THEME_NAME_KEY, propThemeName);
@@ -223,43 +258,47 @@ export function ThemeProvider({
     if (errors.length > 0) {
       throw new TypeError(errors.join('\n'));
     }
+    themeDefinitionRef.current = definition;
     setThemeDefinitionState(definition);
+    setLegacyThemeRGB(undefined);
     writeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
-    if (!definition) {
-      writeStorage(THEME_COLORS_KEY);
-    }
+    writeStorage(THEME_COLORS_KEY);
     setThemeNameState(definition?.name);
+    themeNameRef.current = definition?.name;
     writeStorage(THEME_NAME_KEY, definition?.name);
   }, []);
 
-  const setThemeRGB = useCallback(
-    (colors?: IThemeRGB) => {
-      const definition = colors ? fromLegacyTheme(colors, themeName) : undefined;
-      setThemeDefinition(definition);
-      writeStorage(
-        THEME_COLORS_KEY,
-        definition ? JSON.stringify(definition.modes.light?.colors ?? {}) : undefined,
-      );
-    },
-    [setThemeDefinition, themeName],
-  );
+  const setThemeRGB = useCallback((colors?: IThemeRGB) => {
+    const definition = colors
+      ? fromLegacyTheme(colors, themeDefinitionRef.current?.name ?? themeNameRef.current)
+      : undefined;
+    const legacyColors = definition?.modes.light?.colors;
+    themeDefinitionRef.current = definition;
+    setThemeDefinitionState(definition);
+    setLegacyThemeRGB(legacyColors);
+    setThemeNameState(definition?.name);
+    themeNameRef.current = definition?.name;
+    writeStorage(THEME_DEFINITION_KEY, definition ? JSON.stringify(definition) : undefined);
+    writeStorage(THEME_NAME_KEY, definition?.name);
+    writeStorage(THEME_COLORS_KEY, legacyColors ? JSON.stringify(legacyColors) : undefined);
+  }, []);
 
-  const setThemeName = useCallback(
-    (name?: string) => {
-      const nextName = name?.trim() || (themeDefinition ? 'custom' : undefined);
-      setThemeNameState(nextName);
-      writeStorage(THEME_NAME_KEY, nextName);
+  const setThemeName = useCallback((name?: string) => {
+    const currentDefinition = themeDefinitionRef.current;
+    const nextName = name?.trim() || (currentDefinition ? 'custom' : undefined);
+    setThemeNameState(nextName);
+    themeNameRef.current = nextName;
+    writeStorage(THEME_NAME_KEY, nextName);
 
-      if (!nextName || !themeDefinition) {
-        return;
-      }
+    if (!nextName || !currentDefinition) {
+      return;
+    }
 
-      const renamedDefinition = { ...themeDefinition, name: nextName };
-      setThemeDefinitionState(renamedDefinition);
-      writeStorage(THEME_DEFINITION_KEY, JSON.stringify(renamedDefinition));
-    },
-    [themeDefinition],
-  );
+    const renamedDefinition = { ...currentDefinition, name: nextName };
+    themeDefinitionRef.current = renamedDefinition;
+    setThemeDefinitionState(renamedDefinition);
+    writeStorage(THEME_DEFINITION_KEY, JSON.stringify(renamedDefinition));
+  }, []);
 
   const applyThemeMode = useCallback(
     (currentTheme: AppearanceMode) => {
@@ -274,6 +313,12 @@ export function ThemeProvider({
         return;
       }
 
+      if (legacyThemeRGB) {
+        applyTheme(legacyThemeRGB, root);
+        root.dataset.theme = themeDefinition.name;
+        return;
+      }
+
       try {
         applyResolvedTheme(resolveTheme(themeDefinition, mode), root);
       } catch (error) {
@@ -281,7 +326,7 @@ export function ThemeProvider({
         console.error('Unable to apply theme definition', error);
       }
     },
-    [themeDefinition],
+    [legacyThemeRGB, themeDefinition],
   );
 
   useEffect(() => {
@@ -306,7 +351,7 @@ export function ThemeProvider({
     clearAppliedTheme();
   }, [setTheme, setThemeDefinition]);
 
-  const themeRGB = themeDefinition?.modes.light?.colors;
+  const themeRGB = legacyThemeRGB ?? themeDefinition?.modes.light?.colors;
   const value = useMemo(
     () => ({
       theme,
