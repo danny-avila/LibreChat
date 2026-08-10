@@ -170,6 +170,7 @@
     "@langchain/langgraph-checkpoint": "^1.1.2",
     "@langchain/langgraph-checkpoint-mongodb": "^1.4.0",
     "cluster-key-slot": "^1.1.2",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "proxy-from-env": "^2.1.0"
   }
 }

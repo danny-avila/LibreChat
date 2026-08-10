@@ -113,6 +113,38 @@ function isPrivateIPv4Literal(value: string): boolean {
   return false;
 }
 
+/**
+ * Mirrors `hasPrivateEmbeddedIPv4` in `@librechat/api`'s ip helpers: 6to4, NAT64, and Teredo
+ * carry an IPv4 address inside the IPv6 one, and the runtime guard blocks those when the
+ * embedded address is private. Kept in sync so an operator can exempt what the runtime blocks.
+ */
+function hasPrivateEmbeddedIPv4Literal(value: string): boolean {
+  const is6to4 = value.startsWith('2002:');
+  const isNat64 = value.startsWith('64:ff9b::');
+  const isTeredo = value.startsWith('2001::');
+  if (!is6to4 && !isNat64 && !isTeredo) {
+    return false;
+  }
+
+  const segments = value.split(':').filter((segment) => segment !== '');
+  const pair = is6to4 ? segments.slice(1, 3) : segments.slice(-2);
+  if (pair.length !== 2) {
+    return false;
+  }
+
+  const hi = parseInt(pair[0], 16);
+  const lo = parseInt(pair[1], 16);
+  if (isNaN(hi) || isNaN(lo)) {
+    return false;
+  }
+
+  /** RFC 4380: Teredo stores the external IPv4 as a bitwise complement. */
+  const high = isTeredo ? ~hi : hi;
+  const low = isTeredo ? ~lo : lo;
+  const octets = [(high >> 8) & 0xff, high & 0xff, (low >> 8) & 0xff, low & 0xff];
+  return isPrivateIPv4Literal(octets.join('.'));
+}
+
 function isPrivateIPv6Literal(value: string): boolean {
   if (!value.includes(':')) return false;
   if (value === '::1' || value === '::') return true;
@@ -126,7 +158,7 @@ function isPrivateIPv6Literal(value: string): boolean {
   // 4-in-6: ::ffff:A.B.C.D
   const mappedMatch = value.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
   if (mappedMatch) return isPrivateIPv4Literal(mappedMatch[1]);
-  return false;
+  return hasPrivateEmbeddedIPv4Literal(value);
 }
 
 /**
@@ -1711,6 +1743,7 @@ export enum SafeSearchTypes {
 }
 
 export const webSearchSchema = z.object({
+  allowedAddresses: allowedAddressesSchema,
   serperApiKey: z.string().optional().default('${SERPER_API_KEY}'),
   serperApiKeyPreview: apiKeyPreviewSchema,
   searxngInstanceUrl: z.string().optional().default('${SEARXNG_INSTANCE_URL}'),
