@@ -65,7 +65,7 @@ export function getMCPSandboxUrl(): string {
 }
 
 /**
- * Must match `MAX_CSP_PARAM_LENGTH` in `serveMCPSandbox` (`api/server/controllers/mcpApps.js`), which
+ * Must match `MAX_CSP_PARAM_LENGTH` in `packages/api/src/mcp/sandbox.ts`, which
  * falls back to the restrictive default policy for anything longer.
  */
 export const MAX_SANDBOX_CSP_PARAM_LENGTH = 4096;
@@ -199,7 +199,7 @@ export function clampAppViewHeight(
  * has no stable answer; `path-part` is rejected because the sandbox filter drops path-bearing
  * entries, so accepting one here would authorize a link the sandbox policy never granted.
  *
- * Keep in sync with `SAFE_HOST_RE` in `serveMCPSandbox` (`api/server/controllers/mcpApps.js`):
+ * Keep in sync with `SAFE_HOST_RE` in `packages/api/src/mcp/sandbox.ts`:
  * `isAllowedAppLink` must authorize a strict subset of what the browser grants the same declared
  * source list inside the sandbox, and every deviation from CSP3 here narrows.
  */

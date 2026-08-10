@@ -11,11 +11,30 @@ export const MCP_UI_EXTENSION_ID = 'io.modelcontextprotocol/ui';
 
 const MCP_APP_PROFILE = 'mcp-app';
 
+const HTML_MEDIA_TYPES = new Set(['text/html', 'application/xhtml+xml']);
+
 function unquote(value: string): string {
   if (value.length > 1 && value.startsWith('"') && value.endsWith('"')) {
     return value.slice(1, -1);
   }
   return value;
+}
+
+/** RFC 9110 media types are case-insensitive, and parameters are not part of the type. */
+function mediaTypeOf(mimeType: string): string {
+  return mimeType.split(';')[0].trim().toLowerCase();
+}
+
+/**
+ * True for any HTML media type an MCP App view can render, whether or not it carries the app
+ * profile. Shares its parsing with `isMcpAppMimeType` so the renderable tier can never disagree with
+ * the app-profile tier on the same media type.
+ */
+export function isHtmlMediaType(mimeType?: string | null): boolean {
+  if (typeof mimeType !== 'string') {
+    return false;
+  }
+  return HTML_MEDIA_TYPES.has(mediaTypeOf(mimeType));
 }
 
 /**
@@ -29,7 +48,7 @@ export function isMcpAppMimeType(mimeType?: string | null): boolean {
     return false;
   }
   const parts = mimeType.split(';');
-  if (parts[0].trim().toLowerCase() !== 'text/html') {
+  if (mediaTypeOf(parts[0]) !== 'text/html') {
     return false;
   }
   for (let i = 1; i < parts.length; i++) {

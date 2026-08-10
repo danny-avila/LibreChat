@@ -1,5 +1,10 @@
 import crypto from 'node:crypto';
-import { Tools, MCP_APP_MIME_TYPE, isMcpAppMimeType } from 'librechat-data-provider';
+import {
+  Tools,
+  MCP_APP_MIME_TYPE,
+  isHtmlMediaType,
+  isMcpAppMimeType,
+} from 'librechat-data-provider';
 import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
 
@@ -167,7 +172,8 @@ function parseAsString(result: t.MCPToolCallResponse): string {
  * and when deciding whether a result carries an app the apps toggle must gate.
  *
  * Deliberately wider than `isMcpAppMimeType`: a plain `text/html` `ui://` resource still renders as
- * an inert static view.
+ * an inert static view. Both tiers parse the media type through the same shared helpers, so a
+ * differently-cased `Text/HTML;profile=mcp-app` cannot be renderable to one and not the other.
  */
 export function isRenderableUiResource(item: t.ToolContentPart): boolean {
   if (item.type !== 'resource') {
@@ -179,7 +185,7 @@ export function isRenderableUiResource(item: t.ToolContentPart): boolean {
   }
   const mimeType =
     typeof item.resource.mimeType === 'string' ? item.resource.mimeType : 'text/html';
-  return mimeType.includes('html');
+  return isHtmlMediaType(mimeType);
 }
 
 /**

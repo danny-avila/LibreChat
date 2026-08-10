@@ -3,12 +3,14 @@
  * imports the ESM-only `@modelcontextprotocol/ext-apps` package.
  */
 
+import { logger } from '@librechat/data-schemas';
 import { MCP_APP_MIME_TYPE } from 'librechat-data-provider';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-import type { TokenMethods, IUser } from '@librechat/data-schemas';
+import type { PluginAuthMethods, TokenMethods, IUser } from '@librechat/data-schemas';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
 import type * as t from './types';
+import { getServerCustomUserVars, getUserMCPAuthMap } from './auth';
 
 export interface ToolWithMeta {
   _meta?: Record<string, unknown> | null;
@@ -109,6 +111,77 @@ export interface MCPAppRequestContext {
   customUserVars?: Record<string, string>;
   flowManager?: FlowStateManager<MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
+}
+
+/**
+ * Resolves the request-scoped config and auth context so app follow-up requests can reconnect to
+ * config-sourced servers even when the original tool-call connection is gone.
+ *
+ * Fails closed on both config and auth resolution: a transient lookup failure must reject rather
+ * than fall back to the base config (wrong server) or to unresolved/stale credentials. A user who
+ * genuinely has no vars still resolves to an empty map without throwing, so that path proceeds.
+ * `resolveConfigServers` is supplied by the caller because it is bound to the HTTP request.
+ */
+export async function resolveAppRequestContext({
+  userId,
+  serverName,
+  user,
+  resolveConfigServers,
+  findPluginAuthsByKeys,
+  flowManager,
+  tokenMethods,
+}: {
+  userId: string;
+  serverName: string;
+  user?: IUser;
+  resolveConfigServers: () => Promise<Record<string, t.ParsedServerConfig>>;
+  findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
+  flowManager?: FlowStateManager<MCPOAuthTokens | null>;
+  tokenMethods?: TokenMethods;
+}): Promise<MCPAppRequestContext> {
+  const [configServers, userMCPAuthMap] = await Promise.all([
+    resolveConfigServers(),
+    getUserMCPAuthMap({
+      userId,
+      servers: [serverName],
+      findPluginAuthsByKeys,
+      throwOnError: true,
+    }).catch((error) => {
+      logger.error(
+        `[resolveAppRequestContext] Failed to resolve MCP auth values for user ${userId}, server ${serverName}; failing closed`,
+        error,
+      );
+      throw error;
+    }),
+  ]);
+  return {
+    userId,
+    serverName,
+    user,
+    configServers,
+    customUserVars: getServerCustomUserVars(userMCPAuthMap, serverName),
+    flowManager,
+    tokenMethods,
+  };
+}
+
+/** A denied app request is an expected client error, not a host fault. */
+export function isDeniedAppRequest(error: unknown): boolean {
+  return (
+    error != null &&
+    typeof error === 'object' &&
+    (error as { code?: unknown }).code === ErrorCode.InvalidRequest
+  );
+}
+
+export function buildAppProxyErrorResponse(
+  error: unknown,
+  fallbackMessage: string,
+): { status: number; body: { error: string } } {
+  if (isDeniedAppRequest(error)) {
+    return { status: 400, body: { error: (error as Error).message } };
+  }
+  return { status: 500, body: { error: fallbackMessage } };
 }
 
 export async function readAppResource(

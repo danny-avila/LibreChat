@@ -1,7 +1,7 @@
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { isMcpAppMimeType, MCP_APP_MIME_TYPE } from 'librechat-data-provider';
 import type * as t from '../types';
-import { formatToolContent } from '../parsers';
+import { formatToolContent, isRenderableUiResource } from '../parsers';
 
 describe('formatToolContent', () => {
   describe('unrecognized providers', () => {
@@ -1212,22 +1212,74 @@ describe('isMcpAppMimeType', () => {
   });
 
   // The bridge payload the server attaches and the App Bridge the client starts must be decided by
-  // the same predicate, or one side persists fields the other never reads. Scoped to lower-case
-  // spellings: the tier-1 `includes('html')` gate this path runs first is case-sensitive, so an
-  // upper-case media type is dropped before classification on both sides.
+  // the same predicate, or one side persists fields the other never reads. Every accepted spelling
+  // is covered: the tier-1 renderable gate this path runs first parses the media type through the
+  // same case-insensitive helper, so a differently-cased app profile reaches classification.
+  it.each([...accepted, 'text/html', 'text/html;xprofile=mcp-app'])(
+    'attaches bridge fields exactly when the profile matches: %s',
+    (mimeType) => {
+      const [, artifacts] = formatToolContent(
+        {
+          content: [
+            { type: 'resource', resource: { uri: 'ui://app', mimeType, text: '<p>a</p>' } },
+          ],
+        },
+        'openai',
+        { serverName: 'srv', toolName: 'do_thing' },
+      );
+      const uiResource = artifacts?.ui_resources?.data?.[0];
+      expect(!!uiResource?.serverName).toBe(isMcpAppMimeType(mimeType));
+    },
+  );
+});
+
+describe('isRenderableUiResource media types', () => {
+  const uiResource = (mimeType?: string): t.ToolContentPart =>
+    ({
+      type: 'resource',
+      resource: { uri: 'ui://app', mimeType, text: '<p>hi</p>' },
+    }) as t.ToolContentPart;
+
   it.each([
-    ...accepted.filter((mimeType) => mimeType === mimeType.toLowerCase()),
-    'text/html',
-    'text/html;xprofile=mcp-app',
-  ])('attaches bridge fields exactly when the profile matches: %s', (mimeType) => {
-    const [, artifacts] = formatToolContent(
+    ['text/html', true],
+    ['Text/HTML', true],
+    ['TEXT/HTML;profile=mcp-app', true],
+    ['Text/HTML;profile=mcp-app', true],
+    ['text/html; charset=UTF-8', true],
+    ['  Text/HTML  ', true],
+    ['application/xhtml+xml', true],
+    ['Application/XHTML+XML', true],
+    [undefined, true],
+    ['application/json', false],
+    ['text/plain', false],
+    ['text/plain;x=html', false],
+    ['image/png', false],
+  ])('classifies %j renderable=%s', (mimeType, expected) => {
+    expect(isRenderableUiResource(uiResource(mimeType as string | undefined))).toBe(expected);
+  });
+
+  it('keeps a differently-cased app body out of the model-visible text', () => {
+    const [content, artifacts] = formatToolContent(
       {
-        content: [{ type: 'resource', resource: { uri: 'ui://app', mimeType, text: '<p>a</p>' } }],
+        content: [
+          {
+            type: 'resource',
+            resource: {
+              uri: 'ui://app',
+              mimeType: 'Text/HTML;profile=mcp-app',
+              text: '<p>secret markup</p>',
+            },
+          },
+        ],
       },
       'openai',
       { serverName: 'srv', toolName: 'do_thing' },
     );
-    const uiResource = artifacts?.ui_resources?.data?.[0];
-    expect(!!uiResource?.serverName).toBe(isMcpAppMimeType(mimeType));
+
+    expect(content).not.toContain('secret markup');
+    expect(artifacts?.ui_resources?.data?.[0]).toMatchObject({
+      uri: 'ui://app',
+      serverName: 'srv',
+    });
   });
 });

@@ -1,8 +1,11 @@
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn(), debug: jest.fn(), info: jest.fn() },
 }));
+// The sandbox response builder and the error mapping are exercised for real: they are the
+// server half of the CSP contract this controller only adapts to Express.
 jest.mock('@librechat/api', () => ({
-  getUserMCPAuthMap: jest.fn(),
+  ...jest.requireActual('@librechat/api'),
+  resolveAppRequestContext: jest.fn(),
   readAppResource: jest.fn(),
   listAppResources: jest.fn(),
   listAppResourceTemplates: jest.fn(),
@@ -26,8 +29,7 @@ jest.mock('~/cache', () => ({ getLogStores: jest.fn() }));
 const fs = require('fs');
 const path = require('path');
 const { logger } = require('@librechat/data-schemas');
-const { getUserMCPAuthMap, readAppResource } = require('@librechat/api');
-const { resolveConfigServers } = require('~/server/services/MCP');
+const { resolveAppRequestContext, readAppResource } = require('@librechat/api');
 const { serveMCPSandbox, readMCPResource } = require('./mcpApps');
 
 const SANDBOX_PATH = path.resolve(__dirname, '../../../client/public/mcp-sandbox.html');
@@ -147,68 +149,6 @@ describe('serveMCPSandbox resource policy', () => {
     expect(strict).not.toContain("'unsafe-eval'");
   });
 
-  it.each([
-    'javascript:alert(1)',
-    'data:',
-    'blob:',
-    '*',
-    'http://*',
-    'https://*',
-    'evil.com; script-src *',
-    "'self'",
-    "'unsafe-eval'",
-    "'nonce-abc123'",
-    'a\nb.com',
-    'a\rb.com',
-    'under_score.com',
-    '[::1]',
-    'https://a.com?x=1',
-    'https://a.com#f',
-  ])('drops the illegal declared domain %j', async (domain) => {
-    const res = await serve({ csp: JSON.stringify({ connectDomains: [domain] }) });
-    expect(resourcePolicy(res)).toContain("connect-src 'none'");
-  });
-
-  it.each([
-    'https://api.example.com',
-    'https://*.example.com',
-    'https://a.example.com:8443',
-    'https://a.example.com:*',
-    'HTTPS://API.EXAMPLE.COM',
-    'wss://socket.example.com',
-    'api.example.com',
-    'https://api.example.com/path',
-  ])('emits the legal declared domain %j', async (domain) => {
-    const res = await serve({ csp: JSON.stringify({ connectDomains: [domain] }) });
-    expect(resourcePolicy(res)).toContain(`connect-src ${domain}`);
-  });
-
-  it('emits declared domains trimmed', async () => {
-    const res = await serve({ csp: JSON.stringify({ connectDomains: ['\n  https://a.com  '] }) });
-    expect(resourcePolicy(res)).toContain('connect-src https://a.com;');
-  });
-
-  it('caps the number of declared domains', async () => {
-    const domains = Array.from({ length: 40 }, (_, i) => `https://d${i}.example.com`);
-    const res = await serve({ csp: JSON.stringify({ connectDomains: domains }) });
-    const emitted = resourcePolicy(res)
-      .split('; ')
-      .find((directive) => directive.startsWith('connect-src '));
-    expect(emitted.split(' ')).toHaveLength(33);
-    expect(emitted).not.toContain('d32.example.com');
-  });
-
-  it.each([
-    ['oversized', `{"connectDomains":["https://a.com"],"pad":"${'x'.repeat(4200)}"}`],
-    ['unparseable', '{not json'],
-    ['an array', '["https://a.com"]'],
-    ['repeated', ['{"connectDomains":["https://a.com"]}', '{"connectDomains":["https://b.com"]}']],
-  ])('falls back to the restrictive default for %s csp', async (_name, csp) => {
-    const res = await serve({ csp });
-    expect(resourcePolicy(res)).toContain("connect-src 'none'");
-    expect(resourcePolicy(res)).toContain('frame-src blob:');
-  });
-
   it('substitutes the fail-closed csp marker into the served document', async () => {
     const raw = fs.readFileSync(SANDBOX_PATH, 'utf8');
     const res = await serve({});
@@ -221,12 +161,11 @@ describe('serveMCPSandbox resource policy', () => {
   });
 });
 
-describe('resolveAppContext fail-closed', () => {
+describe('app proxy adapters', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('rejects the request and does not proxy when auth-value resolution fails', async () => {
-    resolveConfigServers.mockResolvedValue({});
-    getUserMCPAuthMap.mockRejectedValue(new Error('db down'));
+  it('rejects the request and does not proxy when context resolution fails', async () => {
+    resolveAppRequestContext.mockRejectedValue(new Error('db down'));
     const req = { user: { id: 'user-1' }, body: { serverName: 'srv', uri: 'ui://x' } };
     const res = makeRes();
 
@@ -236,9 +175,17 @@ describe('resolveAppContext fail-closed', () => {
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
+  it('rejects an unauthenticated request before resolving any context', async () => {
+    const res = makeRes();
+
+    await readMCPResource({ body: {} }, res);
+
+    expect(resolveAppRequestContext).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
   it('returns 400 without an error-level log when the read is denied', async () => {
-    resolveConfigServers.mockResolvedValue({});
-    getUserMCPAuthMap.mockResolvedValue({});
+    resolveAppRequestContext.mockResolvedValue({ userId: 'user-1', serverName: 'srv' });
     readAppResource.mockRejectedValue(
       Object.assign(new Error('Resource "file:///etc/passwd" is not permitted.'), { code: -32600 }),
     );

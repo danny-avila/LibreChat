@@ -40,6 +40,13 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { MCPConnection } from './connection';
 
+/** One RFC 6570 varspec: its name plus the single modifier it may carry. */
+interface UriTemplateVarSpec {
+  name: string;
+  prefix?: number;
+  explode: boolean;
+}
+
 function createOboToolCallErrorMessage(
   logPrefix: string,
   toolName: string,
@@ -88,6 +95,9 @@ export class MCPManager extends UserConnectionManager {
   private static readonly RESOURCE_LIST_MAX_ENTRIES = 5000;
   /** RFC 6570 §2.2 reserves these expression operators; a template using one is not matchable here. */
   private static readonly RESERVED_TEMPLATE_OPERATOR = /^[=,!@|]/;
+  /** RE2 rejects a repeat count above this, so a larger RFC 6570 prefix cannot be compiled as one. */
+  private static readonly MAX_REPEAT_COUNT = 1000;
+  private static readonly MAX_PREFIXED_TEMPLATE_VARS = 8;
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -524,8 +534,9 @@ Please follow these instructions when using tools from the respective MCP server
     >;
     appHidden: Set<string>;
     knownNames: Set<string>;
+    complete: boolean;
   }> {
-    const tools = await connection.fetchTools();
+    const { tools, complete } = await connection.fetchToolsSnapshot();
     const serverMap = new Map<
       string,
       { uri: string; csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
@@ -551,15 +562,19 @@ Please follow these instructions when using tools from the respective MCP server
         logger.warn(`[MCP] Ignoring invalid UI resource metadata on tool "${tool.name}":`, error);
       }
     }
-    return { serverMap, appHidden, knownNames };
+    return { serverMap, appHidden, knownNames, complete };
   }
 
   private async populateToolCaches(connection: MCPConnection, cacheKey: string): Promise<void> {
-    const { serverMap, appHidden, knownNames } = await this.buildToolCaches(connection);
-    // fetchTools returns [] both for genuinely tool-less servers and for a transient tools/list
-    // failure. Caching an empty list as authoritative would disable MCP Apps until reconnect, so
-    // leave the cache unpopulated when empty and re-fetch on the next call.
-    if (knownNames.size === 0) {
+    const { serverMap, appHidden, knownNames, complete } = await this.buildToolCaches(connection);
+    // These caches authorize app tool calls and tool-declared UI resource reads, so a page missing
+    // from a partial `tools/list` is a false denial rather than a missing feature. An incomplete
+    // snapshot (and an empty one, which a transient failure and a genuinely tool-less server both
+    // produce) is left unpublished so the next call re-fetches instead of denying until reconnect.
+    // A snapshot truncated by a tools/list budget cap reports complete and is cached, for the same
+    // reason the advertisement snapshot caches its cap-truncated form: it is reproducible, so
+    // re-fetching it on every call pays the full listing cost without widening the result.
+    if (!complete || knownNames.size === 0) {
       return;
     }
     this.resourceUriCache.set(cacheKey, serverMap);
@@ -1014,7 +1029,7 @@ Please follow these instructions when using tools from the respective MCP server
    * than per-tool because apps.mdx scopes an app's privileges to the same server connection, and
    * needed in addition to the advertised set because servers MAY omit UI-only resources from
    * `resources/list`. A `tools/list` failure denies (and stays retryable: `populateToolCaches` never
-   * caches an empty tool set, so the next read re-fetches).
+   * caches an incomplete or empty tool set, so the next read re-fetches).
    */
   private async isToolDeclaredUiResource(
     connection: MCPConnection,
@@ -1101,34 +1116,49 @@ Please follow these instructions when using tools from the respective MCP server
   }
 
   /**
-   * Walks one cursor-paginated advertisement list. Returns false when the snapshot it produced is
-   * partial (page cap or entry cap reached), so a denial can report that rather than imply the
-   * server does not advertise the resource. An empty-string `nextCursor` ends pagination: treating
-   * it as a next page re-requests page one until the cap and truncates the snapshot instead.
+   * Walks one cursor-paginated advertisement list. Reports `truncated` when the snapshot it produced
+   * stopped at the page or entry cap, so a denial can report that rather than imply the server does
+   * not advertise the resource, and a request failure propagates so it can be told apart from a cap.
+   * An empty-string `nextCursor` ends pagination: treating it as a next page re-requests page one
+   * until the cap and truncates the snapshot instead.
    */
   private static async collectAdvertisedPages<T>(
     fetchPage: (cursor?: string) => Promise<{ items: T[]; nextCursor?: string }>,
     collect: (item: T) => void,
     count: () => number,
-  ): Promise<boolean> {
+  ): Promise<'complete' | 'truncated'> {
     let cursor: string | undefined;
     for (let page = 0; page < MCPManager.RESOURCE_LIST_MAX_PAGES; page++) {
       const { items, nextCursor } = await fetchPage(cursor);
       for (const item of items) {
         if (count() >= MCPManager.RESOURCE_LIST_MAX_ENTRIES) {
-          return false;
+          return 'truncated';
         }
         collect(item);
       }
       if (!nextCursor) {
-        return true;
+        return 'complete';
       }
       cursor = nextCursor;
     }
-    return false;
+    return 'truncated';
   }
 
-  /** Snapshots (and caches per connection) the resource URIs and URI templates a server advertises. */
+  /**
+   * A server that does not implement one of the advertisement methods answers the same way every
+   * time, so its empty list is its actual advertisement rather than a failure to enumerate.
+   */
+  private static isUnimplementedMethod(error: unknown): boolean {
+    return error instanceof McpError && error.code === ErrorCode.MethodNotFound;
+  }
+
+  /**
+   * Snapshots the resource URIs and URI templates a server advertises. Caching is deliberate per
+   * outcome: a fully walked or cap-truncated snapshot is cached (both are reproducible, and
+   * re-walking up to `RESOURCE_LIST_MAX_ENTRIES` entries on every app read is the cost this cache
+   * exists to avoid), while a request failure is not cached at all, so a transient `resources/list`
+   * error denies only the read that saw it instead of every read for the connection's lifetime.
+   */
   private async getAdvertisedResources(
     connection: MCPConnection,
     cacheKey: string,
@@ -1143,16 +1173,17 @@ Please follow these instructions when using tools from the respective MCP server
 
     const uris = new Set<string>();
     const templates: RE2JS[] = [];
-    let complete = true;
+    let truncated = false;
+    let failed = false;
     // The handshake capabilities say whether the server has resources at all, so a server declaring
     // none advertises an empty (and complete) set instead of being probed. Capabilities are unknown
     // only before initialize resolves, where asking is harmless: a failed call still denies.
     const capabilities = connection.client.getServerCapabilities?.();
     if (capabilities == null || capabilities.resources != null) {
-      // A template-only server may not implement resources/list; treat its failure as an empty
-      // concrete list so advertised templates below are still collected and can authorize reads.
+      // A template-only server may not implement resources/list; treat that as an empty concrete
+      // list so advertised templates below are still collected and can authorize reads.
       try {
-        complete = await MCPManager.collectAdvertisedPages(
+        const outcome = await MCPManager.collectAdvertisedPages(
           async (cursor) => {
             const result: ListResourcesResult = await connection.client.listResources(
               cursor != null ? { cursor } : {},
@@ -1163,13 +1194,14 @@ Please follow these instructions when using tools from the respective MCP server
           (resource) => uris.add(resource.uri),
           () => uris.size,
         );
+        truncated = outcome === 'truncated';
       } catch (error) {
-        complete = false;
+        failed = !MCPManager.isUnimplementedMethod(error);
         logger.debug(`[MCP][${cacheKey}] resources/list unavailable; using templates only.`, error);
       }
 
       try {
-        const templatesComplete = await MCPManager.collectAdvertisedPages(
+        const outcome = await MCPManager.collectAdvertisedPages(
           async (cursor) => {
             const result: ListResourceTemplatesResult =
               await connection.client.listResourceTemplates(cursor != null ? { cursor } : {}, {
@@ -1185,9 +1217,9 @@ Please follow these instructions when using tools from the respective MCP server
           },
           () => templates.length,
         );
-        complete = complete && templatesComplete;
+        truncated = truncated || outcome === 'truncated';
       } catch (error) {
-        complete = false;
+        failed = failed || !MCPManager.isUnimplementedMethod(error);
         logger.debug(
           `[MCP][${cacheKey}] resources/templates/list unavailable; skipping templates.`,
           error,
@@ -1195,13 +1227,18 @@ Please follow these instructions when using tools from the respective MCP server
       }
     }
 
-    if (!complete) {
+    const entry = { uris, templates, complete: !truncated && !failed };
+    if (failed) {
+      logger.warn(
+        `[MCP][${cacheKey}] Advertised resources could not be enumerated; denying this read and re-listing on the next one.`,
+      );
+      return entry;
+    }
+    if (truncated) {
       logger.warn(
         `[MCP][${cacheKey}] Advertised resource snapshot is incomplete; resources outside the snapshot will be denied for this connection.`,
       );
     }
-
-    const entry = { uris, templates, complete };
     this.advertisedResourceCache.set(cacheKey, entry);
     this.advertisedResourceConnStamp.set(cacheKey, this.resourceConnStamp(connection));
     return entry;
@@ -1295,6 +1332,15 @@ Please follow these instructions when using tools from the respective MCP server
         if (!keys) {
           return null;
         }
+        if (varSpecs.some((spec) => spec.includes(':'))) {
+          const prefixed = MCPManager.compilePrefixedExpansion(op, varSpecs);
+          if (prefixed == null) {
+            return null;
+          }
+          pattern += prefixed;
+          i = end + 1;
+          continue;
+        }
         // RFC 6570 3.2.5/3.2.6: each defined variable contributes exactly one prefixed component,
         // so a non-exploded expression can never expand past its declared variable count.
         const exploded = varSpecs.some((spec) => spec.endsWith('*'));
@@ -1341,6 +1387,122 @@ Please follow these instructions when using tools from the respective MCP server
       return RE2JS.compile(`^${pattern}$`);
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * RFC 6570 §2.4: a varspec carries at most one modifier, `:max-length` (1 to 9999) or `*`. Anything
+   * else (`{id:3*}`, `{id:0}`, `{id:abc}`) is not a valid varspec, so no expansion of it is knowable.
+   */
+  private static parseVarSpec(spec: string): UriTemplateVarSpec | null {
+    const explode = spec.endsWith('*');
+    const body = explode ? spec.slice(0, -1) : spec;
+    const colon = body.indexOf(':');
+    if (colon === -1) {
+      const name = body.trim();
+      return name ? { name, explode } : null;
+    }
+    if (explode) {
+      return null;
+    }
+    const name = body.slice(0, colon).trim();
+    const maxLength = body.slice(colon + 1).trim();
+    if (!name || !/^[1-9][0-9]{0,3}$/.test(maxLength)) {
+      return null;
+    }
+    return { name, prefix: Number(maxLength), explode };
+  }
+
+  /**
+   * Compiles an expansion in which at least one variable carries a `:max-length` prefix. RFC 6570
+   * §2.4.1 truncates a prefixed string value to that many characters, and templates are matched
+   * against the fully percent-decoded URI, so the limit is a plain character bound on the matched
+   * text. Without it, `db://items/{id:3}` authorizes `db://items/admin`.
+   *
+   * Variables expand in declared order and an undefined one contributes nothing, so what a
+   * multi-variable expression can produce is any ordered subsequence of its components. Those are
+   * compiled as a chain of optional per-variable units, each with its own bound, rather than one
+   * shared quantifier: a shared quantifier would either apply the tightest bound to every position
+   * or, as before, none to any. The chain still requires at least one component, keeping the
+   * existing denial for a URI that omits the whole expansion.
+   *
+   * A prefix RE2 cannot express as a repeat count leaves that variable unbounded (its own class
+   * still applies), which is the pre-existing behavior and cannot deny a legitimate expansion.
+   */
+  private static compilePrefixedExpansion(op: string, varSpecs: string[]): string | null {
+    // The ordered chain is quadratic in the declared variable count, so a pathological varspec list
+    // authorizes nothing instead of being handed to RE2 as a compile-time cost on every read.
+    if (varSpecs.length > MCPManager.MAX_PREFIXED_TEMPLATE_VARS) {
+      return null;
+    }
+    const specs: UriTemplateVarSpec[] = [];
+    for (const varSpec of varSpecs) {
+      const parsed = MCPManager.parseVarSpec(varSpec);
+      if (parsed == null) {
+        return null;
+      }
+      specs.push(parsed);
+    }
+
+    const bound = (spec: UriTemplateVarSpec, cls: string, min: number): string => {
+      if (spec.prefix == null || spec.prefix > MCPManager.MAX_REPEAT_COUNT) {
+        return `${cls}${min === 0 ? '*' : '+'}`;
+      }
+      return `${cls}{${min},${spec.prefix}}`;
+    };
+    const component = (spec: UriTemplateVarSpec, delimiter: string, cls: string): string => {
+      const unit = `${delimiter}${bound(spec, cls, 1)}`;
+      return spec.explode ? `(?:${unit})+` : unit;
+    };
+    const chain = (units: string[]): string => {
+      const branches = units.map((unit, index) =>
+        units.slice(index + 1).reduce((branch, rest) => `${branch}(?:${rest})?`, `(?:${unit})`),
+      );
+      return branches.length === 1 ? branches[0] : `(?:${branches.join('|')})`;
+    };
+    /** Comma-joined operators expand to one run, so their bound is the sum plus the separators. */
+    const joined = (cls: string, min: number, literal = ''): string => {
+      let total = specs.length - 1;
+      for (const spec of specs) {
+        if (spec.prefix == null || spec.explode) {
+          return `${literal}${cls}${min === 0 ? '*' : '+'}`;
+        }
+        total += spec.prefix;
+      }
+      if (total > MCPManager.MAX_REPEAT_COUNT) {
+        return `${literal}${cls}${min === 0 ? '*' : '+'}`;
+      }
+      return `${literal}${cls}{${min},${total}}`;
+    };
+    const escaped = (spec: UriTemplateVarSpec): string =>
+      spec.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const query = (): string =>
+      specs.map((spec) => `${escaped(spec)}=${bound(spec, '[^#&]', 0)}`).join('|');
+
+    switch (op) {
+      case '+':
+        return joined('[^?#]', 1);
+      case '#':
+        return joined('[^\\s]', 0, '#');
+      case '/':
+        return chain(specs.map((spec) => component(spec, '/', '[^/?#]')));
+      case '.':
+        return specs.length === 1 && !specs[0].explode
+          ? component(specs[0], '\\.', '[^/?#]')
+          : chain(specs.map((spec) => component(spec, '\\.', '[^/?#.]')));
+      case ';':
+        return chain(
+          specs.map((spec) => {
+            const unit = `;${escaped(spec)}(?:=${bound(spec, '[^/?#;&]', 0)})?`;
+            return spec.explode ? `(?:${unit})+` : unit;
+          }),
+        );
+      case '?':
+        return `\\?(?:${query()})(?:&(?:${query()}))*`;
+      case '&':
+        return `(?:&(?:${query()}))+`;
+      default:
+        return joined('[^/?#&=]', 1);
     }
   }
 
