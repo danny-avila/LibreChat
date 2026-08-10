@@ -631,4 +631,5 @@ export {
   normalizeServerName,
   normalizeMCPToolKey,
   buildServerNameAliases,
+  stripServerNamePrefix,
 } from 'librechat-data-provider';

@@ -3093,6 +3093,38 @@ export function normalizeMCPToolKey(toolKey: string, rawServerNames: readonly st
   return `${toolKey.slice(0, toolKey.length - matched.length)}${normalized}`;
 }
 
+/**
+ * Strips a redundant leading server-name prefix from a raw upstream tool name
+ * before it is embedded into a model-facing key, so the key doesn't carry the
+ * server twice (`acme_trace_..._mcp_acme`) and push long tool names
+ * past provider function-name limits (64 chars). The match is case-insensitive
+ * because display-cased server names ("Acme") conventionally prefix their
+ * tools in lowercase. `siblingToolNames` guards a server exposing BOTH `foo`
+ * and `<server>_foo`: stripping would collapse two distinct tools into one key,
+ * so the prefixed name stays raw. Ingestion that strips must record the
+ * original name (`serverToolName` on the cached definition) — tool calls send
+ * THAT name back to the server, never the stripped one.
+ */
+export function stripServerNamePrefix(
+  toolName: string,
+  normalizedServerName: string,
+  siblingToolNames?: ReadonlySet<string>,
+): string {
+  const prefixLength = normalizedServerName.length + 1;
+  if (toolName.length <= prefixLength) {
+    return toolName;
+  }
+  const prefix = toolName.slice(0, prefixLength).toLowerCase();
+  if (prefix !== `${normalizedServerName.toLowerCase()}_`) {
+    return toolName;
+  }
+  const stripped = toolName.slice(prefixLength);
+  if (siblingToolNames?.has(stripped)) {
+    return toolName;
+  }
+  return stripped;
+}
+
 export function splitMCPToolKey(
   toolKey: string,
   knownServerNames?: readonly string[],

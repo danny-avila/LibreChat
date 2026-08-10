@@ -4,6 +4,7 @@ import {
   splitToolCallName,
   normalizeMCPToolKey,
   buildServerNameAliases,
+  stripServerNamePrefix,
 } from './config';
 
 describe('splitMCPToolKey', () => {
@@ -206,5 +207,41 @@ describe('splitToolCallName oauth precedence', () => {
       `oauth${d}reset`,
       'github',
     ]);
+  });
+});
+
+describe('stripServerNamePrefix', () => {
+  it('strips a leading server-name prefix from the tool name', () => {
+    expect(stripServerNamePrefix('acme_trace_top_time_consuming_operations', 'acme')).toBe(
+      'trace_top_time_consuming_operations',
+    );
+  });
+
+  it('matches the prefix case-insensitively', () => {
+    /** Display-cased server names ("Acme") conventionally prefix their
+     *  tools in lowercase — the redundancy is the same either way. */
+    expect(stripServerNamePrefix('acme_list_services', 'Acme')).toBe('list_services');
+  });
+
+  it('returns the name unchanged when the prefix does not match', () => {
+    expect(stripServerNamePrefix('github_create_issue', 'acme')).toBe('github_create_issue');
+  });
+
+  it('requires the underscore separator, not a bare substring match', () => {
+    expect(stripServerNamePrefix('acmecorp_tool', 'acme')).toBe('acmecorp_tool');
+  });
+
+  it('keeps a name that is exactly the server name or would strip to empty', () => {
+    expect(stripServerNamePrefix('acme', 'acme')).toBe('acme');
+    expect(stripServerNamePrefix('acme_', 'acme')).toBe('acme_');
+  });
+
+  it('keeps the prefixed name when stripping would collide with a sibling tool', () => {
+    /** A server exposing BOTH `foo` and `<server>_foo` must keep two distinct
+     *  keys — stripping would collapse them into one. */
+    expect(stripServerNamePrefix('acme_search', 'acme', new Set(['search', 'acme_search']))).toBe(
+      'acme_search',
+    );
+    expect(stripServerNamePrefix('acme_search', 'acme', new Set(['acme_search']))).toBe('search');
   });
 });

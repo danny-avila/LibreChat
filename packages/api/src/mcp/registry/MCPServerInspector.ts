@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { Constants, normalizeServerName } from 'librechat-data-provider';
+import { Constants, normalizeServerName, stripServerNamePrefix } from 'librechat-data-provider';
 import type { JsonSchemaType } from '@librechat/data-schemas';
 import type { MCPConnection } from '~/mcp/connection';
 import type * as t from '~/mcp/types';
@@ -188,10 +188,13 @@ export class MCPServerInspector {
     /** Model-facing key: must match the runtime instance name, which embeds
      *  the normalized server name (see `createToolInstance` in MCP.js). */
     const keyServerName = normalizeServerName(serverName);
+    const rawToolNames = new Set(tools.map((tool) => tool.name));
     tools.forEach((tool) => {
-      const name = `${tool.name}${Constants.mcp_delimiter}${keyServerName}`;
+      const keyToolName = stripServerNamePrefix(tool.name, keyServerName, rawToolNames);
+      const name = `${keyToolName}${Constants.mcp_delimiter}${keyServerName}`;
       toolFunctions[name] = {
         type: 'function',
+        ...(keyToolName !== tool.name && { serverToolName: tool.name }),
         ['function']: {
           name,
           description: tool.description,

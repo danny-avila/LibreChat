@@ -10,6 +10,7 @@ const {
   splitMCPToolKey,
   normalizeServerName,
   normalizeMCPToolKey,
+  stripServerNamePrefix,
   buildServerNameAliases,
   findShadowedServerNames,
   getAssistantToolDefinitions: loadAssistantToolDefinitions,
@@ -806,6 +807,8 @@ async function createMCPTools({
   }
 
   const serverTools = [];
+  const keyServerName = normalizeServerName(serverName);
+  const rawToolNames = new Set(result.tools.map((tool) => tool.name));
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
       res,
@@ -820,7 +823,7 @@ async function createMCPTools({
       serverName,
       /** Model-facing key: matches the normalized `availableTools` keys and
        *  the instance name `createToolInstance` will assign. */
-      toolKey: `${tool.name}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`,
+      toolKey: `${stripServerNamePrefix(tool.name, keyServerName, rawToolNames)}${Constants.mcp_delimiter}${keyServerName}`,
       requestBody,
       requestScopedConnections,
       config: serverConfig,
@@ -935,18 +938,41 @@ async function createMCPTool({
 
   /** Legacy keys persisted pre-normalization (assistants, direct tool
    *  calls) carry the RAW server name, while `availableTools` is keyed by
-   *  the canonical normalized key — look up both spellings. */
+   *  the canonical normalized key — look up both spellings. Keys are also
+   *  built after redundant server-name-prefix stripping now, so a persisted
+   *  pre-strip key (`acme_foo_mcp_acme`) must additionally try
+   *  its stripped spelling or the tool degrades to an unavailable stub. */
+  const keyServerName = serverName != null ? normalizeServerName(serverName) : undefined;
   const canonicalToolKey =
-    serverName != null
-      ? `${toolName}${Constants.mcp_delimiter}${normalizeServerName(serverName)}`
-      : toolKey;
-  const findToolDefinition = (tools) =>
-    tools?.[toolKey]?.function ??
-    (canonicalToolKey !== toolKey ? tools?.[canonicalToolKey]?.function : undefined);
+    keyServerName != null ? `${toolName}${Constants.mcp_delimiter}${keyServerName}` : toolKey;
+  const strippedToolName =
+    keyServerName != null ? stripServerNamePrefix(toolName, keyServerName) : toolName;
+  const strippedToolKey =
+    strippedToolName !== toolName
+      ? `${strippedToolName}${Constants.mcp_delimiter}${keyServerName}`
+      : null;
+  const candidateToolKeys = [toolKey];
+  if (canonicalToolKey !== toolKey) {
+    candidateToolKeys.push(canonicalToolKey);
+  }
+  if (strippedToolKey != null && !candidateToolKeys.includes(strippedToolKey)) {
+    candidateToolKeys.push(strippedToolKey);
+  }
+  let matchedToolKey = toolKey;
+  const findToolEntry = (tools) => {
+    for (const key of candidateToolKeys) {
+      const entry = tools?.[key];
+      if (entry?.function) {
+        matchedToolKey = key;
+        return entry;
+      }
+    }
+    return undefined;
+  };
 
-  /** @type {LCTool | undefined} */
-  let toolDefinition = findToolDefinition(availableTools);
-  if (!toolDefinition) {
+  /** @type {LCFunctionTool | undefined} */
+  let toolEntry = findToolEntry(availableTools);
+  if (!toolEntry) {
     const cachedAt = useMissingToolCache ? missingToolCache.get(toolKey) : undefined;
     if (cachedAt && Date.now() - cachedAt < MISSING_TOOL_TTL_MS) {
       logger.debug(
@@ -975,15 +1001,15 @@ async function createMCPTool({
     if (result?.availableTools) {
       onAvailableTools?.(result.availableTools);
     }
-    toolDefinition = findToolDefinition(result?.availableTools);
+    toolEntry = findToolEntry(result?.availableTools);
 
-    if (!toolDefinition && useMissingToolCache) {
+    if (!toolEntry && useMissingToolCache) {
       missingToolCache.set(toolKey, Date.now());
       evictStale(missingToolCache, MISSING_TOOL_TTL_MS);
     }
   }
 
-  if (!toolDefinition) {
+  if (!toolEntry) {
     logger.warn(
       `[MCP][${serverName}][${toolName}] Tool definition not found, returning unavailable stub.`,
     );
@@ -997,10 +1023,14 @@ async function createMCPTool({
     requestBody,
     requestScopedConnections,
     provider,
-    toolName,
+    /** A legacy pre-strip key resolves to the stripped entry — the instance
+     *  takes the CANONICAL (stripped) name so the model-facing name matches
+     *  the definition it was resolved from. */
+    toolName: matchedToolKey === strippedToolKey ? strippedToolName : toolName,
+    serverToolName: toolEntry.serverToolName,
     serverName,
     serverConfig,
-    toolDefinition,
+    toolDefinition: toolEntry['function'],
     streamId,
     jobCreatedAt,
   });
@@ -1013,6 +1043,7 @@ function createToolInstance({
   requestBody: capturedRequestBody,
   requestScopedConnections: capturedRequestScopedConnections,
   toolName,
+  serverToolName = toolName,
   serverName,
   serverConfig: capturedServerConfig,
   toolDefinition,
@@ -1090,7 +1121,9 @@ function createToolInstance({
       const result = await mcpManager.callTool({
         serverName,
         serverConfig: capturedServerConfig,
-        toolName,
+        /** The upstream server never sees stripped names — a key that dropped
+         *  a redundant server-name prefix calls the ORIGINAL tool. */
+        toolName: serverToolName,
         provider,
         toolArguments,
         options: {
