@@ -74,9 +74,10 @@ export type RoleViolation = {
 };
 
 /**
- * The role-separation gate, expressed as a query rather than a checklist: no
- * application role is superuser or BYPASSRLS, every relation in the schema is
- * owned by the migration owner, the request reader holds nothing beyond `SELECT`
+ * The role-separation gate, expressed as a query rather than a checklist: every
+ * application role holds exactly the attributes `002_roles.sql` asserts — LOGIN
+ * and none of SUPERUSER, BYPASSRLS, CREATEROLE, CREATEDB — every relation in the
+ * schema is owned by the migration owner, the request reader holds nothing beyond `SELECT`
  * on the two serving tables, those two tables have RLS both enabled and forced,
  * and the policies on them are exactly the set `003_policies.sql` installs —
  * name, command, roles, and predicate. The last check exists because permissive
@@ -93,16 +94,33 @@ export type RoleViolation = {
  * Grants and policies are all it reads. A privilege the reader could reach by `SET ROLE`,
  * because someone made it a member of another role, is not covered here.
  */
-export async function findRoleViolations(pool: SearchPool): Promise<readonly RoleViolation[]> {
+export async function findRoleViolations(
+  pool: SearchPool,
+  roles: readonly string[] = APPLICATION_ROLES,
+): Promise<readonly RoleViolation[]> {
   const violations: RoleViolation[] = [];
 
+  /**
+   * Every attribute `002_roles.sql` asserts is re-read here, not only the two
+   * superuser-shaped ones. CREATEROLE matters as much as BYPASSRLS: a role
+   * holding it can `ALTER ROLE chat_search_writer PASSWORD ...` and then log in
+   * with the writer's cross-tenant reach, so drift on any of the five is a
+   * violation. The `roles` parameter exists for the drift tests, which flip
+   * attributes on throwaway roles — the managed names are cluster-global, and
+   * flipping them live would race every parallel suite's clean-gate assertion.
+   */
   const { rows: roleRows } = await pool.query<{
     rolname: string;
     rolsuper: boolean;
     rolbypassrls: boolean;
-  }>('SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = ANY($1::text[])', [
-    [...APPLICATION_ROLES],
-  ]);
+    rolcreaterole: boolean;
+    rolcreatedb: boolean;
+    rolcanlogin: boolean;
+  }>(
+    `SELECT rolname, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolcanlogin
+       FROM pg_roles WHERE rolname = ANY($1::text[])`,
+    [[...roles]],
+  );
 
   const seen = new Set<string>();
   for (const row of roleRows) {
@@ -113,8 +131,17 @@ export async function findRoleViolations(pool: SearchPool): Promise<readonly Rol
     if (row.rolbypassrls) {
       violations.push({ role: row.rolname, problem: 'has BYPASSRLS' });
     }
+    if (row.rolcreaterole) {
+      violations.push({ role: row.rolname, problem: 'has CREATEROLE' });
+    }
+    if (row.rolcreatedb) {
+      violations.push({ role: row.rolname, problem: 'has CREATEDB' });
+    }
+    if (!row.rolcanlogin) {
+      violations.push({ role: row.rolname, problem: 'cannot LOGIN' });
+    }
   }
-  for (const role of APPLICATION_ROLES) {
+  for (const role of roles) {
     if (!seen.has(role)) {
       violations.push({ role, problem: 'does not exist' });
     }

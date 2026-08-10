@@ -3,6 +3,7 @@ import path from 'path';
 import { logger } from '@librechat/data-schemas';
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'crypto';
 import type { SearchClient, SearchPool } from './types';
+import { assertRoleSeparation } from './roles';
 import { withTransaction } from './pool';
 
 /** Serializes concurrent migration runners across pods. */
@@ -572,4 +573,27 @@ export function assertRoleCredentialsConfigured(): void {
   for (const [envKey, password] of supplied) {
     assertUsablePassword(envKey, password);
   }
+}
+
+export type ProvisionResult = Readonly<{
+  applied: readonly string[];
+  updated: readonly string[];
+}>;
+
+/**
+ * The whole provisioning sequence behind one call, so the composition itself is
+ * testable instead of living only in the CLI runner: credentials are asserted
+ * before any DDL, migrations apply, the verifiers derived from the environment
+ * are stored, and the run refuses to report success unless the separation it
+ * promises holds at that moment. `config/migrate-chat-search.js` is a thin
+ * printer around this. `migrate.spec.ts` pins the refusal in 'refuses to touch
+ * the database until every credential is supplied' and the sequence in
+ * 'provisions end to end behind the one composition call'.
+ */
+export async function provisionChatSearch(pool: SearchPool): Promise<ProvisionResult> {
+  assertRoleCredentialsConfigured();
+  const applied = await migrate(pool);
+  const updated = await applyRolePasswords(pool);
+  await assertRoleSeparation(pool);
+  return Object.freeze({ applied, updated });
 }

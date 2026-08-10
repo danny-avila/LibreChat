@@ -111,6 +111,27 @@ function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+const OBJECT_ID_HEX = /^[0-9a-f]{24}$/;
+
+/**
+ * The record id a source document projects under.
+ *
+ * Legacy documents can lack their id field entirely — shared links created
+ * before `shareId` existed are the live case. Projected under an empty record id
+ * they all collide on one PostgreSQL primary key, so at most one such link per
+ * user would survive; the Mongo `_id` stands in instead, and the write-side
+ * hooks apply the same fallback so the event key, the tombstone key and the
+ * projected row name one identity (pinned by `projects two legacy shared links
+ * that carry no shareId as distinct records`).
+ */
+function sourceRecordId(kind: SearchKind, doc: SourceDocument): string {
+  const explicit = asString(doc[KIND_ID[kind]]);
+  if (explicit !== '') {
+    return explicit;
+  }
+  return doc._id ? String(doc._id) : '';
+}
+
 /**
  * Where the `(updatedAt, recordId, _id)` scan resumes.
  *
@@ -172,7 +193,7 @@ function scanResumeFilter(
  * match ranked below it.
  */
 export function toProjectionSource(kind: SearchKind, doc: SourceDocument): ProjectionSource {
-  const recordId = asString(doc[KIND_ID[kind]]);
+  const recordId = sourceRecordId(kind, doc);
   const body = kind === 'message' ? (flattenContent(doc.content) ?? asString(doc.text)) : '';
 
   return {
@@ -234,12 +255,21 @@ export function createMongoSourceReader(
         return [];
       }
       const model = modelFor(kind);
+      const recordIds = keys.map((key) => key.recordId);
+      /**
+       * A record id that is 24-hex may be the `_id` fallback identity of a
+       * legacy document whose id field is absent, which the primary query
+       * cannot match. The extra arm admits those; a coincidental `_id` hit on a
+       * document that has a real record id resolves to that id and is dropped
+       * by the owner check below.
+       */
+      const fallbackIds = recordIds.filter((id) => OBJECT_ID_HEX.test(id)).map(toObjectId);
+      const filter: FilterQuery<SourceDocument> =
+        fallbackIds.length === 0
+          ? { [KIND_ID[kind]]: { $in: recordIds } }
+          : { $or: [{ [KIND_ID[kind]]: { $in: recordIds } }, { _id: { $in: fallbackIds } }] };
       const docs = await runAsSystem(() =>
-        model
-          .find({ [KIND_ID[kind]]: { $in: keys.map((key) => key.recordId) } })
-          .select(PROJECTION_FIELDS)
-          .lean<SourceDocument[]>()
-          .exec(),
+        model.find(filter).select(PROJECTION_FIELDS).lean<SourceDocument[]>().exec(),
       );
 
       /**
@@ -331,7 +361,7 @@ export function createMongoSourceReader(
           tenantId: normalizeTenantId(doc.tenantId),
           userId: asString(doc.user),
           kind,
-          recordId: asString(doc[id]),
+          recordId: sourceRecordId(kind, doc),
         }));
         const lastId = docs[docs.length - 1]._id;
         if (!lastId) {
