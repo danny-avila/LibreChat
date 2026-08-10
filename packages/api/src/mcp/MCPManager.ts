@@ -97,7 +97,8 @@ export class MCPManager extends UserConnectionManager {
   private static readonly RESERVED_TEMPLATE_OPERATOR = /^[=,!@|]/;
   /** RE2 rejects a repeat count above this, so a larger RFC 6570 prefix cannot be compiled as one. */
   private static readonly MAX_REPEAT_COUNT = 1000;
-  private static readonly MAX_PREFIXED_TEMPLATE_VARS = 8;
+  /** Declared-variable ceiling for the expansions compiled as an ordered chain of optional units. */
+  private static readonly MAX_ORDERED_TEMPLATE_VARS = 8;
 
   /** Creates and initializes the singleton MCPManager instance */
   public static async createInstance(configs: t.MCPServers): Promise<MCPManager> {
@@ -515,6 +516,21 @@ Please follow these instructions when using tools from the respective MCP server
     return `${connection.createdAt}:${connection.resourceListVersion}`;
   }
 
+  /**
+   * Scope for the tool-metadata and resource-authorization caches. An app-level connection is shared
+   * by every user, and nothing clears its entries (`removeUserConnection` only runs for user-scoped
+   * connections), so keying it per user would retain one entry set per user for the process lifetime.
+   * User-scoped connections (OAuth/OBO/customUserVars/runtime placeholders) are distinct connections
+   * that can expose different tools and different visibility per user, so those keep their per-user
+   * key. Decided by connection identity rather than by re-deriving the config's connection scope.
+   */
+  private cacheScope(serverName: string, connection: MCPConnection, userId?: string): string {
+    if (this.appConnections?.getPooledConnection(serverName) === connection) {
+      return `${serverName}:`;
+    }
+    return `${serverName}:${userId ?? ''}`;
+  }
+
   private isToolCacheFresh(cacheKey: string, connection: MCPConnection): boolean {
     return (
       this.knownToolNamesCache.has(cacheKey) &&
@@ -598,7 +614,7 @@ Please follow these instructions when using tools from the respective MCP server
       const { serverMap } = await this.buildToolCaches(connection);
       return serverMap.get(toolName);
     }
-    const cacheKey = `${serverName}:${userId ?? ''}`;
+    const cacheKey = this.cacheScope(serverName, connection, userId);
     if (!this.isToolCacheFresh(cacheKey, connection)) {
       await this.populateToolCaches(connection, cacheKey);
     }
@@ -1019,7 +1035,12 @@ Please follow these instructions when using tools from the respective MCP server
       );
     }
 
-    await this.assertResourceReadable(connection, `${serverName}:${userId}`, uri, logPrefix);
+    await this.assertResourceReadable(
+      connection,
+      this.cacheScope(serverName, connection, userId),
+      uri,
+      logPrefix,
+    );
 
     return connection.client.readResource({ uri }, { timeout: connection.timeout });
   }
@@ -1332,6 +1353,18 @@ Please follow these instructions when using tools from the respective MCP server
         if (!keys) {
           return null;
         }
+        // Query expansions are bounded per declared variable rather than as an open run of declared
+        // keys, so they route here ahead of the prefix branch: a `:max-length` on a query variable
+        // is only a tighter value bound within the same bounded sequence.
+        if (op === '?' || op === '&') {
+          const queryExpansion = MCPManager.compileQueryExpansion(op, varSpecs);
+          if (queryExpansion == null) {
+            return null;
+          }
+          pattern += queryExpansion;
+          i = end + 1;
+          continue;
+        }
         if (varSpecs.some((spec) => spec.includes(':'))) {
           const prefixed = MCPManager.compilePrefixedExpansion(op, varSpecs);
           if (prefixed == null) {
@@ -1368,12 +1401,6 @@ Please follow these instructions when using tools from the respective MCP server
           case ';': // path-style params: pinned to the declared names and bounded by their count,
             // with a value class excluding `;` so one value cannot swallow `;admin=true`.
             pattern += bounded(`;(?:${keys})(?:=[^/?#;&]*)?`);
-            break;
-          case '?': // query: only the declared parameter names, in any order
-            pattern += `\\?(?:${keys})=[^#&]*(?:&(?:${keys})=[^#&]*)*`;
-            break;
-          case '&': // query continuation: only the declared parameter names
-            pattern += `(?:&(?:${keys})=[^#&]*)+`;
             break;
           default: // simple expansion: a single value. RFC 6570 percent-encodes reserved chars,
             // so a real value never contains a raw `&` or `=`; excluding them stops a query value
@@ -1414,6 +1441,79 @@ Please follow these instructions when using tools from the respective MCP server
   }
 
   /**
+   * Parses every varspec of one expansion, rejecting the whole expression when any is invalid. The
+   * count is capped because both compiled forms chain one optional unit per variable, which is
+   * quadratic in the declared count: a pathological varspec list authorizes nothing instead of being
+   * handed to RE2 as a compile-time cost on every read.
+   */
+  private static parseVarSpecs(varSpecs: string[]): UriTemplateVarSpec[] | null {
+    if (varSpecs.length > MCPManager.MAX_ORDERED_TEMPLATE_VARS) {
+      return null;
+    }
+    const specs: UriTemplateVarSpec[] = [];
+    for (const varSpec of varSpecs) {
+      const parsed = MCPManager.parseVarSpec(varSpec);
+      if (parsed == null) {
+        return null;
+      }
+      specs.push(parsed);
+    }
+    return specs;
+  }
+
+  /**
+   * RFC 6570 §2.4.1 truncates a prefixed value to `:max-length` characters, and templates are matched
+   * against the fully percent-decoded URI, so the limit is a plain character bound on the matched
+   * text. A prefix RE2 cannot express as a repeat count leaves the variable unbounded (its own class
+   * still applies), which cannot deny a legitimate expansion.
+   */
+  private static boundedClass(spec: UriTemplateVarSpec, cls: string, min: number): string {
+    if (spec.prefix == null || spec.prefix > MCPManager.MAX_REPEAT_COUNT) {
+      return `${cls}${min === 0 ? '*' : '+'}`;
+    }
+    return `${cls}{${min},${spec.prefix}}`;
+  }
+
+  /**
+   * Compiles a form-style query expansion (`{?a,b}`) or continuation (`{&a,b}`) as a bounded
+   * sequence. RFC 6570 §3.2.8/§3.2.9: variables expand in declared order, an undefined one is
+   * skipped entirely, a `?` expression prefixes its first present component with `?` and the rest
+   * with `&` (a `&` expression prefixes every component with `&`), and a non-exploded variable
+   * appends its name, `=`, and one value. So the expansion of `{?id}` is a single `?id=<value>` pair,
+   * never `?id=public&id=admin`, which the previous open run of declared keys accepted and forwarded
+   * to a server whose first/last-value semantics could resolve a resource no expansion produces. The
+   * bound is per varspec, so a literal pair the template already carries next to an expansion of the
+   * same name still matches.
+   *
+   * Declared order is enforced rather than any permutation: expansion is order-preserving, so a
+   * reordered query string is not something the advertised template can emit.
+   *
+   * An exploded variable over a list repeats its own key (`{?list*}` produces
+   * `?list=red&list=green`), so its component allows that repeat. An exploded associative array
+   * expands to keys the template never names; those stay unmatchable, as they already were, because
+   * nothing in the template makes them knowable.
+   */
+  private static compileQueryExpansion(op: string, varSpecs: string[]): string | null {
+    const specs = MCPManager.parseVarSpecs(varSpecs);
+    if (specs == null) {
+      return null;
+    }
+    const units = specs.map((spec) => {
+      const name = spec.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const unit = `${name}=${MCPManager.boundedClass(spec, '[^#&]', 0)}`;
+      return spec.explode ? `${unit}(?:&${unit})*` : unit;
+    });
+    const lead = op === '?' ? '\\?' : '&';
+    // One branch per possible first present variable, each followed by the optional later ones in
+    // declared order. At least one component is required, keeping the existing denial for a URI that
+    // omits the whole expansion.
+    const branches = units.map((unit, index) =>
+      units.slice(index + 1).reduce((branch, rest) => `${branch}(?:&${rest})?`, `${lead}${unit}`),
+    );
+    return branches.length === 1 ? branches[0] : `(?:${branches.join('|')})`;
+  }
+
+  /**
    * Compiles an expansion in which at least one variable carries a `:max-length` prefix. RFC 6570
    * §2.4.1 truncates a prefixed string value to that many characters, and templates are matched
    * against the fully percent-decoded URI, so the limit is a plain character bound on the matched
@@ -1425,31 +1525,13 @@ Please follow these instructions when using tools from the respective MCP server
    * shared quantifier: a shared quantifier would either apply the tightest bound to every position
    * or, as before, none to any. The chain still requires at least one component, keeping the
    * existing denial for a URI that omits the whole expansion.
-   *
-   * A prefix RE2 cannot express as a repeat count leaves that variable unbounded (its own class
-   * still applies), which is the pre-existing behavior and cannot deny a legitimate expansion.
    */
   private static compilePrefixedExpansion(op: string, varSpecs: string[]): string | null {
-    // The ordered chain is quadratic in the declared variable count, so a pathological varspec list
-    // authorizes nothing instead of being handed to RE2 as a compile-time cost on every read.
-    if (varSpecs.length > MCPManager.MAX_PREFIXED_TEMPLATE_VARS) {
+    const specs = MCPManager.parseVarSpecs(varSpecs);
+    if (specs == null) {
       return null;
     }
-    const specs: UriTemplateVarSpec[] = [];
-    for (const varSpec of varSpecs) {
-      const parsed = MCPManager.parseVarSpec(varSpec);
-      if (parsed == null) {
-        return null;
-      }
-      specs.push(parsed);
-    }
-
-    const bound = (spec: UriTemplateVarSpec, cls: string, min: number): string => {
-      if (spec.prefix == null || spec.prefix > MCPManager.MAX_REPEAT_COUNT) {
-        return `${cls}${min === 0 ? '*' : '+'}`;
-      }
-      return `${cls}{${min},${spec.prefix}}`;
-    };
+    const bound = MCPManager.boundedClass;
     const component = (spec: UriTemplateVarSpec, delimiter: string, cls: string): string => {
       const unit = `${delimiter}${bound(spec, cls, 1)}`;
       return spec.explode ? `(?:${unit})+` : unit;
@@ -1476,8 +1558,6 @@ Please follow these instructions when using tools from the respective MCP server
     };
     const escaped = (spec: UriTemplateVarSpec): string =>
       spec.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const query = (): string =>
-      specs.map((spec) => `${escaped(spec)}=${bound(spec, '[^#&]', 0)}`).join('|');
 
     switch (op) {
       case '+':
@@ -1497,10 +1577,6 @@ Please follow these instructions when using tools from the respective MCP server
             return spec.explode ? `(?:${unit})+` : unit;
           }),
         );
-      case '?':
-        return `\\?(?:${query()})(?:&(?:${query()}))*`;
-      case '&':
-        return `(?:&(?:${query()}))+`;
       default:
         return joined('[^/?#&=]', 1);
     }
@@ -1640,7 +1716,7 @@ Please follow these instructions when using tools from the respective MCP server
       );
     }
 
-    const cacheKey = `${serverName}:${userId ?? ''}`;
+    const cacheKey = this.cacheScope(serverName, connection, userId);
     if (!this.isToolCacheFresh(cacheKey, connection)) {
       await this.populateToolCaches(connection, cacheKey);
     }

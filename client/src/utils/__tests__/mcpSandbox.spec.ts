@@ -330,6 +330,35 @@ describe('mcp-sandbox proxy', () => {
       }
     });
 
+    it.each([
+      [
+        '<!-- template includes <head> --><html><head></head><body>app</body></html>',
+        '<html><head>',
+      ],
+      ['<!doctype html><!-- <head> --><body>app</body>', '<!doctype html>'],
+      ['<!doctype html><!-- <head>', '<!doctype html>'],
+      [
+        '<!doctype html><html><head></head><body><script>var s="<head>";</script></body></html>',
+        '<head>',
+      ],
+      [
+        '<!doctype html><html><body><script>var s="<head>";</script></body></html>',
+        '<!doctype html>',
+      ],
+      ['<!doctype html><HTML><HEAD></HEAD><body>a</body></HTML>', '<HEAD>'],
+      ['<!doctype html><html><head data-x="1"></head><body>a</body></html>', '<head data-x="1">'],
+      ['<!doctype html><html><body><div title="<head>"></div></body></html>', '<!doctype html>'],
+      ['<p>bare</p>', ''],
+    ])('injects the bootstrap at the first parsed head (%s)', (html, marker) => {
+      const sandbox = loadSandbox();
+      sandbox.deliverResource({ html });
+      const blob = sandbox.blobs[0];
+      const bootstrap = blob.match(/<script>\(function\(\)\{var N=[\s\S]*?<\/script>/)?.[0] ?? '';
+      expect(bootstrap).not.toBe('');
+      const at = marker === '' ? 0 : html.indexOf(marker) + marker.length;
+      expect(blob).toBe(html.slice(0, at) + bootstrap + html.slice(at));
+    });
+
     it('mints a distinct nonce per document', () => {
       const first = loadSandbox();
       first.deliverResource();

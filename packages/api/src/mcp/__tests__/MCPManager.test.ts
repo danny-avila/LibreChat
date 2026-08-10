@@ -166,6 +166,7 @@ describe('MCPManager', () => {
     const mock = {
       has: jest.fn().mockResolvedValue(false),
       get: jest.fn().mockResolvedValue({} as unknown as MCPConnection),
+      getPooledConnection: jest.fn().mockReturnValue(undefined),
       getAll: jest.fn().mockResolvedValue(new Map()),
       getMany: jest.fn().mockResolvedValue(new Map()),
       ...appConnectionsConfig,
@@ -2153,6 +2154,39 @@ describe('MCPManager', () => {
       { uriTemplate: 'api://x{;a,b}', uri: 'api://x;a=1;b=2;c=3', allowed: false },
       { uriTemplate: 'api://x{;p*}', uri: 'api://x;p=1;p=2', allowed: true },
       { uriTemplate: 'db://items{;id,identity}', uri: 'db://items;identity=x', allowed: true },
+      // RFC 6570 3.2.8/3.2.9: a non-exploded query variable contributes one `key=value` pair, in
+      // declared order, so duplicates, reordering and undeclared keys are all unproducible.
+      { uriTemplate: 'db://items{?id}', uri: 'db://items?id=42', allowed: true },
+      { uriTemplate: 'db://items{?id}', uri: 'db://items?id=public&id=admin', allowed: false },
+      { uriTemplate: 'db://items{?id}', uri: 'db://items?id=1&admin=true', allowed: false },
+      { uriTemplate: 'db://items{?id}', uri: 'db://items', allowed: false },
+      { uriTemplate: 'db://items{?id*}', uri: 'db://items?id=1&id=2', allowed: true },
+      { uriTemplate: 'db://items{?id*}', uri: 'db://items?id=1&other=2', allowed: false },
+      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?a=1&b=2', allowed: true },
+      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?a=1', allowed: true },
+      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?b=2', allowed: true },
+      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?b=2&a=1', allowed: false },
+      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?a=1&a=2', allowed: false },
+      { uriTemplate: 'api://x{?a,b}', uri: 'api://x?a=1&b=2&c=3', allowed: false },
+      { uriTemplate: 'api://x?f=1{&a,b}', uri: 'api://x?f=1&a=1&b=2', allowed: true },
+      { uriTemplate: 'api://x?f=1{&a,b}', uri: 'api://x?f=1&b=2', allowed: true },
+      { uriTemplate: 'api://x?f=1{&a,b}', uri: 'api://x?f=1&b=2&a=1', allowed: false },
+      { uriTemplate: 'api://x?f=1{&a}', uri: 'api://x?f=1&a=1&a=2', allowed: false },
+      // The bound is per varspec, not per key name: a literal pair the template already carries plus
+      // one expansion of the same name is a URI the template does produce.
+      { uriTemplate: 'api://x?a=1{&a}', uri: 'api://x?a=1&a=2', allowed: true },
+      // A `:max-length` prefix bounds each key's own value inside that bounded sequence.
+      { uriTemplate: 'api://x{?a:2,b}', uri: 'api://x?a=ab&b=anything', allowed: true },
+      { uriTemplate: 'api://x{?a:2,b}', uri: 'api://x?a=abc&b=anything', allowed: false },
+      { uriTemplate: 'api://x{?a:2,b}', uri: 'api://x?b=anything', allowed: true },
+      { uriTemplate: 'api://x{?a:2,b}', uri: 'api://x?a=ab&a=cd', allowed: false },
+      { uriTemplate: 'api://x{?a:3*}', uri: 'api://x?a=foo', allowed: false },
+      // Same conservative ceiling as the other ordered chains.
+      {
+        uriTemplate: `api://x{?${Array.from({ length: 9 }, (_, i) => `v${i}`).join(',')}}`,
+        uri: 'api://x?v0=1',
+        allowed: false,
+      },
       // Malformed expressions authorize nothing rather than falling back to an open query string.
       { uriTemplate: 'db://x{?}', uri: 'db://x?a=1', allowed: false },
       { uriTemplate: 'db://x{&}', uri: 'db://x&a=1', allowed: false },
@@ -2290,6 +2324,100 @@ describe('MCPManager', () => {
         new UriTemplate('search://items?q={q}').match('search://items?q=foo&admin=true'),
       ).not.toBeNull();
       expect(new UriTemplate('files://root{+path}').match('files://root/x?y=z#f')).not.toBeNull();
+    });
+
+    const cacheKeys = (manager: MCPManager): string[][] => {
+      const caches = manager as unknown as {
+        resourceUriCache: Map<string, unknown>;
+        appHiddenToolCache: Map<string, unknown>;
+        knownToolNamesCache: Map<string, unknown>;
+        toolCacheConnStamp: Map<string, unknown>;
+        advertisedResourceCache: Map<string, unknown>;
+        advertisedResourceConnStamp: Map<string, unknown>;
+      };
+      return [
+        [...caches.resourceUriCache.keys()],
+        [...caches.appHiddenToolCache.keys()],
+        [...caches.knownToolNamesCache.keys()],
+        [...caches.toolCacheConnStamp.keys()],
+        [...caches.advertisedResourceCache.keys()],
+        [...caches.advertisedResourceConnStamp.keys()],
+      ];
+    };
+
+    const readBoth = async (manager: MCPManager, userId: string) => {
+      for (const uri of ['ui://app/main', 'db://items/42']) {
+        await manager.readResource({
+          userId,
+          serverName: 'srv',
+          uri,
+          user: { id: userId } as IUser,
+        });
+      }
+    };
+
+    it('does not grow the metadata caches per user on a shared app-level connection', async () => {
+      const request = templateOnlyRequest('db://items/{id}');
+      const snapshot = jest
+        .fn()
+        .mockResolvedValue({ tools: [uiTool('t', 'ui://app/main')], complete: true });
+      const shared = buildConnection(request, snapshot);
+      mockAppConnections({ getPooledConnection: jest.fn().mockReturnValue(shared) });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(shared);
+
+      for (const userId of ['u1', 'u2', 'u3', 'u4', 'u5']) {
+        await readBoth(manager, userId);
+      }
+
+      for (const keys of cacheKeys(manager)) {
+        expect(keys).toEqual(['srv:']);
+      }
+      expect(snapshot).toHaveBeenCalledTimes(1);
+      expect(
+        request.mock.calls.filter((c) => (c[0] as { method: string }).method === 'resources/list'),
+      ).toHaveLength(1);
+    });
+
+    it('scopes by connection identity when one user falls back to its own connection', async () => {
+      // getConnection hands an app-level server's connection to most users but falls back to a
+      // user connection when the app one is unavailable, so the scope has to follow the instance.
+      const snapshot = () =>
+        jest.fn().mockResolvedValue({ tools: [uiTool('t', 'ui://app/main')], complete: true });
+      const shared = buildConnection(templateOnlyRequest('db://items/{id}'), snapshot());
+      const ownConnection = buildConnection(templateOnlyRequest('db://items/{id}'), snapshot());
+      mockAppConnections({ getPooledConnection: jest.fn().mockReturnValue(shared) });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest
+        .spyOn(manager, 'getConnection')
+        .mockImplementation(async ({ user }) => (user?.id === 'u2' ? ownConnection : shared));
+
+      await readBoth(manager, 'u1');
+      await readBoth(manager, 'u2');
+      await readBoth(manager, 'u3');
+
+      for (const keys of cacheKeys(manager)) {
+        expect(keys).toEqual(['srv:', 'srv:u2']);
+      }
+    });
+
+    it('keeps per-user cache entries for user-scoped connections', async () => {
+      const snapshot = () =>
+        jest.fn().mockResolvedValue({ tools: [uiTool('t', 'ui://app/main')], complete: true });
+      const first = buildConnection(templateOnlyRequest('db://items/{id}'), snapshot());
+      const second = buildConnection(templateOnlyRequest('db://items/{id}'), snapshot());
+      mockAppConnections({ getPooledConnection: jest.fn().mockReturnValue(undefined) });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      jest
+        .spyOn(manager, 'getConnection')
+        .mockImplementation(async ({ user }) => (user?.id === 'u1' ? first : second));
+
+      await readBoth(manager, 'u1');
+      await readBoth(manager, 'u2');
+
+      for (const keys of cacheKeys(manager)) {
+        expect(keys).toEqual(['srv:u1', 'srv:u2']);
+      }
     });
 
     const pagedListRequest = (pages: number, pageSize = 1, nextCursor: () => string = () => 'c') =>

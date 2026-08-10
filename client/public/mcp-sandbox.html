@@ -324,13 +324,101 @@
         }
       });
 
+      const RAW_TEXT_TAGS = ['script', 'style', 'title', 'textarea'];
+
+      function findTagEnd(html, at) {
+        let quote = '';
+        for (let i = at + 1; i < html.length; i += 1) {
+          const char = html[i];
+          if (quote) {
+            if (char === quote) {
+              quote = '';
+            }
+            continue;
+          }
+          if (char === '"' || char === "'") {
+            quote = char;
+            continue;
+          }
+          if (char === '>') {
+            return i;
+          }
+        }
+        return -1;
+      }
+
+      function isTagAt(lower, at, name) {
+        if (!lower.startsWith('<' + name, at)) {
+          return false;
+        }
+        const after = lower[at + name.length + 1];
+        return after === undefined || after === '>' || after === '/' || /\s/.test(after);
+      }
+
+      /**
+       * A literal `<head>` inside a comment, a CDATA section or a raw-text element is never parsed as
+       * a tag, so those spans are walked past instead of matched. Injecting into one would leave the
+       * bootstrap commented out, the view unattested, and every App Bridge message queued until it
+       * times out. Anything the scan cannot resolve confidently returns -1 so the caller prefixes the
+       * whole document, which keeps the bootstrap ahead of the app's markup either way.
+       */
+      function findHeadInjectionPoint(html) {
+        const lower = html.toLowerCase();
+        let at = 0;
+        while (at < lower.length) {
+          const next = lower.indexOf('<', at);
+          if (next === -1) {
+            return -1;
+          }
+          if (lower.startsWith('<!--', next)) {
+            const close = lower.indexOf('-->', next + 4);
+            // An unterminated comment or raw-text span runs to the end of the document, so no head
+            // can follow it.
+            if (close === -1) {
+              return -1;
+            }
+            at = close + 3;
+            continue;
+          }
+          if (lower.startsWith('<![cdata[', next)) {
+            const close = lower.indexOf(']]>', next + 9);
+            if (close === -1) {
+              return -1;
+            }
+            at = close + 3;
+            continue;
+          }
+          const kind = lower[next + 1];
+          if (kind === undefined || !/[a-z!/?]/.test(kind)) {
+            at = next + 1;
+            continue;
+          }
+          if (isTagAt(lower, next, 'head')) {
+            const end = findTagEnd(lower, next);
+            return end === -1 ? -1 : end + 1;
+          }
+          const rawText = RAW_TEXT_TAGS.find((name) => isTagAt(lower, next, name));
+          if (rawText) {
+            const open = findTagEnd(lower, next);
+            const close = open === -1 ? -1 : lower.indexOf('</' + rawText, open + 1);
+            if (close === -1) {
+              return -1;
+            }
+            at = close + rawText.length + 2;
+            continue;
+          }
+          const end = findTagEnd(lower, next);
+          at = end === -1 ? lower.length : end + 1;
+        }
+        return -1;
+      }
+
       function injectIntoHead(html, injection) {
         // The bootstrap must run before any app script, and the app's bytes must reach the blob
         // verbatim: inject, never rewrap. Prefixing a document that opens with a doctype would push
         // the doctype down and flip the app into quirks mode.
-        const headMatch = html.match(/<head[^>]*>/i);
-        if (headMatch) {
-          const at = headMatch.index + headMatch[0].length;
+        const at = findHeadInjectionPoint(html);
+        if (at !== -1) {
           return html.slice(0, at) + injection + html.slice(at);
         }
         const doctypeMatch = html.match(/^\s*<!doctype[^>]*>/i);
