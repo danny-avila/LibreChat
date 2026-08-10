@@ -273,14 +273,17 @@ describeIfFerretDB('FerretDB Multi-Tenancy Benchmark', () => {
       }
 
       const t0 = Date.now();
+      let failure: Error | undefined;
       try {
         await Promise.all(Object.values(models).map((m) => m.createIndexes()));
         console.log(`[Phase 2] Concurrent: ${Date.now() - t0}ms, no deadlock`);
       } catch (err) {
+        failure = err instanceof Error ? err : new Error(String(err));
         console.warn(
-          `[Phase 2] Concurrent: DEADLOCKED after ${Date.now() - t0}ms: ${(err as Error).message}`,
+          `[Phase 2] Concurrent: DEADLOCKED after ${Date.now() - t0}ms: ${failure.message}`,
         );
       }
+      expect(failure).toBeUndefined();
     }, 120_000);
 
     it('verifies sparse, partial, and TTL index types on FerretDB', async () => {
