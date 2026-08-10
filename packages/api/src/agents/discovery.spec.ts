@@ -1,4 +1,4 @@
-import { ErrorTypes, EModelEndpoint } from 'librechat-data-provider';
+import { ErrorTypes, EModelEndpoint, MAX_SUBAGENT_GRAPH_NODES } from 'librechat-data-provider';
 import type { Agent, GraphEdge } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { GraphSubagentHostConfig } from './discovery';
@@ -1199,6 +1199,61 @@ describe('resolveSubagentGraphs', () => {
       primary: { token: 'primary-token' },
       graph: { token: 'graph-token' },
     });
+  });
+
+  it('does not charge initialized root members against the graph load budget', async () => {
+    const rootConfigs = Array.from({ length: MAX_SUBAGENT_GRAPH_NODES }, (_, index) => {
+      const config = makeConfig(`root_${index}`) as GraphSubagentHostConfig;
+      config.subagents = {
+        enabled: true,
+        graphs: [
+          {
+            type: `self_team_${index}`,
+            name: `Self team ${index}`,
+            description: 'Reuses an initialized root',
+            agent_ids: [config.id],
+            edges: [],
+            entry_agent_id: config.id,
+            result_agent_id: config.id,
+          },
+        ],
+      };
+      return config;
+    });
+    const finalRoot = rootConfigs[rootConfigs.length - 1];
+    finalRoot.subagents?.graphs?.push({
+      type: 'external_team',
+      name: 'External team',
+      description: 'Still has room for a real member load',
+      agent_ids: ['external_member'],
+      edges: [],
+      entry_agent_id: 'external_member',
+      result_agent_id: 'external_member',
+    });
+    const getAgent = jest.fn(async ({ id }: { id: string }) => makeAgent(id));
+
+    await resolveSubagentGraphs(
+      {
+        req: makeReq(),
+        res: makeRes(),
+        primaryConfig: rootConfigs[0],
+        rootConfigs,
+        allowedProviders: new Set(),
+        modelsConfig: { openai: ['gpt-4o'] },
+        loadTools: jest.fn(),
+        resourceType: 'remote_agent',
+      },
+      {
+        getAgent,
+        checkPermission: jest.fn().mockResolvedValue(true),
+        logViolation: jest.fn(),
+        db: {} as never,
+      },
+    );
+
+    expect(getAgent).toHaveBeenCalledTimes(1);
+    expect(getAgent).toHaveBeenCalledWith({ id: 'external_member' });
+    expect(finalRoot.subagentGraphConfigs).toHaveLength(2);
   });
 
   it('omits the whole graph when a member lacks remote VIEW access', async () => {

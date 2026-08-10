@@ -1192,7 +1192,12 @@ describe('initializeClient — subagent loading', () => {
     );
 
     const req = makeSubagentReq();
-    req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
+    req.config.endpoints.agents.capabilities.push(
+      'execute_code',
+      'run_in_background',
+      'tool_intents',
+      'stateful_code_sessions',
+    );
     const { userMCPAuthMap } = await initializeClient({
       req,
       res: {},
@@ -1214,6 +1219,14 @@ describe('initializeClient — subagent loading', () => {
       signal: new AbortController().signal,
     });
     expect(mockInitializeAgent).toHaveBeenCalledTimes(3);
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: expect.objectContaining({ id: memberId }),
+        backgroundToolsAvailable: true,
+        toolIntentsAvailable: true,
+      }),
+      expect.anything(),
+    );
     expect(resolvedChild.subagentGraphConfigs).toEqual([
       {
         definition,

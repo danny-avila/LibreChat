@@ -908,6 +908,8 @@ const initializeClient = async ({
             ephemeralSkillsToggle,
           }),
           codeEnvAvailable,
+          backgroundToolsAvailable,
+          toolIntentsAvailable,
           statefulSessionsAvailable,
           memoryAvailable,
           skillStates,

@@ -271,7 +271,9 @@ export async function resolveSubagentGraphs(
       ? (rootConfig.subagents.graphs ?? [])
       : []) {
       const memberIds = [...new Set(definition.agent_ids)];
-      const newMemberIds = memberIds.filter((memberId) => !attemptedGraphMemberIds.has(memberId));
+      const newMemberIds = memberIds.filter(
+        (memberId) => !configById.has(memberId) && !attemptedGraphMemberIds.has(memberId),
+      );
       if (attemptedGraphMemberIds.size + newMemberIds.length > MAX_SUBAGENT_GRAPH_NODES) {
         logger.warn('[resolveSubagentGraphs] Subagent graph node limit exceeded', {
           parentAgentId: rootConfig.id,
