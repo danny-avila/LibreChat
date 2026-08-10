@@ -427,8 +427,26 @@ export default [
       './packages/api/src/middleware/__tests__/**/*.ts',
       './packages/data-schemas/src/search/**/*.ts',
     ],
+    ignores: ['**/*.spec.ts', '**/*.test.ts'],
     rules: {
       'no-restricted-syntax': ['error', ...mongoRestrictions, ...typeSafetyRestrictions],
+    },
+  },
+  {
+    // **Chat search specs — type-safety conventions only.** The Mongo
+    // restrictions exist so production writes cannot bypass the tenant-isolation
+    // middleware; the projection specs use `Model.collection.*` deliberately to
+    // simulate exactly such hook-less writes and prove reconciliation catches
+    // them. The type-safety conventions apply to specs in full — a laundered
+    // cast in a test is how an assertion goes vacuous.
+    files: [
+      './packages/api/src/search/**/*.spec.ts',
+      './packages/api/src/history/**/*.spec.ts',
+      './packages/api/src/middleware/__tests__/**/*.ts',
+      './packages/data-schemas/src/search/**/*.spec.ts',
+    ],
+    rules: {
+      'no-restricted-syntax': ['error', ...typeSafetyRestrictions],
     },
   },
 ];
