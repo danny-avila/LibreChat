@@ -11,20 +11,23 @@ jest.mock('~/utils', () => ({
   groupSequentialToolCalls: jest.fn(),
 }));
 
-jest.mock('~/Providers', () => ({
-  MessageContext: {
-    Provider: ({
-      children,
-      value,
-    }: {
-      children: React.ReactElement<{ idx?: number }>;
-      value: { partIndex: number };
-    }) => React.cloneElement(children, { idx: value.partIndex }),
-  },
-  SearchContext: {
-    Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  },
-}));
+jest.mock('~/Providers', () => {
+  const react = jest.requireActual<typeof import('react')>('react');
+  return {
+    MessageContext: {
+      Provider: ({
+        children,
+        value,
+      }: {
+        children: React.ReactElement<{ idx?: number }>;
+        value: { partIndex: number };
+      }) => react.cloneElement(children, { idx: value.partIndex }),
+    },
+    SearchContext: {
+      Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    },
+  };
+});
 
 jest.mock('../Parts', () => ({
   EditTextPart: () => <div data-testid="edit-text-part" />,
