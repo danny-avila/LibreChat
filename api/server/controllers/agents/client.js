@@ -1425,10 +1425,19 @@ class AgentClient extends BaseClient {
       });
     };
 
-    const preparedRuntimeAgents = new WeakSet(allAgents.map(({ agent }) => agent));
+    const runtimeAgentPreparations = new WeakMap();
+    const prepareRuntimeAgentOnce = (agent, scopedContext) => {
+      const existing = runtimeAgentPreparations.get(agent);
+      if (existing) {
+        return existing;
+      }
+      const pending = prepareRuntimeAgent({ agent, agentId: agent.id }, scopedContext);
+      runtimeAgentPreparations.set(agent, pending);
+      return pending;
+    };
     await Promise.all(
       allAgents.map(({ agent, agentId }) =>
-        prepareRuntimeAgent({ agent, agentId }, agentScopedContext.get(agentId)),
+        prepareRuntimeAgentOnce(agent, agentScopedContext.get(agentId)),
       ),
     );
 
@@ -1470,24 +1479,28 @@ class AgentClient extends BaseClient {
                 resolvedPending.push(...graph.memberConfigs);
               }
             }
-            const unpreparedAgents = resolvedAgents.filter(
-              (agent) => !preparedRuntimeAgents.has(agent),
-            );
-            const lateScopedContext = await buildAgentScopedContext({
-              agentIds: unpreparedAgents.map((agent) => agent.id),
-              attachmentsByAgentId: buildAgentContextAttachmentsByAgentId(unpreparedAgents),
-              sharedRunAttachmentIds,
-              req: this.options.req,
-              tokenCountFn: (text) => countTokens(text),
-            });
             await Promise.all(
-              unpreparedAgents.map((agent) =>
-                prepareRuntimeAgent({ agent, agentId: agent.id }, lateScopedContext.get(agent.id)),
-              ),
+              resolvedAgents.map((agent) => {
+                const existing = runtimeAgentPreparations.get(agent);
+                if (existing) {
+                  return existing;
+                }
+                const pending = buildAgentScopedContext({
+                  agentIds: [agent.id],
+                  attachmentsByAgentId: buildAgentContextAttachmentsByAgentId([agent]),
+                  sharedRunAttachmentIds,
+                  req: this.options.req,
+                  tokenCountFn: (text) => countTokens(text),
+                }).then((lateScopedContext) =>
+                  prepareRuntimeAgent(
+                    { agent, agentId: agent.id },
+                    lateScopedContext.get(agent.id),
+                  ),
+                );
+                runtimeAgentPreparations.set(agent, pending);
+                return pending;
+              }),
             );
-            for (const agent of unpreparedAgents) {
-              preparedRuntimeAgents.add(agent);
-            }
             wrapLazyResolvers(resolvedAgents);
             return resolved;
           };
