@@ -1,8 +1,8 @@
 import React, { memo, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { TooltipAnchor } from '@librechat/client';
+import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import MCPServerMenuItem from '~/components/MCP/MCPServerMenuItem';
 import MCPConfigDialog from '~/components/MCP/MCPConfigDialog';
 import StackedMCPIcons from '~/components/MCP/StackedMCPIcons';
@@ -71,11 +71,11 @@ function MCPSelectContent() {
           render={
             <Ariakit.MenuButton
               className={cn(
-                'group relative inline-flex items-center justify-center gap-1.5',
+                'group relative inline-flex items-center justify-center gap-theme-compact',
                 'border border-border-medium text-sm font-medium transition-all',
-                'h-9 min-w-9 rounded-full bg-transparent px-2.5 shadow-sm',
+                'h-theme-control min-w-theme-control rounded-theme-control-round bg-transparent px-2.5 shadow-sm',
                 'hover:bg-surface-hover hover:shadow-md active:shadow-inner',
-                'md:w-fit md:justify-start md:px-3',
+                'md:w-fit md:justify-start md:px-theme-normal',
                 isOpen && 'bg-surface-hover',
               )}
             />
