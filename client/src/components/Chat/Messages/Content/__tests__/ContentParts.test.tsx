@@ -1,14 +1,14 @@
 import React from 'react';
 import { ContentTypes } from 'librechat-data-provider';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { TMessageContentParts } from 'librechat-data-provider';
+import { groupSequentialToolCalls } from '~/utils';
 
 jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
   mapAttachments: () => ({}),
   filterAttachmentsForPart: (attachments: unknown) => attachments,
-  groupSequentialToolCalls: (parts: Array<{ part: unknown; idx: number }>) =>
-    parts.map((p) => ({ type: 'single' as const, part: p })),
+  groupSequentialToolCalls: jest.fn(),
 }));
 
 jest.mock('~/Providers', () => ({
@@ -42,7 +42,21 @@ jest.mock('../Parts/PendingSkillCall', () => ({
 
 jest.mock('../ToolCallGroup', () => ({
   __esModule: true,
-  default: () => <div data-testid="tool-call-group" />,
+  default: ({
+    initialExpansionState,
+    onExpansionChange,
+  }: {
+    initialExpansionState?: { isExpanded: boolean; userOverride: boolean };
+    onExpansionChange?: (state: { isExpanded: boolean; userOverride: boolean }) => void;
+  }) => (
+    <button
+      data-testid="tool-call-group"
+      data-initial-expanded={
+        initialExpansionState == null ? 'unset' : String(initialExpansionState.isExpanded)
+      }
+      onClick={() => onExpansionChange?.({ isExpanded: false, userOverride: true })}
+    />
+  ),
 }));
 
 jest.mock('../ActivityPhaseGroup', () => ({
@@ -92,6 +106,12 @@ const baseProps = {
   isCreatedByUser: false,
   content: [],
 };
+
+beforeEach(() => {
+  jest
+    .mocked(groupSequentialToolCalls)
+    .mockImplementation((parts) => parts.map((part) => ({ type: 'single', part })));
+});
 
 describe('ContentParts — interim skill cards', () => {
   it('renders a PendingSkillCall per manual skill on assistant messages', () => {
@@ -286,5 +306,55 @@ describe('ContentParts — post-steer author re-attribution', () => {
 
     expect(screen.getByTestId('activity-phase-group')).toBeTruthy();
     expect(screen.getAllByTestId('author-header')).toHaveLength(1);
+  });
+});
+
+describe('ContentParts — activity phase state', () => {
+  it('retains a tool-group expansion override when a completed phase remounts the group', () => {
+    jest.mocked(groupSequentialToolCalls).mockImplementation((parts) => {
+      const toolParts = parts.filter(({ part }) => part.type === ContentTypes.TOOL_CALL);
+      if (toolParts.length > 0) {
+        return [{ type: 'tool-group', parts: toolParts }];
+      }
+      return parts.map((part) => ({ type: 'single', part }));
+    });
+    const tools = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'tool-1', name: 'search', args: {}, output: 'one' },
+      },
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'tool-2', name: 'search', args: {}, output: 'two' },
+      },
+    ] as unknown as TMessageContentParts[];
+    const pendingPhase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: '',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_count: 2,
+      pending: true,
+    } as unknown as TMessageContentParts;
+    const { rerender } = render(
+      <ContentParts {...baseProps} content={[...tools, pendingPhase]} />,
+    );
+
+    const pendingGroup = screen.getByTestId('tool-call-group');
+    expect(pendingGroup).toHaveAttribute('data-initial-expanded', 'unset');
+    fireEvent.click(pendingGroup);
+
+    const completedPhase = {
+      ...pendingPhase,
+      [ContentTypes.ACTIVITY_LABEL]: 'Compared both search results',
+      pending: false,
+    } as unknown as TMessageContentParts;
+    rerender(<ContentParts {...baseProps} content={[...tools, completedPhase]} />);
+
+    expect(screen.getByTestId('activity-phase-group')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-initial-expanded',
+      'false',
+    );
   });
 });

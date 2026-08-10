@@ -153,6 +153,8 @@ type ContentPartsProps = {
   nestedActivityPhase?: boolean;
   /** Message-wide steer attribution retained across sparse phase slices. */
   resumeAuthors?: ReadonlyMap<number, string | undefined>;
+  /** Message-wide tool-group expansion overrides retained across phase slices. */
+  toolGroupExpansionState?: Map<string, ToolCallGroupExpansionState>;
 };
 
 /**
@@ -180,15 +182,17 @@ const ContentParts = memo(function ContentParts({
   createdAt,
   nestedActivityPhase = false,
   resumeAuthors,
+  toolGroupExpansionState,
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
-  const toolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
+  const localToolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
+  const expansionState = toolGroupExpansionState ?? localToolGroupExpansionRef.current;
   const fallbackScopeRef = useRef({ messageId, scope: 0 });
   if (fallbackScopeRef.current.messageId !== messageId) {
     if (!effectiveIsSubmitting) {
       fallbackScopeRef.current.scope += 1;
-      toolGroupExpansionRef.current.clear();
+      expansionState.clear();
     }
     fallbackScopeRef.current.messageId = messageId;
   }
@@ -197,12 +201,12 @@ const ContentParts = memo(function ContentParts({
   const handleGroupExpansionChange = useCallback(
     (groupId: string, state: ToolCallGroupExpansionState) => {
       if (!state.userOverride) {
-        toolGroupExpansionRef.current.delete(groupId);
+        expansionState.delete(groupId);
         return;
       }
-      toolGroupExpansionRef.current.set(groupId, state);
+      expansionState.set(groupId, state);
     },
-    [],
+    [expansionState],
   );
 
   /**
@@ -466,6 +470,7 @@ const ContentParts = memo(function ContentParts({
           isLatestMessage={isLatestMessage}
           nestedActivityPhase
           resumeAuthors={postSteerAuthors}
+          toolGroupExpansionState={expansionState}
         />
       );
     };
@@ -569,7 +574,7 @@ const ContentParts = memo(function ContentParts({
             renderPart={renderGroupedPart}
             lastContentIdx={lastContentIdx}
             groupAttachments={group.groupAttachments}
-            initialExpansionState={toolGroupExpansionRef.current.get(groupId)}
+            initialExpansionState={expansionState.get(groupId)}
             onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
             labelPart={group.labelPart}
           />,
