@@ -41,6 +41,13 @@ export enum Providers {
   MOONSHOT = 'moonshot',
   OPENROUTER = 'openrouter',
   XAI = 'xai',
+  /**
+   * Appended, never renumbered or reordered — these values are persisted.
+   * BAML is a provider discriminator only: it is deliberately absent from
+   * `EModelEndpoint`, because a BAML endpoint is always a NAMED custom endpoint
+   * and the name is what users select, persist, and authorize against.
+   */
+  BAML = 'baml',
 }
 
 /**
@@ -1443,6 +1450,39 @@ export const openAISchema = openAIBaseSchema
 
 export const openRouterSchema = openAIBaseSchema
   .merge(tConversationSchema.pick({ promptCache: true, promptCacheTtl: true }))
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
+  .catch(() => ({}));
+
+/**
+ * BAML owns every generation parameter inside its compiled clients and their static
+ * retry policies, so the host schema keeps only conversation-shaped fields. Anything
+ * a provider would tune — temperature, token limits, reasoning, prompt cache, stop
+ * sequences — is dropped here rather than forwarded to a runtime that cannot honor it.
+ */
+export const bamlBaseSchema = tConversationSchema.pick({
+  chatProjectId: true,
+  model: true,
+  modelLabel: true,
+  chatGptLabel: true,
+  promptPrefix: true,
+  resendFiles: true,
+  artifacts: true,
+  imageDetail: true,
+  iconURL: true,
+  greeting: true,
+  spec: true,
+  maxContextTokens: true,
+  disableStreaming: true,
+  fileTokenLimit: true,
+});
+
+export const bamlSchema = bamlBaseSchema
+  .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
+  .catch(() => ({}));
+
+/** `iconURL` stays server-derived from model spec configuration, never client-supplied. */
+export const compactBamlSchema = bamlBaseSchema
+  .omit({ iconURL: true })
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
 

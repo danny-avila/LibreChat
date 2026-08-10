@@ -26,7 +26,19 @@ RUN apk --no-cache add curl
 # `.node` binary requests `ld-linux-x86-64.so.2`, `libc.so.6` and
 # `libgcc_s.so.1` — all glibc — which Alpine does not have, so the loader
 # reports the misleading "Cannot find native binding". gcompat supplies the
-# shim. Remove this once upstream ships a genuinely musl-linked artifact.
+# missing loader shim.
+#
+# It is a BUILD defect, not a publish mixup: the musl artifact is a distinct
+# binary from the gnu one, so the musl matrix leg was compiled against glibc.
+# The 0.15.1 nightly has the identical glibc NEEDED set, so there is no version
+# to upgrade to. Tracked as AF-o4v.
+#
+# KNOWN RISK: the binary wants symbols up to GLIBC_2.34 and gcompat is a partial
+# ABI shim, not a glibc implementation — a path not exercised here could still
+# fail. What IS exercised, in-image: a full two-turn tool loop against a live
+# provider over HTTPS + SSE (scripts/baml-host/run.mjs). The lower-risk
+# alternative is a glibc base image, where the correctly-built -gnu artifact is
+# used and none of this applies.
 RUN apk --no-cache add gcompat
 RUN npm config set fetch-retry-maxtimeout 600000 && \
     npm config set fetch-retries 5 && \

@@ -701,3 +701,161 @@ describe('parseTextParts', () => {
     );
   });
 });
+
+/**
+ * Behavior 3.3 — client and server strip unsupported BAML parameters.
+ *
+ * BAML owns every generation parameter inside its compiled clients, so the host
+ * allowlist is deliberately tiny. The endpoint is arbitrarily named and reaches
+ * the BAML schema only through `defaultParamsEndpoint`, exactly as
+ * `buildEndpointOption` and `useChatFunctions` resolve it in production.
+ */
+describe('parseConvo/parseCompactConvo - BAML', () => {
+  /** The exact host-owned allowlist from the plan, §7. */
+  const BAML_ALLOWED_KEYS = [
+    'chatProjectId',
+    'model',
+    'modelLabel',
+    'chatGptLabel',
+    'promptPrefix',
+    'resendFiles',
+    'artifacts',
+    'imageDetail',
+    'iconURL',
+    'greeting',
+    'spec',
+    'maxContextTokens',
+    'disableStreaming',
+    'fileTokenLimit',
+  ];
+
+  /** Every provider generation field that must never reach BAML or persistence. */
+  const deniedFields = {
+    temperature: 0.7,
+    top_p: 0.9,
+    topP: 0.9,
+    topK: 40,
+    frequency_penalty: 0.5,
+    presence_penalty: 0.5,
+    max_tokens: 4096,
+    maxTokens: 4096,
+    max_output_tokens: 8192,
+    maxOutputTokens: 8192,
+    max_completion_tokens: 8192,
+    maxCompletionTokens: 8192,
+    stop: ['STOP'],
+    reasoning_effort: 'high',
+    reasoning_summary: 'auto',
+    reasoning_mode: 'standard',
+    reasoning_context: 'auto',
+    thinking: true,
+    thinkingBudget: 2048,
+    effort: 'high',
+    thinkingDisplay: 'summarized',
+    verbosity: 'high',
+    promptCache: true,
+    promptCacheTtl: '1h',
+    web_search: true,
+    useResponsesApi: true,
+    region: 'us-east-1',
+    system: 'be helpful',
+    unknownGenerationKey: 'nope',
+  };
+
+  const allowedFields = {
+    chatProjectId: 'project-1',
+    model: 'OpenRouter',
+    modelLabel: 'Team model',
+    chatGptLabel: 'legacy label',
+    promptPrefix: 'be terse',
+    resendFiles: true,
+    artifacts: 'default',
+    imageDetail: 'auto',
+    iconURL: 'https://example.com/icon.png',
+    greeting: 'hello',
+    spec: 'team-spec',
+    maxContextTokens: 50000,
+    disableStreaming: true,
+    fileTokenLimit: 1000,
+  };
+
+  const bamlConversation = { ...allowedFields, ...deniedFields } as Partial<TConversation>;
+
+  const parseArgs = {
+    endpoint: 'Team-BAML' as EModelEndpoint,
+    endpointType: EModelEndpoint.custom,
+    defaultParamsEndpoint: Providers.BAML,
+  };
+
+  test('parseConvo keeps exactly the BAML allowlist', () => {
+    const result = parseConvo({ ...parseArgs, conversation: bamlConversation });
+
+    expect(result).not.toBeNull();
+    expect(Object.keys(result ?? {}).sort()).toEqual([...BAML_ALLOWED_KEYS].sort());
+  });
+
+  test('parseConvo drops every provider generation field', () => {
+    const result = parseConvo({ ...parseArgs, conversation: bamlConversation }) as Record<
+      string,
+      unknown
+    >;
+
+    for (const denied of Object.keys(deniedFields)) {
+      expect(result[denied]).toBeUndefined();
+    }
+  });
+
+  test('parseCompactConvo keeps the same allowlist minus the server-derived iconURL', () => {
+    const result = parseCompactConvo({ ...parseArgs, conversation: bamlConversation });
+
+    expect(result).not.toBeNull();
+    expect(Object.keys(result ?? {}).sort()).toEqual(
+      BAML_ALLOWED_KEYS.filter((key) => key !== 'iconURL').sort(),
+    );
+  });
+
+  test('parseCompactConvo drops every provider generation field', () => {
+    const result = parseCompactConvo({ ...parseArgs, conversation: bamlConversation }) as Record<
+      string,
+      unknown
+    >;
+
+    for (const denied of Object.keys(deniedFields)) {
+      expect(result[denied]).toBeUndefined();
+    }
+  });
+
+  test('possibleValues.models replaces only the model with the first allowed client', () => {
+    const result = parseConvo({
+      ...parseArgs,
+      conversation: { ...allowedFields, model: 'NotAllowed' } as Partial<TConversation>,
+      possibleValues: { models: ['OpenRouterFast', 'OpenRouter'] },
+    });
+
+    expect(result?.model).toBe('OpenRouterFast');
+    expect(result?.modelLabel).toBe('Team model');
+    expect(result?.maxContextTokens).toBe(50000);
+  });
+
+  test('a second arbitrarily named BAML endpoint parses identically', () => {
+    const first = parseCompactConvo({ ...parseArgs, conversation: bamlConversation });
+    const second = parseCompactConvo({
+      ...parseArgs,
+      endpoint: 'Skunkworks [v2]' as EModelEndpoint,
+      conversation: bamlConversation,
+    });
+
+    expect(second).toEqual(first);
+  });
+
+  test('an ordinary custom endpoint keeps its OpenAI parameters', () => {
+    const result = parseConvo({
+      endpoint: 'Proxy' as EModelEndpoint,
+      endpointType: EModelEndpoint.custom,
+      conversation: bamlConversation,
+    });
+
+    expect(result?.temperature).toBe(0.7);
+    expect(result?.max_tokens).toBe(4096);
+  });
+});

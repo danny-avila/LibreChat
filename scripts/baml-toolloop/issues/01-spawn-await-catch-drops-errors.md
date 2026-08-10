@@ -1,3 +1,28 @@
+> # ⛔ DO NOT FILE — FIXED UPSTREAM (retested 2026-08-10)
+>
+> This was already found and fixed by BoundaryML before we wrote it up:
+> **boundaryml/baml#3979** (closed 2026-07-23) describes our symptom verbatim —
+> *"A throw from a `spawn`ed future could escape uncaught past the `catch` on its
+> `await`, under concurrency/load (Fixes B-405)"* — followed by **#4129**
+> (closed 2026-07-24).
+>
+> Toolchain `0.15.0` was published **2026-07-14**, nine days before that fix
+> landed. Everything measured below is real, but it was measured against a
+> toolchain that predates the fix.
+>
+> Retested 2026-08-10, same repro, same machine:
+>
+> | Toolchain | caught | escaped |
+> |---|---|---|
+> | `0.15.0` | 15/30 | **15/30** |
+> | `0.15.1-nightly.20260731.a` | **30/30** | 0/30 |
+>
+> Not yet on the stable channel — `baml toolchain status` still reports latest
+> canary `0.15.0`. Upgrade when `0.15.1` reaches canary, or pin the nightly.
+>
+> Kept for the measurement methodology and the ruled-out list, which are still
+> useful. Tracked as `AF-e82` (closed).
+
 # `catch` at an `await` site silently drops errors from any spawned task but the first
 
 **Version:** toolchain `0.15.0` (wrapper `0.2.0`, channel `canary`)

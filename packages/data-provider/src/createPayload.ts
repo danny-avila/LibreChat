@@ -35,7 +35,12 @@ export default function createPayload(submission: t.TSubmission) {
   };
 
   const endpoint = _e as s.EModelEndpoint;
-  let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${endpoint}`;
+  /**
+   * The endpoint segment is an admin-chosen custom endpoint name, so it is escaped
+   * exactly once here. Express decodes `req.params.endpoint` on arrival; decoding it
+   * again server-side would resolve a different endpoint than the user selected.
+   */
+  let server = `${EndpointURLs[s.EModelEndpoint.agents]}/${encodeURIComponent(endpoint)}`;
   if (s.isAssistantsEndpoint(endpoint)) {
     server =
       EndpointURLs[(endpointType ?? endpoint) as 'assistants' | 'azureAssistants'] +

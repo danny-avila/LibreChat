@@ -38,6 +38,8 @@ import type {
 } from '~/types';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
 import type { TFilterFilesByAgentAccess } from './resources';
+import { setAgentRuntimeOptions } from '~/agents/runtime';
+import { isBamlInitializeResult } from '~/types';
 import {
   injectSkillCatalog,
   resolveManualSkills,
@@ -1101,6 +1103,13 @@ export async function initializeAgent(
 
   const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
     provider,
+    /**
+     * The agent's endpoint is the persisted identity. Passing it lets a
+     * provider that is only a runtime discriminator — BAML — resolve the named
+     * custom endpoint it belongs to instead of searching for an endpoint with
+     * the discriminator's name.
+     */
+    endpoint: agent.endpoint ?? provider,
     appConfig: req.config,
   });
   if (overrideProvider !== agent.provider) {
@@ -1362,9 +1371,18 @@ export async function initializeAgent(
     tools = structuredTools.concat(providerTools as GenericTool[]);
   }
 
+  /**
+   * Only the DECLARATIVE half is written here — this object becomes a Mongo
+   * document, SSE JSON, and a public DTO. BAML's executable port travels on a
+   * non-enumerable symbol instead, and `createRun` merges it back in at the last
+   * moment, immediately before constructing `ChatBAML`.
+   */
   agent.model_parameters = { ...options.llmConfig } as Agent['model_parameters'];
   if (options.configOptions) {
     (agent.model_parameters as Record<string, unknown>).configuration = options.configOptions;
+  }
+  if (isBamlInitializeResult(options)) {
+    setAgentRuntimeOptions(agent, options.runtimeOptions);
   }
 
   if (agent.instructions && agent.instructions !== '') {

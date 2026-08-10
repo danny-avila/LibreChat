@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
 import {
+  Providers,
   EModelEndpoint,
   eModelEndpointSchema,
   isAgentsEndpoint,
@@ -1014,12 +1015,19 @@ export const endpointSchema = baseEndpointSchema.merge(
     modelDisplayLabel: z.string().optional(),
     /**
      * Forces the endpoint to use a provider's native client / request format
-     * instead of the default OpenAI-compatible client. Currently supports
-     * `anthropic`, for endpoints that speak the Anthropic `/v1/messages` API
-     * (Anthropic itself or Anthropic-compatible gateways). Omit for
-     * OpenAI-compatible endpoints.
+     * instead of the default OpenAI-compatible client.
+     *
+     * - `anthropic` — endpoints speaking the Anthropic `/v1/messages` API
+     *   (Anthropic itself or Anthropic-compatible gateways).
+     * - `baml` — the endpoint's models are COMPILED BAML clients. Transport,
+     *   credentials, and retry policy belong to the compiled client and its
+     *   documented environment variables, so a BAML endpoint declares no
+     *   `apiKey`, `baseURL`, or `headers`. See `bamlEndpointIssues` for the
+     *   cross-field rules enforced at the public config boundary.
+     *
+     * Omit for OpenAI-compatible endpoints.
      */
-    provider: z.literal(EModelEndpoint.anthropic).optional(),
+    provider: z.union([z.literal(EModelEndpoint.anthropic), z.literal(Providers.BAML)]).optional(),
     headers: z.record(z.string()).optional(),
     addParams: addParamsSchema.optional(),
     dropParams: z.array(z.string()).optional(),
@@ -1884,7 +1892,161 @@ export const summarizationConfigSchema = z.object({
 
 export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
-const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
+/** A custom endpoint whose models are compiled BAML clients. */
+export const isBamlEndpoint = (endpoint?: { provider?: unknown } | null): boolean =>
+  endpoint?.provider === Providers.BAML;
+
+/** Values `customParams.defaultParamsEndpoint` may hold on a BAML endpoint. */
+const BAML_DEFAULT_PARAMS_VALUES: readonly string[] = [EModelEndpoint.custom, Providers.BAML];
+
+/**
+ * Config keys a BAML endpoint may not carry, and why.
+ *
+ * Transport and credentials are owned by the compiled BAML client and its
+ * documented environment variables, so accepting them here would create a second
+ * source of truth that silently does nothing. `addParams`/`dropParams` are
+ * OpenAI request-shaping; a BAML turn has no OpenAI request to shape. Ignoring
+ * any of these quietly is worse than refusing them: the operator would believe a
+ * setting took effect.
+ */
+const BAML_FORBIDDEN_KEYS = [
+  'apiKey',
+  'baseURL',
+  'headers',
+  'directEndpoint',
+  'addParams',
+  'dropParams',
+] as const;
+
+const BAML_FORBIDDEN_CUSTOM_PARAMS = [
+  'reasoningFormat',
+  'reasoningKey',
+  'includeReasoningContent',
+  'includeReasoningHistory',
+] as const;
+
+type BamlIssue = { path: (string | number)[]; message: string };
+
+/**
+ * The BAML cross-field grammar.
+ *
+ * It lives here rather than on `endpointSchema` because `configSchema` wraps
+ * custom endpoints in `endpointSchema.partial()` — every field is optional
+ * there, so a required-field rule declared on the endpoint schema would be
+ * erased for exactly the config shape users actually write. Applying the rules
+ * at the array level keeps the partial behavior other custom providers rely on
+ * while still making a malformed BAML endpoint a load-time failure.
+ */
+export const bamlEndpointIssues = (
+  endpoint: Record<string, unknown>,
+  index: number,
+): BamlIssue[] => {
+  const issues: BamlIssue[] = [];
+  const at = (...path: (string | number)[]): (string | number)[] => [index, ...path];
+
+  if (typeof endpoint.name !== 'string' || endpoint.name.trim() === '') {
+    issues.push({ path: at('name'), message: 'A BAML endpoint requires a non-empty name.' });
+  }
+
+  const models = endpoint.models as
+    | { default?: unknown; fetch?: unknown; userIdQuery?: unknown }
+    | undefined;
+
+  if (!Array.isArray(models?.default) || models.default.length === 0) {
+    issues.push({
+      path: at('models', 'default'),
+      message:
+        'A BAML endpoint requires an explicit non-empty models.default list of compiled client names.',
+    });
+  }
+
+  if (models?.fetch === true) {
+    issues.push({
+      path: at('models', 'fetch'),
+      message: 'A BAML endpoint cannot fetch models: its clients are compiled into the server.',
+    });
+  }
+
+  if (models?.userIdQuery !== undefined) {
+    issues.push({
+      path: at('models', 'userIdQuery'),
+      message: 'models.userIdQuery is not supported for a BAML endpoint.',
+    });
+  }
+
+  for (const key of BAML_FORBIDDEN_KEYS) {
+    if (endpoint[key] !== undefined) {
+      issues.push({
+        path: at(key),
+        message: `${key} is not supported for a BAML endpoint: transport, credentials, and request shaping belong to the compiled BAML client.`,
+      });
+    }
+  }
+
+  const customParams = endpoint.customParams as Record<string, unknown> | undefined;
+  if (customParams != null) {
+    const defaultParamsEndpoint = customParams.defaultParamsEndpoint;
+    if (
+      defaultParamsEndpoint !== undefined &&
+      !BAML_DEFAULT_PARAMS_VALUES.includes(defaultParamsEndpoint as string)
+    ) {
+      issues.push({
+        path: at('customParams', 'defaultParamsEndpoint'),
+        message: `A BAML endpoint's defaultParamsEndpoint must be omitted, "${EModelEndpoint.custom}", or "${Providers.BAML}".`,
+      });
+    }
+
+    for (const key of BAML_FORBIDDEN_CUSTOM_PARAMS) {
+      if (customParams[key] !== undefined) {
+        issues.push({
+          path: at('customParams', key),
+          message: `customParams.${key} is not supported for a BAML endpoint.`,
+        });
+      }
+    }
+
+    const paramDefinitions = customParams.paramDefinitions;
+    if (Array.isArray(paramDefinitions) && paramDefinitions.length > 0) {
+      issues.push({
+        path: at('customParams', 'paramDefinitions'),
+        message:
+          'A BAML endpoint exposes no generation parameters, so paramDefinitions cannot be applied.',
+      });
+    }
+  }
+
+  return issues;
+};
+
+/**
+ * Rewrites `customParams.defaultParamsEndpoint` to the provider discriminator so
+ * every downstream reader — parsers, settings, `buildEndpointOption` — sees one
+ * value. Accepting the absent and `custom` spellings keeps existing configs
+ * valid; publishing all three as `baml` keeps the read side from having to know
+ * about the other two.
+ */
+export const normalizeBamlEndpoint = (endpoint: Record<string, unknown>): Record<string, unknown> => {
+  if (!isBamlEndpoint(endpoint)) {
+    return endpoint;
+  }
+  const customParams = (endpoint.customParams ?? {}) as Record<string, unknown>;
+  endpoint.customParams = { ...customParams, defaultParamsEndpoint: Providers.BAML };
+  return endpoint;
+};
+
+const customEndpointsSchema = z
+  .array(endpointSchema.partial())
+  .superRefine((endpoints, ctx) => {
+    endpoints.forEach((endpoint, index) => {
+      if (!isBamlEndpoint(endpoint)) {
+        return;
+      }
+      for (const issue of bamlEndpointIssues(endpoint as Record<string, unknown>, index)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: issue.path, message: issue.message });
+      }
+    });
+  })
+  .optional();
 
 /**
  * Validates a messageFilter PII regex at config load. Defaults to native RegExp so browser

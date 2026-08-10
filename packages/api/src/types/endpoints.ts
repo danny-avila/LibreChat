@@ -1,3 +1,5 @@
+import { Providers } from '@librechat/agents';
+import type { BamlClientOptions, BamlFunctionSet } from '@librechat/agents/baml';
 import type { ClientOptions, OpenAIClientOptions } from '@librechat/agents';
 import type { TConfig } from 'librechat-data-provider';
 import type { EndpointTokenConfig } from './tokens';
@@ -51,15 +53,52 @@ export interface BaseInitializeParams {
   db: EndpointDbMethods;
 }
 
-/**
- * Base result type that all initialize functions return
- * Using a more permissive type to accommodate different provider-specific results
- */
-export interface InitializeResultBase {
-  llmConfig: ClientOptions;
+/** Fields every initializer result carries, whatever the provider. */
+interface InitializeResultCommon {
   configOptions?: OpenAIClientOptions['configuration'];
   endpointTokenConfig?: EndpointTokenConfig;
   useLegacyContent?: boolean;
-  provider?: string;
   tools?: unknown[];
 }
+
+/**
+ * Every provider whose whole client configuration is declarative and therefore
+ * safe to persist as `agent.model_parameters`.
+ */
+export interface StandardInitializeResult extends InitializeResultCommon {
+  llmConfig: ClientOptions;
+  provider?: string;
+  /**
+   * Present only on the BAML arm. Declaring it here as `never` is what makes
+   * `result.runtimeOptions != null` a sound narrowing: `provider` cannot
+   * discriminate, because this arm's `provider` is a plain `string`.
+   */
+  runtimeOptions?: never;
+}
+
+/**
+ * BAML splits its result in two on purpose.
+ *
+ * `llmConfig` is declarative and gets persisted. `runtimeOptions.functions` is
+ * the executable port — generated functions, a worker handle, native values —
+ * and must never reach `model_parameters`, a Mongo document, pending/HITL state,
+ * a checkpoint, an SSE payload, or a public DTO. Splitting them at the TYPE level
+ * means a BAML initializer that forgets cannot compile, rather than leaking at
+ * runtime somewhere far from here.
+ */
+export interface BamlInitializeResult extends InitializeResultCommon {
+  provider: Providers.BAML;
+  llmConfig: Omit<BamlClientOptions, 'functions'>;
+  runtimeOptions: { functions: BamlFunctionSet };
+}
+
+export type InitializeResultBase = StandardInitializeResult | BamlInitializeResult;
+
+/**
+ * Narrow to the BAML arm. Both halves are checked: `provider` is the intent and
+ * `runtimeOptions` is what actually makes the union discriminable.
+ */
+export const isBamlInitializeResult = (
+  result: InitializeResultBase,
+): result is BamlInitializeResult =>
+  result.provider === Providers.BAML && result.runtimeOptions != null;

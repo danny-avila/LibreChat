@@ -48,6 +48,7 @@ import {
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
+import { getAgentRuntimeOptions } from '~/agents/runtime';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
@@ -1368,6 +1369,17 @@ export async function createRun({
       agent.baseContextTokens,
       agent.maxContextTokens,
     );
+
+    /**
+     * The last possible moment: the BAML port is merged into `clientOptions`
+     * here, on its way into `ChatBAML`, and nowhere earlier. Everything upstream
+     * of this line — `agent.model_parameters`, the agent document, checkpoints,
+     * pending state — stays free of executable values.
+     */
+    const runtimeOptions = getAgentRuntimeOptions(agent);
+    if (runtimeOptions != null) {
+      Object.assign(llmConfig, runtimeOptions);
+    }
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
     const agentInput: AgentInputs = {

@@ -1,3 +1,30 @@
+> # ⛔ DO NOT FILE — FIXED UPSTREAM (retested 2026-08-10)
+>
+> Every path that panicked on `0.15.0` passes on
+> `0.15.1-nightly.20260731.a`. Same repro, same machine, `./check.sh`:
+>
+> | Expression | `0.15.0` | nightly `20260731.a` |
+> |---|---|---|
+> | `Pick$parse<Weather>(…)` | ok | ok |
+> | `Pick$render_prompt<Weather>("hi")` | **PANIC 608** | **ok** |
+> | `Pick$build_request<Weather>("hi")` | **PANIC 608** | **ok** |
+> | `Pick$build_request_stream<Weather>("hi")` | **PANIC 608** | **ok** |
+> | `PickConcrete$build_request("hi")` | ok | ok |
+>
+> Not yet on the stable channel — latest canary is still `0.15.0`.
+>
+> **This unblocks Phase 1 of the Providers.BAML port.** The TDD plan defers the
+> runtime-varying tool union and streamed tool-argument deltas explicitly behind
+> this panic. `$types` runtime binding already worked on `$parse`; the prompt
+> path was the only thing missing.
+>
+> **Before acting on that**, re-verify the `$types` runtime-union path
+> specifically via `../runtime-union-probe.mjs` — that probe goes through the
+> Node bridge npm package, which is versioned separately from the CLI toolchain
+> and needs its own check.
+>
+> Tracked as `AF-ln0` (closed).
+
 # Panic: a generic return type reaches `output_format` unsubstituted
 
 **Version:** toolchain `0.15.0` (wrapper `0.2.0`, channel `canary`)

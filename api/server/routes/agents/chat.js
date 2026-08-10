@@ -3,6 +3,7 @@ const { logger } = require('@librechat/data-schemas');
 const {
   createMessageFilterPii,
   generateCheckAccess,
+  requireEndpointIdentity,
   skipAgentCheck,
   applyResumeContext,
   GenerationJobManager,
@@ -77,7 +78,6 @@ router.use(moderateText);
 router.use(checkAgentAccess);
 router.use(checkAgentResourceAccess);
 router.use(validateConvoAccess);
-router.use(buildEndpointOption);
 
 const controller = async (req, res, next) => {
   await AgentController(req, res, next, initializeClient, addTitle);
@@ -96,7 +96,7 @@ const resumeController = async (req, res, next) => {
  * @access Private
  * @returns {void}
  */
-router.post('/resume', resumeController);
+router.post('/resume', buildEndpointOption, resumeController);
 
 /**
  * @route POST / (regular endpoint)
@@ -106,7 +106,7 @@ router.post('/resume', resumeController);
  * @param {express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
-router.post('/', controller);
+router.post('/', buildEndpointOption, controller);
 
 /**
  * @route POST /:endpoint (ephemeral agents)
@@ -116,6 +116,6 @@ router.post('/', controller);
  * @param {express.Response} res - The response object, used to send back a response.
  * @returns {void}
  */
-router.post('/:endpoint', controller);
+router.post('/:endpoint', requireEndpointIdentity, buildEndpointOption, controller);
 
 module.exports = router;

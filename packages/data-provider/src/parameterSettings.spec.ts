@@ -1,5 +1,10 @@
-import { EModelEndpoint } from './types';
-import { applyModelAwareDefaults, paramSettings } from './parameterSettings';
+import { EModelEndpoint, Providers } from './types';
+import {
+  paramSettings,
+  presetSettings,
+  agentParamSettings,
+  applyModelAwareDefaults,
+} from './parameterSettings';
 import type { SettingDefinition } from './generate';
 
 const googleParams = paramSettings[EModelEndpoint.google] as SettingDefinition[];
@@ -53,5 +58,32 @@ describe('applyModelAwareDefaults', () => {
     const override = { ...maxOut(modelAware), default: 2048 } as SettingDefinition;
     const final = modelAware.map((p) => (p.key === 'maxOutputTokens' ? override : p));
     expect(maxOut(final)?.default).toBe(2048);
+  });
+});
+
+/**
+ * Behavior 3.1 — every BAML settings shape is empty and typed.
+ *
+ * BAML owns generation parameters inside its compiled clients, so the host must
+ * offer no controls at all. The shapes stay real `SettingsConfiguration` values;
+ * an empty list is the contract, not a cast to something the renderer tolerates.
+ */
+describe('BAML parameter settings', () => {
+  it('registers an empty parameter definition list', () => {
+    expect(paramSettings[Providers.BAML]).toEqual([]);
+  });
+
+  it('registers both preset columns as empty', () => {
+    expect(presetSettings[Providers.BAML]).toEqual({ col1: [], col2: [] });
+  });
+
+  it('derives an empty agent parameter list rather than an absent one', () => {
+    expect(agentParamSettings[Providers.BAML]).toEqual([]);
+  });
+
+  it('leaves the OpenAI-shaped providers it sits beside untouched', () => {
+    expect(paramSettings[EModelEndpoint.openAI]?.length).toBeGreaterThan(0);
+    expect(paramSettings[Providers.OPENROUTER]?.length).toBeGreaterThan(0);
+    expect(presetSettings[EModelEndpoint.anthropic]?.col2.length).toBeGreaterThan(0);
   });
 });
