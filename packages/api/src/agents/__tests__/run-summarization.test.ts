@@ -1133,6 +1133,63 @@ describe('subagentConfigs', () => {
     expect(resolve).toHaveBeenCalledTimes(2);
   });
 
+  it('uses pristine top-level inputs for a graph resolved by a lazy child', async () => {
+    const topLevelMember = makeAgent({
+      id: 'agent_top_level_member',
+      hasDeferredTools: true,
+      toolDefinitions: [{ name: 'tool_search' }],
+      toolRegistry: new Map([['deep_tool', { name: 'deep_tool', defer_loading: true }]]),
+    });
+    const definition = {
+      type: 'late_team',
+      name: 'Late team',
+      description: 'Resolves after the parent input is built',
+      agent_ids: [topLevelMember.id],
+      edges: [],
+      entry_agent_id: topLevelMember.id,
+      result_agent_id: topLevelMember.id,
+    };
+    const resolve = jest.fn().mockResolvedValue(
+      makeAgent({
+        id: 'agent_lazy_parent',
+        subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+        subagentGraphConfigs: [{ definition, memberConfigs: [topLevelMember] }],
+      }),
+    );
+    const parent = makeAgent({
+      id: 'agent_parent',
+      subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_lazy_parent'] },
+      lazySubagentConfigs: [
+        {
+          id: 'agent_lazy_parent',
+          name: 'Lazy parent',
+          description: 'Lazy graph owner',
+          configId: 'agent_lazy_parent:1:fingerprint',
+          resolve,
+        },
+      ],
+    });
+
+    const agents = await callAndCapture({
+      agents: [topLevelMember, parent],
+      messages: [],
+      discoveredToolNames: ['deep_tool'],
+    });
+    const lazyConfig = (agents[1].subagentConfigs as Array<Record<string, unknown>>)[0];
+    const resolvedInputs = await (
+      lazyConfig.resolveAgentInputs as (context: never) => Promise<Record<string, unknown>>
+    )({ signal: new AbortController().signal } as never);
+    const graphConfig = (resolvedInputs.subagentConfigs as Array<Record<string, unknown>>)[0];
+    const memberInput = (graphConfig.agents as Array<Record<string, unknown>>)[0];
+    const memberRegistry = memberInput.toolRegistry as Map<string, { defer_loading?: boolean }>;
+
+    expect(
+      (agents[0].toolRegistry as Map<string, { defer_loading?: boolean }>).get('deep_tool'),
+    ).toMatchObject({ defer_loading: false });
+    expect(memberRegistry.get('deep_tool')).toMatchObject({ defer_loading: true });
+    expect(memberInput.toolDefinitions).toEqual([{ name: 'tool_search' }]);
+  });
+
   it('builds an explicit saved-agent team as one graph subagent config', async () => {
     const researcher = makeAgent({
       id: 'agent_researcher',

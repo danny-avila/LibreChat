@@ -80,6 +80,7 @@ const {
   collectFileIds,
   processTextWithTokenLimit,
   buildAgentScopedContext,
+  buildAgentContextAttachmentsByAgentId,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
   hasUrlContextTool,
@@ -1397,35 +1398,101 @@ class AgentClient extends BaseClient {
     const ephemeralAgent = this.options.req.body.ephemeralAgent;
     const mcpManager = getMCPManager();
 
-    await Promise.all(
-      allAgents.map(async ({ agent, agentId }) => {
-        const agentRunContextParts = [sharedRunContext];
-        const agentHasMemory = agentHasInlineMemoryTools(agent);
-        if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
-          const partitionMemories = await getAgentPartitionMemories(agent);
-          const agentMemoryContext = buildMemoryContext(
-            agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
-          );
-          if (agentMemoryContext) {
-            agentRunContextParts.push(agentMemoryContext);
-          }
+    const prepareRuntimeAgent = async ({ agent, agentId }, scopedContext) => {
+      const agentRunContextParts = [sharedRunContext];
+      const agentHasMemory = agentHasInlineMemoryTools(agent);
+      if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
+        const partitionMemories = await getAgentPartitionMemories(agent);
+        const agentMemoryContext = buildMemoryContext(
+          agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
+        );
+        if (agentMemoryContext) {
+          agentRunContextParts.push(agentMemoryContext);
         }
-        const scopedContext = agentScopedContext.get(agentId);
-        if (scopedContext) {
-          agentRunContextParts.push(scopedContext);
-        }
+      }
+      if (scopedContext) {
+        agentRunContextParts.push(scopedContext);
+      }
 
-        return applyContextToAgent({
-          agent,
-          agentId,
-          logger,
-          mcpManager,
-          configServers,
-          sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
-          ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
-        });
-      }),
+      return applyContextToAgent({
+        agent,
+        agentId,
+        logger,
+        mcpManager,
+        configServers,
+        sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
+        ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
+      });
+    };
+
+    const preparedRuntimeAgents = new WeakSet(allAgents.map(({ agent }) => agent));
+    await Promise.all(
+      allAgents.map(({ agent, agentId }) =>
+        prepareRuntimeAgent({ agent, agentId }, agentScopedContext.get(agentId)),
+      ),
     );
+
+    const wrappedLazyDescriptors = new WeakSet();
+    const wrapLazyResolvers = (configs) => {
+      const pending = [...configs];
+      for (let index = 0; index < pending.length; index++) {
+        const config = pending[index];
+        if (!config) {
+          continue;
+        }
+        pending.push(...(config.subagentAgentConfigs ?? []));
+        for (const graph of config.subagentGraphConfigs ?? []) {
+          pending.push(...graph.memberConfigs);
+        }
+        for (const descriptor of config.lazySubagentConfigs ?? []) {
+          pending.push(descriptor);
+          if (wrappedLazyDescriptors.has(descriptor)) {
+            continue;
+          }
+          wrappedLazyDescriptors.add(descriptor);
+          const resolve = descriptor.resolve;
+          descriptor.resolve = async (context) => {
+            const resolved = await resolve(context);
+            const resolvedAgents = [];
+            const resolvedPending = [resolved];
+            const resolvedIds = new Set();
+            for (let resolvedIndex = 0; resolvedIndex < resolvedPending.length; resolvedIndex++) {
+              const resolvedAgent = resolvedPending[resolvedIndex];
+              if (!resolvedAgent?.id || resolvedIds.has(resolvedAgent.id)) {
+                continue;
+              }
+              resolvedIds.add(resolvedAgent.id);
+              resolvedAgents.push(resolvedAgent);
+              resolvedPending.push(...(resolvedAgent.subagentAgentConfigs ?? []));
+              for (const graph of resolvedAgent.subagentGraphConfigs ?? []) {
+                resolvedPending.push(...graph.memberConfigs);
+              }
+            }
+            const unpreparedAgents = resolvedAgents.filter(
+              (agent) => !preparedRuntimeAgents.has(agent),
+            );
+            const lateScopedContext = await buildAgentScopedContext({
+              agentIds: unpreparedAgents.map((agent) => agent.id),
+              attachmentsByAgentId: buildAgentContextAttachmentsByAgentId(unpreparedAgents),
+              sharedRunAttachmentIds,
+              req: this.options.req,
+              tokenCountFn: (text) => countTokens(text),
+            });
+            await Promise.all(
+              unpreparedAgents.map((agent) =>
+                prepareRuntimeAgent({ agent, agentId: agent.id }, lateScopedContext.get(agent.id)),
+              ),
+            );
+            for (const agent of unpreparedAgents) {
+              preparedRuntimeAgents.add(agent);
+            }
+            wrapLazyResolvers(resolvedAgents);
+            return resolved;
+          };
+        }
+      }
+    };
+    wrapLazyResolvers([this.options.agent, ...(this.agentConfigs?.values() ?? [])]);
 
     return result;
   }
