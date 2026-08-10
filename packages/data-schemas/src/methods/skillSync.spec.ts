@@ -177,6 +177,32 @@ describe('createSkillSyncMethods', () => {
     expect(clean.skippedSkills).toEqual([]);
   });
 
+  it('persists a skipped skill that lives at the repository root', async () => {
+    /* A root-level SKILL.md is discovered with an empty path, so a required
+       non-empty string here would reject the whole status document and lose
+       the partial result along with every skip reason in it. */
+    const partial = await methods.upsertSkillSyncStatus({
+      provider: 'github',
+      sourceId: 'librechat-skills',
+      status: 'partial',
+      syncedSkillCount: 1,
+      skippedSkillCount: 1,
+      skippedSkills: [
+        {
+          path: '',
+          name: 'root-skill',
+          errorCode: 'DUPLICATE_SKILL_NAME',
+          errorMessage: 'GitHub source "librechat-skills" contains multiple skills named "root"',
+        },
+      ],
+    });
+
+    expect(partial.status).toBe('partial');
+    expect(partial.skippedSkills).toEqual([
+      expect.objectContaining({ path: '', errorCode: 'DUPLICATE_SKILL_NAME' }),
+    ]);
+  });
+
   it('keeps status rows separate for the same source id in different tenants', async () => {
     await methods.upsertSkillSyncStatus({
       provider: 'github',
