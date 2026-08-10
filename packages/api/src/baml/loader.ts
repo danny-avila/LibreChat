@@ -57,17 +57,32 @@ const runtimeUrl = (): string => {
  */
 let runtimeModule: Promise<BamlRuntimeModule> | null = null;
 
+type FacadeImport = (url: string) => Promise<BamlRuntimeModule>;
+
+/**
+ * The real, non-static dynamic import of the dist ESM facade — the documented
+ * exception to this package's no-dynamic-import rule.
+ */
+const importFacade: FacadeImport = (url) =>
+  import(/* webpackIgnore: true */ url) as Promise<BamlRuntimeModule>;
+
+/**
+ * Indirection so a test can OBSERVE the load boundary the process otherwise hides:
+ * that the facade is imported exactly once, stays cached on success, and stays a
+ * sanitized sticky rejection on a link/evaluation failure. Defaults to
+ * {@link importFacade}, so production behavior is byte-for-byte the real import.
+ */
+let facadeImporter: FacadeImport = importFacade;
+
 const loadRuntime = (): Promise<BamlRuntimeModule> => {
   if (runtimeModule != null) {
     return runtimeModule;
   }
   const url = runtimeUrl();
-  runtimeModule = (import(/* webpackIgnore: true */ url) as Promise<BamlRuntimeModule>).catch(
-    (error: unknown) => {
-      logger.error('[BAML] failed to load the compiled runtime facade', error);
-      throw new Error(RUNTIME_LOAD_FAILED);
-    },
-  );
+  runtimeModule = facadeImporter(url).catch((error: unknown) => {
+    logger.error('[BAML] failed to load the compiled runtime facade', error);
+    throw new Error(RUNTIME_LOAD_FAILED);
+  });
   // A cached rejection is still a rejection; keep Node from reporting it as
   // unhandled before the first caller awaits it.
   runtimeModule.catch(() => undefined);
@@ -95,4 +110,13 @@ export const createBamlFunctions = async (clientName: string): Promise<BamlFunct
 /** Test-only: lets a suite prove the module is loaded once and cached. */
 export const __resetBamlRuntimeCacheForTests = (): void => {
   runtimeModule = null;
+};
+
+/**
+ * Test-only: override the ESM facade importer to drive load success/failure
+ * deterministically, or pass `null` to restore the real dynamic import. Pair with
+ * {@link __resetBamlRuntimeCacheForTests} in a suite's teardown.
+ */
+export const __setBamlRuntimeImporterForTests = (importer: FacadeImport | null): void => {
+  facadeImporter = importer ?? importFacade;
 };

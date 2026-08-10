@@ -1,5 +1,11 @@
 import { randomUUID, createHash } from 'crypto';
-import { openAIBaseSchema, googleBaseSchema, anthropicBaseSchema } from 'librechat-data-provider';
+import {
+  Providers,
+  bamlSchema,
+  openAIBaseSchema,
+  googleBaseSchema,
+  anthropicBaseSchema,
+} from 'librechat-data-provider';
 import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 import type { ToolPolicyConfig } from '@librechat/agents';
 
@@ -311,6 +317,33 @@ function isSensitiveParamKey(key: string): boolean {
   return SENSITIVE_PARAM_KEY_FRAGMENTS.some((fragment) => normalized.includes(fragment));
 }
 
+/**
+ * Executable-runtime keys that are never document-shaped. A BAML function set, its
+ * split `runtimeOptions` envelope, a native client and its factory, the compiled
+ * registry, a BAML call context, and an abort signal are request-only. Hard-denying
+ * them here means no resume capture can persist them — not even the otherwise-
+ * serializable `version`/`declaredTools` members a function set carries, which a
+ * function-valued-leaf drop would keep. (`client` also carries credentials, so it is
+ * in {@link SENSITIVE_PARAM_KEYS} too; listing it here states the runtime intent.)
+ */
+const RUNTIME_ONLY_PARAM_KEYS = new Set([
+  'functions',
+  'runtimeoptions',
+  'runtime_options',
+  'client',
+  'createclient',
+  'create_client',
+  'registry',
+  'context',
+  'signal',
+  'abortsignal',
+  'abort_signal',
+]);
+
+function isRuntimeOnlyParamKey(key: string): boolean {
+  return RUNTIME_ONLY_PARAM_KEYS.has(key.toLowerCase());
+}
+
 /** Bounded recursion guard for pathological / cyclic parameter graphs. */
 const MAX_SANITIZE_DEPTH = 8;
 
@@ -329,7 +362,7 @@ function sanitizeParamValue(value: unknown, depth: number): unknown {
     }
     const sanitized: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      if (isSensitiveParamKey(key) || typeof child === 'function') {
+      if (isSensitiveParamKey(key) || isRuntimeOnlyParamKey(key) || typeof child === 'function') {
         continue;
       }
       sanitized[key] = sanitizeParamValue(child, depth + 1);
@@ -452,6 +485,50 @@ const RESUME_PARAM_KEYS: string[] = Array.from(
   ),
 ).filter((key) => !RESUME_PARAM_EXCLUDED.has(key));
 
+/** Options that steer which schema owns a resume capture. */
+export interface ResumeCaptureOptions {
+  /**
+   * The resolved runtime provider (equivalently the resolved `defaultParamsEndpoint`)
+   * of the paused turn. When it is {@link Providers.BAML}, capture is schema-OWNED by
+   * {@link bamlSchema}: only the BAML conversation picks survive and the global
+   * OpenAI/Anthropic/Google request-key union is never overlaid, so a stale
+   * temperature/max-token/reasoning field — or an executable-runtime value — cannot
+   * ride a BAML resume.
+   */
+  provider?: string;
+}
+
+/**
+ * Schema-owned BAML resume capture. The candidate (resolved params, then the UI-form
+ * body layered on top) is parsed by {@link bamlSchema}, which keeps only the BAML
+ * conversation picks and strips everything else — every executable-runtime value and
+ * every provider generation field alike, including a function set's serializable
+ * `version`/`declaredTools` members. The identity picks (`model`, `spec`,
+ * `promptPrefix`, `modelLabel`, …) are owned by {@link RESUME_CONTEXT_KEYS} and removed
+ * here so the two replay channels never duplicate them.
+ */
+function captureBamlResumeModelParameters(
+  body: Record<string, unknown> | undefined | null,
+  resolvedParams: unknown,
+): Record<string, unknown> | undefined {
+  const candidate: Record<string, unknown> = {};
+  if (
+    resolvedParams != null &&
+    typeof resolvedParams === 'object' &&
+    !Array.isArray(resolvedParams)
+  ) {
+    Object.assign(candidate, resolvedParams);
+  }
+  if (body != null && typeof body === 'object' && !Array.isArray(body)) {
+    Object.assign(candidate, body);
+  }
+  const captured: Record<string, unknown> = { ...bamlSchema.parse(candidate) };
+  for (const key of RESUME_PARAM_EXCLUDED) {
+    delete captured[key];
+  }
+  return Object.keys(captured).length > 0 ? captured : undefined;
+}
+
 /**
  * Capture the model parameters to replay on resume. The paused request body is the
  * primary source — its fields are UI-form by construction (they already round-tripped
@@ -460,11 +537,18 @@ const RESUME_PARAM_KEYS: string[] = Array.from(
  * renamed (`maxOutputTokens` → `maxTokens`, `top_p` → `topP`), relocated
  * (`effort` → `invocationKwargs`), or retyped (`thinking` → object) — the schema
  * silently drops or, worse, fails on them (see the `normalize*` helpers, #14253).
+ *
+ * BAML is the exception: its capture is owned by {@link bamlSchema}, not the global
+ * provider request-key union (see {@link captureBamlResumeModelParameters}).
  */
 export function captureResumeModelParameters(
   body: Record<string, unknown> | undefined | null,
   resolvedParams: unknown,
+  options?: ResumeCaptureOptions,
 ): Record<string, unknown> | undefined {
+  if (options?.provider === Providers.BAML) {
+    return captureBamlResumeModelParameters(body, resolvedParams);
+  }
   const captured = sanitizeResumeModelParameters(resolvedParams) ?? {};
   if (body != null && typeof body === 'object') {
     for (const key of RESUME_PARAM_KEYS) {
