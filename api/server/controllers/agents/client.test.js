@@ -186,6 +186,30 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
     expect(ctx.contentParts).toEqual([skillCard, activityTool, phase, final]);
     expect(phase.activity_start_index).toBe(1);
   });
+
+  it('rebases phase bounds over sparse content without treating holes as retained parts', () => {
+    const reasoning = { type: ContentTypes.THINK, think: 'planning' };
+    const toolCall = toolCallPart('tc-sparse');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Searched for tools',
+      activity_label_type: 'phase',
+      activity_start_index: 1,
+    };
+    const final = textPart('answer');
+    const contentParts = [];
+    contentParts[0] = reasoning;
+    contentParts[2] = toolCall;
+    contentParts[3] = phase;
+    contentParts[4] = final;
+    const previousParts = [...contentParts];
+    const ctx = { options: { agent: {} }, contentParts };
+
+    expect(() =>
+      AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts),
+    ).not.toThrow();
+    expect(phase.activity_start_index).toBe(2);
+  });
 });
 
 describe('AgentClient - startup telemetry', () => {
