@@ -31,6 +31,7 @@ jest.mock('~/hooks', () => ({
   useChatHelpers: () => ({ conversation: mockConversation() }),
   useAddedResponse: () => ({}),
   useAdaptiveSSE: jest.fn(),
+  useMissingConversationRecovery: jest.fn(),
   useResumeOnLoad: jest.fn(),
   useQueueDrain: jest.fn(),
 }));
