@@ -401,20 +401,22 @@ describe('validateHexSecret', () => {
     expect(result).toContain('Invalid key length');
   });
 
-  it('should warn about a silent AES-128 downgrade for a 32-character hex key', () => {
+  it('should warn about the legacy AES-128 downgrade and v3 failure for a 32-character hex key', () => {
     const result = validateHexSecret('CREDS_KEY', '0123456789abcdef0123456789abcdef', 32);
 
     expect(result).toContain('decodes to 16 bytes');
     expect(result).toContain('silently use AES-128');
     expect(result).toContain('AES-256');
-    expect(result).not.toContain('Invalid key length');
+    expect(result).toContain('v3 encryption');
+    expect(result).toContain('expected 32 bytes, got 16 bytes');
   });
 
-  it('should warn about a silent AES-192 downgrade for a 48-character hex key', () => {
+  it('should warn about the legacy AES-192 downgrade and v3 failure for a 48-character hex key', () => {
     const result = validateHexSecret('CREDS_KEY', validKey.slice(0, 48), 32);
 
     expect(result).toContain('decodes to 24 bytes');
     expect(result).toContain('silently use AES-192');
+    expect(result).toContain('expected 32 bytes, got 24 bytes');
   });
 
   it('should not claim a downgrade or failure when a trailing-garbage prefix decodes to the expected length', () => {
@@ -426,12 +428,13 @@ describe('validateHexSecret', () => {
     expect(result).not.toContain('Invalid key length');
   });
 
-  it('should report the runtime failure for a 32-character CREDS_IV mismatch', () => {
+  it('should report the IV constraint failure for a 32-character CREDS_IV mismatch', () => {
     const result = validateHexSecret('CREDS_IV', validKey, 16);
 
     expect(result).toContain('CREDS_IV');
     expect(result).toContain('decodes to 32 bytes');
-    expect(result).toContain('Invalid key length');
+    expect(result).toContain('algorithm.iv must contain exactly 16 bytes');
+    expect(result).not.toContain('Invalid key length');
   });
 
   it('should report unset values distinctly', () => {

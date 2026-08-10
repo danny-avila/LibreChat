@@ -116,8 +116,9 @@ const validAesKeyBytes = new Set([16, 24, 32]);
 
 /**
  * Describes the runtime consequence of a misconfigured hex secret.
- * A key that decodes to another valid AES length is accepted by WebCrypto and silently
- * downgrades the cipher, so it must not be reported as a runtime failure.
+ * A key that decodes to another valid AES length is accepted by WebCrypto for the legacy
+ * cipher (silent downgrade) but rejected by the strict 32-byte v3 methods, and a
+ * wrong-length IV fails with the WebCrypto IV constraint rather than "Invalid key length".
  */
 function describeConsequence(name: string, decodedBytes: number, expectedBytes: number): string {
   if (decodedBytes === expectedBytes) {
@@ -125,7 +126,11 @@ function describeConsequence(name: string, decodedBytes: number, expectedBytes: 
   }
 
   if (name === 'CREDS_KEY' && validAesKeyBytes.has(decodedBytes)) {
-    return `Credential encryption will silently use AES-${decodedBytes * 8} instead of the intended AES-${expectedBytes * 8}.`;
+    return `Legacy credential encryption will silently use AES-${decodedBytes * 8} instead of the intended AES-${expectedBytes * 8}, and v3 encryption (admin secrets, two-factor enrollment) will fail with "Invalid key length: expected 32 bytes, got ${decodedBytes} bytes".`;
+  }
+
+  if (name === 'CREDS_IV') {
+    return 'Credential encryption/decryption will fail at runtime with "algorithm.iv must contain exactly 16 bytes".';
   }
 
   return 'Credential encryption/decryption will fail at runtime with "Invalid key length".';
