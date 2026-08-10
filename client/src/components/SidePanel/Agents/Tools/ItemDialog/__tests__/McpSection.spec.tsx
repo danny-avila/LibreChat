@@ -110,8 +110,13 @@ jest.mock('@librechat/client', () => {
   const React = jest.requireActual('react');
   return {
     TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
-    Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) =>
-      React.createElement('button', { type: 'button', onClick }, children),
+    Button: ({
+      children,
+      variant: _variant,
+      size: _size,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: string; size?: string }) =>
+      React.createElement('button', { type: 'button', ...props }, children),
     Checkbox: ({
       checked,
       onCheckedChange,

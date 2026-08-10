@@ -1,9 +1,9 @@
 import { memo, useMemo, useState, useCallback, useRef, useId, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
-import { Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import { ScrollText, ChevronDown, ChevronUp } from 'lucide-react';
-import type { MouseEvent, FocusEvent } from 'react';
+import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { SummaryContentPart } from 'librechat-data-provider';
+import type { MouseEvent, FocusEvent } from 'react';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useMessageContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -75,13 +75,13 @@ const SummaryButton = memo(
 
     return (
       <div className="group/summary flex w-full items-center justify-between gap-2">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           onClick={onClick}
           aria-expanded={isExpanded}
           aria-controls={contentId}
           className={cn(
-            'group/button flex flex-1 items-center justify-start rounded-lg leading-[18px]',
+            'group/button h-auto flex-1 justify-start gap-0 rounded-lg p-0 font-normal leading-[18px] hover:bg-transparent',
             fontSize,
           )}
         >
@@ -99,21 +99,22 @@ const SummaryButton = memo(
             />
           </span>
           <span>{label}</span>
-        </button>
+        </Button>
         {content && showCopyButton && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={onCopy}
             aria-label={
               isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_summary')
             }
             className={cn(
-              'rounded-lg p-1.5 text-text-secondary-alt',
+              'size-auto rounded-lg p-1.5 text-text-secondary-alt',
               isExpanded
                 ? 'opacity-0 group-focus-within/summary-container:opacity-100 group-hover/summary-container:opacity-100'
                 : 'opacity-0',
               'hover:bg-surface-hover hover:text-text-primary',
-              'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black dark:focus-visible:ring-white',
+              'focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
             )}
           >
             <span className="sr-only">
@@ -124,7 +125,7 @@ const SummaryButton = memo(
             ) : (
               <Clipboard size="19" aria-hidden="true" />
             )}
-          </button>
+          </Button>
         )}
       </div>
     );

@@ -2,6 +2,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
 import {
   hasLangfuseEnvCredentials,
+  isLangfuseCentralMediaUploadDisabled,
   isLangfuseFanoutEnabled,
   isLangfuseTenantExportEnabled,
   isLangfuseTraceSampled,
@@ -16,6 +17,7 @@ import { traceIdForMessage } from './trace';
 type LangfuseRunConfig = NonNullable<RunConfig['langfuse']>;
 type LangfuseRunConfigWithTraceAttributes = LangfuseRunConfig & {
   librechatTraceAttributes?: Record<string, string | number | boolean | null | undefined>;
+  mediaUploadEnabled?: boolean;
 };
 type LangfuseTenantDestination = NonNullable<ReturnType<typeof resolveLangfuseTenantDestination>>;
 type LangfuseExportPlan =
@@ -226,6 +228,9 @@ export function buildLangfuseConfig({
       break;
     case 'fanoutCollector':
       langfuse.baseUrl = exportPlan.collectorUrl;
+      if (isLangfuseCentralMediaUploadDisabled()) {
+        langfuse.mediaUploadEnabled = false;
+      }
       break;
     case 'disabled':
       langfuse.enabled = false;

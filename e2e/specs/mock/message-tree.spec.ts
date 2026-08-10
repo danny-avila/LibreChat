@@ -586,7 +586,7 @@ async function clickMessageTitleButton(page: Page, messageTextValue: string, tit
   const render = messageRender(page, messageTextValue);
   await render.scrollIntoViewIfNeeded();
   await render.hover();
-  await render.locator(`button[title="${title}"]`).last().click();
+  await render.getByRole('button', { name: title, exact: true }).last().click();
 }
 
 async function clickSibling(page: Page, messageTextValue: string, direction: 'Previous' | 'Next') {

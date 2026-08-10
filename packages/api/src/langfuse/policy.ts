@@ -8,6 +8,10 @@ export function isLangfuseTenantExportEnabled(): boolean {
   return !isTrueEnv(process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED);
 }
 
+export function isLangfuseCentralMediaUploadDisabled(): boolean {
+  return isTrueEnv(process.env.LANGFUSE_FANOUT_CENTRAL_MEDIA_UPLOAD_DISABLED);
+}
+
 export function isLangfuseFanoutEnabled(): boolean {
   return (
     isTrueEnv(process.env.LANGFUSE_FANOUT_ENABLED) &&

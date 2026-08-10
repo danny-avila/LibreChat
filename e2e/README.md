@@ -18,6 +18,76 @@ CI runs the complete mock suite in both stream modes. Each mode is split across 
 npx playwright test --config=e2e/playwright.config.mock.ts --shard=1/4
 ```
 
+## Property-based browser testing
+
+Bombadil explores randomized sequences across the core chat loop, message branches,
+parallel multi-conversation responses, model changes, reloads, and sidebar conversation
+lifecycle operations:
+
+```sh
+npm run e2e:bombadil
+```
+
+Set `BOMBADIL_TIME_LIMIT` for longer local or scheduled runs. Failures leave a
+reproducible trace under `e2e/.generated/bombadil-output`; rerun it with:
+
+```sh
+BOMBADIL_REPRODUCE=e2e/.generated/bombadil-output npm run e2e:bombadil:run
+```
+
+Reproducing a real violation is expected to fail the Playwright test. Before a
+new run overwrites the active output, the harness archives it under
+`e2e/.generated/bombadil-history/`. Reproduction can diverge when streaming
+timing changes; Bombadil reports that explicitly.
+
+The harness uses the credential-free mock-LLM profile, so exploration never sends
+billable provider requests.
+
+CI runs the broad property exploration for five minutes in the non-blocking
+`Bombadil Property Exploration` workflow. If a property fails, download the
+`bombadil-reproduction-*` artifact into
+`e2e/.generated/bombadil-output/`, then reproduce it locally:
+
+```sh
+BOMBADIL_REPRODUCE=e2e/.generated/bombadil-output npm run e2e:bombadil:run
+```
+
+The accompanying `bombadil-diagnostics-*` artifact contains the captured CI log,
+Playwright HTML report, and Playwright test results. A Bombadil failure produces
+a workflow warning but does not block merge.
+
+The default instruments inline JavaScript only because instrumenting LibreChat's
+full Vite bundle can exceed Bombadil's driver timeout during stateful runs. Set
+`BOMBADIL_INSTRUMENT_JAVASCRIPT=files,inline` for shorter coverage-guided
+experiments.
+
+The branch reload, fork submission, model/conversation, HITL pause/resume, and
+mid-run steering lifecycle properties can be run independently:
+
+```sh
+npm run e2e:bombadil:branch-reload
+npm run e2e:bombadil:fork-lifecycle
+npm run e2e:bombadil:model-lifecycle
+npm run e2e:bombadil:hitl
+npm run e2e:bombadil:steering
+```
+
+These focused commands are diagnostic properties: they exit nonzero when they
+reproduce a product invariant violation. Reproduce a focused trace with its
+matching `:run` script and output directory, for example:
+
+```sh
+BOMBADIL_REPRODUCE=e2e/.generated/bombadil-output-hitl npm run e2e:bombadil:hitl:run
+```
+
+HITL drives a real `ask_user_question` checkpoint through the answer/resume
+controller, reloads while the question is paused, answers it once, and reloads
+the completed conversation. Steering submits an in-flight steer during a slow
+MCP-backed run, checks that it moves exactly once from the composer anchor into
+the response at the tool boundary, and reloads the applied state. The model
+lifecycle property is the passing control. The branch reload and fork
+properties preserve their minimal failing traces.
+
 ## Recording Tests
 
 Use Playwright codegen when you want to turn an exploratory browser session into a draft test:

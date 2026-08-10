@@ -5,6 +5,8 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
 jest.mock('~/server/services/Config', () => ({
+  syncStaticTools: jest.fn().mockResolvedValue(undefined),
+  mergeAppTools: jest.fn().mockResolvedValue(undefined),
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({
     paths: {
@@ -50,13 +52,17 @@ jest.mock(
 describe('Telemetry wiring', () => {
   const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
-  it('loads telemetry before other server imports', () => {
-    const firstStatement = source
+  it('loads credentials before telemetry and other server imports', () => {
+    const firstStatements = source
       .split('\n')
       .map((line) => line.trim())
-      .find(Boolean);
+      .filter(Boolean)
+      .slice(0, 2);
 
-    expect(firstStatement).toBe("const telemetry = require('./telemetry');");
+    expect(firstStatements).toEqual([
+      "require('../config/credentials');",
+      "const telemetry = require('./telemetry');",
+    ]);
   });
 
   it('mounts telemetry middleware after static assets and before routes', () => {
@@ -103,6 +109,16 @@ describe('Telemetry wiring', () => {
 
 describe('Startup readiness wiring', () => {
   const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+
+  it('awaits the shared Redis client before startup cache access', () => {
+    const redisReadyIndex = source.indexOf('await waitForKeyvRedisClient();');
+    const connectDbIndex = source.indexOf('await connectDb();');
+    const appConfigIndex = source.indexOf('await getAppConfig({ baseOnly: true });');
+
+    expect(redisReadyIndex).toBeGreaterThan(-1);
+    expect(connectDbIndex).toBeGreaterThan(redisReadyIndex);
+    expect(appConfigIndex).toBeGreaterThan(redisReadyIndex);
+  });
 
   it('configures generation streams before the server accepts requests', () => {
     const streamConfigIndex = source.indexOf('configureGenerationStreams();');

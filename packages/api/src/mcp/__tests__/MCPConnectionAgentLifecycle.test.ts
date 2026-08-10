@@ -634,7 +634,7 @@ describe('MCPConnection session-ID-aware SSE failure handling', () => {
     conn: MCPConnection,
     transport: ReturnType<typeof makeTransportStub> | StreamableHTTPClientTransport,
     code = 404,
-  ) {
+  ): Error {
     (
       conn as unknown as { setupTransportErrorHandlers: (t: unknown) => void }
     ).setupTransportErrorHandlers(transport);
@@ -643,6 +643,7 @@ describe('MCPConnection session-ID-aware SSE failure handling', () => {
       { code },
     );
     transport.onerror?.(sseError);
+    return sseError;
   }
 
   beforeEach(() => {
@@ -707,16 +708,18 @@ describe('MCPConnection session-ID-aware SSE failure handling', () => {
     expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining('session lost'));
     expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
   });
-
-  it('does not suppress an OAuth challenge before a session ID is assigned', () => {
+  it('does not suppress an OAuth challenge on an optional stream before a session ID is assigned', async () => {
     const conn = makeConn();
     const transport = createStreamableClientTransport();
+    conn.emit('connectionChange', 'connected');
     const emitSpy = jest.spyOn(conn, 'emit');
 
-    fireSSEError(conn, transport, 401);
+    const oauthError = fireSSEError(conn, transport, 401);
 
     expect(emitSpy).toHaveBeenCalledWith('oauthError', expect.any(Error));
-    expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+    expect(await conn.isConnected()).toBe(false);
+    expect(conn.getLastConnectionCheckError()).toBe(oauthError);
   });
 
   it('still reconnects when a 502 SSE failure belongs to an active session ID', () => {
@@ -737,6 +740,20 @@ describe('MCPConnection session-ID-aware SSE failure handling', () => {
     fireSSEError(conn, transport, 502);
 
     expect(emitSpy).toHaveBeenCalledWith('connectionChange', 'error');
+  });
+
+  it('marks an OAuth-challenged connection unusable without blindly reconnecting', async () => {
+    const conn = makeConn();
+    const transport = makeTransportStub();
+    conn.emit('connectionChange', 'connected');
+    const emitSpy = jest.spyOn(conn, 'emit');
+
+    const oauthError = fireSSEError(conn, transport, 401);
+
+    expect(emitSpy).toHaveBeenCalledWith('oauthError', expect.any(Error));
+    expect(emitSpy).not.toHaveBeenCalledWith('connectionChange', 'error');
+    expect(await conn.isConnected()).toBe(false);
+    expect(conn.getLastConnectionCheckError()).toBe(oauthError);
   });
 });
 

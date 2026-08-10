@@ -62,6 +62,8 @@ export interface MCPPrompt {
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
+export type OAuthHandledSource = 'silent-refresh' | 'interactive';
+
 export type MCPTool = Tool;
 export type MCPToolListResponse = ListToolsResult;
 export type ToolContentPart = TextContent | ImageContent | EmbeddedResource | AudioContent;
@@ -152,7 +154,7 @@ export type FormattedToolResponse = FormattedContentResult;
  * - `'config'` — admin-defined via Config override, full trust, lazy init
  * - `'user'`   — user-provided via UI, sandboxed (restricted placeholder resolution)
  */
-export type MCPServerSource = 'yaml' | 'config' | 'user';
+export type MCPServerSource = 'yaml' | 'config' | 'user' | 'plugin';
 
 export type ParsedServerConfig = MCPOptions & {
   url?: string;
@@ -211,6 +213,7 @@ export interface UserConnectionContext {
 export interface RequestScopedMCPConnectionStore {
   connections: Map<string, unknown>;
   pending: Map<string, Promise<unknown>>;
+  disposeConnection?: (connectionKey: string, connection: unknown) => Promise<void>;
 }
 
 export interface OAuthStartOptions {

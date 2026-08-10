@@ -1,6 +1,6 @@
 {
-  "chat_direction_left_to_right": "چیزی باید به اینجا باشه خالی بود",
-  "chat_direction_right_to_left": "چیزی باید به اینجا باشه خالی بود",
+  "chat_direction_left_to_right": "چپ به راست",
+  "chat_direction_right_to_left": "راست به چپ",
   "com_a11y_ai_composing": "هوش مصنوعی هنوز در حال نوشتنه .",
   "com_a11y_end": "هوش مصنوعی پاسخ خود را تموم کرده.",
   "com_a11y_selected": "انتخاب شده",
