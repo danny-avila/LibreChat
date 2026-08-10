@@ -2276,13 +2276,24 @@ class AgentClient extends BaseClient {
    * so prepended skill cards cannot enter a phase and a filtered-away leading
    * reasoning part advances the bound to the first retained child.
    *
+   * Both arrays may be sparse: the aggregator writes parts at provider-source
+   * indexes, which can skip slots. Holes must not enter the identity map — a
+   * hole reads as `undefined`, and one `undefined` key would falsely match
+   * every hole in `previousParts` as a retained part.
+   *
    * @param {Array<import('librechat-data-provider').ContentPart | null | undefined>} previousParts
    */
   rebaseActivityPhaseBounds(previousParts) {
     if (!Array.isArray(previousParts) || !Array.isArray(this.contentParts)) {
       return;
     }
-    const retainedIndexes = new Map(this.contentParts.map((part, index) => [part, index]));
+    const retainedIndexes = new Map();
+    for (let index = 0; index < this.contentParts.length; index += 1) {
+      const part = this.contentParts[index];
+      if (part != null) {
+        retainedIndexes.set(part, index);
+      }
+    }
     for (let markerIndex = 0; markerIndex < this.contentParts.length; markerIndex += 1) {
       const marker = this.contentParts[markerIndex];
       if (
