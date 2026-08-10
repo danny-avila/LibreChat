@@ -870,6 +870,33 @@ endpoints:
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#   # Outbound search and scrape requests are validated at connect time against
+#   # their resolved IP and blocked from reaching private, loopback, link-local,
+#   # or cloud-metadata space. `allowedAddresses` is an SSRF exemption list, NOT a
+#   # strict whitelist: hostname/IP + port pairs listed here bypass that block for
+#   # one deliberately-private endpoint (for example a self-hosted SearXNG
+#   # instance); public destinations continue to work normally.
+#   #
+#   # Entries must include a port: `host:port`, `private.ip:port`, or `[ipv6]:port`.
+#   # Do not use URLs, paths, CIDR ranges, bare hosts/IPs, or public IP literals.
+#   # A hostname entry trusts whatever IP that name resolves to on the listed port,
+#   # so only list hosts you fully control and whose DNS cannot be repointed by an
+#   # attacker. Listing an attacker-controllable or DNS-rebindable host re-opens the
+#   # private-address path this guard closes. Prefer literal IPs where you can.
+#   #
+#   # Self-hosted endpoints need an entry. A private destination such as
+#   # `http://searxng:8080`, `http://firecrawl:3002`, or `http://127.0.0.1:8080` is
+#   # blocked once this guard is active, so list it here or those requests will fail.
+#   #
+#   # A proxy from `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` (either case) is
+#   # exempted automatically and needs no entry. That exemption is applied to the
+#   # whole tool rather than per destination, so a host `NO_PROXY` sends direct also
+#   # carries it. Note that when a proxy carries the request the proxy resolves the
+#   # destination, so destination egress policy is the proxy's to enforce, and for
+#   # https targets the proxy's own tunnel replaces this guard entirely.
+#   # allowedAddresses:
+#   #   - 'searxng:8080'
+#   #   - '127.0.0.1:8080'
 #
 # Tavily as both search and scraper provider example:
 # webSearch:
