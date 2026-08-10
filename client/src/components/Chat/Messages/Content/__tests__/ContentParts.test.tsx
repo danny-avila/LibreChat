@@ -336,9 +336,7 @@ describe('ContentParts — activity phase state', () => {
       activity_count: 2,
       pending: true,
     } as unknown as TMessageContentParts;
-    const { rerender } = render(
-      <ContentParts {...baseProps} content={[...tools, pendingPhase]} />,
-    );
+    const { rerender } = render(<ContentParts {...baseProps} content={[...tools, pendingPhase]} />);
 
     const pendingGroup = screen.getByTestId('tool-call-group');
     expect(pendingGroup).toHaveAttribute('data-initial-expanded', 'unset');
@@ -352,9 +350,6 @@ describe('ContentParts — activity phase state', () => {
     rerender(<ContentParts {...baseProps} content={[...tools, completedPhase]} />);
 
     expect(screen.getByTestId('activity-phase-group')).toBeInTheDocument();
-    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
-      'data-initial-expanded',
-      'false',
-    );
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-initial-expanded', 'false');
   });
 });
