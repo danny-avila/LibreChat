@@ -9,6 +9,7 @@ on:
       - 'packages/**'
       - 'package.json'
       - 'package-lock.json'
+      - 'eslint.config.mjs'
       - '.github/workflows/static-checks.yml'
       - '!**.md'
 
@@ -46,6 +47,7 @@ jobs:
               - 'api/**'
               - 'client/**'
               - 'packages/**'
+              - 'eslint.config.mjs'
               - '.github/workflows/static-checks.yml'
               - '!**.md'
             config:

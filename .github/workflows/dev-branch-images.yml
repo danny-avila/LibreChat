@@ -8,11 +8,14 @@ on:
     paths:
       - 'api/**'
       - 'client/**'
+      - 'config/**'
+      - 'skill/**'
       - 'packages/**'
       - 'package.json'
       - 'package-lock.json'
       - 'Dockerfile'
       - 'Dockerfile.multi'
+      - '.dockerignore'
       - '!**.md'
 
 permissions:

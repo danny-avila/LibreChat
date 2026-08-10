@@ -6,6 +6,8 @@ on:
       - 'client/**'
       - 'packages/client/**'
       - 'packages/data-provider/**'
+      - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/frontend-review.yml'
       - '!**.md'
 

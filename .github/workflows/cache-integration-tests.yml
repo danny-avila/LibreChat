@@ -7,11 +7,17 @@ on:
       - dev
       - dev-staging
       - release/*
+    # The tested modules import across packages/api (e.g. mcp/oauth pulls in
+    # flow/manager) and consume built data-provider and data-schemas, so the
+    # whole src trees must trigger — subdirectory filters silently skip
+    # regressions in imported files.
     paths:
-      - 'packages/api/src/cache/**'
-      - 'packages/api/src/cluster/**'
-      - 'packages/api/src/mcp/**'
-      - 'packages/api/src/stream/**'
+      - 'packages/api/src/**'
+      - 'packages/api/package.json'
+      - 'packages/data-provider/src/**'
+      - 'packages/data-provider/package.json'
+      - 'packages/data-schemas/src/**'
+      - 'packages/data-schemas/package.json'
       - 'redis-config/**'
       - '.github/workflows/cache-integration-tests.yml'
       - '!**.md'

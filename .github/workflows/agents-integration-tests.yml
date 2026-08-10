@@ -11,9 +11,16 @@ on:
       - dev
       - dev-staging
       - release/*
+    # The suite builds and consumes data-provider and data-schemas and imports
+    # across packages/api (the build-cache keys below hash all three src trees),
+    # so it must re-run on any of them — not just src/agents.
     paths:
-      - 'packages/api/src/agents/**'
+      - 'packages/api/src/**'
       - 'packages/api/package.json'
+      - 'packages/data-provider/src/**'
+      - 'packages/data-provider/package.json'
+      - 'packages/data-schemas/src/**'
+      - 'packages/data-schemas/package.json'
       - '.github/workflows/agents-integration-tests.yml'
       - '!**.md'
 
