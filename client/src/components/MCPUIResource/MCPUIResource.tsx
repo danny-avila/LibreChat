@@ -1,9 +1,10 @@
 import React from 'react';
-import { UIResourceRenderer } from '@mcp-ui/client';
-import { useOptionalMessagesConversation, useOptionalMessagesOperations } from '~/Providers';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
-import { handleUIAction } from '~/utils';
+import { useOptionalMessagesConversation } from '~/Providers';
+import { useAppBridge, useMCPAppFrame } from '~/hooks/MCP';
+import { MCPAppFrame } from './MCPAppFrame';
 import { useLocalize } from '~/hooks';
+import { logger } from '~/utils';
 
 interface MCPUIResourceProps {
   node: {
@@ -13,16 +14,33 @@ interface MCPUIResourceProps {
   };
 }
 
-/** Renders an MCP UI resource based on its resource ID. Works in chat, share, and search views. */
+const EMPTY_RESOURCE = { resourceId: '', uri: '' };
+const DEFAULT_HEIGHT = 200;
+
 export function MCPUIResource(props: MCPUIResourceProps) {
   const { resourceId } = props.node.properties;
   const localize = useLocalize();
-  const { ask } = useOptionalMessagesOperations();
-  const { conversationId } = useOptionalMessagesConversation();
-
+  const { conversationId } = useOptionalMessagesConversation() ?? {};
   const conversationResourceMap = useConversationUIResources(conversationId ?? undefined);
-
   const uiResource = conversationResourceMap.get(resourceId ?? '');
+
+  const frame = useMCPAppFrame(uiResource, { defaultHeight: DEFAULT_HEIGHT });
+
+  useAppBridge({
+    iframeRef: frame.iframeRef,
+    resource: uiResource ?? EMPTY_RESOURCE,
+    toolArgs: frame.toolArgs,
+    toolResult: frame.toolResult,
+    active: frame.active,
+    onSizeChanged: frame.onSizeChanged,
+    onLoaded: frame.onLoaded,
+    onTeardown: frame.onTeardown,
+    onFailed: frame.onFailed,
+  });
+
+  if (frame.status === 'tornDown') {
+    return null;
+  }
 
   if (!uiResource) {
     return (
@@ -35,20 +53,40 @@ export function MCPUIResource(props: MCPUIResourceProps) {
   }
 
   try {
-    return (
-      <span className="mx-1 inline-block w-full align-middle">
-        <UIResourceRenderer
-          resource={uiResource}
-          onUIAction={async (result) => handleUIAction(result, ask)}
-          htmlProps={{
-            autoResizeIframe: { width: true, height: true },
-            sandboxPermissions: 'allow-popups',
-          }}
-        />
-      </span>
-    );
+    if (frame.kind === 'unavailable') {
+      return (
+        <span className="mx-1 inline-flex w-full items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 align-middle text-sm text-text-secondary">
+          {localize('com_ui_mcp_app_shared_unavailable')}
+        </span>
+      );
+    }
+    if (frame.kind === 'app') {
+      return (
+        <span
+          className="relative mx-1 inline-block w-full overflow-hidden align-middle"
+          style={{ height: frame.height, minHeight: DEFAULT_HEIGHT }}
+        >
+          <MCPAppFrame frame={frame} resource={uiResource} />
+        </span>
+      );
+    }
+
+    if (frame.kind === 'static') {
+      return (
+        <span className="mx-1 inline-block w-full align-middle">
+          <iframe
+            srcDoc={frame.inlineHtml}
+            sandbox=""
+            style={{ width: '100%', minHeight: '200px', border: 'none' }}
+            title={uiResource.uri}
+          />
+        </span>
+      );
+    }
+
+    return null;
   } catch (error) {
-    console.error('Error rendering UI resource:', error);
+    logger.error('[MCPUIResource]', error);
     return (
       <span className="inline-flex items-center rounded bg-status-error-subtle px-2 py-1 text-xs font-medium text-status-error">
         {localize('com_ui_ui_resource_error', { 0: uiResource.name || resourceId })}

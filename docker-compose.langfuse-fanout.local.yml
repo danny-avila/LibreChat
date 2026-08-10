@@ -1,0 +1,4 @@
+services:
+  langfuse-fanout-collector:
+    ports:
+      - '4318:4318'

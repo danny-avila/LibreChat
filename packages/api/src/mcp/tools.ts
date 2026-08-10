@@ -6,8 +6,11 @@ import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from './typ
 import { canUseAppConnection, requiresEphemeralUserConnection } from './utils';
 import { getMCPAppToolsPublicationGeneration } from './toolsChanged';
 import { normalizeJsonSchema, resolveJsonSchemaRefs } from './zod';
+import { isToolHiddenFromModel } from './apps';
 
-export type MCPToolInput = Pick<Tool, 'name' | 'description'> & Partial<Pick<Tool, 'inputSchema'>>;
+/** `_meta` carries the MCP Apps `ui.visibility` used to hide app-only tools from the model. */
+export type MCPToolInput = Pick<Tool, 'name' | 'description'> &
+  Partial<Pick<Tool, 'inputSchema' | '_meta'>>;
 
 export interface MCPToolCacheDeps {
   getCachedTools: (options?: {
@@ -235,6 +238,9 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
        *  by the raw config name. */
       const keyServerName = normalizeServerName(serverName);
       for (const tool of tools) {
+        if (isToolHiddenFromModel(tool)) {
+          continue;
+        }
         const name = `${tool.name}${mcpDelimiter}${keyServerName}`;
         const entry: LCFunctionTool = {
           type: 'function',

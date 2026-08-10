@@ -15,6 +15,7 @@ export * from './generate';
 export * from './models';
 /* mcp */
 export * from './mcp';
+export * from './mcp/appMime';
 /* RBAC */
 export * from './permissions';
 export * from './roles';

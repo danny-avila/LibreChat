@@ -1,6 +1,7 @@
 import { isIP } from 'node:net';
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
+import { MCP_UI_EXTENSION_ID } from 'librechat-data-provider';
 import { fetch as undiciFetch, Agent, ProxyAgent } from 'undici';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
@@ -21,6 +22,7 @@ import type {
   Dispatcher,
 } from 'undici';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { ClientCapabilities } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
@@ -29,6 +31,7 @@ import { isOAuthServer, sanitizeUrlForLogging } from './utils';
 import { runOutsideTracing } from '~/utils/tracing';
 import { isAddressAllowed } from '~/auth/domain';
 import { withTimeout } from '~/utils/promise';
+import { RESOURCE_MIME_TYPE } from './apps';
 import { mcpConfig } from './mcpConfig';
 
 type FetchLike = (url: string | URL, init?: RequestInit) => Promise<Response>;
@@ -1185,6 +1188,19 @@ export class MCPConnection extends EventEmitter {
    */
   public readonly createdAt: number;
 
+  /**
+   * Bumped on every tools/list_changed notification. Consumers that cache tool metadata can fold
+   * this into their freshness check to detect tool changes that happen on a live connection, which
+   * createdAt alone (stable until reconnect) cannot.
+   */
+  public toolListVersion = 0;
+
+  /**
+   * Bumped on every resources/list_changed notification so consumers caching a server's advertised
+   * resources refresh their authorization data when resources are added or removed.
+   */
+  public resourceListVersion = 0;
+
   private static circuitBreakers: Map<string, CircuitBreakerState> = new Map();
 
   public static clearCooldown(serverName: string): void {
@@ -1299,14 +1315,19 @@ export class MCPConnection extends EventEmitter {
     if (params.oauthTokens) {
       this.oauthTokens = params.oauthTokens;
     }
+    // io.modelcontextprotocol/ui is a per-session host capability: LibreChat can always render MCP
+    // App HTML, so it is advertised unconditionally. Whether apps are enabled for a given
+    // instance/tenant is enforced downstream (UI-resource attachment + app endpoints), never by
+    // withholding the handshake capability, so a scoped opt-in still reaches a capable server.
+    const capabilities: ClientCapabilities = {
+      extensions: { [MCP_UI_EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } },
+    };
     this.client = new Client(
       {
         name: '@librechat/api-client',
         version: '1.2.3',
       },
-      {
-        capabilities: {},
-      },
+      { capabilities },
     );
 
     this.setupEventListeners();
@@ -1901,6 +1922,7 @@ export class MCPConnection extends EventEmitter {
 
   private subscribeToResources(): void {
     this.client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
+      this.resourceListVersion += 1;
       this.emit('resourcesChanged');
     });
   }
@@ -1915,6 +1937,9 @@ export class MCPConnection extends EventEmitter {
   private subscribeToToolListChanges(): void {
     this.client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
       logger.debug(`${this.getLogPrefix()} Server reported a changed tool list`);
+      // Stamps the MCP Apps per-tool metadata caches (resourceUri, visibility) as stale; createdAt
+      // alone cannot see a list change on a still-live connection.
+      this.toolListVersion += 1;
       await this.refreshToolList();
     });
   }

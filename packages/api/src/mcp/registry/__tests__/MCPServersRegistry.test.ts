@@ -260,6 +260,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: ['yaml.com'],
         allowedAddresses: ['10.0.0.0/8'],
         useSSRFProtection: false,
+        appsEnabled: true,
       });
     });
 
@@ -269,6 +270,7 @@ describe('MCPServersRegistry', () => {
         allowedDomains: undefined,
         allowedAddresses: undefined,
         useSSRFProtection: true,
+        appsEnabled: true,
       });
     });
 
@@ -286,17 +288,21 @@ describe('MCPServersRegistry', () => {
         allowedDomains: ['admin-added.com'],
         allowedAddresses: ['172.16.0.0/12'],
         useSSRFProtection: false,
+        appsEnabled: true,
       });
     });
 
-    it('falls back to the YAML base allowlists when the resolver throws', async () => {
+    it('falls back to the YAML base allowlists but disables apps when the resolver throws', async () => {
       const resolver = jest.fn().mockRejectedValue(new Error('DB down'));
       const reg = createWith(['yaml.com'], null, resolver);
 
+      // Allowlists fall back to the operator baseline; apps fail closed because inline app HTML
+      // cannot be retracted once it reaches the transcript.
       await expect(reg.resolveAllowlists()).resolves.toEqual({
         allowedDomains: ['yaml.com'],
         allowedAddresses: null,
         useSSRFProtection: false,
+        appsEnabled: false,
       });
     });
 

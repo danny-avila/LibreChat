@@ -627,6 +627,237 @@ describe('Share Methods', () => {
       expect(attachment).not.toHaveProperty('metadata');
     });
 
+    test('strips resultMeta from shared ui_resources while keeping render fields', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'has app',
+        isCreatedByUser: false,
+        attachments: [
+          {
+            type: 'ui_resources',
+            ui_resources: [
+              {
+                resourceId: 'res1',
+                uri: 'ui://app',
+                mimeType: 'text/html;profile=mcp-app',
+                text: '<p>hi</p>',
+                serverName: 'srv',
+                toolName: 'do_thing',
+                resultMeta: { secret: 'hidden-from-model' },
+              },
+            ],
+          },
+        ],
+      });
+
+      await SharedLink.create({ shareId, conversationId, user: userId, messages: [message._id] });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const attachment = result?.messages[0]?.attachments?.[0] as unknown as {
+        ui_resources?: Array<Record<string, unknown>>;
+      };
+      const resource = attachment?.ui_resources?.[0];
+      expect(resource).toMatchObject({ uri: 'ui://app', resourceId: 'res1', text: '<p>hi</p>' });
+      expect(resource).not.toHaveProperty('resultMeta');
+    });
+
+    test('strips resultMeta from object-shaped ui_resources ({ data: [...] })', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'has app',
+        isCreatedByUser: false,
+        attachments: [
+          {
+            type: 'ui_resources',
+            ui_resources: {
+              data: [
+                {
+                  resourceId: 'res1',
+                  uri: 'ui://app',
+                  mimeType: 'text/html;profile=mcp-app',
+                  text: '<p>hi</p>',
+                  resultMeta: { secret: 'hidden-from-model' },
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      await SharedLink.create({ shareId, conversationId, user: userId, messages: [message._id] });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const attachment = result?.messages[0]?.attachments?.[0] as unknown as {
+        ui_resources?: { data?: Array<Record<string, unknown>> };
+      };
+      const resource = attachment?.ui_resources?.data?.[0];
+      expect(resource).toMatchObject({ uri: 'ui://app', resourceId: 'res1', text: '<p>hi</p>' });
+      expect(resource).not.toHaveProperty('resultMeta');
+    });
+
+    test('strips resource _meta from shared ui_resources while keeping every render field', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'has app',
+        isCreatedByUser: false,
+        attachments: [
+          {
+            type: 'ui_resources',
+            ui_resources: [
+              {
+                resourceId: 'res1',
+                uri: 'ui://app',
+                name: 'App',
+                mimeType: 'text/html;profile=mcp-app',
+                text: '<p>hi</p>',
+                blob: 'PHA+aGk8L3A+',
+                csp: { connectDomains: ['https://api.example.com'] },
+                permissions: { clipboardWrite: true },
+                serverName: 'srv',
+                toolName: 'do_thing',
+                isError: false,
+                _meta: { secret: 'resource-level' },
+                content: [
+                  { type: 'text', text: 'result text', _meta: { secret: 'part-level' } },
+                  {
+                    type: 'resource',
+                    _meta: { secret: 'sibling-part-level' },
+                    resource: {
+                      uri: 'ui://other',
+                      mimeType: 'text/html',
+                      text: '<p>sibling</p>',
+                      _meta: { secret: 'sibling-resource-level' },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      await SharedLink.create({ shareId, conversationId, user: userId, messages: [message._id] });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const attachment = result?.messages[0]?.attachments?.[0] as unknown as {
+        ui_resources?: Array<Record<string, unknown>>;
+      };
+      const resource = attachment?.ui_resources?.[0];
+      expect(resource).toMatchObject({
+        resourceId: 'res1',
+        uri: 'ui://app',
+        name: 'App',
+        mimeType: 'text/html;profile=mcp-app',
+        text: '<p>hi</p>',
+        blob: 'PHA+aGk8L3A+',
+        csp: { connectDomains: ['https://api.example.com'] },
+        permissions: { clipboardWrite: true },
+        serverName: 'srv',
+        toolName: 'do_thing',
+        isError: false,
+      });
+      expect(resource).not.toHaveProperty('_meta');
+
+      const parts = resource?.content as Array<Record<string, unknown>>;
+      expect(parts[0]).toEqual({ type: 'text', text: 'result text' });
+      expect(parts[1]).not.toHaveProperty('_meta');
+      expect(parts[1].resource).toMatchObject({ uri: 'ui://other', mimeType: 'text/html' });
+      expect(parts[1].resource).not.toHaveProperty('_meta');
+      expect(JSON.stringify(resource)).not.toContain('secret');
+    });
+
+    test('strips resource _meta from object-shaped ui_resources ({ data: [...] })', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'has app',
+        isCreatedByUser: false,
+        attachments: [
+          {
+            type: 'ui_resources',
+            ui_resources: {
+              data: [
+                {
+                  resourceId: 'res1',
+                  uri: 'ui://app',
+                  mimeType: 'text/html;profile=mcp-app',
+                  text: '<p>hi</p>',
+                  _meta: { secret: 'resource-level' },
+                  content: [
+                    {
+                      type: 'resource',
+                      resource: { uri: 'ui://app', _meta: { secret: 'nested' } },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      });
+
+      await SharedLink.create({ shareId, conversationId, user: userId, messages: [message._id] });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const attachment = result?.messages[0]?.attachments?.[0] as unknown as {
+        ui_resources?: { data?: Array<Record<string, unknown>> };
+      };
+      const resource = attachment?.ui_resources?.data?.[0];
+      expect(resource).toMatchObject({ uri: 'ui://app', resourceId: 'res1', text: '<p>hi</p>' });
+      expect(resource).not.toHaveProperty('_meta');
+      expect(JSON.stringify(resource)).not.toContain('secret');
+    });
+
+    test('passes through ui_resources values that are neither an array nor { data: [...] }', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'has app',
+        isCreatedByUser: false,
+        attachments: [
+          { type: 'ui_resources', ui_resources: null },
+          { type: 'ui_resources', ui_resources: 'not-a-resource-list' },
+        ],
+      });
+
+      await SharedLink.create({ shareId, conversationId, user: userId, messages: [message._id] });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+      const attachments = result?.messages[0]?.attachments as unknown as Array<
+        Record<string, unknown>
+      >;
+      expect(attachments).toHaveLength(2);
+      expect(attachments[1].ui_resources).toBe('not-a-resource-list');
+    });
+
     test('strips steer-part files from content when the link excludes files', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;

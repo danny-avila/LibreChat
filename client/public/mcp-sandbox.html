@@ -1,0 +1,348 @@
+<!doctype html>
+<html style="height: 100%; margin: 0">
+  <head>
+    <meta charset="utf-8" />
+    <title>MCP App Sandbox</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        display: block;
+        background: transparent;
+      }
+    </style>
+  </head>
+  <body>
+    <script>
+      'use strict';
+
+      // Replaced by the sandbox route with `window.__MCP_SANDBOX_CSP_APPLIED = true;`. The
+      // per-resource policy is delivered as a response header on this document (the blob app
+      // document inherits it), so a deployment that serves this file statically would leave the app
+      // with no policy at all; createInnerFrame refuses to build a frame without the marker.
+      /*__CSP_APPLIED__*/
+
+      const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
+      const ATTEST_METHOD = 'ui/notifications/sandbox-frame-attest';
+      const DETACH_METHOD = 'ui/notifications/sandbox-frame-detach';
+      const RESOURCE_READY_METHOD = 'ui/notifications/sandbox-resource-ready';
+      const PROXY_READY_METHOD = 'ui/notifications/sandbox-proxy-ready';
+      const ATTEST_INTERVAL_MS = 400;
+      const ATTEST_TTL_MS = 1200;
+      const READY_RETRY_MS = 500;
+      const MAX_PENDING_MESSAGES = 50;
+      const READY_MAX_RETRIES = 20;
+      const DEFAULT_SANDBOX = 'allow-scripts allow-forms';
+      const ALLOWED_SANDBOX_TOKENS = ['allow-scripts', 'allow-forms', 'allow-pointer-lock'];
+
+      let innerFrame = null;
+      let innerFrameBlobUrl = null;
+      let innerFrameNavigated = false;
+      let resourceApplied = false;
+      let frameLoads = 0;
+      let readyInterval = null;
+      let readyRetries = 0;
+      let attestNonce = null;
+      let attestedAt = 0;
+      let pendingToInner = [];
+      let pendingToParent = [];
+
+      // The parent passes its origin so the handshake targets LibreChat. There is no same-origin
+      // fallback: this document is framed sandboxed without allow-same-origin, so its own origin
+      // serializes to "null" and postMessage(msg, "null") throws. Without the param, refuse to
+      // bridge rather than post to "*".
+      const trustedOrigin = (function () {
+        try {
+          const param = new URLSearchParams(window.location.search).get('parentOrigin');
+          if (param) {
+            return new URL(param).origin;
+          }
+        } catch (e) {}
+        return null;
+      })();
+
+      function postToParent(msg) {
+        window.parent.postMessage(msg, trustedOrigin);
+      }
+
+      function mintNonce() {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        let hex = '';
+        for (let i = 0; i < bytes.length; i += 1) {
+          hex += bytes[i].toString(16).padStart(2, '0');
+        }
+        return hex;
+      }
+
+      // A document that stops attesting is a document that is gone: the heartbeat's interval and the
+      // pagehide listener both die with the realm that owns them, so neither survives a top-level
+      // navigation of the inner frame. That liveness signal, not the nonce, is what invalidates the
+      // bridge; the nonce only excludes a document that never ran our bootstrap. An app that leaks
+      // its own nonce to a document it navigates to gains nothing it could not already proxy itself.
+      function frameUsable() {
+        return (
+          !!innerFrame && !!innerFrame.contentWindow && !innerFrameNavigated && frameLoads <= 1
+        );
+      }
+
+      function attestFresh() {
+        return Date.now() - attestedAt < ATTEST_TTL_MS;
+      }
+
+      // Hidden pages have their timers throttled to about once a minute, so a backgrounded app goes
+      // stale while it is perfectly alive. Hold its traffic instead of dropping it and release it on
+      // the next attestation: a navigated document cannot produce the nonce, so it can never trigger
+      // a flush, and the queue is discarded the moment the frame detaches or loads again.
+      function enqueue(queue, msg) {
+        if (queue.length >= MAX_PENDING_MESSAGES) {
+          queue.shift();
+        }
+        queue.push(msg);
+      }
+
+      function flushPending() {
+        const toInner = pendingToInner;
+        const toParent = pendingToParent;
+        pendingToInner = [];
+        pendingToParent = [];
+        for (const msg of toInner) {
+          innerFrame.contentWindow.postMessage(msg, '*');
+        }
+        for (const msg of toParent) {
+          postToParent(msg);
+        }
+      }
+
+      function discardPending() {
+        pendingToInner = [];
+        pendingToParent = [];
+      }
+
+      function stopReadyInterval() {
+        if (readyInterval) {
+          clearInterval(readyInterval);
+          readyInterval = null;
+        }
+      }
+
+      function releaseInnerFrame() {
+        discardPending();
+        if (innerFrameBlobUrl) {
+          URL.revokeObjectURL(innerFrameBlobUrl);
+          innerFrameBlobUrl = null;
+        }
+        if (innerFrame) {
+          innerFrame.remove();
+          innerFrame = null;
+        }
+      }
+
+      function notifyReady() {
+        if (!trustedOrigin) {
+          console.error('[MCP Sandbox] Missing parentOrigin: refusing to bridge');
+          return;
+        }
+        postToParent({ jsonrpc: '2.0', method: PROXY_READY_METHOD, params: {} });
+        readyInterval = setInterval(() => {
+          if (innerFrame || readyRetries >= READY_MAX_RETRIES) {
+            stopReadyInterval();
+            return;
+          }
+          readyRetries += 1;
+          postToParent({ jsonrpc: '2.0', method: PROXY_READY_METHOD, params: {} });
+        }, READY_RETRY_MS);
+      }
+
+      window.addEventListener('message', (event) => {
+        let msg;
+        try {
+          msg = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        } catch {
+          return;
+        }
+        if (!msg || msg.jsonrpc !== '2.0') return;
+
+        if (event.source === window.parent) {
+          if (!trustedOrigin || event.origin !== trustedOrigin) {
+            return;
+          }
+          if (msg.method === RESOURCE_READY_METHOD) {
+            stopReadyInterval();
+            createInnerFrame(msg.params);
+            return;
+          }
+          if (!frameUsable()) {
+            return;
+          }
+          if (!attestFresh()) {
+            enqueue(pendingToInner, msg);
+            return;
+          }
+          innerFrame.contentWindow.postMessage(msg, '*');
+          return;
+        }
+
+        if (!innerFrame || event.source !== innerFrame.contentWindow) {
+          return;
+        }
+
+        const attested = !!attestNonce && !!msg.params && msg.params.nonce === attestNonce;
+        if (msg.method === ATTEST_METHOD) {
+          if (attested && frameUsable()) {
+            attestedAt = Date.now();
+            flushPending();
+          }
+          return;
+        }
+        if (msg.method === DETACH_METHOD) {
+          if (attested) {
+            attestedAt = 0;
+            releaseInnerFrame();
+          }
+          return;
+        }
+        if (typeof msg.method === 'string' && msg.method.startsWith(SANDBOX_PREFIX)) {
+          return;
+        }
+        if (!frameUsable()) {
+          return;
+        }
+        if (!attestFresh()) {
+          enqueue(pendingToParent, msg);
+          return;
+        }
+        postToParent(msg);
+      });
+
+      function buildBootstrap(nonce) {
+        return (
+          '<script>(function(){var N=' +
+          JSON.stringify(nonce) +
+          ';var post=function(m){parent.postMessage({jsonrpc:"2.0",method:m,params:{nonce:N}},"*")};' +
+          'post(' +
+          JSON.stringify(ATTEST_METHOD) +
+          ');setInterval(function(){post(' +
+          JSON.stringify(ATTEST_METHOD) +
+          ')},' +
+          ATTEST_INTERVAL_MS +
+          ');addEventListener("pagehide",function(){post(' +
+          JSON.stringify(DETACH_METHOD) +
+          ')},{capture:true});})();<\/script>'
+        );
+      }
+
+      function createInnerFrame(params) {
+        if (window.__MCP_SANDBOX_CSP_APPLIED !== true) {
+          console.error(
+            '[MCP Sandbox] This document was served without a per-resource CSP: refusing to render',
+          );
+          return;
+        }
+        // One resource per sandbox document. Replacing the app in place would leave the previous
+        // document's pending messages, blob URL and load events racing the new one.
+        if (resourceApplied || !trustedOrigin) {
+          return;
+        }
+        resourceApplied = true;
+
+        const { html, permissions } = params;
+        attestNonce = mintNonce();
+
+        innerFrame = document.createElement('iframe');
+        const frame = innerFrame;
+
+        innerFrame.addEventListener('load', () => {
+          frameLoads += 1;
+          // The first load is our blob document. A stale load from an already-released frame must
+          // not revoke the live blob URL, and only a second load of the live frame means the app
+          // navigated away from our document.
+          if (frameLoads <= 1 || frame !== innerFrame) {
+            return;
+          }
+          innerFrameNavigated = true;
+          attestedAt = 0;
+          releaseInnerFrame();
+        });
+
+        // allow-same-origin is never granted, on any origin: the default deployment serves this
+        // sandbox from LibreChat's own origin (VITE_MCP_SANDBOX_URL unset), which would hand the app
+        // LibreChat's localStorage, cookies and authenticated /api/*; and one shared sandbox origin
+        // would pool storage across every app from every server, which the spec answers with the
+        // per-view _meta.ui.domain this host does not implement yet. Grant only from an allowlist so
+        // a new spec token cannot arrive as a silent capability.
+        const requested = new Set(
+          String(params.sandbox || DEFAULT_SANDBOX)
+            .split(/\s+/)
+            .filter(Boolean),
+        );
+        const granted = ALLOWED_SANDBOX_TOKENS.filter((token) => requested.has(token));
+        innerFrame.setAttribute(
+          'sandbox',
+          granted.length > 0 ? granted.join(' ') : DEFAULT_SANDBOX,
+        );
+
+        const allowParts = [];
+        if (permissions && typeof permissions === 'object') {
+          if (permissions.clipboardWrite) allowParts.push('clipboard-write');
+          if (permissions.camera) allowParts.push('camera');
+          if (permissions.microphone) allowParts.push('microphone');
+          if (permissions.geolocation) allowParts.push('geolocation');
+        }
+        if (allowParts.length > 0) {
+          innerFrame.setAttribute('allow', allowParts.join('; '));
+        }
+
+        // The bootstrap sits ahead of the app's own <meta charset>, so declare the encoding here
+        // rather than let the parser guess from bytes our prefix now precedes.
+        const blob = new Blob([injectIntoHead(html, buildBootstrap(attestNonce))], {
+          type: 'text/html;charset=utf-8',
+        });
+        innerFrameBlobUrl = URL.createObjectURL(blob);
+        innerFrame.src = innerFrameBlobUrl;
+        innerFrame.style.cssText = 'width:100%;height:100%;border:none;display:block';
+
+        document.body.appendChild(innerFrame);
+      }
+
+      window.addEventListener('pagehide', () => {
+        if (innerFrameBlobUrl) {
+          URL.revokeObjectURL(innerFrameBlobUrl);
+        }
+      });
+
+      function injectIntoHead(html, injection) {
+        // The bootstrap must run before any app script, and the app's bytes must reach the blob
+        // verbatim: inject, never rewrap. Prefixing a document that opens with a doctype would push
+        // the doctype down and flip the app into quirks mode.
+        const headMatch = html.match(/<head[^>]*>/i);
+        if (headMatch) {
+          const at = headMatch.index + headMatch[0].length;
+          return html.slice(0, at) + injection + html.slice(at);
+        }
+        const doctypeMatch = html.match(/^\s*<!doctype[^>]*>/i);
+        if (doctypeMatch) {
+          return (
+            html.slice(0, doctypeMatch[0].length) + injection + html.slice(doctypeMatch[0].length)
+          );
+        }
+        return injection + html;
+      }
+
+      notifyReady();
+    </script>
+  </body>
+</html>

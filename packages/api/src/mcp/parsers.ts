@@ -1,5 +1,10 @@
 import crypto from 'node:crypto';
-import { Tools } from 'librechat-data-provider';
+import {
+  Tools,
+  MCP_APP_MIME_TYPE,
+  isHtmlMediaType,
+  isMcpAppMimeType,
+} from 'librechat-data-provider';
 import type { UIResource } from 'librechat-data-provider';
 import type * as t from './types';
 
@@ -7,6 +12,32 @@ export const DEFAULT_MCP_IMAGE_DATA_MAX_BYTES: number = 10 * 1024 * 1024;
 
 function generateResourceId(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').substring(0, 10);
+}
+
+/**
+ * Derives a UI resource ID that is unique per result snapshot. The frontend indexes conversation
+ * resources by ID, so two calls that share a base (resourceUri/text) and args but differ in
+ * structuredContent, text content, _meta, or error state must not collide and overwrite each other.
+ */
+function deriveResourceId(
+  base: string,
+  result: t.MCPToolCallResponse,
+  toolArgs: unknown,
+  serverName?: string,
+  toolName?: string,
+): string {
+  const meta = (result as { _meta?: unknown } | undefined)?._meta;
+  const parts = [
+    serverName ?? '',
+    toolName ?? '',
+    base,
+    result?.structuredContent != null ? JSON.stringify(result.structuredContent) : '',
+    result?.content != null ? JSON.stringify(result.content) : '',
+    meta != null ? JSON.stringify(meta) : '',
+    result?.isError === true ? '1' : '',
+    toolArgs != null ? JSON.stringify(toolArgs) : '',
+  ];
+  return generateResourceId(parts.join('\x00'));
 }
 
 function getMCPImageDataMaxBytes(): number {
@@ -107,7 +138,13 @@ function parseAsString(result: t.MCPToolCallResponse): string {
       }
       if (item.type === 'resource') {
         const resourceText = [];
-        if ('text' in item.resource && item.resource.text != null && item.resource.text) {
+        // A ui:// HTML body is a whole document meant for the sandbox, never model context.
+        if (
+          !isRenderableUiResource(item) &&
+          'text' in item.resource &&
+          item.resource.text != null &&
+          item.resource.text
+        ) {
           resourceText.push(item.resource.text);
         }
         if (item.resource.uri) {
@@ -130,6 +167,70 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 }
 
 /**
+ * MCP Apps renders only `ui://` resources whose mime type is HTML (mime omitted defaults to HTML),
+ * the single renderable resource type the spec defines. Used both when attaching a result resource
+ * and when deciding whether a result carries an app the apps toggle must gate.
+ *
+ * Deliberately wider than `isMcpAppMimeType`: a plain `text/html` `ui://` resource still renders as
+ * an inert static view. Both tiers parse the media type through the same shared helpers, so a
+ * differently-cased `Text/HTML;profile=mcp-app` cannot be renderable to one and not the other.
+ */
+export function isRenderableUiResource(item: t.ToolContentPart): boolean {
+  if (item.type !== 'resource') {
+    return false;
+  }
+  const uri = item.resource?.uri;
+  if (typeof uri !== 'string' || !uri.startsWith('ui://')) {
+    return false;
+  }
+  const mimeType =
+    typeof item.resource.mimeType === 'string' ? item.resource.mimeType : 'text/html';
+  return isHtmlMediaType(mimeType);
+}
+
+/**
+ * The shared tool result is attached to each app resource for the App Bridge. Only `ui://` HTML
+ * bodies are emptied in that copy: otherwise N app resources each persist every view's markup, so a
+ * result with several large views grows quadratically and can exceed the document size limit. Every
+ * app still carries its own `text`/`blob` at the top level, while non-UI bodies (`file://`, `db://`,
+ * arbitrary schemes) pass through verbatim because the shared result is the app's only channel for
+ * the tool's own data.
+ *
+ * The carrier key is emptied rather than removed, keeping which kind was used: a resource with
+ * neither `text` nor `blob` fails `CallToolResultSchema`, so the app's notification handler would
+ * reject the result and never fire `ontoolresult`.
+ */
+function emptyUiResourceBodies(content?: t.ToolContentPart[]): t.ToolContentPart[] | undefined {
+  if (!Array.isArray(content)) {
+    return content;
+  }
+  let emptied = false;
+  const next = content.map((item) => {
+    if (item.type !== 'resource' || !isRenderableUiResource(item)) {
+      return item;
+    }
+    if ('text' in item.resource && typeof item.resource.text === 'string' && item.resource.text) {
+      emptied = true;
+      return { ...item, resource: { ...item.resource, text: '' } };
+    }
+    if ('blob' in item.resource && typeof item.resource.blob === 'string' && item.resource.blob) {
+      emptied = true;
+      return { ...item, resource: { ...item.resource, blob: '' } };
+    }
+    return item;
+  });
+  return emptied ? next : content;
+}
+
+export function resultHasRenderableUiResource(result: t.MCPToolCallResponse): boolean {
+  const content = result?.content;
+  if (!Array.isArray(content)) {
+    return false;
+  }
+  return content.some((item) => isRenderableUiResource(item as t.ToolContentPart));
+}
+
+/**
  * Converts MCPToolCallResponse content into a plain-text string plus optional artifacts
  * (images, UI resources). All providers receive string content; images are separated into
  * artifacts and merged back by the agents package via formatArtifactPayload / formatAnthropicArtifactContent.
@@ -141,19 +242,36 @@ function parseAsString(result: t.MCPToolCallResponse): string {
 export function formatToolContent(
   result: t.MCPToolCallResponse,
   provider: t.Provider,
+  metadata?: {
+    serverName?: string;
+    toolName?: string;
+    resourceUri?: string;
+    csp?: UIResource['csp'];
+    permissions?: UIResource['permissions'];
+    toolArgs?: Record<string, unknown>;
+    enableApps?: boolean;
+  },
 ): t.FormattedContentResult {
-  if (!RECOGNIZED_PROVIDERS.has(provider)) {
+  const isRecognizedProvider = RECOGNIZED_PROVIDERS.has(provider);
+  // Truthiness, not != null: an empty resourceUri/serverName/toolName cannot address an app, and a
+  // single predicate keeps this gate and the synthesis below from drifting apart.
+  const hasSyntheticApp = !!(metadata?.resourceUri && metadata.serverName && metadata.toolName);
+  const hasApp =
+    metadata?.enableApps !== false && (hasSyntheticApp || resultHasRenderableUiResource(result));
+  if (!isRecognizedProvider && !hasApp) {
     return [parseAsString(result), undefined];
   }
 
   const content = result?.content ?? [];
-  if (!content.length) {
+  if (!content.length && !hasSyntheticApp) {
     return ['(No response)', undefined];
   }
 
   const imageUrls: t.FormattedContent[] = [];
   const uiResources: UIResource[] = [];
   let currentTextBlock = '';
+  /** Built once and shared by every app resource rather than per-resource. */
+  const sharedResultContent = emptyUiResourceBodies(result?.content);
 
   type ContentHandler = undefined | ((item: t.ToolContentPart) => void);
 
@@ -171,6 +289,10 @@ export function formatToolContent(
         return;
       }
       assertImageDataWithinLimit(item);
+      if (!isRecognizedProvider) {
+        currentTextBlock += (currentTextBlock ? '\n\n' : '') + JSON.stringify(item, null, 2);
+        return;
+      }
       const formatter = imageFormatters.default as t.ImageFormatter;
       const formattedImage = formatter(item);
 
@@ -180,24 +302,70 @@ export function formatToolContent(
     },
 
     resource: (item) => {
-      const isUiResource = item.resource.uri.startsWith('ui://');
+      // ui:// resources that are not renderable apps (other mime types) or that arrive for a
+      // scope with apps disabled fall through to plain resource text rather than an unrenderable
+      // or admin-suppressed app marker.
+      const isUiResource = metadata?.enableApps !== false && isRenderableUiResource(item);
+      const isUnprofiledDeclaredApp =
+        isUiResource &&
+        hasSyntheticApp &&
+        item.resource.uri === metadata?.resourceUri &&
+        !isMcpAppMimeType(item.resource.mimeType);
       const resourceText: string[] = [];
+      const inlineText =
+        'text' in item.resource && typeof item.resource.text === 'string' ? item.resource.text : '';
+      // Only the text/html;profile=mcp-app profile runs the App Bridge on the client
+      // (isMcpAppResource); a plain text/html ui:// resource renders as a static srcDoc, so the
+      // tool result/context fields would be dead, misleading metadata on it. Classify the same
+      // way on both sides and attach the bridge payload only for the app profile. serverName and
+      // toolName are part of the classification because a server the app endpoints reject (OBO,
+      // graph-token, runtime placeholders) leaves them unset, and the client renders such a
+      // resource inert.
+      const isAppBacked =
+        !!metadata?.serverName && !!metadata.toolName && isMcpAppMimeType(item.resource.mimeType);
+      // A static ui:// view is rendered from its inline body alone, so without one the marker would
+      // resolve to nothing on the client. App-backed views instead fetch their HTML over
+      // resources/read and legitimately arrive with no body.
+      const hasInlineBody =
+        !!inlineText ||
+        ('blob' in item.resource && typeof item.resource.blob === 'string' && !!item.resource.blob);
 
-      if (isUiResource) {
-        const contentToHash =
-          'text' in item.resource && item.resource.text && typeof item.resource.text === 'string'
-            ? item.resource.text
-            : item.resource.uri;
-        const resourceId = generateResourceId(contentToHash);
+      if (isUiResource && !isUnprofiledDeclaredApp && (isAppBacked || hasInlineBody)) {
+        // Distinct URIs must not collide into one resourceId even when their markup is identical:
+        // the client indexes conversation resources by id, so the second would overwrite the first.
+        const baseHash = `${item.resource.uri}\x00${inlineText}`;
+        const resourceId = deriveResourceId(
+          baseHash,
+          result,
+          metadata?.toolArgs,
+          metadata?.serverName,
+          metadata?.toolName,
+        );
+        const itemUi = (item.resource._meta as { ui?: Record<string, unknown> } | undefined)?.ui as
+          | { csp?: UIResource['csp']; permissions?: UIResource['permissions'] }
+          | undefined;
         const uiResource: UIResource = {
           ...item.resource,
           resourceId,
+          csp: itemUi?.csp ?? metadata?.csp,
+          permissions: itemUi?.permissions ?? metadata?.permissions,
+          ...(isAppBacked
+            ? {
+                serverName: metadata?.serverName,
+                toolName: metadata?.toolName,
+                structuredContent: result?.structuredContent,
+                content: sharedResultContent,
+                isError: result?.isError,
+                resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
+                toolArgs: metadata?.toolArgs,
+              }
+            : {}),
         };
         uiResources.push(uiResource);
         resourceText.push(`UI Resource ID: ${resourceId}`);
         resourceText.push(`UI Resource Marker: \\ui{${resourceId}}`);
-      } else if ('text' in item.resource && item.resource.text != null && item.resource.text) {
-        resourceText.push(`Resource Text: ${item.resource.text}`);
+      } else if (!isUnprofiledDeclaredApp && !isRenderableUiResource(item) && inlineText) {
+        resourceText.push(`Resource Text: ${inlineText}`);
       }
 
       if (item.resource.uri.length) {
@@ -221,6 +389,48 @@ export function formatToolContent(
       const stringified = JSON.stringify(item, null, 2);
       currentTextBlock += (currentTextBlock ? '\n\n' : '') + stringified;
     }
+  }
+
+  // MCP Apps: the tool-declared ui:// resourceUri is the app the host renders for the call, so
+  // synthesize it unless the result already returned that exact resource. A secondary ui://
+  // resource in the result must not suppress the declared app.
+  const declaredAppAlreadyReturned =
+    metadata?.resourceUri != null &&
+    uiResources.some((r) => r.uri === metadata.resourceUri && isMcpAppMimeType(r.mimeType));
+  // Gated on the per-request apps setting for the same reason the embedded path is: a scope with
+  // apps disabled must not get a synthesized app either.
+  if (
+    hasSyntheticApp &&
+    metadata?.enableApps !== false &&
+    metadata?.resourceUri &&
+    metadata.serverName &&
+    metadata.toolName &&
+    !declaredAppAlreadyReturned
+  ) {
+    const resourceId = deriveResourceId(
+      metadata.resourceUri,
+      result,
+      metadata.toolArgs,
+      metadata.serverName,
+      metadata.toolName,
+    );
+    uiResources.push({
+      resourceId,
+      uri: metadata.resourceUri,
+      mimeType: MCP_APP_MIME_TYPE,
+      serverName: metadata.serverName,
+      toolName: metadata.toolName,
+      structuredContent: result?.structuredContent,
+      content: sharedResultContent,
+      csp: metadata.csp,
+      permissions: metadata.permissions,
+      toolArgs: metadata.toolArgs,
+      isError: result?.isError,
+      resultMeta: (result as { _meta?: Record<string, unknown> })?._meta,
+    });
+    currentTextBlock +=
+      (currentTextBlock ? '\n\n' : '') +
+      `UI Resource ID: ${resourceId}\nUI Resource Marker: \\ui{${resourceId}}`;
   }
 
   if (uiResources.length > 0) {
