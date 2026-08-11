@@ -229,6 +229,23 @@ function resolveResumeValue(pendingAction, body) {
   return { status: 400, error: 'Unsupported pending action type' };
 }
 
+/** Build the durable answer stamp committed with the resume ownership CAS. */
+function getResolvedAskUserQuestion(pendingAction, body) {
+  if (pendingAction.payload?.type !== 'ask_user_question') {
+    return null;
+  }
+  const batched = Array.isArray(pendingAction.payload.questions);
+  return {
+    request: batched
+      ? { questions: pendingAction.payload.questions }
+      : pendingAction.payload.question,
+    output: batched ? JSON.stringify({ answers: body.answers }) : body.answer,
+    ...(pendingAction.payload.tool_call_id && {
+      toolCallId: pendingAction.payload.tool_call_id,
+    }),
+  };
+}
+
 /**
  * Finalize a resumed turn that ran to completion: persist the (now complete)
  * response message, emit the terminal event over the existing SSE, complete the
@@ -646,6 +663,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       generationProtocolVersion,
     );
   }
+  const resolvedAskUserQuestion = getResolvedAskUserQuestion(pendingAction, req.body);
 
   // A legacy job has no saver-level generation namespace, so snapshot its exact
   // durable ids before the atomic resume claim. New jobs can skip this indexed
@@ -701,6 +719,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       pendingAction.actionId,
       {
         preemptCapable: isSteerPreemptSupported(),
+        ...(resolvedAskUserQuestion && { resolvedAskUserQuestion }),
       },
       job.createdAt,
     );
@@ -892,17 +911,12 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // the streamed arg chunks carry no tool name so the aggregator dropped them, and
     // no completion event ever fires for this tool — without this the saved part is
     // an empty "cancelled-looking" tool call. See attachAskUserQuestionAnswer.
-    if (pendingAction.payload?.type === 'ask_user_question') {
-      const batched = Array.isArray(pendingAction.payload.questions);
-      const request = batched
-        ? { questions: pendingAction.payload.questions }
-        : pendingAction.payload.question;
-      const output = batched ? JSON.stringify({ answers: req.body.answers }) : req.body.answer;
+    if (resolvedAskUserQuestion) {
       seedContent = attachAskUserQuestionAnswer(
         seedContent,
-        request,
-        output,
-        pendingAction.payload.tool_call_id,
+        resolvedAskUserQuestion.request,
+        resolvedAskUserQuestion.output,
+        resolvedAskUserQuestion.toolCallId,
       );
     }
     if (client.contentParts) {

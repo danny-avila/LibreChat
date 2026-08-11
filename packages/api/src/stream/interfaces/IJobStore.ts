@@ -25,6 +25,14 @@ export type JobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires
  * Missing markers on pre-rollout records are interpreted as protocol v1. */
 export type GenerationProtocolVersion = 1 | 2;
 
+/** Ask-user answer captured in the same CAS that consumes its pending action. */
+export interface ResolvedAskUserQuestion {
+  /** String supports pending records written before the structured question shape. */
+  request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest | string;
+  output: string;
+  toolCallId?: string;
+}
+
 /**
  * Serializable job data - no object references, suitable for Redis/external storage
  */
@@ -163,6 +171,12 @@ export interface SerializableJobData {
    */
   pendingAction?: Agents.PendingAction;
 
+  /** Durable bridge between the resume claim and content reconstruction. An
+   * abort can win while the resume controller is still rebuilding the client;
+   * retaining the accepted answer here lets that terminal owner stamp it onto
+   * the persisted partial response instead of losing it with the request. */
+  resolvedAskUserQuestion?: ResolvedAskUserQuestion;
+
   /**
    * Flat mirror of `pendingAction.actionId`, kept as a top-level field so an
    * atomic status transition can guard on it (a nested JSON field can't be
@@ -263,6 +277,7 @@ export type JobMetadataPatch = Partial<
     | 'activityPhaseSnapshot'
     | 'preemptCapable'
     | 'generationProtocolVersion'
+    | 'resolvedAskUserQuestion'
   >
 >;
 

@@ -2391,6 +2391,7 @@ class GenerationJobManagerClass {
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
         pendingAction: jobData.pendingAction,
+        resolvedAskUserQuestion: jobData.resolvedAskUserQuestion,
       },
       readyPromise: runtime.readyPromise,
       resolveReady: runtime.resolveReady,

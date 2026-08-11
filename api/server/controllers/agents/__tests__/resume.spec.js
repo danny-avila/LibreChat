@@ -1342,6 +1342,18 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(client.resumeCompletion).toHaveBeenCalledWith(
         expect.objectContaining({ resumeValue: { answer: 'call it report.pdf' } }),
       );
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        {
+          preemptCapable: true,
+          resolvedAskUserQuestion: {
+            request: 'What should I name the file?',
+            output: 'call it report.pdf',
+          },
+        },
+        1000,
+      );
       expect(mockGenerationJobManager.claimTerminalJob).toHaveBeenCalledWith(
         CONVO_ID,
         'complete',
@@ -1368,6 +1380,19 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
       expect(client.resumeCompletion).toHaveBeenCalledWith(
         expect.objectContaining({ resumeValue: { answers } }),
+      );
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        {
+          preemptCapable: true,
+          resolvedAskUserQuestion: {
+            request: { questions: expect.any(Array) },
+            output: JSON.stringify({ answers }),
+            toolCallId: 'tc1',
+          },
+        },
+        1000,
       );
     });
 

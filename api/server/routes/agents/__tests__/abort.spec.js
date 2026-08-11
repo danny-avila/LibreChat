@@ -481,6 +481,56 @@ describe('Agent Abort Endpoint', () => {
         expect(JSON.parse(askPart.tool_call.args)).toMatchObject({ question: 'Deploy where?' });
       });
 
+      it('preserves an accepted ask answer when abort wins during resume reconstruction', async () => {
+        const jobStreamId = 'test-stream-123';
+        const question = { question: 'Deploy where?', options: [{ label: 'Prod', value: 'prod' }] };
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: {
+            userId: 'test-user-123',
+            resolvedAskUserQuestion: {
+              request: question,
+              output: 'prod',
+              toolCallId: 'tc1',
+            },
+          },
+        });
+
+        mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
+          const rawContent = [
+            { type: 'tool_call', tool_call: { id: 'tc1', name: 'ask_user_question', args: '' } },
+          ];
+          const content = options.transformAbortContent(rawContent);
+          const result = {
+            success: true,
+            jobData: {
+              userMessage: { messageId: 'user-msg-123' },
+              responseMessageId: 'response-msg-456',
+              conversationId: jobStreamId,
+            },
+            content,
+            text: '',
+          };
+          await options.beforePublish(result);
+          return result;
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId });
+
+        expect(response.status).toBe(200);
+        const savedMessage = mockSaveMessage.mock.calls
+          .map(([, message]) => message)
+          .find((message) => message.isCreatedByUser === false);
+        const askPart = savedMessage.content.find(
+          (part) => part?.tool_call?.name === 'ask_user_question',
+        );
+        expect(JSON.parse(askPart.tool_call.args)).toEqual(question);
+        expect(askPart.tool_call.output).toBe('prod');
+        expect(askPart.tool_call.progress).toBe(1);
+      });
+
       it('should handle saveMessage errors gracefully', async () => {
         const jobStreamId = 'test-stream-123';
 

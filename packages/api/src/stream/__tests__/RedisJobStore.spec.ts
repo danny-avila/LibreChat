@@ -289,6 +289,11 @@ describe('RedisJobStore', () => {
       discoveredTools: [],
       preemptCapable: true,
       generationProtocolVersion: 2,
+      resolvedAskUserQuestion: {
+        request: { question: 'Deploy where?' },
+        output: 'prod',
+        toolCallId: 'call-1',
+      },
     });
 
     /**
@@ -300,6 +305,11 @@ describe('RedisJobStore', () => {
     expect(job.preemptCapable).toBe(true);
     expect(job.generationProtocolVersion).toBe(2);
     expect(job.checkpointNamespace).toBe(String(job.createdAt));
+    expect(job.resolvedAskUserQuestion).toEqual({
+      request: { question: 'Deploy where?' },
+      output: 'prod',
+      toolCallId: 'call-1',
+    });
 
     expect(job).toMatchObject({
       streamId: 'stream-metadata',
@@ -318,6 +328,11 @@ describe('RedisJobStore', () => {
       isTemporary: false,
       promptTokens: 0,
       discoveredTools: [],
+      resolvedAskUserQuestion: {
+        request: { question: 'Deploy where?' },
+        output: 'prod',
+        toolCallId: 'call-1',
+      },
     });
 
     const creationArgs = evalJobCreation.mock.calls[0];
@@ -329,6 +344,11 @@ describe('RedisJobStore', () => {
       isTemporary: '0',
       promptTokens: '0',
       discoveredTools: '[]',
+      resolvedAskUserQuestion: JSON.stringify({
+        request: { question: 'Deploy where?' },
+        output: 'prod',
+        toolCallId: 'call-1',
+      }),
     });
   });
 

@@ -22,6 +22,7 @@ import type {
   SteerReceipt,
   SteerReceiptInput,
   ParkedSteerClaim,
+  ResolvedAskUserQuestion,
 } from '~/stream/interfaces/IJobStore';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
@@ -4069,6 +4070,7 @@ export class RedisJobStore implements IJobStoreV2 {
       contextUsage: data.contextUsage || undefined,
       tokenUsage: data.tokenUsage || undefined,
       pendingAction: this.parsePendingAction(data.pendingAction),
+      resolvedAskUserQuestion: this.parseResolvedAskUserQuestion(data.resolvedAskUserQuestion),
       pendingActionId: data.pendingActionId || undefined,
       lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
       /** `markActivityLabels` persists this, so it has to be read back:
@@ -4219,6 +4221,34 @@ export class RedisJobStore implements IJobStoreV2 {
       return parsed;
     } catch {
       logger.warn('[RedisJobStore] Dropping unparseable pendingAction record');
+      return undefined;
+    }
+  }
+
+  /** Parse the accepted ask answer retained across resume ownership transfer. */
+  private parseResolvedAskUserQuestion(
+    raw: string | undefined,
+  ): ResolvedAskUserQuestion | undefined {
+    if (!raw) {
+      return undefined;
+    }
+    try {
+      const parsed = JSON.parse(raw) as ResolvedAskUserQuestion;
+      const request = parsed?.request;
+      const requestOk =
+        typeof request === 'string' ||
+        (request != null &&
+          typeof request === 'object' &&
+          (typeof (request as Agents.AskUserQuestionRequest).question === 'string' ||
+            Array.isArray((request as Agents.AskUserQuestionsRequest).questions)));
+      const toolCallIdOk = parsed.toolCallId == null || typeof parsed.toolCallId === 'string';
+      if (!requestOk || typeof parsed.output !== 'string' || !toolCallIdOk) {
+        logger.warn('[RedisJobStore] Dropping malformed resolvedAskUserQuestion record');
+        return undefined;
+      }
+      return parsed;
+    } catch {
+      logger.warn('[RedisJobStore] Dropping unparseable resolvedAskUserQuestion record');
       return undefined;
     }
   }
