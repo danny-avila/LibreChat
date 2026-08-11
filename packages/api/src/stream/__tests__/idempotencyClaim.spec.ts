@@ -1,5 +1,6 @@
 import {
   REDIS_ABORT_TERMINAL_GRACE_MS,
+  REDIS_EVENT_REORDER_TIMEOUT_MS,
   REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS,
 } from '~/stream/internal/transportTiming';
 import {
@@ -776,6 +777,11 @@ describe('GenerationJobManager start-generation claim', () => {
       expect(onError).not.toHaveBeenCalled();
 
       await jest.advanceTimersByTimeAsync(REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS);
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
 
       expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
       expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
