@@ -2,16 +2,16 @@ import type { AbortResult } from '~/stream/interfaces/IJobStore';
 import type { AgentStartupTelemetry } from '~/agents/startup';
 import type { ServerSentEvent } from '~/types';
 import {
+  REDIS_ABORT_ACK_TIMEOUT_MS,
+  REDIS_ABORT_TERMINAL_GRACE_MS,
+  REDIS_EVENT_REORDER_TIMEOUT_MS,
+} from '~/stream/internal/transportTiming';
+import {
   GenerationJobManagerClass,
   TERMINAL_PUBLICATION_RECONNECT_ERROR,
 } from '~/stream/GenerationJobManager';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
-import {
-  REDIS_ABORT_ACK_TIMEOUT_MS,
-  REDIS_ABORT_TERMINAL_GRACE_MS,
-  REDIS_EVENT_REORDER_TIMEOUT_MS,
-} from '~/stream/internal/transportTiming';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 
