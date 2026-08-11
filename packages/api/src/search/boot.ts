@@ -9,6 +9,7 @@ import type { ChatSearch, SearchPool } from './types';
 import type { QueryEmbedder } from './search';
 import { applyRolePasswords, migrate } from './migrate';
 import { createMongoSourceReader } from './source';
+import { assertManagedRoleUrl } from './roles';
 import { createChatSearch } from './service';
 import { createSearchPool } from './pool';
 import { Projector } from './projector';
@@ -130,6 +131,7 @@ async function startProjector(
     );
     return null;
   }
+  assertManagedRoleUrl('CHAT_SEARCH_WRITER_URL', connectionString, 'writer');
 
   const pool = createSearchPool({
     connectionString,
