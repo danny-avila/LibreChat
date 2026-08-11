@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useAcknowledgeTwoFactorSetupMutation,
   useConfirmTwoFactorSetupMutation,
@@ -14,6 +14,7 @@ import {
 } from '~/components/Nav/SettingsTabs/Account/TwoFactorPhases';
 import { useAuthContext, useLocalize } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
+import { isSafeRedirect } from '~/utils';
 
 type SetupPhaseName = 'setup' | 'qr' | 'verify' | 'backup';
 
@@ -22,8 +23,12 @@ const getSecret = (otpauthUrl: string): string => {
   return value ? decodeURIComponent(value) : '';
 };
 
+const isExpiredSetupCredential = (error: unknown): boolean =>
+  (error as { response?: { status?: number } } | undefined)?.response?.status === 401;
+
 const TwoFactorSetupScreen: React.FC = React.memo(() => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const localize = useLocalize();
   const { completeAuthentication } = useAuthContext();
   const phaseRef = useRef<HTMLDivElement>(null);
@@ -42,10 +47,26 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
   const { mutate: acknowledgeSetup, isLoading: isAcknowledging } =
     useAcknowledgeTwoFactorSetupMutation();
   const { mutate: finalizeSetup, isLoading: isFinalizing } = useFinalizeTwoFactorSetupMutation();
+  const redirectTo = searchParams.get('redirect_to');
+  const restartLoginPath =
+    redirectTo && isSafeRedirect(redirectTo)
+      ? `/login?redirect_to=${encodeURIComponent(redirectTo)}`
+      : '/login';
 
   useEffect(() => {
     phaseRef.current?.focus();
   }, [phase]);
+
+  const restartLoginWhenExpired = useCallback(
+    (mutationError: unknown): boolean => {
+      if (!isExpiredSetupCredential(mutationError)) {
+        return false;
+      }
+      navigate(restartLoginPath, { replace: true });
+      return true;
+    },
+    [navigate, restartLoginPath],
+  );
 
   const handleGenerate = useCallback(() => {
     setError(null);
@@ -58,10 +79,14 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
           setBackupCodes(data.backupCodes);
           setPhase('qr');
         },
-        onError: () => setError(localize('com_auth_two_factor_setup_expired')),
+        onError: (mutationError) => {
+          if (!restartLoginWhenExpired(mutationError)) {
+            setError(localize('com_auth_two_factor_setup_expired'));
+          }
+        },
       },
     );
-  }, [enableSetup, localize, tempToken]);
+  }, [enableSetup, localize, restartLoginWhenExpired, tempToken]);
 
   const handleVerify = useCallback(() => {
     if (verificationToken.length !== 6) {
@@ -84,10 +109,14 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
           setDownloaded(false);
           setPhase('backup');
         },
-        onError: () => setError(localize('com_ui_2fa_invalid')),
+        onError: (mutationError) => {
+          if (!restartLoginWhenExpired(mutationError)) {
+            setError(localize('com_ui_2fa_invalid'));
+          }
+        },
       },
     );
-  }, [confirmSetup, localize, tempToken, verificationToken]);
+  }, [confirmSetup, localize, restartLoginWhenExpired, tempToken, verificationToken]);
 
   const handleDownload = useCallback(() => {
     if (!backupCodes.length) {
@@ -110,11 +139,15 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
         { finalizationToken: token },
         {
           onSuccess: ({ token: authToken, user }) => completeAuthentication(authToken, user),
-          onError: () => setError(localize('com_auth_two_factor_setup_finalize_error')),
+          onError: (mutationError) => {
+            if (!restartLoginWhenExpired(mutationError)) {
+              setError(localize('com_auth_two_factor_setup_finalize_error'));
+            }
+          },
         },
       );
     },
-    [completeAuthentication, finalizeSetup, localize],
+    [completeAuthentication, finalizeSetup, localize, restartLoginWhenExpired],
   );
 
   const handleComplete = useCallback(() => {
@@ -135,10 +168,21 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
           setFinalizationToken(issuedToken);
           runFinalize(issuedToken);
         },
-        onError: () => setError(localize('com_auth_two_factor_setup_finalize_error')),
+        onError: (mutationError) => {
+          if (!restartLoginWhenExpired(mutationError)) {
+            setError(localize('com_auth_two_factor_setup_finalize_error'));
+          }
+        },
       },
     );
-  }, [acknowledgementToken, acknowledgeSetup, finalizationToken, localize, runFinalize]);
+  }, [
+    acknowledgementToken,
+    acknowledgeSetup,
+    finalizationToken,
+    localize,
+    restartLoginWhenExpired,
+    runFinalize,
+  ]);
 
   if (!tempToken) {
     return <ErrorMessage>{localize('com_auth_two_factor_setup_expired')}</ErrorMessage>;

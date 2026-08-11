@@ -2,6 +2,7 @@
 import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
 import type * as t from './types';
+import { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } from './config';
 import { setTokenHeader } from './headers-helpers';
 import * as endpoints from './api-endpoints';
 
@@ -185,6 +186,47 @@ const isAuthRedirectInProgress = () => {
   );
 };
 
+const getTwoFactorSetupToken = (payload: unknown): string | null => {
+  if (typeof payload !== 'object' || payload == null) {
+    return null;
+  }
+
+  const response = payload as {
+    code?: unknown;
+    twoFASetupRequired?: unknown;
+    tempToken?: unknown;
+  };
+  if (
+    response.code !== TWO_FACTOR_ENROLLMENT_REQUIRED_CODE ||
+    response.twoFASetupRequired !== true ||
+    typeof response.tempToken !== 'string' ||
+    !response.tempToken.trim()
+  ) {
+    return null;
+  }
+
+  return response.tempToken.trim();
+};
+
+const redirectToTwoFactorSetupOnce = (tempToken: string) => {
+  if (isAuthRedirectInProgress()) {
+    return;
+  }
+
+  const loginRedirect = endpoints.buildLoginRedirectUrl();
+  const redirectTo = new URL(loginRedirect, window.location.origin).searchParams.get('redirect_to');
+  const searchParams = new URLSearchParams({ tempToken });
+  if (redirectTo) {
+    searchParams.set('redirect_to', redirectTo);
+  }
+
+  const href = `${endpoints.apiBaseUrl()}/login/2fa/setup?${searchParams.toString()}`;
+  setTokenHeader(undefined);
+  setAuthRedirectStartedAt();
+  window.dispatchEvent(new CustomEvent(AUTH_REDIRECT_EVENT, { detail: { href } }));
+  window.location.href = href;
+};
+
 const dispatchAuthRecoveryEvent = (state: 'started' | 'finished') => {
   window.dispatchEvent(new CustomEvent(AUTH_RECOVERY_EVENT, { detail: { state } }));
 };
@@ -209,6 +251,11 @@ const startAuthRecovery = (retryRefresh?: boolean) => {
   dispatchAuthRecoveryEvent('started');
   state.refreshPromise = refreshToken(retryRefresh)
     .then((response) => {
+      const setupToken = getTwoFactorSetupToken(response);
+      if (setupToken) {
+        redirectToTwoFactorSetupOnce(setupToken);
+        return null;
+      }
       const token = response?.token ?? '';
       if (!token) {
         return null;
@@ -302,6 +349,25 @@ const withAuthorization = (options: RequestInit | undefined, token: string | nul
   return { ...options, headers };
 };
 
+const redirectIfTwoFactorSetupRequired = async (response: Response): Promise<boolean> => {
+  if (response.status !== 403) {
+    return false;
+  }
+
+  const setupToken = getTwoFactorSetupToken(
+    await response
+      .clone()
+      .json()
+      .catch(() => null),
+  );
+  if (!setupToken) {
+    return false;
+  }
+
+  redirectToTwoFactorSetupOnce(setupToken);
+  return true;
+};
+
 async function _authenticatedFetch(url: string, options?: RequestInit): Promise<Response> {
   if (typeof window === 'undefined') {
     return fetch(url, options);
@@ -309,6 +375,9 @@ async function _authenticatedFetch(url: string, options?: RequestInit): Promise<
 
   const token = (await refreshBeforeRequest(url)) ?? getBearerToken();
   const response = await fetch(url, withAuthorization(options, token));
+  if (await redirectIfTwoFactorSetupRequired(response)) {
+    return response;
+  }
   if (
     response.status !== 401 ||
     isAuthRecoveryEndpoint(url) ||
@@ -332,7 +401,9 @@ async function _authenticatedFetch(url: string, options?: RequestInit): Promise<
   }
 
   await response.body?.cancel().catch(() => undefined);
-  return fetch(url, withAuthorization(options, refreshedToken));
+  const retriedResponse = await fetch(url, withAuthorization(options, refreshedToken));
+  await redirectIfTwoFactorSetupRequired(retriedResponse);
+  return retriedResponse;
 }
 
 if (typeof window !== 'undefined') {
@@ -353,6 +424,14 @@ if (typeof window !== 'undefined') {
       }
       if (!originalRequest) {
         return Promise.reject(error);
+      }
+
+      if (error.response.status === 403) {
+        const setupToken = getTwoFactorSetupToken(error.response.data);
+        if (setupToken) {
+          redirectToTwoFactorSetupOnce(setupToken);
+          return Promise.reject(error);
+        }
       }
 
       const isRefreshRequest = originalRequest.url?.includes('/api/auth/refresh') === true;
