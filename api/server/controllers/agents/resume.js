@@ -4,7 +4,7 @@ const {
   GenerationJobManager,
   isPendingActionStale,
   mapToolApprovalResolutions,
-  mapAskUserAnswer,
+  resolveAskUserQuestionResume,
   attachAskUserQuestionAnswer,
   findUndecidedToolCalls,
   findDisallowedDecisions,
@@ -40,13 +40,6 @@ function sendGenerationJson(res, status, body, generationProtocolVersion) {
   }
   return res.status(status).json({ ...body, generationProtocolVersion });
 }
-
-/**
- * Upper bound on an `ask_user_question` answer (characters). Generous for any real
- * reply typed into the question card while still bounding what a crafted POST can
- * inject into the resumed run's ToolMessage.
- */
-const MAX_ASK_ANSWER_LENGTH = 16_000;
 
 /**
  * How long a resume waits on best-effort steering bookkeeping before answering
@@ -231,15 +224,7 @@ function resolveResumeValue(pendingAction, body) {
     return { resumeValue: mapToolApprovalResolutions(resolutions) };
   }
   if (payload?.type === 'ask_user_question') {
-    if (typeof body.answer !== 'string' || body.answer.length === 0) {
-      return { status: 400, error: 'An answer is required' };
-    }
-    // The answer becomes a ToolMessage the model must ingest — bound it like any
-    // other user-controlled wire field rather than trusting the client.
-    if (body.answer.length > MAX_ASK_ANSWER_LENGTH) {
-      return { status: 400, error: 'Answer exceeds the maximum length' };
-    }
-    return { resumeValue: mapAskUserAnswer({ answer: body.answer }) };
+    return resolveAskUserQuestionResume(payload, body);
   }
   return { status: 400, error: 'Unsupported pending action type' };
 }
@@ -908,10 +893,15 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // no completion event ever fires for this tool — without this the saved part is
     // an empty "cancelled-looking" tool call. See attachAskUserQuestionAnswer.
     if (pendingAction.payload?.type === 'ask_user_question') {
+      const batched = Array.isArray(pendingAction.payload.questions);
+      const request = batched
+        ? { questions: pendingAction.payload.questions }
+        : pendingAction.payload.question;
+      const output = batched ? JSON.stringify({ answers: req.body.answers }) : req.body.answer;
       seedContent = attachAskUserQuestionAnswer(
         seedContent,
-        pendingAction.payload.question,
-        req.body.answer,
+        request,
+        output,
         pendingAction.payload.tool_call_id,
       );
     }

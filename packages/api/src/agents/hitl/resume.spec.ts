@@ -9,6 +9,9 @@ import type { Agents } from 'librechat-data-provider';
 import {
   mapToolApprovalResolutions,
   mapAskUserAnswer,
+  mapAskUserAnswers,
+  serializeAskUserAnswerVariants,
+  resolveAskUserQuestionResume,
   findUndecidedToolCalls,
   findDisallowedDecisions,
   findIncompleteDecisions,
@@ -67,6 +70,105 @@ describe('mapToolApprovalResolutions', () => {
 describe('mapAskUserAnswer', () => {
   test('passes the answer through unchanged', () => {
     expect(mapAskUserAnswer({ answer: 'staging' })).toEqual({ answer: 'staging' });
+  });
+});
+
+describe('mapAskUserAnswers', () => {
+  it('preserves answers keyed by question id', () => {
+    expect(mapAskUserAnswers({ answers: { environment: 'staging', window: '7d' } })).toEqual({
+      answers: { environment: 'staging', window: '7d' },
+    });
+  });
+});
+
+describe('serializeAskUserAnswerVariants', () => {
+  it('covers every bounded downstream answer-map ordering with the resolution wrapper', () => {
+    expect(serializeAskUserAnswerVariants({ second: '456', first: '123' })).toEqual([
+      '{"answers":{"second":"456","first":"123"}}',
+      '{"answers":{"first":"123","second":"456"}}',
+    ]);
+  });
+
+  it('does not expand invalid or unbounded answer maps', () => {
+    expect(serializeAskUserAnswerVariants(['one'])).toEqual([]);
+    expect(
+      serializeAskUserAnswerVariants({
+        one: '1',
+        two: '2',
+        three: '3',
+        four: '4',
+        five: '5',
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe('resolveAskUserQuestionResume', () => {
+  const payload: Agents.AskUserQuestionInterruptPayload = {
+    type: 'ask_user_question',
+    question: { question: 'Where and when?' },
+    questions: [
+      { id: 'environment', question: 'Where?' },
+      { id: 'window', question: 'When?' },
+    ],
+  };
+
+  test('validates and maps a complete batch', () => {
+    expect(
+      resolveAskUserQuestionResume(payload, {
+        answers: { environment: 'staging', window: '7d' },
+      }),
+    ).toEqual({ resumeValue: { answers: { environment: 'staging', window: '7d' } } });
+  });
+
+  test('rejects missing, unknown, and array-shaped answers', () => {
+    expect(resolveAskUserQuestionResume(payload, { answers: { environment: 'staging' } })).toEqual({
+      status: 400,
+      error: 'Answers are required for every question',
+    });
+    expect(
+      resolveAskUserQuestionResume(payload, {
+        answers: { environment: 'staging', window: '7d', region: 'us-east-2' },
+      }),
+    ).toEqual({ status: 400, error: 'Answers contain an unknown question id' });
+    expect(resolveAskUserQuestionResume(payload, { answers: ['staging', '7d'] })).toEqual({
+      status: 400,
+      error: 'Answers are required for every question',
+    });
+  });
+
+  test('rejects invalid batches and oversized answers', () => {
+    expect(
+      resolveAskUserQuestionResume(
+        { ...payload, questions: [{ id: 'bad id', question: 'Invalid?' }] },
+        { answers: { 'bad id': 'yes' } },
+      ),
+    ).toEqual({ status: 400, error: 'The pending question batch is invalid' });
+    expect(
+      resolveAskUserQuestionResume(
+        {
+          ...payload,
+          questions: [{ id: undefined, question: 'Invalid?' }],
+        } as unknown as Agents.AskUserQuestionInterruptPayload,
+        { answers: { undefined: 'yes' } },
+      ),
+    ).toEqual({ status: 400, error: 'The pending question batch is invalid' });
+    expect(
+      resolveAskUserQuestionResume(payload, {
+        answers: { environment: 'x'.repeat(16_001), window: '7d' },
+      }),
+    ).toEqual({ status: 400, error: 'An answer exceeds the maximum length' });
+  });
+
+  test('preserves legacy single-answer validation and mapping', () => {
+    const legacy = { ...payload, questions: undefined };
+    expect(resolveAskUserQuestionResume(legacy, { answer: 'staging' })).toEqual({
+      resumeValue: { answer: 'staging' },
+    });
+    expect(resolveAskUserQuestionResume(legacy, {})).toEqual({
+      status: 400,
+      error: 'An answer is required',
+    });
   });
 });
 
@@ -463,6 +565,22 @@ describe('attachAskUserQuestionAnswer', () => {
       attachAskUserQuestionAnswer(content as never, question as never, 'x', 'tc_missing'),
     ).toBe(content);
   });
+
+  it('stamps batched args and structured answers onto one ask tool call', () => {
+    const request = {
+      questions: [
+        { id: 'environment', question: 'Which env?' },
+        { id: 'window', question: 'Which window?' },
+      ],
+    };
+    const output = JSON.stringify({ answers: { environment: 'staging', window: '7d' } });
+    const next = attachAskUserQuestionAnswer([askPart()] as never, request, output);
+    const toolCall = (next[0] as { tool_call: { args: string; output: string } }).tool_call;
+    expect(JSON.parse(toolCall.args)).toEqual(request);
+    expect(JSON.parse(toolCall.output)).toEqual({
+      answers: { environment: 'staging', window: '7d' },
+    });
+  });
 });
 
 describe('attachAskUserQuestionArgs (pause-time stamp)', () => {
@@ -499,5 +617,21 @@ describe('attachAskUserQuestionArgs (pause-time stamp)', () => {
       question,
     );
     expect((next[1] as { tool_call: { args: string } }).tool_call.args).toBe('');
+  });
+
+  it('stamps the complete batched request at pause time', () => {
+    const content = [
+      { type: 'tool_call', tool_call: { id: 'tc1', name: 'ask_user_question', args: '' } },
+    ];
+    const request = {
+      questions: [
+        { id: 'environment', question: 'Which env?' },
+        { id: 'window', question: 'Which window?' },
+      ],
+    };
+    const next = attachAskUserQuestionArgs(content as never, request);
+    expect(JSON.parse((next[0] as { tool_call: { args: string } }).tool_call.args)).toEqual(
+      request,
+    );
   });
 });

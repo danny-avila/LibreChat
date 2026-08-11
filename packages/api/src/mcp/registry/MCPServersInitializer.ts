@@ -10,6 +10,20 @@ import { isLeader } from '~/cluster';
 const DEFAULT_MCP_INIT_TIMEOUT_MS = 30_000;
 const DEFAULT_FOLLOWER_RETRY_MS = 3000;
 
+/**
+ * Bumped whenever the registry's persisted storage semantics change in a way the
+ * MCP config fingerprint cannot otherwise capture — e.g. how a server's `source`
+ * provenance is tagged. It is folded into the init fingerprint so an upgrade
+ * forces exactly one cluster-wide re-initialization even when the MCP config is
+ * unchanged.
+ *
+ * Without it, a rolling restart on a Redis-backed cluster leaves the persisted
+ * `INITIALIZED_CONFIG_HASH` matching the unchanged config, so replacement
+ * followers short-circuit on the stale status and never re-tag entries written
+ * by the previous version. Bumped to 2 for plugin-provenance preservation.
+ */
+const REGISTRY_STORAGE_SCHEMA_VERSION = 2;
+
 const parseDurationMs = (
   value: string | undefined,
   fallback: number,
@@ -188,6 +202,7 @@ export class MCPServersInitializer {
   private static configHash(rawConfigs: t.MCPServers): string {
     const registry = MCPServersRegistry.getInstance();
     const fingerprint = {
+      schemaVersion: REGISTRY_STORAGE_SCHEMA_VERSION,
       rawConfigs,
       allowedDomains: registry.getAllowedDomains() ?? null,
       allowedAddresses: registry.getAllowedAddresses() ?? null,

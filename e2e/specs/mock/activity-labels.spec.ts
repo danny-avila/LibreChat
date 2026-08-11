@@ -2,9 +2,9 @@ import { expect, test } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { NEW_CHAT_PATH, messagesView, selectMockEndpoint, sendMessage } from './helpers';
 
-/** The only endpoint with `activityLabel` in e2e/config/librechat.e2e.yaml. It
- *  is dedicated to this spec: a label auto-collapses its tool group, hiding the
- *  tool cards other specs assert on. Both are non-spec `addedEndpoints`, the
+/** The endpoint dedicated to child-only `activityLabel` coverage. A label
+ *  auto-collapses its tool group, hiding the tool cards other specs assert on.
+ *  Both are non-spec `addedEndpoints`, the
  *  path the ephemeral MCP dropdown rides (mirroring steering.spec.ts) — a
  *  spec-backed endpoint would not surface the selector at all. */
 const LABELED_ENDPOINT = { label: 'Mock Provider E', model: 'mock-model-e' };

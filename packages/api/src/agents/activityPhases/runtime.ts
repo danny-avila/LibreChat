@@ -194,14 +194,9 @@ function findTrackedStart(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   activity: TrackedActivity,
 ): number {
-  if (activity.toolCallIds != null && activity.toolCallIds.length > 0) {
-    const toolStart = findBatchStart(parts, new Set(activity.toolCallIds));
-    if (
-      parts[toolStart]?.type === ContentTypes.TOOL_CALL &&
-      activity.toolCallIds.includes(String(parts[toolStart]?.tool_call?.id ?? ''))
-    ) {
-      return toolStart;
-    }
+  const toolStart = findTrackedToolStart(parts, activity);
+  if (toolStart != null) {
+    return toolStart;
   }
   const excerpt = activity.thinkingExcerpts?.[0]?.trim();
   if (excerpt) {
@@ -213,6 +208,22 @@ function findTrackedStart(
     }
   }
   return Math.min(activity.startIndex, Math.max(0, parts.length - 1));
+}
+
+function findTrackedToolStart(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  activity: TrackedActivity,
+): number | undefined {
+  if (activity.toolCallIds != null && activity.toolCallIds.length > 0) {
+    const toolStart = findBatchStart(parts, new Set(activity.toolCallIds));
+    if (
+      parts[toolStart]?.type === ContentTypes.TOOL_CALL &&
+      activity.toolCallIds.includes(String(parts[toolStart]?.tool_call?.id ?? ''))
+    ) {
+      return toolStart;
+    }
+  }
+  return undefined;
 }
 
 function findReasoningStart(
@@ -458,13 +469,22 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
 
     generated += 1;
     const phaseIndex = generated - 1;
-    const snapshot = [...activities];
+    const currentParts = deps.getContentParts();
+    /** Child-label and phase hooks run independently. A child label can claim
+     *  its slot before the corresponding tool part reaches the shared content
+     *  array, leaving the phase hook with a fallback start index. Re-anchor
+     *  from stable tool ids when they are available at close; the backward
+     *  scan below claims unresolved leading slots without crossing visible
+     *  answer content. */
+    const snapshot = activities.map((activity) => {
+      const toolStart = findTrackedToolStart(currentParts, activity);
+      return toolStart != null ? { ...activity, startIndex: toolStart } : activity;
+    });
     const contextSnapshot = [...assistantContext];
     const totalActivityCount = activityCount;
     const failedCount = failedActivityCount;
     const partialCount = partialActivityCount;
     let startIndex = Math.min(...snapshot.map((activity) => activity.startIndex));
-    const currentParts = deps.getContentParts();
     /** Pull leading commentary/reasoning into the parent card. A prior phase
      *  marker or steer is the only hard UI boundary; plain text can be
      *  intermediate context on providers that do not expose phase metadata. */
@@ -473,7 +493,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       if (
         prior?.type === ContentTypes.STEER ||
         (prior?.type === ContentTypes.ACTIVITY_LABEL && prior.activity_label_type === 'phase') ||
-        (prior?.type === ContentTypes.TEXT && prior.phase === 'final_answer')
+        (prior?.type === ContentTypes.TEXT &&
+          prior.phase === 'final_answer' &&
+          textValue(prior.text).trim().length > 0)
       ) {
         break;
       }

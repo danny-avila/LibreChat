@@ -19,13 +19,24 @@ const mockGetValues = jest.fn(() => 'existing draft');
 const mockAsk = jest.fn(() => true);
 
 type MockButtonProps = React.ComponentProps<'button'> & {
+  label?: string;
   variant?: string;
   size?: string;
+  shape?: string;
 };
 
 jest.mock('@librechat/client', () => ({
-  Button: ({ children, variant: _variant, size: _size, ...props }: MockButtonProps) => (
-    <button {...props}>{children}</button>
+  IconButton: ({
+    children,
+    label,
+    variant: _variant,
+    size: _size,
+    shape: _shape,
+    ...props
+  }: MockButtonProps) => (
+    <button aria-label={label} {...props}>
+      {children}
+    </button>
   ),
   TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
   ListeningIcon: () => <span />,

@@ -34,6 +34,7 @@ const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
 const STEER_LATE_REPLY_MARKER = 'E2E_STEER_LATE_REPLY:';
 const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
+const ACTIVITY_PHASE_REPLY_MARKER = 'E2E_ACTIVITY_PHASE_REPLY:';
 const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
@@ -68,6 +69,7 @@ const STEER_SPLIT_FINAL_TEXT = 'E2E steer split reply done';
 const STEER_LATE_FINAL_TEXT = 'E2E steer late reply done';
 const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
 const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
+const ACTIVITY_PHASE_FINAL_TEXT = 'E2E activity phase reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
@@ -1151,6 +1153,57 @@ function activityReplyResponses(label, toolNames) {
 }
 
 /**
+ * Three-turn run with two sequential tool batches for the parent activity-phase
+ * e2e. Each tool invocation produces its own `PostToolBatch`; the final model
+ * turn then closes a phase containing both logical activities. Keeping the
+ * batches sequential is essential because two parallel calls are one activity.
+ */
+function activityPhaseReplyResponses(label, toolNames) {
+  const toolName = Array.from(toolNames).find((name) => name.startsWith(STEER_TOOL_NAME_PREFIX));
+  if (!toolName) {
+    return {
+      responses: [
+        `E2E activity phase reply unavailable: no ${STEER_TOOL_NAME_PREFIX} tool advertised.`,
+      ],
+    };
+  }
+  let invocation = 0;
+  return {
+    responses: [''],
+    resolveInvocation: async () => {
+      invocation += 1;
+      if (invocation === 1) {
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: `call_e2e_activity_phase_alpha_${label}`,
+              name: toolName,
+              args: { fact: `activity phase alpha ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      if (invocation === 2) {
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: `call_e2e_activity_phase_beta_${label}`,
+              name: toolName,
+              args: { fact: `activity phase beta ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      return { response: `${ACTIVITY_PHASE_FINAL_TEXT} ${label}` };
+    },
+  };
+}
+
+/**
  * Pause a real agent run at the ask_user_question tool. The resume controller
  * rebuilds the graph with an empty input-message list, so the test hook selects
  * its ordinary mock reply for the resumed model turn. This deliberately tests
@@ -1172,11 +1225,17 @@ function askUserQuestionResponses(label, toolNames) {
         id: `call_e2e_ask_user_question_${label}`,
         name: ASK_USER_QUESTION_TOOL_NAME,
         args: {
-          question: `Which environment should Bombadil use for ${label}?`,
-          description: 'This deterministic pause exercises the HITL answer and resume lifecycle.',
-          options: [
-            { label: 'Staging', value: 'staging' },
-            { label: 'Production', value: 'production' },
+          questions: [
+            {
+              id: 'environment',
+              question: `Which environment should Bombadil use for ${label}?`,
+              description:
+                'This deterministic pause exercises the HITL answer and resume lifecycle.',
+              options: [
+                { label: 'Staging', value: 'staging' },
+                { label: 'Production', value: 'production' },
+              ],
+            },
           ],
         },
         type: 'tool_call',
@@ -1716,8 +1775,13 @@ function deferredHitlInvocationResponse({ graph, messages, options, runManager }
           id: askCallId,
           name: ASK_USER_QUESTION_NAME,
           args: {
-            question: `Continue deferred schema check ${label}?`,
-            options: [{ label: `Continue ${label}`, value: `continue-${label}` }],
+            questions: [
+              {
+                id: 'confirmation',
+                question: `Continue deferred schema check ${label}?`,
+                options: [{ label: `Continue ${label}`, value: `continue-${label}` }],
+              },
+            ],
           },
           type: 'tool_call',
         },
@@ -2058,6 +2122,11 @@ function resolveResponses({ graph, messages, text, toolNames }) {
   const activityLabel = getMarkerValue(text, ACTIVITY_REPLY_MARKER);
   if (activityLabel) {
     return activityReplyResponses(activityLabel, toolNames);
+  }
+
+  const activityPhaseLabel = getMarkerValue(text, ACTIVITY_PHASE_REPLY_MARKER);
+  if (activityPhaseLabel) {
+    return activityPhaseReplyResponses(activityPhaseLabel, toolNames);
   }
 
   const askUserQuestionLabel = getMarkerValue(text, ASK_USER_QUESTION_MARKER);

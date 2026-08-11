@@ -2287,6 +2287,23 @@ class AgentClient extends BaseClient {
     if (!Array.isArray(previousParts) || !Array.isArray(this.contentParts)) {
       return;
     }
+    /** Preserve sparse coordinates when completion did not actually reshape
+     *  the content. A phase can reserve a leading hole for a tool part whose
+     *  SDK event lands after the phase closes; scanning retained identities
+     *  in an unchanged array would skip that hole and move the bound past the
+     *  delayed tool before it arrives. */
+    if (previousParts.length === this.contentParts.length) {
+      let unchanged = true;
+      for (let index = 0; index < previousParts.length; index += 1) {
+        if (previousParts[index] !== this.contentParts[index]) {
+          unchanged = false;
+          break;
+        }
+      }
+      if (unchanged) {
+        return;
+      }
+    }
     const retainedIndexes = new Map();
     for (let index = 0; index < this.contentParts.length; index += 1) {
       const part = this.contentParts[index];
@@ -2371,7 +2388,9 @@ class AgentClient extends BaseClient {
     if (interrupt.payload?.type === 'ask_user_question' && Array.isArray(this.contentParts)) {
       const stamped = attachAskUserQuestionArgs(
         this.contentParts,
-        interrupt.payload.question,
+        Array.isArray(interrupt.payload.questions)
+          ? { questions: interrupt.payload.questions }
+          : interrupt.payload.question,
         interrupt.payload.tool_call_id,
       );
       if (stamped !== this.contentParts) {
