@@ -565,327 +565,334 @@ class BaseClient {
           'chat.conversation_id': opts.conversationId ?? 'new',
           'chat.is_edited': !!opts.isEdited,
         });
-    const appConfig = this.options.req?.config;
-    /** @type {Promise<TMessage>} */
-    let userMessagePromise;
-    const { user, head, isEdited, conversationId, responseMessageId, saveOptions, userMessage } =
-      await this.handleStartMethods(message, opts);
+        const appConfig = this.options.req?.config;
+        /** @type {Promise<TMessage>} */
+        let userMessagePromise;
+        const {
+          user,
+          head,
+          isEdited,
+          conversationId,
+          responseMessageId,
+          saveOptions,
+          userMessage,
+        } = await this.handleStartMethods(message, opts);
 
-    if (opts.progressCallback) {
-      opts.onProgress = opts.progressCallback.call(null, {
-        ...(opts.progressOptions ?? {}),
-        parentMessageId: userMessage.messageId,
-        messageId: responseMessageId,
-      });
-    }
+        if (opts.progressCallback) {
+          opts.onProgress = opts.progressCallback.call(null, {
+            ...(opts.progressOptions ?? {}),
+            parentMessageId: userMessage.messageId,
+            messageId: responseMessageId,
+          });
+        }
 
-    const { editedContent } = opts;
+        const { editedContent } = opts;
 
-    // It's not necessary to push to currentMessages
-    // depending on subclass implementation of handling messages
-    // When this is an edit, all messages are already in currentMessages, both user and response
-    if (isEdited) {
-      let latestMessage = this.currentMessages[this.currentMessages.length - 1];
-      if (!latestMessage) {
-        latestMessage = {
+        // It's not necessary to push to currentMessages
+        // depending on subclass implementation of handling messages
+        // When this is an edit, all messages are already in currentMessages, both user and response
+        if (isEdited) {
+          let latestMessage = this.currentMessages[this.currentMessages.length - 1];
+          if (!latestMessage) {
+            latestMessage = {
+              messageId: responseMessageId,
+              conversationId,
+              parentMessageId: userMessage.messageId,
+              isCreatedByUser: false,
+              model: this.modelOptions?.model ?? this.model,
+              sender: this.sender,
+            };
+            this.currentMessages.push(userMessage, latestMessage);
+          } else if (editedContent != null) {
+            // Handle editedContent for content parts
+            if (editedContent && latestMessage.content && Array.isArray(latestMessage.content)) {
+              const { index, text, type } = editedContent;
+              if (index >= 0 && index < latestMessage.content.length) {
+                const contentPart = latestMessage.content[index];
+                if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
+                  contentPart[ContentTypes.THINK] = text;
+                } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
+                  contentPart[ContentTypes.TEXT] = text;
+                }
+              }
+            }
+          }
+          this.continued = true;
+        } else {
+          this.currentMessages.push(userMessage);
+        }
+
+        /**
+         * When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
+         * this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
+         */
+        const parentMessageId = isEdited ? head : userMessage.messageId;
+        this.parentMessageId = parentMessageId;
+        let {
+          prompt: payload,
+          tokenCountMap,
+          promptTokens,
+        } = await this.buildMessages(
+          this.currentMessages,
+          parentMessageId,
+          this.getBuildMessagesOptions(opts),
+          opts,
+        );
+        this.options.startupTelemetry?.mark('messages_built');
+
+        if (tokenCountMap && tokenCountMap[userMessage.messageId]) {
+          userMessage.tokenCount = tokenCountMap[userMessage.messageId];
+          logger.debug('[BaseClient] userMessage', {
+            messageId: userMessage.messageId,
+            tokenCount: userMessage.tokenCount,
+            conversationId: userMessage.conversationId,
+          });
+        }
+
+        if (!isEdited && !this.skipSaveUserMessage) {
+          const reqFiles = this.options.req?.body?.files;
+          if (reqFiles && Array.isArray(this.options.attachments)) {
+            const files = buildMessageFiles(reqFiles, this.options.attachments);
+            if (files.length > 0) {
+              userMessage.files = files;
+            }
+            delete userMessage.image_urls;
+          }
+          /**
+           * Persist the user's manual skill picks onto the user message so the
+           * frontend `SkillPills` component can render them in history
+           * after reload. UI-only metadata — the runtime skill resolution
+           * pipeline reads the top-level `req.body.manualSkills` separately.
+           * Filter is defense-in-depth on top of Mongoose schema validation:
+           * keeps the DB row free of empty/non-string entries even if a
+           * crafted payload slips past schema checks upstream.
+           */
+          const rawManualSkills = this.options.req?.body?.manualSkills;
+          if (Array.isArray(rawManualSkills) && rawManualSkills.length > 0) {
+            const skills = rawManualSkills.filter((s) => typeof s === 'string' && s.length > 0);
+            if (skills.length > 0) {
+              userMessage.manualSkills = skills;
+            }
+          }
+          /**
+           * Persist the names of skills auto-primed this turn via `always-apply`
+           * frontmatter so `SkillPills` can render pinned-variant badges
+           * on the user bubble that survive reload and history render. Frozen
+           * at turn time (not reconstructed from `Skill.alwaysApply` at render
+           * time) because the flag is mutable — historical turns must keep
+           * their audit trail even if an admin flips `alwaysApply` off later.
+           */
+          const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
+          if (Array.isArray(alwaysApplySkillPrimes) && alwaysApplySkillPrimes.length > 0) {
+            const names = alwaysApplySkillPrimes
+              .map((p) => p?.name)
+              .filter((n) => typeof n === 'string' && n.length > 0);
+            if (names.length > 0) {
+              userMessage.alwaysAppliedSkills = names;
+            }
+          }
+          userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user).catch(
+            (err) => {
+              logger.error('[BaseClient] Failed to save user message:', err);
+              return {};
+            },
+          );
+          this.savedMessageIds.add(userMessage.messageId);
+          if (typeof opts?.getReqData === 'function') {
+            opts.getReqData({
+              userMessagePromise,
+            });
+          }
+        }
+
+        const balanceConfig = getBalanceConfig(appConfig);
+        if (
+          balanceConfig?.enabled &&
+          supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
+        ) {
+          await checkBalance(
+            {
+              req: this.options.req,
+              res: this.options.res,
+              txData: {
+                user: this.user,
+                tokenType: 'prompt',
+                amount: promptTokens,
+                endpoint: this.options.endpoint,
+                model: this.modelOptions?.model ?? this.model,
+                endpointTokenConfig: this.options.endpointTokenConfig,
+              },
+            },
+            {
+              logViolation,
+              getMultiplier: db.getMultiplier,
+              findBalanceByUser: db.findBalanceByUser,
+              createAutoRefillTransaction: db.createAutoRefillTransaction,
+              balanceConfig,
+              upsertBalanceFields: db.upsertBalanceFields,
+            },
+          );
+        }
+
+        const { completion, metadata } = await this.sendCompletion(payload, opts);
+        if (this.abortController) {
+          this.abortController.requestCompleted = true;
+        }
+
+        const isAgentResponse = isAgentsEndpoint(this.options.endpoint);
+        const langfuseTraceId = isAgentResponse ? traceIdForMessage(responseMessageId) : undefined;
+        const langfuseSampled =
+          langfuseTraceId != null ? isLangfuseTraceSampled(langfuseTraceId) : undefined;
+
+        /** @type {TMessage} */
+        const responseMessage = {
           messageId: responseMessageId,
           conversationId,
           parentMessageId: userMessage.messageId,
           isCreatedByUser: false,
-          model: this.modelOptions?.model ?? this.model,
+          ...(isAgentResponse && {
+            langfuseSampled,
+            langfuseDestinationIds: await getLangfuseTraceDestinationIds(
+              appConfig,
+              langfuseTraceId,
+              langfuseSampled,
+            ),
+          }),
+          isEdited,
+          model: this.getResponseModel(),
           sender: this.sender,
+          promptTokens,
+          iconURL: this.options.iconURL,
+          endpoint: this.options.endpoint,
+          ...(this.metadata ?? {}),
+          metadata: Object.keys(metadata ?? {}).length > 0 ? metadata : undefined,
         };
-        this.currentMessages.push(userMessage, latestMessage);
-      } else if (editedContent != null) {
-        // Handle editedContent for content parts
-        if (editedContent && latestMessage.content && Array.isArray(latestMessage.content)) {
-          const { index, text, type } = editedContent;
-          if (index >= 0 && index < latestMessage.content.length) {
-            const contentPart = latestMessage.content[index];
-            if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
-              contentPart[ContentTypes.THINK] = text;
-            } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
-              contentPart[ContentTypes.TEXT] = text;
+
+        if (typeof completion === 'string') {
+          responseMessage.text = completion;
+        } else if (
+          Array.isArray(completion) &&
+          (this.clientName === EModelEndpoint.agents ||
+            isParamEndpoint(this.options.endpoint, this.options.endpointType))
+        ) {
+          responseMessage.text = '';
+
+          if (!opts.editedContent || this.currentMessages.length === 0) {
+            responseMessage.content = completion;
+          } else {
+            const latestMessage = this.currentMessages[this.currentMessages.length - 1];
+            if (!latestMessage?.content) {
+              responseMessage.content = completion;
+            } else {
+              const existingContent = [...latestMessage.content];
+              const { type: editedType } = opts.editedContent;
+              responseMessage.content = this.mergeEditedContent(
+                existingContent,
+                completion,
+                editedType,
+              );
             }
           }
+        } else if (Array.isArray(completion)) {
+          responseMessage.text = completion.join('');
         }
-      }
-      this.continued = true;
-    } else {
-      this.currentMessages.push(userMessage);
-    }
 
-    /**
-     * When the userMessage is pushed to currentMessages, the parentMessage is the userMessageId.
-     * this only matters when buildMessages is utilizing the parentMessageId, and may vary on implementation
-     */
-    const parentMessageId = isEdited ? head : userMessage.messageId;
-    this.parentMessageId = parentMessageId;
-    let {
-      prompt: payload,
-      tokenCountMap,
-      promptTokens,
-    } = await this.buildMessages(
-      this.currentMessages,
-      parentMessageId,
-      this.getBuildMessagesOptions(opts),
-      opts,
-    );
-    this.options.startupTelemetry?.mark('messages_built');
+        if (tokenCountMap && this.recordTokenUsage && this.getTokenCountForResponse) {
+          let completionTokens;
 
-    if (tokenCountMap && tokenCountMap[userMessage.messageId]) {
-      userMessage.tokenCount = tokenCountMap[userMessage.messageId];
-      logger.debug('[BaseClient] userMessage', {
-        messageId: userMessage.messageId,
-        tokenCount: userMessage.tokenCount,
-        conversationId: userMessage.conversationId,
-      });
-    }
+          /**
+           * Metadata about input/output costs for the current message. The client
+           * should provide a function to get the current stream usage metadata; if not,
+           * use the legacy token estimations.
+           * @type {StreamUsage | null} */
+          const usage = this.getStreamUsage != null ? this.getStreamUsage() : null;
 
-    if (!isEdited && !this.skipSaveUserMessage) {
-      const reqFiles = this.options.req?.body?.files;
-      if (reqFiles && Array.isArray(this.options.attachments)) {
-        const files = buildMessageFiles(reqFiles, this.options.attachments);
-        if (files.length > 0) {
-          userMessage.files = files;
+          if (usage != null && Number(usage[this.outputTokensKey]) > 0) {
+            responseMessage.tokenCount = usage[this.outputTokensKey];
+            completionTokens = responseMessage.tokenCount;
+          } else {
+            responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
+            completionTokens = responseMessage.tokenCount;
+            await this.recordTokenUsage({
+              usage,
+              promptTokens,
+              completionTokens,
+              balance: balanceConfig,
+              /** Note: When using agents, responseMessage.model is the agent ID, not the model */
+              model: this.model,
+              messageId: this.responseMessageId,
+            });
+          }
+
+          logger.debug('[BaseClient] Response token usage', {
+            messageId: responseMessage.messageId,
+            model: responseMessage.model,
+            promptTokens,
+            completionTokens,
+          });
         }
-        delete userMessage.image_urls;
-      }
-      /**
-       * Persist the user's manual skill picks onto the user message so the
-       * frontend `SkillPills` component can render them in history
-       * after reload. UI-only metadata — the runtime skill resolution
-       * pipeline reads the top-level `req.body.manualSkills` separately.
-       * Filter is defense-in-depth on top of Mongoose schema validation:
-       * keeps the DB row free of empty/non-string entries even if a
-       * crafted payload slips past schema checks upstream.
-       */
-      const rawManualSkills = this.options.req?.body?.manualSkills;
-      if (Array.isArray(rawManualSkills) && rawManualSkills.length > 0) {
-        const skills = rawManualSkills.filter((s) => typeof s === 'string' && s.length > 0);
-        if (skills.length > 0) {
-          userMessage.manualSkills = skills;
+
+        if (userMessagePromise) {
+          await userMessagePromise;
         }
-      }
-      /**
-       * Persist the names of skills auto-primed this turn via `always-apply`
-       * frontmatter so `SkillPills` can render pinned-variant badges
-       * on the user bubble that survive reload and history render. Frozen
-       * at turn time (not reconstructed from `Skill.alwaysApply` at render
-       * time) because the flag is mutable — historical turns must keep
-       * their audit trail even if an admin flips `alwaysApply` off later.
-       */
-      const alwaysApplySkillPrimes = this.options.agent?.alwaysApplySkillPrimes;
-      if (Array.isArray(alwaysApplySkillPrimes) && alwaysApplySkillPrimes.length > 0) {
-        const names = alwaysApplySkillPrimes
-          .map((p) => p?.name)
-          .filter((n) => typeof n === 'string' && n.length > 0);
-        if (names.length > 0) {
-          userMessage.alwaysAppliedSkills = names;
+
+        if (
+          this.contextMeta?.calibrationRatio > 0 &&
+          this.contextMeta.calibrationRatio !== 1 &&
+          userMessage.tokenCount > 0
+        ) {
+          const calibrated = Math.round(userMessage.tokenCount * this.contextMeta.calibrationRatio);
+          if (calibrated !== userMessage.tokenCount) {
+            logger.debug('[BaseClient] Calibrated user message tokenCount', {
+              messageId: userMessage.messageId,
+              raw: userMessage.tokenCount,
+              calibrated,
+              ratio: this.contextMeta.calibrationRatio,
+            });
+            userMessage.tokenCount = calibrated;
+            await this.updateMessageInDatabase({
+              messageId: userMessage.messageId,
+              tokenCount: calibrated,
+            });
+          }
         }
-      }
-      userMessagePromise = this.saveMessageToDatabase(userMessage, saveOptions, user).catch(
-        (err) => {
-          logger.error('[BaseClient] Failed to save user message:', err);
-          return {};
-        },
-      );
-      this.savedMessageIds.add(userMessage.messageId);
-      if (typeof opts?.getReqData === 'function') {
-        opts.getReqData({
-          userMessagePromise,
-        });
-      }
-    }
 
-    const balanceConfig = getBalanceConfig(appConfig);
-    if (
-      balanceConfig?.enabled &&
-      supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
-    ) {
-      await checkBalance(
-        {
-          req: this.options.req,
-          res: this.options.res,
-          txData: {
-            user: this.user,
-            tokenType: 'prompt',
-            amount: promptTokens,
-            endpoint: this.options.endpoint,
-            model: this.modelOptions?.model ?? this.model,
-            endpointTokenConfig: this.options.endpointTokenConfig,
-          },
-        },
-        {
-          logViolation,
-          getMultiplier: db.getMultiplier,
-          findBalanceByUser: db.findBalanceByUser,
-          createAutoRefillTransaction: db.createAutoRefillTransaction,
-          balanceConfig,
-          upsertBalanceFields: db.upsertBalanceFields,
-        },
-      );
-    }
-
-    const { completion, metadata } = await this.sendCompletion(payload, opts);
-    if (this.abortController) {
-      this.abortController.requestCompleted = true;
-    }
-
-    const isAgentResponse = isAgentsEndpoint(this.options.endpoint);
-    const langfuseTraceId = isAgentResponse ? traceIdForMessage(responseMessageId) : undefined;
-    const langfuseSampled =
-      langfuseTraceId != null ? isLangfuseTraceSampled(langfuseTraceId) : undefined;
-
-    /** @type {TMessage} */
-    const responseMessage = {
-      messageId: responseMessageId,
-      conversationId,
-      parentMessageId: userMessage.messageId,
-      isCreatedByUser: false,
-      ...(isAgentResponse && {
-        langfuseSampled,
-        langfuseDestinationIds: await getLangfuseTraceDestinationIds(
-          appConfig,
-          langfuseTraceId,
-          langfuseSampled,
-        ),
-      }),
-      isEdited,
-      model: this.getResponseModel(),
-      sender: this.sender,
-      promptTokens,
-      iconURL: this.options.iconURL,
-      endpoint: this.options.endpoint,
-      ...(this.metadata ?? {}),
-      metadata: Object.keys(metadata ?? {}).length > 0 ? metadata : undefined,
-    };
-
-    if (typeof completion === 'string') {
-      responseMessage.text = completion;
-    } else if (
-      Array.isArray(completion) &&
-      (this.clientName === EModelEndpoint.agents ||
-        isParamEndpoint(this.options.endpoint, this.options.endpointType))
-    ) {
-      responseMessage.text = '';
-
-      if (!opts.editedContent || this.currentMessages.length === 0) {
-        responseMessage.content = completion;
-      } else {
-        const latestMessage = this.currentMessages[this.currentMessages.length - 1];
-        if (!latestMessage?.content) {
-          responseMessage.content = completion;
-        } else {
-          const existingContent = [...latestMessage.content];
-          const { type: editedType } = opts.editedContent;
-          responseMessage.content = this.mergeEditedContent(
-            existingContent,
-            completion,
-            editedType,
-          );
+        if (this.artifactPromises) {
+          responseMessage.attachments = (await Promise.all(this.artifactPromises)).filter((a) => a);
         }
-      }
-    } else if (Array.isArray(completion)) {
-      responseMessage.text = completion.join('');
-    }
 
-    if (tokenCountMap && this.recordTokenUsage && this.getTokenCountForResponse) {
-      let completionTokens;
+        if (this.options.attachments) {
+          try {
+            saveOptions.files = this.options.attachments.map((attachments) => attachments.file_id);
+          } catch (error) {
+            logger.error('[BaseClient] Error mapping attachments for conversation', error);
+          }
+        }
 
-      /**
-       * Metadata about input/output costs for the current message. The client
-       * should provide a function to get the current stream usage metadata; if not,
-       * use the legacy token estimations.
-       * @type {StreamUsage | null} */
-      const usage = this.getStreamUsage != null ? this.getStreamUsage() : null;
+        if (this.contextMeta) {
+          responseMessage.contextMeta = this.contextMeta;
+        }
 
-      if (usage != null && Number(usage[this.outputTokensKey]) > 0) {
-        responseMessage.tokenCount = usage[this.outputTokensKey];
-        completionTokens = responseMessage.tokenCount;
-      } else {
-        responseMessage.tokenCount = this.getTokenCountForResponse(responseMessage);
-        completionTokens = responseMessage.tokenCount;
-        await this.recordTokenUsage({
-          usage,
-          promptTokens,
-          completionTokens,
-          balance: balanceConfig,
-          /** Note: When using agents, responseMessage.model is the agent ID, not the model */
-          model: this.model,
-          messageId: this.responseMessageId,
-        });
-      }
+        /** Resumable generation controllers must win the generation's terminal
+         * CAS before this outcome-defining `unfinished:false` write can begin.
+         * The hook is deliberately narrow: ordinary clients omit it, and `false`
+         * means another terminal owner (for example Stop) already won, so this
+         * stale completion must return without writing the response row. */
+        if (typeof opts.beforeResponsePersistence === 'function') {
+          const ownsTerminalPersistence = await opts.beforeResponsePersistence(responseMessage);
+          if (ownsTerminalPersistence === false) {
+            responseMessage.databasePromise = Promise.resolve({ persistenceSkipped: true });
+            span.end();
+            return responseMessage;
+          }
+        }
 
-      logger.debug('[BaseClient] Response token usage', {
-        messageId: responseMessage.messageId,
-        model: responseMessage.model,
-        promptTokens,
-        completionTokens,
-      });
-    }
-
-    if (userMessagePromise) {
-      await userMessagePromise;
-    }
-
-    if (
-      this.contextMeta?.calibrationRatio > 0 &&
-      this.contextMeta.calibrationRatio !== 1 &&
-      userMessage.tokenCount > 0
-    ) {
-      const calibrated = Math.round(userMessage.tokenCount * this.contextMeta.calibrationRatio);
-      if (calibrated !== userMessage.tokenCount) {
-        logger.debug('[BaseClient] Calibrated user message tokenCount', {
-          messageId: userMessage.messageId,
-          raw: userMessage.tokenCount,
-          calibrated,
-          ratio: this.contextMeta.calibrationRatio,
-        });
-        userMessage.tokenCount = calibrated;
-        await this.updateMessageInDatabase({
-          messageId: userMessage.messageId,
-          tokenCount: calibrated,
-        });
-      }
-    }
-
-    if (this.artifactPromises) {
-      responseMessage.attachments = (await Promise.all(this.artifactPromises)).filter((a) => a);
-    }
-
-    if (this.options.attachments) {
-      try {
-        saveOptions.files = this.options.attachments.map((attachments) => attachments.file_id);
-      } catch (error) {
-        logger.error('[BaseClient] Error mapping attachments for conversation', error);
-      }
-    }
-
-    if (this.contextMeta) {
-      responseMessage.contextMeta = this.contextMeta;
-    }
-
-    /** Resumable generation controllers must win the generation's terminal
-     * CAS before this outcome-defining `unfinished:false` write can begin.
-     * The hook is deliberately narrow: ordinary clients omit it, and `false`
-     * means another terminal owner (for example Stop) already won, so this
-     * stale completion must return without writing the response row. */
-    if (typeof opts.beforeResponsePersistence === 'function') {
-      const ownsTerminalPersistence = await opts.beforeResponsePersistence(responseMessage);
-      if (ownsTerminalPersistence === false) {
-        responseMessage.databasePromise = Promise.resolve({ persistenceSkipped: true });
-        return responseMessage;
-      }
-    }
-
-    responseMessage.databasePromise = this.saveMessageToDatabase(
-      responseMessage,
-      saveOptions,
-      user,
-    );
-    this.savedMessageIds.add(responseMessage.messageId);
-    delete responseMessage.tokenCount;
+        responseMessage.databasePromise = this.saveMessageToDatabase(
+          responseMessage,
+          saveOptions,
+          user,
+        );
+        this.savedMessageIds.add(responseMessage.messageId);
         chatTurnCounter.add(1, {
           model: this.modelOptions?.model ?? this.model ?? 'unknown',
           endpoint: this.options.endpoint ?? 'unknown',

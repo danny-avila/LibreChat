@@ -20,10 +20,7 @@ const { OTLPLogExporter } = require('@opentelemetry/exporter-logs-otlp-http');
 const { PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics');
 const { BatchLogRecordProcessor } = require('@opentelemetry/sdk-logs');
 const { resourceFromAttributes } = require('@opentelemetry/resources');
-const {
-  ATTR_SERVICE_NAME,
-  ATTR_SERVICE_VERSION,
-} = require('@opentelemetry/semantic-conventions');
+const { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } = require('@opentelemetry/semantic-conventions');
 const { HttpInstrumentation } = require('@opentelemetry/instrumentation-http');
 const { ExpressInstrumentation } = require('@opentelemetry/instrumentation-express');
 const { MongoDBInstrumentation } = require('@opentelemetry/instrumentation-mongodb');
@@ -36,10 +33,7 @@ const resource = resourceFromAttributes({
   'deployment.environment.name': process.env.NODE_ENV || 'development',
   'vcs.repository.url.full': 'https://github.com/michalszymanski-ai/LibreChat',
   'vcs.ref.head.revision':
-    process.env.GITHUB_SHA ||
-    process.env.SOURCE_COMMIT ||
-    process.env.GIT_COMMIT ||
-    'unknown',
+    process.env.GITHUB_SHA || process.env.SOURCE_COMMIT || process.env.GIT_COMMIT || 'unknown',
 });
 
 const traceExporter = new OTLPTraceExporter({
@@ -106,14 +100,12 @@ const WINSTON_TO_OTEL_SEVERITY = {
 
 // Patch Winston to also emit OTel log records
 try {
-  const winston = require('winston');
   const Transport = require('winston-transport');
 
   class OTelTransport extends Transport {
     log(info, callback) {
-      const { level, message, timestamp, ...rest } = info;
-      const severityNumber =
-        WINSTON_TO_OTEL_SEVERITY[level] || SeverityNumber.UNSPECIFIED;
+      const { level, message, timestamp: _timestamp, ...rest } = info;
+      const severityNumber = WINSTON_TO_OTEL_SEVERITY[level] || SeverityNumber.UNSPECIFIED;
       const severityText = level.toUpperCase();
 
       const attributes = {};

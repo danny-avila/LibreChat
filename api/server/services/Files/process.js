@@ -966,18 +966,26 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
             FileSources.execute_code,
           );
-          const result = await loadAuthValues({
-            userId: req.user.id,
-            authFields: [EnvVar.CODE_API_KEY],
-          });
           const stream = fs.createReadStream(file.path);
-          const fileIdentifier = await uploadCodeEnvFile({
+          /* Chat attachments bucket under the user's codeapi session, matching
+           * the `execute_code` tool_resource branch above. The sandbox filename
+           * must be the sanitized name LC persists, or `/mnt/data/<filename>`
+           * drifts from what `primeFiles` tells the model is available. */
+          const uploaded = await uploadCodeEnvFile({
             req,
             stream,
-            filename: file.originalname,
-            apiKey: result[EnvVar.CODE_API_KEY],
+            filename: sanitizeFilename(file.originalname),
+            kind: 'user',
+            id: req.user.id,
           });
-          fileInfoMetadata = { fileIdentifier };
+          fileInfoMetadata = {
+            codeEnvRef: {
+              kind: 'user',
+              id: req.user.id,
+              storage_session_id: uploaded.storage_session_id,
+              file_id: uploaded.file_id,
+            },
+          };
         }
       } catch (err) {
         logger.warn('[processAgentFileUpload] Auto-upload to code bridge failed', err);

@@ -1050,7 +1050,6 @@ export async function initializeAgent(
   }
 
   const {
-    codeFiles,
     toolRegistry,
     toolContextMap,
     dynamicToolContextMap,
@@ -1064,7 +1063,6 @@ export async function initializeAgent(
     primedCodeFiles,
   } = loadToolsResult ?? {
     tools: [],
-    codeFiles: undefined,
     toolContextMap: {},
     dynamicToolContextMap: {},
     userMCPAuthMap: undefined,
@@ -1513,7 +1511,6 @@ export async function initializeAgent(
 
   const initializedAgent: InitializedAgent = {
     ...agent,
-    codeFiles,
     resendFiles,
     toolRegistry,
     mcpAvailableTools,

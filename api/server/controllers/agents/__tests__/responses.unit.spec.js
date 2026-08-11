@@ -152,6 +152,7 @@ jest.mock('@librechat/api', () => ({
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
   createSubagentUsageSink: jest.fn().mockReturnValue(jest.fn()),
+  buildInitialToolSessions: jest.fn().mockReturnValue(undefined),
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],

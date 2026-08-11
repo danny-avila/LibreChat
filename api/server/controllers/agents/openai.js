@@ -38,6 +38,7 @@ const {
   createOpenAIContentAggregator,
   isChatCompletionValidationFailure,
   stripActivityLabelParts,
+  buildInitialToolSessions,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -754,6 +755,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       messages: formattedMessages,
       indexTokenCountMap,
       initialSummary,
+      initialSessions: buildInitialToolSessions({ agents: runAgents }),
       runId: responseId,
       summarizationConfig,
       appConfig,
@@ -772,16 +774,6 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
     if (!run) {
       throw new Error('Failed to create agent run');
-    }
-
-    // Pre-populate code execution session from primed files
-    if (run.Graph && primaryConfig?.codeFiles?.length > 0) {
-      const sessionId = primaryConfig.codeFiles[0].session_id;
-      run.Graph.sessions.set('execute_code', {
-        session_id: sessionId,
-        files: primaryConfig.codeFiles,
-        lastUpdated: Date.now(),
-      });
     }
 
     const config = {
