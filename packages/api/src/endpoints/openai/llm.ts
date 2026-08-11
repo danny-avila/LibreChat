@@ -121,11 +121,12 @@ function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
 }
 
 /**
- * GPT-5.6 models reject function tools combined with `reasoning_effort` in
- * `/v1/chat/completions` (400: "To use function tools, use /v1/responses or
- * set reasoning_effort to 'none'"). Reasoning without tools still works on
- * Chat Completions, but tools are bound after config time, so GPT-5.6
- * reasoning requests default to the Responses API to avoid tool failures.
+ * GPT-5.6 models reject function tools on `/v1/chat/completions` while the
+ * model is reasoning (400: "To use function tools, use /v1/responses or set
+ * reasoning_effort to 'none'"). GPT-5.6 reasons by default even when no
+ * explicit `reasoning_effort` is set, and tools are bound after config time,
+ * so first-party OpenAI GPT-5.6 requests default to the Responses API unless
+ * the user explicitly sets effort to `none` (or opts out of Responses).
  */
 const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
 
@@ -139,11 +140,8 @@ function requiresResponsesApiForReasoning({
   if (typeof model !== 'string' || !responsesApiRequiredPattern.test(model)) {
     return false;
   }
-  return (
-    reasoningEffort != null &&
-    reasoningEffort !== ReasoningEffort.unset &&
-    reasoningEffort !== ReasoningEffort.none
-  );
+  // Only skip when the user explicitly disables reasoning.
+  return reasoningEffort !== ReasoningEffort.none;
 }
 
 /**
