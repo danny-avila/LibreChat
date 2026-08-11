@@ -658,18 +658,21 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     const askRequest = Array.isArray(pendingAction.payload.questions)
       ? { questions: pendingAction.payload.questions }
       : pendingAction.payload.question;
-    resolvedAskContentIndex = findAskUserQuestionContentIndex(
-      answerSnapshot.aggregatedContent,
-      undefined,
-      askRequest,
-    );
-    if (resolvedAskContentIndex < 0) {
-      return sendGenerationJson(
-        res,
-        409,
-        { error: 'Pending question content is unavailable; reconnect and retry' },
-        generationProtocolVersion,
+    const answerContent = answerSnapshot.aggregatedContent ?? [];
+    if (answerContent.length > 0) {
+      resolvedAskContentIndex = findAskUserQuestionContentIndex(
+        answerContent,
+        undefined,
+        askRequest,
       );
+      if (resolvedAskContentIndex < 0) {
+        return sendGenerationJson(
+          res,
+          409,
+          { error: 'Pending question content is unavailable; reconnect and retry' },
+          generationProtocolVersion,
+        );
+      }
     }
   }
   const resolvedAskUserQuestion = buildResolvedAskUserQuestion(
