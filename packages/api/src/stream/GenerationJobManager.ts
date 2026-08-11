@@ -594,6 +594,7 @@ interface RuntimeJobState {
 interface FencedRuntimeRetirementContext {
   controller: AbortController;
   timer?: NodeJS.Timeout;
+  cleanupStarted?: boolean;
 }
 
 interface PreparedSubscription {
@@ -668,7 +669,12 @@ class GenerationJobManagerClass {
 
   /** Generation-scoped retirement callbacks must not outlive the configured
    * store/transport pair that created them. */
-  private fencedRuntimeRetirements = new Set<FencedRuntimeRetirementContext>();
+  private fencedRuntimeRetirements = new Map<RuntimeJobState, FencedRuntimeRetirementContext>();
+
+  /** Suppresses the stream-global disconnect callback while an exact fenced
+   * predecessor detaches. The callback may otherwise target a same-stream
+   * successor that never owned the departing SSE response. */
+  private fencedSubscriberDetachments = new Set<string>();
 
   /** Rejects new jobs once graceful shutdown has started. */
   private shuttingDown = false;
@@ -1296,6 +1302,9 @@ class GenerationJobManagerClass {
 
   private registerAllSubscribersLeft(streamId: string): void {
     this.eventTransport.onAllSubscribersLeft(streamId, () => {
+      if (this.fencedSubscriberDetachments.has(streamId)) {
+        return;
+      }
       const runtime = this.runtimeState.get(streamId);
       if (!runtime) {
         return;
@@ -4147,7 +4156,29 @@ class GenerationJobManagerClass {
         runtime.earlyReplayHandlers.delete(queueChunk);
         runtime.localErrorHandlers.delete(queueError);
         detachSignal?.removeEventListener('abort', detachOnAbort);
-        transportSubscription.unsubscribe();
+        const fencedLastSubscriber =
+          runtime.localErrorHandlers.size === 0 &&
+          (this.fencedRuntimeRetirements.has(runtime) ||
+            this.runtimeState.get(streamId) !== runtime);
+        const addFencedDetachmentSuppression =
+          fencedLastSubscriber && !this.fencedSubscriberDetachments.has(streamId);
+        if (fencedLastSubscriber) {
+          runtime.syncSent = false;
+          runtime.hasSubscriber = false;
+          runtime.attachmentGeneration++;
+          runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
+        }
+        if (addFencedDetachmentSuppression) {
+          this.fencedSubscriberDetachments.add(streamId);
+        }
+        try {
+          this.cleanupUnobservedFencedRuntime(streamId, runtime);
+          transportSubscription.unsubscribe();
+        } finally {
+          if (addFencedDetachmentSuppression) {
+            this.fencedSubscriberDetachments.delete(streamId);
+          }
+        }
         resolveDetached();
       },
     };
@@ -5531,7 +5562,7 @@ class GenerationJobManagerClass {
   }
 
   private cancelFencedRuntimeRetirements(): void {
-    for (const retirement of this.fencedRuntimeRetirements) {
+    for (const retirement of this.fencedRuntimeRetirements.values()) {
       if (retirement.timer != null) {
         clearTimeout(retirement.timer);
         retirement.timer = undefined;
@@ -5551,7 +5582,7 @@ class GenerationJobManagerClass {
     requestedDelayMs = REDIS_ABORT_TERMINAL_GRACE_MS,
   ): void {
     const lifecycleSignal = retirement.controller.signal;
-    if (lifecycleSignal.aborted) {
+    if (lifecycleSignal.aborted || this.fencedRuntimeRetirements.get(runtime) !== retirement) {
       return;
     }
     const remainingMs = REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS - (Date.now() - startedAt);
@@ -5591,7 +5622,17 @@ class GenerationJobManagerClass {
     postHandoffGraceApplied: boolean,
     lifecycleSignal: AbortSignal,
   ): Promise<void> {
-    if (this.shuttingDown || lifecycleSignal.aborted) {
+    if (
+      this.shuttingDown ||
+      lifecycleSignal.aborted ||
+      this.fencedRuntimeRetirements.get(runtime) !== retirement
+    ) {
+      return;
+    }
+    if (
+      runtime.localErrorHandlers.size === 0 &&
+      this.cleanupUnobservedFencedRuntime(streamId, runtime)
+    ) {
       return;
     }
     if (!postHandoffGraceApplied) {
@@ -5628,8 +5669,67 @@ class GenerationJobManagerClass {
       }
     }
 
-    this.fencedRuntimeRetirements.delete(retirement);
+    if (this.fencedRuntimeRetirements.get(runtime) !== retirement) {
+      return;
+    }
+    retirement.cleanupStarted = true;
     this.cleanupFencedRuntime(streamId, runtime);
+    if (this.fencedRuntimeRetirements.get(runtime) === retirement) {
+      this.fencedRuntimeRetirements.delete(runtime);
+    }
+  }
+
+  private cleanupUnobservedFencedRuntime(streamId: string, runtime: RuntimeJobState): boolean {
+    if (runtime.localErrorHandlers.size !== 0) {
+      return false;
+    }
+    const retirement = this.fencedRuntimeRetirements.get(runtime);
+    if (retirement == null || retirement.cleanupStarted === true) {
+      return false;
+    }
+    retirement.cleanupStarted = true;
+    if (retirement.timer != null) {
+      clearTimeout(retirement.timer);
+      retirement.timer = undefined;
+    }
+    retirement.controller.abort();
+    this.fencedRuntimeRetirements.delete(runtime);
+    this.cleanupFencedRuntime(streamId, runtime);
+    return true;
+  }
+
+  private recordFencedRuntimeAbortProof(
+    streamId: string,
+    runtime: RuntimeJobState,
+    ownsExactProvider: boolean,
+  ): void {
+    const recordAbortAcknowledgement = this.eventTransport.recordAbortAcknowledgement;
+    if (!this._isRedis || recordAbortAcknowledgement == null || !ownsExactProvider) {
+      return;
+    }
+
+    try {
+      void recordAbortAcknowledgement
+        .call(this.eventTransport, streamId, runtime.createdAt)
+        .then((confirmed) => {
+          if (!confirmed) {
+            logger.warn(
+              `[GenerationJobManager] Abort proof was not persisted for fenced generation ${streamId}`,
+            );
+          }
+        })
+        .catch((error) => {
+          logger.error(
+            `[GenerationJobManager] Failed to persist abort proof for fenced generation ${streamId}:`,
+            error,
+          );
+        });
+    } catch (error) {
+      logger.error(
+        `[GenerationJobManager] Failed to start abort proof for fenced generation ${streamId}:`,
+        error,
+      );
+    }
   }
 
   private cleanupFencedRuntime(streamId: string, runtime: RuntimeJobState): void {
@@ -5669,6 +5769,9 @@ class GenerationJobManagerClass {
     if (this.runtimeState.get(streamId) !== runtime) {
       return;
     }
+    if (this.fencedRuntimeRetirements.has(runtime)) {
+      return;
+    }
     /** A runtime whose stop signal already landed (cross-replica abort,
      * replacement handshake) observes this fence as a consequence of its own
      * termination — most often a coalesced window draining after the abort
@@ -5681,7 +5784,9 @@ class GenerationJobManagerClass {
     }
     runtime.startupTelemetry?.end('replaced');
     runtime.startupTelemetry = undefined;
+    const ownsExactProvider = this.ownedJobs.get(streamId) === runtime.createdAt;
     runtime.abortController.abort();
+    this.recordFencedRuntimeAbortProof(streamId, runtime, ownsExactProvider);
     if (this.shuttingDown) {
       return;
     }
@@ -5693,7 +5798,7 @@ class GenerationJobManagerClass {
       return;
     }
     const retirement: FencedRuntimeRetirementContext = { controller: new AbortController() };
-    this.fencedRuntimeRetirements.add(retirement);
+    this.fencedRuntimeRetirements.set(runtime, retirement);
     this.scheduleFencedRuntimeRetirement(streamId, runtime, Date.now(), retirement);
   }
 
@@ -6936,6 +7041,7 @@ class GenerationJobManagerClass {
   /** Returns sizes of internal runtime maps for diagnostics */
   getRuntimeStats(): {
     runtimeStateSize: number;
+    fencedRuntimeRetirements: number;
     runStepBufferSize: number;
     eventTransportStreams: number;
     earlyBufferedEvents: number;
@@ -6949,6 +7055,7 @@ class GenerationJobManagerClass {
     }
     return {
       runtimeStateSize: this.runtimeState.size,
+      fencedRuntimeRetirements: this.fencedRuntimeRetirements.size,
       runStepBufferSize: this.runStepBuffers?.size ?? 0,
       eventTransportStreams: this.eventTransport.getTrackedStreamIds().length,
       earlyBufferedEvents,

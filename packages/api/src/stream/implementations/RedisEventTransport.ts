@@ -1255,11 +1255,7 @@ export class RedisEventTransport implements IEventTransport {
     return (await this.publisher.get(KEYS.abortAck(streamId, generationId))) === '1';
   }
 
-  private async publishAbortAcknowledgement(
-    streamId: string,
-    generationId: number,
-    abortRequestId: string,
-  ): Promise<void> {
+  async recordAbortAcknowledgement(streamId: string, generationId: number): Promise<boolean> {
     try {
       await this.publisher.set(
         KEYS.abortAck(streamId, generationId),
@@ -1267,8 +1263,19 @@ export class RedisEventTransport implements IEventTransport {
         'EX',
         ABORT_ACK_TTL_SECONDS,
       );
+      return true;
     } catch (error) {
       logger.error(`[RedisEventTransport] Failed to persist generation abort proof:`, error);
+      return false;
+    }
+  }
+
+  private async publishAbortAcknowledgement(
+    streamId: string,
+    generationId: number,
+    abortRequestId: string,
+  ): Promise<void> {
+    if (!(await this.recordAbortAcknowledgement(streamId, generationId))) {
       // A live acknowledgement is only useful if a racing or inherited receipt
       // can prove the same owner stop after this subscription disappears. A
       // SET that committed despite a lost reply is recovered by the requester's
