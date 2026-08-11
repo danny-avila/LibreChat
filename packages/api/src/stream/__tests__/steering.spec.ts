@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import { SteerEvents } from 'librechat-data-provider';
-import type { TPendingSteer, Agents } from 'librechat-data-provider';
+import type { TMessageContentParts, TPendingSteer, Agents } from 'librechat-data-provider';
 import type {
   SteerQueueItem,
   IEventTransport,
@@ -645,7 +645,7 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
               output: 'staging',
               progress: 1,
             },
-          };
+          } as unknown as TMessageContentParts;
           return next;
         },
       });
