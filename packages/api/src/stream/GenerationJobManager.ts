@@ -69,7 +69,11 @@ import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
 import { emitChunkWithReceipt } from './internal/chunkPublication';
 import { resolveCoalesceWindowMs } from './internal/coalescing';
-import { REDIS_ABORT_TERMINAL_GRACE_MS } from './internal/transportTiming';
+import {
+  REDIS_ABORT_TERMINAL_GRACE_MS,
+  REDIS_EVENT_REORDER_TIMEOUT_MS,
+  REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS,
+} from './internal/transportTiming';
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
@@ -5443,10 +5447,119 @@ class GenerationJobManagerClass {
     }
   }
 
+  private async getReplacementHandoffState(
+    streamId: string,
+    predecessorCreatedAt: number,
+  ): Promise<'none' | 'pending' | 'settled'> {
+    try {
+      const current = (await this.jobStore.getJob(streamId)) as CreatedJobData | null;
+      if (current == null || current.createdAt <= predecessorCreatedAt) {
+        return 'none';
+      }
+      const receipts =
+        current.replacedJobs ?? (current.replacedJob != null ? [current.replacedJob] : []);
+      return receipts.some((receipt) => receipt.createdAt === predecessorCreatedAt)
+        ? 'pending'
+        : 'settled';
+    } catch (error) {
+      logger.warn(
+        `[GenerationJobManager] Failed to inspect replacement handoff for fenced generation ${streamId}:`,
+        error,
+      );
+      // A transient read failure cannot prove that DONE publication finished.
+      return 'pending';
+    }
+  }
+
+  private scheduleFencedRuntimeRetirement(
+    streamId: string,
+    runtime: RuntimeJobState,
+    startedAt: number,
+    handoffPendingObserved = false,
+    postHandoffGraceApplied = false,
+    requestedDelayMs = REDIS_ABORT_TERMINAL_GRACE_MS,
+  ): void {
+    const remainingMs = REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS - (Date.now() - startedAt);
+    const delayMs = Math.max(1, Math.min(requestedDelayMs, remainingMs));
+    const retirement = setTimeout(() => {
+      void this.finishFencedRuntimeRetirement(
+        streamId,
+        runtime,
+        startedAt,
+        handoffPendingObserved,
+        postHandoffGraceApplied,
+      );
+    }, delayMs);
+    retirement.unref?.();
+  }
+
+  private async finishFencedRuntimeRetirement(
+    streamId: string,
+    runtime: RuntimeJobState,
+    startedAt: number,
+    handoffPendingObserved: boolean,
+    postHandoffGraceApplied: boolean,
+  ): Promise<void> {
+    if (this.shuttingDown) {
+      return;
+    }
+    let handoffState: 'none' | 'pending' | 'settled' = 'none';
+    if (Date.now() - startedAt < REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS) {
+      handoffState = await this.getReplacementHandoffState(streamId, runtime.createdAt);
+    }
+    if (this.shuttingDown) {
+      return;
+    }
+    if (Date.now() - startedAt < REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS) {
+      if (handoffState === 'pending') {
+        this.scheduleFencedRuntimeRetirement(streamId, runtime, startedAt, true);
+        return;
+      }
+      if ((handoffPendingObserved || handoffState === 'settled') && !postHandoffGraceApplied) {
+        this.scheduleFencedRuntimeRetirement(
+          streamId,
+          runtime,
+          startedAt,
+          handoffPendingObserved,
+          true,
+          REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+        );
+        return;
+      }
+    }
+
+    if (runtime.replacementTransportHold !== true) {
+      this.releaseAbortSubscription(runtime);
+      this.releaseJobOwnership(streamId, runtime.createdAt);
+      this.jobStore.clearContentState(streamId, runtime.createdAt);
+
+      if (this.runtimeState.get(streamId) === runtime) {
+        this.runtimeState.delete(streamId);
+        this.runStepBuffers?.delete(streamId);
+        this.replayEventWriteQueues.delete(streamId);
+        this.tokenUsageWriteQueues.delete(streamId);
+      }
+    }
+
+    // finalEvent/errorEvent are cached before transport dispatch, so they do
+    // not prove that an attached SSE response closed. Each captured handler
+    // ignores this reconnect signal when its terminal is already queued.
+    for (const notify of [...runtime.localErrorHandlers]) {
+      try {
+        notify(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      } catch (error) {
+        logger.error(
+          `[GenerationJobManager] Failed to recycle a subscriber for fenced generation ${streamId}:`,
+          error,
+        );
+      }
+    }
+  }
+
   /** A generation-fenced append returning false is same-slot proof that this
    * epoch is no longer the durable owner. Stop its provider immediately, then
-   * give an already-published matching terminal frame one bounded cluster-bus
-   * window to close the captured subscribers. A newer runtime is never touched. */
+   * preserve captured subscribers while a durable successor still owns their
+   * handoff receipt. A newer runtime is never touched. */
   private retireRuntimeAfterDurableFence(streamId: string, runtime: RuntimeJobState): void {
     if (this.runtimeState.get(streamId) !== runtime) {
       return;
@@ -5467,39 +5580,7 @@ class GenerationJobManagerClass {
     if (runtime.replacementTransportHold === true) {
       return;
     }
-
-    const retirement = setTimeout(() => {
-      if (this.shuttingDown) {
-        return;
-      }
-      if (runtime.replacementTransportHold !== true) {
-        this.releaseAbortSubscription(runtime);
-        this.releaseJobOwnership(streamId, runtime.createdAt);
-        this.jobStore.clearContentState(streamId, runtime.createdAt);
-
-        if (this.runtimeState.get(streamId) === runtime) {
-          this.runtimeState.delete(streamId);
-          this.runStepBuffers?.delete(streamId);
-          this.replayEventWriteQueues.delete(streamId);
-          this.tokenUsageWriteQueues.delete(streamId);
-        }
-      }
-
-      // finalEvent/errorEvent are cached before transport dispatch, so they do
-      // not prove that an attached SSE response closed. Each captured handler
-      // ignores this reconnect signal when its terminal is already queued.
-      for (const notify of [...runtime.localErrorHandlers]) {
-        try {
-          notify(TERMINAL_PUBLICATION_RECONNECT_ERROR);
-        } catch (error) {
-          logger.error(
-            `[GenerationJobManager] Failed to recycle a subscriber for fenced generation ${streamId}:`,
-            error,
-          );
-        }
-      }
-    }, REDIS_ABORT_TERMINAL_GRACE_MS);
-    retirement.unref?.();
+    this.scheduleFencedRuntimeRetirement(streamId, runtime, Date.now());
   }
 
   private isCurrentRuntime(streamId: string, runtime: RuntimeJobState): boolean {
