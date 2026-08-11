@@ -26,6 +26,7 @@ import {
 import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '~/utils/queueIntent';
 import { markComposerFilesTaken } from '~/utils/composerFiles';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { insertQueuedMessage } from '~/utils/queue';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
@@ -603,7 +604,7 @@ export default function useSteering({
         if (trimmed.length === 0) {
           return;
         }
-        const item = {
+        const item: QueuedMessage = {
           id: options?.id ?? v4(),
           text: trimmed,
           createdAt: options?.createdAt ?? Date.now(),
@@ -618,13 +619,7 @@ export default function useSteering({
             options.manualSkills.length > 0 && { manualSkills: options.manualSkills }),
           ...(options?.front && { priority: true }),
         };
-        set(store.queuedMessagesByConvoId(queueKey), (prev) =>
-          [...prev, item].sort(
-            (a, b) =>
-              Number(b.priority ?? false) - Number(a.priority ?? false) ||
-              a.createdAt - b.createdAt,
-          ),
-        );
+        set(store.queuedMessagesByConvoId(queueKey), (prev) => insertQueuedMessage(prev, item));
         if (options?.skipUsageMark !== true) {
           markQueuedFilesUsage(options?.files);
         }

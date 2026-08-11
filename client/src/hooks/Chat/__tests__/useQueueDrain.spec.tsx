@@ -558,6 +558,26 @@ describe('useQueueDrain', () => {
     );
   });
 
+  it('preserves a manually reordered NEW_CONVO queue during migration', async () => {
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [
+        { id: 'second', text: 'send this first', createdAt: 2 },
+        { id: 'first', text: 'send this second', createdAt: 1 },
+      ]);
+      set(store.queuedMessagesByConvoId(CONVO_ID), [
+        { id: 'third', text: 'send this third', createdAt: 3 },
+      ]);
+    });
+
+    act(() => {
+      setters.setRunEnd!(runEnd({ startedAsNewConvo: true }));
+    });
+
+    await waitFor(() =>
+      expect(ask).toHaveBeenCalledWith({ text: 'send this first' }, emptyOverrides),
+    );
+  });
+
   it('keeps an interrupt queued after URL resolution ahead of pre-migration follow-ups', async () => {
     const { ask, setters } = setup(({ set }) => {
       set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [

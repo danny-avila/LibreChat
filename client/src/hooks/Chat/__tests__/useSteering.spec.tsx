@@ -1553,6 +1553,21 @@ describe('useSteering', () => {
       expect(mockMutate).not.toHaveBeenCalled();
     });
 
+    it('preserves a manual queue order when another message is enqueued', () => {
+      const first: QueuedMessage = { id: 'first', text: 'first', createdAt: 1 };
+      const second: QueuedMessage = { id: 'second', text: 'second', createdAt: 2 };
+      const { result } = setupWithState({}, ({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [first, second]);
+      });
+
+      act(() => {
+        result.current.steering.reorderQueued(first.id, 1);
+        result.current.steering.enqueue('third', { id: 'third', createdAt: 3 });
+      });
+
+      expect(result.current.queue.map((item) => item.id)).toEqual(['second', 'first', 'third']);
+    });
+
     it('atomically discards a recovered source and downgrades its row in place', async () => {
       mockCancelSteer.mockResolvedValueOnce({ removed: true, generationProtocolVersion: 2 });
       const before: QueuedMessage = { id: 'queued-before', text: 'before', createdAt: 0 };

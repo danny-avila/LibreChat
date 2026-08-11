@@ -1,5 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
+import userEvent from '@testing-library/user-event';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { PaletteEntry } from '~/hooks/Input/usePaletteEntries';
@@ -384,11 +385,14 @@ describe('Palette', () => {
       });
       const input = screen.getByTestId('composer-palette-search');
       const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-row-key]'));
-      const findRow = (key: string) => rows.find((row) => row.dataset.rowKey === key);
-      const dotted = findRow('mcp:foo.bar');
-      const underscored = findRow('mcp:foo_bar');
-      const loneHighSurrogate = findRow(loneHighSurrogateKey);
-      const loneLowSurrogate = findRow(loneLowSurrogateKey);
+      const findCell = (key: string) =>
+        rows
+          .find((row) => row.dataset.rowKey === key)
+          ?.querySelector<HTMLElement>('[role="gridcell"][id]');
+      const dotted = findCell('mcp:foo.bar');
+      const underscored = findCell('mcp:foo_bar');
+      const loneHighSurrogate = findCell(loneHighSurrogateKey);
+      const loneLowSurrogate = findCell(loneLowSurrogateKey);
 
       expect(dotted?.id).toBeTruthy();
       expect(underscored?.id).toBeTruthy();
@@ -464,6 +468,33 @@ describe('Palette', () => {
       const input = screen.getByTestId('composer-palette-search');
       fireEvent.keyDown(input, { key: 'd', metaKey: true });
       expect(mockToggleFavorite).toHaveBeenCalledTimes(1);
+    });
+
+    it('exposes a touch-visible named favorite action outside the active gridcell', async () => {
+      const user = userEvent.setup();
+      const onSelect = jest.fn();
+      renderPalette({
+        canAttach: false,
+        entries: [entry({ key: 'only', label: 'Only Tool', onSelect })],
+      });
+
+      expect(screen.getByRole('grid')).toBeVisible();
+      const favorite = screen.getByRole('button', { name: 'com_ui_favorite' });
+      expect(favorite).toHaveAttribute('aria-pressed', 'false');
+      expect(favorite).toHaveClass('opacity-100', '[@media(hover:hover)]:opacity-0');
+      expect(favorite.closest('[role="gridcell"]')).not.toHaveAttribute('id');
+
+      await waitFor(() => expect(screen.getByTestId('composer-palette-search')).toHaveFocus());
+      await user.tab();
+      expect(favorite).toHaveFocus();
+      await user.keyboard('{Enter}');
+      expect(mockToggleFavorite).toHaveBeenCalledWith('tool', 'only');
+      expect(onSelect).not.toHaveBeenCalled();
+
+      mockToggleFavorite.mockClear();
+      await user.click(favorite);
+      expect(mockToggleFavorite).toHaveBeenCalledWith('tool', 'only');
+      expect(onSelect).not.toHaveBeenCalled();
     });
   });
 });

@@ -6,6 +6,7 @@ import type { QueueSendLock } from '~/utils/queueIntent';
 import type { TAskFunction } from '~/common';
 import { acquireQueueSendLock, releaseQueueSendLock, hasQueuedIntent } from '~/utils/queueIntent';
 import { useMarkFilesUsageMutation } from '~/data-provider';
+import { mergeQueuedMessages } from '~/utils/queue';
 import store from '~/store';
 
 /** Mirrors the server's per-request cap on a usage touch. */
@@ -37,9 +38,6 @@ const batchFileIds = (fileIds: string[]): string[][] => {
   }
   return batches;
 };
-
-const compareQueuedMessages = (a: QueuedMessage, b: QueuedMessage): number =>
-  Number(b.priority ?? false) - Number(a.priority ?? false) || a.createdAt - b.createdAt;
 
 /** Interrupt intent belongs to one generation, never to whichever terminal
  * event happens to occupy the shared pane slot next. The NEW_CONVO alias is
@@ -242,9 +240,7 @@ export default function useQueueDrain(
         /** Both queues are ordered independently, but migration crosses the
          * key boundary: an interrupt queued under the resolved conversation
          * must still outrank an ordinary follow-up captured under NEW_CONVO. */
-        const merged = shouldMigrate
-          ? [...newConvoQueue, ...ownQueue].sort(compareQueuedMessages)
-          : ownQueue;
+        const merged = shouldMigrate ? mergeQueuedMessages(newConvoQueue, ownQueue) : ownQueue;
 
         const shouldDrain = end.outcome === 'completed' || interruptArmed;
         /** A row the rail is mid-edit or mid-remove on is spoken for: its words

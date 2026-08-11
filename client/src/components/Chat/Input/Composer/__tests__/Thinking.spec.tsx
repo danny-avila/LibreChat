@@ -6,11 +6,15 @@ import Thinking from '../Thinking';
 
 const mockSetValue = jest.fn();
 const mockSetOption = jest.fn(() => mockSetValue);
-const mockSetting = {
+let mockSetting = {
   key: 'reasoning_effort',
   default: 'low',
   options: ['auto', 'low', 'high'],
 } as SettingDefinition;
+let mockConversation = {
+  conversationId: 'convo-1',
+  reasoning_effort: 'low',
+} as TConversation;
 
 jest.mock('~/hooks/Input/useThinkingSetting', () => ({
   __esModule: true,
@@ -23,8 +27,22 @@ jest.mock('~/hooks/Generic/useReducedMotion', () => ({
 }));
 
 jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string, options?: Record<string, string | number>) =>
-    options ? `${key}:${options['0'] ?? options.count}` : key,
+  useLocalize: () => (key: string, options?: Record<string, string | number>) => {
+    if (options) {
+      return `${key}:${options['0'] ?? options.count}`;
+    }
+    return (
+      (
+        {
+          com_ui_auto: 'Auto',
+          com_ui_off: 'Off',
+          com_ui_low: 'Low',
+          com_ui_medium: 'Medium',
+          com_ui_high: 'High',
+        } as Record<string, string>
+      )[key] ?? key
+    );
+  },
   useSetIndexOptions: () => ({ setOption: mockSetOption }),
 }));
 
@@ -34,10 +52,7 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/Providers', () => ({
   useChatContext: () => ({
-    conversation: {
-      conversationId: 'convo-1',
-      reasoning_effort: 'low',
-    } as TConversation,
+    conversation: mockConversation,
   }),
 }));
 
@@ -56,6 +71,15 @@ function renderInComposer() {
 describe('Thinking', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSetting = {
+      key: 'reasoning_effort',
+      default: 'low',
+      options: ['auto', 'low', 'high'],
+    } as unknown as SettingDefinition;
+    mockConversation = {
+      conversationId: 'convo-1',
+      reasoning_effort: 'low',
+    } as unknown as TConversation;
   });
 
   it('keeps keyboard activation inside the control and moves focus into the effort radios', async () => {
@@ -84,5 +108,55 @@ describe('Thinking', () => {
 
     expect(mockSetValue).toHaveBeenCalledWith('high');
     expect(onComposerClick).not.toHaveBeenCalled();
+  });
+
+  it('aligns three radio hit areas with the visual stop midpoints', async () => {
+    mockSetting = {
+      key: 'reasoning_effort',
+      default: 'low',
+      options: ['auto', 'low', 'medium', 'high'],
+    } as unknown as SettingDefinition;
+    const user = userEvent.setup();
+    renderInComposer();
+
+    await user.click(screen.getByTestId('composer-thinking-button'));
+    const [low, medium, high] = screen.getAllByRole('radio');
+
+    expect(low.style.left).toBe('0px');
+    expect(low.style.right).toBe('calc(75% - 7px)');
+    expect(medium.style.left).toBe('calc(25% + 7px)');
+    expect(medium.style.right).toBe('calc(25% + 7px)');
+    expect(high.style.left).toBe('calc(75% - 7px)');
+    expect(high.style.right).toBe('0px');
+  });
+
+  it('uses the provider mapping for an unset Bedrock effort', async () => {
+    mockSetting = {
+      key: 'reasoning_effort',
+      default: 'unset',
+      options: ['unset', 'low', 'medium', 'high'],
+      enumMappings: {
+        unset: 'com_ui_off',
+        low: 'com_ui_low',
+        medium: 'com_ui_medium',
+        high: 'com_ui_high',
+      },
+    } as unknown as SettingDefinition;
+    mockConversation = {
+      conversationId: 'convo-1',
+      reasoning_effort: 'unset',
+    } as unknown as TConversation;
+    const user = userEvent.setup();
+    renderInComposer();
+
+    expect(screen.getByTestId('composer-thinking-button')).toHaveAccessibleName(
+      'com_ui_composer_thinking_value:Off',
+    );
+
+    await user.click(screen.getByTestId('composer-thinking-button'));
+    const off = screen.getByRole('button', { name: 'Off' });
+    expect(off).toHaveAttribute('aria-pressed', 'true');
+    await user.click(off);
+    expect(mockSetValue).toHaveBeenCalledWith('low');
   });
 });
