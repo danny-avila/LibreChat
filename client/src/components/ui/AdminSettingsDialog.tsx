@@ -168,7 +168,7 @@ const AdminSettingsDialog: React.FC<AdminSettingsDialogProps> = ({
         <OGDialogContent
           className={
             dialogContentClassName ??
-            'w-11/12 max-w-lg border-border-light bg-surface-primary text-text-primary'
+            'w-11/12 max-w-lg border-border-light bg-surface-dialog text-text-primary'
           }
         >
           <OGDialogTitle>

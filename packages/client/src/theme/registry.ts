@@ -187,12 +187,18 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
 
   const baseColors = mode === 'dark' ? darkTheme : defaultTheme;
   const definition = theme.modes[mode];
+  const customColors = definition?.colors;
+  const composerHoverFallback =
+    customColors?.['rgb-surface-composer-hover'] === undefined &&
+    customColors?.['rgb-surface-hover'] !== undefined
+      ? { 'rgb-surface-composer-hover': customColors['rgb-surface-hover'] }
+      : {};
 
   return {
     version: THEME_VERSION,
     name: theme.name,
     mode,
-    colors: { ...baseColors, ...definition?.colors } as Required<IThemeRGB>,
+    colors: { ...baseColors, ...customColors, ...composerHoverFallback } as Required<IThemeRGB>,
     appearance: { ...defaultAppearance, ...definition?.appearance },
   };
 }

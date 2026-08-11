@@ -121,7 +121,7 @@ export default memo(function AudioRecorder({
           label={localize('com_ui_use_micrphone')}
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
           disabled={disabled}
-          className="p-1"
+          className="p-1 hover:bg-surface-composer-hover"
           aria-pressed={isListening}
         >
           {renderIcon()}
