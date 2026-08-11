@@ -8,7 +8,7 @@ interface OptionToggleProps {
   label: string;
   /** Defaults to `label` (bulk toggles use the same text for both). */
   tooltip?: string;
-  /** Text color applied when pressed (e.g. `text-amber-500`). */
+  /** Text color applied directly to the icon when pressed. */
   activeClass: string;
   onToggle: () => void;
   size?: 'sm' | 'md';
@@ -52,13 +52,10 @@ export default function OptionToggle({
             size === 'sm' ? 'size-6' : 'size-7',
             disabled
               ? 'cursor-not-allowed text-text-tertiary opacity-60 hover:bg-transparent hover:text-text-tertiary'
-              : cn(
-                  'hover:bg-surface-hover',
-                  pressed ? activeClass : 'text-text-secondary hover:text-text-primary',
-                ),
+              : 'text-text-secondary hover:bg-surface-hover hover:text-text-secondary',
           )}
         >
-          <Icon className="size-4" aria-hidden="true" />
+          <Icon className={cn('size-4', pressed && activeClass)} aria-hidden="true" />
         </Button>
       }
     />

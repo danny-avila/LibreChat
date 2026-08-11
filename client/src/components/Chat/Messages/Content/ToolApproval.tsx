@@ -73,6 +73,7 @@ export default function ToolApproval({
     registerToolCall,
     unregisterToolCall,
     setDecision,
+    getDecision,
     isReady,
     getStatus,
     getLeadToolCallId,
@@ -80,10 +81,25 @@ export default function ToolApproval({
   } = useApprovalContext();
   const { submitToolApproval } = useResumeSubmit();
 
-  const [active, setActive] = useState<DecisionType | null>(null);
-  const [editText, setEditText] = useState(() => seedArgs(args));
-  const [responseText, setResponseText] = useState('');
-  const [reason, setReason] = useState('');
+  const retainedDecision = getDecision(actionId, toolCallId);
+  const initialDecision =
+    retainedDecision != null && allowedDecisions.includes(retainedDecision.decision)
+      ? retainedDecision
+      : undefined;
+  const [active, setActive] = useState<DecisionType | null>(
+    () => initialDecision?.decision ?? null,
+  );
+  const [editText, setEditText] = useState(() =>
+    initialDecision?.decision === 'edit'
+      ? (JSON.stringify(initialDecision.editedArguments, null, 2) ?? '{}')
+      : seedArgs(args),
+  );
+  const [responseText, setResponseText] = useState(() =>
+    initialDecision?.decision === 'respond' ? (initialDecision.responseText ?? '') : '',
+  );
+  const [reason, setReason] = useState(() =>
+    initialDecision?.decision === 'reject' ? (initialDecision.reason ?? '') : '',
+  );
 
   useEffect(() => {
     registerToolCall(actionId, toolCallId);

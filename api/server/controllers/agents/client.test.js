@@ -162,6 +162,54 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
     AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
     expect(ctx.contentParts).toEqual([textPart('a'), textPart('b')]);
   });
+
+  it('rebases phase bounds across skill prepends and sequential filtering', () => {
+    const reasoning = { type: ContentTypes.THINK, think: 'checking' };
+    const activityTool = toolCallPart('activity-tool');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Resolved the session issue',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+    };
+    const final = textPart('final');
+    const previousParts = [reasoning, activityTool, phase, final];
+    const skillCard = toolCallPart('manual-skill');
+    const ctx = {
+      options: { agent: { hide_sequential_outputs: true } },
+      contentParts: [skillCard, ...previousParts],
+    };
+
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(ctx.contentParts).toEqual([skillCard, activityTool, phase, final]);
+    expect(phase.activity_start_index).toBe(1);
+  });
+
+  it('rebases phase bounds over sparse content without treating holes as retained parts', () => {
+    const reasoning = { type: ContentTypes.THINK, think: 'planning' };
+    const toolCall = toolCallPart('tc-sparse');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Searched for tools',
+      activity_label_type: 'phase',
+      activity_start_index: 1,
+    };
+    const final = textPart('answer');
+    const contentParts = [];
+    contentParts[0] = reasoning;
+    contentParts[2] = toolCall;
+    contentParts[3] = phase;
+    contentParts[4] = final;
+    const previousParts = [...contentParts];
+    const ctx = { options: { agent: {} }, contentParts };
+
+    expect(() =>
+      AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts),
+    ).not.toThrow();
+    expect(phase.activity_start_index).toBe(2);
+  });
 });
 
 describe('AgentClient - startup telemetry', () => {

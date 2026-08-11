@@ -12,6 +12,9 @@ const toolCall = (id: string): TMessageContentParts =>
 const think = (text: string): TMessageContentParts =>
   ({ type: ContentTypes.THINK, [ContentTypes.THINK]: text }) as unknown as TMessageContentParts;
 
+const text = (value: string, phase?: 'commentary' | 'final_answer'): TMessageContentParts =>
+  ({ type: ContentTypes.TEXT, [ContentTypes.TEXT]: value, phase }) as TMessageContentParts;
+
 const label = (text: string): TMessageContentParts =>
   ({
     type: ContentTypes.ACTIVITY_LABEL,
@@ -70,6 +73,26 @@ describe('groupSequentialToolCalls with activity labels', () => {
     expect(group.labelPart?.part).toMatchObject({
       [ContentTypes.ACTIVITY_LABEL]: 'Found the failing spec',
     });
+  });
+
+  it('nests typed commentary with its labeled tool batch, but never final text', () => {
+    const commentary = groupSequentialToolCalls(
+      withIndex([
+        text('I will compare both releases.', 'commentary'),
+        toolCall('t1'),
+        label('Compared both releases'),
+      ]),
+    );
+    expect(commentary).toHaveLength(1);
+    expect(commentary[0]).toMatchObject({ type: 'tool-group' });
+    expect((commentary[0] as { parts: PartWithIndex[] }).parts).toHaveLength(2);
+
+    const final = groupSequentialToolCalls(
+      withIndex([text('Here is the answer.', 'final_answer'), toolCall('t1'), label('Found it')]),
+    );
+    expect(final).toHaveLength(2);
+    expect(final[0]).toMatchObject({ type: 'single' });
+    expect(final[1]).toMatchObject({ type: 'tool-group' });
   });
 
   /** An empty orphan label has nothing to render and no block to delimit. */

@@ -1353,8 +1353,45 @@ export default function useResumableSSE(
               (currentSubmission.initialResponse as TMessage | undefined)?.content?.length ??
               0)
             : 0;
-        const offsetEvent =
-          prefixLength > 0 ? { ...event, index: event.index + prefixLength } : event;
+        const phasePart = event.part as TActivityLabelEvent['part'] & {
+          activity_label_type?: 'phase';
+          activity_start_index?: number;
+        };
+        let offsetEvent = event;
+        if (prefixLength > 0) {
+          let offsetPart: TActivityLabelEvent['part'] & {
+            activity_label_type?: 'phase';
+            activity_start_index?: number;
+          } = phasePart;
+          if (
+            phasePart.activity_label_type === 'phase' &&
+            typeof phasePart.activity_start_index === 'number'
+          ) {
+            let activityStartIndex = phasePart.activity_start_index + prefixLength;
+            const targetContent = messages[index]?.content;
+            /** The first completion text/think part can merge into the
+             *  retained edit tail at prefixLength - 1. Tool/nonmatching starts
+             *  occupy the ordinary +prefix slot, so only fold back across the
+             *  recognizable empty merge slot. */
+            if (
+              phasePart.activity_start_index === 0 &&
+              activityStartIndex > 0 &&
+              targetContent?.[activityStartIndex] == null &&
+              targetContent?.[activityStartIndex - 1] != null
+            ) {
+              activityStartIndex -= 1;
+            }
+            offsetPart = {
+              ...phasePart,
+              activity_start_index: activityStartIndex,
+            };
+          }
+          offsetEvent = {
+            ...event,
+            index: event.index + prefixLength,
+            part: offsetPart,
+          };
+        }
         const updated = applyActivityLabelPart(messages[index], offsetEvent);
         if (updated !== messages[index]) {
           const nextMessages = [...messages];

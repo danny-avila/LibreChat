@@ -56,9 +56,9 @@ export default function MCPCardActions({
   const buttonBaseClass = cn(
     'flex size-7 items-center justify-center rounded-md',
     'transition-colors duration-150',
-    'text-text-secondary hover:text-text-primary',
+    'text-text-secondary hover:text-text-secondary',
     'hover:bg-surface-tertiary',
-    'focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+    'focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
   );
 
   // Loading state - show spinner (with cancel option)
@@ -171,12 +171,12 @@ export default function MCPCardActions({
         <TooltipAnchor
           description={localize('com_ui_revoke')}
           side="top"
-          className={cn(buttonBaseClass, 'text-text-destructive')}
+          className={buttonBaseClass}
           aria-label={localize('com_ui_revoke')}
           role="button"
           onClick={onRevoke}
         >
-          <Trash2 className="size-3.5" aria-hidden="true" />
+          <Trash2 className="size-3.5 text-text-destructive" aria-hidden="true" />
         </TooltipAnchor>
       )}
     </div>

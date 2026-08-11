@@ -84,6 +84,10 @@ interface ApprovalContextValue {
   getStatus: (actionId: string) => ActionStatus;
   /** Set an action's submission status (driven by the cards' submit via `useResumeSubmit`). */
   setStatus: (actionId: string, status: ActionStatus) => void;
+  /** Restore a free-form question answer after transient phase-slice remounts. */
+  getAskAnswerDraft: (actionId: string) => string;
+  /** Retain a free-form question answer for this response message's lifetime. */
+  setAskAnswerDraft: (actionId: string, answer: string) => void;
 }
 
 const ApprovalContext = createContext<ApprovalContextValue | null>(null);
@@ -107,6 +111,8 @@ const FALLBACK: ApprovalContextValue = {
   isReady: () => false,
   getStatus: () => 'idle',
   setStatus: () => undefined,
+  getAskAnswerDraft: () => '',
+  setAskAnswerDraft: () => undefined,
 };
 
 const isExpiredError = (error: unknown): boolean => {
@@ -136,6 +142,7 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
    *  never propagate past the memoized value). */
   const decisionsRef = useRef(new Map<string, Map<string, Agents.ToolApprovalResolution>>());
   const registeredRef = useRef(new Map<string, Set<string>>());
+  const askAnswerDraftsRef = useRef(new Map<string, string>());
   const [version, bump] = useState(0);
   const rerender = useCallback(() => bump((v) => v + 1), []);
   const [statusByAction, setStatusByAction] = useState<Record<string, ActionStatus>>({});
@@ -162,12 +169,14 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
         return;
       }
       set.delete(toolCallId);
-      // Also drop any decision it held so a stale entry can't linger.
-      decisionsRef.current.get(actionId)?.delete(toolCallId);
       if (set.size === 0) {
         registeredRef.current.delete(actionId);
-        decisionsRef.current.delete(actionId);
       }
+      /** Keep the decision for the provider's message-scoped lifetime. A
+       *  phase label can resolve while an approval card is visible, moving
+       *  that card through a nested phase segment; its transient unmount must
+       *  not erase the user's selection. Unregistered decisions are excluded
+       *  from submit/readiness and disappear with this provider. */
       rerender();
     },
     [rerender],
@@ -202,10 +211,17 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
     [],
   );
 
-  const getDecisions = useCallback(
-    (actionId: string) => Array.from(decisionsRef.current.get(actionId)?.values() ?? []),
-    [],
-  );
+  const getDecisions = useCallback((actionId: string) => {
+    const registered = registeredRef.current.get(actionId);
+    const decisions = decisionsRef.current.get(actionId);
+    if (registered == null || decisions == null) {
+      return [];
+    }
+    return [...registered].flatMap((toolCallId) => {
+      const decision = decisions.get(toolCallId);
+      return decision == null ? [] : [decision];
+    });
+  }, []);
 
   const isReady = useCallback((actionId: string) => {
     const registered = registeredRef.current.get(actionId);
@@ -230,6 +246,19 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
     setStatusByAction((prev) => ({ ...prev, [actionId]: status }));
   }, []);
 
+  const getAskAnswerDraft = useCallback(
+    (actionId: string) => askAnswerDraftsRef.current.get(actionId) ?? '',
+    [],
+  );
+
+  const setAskAnswerDraft = useCallback((actionId: string, answer: string) => {
+    if (answer.length === 0) {
+      askAnswerDraftsRef.current.delete(actionId);
+      return;
+    }
+    askAnswerDraftsRef.current.set(actionId, answer);
+  }, []);
+
   const value = useMemo<ApprovalContextValue>(
     () => ({
       version,
@@ -243,6 +272,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       isReady,
       getStatus,
       setStatus,
+      getAskAnswerDraft,
+      setAskAnswerDraft,
     }),
     [
       version,
@@ -256,6 +287,8 @@ export default function ApprovalProvider({ children }: { children: React.ReactNo
       isReady,
       getStatus,
       setStatus,
+      getAskAnswerDraft,
+      setAskAnswerDraft,
     ],
   );
 

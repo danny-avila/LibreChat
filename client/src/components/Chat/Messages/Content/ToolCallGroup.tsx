@@ -10,8 +10,8 @@ import type {
   FunctionToolCall,
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
+import { cn, getToolDisplayLabel, getBatchActivityLabelPart, getActivityLabelText } from '~/utils';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
-import { cn, getToolDisplayLabel, getActivityLabelPart, getActivityLabelText } from '~/utils';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
@@ -152,7 +152,7 @@ export default function ToolCallGroup({
     () => parts.some(({ part }) => hasPendingApprovalInPart(part)),
     [parts],
   );
-  const activityLabel = getActivityLabelPart(labelPart?.part);
+  const activityLabel = getBatchActivityLabelPart(labelPart?.part);
   const activityLabelText = getActivityLabelText(activityLabel);
   const activityFailed = activityLabel?.status === 'failed' || activityLabel?.status === 'partial';
   /** A settled, filled label is itself a completion proof: the PostToolBatch

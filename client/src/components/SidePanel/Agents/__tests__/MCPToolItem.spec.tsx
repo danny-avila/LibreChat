@@ -93,6 +93,13 @@ describe('MCPToolItem', () => {
     expect(props.onToggleDefer).toHaveBeenCalledTimes(1);
   });
 
+  test('deferred tool keeps its warning color while hovered', () => {
+    setup({ deferredToolsEnabled: true, isDeferred: true });
+    const deferButton = screen.getByRole('button', { name: 'com_ui_mcp_defer_loading' });
+    expect(deferButton).toHaveClass('hover:text-text-secondary');
+    expect(deferButton.querySelector('svg')).toHaveClass('text-text-warning');
+  });
+
   test('defer button is absent when deferred tools are disabled', () => {
     setup();
     expect(

@@ -57,10 +57,15 @@ const {
   buildSteerMedia,
   stampSteerPartMedia,
   createActivityLabelWiring,
+  createActivityPhaseWiring,
+  createAssistantPhaseStampingHandlers,
   resolveActivityConfig,
+  resolveActivityPhaseConfig,
   getCustomEndpointConfig,
   mapCollectedMetadataToUsage,
   resolveActivityLabelModel,
+  resolveActivityPhaseLabelModel,
+  traceIdForMessage,
   settlePendingLabelFills,
   stripActivityLabelParts,
   getRequestMemories,
@@ -334,6 +339,10 @@ class AgentClient extends BaseClient {
           deliveredSteer: item,
         },
       );
+      /** Only a COMMITTED steer is a hard semantic boundary. If its durable
+       *  append failed, the drain restores the queue item and the current
+       *  phase evidence must remain intact for the eventual retry. */
+      this.activityPhaseWiring?.drop?.();
     } catch (error) {
       /** The part and its receipt commit as one durable unit. Roll the local
        * projection back when that commit fails so the drain can restore the
@@ -419,6 +428,27 @@ class AgentClient extends BaseClient {
     return this.activityLabelLLMPromise;
   }
 
+  /** Phase resolution is independently configurable and memoized per response. */
+  async resolveActivityPhaseLabelLLM() {
+    this.activityPhaseLabelLLMPromise =
+      this.activityPhaseLabelLLMPromise ??
+      resolveActivityPhaseLabelModel({
+        req: this.options.req,
+        agent: this.options.agent,
+        publicEndpoint: this.options.endpoint,
+        ids: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+        db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+      }).catch((error) => {
+        this.activityPhaseLabelLLMPromise = null;
+        throw error;
+      });
+    return this.activityPhaseLabelLLMPromise;
+  }
+
   /**
    * Bills the label call and folds its usage into the response rollup with
    * an `activity-label` tag (subagent precedent) so `metadata.usage` and the
@@ -445,6 +475,8 @@ class AgentClient extends BaseClient {
      *  the title convention — from locally counted text rather than going
      *  unbilled. Invoked only when no entry carries a real token count. */
     estimate = undefined,
+    /** Separate telemetry bucket for parent phase summaries. */
+    usageType = 'activity-label',
   ) {
     const appConfig = this.options.req?.config;
     /** Provider ON EVERY ENTRY, not just the streamed event: `splitUsage`
@@ -517,7 +549,7 @@ class AgentClient extends BaseClient {
         }),
         ...(provider != null && { provider }),
         model,
-        usage_type: 'activity-label',
+        usage_type: usageType,
         /**
          * Scoped to the GENERATION, not just the response. Editing one
          * assistant response reuses its `responseMessageId` while each fresh
@@ -561,14 +593,14 @@ class AgentClient extends BaseClient {
            *  generation replaced it. */
           { expectedCreatedAt: this.jobCreatedAt },
         ).catch((err) => {
-          logger.warn(`[AgentClient] Failed to emit activity-label usage: ${err?.message ?? err}`);
+          logger.warn(`[AgentClient] Failed to emit ${usageType} usage: ${err?.message ?? err}`);
         });
         this.pendingSubagentEmits.push(emit);
       }
     }
     await this.recordCollectedUsage({
       collectedUsage,
-      context: 'activity-label',
+      context: usageType,
       model,
       endpointTokenConfig: labelTokenConfig,
       /** The label ran elsewhere, so its config governs even when undefined. */
@@ -698,6 +730,7 @@ class AgentClient extends BaseClient {
         })),
         thinkingExcerpts: context.thinkingExcerpts,
         lastAssistantText: context.lastAssistantText,
+        lastAssistantPhase: context.lastAssistantPhase,
         ...(previousLabels != null && { previousLabels }),
         traceSeed,
         charLimit,
@@ -729,6 +762,98 @@ class AgentClient extends BaseClient {
         await recordUsage();
       }
     }
+  }
+
+  /**
+   * SDK bridge for parent phase summaries. Usage is returned as a deferred
+   * collector so the runtime can commit the durable label first and bill
+   * only summaries that actually became visible.
+   */
+  async generateActivityPhaseViaRun({
+    activities,
+    assistantContext,
+    closingTextPhase,
+    phaseIndex,
+    totalActivityCount,
+    status,
+    agentIds,
+    charLimit,
+    prompt,
+    signal,
+  }) {
+    if (typeof this.run?.generateActivityPhaseLabel !== 'function') {
+      return {};
+    }
+    const { provider, clientOptions, endpointTokenConfig, sameEndpoint } =
+      await this.resolveActivityPhaseLabelLLM();
+    const { handleLLMEnd, collected } = createMetadataAggregator();
+    let sdkPromptText;
+    const capturePrompt = {
+      handleLLMStart: (_llm, prompts) => {
+        sdkPromptText = Array.isArray(prompts) ? prompts.join('\n') : undefined;
+      },
+      handleChatModelStart: (_llm, messages) => {
+        try {
+          sdkPromptText = (messages ?? [])
+            .flat()
+            .map((message) =>
+              typeof message?.content === 'string'
+                ? message.content
+                : JSON.stringify(message?.content ?? ''),
+            )
+            .join('\n');
+        } catch {
+          // Providers with usage metadata do not need the estimate fallback.
+        }
+      },
+    };
+    let label;
+    try {
+      ({ label } = await this.run.generateActivityPhaseLabel({
+        provider,
+        clientOptions,
+        activities,
+        assistantContext,
+        closingTextPhase,
+        phaseIndex,
+        totalActivityCount,
+        status,
+        agentIds,
+        charLimit,
+        prompt,
+        sourceRunId: this.responseMessageId,
+        sourceTraceId: traceIdForMessage(this.responseMessageId),
+        responseId: this.responseMessageId,
+        traceSeed: `${this.responseMessageId}-activity-phase-${phaseIndex}`,
+        chainOptions: {
+          signal,
+          callbacks: [{ handleLLMEnd, ...capturePrompt }],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req?.user?.id,
+            requestBody: { parentMessageId: this.parentMessageId },
+          },
+        },
+      }));
+    } catch (error) {
+      if (!signal?.aborted) {
+        logger.warn('[AgentClient] Activity phase generation failed', error);
+      }
+    }
+    return {
+      label,
+      collectUsage: async (completionText) =>
+        this.recordActivityLabelUsage(
+          collected,
+          clientOptions.model,
+          endpointTokenConfig,
+          sameEndpoint,
+          undefined,
+          provider,
+          () => ({ promptText: sdkPromptText ?? '', completionText: completionText ?? '' }),
+          'activity-phase',
+        ),
+    };
   }
 
   /** Bounded settle for in-flight label fills before finalization. On
@@ -821,16 +946,15 @@ class AgentClient extends BaseClient {
      *  emit, whose ordering against shifted SDK indices is load-bearing.
      *  The chain settles on failure (warned retry), so a lost write can
      *  never wedge run startup. */
-    this.activityLabelsMarkedPromise = GenerationJobManager.markActivityLabels(
-      streamId,
-      this.jobCreatedAt,
-    ).catch(() =>
-      GenerationJobManager.markActivityLabels(streamId, this.jobCreatedAt).catch(() => {
-        logger.warn(
-          `[AgentClient] Could not flag activity labels for ${streamId}; a label resolving during a resume gap may not be reconciled.`,
-        );
-      }),
-    );
+    this.activityLabelsMarkedPromise =
+      this.activityLabelsMarkedPromise ??
+      GenerationJobManager.markActivityLabels(streamId, this.jobCreatedAt).catch(() =>
+        GenerationJobManager.markActivityLabels(streamId, this.jobCreatedAt).catch(() => {
+          logger.warn(
+            `[AgentClient] Could not flag activity labels for ${streamId}; a label resolving during a resume gap may not be reconciled.`,
+          );
+        }),
+      );
     /** SDK support probe (steering-style): the Run method and the formatter
      *  replay skip ship together, so method presence is the capability. */
     const sdkCapable = typeof Run?.prototype?.generateActivityLabel === 'function';
@@ -949,6 +1073,94 @@ class AgentClient extends BaseClient {
         generateLabel: (payload) => this.generateActivityLabelViaRun(payload),
       }),
     });
+  }
+
+  /** Builds the independently opt-in parent activity-phase collector. */
+  buildActivityPhaseWiring(streamId, abortSignal, initialSnapshot) {
+    if (!streamId || typeof Run?.prototype?.generateActivityPhaseLabel !== 'function') {
+      return undefined;
+    }
+    const agentEndpoint = this.options.agent?.endpoint ?? '';
+    const appConfig = this.options.req?.config;
+    let customEndpointConfig;
+    try {
+      customEndpointConfig = getCustomEndpointConfig({ endpoint: agentEndpoint, appConfig });
+    } catch {
+      customEndpointConfig = undefined;
+    }
+    const phaseConfig = resolveActivityPhaseConfig(
+      appConfig,
+      agentEndpoint,
+      customEndpointConfig,
+      this.options.endpoint,
+    );
+    if (!phaseConfig.enabled) {
+      return undefined;
+    }
+
+    this.activityLabelsMarkedPromise =
+      this.activityLabelsMarkedPromise ??
+      GenerationJobManager.markActivityLabels(streamId, this.jobCreatedAt).catch(() =>
+        GenerationJobManager.markActivityLabels(streamId, this.jobCreatedAt).catch(() => {
+          logger.warn(
+            `[AgentClient] Could not flag activity phases for ${streamId}; a phase resolving during a resume gap may not be reconciled.`,
+          );
+        }),
+      );
+
+    const scope = { closed: false, abort: new AbortController() };
+    this.activityLabelScopes = this.activityLabelScopes ?? [];
+    this.activityLabelScopes.push(scope);
+    const closeOnAbort = () => {
+      scope.closed = true;
+      scope.abort.abort();
+    };
+    if (abortSignal != null) {
+      if (abortSignal.aborted) {
+        closeOnAbort();
+      } else {
+        abortSignal.addEventListener('abort', closeOnAbort, { once: true });
+        scope.detach = () => abortSignal.removeEventListener('abort', closeOnAbort);
+      }
+    }
+    this.activityLabelUsageSeq =
+      this.activityLabelUsageSeq ??
+      (this.contentParts ?? []).filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length;
+
+    const wiring = createActivityPhaseWiring({
+      maxPerRun: phaseConfig.maxPerRun,
+      charLimit: phaseConfig.charLimit,
+      prompt: phaseConfig.prompt,
+      initialSnapshot,
+      abortSignal: scope.abort.signal,
+      isClosed: () => scope.closed,
+      getContentParts: () => this.contentParts,
+      getStepIndex: (stepId) => this.stepMap?.get(stepId)?.index,
+      bumpIndexOffset: () => {
+        this.steerOffsetState.offset += 1;
+      },
+      emitLabelEvent: (index, part) =>
+        GenerationJobManager.emitChunk(
+          streamId,
+          {
+            event: ActivityLabelEvents.ON_ACTIVITY_LABEL,
+            data: {
+              index,
+              part,
+              responseMessageId: this.responseMessageId,
+              conversationId: this.conversationId,
+            },
+          },
+          { durable: true, expectedCreatedAt: this.jobCreatedAt },
+        ),
+      trackPendingFill: (fillDone) => {
+        this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
+        this.pendingActivityLabelFills.push(fillDone);
+      },
+      generatePhase: (payload) => this.generateActivityPhaseViaRun(payload),
+    });
+    this.activityPhaseWiring = wiring;
+    return wiring;
   }
 
   /**
@@ -2059,6 +2271,59 @@ class AgentClient extends BaseClient {
   }
 
   /**
+   * Rebase parent activity bounds after completion-time content reshaping.
+   * Object identity links retained parts back to their pre-reshape positions,
+   * so prepended skill cards cannot enter a phase and a filtered-away leading
+   * reasoning part advances the bound to the first retained child.
+   *
+   * Both arrays may be sparse: the aggregator writes parts at provider-source
+   * indexes, which can skip slots. Holes must not enter the identity map — a
+   * hole reads as `undefined`, and one `undefined` key would falsely match
+   * every hole in `previousParts` as a retained part.
+   *
+   * @param {Array<import('librechat-data-provider').ContentPart | null | undefined>} previousParts
+   */
+  rebaseActivityPhaseBounds(previousParts) {
+    if (!Array.isArray(previousParts) || !Array.isArray(this.contentParts)) {
+      return;
+    }
+    const retainedIndexes = new Map();
+    for (let index = 0; index < this.contentParts.length; index += 1) {
+      const part = this.contentParts[index];
+      if (part != null) {
+        retainedIndexes.set(part, index);
+      }
+    }
+    for (let markerIndex = 0; markerIndex < this.contentParts.length; markerIndex += 1) {
+      const marker = this.contentParts[markerIndex];
+      if (
+        marker?.type !== ContentTypes.ACTIVITY_LABEL ||
+        marker.activity_label_type !== 'phase' ||
+        typeof marker.activity_start_index !== 'number'
+      ) {
+        continue;
+      }
+      const previousMarkerIndex = previousParts.indexOf(marker);
+      if (previousMarkerIndex < 0) {
+        continue;
+      }
+      const previousStartIndex = Math.min(
+        previousMarkerIndex,
+        Math.max(0, marker.activity_start_index),
+      );
+      let nextStartIndex = markerIndex;
+      for (let index = previousStartIndex; index < previousMarkerIndex; index += 1) {
+        const retainedIndex = retainedIndexes.get(previousParts[index]);
+        if (retainedIndex != null && retainedIndex < markerIndex) {
+          nextStartIndex = retainedIndex;
+          break;
+        }
+      }
+      marker.activity_start_index = nextStartIndex;
+    }
+  }
+
+  /**
    * Surface any human-in-the-loop interrupt the SDK captured during the most
    * recent `processStream` / `resume`. When the run paused for tool approval (or
    * an ask-user question), mark the job `requires_action`, persist the pending
@@ -2165,6 +2430,9 @@ class AgentClient extends BaseClient {
     const paused = await GenerationJobManager.approvals.pause(streamId, pendingAction, {
       expectedCreatedAt: this.jobCreatedAt,
       ...(discoveredTools.length > 0 ? { discoveredTools } : {}),
+      ...(this.activityPhaseWiring?.snapshot != null && {
+        activityPhaseSnapshot: this.activityPhaseWiring.snapshot(),
+      }),
       persistencePending: true,
     });
     if (!paused) {
@@ -2518,6 +2786,12 @@ class AgentClient extends BaseClient {
           });
         }
 
+        const activityLabel = this.buildActivityLabelWiring(streamId, abortController.signal);
+        const activityPhase = this.buildActivityPhaseWiring(streamId, abortController.signal);
+        const offsetHandlers = createSteerIndexOffsetHandlers(
+          this.options.eventHandlers,
+          this.steerOffsetState,
+        );
         const createRunPromise = createRun({
           agents,
           messages,
@@ -2531,17 +2805,19 @@ class AgentClient extends BaseClient {
           // boundary and inject them into graph state. The offset wrapper
           // shifts SDK content indices past any spliced steer parts.
           steering: this.buildSteerWiring(streamId),
-          activityLabel: this.buildActivityLabelWiring(streamId, abortController.signal),
+          activityLabel,
+          activityPhase,
           indexTokenCountMap,
           initialSummary,
           initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
           signal: abortController.signal,
-          customHandlers: createSteerIndexOffsetHandlers(
-            this.options.eventHandlers,
-            this.steerOffsetState,
-          ),
+          /** The phase wrapper stays outermost: it claims and offsets the
+           *  parent slot before the text step reaches the normal handlers. */
+          customHandlers:
+            activityPhase?.handlers(offsetHandlers) ??
+            (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers),
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
           tenantId: this.options.req?.user?.tenantId,
@@ -2663,6 +2939,7 @@ class AgentClient extends BaseClient {
        */
       await this.settleActivityLabels();
 
+      const contentBeforeReshape = [...this.contentParts];
       const manualPrimed = this.options.agent?.manualSkillPrimes ?? [];
       if (manualPrimed.length > 0) {
         const runId = this.responseMessageId ?? 'skill-prime';
@@ -2671,6 +2948,7 @@ class AgentClient extends BaseClient {
       }
 
       this.applyHideSequentialOutputsFilter();
+      this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
       if (abortController.signal.aborted) {
         logger.debug(
@@ -2788,6 +3066,7 @@ class AgentClient extends BaseClient {
    * @param {Agents.ToolApprovalDecisionMap | { answer: string }} params.resumeValue
    * @param {Array} [params.seedContent] - content aggregated before the pause
    * @param {Array<import('@librechat/agents').RunStep>} [params.runSteps] - run steps emitted before the pause
+   * @param {import('@librechat/api').ActivityPhaseSnapshot} [params.activityPhaseSnapshot]
    * @param {AbortController} [params.abortController]
    * @param {Pick<import('@langchain/langgraph').Command, 'update' | 'goto'>} [params.commandOptions]
    */
@@ -2799,6 +3078,7 @@ class AgentClient extends BaseClient {
     commandOptions,
     userMCPAuthMap,
     discoveredToolNames,
+    activityPhaseSnapshot,
   }) {
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
@@ -2878,6 +3158,19 @@ class AgentClient extends BaseClient {
       const initialSessions = buildInitialToolSessions({ skillSessions, agents });
 
       const streamId = this.options.req?._resumableStreamId;
+      const activityLabel = this.buildActivityLabelWiring(streamId, abortController.signal);
+      const activityPhase = this.buildActivityPhaseWiring(
+        streamId,
+        abortController.signal,
+        activityPhaseSnapshot,
+      );
+      const offsetHandlers = createSteerIndexOffsetHandlers(
+        createContentIndexOffsetHandlers(
+          this.options.eventHandlers,
+          Array.isArray(seedContent) ? seedContent : [],
+        ),
+        this.steerOffsetState,
+      );
       run = await createRun({
         agents,
         // State (messages, tool calls) is rehydrated from the checkpoint by
@@ -2892,7 +3185,8 @@ class AgentClient extends BaseClient {
         steering: this.buildSteerWiring(streamId),
         // Activity labels likewise survive pause/resume: post-resume tool
         // batches keep claiming slots and generating group headers.
-        activityLabel: this.buildActivityLabelWiring(streamId, abortController.signal),
+        activityLabel,
+        activityPhase,
         // Replay deferred tools discovered before the pause. With `messages: []` the
         // discovery scan finds nothing, so these names restore the schemas to the
         // rebuilt model binding. Undefined/empty for non-deferred turns is a no-op.
@@ -2906,13 +3200,9 @@ class AgentClient extends BaseClient {
         // type mismatch, is silently dropped against) the pre-pause content. The
         // steer wrapper composes on top: resumed indices shift by seed + any
         // steer parts spliced in while the resumed segment streams.
-        customHandlers: createSteerIndexOffsetHandlers(
-          createContentIndexOffsetHandlers(
-            this.options.eventHandlers,
-            Array.isArray(seedContent) ? seedContent : [],
-          ),
-          this.steerOffsetState,
-        ),
+        customHandlers:
+          activityPhase?.handlers(offsetHandlers) ??
+          (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers),
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
         tenantId: this.options.req?.user?.tenantId,
@@ -2981,7 +3271,9 @@ class AgentClient extends BaseClient {
       // before resume finalize/re-pause persistence reads `this.contentParts`, so a
       // resumed sequential chain doesn't persist/emit outputs hide_sequential_outputs
       // is meant to hide.
+      const contentBeforeReshape = [...this.contentParts];
       this.applyHideSequentialOutputsFilter();
+      this.rebaseActivityPhaseBounds(contentBeforeReshape);
     } catch (err) {
       if (abortController.signal.aborted) {
         logger.debug(

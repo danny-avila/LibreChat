@@ -1,6 +1,10 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TActivityLabelEvent, TMessage, TMessageContentParts } from 'librechat-data-provider';
-import { applyActivityLabelPart, lastVisibleContentIdx } from '../activityLabels';
+import {
+  applyActivityLabelPart,
+  groupActivityPhases,
+  lastVisibleContentIdx,
+} from '../activityLabels';
 
 const buildMessage = (content: TMessage['content']): TMessage =>
   ({ messageId: 'm1', isCreatedByUser: false, content }) as TMessage;
@@ -30,6 +34,25 @@ describe('applyActivityLabelPart', () => {
     const message = buildMessage([undefined as never, part as never]);
     const updated = applyActivityLabelPart(message, { index: 1, part });
     expect(updated).toBe(message);
+  });
+
+  it('applies a bounds-only update to a completed phase', () => {
+    const existing = labelPart({ activity_label: 'Fixed the session', pending: false });
+    Object.assign(existing, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_count: 2,
+    });
+    const incoming = { ...existing, activity_start_index: 1 };
+    const message = buildMessage([existing as never]);
+
+    const updated = applyActivityLabelPart(message, { index: 0, part: incoming });
+
+    expect(updated).not.toBe(message);
+    expect((updated.content as unknown[])[0]).toMatchObject({
+      activity_start_index: 1,
+      activity_count: 2,
+    });
   });
 
   it('never lets a stale pending placeholder overwrite a resolved label', () => {
@@ -74,5 +97,58 @@ describe('lastVisibleContentIdx', () => {
     expect(lastVisibleContentIdx([text, tool])).toBe(1);
     expect(lastVisibleContentIdx([])).toBe(-1);
     expect(lastVisibleContentIdx(undefined)).toBe(-1);
+  });
+
+  it('skips large sparse trailing gaps', () => {
+    expect(lastVisibleContentIdx([undefined, tool, undefined, undefined])).toBe(1);
+    const sparse = new Array<TMessageContentParts | undefined>(10_000);
+    sparse[1] = tool;
+    expect(lastVisibleContentIdx(sparse)).toBe(1);
+  });
+});
+
+describe('groupActivityPhases', () => {
+  const text = { type: ContentTypes.TEXT, text: 'final answer' } as TMessageContentParts;
+  const tool = {
+    type: ContentTypes.TOOL_CALL,
+    tool_call: { id: 't1', name: 'web_search', args: '{}', output: 'ok' },
+  } as unknown as TMessageContentParts;
+
+  it('carries absolute offsets while consuming a completed parent marker', () => {
+    const phase = labelPart({ activity_label: 'Compared both release paths', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 1,
+      activity_count: 2,
+    });
+    const segments = groupActivityPhases([text, tool, tool, phase as never, text]);
+    expect(segments).toHaveLength(3);
+    expect(segments?.[1]).toMatchObject({ type: 'phase', labelIndex: 3, startIndex: 1 });
+    if (segments?.[1]?.type === 'phase') {
+      expect(segments[1].content).toEqual([tool, tool]);
+    }
+  });
+
+  it('leaves pending or empty parent markers on the feature-off path', () => {
+    const pending = labelPart();
+    Object.assign(pending, { activity_label_type: 'phase', activity_start_index: 0 });
+    expect(groupActivityPhases([tool, pending as never])).toBeUndefined();
+  });
+
+  it('preserves a completed summary when every phase child was filtered out', () => {
+    const phase = labelPart({ activity_label: 'Reconciled both release paths', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_count: 2,
+    });
+
+    expect(groupActivityPhases([labelPart() as never, phase as never])).toEqual([
+      expect.objectContaining({
+        type: 'phase',
+        labelIndex: 1,
+        hasContent: false,
+      }),
+    ]);
   });
 });

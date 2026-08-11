@@ -20,11 +20,13 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./tailwind-preset": "./tailwind.preset.cjs",
     "./style.css": "./dist/style.css",
     "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "tailwind.preset.cjs"
   ],
   "scripts": {
     "clean": "rimraf dist",

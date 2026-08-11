@@ -1,23 +1,33 @@
 import React from 'react';
 import { ContentTypes } from 'librechat-data-provider';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { TMessageContentParts } from 'librechat-data-provider';
+import { groupSequentialToolCalls } from '~/utils';
 
 jest.mock('~/utils', () => ({
+  cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
   mapAttachments: () => ({}),
   filterAttachmentsForPart: (attachments: unknown) => attachments,
-  groupSequentialToolCalls: (parts: Array<{ part: unknown; idx: number }>) =>
-    parts.map((p) => ({ type: 'single' as const, part: p })),
+  groupSequentialToolCalls: jest.fn(),
 }));
 
-jest.mock('~/Providers', () => ({
-  MessageContext: {
-    Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  },
-  SearchContext: {
-    Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  },
-}));
+jest.mock('~/Providers', () => {
+  const react = jest.requireActual<typeof import('react')>('react');
+  return {
+    MessageContext: {
+      Provider: ({
+        children,
+        value,
+      }: {
+        children: React.ReactElement<{ idx?: number }>;
+        value: { partIndex: number };
+      }) => react.cloneElement(children, { idx: value.partIndex }),
+    },
+    SearchContext: {
+      Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    },
+  };
+});
 
 jest.mock('../Parts', () => ({
   EditTextPart: () => <div data-testid="edit-text-part" />,
@@ -41,7 +51,30 @@ jest.mock('../Parts/PendingSkillCall', () => ({
 
 jest.mock('../ToolCallGroup', () => ({
   __esModule: true,
-  default: () => <div data-testid="tool-call-group" />,
+  default: ({
+    initialExpansionState,
+    onExpansionChange,
+  }: {
+    initialExpansionState?: { isExpanded: boolean; userOverride: boolean };
+    onExpansionChange?: (state: { isExpanded: boolean; userOverride: boolean }) => void;
+  }) => (
+    <button
+      data-testid="tool-call-group"
+      data-initial-expanded={
+        initialExpansionState == null ? 'unset' : String(initialExpansionState.isExpanded)
+      }
+      onClick={() => onExpansionChange?.({ isExpanded: false, userOverride: true })}
+    />
+  ),
+}));
+
+jest.mock('../ActivityPhaseGroup', () => ({
+  __esModule: true,
+  default: ({ children, showCursor }: { children: React.ReactNode; showCursor?: boolean }) => (
+    <div data-testid="activity-phase-group" data-show-cursor={String(showCursor === true)}>
+      {children}
+    </div>
+  ),
 }));
 
 jest.mock('../Container', () => ({
@@ -53,8 +86,8 @@ jest.mock('../Container', () => ({
 
 jest.mock('../Part', () => ({
   __esModule: true,
-  default: ({ part }: { part: TMessageContentParts }) => (
-    <div data-testid={`real-part-${part.type}`} />
+  default: ({ part, idx }: { part: TMessageContentParts; idx: number }) => (
+    <div data-testid={`real-part-${part.type}`} data-index={idx} />
   ),
 }));
 
@@ -63,13 +96,15 @@ jest.mock('../ParallelContent', () => ({
    *  renderer does for its sequential stretches, so the wiring is testable. */
   ParallelContentRenderer: ({
     content,
+    contentIndexOffset = 0,
     renderResumeAttribution,
   }: {
     content?: Array<TMessageContentParts | undefined>;
+    contentIndexOffset?: number;
     renderResumeAttribution?: (idx: number) => React.ReactNode;
   }) => (
-    <div data-testid="parallel-renderer">
-      {content?.map((_, idx) => renderResumeAttribution?.(idx))}
+    <div data-testid="parallel-renderer" data-index-offset={contentIndexOffset}>
+      {content?.map((_, idx) => renderResumeAttribution?.(idx + contentIndexOffset))}
     </div>
   ),
 }));
@@ -84,6 +119,12 @@ const baseProps = {
   isCreatedByUser: false,
   content: [],
 };
+
+beforeEach(() => {
+  jest
+    .mocked(groupSequentialToolCalls)
+    .mockImplementation((parts) => parts.map((part) => ({ type: 'single', part })));
+});
 
 describe('ContentParts — interim skill cards', () => {
   it('renders a PendingSkillCall per manual skill on assistant messages', () => {
@@ -257,5 +298,130 @@ describe('ContentParts — post-steer author re-attribution', () => {
     );
     expect(screen.getAllByTestId('author-header')).toHaveLength(1);
     expect(screen.queryByTestId('post-steer-agent-update')).toBeNull();
+  });
+
+  it('retains steer attribution when resumed content moves into a phase slice', () => {
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Reconciled both release paths',
+      activity_label_type: 'phase',
+      activity_start_index: 2,
+      activity_count: 2,
+      pending: false,
+    } as unknown as TMessageContentParts;
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[textPart('a'), steerPart, textPart('resumed'), phase]}
+        authorHeader={header}
+      />,
+    );
+
+    expect(screen.getByTestId('activity-phase-group')).toBeTruthy();
+    expect(screen.getAllByTestId('author-header')).toHaveLength(1);
+    expect(screen.getAllByTestId(`real-part-${ContentTypes.TEXT}`)[1]).toHaveAttribute(
+      'data-index',
+      '2',
+    );
+  });
+});
+
+describe('ContentParts — activity phase state', () => {
+  it('keeps a streaming cursor when a completed phase marker is the visible tail', () => {
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Compared both search results',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_count: 2,
+      pending: false,
+    } as unknown as TMessageContentParts;
+
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[
+          { type: ContentTypes.TEXT, text: 'working' } as unknown as TMessageContentParts,
+          phase,
+        ]}
+        isLast
+        isSubmitting
+        isLatestMessage
+      />,
+    );
+
+    expect(screen.getByTestId('activity-phase-group')).toHaveAttribute('data-show-cursor', 'true');
+  });
+
+  it('carries the absolute index offset into a parallel phase segment', () => {
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Compared both agent results',
+      activity_label_type: 'phase',
+      activity_start_index: 1,
+      activity_count: 2,
+      pending: false,
+    } as unknown as TMessageContentParts;
+    const parallel = {
+      type: ContentTypes.TEXT,
+      text: 'lane result',
+      groupId: 1,
+    } as unknown as TMessageContentParts;
+
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[
+          { type: ContentTypes.TEXT, text: 'before' } as unknown as TMessageContentParts,
+          parallel,
+          phase,
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId('parallel-renderer')).toHaveAttribute('data-index-offset', '1');
+  });
+
+  it('retains a tool-group expansion override when a completed phase remounts the group', () => {
+    jest.mocked(groupSequentialToolCalls).mockImplementation((parts) => {
+      const toolParts = parts.filter(({ part }) => part.type === ContentTypes.TOOL_CALL);
+      if (toolParts.length > 0) {
+        return [{ type: 'tool-group', parts: toolParts }];
+      }
+      return parts.map((part) => ({ type: 'single', part }));
+    });
+    const tools = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'tool-1', name: 'search', args: {}, output: 'one' },
+      },
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'tool-2', name: 'search', args: {}, output: 'two' },
+      },
+    ] as unknown as TMessageContentParts[];
+    const pendingPhase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: '',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_count: 2,
+      pending: true,
+    } as unknown as TMessageContentParts;
+    const { rerender } = render(<ContentParts {...baseProps} content={[...tools, pendingPhase]} />);
+
+    const pendingGroup = screen.getByTestId('tool-call-group');
+    expect(pendingGroup).toHaveAttribute('data-initial-expanded', 'unset');
+    fireEvent.click(pendingGroup);
+
+    const completedPhase = {
+      ...pendingPhase,
+      [ContentTypes.ACTIVITY_LABEL]: 'Compared both search results',
+      pending: false,
+    } as unknown as TMessageContentParts;
+    rerender(<ContentParts {...baseProps} content={[...tools, completedPhase]} />);
+
+    expect(screen.getByTestId('activity-phase-group')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-initial-expanded', 'false');
   });
 });

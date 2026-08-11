@@ -3357,6 +3357,110 @@ describe('useStepHandler', () => {
       expect(response?.content?.[0]).toMatchObject({ [ContentTypes.TEXT]: 'kept a' });
     });
 
+    it('does not merge final-answer text into a retained commentary phase', () => {
+      const commentary = {
+        type: ContentTypes.TEXT,
+        [ContentTypes.TEXT]: 'Checked the current deployment. ',
+        phase: 'commentary',
+      } as TMessageContentParts;
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({ content: [textPart('kept'), commentary] }),
+      } as never);
+      (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+      const responseMessage = submission.initialResponse as TMessage;
+      let currentMessages: TMessage[] = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages: TMessage[]) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({
+              stepDetails: {
+                type: StepTypes.MESSAGE_CREATION,
+                message_creation: { message_id: 'msg-1', phase: 'final_answer' },
+              },
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'Done') },
+          submission,
+        );
+      });
+
+      const response = currentMessages.find((message) => !message.isCreatedByUser);
+      expect(response?.content?.[1]).toMatchObject({
+        [ContentTypes.TEXT]: 'Checked the current deployment. ',
+        phase: 'commentary',
+      });
+      expect(response?.content?.[2]).toMatchObject({
+        [ContentTypes.TEXT]: 'Done',
+        phase: 'final_answer',
+      });
+    });
+
+    it.each([
+      [undefined, 'commentary'],
+      ['commentary', undefined],
+    ] as const)(
+      'does not merge phased and unphased text (%s → %s)',
+      (retainedPhase, incomingPhase) => {
+        const retained = {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: 'Retained text. ',
+          ...(retainedPhase != null && { phase: retainedPhase }),
+        } as TMessageContentParts;
+        const submission = createSubmission({
+          editedContent: { index: 0, type: ContentTypes.TEXT },
+          initialResponse: createResponseMessage({ content: [textPart('kept'), retained] }),
+        } as never);
+        (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+        const responseMessage = submission.initialResponse as TMessage;
+        let currentMessages: TMessage[] = [responseMessage];
+        mockGetMessages.mockImplementation(() => currentMessages);
+        mockSetMessages.mockImplementation((messages: TMessage[]) => {
+          currentMessages = messages;
+        });
+
+        const { result } = renderHook(() => useStepHandler(createHookParams()));
+        act(() => {
+          result.current.stepHandler(
+            {
+              event: StepEvents.ON_RUN_STEP,
+              data: createRunStep({
+                stepDetails: {
+                  type: StepTypes.MESSAGE_CREATION,
+                  message_creation: {
+                    message_id: 'msg-1',
+                    ...(incomingPhase != null && { phase: incomingPhase }),
+                  },
+                },
+              }),
+            },
+            submission,
+          );
+          result.current.stepHandler(
+            { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'New text') },
+            submission,
+          );
+        });
+
+        const response = currentMessages.find((message) => !message.isCreatedByUser);
+        expect(response?.content?.[1]).toMatchObject(retained);
+        expect(response?.content?.[2]).toMatchObject({
+          [ContentTypes.TEXT]: 'New text',
+          ...(incomingPhase != null && { phase: incomingPhase }),
+        });
+      },
+    );
+
     /**
      * Post-sync a delta continues at the snapshot's NEXT absolute slot. With
      * the offset still applied it would jump past that slot and leave a hole

@@ -31,6 +31,7 @@ export interface IThemeRGB {
   'rgb-surface-active-alt'?: string;
   'rgb-surface-hover'?: string;
   'rgb-surface-hover-alt'?: string;
+  'rgb-surface-composer-hover'?: string;
   'rgb-surface-primary'?: string;
   'rgb-surface-primary-alt'?: string;
   'rgb-surface-primary-contrast'?: string;
@@ -112,6 +113,7 @@ export interface IThemeVariables {
   '--surface-active-alt': string;
   '--surface-hover': string;
   '--surface-hover-alt': string;
+  '--surface-composer-hover': string;
   '--surface-primary': string;
   '--surface-primary-alt': string;
   '--surface-primary-contrast': string;
@@ -189,6 +191,7 @@ export interface IThemeColors {
   'surface-active-alt'?: string;
   'surface-hover'?: string;
   'surface-hover-alt'?: string;
+  'surface-composer-hover'?: string;
   'surface-primary'?: string;
   'surface-primary-alt'?: string;
   'surface-primary-contrast'?: string;
@@ -248,4 +251,40 @@ export interface IThemeColors {
 export interface Theme {
   name: string;
   colors: IThemeRGB;
+}
+
+export type ThemeMode = 'light' | 'dark';
+
+export interface IThemeAppearance {
+  controlRadius: string;
+  roundControlRadius: string;
+  surfaceRadius: string;
+  largeSurfaceRadius: string;
+  controlHeight: string;
+  spaceCompact: string;
+  spaceNormal: string;
+  fontFamily: string;
+  elevationSurface: string;
+  motionFast: string;
+  motionNormal: string;
+}
+
+export interface ThemeModeDefinition {
+  colors?: IThemeRGB;
+  appearance?: Partial<IThemeAppearance>;
+}
+
+/** Versioned, data-only theme input. Missing values resolve against LibreChat defaults. */
+export interface ThemeDefinition {
+  version: 1;
+  name: string;
+  modes: Partial<Record<ThemeMode, ThemeModeDefinition>>;
+}
+
+export interface ResolvedThemeDefinition {
+  version: 1;
+  name: string;
+  mode: ThemeMode;
+  colors: Required<IThemeRGB>;
+  appearance: IThemeAppearance;
 }

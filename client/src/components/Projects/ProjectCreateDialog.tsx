@@ -7,7 +7,6 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from 'react';
-import type { TChatProject } from 'librechat-data-provider';
 import {
   Button,
   Input,
@@ -17,6 +16,7 @@ import {
   Spinner,
   useToastContext,
 } from '@librechat/client';
+import type { TChatProject } from 'librechat-data-provider';
 import { useCreateProjectMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -83,7 +83,7 @@ export default function ProjectCreateDialog({
       <OGDialogTemplate
         title={localize('com_ui_create_project')}
         showCloseButton={true}
-        className="w-11/12 max-w-lg bg-surface-primary text-text-primary"
+        className="w-11/12 max-w-lg bg-surface-dialog text-text-primary"
         main={
           <form id={formId} onSubmit={handleCreate} className="space-y-2">
             <Label htmlFor={`${formId}-name`} className="text-sm font-medium text-text-primary">

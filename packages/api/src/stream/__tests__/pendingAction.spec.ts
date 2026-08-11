@@ -76,6 +76,37 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(paused?.metadata.discoveredTools).toEqual(['save_issue_mcp_linear']);
     });
 
+    test('persists activity phase state in the same transition as the pause', async () => {
+      const streamId = 'stream-pause-activity-phase';
+      await manager.createJob(streamId, 'user-1');
+      const activityPhaseSnapshot = {
+        version: 1 as const,
+        generated: 0,
+        activityCount: 1,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [
+          {
+            label: 'Inspected the deployment',
+            status: 'success' as const,
+            startIndex: 0,
+          },
+        ],
+        assistantContext: ['Checking the remaining replicas'],
+        pendingReasoning: [],
+      };
+
+      expect(
+        await manager.approvals.pause(streamId, buildAction(streamId), {
+          activityPhaseSnapshot,
+        }),
+      ).toBe(true);
+
+      const paused = await manager.getJob(streamId);
+      expect(paused?.metadata.activityPhaseSnapshot).toEqual(activityPhaseSnapshot);
+    });
+
     test('does not write a stale pause or discoveries onto a replacement job', async () => {
       const streamId = 'stream-pause-replaced';
       const original = await manager.createJob(streamId, 'user-1');

@@ -179,6 +179,22 @@ describe('synthesizeActivityLabelGapEvents', () => {
     ];
     expect(synthesizeActivityLabelGapEvents(parts, parts, meta)).toEqual([]);
   });
+
+  it('re-emits a completed phase when its reconciled bounds changed', () => {
+    const snapshot: LooseContentPart[] = [
+      {
+        type: 'activity_label',
+        activity_label: 'Inspected and fixed the session',
+        activity_label_type: 'phase',
+        activity_start_index: 0,
+        activity_count: 2,
+        pending: false,
+      },
+    ];
+    const fresh: LooseContentPart[] = [{ ...snapshot[0], activity_start_index: 1 }];
+
+    expect(synthesizeActivityLabelGapEvents(snapshot, fresh, meta)).toHaveLength(1);
+  });
 });
 
 describe('createActivityLabelWiring close gate', () => {

@@ -1411,7 +1411,7 @@ describe('User parameter passing tests', () => {
       }
     });
 
-    it('should fail tenant-scoped OAuth flows when tool loading is aborted', async () => {
+    it('does not fail shared OAuth flows when tool loading is aborted', async () => {
       const mockUser = { id: 'tenant-user', name: 'Tenant User' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
       const abortController = new AbortController();
@@ -1419,9 +1419,7 @@ describe('User parameter passing tests', () => {
         createFlowWithHandler: jest.fn(),
         failFlow: jest.fn(),
       };
-      mockGetTenantId.mockReturnValue('tenant/a');
       mockGetFlowStateManager.mockReturnValue(mockFlowManager);
-      MCPOAuthHandler.generateFlowId.mockReturnValue('tenant-flow-id');
 
       let resolveReinit;
       mockReinitMCPServer.mockImplementation(
@@ -1445,21 +1443,7 @@ describe('User parameter passing tests', () => {
       resolveReinit({ tools: [], availableTools: {} });
       await createToolsPromise;
 
-      expect(MCPOAuthHandler.generateFlowId).toHaveBeenCalledWith(
-        mockUser.id,
-        'tenant-abort-server',
-        'tenant/a',
-      );
-      expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
-        'tenant-flow-id',
-        'mcp_oauth',
-        expect.any(Error),
-      );
-      expect(mockFlowManager.failFlow).toHaveBeenCalledWith(
-        'tenant-flow-id',
-        'mcp_get_tokens',
-        expect.any(Error),
-      );
+      expect(mockFlowManager.failFlow).not.toHaveBeenCalled();
     });
 
     it('should throw error if user is not provided', async () => {
@@ -1487,6 +1471,82 @@ describe('User parameter passing tests', () => {
   });
 
   describe('createMCPTool', () => {
+    it('keeps shared OAuth recovery alive when one tool caller aborts', async () => {
+      const mockUser = { id: 'shared-recovery-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const ownerAbort = new AbortController();
+      const waiterAbort = new AbortController();
+      const flowManager = {
+        getFlowState: jest.fn().mockResolvedValue(null),
+        createFlowWithHandler: jest.fn(),
+        failFlow: jest.fn(),
+      };
+      let completeRecovery;
+      const sharedRecovery = new Promise((resolve) => {
+        completeRecovery = resolve;
+      });
+      const callTool = jest.fn(({ options }) => {
+        const signal = options?.signal;
+        return new Promise((resolve, reject) => {
+          const onAbort = () => {
+            signal?.removeEventListener('abort', onAbort);
+            reject(new Error('tool caller aborted'));
+          };
+          signal?.addEventListener('abort', onAbort, { once: true });
+          sharedRecovery.then(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve(['ok', null]);
+          });
+        });
+      });
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      mockGetFlowStateManager.mockReturnValue(flowManager);
+      mockGetMCPManager.mockReturnValue({ callTool });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        config: { url: 'https://runtime-oauth.example.com/mcp' },
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Cached tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+      const createConfig = (signal) => ({
+        signal,
+        configurable: { user: mockUser },
+        metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+        toolCall: {},
+      });
+
+      const ownerCall = mcpTool.invoke({}, createConfig(ownerAbort.signal));
+      const waiterCall = mcpTool.invoke({}, createConfig(waiterAbort.signal));
+      await new Promise((resolve) => setImmediate(resolve));
+
+      ownerAbort.abort();
+
+      await expect(ownerCall).rejects.toThrow('Aborted');
+      expect(flowManager.failFlow).not.toHaveBeenCalled();
+
+      completeRecovery();
+      await expect(waiterCall).resolves.toBe('ok');
+      expect(callTool).toHaveBeenCalledTimes(2);
+    });
+
     it.each(['OAuth flow initiated - return early', 'Pending OAuth flow reused - return early'])(
       'preserves runtime-detected OAuth for the internal signal: %s',
       async (oauthSignal) => {

@@ -522,33 +522,39 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
           }
           const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
 
-          const userConnection = await mcpManager.getUserConnection({
-            user,
-            serverName,
-            flowManager,
-            serverConfig,
-            customUserVars,
-            tokenMethods: {
-              findToken: db.findToken,
-              updateToken: db.updateToken,
-              createToken: db.createToken,
-              deleteTokens: db.deleteTokens,
+          const { snapshot, publicationGeneration } = await mcpManager.withUserConnectionLease(
+            {
+              user,
+              serverName,
+              flowManager,
+              serverConfig,
+              customUserVars,
+              tokenMethods: {
+                findToken: db.findToken,
+                updateToken: db.updateToken,
+                createToken: db.createToken,
+                deleteTokens: db.deleteTokens,
+              },
             },
-          });
+            async (userConnection) => {
+              logger.info(
+                `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
+              );
 
-          logger.info(
-            `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
+              const oauthReconnectionManager = getOAuthReconnectionManager();
+              oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
+
+              const snapshot =
+                typeof userConnection.fetchOrderedToolsSnapshot === 'function'
+                  ? await userConnection.fetchOrderedToolsSnapshot()
+                  : await userConnection.fetchToolsSnapshot();
+              return {
+                snapshot,
+                publicationGeneration: mcpManager.getToolPublicationGeneration?.(userConnection),
+              };
+            },
           );
-
-          const oauthReconnectionManager = getOAuthReconnectionManager();
-          oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
-
-          const snapshot =
-            typeof userConnection.fetchOrderedToolsSnapshot === 'function'
-              ? await userConnection.fetchOrderedToolsSnapshot()
-              : await userConnection.fetchToolsSnapshot();
           if (snapshot.complete) {
-            const publicationGeneration = mcpManager.getToolPublicationGeneration?.(userConnection);
             await updateMCPServerTools({
               userId: flowState.userId,
               serverName,
