@@ -18,6 +18,7 @@ export const ASK_USER_QUESTION = 'ask_user_question' as const;
 export const ASK_USER_DECLINED_ANSWER = 'The user chose not to answer this question.';
 const ASK_USER_QUESTION_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const MAX_ASK_USER_QUESTIONS = 4;
+const MAX_ASK_USER_QUESTION_HEADER_LENGTH = 80;
 
 /** Shape of the synthetic content part carrying an ask-user pending action. */
 export interface AskUserQuestionPart {
@@ -293,10 +294,11 @@ export function parseAskUserQuestionsArgs(
       return null;
     }
     ids.add(id);
-    const header = (item as { header?: unknown }).header;
+    const rawHeader = (item as { header?: unknown }).header;
+    const header = typeof rawHeader === 'string' ? rawHeader.trim() : '';
     questions.push({
       id,
-      ...(typeof header === 'string' && header.length > 0 && { header }),
+      ...(header.length > 0 && header.length <= MAX_ASK_USER_QUESTION_HEADER_LENGTH && { header }),
       ...request,
     });
   }

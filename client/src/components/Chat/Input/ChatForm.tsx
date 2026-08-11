@@ -596,7 +596,11 @@ const ChatForm = memo(function ChatForm({
                           textAreaRef as React.MutableRefObject<HTMLTextAreaElement | null>
                         ).current = e;
                       }}
-                      disabled={disableInputs || isNotAppendable || answerMode.batchMode}
+                      disabled={
+                        disableInputs ||
+                        isNotAppendable ||
+                        (answerMode.active && answerMode.batchMode)
+                      }
                       onPaste={handlePaste}
                       onKeyDown={(e) => {
                         // Answer mode consumes option-navigation keys from the

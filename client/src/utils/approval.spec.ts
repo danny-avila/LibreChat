@@ -324,6 +324,20 @@ describe('parseAskUserQuestionsArgs', () => {
       }),
     ).toBeNull();
   });
+
+  it('trims valid headers and omits whitespace-only or oversized headers', () => {
+    const parsed = parseAskUserQuestionsArgs({
+      questions: [
+        { id: 'trimmed', header: '  Context  ', question: 'First?' },
+        { id: 'blank', header: '   ', question: 'Second?' },
+        { id: 'large', header: 'x'.repeat(81), question: 'Third?' },
+      ],
+    });
+
+    expect(parsed?.questions[0].header).toBe('Context');
+    expect(parsed?.questions[1].header).toBeUndefined();
+    expect(parsed?.questions[2].header).toBeUndefined();
+  });
 });
 
 describe('removeAskUserQuestionPart', () => {

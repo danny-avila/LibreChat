@@ -10,6 +10,7 @@ import {
   mapToolApprovalResolutions,
   mapAskUserAnswer,
   mapAskUserAnswers,
+  resolveAskUserQuestionResume,
   findUndecidedToolCalls,
   findDisallowedDecisions,
   findIncompleteDecisions,
@@ -75,6 +76,75 @@ describe('mapAskUserAnswers', () => {
   it('preserves answers keyed by question id', () => {
     expect(mapAskUserAnswers({ answers: { environment: 'staging', window: '7d' } })).toEqual({
       answers: { environment: 'staging', window: '7d' },
+    });
+  });
+});
+
+describe('resolveAskUserQuestionResume', () => {
+  const payload: Agents.AskUserQuestionInterruptPayload = {
+    type: 'ask_user_question',
+    question: { question: 'Where and when?' },
+    questions: [
+      { id: 'environment', question: 'Where?' },
+      { id: 'window', question: 'When?' },
+    ],
+  };
+
+  test('validates and maps a complete batch', () => {
+    expect(
+      resolveAskUserQuestionResume(payload, {
+        answers: { environment: 'staging', window: '7d' },
+      }),
+    ).toEqual({ resumeValue: { answers: { environment: 'staging', window: '7d' } } });
+  });
+
+  test('rejects missing, unknown, and array-shaped answers', () => {
+    expect(resolveAskUserQuestionResume(payload, { answers: { environment: 'staging' } })).toEqual({
+      status: 400,
+      error: 'Answers are required for every question',
+    });
+    expect(
+      resolveAskUserQuestionResume(payload, {
+        answers: { environment: 'staging', window: '7d', region: 'us-east-2' },
+      }),
+    ).toEqual({ status: 400, error: 'Answers contain an unknown question id' });
+    expect(resolveAskUserQuestionResume(payload, { answers: ['staging', '7d'] })).toEqual({
+      status: 400,
+      error: 'Answers are required for every question',
+    });
+  });
+
+  test('rejects invalid batches and oversized answers', () => {
+    expect(
+      resolveAskUserQuestionResume(
+        { ...payload, questions: [{ id: 'bad id', question: 'Invalid?' }] },
+        { answers: { 'bad id': 'yes' } },
+      ),
+    ).toEqual({ status: 400, error: 'The pending question batch is invalid' });
+    expect(
+      resolveAskUserQuestionResume(
+        {
+          ...payload,
+          questions: [{ id: undefined, question: 'Invalid?' }],
+        } as unknown as Agents.AskUserQuestionInterruptPayload,
+        { answers: { undefined: 'yes' } },
+      ),
+    ).toEqual({ status: 400, error: 'The pending question batch is invalid' });
+    expect(
+      resolveAskUserQuestionResume(payload, {
+        answers: { environment: 'x'.repeat(16_001), window: '7d' },
+      }),
+    ).toEqual({ status: 400, error: 'An answer exceeds the maximum length' });
+  });
+
+  test('preserves legacy single-answer validation and mapping', () => {
+    const legacy = { ...payload, questions: undefined };
+    expect(resolveAskUserQuestionResume(legacy, { answer: 'staging' })).toEqual({
+      resumeValue: { answer: 'staging' },
+    });
+    expect(resolveAskUserQuestionResume(legacy, {})).toEqual({
+      status: 400,
+      error: 'An answer is required',
     });
   });
 });

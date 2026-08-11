@@ -65,6 +65,65 @@ export function mapAskUserAnswers(
   return { answers: resolution.answers };
 }
 
+const MAX_ASK_ANSWER_LENGTH = 16_000;
+const ASK_QUESTION_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+const MAX_ASK_QUESTIONS = 4;
+
+interface AskUserResumeBody {
+  answer?: unknown;
+  answers?: unknown;
+}
+
+type AskUserResumeResult =
+  | { resumeValue: AskUserQuestionResolution | AskUserQuestionsResolution }
+  | { status: 400; error: string };
+
+/** Validate an ask-user resume payload and translate it to the SDK contract. */
+export function resolveAskUserQuestionResume(
+  payload: Agents.AskUserQuestionInterruptPayload,
+  body: AskUserResumeBody,
+): AskUserResumeResult {
+  if (!Array.isArray(payload.questions)) {
+    if (typeof body.answer !== 'string' || body.answer.length === 0) {
+      return { status: 400, error: 'An answer is required' };
+    }
+    if (body.answer.length > MAX_ASK_ANSWER_LENGTH) {
+      return { status: 400, error: 'Answer exceeds the maximum length' };
+    }
+    return { resumeValue: mapAskUserAnswer({ answer: body.answer }) };
+  }
+
+  if (payload.questions.length === 0 || payload.questions.length > MAX_ASK_QUESTIONS) {
+    return { status: 400, error: 'The pending question batch is invalid' };
+  }
+  if (body.answers == null || typeof body.answers !== 'object' || Array.isArray(body.answers)) {
+    return { status: 400, error: 'Answers are required for every question' };
+  }
+
+  const submittedAnswers = body.answers as Record<string, unknown>;
+  const answers: Record<string, string> = Object.create(null);
+  const expectedIds = new Set<string>();
+  for (const question of payload.questions) {
+    const { id } = question;
+    if (typeof id !== 'string' || !ASK_QUESTION_ID_PATTERN.test(id) || expectedIds.has(id)) {
+      return { status: 400, error: 'The pending question batch is invalid' };
+    }
+    expectedIds.add(id);
+    const answer = Object.getOwnPropertyDescriptor(submittedAnswers, id)?.value;
+    if (typeof answer !== 'string' || answer.length === 0) {
+      return { status: 400, error: 'Answers are required for every question' };
+    }
+    if (answer.length > MAX_ASK_ANSWER_LENGTH) {
+      return { status: 400, error: 'An answer exceeds the maximum length' };
+    }
+    answers[id] = answer;
+  }
+  if (Object.keys(submittedAnswers).some((id) => !expectedIds.has(id))) {
+    return { status: 400, error: 'Answers contain an unknown question id' };
+  }
+  return { resumeValue: mapAskUserAnswers({ answers }) };
+}
+
 /**
  * Validate that a set of resolutions covers exactly the tool calls a pending
  * `tool_approval` action is waiting on. Returns the list of `tool_call_id`s that

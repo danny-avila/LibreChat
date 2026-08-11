@@ -51,10 +51,13 @@ function AskUserQuestionsPopoverPanel({ ask }: { ask: ReturnType<typeof useAskAn
 
   return (
     <div className="absolute bottom-28 z-10 w-full">
-      <div className="popover border-token-border-light flex max-h-[70vh] flex-col rounded-2xl border bg-white shadow-lg dark:bg-gray-700">
+      <div className="popover border-token-border-light flex max-h-[70vh] flex-col rounded-2xl border bg-surface-secondary shadow-lg">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border-light px-3 py-2">
           <p className="text-sm font-medium text-text-primary">
-            {localize('com_ui_asking_questions', { 0: questions.length })}
+            {localize(
+              questions.length === 1 ? 'com_ui_asking_questions_one' : 'com_ui_asking_questions',
+              { 0: questions.length },
+            )}
           </p>
           <div className="flex items-center">
             <button

@@ -4,8 +4,7 @@ const {
   GenerationJobManager,
   isPendingActionStale,
   mapToolApprovalResolutions,
-  mapAskUserAnswer,
-  mapAskUserAnswers,
+  resolveAskUserQuestionResume,
   attachAskUserQuestionAnswer,
   findUndecidedToolCalls,
   findDisallowedDecisions,
@@ -41,15 +40,6 @@ function sendGenerationJson(res, status, body, generationProtocolVersion) {
   }
   return res.status(status).json({ ...body, generationProtocolVersion });
 }
-
-/**
- * Upper bound on an `ask_user_question` answer (characters). Generous for any real
- * reply typed into the question card while still bounding what a crafted POST can
- * inject into the resumed run's ToolMessage.
- */
-const MAX_ASK_ANSWER_LENGTH = 16_000;
-const ASK_QUESTION_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
-const MAX_ASK_QUESTIONS = 4;
 
 /**
  * How long a resume waits on best-effort steering bookkeeping before answering
@@ -234,45 +224,7 @@ function resolveResumeValue(pendingAction, body) {
     return { resumeValue: mapToolApprovalResolutions(resolutions) };
   }
   if (payload?.type === 'ask_user_question') {
-    if (Array.isArray(payload.questions)) {
-      if (payload.questions.length === 0 || payload.questions.length > MAX_ASK_QUESTIONS) {
-        return { status: 400, error: 'The pending question batch is invalid' };
-      }
-      if (body.answers == null || typeof body.answers !== 'object' || Array.isArray(body.answers)) {
-        return { status: 400, error: 'Answers are required for every question' };
-      }
-      const answers = Object.create(null);
-      const expectedIds = new Set();
-      for (const question of payload.questions) {
-        const id = question?.id;
-        if (typeof id !== 'string' || !ASK_QUESTION_ID_PATTERN.test(id) || expectedIds.has(id)) {
-          return { status: 400, error: 'The pending question batch is invalid' };
-        }
-        expectedIds.add(id);
-        const descriptor = Object.getOwnPropertyDescriptor(body.answers, id);
-        const answer = descriptor?.value;
-        if (typeof answer !== 'string' || answer.length === 0) {
-          return { status: 400, error: 'Answers are required for every question' };
-        }
-        if (answer.length > MAX_ASK_ANSWER_LENGTH) {
-          return { status: 400, error: 'An answer exceeds the maximum length' };
-        }
-        answers[id] = answer;
-      }
-      if (Object.keys(body.answers).some((id) => !expectedIds.has(id))) {
-        return { status: 400, error: 'Answers contain an unknown question id' };
-      }
-      return { resumeValue: mapAskUserAnswers({ answers }) };
-    }
-    if (typeof body.answer !== 'string' || body.answer.length === 0) {
-      return { status: 400, error: 'An answer is required' };
-    }
-    // The answer becomes a ToolMessage the model must ingest — bound it like any
-    // other user-controlled wire field rather than trusting the client.
-    if (body.answer.length > MAX_ASK_ANSWER_LENGTH) {
-      return { status: 400, error: 'Answer exceeds the maximum length' };
-    }
-    return { resumeValue: mapAskUserAnswer({ answer: body.answer }) };
+    return resolveAskUserQuestionResume(payload, body);
   }
   return { status: 400, error: 'Unsupported pending action type' };
 }

@@ -32,12 +32,17 @@ async function moderateText(req, res, next) {
     if (safeText.length > 0) {
       inputs.push(safeText);
     }
-    if (req.body.answers != null && typeof req.body.answers === 'object') {
+    if (
+      req.body.answers != null &&
+      typeof req.body.answers === 'object' &&
+      !Array.isArray(req.body.answers)
+    ) {
       for (const answer of Object.values(req.body.answers)) {
         if (typeof answer === 'string' && answer.length > 0) {
           inputs.push(answer);
         }
       }
+      inputs.push(JSON.stringify(req.body.answers));
     }
     const quotes = getReferencedQuotes(req.body.quotes);
     if (quotes != null) {

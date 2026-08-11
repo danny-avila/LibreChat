@@ -127,6 +127,7 @@ describe('AskUserQuestionCall', () => {
               id: 'environment',
               header: 'Environment',
               question: 'Where should this run?',
+              description: 'Choose the deployment target.',
               options: [{ label: 'Staging', value: 'staging' }],
             },
             { id: 'window', question: 'Which window?' },
@@ -138,8 +139,25 @@ describe('AskUserQuestionCall', () => {
 
     expect(screen.getByText('Environment')).toBeInTheDocument();
     expect(screen.getByText('Where should this run?')).toBeInTheDocument();
+    expect(screen.getByText('Choose the deployment target.')).toBeInTheDocument();
     expect(screen.getByText('Staging')).toBeInTheDocument();
     expect(screen.getByText('Which window?')).toBeInTheDocument();
     expect(screen.getByText('7d')).toBeInTheDocument();
+  });
+
+  test('renders a failed batch without implying the user declined to answer', () => {
+    render(
+      <AskUserQuestionCall
+        args={{ questions: [{ id: 'environment', question: 'Where should this run?' }] }}
+        output="Error processing tool"
+        failed
+      />,
+    );
+
+    expect(screen.getByText("Question wasn't shown")).toBeInTheDocument();
+    expect(
+      screen.getByText("The agent couldn't show this question and may retry automatically."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('No answer was given')).not.toBeInTheDocument();
   });
 });

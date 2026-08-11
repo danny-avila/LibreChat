@@ -117,14 +117,20 @@ export default function AskUserQuestionCall({
                   <p className="text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
                     {item.question}
                   </p>
-                  {typeof answer === 'string' ? (
+                  {item.description != null && (
+                    <p className="mt-1 text-sm text-text-secondary [overflow-wrap:anywhere]">
+                      {item.description}
+                    </p>
+                  )}
+                  {typeof answer === 'string' && (
                     <p className="mt-1 text-sm text-text-primary [overflow-wrap:anywhere]">
                       <span className="font-medium text-text-secondary">
                         {localize('com_ui_you_answered')}
                       </span>{' '}
                       {formatAnswerLabel(item, answer)}
                     </p>
-                  ) : (
+                  )}
+                  {typeof answer !== 'string' && !failed && (
                     <p className="mt-1 text-sm italic text-text-secondary">
                       {localize('com_ui_question_unanswered')}
                     </p>
@@ -132,6 +138,11 @@ export default function AskUserQuestionCall({
                 </div>
               );
             })}
+            {failed && (
+              <p className="mt-3 text-sm text-text-secondary">
+                {localize('com_ui_question_failed_description')}
+              </p>
+            )}
           </div>
         </div>
         {resumingCursor}

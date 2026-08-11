@@ -196,12 +196,17 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
     if (typeof req.body?.answer === 'string' && req.body.answer.length > 0) {
       candidates.push(req.body.answer);
     }
-    if (req.body?.answers != null && typeof req.body.answers === 'object') {
+    if (
+      req.body?.answers != null &&
+      typeof req.body.answers === 'object' &&
+      !Array.isArray(req.body.answers)
+    ) {
       for (const answer of Object.values(req.body.answers)) {
         if (typeof answer === 'string' && answer.length > 0) {
           candidates.push(answer);
         }
       }
+      candidates.push(JSON.stringify(req.body.answers));
     }
     if (Array.isArray(req.body?.decisions)) {
       for (const decision of req.body.decisions) {
