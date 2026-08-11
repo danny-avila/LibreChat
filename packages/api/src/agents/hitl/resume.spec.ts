@@ -632,7 +632,10 @@ describe('durable ask-user answers', () => {
   });
 
   it('keeps a legacy answer on the earlier ask when a later ask is unanswered', () => {
-    const content = [
+    const content: Array<{
+      type: string;
+      tool_call: { id: string; name: string; args: string; output?: string };
+    }> = [
       { type: 'tool_call', tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' } },
       { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
     ];
