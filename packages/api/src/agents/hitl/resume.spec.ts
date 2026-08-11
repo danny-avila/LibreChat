@@ -589,15 +589,18 @@ describe('attachAskUserQuestionAnswer', () => {
 describe('durable ask-user answers', () => {
   it('builds a typed stamp from the validated pending action', () => {
     const pendingAction = {
+      actionId: 'action-2',
+      streamId: 'stream-1',
+      createdAt: 1,
       payload: {
         type: 'ask_user_question',
-        question: 'Which env?',
+        question: { question: 'Which env?' },
         tool_call_id: 'ask-2',
       },
-    } as Agents.PendingAction;
+    } satisfies Agents.PendingAction;
 
     expect(buildResolvedAskUserQuestion(pendingAction, { answer: 'production' })).toEqual({
-      request: 'Which env?',
+      request: { question: 'Which env?' },
       output: 'production',
       toolCallId: 'ask-2',
     });
@@ -612,7 +615,10 @@ describe('durable ask-user answers', () => {
   });
 
   it('reconstructs multiple retained answers in one content pass', () => {
-    const content = [
+    const content: Array<{
+      type: string;
+      tool_call: { id: string; name: string; args: string; output?: string };
+    }> = [
       { type: 'tool_call', tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' } },
       { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
     ];
