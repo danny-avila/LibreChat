@@ -122,6 +122,8 @@ export interface ResolvedAskUserQuestion {
   toolCallId?: string;
   /** Stable association for legacy SDK payloads that omitted tool_call_id. */
   contentIndex?: number;
+  /** The paused ask part was absent, so this answer must not bind to a later ask. */
+  contentMissing?: true;
 }
 
 type AskUserResumeResult =
@@ -179,6 +181,7 @@ export function buildResolvedAskUserQuestion(
   pendingAction: Agents.PendingAction,
   body: AskUserResumeBody,
   contentIndex?: number,
+  contentMissing = false,
 ): ResolvedAskUserQuestion | undefined {
   const payload = pendingAction.payload;
   if (payload?.type !== 'ask_user_question') {
@@ -193,6 +196,7 @@ export function buildResolvedAskUserQuestion(
       output: JSON.stringify({ answers: body.answers }),
       ...(payload.tool_call_id && { toolCallId: payload.tool_call_id }),
       ...(!payload.tool_call_id && contentIndex != null && { contentIndex }),
+      ...(!payload.tool_call_id && contentMissing && { contentMissing: true as const }),
     };
   }
   if (typeof body.answer !== 'string') {
@@ -203,6 +207,7 @@ export function buildResolvedAskUserQuestion(
     output: body.answer,
     ...(payload.tool_call_id && { toolCallId: payload.tool_call_id }),
     ...(!payload.tool_call_id && contentIndex != null && { contentIndex }),
+    ...(!payload.tool_call_id && contentMissing && { contentMissing: true as const }),
   };
 }
 
@@ -215,6 +220,9 @@ export function appendResolvedAskUserQuestion(
     return retained != null && retained.length > 0 ? [...retained] : undefined;
   }
   if (current.toolCallId == null) {
+    if (current.contentMissing === true) {
+      return [...(retained ?? []), current];
+    }
     return [
       ...(retained ?? []).filter(
         (answer) =>
@@ -602,7 +610,9 @@ export function attachAskUserQuestionAnswers<
   const indexedAnswers = new Map<number, ResolvedAskUserQuestion>();
   const legacyAnswers: ResolvedAskUserQuestion[] = [];
   for (const answer of answers) {
-    if (answer.toolCallId != null && answer.toolCallId.length > 0) {
+    if (answer.contentMissing === true) {
+      continue;
+    } else if (answer.toolCallId != null && answer.toolCallId.length > 0) {
       exactAnswers.set(answer.toolCallId, answer);
     } else if (
       answer.contentIndex != null &&

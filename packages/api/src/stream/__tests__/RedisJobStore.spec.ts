@@ -295,6 +295,11 @@ describe('RedisJobStore', () => {
           output: 'prod',
           toolCallId: 'call-1',
         },
+        {
+          request: { question: 'Legacy missing?' },
+          output: 'yes',
+          contentMissing: true,
+        },
       ],
     });
 
@@ -312,6 +317,11 @@ describe('RedisJobStore', () => {
         request: { question: 'Deploy where?' },
         output: 'prod',
         toolCallId: 'call-1',
+      },
+      {
+        request: { question: 'Legacy missing?' },
+        output: 'yes',
+        contentMissing: true,
       },
     ]);
 
@@ -338,6 +348,11 @@ describe('RedisJobStore', () => {
           output: 'prod',
           toolCallId: 'call-1',
         },
+        {
+          request: { question: 'Legacy missing?' },
+          output: 'yes',
+          contentMissing: true,
+        },
       ],
     });
 
@@ -356,6 +371,11 @@ describe('RedisJobStore', () => {
           output: 'prod',
           toolCallId: 'call-1',
         },
+        {
+          request: { question: 'Legacy missing?' },
+          output: 'yes',
+          contentMissing: true,
+        },
       ]),
     });
   });
@@ -368,6 +388,7 @@ describe('RedisJobStore', () => {
     '[]',
     '[null]',
     '[{"request":"Question?","output":"answer","contentIndex":-1}]',
+    '[{"request":"Question?","output":"answer","contentMissing":false}]',
   ])('drops malformed resolved ask-user metadata: %s', async (resolvedAskUserQuestions) => {
     const redis = {
       isCluster: true,

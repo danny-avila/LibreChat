@@ -625,6 +625,26 @@ describe('durable ask-user answers', () => {
     });
   });
 
+  it('marks an ID-less answer whose paused content part was missing', () => {
+    const pendingAction = {
+      actionId: 'action-missing',
+      streamId: 'stream-1',
+      createdAt: 1,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Missing?' },
+      },
+    } satisfies Agents.PendingAction;
+
+    expect(buildResolvedAskUserQuestion(pendingAction, { answer: 'yes' }, undefined, true)).toEqual(
+      {
+        request: { question: 'Missing?' },
+        output: 'yes',
+        contentMissing: true,
+      },
+    );
+  });
+
   it('accumulates exact-ID answers and replaces a repeated tool call', () => {
     const first = { request: 'First?', output: 'one', toolCallId: 'ask-1' };
     const second = { request: 'Second?', output: 'two', toolCallId: 'ask-2' };
@@ -724,6 +744,19 @@ describe('durable ask-user answers', () => {
 
     expect(next).toBe(content);
     expect(next[1].tool_call.output).toBeUndefined();
+  });
+
+  it('does not bind a missing-content answer to a later ask', () => {
+    const content = [
+      { type: 'tool_call', tool_call: { id: 'later-ask', name: 'ask_user_question', args: '' } },
+    ];
+
+    const next = attachAskUserQuestionAnswers(content, [
+      { request: { question: 'Missing?' }, output: 'old answer', contentMissing: true },
+    ]);
+
+    expect(next).toBe(content);
+    expect(next[0].tool_call.output).toBeUndefined();
   });
 });
 

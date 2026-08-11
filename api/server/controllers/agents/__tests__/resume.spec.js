@@ -1455,6 +1455,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
             {
               request: 'What should I name the file?',
               output: 'call it report.pdf',
+              contentMissing: true,
             },
           ],
         },

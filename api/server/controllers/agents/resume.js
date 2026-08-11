@@ -650,6 +650,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     );
   }
   let resolvedAskContentIndex;
+  let resolvedAskContentMissing = false;
   if (pendingAction.payload.type === 'ask_user_question' && !pendingAction.payload.tool_call_id) {
     const answerSnapshot = await GenerationJobManager.getResumeState(streamId, job.createdAt);
     if (answerSnapshot == null) {
@@ -666,18 +667,18 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         askRequest,
       );
       if (resolvedAskContentIndex < 0) {
-        // Legacy streams can omit the paused ask tool part while retaining
-        // earlier text. Keep the answer as an unindexed legacy stamp so the
-        // resume is not permanently blocked; a later reconstruction can bind
-        // it once the missing ask part is available.
         resolvedAskContentIndex = undefined;
+        resolvedAskContentMissing = true;
       }
+    } else {
+      resolvedAskContentMissing = true;
     }
   }
   const resolvedAskUserQuestion = buildResolvedAskUserQuestion(
     pendingAction,
     req.body,
     resolvedAskContentIndex,
+    resolvedAskContentMissing,
   );
   const resolvedAskUserQuestions = appendResolvedAskUserQuestion(
     job.metadata?.resolvedAskUserQuestions,

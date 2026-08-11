@@ -4255,7 +4255,8 @@ export class RedisJobStore implements IJobStoreV2 {
           typeof answer.output === 'string' &&
           (answer.toolCallId == null || typeof answer.toolCallId === 'string') &&
           (answer.contentIndex == null ||
-            (Number.isSafeInteger(answer.contentIndex) && answer.contentIndex >= 0))
+            (Number.isSafeInteger(answer.contentIndex) && answer.contentIndex >= 0)) &&
+          (answer.contentMissing == null || answer.contentMissing === true)
         );
       });
       if (!valid || parsed.length === 0) {
