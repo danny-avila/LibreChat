@@ -13,12 +13,6 @@
 
 import { defineFunction } from "@boundaryml/baml-bridge";
 
-export const equals_equals = defineFunction('baml.ops.equals_equals', 'sync', ['a', 'b']) as (
-  a: unknown,
-  b: unknown,
-) => boolean;
+export const equals_equals = defineFunction("baml.ops.equals_equals", "sync", ["a", "b"]) as (a: unknown, b: unknown) => boolean;
 
-export const equals_equals_async = defineFunction('baml.ops.equals_equals', 'async', [
-  'a',
-  'b',
-]) as (a: unknown, b: unknown) => Promise<boolean>;
+export const equals_equals_async = defineFunction("baml.ops.equals_equals", "async", ["a", "b"]) as (a: unknown, b: unknown) => Promise<boolean>;

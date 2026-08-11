@@ -15,52 +15,44 @@ import { defineFunction } from "@boundaryml/baml-bridge";
 
 /**
  * Returns the value of the environment variable `key`, or `null` if not set.
- *
+ * 
  * Throws `ParseError` if the variable is set but its value is not valid
  * UTF-8 (the native bridge surfaces `std::env::VarError::NotUnicode` as a
  * catchable parse error).
  * @throws Io
  * @throws ParseError
  */
-export const get = defineFunction('baml.env.get', 'sync', ['key']) as (
-  key: string,
-) => string | null;
+export const get = defineFunction("baml.env.get", "sync", ["key"]) as (key: string) => string | null;
 
 /**
  * Returns the value of the environment variable `key`, or `null` if not set.
- *
+ * 
  * Throws `ParseError` if the variable is set but its value is not valid
  * UTF-8 (the native bridge surfaces `std::env::VarError::NotUnicode` as a
  * catchable parse error).
  * @throws Io
  * @throws ParseError
  */
-export const get_async = defineFunction('baml.env.get', 'async', ['key']) as (
-  key: string,
-) => Promise<string | null>;
+export const get_async = defineFunction("baml.env.get", "async", ["key"]) as (key: string) => Promise<string | null>;
 
 /**
  * Returns the value of the environment variable `key`. Panics if not set.
  * @throws Io
  * @throws ParseError
  */
-export const get_or_panic = defineFunction('baml.env.get_or_panic', 'sync', ['key']) as (
-  key: string,
-) => string;
+export const get_or_panic = defineFunction("baml.env.get_or_panic", "sync", ["key"]) as (key: string) => string;
 
 /**
  * Returns the value of the environment variable `key`. Panics if not set.
  * @throws Io
  * @throws ParseError
  */
-export const get_or_panic_async = defineFunction('baml.env.get_or_panic', 'async', ['key']) as (
-  key: string,
-) => Promise<string>;
+export const get_or_panic_async = defineFunction("baml.env.get_or_panic", "async", ["key"]) as (key: string) => Promise<string>;
 
 /**
  * Like `get_or_panic`, but tolerant of a missing variable when `lenient` is
  * true: a missing variable yields the empty string instead of panicking.
- *
+ * 
  * Used by generated client constructors so that offline prompt rendering
  * (`<Fn>$render_prompt`) can build a client for its provider/role metadata
  * without requiring credentials. The network paths (`<Fn>$call`,
@@ -69,15 +61,12 @@ export const get_or_panic_async = defineFunction('baml.env.get_or_panic', 'async
  * @throws Io
  * @throws ParseError
  */
-export const get_or_panic_lenient = defineFunction('baml.env.get_or_panic_lenient', 'sync', [
-  'key',
-  'lenient',
-]) as (key: string, lenient: boolean) => string;
+export const get_or_panic_lenient = defineFunction("baml.env.get_or_panic_lenient", "sync", ["key", "lenient"]) as (key: string, lenient: boolean) => string;
 
 /**
  * Like `get_or_panic`, but tolerant of a missing variable when `lenient` is
  * true: a missing variable yields the empty string instead of panicking.
- *
+ * 
  * Used by generated client constructors so that offline prompt rendering
  * (`<Fn>$render_prompt`) can build a client for its provider/role metadata
  * without requiring credentials. The network paths (`<Fn>$call`,
@@ -86,7 +75,4 @@ export const get_or_panic_lenient = defineFunction('baml.env.get_or_panic_lenien
  * @throws Io
  * @throws ParseError
  */
-export const get_or_panic_lenient_async = defineFunction('baml.env.get_or_panic_lenient', 'async', [
-  'key',
-  'lenient',
-]) as (key: string, lenient: boolean) => Promise<string>;
+export const get_or_panic_lenient_async = defineFunction("baml.env.get_or_panic_lenient", "async", ["key", "lenient"]) as (key: string, lenient: boolean) => Promise<string>;

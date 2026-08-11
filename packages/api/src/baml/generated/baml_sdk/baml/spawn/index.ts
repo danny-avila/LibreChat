@@ -12,7 +12,7 @@
 // baml-cli is available with the baml package.
 
 import type { BamlHandle as _BamlHandle } from "@boundaryml/baml-bridge";
-import { defineFunction, defineInstanceFunction, type BamlType } from '@boundaryml/baml-bridge';
+import { defineFunction, defineInstanceFunction, type BamlType } from "@boundaryml/baml-bridge";
 
 /**
  * A cooperative, one-shot cancellation handle backed by a runtime
@@ -22,14 +22,16 @@ import { defineFunction, defineInstanceFunction, type BamlType } from '@boundary
  */
 export class CancelToken$stream {
   _handle!: _BamlHandle;
-  constructor(init: { _handle: _BamlHandle }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+  }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * BEP-034 — spawn options and `with` middleware.
- *
+ * 
  * This namespace holds the values a `spawn` can be configured with: a
  * `CancelToken` for cooperative cancellation, a `TaskGroup` for rate
  * limiting, and the `detach` flag — plus `SpawnParams`, the value a
@@ -41,7 +43,7 @@ export class CancelToken$stream {
  * `(SpawnParams<T, E>) -> SpawnParams<U, F>` — it may set config fields,
  * wrap `body` (retry, timing), or replace it entirely (type-changing
  * transformers like a fallback that erases the error type).
- *
+ * 
  * NOTE for the runtime: the engine reads these fields BY INDEX at the spawn
  * dispatch site (body=0, name=1, group=2, cancel=3, detach=4) — keep the
  * declaration order in sync with `bex_engine`'s `read_spawn_params`.
@@ -63,7 +65,7 @@ export class SpawnParams$stream<T, E> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ['T', 'E'] as const;
+  static readonly $generic = ["T", "E"] as const;
 }
 
 /**
@@ -74,14 +76,16 @@ export class SpawnParams$stream<T, E> {
  */
 export class TaskGroup$stream {
   _handle!: _BamlHandle;
-  constructor(init: { _handle: _BamlHandle }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+  }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * BEP-034 — spawn options and `with` middleware.
- *
+ * 
  * This namespace holds the values a `spawn` can be configured with: a
  * `CancelToken` for cooperative cancellation, a `TaskGroup` for rate
  * limiting, and the `detach` flag — plus `SpawnParams`, the value a
@@ -93,7 +97,7 @@ export class TaskGroup$stream {
  * `(SpawnParams<T, E>) -> SpawnParams<U, F>` — it may set config fields,
  * wrap `body` (retry, timing), or replace it entirely (type-changing
  * transformers like a fallback that erases the error type).
- *
+ * 
  * NOTE for the runtime: the engine reads these fields BY INDEX at the spawn
  * dispatch site (body=0, name=1, group=2, cancel=3, detach=4) — keep the
  * declaration order in sync with `bex_engine`'s `read_spawn_params`.
@@ -115,7 +119,7 @@ export class SpawnParams<T, E> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ['T', 'E'] as const;
+  static readonly $generic = ["T", "E"] as const;
 }
 
 /**
@@ -126,69 +130,25 @@ export class SpawnParams<T, E> {
  */
 export class TaskGroup {
   _handle!: _BamlHandle;
-  constructor(init: { _handle: _BamlHandle }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+  }) {
     Object.assign(this, init);
   }
-  static new = defineFunction('baml.spawn.TaskGroup.new', 'sync', ['limit'], ['name']) as (
-    limit: number,
-    $opts?: { name?: string | null | undefined } | undefined,
-  ) => TaskGroup;
-  static new_async = defineFunction('baml.spawn.TaskGroup.new', 'async', ['limit'], ['name']) as (
-    limit: number,
-    $opts?: { name?: string | null | undefined } | undefined,
-  ) => Promise<TaskGroup>;
-  cancel = defineInstanceFunction(
-    'baml.spawn.TaskGroup.cancel',
-    'sync',
-    ['self'],
-    ['pending', 'active'],
-  ).bind(this) as (
-    $opts?:
-      | { pending?: boolean | null | undefined; active?: boolean | null | undefined }
-      | undefined,
-  ) => number;
-  cancel_async = defineInstanceFunction(
-    'baml.spawn.TaskGroup.cancel',
-    'async',
-    ['self'],
-    ['pending', 'active'],
-  ).bind(this) as (
-    $opts?:
-      | { pending?: boolean | null | undefined; active?: boolean | null | undefined }
-      | undefined,
-  ) => Promise<number>;
-  set_limit = defineInstanceFunction('baml.spawn.TaskGroup.set_limit', 'sync', [
-    'self',
-    'limit',
-  ]).bind(this) as (limit: number) => null;
-  set_limit_async = defineInstanceFunction('baml.spawn.TaskGroup.set_limit', 'async', [
-    'self',
-    'limit',
-  ]).bind(this) as (limit: number) => Promise<null>;
-  limit = defineInstanceFunction('baml.spawn.TaskGroup.limit', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  limit_async = defineInstanceFunction('baml.spawn.TaskGroup.limit', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  name = defineInstanceFunction('baml.spawn.TaskGroup.name', 'sync', ['self']).bind(this) as () =>
-    | string
-    | null;
-  name_async = defineInstanceFunction('baml.spawn.TaskGroup.name', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<string | null>;
-  active_count = defineInstanceFunction('baml.spawn.TaskGroup.active_count', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  active_count_async = defineInstanceFunction('baml.spawn.TaskGroup.active_count', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<number>;
-  queued_count = defineInstanceFunction('baml.spawn.TaskGroup.queued_count', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  queued_count_async = defineInstanceFunction('baml.spawn.TaskGroup.queued_count', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<number>;
+  static new = defineFunction("baml.spawn.TaskGroup.new", "sync", ["limit"], ["name"]) as (limit: number, $opts?: { name?: string | null | undefined } | undefined) => TaskGroup;
+  static new_async = defineFunction("baml.spawn.TaskGroup.new", "async", ["limit"], ["name"]) as (limit: number, $opts?: { name?: string | null | undefined } | undefined) => Promise<TaskGroup>;
+  cancel = defineInstanceFunction("baml.spawn.TaskGroup.cancel", "sync", ["self"], ["pending", "active"]).bind(this) as ($opts?: { pending?: boolean | null | undefined; active?: boolean | null | undefined } | undefined) => number;
+  cancel_async = defineInstanceFunction("baml.spawn.TaskGroup.cancel", "async", ["self"], ["pending", "active"]).bind(this) as ($opts?: { pending?: boolean | null | undefined; active?: boolean | null | undefined } | undefined) => Promise<number>;
+  set_limit = defineInstanceFunction("baml.spawn.TaskGroup.set_limit", "sync", ["self", "limit"]).bind(this) as (limit: number) => null;
+  set_limit_async = defineInstanceFunction("baml.spawn.TaskGroup.set_limit", "async", ["self", "limit"]).bind(this) as (limit: number) => Promise<null>;
+  limit = defineInstanceFunction("baml.spawn.TaskGroup.limit", "sync", ["self"]).bind(this) as () => number;
+  limit_async = defineInstanceFunction("baml.spawn.TaskGroup.limit", "async", ["self"]).bind(this) as () => Promise<number>;
+  name = defineInstanceFunction("baml.spawn.TaskGroup.name", "sync", ["self"]).bind(this) as () => string | null;
+  name_async = defineInstanceFunction("baml.spawn.TaskGroup.name", "async", ["self"]).bind(this) as () => Promise<string | null>;
+  active_count = defineInstanceFunction("baml.spawn.TaskGroup.active_count", "sync", ["self"]).bind(this) as () => number;
+  active_count_async = defineInstanceFunction("baml.spawn.TaskGroup.active_count", "async", ["self"]).bind(this) as () => Promise<number>;
+  queued_count = defineInstanceFunction("baml.spawn.TaskGroup.queued_count", "sync", ["self"]).bind(this) as () => number;
+  queued_count_async = defineInstanceFunction("baml.spawn.TaskGroup.queued_count", "async", ["self"]).bind(this) as () => Promise<number>;
 }
 
 /**
@@ -199,33 +159,19 @@ export class TaskGroup {
  */
 export class CancelToken {
   _handle!: _BamlHandle;
-  constructor(init: { _handle: _BamlHandle }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+  }) {
     Object.assign(this, init);
   }
-  static new = defineFunction('baml.spawn.CancelToken.new', 'sync', []) as () => CancelToken;
-  static new_async = defineFunction(
-    'baml.spawn.CancelToken.new',
-    'async',
-    [],
-  ) as () => Promise<CancelToken>;
-  static any = defineFunction('baml.spawn.CancelToken.any', 'sync', ['tokens']) as (
-    tokens: CancelToken[],
-  ) => CancelToken;
-  static any_async = defineFunction('baml.spawn.CancelToken.any', 'async', ['tokens']) as (
-    tokens: CancelToken[],
-  ) => Promise<CancelToken>;
-  cancel = defineInstanceFunction('baml.spawn.CancelToken.cancel', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  cancel_async = defineInstanceFunction('baml.spawn.CancelToken.cancel', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  is_cancelled = defineInstanceFunction('baml.spawn.CancelToken.is_cancelled', 'sync', [
-    'self',
-  ]).bind(this) as () => boolean;
-  is_cancelled_async = defineInstanceFunction('baml.spawn.CancelToken.is_cancelled', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<boolean>;
+  static new = defineFunction("baml.spawn.CancelToken.new", "sync", []) as () => CancelToken;
+  static new_async = defineFunction("baml.spawn.CancelToken.new", "async", []) as () => Promise<CancelToken>;
+  static any = defineFunction("baml.spawn.CancelToken.any", "sync", ["tokens"]) as (tokens: CancelToken[]) => CancelToken;
+  static any_async = defineFunction("baml.spawn.CancelToken.any", "async", ["tokens"]) as (tokens: CancelToken[]) => Promise<CancelToken>;
+  cancel = defineInstanceFunction("baml.spawn.CancelToken.cancel", "sync", ["self"]).bind(this) as () => number;
+  cancel_async = defineInstanceFunction("baml.spawn.CancelToken.cancel", "async", ["self"]).bind(this) as () => Promise<number>;
+  is_cancelled = defineInstanceFunction("baml.spawn.CancelToken.is_cancelled", "sync", ["self"]).bind(this) as () => boolean;
+  is_cancelled_async = defineInstanceFunction("baml.spawn.CancelToken.is_cancelled", "async", ["self"]).bind(this) as () => Promise<boolean>;
 }
 
 /**
@@ -237,21 +183,7 @@ export class CancelToken {
  * of the spawner; `group` enrolls the spawn in a `TaskGroup`, so it parks
  * until the group admits it (FIFO).
  */
-export const options = defineFunction(
-  'baml.spawn.options',
-  'sync',
-  [],
-  ['group', 'cancel', 'detach'],
-  { typeParams: ['T', 'E'] },
-) as <T, E>(
-  $opts?:
-    | {
-        group?: TaskGroup | null | undefined;
-        cancel?: CancelToken | null | undefined;
-        detach?: boolean | null | undefined;
-      }
-    | undefined,
-) => (arg0: SpawnParams<T, E>) => SpawnParams<T, E>;
+export const options = defineFunction("baml.spawn.options", "sync", [], ["group", "cancel", "detach"], { typeParams: ["T", "E"] }) as <T, E>($opts?: { group?: TaskGroup | null | undefined; cancel?: CancelToken | null | undefined; detach?: boolean | null | undefined } | undefined) => (arg0: SpawnParams<T, E>) => SpawnParams<T, E>;
 
 /**
  * The built-in config transformer for a `spawn ... with` clause: sets the
@@ -262,18 +194,4 @@ export const options = defineFunction(
  * of the spawner; `group` enrolls the spawn in a `TaskGroup`, so it parks
  * until the group admits it (FIFO).
  */
-export const options_async = defineFunction(
-  'baml.spawn.options',
-  'async',
-  [],
-  ['group', 'cancel', 'detach'],
-  { typeParams: ['T', 'E'] },
-) as <T, E>(
-  $opts?:
-    | {
-        group?: TaskGroup | null | undefined;
-        cancel?: CancelToken | null | undefined;
-        detach?: boolean | null | undefined;
-      }
-    | undefined,
-) => Promise<(arg0: SpawnParams<T, E>) => SpawnParams<T, E>>;
+export const options_async = defineFunction("baml.spawn.options", "async", [], ["group", "cancel", "detach"], { typeParams: ["T", "E"] }) as <T, E>($opts?: { group?: TaskGroup | null | undefined; cancel?: CancelToken | null | undefined; detach?: boolean | null | undefined } | undefined) => Promise<(arg0: SpawnParams<T, E>) => SpawnParams<T, E>>;

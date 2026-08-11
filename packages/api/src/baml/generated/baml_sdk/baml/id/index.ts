@@ -19,7 +19,7 @@ import { defineFunction } from "@boundaryml/baml-bridge";
  * the call's default `CallRef`. Returns an empty string when no BEX
  * function is running (e.g. during `$init`).
  */
-export const current = defineFunction('baml.id.current', 'sync', []) as () => string;
+export const current = defineFunction("baml.id.current", "sync", []) as () => string;
 
 /**
  * Returns the current BEX runtime ID for this function invocation: the
@@ -27,25 +27,19 @@ export const current = defineFunction('baml.id.current', 'sync', []) as () => st
  * the call's default `CallRef`. Returns an empty string when no BEX
  * function is running (e.g. during `$init`).
  */
-export const current_async = defineFunction(
-  'baml.id.current',
-  'async',
-  [],
-) as () => Promise<string>;
+export const current_async = defineFunction("baml.id.current", "async", []) as () => Promise<string>;
 
-const __baml_new = defineFunction('baml.id.new', 'sync', []) as () => string;
+const __baml_new = defineFunction("baml.id.new", "sync", []) as () => string;
 export { __baml_new as new };
 
-export const new_async = defineFunction('baml.id.new', 'async', []) as () => Promise<string>;
+export const new_async = defineFunction("baml.id.new", "async", []) as () => Promise<string>;
 
 /**
  * @throws InvalidArgument
  */
-export const set = defineFunction('baml.id.set', 'sync', ['id']) as (id: string) => string;
+export const set = defineFunction("baml.id.set", "sync", ["id"]) as (id: string) => string;
 
 /**
  * @throws InvalidArgument
  */
-export const set_async = defineFunction('baml.id.set', 'async', ['id']) as (
-  id: string,
-) => Promise<string>;
+export const set_async = defineFunction("baml.id.set", "async", ["id"]) as (id: string) => Promise<string>;

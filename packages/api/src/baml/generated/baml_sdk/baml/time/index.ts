@@ -12,160 +12,112 @@
 // baml-cli is available with the baml package.
 
 import { defineFunction, defineInstanceFunction } from "@boundaryml/baml-bridge";
-import type * as baml from '../../baml/index.js';
+import type * as baml from "../../baml/index.js";
 
 /**
  * Represents a non-localized timespan.
- *
+ * 
  * May be negative: while `Instant` represents absolute points in time, a `Duration` represents the difference between two `Instant`s.
  */
 export class Duration$stream {
   _nanoseconds!: bigint | null;
-  constructor(init: { _nanoseconds: bigint | null }) {
+  constructor(init: {
+    _nanoseconds: bigint | null;
+  }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * Represents a non-localized timespan.
- *
+ * 
  * May be negative: while `Instant` represents absolute points in time, a `Duration` represents the difference between two `Instant`s.
  */
 export class Duration {
   _nanoseconds!: bigint;
-  constructor(init: { _nanoseconds: bigint }) {
+  constructor(init: {
+    _nanoseconds: bigint;
+  }) {
     Object.assign(this, init);
   }
-  static from_nanoseconds = defineFunction('baml.time.Duration.from_nanoseconds', 'sync', [
-    'ns',
-  ]) as (ns: number | bigint) => Duration;
-  static from_nanoseconds_async = defineFunction('baml.time.Duration.from_nanoseconds', 'async', [
-    'ns',
-  ]) as (ns: number | bigint) => Promise<Duration>;
-  static from_microseconds = defineFunction('baml.time.Duration.from_microseconds', 'sync', [
-    'us',
-  ]) as (us: number | bigint) => Duration;
-  static from_microseconds_async = defineFunction('baml.time.Duration.from_microseconds', 'async', [
-    'us',
-  ]) as (us: number | bigint) => Promise<Duration>;
-  static from_milliseconds = defineFunction('baml.time.Duration.from_milliseconds', 'sync', [
-    'ms',
-  ]) as (ms: number | bigint) => Duration;
-  static from_milliseconds_async = defineFunction('baml.time.Duration.from_milliseconds', 'async', [
-    'ms',
-  ]) as (ms: number | bigint) => Promise<Duration>;
-  static from_seconds = defineFunction('baml.time.Duration.from_seconds', 'sync', ['s']) as (
-    s: number | bigint,
-  ) => Duration;
-  static from_seconds_async = defineFunction('baml.time.Duration.from_seconds', 'async', ['s']) as (
-    s: number | bigint,
-  ) => Promise<Duration>;
-  static from_minutes = defineFunction('baml.time.Duration.from_minutes', 'sync', ['m']) as (
-    m: number | bigint,
-  ) => Duration;
-  static from_minutes_async = defineFunction('baml.time.Duration.from_minutes', 'async', ['m']) as (
-    m: number | bigint,
-  ) => Promise<Duration>;
-  static from_hours = defineFunction('baml.time.Duration.from_hours', 'sync', ['h']) as (
-    h: number | bigint,
-  ) => Duration;
-  static from_hours_async = defineFunction('baml.time.Duration.from_hours', 'async', ['h']) as (
-    h: number | bigint,
-  ) => Promise<Duration>;
-  /**
-   * Creates a new `Duration` representing the positive magnitude of `self`.
-   */
-  abs = defineInstanceFunction('baml.time.Duration.abs', 'sync', ['self']).bind(
-    this,
-  ) as () => Duration;
-  /**
-   * Creates a new `Duration` representing the positive magnitude of `self`.
-   */
-  abs_async = defineInstanceFunction('baml.time.Duration.abs', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<Duration>;
-  /**
-   * Returns the number of nanoseconds in `self`.
-   */
-  to_nanoseconds = defineInstanceFunction('baml.time.Duration.to_nanoseconds', 'sync', [
-    'self',
-  ]).bind(this) as () => bigint;
-  /**
-   * Returns the number of nanoseconds in `self`.
-   */
-  to_nanoseconds_async = defineInstanceFunction('baml.time.Duration.to_nanoseconds', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<bigint>;
-  /**
-   * Returns the number of microseconds in `self`.
-   * Lossy: rounds down
-   */
-  to_microseconds = defineInstanceFunction('baml.time.Duration.to_microseconds', 'sync', [
-    'self',
-  ]).bind(this) as () => bigint;
-  /**
-   * Returns the number of microseconds in `self`.
-   * Lossy: rounds down
-   */
-  to_microseconds_async = defineInstanceFunction('baml.time.Duration.to_microseconds', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<bigint>;
-  /**
-   * Returns the number of milliseconds in `self`.
-   * Lossy: rounds down
-   */
-  to_milliseconds = defineInstanceFunction('baml.time.Duration.to_milliseconds', 'sync', [
-    'self',
-  ]).bind(this) as () => bigint;
-  /**
-   * Returns the number of milliseconds in `self`.
-   * Lossy: rounds down
-   */
-  to_milliseconds_async = defineInstanceFunction('baml.time.Duration.to_milliseconds', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<bigint>;
-  /**
-   * Returns the number of seconds in `self`.
-   * Lossy: rounds down
-   */
-  to_seconds = defineInstanceFunction('baml.time.Duration.to_seconds', 'sync', ['self']).bind(
-    this,
-  ) as () => bigint;
-  /**
-   * Returns the number of seconds in `self`.
-   * Lossy: rounds down
-   */
-  to_seconds_async = defineInstanceFunction('baml.time.Duration.to_seconds', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<bigint>;
-  /**
-   * Returns the number of minutes in `self`.
-   * Lossy: rounds down
-   */
-  to_minutes = defineInstanceFunction('baml.time.Duration.to_minutes', 'sync', ['self']).bind(
-    this,
-  ) as () => bigint;
-  /**
-   * Returns the number of minutes in `self`.
-   * Lossy: rounds down
-   */
-  to_minutes_async = defineInstanceFunction('baml.time.Duration.to_minutes', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<bigint>;
-  /**
-   * Returns the number of hours in `self`.
-   * Lossy: rounds down
-   */
-  to_hours = defineInstanceFunction('baml.time.Duration.to_hours', 'sync', ['self']).bind(
-    this,
-  ) as () => bigint;
-  /**
-   * Returns the number of hours in `self`.
-   * Lossy: rounds down
-   */
-  to_hours_async = defineInstanceFunction('baml.time.Duration.to_hours', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<bigint>;
+  static from_nanoseconds = defineFunction("baml.time.Duration.from_nanoseconds", "sync", ["ns"]) as (ns: number | bigint) => Duration;
+  static from_nanoseconds_async = defineFunction("baml.time.Duration.from_nanoseconds", "async", ["ns"]) as (ns: number | bigint) => Promise<Duration>;
+  static from_microseconds = defineFunction("baml.time.Duration.from_microseconds", "sync", ["us"]) as (us: number | bigint) => Duration;
+  static from_microseconds_async = defineFunction("baml.time.Duration.from_microseconds", "async", ["us"]) as (us: number | bigint) => Promise<Duration>;
+  static from_milliseconds = defineFunction("baml.time.Duration.from_milliseconds", "sync", ["ms"]) as (ms: number | bigint) => Duration;
+  static from_milliseconds_async = defineFunction("baml.time.Duration.from_milliseconds", "async", ["ms"]) as (ms: number | bigint) => Promise<Duration>;
+  static from_seconds = defineFunction("baml.time.Duration.from_seconds", "sync", ["s"]) as (s: number | bigint) => Duration;
+  static from_seconds_async = defineFunction("baml.time.Duration.from_seconds", "async", ["s"]) as (s: number | bigint) => Promise<Duration>;
+  static from_minutes = defineFunction("baml.time.Duration.from_minutes", "sync", ["m"]) as (m: number | bigint) => Duration;
+  static from_minutes_async = defineFunction("baml.time.Duration.from_minutes", "async", ["m"]) as (m: number | bigint) => Promise<Duration>;
+  static from_hours = defineFunction("baml.time.Duration.from_hours", "sync", ["h"]) as (h: number | bigint) => Duration;
+  static from_hours_async = defineFunction("baml.time.Duration.from_hours", "async", ["h"]) as (h: number | bigint) => Promise<Duration>;
+/**
+ * Creates a new `Duration` representing the positive magnitude of `self`.
+ */
+  abs = defineInstanceFunction("baml.time.Duration.abs", "sync", ["self"]).bind(this) as () => Duration;
+/**
+ * Creates a new `Duration` representing the positive magnitude of `self`.
+ */
+  abs_async = defineInstanceFunction("baml.time.Duration.abs", "async", ["self"]).bind(this) as () => Promise<Duration>;
+/**
+ * Returns the number of nanoseconds in `self`.
+ */
+  to_nanoseconds = defineInstanceFunction("baml.time.Duration.to_nanoseconds", "sync", ["self"]).bind(this) as () => bigint;
+/**
+ * Returns the number of nanoseconds in `self`.
+ */
+  to_nanoseconds_async = defineInstanceFunction("baml.time.Duration.to_nanoseconds", "async", ["self"]).bind(this) as () => Promise<bigint>;
+/**
+ * Returns the number of microseconds in `self`.
+ * Lossy: rounds down
+ */
+  to_microseconds = defineInstanceFunction("baml.time.Duration.to_microseconds", "sync", ["self"]).bind(this) as () => bigint;
+/**
+ * Returns the number of microseconds in `self`.
+ * Lossy: rounds down
+ */
+  to_microseconds_async = defineInstanceFunction("baml.time.Duration.to_microseconds", "async", ["self"]).bind(this) as () => Promise<bigint>;
+/**
+ * Returns the number of milliseconds in `self`.
+ * Lossy: rounds down
+ */
+  to_milliseconds = defineInstanceFunction("baml.time.Duration.to_milliseconds", "sync", ["self"]).bind(this) as () => bigint;
+/**
+ * Returns the number of milliseconds in `self`.
+ * Lossy: rounds down
+ */
+  to_milliseconds_async = defineInstanceFunction("baml.time.Duration.to_milliseconds", "async", ["self"]).bind(this) as () => Promise<bigint>;
+/**
+ * Returns the number of seconds in `self`.
+ * Lossy: rounds down
+ */
+  to_seconds = defineInstanceFunction("baml.time.Duration.to_seconds", "sync", ["self"]).bind(this) as () => bigint;
+/**
+ * Returns the number of seconds in `self`.
+ * Lossy: rounds down
+ */
+  to_seconds_async = defineInstanceFunction("baml.time.Duration.to_seconds", "async", ["self"]).bind(this) as () => Promise<bigint>;
+/**
+ * Returns the number of minutes in `self`.
+ * Lossy: rounds down
+ */
+  to_minutes = defineInstanceFunction("baml.time.Duration.to_minutes", "sync", ["self"]).bind(this) as () => bigint;
+/**
+ * Returns the number of minutes in `self`.
+ * Lossy: rounds down
+ */
+  to_minutes_async = defineInstanceFunction("baml.time.Duration.to_minutes", "async", ["self"]).bind(this) as () => Promise<bigint>;
+/**
+ * Returns the number of hours in `self`.
+ * Lossy: rounds down
+ */
+  to_hours = defineInstanceFunction("baml.time.Duration.to_hours", "sync", ["self"]).bind(this) as () => bigint;
+/**
+ * Returns the number of hours in `self`.
+ * Lossy: rounds down
+ */
+  to_hours_async = defineInstanceFunction("baml.time.Duration.to_hours", "async", ["self"]).bind(this) as () => Promise<bigint>;
 }
 
 /**
@@ -176,7 +128,9 @@ export class Duration {
  */
 export class Instant$stream {
   _nanoseconds!: bigint | null;
-  constructor(init: { _nanoseconds: bigint | null }) {
+  constructor(init: {
+    _nanoseconds: bigint | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -189,316 +143,217 @@ export class Instant$stream {
  */
 export class Instant {
   _nanoseconds!: bigint;
-  constructor(init: { _nanoseconds: bigint }) {
+  constructor(init: {
+    _nanoseconds: bigint;
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * Creates a new `Instant` representing the current point in time.
-   *
-   * Note that this uses wall-clock time and is not guaranteed to be monotonic
-   * (e.g. [NTP](https://en.wikipedia.org/wiki/Network_Time_Protocol) adjustments may cause time to jump backwards).
-   *
-   * ## Panics
-   * If the system clock is not available, this function will panic.
-   */
-  static now = defineFunction('baml.time.Instant.now', 'sync', []) as () => Instant;
-  /**
-   * Creates a new `Instant` representing the current point in time.
-   *
-   * Note that this uses wall-clock time and is not guaranteed to be monotonic
-   * (e.g. [NTP](https://en.wikipedia.org/wiki/Network_Time_Protocol) adjustments may cause time to jump backwards).
-   *
-   * ## Panics
-   * If the system clock is not available, this function will panic.
-   */
-  static now_async = defineFunction('baml.time.Instant.now', 'async', []) as () => Promise<Instant>;
-  /**
-   * @throws ParseError
-   */
-  static parse = defineFunction('baml.time.Instant.parse', 'sync', ['s']) as (s: string) => Instant;
-  /**
-   * @throws ParseError
-   */
-  static parse_async = defineFunction('baml.time.Instant.parse', 'async', ['s']) as (
-    s: string,
-  ) => Promise<Instant>;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json = defineFunction('baml.time.Instant.from_json', 'sync', ['j']) as (
-    j: baml.json.json,
-  ) => null;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json_async = defineFunction('baml.time.Instant.from_json', 'async', ['j']) as (
-    j: baml.json.json,
-  ) => Promise<null>;
-  /**
-   * Creates a new `Instant` from a number of nanoseconds since the UNIX epoch.
-   */
-  static from_timestamp_nanoseconds = defineFunction(
-    'baml.time.Instant.from_timestamp_nanoseconds',
-    'sync',
-    ['ns'],
-  ) as (ns: bigint) => Instant;
-  /**
-   * Creates a new `Instant` from a number of nanoseconds since the UNIX epoch.
-   */
-  static from_timestamp_nanoseconds_async = defineFunction(
-    'baml.time.Instant.from_timestamp_nanoseconds',
-    'async',
-    ['ns'],
-  ) as (ns: bigint) => Promise<Instant>;
-  /**
-   * Creates a new `Instant` from a number of microseconds since the UNIX epoch.
-   */
-  static from_timestamp_microseconds = defineFunction(
-    'baml.time.Instant.from_timestamp_microseconds',
-    'sync',
-    ['us'],
-  ) as (us: bigint) => Instant;
-  /**
-   * Creates a new `Instant` from a number of microseconds since the UNIX epoch.
-   */
-  static from_timestamp_microseconds_async = defineFunction(
-    'baml.time.Instant.from_timestamp_microseconds',
-    'async',
-    ['us'],
-  ) as (us: bigint) => Promise<Instant>;
-  /**
-   * Creates a new `Instant` from a number of milliseconds since the UNIX epoch.
-   */
-  static from_timestamp_milliseconds = defineFunction(
-    'baml.time.Instant.from_timestamp_milliseconds',
-    'sync',
-    ['ms'],
-  ) as (ms: bigint) => Instant;
-  /**
-   * Creates a new `Instant` from a number of milliseconds since the UNIX epoch.
-   */
-  static from_timestamp_milliseconds_async = defineFunction(
-    'baml.time.Instant.from_timestamp_milliseconds',
-    'async',
-    ['ms'],
-  ) as (ms: bigint) => Promise<Instant>;
-  /**
-   * Creates a new `Instant` from a number of seconds since the UNIX epoch.
-   */
-  static from_timestamp_seconds = defineFunction(
-    'baml.time.Instant.from_timestamp_seconds',
-    'sync',
-    ['s'],
-  ) as (s: bigint) => Instant;
-  /**
-   * Creates a new `Instant` from a number of seconds since the UNIX epoch.
-   */
-  static from_timestamp_seconds_async = defineFunction(
-    'baml.time.Instant.from_timestamp_seconds',
-    'async',
-    ['s'],
-  ) as (s: bigint) => Promise<Instant>;
-  /**
-   * Returns the Unix epoch (1970-01-01T00:00:00Z).
-   */
-  static epoch = defineFunction('baml.time.Instant.epoch', 'sync', []) as () => Instant;
-  /**
-   * Returns the Unix epoch (1970-01-01T00:00:00Z).
-   */
-  static epoch_async = defineFunction(
-    'baml.time.Instant.epoch',
-    'async',
-    [],
-  ) as () => Promise<Instant>;
-  /**
-   * Creates a new `Duration` representing the time elapsed since `self`.
-   * If `time` is in the future, the duration will be negative.
-   *
-   * Uses `Instant.now()` to get the current time. See it for caveats.
-   *
-   * Also note that since this operation has limited accuracy
-   * due to measurement overhead, it is not recommended to use this
-   * for high-precision measurements.
-   *
-   * ## Examples
-   * ```baml
-   * let start = Instant.now();
-   * let response = baml.http.fetch("https://example.com");
-   * let duration = start.elapsed();
-   * ```
-   */
-  elapsed = defineInstanceFunction('baml.time.Instant.elapsed', 'sync', ['self']).bind(
-    this,
-  ) as () => Duration;
-  /**
-   * Creates a new `Duration` representing the time elapsed since `self`.
-   * If `time` is in the future, the duration will be negative.
-   *
-   * Uses `Instant.now()` to get the current time. See it for caveats.
-   *
-   * Also note that since this operation has limited accuracy
-   * due to measurement overhead, it is not recommended to use this
-   * for high-precision measurements.
-   *
-   * ## Examples
-   * ```baml
-   * let start = Instant.now();
-   * let response = baml.http.fetch("https://example.com");
-   * let duration = start.elapsed();
-   * ```
-   */
-  elapsed_async = defineInstanceFunction('baml.time.Instant.elapsed', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<Duration>;
-  to_string = defineInstanceFunction('baml.time.Instant.to_string', 'sync', ['self']).bind(
-    this,
-  ) as () => string;
-  to_string_async = defineInstanceFunction('baml.time.Instant.to_string', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<string>;
-  /**
-   * Internal RFC 3339 formatter. Throws `InvalidArgument` when the year is
-   * outside the 4-digit RFC 3339 range; `baml.ToString.to_string` turns that
-   * into a panic, while `to_json` surfaces it as a `JsonSerializationError`.
-   * @throws InvalidArgument
-   */
-  _to_string_impl = defineInstanceFunction('baml.time.Instant._to_string_impl', 'sync', [
-    'self',
-  ]).bind(this) as () => string;
-  /**
-   * Internal RFC 3339 formatter. Throws `InvalidArgument` when the year is
-   * outside the 4-digit RFC 3339 range; `baml.ToString.to_string` turns that
-   * into a panic, while `to_json` surfaces it as a `JsonSerializationError`.
-   * @throws InvalidArgument
-   */
-  _to_string_impl_async = defineInstanceFunction('baml.time.Instant._to_string_impl', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<string>;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json = defineInstanceFunction('baml.time.Instant.to_json', 'sync', ['self']).bind(
-    this,
-  ) as () => baml.json.json;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json_async = defineInstanceFunction('baml.time.Instant.to_json', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<baml.json.json>;
-  /**
-   * If `self` is before `other`, returns `other`. Otherwise, returns `self`.
-   */
-  max = defineInstanceFunction('baml.time.Instant.max', 'sync', ['self', 'other']).bind(this) as (
-    other: Instant,
-  ) => Instant;
-  /**
-   * If `self` is before `other`, returns `other`. Otherwise, returns `self`.
-   */
-  max_async = defineInstanceFunction('baml.time.Instant.max', 'async', ['self', 'other']).bind(
-    this,
-  ) as (other: Instant) => Promise<Instant>;
-  /**
-   * If `self` is after `other`, returns `other`. Otherwise, returns `self`.
-   */
-  min = defineInstanceFunction('baml.time.Instant.min', 'sync', ['self', 'other']).bind(this) as (
-    other: Instant,
-  ) => Instant;
-  /**
-   * If `self` is after `other`, returns `other`. Otherwise, returns `self`.
-   */
-  min_async = defineInstanceFunction('baml.time.Instant.min', 'async', ['self', 'other']).bind(
-    this,
-  ) as (other: Instant) => Promise<Instant>;
-  /**
-   * Returns the absolute value of the difference between `self` and `other`.
-   * This operation is commutative: swapping `self` and `other` does not change the result.
-   */
-  abs_diff = defineInstanceFunction('baml.time.Instant.abs_diff', 'sync', ['self', 'other']).bind(
-    this,
-  ) as (other: Instant) => Duration;
-  /**
-   * Returns the absolute value of the difference between `self` and `other`.
-   * This operation is commutative: swapping `self` and `other` does not change the result.
-   */
-  abs_diff_async = defineInstanceFunction('baml.time.Instant.abs_diff', 'async', [
-    'self',
-    'other',
-  ]).bind(this) as (other: Instant) => Promise<Duration>;
-  /**
-   * Returns the number of nanoseconds since the UNIX epoch.
-   */
-  to_timestamp_nanoseconds = defineInstanceFunction(
-    'baml.time.Instant.to_timestamp_nanoseconds',
-    'sync',
-    ['self'],
-  ).bind(this) as () => bigint;
-  /**
-   * Returns the number of nanoseconds since the UNIX epoch.
-   */
-  to_timestamp_nanoseconds_async = defineInstanceFunction(
-    'baml.time.Instant.to_timestamp_nanoseconds',
-    'async',
-    ['self'],
-  ).bind(this) as () => Promise<bigint>;
-  /**
-   * Returns the number of microseconds since the UNIX epoch.
-   * Lossy: rounds down
-   */
-  to_timestamp_microseconds = defineInstanceFunction(
-    'baml.time.Instant.to_timestamp_microseconds',
-    'sync',
-    ['self'],
-  ).bind(this) as () => bigint;
-  /**
-   * Returns the number of microseconds since the UNIX epoch.
-   * Lossy: rounds down
-   */
-  to_timestamp_microseconds_async = defineInstanceFunction(
-    'baml.time.Instant.to_timestamp_microseconds',
-    'async',
-    ['self'],
-  ).bind(this) as () => Promise<bigint>;
-  /**
-   * Returns the number of milliseconds since the UNIX epoch.
-   * Lossy: rounds down
-   */
-  to_timestamp_milliseconds = defineInstanceFunction(
-    'baml.time.Instant.to_timestamp_milliseconds',
-    'sync',
-    ['self'],
-  ).bind(this) as () => bigint;
-  /**
-   * Returns the number of milliseconds since the UNIX epoch.
-   * Lossy: rounds down
-   */
-  to_timestamp_milliseconds_async = defineInstanceFunction(
-    'baml.time.Instant.to_timestamp_milliseconds',
-    'async',
-    ['self'],
-  ).bind(this) as () => Promise<bigint>;
-  /**
-   * Returns the number of seconds since the UNIX epoch.
-   * Lossy: rounds down
-   */
-  to_timestamp_seconds = defineInstanceFunction('baml.time.Instant.to_timestamp_seconds', 'sync', [
-    'self',
-  ]).bind(this) as () => bigint;
-  /**
-   * Returns the number of seconds since the UNIX epoch.
-   * Lossy: rounds down
-   */
-  to_timestamp_seconds_async = defineInstanceFunction(
-    'baml.time.Instant.to_timestamp_seconds',
-    'async',
-    ['self'],
-  ).bind(this) as () => Promise<bigint>;
+/**
+ * Creates a new `Instant` representing the current point in time.
+ * 
+ * Note that this uses wall-clock time and is not guaranteed to be monotonic
+ * (e.g. [NTP](https://en.wikipedia.org/wiki/Network_Time_Protocol) adjustments may cause time to jump backwards).
+ * 
+ * ## Panics
+ * If the system clock is not available, this function will panic.
+ */
+  static now = defineFunction("baml.time.Instant.now", "sync", []) as () => Instant;
+/**
+ * Creates a new `Instant` representing the current point in time.
+ * 
+ * Note that this uses wall-clock time and is not guaranteed to be monotonic
+ * (e.g. [NTP](https://en.wikipedia.org/wiki/Network_Time_Protocol) adjustments may cause time to jump backwards).
+ * 
+ * ## Panics
+ * If the system clock is not available, this function will panic.
+ */
+  static now_async = defineFunction("baml.time.Instant.now", "async", []) as () => Promise<Instant>;
+/**
+ * @throws ParseError
+ */
+  static parse = defineFunction("baml.time.Instant.parse", "sync", ["s"]) as (s: string) => Instant;
+/**
+ * @throws ParseError
+ */
+  static parse_async = defineFunction("baml.time.Instant.parse", "async", ["s"]) as (s: string) => Promise<Instant>;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json = defineFunction("baml.time.Instant.from_json", "sync", ["j"]) as (j: baml.json.json) => null;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json_async = defineFunction("baml.time.Instant.from_json", "async", ["j"]) as (j: baml.json.json) => Promise<null>;
+/**
+ * Creates a new `Instant` from a number of nanoseconds since the UNIX epoch.
+ */
+  static from_timestamp_nanoseconds = defineFunction("baml.time.Instant.from_timestamp_nanoseconds", "sync", ["ns"]) as (ns: bigint) => Instant;
+/**
+ * Creates a new `Instant` from a number of nanoseconds since the UNIX epoch.
+ */
+  static from_timestamp_nanoseconds_async = defineFunction("baml.time.Instant.from_timestamp_nanoseconds", "async", ["ns"]) as (ns: bigint) => Promise<Instant>;
+/**
+ * Creates a new `Instant` from a number of microseconds since the UNIX epoch.
+ */
+  static from_timestamp_microseconds = defineFunction("baml.time.Instant.from_timestamp_microseconds", "sync", ["us"]) as (us: bigint) => Instant;
+/**
+ * Creates a new `Instant` from a number of microseconds since the UNIX epoch.
+ */
+  static from_timestamp_microseconds_async = defineFunction("baml.time.Instant.from_timestamp_microseconds", "async", ["us"]) as (us: bigint) => Promise<Instant>;
+/**
+ * Creates a new `Instant` from a number of milliseconds since the UNIX epoch.
+ */
+  static from_timestamp_milliseconds = defineFunction("baml.time.Instant.from_timestamp_milliseconds", "sync", ["ms"]) as (ms: bigint) => Instant;
+/**
+ * Creates a new `Instant` from a number of milliseconds since the UNIX epoch.
+ */
+  static from_timestamp_milliseconds_async = defineFunction("baml.time.Instant.from_timestamp_milliseconds", "async", ["ms"]) as (ms: bigint) => Promise<Instant>;
+/**
+ * Creates a new `Instant` from a number of seconds since the UNIX epoch.
+ */
+  static from_timestamp_seconds = defineFunction("baml.time.Instant.from_timestamp_seconds", "sync", ["s"]) as (s: bigint) => Instant;
+/**
+ * Creates a new `Instant` from a number of seconds since the UNIX epoch.
+ */
+  static from_timestamp_seconds_async = defineFunction("baml.time.Instant.from_timestamp_seconds", "async", ["s"]) as (s: bigint) => Promise<Instant>;
+/**
+ * Returns the Unix epoch (1970-01-01T00:00:00Z).
+ */
+  static epoch = defineFunction("baml.time.Instant.epoch", "sync", []) as () => Instant;
+/**
+ * Returns the Unix epoch (1970-01-01T00:00:00Z).
+ */
+  static epoch_async = defineFunction("baml.time.Instant.epoch", "async", []) as () => Promise<Instant>;
+/**
+ * Creates a new `Duration` representing the time elapsed since `self`.
+ * If `time` is in the future, the duration will be negative.
+ * 
+ * Uses `Instant.now()` to get the current time. See it for caveats.
+ * 
+ * Also note that since this operation has limited accuracy
+ * due to measurement overhead, it is not recommended to use this
+ * for high-precision measurements.
+ * 
+ * ## Examples
+ * ```baml
+ * let start = Instant.now();
+ * let response = baml.http.fetch("https://example.com");
+ * let duration = start.elapsed();
+ * ```
+ */
+  elapsed = defineInstanceFunction("baml.time.Instant.elapsed", "sync", ["self"]).bind(this) as () => Duration;
+/**
+ * Creates a new `Duration` representing the time elapsed since `self`.
+ * If `time` is in the future, the duration will be negative.
+ * 
+ * Uses `Instant.now()` to get the current time. See it for caveats.
+ * 
+ * Also note that since this operation has limited accuracy
+ * due to measurement overhead, it is not recommended to use this
+ * for high-precision measurements.
+ * 
+ * ## Examples
+ * ```baml
+ * let start = Instant.now();
+ * let response = baml.http.fetch("https://example.com");
+ * let duration = start.elapsed();
+ * ```
+ */
+  elapsed_async = defineInstanceFunction("baml.time.Instant.elapsed", "async", ["self"]).bind(this) as () => Promise<Duration>;
+  to_string = defineInstanceFunction("baml.time.Instant.to_string", "sync", ["self"]).bind(this) as () => string;
+  to_string_async = defineInstanceFunction("baml.time.Instant.to_string", "async", ["self"]).bind(this) as () => Promise<string>;
+/**
+ * Internal RFC 3339 formatter. Throws `InvalidArgument` when the year is
+ * outside the 4-digit RFC 3339 range; `baml.ToString.to_string` turns that
+ * into a panic, while `to_json` surfaces it as a `JsonSerializationError`.
+ * @throws InvalidArgument
+ */
+  _to_string_impl = defineInstanceFunction("baml.time.Instant._to_string_impl", "sync", ["self"]).bind(this) as () => string;
+/**
+ * Internal RFC 3339 formatter. Throws `InvalidArgument` when the year is
+ * outside the 4-digit RFC 3339 range; `baml.ToString.to_string` turns that
+ * into a panic, while `to_json` surfaces it as a `JsonSerializationError`.
+ * @throws InvalidArgument
+ */
+  _to_string_impl_async = defineInstanceFunction("baml.time.Instant._to_string_impl", "async", ["self"]).bind(this) as () => Promise<string>;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json = defineInstanceFunction("baml.time.Instant.to_json", "sync", ["self"]).bind(this) as () => baml.json.json;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json_async = defineInstanceFunction("baml.time.Instant.to_json", "async", ["self"]).bind(this) as () => Promise<baml.json.json>;
+/**
+ * If `self` is before `other`, returns `other`. Otherwise, returns `self`.
+ */
+  max = defineInstanceFunction("baml.time.Instant.max", "sync", ["self", "other"]).bind(this) as (other: Instant) => Instant;
+/**
+ * If `self` is before `other`, returns `other`. Otherwise, returns `self`.
+ */
+  max_async = defineInstanceFunction("baml.time.Instant.max", "async", ["self", "other"]).bind(this) as (other: Instant) => Promise<Instant>;
+/**
+ * If `self` is after `other`, returns `other`. Otherwise, returns `self`.
+ */
+  min = defineInstanceFunction("baml.time.Instant.min", "sync", ["self", "other"]).bind(this) as (other: Instant) => Instant;
+/**
+ * If `self` is after `other`, returns `other`. Otherwise, returns `self`.
+ */
+  min_async = defineInstanceFunction("baml.time.Instant.min", "async", ["self", "other"]).bind(this) as (other: Instant) => Promise<Instant>;
+/**
+ * Returns the absolute value of the difference between `self` and `other`.
+ * This operation is commutative: swapping `self` and `other` does not change the result.
+ */
+  abs_diff = defineInstanceFunction("baml.time.Instant.abs_diff", "sync", ["self", "other"]).bind(this) as (other: Instant) => Duration;
+/**
+ * Returns the absolute value of the difference between `self` and `other`.
+ * This operation is commutative: swapping `self` and `other` does not change the result.
+ */
+  abs_diff_async = defineInstanceFunction("baml.time.Instant.abs_diff", "async", ["self", "other"]).bind(this) as (other: Instant) => Promise<Duration>;
+/**
+ * Returns the number of nanoseconds since the UNIX epoch.
+ */
+  to_timestamp_nanoseconds = defineInstanceFunction("baml.time.Instant.to_timestamp_nanoseconds", "sync", ["self"]).bind(this) as () => bigint;
+/**
+ * Returns the number of nanoseconds since the UNIX epoch.
+ */
+  to_timestamp_nanoseconds_async = defineInstanceFunction("baml.time.Instant.to_timestamp_nanoseconds", "async", ["self"]).bind(this) as () => Promise<bigint>;
+/**
+ * Returns the number of microseconds since the UNIX epoch.
+ * Lossy: rounds down
+ */
+  to_timestamp_microseconds = defineInstanceFunction("baml.time.Instant.to_timestamp_microseconds", "sync", ["self"]).bind(this) as () => bigint;
+/**
+ * Returns the number of microseconds since the UNIX epoch.
+ * Lossy: rounds down
+ */
+  to_timestamp_microseconds_async = defineInstanceFunction("baml.time.Instant.to_timestamp_microseconds", "async", ["self"]).bind(this) as () => Promise<bigint>;
+/**
+ * Returns the number of milliseconds since the UNIX epoch.
+ * Lossy: rounds down
+ */
+  to_timestamp_milliseconds = defineInstanceFunction("baml.time.Instant.to_timestamp_milliseconds", "sync", ["self"]).bind(this) as () => bigint;
+/**
+ * Returns the number of milliseconds since the UNIX epoch.
+ * Lossy: rounds down
+ */
+  to_timestamp_milliseconds_async = defineInstanceFunction("baml.time.Instant.to_timestamp_milliseconds", "async", ["self"]).bind(this) as () => Promise<bigint>;
+/**
+ * Returns the number of seconds since the UNIX epoch.
+ * Lossy: rounds down
+ */
+  to_timestamp_seconds = defineInstanceFunction("baml.time.Instant.to_timestamp_seconds", "sync", ["self"]).bind(this) as () => bigint;
+/**
+ * Returns the number of seconds since the UNIX epoch.
+ * Lossy: rounds down
+ */
+  to_timestamp_seconds_async = defineInstanceFunction("baml.time.Instant.to_timestamp_seconds", "async", ["self"]).bind(this) as () => Promise<bigint>;
 }
 
 /**
  * A civil date without a time or timezone, on the proleptic Gregorian
  * calendar: `1979-05-27`.
- *
+ * 
  * Equivalent to `Temporal.PlainDate` (TC39).
  *
  * Attributes:
@@ -507,7 +362,9 @@ export class Instant {
  */
 export class PlainDate$stream {
   _days!: number | null;
-  constructor(init: { _days: number | null }) {
+  constructor(init: {
+    _days: number | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -515,7 +372,7 @@ export class PlainDate$stream {
 /**
  * A civil date without a time or timezone, on the proleptic Gregorian
  * calendar: `1979-05-27`.
- *
+ * 
  * Equivalent to `Temporal.PlainDate` (TC39).
  *
  * Attributes:
@@ -524,167 +381,110 @@ export class PlainDate$stream {
  */
 export class PlainDate {
   _days!: number;
-  constructor(init: { _days: number }) {
+  constructor(init: {
+    _days: number;
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * @throws InvalidArgument
-   */
-  static from_components = defineFunction('baml.time.PlainDate.from_components', 'sync', [
-    'year',
-    'month',
-    'day',
-  ]) as (year: number, month: number, day: number) => PlainDate;
-  /**
-   * @throws InvalidArgument
-   */
-  static from_components_async = defineFunction('baml.time.PlainDate.from_components', 'async', [
-    'year',
-    'month',
-    'day',
-  ]) as (year: number, month: number, day: number) => Promise<PlainDate>;
-  /**
-   * @throws ParseError
-   */
-  static parse = defineFunction('baml.time.PlainDate.parse', 'sync', ['s']) as (
-    s: string,
-  ) => PlainDate;
-  /**
-   * @throws ParseError
-   */
-  static parse_async = defineFunction('baml.time.PlainDate.parse', 'async', ['s']) as (
-    s: string,
-  ) => Promise<PlainDate>;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json = defineFunction('baml.time.PlainDate.from_json', 'sync', ['j']) as (
-    j: baml.json.json,
-  ) => null;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json_async = defineFunction('baml.time.PlainDate.from_json', 'async', ['j']) as (
-    j: baml.json.json,
-  ) => Promise<null>;
-  to_string = defineInstanceFunction('baml.time.PlainDate.to_string', 'sync', ['self']).bind(
-    this,
-  ) as () => string;
-  to_string_async = defineInstanceFunction('baml.time.PlainDate.to_string', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<string>;
-  /**
-   * Internal ISO 8601 formatter. Throws `InvalidArgument` when the year is
-   * out of range; `baml.ToString.to_string` turns that into a panic, while
-   * `to_json` surfaces it as a `JsonSerializationError`.
-   * @throws InvalidArgument
-   */
-  _to_string_impl = defineInstanceFunction('baml.time.PlainDate._to_string_impl', 'sync', [
-    'self',
-  ]).bind(this) as () => string;
-  /**
-   * Internal ISO 8601 formatter. Throws `InvalidArgument` when the year is
-   * out of range; `baml.ToString.to_string` turns that into a panic, while
-   * `to_json` surfaces it as a `JsonSerializationError`.
-   * @throws InvalidArgument
-   */
-  _to_string_impl_async = defineInstanceFunction('baml.time.PlainDate._to_string_impl', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<string>;
-  /**
-   * Combines with a time-of-day into a `PlainDateTime`. Defaults to
-   * midnight when `time` is omitted (pass by name to override:
-   * `d.to_plain_datetime(time = t)`).
-   */
-  to_plain_datetime = defineInstanceFunction(
-    'baml.time.PlainDate.to_plain_datetime',
-    'sync',
-    ['self'],
-    ['time'],
-  ).bind(this) as ($opts?: { time?: PlainTime | null | undefined } | undefined) => PlainDateTime;
-  /**
-   * Combines with a time-of-day into a `PlainDateTime`. Defaults to
-   * midnight when `time` is omitted (pass by name to override:
-   * `d.to_plain_datetime(time = t)`).
-   */
-  to_plain_datetime_async = defineInstanceFunction(
-    'baml.time.PlainDate.to_plain_datetime',
-    'async',
-    ['self'],
-    ['time'],
-  ).bind(this) as (
-    $opts?: { time?: PlainTime | null | undefined } | undefined,
-  ) => Promise<PlainDateTime>;
-  _to_plain_datetime = defineInstanceFunction('baml.time.PlainDate._to_plain_datetime', 'sync', [
-    'self',
-    'time',
-  ]).bind(this) as (time: PlainTime | null) => PlainDateTime;
-  _to_plain_datetime_async = defineInstanceFunction(
-    'baml.time.PlainDate._to_plain_datetime',
-    'async',
-    ['self', 'time'],
-  ).bind(this) as (time: PlainTime | null) => Promise<PlainDateTime>;
-  /**
-   * The calendar year.
-   * @throws InvalidArgument
-   */
-  year = defineInstanceFunction('baml.time.PlainDate.year', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The calendar year.
-   * @throws InvalidArgument
-   */
-  year_async = defineInstanceFunction('baml.time.PlainDate.year', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The calendar month, in `[1, 12]`.
-   * @throws InvalidArgument
-   */
-  month = defineInstanceFunction('baml.time.PlainDate.month', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The calendar month, in `[1, 12]`.
-   * @throws InvalidArgument
-   */
-  month_async = defineInstanceFunction('baml.time.PlainDate.month', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The day of the month, in `[1, 31]`.
-   * @throws InvalidArgument
-   */
-  day = defineInstanceFunction('baml.time.PlainDate.day', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The day of the month, in `[1, 31]`.
-   * @throws InvalidArgument
-   */
-  day_async = defineInstanceFunction('baml.time.PlainDate.day', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json = defineInstanceFunction('baml.time.PlainDate.to_json', 'sync', ['self']).bind(
-    this,
-  ) as () => baml.json.json;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json_async = defineInstanceFunction('baml.time.PlainDate.to_json', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<baml.json.json>;
+/**
+ * @throws InvalidArgument
+ */
+  static from_components = defineFunction("baml.time.PlainDate.from_components", "sync", ["year", "month", "day"]) as (year: number, month: number, day: number) => PlainDate;
+/**
+ * @throws InvalidArgument
+ */
+  static from_components_async = defineFunction("baml.time.PlainDate.from_components", "async", ["year", "month", "day"]) as (year: number, month: number, day: number) => Promise<PlainDate>;
+/**
+ * @throws ParseError
+ */
+  static parse = defineFunction("baml.time.PlainDate.parse", "sync", ["s"]) as (s: string) => PlainDate;
+/**
+ * @throws ParseError
+ */
+  static parse_async = defineFunction("baml.time.PlainDate.parse", "async", ["s"]) as (s: string) => Promise<PlainDate>;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json = defineFunction("baml.time.PlainDate.from_json", "sync", ["j"]) as (j: baml.json.json) => null;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json_async = defineFunction("baml.time.PlainDate.from_json", "async", ["j"]) as (j: baml.json.json) => Promise<null>;
+  to_string = defineInstanceFunction("baml.time.PlainDate.to_string", "sync", ["self"]).bind(this) as () => string;
+  to_string_async = defineInstanceFunction("baml.time.PlainDate.to_string", "async", ["self"]).bind(this) as () => Promise<string>;
+/**
+ * Internal ISO 8601 formatter. Throws `InvalidArgument` when the year is
+ * out of range; `baml.ToString.to_string` turns that into a panic, while
+ * `to_json` surfaces it as a `JsonSerializationError`.
+ * @throws InvalidArgument
+ */
+  _to_string_impl = defineInstanceFunction("baml.time.PlainDate._to_string_impl", "sync", ["self"]).bind(this) as () => string;
+/**
+ * Internal ISO 8601 formatter. Throws `InvalidArgument` when the year is
+ * out of range; `baml.ToString.to_string` turns that into a panic, while
+ * `to_json` surfaces it as a `JsonSerializationError`.
+ * @throws InvalidArgument
+ */
+  _to_string_impl_async = defineInstanceFunction("baml.time.PlainDate._to_string_impl", "async", ["self"]).bind(this) as () => Promise<string>;
+/**
+ * Combines with a time-of-day into a `PlainDateTime`. Defaults to
+ * midnight when `time` is omitted (pass by name to override:
+ * `d.to_plain_datetime(time = t)`).
+ */
+  to_plain_datetime = defineInstanceFunction("baml.time.PlainDate.to_plain_datetime", "sync", ["self"], ["time"]).bind(this) as ($opts?: { time?: PlainTime | null | undefined } | undefined) => PlainDateTime;
+/**
+ * Combines with a time-of-day into a `PlainDateTime`. Defaults to
+ * midnight when `time` is omitted (pass by name to override:
+ * `d.to_plain_datetime(time = t)`).
+ */
+  to_plain_datetime_async = defineInstanceFunction("baml.time.PlainDate.to_plain_datetime", "async", ["self"], ["time"]).bind(this) as ($opts?: { time?: PlainTime | null | undefined } | undefined) => Promise<PlainDateTime>;
+  _to_plain_datetime = defineInstanceFunction("baml.time.PlainDate._to_plain_datetime", "sync", ["self", "time"]).bind(this) as (time: PlainTime | null) => PlainDateTime;
+  _to_plain_datetime_async = defineInstanceFunction("baml.time.PlainDate._to_plain_datetime", "async", ["self", "time"]).bind(this) as (time: PlainTime | null) => Promise<PlainDateTime>;
+/**
+ * The calendar year.
+ * @throws InvalidArgument
+ */
+  year = defineInstanceFunction("baml.time.PlainDate.year", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The calendar year.
+ * @throws InvalidArgument
+ */
+  year_async = defineInstanceFunction("baml.time.PlainDate.year", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The calendar month, in `[1, 12]`.
+ * @throws InvalidArgument
+ */
+  month = defineInstanceFunction("baml.time.PlainDate.month", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The calendar month, in `[1, 12]`.
+ * @throws InvalidArgument
+ */
+  month_async = defineInstanceFunction("baml.time.PlainDate.month", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The day of the month, in `[1, 31]`.
+ * @throws InvalidArgument
+ */
+  day = defineInstanceFunction("baml.time.PlainDate.day", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The day of the month, in `[1, 31]`.
+ * @throws InvalidArgument
+ */
+  day_async = defineInstanceFunction("baml.time.PlainDate.day", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json = defineInstanceFunction("baml.time.PlainDate.to_json", "sync", ["self"]).bind(this) as () => baml.json.json;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json_async = defineInstanceFunction("baml.time.PlainDate.to_json", "async", ["self"]).bind(this) as () => Promise<baml.json.json>;
 }
 
 /**
  * A civil ("wall-clock") date and time without a timezone, on the proleptic
  * Gregorian calendar: `1979-05-27T07:32:00`. It cannot be located on the
  * global timeline without supplying a timezone via `to_zoned`.
- *
+ * 
  * Equivalent to `Temporal.PlainDateTime` (TC39). The `Plain` prefix marks
  * anything without a timezone, following TC39 Temporal.
  *
@@ -695,7 +495,9 @@ export class PlainDate {
  */
 export class PlainDateTime$stream {
   _nanoseconds!: bigint | null;
-  constructor(init: { _nanoseconds: bigint | null }) {
+  constructor(init: {
+    _nanoseconds: bigint | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -704,7 +506,7 @@ export class PlainDateTime$stream {
  * A civil ("wall-clock") date and time without a timezone, on the proleptic
  * Gregorian calendar: `1979-05-27T07:32:00`. It cannot be located on the
  * global timeline without supplying a timezone via `to_zoned`.
- *
+ * 
  * Equivalent to `Temporal.PlainDateTime` (TC39). The `Plain` prefix marks
  * anything without a timezone, following TC39 Temporal.
  *
@@ -715,372 +517,204 @@ export class PlainDateTime$stream {
  */
 export class PlainDateTime {
   _nanoseconds!: bigint;
-  constructor(init: { _nanoseconds: bigint }) {
+  constructor(init: {
+    _nanoseconds: bigint;
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * Creates a `PlainDateTime` from calendar/clock components. `month` and
-   * `day` are 1-based. Defaulted clock components are passed by name:
-   * `PlainDateTime.from_components(1979, 5, 27, hour = 7)`.
-   *
-   * Throws `root.errors.InvalidArgument` if a component is out of range
-   * (e.g. month 13, Feb 30) or the year is outside ±9999.
-   * @throws InvalidArgument
-   */
-  static from_components = defineFunction(
-    'baml.time.PlainDateTime.from_components',
-    'sync',
-    ['year', 'month', 'day'],
-    ['hour', 'minute', 'second', 'millisecond', 'microsecond', 'nanosecond'],
-  ) as (
-    year: number,
-    month: number,
-    day: number,
-    $opts?:
-      | {
-          hour?: number | undefined;
-          minute?: number | undefined;
-          second?: number | undefined;
-          millisecond?: number | undefined;
-          microsecond?: number | undefined;
-          nanosecond?: number | undefined;
-        }
-      | undefined,
-  ) => PlainDateTime;
-  /**
-   * Creates a `PlainDateTime` from calendar/clock components. `month` and
-   * `day` are 1-based. Defaulted clock components are passed by name:
-   * `PlainDateTime.from_components(1979, 5, 27, hour = 7)`.
-   *
-   * Throws `root.errors.InvalidArgument` if a component is out of range
-   * (e.g. month 13, Feb 30) or the year is outside ±9999.
-   * @throws InvalidArgument
-   */
-  static from_components_async = defineFunction(
-    'baml.time.PlainDateTime.from_components',
-    'async',
-    ['year', 'month', 'day'],
-    ['hour', 'minute', 'second', 'millisecond', 'microsecond', 'nanosecond'],
-  ) as (
-    year: number,
-    month: number,
-    day: number,
-    $opts?:
-      | {
-          hour?: number | undefined;
-          minute?: number | undefined;
-          second?: number | undefined;
-          millisecond?: number | undefined;
-          microsecond?: number | undefined;
-          nanosecond?: number | undefined;
-        }
-      | undefined,
-  ) => Promise<PlainDateTime>;
-  /**
-   * @throws InvalidArgument
-   */
-  static _from_components = defineFunction('baml.time.PlainDateTime._from_components', 'sync', [
-    'year',
-    'month',
-    'day',
-    'hour',
-    'minute',
-    'second',
-    'millisecond',
-    'microsecond',
-    'nanosecond',
-  ]) as (
-    year: number,
-    month: number,
-    day: number,
-    hour: number,
-    minute: number,
-    second: number,
-    millisecond: number,
-    microsecond: number,
-    nanosecond: number,
-  ) => PlainDateTime;
-  /**
-   * @throws InvalidArgument
-   */
-  static _from_components_async = defineFunction(
-    'baml.time.PlainDateTime._from_components',
-    'async',
-    [
-      'year',
-      'month',
-      'day',
-      'hour',
-      'minute',
-      'second',
-      'millisecond',
-      'microsecond',
-      'nanosecond',
-    ],
-  ) as (
-    year: number,
-    month: number,
-    day: number,
-    hour: number,
-    minute: number,
-    second: number,
-    millisecond: number,
-    microsecond: number,
-    nanosecond: number,
-  ) => Promise<PlainDateTime>;
-  /**
-   * @throws ParseError
-   */
-  static parse = defineFunction('baml.time.PlainDateTime.parse', 'sync', ['s']) as (
-    s: string,
-  ) => PlainDateTime;
-  /**
-   * @throws ParseError
-   */
-  static parse_async = defineFunction('baml.time.PlainDateTime.parse', 'async', ['s']) as (
-    s: string,
-  ) => Promise<PlainDateTime>;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json = defineFunction('baml.time.PlainDateTime.from_json', 'sync', ['j']) as (
-    j: baml.json.json,
-  ) => null;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json_async = defineFunction('baml.time.PlainDateTime.from_json', 'async', ['j']) as (
-    j: baml.json.json,
-  ) => Promise<null>;
-  to_string = defineInstanceFunction('baml.time.PlainDateTime.to_string', 'sync', ['self']).bind(
-    this,
-  ) as () => string;
-  to_string_async = defineInstanceFunction('baml.time.PlainDateTime.to_string', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<string>;
-  /**
-   * Internal ISO 8601 formatter. Throws `InvalidArgument` when the year is
-   * outside ±9999; `baml.ToString.to_string` turns that into a panic, while
-   * `to_json` surfaces it as a `JsonSerializationError`.
-   * @throws InvalidArgument
-   */
-  _to_string_impl = defineInstanceFunction('baml.time.PlainDateTime._to_string_impl', 'sync', [
-    'self',
-  ]).bind(this) as () => string;
-  /**
-   * Internal ISO 8601 formatter. Throws `InvalidArgument` when the year is
-   * outside ±9999; `baml.ToString.to_string` turns that into a panic, while
-   * `to_json` surfaces it as a `JsonSerializationError`.
-   * @throws InvalidArgument
-   */
-  _to_string_impl_async = defineInstanceFunction(
-    'baml.time.PlainDateTime._to_string_impl',
-    'async',
-    ['self'],
-  ).bind(this) as () => Promise<string>;
-  /**
-   * Locates this wall-clock reading in a timezone, producing an absolute
-   * time. With a `TimeZoneOffset` the conversion is exact. With an IANA
-   * identifier, DST gaps/overlaps are resolved per `disambiguation`
-   * (passed by name: `dt.to_zoned(tz, disambiguation = "earlier")`).
-   * @throws UnknownTimezoneError
-   * @throws AmbiguousTimeError
-   * @throws Io
-   */
-  to_zoned = defineInstanceFunction(
-    'baml.time.PlainDateTime.to_zoned',
-    'sync',
-    ['self', 'timezone'],
-    ['disambiguation'],
-  ).bind(this) as (
-    timezone: TimeZoneOffset | string,
-    $opts?:
-      | { disambiguation?: 'compatible' | 'earlier' | 'later' | 'reject' | undefined }
-      | undefined,
-  ) => ZonedDateTime;
-  /**
-   * Locates this wall-clock reading in a timezone, producing an absolute
-   * time. With a `TimeZoneOffset` the conversion is exact. With an IANA
-   * identifier, DST gaps/overlaps are resolved per `disambiguation`
-   * (passed by name: `dt.to_zoned(tz, disambiguation = "earlier")`).
-   * @throws UnknownTimezoneError
-   * @throws AmbiguousTimeError
-   * @throws Io
-   */
-  to_zoned_async = defineInstanceFunction(
-    'baml.time.PlainDateTime.to_zoned',
-    'async',
-    ['self', 'timezone'],
-    ['disambiguation'],
-  ).bind(this) as (
-    timezone: TimeZoneOffset | string,
-    $opts?:
-      | { disambiguation?: 'compatible' | 'earlier' | 'later' | 'reject' | undefined }
-      | undefined,
-  ) => Promise<ZonedDateTime>;
-  /**
-   * If `self` is before `other` (civil comparison), returns `other`.
-   * Otherwise, returns `self`.
-   */
-  max = defineInstanceFunction('baml.time.PlainDateTime.max', 'sync', ['self', 'other']).bind(
-    this,
-  ) as (other: PlainDateTime) => PlainDateTime;
-  /**
-   * If `self` is before `other` (civil comparison), returns `other`.
-   * Otherwise, returns `self`.
-   */
-  max_async = defineInstanceFunction('baml.time.PlainDateTime.max', 'async', [
-    'self',
-    'other',
-  ]).bind(this) as (other: PlainDateTime) => Promise<PlainDateTime>;
-  /**
-   * If `self` is after `other` (civil comparison), returns `other`.
-   * Otherwise, returns `self`.
-   */
-  min = defineInstanceFunction('baml.time.PlainDateTime.min', 'sync', ['self', 'other']).bind(
-    this,
-  ) as (other: PlainDateTime) => PlainDateTime;
-  /**
-   * If `self` is after `other` (civil comparison), returns `other`.
-   * Otherwise, returns `self`.
-   */
-  min_async = defineInstanceFunction('baml.time.PlainDateTime.min', 'async', [
-    'self',
-    'other',
-  ]).bind(this) as (other: PlainDateTime) => Promise<PlainDateTime>;
-  /**
-   * @throws InvalidArgument
-   */
-  to_plain_date = defineInstanceFunction('baml.time.PlainDateTime.to_plain_date', 'sync', [
-    'self',
-  ]).bind(this) as () => PlainDate;
-  /**
-   * @throws InvalidArgument
-   */
-  to_plain_date_async = defineInstanceFunction('baml.time.PlainDateTime.to_plain_date', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<PlainDate>;
-  to_plain_time = defineInstanceFunction('baml.time.PlainDateTime.to_plain_time', 'sync', [
-    'self',
-  ]).bind(this) as () => PlainTime;
-  to_plain_time_async = defineInstanceFunction('baml.time.PlainDateTime.to_plain_time', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<PlainTime>;
-  /**
-   * The calendar year.
-   * @throws InvalidArgument
-   */
-  year = defineInstanceFunction('baml.time.PlainDateTime.year', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The calendar year.
-   * @throws InvalidArgument
-   */
-  year_async = defineInstanceFunction('baml.time.PlainDateTime.year', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The calendar month, in `[1, 12]`.
-   * @throws InvalidArgument
-   */
-  month = defineInstanceFunction('baml.time.PlainDateTime.month', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The calendar month, in `[1, 12]`.
-   * @throws InvalidArgument
-   */
-  month_async = defineInstanceFunction('baml.time.PlainDateTime.month', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The day of the month, in `[1, 31]`.
-   * @throws InvalidArgument
-   */
-  day = defineInstanceFunction('baml.time.PlainDateTime.day', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The day of the month, in `[1, 31]`.
-   * @throws InvalidArgument
-   */
-  day_async = defineInstanceFunction('baml.time.PlainDateTime.day', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The hour of the day, in `[0, 23]`.
-   * @throws InvalidArgument
-   */
-  hour = defineInstanceFunction('baml.time.PlainDateTime.hour', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The hour of the day, in `[0, 23]`.
-   * @throws InvalidArgument
-   */
-  hour_async = defineInstanceFunction('baml.time.PlainDateTime.hour', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The minute of the hour, in `[0, 59]`.
-   * @throws InvalidArgument
-   */
-  minute = defineInstanceFunction('baml.time.PlainDateTime.minute', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The minute of the hour, in `[0, 59]`.
-   * @throws InvalidArgument
-   */
-  minute_async = defineInstanceFunction('baml.time.PlainDateTime.minute', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The second of the minute, in `[0, 59]`.
-   * @throws InvalidArgument
-   */
-  second = defineInstanceFunction('baml.time.PlainDateTime.second', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The second of the minute, in `[0, 59]`.
-   * @throws InvalidArgument
-   */
-  second_async = defineInstanceFunction('baml.time.PlainDateTime.second', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The millisecond of the second, in `[0, 999]`.
-   * @throws InvalidArgument
-   */
-  millisecond = defineInstanceFunction('baml.time.PlainDateTime.millisecond', 'sync', [
-    'self',
-  ]).bind(this) as () => number;
-  /**
-   * The millisecond of the second, in `[0, 999]`.
-   * @throws InvalidArgument
-   */
-  millisecond_async = defineInstanceFunction('baml.time.PlainDateTime.millisecond', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<number>;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json = defineInstanceFunction('baml.time.PlainDateTime.to_json', 'sync', ['self']).bind(
-    this,
-  ) as () => baml.json.json;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json_async = defineInstanceFunction('baml.time.PlainDateTime.to_json', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<baml.json.json>;
+/**
+ * Creates a `PlainDateTime` from calendar/clock components. `month` and
+ * `day` are 1-based. Defaulted clock components are passed by name:
+ * `PlainDateTime.from_components(1979, 5, 27, hour = 7)`.
+ * 
+ * Throws `root.errors.InvalidArgument` if a component is out of range
+ * (e.g. month 13, Feb 30) or the year is outside ±9999.
+ * @throws InvalidArgument
+ */
+  static from_components = defineFunction("baml.time.PlainDateTime.from_components", "sync", ["year", "month", "day"], ["hour", "minute", "second", "millisecond", "microsecond", "nanosecond"]) as (year: number, month: number, day: number, $opts?: { hour?: number | undefined; minute?: number | undefined; second?: number | undefined; millisecond?: number | undefined; microsecond?: number | undefined; nanosecond?: number | undefined } | undefined) => PlainDateTime;
+/**
+ * Creates a `PlainDateTime` from calendar/clock components. `month` and
+ * `day` are 1-based. Defaulted clock components are passed by name:
+ * `PlainDateTime.from_components(1979, 5, 27, hour = 7)`.
+ * 
+ * Throws `root.errors.InvalidArgument` if a component is out of range
+ * (e.g. month 13, Feb 30) or the year is outside ±9999.
+ * @throws InvalidArgument
+ */
+  static from_components_async = defineFunction("baml.time.PlainDateTime.from_components", "async", ["year", "month", "day"], ["hour", "minute", "second", "millisecond", "microsecond", "nanosecond"]) as (year: number, month: number, day: number, $opts?: { hour?: number | undefined; minute?: number | undefined; second?: number | undefined; millisecond?: number | undefined; microsecond?: number | undefined; nanosecond?: number | undefined } | undefined) => Promise<PlainDateTime>;
+/**
+ * @throws InvalidArgument
+ */
+  static _from_components = defineFunction("baml.time.PlainDateTime._from_components", "sync", ["year", "month", "day", "hour", "minute", "second", "millisecond", "microsecond", "nanosecond"]) as (year: number, month: number, day: number, hour: number, minute: number, second: number, millisecond: number, microsecond: number, nanosecond: number) => PlainDateTime;
+/**
+ * @throws InvalidArgument
+ */
+  static _from_components_async = defineFunction("baml.time.PlainDateTime._from_components", "async", ["year", "month", "day", "hour", "minute", "second", "millisecond", "microsecond", "nanosecond"]) as (year: number, month: number, day: number, hour: number, minute: number, second: number, millisecond: number, microsecond: number, nanosecond: number) => Promise<PlainDateTime>;
+/**
+ * @throws ParseError
+ */
+  static parse = defineFunction("baml.time.PlainDateTime.parse", "sync", ["s"]) as (s: string) => PlainDateTime;
+/**
+ * @throws ParseError
+ */
+  static parse_async = defineFunction("baml.time.PlainDateTime.parse", "async", ["s"]) as (s: string) => Promise<PlainDateTime>;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json = defineFunction("baml.time.PlainDateTime.from_json", "sync", ["j"]) as (j: baml.json.json) => null;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json_async = defineFunction("baml.time.PlainDateTime.from_json", "async", ["j"]) as (j: baml.json.json) => Promise<null>;
+  to_string = defineInstanceFunction("baml.time.PlainDateTime.to_string", "sync", ["self"]).bind(this) as () => string;
+  to_string_async = defineInstanceFunction("baml.time.PlainDateTime.to_string", "async", ["self"]).bind(this) as () => Promise<string>;
+/**
+ * Internal ISO 8601 formatter. Throws `InvalidArgument` when the year is
+ * outside ±9999; `baml.ToString.to_string` turns that into a panic, while
+ * `to_json` surfaces it as a `JsonSerializationError`.
+ * @throws InvalidArgument
+ */
+  _to_string_impl = defineInstanceFunction("baml.time.PlainDateTime._to_string_impl", "sync", ["self"]).bind(this) as () => string;
+/**
+ * Internal ISO 8601 formatter. Throws `InvalidArgument` when the year is
+ * outside ±9999; `baml.ToString.to_string` turns that into a panic, while
+ * `to_json` surfaces it as a `JsonSerializationError`.
+ * @throws InvalidArgument
+ */
+  _to_string_impl_async = defineInstanceFunction("baml.time.PlainDateTime._to_string_impl", "async", ["self"]).bind(this) as () => Promise<string>;
+/**
+ * Locates this wall-clock reading in a timezone, producing an absolute
+ * time. With a `TimeZoneOffset` the conversion is exact. With an IANA
+ * identifier, DST gaps/overlaps are resolved per `disambiguation`
+ * (passed by name: `dt.to_zoned(tz, disambiguation = "earlier")`).
+ * @throws UnknownTimezoneError
+ * @throws AmbiguousTimeError
+ * @throws Io
+ */
+  to_zoned = defineInstanceFunction("baml.time.PlainDateTime.to_zoned", "sync", ["self", "timezone"], ["disambiguation"]).bind(this) as (timezone: TimeZoneOffset | string, $opts?: { disambiguation?: "compatible" | "earlier" | "later" | "reject" | undefined } | undefined) => ZonedDateTime;
+/**
+ * Locates this wall-clock reading in a timezone, producing an absolute
+ * time. With a `TimeZoneOffset` the conversion is exact. With an IANA
+ * identifier, DST gaps/overlaps are resolved per `disambiguation`
+ * (passed by name: `dt.to_zoned(tz, disambiguation = "earlier")`).
+ * @throws UnknownTimezoneError
+ * @throws AmbiguousTimeError
+ * @throws Io
+ */
+  to_zoned_async = defineInstanceFunction("baml.time.PlainDateTime.to_zoned", "async", ["self", "timezone"], ["disambiguation"]).bind(this) as (timezone: TimeZoneOffset | string, $opts?: { disambiguation?: "compatible" | "earlier" | "later" | "reject" | undefined } | undefined) => Promise<ZonedDateTime>;
+/**
+ * If `self` is before `other` (civil comparison), returns `other`.
+ * Otherwise, returns `self`.
+ */
+  max = defineInstanceFunction("baml.time.PlainDateTime.max", "sync", ["self", "other"]).bind(this) as (other: PlainDateTime) => PlainDateTime;
+/**
+ * If `self` is before `other` (civil comparison), returns `other`.
+ * Otherwise, returns `self`.
+ */
+  max_async = defineInstanceFunction("baml.time.PlainDateTime.max", "async", ["self", "other"]).bind(this) as (other: PlainDateTime) => Promise<PlainDateTime>;
+/**
+ * If `self` is after `other` (civil comparison), returns `other`.
+ * Otherwise, returns `self`.
+ */
+  min = defineInstanceFunction("baml.time.PlainDateTime.min", "sync", ["self", "other"]).bind(this) as (other: PlainDateTime) => PlainDateTime;
+/**
+ * If `self` is after `other` (civil comparison), returns `other`.
+ * Otherwise, returns `self`.
+ */
+  min_async = defineInstanceFunction("baml.time.PlainDateTime.min", "async", ["self", "other"]).bind(this) as (other: PlainDateTime) => Promise<PlainDateTime>;
+/**
+ * @throws InvalidArgument
+ */
+  to_plain_date = defineInstanceFunction("baml.time.PlainDateTime.to_plain_date", "sync", ["self"]).bind(this) as () => PlainDate;
+/**
+ * @throws InvalidArgument
+ */
+  to_plain_date_async = defineInstanceFunction("baml.time.PlainDateTime.to_plain_date", "async", ["self"]).bind(this) as () => Promise<PlainDate>;
+  to_plain_time = defineInstanceFunction("baml.time.PlainDateTime.to_plain_time", "sync", ["self"]).bind(this) as () => PlainTime;
+  to_plain_time_async = defineInstanceFunction("baml.time.PlainDateTime.to_plain_time", "async", ["self"]).bind(this) as () => Promise<PlainTime>;
+/**
+ * The calendar year.
+ * @throws InvalidArgument
+ */
+  year = defineInstanceFunction("baml.time.PlainDateTime.year", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The calendar year.
+ * @throws InvalidArgument
+ */
+  year_async = defineInstanceFunction("baml.time.PlainDateTime.year", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The calendar month, in `[1, 12]`.
+ * @throws InvalidArgument
+ */
+  month = defineInstanceFunction("baml.time.PlainDateTime.month", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The calendar month, in `[1, 12]`.
+ * @throws InvalidArgument
+ */
+  month_async = defineInstanceFunction("baml.time.PlainDateTime.month", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The day of the month, in `[1, 31]`.
+ * @throws InvalidArgument
+ */
+  day = defineInstanceFunction("baml.time.PlainDateTime.day", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The day of the month, in `[1, 31]`.
+ * @throws InvalidArgument
+ */
+  day_async = defineInstanceFunction("baml.time.PlainDateTime.day", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The hour of the day, in `[0, 23]`.
+ * @throws InvalidArgument
+ */
+  hour = defineInstanceFunction("baml.time.PlainDateTime.hour", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The hour of the day, in `[0, 23]`.
+ * @throws InvalidArgument
+ */
+  hour_async = defineInstanceFunction("baml.time.PlainDateTime.hour", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The minute of the hour, in `[0, 59]`.
+ * @throws InvalidArgument
+ */
+  minute = defineInstanceFunction("baml.time.PlainDateTime.minute", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The minute of the hour, in `[0, 59]`.
+ * @throws InvalidArgument
+ */
+  minute_async = defineInstanceFunction("baml.time.PlainDateTime.minute", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The second of the minute, in `[0, 59]`.
+ * @throws InvalidArgument
+ */
+  second = defineInstanceFunction("baml.time.PlainDateTime.second", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The second of the minute, in `[0, 59]`.
+ * @throws InvalidArgument
+ */
+  second_async = defineInstanceFunction("baml.time.PlainDateTime.second", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The millisecond of the second, in `[0, 999]`.
+ * @throws InvalidArgument
+ */
+  millisecond = defineInstanceFunction("baml.time.PlainDateTime.millisecond", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The millisecond of the second, in `[0, 999]`.
+ * @throws InvalidArgument
+ */
+  millisecond_async = defineInstanceFunction("baml.time.PlainDateTime.millisecond", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json = defineInstanceFunction("baml.time.PlainDateTime.to_json", "sync", ["self"]).bind(this) as () => baml.json.json;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json_async = defineInstanceFunction("baml.time.PlainDateTime.to_json", "async", ["self"]).bind(this) as () => Promise<baml.json.json>;
 }
 
 /**
  * A civil wall-clock time without a date or timezone: `07:32:00.5`.
- *
+ * 
  * Equivalent to `Temporal.PlainTime` (TC39).
  *
  * Attributes:
@@ -1088,14 +722,16 @@ export class PlainDateTime {
  */
 export class PlainTime$stream {
   _nanoseconds!: number | null;
-  constructor(init: { _nanoseconds: number | null }) {
+  constructor(init: {
+    _nanoseconds: number | null;
+  }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * A civil wall-clock time without a date or timezone: `07:32:00.5`.
- *
+ * 
  * Equivalent to `Temporal.PlainTime` (TC39).
  *
  * Attributes:
@@ -1103,206 +739,105 @@ export class PlainTime$stream {
  */
 export class PlainTime {
   _nanoseconds!: number;
-  constructor(init: { _nanoseconds: number }) {
+  constructor(init: {
+    _nanoseconds: number;
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * Creates a `PlainTime` from clock components. Defaulted components
-   * are passed by name: `PlainTime.from_components(7, minute = 32)`.
-   *
-   * Throws `root.errors.InvalidArgument` if a component is out of range
-   * (e.g. hour 24, minute 60).
-   * @throws InvalidArgument
-   */
-  static from_components = defineFunction(
-    'baml.time.PlainTime.from_components',
-    'sync',
-    ['hour'],
-    ['minute', 'second', 'millisecond', 'microsecond', 'nanosecond'],
-  ) as (
-    hour: number,
-    $opts?:
-      | {
-          minute?: number | undefined;
-          second?: number | undefined;
-          millisecond?: number | undefined;
-          microsecond?: number | undefined;
-          nanosecond?: number | undefined;
-        }
-      | undefined,
-  ) => PlainTime;
-  /**
-   * Creates a `PlainTime` from clock components. Defaulted components
-   * are passed by name: `PlainTime.from_components(7, minute = 32)`.
-   *
-   * Throws `root.errors.InvalidArgument` if a component is out of range
-   * (e.g. hour 24, minute 60).
-   * @throws InvalidArgument
-   */
-  static from_components_async = defineFunction(
-    'baml.time.PlainTime.from_components',
-    'async',
-    ['hour'],
-    ['minute', 'second', 'millisecond', 'microsecond', 'nanosecond'],
-  ) as (
-    hour: number,
-    $opts?:
-      | {
-          minute?: number | undefined;
-          second?: number | undefined;
-          millisecond?: number | undefined;
-          microsecond?: number | undefined;
-          nanosecond?: number | undefined;
-        }
-      | undefined,
-  ) => Promise<PlainTime>;
-  /**
-   * @throws InvalidArgument
-   */
-  static _from_components = defineFunction('baml.time.PlainTime._from_components', 'sync', [
-    'hour',
-    'minute',
-    'second',
-    'millisecond',
-    'microsecond',
-    'nanosecond',
-  ]) as (
-    hour: number,
-    minute: number,
-    second: number,
-    millisecond: number,
-    microsecond: number,
-    nanosecond: number,
-  ) => PlainTime;
-  /**
-   * @throws InvalidArgument
-   */
-  static _from_components_async = defineFunction('baml.time.PlainTime._from_components', 'async', [
-    'hour',
-    'minute',
-    'second',
-    'millisecond',
-    'microsecond',
-    'nanosecond',
-  ]) as (
-    hour: number,
-    minute: number,
-    second: number,
-    millisecond: number,
-    microsecond: number,
-    nanosecond: number,
-  ) => Promise<PlainTime>;
-  /**
-   * @throws ParseError
-   */
-  static parse = defineFunction('baml.time.PlainTime.parse', 'sync', ['s']) as (
-    s: string,
-  ) => PlainTime;
-  /**
-   * @throws ParseError
-   */
-  static parse_async = defineFunction('baml.time.PlainTime.parse', 'async', ['s']) as (
-    s: string,
-  ) => Promise<PlainTime>;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json = defineFunction('baml.time.PlainTime.from_json', 'sync', ['j']) as (
-    j: baml.json.json,
-  ) => null;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json_async = defineFunction('baml.time.PlainTime.from_json', 'async', ['j']) as (
-    j: baml.json.json,
-  ) => Promise<null>;
-  to_string = defineInstanceFunction('baml.time.PlainTime.to_string', 'sync', ['self']).bind(
-    this,
-  ) as () => string;
-  to_string_async = defineInstanceFunction('baml.time.PlainTime.to_string', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<string>;
-  _to_string_impl = defineInstanceFunction('baml.time.PlainTime._to_string_impl', 'sync', [
-    'self',
-  ]).bind(this) as () => string;
-  _to_string_impl_async = defineInstanceFunction('baml.time.PlainTime._to_string_impl', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<string>;
-  /**
-   * Combines with a date into a `PlainDateTime`.
-   */
-  to_plain_datetime = defineInstanceFunction('baml.time.PlainTime.to_plain_datetime', 'sync', [
-    'self',
-    'date',
-  ]).bind(this) as (date: PlainDate) => PlainDateTime;
-  /**
-   * Combines with a date into a `PlainDateTime`.
-   */
-  to_plain_datetime_async = defineInstanceFunction(
-    'baml.time.PlainTime.to_plain_datetime',
-    'async',
-    ['self', 'date'],
-  ).bind(this) as (date: PlainDate) => Promise<PlainDateTime>;
-  /**
-   * The hour of the day, in `[0, 23]`.
-   */
-  hour = defineInstanceFunction('baml.time.PlainTime.hour', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The hour of the day, in `[0, 23]`.
-   */
-  hour_async = defineInstanceFunction('baml.time.PlainTime.hour', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The minute of the hour, in `[0, 59]`.
-   */
-  minute = defineInstanceFunction('baml.time.PlainTime.minute', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The minute of the hour, in `[0, 59]`.
-   */
-  minute_async = defineInstanceFunction('baml.time.PlainTime.minute', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The second of the minute, in `[0, 59]`.
-   */
-  second = defineInstanceFunction('baml.time.PlainTime.second', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The second of the minute, in `[0, 59]`.
-   */
-  second_async = defineInstanceFunction('baml.time.PlainTime.second', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The millisecond of the second, in `[0, 999]`.
-   */
-  millisecond = defineInstanceFunction('baml.time.PlainTime.millisecond', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The millisecond of the second, in `[0, 999]`.
-   */
-  millisecond_async = defineInstanceFunction('baml.time.PlainTime.millisecond', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<number>;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json = defineInstanceFunction('baml.time.PlainTime.to_json', 'sync', ['self']).bind(
-    this,
-  ) as () => baml.json.json;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json_async = defineInstanceFunction('baml.time.PlainTime.to_json', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<baml.json.json>;
+/**
+ * Creates a `PlainTime` from clock components. Defaulted components
+ * are passed by name: `PlainTime.from_components(7, minute = 32)`.
+ * 
+ * Throws `root.errors.InvalidArgument` if a component is out of range
+ * (e.g. hour 24, minute 60).
+ * @throws InvalidArgument
+ */
+  static from_components = defineFunction("baml.time.PlainTime.from_components", "sync", ["hour"], ["minute", "second", "millisecond", "microsecond", "nanosecond"]) as (hour: number, $opts?: { minute?: number | undefined; second?: number | undefined; millisecond?: number | undefined; microsecond?: number | undefined; nanosecond?: number | undefined } | undefined) => PlainTime;
+/**
+ * Creates a `PlainTime` from clock components. Defaulted components
+ * are passed by name: `PlainTime.from_components(7, minute = 32)`.
+ * 
+ * Throws `root.errors.InvalidArgument` if a component is out of range
+ * (e.g. hour 24, minute 60).
+ * @throws InvalidArgument
+ */
+  static from_components_async = defineFunction("baml.time.PlainTime.from_components", "async", ["hour"], ["minute", "second", "millisecond", "microsecond", "nanosecond"]) as (hour: number, $opts?: { minute?: number | undefined; second?: number | undefined; millisecond?: number | undefined; microsecond?: number | undefined; nanosecond?: number | undefined } | undefined) => Promise<PlainTime>;
+/**
+ * @throws InvalidArgument
+ */
+  static _from_components = defineFunction("baml.time.PlainTime._from_components", "sync", ["hour", "minute", "second", "millisecond", "microsecond", "nanosecond"]) as (hour: number, minute: number, second: number, millisecond: number, microsecond: number, nanosecond: number) => PlainTime;
+/**
+ * @throws InvalidArgument
+ */
+  static _from_components_async = defineFunction("baml.time.PlainTime._from_components", "async", ["hour", "minute", "second", "millisecond", "microsecond", "nanosecond"]) as (hour: number, minute: number, second: number, millisecond: number, microsecond: number, nanosecond: number) => Promise<PlainTime>;
+/**
+ * @throws ParseError
+ */
+  static parse = defineFunction("baml.time.PlainTime.parse", "sync", ["s"]) as (s: string) => PlainTime;
+/**
+ * @throws ParseError
+ */
+  static parse_async = defineFunction("baml.time.PlainTime.parse", "async", ["s"]) as (s: string) => Promise<PlainTime>;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json = defineFunction("baml.time.PlainTime.from_json", "sync", ["j"]) as (j: baml.json.json) => null;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json_async = defineFunction("baml.time.PlainTime.from_json", "async", ["j"]) as (j: baml.json.json) => Promise<null>;
+  to_string = defineInstanceFunction("baml.time.PlainTime.to_string", "sync", ["self"]).bind(this) as () => string;
+  to_string_async = defineInstanceFunction("baml.time.PlainTime.to_string", "async", ["self"]).bind(this) as () => Promise<string>;
+  _to_string_impl = defineInstanceFunction("baml.time.PlainTime._to_string_impl", "sync", ["self"]).bind(this) as () => string;
+  _to_string_impl_async = defineInstanceFunction("baml.time.PlainTime._to_string_impl", "async", ["self"]).bind(this) as () => Promise<string>;
+/**
+ * Combines with a date into a `PlainDateTime`.
+ */
+  to_plain_datetime = defineInstanceFunction("baml.time.PlainTime.to_plain_datetime", "sync", ["self", "date"]).bind(this) as (date: PlainDate) => PlainDateTime;
+/**
+ * Combines with a date into a `PlainDateTime`.
+ */
+  to_plain_datetime_async = defineInstanceFunction("baml.time.PlainTime.to_plain_datetime", "async", ["self", "date"]).bind(this) as (date: PlainDate) => Promise<PlainDateTime>;
+/**
+ * The hour of the day, in `[0, 23]`.
+ */
+  hour = defineInstanceFunction("baml.time.PlainTime.hour", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The hour of the day, in `[0, 23]`.
+ */
+  hour_async = defineInstanceFunction("baml.time.PlainTime.hour", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The minute of the hour, in `[0, 59]`.
+ */
+  minute = defineInstanceFunction("baml.time.PlainTime.minute", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The minute of the hour, in `[0, 59]`.
+ */
+  minute_async = defineInstanceFunction("baml.time.PlainTime.minute", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The second of the minute, in `[0, 59]`.
+ */
+  second = defineInstanceFunction("baml.time.PlainTime.second", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The second of the minute, in `[0, 59]`.
+ */
+  second_async = defineInstanceFunction("baml.time.PlainTime.second", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The millisecond of the second, in `[0, 999]`.
+ */
+  millisecond = defineInstanceFunction("baml.time.PlainTime.millisecond", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The millisecond of the second, in `[0, 999]`.
+ */
+  millisecond_async = defineInstanceFunction("baml.time.PlainTime.millisecond", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json = defineInstanceFunction("baml.time.PlainTime.to_json", "sync", ["self"]).bind(this) as () => baml.json.json;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json_async = defineInstanceFunction("baml.time.PlainTime.to_json", "async", ["self"]).bind(this) as () => Promise<baml.json.json>;
 }
 
 /**
@@ -1311,7 +846,9 @@ export class PlainTime {
  */
 export class AmbiguousTimeError$stream {
   message!: string | null;
-  constructor(init: { message: string | null }) {
+  constructor(init: {
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -1319,7 +856,7 @@ export class AmbiguousTimeError$stream {
 /**
  * A fixed offset from UTC, with a permitted range of ±24 hours (real
  * timezones currently range from -12 to +14 hours).
- *
+ * 
  * Note that unlike IANA identifiers, a `TimeZoneOffset` does not change
  * based on daylight savings. Sometimes this is desirable, but other times
  * it is not, so `ZonedDateTime` permits either.
@@ -1330,7 +867,9 @@ export class AmbiguousTimeError$stream {
  */
 export class TimeZoneOffset$stream {
   _nanoseconds!: number | null;
-  constructor(init: { _nanoseconds: number | null }) {
+  constructor(init: {
+    _nanoseconds: number | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -1341,14 +880,16 @@ export class TimeZoneOffset$stream {
  */
 export class UnknownTimezoneError$stream {
   timezone!: string | null;
-  constructor(init: { timezone: string | null }) {
+  constructor(init: {
+    timezone: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
 
-export type Disambiguation$stream = 'compatible' | 'earlier' | 'later' | 'reject';
+export type Disambiguation$stream = "compatible" | "earlier" | "later" | "reject";
 
-export type Disambiguation = 'compatible' | 'earlier' | 'later' | 'reject';
+export type Disambiguation = "compatible" | "earlier" | "later" | "reject";
 
 /**
  * Thrown when an IANA timezone identifier cannot be resolved against the
@@ -1356,7 +897,9 @@ export type Disambiguation = 'compatible' | 'earlier' | 'later' | 'reject';
  */
 export class UnknownTimezoneError {
   timezone!: string;
-  constructor(init: { timezone: string }) {
+  constructor(init: {
+    timezone: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -1367,7 +910,9 @@ export class UnknownTimezoneError {
  */
 export class AmbiguousTimeError {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -1375,7 +920,7 @@ export class AmbiguousTimeError {
 /**
  * A fixed offset from UTC, with a permitted range of ±24 hours (real
  * timezones currently range from -12 to +14 hours).
- *
+ * 
  * Note that unlike IANA identifiers, a `TimeZoneOffset` does not change
  * based on daylight savings. Sometimes this is desirable, but other times
  * it is not, so `ZonedDateTime` permits either.
@@ -1386,166 +931,120 @@ export class AmbiguousTimeError {
  */
 export class TimeZoneOffset {
   _nanoseconds!: number;
-  constructor(init: { _nanoseconds: number }) {
+  constructor(init: {
+    _nanoseconds: number;
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * The UTC (zero) offset.
-   */
-  static utc = defineFunction('baml.time.TimeZoneOffset.utc', 'sync', []) as () => TimeZoneOffset;
-  /**
-   * The UTC (zero) offset.
-   */
-  static utc_async = defineFunction(
-    'baml.time.TimeZoneOffset.utc',
-    'async',
-    [],
-  ) as () => Promise<TimeZoneOffset>;
-  /**
-   * Creates a `TimeZoneOffset` from hours and minutes east of UTC.
-   * Both components must carry the same sign (e.g. `new(-7, 0)`,
-   * `new(5, 30)`, `new(-9, -30)`).
-   *
-   * Throws `root.errors.InvalidArgument` if the signs differ or the
-   * result exceeds ±24 hours.
-   * @throws InvalidArgument
-   */
-  static new = defineFunction('baml.time.TimeZoneOffset.new', 'sync', ['hours', 'minutes']) as (
-    hours: number,
-    minutes: number,
-  ) => TimeZoneOffset;
-  /**
-   * Creates a `TimeZoneOffset` from hours and minutes east of UTC.
-   * Both components must carry the same sign (e.g. `new(-7, 0)`,
-   * `new(5, 30)`, `new(-9, -30)`).
-   *
-   * Throws `root.errors.InvalidArgument` if the signs differ or the
-   * result exceeds ±24 hours.
-   * @throws InvalidArgument
-   */
-  static new_async = defineFunction('baml.time.TimeZoneOffset.new', 'async', [
-    'hours',
-    'minutes',
-  ]) as (hours: number, minutes: number) => Promise<TimeZoneOffset>;
-  /**
-   * Resolves an IANA timezone identifier (e.g. `"America/Los_Angeles"`)
-   * to its concrete offset at the absolute time `at` (DST-aware).
-   *
-   * Resolution uses the host's timezone database.
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  static from_timezone = defineFunction('baml.time.TimeZoneOffset.from_timezone', 'sync', [
-    'timezone',
-    'at',
-  ]) as (timezone: string, at: Instant) => TimeZoneOffset;
-  /**
-   * Resolves an IANA timezone identifier (e.g. `"America/Los_Angeles"`)
-   * to its concrete offset at the absolute time `at` (DST-aware).
-   *
-   * Resolution uses the host's timezone database.
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  static from_timezone_async = defineFunction('baml.time.TimeZoneOffset.from_timezone', 'async', [
-    'timezone',
-    'at',
-  ]) as (timezone: string, at: Instant) => Promise<TimeZoneOffset>;
-  /**
-   * Returns the local timezone offset right now.
-   * Note that even in the same location, this may vary over time based on
-   * daylight savings.
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  static local = defineFunction(
-    'baml.time.TimeZoneOffset.local',
-    'sync',
-    [],
-  ) as () => TimeZoneOffset;
-  /**
-   * Returns the local timezone offset right now.
-   * Note that even in the same location, this may vary over time based on
-   * daylight savings.
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  static local_async = defineFunction(
-    'baml.time.TimeZoneOffset.local',
-    'async',
-    [],
-  ) as () => Promise<TimeZoneOffset>;
-  /**
-   * @throws InvalidArgument
-   */
-  static from_duration = defineFunction('baml.time.TimeZoneOffset.from_duration', 'sync', [
-    'duration',
-  ]) as (duration: Duration) => TimeZoneOffset;
-  /**
-   * @throws InvalidArgument
-   */
-  static from_duration_async = defineFunction('baml.time.TimeZoneOffset.from_duration', 'async', [
-    'duration',
-  ]) as (duration: Duration) => Promise<TimeZoneOffset>;
-  to_duration = defineInstanceFunction('baml.time.TimeZoneOffset.to_duration', 'sync', [
-    'self',
-  ]).bind(this) as () => Duration;
-  to_duration_async = defineInstanceFunction('baml.time.TimeZoneOffset.to_duration', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<Duration>;
-  /**
-   * The hour component of the offset. Rounded toward zero.
-   */
-  hours = defineInstanceFunction('baml.time.TimeZoneOffset.hours', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The hour component of the offset. Rounded toward zero.
-   */
-  hours_async = defineInstanceFunction('baml.time.TimeZoneOffset.hours', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The minute component of the offset, modulo one hour. Rounded toward zero.
-   */
-  minutes = defineInstanceFunction('baml.time.TimeZoneOffset.minutes', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The minute component of the offset, modulo one hour. Rounded toward zero.
-   */
-  minutes_async = defineInstanceFunction('baml.time.TimeZoneOffset.minutes', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<number>;
+/**
+ * The UTC (zero) offset.
+ */
+  static utc = defineFunction("baml.time.TimeZoneOffset.utc", "sync", []) as () => TimeZoneOffset;
+/**
+ * The UTC (zero) offset.
+ */
+  static utc_async = defineFunction("baml.time.TimeZoneOffset.utc", "async", []) as () => Promise<TimeZoneOffset>;
+/**
+ * Creates a `TimeZoneOffset` from hours and minutes east of UTC.
+ * Both components must carry the same sign (e.g. `new(-7, 0)`,
+ * `new(5, 30)`, `new(-9, -30)`).
+ * 
+ * Throws `root.errors.InvalidArgument` if the signs differ or the
+ * result exceeds ±24 hours.
+ * @throws InvalidArgument
+ */
+  static new = defineFunction("baml.time.TimeZoneOffset.new", "sync", ["hours", "minutes"]) as (hours: number, minutes: number) => TimeZoneOffset;
+/**
+ * Creates a `TimeZoneOffset` from hours and minutes east of UTC.
+ * Both components must carry the same sign (e.g. `new(-7, 0)`,
+ * `new(5, 30)`, `new(-9, -30)`).
+ * 
+ * Throws `root.errors.InvalidArgument` if the signs differ or the
+ * result exceeds ±24 hours.
+ * @throws InvalidArgument
+ */
+  static new_async = defineFunction("baml.time.TimeZoneOffset.new", "async", ["hours", "minutes"]) as (hours: number, minutes: number) => Promise<TimeZoneOffset>;
+/**
+ * Resolves an IANA timezone identifier (e.g. `"America/Los_Angeles"`)
+ * to its concrete offset at the absolute time `at` (DST-aware).
+ * 
+ * Resolution uses the host's timezone database.
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  static from_timezone = defineFunction("baml.time.TimeZoneOffset.from_timezone", "sync", ["timezone", "at"]) as (timezone: string, at: Instant) => TimeZoneOffset;
+/**
+ * Resolves an IANA timezone identifier (e.g. `"America/Los_Angeles"`)
+ * to its concrete offset at the absolute time `at` (DST-aware).
+ * 
+ * Resolution uses the host's timezone database.
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  static from_timezone_async = defineFunction("baml.time.TimeZoneOffset.from_timezone", "async", ["timezone", "at"]) as (timezone: string, at: Instant) => Promise<TimeZoneOffset>;
+/**
+ * Returns the local timezone offset right now.
+ * Note that even in the same location, this may vary over time based on
+ * daylight savings.
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  static local = defineFunction("baml.time.TimeZoneOffset.local", "sync", []) as () => TimeZoneOffset;
+/**
+ * Returns the local timezone offset right now.
+ * Note that even in the same location, this may vary over time based on
+ * daylight savings.
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  static local_async = defineFunction("baml.time.TimeZoneOffset.local", "async", []) as () => Promise<TimeZoneOffset>;
+/**
+ * @throws InvalidArgument
+ */
+  static from_duration = defineFunction("baml.time.TimeZoneOffset.from_duration", "sync", ["duration"]) as (duration: Duration) => TimeZoneOffset;
+/**
+ * @throws InvalidArgument
+ */
+  static from_duration_async = defineFunction("baml.time.TimeZoneOffset.from_duration", "async", ["duration"]) as (duration: Duration) => Promise<TimeZoneOffset>;
+  to_duration = defineInstanceFunction("baml.time.TimeZoneOffset.to_duration", "sync", ["self"]).bind(this) as () => Duration;
+  to_duration_async = defineInstanceFunction("baml.time.TimeZoneOffset.to_duration", "async", ["self"]).bind(this) as () => Promise<Duration>;
+/**
+ * The hour component of the offset. Rounded toward zero.
+ */
+  hours = defineInstanceFunction("baml.time.TimeZoneOffset.hours", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The hour component of the offset. Rounded toward zero.
+ */
+  hours_async = defineInstanceFunction("baml.time.TimeZoneOffset.hours", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The minute component of the offset, modulo one hour. Rounded toward zero.
+ */
+  minutes = defineInstanceFunction("baml.time.TimeZoneOffset.minutes", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The minute component of the offset, modulo one hour. Rounded toward zero.
+ */
+  minutes_async = defineInstanceFunction("baml.time.TimeZoneOffset.minutes", "async", ["self"]).bind(this) as () => Promise<number>;
 }
 
 /**
  * Returns the system's IANA timezone identifier, for example
  * `"America/Los_Angeles"`. Mirrors `Temporal.Now.timeZoneId()`.
- *
+ * 
  * An IO function so hosts can swap the system-state source out.
  * Throws if the host cannot determine its timezone.
  * @throws Io
  */
-export const system_timezone = defineFunction(
-  'baml.time.system_timezone',
-  'sync',
-  [],
-) as () => string;
+export const system_timezone = defineFunction("baml.time.system_timezone", "sync", []) as () => string;
 
 /**
  * Returns the system's IANA timezone identifier, for example
  * `"America/Los_Angeles"`. Mirrors `Temporal.Now.timeZoneId()`.
- *
+ * 
  * An IO function so hosts can swap the system-state source out.
  * Throws if the host cannot determine its timezone.
  * @throws Io
  */
-export const system_timezone_async = defineFunction(
-  'baml.time.system_timezone',
-  'async',
-  [],
-) as () => Promise<string>;
+export const system_timezone_async = defineFunction("baml.time.system_timezone", "async", []) as () => Promise<string>;
 
 /**
  * Internal: resolves an IANA identifier to its offset (in nanoseconds) at
@@ -1553,10 +1052,7 @@ export const system_timezone_async = defineFunction(
  * host's timezone database. Returns `null` if the identifier is unknown.
  * @throws Io
  */
-export const _tz_offset_at = defineFunction('baml.time._tz_offset_at', 'sync', [
-  'timezone',
-  'at_ns',
-]) as (timezone: string, at_ns: bigint) => number | null;
+export const _tz_offset_at = defineFunction("baml.time._tz_offset_at", "sync", ["timezone", "at_ns"]) as (timezone: string, at_ns: bigint) => number | null;
 
 /**
  * Internal: resolves an IANA identifier to its offset (in nanoseconds) at
@@ -1564,10 +1060,7 @@ export const _tz_offset_at = defineFunction('baml.time._tz_offset_at', 'sync', [
  * host's timezone database. Returns `null` if the identifier is unknown.
  * @throws Io
  */
-export const _tz_offset_at_async = defineFunction('baml.time._tz_offset_at', 'async', [
-  'timezone',
-  'at_ns',
-]) as (timezone: string, at_ns: bigint) => Promise<number | null>;
+export const _tz_offset_at_async = defineFunction("baml.time._tz_offset_at", "async", ["timezone", "at_ns"]) as (timezone: string, at_ns: bigint) => Promise<number | null>;
 
 /**
  * Internal: locates the civil ("wall-clock") reading `civil_ns` (nanoseconds
@@ -1580,11 +1073,7 @@ export const _tz_offset_at_async = defineFunction('baml.time._tz_offset_at', 'as
  * database.
  * @throws Io
  */
-export const _tz_to_instant = defineFunction('baml.time._tz_to_instant', 'sync', [
-  'timezone',
-  'civil_ns',
-  'disambiguation',
-]) as (timezone: string, civil_ns: bigint, disambiguation: string) => bigint | null;
+export const _tz_to_instant = defineFunction("baml.time._tz_to_instant", "sync", ["timezone", "civil_ns", "disambiguation"]) as (timezone: string, civil_ns: bigint, disambiguation: string) => bigint | null;
 
 /**
  * Internal: locates the civil ("wall-clock") reading `civil_ns` (nanoseconds
@@ -1597,22 +1086,18 @@ export const _tz_to_instant = defineFunction('baml.time._tz_to_instant', 'sync',
  * database.
  * @throws Io
  */
-export const _tz_to_instant_async = defineFunction('baml.time._tz_to_instant', 'async', [
-  'timezone',
-  'civil_ns',
-  'disambiguation',
-]) as (timezone: string, civil_ns: bigint, disambiguation: string) => Promise<bigint | null>;
+export const _tz_to_instant_async = defineFunction("baml.time._tz_to_instant", "async", ["timezone", "civil_ns", "disambiguation"]) as (timezone: string, civil_ns: bigint, disambiguation: string) => Promise<bigint | null>;
 
 /**
  * A timezone-aware point in time: an absolute instant plus a timezone —
  * either a fixed offset (`-07:00`) or an IANA identifier
  * (`America/Los_Angeles`).
- *
+ * 
  * The timezone does not affect the absolute time; it affects the
  * interpretation of date/time components and string formatting. The
  * internal representation is an absolute time (like `Instant`) rather than
  * calendar components, so values are unambiguous across DST transitions.
- *
+ * 
  * Equivalent to `Temporal.ZonedDateTime` (TC39).
  *
  * Attributes:
@@ -1639,12 +1124,12 @@ export class ZonedDateTime$stream {
  * A timezone-aware point in time: an absolute instant plus a timezone —
  * either a fixed offset (`-07:00`) or an IANA identifier
  * (`America/Los_Angeles`).
- *
+ * 
  * The timezone does not affect the absolute time; it affects the
  * interpretation of date/time components and string formatting. The
  * internal representation is an absolute time (like `Instant`) rather than
  * calendar components, so values are unambiguous across DST transitions.
- *
+ * 
  * Equivalent to `Temporal.ZonedDateTime` (TC39).
  *
  * Attributes:
@@ -1658,421 +1143,285 @@ export class ZonedDateTime {
   _nanoseconds!: bigint;
   _offset_ns!: number | null;
   _iana!: string | null;
-  constructor(init: { _nanoseconds: bigint; _offset_ns: number | null; _iana: string | null }) {
+  constructor(init: {
+    _nanoseconds: bigint;
+    _offset_ns: number | null;
+    _iana: string | null;
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * Creates a new `ZonedDateTime` with the current time in the system
-   * timezone (an IANA identifier, e.g. `"America/Los_Angeles"`).
-   * Mirrors `Temporal.Now.zonedDateTimeISO()`.
-   * @throws Io
-   */
-  static now = defineFunction('baml.time.ZonedDateTime.now', 'sync', []) as () => ZonedDateTime;
-  /**
-   * Creates a new `ZonedDateTime` with the current time in the system
-   * timezone (an IANA identifier, e.g. `"America/Los_Angeles"`).
-   * Mirrors `Temporal.Now.zonedDateTimeISO()`.
-   * @throws Io
-   */
-  static now_async = defineFunction(
-    'baml.time.ZonedDateTime.now',
-    'async',
-    [],
-  ) as () => Promise<ZonedDateTime>;
-  /**
-   * Creates a new `ZonedDateTime` with the current time in the given
-   * timezone.
-   */
-  static now_in = defineFunction('baml.time.ZonedDateTime.now_in', 'sync', ['timezone']) as (
-    timezone: TimeZoneOffset | string,
-  ) => ZonedDateTime;
-  /**
-   * Creates a new `ZonedDateTime` with the current time in the given
-   * timezone.
-   */
-  static now_in_async = defineFunction('baml.time.ZonedDateTime.now_in', 'async', ['timezone']) as (
-    timezone: TimeZoneOffset | string,
-  ) => Promise<ZonedDateTime>;
-  /**
-   * Pairs an absolute time with a timezone.
-   */
-  static from_instant = defineFunction('baml.time.ZonedDateTime.from_instant', 'sync', [
-    'instant',
-    'timezone',
-  ]) as (instant: Instant, timezone: TimeZoneOffset | string) => ZonedDateTime;
-  /**
-   * Pairs an absolute time with a timezone.
-   */
-  static from_instant_async = defineFunction('baml.time.ZonedDateTime.from_instant', 'async', [
-    'instant',
-    'timezone',
-  ]) as (instant: Instant, timezone: TimeZoneOffset | string) => Promise<ZonedDateTime>;
-  /**
-   * Creates a `ZonedDateTime` from calendar/clock components read in
-   * `timezone`. `month` and `day` are 1-based. Defaulted clock components
-   * and `disambiguation` are passed by name. With an IANA timezone, DST
-   * gaps/overlaps are resolved per `disambiguation` (see `Disambiguation`).
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws AmbiguousTimeError
-   * @throws Io
-   */
-  static from_components = defineFunction(
-    'baml.time.ZonedDateTime.from_components',
-    'sync',
-    ['timezone', 'year', 'month', 'day'],
-    ['hour', 'minute', 'second', 'millisecond', 'microsecond', 'nanosecond', 'disambiguation'],
-  ) as (
-    timezone: TimeZoneOffset | string,
-    year: number,
-    month: number,
-    day: number,
-    $opts?:
-      | {
-          hour?: number | undefined;
-          minute?: number | undefined;
-          second?: number | undefined;
-          millisecond?: number | undefined;
-          microsecond?: number | undefined;
-          nanosecond?: number | undefined;
-          disambiguation?: 'compatible' | 'earlier' | 'later' | 'reject' | undefined;
-        }
-      | undefined,
-  ) => ZonedDateTime;
-  /**
-   * Creates a `ZonedDateTime` from calendar/clock components read in
-   * `timezone`. `month` and `day` are 1-based. Defaulted clock components
-   * and `disambiguation` are passed by name. With an IANA timezone, DST
-   * gaps/overlaps are resolved per `disambiguation` (see `Disambiguation`).
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws AmbiguousTimeError
-   * @throws Io
-   */
-  static from_components_async = defineFunction(
-    'baml.time.ZonedDateTime.from_components',
-    'async',
-    ['timezone', 'year', 'month', 'day'],
-    ['hour', 'minute', 'second', 'millisecond', 'microsecond', 'nanosecond', 'disambiguation'],
-  ) as (
-    timezone: TimeZoneOffset | string,
-    year: number,
-    month: number,
-    day: number,
-    $opts?:
-      | {
-          hour?: number | undefined;
-          minute?: number | undefined;
-          second?: number | undefined;
-          millisecond?: number | undefined;
-          microsecond?: number | undefined;
-          nanosecond?: number | undefined;
-          disambiguation?: 'compatible' | 'earlier' | 'later' | 'reject' | undefined;
-        }
-      | undefined,
-  ) => Promise<ZonedDateTime>;
-  /**
-   * @throws ParseError
-   */
-  static parse = defineFunction('baml.time.ZonedDateTime.parse', 'sync', ['s']) as (
-    s: string,
-  ) => ZonedDateTime;
-  /**
-   * @throws ParseError
-   */
-  static parse_async = defineFunction('baml.time.ZonedDateTime.parse', 'async', ['s']) as (
-    s: string,
-  ) => Promise<ZonedDateTime>;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json = defineFunction('baml.time.ZonedDateTime.from_json', 'sync', ['j']) as (
-    j: baml.json.json,
-  ) => null;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json_async = defineFunction('baml.time.ZonedDateTime.from_json', 'async', ['j']) as (
-    j: baml.json.json,
-  ) => Promise<null>;
-  /**
-   * The absolute time, dropping the timezone.
-   */
-  to_instant = defineInstanceFunction('baml.time.ZonedDateTime.to_instant', 'sync', ['self']).bind(
-    this,
-  ) as () => Instant;
-  /**
-   * The absolute time, dropping the timezone.
-   */
-  to_instant_async = defineInstanceFunction('baml.time.ZonedDateTime.to_instant', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<Instant>;
-  to_string = defineInstanceFunction('baml.time.ZonedDateTime.to_string', 'sync', ['self']).bind(
-    this,
-  ) as () => string;
-  to_string_async = defineInstanceFunction('baml.time.ZonedDateTime.to_string', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<string>;
-  /**
-   * Internal RFC 9557 / RFC 3339 formatter. Throws when the value cannot be
-   * formatted; `baml.ToString.to_string` turns that into a panic, while
-   * `to_json` surfaces it as a `JsonSerializationError`.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  _to_string_impl = defineInstanceFunction('baml.time.ZonedDateTime._to_string_impl', 'sync', [
-    'self',
-  ]).bind(this) as () => string;
-  /**
-   * Internal RFC 9557 / RFC 3339 formatter. Throws when the value cannot be
-   * formatted; `baml.ToString.to_string` turns that into a panic, while
-   * `to_json` surfaces it as a `JsonSerializationError`.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  _to_string_impl_async = defineInstanceFunction(
-    'baml.time.ZonedDateTime._to_string_impl',
-    'async',
-    ['self'],
-  ).bind(this) as () => Promise<string>;
-  /**
-   * If `self` is before `other` (absolute-time comparison), returns
-   * `other`. Otherwise, returns `self`.
-   */
-  max = defineInstanceFunction('baml.time.ZonedDateTime.max', 'sync', ['self', 'other']).bind(
-    this,
-  ) as (other: ZonedDateTime) => ZonedDateTime;
-  /**
-   * If `self` is before `other` (absolute-time comparison), returns
-   * `other`. Otherwise, returns `self`.
-   */
-  max_async = defineInstanceFunction('baml.time.ZonedDateTime.max', 'async', [
-    'self',
-    'other',
-  ]).bind(this) as (other: ZonedDateTime) => Promise<ZonedDateTime>;
-  /**
-   * If `self` is after `other` (absolute-time comparison), returns
-   * `other`. Otherwise, returns `self`.
-   */
-  min = defineInstanceFunction('baml.time.ZonedDateTime.min', 'sync', ['self', 'other']).bind(
-    this,
-  ) as (other: ZonedDateTime) => ZonedDateTime;
-  /**
-   * If `self` is after `other` (absolute-time comparison), returns
-   * `other`. Otherwise, returns `self`.
-   */
-  min_async = defineInstanceFunction('baml.time.ZonedDateTime.min', 'async', [
-    'self',
-    'other',
-  ]).bind(this) as (other: ZonedDateTime) => Promise<ZonedDateTime>;
-  /**
-   * Same absolute time, different timezone.
-   */
-  with_timezone = defineInstanceFunction('baml.time.ZonedDateTime.with_timezone', 'sync', [
-    'self',
-    'timezone',
-  ]).bind(this) as (timezone: TimeZoneOffset | string) => ZonedDateTime;
-  /**
-   * Same absolute time, different timezone.
-   */
-  with_timezone_async = defineInstanceFunction('baml.time.ZonedDateTime.with_timezone', 'async', [
-    'self',
-    'timezone',
-  ]).bind(this) as (timezone: TimeZoneOffset | string) => Promise<ZonedDateTime>;
-  /**
-   * The timezone: a `TimeZoneOffset` if fixed, or the IANA identifier.
-   */
-  timezone = defineInstanceFunction('baml.time.ZonedDateTime.timezone', 'sync', ['self']).bind(
-    this,
-  ) as () => TimeZoneOffset | string;
-  /**
-   * The timezone: a `TimeZoneOffset` if fixed, or the IANA identifier.
-   */
-  timezone_async = defineInstanceFunction('baml.time.ZonedDateTime.timezone', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<TimeZoneOffset | string>;
-  /**
-   * The resolved `TimeZoneOffset` for this `ZonedDateTime`. If the
-   * timezone is an IANA identifier, it is resolved to a concrete offset
-   * based on the absolute time (DST-aware), using the host's timezone
-   * database.
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  timezone_offset = defineInstanceFunction('baml.time.ZonedDateTime.timezone_offset', 'sync', [
-    'self',
-  ]).bind(this) as () => TimeZoneOffset;
-  /**
-   * The resolved `TimeZoneOffset` for this `ZonedDateTime`. If the
-   * timezone is an IANA identifier, it is resolved to a concrete offset
-   * based on the absolute time (DST-aware), using the host's timezone
-   * database.
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  timezone_offset_async = defineInstanceFunction(
-    'baml.time.ZonedDateTime.timezone_offset',
-    'async',
-    ['self'],
-  ).bind(this) as () => Promise<TimeZoneOffset>;
-  /**
-   * Drops the timezone, keeping the wall-clock reading.
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  to_plain = defineInstanceFunction('baml.time.ZonedDateTime.to_plain', 'sync', ['self']).bind(
-    this,
-  ) as () => PlainDateTime;
-  /**
-   * Drops the timezone, keeping the wall-clock reading.
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  to_plain_async = defineInstanceFunction('baml.time.ZonedDateTime.to_plain', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<PlainDateTime>;
-  /**
-   * The calendar year, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  year = defineInstanceFunction('baml.time.ZonedDateTime.year', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The calendar year, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  year_async = defineInstanceFunction('baml.time.ZonedDateTime.year', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The calendar month, in `[1, 12]`, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  month = defineInstanceFunction('baml.time.ZonedDateTime.month', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The calendar month, in `[1, 12]`, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  month_async = defineInstanceFunction('baml.time.ZonedDateTime.month', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The day of the month, in `[1, 31]`, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  day = defineInstanceFunction('baml.time.ZonedDateTime.day', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The day of the month, in `[1, 31]`, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  day_async = defineInstanceFunction('baml.time.ZonedDateTime.day', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The hour of the day, in `[0, 23]`, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  hour = defineInstanceFunction('baml.time.ZonedDateTime.hour', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The hour of the day, in `[0, 23]`, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  hour_async = defineInstanceFunction('baml.time.ZonedDateTime.hour', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The minute of the hour, in `[0, 59]`, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  minute = defineInstanceFunction('baml.time.ZonedDateTime.minute', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The minute of the hour, in `[0, 59]`, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  minute_async = defineInstanceFunction('baml.time.ZonedDateTime.minute', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The second of the minute, in `[0, 59]`, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  second = defineInstanceFunction('baml.time.ZonedDateTime.second', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  /**
-   * The second of the minute, in `[0, 59]`, resolved through the timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  second_async = defineInstanceFunction('baml.time.ZonedDateTime.second', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  /**
-   * The millisecond of the second, in `[0, 999]`, resolved through the
-   * timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  millisecond = defineInstanceFunction('baml.time.ZonedDateTime.millisecond', 'sync', [
-    'self',
-  ]).bind(this) as () => number;
-  /**
-   * The millisecond of the second, in `[0, 999]`, resolved through the
-   * timezone.
-   * @throws InvalidArgument
-   * @throws UnknownTimezoneError
-   * @throws Io
-   */
-  millisecond_async = defineInstanceFunction('baml.time.ZonedDateTime.millisecond', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<number>;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json = defineInstanceFunction('baml.time.ZonedDateTime.to_json', 'sync', ['self']).bind(
-    this,
-  ) as () => baml.json.json;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json_async = defineInstanceFunction('baml.time.ZonedDateTime.to_json', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<baml.json.json>;
+/**
+ * Creates a new `ZonedDateTime` with the current time in the system
+ * timezone (an IANA identifier, e.g. `"America/Los_Angeles"`).
+ * Mirrors `Temporal.Now.zonedDateTimeISO()`.
+ * @throws Io
+ */
+  static now = defineFunction("baml.time.ZonedDateTime.now", "sync", []) as () => ZonedDateTime;
+/**
+ * Creates a new `ZonedDateTime` with the current time in the system
+ * timezone (an IANA identifier, e.g. `"America/Los_Angeles"`).
+ * Mirrors `Temporal.Now.zonedDateTimeISO()`.
+ * @throws Io
+ */
+  static now_async = defineFunction("baml.time.ZonedDateTime.now", "async", []) as () => Promise<ZonedDateTime>;
+/**
+ * Creates a new `ZonedDateTime` with the current time in the given
+ * timezone.
+ */
+  static now_in = defineFunction("baml.time.ZonedDateTime.now_in", "sync", ["timezone"]) as (timezone: TimeZoneOffset | string) => ZonedDateTime;
+/**
+ * Creates a new `ZonedDateTime` with the current time in the given
+ * timezone.
+ */
+  static now_in_async = defineFunction("baml.time.ZonedDateTime.now_in", "async", ["timezone"]) as (timezone: TimeZoneOffset | string) => Promise<ZonedDateTime>;
+/**
+ * Pairs an absolute time with a timezone.
+ */
+  static from_instant = defineFunction("baml.time.ZonedDateTime.from_instant", "sync", ["instant", "timezone"]) as (instant: Instant, timezone: TimeZoneOffset | string) => ZonedDateTime;
+/**
+ * Pairs an absolute time with a timezone.
+ */
+  static from_instant_async = defineFunction("baml.time.ZonedDateTime.from_instant", "async", ["instant", "timezone"]) as (instant: Instant, timezone: TimeZoneOffset | string) => Promise<ZonedDateTime>;
+/**
+ * Creates a `ZonedDateTime` from calendar/clock components read in
+ * `timezone`. `month` and `day` are 1-based. Defaulted clock components
+ * and `disambiguation` are passed by name. With an IANA timezone, DST
+ * gaps/overlaps are resolved per `disambiguation` (see `Disambiguation`).
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws AmbiguousTimeError
+ * @throws Io
+ */
+  static from_components = defineFunction("baml.time.ZonedDateTime.from_components", "sync", ["timezone", "year", "month", "day"], ["hour", "minute", "second", "millisecond", "microsecond", "nanosecond", "disambiguation"]) as (timezone: TimeZoneOffset | string, year: number, month: number, day: number, $opts?: { hour?: number | undefined; minute?: number | undefined; second?: number | undefined; millisecond?: number | undefined; microsecond?: number | undefined; nanosecond?: number | undefined; disambiguation?: "compatible" | "earlier" | "later" | "reject" | undefined } | undefined) => ZonedDateTime;
+/**
+ * Creates a `ZonedDateTime` from calendar/clock components read in
+ * `timezone`. `month` and `day` are 1-based. Defaulted clock components
+ * and `disambiguation` are passed by name. With an IANA timezone, DST
+ * gaps/overlaps are resolved per `disambiguation` (see `Disambiguation`).
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws AmbiguousTimeError
+ * @throws Io
+ */
+  static from_components_async = defineFunction("baml.time.ZonedDateTime.from_components", "async", ["timezone", "year", "month", "day"], ["hour", "minute", "second", "millisecond", "microsecond", "nanosecond", "disambiguation"]) as (timezone: TimeZoneOffset | string, year: number, month: number, day: number, $opts?: { hour?: number | undefined; minute?: number | undefined; second?: number | undefined; millisecond?: number | undefined; microsecond?: number | undefined; nanosecond?: number | undefined; disambiguation?: "compatible" | "earlier" | "later" | "reject" | undefined } | undefined) => Promise<ZonedDateTime>;
+/**
+ * @throws ParseError
+ */
+  static parse = defineFunction("baml.time.ZonedDateTime.parse", "sync", ["s"]) as (s: string) => ZonedDateTime;
+/**
+ * @throws ParseError
+ */
+  static parse_async = defineFunction("baml.time.ZonedDateTime.parse", "async", ["s"]) as (s: string) => Promise<ZonedDateTime>;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json = defineFunction("baml.time.ZonedDateTime.from_json", "sync", ["j"]) as (j: baml.json.json) => null;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json_async = defineFunction("baml.time.ZonedDateTime.from_json", "async", ["j"]) as (j: baml.json.json) => Promise<null>;
+/**
+ * The absolute time, dropping the timezone.
+ */
+  to_instant = defineInstanceFunction("baml.time.ZonedDateTime.to_instant", "sync", ["self"]).bind(this) as () => Instant;
+/**
+ * The absolute time, dropping the timezone.
+ */
+  to_instant_async = defineInstanceFunction("baml.time.ZonedDateTime.to_instant", "async", ["self"]).bind(this) as () => Promise<Instant>;
+  to_string = defineInstanceFunction("baml.time.ZonedDateTime.to_string", "sync", ["self"]).bind(this) as () => string;
+  to_string_async = defineInstanceFunction("baml.time.ZonedDateTime.to_string", "async", ["self"]).bind(this) as () => Promise<string>;
+/**
+ * Internal RFC 9557 / RFC 3339 formatter. Throws when the value cannot be
+ * formatted; `baml.ToString.to_string` turns that into a panic, while
+ * `to_json` surfaces it as a `JsonSerializationError`.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  _to_string_impl = defineInstanceFunction("baml.time.ZonedDateTime._to_string_impl", "sync", ["self"]).bind(this) as () => string;
+/**
+ * Internal RFC 9557 / RFC 3339 formatter. Throws when the value cannot be
+ * formatted; `baml.ToString.to_string` turns that into a panic, while
+ * `to_json` surfaces it as a `JsonSerializationError`.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  _to_string_impl_async = defineInstanceFunction("baml.time.ZonedDateTime._to_string_impl", "async", ["self"]).bind(this) as () => Promise<string>;
+/**
+ * If `self` is before `other` (absolute-time comparison), returns
+ * `other`. Otherwise, returns `self`.
+ */
+  max = defineInstanceFunction("baml.time.ZonedDateTime.max", "sync", ["self", "other"]).bind(this) as (other: ZonedDateTime) => ZonedDateTime;
+/**
+ * If `self` is before `other` (absolute-time comparison), returns
+ * `other`. Otherwise, returns `self`.
+ */
+  max_async = defineInstanceFunction("baml.time.ZonedDateTime.max", "async", ["self", "other"]).bind(this) as (other: ZonedDateTime) => Promise<ZonedDateTime>;
+/**
+ * If `self` is after `other` (absolute-time comparison), returns
+ * `other`. Otherwise, returns `self`.
+ */
+  min = defineInstanceFunction("baml.time.ZonedDateTime.min", "sync", ["self", "other"]).bind(this) as (other: ZonedDateTime) => ZonedDateTime;
+/**
+ * If `self` is after `other` (absolute-time comparison), returns
+ * `other`. Otherwise, returns `self`.
+ */
+  min_async = defineInstanceFunction("baml.time.ZonedDateTime.min", "async", ["self", "other"]).bind(this) as (other: ZonedDateTime) => Promise<ZonedDateTime>;
+/**
+ * Same absolute time, different timezone.
+ */
+  with_timezone = defineInstanceFunction("baml.time.ZonedDateTime.with_timezone", "sync", ["self", "timezone"]).bind(this) as (timezone: TimeZoneOffset | string) => ZonedDateTime;
+/**
+ * Same absolute time, different timezone.
+ */
+  with_timezone_async = defineInstanceFunction("baml.time.ZonedDateTime.with_timezone", "async", ["self", "timezone"]).bind(this) as (timezone: TimeZoneOffset | string) => Promise<ZonedDateTime>;
+/**
+ * The timezone: a `TimeZoneOffset` if fixed, or the IANA identifier.
+ */
+  timezone = defineInstanceFunction("baml.time.ZonedDateTime.timezone", "sync", ["self"]).bind(this) as () => TimeZoneOffset | string;
+/**
+ * The timezone: a `TimeZoneOffset` if fixed, or the IANA identifier.
+ */
+  timezone_async = defineInstanceFunction("baml.time.ZonedDateTime.timezone", "async", ["self"]).bind(this) as () => Promise<TimeZoneOffset | string>;
+/**
+ * The resolved `TimeZoneOffset` for this `ZonedDateTime`. If the
+ * timezone is an IANA identifier, it is resolved to a concrete offset
+ * based on the absolute time (DST-aware), using the host's timezone
+ * database.
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  timezone_offset = defineInstanceFunction("baml.time.ZonedDateTime.timezone_offset", "sync", ["self"]).bind(this) as () => TimeZoneOffset;
+/**
+ * The resolved `TimeZoneOffset` for this `ZonedDateTime`. If the
+ * timezone is an IANA identifier, it is resolved to a concrete offset
+ * based on the absolute time (DST-aware), using the host's timezone
+ * database.
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  timezone_offset_async = defineInstanceFunction("baml.time.ZonedDateTime.timezone_offset", "async", ["self"]).bind(this) as () => Promise<TimeZoneOffset>;
+/**
+ * Drops the timezone, keeping the wall-clock reading.
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  to_plain = defineInstanceFunction("baml.time.ZonedDateTime.to_plain", "sync", ["self"]).bind(this) as () => PlainDateTime;
+/**
+ * Drops the timezone, keeping the wall-clock reading.
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  to_plain_async = defineInstanceFunction("baml.time.ZonedDateTime.to_plain", "async", ["self"]).bind(this) as () => Promise<PlainDateTime>;
+/**
+ * The calendar year, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  year = defineInstanceFunction("baml.time.ZonedDateTime.year", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The calendar year, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  year_async = defineInstanceFunction("baml.time.ZonedDateTime.year", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The calendar month, in `[1, 12]`, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  month = defineInstanceFunction("baml.time.ZonedDateTime.month", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The calendar month, in `[1, 12]`, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  month_async = defineInstanceFunction("baml.time.ZonedDateTime.month", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The day of the month, in `[1, 31]`, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  day = defineInstanceFunction("baml.time.ZonedDateTime.day", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The day of the month, in `[1, 31]`, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  day_async = defineInstanceFunction("baml.time.ZonedDateTime.day", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The hour of the day, in `[0, 23]`, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  hour = defineInstanceFunction("baml.time.ZonedDateTime.hour", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The hour of the day, in `[0, 23]`, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  hour_async = defineInstanceFunction("baml.time.ZonedDateTime.hour", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The minute of the hour, in `[0, 59]`, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  minute = defineInstanceFunction("baml.time.ZonedDateTime.minute", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The minute of the hour, in `[0, 59]`, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  minute_async = defineInstanceFunction("baml.time.ZonedDateTime.minute", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The second of the minute, in `[0, 59]`, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  second = defineInstanceFunction("baml.time.ZonedDateTime.second", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The second of the minute, in `[0, 59]`, resolved through the timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  second_async = defineInstanceFunction("baml.time.ZonedDateTime.second", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * The millisecond of the second, in `[0, 999]`, resolved through the
+ * timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  millisecond = defineInstanceFunction("baml.time.ZonedDateTime.millisecond", "sync", ["self"]).bind(this) as () => number;
+/**
+ * The millisecond of the second, in `[0, 999]`, resolved through the
+ * timezone.
+ * @throws InvalidArgument
+ * @throws UnknownTimezoneError
+ * @throws Io
+ */
+  millisecond_async = defineInstanceFunction("baml.time.ZonedDateTime.millisecond", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json = defineInstanceFunction("baml.time.ZonedDateTime.to_json", "sync", ["self"]).bind(this) as () => baml.json.json;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json_async = defineInstanceFunction("baml.time.ZonedDateTime.to_json", "async", ["self"]).bind(this) as () => Promise<baml.json.json>;
 }
 
 /**
@@ -2080,19 +1429,11 @@ export class ZonedDateTime {
  * appending an RFC 9557 `[iana]` annotation when `iana` is non-null.
  * @throws InvalidArgument
  */
-export const _format_zoned = defineFunction('baml.time._format_zoned', 'sync', [
-  'epoch_ns',
-  'offset_ns',
-  'iana',
-]) as (epoch_ns: bigint, offset_ns: number, iana: string | null) => string;
+export const _format_zoned = defineFunction("baml.time._format_zoned", "sync", ["epoch_ns", "offset_ns", "iana"]) as (epoch_ns: bigint, offset_ns: number, iana: string | null) => string;
 
 /**
  * Internal: formats an absolute time as RFC 3339 at the given offset,
  * appending an RFC 9557 `[iana]` annotation when `iana` is non-null.
  * @throws InvalidArgument
  */
-export const _format_zoned_async = defineFunction('baml.time._format_zoned', 'async', [
-  'epoch_ns',
-  'offset_ns',
-  'iana',
-]) as (epoch_ns: bigint, offset_ns: number, iana: string | null) => Promise<string>;
+export const _format_zoned_async = defineFunction("baml.time._format_zoned", "async", ["epoch_ns", "offset_ns", "iana"]) as (epoch_ns: bigint, offset_ns: number, iana: string | null) => Promise<string>;

@@ -12,14 +12,16 @@
 // baml-cli is available with the baml package.
 
 import type { BamlHandle as _BamlHandle } from "@boundaryml/baml-bridge";
-import { defineFunction, defineInstanceFunction } from '@boundaryml/baml-bridge';
+import { defineFunction, defineInstanceFunction } from "@boundaryml/baml-bridge";
 
 /**
  * A compiled glob pattern. Create one with `baml.glob.new(pattern)`.
  */
 export class Glob$stream {
   _handle!: _BamlHandle;
-  constructor(init: { _handle: _BamlHandle }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -89,54 +91,44 @@ export class ScanOptions {
  */
 export class Glob {
   _handle!: _BamlHandle;
-  constructor(init: { _handle: _BamlHandle }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * Scans the filesystem and returns all paths matching this glob pattern.
-   * Pass a `string` root path or a `ScanOptions` object for more control.
-   * @throws Io
-   */
-  scan = defineInstanceFunction('baml.glob.Glob.scan', 'sync', ['self', 'root']).bind(this) as (
-    root: string | ScanOptions,
-  ) => string[];
-  /**
-   * Scans the filesystem and returns all paths matching this glob pattern.
-   * Pass a `string` root path or a `ScanOptions` object for more control.
-   * @throws Io
-   */
-  scan_async = defineInstanceFunction('baml.glob.Glob.scan', 'async', ['self', 'root']).bind(
-    this,
-  ) as (root: string | ScanOptions) => Promise<string[]>;
-  /**
-   * Returns `true` if `path` matches this glob pattern.
-   * @throws Io
-   */
-  matches = defineInstanceFunction('baml.glob.Glob.matches', 'sync', ['self', 'path']).bind(
-    this,
-  ) as (path: string) => boolean;
-  /**
-   * Returns `true` if `path` matches this glob pattern.
-   * @throws Io
-   */
-  matches_async = defineInstanceFunction('baml.glob.Glob.matches', 'async', ['self', 'path']).bind(
-    this,
-  ) as (path: string) => Promise<boolean>;
+/**
+ * Scans the filesystem and returns all paths matching this glob pattern.
+ * Pass a `string` root path or a `ScanOptions` object for more control.
+ * @throws Io
+ */
+  scan = defineInstanceFunction("baml.glob.Glob.scan", "sync", ["self", "root"]).bind(this) as (root: string | ScanOptions) => string[];
+/**
+ * Scans the filesystem and returns all paths matching this glob pattern.
+ * Pass a `string` root path or a `ScanOptions` object for more control.
+ * @throws Io
+ */
+  scan_async = defineInstanceFunction("baml.glob.Glob.scan", "async", ["self", "root"]).bind(this) as (root: string | ScanOptions) => Promise<string[]>;
+/**
+ * Returns `true` if `path` matches this glob pattern.
+ * @throws Io
+ */
+  matches = defineInstanceFunction("baml.glob.Glob.matches", "sync", ["self", "path"]).bind(this) as (path: string) => boolean;
+/**
+ * Returns `true` if `path` matches this glob pattern.
+ * @throws Io
+ */
+  matches_async = defineInstanceFunction("baml.glob.Glob.matches", "async", ["self", "path"]).bind(this) as (path: string) => Promise<boolean>;
 }
 
 /**
  * Compiles a glob `pattern` and returns a `Glob` object for scanning or matching.
  * @throws Io
  */
-const __baml_new = defineFunction('baml.glob.new', 'sync', ['pattern']) as (
-  pattern: string,
-) => Glob;
+const __baml_new = defineFunction("baml.glob.new", "sync", ["pattern"]) as (pattern: string) => Glob;
 export { __baml_new as new };
 
 /**
  * Compiles a glob `pattern` and returns a `Glob` object for scanning or matching.
  * @throws Io
  */
-export const new_async = defineFunction('baml.glob.new', 'async', ['pattern']) as (
-  pattern: string,
-) => Promise<Glob>;
+export const new_async = defineFunction("baml.glob.new", "async", ["pattern"]) as (pattern: string) => Promise<Glob>;

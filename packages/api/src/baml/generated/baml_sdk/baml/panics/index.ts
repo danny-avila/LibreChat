@@ -30,7 +30,9 @@ export class AllocFailure$stream {
  */
 export class AssertionFailed$stream {
   message!: string | null;
-  constructor(init: { message: string | null }) {
+  constructor(init: {
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -40,7 +42,9 @@ export class AssertionFailed$stream {
  */
 export class Cancelled$stream {
   message!: string | null;
-  constructor(init: { message: string | null }) {
+  constructor(init: {
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -50,21 +54,25 @@ export class Cancelled$stream {
  */
 export class DivisionByZero$stream {
   dividend!: number | null;
-  constructor(init: { dividend: number | null }) {
+  constructor(init: {
+    dividend: number | null;
+  }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * A clean process-termination request from `baml.sys.exit(code)`.
- *
+ * 
  * Catchable like any other panic; if left unhandled, the engine
  * terminates the process with this code. Patterned after Python's
  * `SystemExit`.
  */
 export class Exit$stream {
   code!: number | null;
-  constructor(init: { code: number | null }) {
+  constructor(init: {
+    code: number | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -95,7 +103,10 @@ export class HostContractViolation$stream {
 export class HostUnavailable$stream {
   resource!: string | null;
   message!: string | null;
-  constructor(init: { resource: string | null; message: string | null }) {
+  constructor(init: {
+    resource: string | null;
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -106,7 +117,10 @@ export class HostUnavailable$stream {
 export class IndexOutOfBounds$stream {
   index!: number | null;
   length!: number | null;
-  constructor(init: { index: number | null; length: number | null }) {
+  constructor(init: {
+    index: number | null;
+    length: number | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -119,7 +133,9 @@ export class IndexOutOfBounds$stream {
  */
 export class IntegerOverflow$stream {
   message!: string | null;
-  constructor(init: { message: string | null }) {
+  constructor(init: {
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -130,7 +146,10 @@ export class IntegerOverflow$stream {
 export class InvalidFieldAccess$stream {
   field_index!: number | null;
   field_count!: number | null;
-  constructor(init: { field_index: number | null; field_count: number | null }) {
+  constructor(init: {
+    field_index: number | null;
+    field_count: number | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -140,7 +159,9 @@ export class InvalidFieldAccess$stream {
  */
 export class MapKeyNotFound$stream {
   key!: string | null;
-  constructor(init: { key: string | null }) {
+  constructor(init: {
+    key: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -152,7 +173,9 @@ export class MapKeyNotFound$stream {
  */
 export class NegativeBitShift$stream {
   message!: string | null;
-  constructor(init: { message: string | null }) {
+  constructor(init: {
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -165,7 +188,9 @@ export class NegativeBitShift$stream {
  */
 export class SdkPanic$stream {
   message!: string | null;
-  constructor(init: { message: string | null }) {
+  constructor(init: {
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -175,7 +200,9 @@ export class SdkPanic$stream {
  */
 export class StackOverflow$stream {
   message!: string | null;
-  constructor(init: { message: string | null }) {
+  constructor(init: {
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -185,7 +212,9 @@ export class StackOverflow$stream {
  */
 export class Unreachable$stream {
   message!: string | null;
-  constructor(init: { message: string | null }) {
+  constructor(init: {
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -195,35 +224,23 @@ export class Unreachable$stream {
  */
 export class UserPanic$stream {
   message!: string | null;
-  constructor(init: { message: string | null }) {
+  constructor(init: {
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
 
-export type Panic$stream =
-  | DivisionByZero$stream
-  | IndexOutOfBounds$stream
-  | InvalidFieldAccess$stream
-  | MapKeyNotFound$stream
-  | StackOverflow$stream
-  | AssertionFailed$stream
-  | Unreachable$stream
-  | Cancelled$stream
-  | UserPanic$stream
-  | Exit$stream
-  | AllocFailure$stream
-  | HostUnavailable$stream
-  | NegativeBitShift$stream
-  | SdkPanic$stream
-  | HostContractViolation$stream
-  | IntegerOverflow$stream;
+export type Panic$stream = DivisionByZero$stream | IndexOutOfBounds$stream | InvalidFieldAccess$stream | MapKeyNotFound$stream | StackOverflow$stream | AssertionFailed$stream | Unreachable$stream | Cancelled$stream | UserPanic$stream | Exit$stream | AllocFailure$stream | HostUnavailable$stream | NegativeBitShift$stream | SdkPanic$stream | HostContractViolation$stream | IntegerOverflow$stream;
 
 /**
  * Raised when an integer is divided by zero.
  */
 export class DivisionByZero {
   dividend!: number;
-  constructor(init: { dividend: number }) {
+  constructor(init: {
+    dividend: number;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -234,7 +251,10 @@ export class DivisionByZero {
 export class IndexOutOfBounds {
   index!: number;
   length!: number;
-  constructor(init: { index: number; length: number }) {
+  constructor(init: {
+    index: number;
+    length: number;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -245,7 +265,10 @@ export class IndexOutOfBounds {
 export class InvalidFieldAccess {
   field_index!: number;
   field_count!: number;
-  constructor(init: { field_index: number; field_count: number }) {
+  constructor(init: {
+    field_index: number;
+    field_count: number;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -255,7 +278,9 @@ export class InvalidFieldAccess {
  */
 export class MapKeyNotFound {
   key!: string;
-  constructor(init: { key: string }) {
+  constructor(init: {
+    key: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -265,7 +290,9 @@ export class MapKeyNotFound {
  */
 export class StackOverflow {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -275,7 +302,9 @@ export class StackOverflow {
  */
 export class AssertionFailed {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -285,7 +314,9 @@ export class AssertionFailed {
  */
 export class Unreachable {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -295,7 +326,9 @@ export class Unreachable {
  */
 export class Cancelled {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -305,21 +338,25 @@ export class Cancelled {
  */
 export class UserPanic {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * A clean process-termination request from `baml.sys.exit(code)`.
- *
+ * 
  * Catchable like any other panic; if left unhandled, the engine
  * terminates the process with this code. Patterned after Python's
  * `SystemExit`.
  */
 export class Exit {
   code!: number;
-  constructor(init: { code: number }) {
+  constructor(init: {
+    code: number;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -331,7 +368,9 @@ export class Exit {
  */
 export class AllocFailure {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -344,7 +383,10 @@ export class AllocFailure {
 export class HostUnavailable {
   resource!: string;
   message!: string;
-  constructor(init: { resource: string; message: string }) {
+  constructor(init: {
+    resource: string;
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -356,7 +398,9 @@ export class HostUnavailable {
  */
 export class NegativeBitShift {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -369,7 +413,9 @@ export class NegativeBitShift {
  */
 export class SdkPanic {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -383,7 +429,11 @@ export class HostContractViolation {
   message!: string;
   class_name!: string | null;
   language!: string | null;
-  constructor(init: { message: string; class_name: string | null; language: string | null }) {
+  constructor(init: {
+    message: string;
+    class_name: string | null;
+    language: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -396,25 +446,11 @@ export class HostContractViolation {
  */
 export class IntegerOverflow {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }
 
-export type Panic =
-  | DivisionByZero
-  | IndexOutOfBounds
-  | InvalidFieldAccess
-  | MapKeyNotFound
-  | StackOverflow
-  | AssertionFailed
-  | Unreachable
-  | Cancelled
-  | UserPanic
-  | Exit
-  | AllocFailure
-  | HostUnavailable
-  | NegativeBitShift
-  | SdkPanic
-  | HostContractViolation
-  | IntegerOverflow;
+export type Panic = DivisionByZero | IndexOutOfBounds | InvalidFieldAccess | MapKeyNotFound | StackOverflow | AssertionFailed | Unreachable | Cancelled | UserPanic | Exit | AllocFailure | HostUnavailable | NegativeBitShift | SdkPanic | HostContractViolation | IntegerOverflow;

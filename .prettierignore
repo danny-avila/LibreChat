@@ -1,0 +1,6 @@
+# BAML codegen output is committed and integrity-checked against
+# packages/api/baml.generated.sha256 (see packages/api/scripts/bamlFingerprint.mjs).
+# It must only change via `npm --prefix packages/api run generate:baml` — never
+# via hand formatting, which would desync the recorded fingerprint and break
+# every downstream build.
+packages/api/src/baml/generated/

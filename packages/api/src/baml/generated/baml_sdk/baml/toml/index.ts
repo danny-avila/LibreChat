@@ -12,85 +12,61 @@
 // baml-cli is available with the baml package.
 
 import { defineFunction, defineInstanceFunction } from "@boundaryml/baml-bridge";
-import type * as baml from '../../baml/index.js';
+import type * as baml from "../../baml/index.js";
 
-export type Item$stream =
-  | Table$stream
-  | Item$stream[]
-  | boolean
-  | number
-  | number
-  | string
-  | baml.time.ZonedDateTime$stream
-  | baml.time.PlainDateTime$stream
-  | baml.time.PlainDate$stream
-  | baml.time.PlainTime$stream;
+export type Item$stream = Table$stream | Item$stream[] | boolean | number | number | string | baml.time.ZonedDateTime$stream | baml.time.PlainDateTime$stream | baml.time.PlainDate$stream | baml.time.PlainTime$stream;
 
-export type Item =
-  | Table
-  | Item[]
-  | boolean
-  | number
-  | number
-  | string
-  | baml.time.ZonedDateTime
-  | baml.time.PlainDateTime
-  | baml.time.PlainDate
-  | baml.time.PlainTime;
+export type Item = Table | Item[] | boolean | number | number | string | baml.time.ZonedDateTime | baml.time.PlainDateTime | baml.time.PlainDate | baml.time.PlainTime;
 
 export class Table$stream {
   items!: { [key: string]: Item$stream };
-  constructor(init: { items: { [key: string]: Item$stream } }) {
+  constructor(init: {
+    items: { [key: string]: Item$stream };
+  }) {
     Object.assign(this, init);
   }
 }
 
 export class TomlParseError$stream {
   message!: string | null;
-  constructor(init: { message: string | null }) {
+  constructor(init: {
+    message: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
 
 export class Table {
   items!: { [key: string]: Item };
-  constructor(init: { items: { [key: string]: Item } }) {
+  constructor(init: {
+    items: { [key: string]: Item };
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json = defineFunction('baml.toml.Table.from_json', 'sync', ['j']) as (
-    j: baml.json.json,
-  ) => null;
-  /**
-   * @throws JsonDecodeError
-   */
-  static from_json_async = defineFunction('baml.toml.Table.from_json', 'async', ['j']) as (
-    j: baml.json.json,
-  ) => Promise<null>;
-  /**
-   * @throws TomlParseError
-   */
-  static parse = defineFunction('baml.toml.Table.parse', 'sync', ['s']) as (s: string) => Table;
-  /**
-   * @throws TomlParseError
-   */
-  static parse_async = defineFunction('baml.toml.Table.parse', 'async', ['s']) as (
-    s: string,
-  ) => Promise<Table>;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json = defineInstanceFunction('baml.toml.Table.to_json', 'sync', ['self']).bind(
-    this,
-  ) as () => baml.json.json;
-  /**
-   * @throws JsonSerializationError
-   */
-  to_json_async = defineInstanceFunction('baml.toml.Table.to_json', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<baml.json.json>;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json = defineFunction("baml.toml.Table.from_json", "sync", ["j"]) as (j: baml.json.json) => null;
+/**
+ * @throws JsonDecodeError
+ */
+  static from_json_async = defineFunction("baml.toml.Table.from_json", "async", ["j"]) as (j: baml.json.json) => Promise<null>;
+/**
+ * @throws TomlParseError
+ */
+  static parse = defineFunction("baml.toml.Table.parse", "sync", ["s"]) as (s: string) => Table;
+/**
+ * @throws TomlParseError
+ */
+  static parse_async = defineFunction("baml.toml.Table.parse", "async", ["s"]) as (s: string) => Promise<Table>;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json = defineInstanceFunction("baml.toml.Table.to_json", "sync", ["self"]).bind(this) as () => baml.json.json;
+/**
+ * @throws JsonSerializationError
+ */
+  to_json_async = defineInstanceFunction("baml.toml.Table.to_json", "async", ["self"]).bind(this) as () => Promise<baml.json.json>;
 }
 
 /**
@@ -99,9 +75,7 @@ export class Table {
  * is analyzed without the abstract `Self` of `Table`'s `baml.FromJson` impl.
  * @throws JsonDecodeError
  */
-export const table_from_json = defineFunction('baml.toml.table_from_json', 'sync', ['j']) as (
-  j: baml.json.json,
-) => Table;
+export const table_from_json = defineFunction("baml.toml.table_from_json", "sync", ["j"]) as (j: baml.json.json) => Table;
 
 /**
  * Decodes a JSON object into a `Table`, skipping null values. Returns a
@@ -109,53 +83,45 @@ export const table_from_json = defineFunction('baml.toml.table_from_json', 'sync
  * is analyzed without the abstract `Self` of `Table`'s `baml.FromJson` impl.
  * @throws JsonDecodeError
  */
-export const table_from_json_async = defineFunction('baml.toml.table_from_json', 'async', [
-  'j',
-]) as (j: baml.json.json) => Promise<Table>;
+export const table_from_json_async = defineFunction("baml.toml.table_from_json", "async", ["j"]) as (j: baml.json.json) => Promise<Table>;
 
 /**
  * Converts a TOML item to a JSON value.
- *
+ * 
  * This is lossy: TOML datetime values are converted to JSON strings
  * (`ZonedDateTime` as RFC 3339, the `Plain*` types as zoneless ISO 8601).
  * @throws JsonSerializationError
  */
-export const item_to_json = defineFunction('baml.toml.item_to_json', 'sync', ['item']) as (
-  item: Item,
-) => baml.json.json;
+export const item_to_json = defineFunction("baml.toml.item_to_json", "sync", ["item"]) as (item: Item) => baml.json.json;
 
 /**
  * Converts a TOML item to a JSON value.
- *
+ * 
  * This is lossy: TOML datetime values are converted to JSON strings
  * (`ZonedDateTime` as RFC 3339, the `Plain*` types as zoneless ISO 8601).
  * @throws JsonSerializationError
  */
-export const item_to_json_async = defineFunction('baml.toml.item_to_json', 'async', ['item']) as (
-  item: Item,
-) => Promise<baml.json.json>;
+export const item_to_json_async = defineFunction("baml.toml.item_to_json", "async", ["item"]) as (item: Item) => Promise<baml.json.json>;
 
 /**
  * Errors if the JSON value is `null`.
  * Usually `Table.from_json` is a better entrypoint, as it will skip null values without erroring.
  * @throws JsonDecodeError
  */
-export const item_from_json = defineFunction('baml.toml.item_from_json', 'sync', ['json']) as (
-  json: baml.json.json,
-) => Item;
+export const item_from_json = defineFunction("baml.toml.item_from_json", "sync", ["json"]) as (json: baml.json.json) => Item;
 
 /**
  * Errors if the JSON value is `null`.
  * Usually `Table.from_json` is a better entrypoint, as it will skip null values without erroring.
  * @throws JsonDecodeError
  */
-export const item_from_json_async = defineFunction('baml.toml.item_from_json', 'async', [
-  'json',
-]) as (json: baml.json.json) => Promise<Item>;
+export const item_from_json_async = defineFunction("baml.toml.item_from_json", "async", ["json"]) as (json: baml.json.json) => Promise<Item>;
 
 export class TomlParseError {
   message!: string;
-  constructor(init: { message: string }) {
+  constructor(init: {
+    message: string;
+  }) {
     Object.assign(this, init);
   }
 }

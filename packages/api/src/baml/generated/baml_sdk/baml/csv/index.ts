@@ -12,12 +12,12 @@
 // baml-cli is available with the baml package.
 
 import type { BamlHandle as _BamlHandle } from "@boundaryml/baml-bridge";
-import { defineFunction, defineInstanceFunction, type BamlType } from '@boundaryml/baml-bridge';
-import type * as baml from '../../baml/index.js';
+import { defineFunction, defineInstanceFunction, type BamlType } from "@boundaryml/baml-bridge";
+import type * as baml from "../../baml/index.js";
 
 /**
  * A structured CSV error with positional diagnostics.
- *
+ * 
  * `kind` is for portable handling; `line` / `record` / `field` / `column`
  * make "row 41,283 has 7 fields, expected 8" diagnostics cheap.
  *
@@ -60,7 +60,9 @@ export class CsvError$stream {
  */
 export class CsvHeaders$stream {
   names!: string[] | null;
-  constructor(init: { names: string[] | null }) {
+  constructor(init: {
+    names: string[] | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -87,7 +89,11 @@ export class CsvPosition$stream {
   byte!: number | null;
   line!: number | null;
   record!: number | null;
-  constructor(init: { byte: number | null; line: number | null; record: number | null }) {
+  constructor(init: {
+    byte: number | null;
+    line: number | null;
+    record: number | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -95,13 +101,13 @@ export class CsvPosition$stream {
 /**
  * A streaming CSV reader. Create one with `baml.csv.open` or
  * `baml.csv.reader`.
- *
+ * 
  * `CsvReader` is a lazy iterator over `CsvRecord` values: a multi-gigabyte
  * file parses in constant memory, and every `baml.iter` adapter and default
  * method (`map`, `filter`, `collect`, ...) works on it. There is one
  * cursor; raw iteration, `rows<T>()`, and `headers()` all draw from the
  * same stream.
- *
+ * 
  * A thrown record error has already consumed the offending record: the
  * parser resynchronizes at the next record boundary and the next call to
  * `next()` continues. One corrupt cell costs exactly one record.
@@ -123,14 +129,16 @@ export class CsvReader$stream {
 
 /**
  * One raw CSV record. Yielded by iterating a `CsvReader`.
- *
+ * 
  * Records have snapshot semantics: they remain valid after the reader
  * advances. Cell access is lazy — `get<int>("amount")` converts one cell
  * without touching the others.
  */
 export class CsvRecord$stream {
   _handle!: _BamlHandle;
-  constructor(init: { _handle: _BamlHandle }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -142,10 +150,13 @@ export class CsvRecord$stream {
 export class CsvRows$stream<T> {
   reader!: CsvReader$stream | null;
   $types?: { T?: BamlType };
-  constructor(init: { reader: CsvReader$stream | null; $types?: { T?: BamlType } }) {
+  constructor(init: {
+    reader: CsvReader$stream | null;
+    $types?: { T?: BamlType };
+  }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ['T'] as const;
+  static readonly $generic = ["T"] as const;
 }
 
 /**
@@ -154,7 +165,9 @@ export class CsvRows$stream<T> {
  */
 export class CsvSkip$stream {
   error!: CsvError$stream | null;
-  constructor(init: { error: CsvError$stream | null }) {
+  constructor(init: {
+    error: CsvError$stream | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -178,7 +191,7 @@ export class CsvWriter$stream {
 
 /**
  * Options for CSV readers. All fields are optional; `null` means default.
- *
+ * 
  * `delimiter`, `quote`, `escape`, and `comment` must be single ASCII bytes
  * and mutually distinct; violations throw `CsvError { kind: Options }` at
  * construction.
@@ -226,14 +239,14 @@ export class ReaderOptions$stream {
   has_header!: boolean | null;
   headers!: string[] | null;
   comment!: string | null;
-  trim!: 'none' | 'headers' | 'fields' | 'all' | null;
+  trim!: "none" | "headers" | "fields" | "all" | null;
   skip_lines!: number | null;
   skip_blank_records!: boolean | null;
-  ragged!: 'strict' | 'pad' | 'truncate' | null;
+  ragged!: "strict" | "pad" | "truncate" | null;
   null_values!: string[] | null;
-  encoding!: 'utf8' | 'utf8-lossy' | null;
-  bom!: 'strip' | 'keep' | null;
-  on_error!: 'throw' | 'skip' | null;
+  encoding!: "utf8" | "utf8-lossy" | null;
+  bom!: "strip" | "keep" | null;
+  on_error!: "throw" | "skip" | null;
   on_skip!: unknown | null;
   max_skipped!: number | null;
   limit!: number | null;
@@ -245,14 +258,14 @@ export class ReaderOptions$stream {
     has_header: boolean | null;
     headers: string[] | null;
     comment: string | null;
-    trim: 'none' | 'headers' | 'fields' | 'all' | null;
+    trim: "none" | "headers" | "fields" | "all" | null;
     skip_lines: number | null;
     skip_blank_records: boolean | null;
-    ragged: 'strict' | 'pad' | 'truncate' | null;
+    ragged: "strict" | "pad" | "truncate" | null;
     null_values: string[] | null;
-    encoding: 'utf8' | 'utf8-lossy' | null;
-    bom: 'strip' | 'keep' | null;
-    on_error: 'throw' | 'skip' | null;
+    encoding: "utf8" | "utf8-lossy" | null;
+    bom: "strip" | "keep" | null;
+    on_error: "throw" | "skip" | null;
     on_skip: unknown | null;
     max_skipped: number | null;
     limit: number | null;
@@ -284,9 +297,9 @@ export class ReaderOptions$stream {
 export class WriterOptions$stream {
   delimiter!: string | null;
   quote!: string | null;
-  quote_style!: 'minimal' | 'all' | 'never' | null;
+  quote_style!: "minimal" | "all" | "never" | null;
   escape!: string | null;
-  terminator!: 'lf' | 'crlf' | null;
+  terminator!: "lf" | "crlf" | null;
   write_header!: boolean | null;
   headers!: string[] | null;
   null_value!: string | null;
@@ -295,9 +308,9 @@ export class WriterOptions$stream {
   constructor(init: {
     delimiter: string | null;
     quote: string | null;
-    quote_style: 'minimal' | 'all' | 'never' | null;
+    quote_style: "minimal" | "all" | "never" | null;
     escape: string | null;
-    terminator: 'lf' | 'crlf' | null;
+    terminator: "lf" | "crlf" | null;
     write_header: boolean | null;
     headers: string[] | null;
     null_value: string | null;
@@ -326,21 +339,21 @@ export type CsvValue$stream = boolean | number | bigint | number | string | null
  *   Closed: Operation on a closed reader or writer.
  */
 export enum CsvErrorKind {
-  Options = 'Options',
-  Quote = 'Quote',
-  FieldCount = 'FieldCount',
-  Encoding = 'Encoding',
-  Header = 'Header',
-  Decode = 'Decode',
-  Encode = 'Encode',
-  NotFound = 'NotFound',
-  TooManyRows = 'TooManyRows',
-  Closed = 'Closed',
+  Options = "Options",
+  Quote = "Quote",
+  FieldCount = "FieldCount",
+  Encoding = "Encoding",
+  Header = "Header",
+  Decode = "Decode",
+  Encode = "Encode",
+  NotFound = "NotFound",
+  TooManyRows = "TooManyRows",
+  Closed = "Closed",
 }
 
 /**
  * A structured CSV error with positional diagnostics.
- *
+ * 
  * `kind` is for portable handling; `line` / `record` / `field` / `column`
  * make "row 41,283 has 7 fields, expected 8" diagnostics cheap.
  *
@@ -389,14 +402,18 @@ export class CsvPosition {
   byte!: number;
   line!: number;
   record!: number;
-  constructor(init: { byte: number; line: number; record: number }) {
+  constructor(init: {
+    byte: number;
+    line: number;
+    record: number;
+  }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * Options for CSV readers. All fields are optional; `null` means default.
- *
+ * 
  * `delimiter`, `quote`, `escape`, and `comment` must be single ASCII bytes
  * and mutually distinct; violations throw `CsvError { kind: Options }` at
  * construction.
@@ -444,14 +461,14 @@ export class ReaderOptions {
   has_header!: boolean | null;
   headers!: string[] | null;
   comment!: string | null;
-  trim!: 'none' | 'headers' | 'fields' | 'all' | null;
+  trim!: "none" | "headers" | "fields" | "all" | null;
   skip_lines!: number | null;
   skip_blank_records!: boolean | null;
-  ragged!: 'strict' | 'pad' | 'truncate' | null;
+  ragged!: "strict" | "pad" | "truncate" | null;
   null_values!: string[] | null;
-  encoding!: 'utf8' | 'utf8-lossy' | null;
-  bom!: 'strip' | 'keep' | null;
-  on_error!: 'throw' | 'skip' | null;
+  encoding!: "utf8" | "utf8-lossy" | null;
+  bom!: "strip" | "keep" | null;
+  on_error!: "throw" | "skip" | null;
   on_skip!: (arg0: CsvError) => null | null;
   max_skipped!: number | null;
   limit!: number | null;
@@ -463,14 +480,14 @@ export class ReaderOptions {
     has_header: boolean | null;
     headers: string[] | null;
     comment: string | null;
-    trim: 'none' | 'headers' | 'fields' | 'all' | null;
+    trim: "none" | "headers" | "fields" | "all" | null;
     skip_lines: number | null;
     skip_blank_records: boolean | null;
-    ragged: 'strict' | 'pad' | 'truncate' | null;
+    ragged: "strict" | "pad" | "truncate" | null;
     null_values: string[] | null;
-    encoding: 'utf8' | 'utf8-lossy' | null;
-    bom: 'strip' | 'keep' | null;
-    on_error: 'throw' | 'skip' | null;
+    encoding: "utf8" | "utf8-lossy" | null;
+    bom: "strip" | "keep" | null;
+    on_error: "throw" | "skip" | null;
     on_skip: (arg0: CsvError) => null | null;
     max_skipped: number | null;
     limit: number | null;
@@ -502,9 +519,9 @@ export class ReaderOptions {
 export class WriterOptions {
   delimiter!: string | null;
   quote!: string | null;
-  quote_style!: 'minimal' | 'all' | 'never' | null;
+  quote_style!: "minimal" | "all" | "never" | null;
   escape!: string | null;
-  terminator!: 'lf' | 'crlf' | null;
+  terminator!: "lf" | "crlf" | null;
   write_header!: boolean | null;
   headers!: string[] | null;
   null_value!: string | null;
@@ -513,9 +530,9 @@ export class WriterOptions {
   constructor(init: {
     delimiter: string | null;
     quote: string | null;
-    quote_style: 'minimal' | 'all' | 'never' | null;
+    quote_style: "minimal" | "all" | "never" | null;
     escape: string | null;
-    terminator: 'lf' | 'crlf' | null;
+    terminator: "lf" | "crlf" | null;
     write_header: boolean | null;
     headers: string[] | null;
     null_value: string | null;
@@ -544,7 +561,9 @@ export class CsvNeedData {
  */
 export class CsvSkip {
   error!: CsvError;
-  constructor(init: { error: CsvError }) {
+  constructor(init: {
+    error: CsvError;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -555,137 +574,101 @@ export class CsvSkip {
  */
 export class CsvHeaders {
   names!: string[] | null;
-  constructor(init: { names: string[] | null }) {
+  constructor(init: {
+    names: string[] | null;
+  }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * One raw CSV record. Yielded by iterating a `CsvReader`.
- *
+ * 
  * Records have snapshot semantics: they remain valid after the reader
  * advances. Cell access is lazy — `get<int>("amount")` converts one cell
  * without touching the others.
  */
 export class CsvRecord {
   _handle!: _BamlHandle;
-  constructor(init: { _handle: _BamlHandle }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * Converts the cell under header `column` to `T`.
-   *
-   * Returns `null` for a column name absent from the headers, a missing
-   * cell, or a null cell. Throws `CsvError { kind: Decode }` when a cell
-   * exists but cannot convert to `T`, and `CsvError { kind: Header }` when
-   * the name is duplicated in the header or when name-based access is used
-   * with no headers at all.
-   * @throws CsvError
-   */
-  get = defineInstanceFunction('baml.csv.CsvRecord.get', 'sync', ['self', 'column'], undefined, {
-    typeParams: ['T'],
-  }).bind(this) as <T>(column: string) => T | null;
-  /**
-   * Converts the cell under header `column` to `T`.
-   *
-   * Returns `null` for a column name absent from the headers, a missing
-   * cell, or a null cell. Throws `CsvError { kind: Decode }` when a cell
-   * exists but cannot convert to `T`, and `CsvError { kind: Header }` when
-   * the name is duplicated in the header or when name-based access is used
-   * with no headers at all.
-   * @throws CsvError
-   */
-  get_async = defineInstanceFunction(
-    'baml.csv.CsvRecord.get',
-    'async',
-    ['self', 'column'],
-    undefined,
-    { typeParams: ['T'] },
-  ).bind(this) as <T>(column: string) => Promise<T | null>;
-  /**
-   * Converts the cell at `index` to `T`. Returns `null` for a missing or
-   * null cell; throws `CsvError { kind: Decode }` on conversion failure.
-   * @throws CsvError
-   */
-  get_at = defineInstanceFunction(
-    'baml.csv.CsvRecord.get_at',
-    'sync',
-    ['self', 'index'],
-    undefined,
-    { typeParams: ['T'] },
-  ).bind(this) as <T>(index: number) => T | null;
-  /**
-   * Converts the cell at `index` to `T`. Returns `null` for a missing or
-   * null cell; throws `CsvError { kind: Decode }` on conversion failure.
-   * @throws CsvError
-   */
-  get_at_async = defineInstanceFunction(
-    'baml.csv.CsvRecord.get_at',
-    'async',
-    ['self', 'index'],
-    undefined,
-    { typeParams: ['T'] },
-  ).bind(this) as <T>(index: number) => Promise<T | null>;
-  fields = defineInstanceFunction('baml.csv.CsvRecord.fields', 'sync', ['self']).bind(
-    this,
-  ) as () => string[];
-  fields_async = defineInstanceFunction('baml.csv.CsvRecord.fields', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<string[]>;
-  length = defineInstanceFunction('baml.csv.CsvRecord.length', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  length_async = defineInstanceFunction('baml.csv.CsvRecord.length', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<number>;
-  position = defineInstanceFunction('baml.csv.CsvRecord.position', 'sync', ['self']).bind(
-    this,
-  ) as () => CsvPosition;
-  position_async = defineInstanceFunction('baml.csv.CsvRecord.position', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<CsvPosition>;
-  /**
-   * Applies the full typed-decode rules to this one record — useful for
-   * routing heterogeneous rows. Always throws on failure, regardless of
-   * the reader's `on_error` policy.
-   * @throws CsvError
-   */
-  decode = defineInstanceFunction('baml.csv.CsvRecord.decode', 'sync', ['self'], undefined, {
-    typeParams: ['T'],
-  }).bind(this) as <T>() => T;
-  /**
-   * Applies the full typed-decode rules to this one record — useful for
-   * routing heterogeneous rows. Always throws on failure, regardless of
-   * the reader's `on_error` policy.
-   * @throws CsvError
-   */
-  decode_async = defineInstanceFunction('baml.csv.CsvRecord.decode', 'async', ['self'], undefined, {
-    typeParams: ['T'],
-  }).bind(this) as <T>() => Promise<T>;
-  /**
-   * @throws CsvError
-   */
-  to_map = defineInstanceFunction('baml.csv.CsvRecord.to_map', 'sync', ['self']).bind(
-    this,
-  ) as () => { [key: string]: string };
-  /**
-   * @throws CsvError
-   */
-  to_map_async = defineInstanceFunction('baml.csv.CsvRecord.to_map', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<{ [key: string]: string }>;
+/**
+ * Converts the cell under header `column` to `T`.
+ * 
+ * Returns `null` for a column name absent from the headers, a missing
+ * cell, or a null cell. Throws `CsvError { kind: Decode }` when a cell
+ * exists but cannot convert to `T`, and `CsvError { kind: Header }` when
+ * the name is duplicated in the header or when name-based access is used
+ * with no headers at all.
+ * @throws CsvError
+ */
+  get = defineInstanceFunction("baml.csv.CsvRecord.get", "sync", ["self", "column"], undefined, { typeParams: ["T"] }).bind(this) as <T>(column: string) => T | null;
+/**
+ * Converts the cell under header `column` to `T`.
+ * 
+ * Returns `null` for a column name absent from the headers, a missing
+ * cell, or a null cell. Throws `CsvError { kind: Decode }` when a cell
+ * exists but cannot convert to `T`, and `CsvError { kind: Header }` when
+ * the name is duplicated in the header or when name-based access is used
+ * with no headers at all.
+ * @throws CsvError
+ */
+  get_async = defineInstanceFunction("baml.csv.CsvRecord.get", "async", ["self", "column"], undefined, { typeParams: ["T"] }).bind(this) as <T>(column: string) => Promise<T | null>;
+/**
+ * Converts the cell at `index` to `T`. Returns `null` for a missing or
+ * null cell; throws `CsvError { kind: Decode }` on conversion failure.
+ * @throws CsvError
+ */
+  get_at = defineInstanceFunction("baml.csv.CsvRecord.get_at", "sync", ["self", "index"], undefined, { typeParams: ["T"] }).bind(this) as <T>(index: number) => T | null;
+/**
+ * Converts the cell at `index` to `T`. Returns `null` for a missing or
+ * null cell; throws `CsvError { kind: Decode }` on conversion failure.
+ * @throws CsvError
+ */
+  get_at_async = defineInstanceFunction("baml.csv.CsvRecord.get_at", "async", ["self", "index"], undefined, { typeParams: ["T"] }).bind(this) as <T>(index: number) => Promise<T | null>;
+  fields = defineInstanceFunction("baml.csv.CsvRecord.fields", "sync", ["self"]).bind(this) as () => string[];
+  fields_async = defineInstanceFunction("baml.csv.CsvRecord.fields", "async", ["self"]).bind(this) as () => Promise<string[]>;
+  length = defineInstanceFunction("baml.csv.CsvRecord.length", "sync", ["self"]).bind(this) as () => number;
+  length_async = defineInstanceFunction("baml.csv.CsvRecord.length", "async", ["self"]).bind(this) as () => Promise<number>;
+  position = defineInstanceFunction("baml.csv.CsvRecord.position", "sync", ["self"]).bind(this) as () => CsvPosition;
+  position_async = defineInstanceFunction("baml.csv.CsvRecord.position", "async", ["self"]).bind(this) as () => Promise<CsvPosition>;
+/**
+ * Applies the full typed-decode rules to this one record — useful for
+ * routing heterogeneous rows. Always throws on failure, regardless of
+ * the reader's `on_error` policy.
+ * @throws CsvError
+ */
+  decode = defineInstanceFunction("baml.csv.CsvRecord.decode", "sync", ["self"], undefined, { typeParams: ["T"] }).bind(this) as <T>() => T;
+/**
+ * Applies the full typed-decode rules to this one record — useful for
+ * routing heterogeneous rows. Always throws on failure, regardless of
+ * the reader's `on_error` policy.
+ * @throws CsvError
+ */
+  decode_async = defineInstanceFunction("baml.csv.CsvRecord.decode", "async", ["self"], undefined, { typeParams: ["T"] }).bind(this) as <T>() => Promise<T>;
+/**
+ * @throws CsvError
+ */
+  to_map = defineInstanceFunction("baml.csv.CsvRecord.to_map", "sync", ["self"]).bind(this) as () => { [key: string]: string };
+/**
+ * @throws CsvError
+ */
+  to_map_async = defineInstanceFunction("baml.csv.CsvRecord.to_map", "async", ["self"]).bind(this) as () => Promise<{ [key: string]: string }>;
 }
 
 /**
  * A streaming CSV reader. Create one with `baml.csv.open` or
  * `baml.csv.reader`.
- *
+ * 
  * `CsvReader` is a lazy iterator over `CsvRecord` values: a multi-gigabyte
  * file parses in constant memory, and every `baml.iter` adapter and default
  * method (`map`, `filter`, `collect`, ...) works on it. There is one
  * cursor; raw iteration, `rows<T>()`, and `headers()` all draw from the
  * same stream.
- *
+ * 
  * A thrown record error has already consumed the offending record: the
  * parser resynchronizes at the next record boundary and the next call to
  * `next()` continues. One corrupt cell costs exactly one record.
@@ -703,198 +686,136 @@ export class CsvReader {
   }) {
     Object.assign(this, init);
   }
-  iter = defineInstanceFunction('baml.csv.CsvReader.iter', 'sync', ['self']).bind(
-    this,
-  ) as () => unknown;
-  iter_async = defineInstanceFunction('baml.csv.CsvReader.iter', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<unknown>;
-  /**
-   * @throws CsvError
-   * @throws Io
-   */
-  next = defineInstanceFunction('baml.csv.CsvReader.next', 'sync', ['self']).bind(this) as () =>
-    | CsvRecord
-    | baml.iter.Done;
-  /**
-   * @throws CsvError
-   * @throws Io
-   */
-  next_async = defineInstanceFunction('baml.csv.CsvReader.next', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<CsvRecord | baml.iter.Done>;
-  /**
-   * The column names: the `headers` option when set, the file's header row
-   * when `has_header = true` (consumed on first call), and `null` otherwise.
-   *
-   * Parse errors in the header record (`Quote`, `Encoding`) surface from
-   * this call (or from whichever call reads the header first), and they
-   * exhaust the reader: without a trustworthy header every subsequent
-   * name-to-column mapping would be silently wrong, so the stream ends
-   * rather than mis-mapping a million rows.
-   * @throws CsvError
-   * @throws Io
-   */
-  headers = defineInstanceFunction('baml.csv.CsvReader.headers', 'sync', ['self']).bind(
-    this,
-  ) as () => string[] | null;
-  /**
-   * The column names: the `headers` option when set, the file's header row
-   * when `has_header = true` (consumed on first call), and `null` otherwise.
-   *
-   * Parse errors in the header record (`Quote`, `Encoding`) surface from
-   * this call (or from whichever call reads the header first), and they
-   * exhaust the reader: without a trustworthy header every subsequent
-   * name-to-column mapping would be silently wrong, so the stream ends
-   * rather than mis-mapping a million rows.
-   * @throws CsvError
-   * @throws Io
-   */
-  headers_async = defineInstanceFunction('baml.csv.CsvReader.headers', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<string[] | null>;
-  /**
-   * A typed iterator over the remaining records, decoding each into `T`.
-   *
-   * Validates eagerly: reads the header if necessary and checks that every
-   * non-optional field of `T` is satisfiable, throwing
-   * `CsvError { kind: Header }` at the call site rather than on the
-   * millionth row.
-   * @throws CsvError
-   * @throws Io
-   */
-  rows = defineInstanceFunction('baml.csv.CsvReader.rows', 'sync', ['self'], undefined, {
-    typeParams: ['T'],
-  }).bind(this) as <T>() => unknown;
-  /**
-   * A typed iterator over the remaining records, decoding each into `T`.
-   *
-   * Validates eagerly: reads the header if necessary and checks that every
-   * non-optional field of `T` is satisfiable, throwing
-   * `CsvError { kind: Header }` at the call site rather than on the
-   * millionth row.
-   * @throws CsvError
-   * @throws Io
-   */
-  rows_async = defineInstanceFunction('baml.csv.CsvReader.rows', 'async', ['self'], undefined, {
-    typeParams: ['T'],
-  }).bind(this) as <T>() => Promise<unknown>;
-  skipped = defineInstanceFunction('baml.csv.CsvReader.skipped', 'sync', ['self']).bind(
-    this,
-  ) as () => CsvError[];
-  skipped_async = defineInstanceFunction('baml.csv.CsvReader.skipped', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<CsvError[]>;
-  skipped_count = defineInstanceFunction('baml.csv.CsvReader.skipped_count', 'sync', ['self']).bind(
-    this,
-  ) as () => number;
-  skipped_count_async = defineInstanceFunction('baml.csv.CsvReader.skipped_count', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<number>;
-  position = defineInstanceFunction('baml.csv.CsvReader.position', 'sync', ['self']).bind(
-    this,
-  ) as () => CsvPosition;
-  position_async = defineInstanceFunction('baml.csv.CsvReader.position', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<CsvPosition>;
-  /**
-   * Releases the reader. Idempotent. The underlying file handle is closed
-   * only when the reader owns it (created by `open`); a handle passed to
-   * `reader(file)` stays open — its lifecycle belongs to the caller.
-   * Subsequent `next()`, `headers()`, and `rows<T>()` calls throw
-   * `CsvError { kind: Closed }`; `skipped()`, `skipped_count()`, and
-   * `position()` remain valid. As with `baml.fs.File`, closing is optional:
-   * the GC reclaims unreferenced readers.
-   * @throws Io
-   */
-  close = defineInstanceFunction('baml.csv.CsvReader.close', 'sync', ['self']).bind(
-    this,
-  ) as () => null;
-  /**
-   * Releases the reader. Idempotent. The underlying file handle is closed
-   * only when the reader owns it (created by `open`); a handle passed to
-   * `reader(file)` stays open — its lifecycle belongs to the caller.
-   * Subsequent `next()`, `headers()`, and `rows<T>()` calls throw
-   * `CsvError { kind: Closed }`; `skipped()`, `skipped_count()`, and
-   * `position()` remain valid. As with `baml.fs.File`, closing is optional:
-   * the GC reclaims unreferenced readers.
-   * @throws Io
-   */
-  close_async = defineInstanceFunction('baml.csv.CsvReader.close', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<null>;
-  /**
-   * @throws CsvError
-   */
-  _poll = defineInstanceFunction('baml.csv.CsvReader._poll', 'sync', ['self']).bind(this) as () =>
-    | CsvRecord
-    | CsvSkip
-    | CsvNeedData
-    | baml.iter.Done;
-  /**
-   * @throws CsvError
-   */
-  _poll_async = defineInstanceFunction('baml.csv.CsvReader._poll', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<CsvRecord | CsvSkip | CsvNeedData | baml.iter.Done>;
-  /**
-   * @throws CsvError
-   */
-  _poll_headers = defineInstanceFunction('baml.csv.CsvReader._poll_headers', 'sync', ['self']).bind(
-    this,
-  ) as () => CsvHeaders | CsvNeedData;
-  /**
-   * @throws CsvError
-   */
-  _poll_headers_async = defineInstanceFunction('baml.csv.CsvReader._poll_headers', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<CsvHeaders | CsvNeedData>;
-  _feed = defineInstanceFunction('baml.csv.CsvReader._feed', 'sync', ['self', 'chunk']).bind(
-    this,
-  ) as (chunk: Uint8Array) => null;
-  _feed_async = defineInstanceFunction('baml.csv.CsvReader._feed', 'async', ['self', 'chunk']).bind(
-    this,
-  ) as (chunk: Uint8Array) => Promise<null>;
-  _feed_eof = defineInstanceFunction('baml.csv.CsvReader._feed_eof', 'sync', ['self']).bind(
-    this,
-  ) as () => null;
-  _feed_eof_async = defineInstanceFunction('baml.csv.CsvReader._feed_eof', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<null>;
-  _mark_closed = defineInstanceFunction('baml.csv.CsvReader._mark_closed', 'sync', ['self']).bind(
-    this,
-  ) as () => null;
-  _mark_closed_async = defineInstanceFunction('baml.csv.CsvReader._mark_closed', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<null>;
-  _mark_exhausted = defineInstanceFunction('baml.csv.CsvReader._mark_exhausted', 'sync', [
-    'self',
-  ]).bind(this) as () => null;
-  _mark_exhausted_async = defineInstanceFunction('baml.csv.CsvReader._mark_exhausted', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<null>;
-  /**
-   * (internal) Pull the next chunk from the backing file, or mark EOF for
-   * in-memory sources. IO errors are stream-scoped and fatal: the reader is
-   * marked exhausted before the throw, so subsequent `next()` calls return
-   * `baml.iter.Done`.
-   * @throws CsvError
-   * @throws Io
-   */
-  _read_chunk = defineInstanceFunction('baml.csv.CsvReader._read_chunk', 'sync', ['self']).bind(
-    this,
-  ) as () => null;
-  /**
-   * (internal) Pull the next chunk from the backing file, or mark EOF for
-   * in-memory sources. IO errors are stream-scoped and fatal: the reader is
-   * marked exhausted before the throw, so subsequent `next()` calls return
-   * `baml.iter.Done`.
-   * @throws CsvError
-   * @throws Io
-   */
-  _read_chunk_async = defineInstanceFunction('baml.csv.CsvReader._read_chunk', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<null>;
+  iter = defineInstanceFunction("baml.csv.CsvReader.iter", "sync", ["self"]).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction("baml.csv.CsvReader.iter", "async", ["self"]).bind(this) as () => Promise<unknown>;
+/**
+ * @throws CsvError
+ * @throws Io
+ */
+  next = defineInstanceFunction("baml.csv.CsvReader.next", "sync", ["self"]).bind(this) as () => CsvRecord | baml.iter.Done;
+/**
+ * @throws CsvError
+ * @throws Io
+ */
+  next_async = defineInstanceFunction("baml.csv.CsvReader.next", "async", ["self"]).bind(this) as () => Promise<CsvRecord | baml.iter.Done>;
+/**
+ * The column names: the `headers` option when set, the file's header row
+ * when `has_header = true` (consumed on first call), and `null` otherwise.
+ * 
+ * Parse errors in the header record (`Quote`, `Encoding`) surface from
+ * this call (or from whichever call reads the header first), and they
+ * exhaust the reader: without a trustworthy header every subsequent
+ * name-to-column mapping would be silently wrong, so the stream ends
+ * rather than mis-mapping a million rows.
+ * @throws CsvError
+ * @throws Io
+ */
+  headers = defineInstanceFunction("baml.csv.CsvReader.headers", "sync", ["self"]).bind(this) as () => string[] | null;
+/**
+ * The column names: the `headers` option when set, the file's header row
+ * when `has_header = true` (consumed on first call), and `null` otherwise.
+ * 
+ * Parse errors in the header record (`Quote`, `Encoding`) surface from
+ * this call (or from whichever call reads the header first), and they
+ * exhaust the reader: without a trustworthy header every subsequent
+ * name-to-column mapping would be silently wrong, so the stream ends
+ * rather than mis-mapping a million rows.
+ * @throws CsvError
+ * @throws Io
+ */
+  headers_async = defineInstanceFunction("baml.csv.CsvReader.headers", "async", ["self"]).bind(this) as () => Promise<string[] | null>;
+/**
+ * A typed iterator over the remaining records, decoding each into `T`.
+ * 
+ * Validates eagerly: reads the header if necessary and checks that every
+ * non-optional field of `T` is satisfiable, throwing
+ * `CsvError { kind: Header }` at the call site rather than on the
+ * millionth row.
+ * @throws CsvError
+ * @throws Io
+ */
+  rows = defineInstanceFunction("baml.csv.CsvReader.rows", "sync", ["self"], undefined, { typeParams: ["T"] }).bind(this) as <T>() => unknown;
+/**
+ * A typed iterator over the remaining records, decoding each into `T`.
+ * 
+ * Validates eagerly: reads the header if necessary and checks that every
+ * non-optional field of `T` is satisfiable, throwing
+ * `CsvError { kind: Header }` at the call site rather than on the
+ * millionth row.
+ * @throws CsvError
+ * @throws Io
+ */
+  rows_async = defineInstanceFunction("baml.csv.CsvReader.rows", "async", ["self"], undefined, { typeParams: ["T"] }).bind(this) as <T>() => Promise<unknown>;
+  skipped = defineInstanceFunction("baml.csv.CsvReader.skipped", "sync", ["self"]).bind(this) as () => CsvError[];
+  skipped_async = defineInstanceFunction("baml.csv.CsvReader.skipped", "async", ["self"]).bind(this) as () => Promise<CsvError[]>;
+  skipped_count = defineInstanceFunction("baml.csv.CsvReader.skipped_count", "sync", ["self"]).bind(this) as () => number;
+  skipped_count_async = defineInstanceFunction("baml.csv.CsvReader.skipped_count", "async", ["self"]).bind(this) as () => Promise<number>;
+  position = defineInstanceFunction("baml.csv.CsvReader.position", "sync", ["self"]).bind(this) as () => CsvPosition;
+  position_async = defineInstanceFunction("baml.csv.CsvReader.position", "async", ["self"]).bind(this) as () => Promise<CsvPosition>;
+/**
+ * Releases the reader. Idempotent. The underlying file handle is closed
+ * only when the reader owns it (created by `open`); a handle passed to
+ * `reader(file)` stays open — its lifecycle belongs to the caller.
+ * Subsequent `next()`, `headers()`, and `rows<T>()` calls throw
+ * `CsvError { kind: Closed }`; `skipped()`, `skipped_count()`, and
+ * `position()` remain valid. As with `baml.fs.File`, closing is optional:
+ * the GC reclaims unreferenced readers.
+ * @throws Io
+ */
+  close = defineInstanceFunction("baml.csv.CsvReader.close", "sync", ["self"]).bind(this) as () => null;
+/**
+ * Releases the reader. Idempotent. The underlying file handle is closed
+ * only when the reader owns it (created by `open`); a handle passed to
+ * `reader(file)` stays open — its lifecycle belongs to the caller.
+ * Subsequent `next()`, `headers()`, and `rows<T>()` calls throw
+ * `CsvError { kind: Closed }`; `skipped()`, `skipped_count()`, and
+ * `position()` remain valid. As with `baml.fs.File`, closing is optional:
+ * the GC reclaims unreferenced readers.
+ * @throws Io
+ */
+  close_async = defineInstanceFunction("baml.csv.CsvReader.close", "async", ["self"]).bind(this) as () => Promise<null>;
+/**
+ * @throws CsvError
+ */
+  _poll = defineInstanceFunction("baml.csv.CsvReader._poll", "sync", ["self"]).bind(this) as () => CsvRecord | CsvSkip | CsvNeedData | baml.iter.Done;
+/**
+ * @throws CsvError
+ */
+  _poll_async = defineInstanceFunction("baml.csv.CsvReader._poll", "async", ["self"]).bind(this) as () => Promise<CsvRecord | CsvSkip | CsvNeedData | baml.iter.Done>;
+/**
+ * @throws CsvError
+ */
+  _poll_headers = defineInstanceFunction("baml.csv.CsvReader._poll_headers", "sync", ["self"]).bind(this) as () => CsvHeaders | CsvNeedData;
+/**
+ * @throws CsvError
+ */
+  _poll_headers_async = defineInstanceFunction("baml.csv.CsvReader._poll_headers", "async", ["self"]).bind(this) as () => Promise<CsvHeaders | CsvNeedData>;
+  _feed = defineInstanceFunction("baml.csv.CsvReader._feed", "sync", ["self", "chunk"]).bind(this) as (chunk: Uint8Array) => null;
+  _feed_async = defineInstanceFunction("baml.csv.CsvReader._feed", "async", ["self", "chunk"]).bind(this) as (chunk: Uint8Array) => Promise<null>;
+  _feed_eof = defineInstanceFunction("baml.csv.CsvReader._feed_eof", "sync", ["self"]).bind(this) as () => null;
+  _feed_eof_async = defineInstanceFunction("baml.csv.CsvReader._feed_eof", "async", ["self"]).bind(this) as () => Promise<null>;
+  _mark_closed = defineInstanceFunction("baml.csv.CsvReader._mark_closed", "sync", ["self"]).bind(this) as () => null;
+  _mark_closed_async = defineInstanceFunction("baml.csv.CsvReader._mark_closed", "async", ["self"]).bind(this) as () => Promise<null>;
+  _mark_exhausted = defineInstanceFunction("baml.csv.CsvReader._mark_exhausted", "sync", ["self"]).bind(this) as () => null;
+  _mark_exhausted_async = defineInstanceFunction("baml.csv.CsvReader._mark_exhausted", "async", ["self"]).bind(this) as () => Promise<null>;
+/**
+ * (internal) Pull the next chunk from the backing file, or mark EOF for
+ * in-memory sources. IO errors are stream-scoped and fatal: the reader is
+ * marked exhausted before the throw, so subsequent `next()` calls return
+ * `baml.iter.Done`.
+ * @throws CsvError
+ * @throws Io
+ */
+  _read_chunk = defineInstanceFunction("baml.csv.CsvReader._read_chunk", "sync", ["self"]).bind(this) as () => null;
+/**
+ * (internal) Pull the next chunk from the backing file, or mark EOF for
+ * in-memory sources. IO errors are stream-scoped and fatal: the reader is
+ * marked exhausted before the throw, so subsequent `next()` calls return
+ * `baml.iter.Done`.
+ * @throws CsvError
+ * @throws Io
+ */
+  _read_chunk_async = defineInstanceFunction("baml.csv.CsvReader._read_chunk", "async", ["self"]).bind(this) as () => Promise<null>;
 }
 
 /**
@@ -904,30 +825,25 @@ export class CsvReader {
 export class CsvRows<T> {
   reader!: CsvReader;
   $types?: { T?: BamlType };
-  constructor(init: { reader: CsvReader; $types?: { T?: BamlType } }) {
+  constructor(init: {
+    reader: CsvReader;
+    $types?: { T?: BamlType };
+  }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ['T'] as const;
-  iter = defineInstanceFunction('baml.csv.CsvRows.iter', 'sync', ['self'], undefined, {
-    classTypeParams: ['T'],
-  }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction('baml.csv.CsvRows.iter', 'async', ['self'], undefined, {
-    classTypeParams: ['T'],
-  }).bind(this) as () => Promise<unknown>;
-  /**
-   * @throws CsvError
-   * @throws Io
-   */
-  next = defineInstanceFunction('baml.csv.CsvRows.next', 'sync', ['self'], undefined, {
-    classTypeParams: ['T'],
-  }).bind(this) as () => T | baml.iter.Done;
-  /**
-   * @throws CsvError
-   * @throws Io
-   */
-  next_async = defineInstanceFunction('baml.csv.CsvRows.next', 'async', ['self'], undefined, {
-    classTypeParams: ['T'],
-  }).bind(this) as () => Promise<T | baml.iter.Done>;
+  static readonly $generic = ["T"] as const;
+  iter = defineInstanceFunction("baml.csv.CsvRows.iter", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction("baml.csv.CsvRows.iter", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<unknown>;
+/**
+ * @throws CsvError
+ * @throws Io
+ */
+  next = defineInstanceFunction("baml.csv.CsvRows.next", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => T | baml.iter.Done;
+/**
+ * @throws CsvError
+ * @throws Io
+ */
+  next_async = defineInstanceFunction("baml.csv.CsvRows.next", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<T | baml.iter.Done>;
 }
 
 /**
@@ -938,425 +854,276 @@ export class CsvWriter {
   _handle!: _BamlHandle;
   _file!: baml.fs.File | null;
   _owns_file!: boolean;
-  constructor(init: { _handle: _BamlHandle; _file: baml.fs.File | null; _owns_file: boolean }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+    _file: baml.fs.File | null;
+    _owns_file: boolean;
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * Writes one raw record. Never triggers an automatic header.
-   * @throws CsvError
-   * @throws Io
-   */
-  write_record = defineInstanceFunction('baml.csv.CsvWriter.write_record', 'sync', [
-    'self',
-    'record',
-  ]).bind(this) as (record: (boolean | number | bigint | number | string | null)[]) => null;
-  /**
-   * Writes one raw record. Never triggers an automatic header.
-   * @throws CsvError
-   * @throws Io
-   */
-  write_record_async = defineInstanceFunction('baml.csv.CsvWriter.write_record', 'async', [
-    'self',
-    'record',
-  ]).bind(this) as (
-    record: (boolean | number | bigint | number | string | null)[],
-  ) => Promise<null>;
-  /**
-   * Writes one typed row. Fields serialize in declaration order; if
-   * `write_header` is enabled (default) and no header has been written yet,
-   * the header derived from `T`'s field names (or `WriterOptions.headers`)
-   * is emitted first.
-   * @throws CsvError
-   * @throws Io
-   */
-  write_row = defineInstanceFunction(
-    'baml.csv.CsvWriter.write_row',
-    'sync',
-    ['self', 'row'],
-    undefined,
-    { typeParams: ['T'] },
-  ).bind(this) as <T>(row: T) => null;
-  /**
-   * Writes one typed row. Fields serialize in declaration order; if
-   * `write_header` is enabled (default) and no header has been written yet,
-   * the header derived from `T`'s field names (or `WriterOptions.headers`)
-   * is emitted first.
-   * @throws CsvError
-   * @throws Io
-   */
-  write_row_async = defineInstanceFunction(
-    'baml.csv.CsvWriter.write_row',
-    'async',
-    ['self', 'row'],
-    undefined,
-    { typeParams: ['T'] },
-  ).bind(this) as <T>(row: T) => Promise<null>;
-  /**
-   * Writes many typed rows, as one atomic batch: on a thrown error nothing
-   * from the batch is emitted or counted. Otherwise equivalent to
-   * `write_row<T>` in a loop.
-   * @throws CsvError
-   * @throws Io
-   */
-  write_rows = defineInstanceFunction(
-    'baml.csv.CsvWriter.write_rows',
-    'sync',
-    ['self', 'rows'],
-    undefined,
-    { typeParams: ['T'] },
-  ).bind(this) as <T>(rows: T[]) => null;
-  /**
-   * Writes many typed rows, as one atomic batch: on a thrown error nothing
-   * from the batch is emitted or counted. Otherwise equivalent to
-   * `write_row<T>` in a loop.
-   * @throws CsvError
-   * @throws Io
-   */
-  write_rows_async = defineInstanceFunction(
-    'baml.csv.CsvWriter.write_rows',
-    'async',
-    ['self', 'rows'],
-    undefined,
-    { typeParams: ['T'] },
-  ).bind(this) as <T>(rows: T[]) => Promise<null>;
-  /**
-   * Writes an explicit header record. Throws `CsvError { kind: Header }`
-   * after data has been written.
-   * @throws CsvError
-   * @throws Io
-   */
-  write_header = defineInstanceFunction('baml.csv.CsvWriter.write_header', 'sync', [
-    'self',
-    'names',
-  ]).bind(this) as (names: string[]) => null;
-  /**
-   * Writes an explicit header record. Throws `CsvError { kind: Header }`
-   * after data has been written.
-   * @throws CsvError
-   * @throws Io
-   */
-  write_header_async = defineInstanceFunction('baml.csv.CsvWriter.write_header', 'async', [
-    'self',
-    'names',
-  ]).bind(this) as (names: string[]) => Promise<null>;
-  records_written = defineInstanceFunction('baml.csv.CsvWriter.records_written', 'sync', [
-    'self',
-  ]).bind(this) as () => number;
-  records_written_async = defineInstanceFunction('baml.csv.CsvWriter.records_written', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<number>;
-  /**
-   * @throws CsvError
-   */
-  text = defineInstanceFunction('baml.csv.CsvWriter.text', 'sync', ['self']).bind(
-    this,
-  ) as () => string;
-  /**
-   * @throws CsvError
-   */
-  text_async = defineInstanceFunction('baml.csv.CsvWriter.text', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<string>;
-  /**
-   * Flushes pending output. Writes through `baml.fs` flush eagerly, so this
-   * is an infallible no-op kept for symmetry with other writer APIs.
-   */
-  flush = defineInstanceFunction('baml.csv.CsvWriter.flush', 'sync', ['self']).bind(
-    this,
-  ) as () => null;
-  /**
-   * Flushes pending output. Writes through `baml.fs` flush eagerly, so this
-   * is an infallible no-op kept for symmetry with other writer APIs.
-   */
-  flush_async = defineInstanceFunction('baml.csv.CsvWriter.flush', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<null>;
-  /**
-   * Flushes and releases the writer. Idempotent. The underlying file
-   * handle is closed only when the writer owns it (created by `create`); a
-   * handle passed to `writer(file)` stays open — its lifecycle belongs to
-   * the caller. Writes after close throw `CsvError { kind: Closed }`;
-   * `records_written()` remains valid.
-   * @throws Io
-   */
-  close = defineInstanceFunction('baml.csv.CsvWriter.close', 'sync', ['self']).bind(
-    this,
-  ) as () => null;
-  /**
-   * Flushes and releases the writer. Idempotent. The underlying file
-   * handle is closed only when the writer owns it (created by `create`); a
-   * handle passed to `writer(file)` stays open — its lifecycle belongs to
-   * the caller. Writes after close throw `CsvError { kind: Closed }`;
-   * `records_written()` remains valid.
-   * @throws Io
-   */
-  close_async = defineInstanceFunction('baml.csv.CsvWriter.close', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<null>;
-  /**
-   * @throws CsvError
-   */
-  _encode_record = defineInstanceFunction('baml.csv.CsvWriter._encode_record', 'sync', [
-    'self',
-    'record',
-  ]).bind(this) as (record: (boolean | number | bigint | number | string | null)[]) => string;
-  /**
-   * @throws CsvError
-   */
-  _encode_record_async = defineInstanceFunction('baml.csv.CsvWriter._encode_record', 'async', [
-    'self',
-    'record',
-  ]).bind(this) as (
-    record: (boolean | number | bigint | number | string | null)[],
-  ) => Promise<string>;
-  /**
-   * @throws CsvError
-   */
-  _encode_header = defineInstanceFunction('baml.csv.CsvWriter._encode_header', 'sync', [
-    'self',
-    'names',
-  ]).bind(this) as (names: string[]) => string;
-  /**
-   * @throws CsvError
-   */
-  _encode_header_async = defineInstanceFunction('baml.csv.CsvWriter._encode_header', 'async', [
-    'self',
-    'names',
-  ]).bind(this) as (names: string[]) => Promise<string>;
-  _bytes_written = defineInstanceFunction('baml.csv.CsvWriter._bytes_written', 'sync', [
-    'self',
-  ]).bind(this) as () => number;
-  _bytes_written_async = defineInstanceFunction('baml.csv.CsvWriter._bytes_written', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<number>;
-  _mark_closed = defineInstanceFunction('baml.csv.CsvWriter._mark_closed', 'sync', ['self']).bind(
-    this,
-  ) as () => null;
-  _mark_closed_async = defineInstanceFunction('baml.csv.CsvWriter._mark_closed', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<null>;
-  /**
-   * (internal) Write encoded text to the backing file, if any. Buffer
-   * writers accumulate natively and receive `""` here.
-   * @throws Io
-   */
-  _emit = defineInstanceFunction('baml.csv.CsvWriter._emit', 'sync', ['self', 'out']).bind(
-    this,
-  ) as (out: string) => null;
-  /**
-   * (internal) Write encoded text to the backing file, if any. Buffer
-   * writers accumulate natively and receive `""` here.
-   * @throws Io
-   */
-  _emit_async = defineInstanceFunction('baml.csv.CsvWriter._emit', 'async', ['self', 'out']).bind(
-    this,
-  ) as (out: string) => Promise<null>;
+/**
+ * Writes one raw record. Never triggers an automatic header.
+ * @throws CsvError
+ * @throws Io
+ */
+  write_record = defineInstanceFunction("baml.csv.CsvWriter.write_record", "sync", ["self", "record"]).bind(this) as (record: (boolean | number | bigint | number | string | null)[]) => null;
+/**
+ * Writes one raw record. Never triggers an automatic header.
+ * @throws CsvError
+ * @throws Io
+ */
+  write_record_async = defineInstanceFunction("baml.csv.CsvWriter.write_record", "async", ["self", "record"]).bind(this) as (record: (boolean | number | bigint | number | string | null)[]) => Promise<null>;
+/**
+ * Writes one typed row. Fields serialize in declaration order; if
+ * `write_header` is enabled (default) and no header has been written yet,
+ * the header derived from `T`'s field names (or `WriterOptions.headers`)
+ * is emitted first.
+ * @throws CsvError
+ * @throws Io
+ */
+  write_row = defineInstanceFunction("baml.csv.CsvWriter.write_row", "sync", ["self", "row"], undefined, { typeParams: ["T"] }).bind(this) as <T>(row: T) => null;
+/**
+ * Writes one typed row. Fields serialize in declaration order; if
+ * `write_header` is enabled (default) and no header has been written yet,
+ * the header derived from `T`'s field names (or `WriterOptions.headers`)
+ * is emitted first.
+ * @throws CsvError
+ * @throws Io
+ */
+  write_row_async = defineInstanceFunction("baml.csv.CsvWriter.write_row", "async", ["self", "row"], undefined, { typeParams: ["T"] }).bind(this) as <T>(row: T) => Promise<null>;
+/**
+ * Writes many typed rows, as one atomic batch: on a thrown error nothing
+ * from the batch is emitted or counted. Otherwise equivalent to
+ * `write_row<T>` in a loop.
+ * @throws CsvError
+ * @throws Io
+ */
+  write_rows = defineInstanceFunction("baml.csv.CsvWriter.write_rows", "sync", ["self", "rows"], undefined, { typeParams: ["T"] }).bind(this) as <T>(rows: T[]) => null;
+/**
+ * Writes many typed rows, as one atomic batch: on a thrown error nothing
+ * from the batch is emitted or counted. Otherwise equivalent to
+ * `write_row<T>` in a loop.
+ * @throws CsvError
+ * @throws Io
+ */
+  write_rows_async = defineInstanceFunction("baml.csv.CsvWriter.write_rows", "async", ["self", "rows"], undefined, { typeParams: ["T"] }).bind(this) as <T>(rows: T[]) => Promise<null>;
+/**
+ * Writes an explicit header record. Throws `CsvError { kind: Header }`
+ * after data has been written.
+ * @throws CsvError
+ * @throws Io
+ */
+  write_header = defineInstanceFunction("baml.csv.CsvWriter.write_header", "sync", ["self", "names"]).bind(this) as (names: string[]) => null;
+/**
+ * Writes an explicit header record. Throws `CsvError { kind: Header }`
+ * after data has been written.
+ * @throws CsvError
+ * @throws Io
+ */
+  write_header_async = defineInstanceFunction("baml.csv.CsvWriter.write_header", "async", ["self", "names"]).bind(this) as (names: string[]) => Promise<null>;
+  records_written = defineInstanceFunction("baml.csv.CsvWriter.records_written", "sync", ["self"]).bind(this) as () => number;
+  records_written_async = defineInstanceFunction("baml.csv.CsvWriter.records_written", "async", ["self"]).bind(this) as () => Promise<number>;
+/**
+ * @throws CsvError
+ */
+  text = defineInstanceFunction("baml.csv.CsvWriter.text", "sync", ["self"]).bind(this) as () => string;
+/**
+ * @throws CsvError
+ */
+  text_async = defineInstanceFunction("baml.csv.CsvWriter.text", "async", ["self"]).bind(this) as () => Promise<string>;
+/**
+ * Flushes pending output. Writes through `baml.fs` flush eagerly, so this
+ * is an infallible no-op kept for symmetry with other writer APIs.
+ */
+  flush = defineInstanceFunction("baml.csv.CsvWriter.flush", "sync", ["self"]).bind(this) as () => null;
+/**
+ * Flushes pending output. Writes through `baml.fs` flush eagerly, so this
+ * is an infallible no-op kept for symmetry with other writer APIs.
+ */
+  flush_async = defineInstanceFunction("baml.csv.CsvWriter.flush", "async", ["self"]).bind(this) as () => Promise<null>;
+/**
+ * Flushes and releases the writer. Idempotent. The underlying file
+ * handle is closed only when the writer owns it (created by `create`); a
+ * handle passed to `writer(file)` stays open — its lifecycle belongs to
+ * the caller. Writes after close throw `CsvError { kind: Closed }`;
+ * `records_written()` remains valid.
+ * @throws Io
+ */
+  close = defineInstanceFunction("baml.csv.CsvWriter.close", "sync", ["self"]).bind(this) as () => null;
+/**
+ * Flushes and releases the writer. Idempotent. The underlying file
+ * handle is closed only when the writer owns it (created by `create`); a
+ * handle passed to `writer(file)` stays open — its lifecycle belongs to
+ * the caller. Writes after close throw `CsvError { kind: Closed }`;
+ * `records_written()` remains valid.
+ * @throws Io
+ */
+  close_async = defineInstanceFunction("baml.csv.CsvWriter.close", "async", ["self"]).bind(this) as () => Promise<null>;
+/**
+ * @throws CsvError
+ */
+  _encode_record = defineInstanceFunction("baml.csv.CsvWriter._encode_record", "sync", ["self", "record"]).bind(this) as (record: (boolean | number | bigint | number | string | null)[]) => string;
+/**
+ * @throws CsvError
+ */
+  _encode_record_async = defineInstanceFunction("baml.csv.CsvWriter._encode_record", "async", ["self", "record"]).bind(this) as (record: (boolean | number | bigint | number | string | null)[]) => Promise<string>;
+/**
+ * @throws CsvError
+ */
+  _encode_header = defineInstanceFunction("baml.csv.CsvWriter._encode_header", "sync", ["self", "names"]).bind(this) as (names: string[]) => string;
+/**
+ * @throws CsvError
+ */
+  _encode_header_async = defineInstanceFunction("baml.csv.CsvWriter._encode_header", "async", ["self", "names"]).bind(this) as (names: string[]) => Promise<string>;
+  _bytes_written = defineInstanceFunction("baml.csv.CsvWriter._bytes_written", "sync", ["self"]).bind(this) as () => number;
+  _bytes_written_async = defineInstanceFunction("baml.csv.CsvWriter._bytes_written", "async", ["self"]).bind(this) as () => Promise<number>;
+  _mark_closed = defineInstanceFunction("baml.csv.CsvWriter._mark_closed", "sync", ["self"]).bind(this) as () => null;
+  _mark_closed_async = defineInstanceFunction("baml.csv.CsvWriter._mark_closed", "async", ["self"]).bind(this) as () => Promise<null>;
+/**
+ * (internal) Write encoded text to the backing file, if any. Buffer
+ * writers accumulate natively and receive `""` here.
+ * @throws Io
+ */
+  _emit = defineInstanceFunction("baml.csv.CsvWriter._emit", "sync", ["self", "out"]).bind(this) as (out: string) => null;
+/**
+ * (internal) Write encoded text to the backing file, if any. Buffer
+ * writers accumulate natively and receive `""` here.
+ * @throws Io
+ */
+  _emit_async = defineInstanceFunction("baml.csv.CsvWriter._emit", "async", ["self", "out"]).bind(this) as (out: string) => Promise<null>;
 }
 
 /**
  * A streaming reader over in-memory text/bytes or an open file handle.
- *
+ * 
  * A `string` or `uint8array` source is CSV content, parsed in place. A
  * `baml.fs.File` source is streamed from its current cursor to EOF; from
  * construction until the reader is exhausted or closed, the reader owns
  * that cursor.
  * @throws CsvError
  */
-export const reader = defineFunction('baml.csv.reader', 'sync', ['source'], ['options']) as (
-  source: string | Uint8Array | baml.fs.File,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => CsvReader;
+export const reader = defineFunction("baml.csv.reader", "sync", ["source"], ["options"]) as (source: string | Uint8Array | baml.fs.File, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => CsvReader;
 
 /**
  * A streaming reader over in-memory text/bytes or an open file handle.
- *
+ * 
  * A `string` or `uint8array` source is CSV content, parsed in place. A
  * `baml.fs.File` source is streamed from its current cursor to EOF; from
  * construction until the reader is exhausted or closed, the reader owns
  * that cursor.
  * @throws CsvError
  */
-export const reader_async = defineFunction('baml.csv.reader', 'async', ['source'], ['options']) as (
-  source: string | Uint8Array | baml.fs.File,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => Promise<CsvReader>;
+export const reader_async = defineFunction("baml.csv.reader", "async", ["source"], ["options"]) as (source: string | Uint8Array | baml.fs.File, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => Promise<CsvReader>;
 
 /**
  * Opens the file at `path` via `baml.fs` and streams it.
  * @throws CsvError
  * @throws Io
  */
-export const open = defineFunction('baml.csv.open', 'sync', ['path'], ['options']) as (
-  path: string,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => CsvReader;
+export const open = defineFunction("baml.csv.open", "sync", ["path"], ["options"]) as (path: string, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => CsvReader;
 
 /**
  * Opens the file at `path` via `baml.fs` and streams it.
  * @throws CsvError
  * @throws Io
  */
-export const open_async = defineFunction('baml.csv.open', 'async', ['path'], ['options']) as (
-  path: string,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => Promise<CsvReader>;
+export const open_async = defineFunction("baml.csv.open", "async", ["path"], ["options"]) as (path: string, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => Promise<CsvReader>;
 
 /**
  * Eager typed read of a whole file: `open(path).rows<T>().collect()`.
- *
+ * 
  * If the file might not fit in memory, `open` it and stream instead — the
  * options are the same; the streaming spelling is a verb swap away.
  * @throws CsvError
  * @throws Io
  */
-export const read = defineFunction('baml.csv.read', 'sync', ['path'], ['options'], {
-  typeParams: ['T'],
-}) as <T>(path: string, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => T[];
+export const read = defineFunction("baml.csv.read", "sync", ["path"], ["options"], { typeParams: ["T"] }) as <T>(path: string, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => T[];
 
 /**
  * Eager typed read of a whole file: `open(path).rows<T>().collect()`.
- *
+ * 
  * If the file might not fit in memory, `open` it and stream instead — the
  * options are the same; the streaming spelling is a verb swap away.
  * @throws CsvError
  * @throws Io
  */
-export const read_async = defineFunction('baml.csv.read', 'async', ['path'], ['options'], {
-  typeParams: ['T'],
-}) as <T>(
-  path: string,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => Promise<T[]>;
+export const read_async = defineFunction("baml.csv.read", "async", ["path"], ["options"], { typeParams: ["T"] }) as <T>(path: string, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => Promise<T[]>;
 
 /**
  * Eager untyped parse of in-memory input: records as string arrays.
  * @throws CsvError
  */
-export const parse = defineFunction('baml.csv.parse', 'sync', ['source'], ['options']) as (
-  source: string | Uint8Array,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => string[][];
+export const parse = defineFunction("baml.csv.parse", "sync", ["source"], ["options"]) as (source: string | Uint8Array, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => string[][];
 
 /**
  * Eager untyped parse of in-memory input: records as string arrays.
  * @throws CsvError
  */
-export const parse_async = defineFunction('baml.csv.parse', 'async', ['source'], ['options']) as (
-  source: string | Uint8Array,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => Promise<string[][]>;
+export const parse_async = defineFunction("baml.csv.parse", "async", ["source"], ["options"]) as (source: string | Uint8Array, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => Promise<string[][]>;
 
 /**
  * Eager typed parse of in-memory input.
  * @throws CsvError
  */
-export const decode = defineFunction('baml.csv.decode', 'sync', ['source'], ['options'], {
-  typeParams: ['T'],
-}) as <T>(
-  source: string | Uint8Array,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => T[];
+export const decode = defineFunction("baml.csv.decode", "sync", ["source"], ["options"], { typeParams: ["T"] }) as <T>(source: string | Uint8Array, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => T[];
 
 /**
  * Eager typed parse of in-memory input.
  * @throws CsvError
  */
-export const decode_async = defineFunction('baml.csv.decode', 'async', ['source'], ['options'], {
-  typeParams: ['T'],
-}) as <T>(
-  source: string | Uint8Array,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => Promise<T[]>;
+export const decode_async = defineFunction("baml.csv.decode", "async", ["source"], ["options"], { typeParams: ["T"] }) as <T>(source: string | Uint8Array, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => Promise<T[]>;
 
 /**
  * Typed parse of an input with zero or one data record. Extra records
  * throw `CsvError { kind: TooManyRows }`.
  * @throws CsvError
  */
-export const decode_optional = defineFunction(
-  'baml.csv.decode_optional',
-  'sync',
-  ['source'],
-  ['options'],
-  { typeParams: ['T'] },
-) as <T>(
-  source: string | Uint8Array,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => T | null;
+export const decode_optional = defineFunction("baml.csv.decode_optional", "sync", ["source"], ["options"], { typeParams: ["T"] }) as <T>(source: string | Uint8Array, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => T | null;
 
 /**
  * Typed parse of an input with zero or one data record. Extra records
  * throw `CsvError { kind: TooManyRows }`.
  * @throws CsvError
  */
-export const decode_optional_async = defineFunction(
-  'baml.csv.decode_optional',
-  'async',
-  ['source'],
-  ['options'],
-  { typeParams: ['T'] },
-) as <T>(
-  source: string | Uint8Array,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => Promise<T | null>;
+export const decode_optional_async = defineFunction("baml.csv.decode_optional", "async", ["source"], ["options"], { typeParams: ["T"] }) as <T>(source: string | Uint8Array, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => Promise<T | null>;
 
 /**
  * Typed parse of an input with exactly one data record. Zero records throw
  * `CsvError { kind: NotFound }`; extra records throw
  * `CsvError { kind: TooManyRows }`.
- *
+ * 
  * Fits LLM output that was requested as exactly one row — with
  * `has_header: false` for a bare row (positional decode), or default
  * options when the model was asked to emit a header plus one data row.
  * @throws CsvError
  */
-export const decode_one = defineFunction('baml.csv.decode_one', 'sync', ['source'], ['options'], {
-  typeParams: ['T'],
-}) as <T>(
-  source: string | Uint8Array,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => T;
+export const decode_one = defineFunction("baml.csv.decode_one", "sync", ["source"], ["options"], { typeParams: ["T"] }) as <T>(source: string | Uint8Array, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => T;
 
 /**
  * Typed parse of an input with exactly one data record. Zero records throw
  * `CsvError { kind: NotFound }`; extra records throw
  * `CsvError { kind: TooManyRows }`.
- *
+ * 
  * Fits LLM output that was requested as exactly one row — with
  * `has_header: false` for a bare row (positional decode), or default
  * options when the model was asked to emit a header plus one data row.
  * @throws CsvError
  */
-export const decode_one_async = defineFunction(
-  'baml.csv.decode_one',
-  'async',
-  ['source'],
-  ['options'],
-  { typeParams: ['T'] },
-) as <T>(
-  source: string | Uint8Array,
-  $opts?: { options?: ReaderOptions | null | undefined } | undefined,
-) => Promise<T>;
+export const decode_one_async = defineFunction("baml.csv.decode_one", "async", ["source"], ["options"], { typeParams: ["T"] }) as <T>(source: string | Uint8Array, $opts?: { options?: ReaderOptions | null | undefined } | undefined) => Promise<T>;
 
 /**
  * A streaming writer to an open file handle. Emits from the file's current
  * cursor and never truncates; for fresh output files, use `create`.
  * @throws CsvError
  */
-export const writer = defineFunction('baml.csv.writer', 'sync', ['file'], ['options']) as (
-  file: baml.fs.File,
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => CsvWriter;
+export const writer = defineFunction("baml.csv.writer", "sync", ["file"], ["options"]) as (file: baml.fs.File, $opts?: { options?: WriterOptions | null | undefined } | undefined) => CsvWriter;
 
 /**
  * A streaming writer to an open file handle. Emits from the file's current
  * cursor and never truncates; for fresh output files, use `create`.
  * @throws CsvError
  */
-export const writer_async = defineFunction('baml.csv.writer', 'async', ['file'], ['options']) as (
-  file: baml.fs.File,
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => Promise<CsvWriter>;
+export const writer_async = defineFunction("baml.csv.writer", "async", ["file"], ["options"]) as (file: baml.fs.File, $opts?: { options?: WriterOptions | null | undefined } | undefined) => Promise<CsvWriter>;
 
 /**
  * Creates or truncates the file at `path` (auto-creating parent
@@ -1364,10 +1131,7 @@ export const writer_async = defineFunction('baml.csv.writer', 'async', ['file'],
  * @throws CsvError
  * @throws Io
  */
-export const create = defineFunction('baml.csv.create', 'sync', ['path'], ['options']) as (
-  path: string,
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => CsvWriter;
+export const create = defineFunction("baml.csv.create", "sync", ["path"], ["options"]) as (path: string, $opts?: { options?: WriterOptions | null | undefined } | undefined) => CsvWriter;
 
 /**
  * Creates or truncates the file at `path` (auto-creating parent
@@ -1375,26 +1139,19 @@ export const create = defineFunction('baml.csv.create', 'sync', ['path'], ['opti
  * @throws CsvError
  * @throws Io
  */
-export const create_async = defineFunction('baml.csv.create', 'async', ['path'], ['options']) as (
-  path: string,
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => Promise<CsvWriter>;
+export const create_async = defineFunction("baml.csv.create", "async", ["path"], ["options"]) as (path: string, $opts?: { options?: WriterOptions | null | undefined } | undefined) => Promise<CsvWriter>;
 
 /**
  * An in-memory writer; retrieve the accumulated CSV with `text()`.
  * @throws CsvError
  */
-export const buffer = defineFunction('baml.csv.buffer', 'sync', [], ['options']) as (
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => CsvWriter;
+export const buffer = defineFunction("baml.csv.buffer", "sync", [], ["options"]) as ($opts?: { options?: WriterOptions | null | undefined } | undefined) => CsvWriter;
 
 /**
  * An in-memory writer; retrieve the accumulated CSV with `text()`.
  * @throws CsvError
  */
-export const buffer_async = defineFunction('baml.csv.buffer', 'async', [], ['options']) as (
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => Promise<CsvWriter>;
+export const buffer_async = defineFunction("baml.csv.buffer", "async", [], ["options"]) as ($opts?: { options?: WriterOptions | null | undefined } | undefined) => Promise<CsvWriter>;
 
 /**
  * One-shot typed file write; returns bytes written, mirroring
@@ -1402,13 +1159,7 @@ export const buffer_async = defineFunction('baml.csv.buffer', 'async', [], ['opt
  * @throws CsvError
  * @throws Io
  */
-export const write = defineFunction('baml.csv.write', 'sync', ['path', 'rows'], ['options'], {
-  typeParams: ['T'],
-}) as <T>(
-  path: string,
-  rows: T[],
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => number;
+export const write = defineFunction("baml.csv.write", "sync", ["path", "rows"], ["options"], { typeParams: ["T"] }) as <T>(path: string, rows: T[], $opts?: { options?: WriterOptions | null | undefined } | undefined) => number;
 
 /**
  * One-shot typed file write; returns bytes written, mirroring
@@ -1416,367 +1167,176 @@ export const write = defineFunction('baml.csv.write', 'sync', ['path', 'rows'], 
  * @throws CsvError
  * @throws Io
  */
-export const write_async = defineFunction(
-  'baml.csv.write',
-  'async',
-  ['path', 'rows'],
-  ['options'],
-  { typeParams: ['T'] },
-) as <T>(
-  path: string,
-  rows: T[],
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => Promise<number>;
+export const write_async = defineFunction("baml.csv.write", "async", ["path", "rows"], ["options"], { typeParams: ["T"] }) as <T>(path: string, rows: T[], $opts?: { options?: WriterOptions | null | undefined } | undefined) => Promise<number>;
 
 /**
  * Serializes rows of `T` to CSV text.
  * @throws CsvError
  */
-export const stringify = defineFunction('baml.csv.stringify', 'sync', ['rows'], ['options'], {
-  typeParams: ['T'],
-}) as <T>(rows: T[], $opts?: { options?: WriterOptions | null | undefined } | undefined) => string;
+export const stringify = defineFunction("baml.csv.stringify", "sync", ["rows"], ["options"], { typeParams: ["T"] }) as <T>(rows: T[], $opts?: { options?: WriterOptions | null | undefined } | undefined) => string;
 
 /**
  * Serializes rows of `T` to CSV text.
  * @throws CsvError
  */
-export const stringify_async = defineFunction(
-  'baml.csv.stringify',
-  'async',
-  ['rows'],
-  ['options'],
-  { typeParams: ['T'] },
-) as <T>(
-  rows: T[],
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => Promise<string>;
+export const stringify_async = defineFunction("baml.csv.stringify", "async", ["rows"], ["options"], { typeParams: ["T"] }) as <T>(rows: T[], $opts?: { options?: WriterOptions | null | undefined } | undefined) => Promise<string>;
 
 /**
  * Serializes raw records to CSV text.
  * @throws CsvError
  */
-export const stringify_records = defineFunction(
-  'baml.csv.stringify_records',
-  'sync',
-  ['records'],
-  ['options'],
-) as (
-  records: (boolean | number | bigint | number | string | null)[][],
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => string;
+export const stringify_records = defineFunction("baml.csv.stringify_records", "sync", ["records"], ["options"]) as (records: ((boolean | number | bigint | number | string | null)[])[], $opts?: { options?: WriterOptions | null | undefined } | undefined) => string;
 
 /**
  * Serializes raw records to CSV text.
  * @throws CsvError
  */
-export const stringify_records_async = defineFunction(
-  'baml.csv.stringify_records',
-  'async',
-  ['records'],
-  ['options'],
-) as (
-  records: (boolean | number | bigint | number | string | null)[][],
-  $opts?: { options?: WriterOptions | null | undefined } | undefined,
-) => Promise<string>;
+export const stringify_records_async = defineFunction("baml.csv.stringify_records", "async", ["records"], ["options"]) as (records: ((boolean | number | bigint | number | string | null)[])[], $opts?: { options?: WriterOptions | null | undefined } | undefined) => Promise<string>;
 
 /**
  * Renders rows of `T` as a GitHub-style Markdown table for prompt context.
- *
+ * 
  * Headers come from `T`'s field names. `|` is escaped and embedded newlines
  * become spaces; non-finite floats render as `NaN` / `inf` (prompt text is
  * not meant to round-trip). Beyond `max_rows`, output is truncated with a
  * final `… (N more rows)` line.
  */
-export const to_markdown = defineFunction('baml.csv.to_markdown', 'sync', ['rows'], ['max_rows'], {
-  typeParams: ['T'],
-}) as <T>(rows: T[], $opts?: { max_rows?: number | undefined } | undefined) => string;
+export const to_markdown = defineFunction("baml.csv.to_markdown", "sync", ["rows"], ["max_rows"], { typeParams: ["T"] }) as <T>(rows: T[], $opts?: { max_rows?: number | undefined } | undefined) => string;
 
 /**
  * Renders rows of `T` as a GitHub-style Markdown table for prompt context.
- *
+ * 
  * Headers come from `T`'s field names. `|` is escaped and embedded newlines
  * become spaces; non-finite floats render as `NaN` / `inf` (prompt text is
  * not meant to round-trip). Beyond `max_rows`, output is truncated with a
  * final `… (N more rows)` line.
  */
-export const to_markdown_async = defineFunction(
-  'baml.csv.to_markdown',
-  'async',
-  ['rows'],
-  ['max_rows'],
-  { typeParams: ['T'] },
-) as <T>(rows: T[], $opts?: { max_rows?: number | undefined } | undefined) => Promise<string>;
+export const to_markdown_async = defineFunction("baml.csv.to_markdown", "async", ["rows"], ["max_rows"], { typeParams: ["T"] }) as <T>(rows: T[], $opts?: { max_rows?: number | undefined } | undefined) => Promise<string>;
 
 /**
  * Renders untyped records as a GitHub-style Markdown table.
  */
-export const to_markdown_records = defineFunction(
-  'baml.csv.to_markdown_records',
-  'sync',
-  ['records'],
-  ['headers', 'max_rows'],
-) as (
-  records: string[][],
-  $opts?: { headers?: string[] | null | undefined; max_rows?: number | undefined } | undefined,
-) => string;
+export const to_markdown_records = defineFunction("baml.csv.to_markdown_records", "sync", ["records"], ["headers", "max_rows"]) as (records: string[][], $opts?: { headers?: string[] | null | undefined; max_rows?: number | undefined } | undefined) => string;
 
 /**
  * Renders untyped records as a GitHub-style Markdown table.
  */
-export const to_markdown_records_async = defineFunction(
-  'baml.csv.to_markdown_records',
-  'async',
-  ['records'],
-  ['headers', 'max_rows'],
-) as (
-  records: string[][],
-  $opts?: { headers?: string[] | null | undefined; max_rows?: number | undefined } | undefined,
-) => Promise<string>;
+export const to_markdown_records_async = defineFunction("baml.csv.to_markdown_records", "async", ["records"], ["headers", "max_rows"]) as (records: string[][], $opts?: { headers?: string[] | null | undefined; max_rows?: number | undefined } | undefined) => Promise<string>;
 
 /**
  * @throws CsvError
  */
-export const _reader = defineFunction('baml.csv._reader', 'sync', [
-  'source',
-  'options',
-  'owns_file',
-]) as (
-  source: string | Uint8Array | baml.fs.File,
-  options: ReaderOptions | null,
-  owns_file: boolean,
-) => CsvReader;
+export const _reader = defineFunction("baml.csv._reader", "sync", ["source", "options", "owns_file"]) as (source: string | Uint8Array | baml.fs.File, options: ReaderOptions | null, owns_file: boolean) => CsvReader;
 
 /**
  * @throws CsvError
  */
-export const _reader_async = defineFunction('baml.csv._reader', 'async', [
-  'source',
-  'options',
-  'owns_file',
-]) as (
-  source: string | Uint8Array | baml.fs.File,
-  options: ReaderOptions | null,
-  owns_file: boolean,
-) => Promise<CsvReader>;
+export const _reader_async = defineFunction("baml.csv._reader", "async", ["source", "options", "owns_file"]) as (source: string | Uint8Array | baml.fs.File, options: ReaderOptions | null, owns_file: boolean) => Promise<CsvReader>;
 
 /**
  * @throws CsvError
  */
-export const _writer = defineFunction('baml.csv._writer', 'sync', [
-  'file',
-  'options',
-  'owns_file',
-]) as (file: baml.fs.File, options: WriterOptions | null, owns_file: boolean) => CsvWriter;
+export const _writer = defineFunction("baml.csv._writer", "sync", ["file", "options", "owns_file"]) as (file: baml.fs.File, options: WriterOptions | null, owns_file: boolean) => CsvWriter;
 
 /**
  * @throws CsvError
  */
-export const _writer_async = defineFunction('baml.csv._writer', 'async', [
-  'file',
-  'options',
-  'owns_file',
-]) as (file: baml.fs.File, options: WriterOptions | null, owns_file: boolean) => Promise<CsvWriter>;
+export const _writer_async = defineFunction("baml.csv._writer", "async", ["file", "options", "owns_file"]) as (file: baml.fs.File, options: WriterOptions | null, owns_file: boolean) => Promise<CsvWriter>;
 
 /**
  * @throws CsvError
  */
-export const _buffer = defineFunction('baml.csv._buffer', 'sync', ['options']) as (
-  options: WriterOptions | null,
-) => CsvWriter;
+export const _buffer = defineFunction("baml.csv._buffer", "sync", ["options"]) as (options: WriterOptions | null) => CsvWriter;
 
 /**
  * @throws CsvError
  */
-export const _buffer_async = defineFunction('baml.csv._buffer', 'async', ['options']) as (
-  options: WriterOptions | null,
-) => Promise<CsvWriter>;
+export const _buffer_async = defineFunction("baml.csv._buffer", "async", ["options"]) as (options: WriterOptions | null) => Promise<CsvWriter>;
 
 /**
  * @throws CsvError
  */
-export const _validate_columns = defineFunction(
-  'baml.csv._validate_columns',
-  'sync',
-  ['r'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(r: CsvReader) => null;
+export const _validate_columns = defineFunction("baml.csv._validate_columns", "sync", ["r"], undefined, { typeParams: ["T"] }) as <T>(r: CsvReader) => null;
 
 /**
  * @throws CsvError
  */
-export const _validate_columns_async = defineFunction(
-  'baml.csv._validate_columns',
-  'async',
-  ['r'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(r: CsvReader) => Promise<null>;
+export const _validate_columns_async = defineFunction("baml.csv._validate_columns", "async", ["r"], undefined, { typeParams: ["T"] }) as <T>(r: CsvReader) => Promise<null>;
 
 /**
  * @throws CsvError
  */
-export const _try_decode = defineFunction('baml.csv._try_decode', 'sync', ['rec', 'r'], undefined, {
-  typeParams: ['T'],
-}) as <T>(rec: CsvRecord, r: CsvReader) => T | CsvSkip;
+export const _try_decode = defineFunction("baml.csv._try_decode", "sync", ["rec", "r"], undefined, { typeParams: ["T"] }) as <T>(rec: CsvRecord, r: CsvReader) => T | CsvSkip;
 
 /**
  * @throws CsvError
  */
-export const _try_decode_async = defineFunction(
-  'baml.csv._try_decode',
-  'async',
-  ['rec', 'r'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(rec: CsvRecord, r: CsvReader) => Promise<T | CsvSkip>;
+export const _try_decode_async = defineFunction("baml.csv._try_decode", "async", ["rec", "r"], undefined, { typeParams: ["T"] }) as <T>(rec: CsvRecord, r: CsvReader) => Promise<T | CsvSkip>;
 
 /**
  * @throws CsvError
  */
-export const _decode_record = defineFunction(
-  'baml.csv._decode_record',
-  'sync',
-  ['rec'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(rec: CsvRecord) => T;
+export const _decode_record = defineFunction("baml.csv._decode_record", "sync", ["rec"], undefined, { typeParams: ["T"] }) as <T>(rec: CsvRecord) => T;
 
 /**
  * @throws CsvError
  */
-export const _decode_record_async = defineFunction(
-  'baml.csv._decode_record',
-  'async',
-  ['rec'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(rec: CsvRecord) => Promise<T>;
+export const _decode_record_async = defineFunction("baml.csv._decode_record", "async", ["rec"], undefined, { typeParams: ["T"] }) as <T>(rec: CsvRecord) => Promise<T>;
 
 /**
  * @throws CsvError
  */
-export const _cell_by_name = defineFunction(
-  'baml.csv._cell_by_name',
-  'sync',
-  ['rec', 'column'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(rec: CsvRecord, column: string) => T | null;
+export const _cell_by_name = defineFunction("baml.csv._cell_by_name", "sync", ["rec", "column"], undefined, { typeParams: ["T"] }) as <T>(rec: CsvRecord, column: string) => T | null;
 
 /**
  * @throws CsvError
  */
-export const _cell_by_name_async = defineFunction(
-  'baml.csv._cell_by_name',
-  'async',
-  ['rec', 'column'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(rec: CsvRecord, column: string) => Promise<T | null>;
+export const _cell_by_name_async = defineFunction("baml.csv._cell_by_name", "async", ["rec", "column"], undefined, { typeParams: ["T"] }) as <T>(rec: CsvRecord, column: string) => Promise<T | null>;
 
 /**
  * @throws CsvError
  */
-export const _cell_by_index = defineFunction(
-  'baml.csv._cell_by_index',
-  'sync',
-  ['rec', 'index'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(rec: CsvRecord, index: number) => T | null;
+export const _cell_by_index = defineFunction("baml.csv._cell_by_index", "sync", ["rec", "index"], undefined, { typeParams: ["T"] }) as <T>(rec: CsvRecord, index: number) => T | null;
 
 /**
  * @throws CsvError
  */
-export const _cell_by_index_async = defineFunction(
-  'baml.csv._cell_by_index',
-  'async',
-  ['rec', 'index'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(rec: CsvRecord, index: number) => Promise<T | null>;
+export const _cell_by_index_async = defineFunction("baml.csv._cell_by_index", "async", ["rec", "index"], undefined, { typeParams: ["T"] }) as <T>(rec: CsvRecord, index: number) => Promise<T | null>;
 
 /**
  * @throws CsvError
  */
-export const _encode_row = defineFunction('baml.csv._encode_row', 'sync', ['w', 'row'], undefined, {
-  typeParams: ['T'],
-}) as <T>(w: CsvWriter, row: T) => string;
+export const _encode_row = defineFunction("baml.csv._encode_row", "sync", ["w", "row"], undefined, { typeParams: ["T"] }) as <T>(w: CsvWriter, row: T) => string;
 
 /**
  * @throws CsvError
  */
-export const _encode_row_async = defineFunction(
-  'baml.csv._encode_row',
-  'async',
-  ['w', 'row'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(w: CsvWriter, row: T) => Promise<string>;
+export const _encode_row_async = defineFunction("baml.csv._encode_row", "async", ["w", "row"], undefined, { typeParams: ["T"] }) as <T>(w: CsvWriter, row: T) => Promise<string>;
 
 /**
  * @throws CsvError
  */
-export const _encode_rows = defineFunction(
-  'baml.csv._encode_rows',
-  'sync',
-  ['w', 'rows'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(w: CsvWriter, rows: T[]) => string;
+export const _encode_rows = defineFunction("baml.csv._encode_rows", "sync", ["w", "rows"], undefined, { typeParams: ["T"] }) as <T>(w: CsvWriter, rows: T[]) => string;
 
 /**
  * @throws CsvError
  */
-export const _encode_rows_async = defineFunction(
-  'baml.csv._encode_rows',
-  'async',
-  ['w', 'rows'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(w: CsvWriter, rows: T[]) => Promise<string>;
+export const _encode_rows_async = defineFunction("baml.csv._encode_rows", "async", ["w", "rows"], undefined, { typeParams: ["T"] }) as <T>(w: CsvWriter, rows: T[]) => Promise<string>;
 
-export const _to_markdown = defineFunction(
-  'baml.csv._to_markdown',
-  'sync',
-  ['rows', 'max_rows'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(rows: T[], max_rows: number) => string;
+export const _to_markdown = defineFunction("baml.csv._to_markdown", "sync", ["rows", "max_rows"], undefined, { typeParams: ["T"] }) as <T>(rows: T[], max_rows: number) => string;
 
-export const _to_markdown_async = defineFunction(
-  'baml.csv._to_markdown',
-  'async',
-  ['rows', 'max_rows'],
-  undefined,
-  { typeParams: ['T'] },
-) as <T>(rows: T[], max_rows: number) => Promise<string>;
+export const _to_markdown_async = defineFunction("baml.csv._to_markdown", "async", ["rows", "max_rows"], undefined, { typeParams: ["T"] }) as <T>(rows: T[], max_rows: number) => Promise<string>;
 
-export const _to_markdown_records = defineFunction('baml.csv._to_markdown_records', 'sync', [
-  'records',
-  'headers',
-  'max_rows',
-]) as (records: string[][], headers: string[] | null, max_rows: number) => string;
+export const _to_markdown_records = defineFunction("baml.csv._to_markdown_records", "sync", ["records", "headers", "max_rows"]) as (records: string[][], headers: string[] | null, max_rows: number) => string;
 
-export const _to_markdown_records_async = defineFunction('baml.csv._to_markdown_records', 'async', [
-  'records',
-  'headers',
-  'max_rows',
-]) as (records: string[][], headers: string[] | null, max_rows: number) => Promise<string>;
+export const _to_markdown_records_async = defineFunction("baml.csv._to_markdown_records", "async", ["records", "headers", "max_rows"]) as (records: string[][], headers: string[] | null, max_rows: number) => Promise<string>;
 
 /**
  * (internal) Construct a `CsvError` with no positional fields.
  */
-export const _error = defineFunction('baml.csv._error', 'sync', ['kind', 'message']) as (
-  kind: CsvErrorKind,
-  message: string,
-) => CsvError;
+export const _error = defineFunction("baml.csv._error", "sync", ["kind", "message"]) as (kind: CsvErrorKind, message: string) => CsvError;
 
 /**
  * (internal) Construct a `CsvError` with no positional fields.
  */
-export const _error_async = defineFunction('baml.csv._error', 'async', ['kind', 'message']) as (
-  kind: CsvErrorKind,
-  message: string,
-) => Promise<CsvError>;
+export const _error_async = defineFunction("baml.csv._error", "async", ["kind", "message"]) as (kind: CsvErrorKind, message: string) => Promise<CsvError>;

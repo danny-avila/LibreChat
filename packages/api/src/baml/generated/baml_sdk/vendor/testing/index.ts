@@ -16,7 +16,10 @@ import { defineFunction, defineInstanceFunction } from "@boundaryml/baml-bridge"
 export class FilterPat$stream {
   func_pat!: string | null;
   test_pat!: string | null;
-  constructor(init: { func_pat: string | null; test_pat: string | null }) {
+  constructor(init: {
+    func_pat: string | null;
+    test_pat: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -39,7 +42,10 @@ export class LeafCounts$stream {
 export class NameSplit$stream {
   head!: string | null;
   tail!: string | null;
-  constructor(init: { head: string | null; tail: string | null }) {
+  constructor(init: {
+    head: string | null;
+    tail: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -47,7 +53,10 @@ export class NameSplit$stream {
 export class SerializedTest$stream {
   type!: string | null;
   name!: string | null;
-  constructor(init: { type: string | null; name: string | null }) {
+  constructor(init: {
+    type: string | null;
+    name: string | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -82,7 +91,11 @@ export class TestRegistration$stream {
   name!: string | null;
   body!: unknown | null;
   runner!: unknown | null;
-  constructor(init: { name: string | null; body: unknown | null; runner: unknown | null }) {
+  constructor(init: {
+    name: string | null;
+    body: unknown | null;
+    runner: unknown | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -104,7 +117,11 @@ export class TestSetRegistration$stream {
   name!: string | null;
   collector!: unknown | null;
   runner!: unknown | null;
-  constructor(init: { name: string | null; collector: unknown | null; runner: unknown | null }) {
+  constructor(init: {
+    name: string | null;
+    collector: unknown | null;
+    runner: unknown | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -148,83 +165,29 @@ export class TestCollector {
   }) {
     Object.assign(this, init);
   }
-  static new = defineFunction('testing.TestCollector.new', 'sync', ['prefix']) as (
-    prefix: string,
-  ) => TestCollector;
-  static new_async = defineFunction('testing.TestCollector.new', 'async', ['prefix']) as (
-    prefix: string,
-  ) => Promise<TestCollector>;
-  register_test = defineInstanceFunction('testing.TestCollector.register_test', 'sync', [
-    'self',
-    'name',
-    'body',
-    'runner',
-  ]).bind(this) as (
-    name: string,
-    body: () => null,
-    runner: (arg0: () => TestReport) => () => TestReport | null,
-  ) => null;
-  register_test_async = defineInstanceFunction('testing.TestCollector.register_test', 'async', [
-    'self',
-    'name',
-    'body',
-    'runner',
-  ]).bind(this) as (
-    name: string,
-    body: () => null,
-    runner: (arg0: () => TestReport) => () => TestReport | null,
-  ) => Promise<null>;
-  register_test_set = defineInstanceFunction('testing.TestCollector.register_test_set', 'sync', [
-    'self',
-    'name',
-    'collector',
-    'runner',
-  ]).bind(this) as (
-    name: string,
-    collector: (arg0: TestCollector) => null,
-    runner: (arg0: TestSetChild[]) => TestSetReport | null,
-  ) => null;
-  register_test_set_async = defineInstanceFunction(
-    'testing.TestCollector.register_test_set',
-    'async',
-    ['self', 'name', 'collector', 'runner'],
-  ).bind(this) as (
-    name: string,
-    collector: (arg0: TestCollector) => null,
-    runner: (arg0: TestSetChild[]) => TestSetReport | null,
-  ) => Promise<null>;
-  find_testset = defineInstanceFunction('testing.TestCollector.find_testset', 'sync', [
-    'self',
-    'name',
-  ]).bind(this) as (name: string) => TestSetRegistration;
-  find_testset_async = defineInstanceFunction('testing.TestCollector.find_testset', 'async', [
-    'self',
-    'name',
-  ]).bind(this) as (name: string) => Promise<TestSetRegistration>;
-  find_test = defineInstanceFunction('testing.TestCollector.find_test', 'sync', [
-    'self',
-    'name',
-  ]).bind(this) as (name: string) => TestRegistration;
-  find_test_async = defineInstanceFunction('testing.TestCollector.find_test', 'async', [
-    'self',
-    'name',
-  ]).bind(this) as (name: string) => Promise<TestRegistration>;
+  static new = defineFunction("testing.TestCollector.new", "sync", ["prefix"]) as (prefix: string) => TestCollector;
+  static new_async = defineFunction("testing.TestCollector.new", "async", ["prefix"]) as (prefix: string) => Promise<TestCollector>;
+  register_test = defineInstanceFunction("testing.TestCollector.register_test", "sync", ["self", "name", "body", "runner"]).bind(this) as (name: string, body: () => null, runner: (arg0: () => TestReport) => () => TestReport | null) => null;
+  register_test_async = defineInstanceFunction("testing.TestCollector.register_test", "async", ["self", "name", "body", "runner"]).bind(this) as (name: string, body: () => null, runner: (arg0: () => TestReport) => () => TestReport | null) => Promise<null>;
+  register_test_set = defineInstanceFunction("testing.TestCollector.register_test_set", "sync", ["self", "name", "collector", "runner"]).bind(this) as (name: string, collector: (arg0: TestCollector) => null, runner: (arg0: TestSetChild[]) => TestSetReport | null) => null;
+  register_test_set_async = defineInstanceFunction("testing.TestCollector.register_test_set", "async", ["self", "name", "collector", "runner"]).bind(this) as (name: string, collector: (arg0: TestCollector) => null, runner: (arg0: TestSetChild[]) => TestSetReport | null) => Promise<null>;
+  find_testset = defineInstanceFunction("testing.TestCollector.find_testset", "sync", ["self", "name"]).bind(this) as (name: string) => TestSetRegistration;
+  find_testset_async = defineInstanceFunction("testing.TestCollector.find_testset", "async", ["self", "name"]).bind(this) as (name: string) => Promise<TestSetRegistration>;
+  find_test = defineInstanceFunction("testing.TestCollector.find_test", "sync", ["self", "name"]).bind(this) as (name: string) => TestRegistration;
+  find_test_async = defineInstanceFunction("testing.TestCollector.find_test", "async", ["self", "name"]).bind(this) as (name: string) => Promise<TestRegistration>;
 }
 
-export const $invoke_collector = defineFunction('testing.$invoke_collector', 'sync', [
-  'collector',
-  'c',
-]) as (collector: (arg0: TestCollector) => null, c: TestCollector) => null;
+export const $invoke_collector = defineFunction("testing.$invoke_collector", "sync", ["collector", "c"]) as (collector: (arg0: TestCollector) => null, c: TestCollector) => null;
 
-export const $invoke_collector_async = defineFunction('testing.$invoke_collector', 'async', [
-  'collector',
-  'c',
-]) as (collector: (arg0: TestCollector) => null, c: TestCollector) => Promise<null>;
+export const $invoke_collector_async = defineFunction("testing.$invoke_collector", "async", ["collector", "c"]) as (collector: (arg0: TestCollector) => null, c: TestCollector) => Promise<null>;
 
 export class SerializedTest {
   type!: string;
   name!: string;
-  constructor(init: { type: string; name: string }) {
+  constructor(init: {
+    type: string;
+    name: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -255,228 +218,83 @@ export class TestRegistry {
   }) {
     Object.assign(this, init);
   }
-  static new = defineFunction('testing.TestRegistry.new', 'sync', ['collector']) as (
-    collector: TestCollector,
-  ) => TestRegistry;
-  static new_async = defineFunction('testing.TestRegistry.new', 'async', ['collector']) as (
-    collector: TestCollector,
-  ) => Promise<TestRegistry>;
-  serialize = defineInstanceFunction('testing.TestRegistry.serialize', 'sync', ['self']).bind(
-    this,
-  ) as () => (SerializedTest | SerializedTestSet)[];
-  serialize_async = defineInstanceFunction('testing.TestRegistry.serialize', 'async', [
-    'self',
-  ]).bind(this) as () => Promise<(SerializedTest | SerializedTestSet)[]>;
-  run_test = defineInstanceFunction('testing.TestRegistry.run_test', 'sync', ['self', 'name']).bind(
-    this,
-  ) as (name: string) => TestReport;
-  run_test_async = defineInstanceFunction('testing.TestRegistry.run_test', 'async', [
-    'self',
-    'name',
-  ]).bind(this) as (name: string) => Promise<TestReport>;
-  run_testset = defineInstanceFunction('testing.TestRegistry.run_testset', 'sync', [
-    'self',
-    'name',
-  ]).bind(this) as (name: string) => TestSetReport;
-  run_testset_async = defineInstanceFunction('testing.TestRegistry.run_testset', 'async', [
-    'self',
-    'name',
-  ]).bind(this) as (name: string) => Promise<TestSetReport>;
-  run_all = defineInstanceFunction('testing.TestRegistry.run_all', 'sync', ['self']).bind(
-    this,
-  ) as () => TestSetReport;
-  run_all_async = defineInstanceFunction('testing.TestRegistry.run_all', 'async', ['self']).bind(
-    this,
-  ) as () => Promise<TestSetReport>;
-  run_selected = defineInstanceFunction('testing.TestRegistry.run_selected', 'sync', [
-    'self',
-    'names',
-  ]).bind(this) as (names: string[]) => TestSetReport;
-  run_selected_async = defineInstanceFunction('testing.TestRegistry.run_selected', 'async', [
-    'self',
-    'names',
-  ]).bind(this) as (names: string[]) => Promise<TestSetReport>;
-  run_filtered = defineInstanceFunction('testing.TestRegistry.run_filtered', 'sync', [
-    'self',
-    'include',
-    'exclude',
-  ]).bind(this) as (include: string[], exclude: string[]) => FlatTestReport;
-  run_filtered_async = defineInstanceFunction('testing.TestRegistry.run_filtered', 'async', [
-    'self',
-    'include',
-    'exclude',
-  ]).bind(this) as (include: string[], exclude: string[]) => Promise<FlatTestReport>;
-  list_filtered = defineInstanceFunction('testing.TestRegistry.list_filtered', 'sync', [
-    'self',
-    'include',
-    'exclude',
-  ]).bind(this) as (include: string[], exclude: string[]) => string[];
-  list_filtered_async = defineInstanceFunction('testing.TestRegistry.list_filtered', 'async', [
-    'self',
-    'include',
-    'exclude',
-  ]).bind(this) as (include: string[], exclude: string[]) => Promise<string[]>;
-  expand_set = defineInstanceFunction('testing.TestRegistry.expand_set', 'sync', [
-    'self',
-    'name',
-  ]).bind(this) as (name: string) => (SerializedTest | SerializedTestSet)[];
-  expand_set_async = defineInstanceFunction('testing.TestRegistry.expand_set', 'async', [
-    'self',
-    'name',
-  ]).bind(this) as (name: string) => Promise<(SerializedTest | SerializedTestSet)[]>;
-  expand_testset_registry = defineInstanceFunction(
-    'testing.TestRegistry.expand_testset_registry',
-    'sync',
-    ['self', 'ts'],
-  ).bind(this) as (ts: TestSetRegistration) => TestRegistry;
-  expand_testset_registry_async = defineInstanceFunction(
-    'testing.TestRegistry.expand_testset_registry',
-    'async',
-    ['self', 'ts'],
-  ).bind(this) as (ts: TestSetRegistration) => Promise<TestRegistry>;
+  static new = defineFunction("testing.TestRegistry.new", "sync", ["collector"]) as (collector: TestCollector) => TestRegistry;
+  static new_async = defineFunction("testing.TestRegistry.new", "async", ["collector"]) as (collector: TestCollector) => Promise<TestRegistry>;
+  serialize = defineInstanceFunction("testing.TestRegistry.serialize", "sync", ["self"]).bind(this) as () => (SerializedTest | SerializedTestSet)[];
+  serialize_async = defineInstanceFunction("testing.TestRegistry.serialize", "async", ["self"]).bind(this) as () => Promise<(SerializedTest | SerializedTestSet)[]>;
+  run_test = defineInstanceFunction("testing.TestRegistry.run_test", "sync", ["self", "name"]).bind(this) as (name: string) => TestReport;
+  run_test_async = defineInstanceFunction("testing.TestRegistry.run_test", "async", ["self", "name"]).bind(this) as (name: string) => Promise<TestReport>;
+  run_testset = defineInstanceFunction("testing.TestRegistry.run_testset", "sync", ["self", "name"]).bind(this) as (name: string) => TestSetReport;
+  run_testset_async = defineInstanceFunction("testing.TestRegistry.run_testset", "async", ["self", "name"]).bind(this) as (name: string) => Promise<TestSetReport>;
+  run_all = defineInstanceFunction("testing.TestRegistry.run_all", "sync", ["self"]).bind(this) as () => TestSetReport;
+  run_all_async = defineInstanceFunction("testing.TestRegistry.run_all", "async", ["self"]).bind(this) as () => Promise<TestSetReport>;
+  run_selected = defineInstanceFunction("testing.TestRegistry.run_selected", "sync", ["self", "names"]).bind(this) as (names: string[]) => TestSetReport;
+  run_selected_async = defineInstanceFunction("testing.TestRegistry.run_selected", "async", ["self", "names"]).bind(this) as (names: string[]) => Promise<TestSetReport>;
+  run_filtered = defineInstanceFunction("testing.TestRegistry.run_filtered", "sync", ["self", "include", "exclude"]).bind(this) as (include: string[], exclude: string[]) => FlatTestReport;
+  run_filtered_async = defineInstanceFunction("testing.TestRegistry.run_filtered", "async", ["self", "include", "exclude"]).bind(this) as (include: string[], exclude: string[]) => Promise<FlatTestReport>;
+  list_filtered = defineInstanceFunction("testing.TestRegistry.list_filtered", "sync", ["self", "include", "exclude"]).bind(this) as (include: string[], exclude: string[]) => string[];
+  list_filtered_async = defineInstanceFunction("testing.TestRegistry.list_filtered", "async", ["self", "include", "exclude"]).bind(this) as (include: string[], exclude: string[]) => Promise<string[]>;
+  expand_set = defineInstanceFunction("testing.TestRegistry.expand_set", "sync", ["self", "name"]).bind(this) as (name: string) => (SerializedTest | SerializedTestSet)[];
+  expand_set_async = defineInstanceFunction("testing.TestRegistry.expand_set", "async", ["self", "name"]).bind(this) as (name: string) => Promise<(SerializedTest | SerializedTestSet)[]>;
+  expand_testset_registry = defineInstanceFunction("testing.TestRegistry.expand_testset_registry", "sync", ["self", "ts"]).bind(this) as (ts: TestSetRegistration) => TestRegistry;
+  expand_testset_registry_async = defineInstanceFunction("testing.TestRegistry.expand_testset_registry", "async", ["self", "ts"]).bind(this) as (ts: TestSetRegistration) => Promise<TestRegistry>;
 }
 
-export const testset_children = defineFunction('testing.testset_children', 'sync', [
-  'registry',
-]) as (registry: TestRegistry) => TestSetChild[];
+export const testset_children = defineFunction("testing.testset_children", "sync", ["registry"]) as (registry: TestRegistry) => TestSetChild[];
 
-export const testset_children_async = defineFunction('testing.testset_children', 'async', [
-  'registry',
-]) as (registry: TestRegistry) => Promise<TestSetChild[]>;
+export const testset_children_async = defineFunction("testing.testset_children", "async", ["registry"]) as (registry: TestRegistry) => Promise<TestSetChild[]>;
 
-export const testset_children_selected = defineFunction(
-  'testing.testset_children_selected',
-  'sync',
-  ['registry', 'names'],
-) as (registry: TestRegistry, names: string[]) => TestSetChild[];
+export const testset_children_selected = defineFunction("testing.testset_children_selected", "sync", ["registry", "names"]) as (registry: TestRegistry, names: string[]) => TestSetChild[];
 
-export const testset_children_selected_async = defineFunction(
-  'testing.testset_children_selected',
-  'async',
-  ['registry', 'names'],
-) as (registry: TestRegistry, names: string[]) => Promise<TestSetChild[]>;
+export const testset_children_selected_async = defineFunction("testing.testset_children_selected", "async", ["registry", "names"]) as (registry: TestRegistry, names: string[]) => Promise<TestSetChild[]>;
 
-export const test_child = defineFunction('testing.test_child', 'sync', [
-  'name',
-  'body',
-  'runner',
-]) as (
-  name: string,
-  body: () => null,
-  runner: (arg0: () => TestReport) => () => TestReport | null,
-) => TestSetChild;
+export const test_child = defineFunction("testing.test_child", "sync", ["name", "body", "runner"]) as (name: string, body: () => null, runner: (arg0: () => TestReport) => () => TestReport | null) => TestSetChild;
 
-export const test_child_async = defineFunction('testing.test_child', 'async', [
-  'name',
-  'body',
-  'runner',
-]) as (
-  name: string,
-  body: () => null,
-  runner: (arg0: () => TestReport) => () => TestReport | null,
-) => Promise<TestSetChild>;
+export const test_child_async = defineFunction("testing.test_child", "async", ["name", "body", "runner"]) as (name: string, body: () => null, runner: (arg0: () => TestReport) => () => TestReport | null) => Promise<TestSetChild>;
 
-export const testset_child = defineFunction('testing.testset_child', 'sync', [
-  'registry',
-  'ts',
-]) as (registry: TestRegistry, ts: TestSetRegistration) => TestSetChild;
+export const testset_child = defineFunction("testing.testset_child", "sync", ["registry", "ts"]) as (registry: TestRegistry, ts: TestSetRegistration) => TestSetChild;
 
-export const testset_child_async = defineFunction('testing.testset_child', 'async', [
-  'registry',
-  'ts',
-]) as (registry: TestRegistry, ts: TestSetRegistration) => Promise<TestSetChild>;
+export const testset_child_async = defineFunction("testing.testset_child", "async", ["registry", "ts"]) as (registry: TestRegistry, ts: TestSetRegistration) => Promise<TestSetChild>;
 
-export const testset_child_selected = defineFunction('testing.testset_child_selected', 'sync', [
-  'registry',
-  'ts',
-  'names',
-]) as (registry: TestRegistry, ts: TestSetRegistration, names: string[]) => TestSetChild;
+export const testset_child_selected = defineFunction("testing.testset_child_selected", "sync", ["registry", "ts", "names"]) as (registry: TestRegistry, ts: TestSetRegistration, names: string[]) => TestSetChild;
 
-export const testset_child_selected_async = defineFunction(
-  'testing.testset_child_selected',
-  'async',
-  ['registry', 'ts', 'names'],
-) as (registry: TestRegistry, ts: TestSetRegistration, names: string[]) => Promise<TestSetChild>;
+export const testset_child_selected_async = defineFunction("testing.testset_child_selected", "async", ["registry", "ts", "names"]) as (registry: TestRegistry, ts: TestSetRegistration, names: string[]) => Promise<TestSetChild>;
 
-export const _name_selected = defineFunction('testing._name_selected', 'sync', [
-  'name',
-  'names',
-]) as (name: string, names: string[]) => boolean;
+export const _name_selected = defineFunction("testing._name_selected", "sync", ["name", "names"]) as (name: string, names: string[]) => boolean;
 
-export const _name_selected_async = defineFunction('testing._name_selected', 'async', [
-  'name',
-  'names',
-]) as (name: string, names: string[]) => Promise<boolean>;
+export const _name_selected_async = defineFunction("testing._name_selected", "async", ["name", "names"]) as (name: string, names: string[]) => Promise<boolean>;
 
-export const _has_selected_descendant = defineFunction('testing._has_selected_descendant', 'sync', [
-  'prefix',
-  'names',
-]) as (prefix: string, names: string[]) => boolean;
+export const _has_selected_descendant = defineFunction("testing._has_selected_descendant", "sync", ["prefix", "names"]) as (prefix: string, names: string[]) => boolean;
 
-export const _has_selected_descendant_async = defineFunction(
-  'testing._has_selected_descendant',
-  'async',
-  ['prefix', 'names'],
-) as (prefix: string, names: string[]) => Promise<boolean>;
+export const _has_selected_descendant_async = defineFunction("testing._has_selected_descendant", "async", ["prefix", "names"]) as (prefix: string, names: string[]) => Promise<boolean>;
 
-export const aggregate_reports = defineFunction('testing.aggregate_reports', 'sync', [
-  'named_results',
-]) as (named_results: NamedChildReport[]) => TestSetReport;
+export const aggregate_reports = defineFunction("testing.aggregate_reports", "sync", ["named_results"]) as (named_results: NamedChildReport[]) => TestSetReport;
 
-export const aggregate_reports_async = defineFunction('testing.aggregate_reports', 'async', [
-  'named_results',
-]) as (named_results: NamedChildReport[]) => Promise<TestSetReport>;
+export const aggregate_reports_async = defineFunction("testing.aggregate_reports", "async", ["named_results"]) as (named_results: NamedChildReport[]) => Promise<TestSetReport>;
 
-export const run_children_parallel = defineFunction('testing.run_children_parallel', 'sync', [
-  'children',
-]) as (children: TestSetChild[]) => TestSetReport;
+export const run_children_parallel = defineFunction("testing.run_children_parallel", "sync", ["children"]) as (children: TestSetChild[]) => TestSetReport;
 
-export const run_children_parallel_async = defineFunction(
-  'testing.run_children_parallel',
-  'async',
-  ['children'],
-) as (children: TestSetChild[]) => Promise<TestSetReport>;
+export const run_children_parallel_async = defineFunction("testing.run_children_parallel", "async", ["children"]) as (children: TestSetChild[]) => Promise<TestSetReport>;
 
-export const run_test = defineFunction('testing.run_test', 'sync', ['body', 'runner']) as (
-  body: () => null,
-  runner: (arg0: () => TestReport) => () => TestReport | null,
-) => TestReport;
+export const run_test = defineFunction("testing.run_test", "sync", ["body", "runner"]) as (body: () => null, runner: (arg0: () => TestReport) => () => TestReport | null) => TestReport;
 
-export const run_test_async = defineFunction('testing.run_test', 'async', ['body', 'runner']) as (
-  body: () => null,
-  runner: (arg0: () => TestReport) => () => TestReport | null,
-) => Promise<TestReport>;
+export const run_test_async = defineFunction("testing.run_test", "async", ["body", "runner"]) as (body: () => null, runner: (arg0: () => TestReport) => () => TestReport | null) => Promise<TestReport>;
 
-export const run_testset = defineFunction('testing.run_testset', 'sync', [
-  'children',
-  'runner',
-]) as (
-  children: TestSetChild[],
-  runner: (arg0: TestSetChild[]) => TestSetReport | null,
-) => TestSetReport;
+export const run_testset = defineFunction("testing.run_testset", "sync", ["children", "runner"]) as (children: TestSetChild[], runner: (arg0: TestSetChild[]) => TestSetReport | null) => TestSetReport;
 
-export const run_testset_async = defineFunction('testing.run_testset', 'async', [
-  'children',
-  'runner',
-]) as (
-  children: TestSetChild[],
-  runner: (arg0: TestSetChild[]) => TestSetReport | null,
-) => Promise<TestSetReport>;
+export const run_testset_async = defineFunction("testing.run_testset", "async", ["children", "runner"]) as (children: TestSetChild[], runner: (arg0: TestSetChild[]) => TestSetReport | null) => Promise<TestSetReport>;
 
-export const expansion_error_report = defineFunction('testing.expansion_error_report', 'sync', [
-  'name',
-]) as (name: string) => TestSetReport;
+export const expansion_error_report = defineFunction("testing.expansion_error_report", "sync", ["name"]) as (name: string) => TestSetReport;
 
-export const expansion_error_report_async = defineFunction(
-  'testing.expansion_error_report',
-  'async',
-  ['name'],
-) as (name: string) => Promise<TestSetReport>;
+export const expansion_error_report_async = defineFunction("testing.expansion_error_report", "async", ["name"]) as (name: string) => Promise<TestSetReport>;
 
 export class FilterPat {
   func_pat!: string;
   test_pat!: string;
-  constructor(init: { func_pat: string; test_pat: string }) {
+  constructor(init: {
+    func_pat: string;
+    test_pat: string;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -484,212 +302,108 @@ export class FilterPat {
 export class NameSplit {
   head!: string;
   tail!: string;
-  constructor(init: { head: string; tail: string }) {
+  constructor(init: {
+    head: string;
+    tail: string;
+  }) {
     Object.assign(this, init);
   }
 }
 
-export const split_top = defineFunction('testing.split_top', 'sync', ['path']) as (
-  path: string,
-) => NameSplit;
+export const split_top = defineFunction("testing.split_top", "sync", ["path"]) as (path: string) => NameSplit;
 
-export const split_top_async = defineFunction('testing.split_top', 'async', ['path']) as (
-  path: string,
-) => Promise<NameSplit>;
+export const split_top_async = defineFunction("testing.split_top", "async", ["path"]) as (path: string) => Promise<NameSplit>;
 
-export const parse_filter_patterns = defineFunction('testing.parse_filter_patterns', 'sync', [
-  'raw',
-]) as (raw: string[]) => FilterPat[];
+export const parse_filter_patterns = defineFunction("testing.parse_filter_patterns", "sync", ["raw"]) as (raw: string[]) => FilterPat[];
 
-export const parse_filter_patterns_async = defineFunction(
-  'testing.parse_filter_patterns',
-  'async',
-  ['raw'],
-) as (raw: string[]) => Promise<FilterPat[]>;
+export const parse_filter_patterns_async = defineFunction("testing.parse_filter_patterns", "async", ["raw"]) as (raw: string[]) => Promise<FilterPat[]>;
 
-export const glob_match = defineFunction('testing.glob_match', 'sync', ['subject', 'pattern']) as (
-  subject: string,
-  pattern: string,
-) => boolean;
+export const glob_match = defineFunction("testing.glob_match", "sync", ["subject", "pattern"]) as (subject: string, pattern: string) => boolean;
 
-export const glob_match_async = defineFunction('testing.glob_match', 'async', [
-  'subject',
-  'pattern',
-]) as (subject: string, pattern: string) => Promise<boolean>;
+export const glob_match_async = defineFunction("testing.glob_match", "async", ["subject", "pattern"]) as (subject: string, pattern: string) => Promise<boolean>;
 
-export const filter_match = defineFunction('testing.filter_match', 'sync', ['expr', 'subject']) as (
-  expr: string,
-  subject: string,
-) => boolean;
+export const filter_match = defineFunction("testing.filter_match", "sync", ["expr", "subject"]) as (expr: string, subject: string) => boolean;
 
-export const filter_match_async = defineFunction('testing.filter_match', 'async', [
-  'expr',
-  'subject',
-]) as (expr: string, subject: string) => Promise<boolean>;
+export const filter_match_async = defineFunction("testing.filter_match", "async", ["expr", "subject"]) as (expr: string, subject: string) => Promise<boolean>;
 
-export const any_pattern_matches = defineFunction('testing.any_pattern_matches', 'sync', [
-  'pats',
-  'function_name',
-  'test_name',
-]) as (pats: FilterPat[], function_name: string, test_name: string) => boolean;
+export const any_pattern_matches = defineFunction("testing.any_pattern_matches", "sync", ["pats", "function_name", "test_name"]) as (pats: FilterPat[], function_name: string, test_name: string) => boolean;
 
-export const any_pattern_matches_async = defineFunction('testing.any_pattern_matches', 'async', [
-  'pats',
-  'function_name',
-  'test_name',
-]) as (pats: FilterPat[], function_name: string, test_name: string) => Promise<boolean>;
+export const any_pattern_matches_async = defineFunction("testing.any_pattern_matches", "async", ["pats", "function_name", "test_name"]) as (pats: FilterPat[], function_name: string, test_name: string) => Promise<boolean>;
 
-export const leaf_selected = defineFunction('testing.leaf_selected', 'sync', [
-  'name',
-  'include',
-  'exclude',
-]) as (name: string, include: FilterPat[], exclude: FilterPat[]) => boolean;
+export const leaf_selected = defineFunction("testing.leaf_selected", "sync", ["name", "include", "exclude"]) as (name: string, include: FilterPat[], exclude: FilterPat[]) => boolean;
 
-export const leaf_selected_async = defineFunction('testing.leaf_selected', 'async', [
-  'name',
-  'include',
-  'exclude',
-]) as (name: string, include: FilterPat[], exclude: FilterPat[]) => Promise<boolean>;
+export const leaf_selected_async = defineFunction("testing.leaf_selected", "async", ["name", "include", "exclude"]) as (name: string, include: FilterPat[], exclude: FilterPat[]) => Promise<boolean>;
 
-export const select_names = defineFunction('testing.select_names', 'sync', [
-  'registry',
-  'include',
-  'exclude',
-]) as (registry: TestRegistry, include: string[], exclude: string[]) => string[];
+export const select_names = defineFunction("testing.select_names", "sync", ["registry", "include", "exclude"]) as (registry: TestRegistry, include: string[], exclude: string[]) => string[];
 
-export const select_names_async = defineFunction('testing.select_names', 'async', [
-  'registry',
-  'include',
-  'exclude',
-]) as (registry: TestRegistry, include: string[], exclude: string[]) => Promise<string[]>;
+export const select_names_async = defineFunction("testing.select_names", "async", ["registry", "include", "exclude"]) as (registry: TestRegistry, include: string[], exclude: string[]) => Promise<string[]>;
 
-export const collect_leaf_names = defineFunction('testing.collect_leaf_names', 'sync', [
-  'registry',
-]) as (registry: TestRegistry) => string[];
+export const collect_leaf_names = defineFunction("testing.collect_leaf_names", "sync", ["registry"]) as (registry: TestRegistry) => string[];
 
-export const collect_leaf_names_async = defineFunction('testing.collect_leaf_names', 'async', [
-  'registry',
-]) as (registry: TestRegistry) => Promise<string[]>;
+export const collect_leaf_names_async = defineFunction("testing.collect_leaf_names", "async", ["registry"]) as (registry: TestRegistry) => Promise<string[]>;
 
-export const collect_subtree_names = defineFunction('testing.collect_subtree_names', 'sync', [
-  'registry',
-  'ts',
-]) as (registry: TestRegistry, ts: TestSetRegistration) => string[];
+export const collect_subtree_names = defineFunction("testing.collect_subtree_names", "sync", ["registry", "ts"]) as (registry: TestRegistry, ts: TestSetRegistration) => string[];
 
-export const collect_subtree_names_async = defineFunction(
-  'testing.collect_subtree_names',
-  'async',
-  ['registry', 'ts'],
-) as (registry: TestRegistry, ts: TestSetRegistration) => Promise<string[]>;
+export const collect_subtree_names_async = defineFunction("testing.collect_subtree_names", "async", ["registry", "ts"]) as (registry: TestRegistry, ts: TestSetRegistration) => Promise<string[]>;
 
 export class LeafCounts {
   passed!: number;
   failed!: number;
   tolerated!: number;
   total!: number;
-  constructor(init: { passed: number; failed: number; tolerated: number; total: number }) {
+  constructor(init: {
+    passed: number;
+    failed: number;
+    tolerated: number;
+    total: number;
+  }) {
     Object.assign(this, init);
   }
 }
 
-export const count_leaves = defineFunction('testing.count_leaves', 'sync', [
-  'results',
-  'tolerated_by_parent',
-]) as (results: (TestReport | TestSetReport)[], tolerated_by_parent: boolean) => LeafCounts;
+export const count_leaves = defineFunction("testing.count_leaves", "sync", ["results", "tolerated_by_parent"]) as (results: (TestReport | TestSetReport)[], tolerated_by_parent: boolean) => LeafCounts;
 
-export const count_leaves_async = defineFunction('testing.count_leaves', 'async', [
-  'results',
-  'tolerated_by_parent',
-]) as (
-  results: (TestReport | TestSetReport)[],
-  tolerated_by_parent: boolean,
-) => Promise<LeafCounts>;
+export const count_leaves_async = defineFunction("testing.count_leaves", "async", ["results", "tolerated_by_parent"]) as (results: (TestReport | TestSetReport)[], tolerated_by_parent: boolean) => Promise<LeafCounts>;
 
-export const flatten_with_tolerated = defineFunction('testing.flatten_with_tolerated', 'sync', [
-  'report',
-]) as (report: TestSetReport) => FlatTestReport;
+export const flatten_with_tolerated = defineFunction("testing.flatten_with_tolerated", "sync", ["report"]) as (report: TestSetReport) => FlatTestReport;
 
-export const flatten_with_tolerated_async = defineFunction(
-  'testing.flatten_with_tolerated',
-  'async',
-  ['report'],
-) as (report: TestSetReport) => Promise<FlatTestReport>;
+export const flatten_with_tolerated_async = defineFunction("testing.flatten_with_tolerated", "async", ["report"]) as (report: TestSetReport) => Promise<FlatTestReport>;
 
-export const collect_leaf_messages = defineFunction('testing.collect_leaf_messages', 'sync', [
-  'results',
-  'out',
-]) as (results: (TestReport | TestSetReport)[], out: string[]) => null;
+export const collect_leaf_messages = defineFunction("testing.collect_leaf_messages", "sync", ["results", "out"]) as (results: (TestReport | TestSetReport)[], out: string[]) => null;
 
-export const collect_leaf_messages_async = defineFunction(
-  'testing.collect_leaf_messages',
-  'async',
-  ['results', 'out'],
-) as (results: (TestReport | TestSetReport)[], out: string[]) => Promise<null>;
+export const collect_leaf_messages_async = defineFunction("testing.collect_leaf_messages", "async", ["results", "out"]) as (results: (TestReport | TestSetReport)[], out: string[]) => Promise<null>;
 
-export const Quorum = defineFunction('testing.Quorum', 'sync', ['n', 'm']) as (
-  n: number,
-  m: number,
-) => (arg0: () => TestReport) => () => TestReport;
+export const Quorum = defineFunction("testing.Quorum", "sync", ["n", "m"]) as (n: number, m: number) => (arg0: () => TestReport) => () => TestReport;
 
-export const Quorum_async = defineFunction('testing.Quorum', 'async', ['n', 'm']) as (
-  n: number,
-  m: number,
-) => Promise<(arg0: () => TestReport) => () => TestReport>;
+export const Quorum_async = defineFunction("testing.Quorum", "async", ["n", "m"]) as (n: number, m: number) => Promise<(arg0: () => TestReport) => () => TestReport>;
 
-export const Retry = defineFunction('testing.Retry', 'sync', ['max_attempts']) as (
-  max_attempts: number,
-) => (arg0: () => TestReport) => () => TestReport;
+export const Retry = defineFunction("testing.Retry", "sync", ["max_attempts"]) as (max_attempts: number) => (arg0: () => TestReport) => () => TestReport;
 
-export const Retry_async = defineFunction('testing.Retry', 'async', ['max_attempts']) as (
-  max_attempts: number,
-) => Promise<(arg0: () => TestReport) => () => TestReport>;
+export const Retry_async = defineFunction("testing.Retry", "async", ["max_attempts"]) as (max_attempts: number) => Promise<(arg0: () => TestReport) => () => TestReport>;
 
-export const PassRate = defineFunction('testing.PassRate', 'sync', ['threshold']) as (
-  threshold: number,
-) => (arg0: TestSetChild[]) => TestSetReport;
+export const PassRate = defineFunction("testing.PassRate", "sync", ["threshold"]) as (threshold: number) => (arg0: TestSetChild[]) => TestSetReport;
 
-export const PassRate_async = defineFunction('testing.PassRate', 'async', ['threshold']) as (
-  threshold: number,
-) => Promise<(arg0: TestSetChild[]) => TestSetReport>;
+export const PassRate_async = defineFunction("testing.PassRate", "async", ["threshold"]) as (threshold: number) => Promise<(arg0: TestSetChild[]) => TestSetReport>;
 
-export const Sequential = defineFunction('testing.Sequential', 'sync', []) as () => (
-  arg0: TestSetChild[],
-) => TestSetReport;
+export const Sequential = defineFunction("testing.Sequential", "sync", []) as () => (arg0: TestSetChild[]) => TestSetReport;
 
-export const Sequential_async = defineFunction('testing.Sequential', 'async', []) as () => Promise<
-  (arg0: TestSetChild[]) => TestSetReport
->;
+export const Sequential_async = defineFunction("testing.Sequential", "async", []) as () => Promise<(arg0: TestSetChild[]) => TestSetReport>;
 
-export const FailFast = defineFunction('testing.FailFast', 'sync', []) as () => (
-  arg0: TestSetChild[],
-) => TestSetReport;
+export const FailFast = defineFunction("testing.FailFast", "sync", []) as () => (arg0: TestSetChild[]) => TestSetReport;
 
-export const FailFast_async = defineFunction('testing.FailFast', 'async', []) as () => Promise<
-  (arg0: TestSetChild[]) => TestSetReport
->;
+export const FailFast_async = defineFunction("testing.FailFast", "async", []) as () => Promise<(arg0: TestSetChild[]) => TestSetReport>;
 
-export const run_children_sequential = defineFunction('testing.run_children_sequential', 'sync', [
-  'children',
-  'fail_fast',
-]) as (children: TestSetChild[], fail_fast: boolean) => TestSetReport;
+export const run_children_sequential = defineFunction("testing.run_children_sequential", "sync", ["children", "fail_fast"]) as (children: TestSetChild[], fail_fast: boolean) => TestSetReport;
 
-export const run_children_sequential_async = defineFunction(
-  'testing.run_children_sequential',
-  'async',
-  ['children', 'fail_fast'],
-) as (children: TestSetChild[], fail_fast: boolean) => Promise<TestSetReport>;
+export const run_children_sequential_async = defineFunction("testing.run_children_sequential", "async", ["children", "fail_fast"]) as (children: TestSetChild[], fail_fast: boolean) => Promise<TestSetReport>;
 
-export const _int_to_float = defineFunction('testing._int_to_float', 'sync', ['value']) as (
-  value: number,
-) => number;
+export const _int_to_float = defineFunction("testing._int_to_float", "sync", ["value"]) as (value: number) => number;
 
-export const _int_to_float_async = defineFunction('testing._int_to_float', 'async', ['value']) as (
-  value: number,
-) => Promise<number>;
+export const _int_to_float_async = defineFunction("testing._int_to_float", "async", ["value"]) as (value: number) => Promise<number>;
 
 /**
  * Aggregated, already-flattened report returned to the CLI driver.
- *
+ * 
  * `outcome` is the aggregate verdict (honors testset runners). Counts are
  * leaf-level: `failed` = hard failures, `tolerated` = failing leaves whose
  * enclosing testset runner still passed (e.g. under `PassRate`), `passed` and
@@ -697,7 +411,7 @@ export const _int_to_float_async = defineFunction('testing._int_to_float', 'asyn
  * every failing run's message.
  */
 export class FlatTestReport$stream {
-  outcome!: 'pass' | 'fail' | 'error' | null;
+  outcome!: "pass" | "fail" | "error" | null;
   passed!: number | null;
   failed!: number | null;
   tolerated!: number | null;
@@ -705,7 +419,7 @@ export class FlatTestReport$stream {
   failed_names!: string[];
   messages!: string[];
   constructor(init: {
-    outcome: 'pass' | 'fail' | 'error' | null;
+    outcome: "pass" | "fail" | "error" | null;
     passed: number | null;
     failed: number | null;
     tolerated: number | null;
@@ -735,11 +449,11 @@ export class NamedChildReport$stream {
  * The result of a single test-function execution.
  */
 export class RunReport$stream {
-  outcome!: 'pass' | 'fail' | 'error' | null;
+  outcome!: "pass" | "fail" | "error" | null;
   duration_ms!: number | null;
   message!: string | null;
   constructor(init: {
-    outcome: 'pass' | 'fail' | 'error' | null;
+    outcome: "pass" | "fail" | "error" | null;
     duration_ms: number | null;
     message: string | null;
   }) {
@@ -751,9 +465,12 @@ export class RunReport$stream {
  * The aggregated result of all runs for a single `test` block.
  */
 export class TestReport$stream {
-  outcome!: 'pass' | 'fail' | 'error' | null;
+  outcome!: "pass" | "fail" | "error" | null;
   runs!: RunReport$stream[];
-  constructor(init: { outcome: 'pass' | 'fail' | 'error' | null; runs: RunReport$stream[] }) {
+  constructor(init: {
+    outcome: "pass" | "fail" | "error" | null;
+    runs: RunReport$stream[];
+  }) {
     Object.assign(this, init);
   }
 }
@@ -764,7 +481,10 @@ export class TestReport$stream {
 export class TestSetChild$stream {
   name!: string | null;
   run!: unknown | null;
-  constructor(init: { name: string | null; run: unknown | null }) {
+  constructor(init: {
+    name: string | null;
+    run: unknown | null;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -773,14 +493,14 @@ export class TestSetChild$stream {
  * The aggregated result of all tests in a `testset` block.
  */
 export class TestSetReport$stream {
-  outcome!: 'pass' | 'fail' | 'error' | null;
+  outcome!: "pass" | "fail" | "error" | null;
   passed!: number | null;
   failed!: number | null;
   total!: number | null;
   failed_names!: string[];
   results!: (TestReport$stream | TestSetReport$stream)[];
   constructor(init: {
-    outcome: 'pass' | 'fail' | 'error' | null;
+    outcome: "pass" | "fail" | "error" | null;
     passed: number | null;
     failed: number | null;
     total: number | null;
@@ -795,7 +515,7 @@ export type ChildReport$stream = TestReport$stream | TestSetReport$stream;
 
 export type ChildReportThunk$stream = unknown;
 
-export type Outcome$stream = 'pass' | 'fail' | 'error';
+export type Outcome$stream = "pass" | "fail" | "error";
 
 export type TestBody$stream = unknown;
 
@@ -809,17 +529,17 @@ export type TestSetReportThunk$stream = unknown;
 
 export type TestSetRunner$stream = unknown;
 
-export type Outcome = 'pass' | 'fail' | 'error';
+export type Outcome = "pass" | "fail" | "error";
 
 /**
  * The result of a single test-function execution.
  */
 export class RunReport {
-  outcome!: 'pass' | 'fail' | 'error';
+  outcome!: "pass" | "fail" | "error";
   duration_ms!: number;
   message!: string | null;
   constructor(init: {
-    outcome: 'pass' | 'fail' | 'error';
+    outcome: "pass" | "fail" | "error";
     duration_ms: number;
     message: string | null;
   }) {
@@ -831,9 +551,12 @@ export class RunReport {
  * The aggregated result of all runs for a single `test` block.
  */
 export class TestReport {
-  outcome!: 'pass' | 'fail' | 'error';
+  outcome!: "pass" | "fail" | "error";
   runs!: RunReport[];
-  constructor(init: { outcome: 'pass' | 'fail' | 'error'; runs: RunReport[] }) {
+  constructor(init: {
+    outcome: "pass" | "fail" | "error";
+    runs: RunReport[];
+  }) {
     Object.assign(this, init);
   }
 }
@@ -842,14 +565,14 @@ export class TestReport {
  * The aggregated result of all tests in a `testset` block.
  */
 export class TestSetReport {
-  outcome!: 'pass' | 'fail' | 'error';
+  outcome!: "pass" | "fail" | "error";
   passed!: number;
   failed!: number;
   total!: number;
   failed_names!: string[];
   results!: (TestReport | TestSetReport)[];
   constructor(init: {
-    outcome: 'pass' | 'fail' | 'error';
+    outcome: "pass" | "fail" | "error";
     passed: number;
     failed: number;
     total: number;
@@ -868,7 +591,10 @@ export type ChildReport = TestReport | TestSetReport;
 export class NamedChildReport {
   name!: string;
   report!: TestReport | TestSetReport;
-  constructor(init: { name: string; report: TestReport | TestSetReport }) {
+  constructor(init: {
+    name: string;
+    report: TestReport | TestSetReport;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -891,7 +617,10 @@ export type TestRunner = (arg0: () => TestReport) => () => TestReport;
 export class TestSetChild {
   name!: string;
   run!: () => TestReport | TestSetReport;
-  constructor(init: { name: string; run: () => TestReport | TestSetReport }) {
+  constructor(init: {
+    name: string;
+    run: () => TestReport | TestSetReport;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -900,7 +629,7 @@ export type TestSetRunner = (arg0: TestSetChild[]) => TestSetReport;
 
 /**
  * Aggregated, already-flattened report returned to the CLI driver.
- *
+ * 
  * `outcome` is the aggregate verdict (honors testset runners). Counts are
  * leaf-level: `failed` = hard failures, `tolerated` = failing leaves whose
  * enclosing testset runner still passed (e.g. under `PassRate`), `passed` and
@@ -908,7 +637,7 @@ export type TestSetRunner = (arg0: TestSetChild[]) => TestSetReport;
  * every failing run's message.
  */
 export class FlatTestReport {
-  outcome!: 'pass' | 'fail' | 'error';
+  outcome!: "pass" | "fail" | "error";
   passed!: number;
   failed!: number;
   tolerated!: number;
@@ -916,7 +645,7 @@ export class FlatTestReport {
   failed_names!: string[];
   messages!: string[];
   constructor(init: {
-    outcome: 'pass' | 'fail' | 'error';
+    outcome: "pass" | "fail" | "error";
     passed: number;
     failed: number;
     tolerated: number;

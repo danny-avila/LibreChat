@@ -12,12 +12,14 @@
 // baml-cli is available with the baml package.
 
 import type { BamlHandle as _BamlHandle } from "@boundaryml/baml-bridge";
-import { defineFunction, defineInstanceFunction } from '@boundaryml/baml-bridge';
-import * as __ns_id from './id/index.js';
+import { defineFunction, defineInstanceFunction } from "@boundaryml/baml-bridge";
+import * as __ns_id from "./id/index.js";
 
 export class LocalId$stream {
   _handle!: _BamlHandle;
-  constructor(init: { _handle: _BamlHandle }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+  }) {
     Object.assign(this, init);
   }
 }
@@ -25,53 +27,26 @@ export class LocalId$stream {
 /**
  * @throws InvalidArgument
  */
-export const id = Object.assign(
-  defineFunction('boundary.id', 'sync', []) as () => LocalId,
-  __ns_id,
-);
+export const id = Object.assign(defineFunction("boundary.id", "sync", []) as () => LocalId, __ns_id);
 
 /**
  * @throws InvalidArgument
  */
-export const id_async = defineFunction('boundary.id', 'async', []) as () => Promise<LocalId>;
+export const id_async = defineFunction("boundary.id", "async", []) as () => Promise<LocalId>;
 
 export class LocalId {
   _handle!: _BamlHandle;
-  constructor(init: { _handle: _BamlHandle }) {
+  constructor(init: {
+    _handle: _BamlHandle;
+  }) {
     Object.assign(this, init);
   }
-  /**
-   * @throws InvalidArgument
-   */
-  capture = defineInstanceFunction(
-    'boundary.LocalId.capture',
-    'sync',
-    ['self'],
-    ['inputs', 'output', 'error'],
-  ).bind(this) as (
-    $opts?:
-      | {
-          inputs?: boolean | null | undefined;
-          output?: boolean | null | undefined;
-          error?: boolean | null | undefined;
-        }
-      | undefined,
-  ) => LocalId;
-  /**
-   * @throws InvalidArgument
-   */
-  capture_async = defineInstanceFunction(
-    'boundary.LocalId.capture',
-    'async',
-    ['self'],
-    ['inputs', 'output', 'error'],
-  ).bind(this) as (
-    $opts?:
-      | {
-          inputs?: boolean | null | undefined;
-          output?: boolean | null | undefined;
-          error?: boolean | null | undefined;
-        }
-      | undefined,
-  ) => Promise<LocalId>;
+/**
+ * @throws InvalidArgument
+ */
+  capture = defineInstanceFunction("boundary.LocalId.capture", "sync", ["self"], ["inputs", "output", "error"]).bind(this) as ($opts?: { inputs?: boolean | null | undefined; output?: boolean | null | undefined; error?: boolean | null | undefined } | undefined) => LocalId;
+/**
+ * @throws InvalidArgument
+ */
+  capture_async = defineInstanceFunction("boundary.LocalId.capture", "async", ["self"], ["inputs", "output", "error"]).bind(this) as ($opts?: { inputs?: boolean | null | undefined; output?: boolean | null | undefined; error?: boolean | null | undefined } | undefined) => Promise<LocalId>;
 }
