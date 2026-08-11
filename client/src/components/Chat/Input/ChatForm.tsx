@@ -26,10 +26,10 @@ import {
 import useComposerRestore from '~/hooks/Input/useComposerRestore';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
-import InterruptSteerButton from './InterruptSteerButton';
 import useComposerItems from '~/hooks/Input/useComposerItems';
 import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import useAttachTarget from '~/hooks/Input/useAttachTarget';
+import InterruptSteerButton from './InterruptSteerButton';
 import Hints, { composerHintId } from './Composer/Hints';
 import DuringRunSendButton from './DuringRunSendButton';
 import useDictation from '~/hooks/Input/useDictation';
@@ -60,6 +60,7 @@ interface ChatFormProps {
   setFiles: FileSetter;
   conversation: TConversation | null;
   isSubmitting: boolean;
+  filesLoading: boolean;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
   handleStopGenerating: (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -73,6 +74,7 @@ const ChatForm = memo(function ChatForm({
   setFiles,
   conversation,
   isSubmitting,
+  filesLoading,
   setFilesLoading,
   newConversation,
   handleStopGenerating,
@@ -677,6 +679,7 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
     setFiles,
     conversation,
     isSubmitting,
+    filesLoading,
     setFilesLoading,
     newConversation,
     handleStopGenerating,
@@ -735,6 +738,7 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
       setFiles={setFiles}
       conversation={stableConversation}
       isSubmitting={isSubmitting}
+      filesLoading={filesLoading}
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}
       handleStopGenerating={stableHandleStop}
