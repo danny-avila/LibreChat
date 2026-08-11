@@ -2092,9 +2092,14 @@ class AgentClient extends BaseClient {
     // (apiKey, credentials) and gateway config — resume re-resolves those server-side.
     // (Saved agents source params from the DB record, so this is belt-and-suspenders.)
     const resumeContext = pickResumeContext(this.options.req?.body);
+    // BAML resume capture is schema-owned: passing the resolved provider routes a BAML
+    // turn through `bamlSchema` (only its conversation picks survive) instead of the
+    // global OpenAI/Anthropic/Google request-key union, so no stale generation field or
+    // executable-runtime value rides the resume. Non-BAML providers are unaffected.
     const resumeModelParameters = captureResumeModelParameters(
       this.options.req?.body,
       this.options.agent?.model_parameters,
+      { provider: this.options.agent?.provider },
     );
     if (resumeModelParameters) {
       resumeContext.model_parameters = resumeModelParameters;
