@@ -7,6 +7,11 @@ import {
 } from '~/stream/GenerationJobManager';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
+import {
+  REDIS_ABORT_ACK_TIMEOUT_MS,
+  REDIS_ABORT_TERMINAL_GRACE_MS,
+  REDIS_EVENT_REORDER_TIMEOUT_MS,
+} from '~/stream/internal/transportTiming';
 import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 
@@ -771,10 +776,13 @@ describe('GenerationJobManager startup telemetry', () => {
       expect(job.abortController.signal.aborted).toBe(true);
       expect(onError).not.toHaveBeenCalled();
 
+      jest.advanceTimersByTime(REDIS_ABORT_ACK_TIMEOUT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS);
+      expect(onError).not.toHaveBeenCalled();
+
       eventTransport.emitDone(streamId, { final: true }, job.createdAt);
       expect(onDone).toHaveBeenCalledWith({ final: true });
 
-      jest.advanceTimersByTime(1_000);
+      jest.advanceTimersByTime(REDIS_EVENT_REORDER_TIMEOUT_MS);
       expect(onError).not.toHaveBeenCalled();
       expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
     } finally {
@@ -809,7 +817,10 @@ describe('GenerationJobManager startup telemetry', () => {
       expect(job.abortController.signal.aborted).toBe(true);
       expect(onError).not.toHaveBeenCalled();
 
-      jest.advanceTimersByTime(1_000);
+      jest.advanceTimersByTime(REDIS_ABORT_TERMINAL_GRACE_MS - 1);
+      expect(onError).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(1);
       expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
       expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
     } finally {
@@ -864,7 +875,7 @@ describe('GenerationJobManager startup telemetry', () => {
       expect(current?.createdAt).toBe(replacement.createdAt);
       expect(replacementSubscription).not.toBeNull();
 
-      jest.advanceTimersByTime(1_000);
+      jest.advanceTimersByTime(REDIS_ABORT_TERMINAL_GRACE_MS);
 
       expect(predecessorError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
       expect(replacementError).not.toHaveBeenCalled();

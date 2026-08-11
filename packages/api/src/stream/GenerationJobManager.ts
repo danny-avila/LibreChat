@@ -69,6 +69,7 @@ import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
 import { emitChunkWithReceipt } from './internal/chunkPublication';
 import { resolveCoalesceWindowMs } from './internal/coalescing';
+import { REDIS_ABORT_TERMINAL_GRACE_MS } from './internal/transportTiming';
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
@@ -103,11 +104,6 @@ const SHUTTING_DOWN_ERROR = 'Generation job manager is shutting down';
  * this as an application-level generation error. */
 export const TERMINAL_PUBLICATION_RECONNECT_ERROR =
   'Terminal publication failed; reconnect to load the durable result';
-/** A fenced provider stops immediately, but a matching terminal frame already
- * accepted by Redis may still be crossing the cluster bus. Keep only that
- * captured generation alive beyond the transport's 500ms reorder window before
- * recycling its subscribers when no terminal arrives. */
-const FENCED_RUNTIME_TERMINAL_GRACE_MS = 1_000;
 /** Upper bound for a terminal owner's required persistence barrier. A crashed
  * owner leaves the durable pending bit behind; the next read or subscriber
  * promotes it to conservative reconciliation after this window. */
@@ -5502,7 +5498,7 @@ class GenerationJobManagerClass {
           );
         }
       }
-    }, FENCED_RUNTIME_TERMINAL_GRACE_MS);
+    }, REDIS_ABORT_TERMINAL_GRACE_MS);
     retirement.unref?.();
   }
 
