@@ -17,6 +17,10 @@ const askQuestionsFormState = atomFamily<AskQuestionsFormState, string>({
   default: { text: {}, selected: {} },
 });
 
+function ownValue<T>(record: Record<string, T>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
 export default function useAskQuestionsForm(
   actionId: string,
   questions: Agents.AskUserQuestionBatchItem[],
@@ -44,7 +48,7 @@ export default function useAskQuestionsForm(
   const selectOption = useCallback(
     (question: Agents.AskUserQuestionBatchItem, value: string) => {
       setState((previous) => {
-        const current = previous.selected[question.id] ?? [];
+        const current = ownValue(previous.selected, question.id) ?? [];
         let selected = [value];
         if (question.multiSelect === true) {
           selected = current.includes(value)
@@ -62,10 +66,10 @@ export default function useAskQuestionsForm(
   );
 
   const answers = useMemo(() => {
-    const resolved: Record<string, string> = {};
+    const resolved = Object.create(null) as Record<string, string>;
     for (const question of questions) {
-      const text = state.text[question.id]?.trim() ?? '';
-      const selected = state.selected[question.id] ?? [];
+      const text = ownValue(state.text, question.id)?.trim() ?? '';
+      const selected = ownValue(state.selected, question.id) ?? [];
       const values = question.multiSelect === true ? [...selected] : [];
       if (text.length > 0) {
         values.push(text);
@@ -79,7 +83,8 @@ export default function useAskQuestionsForm(
     return resolved;
   }, [questions, state]);
 
-  const canSubmit = !locked && questions.every((question) => answers[question.id]?.length > 0);
+  const canSubmit =
+    !locked && questions.every((question) => (ownValue(answers, question.id)?.length ?? 0) > 0);
 
   const submit = useCallback(() => {
     if (!canSubmit) {

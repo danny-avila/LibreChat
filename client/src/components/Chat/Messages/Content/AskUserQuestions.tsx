@@ -41,7 +41,12 @@ export default function AskUserQuestions({
       <div className="min-h-0 flex-1 overflow-y-auto px-3">
         {questions.map((question, questionIndex) => {
           const { choices, otherLabel } = splitOtherOption(question.options);
-          const selected = form.state.selected[question.id] ?? [];
+          const selected = Object.hasOwn(form.state.selected, question.id)
+            ? form.state.selected[question.id]
+            : [];
+          const text = Object.hasOwn(form.state.text, question.id)
+            ? form.state.text[question.id]
+            : '';
           return (
             <fieldset
               key={question.id}
@@ -85,7 +90,7 @@ export default function AskUserQuestions({
                 </div>
               )}
               <TextareaAutosize
-                value={form.state.text[question.id] ?? ''}
+                value={text}
                 disabled={form.locked}
                 onChange={(event) => form.setText(question, event.target.value)}
                 minRows={1}

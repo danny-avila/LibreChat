@@ -136,6 +136,24 @@ describe('messageFilterPii middleware', () => {
     expect(capturedRes.status).toBe(400);
   });
 
+  it('rejects the normalized ToolMessage ordering when request keys arrive out of order', () => {
+    const { capturedRes, nextCalls } = runMiddleware(
+      {
+        starterPatterns: [],
+        customPatterns: [
+          {
+            id: 'ordered',
+            label: 'Ordered token',
+            regex: '\\{"answers":\\{"first":"123","second":"456"\\}\\}',
+          },
+        ],
+      },
+      { answers: { second: '456', first: '123' } },
+    );
+    expect(nextCalls).toBe(0);
+    expect(capturedRes.status).toBe(400);
+  });
+
   it('rejects a tool-approval decision responseText containing a blocked token', () => {
     const { capturedRes, nextCalls } = runMiddleware(
       {},

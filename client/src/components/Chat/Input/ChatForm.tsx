@@ -703,7 +703,7 @@ const ChatForm = memo(function ChatForm({
                             filesLoading ||
                             disableInputs ||
                             isNotAppendable ||
-                            answerMode.batchMode ||
+                            (answerMode.active && answerMode.batchMode) ||
                             (isSubmitting && !answerMode.active)
                           }
                         />

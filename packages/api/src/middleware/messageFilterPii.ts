@@ -8,6 +8,7 @@ import type {
   Response as ServerResponse,
 } from 'express';
 import type { MessageFilterPiiConfig } from 'librechat-data-provider';
+import { serializeAskUserAnswerVariants } from '../agents/hitl/resume';
 import { getReferencedQuotes, mergeQuotedText } from '../utils/quotes';
 
 /**
@@ -206,7 +207,7 @@ export function createMessageFilterPii(options: CreateMessageFilterPiiOptions): 
           candidates.push(answer);
         }
       }
-      candidates.push(JSON.stringify(req.body.answers));
+      candidates.push(...serializeAskUserAnswerVariants(req.body.answers));
     }
     if (Array.isArray(req.body?.decisions)) {
       for (const decision of req.body.decisions) {

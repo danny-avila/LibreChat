@@ -69,6 +69,46 @@ const MAX_ASK_ANSWER_LENGTH = 16_000;
 const ASK_QUESTION_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const MAX_ASK_QUESTIONS = 4;
 
+/**
+ * Serialize every ordering a validated batch can take after the SDK rebuilds
+ * its answer map in question order. Batches are capped at four questions, so
+ * this remains bounded at 24 candidates and lets pre-controller PII/moderation
+ * checks inspect the exact ToolMessage even for a crafted key order.
+ */
+export function serializeAskUserAnswerVariants(answers: unknown): string[] {
+  if (answers == null || typeof answers !== 'object' || Array.isArray(answers)) {
+    return [];
+  }
+  const entries = Object.entries(answers);
+  if (
+    entries.length === 0 ||
+    entries.length > MAX_ASK_QUESTIONS ||
+    entries.some(([, value]) => typeof value !== 'string')
+  ) {
+    return [];
+  }
+
+  const variants: string[] = [];
+  const visit = (remaining: Array<[string, unknown]>, ordered: Array<[string, unknown]>) => {
+    if (remaining.length === 0) {
+      const normalized = Object.create(null) as Record<string, unknown>;
+      for (const [key, value] of ordered) {
+        normalized[key] = value;
+      }
+      variants.push(JSON.stringify({ answers: normalized }));
+      return;
+    }
+    for (let index = 0; index < remaining.length; index++) {
+      visit(
+        [...remaining.slice(0, index), ...remaining.slice(index + 1)],
+        [...ordered, remaining[index]],
+      );
+    }
+  };
+  visit(entries, []);
+  return variants;
+}
+
 interface AskUserResumeBody {
   answer?: unknown;
   answers?: unknown;

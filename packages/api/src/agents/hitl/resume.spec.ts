@@ -10,6 +10,7 @@ import {
   mapToolApprovalResolutions,
   mapAskUserAnswer,
   mapAskUserAnswers,
+  serializeAskUserAnswerVariants,
   resolveAskUserQuestionResume,
   findUndecidedToolCalls,
   findDisallowedDecisions,
@@ -77,6 +78,28 @@ describe('mapAskUserAnswers', () => {
     expect(mapAskUserAnswers({ answers: { environment: 'staging', window: '7d' } })).toEqual({
       answers: { environment: 'staging', window: '7d' },
     });
+  });
+});
+
+describe('serializeAskUserAnswerVariants', () => {
+  it('covers every bounded downstream answer-map ordering with the resolution wrapper', () => {
+    expect(serializeAskUserAnswerVariants({ second: '456', first: '123' })).toEqual([
+      '{"answers":{"second":"456","first":"123"}}',
+      '{"answers":{"first":"123","second":"456"}}',
+    ]);
+  });
+
+  it('does not expand invalid or unbounded answer maps', () => {
+    expect(serializeAskUserAnswerVariants(['one'])).toEqual([]);
+    expect(
+      serializeAskUserAnswerVariants({
+        one: '1',
+        two: '2',
+        three: '3',
+        four: '4',
+        five: '5',
+      }),
+    ).toEqual([]);
   });
 });
 

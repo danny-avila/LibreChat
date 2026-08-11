@@ -3,6 +3,7 @@ import { tool } from '@librechat/agents/langchain/tools';
 import {
   ASK_USER_QUESTION_ID_PATTERN,
   MAX_ASK_USER_QUESTIONS,
+  askUserQuestion,
   askUserQuestions,
 } from '@librechat/agents';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
@@ -127,6 +128,8 @@ const askUserQuestionsArraySchema: z.ZodEffects<z.ZodArray<typeof askUserQuestio
     },
   )
   .describe('One to four related questions presented to the user in one interaction.');
+
+const legacyAskUserQuestionToolSchema = askUserQuestionItemSchema.omit({ id: true, header: true });
 
 export const askUserQuestionToolSchema: z.ZodObject<
   { questions: typeof askUserQuestionsArraySchema },
@@ -292,6 +295,20 @@ export const AskUserQuestionToolDefinition: AskUserQuestionToolDefinitionShape =
 export function createAskUserQuestionTool(
   validationErrorsByToolCallId?: Map<string, ToolInputValidationError>,
 ): DynamicStructuredTool<typeof askUserQuestionToolSchema> {
+  /** Kept out of the provider-facing definition. A graph rebuilt during a
+   * rolling deploy can still rerun checkpointed legacy `{ question, ... }`
+   * arguments through this schema and consume its retained `{ answer }` resume. */
+  const legacyAskTool = tool(
+    async (input, config?: { toolCall?: { id?: string } }) => {
+      const resolution = askUserQuestion(input, { toolCallId: config?.toolCall?.id });
+      return JSON.stringify(resolution);
+    },
+    {
+      name: ASK_USER_QUESTION_TOOL_NAME,
+      description: ASK_USER_QUESTION_DESCRIPTION,
+      schema: legacyAskUserQuestionToolSchema,
+    },
+  );
   const askTool = tool(
     async (input: AskUserQuestionToolInput, config?: { toolCall?: { id?: string } }) => {
       const resolution = askUserQuestions(input, { toolCallId: config?.toolCall?.id });
@@ -310,6 +327,11 @@ export function createAskUserQuestionTool(
   const invoke = askTool.invoke.bind(askTool);
   askTool.invoke = async (input, config) => {
     try {
+      const candidate =
+        typeof input === 'object' && input != null && 'args' in input ? input.args : input;
+      if (legacyAskUserQuestionToolSchema.safeParse(candidate).success) {
+        return await legacyAskTool.invoke(input, config);
+      }
       return await invoke(input, config);
     } catch (error) {
       const toolCallId =

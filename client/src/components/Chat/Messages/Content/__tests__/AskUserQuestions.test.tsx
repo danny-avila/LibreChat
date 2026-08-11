@@ -84,4 +84,30 @@ describe('AskUserQuestions', () => {
 
     expect(screen.getByRole('textbox', { name: /Which time window/ })).toHaveValue('Today');
   });
+
+  test('supports question ids inherited by ordinary objects', () => {
+    render(
+      <RecoilRoot>
+        <AskUserQuestions
+          actionId="ask-prototype-id"
+          questions={[
+            {
+              id: 'constructor',
+              question: 'Continue?',
+              options: [{ label: 'Yes', value: 'yes' }],
+            },
+          ]}
+        />
+      </RecoilRoot>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+
+    expect(mockSubmitAskAnswer).toHaveBeenCalledWith(
+      'ask-prototype-id',
+      { constructor: 'yes' },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+  });
 });

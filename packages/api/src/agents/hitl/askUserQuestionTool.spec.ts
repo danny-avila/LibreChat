@@ -88,6 +88,18 @@ describe('ask_user_question tool contract', () => {
         new Map([['tool-1', { fieldPath: 'questions[0].options[0].label', isLengthLimit: true }]]),
       );
     });
+
+    test('accepts checkpointed legacy arguments without advertising them', async () => {
+      const promise = createAskUserQuestionTool().invoke({
+        id: 'legacy-call',
+        name: ASK_USER_QUESTION_TOOL_NAME,
+        type: 'tool_call',
+        args: { question: 'Continue the pre-deploy run?' },
+      });
+
+      await expect(promise).rejects.toThrow('No configurable found in config');
+      expect(AskUserQuestionToolDefinition.schema.required).toEqual(['questions']);
+    });
   });
 
   describe('registry definition', () => {
