@@ -630,6 +630,61 @@ describe('durable ask-user answers', () => {
     expect(next.map((part) => part.tool_call.output)).toEqual(['one', 'two']);
     expect(next.map((part) => JSON.parse(part.tool_call.args))).toEqual(['First?', 'Second?']);
   });
+
+  it('keeps a legacy answer on the earlier ask when a later ask is unanswered', () => {
+    const content = [
+      { type: 'tool_call', tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' } },
+      { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
+    ];
+
+    const next = attachAskUserQuestionAnswers(content, [{ request: 'First?', output: 'one' }]);
+
+    expect(next[0].tool_call.output).toBe('one');
+    expect(next[1].tool_call.output).toBeUndefined();
+  });
+
+  it('consumes a legacy stamp already present on content before a later ask', () => {
+    const firstRequest = { question: 'First?' };
+    const content = [
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'ask-1',
+          name: 'ask_user_question',
+          args: JSON.stringify(firstRequest),
+          output: 'one',
+        },
+      },
+      { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
+    ];
+
+    const next = attachAskUserQuestionAnswers(content, [{ request: firstRequest, output: 'one' }]);
+
+    expect(next).toBe(content);
+    expect(next[1].tool_call.output).toBeUndefined();
+  });
+
+  it('does not slide ambiguous legacy metadata past different answered content', () => {
+    const content = [
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'ask-1',
+          name: 'ask_user_question',
+          args: JSON.stringify({ question: 'Different?' }),
+          output: 'different',
+        },
+      },
+      { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
+    ];
+
+    const next = attachAskUserQuestionAnswers(content, [
+      { request: { question: 'First?' }, output: 'one' },
+    ]);
+
+    expect(next).toBe(content);
+    expect(next[1].tool_call.output).toBeUndefined();
+  });
 });
 
 describe('attachAskUserQuestionArgs (pause-time stamp)', () => {

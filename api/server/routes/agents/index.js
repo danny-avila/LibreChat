@@ -665,14 +665,7 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
           }
           const abortedAskPayload = abortJobData.pendingAction?.payload;
           const resolvedAskUserQuestions = abortJobData.resolvedAskUserQuestions ?? [];
-          /** ID-less stamps are legacy-only. If this generation has reached a
-           * later pause, the previous answer was already seeded before that
-           * run started and must not target the new unanswered ask. */
-          const applicableAnswers =
-            abortedAskPayload?.type === 'ask_user_question'
-              ? resolvedAskUserQuestions.filter((answer) => answer.toolCallId != null)
-              : resolvedAskUserQuestions;
-          const answeredContent = attachAskUserQuestionAnswers(content, applicableAnswers);
+          const answeredContent = attachAskUserQuestionAnswers(content, resolvedAskUserQuestions);
           return abortedAskPayload?.type === 'ask_user_question'
             ? attachAskUserQuestionArgs(
                 answeredContent,

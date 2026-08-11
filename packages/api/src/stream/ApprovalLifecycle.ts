@@ -102,23 +102,9 @@ export class ApprovalLifecycle {
         : 0,
     );
     const persistenceStartedAt = Date.now();
-    const resolvedAskUserQuestions = job.resolvedAskUserQuestions ?? [];
-    const retainedAskUserQuestions =
-      pendingAction.payload.type === 'ask_user_question'
-        ? resolvedAskUserQuestions.filter((answer) => answer.toolCallId != null)
-        : resolvedAskUserQuestions;
-    const replacesResolvedAnswers =
-      retainedAskUserQuestions.length !== resolvedAskUserQuestions.length;
     const ok = await this.store.transitionStatus(streamId, {
       from: 'running',
       to: 'requires_action',
-      // Exact-ID answers remain a Redis reconstruction bridge for an earlier
-      // ask across replicas. Only legacy ID-less stamps become ambiguous when
-      // this run reaches a later pending action.
-      ...(replacesResolvedAnswers &&
-        retainedAskUserQuestions.length === 0 && {
-          clear: ['resolvedAskUserQuestions'] as const,
-        }),
       // pendingActionId is the flat mirror the atomic resolve/expire guard on.
       patch: {
         pendingAction,
@@ -126,10 +112,6 @@ export class ApprovalLifecycle {
           options.persistencePending === true
             ? pausePersistenceActionId(pendingAction.actionId)
             : pendingAction.actionId,
-        ...(replacesResolvedAnswers &&
-          retainedAskUserQuestions.length > 0 && {
-            resolvedAskUserQuestions: retainedAskUserQuestions,
-          }),
         ...(options.persistencePending === true && {
           terminalPersistencePending: true,
           terminalPersistenceStartedAt: persistenceStartedAt,

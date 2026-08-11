@@ -515,6 +515,31 @@ export function attachAskUserQuestionAnswer<
   output: string,
   toolCallId?: string,
 ): TPart[] {
+  if (toolCallId == null) {
+    for (let index = content.length - 1; index >= 0; index--) {
+      const part = content[index];
+      const toolCall = part?.tool_call;
+      if (
+        part?.type !== 'tool_call' ||
+        toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME ||
+        (typeof toolCall.output === 'string' && toolCall.output.length > 0)
+      ) {
+        continue;
+      }
+      const next = [...content];
+      next[index] = {
+        ...part,
+        tool_call: {
+          ...toolCall,
+          args: JSON.stringify(request),
+          output,
+          progress: 1,
+        },
+      };
+      return next;
+    }
+    return content;
+  }
   return attachAskUserQuestionAnswers(content, [{ request, output, toolCallId }]);
 }
 
@@ -535,20 +560,47 @@ export function attachAskUserQuestionAnswers<
     }
   }
 
-  let legacyIndex = legacyAnswers.length - 1;
+  /** Legacy stamps have no tool-call id, but their array order is the durable
+   * association: answers are appended as asks resolve, and tool-call parts are
+   * reconstructed in that same chronological order. Walk forward so an
+   * earlier accepted answer cannot slide onto a later unanswered ask. */
+  let legacyIndex = 0;
   let next: TPart[] | undefined;
-  for (let index = content.length - 1; index >= 0; index--) {
+  for (let index = 0; index < content.length; index++) {
     const part = content[index];
     const toolCall = part?.tool_call;
     if (part?.type !== 'tool_call' || toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME) {
       continue;
     }
     const exactAnswer = toolCall.id != null ? exactAnswers.get(toolCall.id) : undefined;
+    const legacyCandidate = legacyAnswers[legacyIndex];
+    if (
+      exactAnswer == null &&
+      legacyCandidate != null &&
+      typeof toolCall.output === 'string' &&
+      toolCall.output.length > 0
+    ) {
+      try {
+        if (
+          toolCall.output === legacyCandidate.output &&
+          JSON.stringify(JSON.parse((toolCall as { args?: string }).args ?? '')) ===
+            JSON.stringify(legacyCandidate.request)
+        ) {
+          legacyIndex++;
+        } else {
+          legacyIndex = legacyAnswers.length;
+        }
+      } catch {
+        // Ambiguous legacy metadata must never slide onto a later ask.
+        legacyIndex = legacyAnswers.length;
+      }
+      continue;
+    }
     const legacyAnswer =
       exactAnswer == null &&
-      legacyIndex >= 0 &&
+      legacyIndex < legacyAnswers.length &&
       !(typeof toolCall.output === 'string' && toolCall.output.length > 0)
-        ? legacyAnswers[legacyIndex--]
+        ? legacyAnswers[legacyIndex++]
         : undefined;
     const answer = exactAnswer ?? legacyAnswer;
     if (answer == null) {
