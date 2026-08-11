@@ -575,6 +575,49 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(status.skippedSkills?.[0].path).toHaveLength(500);
   });
 
+  it('bounds and caps per-skill warning logs for a pathological source', async () => {
+    const invalidSkills = Array.from({ length: 25 }, (_, index) => ({
+      dir: `${index}-${'x'.repeat(600)}`,
+      markdown: '---\nname: [\n---\nBody',
+    }));
+    const deps = createDeps({
+      fetchFn: multiSkillFetch([
+        {
+          dir: 'research',
+          markdown: '---\nname: research\ndescription: Research things\n---\nBody',
+        },
+        ...invalidSkills,
+      ]),
+    });
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    try {
+      const result = await createGitHubSkillSyncRunner(deps).runOnce();
+      const warningText = warn.mock.calls.map(([message]) => String(message));
+      const perSkillWarnings = warningText.filter((message) => message.includes(' skipped "'));
+
+      expect(result.status).toBe('completed');
+      expect(perSkillWarnings).toHaveLength(20);
+      expect(perSkillWarnings.every((message) => message.length <= 1100)).toBe(true);
+      expect(warningText).toContain(
+        '[GitHubSkillSync] Source "librechat-skills" suppressed 5 additional skipped skill warning(s)',
+      );
+      expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: 'partial',
+          syncedSkillCount: 1,
+          skippedSkillCount: 25,
+          skippedSkills: expect.any(Array),
+        }),
+      );
+      const statusCalls = (deps.upsertStatus as jest.Mock).mock.calls;
+      const status = statusCalls[statusCalls.length - 1]?.[0] as SkillSyncStatusInput;
+      expect(status.skippedSkills).toHaveLength(20);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('bounds a skipped skill name so the partial status remains persistable', async () => {
     const longName = 'b'.repeat(600);
     const deps = createDeps({
@@ -711,9 +754,52 @@ describe('createGitHubSkillSyncRunner', () => {
 
       expect(result.status).toBe('completed');
       expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('frontmatter.references: "references" is not a recognized'),
+        expect.stringContaining(
+          'frontmatter.references [UNKNOWN_KEY]: "references" is not a recognized',
+        ),
       );
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('research'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('bounds and caps validation warning logs across successfully synced skills', async () => {
+    const skills = Array.from({ length: 25 }, (_, index) => ({
+      dir: `skill-${index}`,
+      markdown: `---\nname: skill-${index}\ndescription: Valid skill ${index}\n---\nBody`,
+    }));
+    const deps = createDeps({
+      fetchFn: multiSkillFetch(skills),
+      createSkill: jest.fn(
+        async (input: CreateSkillInput): Promise<CreateSkillResult> => ({
+          skill: makeSkill(input),
+          warnings: [
+            {
+              field: `frontmatter.${'f'.repeat(300)}`,
+              code: 'UNKNOWN_KEY',
+              severity: 'warning',
+              message: `Unknown key ${'m'.repeat(1000)}`,
+            },
+          ],
+        }),
+      ),
+    });
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    try {
+      const result = await createGitHubSkillSyncRunner(deps).runOnce();
+      const warningText = warn.mock.calls.map(([message]) => String(message));
+      const validationWarnings = warningText.filter((message) =>
+        message.includes(' synced with warnings:'),
+      );
+
+      expect(result.status).toBe('completed');
+      expect(validationWarnings).toHaveLength(20);
+      expect(validationWarnings.every((message) => message.length <= 700)).toBe(true);
+      expect(warningText).toContain(
+        '[GitHubSkillSync] Source "librechat-skills" suppressed 5 additional synced skill validation warning(s)',
+      );
     } finally {
       warn.mockRestore();
     }
@@ -2202,6 +2288,43 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('keeps a moved and renamed mirror when duplicate replacements are skipped', async () => {
+    const existing = makeSkill({
+      name: 'old-research',
+      description: 'Last known good description',
+      author: makeSourceAuthorId(),
+      authorName: 'GitHub Sync',
+      frontmatter: {},
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/old-research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/old-research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const deps = createDeps({
+      fetchFn: multiSkillFetch([
+        { dir: 'first', markdown: '---\nname: duplicate\ndescription: First\n---\nBody' },
+        { dir: 'second', markdown: '---\nname: duplicate\ndescription: Second\n---\nBody' },
+      ]),
+      findSkillBySourceIdentity: jest.fn(async () => null),
+      listSkillsBySource: jest.fn(async () => [existing]),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.deleteSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deletedSkillCount: 0, skippedSkillCount: 2 }),
+    );
+  });
+
   it('keeps a moved skill mirror when its move fails part way through', async () => {
     /* The mirror still carries the old upstream id until the update lands, so
        a failed move must not leave the reconcile pass reading it as stale. */
@@ -2238,6 +2361,53 @@ describe('createGitHubSkillSyncRunner', () => {
 
     expect(result.status).toBe('failed');
     expect(deps.deleteSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deletedSkillCount: 0, skippedSkillCount: 1 }),
+    );
+  });
+
+  it('keeps a moved and renamed mirror when its replacement fails after preparation', async () => {
+    const existing = makeSkill({
+      name: 'old-research',
+      description: 'Last known good description',
+      author: makeSourceAuthorId(),
+      authorName: 'GitHub Sync',
+      frontmatter: {},
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/old-research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/old-research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    let createdSkill: (ISkill & { _id: Types.ObjectId }) | undefined;
+    const deleteSkill = jest.fn(async () => ({ deleted: true }));
+    const deps = createDeps({
+      fetchFn: githubFetch(
+        '---\nname: renamed-research\ndescription: Renamed research skill\n---\nBody',
+      ),
+      findSkillBySourceIdentity: jest.fn(async () => null),
+      listSkillsBySource: jest.fn(async () => [existing]),
+      createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+        createdSkill = makeSkill(input);
+        return { skill: createdSkill, warnings: [] };
+      }),
+      saveBuffer: jest.fn(async () => {
+        throw new Error('storage unavailable');
+      }),
+      deleteSkill,
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(createdSkill).toBeDefined();
+    expect(deleteSkill).toHaveBeenCalledWith(createdSkill!._id.toString());
+    expect(deleteSkill).not.toHaveBeenCalledWith(existing._id.toString());
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({ deletedSkillCount: 0, skippedSkillCount: 1 }),
     );

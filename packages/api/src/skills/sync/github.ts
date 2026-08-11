@@ -41,6 +41,8 @@ const PROVIDER: SkillSyncProvider = 'github';
 const LOCK_LEASE_MS = 30 * 60 * 1000;
 /** Keeps a pathological source from writing an unbounded status document. */
 const MAX_RECORDED_SKIPPED_SKILLS = 20;
+/** Shared cap for skipped-skill and successful-skill validation warning logs. */
+const MAX_LOGGED_PER_SKILL_WARNINGS = 20;
 const SKIP_PATH_MAX = 500;
 const SKIP_NAME_MAX = 128;
 const SKIP_MESSAGE_MAX = 500;
@@ -991,25 +993,10 @@ async function prepareRemoteSkill(params: {
   return { existing, update, createInput };
 }
 
-/**
- * Non-blocking validation issues (an unrecognized frontmatter key, a very short
- * description) have no user-facing surface on a background sync, so the log is
- * the only place a maintainer can see why an upstream `SKILL.md` looks off.
- */
-function logSkillWarnings(name: string, warnings: ValidationIssue[] | undefined): void {
-  if (!warnings?.length) {
-    return;
-  }
-  logger.warn(
-    `[GitHubSkillSync] Skill "${name}" synced with warnings: ${warnings
-      .map((warning) => `${warning.field}: ${warning.message}`)
-      .join('; ')}`,
-  );
-}
-
 async function commitRemoteSkill(
   deps: GitHubSkillSyncDeps,
   prepared: PreparedRemoteSkill,
+  logSkillWarnings: (name: string, warnings: ValidationIssue[] | undefined) => void,
 ): Promise<UpsertRemoteSkillResult> {
   if (prepared.existing) {
     const result = await deps.updateSkill({
@@ -1057,7 +1044,10 @@ function hasExternalSkillEdit(before: ISkill, after: ISkill): boolean {
 async function commitExistingRemoteSkillAfterFileSync(
   deps: GitHubSkillSyncDeps,
   prepared: PreparedExistingRemoteSkill,
-  options: { forceCommit?: boolean } = {},
+  options: {
+    forceCommit?: boolean;
+    logSkillWarnings: (name: string, warnings: ValidationIssue[] | undefined) => void;
+  },
 ): Promise<UpsertRemoteSkillResult> {
   const refreshed = await deps.getSkillById(prepared.existing._id);
   if (!refreshed) {
@@ -1075,7 +1065,7 @@ async function commitExistingRemoteSkillAfterFileSync(
   if (!options.forceCommit && !hasRemoteSkillDefinitionChanged(prepared.update, refreshed)) {
     return { skill: refreshed, created: false };
   }
-  return commitRemoteSkill(deps, { ...prepared, existing: refreshed });
+  return commitRemoteSkill(deps, { ...prepared, existing: refreshed }, options.logSkillWarnings);
 }
 
 async function cleanupFile(deps: GitHubSkillSyncDeps, file: StoredSkillFileRef): Promise<void> {
@@ -1630,6 +1620,42 @@ async function syncSource(params: {
       skippedSkillCount: 0,
     };
     const skippedSkills: ISkillSyncSkippedSkill[] = [];
+    let loggedPerSkillWarningCount = 0;
+    let suppressedSkippedWarningCount = 0;
+    let suppressedValidationWarningCount = 0;
+    /**
+     * Non-blocking validation issues have no user-facing surface on a background
+     * sync. Keep them visible without allowing a large source to amplify logs.
+     */
+    const logSkillWarnings = (name: string, warnings: ValidationIssue[] | undefined): void => {
+      if (!warnings?.length) {
+        return;
+      }
+      if (loggedPerSkillWarningCount >= MAX_LOGGED_PER_SKILL_WARNINGS) {
+        suppressedValidationWarningCount++;
+        return;
+      }
+      const summary = summarizeValidationIssues(warnings);
+      if (!summary) {
+        return;
+      }
+      logger.warn(
+        `[GitHubSkillSync] Skill "${truncateSkipName(name)}" synced with warnings: ${truncateSkipMessage(summary)}`,
+      );
+      loggedPerSkillWarningCount++;
+    };
+    const logSuppressedPerSkillWarningSummaries = (): void => {
+      if (suppressedSkippedWarningCount > 0) {
+        logger.warn(
+          `[GitHubSkillSync] Source "${source.id}" suppressed ${suppressedSkippedWarningCount} additional skipped skill warning(s)`,
+        );
+      }
+      if (suppressedValidationWarningCount > 0) {
+        logger.warn(
+          `[GitHubSkillSync] Source "${source.id}" suppressed ${suppressedValidationWarningCount} additional synced skill validation warning(s)`,
+        );
+      }
+    };
     /**
      * Charges one skill's failure to that skill and lets the run continue.
      * Source-level failures are rethrown so the whole source still fails fast
@@ -1649,9 +1675,14 @@ async function syncSource(params: {
       }
       const sanitized = sanitizeError(error);
       counts.skippedSkillCount++;
-      logger.warn(
-        `[GitHubSkillSync] Source "${source.id}" skipped "${path}": ${sanitized.message}`,
-      );
+      if (loggedPerSkillWarningCount < MAX_LOGGED_PER_SKILL_WARNINGS) {
+        logger.warn(
+          `[GitHubSkillSync] Source "${source.id}" skipped "${truncateSkipPath(path)}": ${truncateSkipMessage(sanitized.message)}`,
+        );
+        loggedPerSkillWarningCount++;
+      } else {
+        suppressedSkippedWarningCount++;
+      }
       if (skippedSkills.length >= MAX_RECORDED_SKIPPED_SKILLS) {
         return;
       }
@@ -1737,7 +1768,13 @@ async function syncSource(params: {
       /* A duplicate never reaches `syncPreparedSkill`, so without this its
          moved mirror goes unmarked and is reconciled away even though nothing
          was published to replace it. */
-      await markMovedMirrorAsSeen(prepared);
+      const movedMirror = await markMovedMirrorAsSeen(prepared);
+      if (!prepared.existing && !movedMirror) {
+        /* A duplicate with a new identity can be a moved and renamed skill.
+           Without an identity or name match, preserve unmatched stale mirrors
+           because one may be its last-known-good copy. */
+        canReconcileStaleSkills = false;
+      }
       recordSkippedSkill({
         path: discovered.rootPath,
         name: prepared.createInput.name,
@@ -1829,7 +1866,10 @@ async function syncSource(params: {
               ...effectivePrepared,
               existing: effectivePrepared.existing,
             },
-            { forceCommit: fileCounts.syncedFileCount > 0 || fileCounts.deletedFileCount > 0 },
+            {
+              forceCommit: fileCounts.syncedFileCount > 0 || fileCounts.deletedFileCount > 0,
+              logSkillWarnings,
+            },
           );
         } catch (error) {
           let rollbackFailed = false;
@@ -1876,7 +1916,7 @@ async function syncSource(params: {
         return;
       }
 
-      const upserted = await commitRemoteSkill(deps, effectivePrepared);
+      const upserted = await commitRemoteSkill(deps, effectivePrepared, logSkillWarnings);
       const { skill } = upserted;
       try {
         const fileCounts = await syncSkillFiles({
@@ -1916,6 +1956,21 @@ async function syncSource(params: {
       try {
         await syncPreparedSkill(entry);
       } catch (error) {
+        if (
+          !entry.prepared.existing &&
+          !findMovedSourceSkill({
+            source,
+            prepared: entry.prepared,
+            existingSyncedSkills: await getExistingSyncedSkills(),
+            excludedUpstreamIds: discoveredUpstreamIds,
+          })
+        ) {
+          /* A new identity can be a moved and renamed skill that name-based
+             matching cannot associate with its old mirror. If it fails after
+             preparation, preserve stale mirrors because the old upstream id
+             is unknown and may be the last-known-good copy. */
+          canReconcileStaleSkills = false;
+        }
         recordSkippedSkill({
           path: entry.discovered.rootPath,
           name: entry.prepared.createInput.name,
@@ -1951,6 +2006,7 @@ async function syncSource(params: {
     }
 
     if (counts.skippedSkillCount === 0) {
+      logSuppressedPerSkillWarningSummaries();
       return deps.upsertStatus(
         makeStatusInput({
           source,
@@ -1966,6 +2022,7 @@ async function syncSource(params: {
        first skip carries the reason so the status is actionable. */
     const publishedNothing = counts.syncedSkillCount === 0;
     const firstSkip = skippedSkills[0];
+    logSuppressedPerSkillWarningSummaries();
     logger.warn(
       `[GitHubSkillSync] Source "${source.id}" synced ${counts.syncedSkillCount} skill(s) and skipped ${counts.skippedSkillCount}`,
     );

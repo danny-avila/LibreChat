@@ -297,7 +297,15 @@ const FRONTMATTER_KIND: Record<string, FrontmatterKind | FrontmatterKind[]> = {
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isValidFrontmatterKey(key: string): boolean {
+  return !key.includes('\u0000');
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -341,7 +349,9 @@ function isJsonSafe(value: unknown, depth: number): boolean {
     return value.every((v) => isJsonSafe(v, depth + 1));
   }
   if (isPlainObject(value)) {
-    return Object.values(value).every((v) => isJsonSafe(v, depth + 1));
+    return Object.entries(value).every(
+      ([key, nestedValue]) => isValidFrontmatterKey(key) && isJsonSafe(nestedValue, depth + 1),
+    );
   }
   return false;
 }
@@ -370,6 +380,14 @@ export function validateSkillFrontmatter(frontmatter: unknown): ValidationIssue[
 
   const issues: ValidationIssue[] = [];
   for (const [key, value] of Object.entries(frontmatter)) {
+    if (!isValidFrontmatterKey(key)) {
+      issues.push({
+        field: 'frontmatter',
+        code: 'INVALID_KEY',
+        message: 'Frontmatter keys must not contain NUL characters',
+      });
+      continue;
+    }
     if (!ALLOWED_FRONTMATTER_KEYS.has(key)) {
       issues.push({
         field: `frontmatter.${key}`,

@@ -297,6 +297,29 @@ describe('skill validation helpers', () => {
       ).toBe(true);
     });
 
+    it('rejects non-plain object values under unknown keys', () => {
+      const issues = validateSkillFrontmatter({ created: new Date('2026-08-11T00:00:00.000Z') });
+
+      expect(issues.some((i) => i.code === 'UNKNOWN_KEY' && i.severity === 'warning')).toBe(true);
+      expect(
+        partitionIssues(issues).errors.some(
+          (i) => i.code === 'INVALID_SHAPE' && i.field === 'frontmatter.created',
+        ),
+      ).toBe(true);
+    });
+
+    it('rejects NUL characters in unknown key names before persistence', () => {
+      const issues = validateSkillFrontmatter({ ['custom\u0000key']: 'value' });
+
+      expect(partitionIssues(issues).errors).toEqual([
+        expect.objectContaining({
+          field: 'frontmatter',
+          code: 'INVALID_KEY',
+        }),
+      ]);
+      expect(issues.some((i) => i.code === 'UNKNOWN_KEY')).toBe(false);
+    });
+
     it('accepts the references key in every shape real SKILL.md files use', () => {
       expect(validateSkillFrontmatter({ references: ['workers', 'pages', 'd1'] })).toEqual([]);
       expect(validateSkillFrontmatter({ references: 'references/api.md' })).toEqual([]);
