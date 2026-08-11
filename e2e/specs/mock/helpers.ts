@@ -20,10 +20,6 @@ type RefreshTokenBody = {
   token?: string;
 };
 
-type AgentGenerationRequest = {
-  messageId?: string;
-};
-
 type AgentGenerationStart = {
   conversationId?: string;
 };
@@ -32,7 +28,7 @@ type CompletionOptions = {
   timeout?: number;
 };
 
-const DEFAULT_COMPLETION_TIMEOUT = 60_000;
+const DEFAULT_COMPLETION_TIMEOUT = 20_000;
 
 export function isAgentsStream(response: Response) {
   return isAgentGenerationStart(response);
@@ -123,20 +119,33 @@ export async function sendMessage(page: Page, text: string): Promise<Response> {
 
 function formatPersistedMessages(messages: TMessage[]): string {
   return JSON.stringify(
-    messages.map(({ content, error, messageId, unfinished }) => ({
-      messageId,
-      unfinished,
-      error,
-      content: content?.map((part) => ({
-        type: part?.type,
-        ...(part?.type === ContentTypes.ERROR
-          ? { error: part[ContentTypes.ERROR], text: part.text }
-          : {}),
-      })),
-    })),
+    messages.map(
+      ({ content, error, isCreatedByUser, messageId, parentMessageId, text, unfinished }) => ({
+        messageId,
+        parentMessageId,
+        isCreatedByUser,
+        unfinished,
+        error,
+        text: typeof text === 'string' ? text.slice(0, 200) : text,
+        content: content?.map((part) => ({
+          type: part?.type,
+          ...(part?.type === ContentTypes.ERROR
+            ? { error: part[ContentTypes.ERROR], text: part.text }
+            : {}),
+        })),
+      }),
+    ),
     null,
     2,
   );
+}
+
+function conversationIdFromUrl(url: string): string | undefined {
+  const match = new URL(url).pathname.match(/^\/c\/([^/]+)\/?$/);
+  const conversationId = match?.[1];
+  return conversationId && conversationId !== 'new'
+    ? decodeURIComponent(conversationId)
+    : undefined;
 }
 
 /**
@@ -148,23 +157,42 @@ export async function sendMessageAndWaitForCompletion(
   text: string,
   options: CompletionOptions = {},
 ): Promise<Response> {
+  const token = await getAccessToken(page);
+  const existingConversationId = conversationIdFromUrl(page.url());
+  /** The POST messageId is an optimistic UI placeholder; BaseClient persists a
+   * server-generated user ID. Snapshot history before admission so the new
+   * canonical user→assistant edge can be identified without matching prompt text. */
+  const existingMessages = existingConversationId
+    ? await fetchJson<TMessage[]>(
+        page,
+        `/api/messages/${encodeURIComponent(existingConversationId)}`,
+        token,
+      )
+    : [];
+  const existingMessageIds = new Set(existingMessages.map((message) => message.messageId));
+
   const response = await sendMessage(page, text);
-  const requestBody = response.request().postDataJSON() as AgentGenerationRequest;
   const start = (await response.json()) as AgentGenerationStart;
-  const userMessageId = requestBody.messageId;
   const conversationId = start.conversationId;
 
-  if (!userMessageId || !conversationId || conversationId === 'new') {
+  if (!conversationId || conversationId === 'new') {
     throw new Error(
       `Generation admission did not identify a persisted turn: ${JSON.stringify({
         conversationId,
-        userMessageId,
+      })}`,
+    );
+  }
+  if (existingConversationId && existingConversationId !== conversationId) {
+    throw new Error(
+      `Generation admission changed conversations unexpectedly: ${JSON.stringify({
+        existingConversationId,
+        conversationId,
       })}`,
     );
   }
 
-  const token = await getAccessToken(page);
   let assistantMessages: TMessage[] = [];
+  let newMessages: TMessage[] = [];
   let latestMessages: TMessage[] = [];
   let latestReadError: string | undefined;
 
@@ -184,11 +212,22 @@ export async function sendMessageAndWaitForCompletion(
             return false;
           }
 
-          assistantMessages = latestMessages.filter(
+          newMessages = latestMessages.filter(
+            (message) => !existingMessageIds.has(message.messageId),
+          );
+          const userMessageIds = new Set(
+            newMessages
+              .filter((message) => message.isCreatedByUser === true)
+              .map((message) => message.messageId),
+          );
+          assistantMessages = newMessages.filter(
             (message) =>
-              message.isCreatedByUser === false && message.parentMessageId === userMessageId,
+              message.isCreatedByUser === false &&
+              message.parentMessageId != null &&
+              userMessageIds.has(message.parentMessageId),
           );
           return (
+            userMessageIds.size > 0 &&
             assistantMessages.length > 0 &&
             assistantMessages.every((message) => message.unfinished === false)
           );
@@ -196,7 +235,7 @@ export async function sendMessageAndWaitForCompletion(
         {
           timeout: options.timeout ?? DEFAULT_COMPLETION_TIMEOUT,
           intervals: [250, 500, 1_000],
-          message: `assistant response to ${userMessageId} should be durably finalized`,
+          message: 'new assistant response should be durably finalized',
         },
       )
       .toBe(true);
@@ -204,8 +243,10 @@ export async function sendMessageAndWaitForCompletion(
     const pollError = error instanceof Error ? error.message : String(error);
     throw new Error(
       [
-        `Timed out waiting for assistant response to ${userMessageId} to be durably finalized.`,
+        'Timed out waiting for the new assistant response to be durably finalized.',
         latestReadError ? `Latest message read failed: ${latestReadError}` : undefined,
+        `Pre-existing message IDs: ${JSON.stringify([...existingMessageIds])}`,
+        `New persisted messages: ${formatPersistedMessages(newMessages)}`,
         `Persisted messages: ${formatPersistedMessages(latestMessages)}`,
         pollError,
       ]
@@ -225,6 +266,16 @@ export async function sendMessageAndWaitForCompletion(
         failedMessage,
       ])}`,
     );
+  }
+
+  if (!existingConversationId) {
+    await expect
+      .poll(() => conversationIdFromUrl(page.url()), {
+        timeout: 5_000,
+        intervals: [100, 250, 500],
+        message: 'new conversation route should use the admitted conversation ID',
+      })
+      .toBe(conversationId);
   }
 
   return response;
