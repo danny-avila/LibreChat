@@ -230,7 +230,7 @@ describe('GenerationJobManager resume replay events', () => {
 
     const resumeState = await manager.getResumeState(streamId);
 
-    expect(resumeState?.aggregatedContent[0]).toMatchObject({
+    expect(resumeState?.aggregatedContent?.[0]).toMatchObject({
       tool_call: { output: 'staging' },
     });
     expect(resumeState?.pendingAction).toBeUndefined();
