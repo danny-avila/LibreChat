@@ -325,12 +325,15 @@ export function createAskUserQuestionTool(
    *  the tool boundary so the thrown validation error can be correlated with
    *  the real call ID without inferring failure from persisted output text. */
   const invoke = askTool.invoke.bind(askTool);
-  askTool.invoke = async (input, config) => {
+  askTool.invoke = (async (input, config) => {
     try {
       const candidate =
         typeof input === 'object' && input != null && 'args' in input ? input.args : input;
       if (legacyAskUserQuestionToolSchema.safeParse(candidate).success) {
-        return await legacyAskTool.invoke(input, config);
+        return await legacyAskTool.invoke(
+          input as unknown as Parameters<typeof legacyAskTool.invoke>[0],
+          config,
+        );
       }
       return await invoke(input, config);
     } catch (error) {
@@ -339,7 +342,7 @@ export function createAskUserQuestionTool(
       recordToolInputValidationError(validationErrorsByToolCallId, error, toolCallId);
       throw error;
     }
-  };
+  }) as typeof askTool.invoke;
 
   return askTool;
 }
