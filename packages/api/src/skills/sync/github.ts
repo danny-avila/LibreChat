@@ -1846,35 +1846,19 @@ async function syncSource(params: {
             );
           });
           if (staleConflictCleanup?.deletedSkill) {
-            const restored = await restoreDeletedSyncedSkill(
-              deps,
-              staleConflictCleanup.deletedSkill,
-            )
-              .then(() => true)
-              .catch((cleanupError) => {
+            await restoreDeletedSyncedSkill(deps, staleConflictCleanup.deletedSkill).catch(
+              (cleanupError) => {
                 logger.error(
-                  '[GitHubSkillSync] Failed to restore stale mirrored skill after sync failure:',
+                  '[GitHubSkillSync] Failed to recreate stale mirrored skill after sync failure:',
                   cleanupError,
                 );
-                return false;
-              });
-            /* The run continues past this skill now, so the provisional counts
-               would otherwise be persisted for work that was undone, and the
-               reconcile pass would count the restored mirror a second time. */
-            if (restored) {
-              const restoredUpstreamId = getSourceMetadataString(
-                staleConflictCleanup.deletedSkill.skill,
-                'upstreamId',
-              );
-              if (restoredUpstreamId) {
-                seenUpstreamIds.add(restoredUpstreamId);
-              }
-              existingSyncedSkills = null;
-              counts.deletedSkillCount -= staleConflictCleanup.deletedSkillCount;
-              counts.deletedFileCount -= staleConflictCleanup.deletedFileCount;
-            } else {
-              rollbackFailed = true;
-            }
+              },
+            );
+            /* deleteSkill removes the original id from agent allowlists and
+               deletes every ACL entry. Recreating the row recovers its data,
+               but cannot restore that dependent state, so this is never a
+               complete rollback and the source must fail visibly. */
+            rollbackFailed = true;
           }
           throw rollbackFailed ? makeRollbackFailure(error) : error;
         }

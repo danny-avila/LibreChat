@@ -1451,7 +1451,7 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
-  it('restores a stale name-conflicting mirror when the rename update fails after deletion', async () => {
+  it('fails the source when recreating a stale mirror cannot preserve its dependent state', async () => {
     const staleId = new Types.ObjectId();
     const existingId = new Types.ObjectId();
     const author = makeSourceAuthorId();
@@ -1517,10 +1517,14 @@ describe('createGitHubSkillSyncRunner', () => {
       expect.objectContaining({ resourceId: restoredSkill?._id }),
     );
     expect(persistedSkills.has(restoredSkill?._id.toString() ?? '')).toBe(true);
-    /* The deletion was undone, and the run no longer stops here, so the status
-       must not persist a count for work that was rolled back. */
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
-      expect.objectContaining({ deletedSkillCount: 0, deletedFileCount: 0 }),
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SYNC_ROLLBACK_FAILED',
+        errorMessage: 'Rollback failed after: Skill "research" changed during sync',
+        deletedSkillCount: 0,
+        deletedFileCount: 0,
+      }),
     );
   });
 
