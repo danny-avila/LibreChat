@@ -9,7 +9,7 @@ import {
   replyText,
   replyPrompt,
   selectMockEndpoint,
-  sendMessage,
+  sendMessageAndWaitForCompletion,
 } from './helpers';
 
 type UploadFixture = {
@@ -94,7 +94,7 @@ test.describe('core chat loop', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
 
-    const response = await sendMessage(page, userMessage);
+    const response = await sendMessageAndWaitForCompletion(page, userMessage);
     expect(response.ok()).toBeTruthy();
 
     await expect(page.getByText(userMessage)).toBeVisible();
@@ -135,7 +135,7 @@ test.describe('core chat loop', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
 
-    const response = await sendMessage(page, 'E2E_MARKDOWN_REPLY');
+    const response = await sendMessageAndWaitForCompletion(page, 'E2E_MARKDOWN_REPLY');
     expect(response.ok()).toBeTruthy();
 
     const assistantMessage = messagesView(page)
@@ -169,11 +169,11 @@ test.describe('core chat loop', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
 
-    let response = await sendMessage(page, firstMessage);
+    let response = await sendMessageAndWaitForCompletion(page, firstMessage);
     expect(response.ok()).toBeTruthy();
     await expect(mockReply(page)).toBeVisible();
 
-    response = await sendMessage(page, followUpMessage);
+    response = await sendMessageAndWaitForCompletion(page, followUpMessage);
     expect(response.ok()).toBeTruthy();
     await expect(page.getByText(followUpMessage)).toBeVisible();
 
@@ -206,10 +206,10 @@ test.describe('core chat loop', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
 
-    let response = await sendMessage(page, firstMessage);
+    let response = await sendMessageAndWaitForCompletion(page, firstMessage);
     expect(response.ok()).toBeTruthy();
     await expect(mockReply(page).first()).toBeVisible();
-    response = await sendMessage(page, secondMessage);
+    response = await sendMessageAndWaitForCompletion(page, secondMessage);
     expect(response.ok()).toBeTruthy();
     await expect(page.getByText(secondMessage)).toBeVisible();
 
@@ -273,7 +273,7 @@ test.describe('core chat loop', () => {
     // Build a three-turn thread (the "long running thread"), waiting for each
     // turn's unique reply to render before sending the next.
     for (const turn of turns) {
-      const response = await sendMessage(page, turn.prompt);
+      const response = await sendMessageAndWaitForCompletion(page, turn.prompt);
       expect(response.ok()).toBeTruthy();
       await expect(messagesView(page).getByText(turn.reply)).toBeVisible({ timeout: 30000 });
     }
