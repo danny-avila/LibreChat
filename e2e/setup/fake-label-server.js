@@ -17,6 +17,7 @@
 const http = require('http');
 
 const PORT = Number(process.env.E2E_LABEL_PORT) || 8889;
+const PHASE_PROMPT_MARKER = 'Summarize what this phase of an agent run accomplished';
 
 /** Recorded label requests, newest last. */
 const requests = [];
@@ -170,7 +171,7 @@ const server = http.createServer(async (req, res) => {
     const promptLabel = Object.entries(behavior.labelsByPrompt ?? {}).find(([needle]) =>
       prompt.includes(needle),
     )?.[1];
-    const isPhase = prompt.includes('Summarize what this phase of an agent run accomplished');
+    const isPhase = prompt.includes(PHASE_PROMPT_MARKER);
     const label =
       behavior.mode === 'blank'
         ? '   '

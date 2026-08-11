@@ -14,7 +14,6 @@ const CHILD_LABEL_MODEL = 'mock-label-model';
 const PHASE_LABEL_MODEL = 'mock-phase-label-model';
 const MCP_SERVER_TITLE = 'E2E Memory';
 const LABEL_SERVER = `http://127.0.0.1:${process.env.E2E_LABEL_PORT || '8889'}`;
-const PHASE_PROMPT_MARKER = 'Summarize what this phase of an agent run accomplished';
 const PARENT_LABEL = 'Verified both memory facts across the sequential research phase';
 const FIRST_CHILD_LABEL = 'Recorded the first phase fact in memory';
 const SECOND_CHILD_LABEL = 'Recorded the second phase fact in memory';
@@ -44,18 +43,26 @@ type PersistedMessage = {
 
 const uniqueLabel = () => `phase-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
+function phaseChildLabels(label: string) {
+  return {
+    first: `${FIRST_CHILD_LABEL} ${label}`,
+    second: `${SECOND_CHILD_LABEL} ${label}`,
+  };
+}
+
 async function resetLabelServer(request: APIRequestContext) {
   const response = await request.post(`${LABEL_SERVER}/__e2e/reset`);
   expect(response.ok()).toBeTruthy();
 }
 
 async function setPhaseLabels(request: APIRequestContext, label: string) {
+  const childLabels = phaseChildLabels(label);
   const response = await request.post(`${LABEL_SERVER}/__e2e/behavior`, {
     data: {
       phaseLabel: PARENT_LABEL,
       labelsByPrompt: {
-        [`activity phase alpha ${label}`]: FIRST_CHILD_LABEL,
-        [`activity phase beta ${label}`]: SECOND_CHILD_LABEL,
+        [`activity phase alpha ${label}`]: childLabels.first,
+        [`activity phase beta ${label}`]: childLabels.second,
       },
     },
   });
@@ -66,6 +73,13 @@ async function getLabelRequests(request: APIRequestContext): Promise<LabelReques
   const response = await request.get(`${LABEL_SERVER}/__e2e/requests`);
   expect(response.ok()).toBeTruthy();
   return (await response.json()).requests as LabelRequest[];
+}
+
+async function getLabelRequestsFor(
+  request: APIRequestContext,
+  label: string,
+): Promise<LabelRequest[]> {
+  return (await getLabelRequests(request)).filter((entry) => entry.prompt.includes(label));
 }
 
 async function selectEphemeralMCP(page: Page) {
@@ -121,6 +135,7 @@ test.describe('parent activity phases', () => {
     const finalText = `E2E activity phase reply done ${label}`;
     const firstToolCallId = `call_e2e_activity_phase_alpha_${label}`;
     const secondToolCallId = `call_e2e_activity_phase_beta_${label}`;
+    const childLabels = phaseChildLabels(label);
     await setPhaseLabels(request, label);
 
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
@@ -129,18 +144,18 @@ test.describe('parent activity phases', () => {
     const run = await sendMessage(page, `E2E_ACTIVITY_PHASE_REPLY:${label}`);
     expect(run.ok()).toBeTruthy();
 
-    const parent = messagesView(page).getByRole('button', { name: PARENT_LABEL });
+    const parent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);
     await expect(parent).toBeVisible({ timeout: 60000 });
     await expect(messagesView(page).getByText(finalText)).toBeVisible({ timeout: 60000 });
     await parent.click();
-    await expect(messagesView(page).getByRole('button', { name: FIRST_CHILD_LABEL })).toBeVisible();
+    await expect(messagesView(page).getByRole('button', { name: childLabels.first })).toBeVisible();
     await expect(
-      messagesView(page).getByRole('button', { name: SECOND_CHILD_LABEL }),
+      messagesView(page).getByRole('button', { name: childLabels.second }),
     ).toBeVisible();
 
-    await expect.poll(async () => (await getLabelRequests(request)).length).toBe(3);
-    const labelRequests = await getLabelRequests(request);
-    const phaseRequest = labelRequests.find((entry) => entry.prompt.includes(PHASE_PROMPT_MARKER));
+    await expect.poll(async () => (await getLabelRequestsFor(request, label)).length).toBe(3);
+    const labelRequests = await getLabelRequestsFor(request, label);
+    const phaseRequest = labelRequests.find((entry) => entry.model === PHASE_LABEL_MODEL);
     const childRequests = labelRequests.filter((entry) => entry !== phaseRequest);
     expect(phaseRequest).toMatchObject({ model: PHASE_LABEL_MODEL, stream: false });
     expect(childRequests).toHaveLength(2);
@@ -199,20 +214,20 @@ test.describe('parent activity phases', () => {
       expect.arrayContaining([firstToolCallId, secondToolCallId]),
     );
     expect(phaseChildren.map(contentPartText)).toEqual(
-      expect.arrayContaining([FIRST_CHILD_LABEL, SECOND_CHILD_LABEL]),
+      expect.arrayContaining([childLabels.first, childLabels.second]),
     );
     const finalTextIndex = content.findIndex((part) => contentPartText(part).includes(finalText));
     expect(finalTextIndex).toBeGreaterThan(phaseIndex);
 
     await page.reload();
-    const reloadedParent = messagesView(page).getByRole('button', { name: PARENT_LABEL });
+    const reloadedParent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);
     await expect(reloadedParent).toBeVisible({ timeout: 30000 });
     await expect(messagesView(page).getByText(finalText)).toBeVisible();
     await reloadedParent.click();
-    await expect(messagesView(page).getByRole('button', { name: FIRST_CHILD_LABEL })).toBeVisible();
+    await expect(messagesView(page).getByRole('button', { name: childLabels.first })).toBeVisible();
     await expect(
-      messagesView(page).getByRole('button', { name: SECOND_CHILD_LABEL }),
+      messagesView(page).getByRole('button', { name: childLabels.second }),
     ).toBeVisible();
-    expect(await getLabelRequests(request)).toHaveLength(3);
+    expect(await getLabelRequestsFor(request, label)).toHaveLength(3);
   });
 });
