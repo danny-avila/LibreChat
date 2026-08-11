@@ -637,13 +637,12 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
       // chunk log, which never saw the pause-time stamp applied to the in-process
       // contentParts — stamping inside abortJob (not after) means the LIVE client
       // gets the question too, not just the saved message on reload.
-      const abortedAskPayload = job.metadata?.pendingAction?.payload;
-      const resolvedAskUserQuestion = job.metadata?.resolvedAskUserQuestion;
+      const initialResolvedAskUserQuestion = job.metadata?.resolvedAskUserQuestion;
       const agentsCfg = req.config?.endpoints?.agents;
       const shouldPruneCheckpoint =
         isHITLEnabled(agentsCfg?.toolApproval) ||
         job.metadata?.pendingAction != null ||
-        resolvedAskUserQuestion != null;
+        initialResolvedAskUserQuestion != null;
       const checkpointNamespace =
         typeof job.metadata?.checkpointNamespace === 'string'
           ? job.metadata.checkpointNamespace
@@ -660,11 +659,19 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
           : undefined;
       const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
         expectedCreatedAt: job.createdAt,
-        transformAbortContent: (content) => {
+        transformAbortContent: (content, abortJobData) => {
           if (!Array.isArray(content)) {
             return content;
           }
-          const answeredContent = resolvedAskUserQuestion
+          const abortedAskPayload = abortJobData.pendingAction?.payload;
+          const resolvedAskUserQuestion = abortJobData.resolvedAskUserQuestion;
+          /** ID-less stamps are legacy-only. If this generation has reached a
+           * later pause, the previous answer was already seeded before that
+           * run started and must not target the new unanswered ask. */
+          const canAttachResolvedAnswer =
+            resolvedAskUserQuestion != null &&
+            (resolvedAskUserQuestion.toolCallId != null || abortJobData.pendingAction == null);
+          const answeredContent = canAttachResolvedAnswer
             ? attachAskUserQuestionAnswer(
                 content,
                 resolvedAskUserQuestion.request,

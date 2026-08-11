@@ -548,6 +548,68 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       expect(await manager.steering.peek(streamId)).toEqual([]);
     });
 
+    test('abortJob transforms content with metadata from the winning resume-race snapshot', async () => {
+      const streamId = 'abort-resume-metadata-race';
+      const job = await manager.createJob(streamId, 'user-1');
+      const action = buildPendingAction(
+        buildToolApprovalPayload([
+          { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call-1' },
+        ]),
+        { streamId, conversationId: streamId, runId: 'run-1', responseMessageId: 'msg-1' },
+      );
+      expect(await manager.approvals.pause(streamId, action)).toBe(true);
+      jobStore.setContentParts(streamId, [{ type: 'text', text: 'partial' }], job.createdAt);
+
+      const originalGetContentParts = jobStore.getContentParts.bind(jobStore);
+      let signalSnapshotStarted: (() => void) | undefined;
+      const snapshotStarted = new Promise<void>((resolve) => {
+        signalSnapshotStarted = resolve;
+      });
+      let releaseSnapshot: (() => void) | undefined;
+      const snapshotGate = new Promise<void>((resolve) => {
+        releaseSnapshot = resolve;
+      });
+      jest.spyOn(jobStore, 'getContentParts').mockImplementationOnce(async (...args) => {
+        signalSnapshotStarted?.();
+        await snapshotGate;
+        return originalGetContentParts(...args);
+      });
+      let transformedWith: unknown;
+
+      try {
+        const aborting = manager.abortJob(streamId, {
+          expectedCreatedAt: job.createdAt,
+          transformAbortContent: (content, claimedJob) => {
+            transformedWith = claimedJob.resolvedAskUserQuestion;
+            return content;
+          },
+        });
+        await snapshotStarted;
+        await expect(
+          manager.approvals.resolve(
+            streamId,
+            action.actionId,
+            {
+              resolvedAskUserQuestion: {
+                request: 'Which environment?',
+                output: 'staging',
+              },
+            },
+            job.createdAt,
+          ),
+        ).resolves.toBe(true);
+        releaseSnapshot?.();
+
+        await expect(aborting).resolves.toMatchObject({ success: true });
+        expect(transformedWith).toEqual({
+          request: 'Which environment?',
+          output: 'staging',
+        });
+      } finally {
+        releaseSnapshot?.();
+      }
+    });
+
     test('abortJob publishes nothing when natural completion wins its terminal CAS', async () => {
       const streamId = 'steer-abort-loses-terminal-race';
       const eventTransport = new InMemoryEventTransport();

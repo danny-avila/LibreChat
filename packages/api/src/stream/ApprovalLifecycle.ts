@@ -105,6 +105,10 @@ export class ApprovalLifecycle {
     const ok = await this.store.transitionStatus(streamId, {
       from: 'running',
       to: 'requires_action',
+      // A prior ask answer is only a reconstruction bridge for the resumed
+      // run. Reaching another pause proves that seed was consumed; retaining
+      // an ID-less legacy stamp could attribute it to this new action.
+      clear: ['resolvedAskUserQuestion'],
       // pendingActionId is the flat mirror the atomic resolve/expire guard on.
       patch: {
         pendingAction,

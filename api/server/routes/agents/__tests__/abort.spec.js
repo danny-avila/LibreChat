@@ -449,7 +449,11 @@ describe('Agent Abort Endpoint', () => {
           const rawContent = [
             { type: 'tool_call', tool_call: { id: 'tc1', name: 'ask_user_question', args: '' } },
           ];
-          const content = capturedTransform ? capturedTransform(rawContent) : rawContent;
+          const content = capturedTransform
+            ? capturedTransform(rawContent, {
+                pendingAction: { payload: { type: 'ask_user_question', question } },
+              })
+            : rawContent;
           const result = {
             success: true,
             jobData: {
@@ -485,22 +489,24 @@ describe('Agent Abort Endpoint', () => {
         const jobStreamId = 'test-stream-123';
         const question = { question: 'Deploy where?', options: [{ label: 'Prod', value: 'prod' }] };
 
+        // The route reads the still-paused snapshot before resume wins. The
+        // manager must supply the newer, terminal-claim snapshot to the
+        // transform rather than letting this initial read go stale.
         mockGenerationJobManager.getJob.mockResolvedValue({
-          metadata: {
-            userId: 'test-user-123',
-            resolvedAskUserQuestion: {
-              request: question,
-              output: 'prod',
-              toolCallId: 'tc1',
-            },
-          },
+          metadata: { userId: 'test-user-123' },
         });
 
         mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
           const rawContent = [
             { type: 'tool_call', tool_call: { id: 'tc1', name: 'ask_user_question', args: '' } },
           ];
-          const content = options.transformAbortContent(rawContent);
+          const content = options.transformAbortContent(rawContent, {
+            resolvedAskUserQuestion: {
+              request: question,
+              output: 'prod',
+              toolCallId: 'tc1',
+            },
+          });
           const result = {
             success: true,
             jobData: {
@@ -529,6 +535,69 @@ describe('Agent Abort Endpoint', () => {
         expect(JSON.parse(askPart.tool_call.args)).toEqual(question);
         expect(askPart.tool_call.output).toBe('prod');
         expect(askPart.tool_call.progress).toBe(1);
+      });
+
+      it('does not stamp an ID-less legacy answer onto a later pending ask', async () => {
+        const jobStreamId = 'test-stream-123';
+        const priorQuestion = { question: 'Which environment?' };
+        const currentQuestion = { question: 'Approve deployment?' };
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+        });
+        mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
+          const rawContent = [
+            {
+              type: 'tool_call',
+              tool_call: {
+                id: 'legacy-call',
+                name: 'ask_user_question',
+                args: JSON.stringify(priorQuestion),
+                output: 'staging',
+              },
+            },
+            {
+              type: 'tool_call',
+              tool_call: { id: 'current-call', name: 'ask_user_question', args: '' },
+            },
+          ];
+          const content = options.transformAbortContent(rawContent, {
+            resolvedAskUserQuestion: { request: priorQuestion, output: 'staging' },
+            pendingAction: {
+              payload: {
+                type: 'ask_user_question',
+                question: currentQuestion,
+                tool_call_id: 'current-call',
+              },
+            },
+          });
+          const result = {
+            success: true,
+            jobData: {
+              userMessage: { messageId: 'user-msg-123' },
+              responseMessageId: 'response-msg-456',
+              conversationId: jobStreamId,
+            },
+            content,
+            text: '',
+          };
+          await options.beforePublish(result);
+          return result;
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId });
+
+        expect(response.status).toBe(200);
+        const savedMessage = mockSaveMessage.mock.calls
+          .map(([, message]) => message)
+          .find((message) => message.isCreatedByUser === false);
+        const [priorAsk, currentAsk] = savedMessage.content;
+        expect(priorAsk.tool_call.output).toBe('staging');
+        expect(JSON.parse(priorAsk.tool_call.args)).toEqual(priorQuestion);
+        expect(currentAsk.tool_call.output).toBeUndefined();
+        expect(JSON.parse(currentAsk.tool_call.args)).toEqual(currentQuestion);
       });
 
       it('should handle saveMessage errors gracefully', async () => {

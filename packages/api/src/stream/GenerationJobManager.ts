@@ -3500,7 +3500,10 @@ class GenerationJobManagerClass {
   async abortJob(
     streamId: string,
     options?: {
-      transformAbortContent?: (content: TMessageContentParts[]) => TMessageContentParts[];
+      transformAbortContent?: (
+        content: TMessageContentParts[],
+        jobData: SerializableJobData,
+      ) => TMessageContentParts[];
       /** Required durable work (for example saving the partial response and
        * pruning the paused checkpoint) that must finish before the normal
        * FINAL lets the client submit against that history. Throwing emits a
@@ -3605,11 +3608,6 @@ class GenerationJobManagerClass {
     const result = await this.jobStore.getContentParts(streamId, jobData.createdAt);
     let content = result?.content ?? [];
     let abortContent = filterPersistableAbortContent(content);
-    if (options?.transformAbortContent) {
-      abortContent = options.transformAbortContent(
-        abortContent as TMessageContentParts[],
-      ) as typeof abortContent;
-    }
     let shouldPersistAbortContent = abortContent.length > 0;
 
     /** Collected usage for all models */
@@ -3699,6 +3697,10 @@ class GenerationJobManagerClass {
         collectedUsage,
       };
     }
+    // The successful CAS may follow a same-generation approval transition.
+    // Use the snapshot that selected the winning source status so host-side
+    // content transforms see metadata committed by that transition.
+    jobData = currentAfterConflict ?? jobData;
     const terminalClaim: TerminalJobClaim = Object.freeze({
       streamId,
       createdAt: jobData.createdAt,
@@ -3739,17 +3741,6 @@ class GenerationJobManagerClass {
         if (committed) {
           content = committed.content;
           abortContent = filterPersistableAbortContent(content);
-          if (options?.transformAbortContent) {
-            abortContent = options.transformAbortContent(
-              abortContent as TMessageContentParts[],
-            ) as typeof abortContent;
-          }
-          shouldPersistAbortContent = abortContent.length > 0;
-          text = shouldPersistAbortContent
-            ? parseTextParts(abortContent as TMessageContentParts[], false, {
-                includeSteer: true,
-              })
-            : '';
         }
       } catch (contentError) {
         logger.warn(
@@ -3757,6 +3748,16 @@ class GenerationJobManagerClass {
           contentError,
         );
       }
+      if (options?.transformAbortContent) {
+        abortContent = options.transformAbortContent(
+          abortContent as TMessageContentParts[],
+          jobData,
+        ) as typeof abortContent;
+      }
+      shouldPersistAbortContent = abortContent.length > 0;
+      text = shouldPersistAbortContent
+        ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })
+        : '';
 
       /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
       In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */

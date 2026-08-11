@@ -60,6 +60,23 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       }
     });
 
+    test('a later pause clears the resolved answer used to seed the resumed run', async () => {
+      const streamId = 'stream-repause-clears-answer';
+      await manager.createJob(streamId, 'user-1', undefined, {
+        resolvedAskUserQuestion: {
+          request: 'Which environment?',
+          output: 'staging',
+        },
+      });
+
+      expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
+
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        metadata: { resolvedAskUserQuestion: undefined },
+      });
+    });
+
     test('persists discovered tools in the same transition that makes the pause visible', async () => {
       const streamId = 'stream-pause-discoveries';
       await manager.createJob(streamId, 'user-1');
