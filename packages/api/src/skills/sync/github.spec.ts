@@ -99,7 +99,15 @@ function githubFetch(
 /** Serves one `skills/<dir>/SKILL.md` per entry, in the order given. */
 function multiSkillFetch(
   skills: Array<{ dir: string; markdown: string }>,
-  { rateLimitedDirs = [] }: { rateLimitedDirs?: string[] } = {},
+  {
+    rateLimitedDirs = [],
+    requestFailedDirs = [],
+    rejectedDirs = [],
+  }: {
+    rateLimitedDirs?: string[];
+    requestFailedDirs?: string[];
+    rejectedDirs?: string[];
+  } = {},
 ): typeof fetch {
   return jest.fn(async (input: RequestInfo | URL) => {
     const url = input.toString();
@@ -140,6 +148,12 @@ function multiSkillFetch(
       return response({ message: 'API rate limit exceeded' }, 403, {
         'x-ratelimit-remaining': '0',
       });
+    }
+    if (requested && requestFailedDirs.includes(requested.dir)) {
+      return response({ message: 'upstream unavailable' }, 503);
+    }
+    if (requested && rejectedDirs.includes(requested.dir)) {
+      throw new TypeError('fetch failed');
     }
     if (requested) {
       return response(blob(requested.markdown));
@@ -381,6 +395,28 @@ describe('createGitHubSkillSyncRunner', () => {
           customConfig: 'camel',
           customconfig: 'lower',
         }),
+      }),
+    );
+  });
+
+  it('rejects case-colliding recognized frontmatter keys instead of choosing by order', async () => {
+    const deps = createDeps({
+      fetchFn: githubFetch(
+        '---\nname: research\ndescription: Research things\nallowed-tools:\n  - execute_code\nAllowed-Tools:\n  - web_search\n---\nBody',
+      ),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.createSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SKILL_PARSE_FAILED',
+        errorMessage: expect.stringContaining(
+          'Recognized frontmatter keys "allowed-tools" and "Allowed-Tools" both resolve to "allowed-tools"',
+        ),
       }),
     );
   });
@@ -885,6 +921,39 @@ describe('createGitHubSkillSyncRunner', () => {
     }
   });
 
+  it('does not log new-skill warnings when publication rolls back', async () => {
+    const deps = createDeps({
+      createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+        return {
+          skill: makeSkill(input),
+          warnings: [
+            {
+              field: 'frontmatter.references',
+              code: 'UNKNOWN_KEY',
+              severity: 'warning',
+              message: '"references" is not a recognized frontmatter key',
+            },
+          ],
+        };
+      }),
+      grantPermission: jest.fn(async () => {
+        throw new Error('permission unavailable');
+      }),
+    });
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    try {
+      const result = await createGitHubSkillSyncRunner(deps).runOnce();
+      const warningText = warn.mock.calls.map(([message]) => String(message));
+
+      expect(result.status).toBe('failed');
+      expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
+      expect(warningText.some((message) => message.includes(' synced with warnings:'))).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('bounds and caps validation warning logs across successfully synced skills', async () => {
     const skills = Array.from({ length: 25 }, (_, index) => ({
       dir: `skill-${index}`,
@@ -1016,6 +1085,35 @@ describe('createGitHubSkillSyncRunner', () => {
       expect.objectContaining({
         status: 'failed',
         errorCode: 'GITHUB_RATE_LIMITED',
+        skippedSkillCount: 0,
+      }),
+    );
+  });
+
+  it.each([
+    ['returns a server error', { requestFailedDirs: ['analysis'] }],
+    ['rejects the request', { rejectedDirs: ['analysis'] }],
+  ])('fails the whole source when GitHub %s', async (_description, fetchOptions) => {
+    const deps = createDeps({
+      fetchFn: multiSkillFetch(
+        [
+          {
+            dir: 'research',
+            markdown: '---\nname: research\ndescription: Research things\n---\nBody',
+          },
+          { dir: 'analysis', markdown: '---\nname: analysis\ndescription: Analyze\n---\nBody' },
+        ],
+        fetchOptions,
+      ),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'GITHUB_REQUEST_FAILED',
         skippedSkillCount: 0,
       }),
     );
@@ -2432,6 +2530,31 @@ describe('createGitHubSkillSyncRunner', () => {
         status: 'failed',
         errorCode: 'SYNC_ROLLBACK_FAILED',
         errorMessage: 'Rollback failed after: permission unavailable',
+      }),
+    );
+  });
+
+  it('fails the source when an unpersisted upload cannot be cleaned up', async () => {
+    const deleteFile = jest.fn(async () => {
+      throw new Error('orphan cleanup unavailable');
+    });
+    const deps = createDeps({
+      upsertSkillFile: jest.fn(async () => {
+        throw new Error('database unavailable');
+      }),
+      deleteFile,
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deleteFile).toHaveBeenCalledTimes(1);
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SYNC_ROLLBACK_FAILED',
+        errorMessage: 'Rollback failed after: database unavailable',
       }),
     );
   });

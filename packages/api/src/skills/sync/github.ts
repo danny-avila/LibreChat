@@ -106,6 +106,7 @@ type DiscoveredSkill = {
 type UpsertRemoteSkillResult = {
   skill: ISkill & { _id: Types.ObjectId };
   created: boolean;
+  warnings?: ValidationIssue[];
 };
 
 type PreparedRemoteSkill = {
@@ -581,6 +582,7 @@ const SOURCE_FATAL_ERROR_CODES = new Set([
   'SYNC_LOCK_LOST',
   'GITHUB_AUTH_FAILED',
   'GITHUB_RATE_LIMITED',
+  'GITHUB_REQUEST_FAILED',
   'SYNC_ROLLBACK_FAILED',
 ]);
 
@@ -672,9 +674,17 @@ async function githubJson<T>(params: {
   token: string;
   pathname: string;
 }): Promise<T> {
-  const response = await params.fetchFn(buildGitHubUrl(params.pathname), {
-    headers: buildGitHubHeaders(params.token),
-  });
+  let response: Response;
+  try {
+    response = await params.fetchFn(buildGitHubUrl(params.pathname), {
+      headers: buildGitHubHeaders(params.token),
+    });
+  } catch {
+    throw new SkillSyncError(
+      'GITHUB_REQUEST_FAILED',
+      'GitHub request failed before receiving a response',
+    );
+  }
   if (response.ok) {
     return (await response.json()) as T;
   }
@@ -1043,7 +1053,6 @@ async function prepareRemoteSkill(params: {
 async function commitRemoteSkill(
   deps: GitHubSkillSyncDeps,
   prepared: PreparedRemoteSkill,
-  logSkillWarnings: (name: string, warnings: ValidationIssue[] | undefined) => void,
 ): Promise<UpsertRemoteSkillResult> {
   if (prepared.existing) {
     const result = await deps.updateSkill({
@@ -1052,8 +1061,7 @@ async function commitRemoteSkill(
       update: prepared.update,
     });
     if (result.status === 'updated') {
-      logSkillWarnings(result.skill.name, result.warnings);
-      return { skill: result.skill, created: false };
+      return { skill: result.skill, created: false, warnings: result.warnings };
     }
     if (result.status === 'conflict') {
       throw new SkillSyncError(
@@ -1067,8 +1075,7 @@ async function commitRemoteSkill(
     );
   }
   const created = await deps.createSkill(prepared.createInput);
-  logSkillWarnings(created.skill.name, created.warnings);
-  return { skill: created.skill, created: true };
+  return { skill: created.skill, created: true, warnings: created.warnings };
 }
 
 /**
@@ -1112,7 +1119,9 @@ async function commitExistingRemoteSkillAfterFileSync(
   if (!options.forceCommit && !hasRemoteSkillDefinitionChanged(prepared.update, refreshed)) {
     return { skill: refreshed, created: false };
   }
-  return commitRemoteSkill(deps, { ...prepared, existing: refreshed }, options.logSkillWarnings);
+  const result = await commitRemoteSkill(deps, { ...prepared, existing: refreshed });
+  options.logSkillWarnings(result.skill.name, result.warnings);
+  return result;
 }
 
 async function cleanupFile(deps: GitHubSkillSyncDeps, file: StoredSkillFileRef): Promise<void> {
@@ -1545,9 +1554,10 @@ async function syncSkillFiles(params: {
         tenantId: skill.tenantId,
       });
     } catch (error) {
-      await cleanupFile(deps, savedFile).catch((cleanupError) =>
-        logger.error('[GitHubSkillSync] Failed to clean up orphaned synced file:', cleanupError),
-      );
+      await cleanupFile(deps, savedFile).catch((cleanupError) => {
+        logger.error('[GitHubSkillSync] Failed to clean up orphaned synced file:', cleanupError);
+        throw makeRollbackFailure(error);
+      });
       throw error;
     }
     syncedFileCount++;
@@ -1975,7 +1985,7 @@ async function syncSource(params: {
         return;
       }
 
-      const upserted = await commitRemoteSkill(deps, effectivePrepared, logSkillWarnings);
+      const upserted = await commitRemoteSkill(deps, effectivePrepared);
       const { skill } = upserted;
       try {
         const fileCounts = await syncSkillFiles({
@@ -1989,6 +1999,7 @@ async function syncSource(params: {
           assertNotCancelled,
         });
         await ensurePublicViewer(deps, skill._id);
+        logSkillWarnings(skill.name, upserted.warnings);
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;
