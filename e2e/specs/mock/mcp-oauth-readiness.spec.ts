@@ -16,10 +16,10 @@ const serverCard = (page: Page) => page.getByLabel(new RegExp(`^${SERVER_TITLE} 
 
 /** Selection state lives in the composer palette; open it fresh per check and
  *  close with Escape so the panel underneath stays interactable. */
-const paletteOption = (page: Page) => page.getByRole('option', { name: new RegExp(SERVER_TITLE) });
+const paletteOption = (page: Page) => page.getByRole('button', { name: new RegExp(SERVER_TITLE) });
 async function expectSelected(page: Page, checked: 'true' | 'false') {
   await page.getByRole('button', { name: 'Attach and tools' }).click();
-  await expect(paletteOption(page)).toHaveAttribute('aria-checked', checked);
+  await expect(paletteOption(page)).toHaveAttribute('aria-pressed', checked);
   await page.keyboard.press('Escape');
 }
 
