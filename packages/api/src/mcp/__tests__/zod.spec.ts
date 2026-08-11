@@ -2121,6 +2121,80 @@ describe('normalizeJsonSchema', () => {
     expect(result.additionalProperties).toEqual({ type: 'string', enum: ['val'] });
   });
 
+  it('should drop a malformed object-valued `required` (Bedrock rejects it)', () => {
+    const schema = {
+      type: 'object',
+      properties: { name: { type: 'string' } },
+      required: {},
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result).not.toHaveProperty('required');
+    expect(result.properties.name).toEqual({ type: 'string' });
+  });
+
+  it('should drop malformed `required` in nested subschemas', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        config: {
+          type: 'object',
+          properties: { host: { type: 'string' } },
+          required: { host: true },
+        },
+      },
+      oneOf: [{ type: 'object', required: {} }],
+      items: { type: 'object', required: 'name' },
+      required: ['config'],
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result.required).toEqual(['config']);
+    expect(result.properties.config).not.toHaveProperty('required');
+    expect(result.oneOf[0]).not.toHaveProperty('required');
+    expect(result.items).not.toHaveProperty('required');
+  });
+
+  it('should filter non-string entries out of a `required` array', () => {
+    const schema = {
+      type: 'object',
+      properties: { name: { type: 'string' }, age: { type: 'number' } },
+      required: ['name', 42, null, 'age', { key: 'value' }],
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result.required).toEqual(['name', 'age']);
+  });
+
+  it('should preserve a valid `required` array, including an empty one', () => {
+    const schema = {
+      type: 'object',
+      properties: { name: { type: 'string' } },
+      required: ['name'],
+    } as any;
+    expect(normalizeJsonSchema(schema).required).toEqual(['name']);
+
+    const emptyRequired = { type: 'object', properties: {}, required: [] } as any;
+    expect(normalizeJsonSchema(emptyRequired).required).toEqual([]);
+  });
+
+  it('should not touch a property literally named `required`', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        required: { type: 'boolean', description: 'Whether the field is mandatory' },
+      },
+      required: ['required'],
+    } as any;
+
+    const result = normalizeJsonSchema(schema);
+    expect(result.properties.required).toEqual({
+      type: 'boolean',
+      description: 'Whether the field is mandatory',
+    });
+    expect(result.required).toEqual(['required']);
+  });
+
   it('should handle null, undefined, and primitive inputs safely', () => {
     expect(normalizeJsonSchema(null as any)).toBeNull();
     expect(normalizeJsonSchema(undefined as any)).toBeUndefined();

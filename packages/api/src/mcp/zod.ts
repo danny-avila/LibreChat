@@ -337,6 +337,8 @@ export function resolveJsonSchemaRefs<T extends Record<string, unknown>>(
  * - Strips vendor extension fields (`x-*` prefixed keys, e.g. `x-google-enum-descriptions`)
  * - Strips `definitions` and `$`-prefixed schema keywords (`$defs`, `$schema`,
  *   `$id`, `$comment`, ...) that may survive ref resolution
+ * - Coerces `required` to an array of strings, dropping the keyword when a
+ *   server emits a non-array value (Bedrock Converse rejects `required: {}`)
  *
  * Beyond LLM compatibility, dropping every `$`-prefixed keyword also makes the
  * output safe to persist: MongoDB rejects field names beginning with `$`, so a
@@ -413,6 +415,18 @@ export function normalizeJsonSchema<T extends Record<string, unknown>>(schema: T
 
     if (key === 'const' && 'enum' in schema) {
       // Skip `const` when `enum` already exists
+      continue;
+    }
+
+    // `required` must be an array of property names. Some MCP servers emit an
+    // object (e.g. `{}` from an SDK serializing an empty map); Anthropic's API
+    // tolerates it but Bedrock Converse rejects the whole request. Keep only a
+    // string-filtered array, dropping the keyword otherwise — an absent
+    // `required` is the permissive, spec-valid reading of a malformed one.
+    if (key === 'required') {
+      if (Array.isArray(value)) {
+        result[key] = value.filter((entry) => typeof entry === 'string');
+      }
       continue;
     }
 
