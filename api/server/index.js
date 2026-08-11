@@ -1,7 +1,8 @@
 require('../config/credentials');
-require('./otel');
-
 const telemetry = require('./telemetry');
+/** Must stay ahead of the express/http/mongodb requires below so the OTel
+ *  auto-instrumentations can patch them. Inert unless OPSAAS_API_KEY is set. */
+require('./otel');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
