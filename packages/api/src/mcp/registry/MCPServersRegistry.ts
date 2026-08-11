@@ -9,6 +9,7 @@ import {
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache/cacheConfig';
@@ -16,6 +17,27 @@ import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
+
+/**
+ * Provenance to persist for a config being stored in `tier`.
+ *
+ * SECURITY INVARIANT — an Agent Plugins server keeps its own `'plugin'` marker
+ * rather than taking the tier's tag. `processMCPEnv` reads that marker to decide
+ * whether a `${VAR}` the plugin authored stays literal, so retagging here would
+ * expand host secrets into a plugin-controlled header or URL at both inspection
+ * and connect time. Only operator-loaded tiers may carry the marker: a DB entry
+ * is user-authored and is always `'user'`, so user input can never claim plugin
+ * provenance and skip the sandboxed placeholder rules.
+ */
+function resolveServerSource(
+  config: t.ParsedServerConfig,
+  tier: t.MCPServerSource,
+): t.MCPServerSource {
+  if (tier === 'user') {
+    return 'user';
+  }
+  return isPluginSourced(config) ? MCP_PLUGIN_SOURCE : tier;
+}
 
 /**
  * Fields an admin override can legitimately set. Used to detect whether a
@@ -401,7 +423,11 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true, source: 'yaml' };
+    const stubConfig: t.ParsedServerConfig = {
+      ...config,
+      inspectionFailed: true,
+      source: resolveServerSource(config, 'yaml'),
+    };
     const result = await configRepo.add(serverName, stubConfig, userId);
     await this.invalidateServerReadCaches(result.serverName, userId);
     this.resetYamlServerNamesMemo();
@@ -416,7 +442,7 @@ export class MCPServersRegistry {
     reservedServerNames?: Iterable<string>,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const source = resolveServerSource(config, storageLocation === 'CACHE' ? 'yaml' : 'user');
     const configForInspection = { ...config, source } as t.ParsedServerConfig;
     const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
@@ -512,7 +538,7 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const source = resolveServerSource(config, storageLocation === 'CACHE' ? 'yaml' : 'user');
 
     // Merge existing admin API key if not provided in update (needed for inspection)
     let configForInspection = { ...config };
@@ -699,11 +725,10 @@ export class MCPServersRegistry {
     const prefix = `[MCP][config][${serverName}]`;
     logger.info(`${prefix} Lazy-initializing config-source server`);
 
+    const source = resolveServerSource(rawConfig, 'config');
+
     try {
-      const configForInspection = {
-        ...rawConfig,
-        source: 'config' as const,
-      } as t.ParsedServerConfig;
+      const configForInspection = { ...rawConfig, source } as t.ParsedServerConfig;
       const { allowedDomains, allowedAddresses } = allowlists;
       const inspected = await withTimeout(
         MCPServerInspector.inspect(
@@ -717,7 +742,7 @@ export class MCPServersRegistry {
         `${prefix} Server initialization timed out`,
       );
 
-      const parsedConfig: t.ParsedServerConfig = { ...inspected, source: 'config' };
+      const parsedConfig: t.ParsedServerConfig = { ...inspected, source };
       await this.upsertConfigCache(cacheKey, parsedConfig);
 
       logger.info(
@@ -731,7 +756,7 @@ export class MCPServersRegistry {
       const stubConfig: t.ParsedServerConfig = {
         ...rawConfig,
         inspectionFailed: true,
-        source: 'config',
+        source,
         updatedAt: Date.now(),
       };
       try {

@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
+import { processMCPEnv } from '~/utils/env';
 
 // Mock MCPServerInspector to avoid actual server connections
 jest.mock('~/mcp/registry/MCPServerInspector');
@@ -237,6 +238,93 @@ describe('MCPServersRegistry', () => {
       const reservedServerNames = Array.from(dbAddSpy.mock.calls[0]?.[3] ?? []);
       expect(reservedServerNames).toEqual(expect.arrayContaining(['slack', 'config_slack']));
       expect(reservedServerNames).not.toContain('other_tenant');
+    });
+  });
+
+  /**
+   * Agent Plugins servers reach the registry through the same startup path as
+   * librechat.yaml servers. Deriving `source` from the storage tier alone used to
+   * retag them `'yaml'`, which dropped the marker `processMCPEnv` needs to keep
+   * plugin-authored placeholders literal and let a plugin exfiltrate `process.env`
+   * secrets through its own headers.
+   */
+  describe('plugin provenance', () => {
+    const pluginConfig: t.MCPOptions = {
+      source: 'plugin',
+      type: 'streamable-http',
+      url: 'https://plugin.example.com/mcp',
+      headers: { Authorization: 'Bearer ${TEST_PLUGIN_SECRET}' },
+    } as t.MCPOptions;
+
+    it('keeps the plugin marker through inspection and cache storage', async () => {
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+
+      const result = await registry.addServer('plugin_server', pluginConfig, 'CACHE');
+
+      expect(inspectSpy).toHaveBeenCalledWith(
+        'plugin_server',
+        expect.objectContaining({
+          source: 'plugin',
+          headers: { Authorization: 'Bearer ${TEST_PLUGIN_SECRET}' },
+        }),
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(result.config.source).toBe('plugin');
+      await expect(registry['cacheConfigsRepo'].get('plugin_server')).resolves.toMatchObject({
+        source: 'plugin',
+        headers: { Authorization: 'Bearer ${TEST_PLUGIN_SECRET}' },
+      });
+    });
+
+    it('still tags operator-authored cache servers as yaml', async () => {
+      const result = await registry.addServer('yaml_server', { ...testParsedConfig }, 'CACHE');
+
+      expect(result.config.source).toBe('yaml');
+    });
+
+    it('keeps the plugin marker on a recovery stub when inspection fails', async () => {
+      const result = await registry.addServerStub('plugin_server', pluginConfig, 'CACHE');
+
+      expect(result.config).toMatchObject({ source: 'plugin', inspectionFailed: true });
+    });
+
+    it('keeps the plugin marker through config-tier lazy init', async () => {
+      const result = await registry.ensureConfigServers({ plugin_server: pluginConfig });
+
+      expect(result.plugin_server.source).toBe('plugin');
+    });
+
+    it('never lets a DB-stored config claim plugin provenance', async () => {
+      const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
+
+      const result = await registry.addServer('forged_server', pluginConfig, 'DB', 'user-1');
+
+      expect(inspectSpy).toHaveBeenCalledWith(
+        'forged_server',
+        expect.objectContaining({ source: 'user' }),
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(result.config.source).toBe('user');
+    });
+
+    it('leaves a plugin-authored header literal after a registry round trip', async () => {
+      process.env.TEST_PLUGIN_SECRET = 'host-secret-value';
+      try {
+        await registry.addServer('plugin_server', pluginConfig, 'CACHE');
+        const stored = await registry.getServerConfig('plugin_server');
+
+        const runtimeConfig = processMCPEnv({ options: stored as t.MCPOptions });
+
+        expect((runtimeConfig as { headers: Record<string, string> }).headers.Authorization).toBe(
+          'Bearer ${TEST_PLUGIN_SECRET}',
+        );
+      } finally {
+        delete process.env.TEST_PLUGIN_SECRET;
+      }
     });
   });
 
