@@ -56,10 +56,10 @@
     "build:client-package": "cd packages/client && npm run build",
     "build:baml": "npx tsc -p baml_ts/tsconfig.json",
     "generate:baml": "baml generate && npm run build:baml",
-    "build:packages": "npm run build:baml && npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package",
-    "build": "npm run build:baml && npx turbo run build",
-    "build:safe": "npm run build:baml && npx turbo run build --no-daemon",
-    "frontend": "npm run build:baml && npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && cd client && npm run build",
+    "build:packages": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package",
+    "build": "npx turbo run build",
+    "build:safe": "npx turbo run build --no-daemon",
+    "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "e2e:prepare": "npm run frontend",
@@ -220,6 +220,6 @@
     ]
   },
   "dependencies": {
-    "@boundaryml/baml-bridge": "^0.15.0"
+    "@boundaryml/baml-bridge": "0.15.0"
   }
 }

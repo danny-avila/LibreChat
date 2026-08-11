@@ -10,7 +10,31 @@ env:
   RUNNER_VERSION: 2.293.0
 
 jobs:
+  baml-generation-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+
+      - name: 'Use Node 24'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.16.0
+
+      - name: 'Install pinned BAML toolchain'
+        run: |
+          ./scripts/install-baml-toolchain.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: 'Regenerate and require a clean BAML graph'
+        run: |
+          ./scripts/install-baml-toolchain.sh --verify
+          npm --prefix packages/api run generate:baml
+          baml check --from packages/api
+          git diff --exit-code -- packages/api/baml_src packages/api/src/baml/generated packages/api/baml.generated.sha256
+
   build-and-push:
+    needs: baml-generation-freshness
     runs-on: ubuntu-latest
     steps:
       # checkout the repo

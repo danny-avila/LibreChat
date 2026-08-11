@@ -1,10 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { INLINED_BYTECODE_FILE, normalizeBamlSourcePaths } from './bamlGeneratedPaths.mjs';
 import {
   BAML_TOOLCHAIN_VERSION,
   FINGERPRINT_FILE,
   PACKAGE_ROOT,
+  SOURCE_DIR,
   currentFingerprint,
   renderFingerprint,
 } from './bamlFingerprint.mjs';
@@ -40,10 +42,17 @@ execFileSync('baml', ['generate', '--from', 'packages/api', '--color', 'never'],
   stdio: 'inherit',
 });
 
+const normalized = normalizeBamlSourcePaths(
+  readFileSync(INLINED_BYTECODE_FILE, 'utf8'),
+  SOURCE_DIR,
+);
+writeFileSync(INLINED_BYTECODE_FILE, normalized.text);
+
 const fingerprint = currentFingerprint();
 writeFileSync(FINGERPRINT_FILE, renderFingerprint(fingerprint));
 
 process.stdout.write(
-  `baml.generated.sha256 updated\n  toolchain ${fingerprint.toolchain}\n` +
+  `normalized ${normalized.replacements} embedded BAML source path(s)\n` +
+    `baml.generated.sha256 updated\n  toolchain ${fingerprint.toolchain}\n` +
     `  baml_src ${fingerprint.source}\n  generated ${fingerprint.generated}\n`,
 );
