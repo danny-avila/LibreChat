@@ -633,11 +633,15 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
         expectedCreatedAt: job.createdAt,
         transformAbortContent: (content) => {
           expect(content).toHaveLength(2);
+          const askPart = content[1];
+          if (askPart?.type !== 'tool_call' || !('tool_call' in askPart)) {
+            throw new Error('Expected reconstructed ask tool call at index 1');
+          }
           const next = [...content];
           next[1] = {
-            ...next[1],
+            ...askPart,
             tool_call: {
-              ...next[1].tool_call,
+              ...askPart.tool_call,
               output: 'staging',
               progress: 1,
             },
