@@ -3,10 +3,10 @@ import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
 import type { SettingDefinition, TConversation } from 'librechat-data-provider';
-import Effort, { AUTO_VALUES, resolveEffortLabel } from './Effort';
 import useThinkingSetting from '~/hooks/Input/useThinkingSetting';
 import useReducedMotion from '~/hooks/Generic/useReducedMotion';
 import { useSetIndexOptions, useLocalize } from '~/hooks';
+import Effort, { resolveEffortLabel } from './Effort';
 import { useGetStartupConfig } from '~/data-provider';
 import { useChatContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -42,8 +42,8 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
      runs, and with the Parameters panel. */
   const raw = conversation?.[setting.key as keyof TConversation] ?? setting.default;
   const value = raw == null ? undefined : String(raw);
-  const isAuto = value == null || AUTO_VALUES.has(value);
-  const display = isAuto ? localize('com_ui_auto') : resolveEffortLabel(setting, value, localize);
+  const display =
+    value == null ? localize('com_ui_auto') : resolveEffortLabel(setting, value, localize);
 
   /* Every label this button can show, in the active language. All of them get
      measured rather than picking by character count: the longest string is not
@@ -52,9 +52,7 @@ function ThinkingControl({ setting, conversation }: ThinkingControlProps) {
     const seen = new Set<string>([localize('com_ui_auto')]);
     for (const option of setting.options ?? []) {
       const raw = String(option);
-      seen.add(
-        AUTO_VALUES.has(raw) ? localize('com_ui_auto') : resolveEffortLabel(setting, raw, localize),
-      );
+      seen.add(resolveEffortLabel(setting, raw, localize));
     }
     return [...seen];
   }, [setting, localize]);

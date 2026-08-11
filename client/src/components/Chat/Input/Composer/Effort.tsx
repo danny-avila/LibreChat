@@ -9,19 +9,20 @@ import {
   HoverCardPortal,
 } from '@librechat/client';
 import type { SettingDefinition, TConversation } from 'librechat-data-provider';
+import type { CSSProperties } from 'react';
 import type { TSetOption, LocalizeFunction } from '~/common';
 import type { TranslationKeys } from '~/hooks';
 import useReducedMotion from '~/hooks/Generic/useReducedMotion';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-/** Values that mean "let the provider decide" rather than a graded level. They
- *  are lifted out of the track and offered as a separate Auto toggle, so the
- *  slider only ever expresses "how much".
+/** Values represented outside the graded track. Their provider mapping names
+ *  the separate mode, which can be Auto, Off, or another provider label, while
+ *  the slider itself only expresses "how much".
  *
  *  `none` is deliberately NOT here: it is a real setting meaning "do not reason
  *  at all", and swallowing it hid the track's own first stop. */
-export const AUTO_VALUES = new Set(['unset', 'auto', '']);
+const UNGRADED_VALUES = new Set(['unset', 'auto', '']);
 
 const TRACK_H = 24;
 /** The thumb overhangs the rail slightly at rest and grows while held, so the
@@ -57,6 +58,9 @@ export function resolveEffortLabel(
       return translated;
     }
   }
+  if (UNGRADED_VALUES.has(value)) {
+    return localize('com_ui_auto');
+  }
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
@@ -88,25 +92,25 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
   const stopRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [dragging, setDragging] = useState(false);
 
-  const { levels, autoValue } = useMemo(() => {
+  const { levels, ungradedValue } = useMemo(() => {
     const options = (setting.options ?? []).map(String);
     return {
-      levels: options.filter((option) => !AUTO_VALUES.has(option)),
-      autoValue: options.find((option) => AUTO_VALUES.has(option)),
+      levels: options.filter((option) => !UNGRADED_VALUES.has(option)),
+      ungradedValue: options.find((option) => UNGRADED_VALUES.has(option)),
     };
   }, [setting.options]);
 
   /* Same resolution as the trigger: an untouched conversation falls back to
-     the setting's (possibly admin-overridden) default, not to Auto. */
+     the setting's possibly admin-overridden default, not to the separate mode. */
   const raw = conversation?.[setting.key as keyof TConversation] ?? setting.default;
   const current = raw == null ? undefined : String(raw);
-  const isAuto = current == null || AUTO_VALUES.has(current);
-  const activeIndex = isAuto ? -1 : levels.indexOf(current);
+  const isUngraded = current == null || UNGRADED_VALUES.has(current);
+  const activeIndex = isUngraded ? -1 : levels.indexOf(current);
 
-  /* The graded level Auto was turned on from. Two jobs: Auto has no position on
-     the rail, so the fill and thumb hold this one while they fade (without it
-     the thumb unmounted the instant Auto turned on and left the fill briefly
-     naked, which flashed green), and switching Auto back off returns here
+  /* The graded level the separate mode was turned on from. Two jobs: that mode
+     has no position on the rail, so the fill and thumb hold this one while they
+     fade (without it the thumb unmounted instantly and left the fill briefly
+     naked, which flashed green), and switching the separate mode off returns here
      instead of dumping the user on the lowest level.
 
      Held as a value rather than an index, and scoped to the conversation it was
@@ -146,6 +150,10 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
     (value: string) => resolveEffortLabel(setting, value, localize),
     [setting, localize],
   );
+  const activeUngradedValue =
+    current != null && UNGRADED_VALUES.has(current) ? current : ungradedValue;
+  const ungradedLabel =
+    activeUngradedValue != null ? label(activeUngradedValue) : localize('com_ui_auto');
 
   /**
    * Nearest stop to a pointer position, so a sweep snaps rather than drifts.
@@ -198,6 +206,21 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
   }
 
   const ratioOf = (index: number) => (levels.length === 1 ? 1 : index / (levels.length - 1));
+  const offset = (ratio: number, fromRight = false) => {
+    const percent = (fromRight ? 1 - ratio : ratio) * 100;
+    const pixels = THUMB * (fromRight ? ratio - 0.5 : 0.5 - ratio);
+    const roundedPercent = Number(percent.toFixed(6));
+    const roundedPixels = Number(Math.abs(pixels).toFixed(6));
+    return `calc(${roundedPercent}% ${pixels < 0 ? '-' : '+'} ${roundedPixels}px)`;
+  };
+  const hitArea = (index: number): CSSProperties => {
+    const previousBoundary = ratioOf(index - 0.5);
+    const nextBoundary = ratioOf(index + 0.5);
+    return {
+      left: index === 0 ? 0 : offset(previousBoundary),
+      right: index === levels.length - 1 ? 0 : offset(nextBoundary, true),
+    };
+  };
   /* Anchored on the resting thumb size so its edge is flush with the rail at
      either end; while held it grows a couple of pixels past, which reads as the
      thumb lifting rather than as a misaligned track. */
@@ -283,7 +306,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
           dragging ? 'cursor-grabbing' : 'cursor-pointer',
           /* Muted while the provider is deciding, so it reads as "not set by
              you" instead of "set to the lowest". Touching it takes over. */
-          isAuto && 'opacity-60',
+          isUngraded && 'opacity-60',
         )}
       >
         <span
@@ -292,13 +315,15 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
           className={cn(
             'absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-full transition-colors',
             /* The border is always present and only its colour changes. Adding
-               the border class on the way into Auto flipped its width 0 -> 1px
+               the border class on the way into the separate mode flipped its width 0 -> 1px
                with the colour animating up from `currentColor`, which flashed
                white, and the extra pixel nudged the centred label. */
             'border border-dashed',
             /* Not `surface-tertiary`: the popover itself is that colour now,
                and the rail would vanish into it. */
-            isAuto ? 'border-border-heavy bg-transparent' : 'border-transparent bg-border-medium',
+            isUngraded
+              ? 'border-border-heavy bg-transparent'
+              : 'border-transparent bg-border-medium',
           )}
         />
         {/* The semantic accent keeps the track intentional in every theme.
@@ -310,7 +335,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
           style={{
             height: TRACK_H,
             width: fillWidth(shownIndex),
-            opacity: isAuto ? 0 : 1,
+            opacity: isUngraded ? 0 : 1,
             /* Fades out faster than the thumb above it, so it is already gone
                before the thumb starts uncovering the rail. */
             transition: `width ${moveMs}ms ease-out, opacity ${fadeMs}ms ease-out`,
@@ -318,7 +343,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
           className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-accent-primary"
         />
 
-        {!isAuto &&
+        {!isUngraded &&
           levels.map((value, index) => (
             <span
               key={`stop-${value}`}
@@ -331,19 +356,19 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
             />
           ))}
 
-        {/* Auto has no position on the track, so rather than leave an empty rail
-            the rail says so outright; otherwise it just looks broken. */}
-        {isAuto && (
+        {/* The ungraded mode has no position on the track, so the rail names it
+            outright rather than looking broken. */}
+        {isUngraded && (
           <span
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 flex items-center justify-center text-[11px] font-medium uppercase tracking-wide text-text-secondary"
           >
-            {localize('com_ui_auto')}
+            {ungradedLabel}
           </span>
         )}
 
-        {/* Always mounted: unmounting it on the way into Auto pulled the cover off
-            the fill mid-fade. It holds still and full-strength until the fill has
+        {/* Always mounted: unmounting it on the way into the ungraded mode pulled
+            the cover off the fill mid-fade. It holds still until the fill has
             gone, then fades itself. */}
         <span
           aria-hidden="true"
@@ -351,12 +376,12 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
             left: centerOf(shownIndex),
             height: thumbSize,
             width: thumbSize,
-            opacity: isAuto ? 0 : 1,
+            opacity: isUngraded ? 0 : 1,
             transition: [
               `left ${moveMs}ms ease-out`,
               `height ${moveMs}ms ease-out`,
               `width ${moveMs}ms ease-out`,
-              `opacity ${thumbFadeMs}ms ease-out ${isAuto ? `${fadeMs}ms` : '0ms'}`,
+              `opacity ${thumbFadeMs}ms ease-out ${isUngraded ? `${fadeMs}ms` : '0ms'}`,
             ].join(', '),
           }}
           className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-surface-fixed shadow-md"
@@ -367,11 +392,11 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
             key={value}
             type="button"
             role="radio"
-            aria-checked={!isAuto && index === activeIndex}
+            aria-checked={!isUngraded && index === activeIndex}
             aria-label={label(value)}
             /* One stop for the whole group, as a radiogroup is meant to have:
                Tab reaches the current level and leaves, and the arrow keys move
-               between them. Under Auto no level is checked, so the one that
+               between them. In the ungraded mode no level is checked, so the one that
                would be restored takes the tab stop. */
             tabIndex={index === shownIndex ? 0 : -1}
             onKeyDown={(event) => {
@@ -388,7 +413,7 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
               stopRefs.current[index] = node;
             }}
             onClick={() => select(value)}
-            style={{ left: `${(index / levels.length) * 100}%`, width: `${100 / levels.length}%` }}
+            style={hitArea(index)}
             className="absolute inset-y-0 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
           />
         ))}
@@ -420,23 +445,21 @@ function Effort({ setting, conversation, setOption }: EffortProps) {
             {localize('com_ui_composer_thinking')}
           </span>
           <span className="flex shrink-0 items-center gap-2">
-            {/* Only offered as a way back: the button that opened this already
-              reads "Auto" while it is active. */}
-            {/* Always present, so Auto reads as a mode you turn on and off
-                rather than a one-way escape hatch that vanishes once used. */}
-            {autoValue != null && (
+            {/* Always present so the separate mode reads as something the user
+                can turn on and off rather than as a one-way escape hatch. */}
+            {ungradedValue != null && (
               <button
                 type="button"
-                aria-pressed={isAuto}
-                onClick={() => select(isAuto ? levels[restoreIndex] : autoValue)}
+                aria-pressed={isUngraded}
+                onClick={() => select(isUngraded ? levels[restoreIndex] : ungradedValue)}
                 className={cn(
                   'rounded-full px-2 py-0.5 text-[11px] transition-colors',
-                  isAuto
+                  isUngraded
                     ? 'bg-accent-primary/15 text-accent-primary'
                     : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
                 )}
               >
-                {localize('com_ui_auto')}
+                {label(ungradedValue)}
               </button>
             )}
             {descriptionText != null && descriptionText !== '' && (
