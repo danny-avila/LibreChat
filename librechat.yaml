@@ -1,0 +1,45 @@
+version: 1.3.13
+cache: true
+
+endpoints:
+  custom:
+    - name: 'OpenRouter'
+      apiKey: '${OPENROUTER_API_KEY}'
+      baseURL: 'https://openrouter.ai/api/v1'
+      models:
+        default:
+          - 'openai/gpt-oss-20b:free'
+        fetch: true
+      titleConvo: true
+      titleModel: 'openai/gpt-oss-20b:free'
+      modelDisplayLabel: 'OpenRouter'
+      dropParams:
+        - 'stop'
+
+    # BAML compiled endpoint. The compiled clients (packages/api/baml_src/ns_host/clients.baml),
+    # not this entry, own provider transport and credentials:
+    #   OPENROUTER_API_KEY: authoritative provider credential (shared with the plain
+    #     OpenRouter entry above)
+    #   BAML_OPENROUTER_BASE_URL: authoritative provider base URL, production value
+    #     https://openrouter.ai/api/v1
+    #   OpenRouter: openai/gpt-oss-120b, FreePoolBackoff, max_retries: 4
+    #   OpenRouterFast: openai/gpt-oss-20b, FastPoolBackoff, max_retries: 2
+    - name: 'Team-BAML'
+      provider: 'baml'
+      models:
+        default:
+          - 'OpenRouter'
+          - 'OpenRouterFast'
+        fetch: false
+      tokenConfig:
+        OpenRouter:
+          context: 131072
+          prompt: 0.03
+          completion: 0.17
+        OpenRouterFast:
+          context: 131072
+          prompt: 0.03
+          completion: 0.13
+      customParams:
+        defaultParamsEndpoint: 'baml'
+      modelDisplayLabel: 'Team BAML'

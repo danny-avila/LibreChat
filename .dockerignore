@@ -9,10 +9,11 @@
 # Specific patterns to ignore
 data-node
 meili_data*
-# Anchored to root so this only matches librechat.yaml/librechat.example.yaml
-# and not similarly-named paths elsewhere in the tree (unanchored `librechat*`
-# would match at any depth).
-/librechat*.yaml
+# librechat.yaml is deliberately NOT excluded: this deployment bakes its
+# config into the image rather than mounting it at runtime. Anchored to root
+# so this only matches librechat.example.yaml itself, not similarly-named
+# paths elsewhere in the tree.
+/librechat.example.yaml
 Dockerfile*
 docs
 
