@@ -9,6 +9,7 @@ import {
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
 import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
 import { cacheConfig } from '~/cache/cacheConfig';
@@ -16,6 +17,48 @@ import { withTimeout } from '~/utils';
 
 /** How long a failure stub is considered fresh before re-attempting inspection (5 minutes). */
 const CONFIG_STUB_RETRY_MS = 5 * 60 * 1000;
+
+/**
+ * Provenance to persist for a config being stored in `tier`.
+ *
+ * SECURITY INVARIANT — an Agent Plugins server keeps its own `'plugin'` marker
+ * rather than taking the tier's tag. `processMCPEnv` reads that marker to decide
+ * whether a `${VAR}` the plugin authored stays literal, so retagging here would
+ * expand host secrets into a plugin-controlled header or URL at both inspection
+ * and connect time. Only operator-loaded tiers may carry the marker: a DB entry
+ * is user-authored and is always `'user'`, so user input can never claim plugin
+ * provenance and skip the sandboxed placeholder rules.
+ */
+function resolveServerSource(
+  config: t.ParsedServerConfig,
+  tier: t.MCPServerSource,
+): t.MCPServerSource {
+  if (tier === 'user') {
+    return 'user';
+  }
+  return isPluginSourced(config) ? MCP_PLUGIN_SOURCE : tier;
+}
+
+/**
+ * Source an overlaid config should carry when a Config-tier override shadows a
+ * same-name base entry. The base's source is normally inherited so downstream
+ * recovery routes to the base's storage tier.
+ *
+ * SECURITY INVARIANT — a `'plugin'` base is the exception: its no-resolve
+ * provenance must never transfer to an operator-authored override, or
+ * `processMCPEnv` would stop resolving the operator's own `${VAR}` placeholders.
+ * The override supersedes the plugin (operator config outranks a plugin server),
+ * so it keeps its own trusted source instead.
+ */
+function overlaySource(
+  base: t.ParsedServerConfig,
+  override: t.ParsedServerConfig,
+): t.MCPServerSource | undefined {
+  if (base.source === MCP_PLUGIN_SOURCE) {
+    return override.source ?? 'config';
+  }
+  return base.source;
+}
 
 /**
  * Fields an admin override can legitimately set. Used to detect whether a
@@ -295,7 +338,7 @@ export class MCPServersRegistry {
     if (!candidate) return base;
     if (base?.source === 'user') return base;
     if (candidate.inspectionFailed) return base ?? candidate;
-    return base ? { ...candidate, source: base.source } : candidate;
+    return base ? { ...candidate, source: overlaySource(base, candidate) } : candidate;
   }
 
   /** Returns whether an effective config exactly matches the operator-owned base config. */
@@ -317,7 +360,9 @@ export class MCPServersRegistry {
    *      base entry; the healthy base is preserved for the duration of the retry window.
    *   2. User-DB entries (`source: 'user'`) are never replaced by Config-tier overlays.
    * On a successful overlay the base entry's `source` field is preserved so downstream
-   * recovery logic routes to the correct storage location.
+   * recovery logic routes to the correct storage location — except a `'plugin'` base,
+   * whose no-resolve provenance must not transfer to the operator override (see
+   * `overlaySource`).
    */
   public async getAllServerConfigs(
     userId?: string,
@@ -335,8 +380,10 @@ export class MCPServersRegistry {
         continue;
       }
       if (override.inspectionFailed && result[name]) continue;
-      const baseSource = result[name]?.source;
-      result[name] = baseSource ? { ...override, source: baseSource } : override;
+      const baseEntry = result[name];
+      result[name] = baseEntry
+        ? { ...override, source: overlaySource(baseEntry, override) }
+        : override;
     }
     return result;
   }
@@ -401,7 +448,11 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const stubConfig: t.ParsedServerConfig = { ...config, inspectionFailed: true, source: 'yaml' };
+    const stubConfig: t.ParsedServerConfig = {
+      ...config,
+      inspectionFailed: true,
+      source: resolveServerSource(config, 'yaml'),
+    };
     const result = await configRepo.add(serverName, stubConfig, userId);
     await this.invalidateServerReadCaches(result.serverName, userId);
     this.resetYamlServerNamesMemo();
@@ -416,7 +467,7 @@ export class MCPServersRegistry {
     reservedServerNames?: Iterable<string>,
   ): Promise<t.AddServerResult> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const source = resolveServerSource(config, storageLocation === 'CACHE' ? 'yaml' : 'user');
     const configForInspection = { ...config, source } as t.ParsedServerConfig;
     const { allowedDomains, allowedAddresses } = await this.resolveAllowlists({ userId });
     let parsedConfig: t.ParsedServerConfig;
@@ -512,7 +563,7 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
-    const source = (storageLocation === 'CACHE' ? 'yaml' : 'user') as t.MCPServerSource;
+    const source = resolveServerSource(config, storageLocation === 'CACHE' ? 'yaml' : 'user');
 
     // Merge existing admin API key if not provided in update (needed for inspection)
     let configForInspection = { ...config };
@@ -699,11 +750,10 @@ export class MCPServersRegistry {
     const prefix = `[MCP][config][${serverName}]`;
     logger.info(`${prefix} Lazy-initializing config-source server`);
 
+    const source = resolveServerSource(rawConfig, 'config');
+
     try {
-      const configForInspection = {
-        ...rawConfig,
-        source: 'config' as const,
-      } as t.ParsedServerConfig;
+      const configForInspection = { ...rawConfig, source } as t.ParsedServerConfig;
       const { allowedDomains, allowedAddresses } = allowlists;
       const inspected = await withTimeout(
         MCPServerInspector.inspect(
@@ -717,7 +767,7 @@ export class MCPServersRegistry {
         `${prefix} Server initialization timed out`,
       );
 
-      const parsedConfig: t.ParsedServerConfig = { ...inspected, source: 'config' };
+      const parsedConfig: t.ParsedServerConfig = { ...inspected, source };
       await this.upsertConfigCache(cacheKey, parsedConfig);
 
       logger.info(
@@ -731,7 +781,7 @@ export class MCPServersRegistry {
       const stubConfig: t.ParsedServerConfig = {
         ...rawConfig,
         inspectionFailed: true,
-        source: 'config',
+        source,
         updatedAt: Date.now(),
       };
       try {
