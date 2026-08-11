@@ -145,6 +145,25 @@ describePg('chat search composition root', () => {
   }, 60_000);
 
   /**
+   * The writer slot naming another managed role is refused before a pool ever
+   * exists: as the reader it cannot write, and as the owner a DDL-only role
+   * lands on a background write path. The boot contract holds — the stack
+   * still comes up, without a projector, and says why in the log.
+   */
+  it('does not start the projector when the writer URL names another managed role', async () => {
+    const readerUrl = new URL(process.env.CHAT_SEARCH_WRITER_URL as string);
+    readerUrl.username = 'chat_search_reader';
+    process.env.CHAT_SEARCH_WRITER_URL = readerUrl.toString();
+
+    const stack = await startChatSearch({ mongoose });
+    try {
+      expect(stack.isProjecting()).toBe(false);
+    } finally {
+      await stack.stop();
+    }
+  }, 60_000);
+
+  /**
    * Configuring the migrate URL is the operator saying "migrate this". When that
    * attempt fails, the database may be half-provisioned or behind — yet an older
    * schema can still hold a usable lease table, so an unconditional start would

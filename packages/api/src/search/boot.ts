@@ -8,6 +8,7 @@ import {
 import type { SearchPool } from './types';
 import { applyRolePasswords, migrate } from './migrate';
 import { createMongoSourceReader } from './source';
+import { assertManagedRoleUrl } from './roles';
 import { createSearchPool } from './pool';
 import { Projector } from './projector';
 
@@ -119,6 +120,7 @@ async function startProjector(
     );
     return null;
   }
+  assertManagedRoleUrl('CHAT_SEARCH_WRITER_URL', connectionString, 'writer');
 
   const pool = createSearchPool({
     connectionString,
