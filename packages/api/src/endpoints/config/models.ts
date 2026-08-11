@@ -11,6 +11,11 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { ServerRequest, GetUserKeyValuesFunction, UserKeyValues } from '~/types';
 import type { FetchModelsParams } from '~/endpoints/models';
 import type { GetAppConfigOptions } from '~/app/service';
+import {
+  bamlClientNames,
+  isBamlEndpoint,
+  isPublishableCustomEndpoint,
+} from '~/endpoints/custom/provider';
 import { fetchModels as defaultFetchModels } from '~/endpoints/models';
 import { getTokenConfigKey } from '~/endpoints/custom/initialize';
 import { getAppConfigOptionsFromUser } from '~/app/service';
@@ -82,12 +87,7 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
     }
 
     const customEndpoints = (appConfig.endpoints[EModelEndpoint.custom] as TEndpoint[]).filter(
-      (endpoint) =>
-        endpoint.baseURL &&
-        endpoint.apiKey &&
-        endpoint.name &&
-        endpoint.models &&
-        (endpoint.models.fetch || endpoint.models.default),
+      isPublishableCustomEndpoint,
     );
 
     const fetchPromisesMap: Record<string, Promise<string[]>> = {};
@@ -107,6 +107,17 @@ export function createLoadConfigModels(deps: LoadConfigModelsDeps) {
       const name = normalizeEndpointName(configName);
       endpointsMap[name] = endpoint;
       modelsConfig[name] = [];
+
+      /**
+       * A BAML endpoint's models ARE its compiled client names, exactly as
+       * written and case-preserved: there is nothing to fetch, no secret to
+       * decrypt, no user key to look up, and no token config to cache. Publishing
+       * them here and skipping the rest keeps discovery side-effect free.
+       */
+      if (isBamlEndpoint(endpoint)) {
+        modelsConfig[name] = bamlClientNames(endpoint);
+        continue;
+      }
 
       const resolvedApiKey = resolveConfigSecret(apiKey) ?? '';
       const resolvedBaseURL = extractEnvVariable(baseURL);

@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "outDir": "./dist",
+    "rootDir": "./baml_sdk",
+    "declaration": false,
+    "skipLibCheck": true,
+    "strict": false,
+    "esModuleInterop": true
+  },
+  "include": ["baml_sdk/**/*.ts"]
+}

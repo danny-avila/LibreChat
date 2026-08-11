@@ -1,6 +1,11 @@
 import { EModelEndpoint, extractEnvVariable, normalizeEndpointName } from 'librechat-data-provider';
 import type { TCustomEndpoints, TEndpoint } from 'librechat-data-provider';
 import type { TCustomEndpointsConfig } from '~/types/endpoints';
+import {
+  isBamlEndpoint,
+  isPublishableCustomEndpoint,
+  resolveDefaultParams,
+} from '~/endpoints/custom/provider';
 import { isUserProvided } from '~/utils';
 
 /**
@@ -17,50 +22,41 @@ export function loadCustomEndpointsConfig(
   const customEndpointsConfig: TCustomEndpointsConfig = {};
 
   if (Array.isArray(customEndpoints)) {
-    const filteredEndpoints = customEndpoints.filter(
-      (endpoint) =>
-        endpoint.baseURL &&
-        endpoint.apiKey &&
-        endpoint.name &&
-        endpoint.models &&
-        (endpoint.models.fetch || endpoint.models.default),
-    );
+    const filteredEndpoints = customEndpoints.filter(isPublishableCustomEndpoint);
 
     for (let i = 0; i < filteredEndpoints.length; i++) {
       const endpoint = filteredEndpoints[i] as TEndpoint;
-      const {
-        baseURL,
-        apiKey,
-        name: configName,
-        iconURL,
-        modelDisplayLabel,
-        customParams,
-        provider,
-      } = endpoint;
+      const { baseURL, apiKey, name: configName, iconURL, modelDisplayLabel } = endpoint;
       const name = normalizeEndpointName(configName);
+      const customParams = resolveDefaultParams(endpoint);
+
+      /**
+       * A BAML endpoint has no credentials to resolve and no URL to hand out, so
+       * discovery does neither. Publishing it as an ordinary named custom
+       * endpoint is deliberate: the client never learns it is BAML-backed beyond
+       * `defaultParamsEndpoint`, and the persisted identity stays the name.
+       */
+      if (isBamlEndpoint(endpoint)) {
+        customEndpointsConfig[name] = {
+          type: EModelEndpoint.custom,
+          userProvide: false,
+          userProvideURL: false,
+          customParams,
+          modelDisplayLabel,
+          iconURL,
+        };
+        continue;
+      }
 
       const resolvedApiKey = extractEnvVariable(apiKey ?? '');
       const resolvedBaseURL = extractEnvVariable(baseURL ?? '');
       const userProvideURL = isUserProvided(resolvedBaseURL);
 
-      /**
-       * A native `provider` (e.g. anthropic) implies its parameter set. Surface it
-       * as `defaultParamsEndpoint` so the client param panel shows the right fields
-       * (e.g. `maxOutputTokens`/`thinking` for Anthropic, not OpenAI `max_tokens`),
-       * unless an admin explicitly chose a non-default `defaultParamsEndpoint`.
-       */
-      const resolvedCustomParams =
-        provider != null &&
-        (customParams?.defaultParamsEndpoint == null ||
-          customParams.defaultParamsEndpoint === EModelEndpoint.custom)
-          ? { ...customParams, defaultParamsEndpoint: provider }
-          : customParams;
-
       customEndpointsConfig[name] = {
         type: EModelEndpoint.custom,
         userProvide: isUserProvided(resolvedApiKey) || userProvideURL,
         userProvideURL,
-        customParams: resolvedCustomParams,
+        customParams,
         modelDisplayLabel,
         iconURL,
       };

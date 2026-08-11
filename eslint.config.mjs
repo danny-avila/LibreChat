@@ -32,6 +32,7 @@ export default [
       'packages/api/types/**/*',
       'packages/api/dist/**/*',
       'packages/api/test_bundle/**/*',
+      'packages/api/src/baml/generated/**/*',
       'api/demo/**/*',
       'packages/client/dist/**/*',
       'packages/data-provider/types/**/*',

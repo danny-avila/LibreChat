@@ -6,6 +6,7 @@ import type * as a from './types/assistants';
 import type * as s from './schemas';
 import type * as t from './types';
 import {
+  bamlSchema,
   openAISchema,
   openRouterSchema,
   googleSchema,
@@ -14,6 +15,7 @@ import {
   anthropicSchema,
   assistantSchema,
   // agentsSchema,
+  compactBamlSchema,
   compactAgentsSchema,
   compactGoogleSchema,
   compactAssistantSchema,
@@ -28,6 +30,7 @@ dayjs.extend(timezonePlugin);
 type EndpointSchema =
   | typeof openAISchema
   | typeof openRouterSchema
+  | typeof bamlSchema
   | typeof googleSchema
   | typeof anthropicSchema
   | typeof assistantSchema
@@ -35,13 +38,14 @@ type EndpointSchema =
   | typeof bedrockInputSchema;
 
 export type EndpointSchemaKey = EModelEndpoint;
-type EndpointSchemaLookupKey = EModelEndpoint | Providers.OPENROUTER;
+type EndpointSchemaLookupKey = EModelEndpoint | Providers.OPENROUTER | Providers.BAML;
 
 const endpointSchemas: Record<EndpointSchemaLookupKey, EndpointSchema> = {
   [EModelEndpoint.openAI]: openAISchema,
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
   [Providers.OPENROUTER]: openRouterSchema,
+  [Providers.BAML]: bamlSchema,
   [EModelEndpoint.google]: googleSchema,
   [EModelEndpoint.anthropic]: anthropicSchema,
   [EModelEndpoint.assistants]: assistantSchema,
@@ -315,6 +319,7 @@ type CompactEndpointSchema =
   | typeof compactAssistantSchema
   | typeof compactAgentsSchema
   | typeof compactGoogleSchema
+  | typeof compactBamlSchema
   | typeof openRouterSchema
   | typeof anthropicSchema
   | typeof bedrockInputSchema;
@@ -324,6 +329,7 @@ const compactEndpointSchemas: Record<EndpointSchemaLookupKey, CompactEndpointSch
   [EModelEndpoint.azureOpenAI]: openAISchema,
   [EModelEndpoint.custom]: openAISchema,
   [Providers.OPENROUTER]: openRouterSchema,
+  [Providers.BAML]: compactBamlSchema,
   [EModelEndpoint.assistants]: compactAssistantSchema,
   [EModelEndpoint.azureAssistants]: compactAssistantSchema,
   [EModelEndpoint.agents]: compactAgentsSchema,

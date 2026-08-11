@@ -1156,11 +1156,19 @@ const bedrockMoonshotCol2: SettingsConfiguration = [
   librechat.fileTokenLimit,
 ];
 
+/**
+ * BAML owns temperature, token limits, and every other generation parameter inside
+ * its compiled clients, so the host offers no controls for it. The empty list is the
+ * contract: `EndpointSettings` finds no component for it and renders no panel.
+ */
+const bamlConfig: SettingsConfiguration = [];
+
 export const paramSettings: Record<string, SettingsConfiguration | undefined> = {
   [EModelEndpoint.openAI]: openAI,
   [EModelEndpoint.azureOpenAI]: openAI,
   [EModelEndpoint.custom]: openAI,
   [Providers.OPENROUTER]: openRouter,
+  [Providers.BAML]: bamlConfig,
   [EModelEndpoint.anthropic]: anthropicConfig,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.Anthropic}`]: bedrockAnthropic,
   [`${EModelEndpoint.bedrock}-${BedrockProviders.MistralAI}`]: bedrockMistral,
@@ -1186,6 +1194,11 @@ const bedrockGeneralColumns = {
   col2: bedrockGeneralCol2,
 };
 
+const bamlColumns = {
+  col1: bamlConfig,
+  col2: bamlConfig,
+};
+
 export const presetSettings: Record<
   string,
   | {
@@ -1201,6 +1214,7 @@ export const presetSettings: Record<
     col1: openAICol1,
     col2: [...openAICol2, anthropic.promptCache, anthropic.promptCacheTtl],
   },
+  [Providers.BAML]: bamlColumns,
   [EModelEndpoint.anthropic]: {
     col1: anthropicCol1,
     col2: anthropicCol2,

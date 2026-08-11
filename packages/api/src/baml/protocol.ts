@@ -1,0 +1,320 @@
+import { createHash } from 'node:crypto';
+import type { BamlDeclaredTool, BamlFailureCode, BamlPortVersion } from '@librechat/agents/baml';
+
+/**
+ * The port version this adapter speaks. Declared as a local literal rather than
+ * re-exported from `@librechat/agents/baml`: importing that entry for its value
+ * would run its registration side-effect inside the worker facade, which exists
+ * to stay lightweight. The annotation still fails the build if the port moves.
+ */
+export const SUPPORTED_PORT_VERSION: BamlPortVersion = 1;
+
+/**
+ * Everything both sides of the BAML worker boundary agree on, and nothing that
+ * touches the native graph. The parent facade and the worker each bundle this
+ * module; it must stay free of `@boundaryml/baml-bridge`, of the generated SDK,
+ * and of `node:worker_threads`, or importing the facade would pull the native
+ * runtime the whole lazy-loading design exists to avoid.
+ */
+
+/** The compiled tool union in `baml_src/ns_host/protocol.baml`, mirrored. */
+const COMPILED_TOOLS = [
+  { name: 'get_weather', fields: { tool: 'literal:get_weather', city: 'string' } },
+  { name: 'web_search', fields: { tool: 'literal:web_search', query: 'string' } },
+] as const;
+
+const fingerprint = (fields: Readonly<Record<string, string>>): string =>
+  `sha256:${createHash('sha256').update(JSON.stringify(fields)).digest('hex').slice(0, 32)}`;
+
+/**
+ * Hand-maintained in step with the BAML union. The fingerprint's job is to
+ * detect drift between the schema a caller *binds* and the schema BAML
+ * *compiled*, and the compiled schema is not reachable without the native
+ * runtime — which is exactly what the facade may not load.
+ */
+export const DECLARED_TOOLS: readonly BamlDeclaredTool[] = Object.freeze(
+  COMPILED_TOOLS.map((tool) =>
+    Object.freeze({ name: tool.name, schemaFingerprint: fingerprint(tool.fields) }),
+  ),
+);
+
+/** Non-user-configurable safety budgets, all owned by the parent. */
+export const BAML_CALL_TIMEOUT_MS = 120_000;
+export const BAML_STREAM_START_TIMEOUT_MS = 60_000;
+export const BAML_STREAM_IDLE_TIMEOUT_MS = 30_000;
+export const BAML_STREAM_FINAL_TIMEOUT_MS = 30_000;
+export const BAML_STREAM_TOTAL_TIMEOUT_MS = 300_000;
+export const BAML_WORKER_ABORT_GRACE_MS = 250;
+
+/** Transcript bounds, measured in JavaScript string code units. */
+export const MAX_TRANSCRIPT_ENTRIES = 1_000;
+export const MAX_TRANSCRIPT_TEXT_CHARS = 2_000_000;
+export const MAX_TOOL_RESULT_CHARS = 250_000;
+
+/**
+ * Public failure and rejection text. Stable and sanitized by construction: no
+ * stack, path, environment name or value, credential, native constructor,
+ * `$new`, or bridge internal may ever be interpolated into these.
+ */
+export const UNCOMPILED_CLIENT_MESSAGE = 'The selected BAML model is not compiled for this server.';
+export const TRANSPORT_FAILED_MESSAGE = 'BAML provider request failed.';
+export const TRANSPORT_TIMEOUT_MESSAGE = 'BAML provider request timed out.';
+export const TRANSCRIPT_TOO_LARGE_MESSAGE =
+  'The conversation is too large to send to the selected BAML model.';
+export const DIVERGENT_PARTIAL_MESSAGE =
+  'The BAML model produced an inconsistent partial response.';
+export const MODEL_ERROR_MESSAGE = 'The BAML model could not complete this turn.';
+export const PARSE_ERROR_MESSAGE =
+  'The BAML model returned a response that did not match the expected schema.';
+export const PORT_VERSION_MESSAGE =
+  'The BAML port version this request was built for is not supported.';
+export const ABORT_MESSAGE = 'BAML turn aborted';
+
+/** A tool the model selected that the caller did not bind this turn. */
+export const unboundToolMessage = (name: string): string =>
+  `The model selected the tool "${name}", which is not bound for this turn.`;
+
+/** A tool selection as it crosses the worker boundary: plain data, never a generated instance. */
+export interface WireToolSelection {
+  readonly name: string;
+  readonly args: Record<string, string | number | boolean | null>;
+}
+
+/** A `TurnPlan`, flattened. Generated class instances never cross the boundary. */
+export interface WireTurnPlan {
+  readonly reply: string | null;
+  readonly tools: readonly WireToolSelection[];
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isWireArgument = (value: unknown): value is string | number | boolean | null =>
+  value === null ||
+  typeof value === 'string' ||
+  typeof value === 'boolean' ||
+  (typeof value === 'number' && Number.isFinite(value));
+
+const isWireToolSelection = (value: unknown): value is WireToolSelection =>
+  isRecord(value) &&
+  typeof value.name === 'string' &&
+  isRecord(value.args) &&
+  Object.values(value.args).every(isWireArgument);
+
+/**
+ * Worker messages are runtime input even though both ends share TypeScript
+ * declarations. Validate the structured-clone payload before treating it as a
+ * generated turn; malformed partials are model parse failures, not empty text.
+ */
+export const isWireTurnPlan = (value: unknown): value is WireTurnPlan =>
+  isRecord(value) &&
+  (typeof value.reply === 'string' || value.reply === null) &&
+  Array.isArray(value.tools) &&
+  value.tools.every(isWireToolSelection);
+
+/**
+ * Flattens one native tool selection (`{tool: <literal>, ...fields}`) to the
+ * wire shape. Returns `null` for anything that is not at least a record with a
+ * string `tool` discriminator. The caller MUST NOT filter a `null` out of an
+ * array of selections — doing so silently drops a malformed selection instead
+ * of surfacing it as a parse failure, which is the coercive-flattening bug
+ * this function exists to make impossible.
+ */
+export const toWireToolSelection = (selection: unknown): WireToolSelection | null => {
+  if (!isRecord(selection) || typeof selection.tool !== 'string') {
+    return null;
+  }
+  const { tool, ...rest } = selection;
+  const args: Record<string, string | number | boolean | null> = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (value === null) {
+      args[key] = null;
+      continue;
+    }
+    const kind = typeof value;
+    args[key] =
+      kind === 'string' || kind === 'number' || kind === 'boolean'
+        ? (value as string | number | boolean)
+        : String(value);
+  }
+  return { name: tool, args };
+};
+
+export type ChunkCandidateResult =
+  | { readonly ok: true; readonly value: WireTurnPlan }
+  | { readonly ok: false };
+
+/**
+ * Honestly assembles one raw native stream snapshot's `reply`/`tools` fields
+ * into a validated `WireTurnPlan`, or reports that the snapshot is
+ * structurally invalid.
+ *
+ * `undefined` is the one benign case in either field — bridge 0.15.0 leaves a
+ * field unset while it is still being populated, which is the absence of a
+ * claim, not a malformed one — so it becomes the field's neutral default.
+ * Every other unexpected shape (a wrong-typed `reply`, a non-array `tools`, an
+ * unmappable tool selection) is passed through to `isWireTurnPlan` rather than
+ * silently coerced to that same neutral default: coercing it away is exactly
+ * what would make a genuine model parse failure indistinguishable from "no
+ * data yet".
+ */
+export const toChunkCandidate = (rawReply: unknown, rawTools: unknown): ChunkCandidateResult => {
+  const reply = rawReply === undefined ? null : rawReply;
+  let tools: unknown = rawTools === undefined ? [] : rawTools;
+  if (Array.isArray(tools)) {
+    tools = tools.map(toWireToolSelection);
+  }
+  const candidate = { reply, tools };
+  return isWireTurnPlan(candidate) ? { ok: true, value: candidate } : { ok: false };
+};
+
+export interface PartialTextCursor {
+  readonly emitted: string;
+  readonly terminal: boolean;
+}
+
+export type PartialTextEmission =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'failure'; readonly failure: WireFailure };
+
+export interface PartialTextStep {
+  readonly cursor: PartialTextCursor;
+  readonly emission?: PartialTextEmission;
+}
+
+/** Creates request-local state for one cumulative BAML stream. */
+export const createPartialTextCursor = (): PartialTextCursor => ({
+  emitted: '',
+  terminal: false,
+});
+
+const terminalParseFailure = (cursor: PartialTextCursor, message: string): PartialTextStep => ({
+  cursor: { emitted: cursor.emitted, terminal: true },
+  emission: { kind: 'failure', failure: { code: 'parse_error', message } },
+});
+
+/**
+ * Advances one cumulative text snapshot.
+ *
+ * Only strict string-prefix growth emits text. Duplicate/null/tool snapshots
+ * emit nothing, while structural invalidity or retraction/divergence emits one
+ * terminal parse failure. Once terminal, queued snapshots are ignored.
+ */
+export const consumeCumulativeTextSnapshot = (
+  cursor: PartialTextCursor,
+  snapshot: unknown,
+): PartialTextStep => {
+  if (cursor.terminal) {
+    return { cursor };
+  }
+  if (!isWireTurnPlan(snapshot)) {
+    return terminalParseFailure(cursor, PARSE_ERROR_MESSAGE);
+  }
+  if (snapshot.tools.length > 0 || snapshot.reply === null || snapshot.reply === cursor.emitted) {
+    return { cursor };
+  }
+  if (!snapshot.reply.startsWith(cursor.emitted)) {
+    return terminalParseFailure(cursor, DIVERGENT_PARTIAL_MESSAGE);
+  }
+
+  return {
+    cursor: { emitted: snapshot.reply, terminal: false },
+    emission: { kind: 'text', text: snapshot.reply.slice(cursor.emitted.length) },
+  };
+};
+
+/**
+ * `message` is the stable public text. `detail` is native error text for the
+ * redacted structured logger only — the parent strips it before the value
+ * becomes a port outcome, so it can never reach a response, a document, or a
+ * DTO.
+ */
+export interface WireFailure {
+  readonly code: BamlFailureCode;
+  readonly message: string;
+  readonly toolName?: string;
+  readonly detail?: string;
+}
+
+/** Rejections stay a closed pair: the caller aborted, or the transport did not deliver. */
+export type WireRejectionKind = 'abort' | 'transport';
+
+export interface WireRejection {
+  readonly kind: WireRejectionKind;
+  readonly message: string;
+  readonly detail?: string;
+}
+
+export type WorkerMode = 'call' | 'stream';
+
+export interface WorkerTurnInput {
+  readonly userMessage: string;
+  readonly transcript: string;
+  readonly allowedTools: readonly string[];
+}
+
+export interface StartRequest {
+  readonly type: 'start';
+  readonly operationId: string;
+  readonly mode: WorkerMode;
+  readonly clientName: string;
+  readonly input: WorkerTurnInput;
+}
+
+export interface AbortRequest {
+  readonly type: 'abort';
+  readonly operationId: string;
+}
+
+export type WorkerRequest = StartRequest | AbortRequest;
+
+export interface ReadyMessage {
+  readonly type: 'ready';
+  readonly operationId: string;
+}
+
+/**
+ * The stream is exhausted and the worker is about to make the blocking `final()`
+ * pull. Without it the parent cannot tell "waiting for the next snapshot" from
+ * "waiting for the final result", and the two have separate budgets.
+ */
+export interface FinalizingMessage {
+  readonly type: 'finalizing';
+  readonly operationId: string;
+}
+
+export interface ChunkMessage {
+  readonly type: 'chunk';
+  readonly operationId: string;
+  readonly snapshot: WireTurnPlan;
+}
+
+export interface FinalMessage {
+  readonly type: 'final';
+  readonly operationId: string;
+  readonly plan: WireTurnPlan;
+}
+
+export interface FailureMessage {
+  readonly type: 'failure';
+  readonly operationId: string;
+  readonly failure: WireFailure;
+}
+
+export interface RejectionMessage {
+  readonly type: 'rejection';
+  readonly operationId: string;
+  readonly rejection: WireRejection;
+}
+
+export type WorkerMessage =
+  | ReadyMessage
+  | FinalizingMessage
+  | ChunkMessage
+  | FinalMessage
+  | FailureMessage
+  | RejectionMessage;
+
+/** One terminal message ends an operation; everything after it is ignored. */
+export const isTerminalMessage = (message: WorkerMessage): boolean =>
+  message.type === 'final' || message.type === 'failure' || message.type === 'rejection';

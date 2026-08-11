@@ -64,9 +64,11 @@ import {
 } from './tools';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
+import { setAgentRuntimeOptions } from '~/agents/runtime';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
+import { isBamlInitializeResult } from '~/types';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
 
@@ -1101,6 +1103,13 @@ export async function initializeAgent(
 
   const { getOptions, overrideProvider, customEndpointConfig } = getProviderConfig({
     provider,
+    /**
+     * The agent's endpoint is the persisted identity. Passing it lets a
+     * provider that is only a runtime discriminator — BAML — resolve the named
+     * custom endpoint it belongs to instead of searching for an endpoint with
+     * the discriminator's name.
+     */
+    endpoint: agent.endpoint ?? provider,
     appConfig: req.config,
   });
   if (overrideProvider !== agent.provider) {
@@ -1362,6 +1371,12 @@ export async function initializeAgent(
     tools = structuredTools.concat(providerTools as GenericTool[]);
   }
 
+  /**
+   * Only the DECLARATIVE half is written here — this object becomes a Mongo
+   * document, SSE JSON, and a public DTO. BAML's executable port travels on a
+   * non-enumerable symbol instead, and `createRun` merges it back in at the last
+   * moment, immediately before constructing `ChatBAML`.
+   */
   agent.model_parameters = { ...options.llmConfig } as Agent['model_parameters'];
   if (options.configOptions) {
     (agent.model_parameters as Record<string, unknown>).configuration = options.configOptions;
@@ -1546,6 +1561,17 @@ export async function initializeAgent(
     primedCodeFiles,
     endpointTokenConfig: options.endpointTokenConfig,
   };
+
+  /**
+   * Attached to the RETURNED object, not the mutated `agent` param above:
+   * `initializedAgent` is built by spreading `agent`, and `Object.defineProperty`'s
+   * `enumerable: false` symbol-keyed carrier is exactly what a spread skips.
+   * `createRun` reads it off this same returned/stored config — see the "last
+   * possible moment" merge in `~/agents/run`.
+   */
+  if (isBamlInitializeResult(options)) {
+    setAgentRuntimeOptions(initializedAgent, options.runtimeOptions);
+  }
 
   return initializedAgent;
 }

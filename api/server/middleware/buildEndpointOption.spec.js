@@ -519,3 +519,152 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     );
   });
 });
+
+/**
+ * Behavior 3.3 (server ingress) — a raw caller gets the same cleanup as the UI.
+ *
+ * The endpoint is arbitrarily named and reaches the BAML schema only through the
+ * published `customParams.defaultParamsEndpoint`, exactly as discovery emits it.
+ */
+describe('buildEndpointOption - BAML ingress', () => {
+  const { EndpointURLs, Providers } = require('librechat-data-provider');
+
+  /** Every provider generation field a raw caller might send. */
+  const deniedBody = {
+    temperature: 0.7,
+    top_p: 0.9,
+    topP: 0.9,
+    topK: 40,
+    frequency_penalty: 0.5,
+    presence_penalty: 0.5,
+    max_tokens: 4096,
+    maxTokens: 4096,
+    max_output_tokens: 8192,
+    maxOutputTokens: 8192,
+    max_completion_tokens: 8192,
+    maxCompletionTokens: 8192,
+    stop: ['STOP'],
+    reasoning_effort: 'high',
+    reasoning_summary: 'auto',
+    reasoning_mode: 'standard',
+    reasoning_context: 'auto',
+    thinking: true,
+    thinkingBudget: 2048,
+    effort: 'high',
+    thinkingDisplay: 'summarized',
+    verbosity: 'high',
+    promptCache: true,
+    promptCacheTtl: '1h',
+    web_search: true,
+    useResponsesApi: true,
+    region: 'us-east-1',
+    system: 'be helpful',
+    unknownGenerationKey: 'nope',
+  };
+
+  const bamlEndpointsConfig = {
+    'Team-BAML': {
+      type: EModelEndpoint.custom,
+      customParams: { defaultParamsEndpoint: Providers.BAML },
+    },
+  };
+
+  /** The client always sends the resolved `endpointType` alongside a custom endpoint. */
+  const createBamlReq = (body, config = {}) => ({
+    body: { endpointType: EModelEndpoint.custom, ...body },
+    config,
+    user: { id: 'user-1' },
+    baseUrl: EndpointURLs[EModelEndpoint.agents],
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetEndpointsConfig.mockResolvedValue(bamlEndpointsConfig);
+  });
+
+  it('strips every provider generation field a raw caller sends', async () => {
+    const req = createBamlReq({
+      endpoint: 'Team-BAML',
+      model: 'OpenRouter',
+      promptPrefix: 'be terse',
+      maxContextTokens: 50000,
+      ...deniedBody,
+    });
+    const next = jest.fn();
+
+    await buildEndpointOption(req, createRes(), next);
+
+    expect(next).toHaveBeenCalled();
+    const built = req.body.endpointOption;
+    for (const denied of Object.keys(deniedBody)) {
+      expect(built[denied]).toBeUndefined();
+    }
+    expect(built.model).toBe('OpenRouter');
+    expect(built.promptPrefix).toBe('be terse');
+    expect(built.maxContextTokens).toBe(50000);
+  });
+
+  it('resolves the BAML schema through the published defaultParamsEndpoint', async () => {
+    const req = createBamlReq({ endpoint: 'Team-BAML', model: 'OpenRouter', temperature: 0.7 });
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(parseCompactConvo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: 'Team-BAML',
+        defaultParamsEndpoint: Providers.BAML,
+      }),
+    );
+  });
+
+  it('keeps stripping when an enforced model spec is reparsed', async () => {
+    const req = createBamlReq(
+      {
+        endpoint: 'Team-BAML',
+        spec: 'baml-spec',
+        model: 'OpenRouter',
+        ...deniedBody,
+      },
+      {
+        modelSpecs: {
+          enforce: true,
+          list: [
+            {
+              name: 'baml-spec',
+              label: 'BAML Spec',
+              preset: {
+                endpoint: 'Team-BAML',
+                model: 'OpenRouterFast',
+                temperature: 0.9,
+                max_tokens: 2048,
+                maxOutputTokens: 2048,
+              },
+            },
+          ],
+        },
+      },
+    );
+    const next = jest.fn();
+
+    await buildEndpointOption(req, createRes(), next);
+
+    expect(next).toHaveBeenCalled();
+    const built = req.body.endpointOption;
+    expect(built.model).toBe('OpenRouterFast');
+    expect(built.temperature).toBeUndefined();
+    expect(built.max_tokens).toBeUndefined();
+    expect(built.maxOutputTokens).toBeUndefined();
+  });
+
+  it('leaves an ordinary custom endpoint OpenAI-shaped', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({
+      Proxy: { type: EModelEndpoint.custom },
+    });
+    const req = createBamlReq({ endpoint: 'Proxy', model: 'gpt-4o', ...deniedBody });
+
+    await buildEndpointOption(req, createRes(), jest.fn());
+
+    expect(req.body.endpointOption.temperature).toBe(0.7);
+    expect(req.body.endpointOption.max_tokens).toBe(4096);
+  });
+});

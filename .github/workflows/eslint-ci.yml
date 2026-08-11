@@ -47,7 +47,8 @@ jobs:
           # Get changed files (only JS/TS files in api/, client/, or packages/)
           mapfile -d '' -t CHANGED_FILES < <(
             git diff -z --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD |
-              grep -zE '^(api|client|packages)/.*\.(js|jsx|ts|tsx)$' || true
+              grep -zE '^(api|client|packages)/.*\.(js|jsx|ts|tsx)$' |
+              grep -zvE '^packages/api/src/baml/generated/' || true
           )
 
           # Debug output
@@ -77,7 +78,8 @@ jobs:
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
           mapfile -d '' -t CHANGED_FILES < <(
             git diff -z --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD |
-              grep -zE '^(api|client|packages)/.*\.(js|jsx|ts|tsx)$' || true
+              grep -zE '^(api|client|packages)/.*\.(js|jsx|ts|tsx)$' |
+              grep -zvE '^packages/api/src/baml/generated/' || true
           )
 
           if [[ ${#CHANGED_FILES[@]} -eq 0 ]]; then
@@ -107,7 +109,8 @@ jobs:
           BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
           mapfile -d '' -t CHANGED_FILES < <(
             git diff -z --name-only --diff-filter=ACMRTUXB "$BASE_SHA" HEAD |
-              grep -zE '^(api|client|packages)/.*\.(js|jsx|ts|tsx)$' || true
+              grep -zE '^(api|client|packages)/.*\.(js|jsx|ts|tsx)$' |
+              grep -zvE '^packages/api/src/baml/generated/' || true
           )
 
           if [[ ${#CHANGED_FILES[@]} -eq 0 ]]; then

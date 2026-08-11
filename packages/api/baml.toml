@@ -1,0 +1,17 @@
+[package]
+name = "librechat-api-baml"
+
+# The production BAML project for `@librechat/api`.
+#
+# Distinct from the repository-root project on purpose: the root `baml_src/` is a
+# probe/toolloop workspace whose functions pin toolchain limitations, and it must
+# never be a production build input. Everything the chat path executes is declared
+# here and generated into the package it ships from.
+#
+# Generated output is committed. `packages/api/baml.generated.sha256` stamps the
+# toolchain version plus source/generated tree hashes so every npm, Bun, Turbo, and
+# Docker build can verify freshness without installing the CLI.
+[generator.node_client]
+output_type = "typescript/node"
+output_dir = "./src/baml/generated"
+naming_convention = "preserve-case"

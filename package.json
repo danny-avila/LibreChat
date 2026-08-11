@@ -54,6 +54,8 @@
     "build:data-schemas": "cd packages/data-schemas && npm run build",
     "build:client": "cd client && npm run build",
     "build:client-package": "cd packages/client && npm run build",
+    "build:baml": "npx tsc -p baml_ts/tsconfig.json",
+    "generate:baml": "baml generate && npm run build:baml",
     "build:packages": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package",
     "build": "npx turbo run build",
     "build:safe": "npx turbo run build --no-daemon",
@@ -216,5 +218,8 @@
       "admin/",
       "packages/"
     ]
+  },
+  "dependencies": {
+    "@boundaryml/baml-bridge": "0.15.0"
   }
 }

@@ -1,6 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { getEndpointField, SettingsViews } from 'librechat-data-provider';
+import { getEndpointField, getDefaultParamsEndpoint, SettingsViews } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { TSettingsProps } from '~/common';
 import { useGetEndpointsQuery } from '~/data-provider';
@@ -17,8 +17,16 @@ export default function Settings({
   const modelsQuery = useGetModelsQuery();
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const currentSettingsView = useRecoilValue(store.currentSettingsView);
-  const endpointType = getEndpointField(endpointsConfig, conversation?.endpoint ?? '', 'type');
-  const endpoint = endpointType ?? conversation?.endpoint ?? '';
+  const conversationEndpoint = conversation?.endpoint ?? '';
+  const endpointType = getEndpointField(endpointsConfig, conversationEndpoint, 'type');
+  /**
+   * Resolve the configured default-params endpoint first, matching the side panel and
+   * Agent Builder. A named custom endpoint can declare a provider whose controls differ
+   * from the OpenAI-shaped `custom` default — BAML declares an empty set, so no panel
+   * renders at all.
+   */
+  const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, conversationEndpoint);
+  const endpoint = defaultParamsEndpoint ?? endpointType ?? conversationEndpoint;
   if (!endpoint || currentSettingsView !== SettingsViews.default) {
     return null;
   }

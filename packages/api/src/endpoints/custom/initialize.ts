@@ -10,16 +10,19 @@ import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
   BaseInitializeParams,
+  BamlInitializeResult,
   InitializeResultBase,
   EndpointTokenConfig,
   AnthropicModelOptions,
 } from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
+import { isBamlEndpoint } from '~/endpoints/custom/provider';
 import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getScopedTokenConfigKey } from '~/endpoints/keys';
 import { getCustomEndpointConfig } from '~/app/config';
+import { createBamlFunctions } from '~/baml/loader';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';
@@ -85,6 +88,69 @@ function toBillingTokenConfig(
     result[model] = mapped as EndpointTokenConfig[string];
   }
   return result;
+}
+
+/**
+ * The single place that decides whether a FETCHED token config may be read.
+ *
+ * The decision used to be spread across the condition that also performed the
+ * read, which made "does this endpoint touch the cache at all?" impossible to
+ * assert without observing a cache call. As a pure predicate it is testable on
+ * its own, and it is always false for BAML (compiled clients publish no model
+ * list to derive rates from) and for any endpoint with a static `tokenConfig`.
+ */
+export function shouldReadFetchedTokenConfig(
+  endpointConfig: Partial<TEndpoint>,
+  endpoint: string,
+): boolean {
+  if (isBamlEndpoint(endpointConfig) || endpointConfig.tokenConfig != null) {
+    return false;
+  }
+  return Boolean(FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig]);
+}
+
+/**
+ * Initializes a BAML-backed custom endpoint.
+ *
+ * Runs BEFORE any generic custom work — no credential resolution, no user-key
+ * lookup, no URL validation, no model fetch, no cache access, no OpenAI config.
+ * All of that assumes a `baseURL` and an `apiKey` a BAML endpoint does not have.
+ *
+ * The selected model is the exact logical compiled-client name. It is NOT
+ * validated against the registry here: the facade must not load the generated
+ * graph, so an allow-listed-but-uncompiled name initializes normally and becomes
+ * a sanitized `model_error` on its first turn, where the existing
+ * `BamlTurnError` content handling and persistence already own the outcome.
+ */
+async function initializeBaml({
+  endpoint,
+  endpointConfig,
+  model_parameters,
+}: {
+  endpoint: string;
+  endpointConfig: Partial<TEndpoint>;
+  model_parameters?: Record<string, unknown>;
+}): Promise<BamlInitializeResult> {
+  const model = model_parameters?.model;
+  if (typeof model !== 'string' || model === '') {
+    throw new Error(`A BAML model must be selected for the ${endpoint} endpoint.`);
+  }
+
+  const functions = await createBamlFunctions(model);
+
+  return {
+    provider: Providers.BAML,
+    /** Declarative only — this is what becomes `agent.model_parameters`. */
+    llmConfig: { model },
+    /** Executable, request-only. Never persisted; see `~/agents/runtime`. */
+    runtimeOptions: { functions },
+    endpointTokenConfig:
+      endpointConfig.tokenConfig == null
+        ? undefined
+        : toBillingTokenConfig(
+            endpointConfig.tokenConfig as Record<string, Record<string, number>>,
+          ),
+  };
 }
 
 /**
@@ -191,6 +257,15 @@ export async function initializeCustom({
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }
 
+  /**
+   * Discriminated immediately after endpoint lookup, before every side effect
+   * below. Reaching any of that generic work with a BAML endpoint would fail on
+   * the missing API key long before the real problem became visible.
+   */
+  if (isBamlEndpoint(endpointConfig)) {
+    return initializeBaml({ endpoint, endpointConfig, model_parameters });
+  }
+
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey ?? '');
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL ?? '');
 
@@ -265,11 +340,10 @@ export async function initializeCustom({
     endpointTokenConfig = toBillingTokenConfig(
       endpointConfig.tokenConfig as Record<string, Record<string, number>>,
     );
-  } else {
-    const cachedConfig =
-      FetchTokenConfig[endpoint.toLowerCase() as keyof typeof FetchTokenConfig] &&
-      (await cache.get(tokenKey));
-    endpointTokenConfig = (cachedConfig as EndpointTokenConfig) || undefined;
+  } else if (shouldReadFetchedTokenConfig(endpointConfig, endpoint)) {
+    /** The gate is decided first and the read happens in its own statement, so
+     *  "this endpoint performed zero cache reads" is assertable. */
+    endpointTokenConfig = ((await cache.get(tokenKey)) as EndpointTokenConfig) || undefined;
   }
 
   if (

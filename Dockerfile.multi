@@ -20,6 +20,25 @@ ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 
 WORKDIR /app
 RUN apk --no-cache add curl
+# gcompat is required by the BAML native bridge, and the reason is an upstream
+# packaging bug rather than a preference: the artifact published as
+# `@boundaryml/baml-bridge-linux-x64-musl` is not actually a musl build. Its
+# `.node` binary requests `ld-linux-x86-64.so.2`, `libc.so.6` and
+# `libgcc_s.so.1` — all glibc — which Alpine does not have, so the loader
+# reports the misleading "Cannot find native binding". gcompat supplies the
+# missing loader shim.
+#
+# It is a BUILD defect, not a publish mixup: the musl artifact is a distinct
+# binary from the gnu one, so the musl matrix leg was compiled against glibc.
+# The 0.15.1 nightly has the identical glibc NEEDED set, so there is no version
+# to upgrade to. Tracked as AF-o4v.
+#
+# KNOWN RISK: the binary wants symbols up to GLIBC_2.34 and gcompat is a partial
+# ABI shim, not a glibc implementation — a path not exercised here could still
+# fail. The release gate executes the compiled package runtime in this image
+# against a loopback provider. The lower-risk alternative is a glibc base image,
+# where the correctly-built -gnu artifact is used and none of this applies.
+RUN apk --no-cache add gcompat
 RUN npm config set fetch-retry-maxtimeout 600000 && \
     npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 15000
@@ -30,6 +49,12 @@ COPY packages/data-schemas/package*.json ./packages/data-schemas/
 COPY packages/client/package*.json ./packages/client/
 COPY client/package*.json ./client/
 COPY api/package*.json ./api/
+# `packages/api` and `api` depend on @librechat/agents as a vendored tarball
+# (`file:../vendor/librechat-agents-*.tgz`) while the BAML provider port is
+# unpublished. npm resolves that path during `npm ci`, so the tarball must be
+# present in EVERY stage that installs — both the full `base` install and the
+# `--omit=dev` install in the final stage, which share this ancestor.
+COPY vendor ./vendor
 
 # Install all dependencies for every build
 FROM base-min AS base
@@ -114,6 +139,10 @@ COPY --from=data-provider-build /app/packages/data-provider/dist ./packages/data
 COPY --from=data-schemas-build /app/packages/data-schemas/dist ./packages/data-schemas/dist
 COPY --from=api-package-build /app/packages/api/dist ./packages/api/dist
 COPY --from=client-build /app/client/dist ./client/dist
+# BAML is package-owned: runtime.mjs is the lazy parent facade and worker.mjs
+# contains the bundled generated graph. The only external runtime artifact is
+# the exactly pinned native bridge installed above. No root probe SDK or source
+# adapter is copied into the production image.
 # Propagate build metadata into runtime env so /api/config can expose it.
 # Declared here (after the heavy install/copy steps) so that commit/date
 # changing on every CI run does not bust the cache for those layers.

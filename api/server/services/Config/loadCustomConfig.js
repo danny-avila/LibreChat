@@ -10,6 +10,7 @@ const {
   paramSettings,
   EImageOutputType,
   agentParamSettings,
+  normalizeBamlEndpoint,
   validateSettingDefinitions,
 } = require('librechat-data-provider');
 
@@ -167,6 +168,13 @@ https://www.librechat.ai/docs/configuration/stt_tts`);
   (customConfig.endpoints?.custom ?? [])
     .filter((endpoint) => endpoint.customParams)
     .forEach((endpoint) => parseCustomParams(endpoint.name, endpoint.customParams));
+
+  /**
+   * Runs after `parseCustomParams`, which defaults `defaultParamsEndpoint` to
+   * `custom`. A BAML endpoint accepts that spelling but publishes `baml`, so the
+   * rewrite has to come last or the default would win.
+   */
+  (customConfig.endpoints?.custom ?? []).forEach(normalizeBamlEndpoint);
 
   if (result.data.modelSpecs) {
     customConfig.modelSpecs = result.data.modelSpecs;

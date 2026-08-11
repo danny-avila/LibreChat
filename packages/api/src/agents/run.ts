@@ -60,6 +60,7 @@ import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
+import { getAgentRuntimeOptions } from '~/agents/runtime';
 import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
@@ -1368,6 +1369,17 @@ export async function createRun({
       agent.baseContextTokens,
       agent.maxContextTokens,
     );
+
+    /**
+     * The last possible moment: the BAML port is merged into `clientOptions`
+     * here, on its way into `ChatBAML`, and nowhere earlier. Everything upstream
+     * of this line — `agent.model_parameters`, the agent document, checkpoints,
+     * pending state — stays free of executable values.
+     */
+    const runtimeOptions = getAgentRuntimeOptions(agent);
+    if (runtimeOptions != null) {
+      Object.assign(llmConfig, runtimeOptions);
+    }
 
     const reasoningKey = getReasoningKey(provider, llmConfig, agent.endpoint, agent.reasoningKey);
     const agentInput: AgentInputs = {
