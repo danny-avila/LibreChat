@@ -21,6 +21,7 @@ import {
 import type { TDialogProps } from '~/common';
 import { useUserKey, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
+import { formatKeyExpiryLabel } from './utils';
 import CustomConfig from './CustomEndpoint';
 import BedrockConfig from './BedrockConfig';
 import GoogleConfig from './GoogleConfig';
@@ -367,9 +368,7 @@ const SetKeyDialog = ({
   if (expiryTime === 'never') {
     currentExpiryLabel = localize('com_endpoint_config_key_never_expires');
   } else if (expiryTime !== undefined) {
-    currentExpiryLabel = localize('com_endpoint_config_key_encryption', {
-      0: new Date(expiryTime).toLocaleString(),
-    });
+    currentExpiryLabel = formatKeyExpiryLabel(localize, expiryTime);
   }
 
   return (

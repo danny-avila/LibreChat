@@ -109,11 +109,13 @@ describe('light brand text', () => {
 });
 
 describe('shared field and dropdown interaction styles', () => {
-  it('keeps text fields visually stable on focus', () => {
+  it('keeps pointer focus stable and keyboard focus visible on text fields', () => {
     ['Input.tsx', 'Textarea.tsx'].forEach((component) => {
       const source = readFileSync(join(__dirname, '..', 'components', component), 'utf8');
 
-      expect(source).not.toMatch(/focus-visible:(?:border|ring)-/);
+      expect(source).toMatch(/focus-visible:border-border-medium/);
+      expect(source).toMatch(/focus-visible:ring-2/);
+      expect(source).toMatch(/focus-visible:ring-text-primary/);
     });
 
     const secretInput = readFileSync(
@@ -121,6 +123,15 @@ describe('shared field and dropdown interaction styles', () => {
       'utf8',
     );
     expect(secretInput).not.toMatch(/(?:hover|focus-visible):border-/);
+
+    const appStyles = readFileSync(
+      join(__dirname, '..', '..', '..', '..', 'client', 'src', 'style.css'),
+      'utf8',
+    );
+    expect(appStyles).toMatch(/html\[data-input-modality='pointer'\]/);
+    expect(appStyles).toMatch(/html\[data-input-modality='keyboard'\]/);
+    expect(appStyles).toMatch(/outline:\s*2px solid rgb\(var\(--text-primary\)\) !important;/);
+    expect(appStyles).not.toMatch(/textarea\s*\n\):hover,/);
   });
 
   it('keeps shared dropdown triggers transparent at rest and while disabled', () => {

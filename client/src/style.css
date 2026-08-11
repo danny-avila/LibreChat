@@ -2190,26 +2190,50 @@ html {
   outline: none;
 }
 
-:where(
-  input:not([type]),
-  input:is(
-    [type='text'],
-    [type='search'],
-    [type='email'],
-    [type='password'],
-    [type='url'],
-    [type='tel'],
-    [type='number'],
-    [type='date'],
-    [type='datetime-local'],
-    [type='month'],
-    [type='week'],
-    [type='time']
-  ),
-  textarea
-):is(:hover, :focus, :focus-visible) {
+html[data-input-modality='pointer']
+  :where(
+    input:not([type]),
+    input:is(
+      [type='text'],
+      [type='search'],
+      [type='email'],
+      [type='password'],
+      [type='url'],
+      [type='tel'],
+      [type='number'],
+      [type='date'],
+      [type='datetime-local'],
+      [type='month'],
+      [type='week'],
+      [type='time']
+    ),
+    textarea
+  ):is(:focus, :focus-visible) {
   outline: none !important;
   box-shadow: none !important;
+}
+
+html[data-input-modality='keyboard']
+  :where(
+    input:not([type]),
+    input:is(
+      [type='text'],
+      [type='search'],
+      [type='email'],
+      [type='password'],
+      [type='url'],
+      [type='tel'],
+      [type='number'],
+      [type='date'],
+      [type='datetime-local'],
+      [type='month'],
+      [type='week'],
+      [type='time']
+    ),
+    textarea
+  ):not(.lc-field):focus-visible {
+  outline: 2px solid rgb(var(--text-primary)) !important;
+  outline-offset: 2px !important;
 }
 
 :focus-visible {

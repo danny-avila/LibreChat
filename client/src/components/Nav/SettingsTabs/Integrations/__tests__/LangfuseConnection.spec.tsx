@@ -136,11 +136,11 @@ describe('LangfuseConnection', () => {
     expect(screen.queryByText('com_ui_langfuse_status_not_configured')).not.toBeInTheDocument();
   });
 
-  it('moves the connection explanation into the help card', async () => {
+  it('opens the connection explanation when the help button is clicked', async () => {
     render(<LangfuseConnection />);
 
     expect(screen.queryByText('com_ui_langfuse_description')).not.toBeInTheDocument();
-    await userEvent.hover(screen.getByRole('button', { name: 'com_ui_more_info' }));
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_more_info' }));
 
     expect(await screen.findByText('com_ui_langfuse_beta_info')).toBeVisible();
   });
@@ -410,6 +410,37 @@ describe('LangfuseConnection', () => {
       publicKey: 'pk-lf-1',
       secretKey: 'sk-lf-replacement',
     });
+  });
+
+  it('preserves a disabled connection when saving edited credentials', async () => {
+    mockGet.mockReturnValue({
+      data: {
+        configured: true,
+        enabled: false,
+        destinations: [{ key: 'eu', baseUrl: 'https://cloud.langfuse.com' }],
+        destination: 'eu',
+        publicKey: 'pk-lf-1',
+        secretKeyPreview: 'sk-lf-...515f',
+      },
+    });
+    render(<LangfuseConnection />);
+    await waitFor(() => expect(mockTest).toHaveBeenCalledTimes(1));
+
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: 'com_ui_edit com_ui_langfuse_public_key',
+      }),
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    expect(mockUpdate).toHaveBeenCalledWith(
+      {
+        enabled: false,
+        destination: 'eu',
+        publicKey: 'pk-lf-1',
+      },
+      expect.any(Object),
+    );
   });
 
   it('shows a save failure when mandatory server verification rejects the connection', async () => {

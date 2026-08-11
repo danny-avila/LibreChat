@@ -3,16 +3,18 @@ import {
   Button,
   CircleHelpIcon,
   Dropdown,
-  HoverCard,
-  HoverCardContent,
-  HoverCardPortal,
-  HoverCardTrigger,
   Input,
   Label,
   SecretInput,
   Spinner,
   useToastContext,
 } from '@librechat/client';
+import {
+  Root as Popover,
+  Portal as PopoverPortal,
+  Trigger as PopoverTrigger,
+  Content as PopoverContent,
+} from '@radix-ui/react-popover';
 import type {
   TLangfuseConnectionStatus,
   TLangfuseConnectionTestErrorCode,
@@ -24,7 +26,6 @@ import {
   useTestLangfuseConnectionMutation,
 } from '~/data-provider';
 import { useLocalize } from '~/hooks';
-import { ESide } from '~/common';
 
 type ConnectionTestState = 'idle' | 'unverified' | 'checking' | 'connected' | 'failed';
 
@@ -255,7 +256,7 @@ export default function LangfuseConnection() {
 
   const handleSave = () => {
     const payload = {
-      enabled: true,
+      enabled: !secretConfigured || connectionStatus?.enabled === true,
       destination,
       publicKey: trimmedPublicKey,
       ...(trimmedSecretKey ? { secretKey: trimmedSecretKey } : {}),
@@ -397,14 +398,14 @@ export default function LangfuseConnection() {
 
   return (
     <div className="flex flex-col gap-4">
-      <HoverCard openDelay={50}>
+      <Popover>
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <div className="font-medium">{localize('com_ui_langfuse_title')}</div>
             <div className="rounded-full border border-brand-purple/40 bg-brand-purple/10 px-2 py-0.5 text-xs font-medium text-brand-purple">
               {localize('com_ui_beta')}
             </div>
-            <HoverCardTrigger asChild>
+            <PopoverTrigger asChild>
               <button
                 type="button"
                 aria-label={localize('com_ui_more_info')}
@@ -412,7 +413,7 @@ export default function LangfuseConnection() {
               >
                 <CircleHelpIcon className="h-4 w-4" aria-hidden="true" />
               </button>
-            </HoverCardTrigger>
+            </PopoverTrigger>
           </div>
           <div
             data-testid="langfuse-connection-status"
@@ -429,12 +430,16 @@ export default function LangfuseConnection() {
           </div>
         </div>
 
-        <HoverCardPortal>
-          <HoverCardContent side={ESide.Top} className="w-80">
+        <PopoverPortal>
+          <PopoverContent
+            side="top"
+            sideOffset={6}
+            className="z-[999] w-80 rounded-xl border border-border-light bg-surface-secondary p-4 text-text-primary shadow-md outline-none"
+          >
             <p className="text-sm text-text-secondary">{localize('com_ui_langfuse_beta_info')}</p>
-          </HoverCardContent>
-        </HoverCardPortal>
-      </HoverCard>
+          </PopoverContent>
+        </PopoverPortal>
+      </Popover>
 
       <div className="flex flex-col gap-1.5">
         <Label id="langfuse-destination-label">{localize('com_ui_langfuse_destination')}</Label>
