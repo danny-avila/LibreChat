@@ -30,6 +30,33 @@ function createManager(): GenerationJobManagerClass {
   return manager;
 }
 
+class DeferredEventTransport extends InMemoryEventTransport {
+  private pendingDeliveries: Array<() => void> = [];
+
+  override emitChunk(streamId: string, event: unknown, generationId?: number): void {
+    this.pendingDeliveries.push(() => super.emitChunk(streamId, event, generationId));
+  }
+
+  override emitDone(streamId: string, event: unknown, generationId?: number): void {
+    this.pendingDeliveries.push(() => super.emitDone(streamId, event, generationId));
+  }
+
+  flushDeliveries(): void {
+    const deliveries = this.pendingDeliveries;
+    this.pendingDeliveries = [];
+    for (const deliver of deliveries) {
+      deliver();
+    }
+  }
+}
+
+function getEventLabel(event: ServerSentEvent): string | undefined {
+  if (!('data' in event) || typeof event.data !== 'object' || event.data == null) {
+    return undefined;
+  }
+  return typeof event.data.label === 'string' ? event.data.label : undefined;
+}
+
 function createPendingAction(streamId: string) {
   return buildPendingAction(
     buildToolApprovalPayload([
@@ -639,6 +666,224 @@ describe('GenerationJobManager startup telemetry', () => {
     expect(onChunk).not.toHaveBeenCalled();
 
     await manager.destroy();
+  });
+
+  it('delivers only matching generation-tagged chunks after terminal cleanup before done', async () => {
+    const streamId = 'stream-terminal-delayed-chunk';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new DeferredEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const order: string[] = [];
+    const subscription = await manager.subscribe(
+      streamId,
+      (event) => {
+        const label = getEventLabel(event);
+        if (label != null) {
+          order.push(label);
+        }
+      },
+      () => order.push('done'),
+    );
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { label: 'matching' },
+      } as ServerSentEvent);
+      eventTransport.emitChunk(streamId, { data: { label: 'untagged' } });
+      eventTransport.emitChunk(streamId, { data: { label: 'mismatched' } }, job.createdAt + 1);
+
+      await expect(manager.abortJob(streamId)).resolves.toMatchObject({ success: true });
+      await expect(jobStore.getJob(streamId)).resolves.toBeNull();
+      expect(order).toEqual([]);
+
+      eventTransport.flushDeliveries();
+
+      expect(order).toEqual(['matching', 'done']);
+    } finally {
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('rejects a delayed predecessor chunk after a replacement runtime is installed', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+    const streamId = 'stream-delayed-predecessor-chunk';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new DeferredEventTransport();
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+    const predecessor = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const received: string[] = [];
+    const subscription = await manager.subscribe(streamId, (event) => {
+      const label = getEventLabel(event);
+      if (label != null) {
+        received.push(label);
+      }
+    });
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { label: 'predecessor' },
+      } as ServerSentEvent);
+      now.mockReturnValue(2000);
+      const replacement = await manager.createJob(streamId, 'user-1', 'conversation-1');
+
+      expect(replacement.createdAt).toBeGreaterThan(predecessor.createdAt);
+      eventTransport.flushDeliveries();
+
+      expect(received).toEqual([]);
+    } finally {
+      now.mockRestore();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('lets a matching terminal drain win after a pre-signal durable fence', async () => {
+    const streamId = 'stream-fenced-terminal-drain';
+    const eventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60_000 }),
+      eventTransport,
+      isRedis: false,
+    });
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, onDone, onError);
+    jest.useFakeTimers();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+
+      eventTransport.emitDone(streamId, { final: true }, job.createdAt);
+      expect(onDone).toHaveBeenCalledWith({ final: true });
+
+      jest.advanceTimersByTime(1_000);
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('reconnect-closes a fenced generation when no terminal arrives within the drain window', async () => {
+    const streamId = 'stream-fenced-terminal-missing';
+    const eventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore: new InMemoryJobStore({ ttlAfterComplete: 60_000 }),
+      eventTransport,
+      isRedis: false,
+    });
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    jest.useFakeTimers();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+
+      jest.advanceTimersByTime(1_000);
+      expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('reconnect-closes only the fenced predecessor after a replacement installs during grace', async () => {
+    const streamId = 'stream-fenced-predecessor-replaced';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new DeferredEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const owner = new GenerationJobManagerClass();
+    const replacer = new GenerationJobManagerClass();
+    owner.configure({ jobStore, eventTransport, isRedis: false });
+    replacer.configure({ jobStore, eventTransport, isRedis: false });
+    owner.initialize();
+    replacer.initialize();
+    const predecessor = await owner.createJob(streamId, 'user-1', 'conversation-1');
+    const predecessorError = jest.fn();
+    const predecessorSubscription = await owner.subscribe(
+      streamId,
+      () => undefined,
+      undefined,
+      predecessorError,
+    );
+    let replacementSubscription: Awaited<ReturnType<typeof owner.subscribe>> = null;
+    jest.useFakeTimers();
+
+    try {
+      await owner.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+
+      const replacement = await replacer.createJob(streamId, 'user-1', 'conversation-1');
+      const current = await owner.getJob(streamId);
+      const replacementDone = jest.fn();
+      const replacementError = jest.fn();
+      replacementSubscription = await owner.subscribe(
+        streamId,
+        () => undefined,
+        replacementDone,
+        replacementError,
+        { expectedCreatedAt: replacement.createdAt },
+      );
+
+      expect(replacement.createdAt).toBeGreaterThan(predecessor.createdAt);
+      expect(current?.createdAt).toBe(replacement.createdAt);
+      expect(replacementSubscription).not.toBeNull();
+
+      jest.advanceTimersByTime(1_000);
+
+      expect(predecessorError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(replacementError).not.toHaveBeenCalled();
+      expect(replacementDone).not.toHaveBeenCalled();
+      expect(owner.getRuntimeStats().runtimeStateSize).toBe(1);
+      expect(eventTransport.getSubscriberCount(streamId)).toBe(1);
+
+      eventTransport.flushDeliveries();
+
+      expect(replacementError).not.toHaveBeenCalled();
+      expect(replacementDone).not.toHaveBeenCalled();
+      expect(owner.getRuntimeStats().runtimeStateSize).toBe(1);
+      expect(eventTransport.getSubscriberCount(streamId)).toBe(1);
+    } finally {
+      jest.useRealTimers();
+      predecessorSubscription?.unsubscribe();
+      replacementSubscription?.unsubscribe();
+      await Promise.all([owner.destroy(), replacer.destroy()]);
+    }
   });
 
   it('does not return a lazy runtime replaced while its abort listener activates', async () => {

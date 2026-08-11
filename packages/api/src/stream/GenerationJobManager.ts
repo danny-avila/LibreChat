@@ -103,6 +103,11 @@ const SHUTTING_DOWN_ERROR = 'Generation job manager is shutting down';
  * this as an application-level generation error. */
 export const TERMINAL_PUBLICATION_RECONNECT_ERROR =
   'Terminal publication failed; reconnect to load the durable result';
+/** A fenced provider stops immediately, but a matching terminal frame already
+ * accepted by Redis may still be crossing the cluster bus. Keep only that
+ * captured generation alive beyond the transport's 500ms reorder window before
+ * recycling its subscribers when no terminal arrives. */
+const FENCED_RUNTIME_TERMINAL_GRACE_MS = 1_000;
 /** Upper bound for a terminal owner's required persistence barrier. A crashed
  * owner leaves the durable pending bit behind; the next read or subscriber
  * promotes it to conservative reconciliation after this window. */
@@ -4074,8 +4079,11 @@ class GenerationJobManagerClass {
       streamId,
       {
         onChunk: (event, generationId) => {
+          const currentRuntime = this.runtimeState.get(streamId);
+          const isMatchingTerminalDrain =
+            currentRuntime == null && generationId === runtime.createdAt;
           if (
-            this.runtimeState.get(streamId) !== runtime ||
+            (currentRuntime !== runtime && !isMatchingTerminalDrain) ||
             (generationId != null && generationId !== runtime.createdAt)
           ) {
             return;
@@ -5440,9 +5448,9 @@ class GenerationJobManagerClass {
   }
 
   /** A generation-fenced append returning false is same-slot proof that this
-   * epoch is no longer the durable owner. This is the provider's backstop when
-   * a replacement abort publication is lost. Retire only the exact captured
-   * runtime; a newer local successor may already occupy the same stream id. */
+   * epoch is no longer the durable owner. Stop its provider immediately, then
+   * give an already-published matching terminal frame one bounded cluster-bus
+   * window to close the captured subscribers. A newer runtime is never touched. */
   private retireRuntimeAfterDurableFence(streamId: string, runtime: RuntimeJobState): void {
     if (this.runtimeState.get(streamId) !== runtime) {
       return;
@@ -5463,26 +5471,39 @@ class GenerationJobManagerClass {
     if (runtime.replacementTransportHold === true) {
       return;
     }
-    this.releaseAbortSubscription(runtime);
-    if (this.runtimeState.get(streamId) === runtime) {
-      this.runtimeState.delete(streamId);
-      this.releaseJobOwnership(streamId, runtime.createdAt);
-      this.runStepBuffers?.delete(streamId);
-      this.replayEventWriteQueues.delete(streamId);
-      this.tokenUsageWriteQueues.delete(streamId);
-      this.jobStore.clearContentState(streamId, runtime.createdAt);
-      try {
-        // Delete runtime ownership before closing. The transport's
-        // all-subscribers-left callback may run synchronously; it must not
-        // persist a partial response for this already-replaced epoch.
-        this.eventTransport.closeLocalSubscribers?.(streamId, TERMINAL_PUBLICATION_RECONNECT_ERROR);
-      } catch (error) {
-        logger.error(
-          `[GenerationJobManager] Failed to recycle subscribers for fenced generation ${streamId}:`,
-          error,
-        );
+
+    const retirement = setTimeout(() => {
+      if (this.shuttingDown) {
+        return;
       }
-    }
+      if (runtime.replacementTransportHold !== true) {
+        this.releaseAbortSubscription(runtime);
+        this.releaseJobOwnership(streamId, runtime.createdAt);
+        this.jobStore.clearContentState(streamId, runtime.createdAt);
+
+        if (this.runtimeState.get(streamId) === runtime) {
+          this.runtimeState.delete(streamId);
+          this.runStepBuffers?.delete(streamId);
+          this.replayEventWriteQueues.delete(streamId);
+          this.tokenUsageWriteQueues.delete(streamId);
+        }
+      }
+
+      // finalEvent/errorEvent are cached before transport dispatch, so they do
+      // not prove that an attached SSE response closed. Each captured handler
+      // ignores this reconnect signal when its terminal is already queued.
+      for (const notify of [...runtime.localErrorHandlers]) {
+        try {
+          notify(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+        } catch (error) {
+          logger.error(
+            `[GenerationJobManager] Failed to recycle a subscriber for fenced generation ${streamId}:`,
+            error,
+          );
+        }
+      }
+    }, FENCED_RUNTIME_TERMINAL_GRACE_MS);
+    retirement.unref?.();
   }
 
   private isCurrentRuntime(streamId: string, runtime: RuntimeJobState): boolean {
