@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import type { SearchPool } from './types';
 
 /**
@@ -378,4 +379,55 @@ export async function assertRoleSeparation(pool: SearchPool): Promise<void> {
   }
   const detail = violations.map(({ role, problem }) => `${role} ${problem}`).join('; ');
   throw new Error(`[chatSearch] role separation violated: ${detail}`);
+}
+
+export type RuntimeRoleSlot = 'reader' | 'writer';
+
+/**
+ * Boot-time check that a runtime connection string names the role its slot is
+ * built around, because the failure modes of a mismatch are quiet. A reader
+ * pool connected as an unrelated role fails closed under FORCE RLS — search is
+ * enabled and permanently empty, with nothing naming the cause. Connected as
+ * this deployment's *writer* it still returns correctly scoped rows (the query
+ * predicates scope independently), but the row-security layer beneath them is
+ * silently gone; connected as the owner, a DDL-only role is suddenly on a
+ * request path. Naming one of our own roles in the wrong slot is therefore an
+ * error; an unknown name is only a warning, since PostgreSQL applies a policy
+ * to members of its role and a deployment may legitimately connect through a
+ * membership. A URL that carries no username (PG* environment variables,
+ * .pgpass) is left for the server to resolve. `migrate.spec.ts` pins each
+ * branch in the 'runtime role URLs' suite.
+ */
+export function assertManagedRoleUrl(
+  envKey: string,
+  connectionString: string,
+  slot: RuntimeRoleSlot,
+): void {
+  let username: string;
+  try {
+    username = decodeURIComponent(new URL(connectionString).username);
+  } catch {
+    return;
+  }
+  if (username === '') {
+    return;
+  }
+  const names = managedRoles();
+  const expected = slot === 'reader' ? names.reader : names.writer;
+  if (username === expected) {
+    return;
+  }
+  if ([names.owner, names.writer, names.reader].includes(username)) {
+    throw new Error(
+      `[chatSearch] ${envKey} connects as ${username}, which is this deployment's ` +
+        `${username === names.owner ? 'DDL owner' : 'other runtime'} role — the ${slot} slot ` +
+        `must connect as ${expected}. Each URL names its own role; that separation is the ` +
+        'isolation, not a label on it.',
+    );
+  }
+  logger.warn(
+    `[chatSearch] ${envKey} connects as ${username}, not ${expected}. If ${username} is a ` +
+      `member of ${expected} this works — row-security policies apply to members — otherwise ` +
+      'expect permission failures or empty results from this connection.',
+  );
 }

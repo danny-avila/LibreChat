@@ -23,6 +23,7 @@ import {
   TEST_URL,
 } from './pg.helper';
 import {
+  assertManagedRoleUrl,
   chatSearchRolePrefix,
   findRoleViolations,
   managedRoles,
@@ -245,6 +246,85 @@ describe('role prefix', () => {
     process.env = { ...OLD_ENV };
     const bare = readMigrations();
     expect(bare.map((m) => m.checksum)).not.toEqual(rendered.map((m) => m.checksum));
+  });
+});
+
+describe('runtime role URLs', () => {
+  const OLD_ENV = process.env;
+
+  afterEach(() => {
+    process.env = OLD_ENV;
+    jest.restoreAllMocks();
+  });
+
+  it('accepts the slot role, however encoded', () => {
+    expect(() =>
+      assertManagedRoleUrl(
+        'CHAT_SEARCH_DATABASE_URL',
+        'postgres://chat_search_reader:pw@db:5432/x',
+        'reader',
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertManagedRoleUrl(
+        'CHAT_SEARCH_DATABASE_URL',
+        'postgres://chat_search%5Freader:pw@db/x',
+        'reader',
+      ),
+    ).not.toThrow();
+  });
+
+  /**
+   * The writer in the reader slot returns correctly scoped rows — the query
+   * predicates scope on their own — while the row-security layer beneath them
+   * is silently gone. A defence that can vanish without a symptom has to be
+   * refused at boot, not discovered in an audit.
+   */
+  it('refuses our own role in the wrong slot', () => {
+    expect(() =>
+      assertManagedRoleUrl(
+        'CHAT_SEARCH_DATABASE_URL',
+        'postgres://chat_search_writer:pw@db/x',
+        'reader',
+      ),
+    ).toThrow(/must connect as chat_search_reader/);
+    expect(() =>
+      assertManagedRoleUrl(
+        'CHAT_SEARCH_WRITER_URL',
+        'postgres://chat_search_owner:pw@db/x',
+        'writer',
+      ),
+    ).toThrow(/DDL owner/);
+  });
+
+  it('follows the deployment prefix', () => {
+    process.env = { ...OLD_ENV, CHAT_SEARCH_ROLE_PREFIX: 'alpha_' };
+    expect(() =>
+      assertManagedRoleUrl(
+        'CHAT_SEARCH_DATABASE_URL',
+        'postgres://alpha_chat_search_writer:pw@db/x',
+        'reader',
+      ),
+    ).toThrow(/alpha_chat_search_reader/);
+  });
+
+  it('warns on an unknown role, which may be a membership', () => {
+    const warn = jest.spyOn(logger, 'warn');
+    expect(() =>
+      assertManagedRoleUrl('CHAT_SEARCH_DATABASE_URL', 'postgres://svc_reader:pw@db/x', 'reader'),
+    ).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('svc_reader'));
+  });
+
+  it('leaves URLs without a username to the server', () => {
+    const warn = jest.spyOn(logger, 'warn');
+    expect(() =>
+      assertManagedRoleUrl('CHAT_SEARCH_DATABASE_URL', 'postgres://db:5432/x', 'reader'),
+    ).not.toThrow();
+    expect(() =>
+      assertManagedRoleUrl('CHAT_SEARCH_DATABASE_URL', 'not a url', 'reader'),
+    ).not.toThrow();
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 
