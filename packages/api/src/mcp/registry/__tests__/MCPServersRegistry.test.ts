@@ -249,12 +249,12 @@ describe('MCPServersRegistry', () => {
    * secrets through its own headers.
    */
   describe('plugin provenance', () => {
-    const pluginConfig: t.MCPOptions = {
+    const pluginConfig: t.ParsedServerConfig = {
       source: 'plugin',
       type: 'streamable-http',
       url: 'https://plugin.example.com/mcp',
       headers: { Authorization: 'Bearer ${TEST_PLUGIN_SECRET}' },
-    } as t.MCPOptions;
+    };
 
     it('keeps the plugin marker through inspection and cache storage', async () => {
       const inspectSpy = jest.spyOn(MCPServerInspector, 'inspect');
@@ -316,14 +316,55 @@ describe('MCPServersRegistry', () => {
       try {
         await registry.addServer('plugin_server', pluginConfig, 'CACHE');
         const stored = await registry.getServerConfig('plugin_server');
+        expect(stored).toBeDefined();
 
-        const runtimeConfig = processMCPEnv({ options: stored as t.MCPOptions });
+        const runtimeConfig = processMCPEnv({ options: stored! });
 
-        expect((runtimeConfig as { headers: Record<string, string> }).headers.Authorization).toBe(
-          'Bearer ${TEST_PLUGIN_SECRET}',
-        );
+        expect(runtimeConfig).toMatchObject({
+          headers: { Authorization: 'Bearer ${TEST_PLUGIN_SECRET}' },
+        });
       } finally {
         delete process.env.TEST_PLUGIN_SECRET;
+      }
+    });
+
+    /**
+     * An operator Config override that shadows a same-name plugin base must keep
+     * its own trusted `'config'` source. Inheriting the base's `'plugin'` marker
+     * would make `processMCPEnv` stop resolving the operator's own placeholders
+     * and silently break their server.
+     */
+    it('does not lend plugin provenance to an operator config override of the same name', async () => {
+      const pluginBase: t.ParsedServerConfig = {
+        source: 'plugin',
+        type: 'streamable-http',
+        url: 'https://plugin.example.com/mcp',
+        requiresOAuth: false,
+      };
+      await registry['cacheConfigsRepo'].add('shared', pluginBase);
+
+      const override: t.ParsedServerConfig = {
+        source: 'config',
+        type: 'streamable-http',
+        url: 'https://operator.example.com/mcp',
+        headers: { Authorization: 'Bearer ${TEST_OPERATOR_SECRET}' },
+        requiresOAuth: false,
+      };
+
+      const all = await registry.getAllServerConfigs('user-1', { shared: override });
+      expect(all.shared.source).toBe('config');
+
+      const single = await registry.getServerConfig('shared', 'user-1', { shared: override });
+      expect(single?.source).toBe('config');
+
+      process.env.TEST_OPERATOR_SECRET = 'operator-secret-value';
+      try {
+        const runtimeConfig = processMCPEnv({ options: all.shared });
+        expect(runtimeConfig).toMatchObject({
+          headers: { Authorization: 'Bearer operator-secret-value' },
+        });
+      } finally {
+        delete process.env.TEST_OPERATOR_SECRET;
       }
     });
   });

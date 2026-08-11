@@ -40,6 +40,27 @@ function resolveServerSource(
 }
 
 /**
+ * Source an overlaid config should carry when a Config-tier override shadows a
+ * same-name base entry. The base's source is normally inherited so downstream
+ * recovery routes to the base's storage tier.
+ *
+ * SECURITY INVARIANT — a `'plugin'` base is the exception: its no-resolve
+ * provenance must never transfer to an operator-authored override, or
+ * `processMCPEnv` would stop resolving the operator's own `${VAR}` placeholders.
+ * The override supersedes the plugin (operator config outranks a plugin server),
+ * so it keeps its own trusted source instead.
+ */
+function overlaySource(
+  base: t.ParsedServerConfig,
+  override: t.ParsedServerConfig,
+): t.MCPServerSource | undefined {
+  if (base.source === MCP_PLUGIN_SOURCE) {
+    return override.source ?? 'config';
+  }
+  return base.source;
+}
+
+/**
  * Fields an admin override can legitimately set. Used to detect whether a
  * resolved entry differs from its YAML base so unmodified YAML servers can
  * skip lazy-init (avoids per-request inspect storms and prevents these
@@ -317,7 +338,7 @@ export class MCPServersRegistry {
     if (!candidate) return base;
     if (base?.source === 'user') return base;
     if (candidate.inspectionFailed) return base ?? candidate;
-    return base ? { ...candidate, source: base.source } : candidate;
+    return base ? { ...candidate, source: overlaySource(base, candidate) } : candidate;
   }
 
   /** Returns whether an effective config exactly matches the operator-owned base config. */
@@ -339,7 +360,9 @@ export class MCPServersRegistry {
    *      base entry; the healthy base is preserved for the duration of the retry window.
    *   2. User-DB entries (`source: 'user'`) are never replaced by Config-tier overlays.
    * On a successful overlay the base entry's `source` field is preserved so downstream
-   * recovery logic routes to the correct storage location.
+   * recovery logic routes to the correct storage location — except a `'plugin'` base,
+   * whose no-resolve provenance must not transfer to the operator override (see
+   * `overlaySource`).
    */
   public async getAllServerConfigs(
     userId?: string,
@@ -357,8 +380,10 @@ export class MCPServersRegistry {
         continue;
       }
       if (override.inspectionFailed && result[name]) continue;
-      const baseSource = result[name]?.source;
-      result[name] = baseSource ? { ...override, source: baseSource } : override;
+      const baseEntry = result[name];
+      result[name] = baseEntry
+        ? { ...override, source: overlaySource(baseEntry, override) }
+        : override;
     }
     return result;
   }
