@@ -900,6 +900,38 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('preserves earlier skipped skill details when a later request is rate limited', async () => {
+    const deps = createDeps({
+      fetchFn: multiSkillFetch(
+        [
+          { dir: 'broken', markdown: '---\nname: [\n---\nBody' },
+          {
+            dir: 'analysis',
+            markdown: '---\nname: analysis\ndescription: Analyze\n---\nBody',
+          },
+        ],
+        { rateLimitedDirs: ['analysis'] },
+      ),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'GITHUB_RATE_LIMITED',
+        skippedSkillCount: 1,
+        skippedSkills: [
+          expect.objectContaining({
+            path: 'skills/broken',
+            errorCode: 'SKILL_PARSE_FAILED',
+          }),
+        ],
+      }),
+    );
+  });
+
   it('discovers nested skill roots within the configured discovery depth', async () => {
     const skillMarkdown = '---\nname: tdd\ndescription: Test-driven development\n---\nBody';
     const fetchFn = jest.fn(async (input: RequestInfo | URL) => {

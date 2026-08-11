@@ -1578,6 +1578,14 @@ async function syncSource(params: {
 }): Promise<ISkillSyncStatus> {
   const { deps, source, fetchFn, assertNotCancelled } = params;
   const startedAt = new Date();
+  const counts: SyncCounters = {
+    syncedSkillCount: 0,
+    syncedFileCount: 0,
+    deletedSkillCount: 0,
+    deletedFileCount: 0,
+    skippedSkillCount: 0,
+  };
+  const skippedSkills: ISkillSyncSkippedSkill[] = [];
   await deps.upsertStatus(makeStatusInput({ source, status: 'running', startedAt }));
   try {
     assertNotCancelled();
@@ -1612,14 +1620,6 @@ async function syncSource(params: {
       }
       return existingSyncedSkills;
     };
-    const counts: SyncCounters = {
-      syncedSkillCount: 0,
-      syncedFileCount: 0,
-      deletedSkillCount: 0,
-      deletedFileCount: 0,
-      skippedSkillCount: 0,
-    };
-    const skippedSkills: ISkillSyncSkippedSkill[] = [];
     let loggedPerSkillWarningCount = 0;
     let suppressedSkippedWarningCount = 0;
     let suppressedValidationWarningCount = 0;
@@ -2047,6 +2047,14 @@ async function syncSource(params: {
         status: 'failed',
         startedAt,
         finishedAt: new Date(),
+        counts: {
+          syncedSkillCount: 0,
+          syncedFileCount: 0,
+          deletedSkillCount: 0,
+          deletedFileCount: 0,
+          skippedSkillCount: counts.skippedSkillCount,
+        },
+        skippedSkills: skippedSkills.length > 0 ? skippedSkills : undefined,
         errorCode: sanitized.code,
         errorMessage: sanitized.message,
       }),
