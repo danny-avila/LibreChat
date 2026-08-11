@@ -50,7 +50,7 @@ librechat:
     # Anthropic via Azure AI Foundry (deployment names == model ids on the Foundry)
     ANTHROPIC_API_KEY: "override-via-pipeline"
     ANTHROPIC_REVERSE_PROXY: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/anthropic"
-    ANTHROPIC_MODELS: "claude-fable-5,claude-opus-4-8,claude-opus-4-7,claude-opus-4-6"
+    ANTHROPIC_MODELS: "claude-opus-5,claude-fable-5,claude-opus-4-8,claude-opus-4-7,claude-opus-4-6"
 
     # RAG
     RAG_OPENAI_BASEURL: "https://micha-mm146vwy-swedencentral.services.ai.azure.com/openai"
@@ -116,10 +116,9 @@ librechat:
         type: streamable-http
         url: https://billedeck-app-2074.azurewebsites.net/mcp-server
         timeout: 120000
+        initTimeout: 90000
         chatMenu: true
         serverInstructions: true
-        obo:
-          scopes: "api://0d2049c3-469c-4542-add2-8cdb5a1f874b/.default"
       # Primetric — read-only resource-planning MCP (people, projects, availability).
       # Deployed in-cluster from michalszymanski-ai/primetric-mcp (HTTP mode).
       # Manifests: deploy/azure/primetric-mcp/k8s-manifests.yaml
