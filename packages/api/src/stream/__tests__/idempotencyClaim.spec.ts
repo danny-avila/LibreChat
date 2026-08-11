@@ -2,7 +2,7 @@ import {
   REDIS_ABORT_TERMINAL_GRACE_MS,
   REDIS_EVENT_REORDER_TIMEOUT_MS,
   REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS,
-} from '~/stream/internal/transportTiming';
+} from '~/stream/internal/timing';
 import {
   JobCreationSupersededError,
   type CreatedJobData,

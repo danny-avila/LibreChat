@@ -5,9 +5,9 @@ import {
 } from '../GenerationJobManager';
 import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
 import { registerChunkPublicationCapability } from '../internal/chunkPublication';
-import { REDIS_ABORT_TERMINAL_GRACE_MS } from '../internal/transportTiming';
 import { InMemoryJobStore } from '../implementations/InMemoryJobStore';
 import { STEER_ENQUEUE_RECEIPT_FULL } from '../interfaces/IJobStore';
+import { REDIS_ABORT_TERMINAL_GRACE_MS } from '../internal/timing';
 
 type ReceiptEntry = { receipt: SteerReceipt; expiresAt: number };
 type ReceiptMap = Map<string, ReceiptEntry>;

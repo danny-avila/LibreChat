@@ -11,7 +11,7 @@ import {
 import {
   REDIS_ABORT_ACK_TIMEOUT_MS,
   REDIS_EVENT_REORDER_TIMEOUT_MS,
-} from '~/stream/internal/transportTiming';
+} from '~/stream/internal/timing';
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 

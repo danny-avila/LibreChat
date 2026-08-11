@@ -73,7 +73,7 @@ import {
   REDIS_ABORT_TERMINAL_GRACE_MS,
   REDIS_EVENT_REORDER_TIMEOUT_MS,
   REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS,
-} from './internal/transportTiming';
+} from './internal/timing';
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
@@ -591,6 +591,11 @@ interface RuntimeJobState {
   allSubscribersLeftHandlers?: Array<(...args: unknown[]) => void | Promise<void>>;
 }
 
+interface FencedRuntimeRetirementContext {
+  controller: AbortController;
+  timer?: NodeJS.Timeout;
+}
+
 interface PreparedSubscription {
   runtime: RuntimeJobState;
   jobData: SerializableJobData | null;
@@ -661,6 +666,10 @@ class GenerationJobManagerClass {
 
   private cleanupInterval: NodeJS.Timeout | null = null;
 
+  /** Generation-scoped retirement callbacks must not outlive the configured
+   * store/transport pair that created them. */
+  private fencedRuntimeRetirements = new Set<FencedRuntimeRetirementContext>();
+
   /** Rejects new jobs once graceful shutdown has started. */
   private shuttingDown = false;
 
@@ -728,6 +737,7 @@ class GenerationJobManagerClass {
     cleanupOnComplete?: boolean;
   }): void {
     assertJobStoreV2(services.jobStore);
+    this.cancelFencedRuntimeRetirements();
     const previousStore = this.storeLabel;
     if (this.cleanupInterval) {
       logger.warn(
@@ -5481,36 +5491,69 @@ class GenerationJobManagerClass {
     streamId: string,
     predecessorCreatedAt: number,
     deadlineAt: number,
-  ): Promise<'none' | 'pending' | 'settled' | 'deadline'> {
+    lifecycleSignal: AbortSignal,
+  ): Promise<'none' | 'pending' | 'settled' | 'deadline' | 'cancelled'> {
+    if (lifecycleSignal.aborted) {
+      return 'cancelled';
+    }
     const remainingMs = deadlineAt - Date.now();
     if (remainingMs <= 0) {
       return 'deadline';
     }
 
     let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    let removeCancellationListener: (() => void) | undefined;
     try {
+      const cancellation = new Promise<'cancelled'>((resolve) => {
+        const onCancelled = (): void => resolve('cancelled');
+        removeCancellationListener = (): void =>
+          lifecycleSignal.removeEventListener('abort', onCancelled);
+        lifecycleSignal.addEventListener('abort', onCancelled, { once: true });
+        if (lifecycleSignal.aborted) {
+          onCancelled();
+        }
+      });
+      const deadline = new Promise<'deadline'>((resolve) => {
+        deadlineTimer = setTimeout(() => resolve('deadline'), remainingMs);
+        deadlineTimer.unref?.();
+      });
       return await Promise.race([
         this.getReplacementHandoffState(streamId, predecessorCreatedAt),
-        new Promise<'deadline'>((resolve) => {
-          deadlineTimer = setTimeout(() => resolve('deadline'), remainingMs);
-          deadlineTimer.unref?.();
-        }),
+        deadline,
+        cancellation,
       ]);
     } finally {
       if (deadlineTimer != null) {
         clearTimeout(deadlineTimer);
       }
+      removeCancellationListener?.();
     }
+  }
+
+  private cancelFencedRuntimeRetirements(): void {
+    for (const retirement of this.fencedRuntimeRetirements) {
+      if (retirement.timer != null) {
+        clearTimeout(retirement.timer);
+        retirement.timer = undefined;
+      }
+      retirement.controller.abort();
+    }
+    this.fencedRuntimeRetirements.clear();
   }
 
   private scheduleFencedRuntimeRetirement(
     streamId: string,
     runtime: RuntimeJobState,
     startedAt: number,
+    retirement: FencedRuntimeRetirementContext,
     handoffPendingObserved = false,
     postHandoffGraceApplied = false,
     requestedDelayMs = REDIS_ABORT_TERMINAL_GRACE_MS,
   ): void {
+    const lifecycleSignal = retirement.controller.signal;
+    if (lifecycleSignal.aborted) {
+      return;
+    }
     const remainingMs = REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS - (Date.now() - startedAt);
     /** Handoff inspection is capped at 30 seconds. Once inspection ends, the
      * final delivery grace is intentionally un-clamped and may extend the
@@ -5518,26 +5561,37 @@ class GenerationJobManagerClass {
     const delayMs = postHandoffGraceApplied
       ? Math.max(1, requestedDelayMs)
       : Math.max(1, Math.min(requestedDelayMs, remainingMs));
-    const retirement = setTimeout(() => {
+    const retirementTimer = setTimeout(() => {
+      if (retirement.timer === retirementTimer) {
+        retirement.timer = undefined;
+      }
+      if (lifecycleSignal.aborted) {
+        return;
+      }
       void this.finishFencedRuntimeRetirement(
         streamId,
         runtime,
         startedAt,
+        retirement,
         handoffPendingObserved,
         postHandoffGraceApplied,
+        lifecycleSignal,
       );
     }, delayMs);
-    retirement.unref?.();
+    retirement.timer = retirementTimer;
+    retirementTimer.unref?.();
   }
 
   private async finishFencedRuntimeRetirement(
     streamId: string,
     runtime: RuntimeJobState,
     startedAt: number,
+    retirement: FencedRuntimeRetirementContext,
     handoffPendingObserved: boolean,
     postHandoffGraceApplied: boolean,
+    lifecycleSignal: AbortSignal,
   ): Promise<void> {
-    if (this.shuttingDown) {
+    if (this.shuttingDown || lifecycleSignal.aborted) {
       return;
     }
     if (!postHandoffGraceApplied) {
@@ -5546,12 +5600,13 @@ class GenerationJobManagerClass {
         streamId,
         runtime.createdAt,
         deadlineAt,
+        lifecycleSignal,
       );
-      if (this.shuttingDown) {
+      if (this.shuttingDown || lifecycleSignal.aborted || handoffState === 'cancelled') {
         return;
       }
       if (handoffState === 'pending' && Date.now() < deadlineAt) {
-        this.scheduleFencedRuntimeRetirement(streamId, runtime, startedAt, true);
+        this.scheduleFencedRuntimeRetirement(streamId, runtime, startedAt, retirement, true);
         return;
       }
       if (
@@ -5564,6 +5619,7 @@ class GenerationJobManagerClass {
           streamId,
           runtime,
           startedAt,
+          retirement,
           handoffPendingObserved || handoffState === 'pending',
           true,
           REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
@@ -5572,6 +5628,11 @@ class GenerationJobManagerClass {
       }
     }
 
+    this.fencedRuntimeRetirements.delete(retirement);
+    this.cleanupFencedRuntime(streamId, runtime);
+  }
+
+  private cleanupFencedRuntime(streamId: string, runtime: RuntimeJobState): void {
     if (runtime.replacementTransportHold !== true) {
       this.releaseAbortSubscription(runtime);
       this.releaseJobOwnership(streamId, runtime.createdAt);
@@ -5621,10 +5682,19 @@ class GenerationJobManagerClass {
     runtime.startupTelemetry?.end('replaced');
     runtime.startupTelemetry = undefined;
     runtime.abortController.abort();
+    if (this.shuttingDown) {
+      return;
+    }
     if (runtime.replacementTransportHold === true) {
       return;
     }
-    this.scheduleFencedRuntimeRetirement(streamId, runtime, Date.now());
+    if (runtime.localErrorHandlers.size === 0) {
+      this.cleanupFencedRuntime(streamId, runtime);
+      return;
+    }
+    const retirement: FencedRuntimeRetirementContext = { controller: new AbortController() };
+    this.fencedRuntimeRetirements.add(retirement);
+    this.scheduleFencedRuntimeRetirement(streamId, runtime, Date.now(), retirement);
   }
 
   private isCurrentRuntime(streamId: string, runtime: RuntimeJobState): boolean {
@@ -6989,6 +7059,7 @@ class GenerationJobManagerClass {
       return;
     }
     this.shuttingDown = true;
+    this.cancelFencedRuntimeRetirements();
 
     for (const runtime of this.runtimeState.values()) {
       runtime.startupTelemetry?.end('aborted');
@@ -7010,6 +7081,7 @@ class GenerationJobManagerClass {
    */
   async destroy(): Promise<void> {
     this.shuttingDown = true;
+    this.cancelFencedRuntimeRetirements();
 
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
