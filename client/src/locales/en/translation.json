@@ -2236,6 +2236,7 @@
   "com_ui_steer_delivered_info": "Delivered. Your message will join the response at the next safe moment.",
   "com_ui_steer_delivery_unconfirmed": "Delivery unconfirmed",
   "com_ui_steer_edit_queued": "Your composer already has a draft, so that message was queued instead",
+  "com_ui_steer_delivery_uncertain": "Delivery status is unknown; this steering message may still reach the agent",
   "com_ui_steer_failed": "Steering failed",
   "com_ui_steer_failed_inline": "Couldn't add to this reply",
   "com_ui_steer_in_flight": "Steering",
