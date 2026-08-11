@@ -550,6 +550,13 @@ describe('User Methods - Database Tests', () => {
       const stored = await readEnrollment(id);
 
       expect(promoted).not.toBeNull();
+      expect(promoted).toMatchObject({
+        name: 'Enrolling User',
+        email: 'finalize-2fa@example.com',
+        provider: 'local',
+        twoFactorEnabled: true,
+      });
+      expect(promoted?.createdAt).toBeInstanceOf(Date);
       expect(replay).toBeNull();
       expect(stored).toMatchObject({
         twoFactorEnabled: true,
