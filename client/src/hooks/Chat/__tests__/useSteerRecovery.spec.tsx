@@ -69,6 +69,28 @@ describe('useSteerRecovery', () => {
       ]);
     });
 
+    it('does not retry an uncertain protocol-v1 delivery', () => {
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'legacy-uncertain',
+            text: 'may already be committed',
+            status: 'failed',
+            deliveryUncertain: true,
+            generationProtocolVersion: 1,
+            createdAt: 5,
+          },
+        ]);
+      });
+
+      act(() => result.current.recovery.retry('legacy-uncertain'));
+
+      expect(mockMutateAsync).not.toHaveBeenCalled();
+      expect(result.current.chips).toEqual([
+        expect.objectContaining({ steerId: 'legacy-uncertain', status: 'failed' }),
+      ]);
+    });
+
     it('swaps the local id for the server id on success, keeping it pending', async () => {
       mockMutateAsync.mockResolvedValue({
         steerId: 'srv-9',
@@ -554,6 +576,26 @@ describe('useSteerRecovery', () => {
   });
 
   describe('sendAsNew', () => {
+    it('does not reroute an uncertain protocol-v1 delivery', () => {
+      const { result } = setup(({ set }) => {
+        set(store.pendingSteersByConvoId(CONVO_ID), [
+          {
+            steerId: 'legacy-uncertain',
+            text: 'may already be committed',
+            status: 'failed',
+            deliveryUncertain: true,
+            generationProtocolVersion: 1,
+            createdAt: 0,
+          },
+        ]);
+      });
+
+      act(() => result.current.recovery.sendAsNew('legacy-uncertain'));
+
+      expect(result.current.chips).toHaveLength(1);
+      expect(result.current.queue).toEqual([]);
+    });
+
     it('moves the chip to the queue, merged chronologically with existing items', () => {
       const { result } = setup(({ set }) => {
         set(store.pendingSteersByConvoId(CONVO_ID), [

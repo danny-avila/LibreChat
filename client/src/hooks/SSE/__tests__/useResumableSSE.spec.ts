@@ -3933,6 +3933,26 @@ describe('selectLocalSteersForQueue', () => {
     expect(selectLocalSteersForQueue([sending])).toEqual([]);
   });
 
+  it('preserves uncertain v1 deliveries while allowing idempotent v2 recovery', () => {
+    const legacy = chip({
+      steerId: 'legacy-uncertain',
+      status: 'failed',
+      deliveryUncertain: true,
+      generationProtocolVersion: 1,
+    });
+    const modern = chip({
+      steerId: 'modern-uncertain',
+      status: 'failed',
+      deliveryUncertain: true,
+      generationProtocolVersion: 2,
+    });
+
+    expect(selectLocalSteersForQueue([legacy, modern]).map((steer) => steer.steerId)).toEqual([
+      'modern-uncertain',
+    ]);
+    expect(selectLocalSteersForQueue([legacy], ABORT_SWEEP_STATUSES)).toEqual([]);
+  });
+
   it('carries files only when present', () => {
     const withFiles = chip({
       steerId: 'p2',

@@ -90,6 +90,20 @@ describe('PendingSteers', () => {
     expect(screen.getByText('com_ui_send_as_new')).toBeInTheDocument();
   });
 
+  it('locks recovery actions while a protocol-v1 delivery is uncertain', () => {
+    renderPending([
+      pending({
+        status: 'failed',
+        deliveryUncertain: true,
+        generationProtocolVersion: 1,
+      }),
+    ]);
+
+    expect(screen.getByText('com_ui_steer_delivery_uncertain')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_retry')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_send_as_new')).not.toBeInTheDocument();
+  });
+
   it('retries the failed steer by id', () => {
     renderPending([pending({ status: 'failed', steerId: 's-failed' })]);
     fireEvent.click(screen.getByText('com_ui_retry'));
