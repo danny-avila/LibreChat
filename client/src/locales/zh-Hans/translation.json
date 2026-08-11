@@ -1278,7 +1278,6 @@
   "com_ui_run_code": "运行代码",
   "com_ui_run_code_error": "代码运行出错",
   "com_ui_save": "保存",
-  "com_ui_save_badge_changes": "保存徽章更改？",
   "com_ui_save_key_error": "保存 API Key 失败，请重试。",
   "com_ui_save_key_success": "API Key 保存成功",
   "com_ui_save_submit": "保存并提交",
