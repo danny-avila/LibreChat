@@ -30,10 +30,6 @@ function restoreAuthUserCacheEnv() {
   }
 }
 
-function enableAuthUserDocCache() {
-  process.env.AUTH_USER_CACHE_MODE = 'on';
-}
-
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
@@ -348,7 +344,6 @@ describe('User Methods - Database Tests', () => {
     });
 
     test('should invalidate cached auth user documents on update', async () => {
-      enableAuthUserDocCache();
       const user = await User.create({
         name: 'Cached Auth User',
         email: 'cached-auth@example.com',
@@ -374,7 +369,6 @@ describe('User Methods - Database Tests', () => {
     });
 
     test('should invalidate cached auth user documents on delete', async () => {
-      enableAuthUserDocCache();
       const user = await User.create({
         name: 'Deleted Cached Auth User',
         email: 'deleted-cached-auth@example.com',
@@ -558,7 +552,6 @@ describe('User Methods - Database Tests', () => {
     });
 
     test('should invalidate cached auth user documents on acceptance', async () => {
-      enableAuthUserDocCache();
       const user = await User.create({
         name: 'Cached Terms User',
         email: 'cached-terms@example.com',
@@ -804,7 +797,6 @@ describe('User Methods - Database Tests', () => {
     });
 
     test('should invalidate cached auth user documents when memories preference changes', async () => {
-      enableAuthUserDocCache();
       const user = await User.create({
         name: 'Cached Memory User',
         email: 'cached-memory@example.com',
