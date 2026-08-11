@@ -1327,6 +1327,7 @@
   "com_ui_run_code_error": "Ocorreu um erro ao executar o código",
   "com_ui_running": "Em execução...",
   "com_ui_save": "Salvar",
+  "com_ui_save_badge_changes": "Salvar alterações dos emblemas?",
   "com_ui_save_key_error": "Falha ao salvar a chave de API. Por favor, tente novamente.",
   "com_ui_save_key_success": "Chave de API salva com sucesso",
   "com_ui_save_submit": "Salvar & Enviar",

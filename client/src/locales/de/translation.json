@@ -1652,6 +1652,7 @@
   "com_ui_running_n_agents": "{{0}} Agenten werden ausgeführt",
   "com_ui_sandbox_starting": "Sandbox-Umgebung wird gestartet",
   "com_ui_save": "Speichern",
+  "com_ui_save_badge_changes": "Änderungen an Badges speichern?",
   "com_ui_save_key_error": "API-Schlüssel konnte nicht gespeichert werden. Bitte versuch es erneut.",
   "com_ui_save_key_success": "API-Schlüssel erfolgreich gespeichert",
   "com_ui_save_submit": "Speichern & Absenden",

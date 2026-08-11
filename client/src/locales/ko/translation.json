@@ -1004,6 +1004,7 @@
   "com_ui_run_code": "코드 실행",
   "com_ui_run_code_error": "코드 실행 중 오류가 발생했습니다",
   "com_ui_save": "저장",
+  "com_ui_save_badge_changes": "배지 변경 사항 저장하시겠습니까?",
   "com_ui_save_submit": "저장 및 제출",
   "com_ui_saved": "저장되었습니다!",
   "com_ui_saving": "저장 중...",

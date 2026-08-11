@@ -1,11 +1,12 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
+import { RecoilRoot, useRecoilValue } from 'recoil';
 import userEvent from '@testing-library/user-event';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { PaletteEntry } from '~/hooks/Input/usePaletteEntries';
 import type { AttachEntry } from '~/hooks/Input/useAttachItems';
 import Palette from '../Palette';
+import store from '~/store';
 
 /**
  * The palette's row model: what the list is made of, in what order, and what a
@@ -26,7 +27,7 @@ jest.mock('react-virtualized', () => {
 
 jest.mock('~/hooks/Generic/useElementSize', () => ({
   __esModule: true,
-  default: () => ({ ref: { current: null }, height: 0, width: 0 }),
+  default: () => ({ ref: { current: null }, height: mockPopupHeight, width: 0 }),
 }));
 
 jest.mock('~/components/SharePoint', () => ({ SharePointPickerDialog: () => null }));
@@ -69,6 +70,7 @@ jest.mock('~/hooks', () => ({
 let mockFavoriteKeys: string[] = [];
 let mockRecentFiles: Array<Record<string, unknown>> = [];
 let mockAttachEntries: AttachEntry[] = [];
+let mockPopupHeight = 0;
 
 const attachEntry = (id: string, label: string, primary = false): AttachEntry => ({
   id,
@@ -111,11 +113,18 @@ function renderPalette(
     onContainerClick?: () => void;
     dictating?: boolean;
     onCancel?: () => void;
+    anchorBottom?: number;
   } = {},
 ) {
   const anchorRef = { current: document.createElement('div') };
+  if (over.anchorBottom != null) {
+    jest.spyOn(anchorRef.current, 'getBoundingClientRect').mockReturnValue({
+      bottom: over.anchorBottom,
+    } as DOMRect);
+  }
   const view = render(
     <RecoilRoot>
+      <LiftObserver />
       {/* Stands in for the composer box, whose own click handler focuses the
           textarea. The popup is portaled but still a React descendant of it, so
           this is the handler a row's click bubbles into. */}
@@ -138,6 +147,11 @@ function renderPalette(
   );
   fireEvent.click(screen.getByTestId('composer-palette-button'));
   return view;
+}
+
+function LiftObserver() {
+  const lift = useRecoilValue(store.composerLiftFamily(0));
+  return <output data-testid="composer-lift">{lift}</output>;
 }
 
 /** Row labels in list order, headers included, as the user reads them. The
@@ -171,6 +185,32 @@ describe('Palette', () => {
     mockFavoriteKeys = [];
     mockRecentFiles = [];
     mockAttachEntries = ATTACH;
+    mockPopupHeight = 0;
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: undefined,
+    });
+  });
+
+  it('recalculates the landing lift when the visual viewport changes', async () => {
+    mockPopupHeight = 100;
+    let viewportHeight = 700;
+    const viewport = new EventTarget();
+    Object.defineProperties(viewport, {
+      height: { get: () => viewportHeight },
+      offsetTop: { value: 0 },
+    });
+    Object.defineProperty(window, 'visualViewport', {
+      configurable: true,
+      value: viewport,
+    });
+    renderPalette({ anchorBottom: 650 });
+    await waitFor(() => expect(screen.getByTestId('composer-lift')).toHaveTextContent('70'));
+
+    viewportHeight = 600;
+    act(() => viewport.dispatchEvent(new Event('resize')));
+
+    await waitFor(() => expect(screen.getByTestId('composer-lift')).toHaveTextContent('170'));
   });
 
   it('does not advertise its cancel state as the upload shortcut target', () => {
