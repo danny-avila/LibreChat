@@ -8,14 +8,14 @@ const jwtSecret = 'test-two-factor-secret';
 const createToken = (userId, purpose = 'login_2fa_challenge') =>
   jwt.sign({ userId, purpose }, jwtSecret, { expiresIn: '5m' });
 
-const createApp = () => {
+const createApp = (max = '2') => {
   jest.resetModules();
   process.env = {
     ...originalEnv,
     JWT_SECRET: jwtSecret,
     LOGIN_MAX: '2',
     LOGIN_WINDOW: '5',
-    TWO_FACTOR_TEMP_MAX: '2',
+    TWO_FACTOR_TEMP_MAX: max,
     TWO_FACTOR_TEMP_WINDOW: '5',
   };
 
@@ -89,24 +89,24 @@ describe('twoFactorTempLimiter', () => {
     });
   });
 
-  it('keeps the existing source IP limit before the user limit', async () => {
+  it('keeps the source IP limit for invalid temporary credentials', async () => {
     const { app, logViolation } = createApp();
 
     await request(app)
       .post('/verify')
       .set('X-Forwarded-For', '198.51.100.1')
-      .send({ tempToken: createToken('user-a'), token: '000000' })
+      .send({ tempToken: 'invalid-token-a', token: '000000' })
       .expect(204);
     await request(app)
       .post('/verify')
       .set('X-Forwarded-For', '198.51.100.1')
-      .send({ tempToken: createToken('user-b'), token: '000001' })
+      .send({ tempToken: 'invalid-token-b', token: '000001' })
       .expect(204);
 
     await request(app)
       .post('/verify')
       .set('X-Forwarded-For', '198.51.100.1')
-      .send({ tempToken: createToken('user-c'), token: '000002' })
+      .send({ tempToken: 'invalid-token-c', token: '000002' })
       .expect(429);
 
     expect(logViolation).toHaveBeenCalledTimes(1);
@@ -115,6 +115,40 @@ describe('twoFactorTempLimiter', () => {
       max: '2',
       windowInMinutes: 5,
     });
+  });
+
+  it('does not share the low IP quota between valid users behind one address', async () => {
+    const { app, logViolation } = createApp('7');
+    const sourceIp = '198.51.100.10';
+
+    for (const userId of ['user-a', 'user-b']) {
+      const setupToken = createToken(userId, 'required_2fa_setup');
+      const acknowledgementToken = createToken(userId, 'required_2fa_acknowledgement');
+      const finalizationToken = createToken(userId, 'required_2fa_finalization');
+
+      await request(app)
+        .post('/verify')
+        .set('X-Forwarded-For', sourceIp)
+        .send({ tempToken: setupToken })
+        .expect(204);
+      await request(app)
+        .post('/verify')
+        .set('X-Forwarded-For', sourceIp)
+        .send({ tempToken: setupToken, token: '000000' })
+        .expect(204);
+      await request(app)
+        .post('/acknowledge')
+        .set('X-Forwarded-For', sourceIp)
+        .send({ acknowledgementToken })
+        .expect(204);
+      await request(app)
+        .post('/finalize')
+        .set('X-Forwarded-For', sourceIp)
+        .send({ finalizationToken })
+        .expect(204);
+    }
+
+    expect(logViolation).not.toHaveBeenCalled();
   });
 
   it.each([

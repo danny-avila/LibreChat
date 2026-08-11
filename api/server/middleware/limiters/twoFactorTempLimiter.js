@@ -20,6 +20,7 @@ const windowInMinutes = windowMs / 60000;
 const message = `Too many verification attempts, please try again after ${windowInMinutes} minutes.`;
 
 const hashLimiterKey = (value) => createHash('sha256').update(value).digest('hex');
+const hasResolvedTempUser = (req) => Boolean(req.user?.id ?? req.user?._id);
 
 const getUserLimiterKey = (req) => {
   const userId = req.user?.id ?? req.user?._id;
@@ -75,6 +76,7 @@ const createHandler = (limiter) => async (req, res) => {
 const ipLimiterOptions = {
   windowMs,
   max,
+  skip: hasResolvedTempUser,
   handler: createHandler('ip'),
   keyGenerator: removePorts,
   store: limiterCache('two_factor_temp_limiter'),
