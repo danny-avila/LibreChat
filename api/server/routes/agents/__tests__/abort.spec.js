@@ -666,6 +666,57 @@ describe('Agent Abort Endpoint', () => {
         expect(JSON.parse(currentAsk.tool_call.args)).toEqual(currentQuestion);
       });
 
+      it('reconstructs an ID-less prior answer while a later tool approval is pending', async () => {
+        const jobStreamId = 'test-stream-123';
+        const priorQuestion = { question: 'Which environment?' };
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+        });
+        mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
+          const rawContent = [
+            {
+              type: 'tool_call',
+              tool_call: { id: 'legacy-call', name: 'ask_user_question', args: '' },
+            },
+          ];
+          const content = options.transformAbortContent(rawContent, {
+            resolvedAskUserQuestions: [{ request: priorQuestion, output: 'staging' }],
+            pendingAction: {
+              payload: {
+                type: 'tool_approval',
+                action_requests: [{ tool_call_id: 'tool-1' }],
+                review_configs: [],
+              },
+            },
+          });
+          const result = {
+            success: true,
+            jobData: {
+              userMessage: { messageId: 'user-msg-123' },
+              responseMessageId: 'response-msg-456',
+              conversationId: jobStreamId,
+            },
+            content,
+            text: '',
+          };
+          await options.beforePublish(result);
+          return result;
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId });
+
+        expect(response.status).toBe(200);
+        const savedMessage = mockSaveMessage.mock.calls
+          .map(([, message]) => message)
+          .find((message) => message.isCreatedByUser === false);
+        const [priorAsk] = savedMessage.content;
+        expect(priorAsk.tool_call.output).toBe('staging');
+        expect(JSON.parse(priorAsk.tool_call.args)).toEqual(priorQuestion);
+      });
+
       it('should handle saveMessage errors gracefully', async () => {
         const jobStreamId = 'test-stream-123';
 

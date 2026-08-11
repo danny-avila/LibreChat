@@ -103,9 +103,10 @@ export class ApprovalLifecycle {
     );
     const persistenceStartedAt = Date.now();
     const resolvedAskUserQuestions = job.resolvedAskUserQuestions ?? [];
-    const retainedAskUserQuestions = resolvedAskUserQuestions.filter(
-      (answer) => answer.toolCallId != null,
-    );
+    const retainedAskUserQuestions =
+      pendingAction.payload.type === 'ask_user_question'
+        ? resolvedAskUserQuestions.filter((answer) => answer.toolCallId != null)
+        : resolvedAskUserQuestions;
     const replacesResolvedAnswers =
       retainedAskUserQuestions.length !== resolvedAskUserQuestions.length;
     const ok = await this.store.transitionStatus(streamId, {

@@ -669,9 +669,9 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
            * later pause, the previous answer was already seeded before that
            * run started and must not target the new unanswered ask. */
           const applicableAnswers =
-            abortJobData.pendingAction == null
-              ? resolvedAskUserQuestions
-              : resolvedAskUserQuestions.filter((answer) => answer.toolCallId != null);
+            abortedAskPayload?.type === 'ask_user_question'
+              ? resolvedAskUserQuestions.filter((answer) => answer.toolCallId != null)
+              : resolvedAskUserQuestions;
           const answeredContent = attachAskUserQuestionAnswers(content, applicableAnswers);
           return abortedAskPayload?.type === 'ask_user_question'
             ? attachAskUserQuestionArgs(

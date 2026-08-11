@@ -76,11 +76,53 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
         }),
       ).toBe(true);
 
-      expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
+      expect(
+        await manager.approvals.pause(
+          streamId,
+          buildAction(streamId, {
+            payload: {
+              type: 'ask_user_question',
+              question: { question: 'Approve deployment?' },
+              tool_call_id: 'ask-2',
+            },
+          }),
+        ),
+      ).toBe(true);
 
       await expect(manager.getJob(streamId)).resolves.toMatchObject({
         status: 'requires_action',
         metadata: { resolvedAskUserQuestions: undefined },
+      });
+    });
+
+    test('a later tool approval retains a legacy answer for cross-replica reconstruction', async () => {
+      const streamId = 'stream-repause-retains-legacy-answer';
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
+      expect(
+        await manager.approvals.resolve(streamId, firstAction.actionId, {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
+        }),
+      ).toBe(true);
+
+      expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
+
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        metadata: {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
+        },
       });
     });
 
