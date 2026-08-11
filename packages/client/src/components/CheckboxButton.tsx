@@ -62,9 +62,9 @@ const CheckboxButton: React.ForwardRefExoticComponent<
       onChange={onChange}
       className={cn(
         // Base styling from MultiSelect's selectClassName
-        'group relative inline-flex items-center justify-center gap-1.5',
-        'rounded-full border border-border-medium text-sm font-medium',
-        'size-9 max-w-fit p-2 transition-all md:w-full md:p-3',
+        'group relative inline-flex items-center justify-center gap-theme-compact',
+        'rounded-theme-control-round border border-border-medium text-sm font-medium',
+        'size-theme-control max-w-fit p-theme-compact transition-all md:w-full md:px-theme-normal',
         'bg-transparent shadow-sm hover:bg-surface-hover hover:shadow-md active:shadow-inner',
 
         // Checked state styling
