@@ -457,6 +457,25 @@ describe('User Methods - Database Tests', () => {
       expect(stored?.twoFactorFinalizationNonceHash).toBeNull();
     });
 
+    test('updates legacy enrolling users whose two-factor flag is missing', async () => {
+      const { id, pendingBackupCodes } = await createEnrollingUser('legacy-2fa@example.com');
+      const objectId = new mongoose.Types.ObjectId(id);
+      await User.collection.updateOne({ _id: objectId }, { $unset: { twoFactorEnabled: '' } });
+
+      const legacyUser = await User.collection.findOne({ _id: objectId });
+      expect(legacyUser).not.toHaveProperty('twoFactorEnabled');
+
+      const updated = await methods.updateTwoFactorEnrollment(
+        id,
+        { pendingTotpSecret: 'pending-secret', pendingBackupCodes },
+        { twoFactorAcknowledgementNonceHash: ACK_HASH },
+      );
+      const stored = await readEnrollment(id);
+
+      expect(updated).not.toBeNull();
+      expect(stored?.twoFactorAcknowledgementNonceHash).toBe(ACK_HASH);
+    });
+
     test('a second confirmation on the stale snapshot loses the race and writes nothing', async () => {
       const { id, pendingBackupCodes } = await createEnrollingUser('confirm-race@example.com');
       const guard = { pendingTotpSecret: 'pending-secret', pendingBackupCodes };

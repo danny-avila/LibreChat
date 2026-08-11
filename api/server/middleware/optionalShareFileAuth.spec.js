@@ -2,11 +2,17 @@ const mockVerify = jest.fn();
 const mockGetUserById = jest.fn();
 const mockFindSession = jest.fn();
 const mockRunAsSystem = jest.fn((fn) => fn());
+const mockIsTwoFactorEnrollmentRequired = jest.fn(() => false);
 
 jest.mock('jsonwebtoken', () => ({ verify: (...args) => mockVerify(...args) }));
-jest.mock('@librechat/api', () => ({ isEnabled: (v) => v === 'true' || v === true }), {
-  virtual: true,
-});
+jest.mock(
+  '@librechat/api',
+  () => ({
+    isEnabled: (v) => v === 'true' || v === true,
+    isTwoFactorEnrollmentRequired: (...args) => mockIsTwoFactorEnrollmentRequired(...args),
+  }),
+  { virtual: true },
+);
 jest.mock(
   '@librechat/data-schemas',
   () => ({
@@ -34,6 +40,7 @@ const run = async (req) => {
 describe('optionalShareFileAuth', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockIsTwoFactorEnrollmentRequired.mockReturnValue(false);
     process.env.JWT_REFRESH_SECRET = 'test-secret';
   });
 
@@ -42,6 +49,23 @@ describe('optionalShareFileAuth', () => {
     const next = await run(req);
     expect(next).toHaveBeenCalledTimes(1);
     expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockGetUserById).not.toHaveBeenCalled();
+    expect(mockFindSession).not.toHaveBeenCalled();
+  });
+
+  it('removes an existing viewer when required enrollment is incomplete', async () => {
+    mockIsTwoFactorEnrollmentRequired.mockReturnValue(true);
+    const req = {
+      user: { id: 'u1', provider: 'local', twoFactorEnabled: false },
+      authStrategy: 'jwt',
+      headers: { cookie: 'refreshToken=x' },
+    };
+
+    const next = await run(req);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.user).toBeUndefined();
+    expect(req.authStrategy).toBeUndefined();
     expect(mockGetUserById).not.toHaveBeenCalled();
     expect(mockFindSession).not.toHaveBeenCalled();
   });
@@ -57,6 +81,25 @@ describe('optionalShareFileAuth', () => {
     expect(mockFindSession).toHaveBeenCalledWith({ userId: 'viewer-1', refreshToken: 'good.jwt' });
     expect(mockRunAsSystem).toHaveBeenCalledTimes(2);
     expect(req.user).toMatchObject({ id: 'viewer-1', role: 'USER' });
+  });
+
+  it('does not restore a cookie viewer when required enrollment is incomplete', async () => {
+    mockVerify.mockReturnValue({ id: 'viewer-required' });
+    mockFindSession.mockResolvedValue({ _id: 'session-required' });
+    mockGetUserById.mockResolvedValue({
+      _id: 'viewer-required',
+      role: 'USER',
+      provider: 'local',
+      twoFactorEnabled: false,
+    });
+    mockIsTwoFactorEnrollmentRequired.mockReturnValue(true);
+    const req = { headers: { cookie: 'refreshToken=good.jwt' } };
+
+    const next = await run(req);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.user).toBeUndefined();
+    expect(mockGetUserById).toHaveBeenCalledTimes(1);
   });
 
   it('defaults the role to USER when the record has none', async () => {

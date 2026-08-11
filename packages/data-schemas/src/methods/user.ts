@@ -300,7 +300,7 @@ export function createUserMethods(
     const updated = await User.findOneAndUpdate(
       {
         _id: userId,
-        twoFactorEnabled: false,
+        twoFactorEnabled: { $ne: true },
         provider: { $in: TWO_FACTOR_ENROLLMENT_PROVIDERS },
         ...guard,
       },

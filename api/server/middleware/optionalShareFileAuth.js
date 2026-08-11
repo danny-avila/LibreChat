@@ -1,6 +1,6 @@
 const cookie = require('cookie');
 const jwt = require('jsonwebtoken');
-const { isEnabled } = require('@librechat/api');
+const { isEnabled, isTwoFactorEnrollmentRequired } = require('@librechat/api');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { getUserById, findSession } = require('~/models');
@@ -37,6 +37,16 @@ const getOpenIdUserId = (parsed, req) => {
   return verifySignedUserId(parsed.openid_user_id);
 };
 
+const clearUserWhenEnrollmentIsRequired = (req) => {
+  if (!isTwoFactorEnrollmentRequired(req.user)) {
+    return false;
+  }
+
+  delete req.user;
+  delete req.authStrategy;
+  return true;
+};
+
 /**
  * Fallback auth for share file routes that are hit by `<img>`/anchor requests,
  * which can't carry the bearer access token. Resolves the viewer from the
@@ -47,6 +57,7 @@ const getOpenIdUserId = (parsed, req) => {
  */
 const optionalShareFileAuth = async (req, res, next) => {
   if (req.user) {
+    clearUserWhenEnrollmentIsRequired(req);
     return next();
   }
 
@@ -71,7 +82,7 @@ const optionalShareFileAuth = async (req, res, next) => {
     const user = await runAsSystem(() =>
       getUserById(userId, '-password -__v -totpSecret -backupCodes'),
     );
-    if (user) {
+    if (user && !isTwoFactorEnrollmentRequired(user)) {
       user.id = user._id.toString();
       if (!user.role) {
         user.role = SystemRoles.USER;
