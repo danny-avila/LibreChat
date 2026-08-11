@@ -59,11 +59,13 @@ function setup({
   draft = '',
   isSubmitting = false,
   filesLoading = false,
+  deferComposerReset = false,
 }: {
   autoSendText?: number;
   draft?: string;
   isSubmitting?: boolean;
   filesLoading?: boolean;
+  deferComposerReset?: boolean;
 } = {}) {
   let text = draft;
   let uploading = filesLoading;
@@ -82,13 +84,16 @@ function setup({
     </RecoilRoot>
   );
   const view = renderHook(
-    () =>
-      useDictation({
+    () => {
+      const dictationOptions = {
         ask: ask as unknown as TAskFunction,
         methods: methods as never,
         isSubmitting,
         filesLoading: uploading,
-      }),
+        deferComposerReset,
+      };
+      return useDictation(dictationOptions);
+    },
     { wrapper },
   );
   return {
@@ -178,6 +183,24 @@ describe('useDictation', () => {
     await settle(rerender);
     act(() => mockOnTranscriptionComplete('only once'));
 
+    expect(ask).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains an accepted transcript until its deferred reset is confirmed', async () => {
+    const { result, rerender, currentText, methods } = setup({ deferComposerReset: true });
+    act(() => result.current.start());
+    mockIsListening = true;
+    act(() => rerender());
+
+    act(() => mockSetTextCallback('answer after confirmation'));
+    act(() => result.current.stopAndSend());
+    await settle(rerender);
+
+    expect(ask).toHaveBeenCalledWith({ text: 'answer after confirmation' });
+    expect(currentText()).toBe('answer after confirmation');
+    expect(methods.reset).not.toHaveBeenCalled();
+
+    act(() => mockOnTranscriptionComplete('answer after confirmation'));
     expect(ask).toHaveBeenCalledTimes(1);
   });
 

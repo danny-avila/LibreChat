@@ -47,6 +47,7 @@ export default function useDictation({
   methods,
   isSubmitting,
   filesLoading = false,
+  deferComposerReset = false,
 }: {
   ask: TAskFunction;
   methods: ReturnType<typeof useChatFormContext>;
@@ -55,6 +56,9 @@ export default function useDictation({
    *  this is true, and a dictated turn must not be the one path that lets a
    *  half-uploaded file ride along. */
   filesLoading?: boolean;
+  /** The accepted submission owns composer cleanup asynchronously. Keep this
+   *  take spent while leaving its transcript until that owner confirms it. */
+  deferComposerReset?: boolean;
 }): Dictation {
   const { setValue, reset, getValues } = methods;
   const localize = useLocalize();
@@ -70,6 +74,8 @@ export default function useDictation({
   isSubmittingRef.current = isSubmitting;
   const filesLoadingRef = useRef(filesLoading);
   filesLoadingRef.current = filesLoading;
+  const deferComposerResetRef = useRef(deferComposerReset);
+  deferComposerResetRef.current = deferComposerReset;
   /** Read when the transcription lands, which is after the stop that set it.
    *  The speech hooks have no notion of cancelling or of deferring a send. */
   const modeRef = useRef<StopMode>('compose');
@@ -106,6 +112,9 @@ export default function useDictation({
       const submitted = ask({ text });
       if (submitted === false) {
         spentRef.current = false;
+        return;
+      }
+      if (deferComposerResetRef.current) {
         return;
       }
       reset({ text: '' });

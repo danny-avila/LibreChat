@@ -174,6 +174,7 @@ const ChatForm = memo(function ChatForm({
   }, [isCollapsed]);
 
   const answerMode = useAskAnswerMode(conversationId);
+  const batchAnswerMode = answerMode.composerDisabled;
 
   useAutoSave({
     files,
@@ -254,6 +255,12 @@ const ChatForm = memo(function ChatForm({
     index,
     textAreaRef,
   });
+  let composerPlaceholder = placeholder;
+  if (answerMode.active) {
+    composerPlaceholder = answerMode.batchMode
+      ? localize('com_ui_answer_questions_above')
+      : (answerMode.otherLabel ?? localize('com_ui_something_else'));
+  }
   const {
     isNotAppendable,
     handlePaste,
@@ -264,11 +271,9 @@ const ChatForm = memo(function ChatForm({
     textAreaRef,
     submitButtonRef,
     setIsScrollable,
-    disabled: disableInputs,
+    disabled: disableInputs || batchAnswerMode,
     // The composer IS the free-form answer box while a question pause is live.
-    placeholder: answerMode.active
-      ? (answerMode.otherLabel ?? localize('com_ui_something_else'))
-      : placeholder,
+    placeholder: composerPlaceholder,
     // Enter stays live during a run when it can steer/queue instead of send.
     allowSubmitWhileGenerating: steering.duringRunActive,
     onDuringRunModifier: steering.duringRunActive ? handleDuringRunModifier : undefined,
@@ -300,17 +305,18 @@ const ChatForm = memo(function ChatForm({
   const composerItems = useComposerItems(conversationId, quotesEnabled);
   const attachTarget = useAttachTarget(conversation, disableInputs);
   const { active: answerModeActive, submitText: submitAnswerText } = answerMode;
+  const dictationAnswerModeActive = answerModeActive && !answerMode.batchMode;
   /** The same gate `onSubmit` applies: while a question pause is live the
    *  composer IS the answer box, so a dictated turn has to answer it rather
    *  than start a turn the paused run would drop. */
   const dictationAsk = useCallback<TAskFunction>(
     (props) => {
-      if (answerModeActive && submitAnswerText(props.text)) {
+      if (dictationAnswerModeActive && submitAnswerText(props.text)) {
         return;
       }
       return submitMessage({ text: props.text });
     },
-    [answerModeActive, submitAnswerText, submitMessage],
+    [dictationAnswerModeActive, submitAnswerText, submitMessage],
   );
   const dictation = useDictation({
     ask: dictationAsk,
@@ -318,8 +324,11 @@ const ChatForm = memo(function ChatForm({
     /* Answer mode leaves the run submitting while handing the composer over,
        which is exactly when speech must still reach it: the send button is
        enabled on the same terms. */
-    isSubmitting: isSubmitting && !answerModeActive,
+    isSubmitting: (isSubmitting && !dictationAnswerModeActive) || batchAnswerMode,
     filesLoading,
+    /* A dictated question answer is cleared by answer mode only after the
+       resume succeeds. A transient failure must leave the transcript intact. */
+    deferComposerReset: dictationAnswerModeActive,
   });
   const uploadingCount = useMemo(() => {
     let count = 0;
@@ -407,6 +416,7 @@ const ChatForm = memo(function ChatForm({
                 filesLoading ||
                 disableInputs ||
                 isNotAppendable ||
+                batchAnswerMode ||
                 (isSubmitting && !answerMode.active)
               }
             />
@@ -417,6 +427,7 @@ const ChatForm = memo(function ChatForm({
       filesLoading,
       disableInputs,
       isNotAppendable,
+      batchAnswerMode,
       isSubmitting,
       answerMode.active,
       methods.control,
@@ -556,7 +567,7 @@ const ChatForm = memo(function ChatForm({
                           textAreaRef as React.MutableRefObject<HTMLTextAreaElement | null>
                         ).current = e;
                       }}
-                      disabled={disableInputs || isNotAppendable}
+                      disabled={disableInputs || isNotAppendable || batchAnswerMode}
                       onPaste={handlePaste}
                       onKeyDown={(e) => {
                         // Answer mode consumes option-navigation keys from the
@@ -638,7 +649,7 @@ const ChatForm = memo(function ChatForm({
                   showTools={showTools}
                   isSubmitting={isSubmitting}
                   showSpeech={SpeechToText}
-                  speechDisabled={disableInputs || isNotAppendable}
+                  speechDisabled={disableInputs || isNotAppendable || batchAnswerMode}
                   dictation={dictation}
                   actionSlot={actionSlot}
                 />

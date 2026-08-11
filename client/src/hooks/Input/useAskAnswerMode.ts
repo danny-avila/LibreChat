@@ -132,6 +132,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
    *  composer's answer role) but hands the question display to the chat card. */
   const popoverVisible = active && !collapsed;
   const batchMode = (liveAsk?.questions?.length ?? 0) > 0;
+  const composerDisabled = active && batchMode;
   const multiSelect = !batchMode && liveAsk != null && liveAsk.question.multiSelect === true;
   /** Answer-phase draft key: handed to useAutoSave so the composer drafts
    *  under the question's own key while answer mode is live, leaving the
@@ -453,6 +454,7 @@ export default function useAskAnswerMode(conversationId?: string | null) {
   return {
     active,
     batchMode,
+    composerDisabled,
     liveAsk,
     options,
     dismissed,

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { TooltipAnchor } from '@librechat/client';
+import { IconButton, TooltipAnchor } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -28,14 +28,14 @@ export default memo(function StopButton({
     <TooltipAnchor
       description={localize('com_nav_stop_generating')}
       render={
-        <button
+        <IconButton
           type="button"
+          label={localize('com_nav_stop_generating')}
+          variant="primary"
+          size="theme"
+          shape="theme"
           data-testid="stop-generation-button"
-          className={cn(
-            'flex size-9 items-center justify-center rounded-full bg-text-primary text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-30',
-            hidden && 'hidden',
-          )}
-          aria-label={localize('com_nav_stop_generating')}
+          className={cn('duration-theme-normal disabled:opacity-30', hidden && 'hidden')}
           disabled={!canStop}
           onClick={(e) => {
             if (!canStop) {
@@ -51,11 +51,11 @@ export default memo(function StopButton({
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
-            className="size-6 text-surface-primary"
+            className="size-6"
           >
             <rect x="7" y="7" width="10" height="10" rx="1.25" fill="currentColor"></rect>
           </svg>
-        </button>
+        </IconButton>
       }
     ></TooltipAnchor>
   );
