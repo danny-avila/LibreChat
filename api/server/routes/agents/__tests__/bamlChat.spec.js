@@ -90,10 +90,18 @@ class Harness {
     // The harness self-exits after `shutdown` (see its file for why a bounded
     // per-step timeout there still isn't enough on its own); race it against
     // a hard deadline here too, so a wedged child is never left running.
+    // `Promise.race` doesn't cancel the losing branch, so the timer must be
+    // cleared explicitly once the race settles — otherwise it keeps a live
+    // handle open for the rest of its 5s even on the fast (non-wedged) path,
+    // which is exactly what leaves Jest unable to exit.
+    let timeoutId;
     await Promise.race([
       this.send({ type: 'shutdown' }).catch(() => {}),
-      new Promise((resolve) => setTimeout(resolve, 5000)),
+      new Promise((resolve) => {
+        timeoutId = setTimeout(resolve, 5000);
+      }),
     ]);
+    clearTimeout(timeoutId);
     if (child.exitCode == null && child.signalCode == null) {
       child.kill('SIGKILL');
     }
@@ -213,6 +221,17 @@ describe('BAML public chat route (Closures C, D, E)', () => {
     return res;
   }
 
+  /** The durable Conversation document itself — a distinct observable from
+   * the message list (Behavior 5.3's "conversation data"). */
+  async function getConversation(token, conversationId) {
+    const { res } = await harness.send({
+      type: 'httpGet',
+      path: `/api/convos/${conversationId}`,
+      token,
+    });
+    return res;
+  }
+
   /** Every runtime key/value that must never appear on a public observable. */
   const FORBIDDEN_KEYS = new Set([
     'functions',
@@ -324,6 +343,13 @@ describe('BAML public chat route (Closures C, D, E)', () => {
     expect(messagesRes.status).toBe(200);
     assertNoRuntimeLeak(messagesRes.body);
 
+    // Behavior 5.3 — "conversation data" is a distinct observable from the
+    // message list: the durable Conversation document read back through the
+    // real `GET /api/convos/:conversationId` route.
+    const convoRes = await getConversation(token, conversationId);
+    expect(convoRes.status).toBe(200);
+    assertNoRuntimeLeak(convoRes.body);
+
     const assistantMessages = messagesRes.body.filter((message) => !message.isCreatedByUser);
     expect(assistantMessages).toHaveLength(1);
     const assistantMessage = assistantMessages[0];
@@ -433,8 +459,24 @@ describe('BAML public chat route (Closures C, D, E)', () => {
     expect(assistantMessage.unfinished).toBe(false);
     assertNoRuntimeLeak(assistantMessage);
 
+    const convoRes = await getConversation(token, conversationId);
+    expect(convoRes.status).toBe(200);
+    assertNoRuntimeLeak(convoRes.body);
+
     const { requests } = await harness.send({ type: 'providerRequests' });
     expect(requests).toHaveLength(0);
+
+    // Behavior 5.3 on the ERROR path: a `model_error` is exactly the kind of
+    // partially-built state (a real thrown error object, a BAML call-context
+    // carrier) most likely to leak into a write or the job's resume state —
+    // this must hold here, not just on the happy path (5.1).
+    const { violations } = await harness.send({ type: 'getWriteViolations' });
+    expect(violations).toEqual([]);
+    const { violation: resumeStateViolation } = await harness.send({
+      type: 'getResumeStateLeak',
+      streamId,
+    });
+    expect(resumeStateViolation).toBeNull();
   });
 
   test('Behavior 5.4: owner abort has one terminal outcome and no duplicate persistence', async () => {
@@ -467,12 +509,33 @@ describe('BAML public chat route (Closures C, D, E)', () => {
     const settledJob = await waitForJobSettled(streamId);
     expect(settledJob?.status).toBe('aborted');
 
+    // Behavior 5.3 on the CANCELLATION path — the SSE observable, previously
+    // uninspected here: `cleanupOnComplete: false` retains the chunk log for
+    // an aborted job just as it does for a completed one (5.1, 5.5), so a
+    // fresh subscribe must still replay real, non-leaking framing.
+    const sse = await collectSse(token, streamId);
+    expect(sse.status).toBe(200);
+    for (const frame of sse.frames) {
+      expect(frame.event).toBe('message');
+    }
+    expect(sse.frames.length).toBeGreaterThan(0);
+    assertNoRuntimeLeak(sse.frames);
+
     const messagesRes = await getMessages(token, conversationId);
     const userMessages = messagesRes.body.filter((message) => message.isCreatedByUser);
     const assistantMessages = messagesRes.body.filter((message) => !message.isCreatedByUser);
     expect(userMessages.length).toBeLessThanOrEqual(1);
     expect(assistantMessages.length).toBeLessThanOrEqual(1);
     assertNoRuntimeLeak(messagesRes.body);
+
+    // Behavior 5.3 — "conversation data" on the CANCELLATION path: the user
+    // message (and the conversation row it implies) is saved before the BAML
+    // call is made, so it durably exists by the time an in-flight call is
+    // aborted (see BaseClient.sendMessage: `saveMessageToDatabase` for the
+    // user turn is kicked off before `sendCompletion` is awaited).
+    const convoRes = await getConversation(token, conversationId);
+    expect(convoRes.status).toBe(200);
+    assertNoRuntimeLeak(convoRes.body);
 
     // Nothing further arrives once the abort has settled.
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -481,6 +544,18 @@ describe('BAML public chat route (Closures C, D, E)', () => {
 
     const { requests } = await harness.send({ type: 'providerRequests' });
     expect(requests.length).toBeLessThanOrEqual(1);
+
+    // Behavior 5.3 — the partially-built abort state (a real thrown
+    // AbortError/cancellation object, the job's pending pull) is exactly the
+    // shape most likely to leak a runtime carrier into persistence or resume
+    // state; this must hold on the cancellation path, not just 5.1's happy path.
+    const { violations } = await harness.send({ type: 'getWriteViolations' });
+    expect(violations).toEqual([]);
+    const { violation: resumeStateViolation } = await harness.send({
+      type: 'getResumeStateLeak',
+      streamId,
+    });
+    expect(resumeStateViolation).toBeNull();
   });
 
   test('Behavior 5.5: SSE disconnect without the abort route only unsubscribes; reconnect replays without duplication', async () => {

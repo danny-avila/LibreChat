@@ -197,6 +197,10 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const jwtLogin = require('~/strategies/jwtStrategy');
 const agentsRouter = require('~/server/routes/agents');
 const messagesRouter = require('~/server/routes/messages');
+// Mounted so Behavior 5.3 can inspect the durable Conversation document
+// itself (the "conversation data" observable) through the real read route,
+// not just the write arguments handed to `saveConvo`.
+const convosRouter = require('~/server/routes/convos');
 // Real production bootstrap step for a zero-configured-server MCPManager
 // singleton (api/server/index.js calls this at startup). `loadAgentTools`
 // unconditionally reaches the singleton even for a tool-less ephemeral agent;
@@ -499,6 +503,7 @@ async function handleCommand(cmd) {
       app.use(requireJwtAuth);
       app.use('/api/agents', agentsRouter);
       app.use('/api/messages', messagesRouter);
+      app.use('/api/convos', convosRouter);
       server = http.createServer(app);
       await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
       baseUrl = `http://127.0.0.1:${server.address().port}`;
