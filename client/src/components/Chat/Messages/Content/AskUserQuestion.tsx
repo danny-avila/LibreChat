@@ -2,7 +2,7 @@ import { useContext, useMemo, useState } from 'react';
 import { ChevronUp, TriangleAlert } from 'lucide-react';
 import { Button, TextareaAutosize } from '@librechat/client';
 import type { Agents } from 'librechat-data-provider';
-import { useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
+import { useApprovalContext, useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import { ChatContext } from '~/Providers/ChatContext';
 import { splitOtherOption } from '~/utils/approval';
@@ -25,9 +25,10 @@ export default function AskUserQuestion({
   question: Agents.AskUserQuestionRequest;
 }) {
   const localize = useLocalize();
+  const { getAskAnswerDraft, setAskAnswerDraft } = useApprovalContext();
   const { getAskStatus } = useAskSubmitStatus();
   const { submitAskAnswer } = useResumeSubmit();
-  const [answer, setAnswer] = useState('');
+  const [answer, setAnswer] = useState(() => getAskAnswerDraft(actionId));
   const [localChecked, setLocalChecked] = useState<number[]>([]);
   /**
    * The composer popover is the primary answer surface — while it's VISIBLE
@@ -110,7 +111,9 @@ export default function AskUserQuestion({
   return (
     <div className="my-2 flex w-full flex-col gap-2 rounded-lg border border-border-light bg-surface-secondary p-3">
       <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium text-text-primary">{question.question}</p>
+        <p className="min-w-0 text-sm font-medium text-text-primary [overflow-wrap:anywhere]">
+          {question.question}
+        </p>
         {collapsed && isLivePause && (
           <button
             type="button"
@@ -123,7 +126,9 @@ export default function AskUserQuestion({
         )}
       </div>
       {question.description != null && question.description.length > 0 && (
-        <p className="text-sm text-text-secondary">{question.description}</p>
+        <p className="text-sm text-text-secondary [overflow-wrap:anywhere]">
+          {question.description}
+        </p>
       )}
 
       {choices.length > 0 && (
@@ -136,6 +141,7 @@ export default function AskUserQuestion({
               role={multiSelect ? 'checkbox' : undefined}
               aria-checked={multiSelect ? checkedIndices.includes(index) : undefined}
               disabled={locked}
+              className="h-auto min-h-9 max-w-full whitespace-normal py-1.5 text-left [overflow-wrap:anywhere]"
               onClick={() => (multiSelect ? toggleIndex(index) : submitSingle(index))}
             >
               {option.label}
@@ -147,7 +153,10 @@ export default function AskUserQuestion({
       <TextareaAutosize
         value={answer}
         disabled={locked}
-        onChange={(e) => setAnswer(e.target.value)}
+        onChange={(e) => {
+          setAnswer(e.target.value);
+          setAskAnswerDraft(actionId, e.target.value);
+        }}
         minRows={2}
         maxRows={12}
         placeholder={otherLabel ?? localize('com_ui_your_answer')}

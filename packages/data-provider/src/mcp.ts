@@ -288,6 +288,11 @@ export const StdioOptionsSchema = BaseOptionsSchema.extend({
   stderr: z
     .union([z.enum(['pipe', 'ignore', 'inherit']), z.number().int().nonnegative()])
     .optional(),
+  /**
+   * Working directory for the spawned process. Supplied by Agent Plugins
+   * packages, which resolve and contain the path before it reaches this schema.
+   */
+  cwd: z.string().optional(),
 });
 
 export const WebSocketOptionsSchema = BaseOptionsSchema.extend({

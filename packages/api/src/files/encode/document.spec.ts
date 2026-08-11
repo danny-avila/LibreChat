@@ -784,7 +784,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
   });
 
   describe('Generic document encoding path', () => {
-    it('should format text/plain for Anthropic with citations enabled', async () => {
+    it('should format text/plain for Anthropic as a plain-text document source', async () => {
       const req = createMockRequest(30) as ServerRequest;
       const file = createMockDocFile(1, 'text/plain', 'notes.txt');
 
@@ -806,9 +806,9 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       expect(result.documents[0]).toMatchObject({
         type: 'document',
         source: {
-          type: 'base64',
+          type: 'text',
           media_type: 'text/plain',
-          data: mockContent,
+          data: 'plain text content',
         },
         citations: { enabled: true },
         context: 'File: "notes.txt"',
@@ -816,7 +816,7 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       expect(result.files).toHaveLength(1);
     });
 
-    it('should format text/html for Anthropic with citations enabled', async () => {
+    it('should format text/html for Anthropic as a plain-text document source', async () => {
       const req = createMockRequest(30) as ServerRequest;
       const file = createMockDocFile(1, 'text/html', 'page.html');
 
@@ -837,12 +837,12 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       expect(result.documents).toHaveLength(1);
       expect(result.documents[0]).toMatchObject({
         type: 'document',
-        source: { type: 'base64', media_type: 'text/html', data: mockContent },
+        source: { type: 'text', media_type: 'text/plain', data: '<html>content</html>' },
         citations: { enabled: true },
       });
     });
 
-    it('should format application/json for Anthropic without citations', async () => {
+    it('should format application/json for Anthropic as a plain-text document source', async () => {
       const req = createMockRequest(30) as ServerRequest;
       const file = createMockDocFile(1, 'application/json', 'data.json');
 
@@ -861,7 +861,113 @@ describe('encodeAndFormatDocuments - fileConfig integration', () => {
       );
 
       expect(result.documents).toHaveLength(1);
-      expect(result.documents[0]).not.toHaveProperty('citations');
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        source: { type: 'text', media_type: 'text/plain', data: '{"key":"value"}' },
+        citations: { enabled: true },
+      });
+    });
+
+    it('should skip non-PDF binary documents for Anthropic without contacting storage', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockDocFile(
+        1,
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'report.docx',
+      );
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.ANTHROPIC },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(0);
+      expect(result.files).toHaveLength(0);
+      expect(mockedGetFileStream).not.toHaveBeenCalled();
+    });
+
+    it('should apply Claude document restrictions through an OpenAI-compatible gateway', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockDocFile(
+        1,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'report.xlsx',
+      );
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.OPENAI, model: 'anthropic/claude-sonnet-4-6' },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(0);
+      expect(result.files).toHaveLength(0);
+      expect(mockedGetFileStream).not.toHaveBeenCalled();
+    });
+
+    it('should retain XLSX support for non-Claude OpenAI models', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const file = createMockDocFile(
+        1,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'report.xlsx',
+      );
+      const mockContent = Buffer.from('xlsx-content').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file,
+        content: mockContent,
+        metadata: file,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [file],
+        { provider: Providers.OPENAI, model: 'gpt-5.4' },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toMatchObject([
+        {
+          type: 'file',
+          file: {
+            filename: 'report.xlsx',
+            file_data: `data:${file.type};base64,${mockContent}`,
+          },
+        },
+      ]);
+      expect(result.files).toEqual([file]);
+      expect(mockedGetFileStream).toHaveBeenCalledTimes(1);
+    });
+
+    it('should still encode supported Anthropic documents when mixed with unsupported ones', async () => {
+      const req = createMockRequest(30) as ServerRequest;
+      const docxFile = createMockDocFile(1, 'application/vnd.ms-excel', 'sheet.xls');
+      const textFile = createMockDocFile(1, 'text/markdown', 'readme.md');
+
+      const mockContent = Buffer.from('# heading').toString('base64');
+      mockedGetFileStream.mockResolvedValue({
+        file: textFile,
+        content: mockContent,
+        metadata: textFile,
+      });
+
+      const result = await encodeAndFormatDocuments(
+        req,
+        [docxFile, textFile],
+        { provider: Providers.ANTHROPIC },
+        mockStrategyFunctions,
+      );
+
+      expect(result.documents).toHaveLength(1);
+      expect(result.documents[0]).toMatchObject({
+        type: 'document',
+        source: { type: 'text', media_type: 'text/plain', data: '# heading' },
+      });
+      expect(result.files).toHaveLength(1);
+      expect(mockedGetFileStream).toHaveBeenCalledTimes(1);
     });
 
     it('should format text/csv for OpenAI responses API', async () => {

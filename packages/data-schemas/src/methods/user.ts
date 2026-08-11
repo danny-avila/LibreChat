@@ -296,28 +296,45 @@ export function createUserMethods(
 
   /**
    * Atomically records terms acceptance for a user.
-   * Sets termsAccepted and, only when no timestamp is already stored, stamps
-   * termsAcceptedAt with the server time so the first acceptance within a terms
-   * cycle is preserved across concurrent or repeated requests.
+   * A null-guarded claim stamps termsAcceptedAt only when no timestamp is
+   * already stored (explicit null from the schema default, a missing legacy
+   * field, or a terms reset), so the first acceptance within a terms cycle is
+   * preserved across concurrent or repeated requests. The repeat-acceptance
+   * fallback is guarded by the exact complement (a non-null timestamp) so it
+   * can never resurrect termsAccepted into a cycle that config/reset-terms.js
+   * started between the two updates; when both guards miss because a reset
+   * raced in, the claim retries and records a fresh stamped acceptance. Plain
+   * updates are used instead of an aggregation pipeline with $$NOW, which
+   * Amazon DocumentDB rejects.
    */
   async function acceptTerms(userId: string): Promise<IUser | null> {
     const User = mongoose.models.User;
-    const updated = await User.findByIdAndUpdate(
-      userId,
-      [
-        {
-          $set: {
-            termsAccepted: true,
-            termsAcceptedAt: { $ifNull: ['$termsAcceptedAt', '$$NOW'] },
-          },
-        },
-      ],
-      { new: true, runValidators: true },
-    ).lean<IUser>();
-    if (updated) {
-      await invalidateAuthUserDocCache(userId);
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const firstAcceptance = await User.findOneAndUpdate(
+        { _id: userId, termsAcceptedAt: null },
+        { $set: { termsAccepted: true, termsAcceptedAt: new Date() } },
+        { new: true, runValidators: true },
+      ).lean<IUser>();
+      if (firstAcceptance) {
+        await invalidateAuthUserDocCache(userId);
+        return firstAcceptance;
+      }
+      const reacceptance = await User.findOneAndUpdate(
+        { _id: userId, termsAcceptedAt: { $ne: null } },
+        { $set: { termsAccepted: true } },
+        { new: true, runValidators: true },
+      ).lean<IUser>();
+      if (reacceptance) {
+        await invalidateAuthUserDocCache(userId);
+        return reacceptance;
+      }
+      const exists = await User.exists({ _id: userId });
+      if (!exists) {
+        return null;
+      }
     }
-    return updated;
+    return null;
   }
 
   /**

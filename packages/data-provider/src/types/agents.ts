@@ -285,6 +285,9 @@ export namespace Agents {
     type: StepTypes.MESSAGE_CREATION;
     message_creation: {
       message_id: string;
+      /** Provider content kind and Open Responses semantic text channel. */
+      content_type?: 'text' | 'think';
+      phase?: 'commentary' | 'final_answer';
     };
   };
   export type ToolCallsDetails = {
@@ -381,6 +384,13 @@ export namespace Agents {
   export interface AskUserQuestionInterruptPayload {
     type: 'ask_user_question';
     question: AskUserQuestionRequest;
+    /**
+     * The ask tool call that raised this interrupt (mirrors the SDK field,
+     * present from `@librechat/agents` > 3.3.8). Lets the question/answer
+     * stamps target the exact tool-call part instead of guessing by
+     * position when a model emits several ask calls in one turn.
+     */
+    tool_call_id?: string;
   }
 
   /**

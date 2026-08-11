@@ -1,19 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { ShieldEllipsis } from 'lucide-react';
 import { useForm, Controller } from 'react-hook-form';
+import { ChevronDown, ShieldEllipsis } from 'lucide-react';
 import { Permissions, SystemRoles, PermissionTypes } from 'librechat-data-provider';
 import {
+  Label,
   Button,
   Switch,
   OGDialog,
   DropdownPopup,
+  OGDialogHeader,
+  OGDialogFooter,
   OGDialogTitle,
+  OGDialogDescription,
   OGDialogContent,
   OGDialogTrigger,
   useToastContext,
 } from '@librechat/client';
-import type { Control, UseFormSetValue, UseFormGetValues } from 'react-hook-form';
+import type { Control } from 'react-hook-form';
 import { useUpdatePeoplePickerPermissionsMutation } from '~/data-provider';
 import { useLocalize, useAuthContext, useRoleSelector } from '~/hooks';
 
@@ -27,36 +31,23 @@ type LabelControllerProps = {
   label: string;
   peoplePickerPerm: Permissions.VIEW_USERS | Permissions.VIEW_GROUPS | Permissions.VIEW_ROLES;
   control: Control<FormValues, unknown, FormValues>;
-  setValue: UseFormSetValue<FormValues>;
-  getValues: UseFormGetValues<FormValues>;
 };
 
-const LabelController: React.FC<LabelControllerProps> = ({
-  control,
-  peoplePickerPerm,
-  label,
-  getValues,
-  setValue,
-}) => (
-  <div className="mb-4 flex items-center justify-between gap-2">
-    <button
-      className="cursor-pointer select-none"
-      type="button"
-      onClick={() =>
-        setValue(peoplePickerPerm, !getValues(peoplePickerPerm), {
-          shouldDirty: true,
-        })
-      }
-      tabIndex={0}
+const LabelController: React.FC<LabelControllerProps> = ({ control, peoplePickerPerm, label }) => (
+  <div className="flex items-center justify-between gap-4 px-4 py-3.5">
+    <Label
+      htmlFor={peoplePickerPerm}
+      className="w-auto cursor-pointer select-none break-normal text-sm font-medium text-text-primary"
     >
       {label}
-    </button>
+    </Label>
     <Controller
       name={peoplePickerPerm}
       control={control}
       render={({ field }) => (
         <Switch
           {...field}
+          id={peoplePickerPerm}
           checked={field.value ?? false}
           onCheckedChange={field.onChange}
           value={(field.value ?? false).toString()}
@@ -71,16 +62,10 @@ const PeoplePickerAdminSettings = () => {
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { user } = useAuthContext();
-  const { mutate, isLoading } = useUpdatePeoplePickerPermissionsMutation({
-    onSuccess: () => {
-      showToast({ status: 'success', message: localize('com_ui_saved') });
-    },
-    onError: () => {
-      showToast({ status: 'error', message: localize('com_ui_error_save_admin_settings') });
-    },
-  });
-
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
+  const roleLabelId = useId();
+  const roleValueId = useId();
   const {
     selectedRole,
     isSelectedCustomRole,
@@ -93,8 +78,6 @@ const PeoplePickerAdminSettings = () => {
   const {
     reset,
     control,
-    setValue,
-    getValues,
     handleSubmit,
     formState: { isSubmitting },
   } = useForm<FormValues>({
@@ -108,6 +91,24 @@ const PeoplePickerAdminSettings = () => {
     }
     reset(defaultValues as FormValues);
   }, [isSelectedCustomRole, isCustomRoleLoading, isCustomRoleError, defaultValues, reset]);
+
+  const handleDialogOpenChange = (open: boolean) => {
+    if (!open) {
+      setIsRoleMenuOpen(false);
+      reset(defaultValues as FormValues);
+    }
+    setIsDialogOpen(open);
+  };
+
+  const { mutate, isLoading } = useUpdatePeoplePickerPermissionsMutation({
+    onSuccess: () => {
+      showToast({ status: 'success', message: localize('com_ui_saved') });
+      handleDialogOpenChange(false);
+    },
+    onError: () => {
+      showToast({ status: 'error', message: localize('com_ui_error_save_admin_settings') });
+    },
+  });
 
   if (user?.role !== SystemRoles.ADMIN) {
     return null;
@@ -136,71 +137,95 @@ const PeoplePickerAdminSettings = () => {
   };
 
   return (
-    <OGDialog>
+    <OGDialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
       <OGDialogTrigger asChild>
         <Button
-          variant={'outline'}
-          className="btn btn-neutral border-token-border-light gap-1 rounded-lg font-medium"
+          type="button"
+          variant="outline"
+          className="gap-2 rounded-lg font-medium"
           aria-label={localize('com_ui_admin_settings')}
         >
-          <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
+          <ShieldEllipsis className="size-4" aria-hidden="true" />
           {localize('com_ui_admin_settings')}
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="w-full border-border-light bg-surface-primary text-text-primary lg:w-1/4">
-        <OGDialogTitle>
-          {localize('com_ui_admin_settings_section', { section: localize('com_ui_people_picker') })}
-        </OGDialogTitle>
-        <div className="p-2">
-          {/* Role selection dropdown */}
-          <div className="flex items-center gap-2">
-            <span className="font-medium">{localize('com_ui_role_select')}:</span>
-            <DropdownPopup
-              unmountOnHide={true}
-              menuId="role-dropdown"
-              isOpen={isRoleMenuOpen}
-              setIsOpen={setIsRoleMenuOpen}
-              trigger={
-                <Ariakit.MenuButton className="inline-flex min-w-[6rem] items-center justify-center rounded-lg border border-border-light bg-transparent px-2 py-1 text-text-primary transition-all ease-in-out hover:bg-surface-tertiary">
-                  {selectedRole}
-                </Ariakit.MenuButton>
-              }
-              items={roleDropdownItems}
-              itemClassName="items-center justify-center"
-              sameWidth={true}
-            />
+      <OGDialogContent className="w-11/12 max-w-2xl gap-0 overflow-hidden p-0">
+        <OGDialogHeader className="px-5 py-5 pr-14 text-left sm:px-6">
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border-light bg-surface-secondary text-text-secondary">
+              <ShieldEllipsis className="size-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0 space-y-1">
+              <OGDialogTitle className="text-xl leading-7">
+                {localize('com_ui_admin_settings_section', {
+                  section: localize('com_ui_people_picker'),
+                })}
+              </OGDialogTitle>
+              <OGDialogDescription className="sr-only">
+                {localize('com_ui_people_picker_admin_description')}
+              </OGDialogDescription>
+            </div>
           </div>
-          {/* Permissions form */}
-          <form onSubmit={handleSubmit(onSubmit)}>
-            <div className="py-5">
+        </OGDialogHeader>
+
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <div className="space-y-4 p-4 sm:p-6">
+            <div className="grid gap-3 rounded-xl border border-border-light bg-surface-secondary p-4 sm:grid-cols-[minmax(0,1fr)_9rem] sm:items-center">
+              <span id={roleLabelId} className="text-sm font-semibold text-text-primary">
+                {localize('com_ui_role_select')}
+              </span>
+              <DropdownPopup
+                unmountOnHide={true}
+                menuId="people-picker-role-dropdown"
+                isOpen={isRoleMenuOpen}
+                setIsOpen={setIsRoleMenuOpen}
+                trigger={
+                  <Ariakit.MenuButton
+                    aria-labelledby={`${roleLabelId} ${roleValueId}`}
+                    className="inline-flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-border-medium bg-transparent px-3 text-sm text-text-primary transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+                  >
+                    <span id={roleValueId} className="truncate font-medium">
+                      {selectedRole}
+                    </span>
+                    <ChevronDown
+                      className="size-4 shrink-0 text-text-secondary"
+                      aria-hidden="true"
+                    />
+                  </Ariakit.MenuButton>
+                }
+                items={roleDropdownItems}
+                itemClassName="items-center justify-center"
+                sameWidth={true}
+              />
+            </div>
+
+            <div className="divide-y divide-border-light overflow-hidden rounded-xl border border-border-light bg-surface-secondary">
               {labelControllerData.map(({ peoplePickerPerm, label }) => (
-                <div key={peoplePickerPerm}>
-                  <LabelController
-                    control={control}
-                    peoplePickerPerm={peoplePickerPerm}
-                    label={label}
-                    getValues={getValues}
-                    setValue={setValue}
-                  />
-                </div>
+                <LabelController
+                  key={peoplePickerPerm}
+                  control={control}
+                  peoplePickerPerm={peoplePickerPerm}
+                  label={label}
+                />
               ))}
             </div>
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={handleSubmit(onSubmit)}
-                disabled={
-                  isSubmitting ||
-                  isLoading ||
-                  (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError))
-                }
-                className="btn rounded bg-green-500 font-bold text-white transition-all hover:bg-green-600"
-              >
-                {localize('com_ui_save')}
-              </button>
-            </div>
-          </form>
-        </div>
+          </div>
+
+          <OGDialogFooter className="bg-transparent px-4 py-4 sm:px-6">
+            <Button
+              variant="submit"
+              type="submit"
+              disabled={
+                isSubmitting ||
+                isLoading ||
+                (isSelectedCustomRole && (isCustomRoleLoading || isCustomRoleError))
+              }
+              className="font-bold"
+            >
+              {localize('com_ui_save')}
+            </Button>
+          </OGDialogFooter>
+        </form>
       </OGDialogContent>
     </OGDialog>
   );

@@ -18,7 +18,7 @@ function isFederatedTokens(obj: unknown): obj is OIDCTokens {
   return 'access_token' in obj || 'id_token' in obj || 'expires_at' in obj;
 }
 
-const OPENID_TOKEN_FIELDS = [
+export const OPENID_TOKEN_FIELDS = [
   'ACCESS_TOKEN',
   'ID_TOKEN',
   'USER_ID',

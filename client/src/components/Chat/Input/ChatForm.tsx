@@ -22,10 +22,11 @@ import {
   useAddedChatContext,
   useAssistantsMapContext,
 } from '~/Providers';
+import { cn, getModelSpec, hasIncompleteFiles, removeFocusRings } from '~/utils';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
-import { cn, getModelSpec, removeFocusRings } from '~/utils';
+import InterruptSteerButton from './InterruptSteerButton';
 import DuringRunSendButton from './DuringRunSendButton';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
@@ -58,7 +59,6 @@ interface ChatFormProps {
   setFiles: FileSetter;
   conversation: TConversation | null;
   isSubmitting: boolean;
-  filesLoading: boolean;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
   handleStopGenerating: (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -72,7 +72,6 @@ const ChatForm = memo(function ChatForm({
   setFiles,
   conversation,
   isSubmitting,
-  filesLoading,
   setFilesLoading,
   newConversation,
   handleStopGenerating,
@@ -122,6 +121,7 @@ const ChatForm = memo(function ChatForm({
     [conversation?.spec, startupConfig],
   );
   const hideBadgeRow = modelSpec?.hideBadgeRow === true;
+  const filesLoading = useMemo(() => hasIncompleteFiles(files), [files]);
   const conversationId = useMemo(
     () => conversation?.conversationId ?? Constants.NEW_CONVO,
     [conversation?.conversationId],
@@ -198,6 +198,10 @@ const ChatForm = memo(function ChatForm({
         overrideFiles,
         overrideQuotes: context?.quotes ?? [],
         overrideManualSkills: context?.manualSkills ?? [],
+        overrideClientRequestId: context?.clientRequestId,
+        overrideRecoverySteerId: context?.recoverySteerId,
+        overrideExpectedPredecessorCreatedAt: context?.expectedPredecessorCreatedAt,
+        overrideQueuedMessageOrigin: context?.queuedMessageOrigin,
       }),
     [submitMessage],
   );
@@ -344,13 +348,16 @@ const ChatForm = memo(function ChatForm({
   );
 
   /** ⌘/Ctrl+Enter = the non-default during-run action, ⌥/Alt+Enter =
-   *  interrupt & send — the counterpart of Enter's `submitDuringRun`. */
+   *  interrupt & send (discards the answer), ⌘/Ctrl+Shift+Enter = interrupt &
+   *  steer (keeps it) — all counterparts of Enter's `submitDuringRun`. */
   const handleDuringRunModifier = useCallback(
-    (kind: 'other' | 'interrupt') => {
+    (kind: 'other' | 'interrupt' | 'preempt') => {
       const text = methods.getValues('text');
       let consumed = false;
       if (kind === 'interrupt') {
         consumed = steering.interruptAndSend(text);
+      } else if (kind === 'preempt') {
+        consumed = steering.interruptSteer(text);
       } else if (steering.effectiveAction === 'steer') {
         consumed = steering.queueFromComposer(text);
       } else {
@@ -432,24 +439,29 @@ const ChatForm = memo(function ChatForm({
   /** One button slot while a run is generating: with composer text the send
    *  button takes over (Enter steers/queues; hover reveals all actions);
    *  clearing the text restores Stop. */
-  const duringRunSlot =
-    steering.duringRunActive && (textValue?.trim() ?? '') !== '' ? (
-      <DuringRunSendButton
-        ref={submitButtonRef}
-        control={methods.control}
-        steering={steering}
-        getText={() => methods.getValues('text')}
-        onConsumed={() => methods.reset()}
-        disabled={filesLoading}
-      />
-    ) : (
-      <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />
-    );
+  const duringRunSlot = (() => {
+    if (steering.duringRunActive && (textValue?.trim() ?? '') !== '') {
+      return (
+        <DuringRunSendButton
+          ref={submitButtonRef}
+          control={methods.control}
+          steering={steering}
+          getText={() => methods.getValues('text')}
+          onConsumed={() => methods.reset()}
+          disabled={filesLoading}
+        />
+      );
+    }
+    if (showStopButton) {
+      return <StopButton stop={handleStopGenerating} setShowStopButton={setShowStopButton} />;
+    }
+    return null;
+  })();
 
   const baseClasses = useMemo(
     () =>
       cn(
-        'md:py-3.5 m-0 w-full resize-none py-[13px] placeholder-black/60 bg-transparent dark:placeholder-white/60 [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+        'md:py-3.5 m-0 w-full resize-none py-[13px] placeholder:text-text-tertiary bg-transparent [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
         isCollapsed ? 'max-h-[52px]' : 'max-h-[45vh] md:max-h-[55vh]',
         isMoreThanThreeRows ? 'pl-5' : 'px-5',
       ),
@@ -489,7 +501,9 @@ const ChatForm = memo(function ChatForm({
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
         {/* Primary composer owns the selection popup so split-view doesn't double it. */}
         {index === 0 && quotesEnabled && <QuoteButton conversationId={conversationId} />}
-        <div className="flex w-full flex-col">
+        {/* `relative` anchors the in-flight steer overlay, which floats above
+            the composer (`bottom-full`) over the bottom of the thread. */}
+        <div className="relative flex w-full flex-col">
           {/* Run-scoped: `enabled` alone is any primary composer on a steerable
               endpoint, so a chip that outlives the run would strand a bubble. */}
           {steering.enabled && isSubmitting && (
@@ -659,8 +673,22 @@ const ChatForm = memo(function ChatForm({
                     isSubmitting={isSubmitting}
                   />
                 )}
+                {steering.duringRunActive &&
+                  steering.canControlGeneration &&
+                  (textValue?.trim() ?? '') !== '' && (
+                    <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
+                      <InterruptSteerButton
+                        steering={steering}
+                        getText={() => methods.getValues('text')}
+                        onConsumed={() => methods.reset()}
+                        disabled={filesLoading}
+                      />
+                    </div>
+                  )}
                 <div className={`${isRTL ? 'ml-2' : 'mr-2'}`}>
-                  {isSubmitting && showStopButton && !answerMode.active
+                  {isSubmitting &&
+                  (showStopButton || steering.duringRunActive) &&
+                  !answerMode.active
                     ? duringRunSlot
                     : endpoint && (
                         <SendButton
@@ -697,7 +725,6 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
     setFiles,
     conversation,
     isSubmitting,
-    filesLoading,
     setFilesLoading,
     newConversation,
     handleStopGenerating,
@@ -756,7 +783,6 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
       setFiles={setFiles}
       conversation={stableConversation}
       isSubmitting={isSubmitting}
-      filesLoading={filesLoading}
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}
       handleStopGenerating={stableHandleStop}

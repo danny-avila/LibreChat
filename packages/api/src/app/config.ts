@@ -6,6 +6,7 @@ import {
 } from 'librechat-data-provider';
 import type { TCustomConfig, TEndpoint, TTransactionsConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { resolveCustomEndpointSecrets } from '~/admin/secrets';
 import { isEnabled } from '~/utils';
 
 /**
@@ -63,8 +64,8 @@ export const getCustomEndpointConfig = ({
   }
 
   const customEndpoints = appConfig.endpoints?.[EModelEndpoint.custom] ?? [];
-  return customEndpoints.find(
-    (endpointConfig) =>
-      normalizeEndpointName(endpointConfig.name) === normalizeEndpointName(endpoint),
+  const endpointConfig = customEndpoints.find(
+    (config) => normalizeEndpointName(config.name) === normalizeEndpointName(endpoint),
   );
+  return endpointConfig && resolveCustomEndpointSecrets(endpointConfig);
 };

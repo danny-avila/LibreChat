@@ -104,6 +104,29 @@ describe('FlowStateManager', () => {
       await expect(flowPromise).rejects.toThrow('test-type flow timed out');
     });
 
+    it('should retain a terminal timeout for the remaining storage TTL', async () => {
+      const flowId = 'retained-timeout-flow';
+      const type = 'mcp_oauth';
+      const shortTimeoutManager = new FlowStateManager(store as unknown as Keyv, {
+        ttl: 5000,
+        monitorTimeout: 100,
+        retainedFailureTypes: ['mcp_oauth'],
+        ci: true,
+      });
+
+      await expect(shortTimeoutManager.createFlow(flowId, type)).rejects.toThrow(
+        'mcp_oauth flow timed out',
+      );
+
+      await expect(shortTimeoutManager.getFlowState(flowId, type)).resolves.toEqual(
+        expect.objectContaining({
+          status: 'FAILED',
+          error: 'mcp_oauth flow timed out',
+          failedAt: expect.any(Number),
+        }),
+      );
+    });
+
     it('should maintain flow state consistency under high concurrency', async () => {
       const flowId = 'concurrent-flow';
       const type = 'test-type';
@@ -174,6 +197,26 @@ describe('FlowStateManager', () => {
       await flowManager.failFlow(flowId, type, new Error('failure'));
 
       await expect(flowPromise).rejects.toThrow('failure');
+      await expect(flowManager.getFlowState(flowId, type)).resolves.toBeUndefined();
+    }, 15000);
+
+    it('should retain configured failed flow types for status polling', async () => {
+      const flowId = 'retained-failure-flow';
+      const type = 'mcp_oauth';
+      const retainedManager = new FlowStateManager(store as unknown as Keyv, {
+        ttl: 5000,
+        retainedFailureTypes: [type],
+        ci: true,
+      });
+      const flowPromise = retainedManager.createFlow(flowId, type);
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await retainedManager.failFlow(flowId, type, new Error('provider rejected request'));
+
+      await expect(flowPromise).rejects.toThrow('provider rejected request');
+      await expect(retainedManager.getFlowState(flowId, type)).resolves.toEqual(
+        expect.objectContaining({ status: 'FAILED', error: 'provider rejected request' }),
+      );
     }, 15000);
 
     it('should not overwrite a completed flow with a late failure', async () => {

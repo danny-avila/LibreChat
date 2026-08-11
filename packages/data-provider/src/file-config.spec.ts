@@ -2,10 +2,13 @@ import type { MimeUploadCapability } from './file-config';
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
+  isAnthropicTextDocumentType,
   getConfiguredMimeAccept,
   bedrockDocumentMimeTypes,
+  isAnthropicDocumentType,
   isPermissiveMimeConfig,
   convertStringsToRegex,
+  setFileConfigRegexCompiler,
   documentParserMimeTypes,
   getEndpointFileConfig,
   applicationMimeTypes,
@@ -215,6 +218,47 @@ describe('documentParserMimeTypes', () => {
     'image/png',
   ])('does not match OCR-only or unsupported type: %s', (mimeType) => {
     expect(check(mimeType)).toBe(false);
+  });
+});
+
+describe('isAnthropicDocumentType', () => {
+  it.each([
+    'application/pdf',
+    'text/plain',
+    'text/html',
+    'text/markdown',
+    'text/csv',
+    'text/x-python',
+    'application/json',
+    'application/xml',
+    'application/yaml',
+    'application/sql',
+    'application/csv',
+  ])('accepts type the Anthropic document path can send: %s', (mimeType) => {
+    expect(isAnthropicDocumentType(mimeType)).toBe(true);
+  });
+
+  it.each([
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/msword',
+    'application/vnd.ms-excel',
+    'application/epub+zip',
+    'application/zip',
+    'application/vnd.apache.parquet',
+    'image/png',
+    '',
+  ])('rejects type Anthropic would 400 on: %s', (mimeType) => {
+    expect(isAnthropicDocumentType(mimeType)).toBe(false);
+  });
+
+  it('rejects undefined', () => {
+    expect(isAnthropicDocumentType(undefined)).toBe(false);
+  });
+
+  it('excludes PDF from the plain-text subset', () => {
+    expect(isAnthropicTextDocumentType('application/pdf')).toBe(false);
+    expect(isAnthropicTextDocumentType('text/plain')).toBe(true);
   });
 });
 
@@ -1569,5 +1613,38 @@ describe('getConfiguredMimeAccept', () => {
     );
     expect(accept.has('.epub')).toBe(true);
     expect(accept.has('.parquet')).toBe(true);
+  });
+});
+
+describe('setFileConfigRegexCompiler (MIME pattern compiler seam)', () => {
+  afterEach(() => {
+    setFileConfigRegexCompiler((pattern) => new RegExp(pattern));
+  });
+
+  it('defaults to a native RegExp compiler', () => {
+    const [regex] = convertStringsToRegex(['^text/']);
+    expect(regex.test('text/csv')).toBe(true);
+    expect(regex.test('image/png')).toBe(false);
+  });
+
+  it('routes patterns through an injected compiler', () => {
+    const seen: string[] = [];
+    setFileConfigRegexCompiler((pattern) => {
+      seen.push(pattern);
+      return { test: () => false };
+    });
+    const compiled = convertStringsToRegex(['application/pdf', 'text/*']);
+    expect(seen).toEqual(['application/pdf', 'text/*']);
+    expect(compiled.every((matcher) => matcher.test('anything') === false)).toBe(true);
+  });
+
+  it('returns a single reject-all matcher when every pattern fails to compile', () => {
+    setFileConfigRegexCompiler(() => {
+      throw new Error('unsupported pattern');
+    });
+    const compiled = convertStringsToRegex(['application/pdf', 'text/*']);
+    expect(compiled).toHaveLength(1);
+    expect(compiled[0].test('application/pdf')).toBe(false);
+    expect(compiled[0].test('anything')).toBe(false);
   });
 });

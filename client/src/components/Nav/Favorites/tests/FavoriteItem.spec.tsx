@@ -31,17 +31,6 @@ jest.mock('~/utils', () => ({
   renderAgentAvatar: () => <span data-testid="agent-avatar" />,
 }));
 
-jest.mock('@librechat/client', () => ({
-  ...jest.requireActual('@librechat/client'),
-  DropdownPopup: () => <div data-testid="dropdown-popup" />,
-}));
-
-jest.mock('@ariakit/react/menu', () => ({
-  MenuButton: ({ children }: { children?: React.ReactNode }) => (
-    <button type="button">{children}</button>
-  ),
-}));
-
 const baseAgent: Agent = {
   id: 'agent-123',
   name: 'Research Agent',
@@ -145,6 +134,30 @@ describe('FavoriteItem', () => {
       render(<FavoriteItem type="spec" item={baseSpec} onSelectSpec={onSelectSpec} />);
       fireEvent.keyDown(screen.getByTestId('favorite-item'), { key: ' ' });
       expect(onSelectSpec).toHaveBeenCalledWith(baseSpec);
+    });
+  });
+
+  describe('unpin button', () => {
+    it('unpins directly without opening a menu', () => {
+      render(<FavoriteItem type="agent" item={baseAgent} />);
+      const unpin = screen.getByTestId('favorite-unpin-button');
+      expect(unpin).toHaveAttribute('aria-label', 'com_ui_unpin');
+      fireEvent.click(unpin);
+      expect(mockRemoveFavoriteAgent).toHaveBeenCalledWith('agent-123');
+    });
+
+    it('unpins a model without selecting the row', () => {
+      const onSelectEndpoint = jest.fn();
+      render(<FavoriteItem type="model" item={baseModel} onSelectEndpoint={onSelectEndpoint} />);
+      fireEvent.click(screen.getByTestId('favorite-unpin-button'));
+      expect(mockRemoveFavoriteModel).toHaveBeenCalledWith('gpt-5', 'openai');
+      expect(onSelectEndpoint).not.toHaveBeenCalled();
+    });
+
+    it('unpins a spec', () => {
+      render(<FavoriteItem type="spec" item={baseSpec} />);
+      fireEvent.click(screen.getByTestId('favorite-unpin-button'));
+      expect(mockRemoveFavoriteSpec).toHaveBeenCalledWith('my-spec');
     });
   });
 });

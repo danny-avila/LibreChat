@@ -41,6 +41,13 @@ jest.mock('@librechat/api', () => {
     sanitizeFilename: jest.fn((n) => n),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
+    sendUploadSuccess: jest.fn((res, sseStream, message, result) => {
+      if (sseStream) {
+        sseStream.sendData({ message, ...result });
+        return;
+      }
+      res.status(200).json({ message, ...result });
+    }),
     getStorageMetadata: jest.fn(() => ({})),
     getRetentionExpiry,
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {

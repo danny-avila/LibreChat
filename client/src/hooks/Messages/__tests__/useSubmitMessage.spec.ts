@@ -130,4 +130,25 @@ describe('useSubmitMessage', () => {
     expect(setMessages).not.toHaveBeenCalled();
     expect(ask).toHaveBeenCalled();
   });
+
+  it('uses the recovery source as the stable user row and forwards the attempt fields', () => {
+    ask.mockReturnValue(true);
+    const { result } = renderHook(() => useSubmitMessage());
+
+    act(() => {
+      result.current.submitMessage({
+        text: 'recover once',
+        overrideClientRequestId: 'attempt-uuid',
+        overrideRecoverySteerId: 'source-steer',
+      });
+    });
+
+    expect(ask).toHaveBeenCalledWith(
+      { text: 'recover once', overrideUserMessageId: 'source-steer' },
+      expect.objectContaining({
+        overrideClientRequestId: 'attempt-uuid',
+        overrideRecoverySteerId: 'source-steer',
+      }),
+    );
+  });
 });

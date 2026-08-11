@@ -25,14 +25,14 @@ const AssistantAvatar = ({
     return (
       <img
         src={avatar}
-        className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
+        className="bg-token-surface-secondary h-full w-full rounded-full object-cover dark:bg-surface-tertiary"
         alt={assistantName}
         width="80"
         height="80"
       />
     );
   } else if (assistantName) {
-    return <AssistantIcon className={cn('text-token-secondary', className)} size={size} />;
+    return <AssistantIcon className={cn('text-text-secondary', className)} size={size} />;
   }
 
   return <Sparkles className={cn(context === 'landing' ? 'icon-2xl' : '', className)} />;
@@ -43,7 +43,7 @@ const AgentAvatar = ({ className = '', avatar = '', agentName, size }: AgentIcon
     return (
       <img
         src={avatar}
-        className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
+        className="bg-token-surface-secondary h-full w-full rounded-full object-cover dark:bg-surface-tertiary"
         alt={agentName}
         width="80"
         height="80"

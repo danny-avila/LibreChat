@@ -21,11 +21,20 @@ import {
   isDocumentSupportedProvider,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TFile, EndpointFileConfig, FileConfig } from 'librechat-data-provider';
+import type { TFile, EndpointFileConfig, FileConfig, RegexLike } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ExtendedFile } from '~/common';
 
 export const partialTypes = ['text/x-'];
+
+export function hasIncompleteFiles(files: Map<string, ExtendedFile>): boolean {
+  for (const file of files.values()) {
+    if (file.progress < 1) {
+      return true;
+    }
+  }
+  return false;
+}
 
 const textDocument = {
   paths: TextPaths,
@@ -336,7 +345,7 @@ export type UploadOptionContext = {
   fileSearchAllowedByAgent: boolean;
   codeAllowedByAgent: boolean;
   fileConfig: FileConfig | null;
-  endpointSupportedMimeTypes?: RegExp[];
+  endpointSupportedMimeTypes?: RegexLike[];
 };
 
 const isProviderAttachType = (type: string, ctx: UploadOptionContext): boolean => {
@@ -438,4 +447,13 @@ export function sortPagesByRelevance(
     return pages;
   }
   return [...pages].sort((a, b) => (pageRelevance[b] || 0) - (pageRelevance[a] || 0));
+}
+
+/**
+ * Collapses whitespace runs to underscores so export filenames come out
+ * identical across all export formats: `export-from-json`'s default formatter
+ * only replaces the first whitespace run, while direct downloads replace none.
+ */
+export function normalizeExportFilename(filename: string): string {
+  return filename.replace(/\s+/g, '_');
 }

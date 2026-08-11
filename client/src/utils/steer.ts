@@ -5,12 +5,55 @@ import type {
   TSteerAppliedEvent,
   TMessageContentParts,
 } from 'librechat-data-provider';
+import type { QueuedMessage, QueuedMessageOrigin } from '~/store/families';
 
 type SteerPart = Extract<TMessageContentParts, { type: ContentTypes.STEER }>;
 
 /** Returns the steer content part when `part` is one, else undefined. */
 export function getSteerPart(part: TMessageContentParts | undefined): SteerPart | undefined {
   return part?.type === ContentTypes.STEER ? (part as SteerPart) : undefined;
+}
+
+/** Server/client ids embedded in applied steer parts, whether passed a raw
+ * content array or message objects. Used during reconnect to retire a failed
+ * optimistic chip whose POST ACK was lost before the steer applied offline. */
+export function collectAppliedSteerIds(values: unknown[] | undefined): string[] {
+  if (!values) {
+    return [];
+  }
+  const ids = new Set<string>();
+  for (const value of values) {
+    if (value == null || typeof value !== 'object') {
+      continue;
+    }
+    const object = value as {
+      type?: unknown;
+      steerId?: unknown;
+      clientSteerId?: unknown;
+      content?: unknown;
+    };
+    const parts = Array.isArray(object.content) ? object.content : [object];
+    for (const part of parts) {
+      if (part == null || typeof part !== 'object') {
+        continue;
+      }
+      const candidate = part as {
+        type?: unknown;
+        steerId?: unknown;
+        clientSteerId?: unknown;
+      };
+      if (candidate.type !== ContentTypes.STEER) {
+        continue;
+      }
+      if (typeof candidate.steerId === 'string') {
+        ids.add(candidate.steerId);
+      }
+      if (typeof candidate.clientSteerId === 'string') {
+        ids.add(candidate.clientSteerId);
+      }
+    }
+  }
+  return [...ids];
 }
 
 /**
@@ -80,8 +123,10 @@ export function resolveAbortSteerTarget(params: { conversationId: string; resolv
 }
 
 /** Bounds the per-conversation applied-steer id set. A late 202 ACK can land
- *  after the run's final event, so the set is capped rather than cleared. */
-const APPLIED_STEER_IDS_CAP = 100;
+ * after the run's final event, so the set is capped rather than cleared.
+ * Modern steers contribute both a server and client correlation id; retain
+ * two ids for every one of the server's 100 durable receipt slots. */
+const APPLIED_STEER_IDS_CAP = 200;
 
 /**
  * Appends steer ids to an applied-id set, deduped and capped. Returns the
@@ -108,6 +153,65 @@ export function carriedSteerContext(source?: SteerCarriedContext): SteerCarriedC
     ...(quotes && quotes.length > 0 && { quotes }),
     ...(manualSkills && manualSkills.length > 0 && { manualSkills }),
   };
+}
+
+/** Restore a temporarily removed queue item using surviving original
+ * neighbours first, then the queue's durable priority/time ordering. */
+export function insertQueuedOrigin(
+  queue: QueuedMessage[],
+  origin: QueuedMessageOrigin,
+  expectedPredecessorCreatedAt?: number,
+): QueuedMessage[] {
+  const rebasePredecessor = (item: QueuedMessage): QueuedMessage => {
+    if (expectedPredecessorCreatedAt === undefined) {
+      return item;
+    }
+    return item.expectedPredecessorCreatedAt === expectedPredecessorCreatedAt
+      ? item
+      : { ...item, expectedPredecessorCreatedAt };
+  };
+
+  const existingIndex = queue.findIndex((queued) => queued.id === origin.item.id);
+  if (existingIndex >= 0) {
+    const rebased = rebasePredecessor(queue[existingIndex]);
+    if (rebased === queue[existingIndex]) {
+      return queue;
+    }
+    const next = [...queue];
+    next[existingIndex] = rebased;
+    return next;
+  }
+  const restoredItem = rebasePredecessor(origin.item);
+  let index = -1;
+  for (const id of origin.afterIds) {
+    index = queue.findIndex((queued) => queued.id === id);
+    if (index >= 0) {
+      break;
+    }
+  }
+  if (index < 0) {
+    for (let i = origin.beforeIds.length - 1; i >= 0; i -= 1) {
+      const beforeIndex = queue.findIndex((queued) => queued.id === origin.beforeIds[i]);
+      if (beforeIndex >= 0) {
+        index = beforeIndex + 1;
+        break;
+      }
+    }
+  }
+  if (index < 0) {
+    index = queue.findIndex((queued) => {
+      const itemPriority = Number(restoredItem.priority === true);
+      const queuedPriority = Number(queued.priority === true);
+      return (
+        itemPriority > queuedPriority ||
+        (itemPriority === queuedPriority && restoredItem.createdAt < queued.createdAt)
+      );
+    });
+    if (index < 0) {
+      index = queue.length;
+    }
+  }
+  return [...queue.slice(0, index), restoredItem, ...queue.slice(index)];
 }
 
 /** Merges steer lists into one id-deduped conversion batch (first wins). */

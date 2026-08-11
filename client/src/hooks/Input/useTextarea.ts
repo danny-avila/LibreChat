@@ -1,16 +1,10 @@
-import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import debounce from 'lodash/debounce';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilState } from 'recoil';
 import { EToolResources, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
-import {
-  parseBinding,
-  isMacPlatform,
-  bindingFromEvent,
-  resolveSubmitOverrideAction,
-} from '~/utils/shortcuts';
 import {
   forceResize,
   insertTextAtCursor,
@@ -20,11 +14,13 @@ import {
 } from '~/utils';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import { useLatestMessageMeta } from '~/hooks/Messages/useLatestMessage';
+import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import useFileUploadRouter from '~/hooks/Files/useFileUploadRouter';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useUploadOptions from '~/hooks/Files/useUploadOptions';
 import { useInteractionHealthCheck } from '~/data-provider';
+import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useChatContext } from '~/Providers/ChatContext';
 import { useUploadModalContext } from '~/Providers';
 import { globalAudioId } from '~/common';
@@ -51,7 +47,7 @@ export default function useTextarea({
   allowSubmitWhileGenerating?: boolean;
   /** During-run modifier chords: ⌘/Ctrl+Enter = the non-default action,
    *  ⌥/Alt+Enter = interrupt & send. Enter itself submits the default. */
-  onDuringRunModifier?: (kind: 'other' | 'interrupt') => void;
+  onDuringRunModifier?: (kind: 'other' | 'interrupt' | 'preempt') => void;
 }) {
   const localize = useLocalize();
   const getSender = useGetSender();
@@ -64,23 +60,9 @@ export default function useTextarea({
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
-  const customShortcuts = useRecoilValue(store.customShortcuts);
+  const { submitOverride, yieldedChords } = useComposerBindings();
 
-  /**
-   * Effective `submitMessage` override: `undefined` when unset (default Ctrl/Cmd+Enter applies),
-   * `null` when explicitly unbound, otherwise the rebound chord. When present, the composer
-   * honors it instead of the hard-coded Ctrl/Cmd+Enter so the shortcut can be replaced or
-   * disabled in the main place it is used.
-   */
-  const submitOverride = useMemo(() => {
-    const override = customShortcuts['submitMessage'];
-    if (!override) {
-      return undefined;
-    }
-    return parseBinding(isMacPlatform ? override.mac : override.other);
-  }, [customShortcuts]);
-
-  const { index, conversation, isSubmitting, filesLoading, setFilesLoading } = useChatContext();
+  const { index, conversation, isSubmitting, setFilesLoading } = useChatContext();
   const latestMessage = useLatestMessageMeta(index);
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
@@ -194,98 +176,48 @@ export default function useTextarea({
 
       checkHealth();
 
-      const isNonShiftEnter = e.key === 'Enter' && !e.shiftKey;
-      const isCtrlEnter = e.key === 'Enter' && (e.ctrlKey || e.metaKey);
-
       // NOTE: isComposing and e.key behave differently in Safari compared to other browsers, forcing us to use e.keyCode instead
       const isComposingInput = isComposing.current || e.key === 'Process' || e.keyCode === 229;
 
-      if (
-        e.key === 'Enter' &&
-        isSubmitting &&
-        allowSubmitWhileGenerating &&
-        onDuringRunModifier != null &&
-        !isComposingInput
-      ) {
-        if (e.altKey) {
-          e.preventDefault();
-          onDuringRunModifier('interrupt');
-          return;
-        }
-        // Only when plain Enter is the submit key — for Ctrl/Cmd+Enter
-        // submitters (enterToSend off or a rebound chord) the chord must
-        // keep meaning "submit the default action".
-        if ((e.ctrlKey || e.metaKey) && enterToSend && submitOverride === undefined) {
-          e.preventDefault();
-          onDuringRunModifier('other');
-          return;
-        }
-      }
+      const action = resolveComposerKeyDown(e.nativeEvent, {
+        isComposing: isComposingInput,
+        isSubmitting,
+        allowSubmitWhileGenerating,
+        hasDuringRunModifier: onDuringRunModifier != null,
+        enterToSend,
+        submitOverride,
+        yieldedChords,
+      });
 
-      const submitMessage = () => {
-        const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | undefined;
-        if (globalAudio) {
-          console.log('Unmuting global audio');
-          globalAudio.muted = false;
-        }
-        submitButtonRef.current?.click();
-      };
-
-      // A rebound (or unbound) submitMessage shortcut takes over Enter handling in the composer
-      // so the default Ctrl/Cmd+Enter no longer submits once the user has replaced or disabled it.
-      if (submitOverride !== undefined) {
-        if (isComposingInput) {
-          return;
-        }
-        const action = resolveSubmitOverrideAction(
-          bindingFromEvent(e.nativeEvent),
-          submitOverride,
-          enterToSend,
-        );
-        if (action === 'submit') {
-          e.preventDefault();
-          submitMessage();
-          return;
-        }
-        if (action === 'newline' && textAreaRef.current) {
-          e.preventDefault();
-          insertTextAtCursor(textAreaRef.current, '\n');
-          forceResize(textAreaRef.current);
-        }
+      if (action === 'none') {
         return;
       }
-
-      if (isNonShiftEnter && filesLoading) {
-        e.preventDefault();
+      e.preventDefault();
+      if (action === 'interrupt' || action === 'preempt' || action === 'other') {
+        onDuringRunModifier?.(action);
+        return;
       }
-
-      if (isNonShiftEnter) {
-        e.preventDefault();
-      }
-
-      if (
-        e.key === 'Enter' &&
-        !enterToSend &&
-        !isCtrlEnter &&
-        textAreaRef.current &&
-        !isComposingInput
-      ) {
-        e.preventDefault();
+      if (action === 'newline' && textAreaRef.current) {
         insertTextAtCursor(textAreaRef.current, '\n');
         forceResize(textAreaRef.current);
         return;
       }
-
-      if ((isNonShiftEnter || isCtrlEnter) && !isComposingInput) {
-        submitMessage();
+      if (action !== 'submit') {
+        return;
       }
+      const globalAudio = document.getElementById(globalAudioId) as HTMLAudioElement | undefined;
+      if (globalAudio) {
+        console.log('Unmuting global audio');
+        globalAudio.muted = false;
+      }
+      submitButtonRef.current?.click();
     },
     [
       isSubmitting,
       allowSubmitWhileGenerating,
       onDuringRunModifier,
+      yieldedChords,
       checkHealth,
-      filesLoading,
       enterToSend,
       submitOverride,
       setIsScrollable,

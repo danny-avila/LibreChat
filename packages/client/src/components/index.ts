@@ -1,8 +1,10 @@
 export * from './Accordion';
 export * from './AnimatedTabs';
+export * from './Alert';
 export * from './AlertDialog';
 export * from './Breadcrumb';
 export * from './Button';
+export * from './Chip';
 export * from './Checkbox';
 export * from './Dialog';
 export * from './DropdownMenu';
@@ -29,6 +31,7 @@ export * from './Tooltip';
 export * from './Pagination';
 export * from './Progress';
 export * from './InputOTP';
+export * from './IconButton';
 export * from './MultiSearch';
 export * from './Resizable';
 export * from './Select';
@@ -54,3 +57,12 @@ export { default as ControlCombobox } from './ControlCombobox';
 export { default as OGDialogTemplate } from './OGDialogTemplate';
 export { default as InputWithDropdown } from './InputWithDropDown';
 export { default as AnimatedSearchInput } from './AnimatedSearchInput';
+export { default as VirtualizedDataTable } from './DataTable/DataTable';
+export type {
+  TableColumn,
+  TableColumnDef,
+  DataTableConfig,
+  ProcessedDataRow,
+  DataTableSearchProps,
+  DataTableProps as VirtualizedDataTableProps,
+} from './DataTable/DataTable.types';

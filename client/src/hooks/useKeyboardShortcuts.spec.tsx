@@ -51,11 +51,16 @@ function Harness() {
   );
 }
 
-function renderHarness(conversation?: TConversation, route = '/c/test-convo') {
+function renderHarness(
+  conversation?: TConversation,
+  route = '/c/test-convo',
+  initialize?: (snapshot: MutableSnapshot) => void,
+) {
   const initializeState = (snapshot: MutableSnapshot) => {
     if (conversation) {
       snapshot.set(store.conversationByIndex(0), conversation);
     }
+    initialize?.(snapshot);
   };
   return render(<Harness />, {
     wrapper: ({ children }: { children: ReactNode }) => (
@@ -96,6 +101,18 @@ function appendResponseCopyButton(onClick: () => void) {
   document.body.appendChild(button);
 }
 
+function appendEscalationButton(surface: 'bubble' | 'queued', active = false) {
+  const onClick = jest.fn();
+  const button = document.createElement('button');
+  button.dataset.escalateSteer = surface;
+  if (active) {
+    button.dataset.escalateSteerActive = 'true';
+  }
+  button.addEventListener('click', onClick);
+  document.body.appendChild(button);
+  return { button, onClick };
+}
+
 describe('binding resolution helpers', () => {
   it('falls back to the default binding when there is no override', () => {
     const binding = effectiveBinding('newChat');
@@ -122,6 +139,38 @@ describe('binding resolution helpers', () => {
     expect(getShortcutDisplay('newChat')).toBe('');
   });
 
+  it('keeps a persisted custom chord when a new default later claims the same keys', () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        toggleSidebar: { mac: 'Meta+Shift+.', other: 'Control+Shift+.' },
+      }),
+    );
+
+    expect(effectiveBinding('toggleSidebar')).toMatchObject({
+      ctrl: true,
+      shift: true,
+      key: '.',
+    });
+    expect(effectiveBinding('escalateSteer')).toBeNull();
+    expect(getShortcutDisplay('escalateSteer')).toBe('');
+    expect(getShortcutAriaKey('escalateSteer')).toBe('');
+  });
+
+  it("does not treat an other-platform edit's copied default as a custom claim", () => {
+    const overrides = {
+      newChat: { mac: 'Meta+Alt+N', other: 'Control+Shift+O' },
+      toggleSidebar: { mac: 'Meta+Shift+O', other: 'Control+Shift+O' },
+    };
+
+    expect(effectiveBinding('toggleSidebar', overrides)).toMatchObject({
+      ctrl: true,
+      shift: true,
+      key: 'O',
+    });
+    expect(effectiveBinding('newChat', overrides)).toBeNull();
+  });
+
   it('detects whether an override diverges from the default', () => {
     expect(isOverridden('newChat', undefined)).toBe(false);
     expect(isOverridden('newChat', { mac: 'Meta+Shift+O', other: 'Control+Shift+O' })).toBe(false);
@@ -139,6 +188,57 @@ describe('global shortcut dispatch', () => {
 
     expect(event.defaultPrevented).toBe(true);
     expect(getByTestId('sidebar').textContent).not.toBe(before);
+  });
+
+  it('yields when a closer handler already claimed the keypress', () => {
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+    const widget = document.createElement('div');
+    widget.addEventListener('keydown', (e) => e.preventDefault());
+    document.body.appendChild(widget);
+
+    dispatchKey({ key: 's', ctrlKey: true, shiftKey: true }, widget);
+
+    expect(getByTestId('sidebar').textContent).toBe(before);
+  });
+
+  it('still acts when the same widget lets the keypress through', () => {
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+    const widget = document.createElement('div');
+    document.body.appendChild(widget);
+
+    const event = dispatchKey({ key: 's', ctrlKey: true, shiftKey: true }, widget);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(getByTestId('sidebar').textContent).not.toBe(before);
+  });
+
+  it('yields to a document-level owner that registered after the dispatcher', () => {
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+    const claim = (e: KeyboardEvent) => e.preventDefault();
+    document.addEventListener('keydown', claim);
+
+    try {
+      dispatchKey({ key: 's', ctrlKey: true, shiftKey: true });
+    } finally {
+      document.removeEventListener('keydown', claim);
+    }
+
+    expect(getByTestId('sidebar').textContent).toBe(before);
+  });
+
+  it('yields an editing-allowed chord that the focused input claimed', () => {
+    renderHarness();
+    const escalation = appendEscalationButton('bubble');
+    const input = document.createElement('input');
+    input.addEventListener('keydown', (e) => e.preventDefault());
+    document.body.appendChild(input);
+
+    dispatchKey({ key: '.', ctrlKey: true, shiftKey: true }, input);
+
+    expect(escalation.onClick).not.toHaveBeenCalled();
   });
 
   it('ignores shortcuts while a modal dialog is open', () => {
@@ -197,6 +297,54 @@ describe('global shortcut dispatch', () => {
 
     expect(event.defaultPrevented).toBe(true);
     expect(document.activeElement).toBe(textarea);
+  });
+
+  it('dispatches a persisted custom owner instead of a colliding new default', () => {
+    const overrides = {
+      toggleSidebar: { mac: 'Meta+Shift+.', other: 'Control+Shift+.' },
+    };
+    const { getByTestId } = renderHarness(undefined, '/c/test-convo', (snapshot) => {
+      snapshot.set(store.customShortcuts, overrides);
+    });
+    const before = getByTestId('sidebar').textContent;
+    const escalation = appendEscalationButton('bubble');
+
+    const event = dispatchKey({ key: '.', ctrlKey: true, shiftKey: true });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(getByTestId('sidebar').textContent).not.toBe(before);
+    expect(escalation.onClick).not.toHaveBeenCalled();
+  });
+
+  it('targets the active waiting row before falling back to the newest one', () => {
+    renderHarness();
+    const active = appendEscalationButton('bubble', true);
+    const newest = appendEscalationButton('bubble');
+
+    dispatchKey({ key: '.', ctrlKey: true, shiftKey: true });
+
+    expect(active.onClick).toHaveBeenCalledTimes(1);
+    expect(newest.onClick).not.toHaveBeenCalled();
+
+    active.button.removeAttribute('data-escalate-steer-active');
+    dispatchKey({ key: '.', ctrlKey: true, shiftKey: true });
+
+    expect(newest.onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches the escalation shortcut by physical key on a non-US layout', () => {
+    renderHarness();
+    const escalation = appendEscalationButton('bubble');
+
+    const event = dispatchKey({
+      key: ':',
+      code: 'Period',
+      ctrlKey: true,
+      shiftKey: true,
+    });
+
+    expect(escalation.onClick).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
   });
 });
 

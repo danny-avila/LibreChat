@@ -12,9 +12,12 @@ import { cn } from '~/utils';
 interface ModelSpecItemProps {
   spec: TModelSpec;
   isSelected: boolean;
+  /** Set when the sibling model list is virtualized; see `VirtualizedModelList`. */
+  posInSet?: number;
+  setSize?: number;
 }
 
-export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
+export function ModelSpecItem({ spec, isSelected, posInSet, setSize }: ModelSpecItemProps) {
   const localize = useLocalize();
   const { handleSelectSpec, endpointsConfig } = useModelSelectorContext();
   const { isFavoriteSpec, toggleFavoriteSpec } = useFavorites();
@@ -34,6 +37,8 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
       ref={itemRef}
       onClick={() => handleSelectSpec(spec)}
       aria-selected={isSelected || undefined}
+      aria-posinset={posInSet}
+      aria-setsize={setSize}
       className="group flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
     >
       <div

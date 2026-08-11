@@ -13,6 +13,9 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
+  getLangfuseTraceDestinationIds,
+  isLangfuseTraceSampled,
+  traceIdForMessage,
 } = require('@librechat/api');
 const {
   Constants,
@@ -397,6 +400,7 @@ class BaseClient {
       parentMessageId,
       responseMessageId,
     } = await this.setMessageOptions(opts);
+    this.options.startupTelemetry?.mark('history_loaded');
 
     const userMessage = opts.isEdited
       ? this.currentMessages[this.currentMessages.length - 2]
@@ -627,6 +631,7 @@ class BaseClient {
       this.getBuildMessagesOptions(opts),
       opts,
     );
+    this.options.startupTelemetry?.mark('messages_built');
 
     if (tokenCountMap && tokenCountMap[userMessage.messageId]) {
       userMessage.tokenCount = tokenCountMap[userMessage.messageId];
@@ -727,12 +732,25 @@ class BaseClient {
       this.abortController.requestCompleted = true;
     }
 
+    const isAgentResponse = isAgentsEndpoint(this.options.endpoint);
+    const langfuseTraceId = isAgentResponse ? traceIdForMessage(responseMessageId) : undefined;
+    const langfuseSampled =
+      langfuseTraceId != null ? isLangfuseTraceSampled(langfuseTraceId) : undefined;
+
     /** @type {TMessage} */
     const responseMessage = {
       messageId: responseMessageId,
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
+      ...(isAgentResponse && {
+        langfuseSampled,
+        langfuseDestinationIds: await getLangfuseTraceDestinationIds(
+          appConfig,
+          langfuseTraceId,
+          langfuseSampled,
+        ),
+      }),
       isEdited,
       model: this.getResponseModel(),
       sender: this.sender,
@@ -846,6 +864,19 @@ class BaseClient {
 
     if (this.contextMeta) {
       responseMessage.contextMeta = this.contextMeta;
+    }
+
+    /** Resumable generation controllers must win the generation's terminal
+     * CAS before this outcome-defining `unfinished:false` write can begin.
+     * The hook is deliberately narrow: ordinary clients omit it, and `false`
+     * means another terminal owner (for example Stop) already won, so this
+     * stale completion must return without writing the response row. */
+    if (typeof opts.beforeResponsePersistence === 'function') {
+      const ownsTerminalPersistence = await opts.beforeResponsePersistence(responseMessage);
+      if (ownsTerminalPersistence === false) {
+        responseMessage.databasePromise = Promise.resolve({ persistenceSkipped: true });
+        return responseMessage;
+      }
     }
 
     responseMessage.databasePromise = this.saveMessageToDatabase(
@@ -1212,6 +1243,8 @@ class BaseClient {
             !item.type ||
             item.type === ContentTypes.THINK ||
             item.type === ContentTypes.ERROR ||
+            // UI-only progress headers — never model input, never billed output
+            item.type === ContentTypes.ACTIVITY_LABEL ||
             item.type === ContentTypes.IMAGE_URL
           ) {
             continue;
@@ -1275,36 +1308,67 @@ class BaseClient {
       return existingContent.concat(newCompletion);
     }
 
-    if (editedType !== ContentTypes.TEXT && editedType !== ContentTypes.THINK) {
-      return existingContent.concat(newCompletion);
-    }
-
     const lastIndex = existingContent.length - 1;
     const lastExisting = existingContent[lastIndex];
     const firstNew = newCompletion[0];
+    /** Phased and legacy/unphased text are distinct semantic streams. Merging
+     *  either direction would stamp retained text with the wrong phase. */
+    const textPhaseCompatible =
+      editedType !== ContentTypes.TEXT ||
+      (lastExisting?.phase ?? null) === (firstNew?.phase ?? null);
+    const mergesFirstPart =
+      (editedType === ContentTypes.TEXT || editedType === ContentTypes.THINK) &&
+      lastExisting?.type === firstNew?.type &&
+      firstNew?.type === editedType &&
+      textPhaseCompatible;
+    /** Phase bounds are completion-local while the run streams. Persist them
+     *  in the same absolute index space as the edited response assembled
+     *  here. When the first new text/think part merges into the retained tail,
+     *  every completion index shifts by prefixLength - 1; otherwise it shifts
+     *  by the full retained prefix. */
+    const phaseIndexOffset = mergesFirstPart ? lastIndex : existingContent.length;
+    const adjustedCompletion = newCompletion.map((part) => {
+      if (
+        part?.type !== ContentTypes.ACTIVITY_LABEL ||
+        part.activity_label_type !== 'phase' ||
+        typeof part.activity_start_index !== 'number'
+      ) {
+        return part;
+      }
+      return {
+        ...part,
+        activity_start_index: part.activity_start_index + phaseIndexOffset,
+      };
+    });
 
-    if (lastExisting?.type !== firstNew?.type || firstNew?.type !== editedType) {
-      return existingContent.concat(newCompletion);
+    if (editedType !== ContentTypes.TEXT && editedType !== ContentTypes.THINK) {
+      return existingContent.concat(adjustedCompletion);
+    }
+
+    if (!mergesFirstPart) {
+      return existingContent.concat(adjustedCompletion);
     }
 
     const mergedContent = [...existingContent];
     if (editedType === ContentTypes.TEXT) {
       mergedContent[lastIndex] = {
         ...mergedContent[lastIndex],
+        ...(firstNew.phase != null && { phase: firstNew.phase }),
         [ContentTypes.TEXT]:
-          (mergedContent[lastIndex][ContentTypes.TEXT] || '') + (firstNew[ContentTypes.TEXT] || ''),
+          (mergedContent[lastIndex][ContentTypes.TEXT] || '') +
+          (adjustedCompletion[0][ContentTypes.TEXT] || ''),
       };
     } else {
       mergedContent[lastIndex] = {
         ...mergedContent[lastIndex],
         [ContentTypes.THINK]:
           (mergedContent[lastIndex][ContentTypes.THINK] || '') +
-          (firstNew[ContentTypes.THINK] || ''),
+          (adjustedCompletion[0][ContentTypes.THINK] || ''),
       };
     }
 
     // Add remaining completion items
-    return mergedContent.concat(newCompletion.slice(1));
+    return mergedContent.concat(adjustedCompletion.slice(1));
   }
 
   async sendPayload(payload, opts = {}) {
@@ -1564,8 +1628,10 @@ class BaseClient {
         return message;
       }
 
-      await this.addFileContextToMessage(message, contextFiles);
-      await this.processAttachments(message, contextFiles);
+      await Promise.all([
+        this.addFileContextToMessage(message, contextFiles),
+        this.processAttachments(message, contextFiles),
+      ]);
 
       this.message_file_map[message.messageId] = contextFiles;
       return message;

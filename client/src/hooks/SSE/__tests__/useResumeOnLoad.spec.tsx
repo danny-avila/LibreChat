@@ -1,6 +1,6 @@
-import { RecoilRoot, useRecoilValue } from 'recoil';
-import { Constants } from 'librechat-data-provider';
 import { renderHook, act } from '@testing-library/react';
+import { Constants, ContentTypes } from 'librechat-data-provider';
+import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
@@ -85,6 +85,7 @@ function renderUseResumeOnLoad({
   onQueuedMessages?: (queued: QueuedMessage[]) => void;
 }) {
   const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
+  let setSubmissionState: ((submission: TSubmission | null) => void) | undefined;
   const initializeState = (snapshot: MutableSnapshot) => {
     snapshot.set(store.conversationByIndex(0), buildConversation(conversationId));
     snapshot.set(store.submissionByIndex(0), submission);
@@ -95,6 +96,7 @@ function renderUseResumeOnLoad({
 
   const SubmissionProbe = () => {
     const currentSubmission = useRecoilValue(store.submissionByIndex(0));
+    setSubmissionState = useSetRecoilState(store.submissionByIndex(0));
     onSubmission?.(currentSubmission);
     return null;
   };
@@ -128,6 +130,7 @@ function renderUseResumeOnLoad({
 
   return {
     getMessages,
+    setSubmission: (nextSubmission: TSubmission | null) => setSubmissionState?.(nextSubmission),
     ...renderHook(() => useResumeOnLoad(conversationId, getMessages, 0, messagesLoaded), {
       wrapper,
     }),
@@ -233,6 +236,8 @@ describe('useResumeOnLoad', () => {
         active: true,
         status: 'running',
         streamId: CONVERSATION_ID,
+        createdAt: 1234,
+        generationProtocolVersion: 2,
         resumeState: {
           runSteps: [],
           aggregatedContent: [{ type: 'text', text: 'Streaming...' }],
@@ -279,6 +284,82 @@ describe('useResumeOnLoad', () => {
         model: 'gpt-4.1',
       }),
     );
+    expect(
+      (
+        observedSubmissions[observedSubmissions.length - 1] as TSubmission & {
+          resumeGenerationCreatedAt?: number;
+          resumeGenerationProtocolVersion?: number;
+        }
+      ).resumeGenerationCreatedAt,
+    ).toBe(1234);
+    expect(
+      (
+        observedSubmissions[observedSubmissions.length - 1] as TSubmission & {
+          resumeGenerationProtocolVersion?: number;
+        }
+      ).resumeGenerationProtocolVersion,
+    ).toBe(2);
+  });
+
+  it('reprocesses the same conversation when a stale attachment hands off to a newer epoch', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    const staleSubmission = buildSubmission(CONVERSATION_ID);
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        generationHandoff: true,
+        generationProtocolVersion: 2,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        createdAt: 2000,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [{ type: 'text', text: 'replacement content' }],
+          responseMessageId: 'replacement-response',
+          conversationId: CONVERSATION_ID,
+          userMessage: {
+            messageId: 'replacement-user',
+            parentMessageId: Constants.NO_PARENT,
+            conversationId: CONVERSATION_ID,
+            text: 'Replacement prompt',
+          },
+        },
+      },
+    });
+
+    const rendered = renderUseResumeOnLoad({
+      submission: staleSubmission,
+      messages: [buildUserMessage(CONVERSATION_ID)],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      rendered.setSubmission(null);
+      await Promise.resolve();
+    });
+
+    const replacement = observedSubmissions[observedSubmissions.length - 1] as TSubmission & {
+      resumeStreamId?: string;
+      resumeGenerationCreatedAt?: number;
+    };
+    expect(replacement.resumeStreamId).toBe(CONVERSATION_ID);
+    expect(replacement.resumeGenerationCreatedAt).toBe(2000);
+    expect(replacement.userMessage?.messageId).toBe('replacement-user');
+
+    await act(async () => {
+      rendered.setSubmission(null);
+      await Promise.resolve();
+    });
+
+    const replacementInstalls = observedSubmissions.filter(
+      (candidate) =>
+        (candidate as (TSubmission & { resumeGenerationCreatedAt?: number }) | null)
+          ?.resumeGenerationCreatedAt === 2000,
+    );
+    expect(replacementInstalls).toHaveLength(1);
+    expect(observedSubmissions[observedSubmissions.length - 1]).toBeNull();
   });
 
   it('strips the paused user/assistant rows from submission.messages (no duplicate on resume)', async () => {
@@ -335,6 +416,63 @@ describe('useResumeOnLoad', () => {
     // ...but still carried on the placeholders for re-insertion.
     expect(submission?.userMessage?.messageId).toBe(USER_MESSAGE_ID);
     expect(submission?.initialResponse?.messageId).toBe(RESPONSE_MESSAGE_ID);
+  });
+
+  it('prefers the exact active response over an older assistant sibling', async () => {
+    const observedSubmissions: Array<TSubmission | null> = [];
+    const userMessage = buildUserMessage(CONVERSATION_ID);
+    const olderSibling = {
+      messageId: 'older-sibling-response',
+      parentMessageId: userMessage.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'Older sibling',
+      isCreatedByUser: false,
+    } as TMessage;
+    const activeResponse = {
+      messageId: 'active-response',
+      parentMessageId: userMessage.messageId,
+      conversationId: CONVERSATION_ID,
+      text: '',
+      isCreatedByUser: false,
+      unfinished: true,
+    } as TMessage;
+
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [{ type: 'text', text: 'Active branch streaming' }],
+          responseMessageId: activeResponse.messageId,
+          conversationId: CONVERSATION_ID,
+          userMessage: {
+            messageId: userMessage.messageId,
+            parentMessageId: userMessage.parentMessageId,
+            conversationId: CONVERSATION_ID,
+            text: userMessage.text,
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [userMessage, olderSibling, activeResponse],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const submission = observedSubmissions[observedSubmissions.length - 1];
+    expect(submission?.initialResponse?.messageId).toBe(activeResponse.messageId);
+    expect((submission?.messages ?? []).map((message) => message.messageId)).toEqual([
+      olderSibling.messageId,
+    ]);
   });
 
   it('restores the branch that owns a pending OAuth resume user message', async () => {
@@ -417,6 +555,7 @@ describe('useResumeOnLoad', () => {
       isCreatedByUser: false,
     } as TMessage;
     const observedSiblingIndexes: number[] = [];
+    const observedSubmissions: Array<TSubmission | null> = [];
 
     mockUseStreamStatus.mockReturnValue({
       isSuccess: true,
@@ -442,16 +581,23 @@ describe('useResumeOnLoad', () => {
     });
 
     renderUseResumeOnLoad({
-      messages: [rootUser, olderResponse, newerResponse],
+      // Put the unrelated sibling first: parent-only fallback would select it.
+      messages: [rootUser, newerResponse, olderResponse],
       siblingIndexParentId: rootUser.messageId,
       onSiblingIndex: (siblingIndex) => observedSiblingIndexes.push(siblingIndex),
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
     });
 
     await act(async () => {
       await Promise.resolve();
     });
 
-    expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(1);
+    expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(0);
+    const submission = observedSubmissions[observedSubmissions.length - 1];
+    expect(submission?.initialResponse?.messageId).toBe(olderResponse.messageId);
+    expect((submission?.messages ?? []).map((message) => message.messageId)).toEqual([
+      newerResponse.messageId,
+    ]);
   });
 
   describe('steer chip restore', () => {
@@ -476,6 +622,8 @@ describe('useResumeOnLoad', () => {
           active: true,
           status: 'running',
           streamId: CONVERSATION_ID,
+          createdAt: 1234,
+          generationProtocolVersion: 2,
           resumeState: {
             runSteps: [],
             aggregatedContent: [],
@@ -529,8 +677,69 @@ describe('useResumeOnLoad', () => {
       });
 
       expect(observedSteers[observedSteers.length - 1]).toEqual([
-        { steerId: 'queued-1', text: 'still queued', status: 'pending', createdAt: 5, files },
+        {
+          steerId: 'queued-1',
+          text: 'still queued',
+          status: 'pending',
+          createdAt: 5,
+          files,
+          generationCreatedAt: 1234,
+          generationProtocolVersion: 2,
+        },
       ]);
+    });
+
+    it('seeds the pending snapshot before settling an inline applied steer', async () => {
+      const observedSteers: PendingSteer[][] = [];
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: {
+          active: true,
+          status: 'running',
+          streamId: CONVERSATION_ID,
+          resumeState: {
+            runSteps: [],
+            pendingSteers: [
+              {
+                steerId: 'steer-snapshot-race',
+                clientSteerId: 'local-snapshot-race',
+                text: 'applied at snapshot boundary',
+                createdAt: 5,
+              },
+            ],
+            aggregatedContent: [
+              {
+                type: ContentTypes.STEER,
+                steerId: 'steer-snapshot-race',
+                clientSteerId: 'local-snapshot-race',
+                steer: 'applied at snapshot boundary',
+              },
+            ],
+            responseMessageId: RESPONSE_MESSAGE_ID,
+            conversationId: CONVERSATION_ID,
+            userMessage: {
+              messageId: USER_MESSAGE_ID,
+              parentMessageId: Constants.NO_PARENT,
+              conversationId: CONVERSATION_ID,
+              text: 'Hello',
+            },
+          },
+        },
+      });
+
+      renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        onPendingSteers: (steers) => observedSteers.push(steers),
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // The status snapshot and aggregated content can straddle the same apply
+      // boundary. Restore-then-settle must finish with no resurrected chip.
+      expect(observedSteers[observedSteers.length - 1]).toEqual([]);
     });
 
     it('clears stale pending chips when the run finished while away (no active job)', async () => {

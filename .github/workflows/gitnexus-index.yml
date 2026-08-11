@@ -138,7 +138,7 @@ jobs:
           fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24.16.0'
 
@@ -170,7 +170,7 @@ jobs:
           test -x "$RUNNER_TEMP/gitnexus-cli/node_modules/.bin/gitnexus"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # When the /gitnexus command dispatches us with a pr_ref, it's
           # a refs/pull/<N>/head ref that GitHub mirrors into the base
@@ -186,7 +186,7 @@ jobs:
       # across runs so warm runs never touch HF at all.
       - name: Cache HuggingFace embedding model
         if: steps.flags.outputs.enable_embeddings == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/hf-cache
           key: hf-model-snowflake-arctic-embed-xs-v1
@@ -234,7 +234,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Upload GitNexus index
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           # Artifact naming order of precedence:
           #   1. /gitnexus command dispatch: inputs.pr_number -> pr-<N>
@@ -270,7 +270,7 @@ jobs:
       # a PR number can still opt into a deploy by setting deploy_after=true.
       - name: Trigger deploy workflow after non-PR dispatches
         if: inputs.deploy_after && inputs.pr_number == '' && needs.index.result == 'success'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             core.info('deploy_after=true; dispatching gitnexus-deploy.yml manually.');
@@ -289,7 +289,7 @@ jobs:
       # inputs.pr_number is set and reports the index job result.
       - name: Comment on PR — index complete
         if: inputs.pr_number != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           EMBEDDINGS_INPUT: ${{ inputs.embeddings }}
           INDEX_RESULT: ${{ needs.index.result }}

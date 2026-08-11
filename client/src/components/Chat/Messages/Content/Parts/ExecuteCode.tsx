@@ -2,12 +2,14 @@ import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { SquareTerminal } from 'lucide-react';
 import type { TAttachment } from 'librechat-data-provider';
+import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import { sandboxStartingByToolCallId } from '~/store';
 import useLazyHighlight from './useLazyHighlight';
 import useToolCallState from './useToolCallState';
 import CodeWindowHeader from './CodeWindowHeader';
 import { AttachmentGroup } from './Attachment';
+import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
@@ -73,6 +75,9 @@ export default function ExecuteCode({
 }) {
   const localize = useLocalize();
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
+  /** Model-authored live label, streamed as the first args key; persists as
+   *  the settled label (completion is a UI state, not a tense change). */
+  const intent = useToolCallIntent(args);
   const sandboxStarting = useRecoilValue(sandboxStartingByToolCallId(toolCallId ?? ''));
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
@@ -80,20 +85,44 @@ export default function ExecuteCode({
 
   const highlighted = useLazyHighlight(code, lang);
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
+  /** A backgrounded call's persisted output stays the dispatch handle until
+   *  the detached run settles and patches it; render a background state
+   *  instead of the handle JSON. Completion arrives live as the status marker
+   *  attachment (also covers stdout-only runs) or as harvested files. */
+  const backgroundHandle = useMemo(() => parseBackgroundHandle(output), [output]);
+  const { fileAttachments, backgroundStatus } = useMemo(
+    () => splitBackgroundAttachments(attachments, toolCallId),
+    [attachments, toolCallId],
+  );
+  const backgroundFailed = backgroundHandle != null && backgroundStatus === 'error';
+  const backgroundFinishedText = backgroundHandle
+    ? localize(
+        backgroundStatus != null || (fileAttachments?.length ?? 0) > 0
+          ? 'com_ui_background_finished'
+          : 'com_ui_background_running',
+      )
+    : null;
 
   return (
     <>
-      <div className="relative my-1.5 flex size-5 shrink-0 items-center gap-2.5">
+      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
           progress={progress}
           onClick={toggleCode}
           inProgressText={
-            sandboxStarting ? localize('com_ui_sandbox_starting') : localize('com_ui_analyzing')
+            intent ??
+            (sandboxStarting ? localize('com_ui_sandbox_starting') : localize('com_ui_analyzing'))
           }
           finishedText={
-            cancelled ? localize('com_ui_cancelled') : localize('com_ui_analyzing_finished')
+            cancelled
+              ? localize('com_ui_cancelled')
+              : (backgroundFinishedText ?? intent ?? localize('com_ui_analyzing_finished'))
           }
-          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
+          errorSuffix={
+            (hasError && !cancelled) || backgroundFailed
+              ? localize('com_ui_tool_failed')
+              : undefined
+          }
           icon={
             <SquareTerminal
               className={cn(
@@ -117,7 +146,7 @@ export default function ExecuteCode({
                 <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
               </pre>
             )}
-            {hasOutput && (
+            {hasOutput && backgroundHandle == null && (
               <div
                 className={cn(
                   'bg-surface-primary-alt p-4 text-xs dark:bg-transparent',
@@ -130,7 +159,7 @@ export default function ExecuteCode({
                 <div
                   className={cn(
                     'max-h-[200px] overflow-auto',
-                    outputHasError ? 'text-red-600 dark:text-red-400' : 'text-text-primary',
+                    outputHasError ? 'text-status-error' : 'text-text-primary',
                   )}
                 >
                   <Stdout output={output} />
@@ -140,8 +169,8 @@ export default function ExecuteCode({
           </div>
         </div>
       </div>
-      {!hideAttachments && attachments && attachments.length > 0 && (
-        <AttachmentGroup attachments={attachments} />
+      {!hideAttachments && fileAttachments && fileAttachments.length > 0 && (
+        <AttachmentGroup attachments={fileAttachments} />
       )}
     </>
   );

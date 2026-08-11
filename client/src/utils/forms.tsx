@@ -76,7 +76,7 @@ export const processAgentOption = ({
     ...(_agent ?? ({} as Agent)),
     label: _agent?.name ?? '',
     value: _agent?.id ?? '',
-    icon: isGlobal ? <EarthIcon className="icon-md text-green-400" /> : null,
+    icon: isGlobal ? <EarthIcon className="icon-md text-status-success" /> : null,
     context_files: context_files.length > 0 ? ([] as Array<[string, ExtendedFile]>) : undefined,
     knowledge_files: _agent?.tool_resources?.file_search?.file_ids
       ? ([] as Array<[string, ExtendedFile]>)

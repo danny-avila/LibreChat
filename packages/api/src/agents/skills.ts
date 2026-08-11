@@ -1,14 +1,87 @@
 import { logger } from '@librechat/data-schemas';
 import { isEphemeralAgentId } from 'librechat-data-provider';
 import { HumanMessage } from '@librechat/agents/langchain/messages';
-import { formatSkillCatalog, SkillToolDefinition } from '@librechat/agents';
+import { formatSkillCatalog, SkillToolDefinition, ReadFileToolDefinition } from '@librechat/agents';
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Agent } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
-import type { InitializeAgentDbMethods } from './initialize';
 import { registerCodeExecutionTools } from './tools';
 import { logAxiosError } from '~/utils';
+
+/**
+ * Load a single skill by name, constrained to an ACL-accessible ID set.
+ * Returns the full document (including `body`) so manual invocation can
+ * prime SKILL.md without a second DB round-trip.
+ *
+ * `preferUserInvocable` (manual paths): on a same-name collision,
+ * prefer the newest doc with `userInvocable !== false`.
+ * `preferModelInvocable` (model paths — `skill` / `read_file`): on a
+ * same-name collision, prefer the newest doc with
+ * `disableModelInvocation !== true`. Both fall back to the newest match
+ * so the explicit-rejection error paths still fire when only the
+ * non-preferred variant exists.
+ */
+export type TGetSkillByName = (
+  name: string,
+  accessibleIds: Types.ObjectId[],
+  options?: { preferUserInvocable?: boolean; preferModelInvocable?: boolean },
+) => Promise<{
+  _id: Types.ObjectId;
+  name: string;
+  body: string;
+  author: Types.ObjectId;
+  /**
+   * Skill-declared tool allowlist, forwarded verbatim from the skill doc.
+   * Surfaced so the resolver can carry it onto `ResolvedManualSkill` for
+   * future runtime enforcement without a second round-trip.
+   */
+  allowedTools?: string[];
+  /**
+   * Set when the skill was authored with `disable-model-invocation: true`.
+   * The skill tool handler short-circuits on this so a model that names
+   * such a skill (e.g. via hallucination or stale catalog) gets a clear
+   * rejection instead of silently executing.
+   */
+  disableModelInvocation?: boolean;
+  /**
+   * Set when the skill was authored with `user-invocable: false`. The
+   * manual-invocation resolver skips with a warn log so an API-direct
+   * caller can't bypass the popover-side filter.
+   */
+  userInvocable?: boolean;
+  /** True for deployment-directory skills that are loaded in memory. */
+  deployment?: boolean;
+} | null>;
+
+/** List skill summaries for catalog injection (paginated, omits body/frontmatter). */
+export type TListSkillsByAccess = (params: {
+  accessibleIds: Types.ObjectId[];
+  limit: number;
+  cursor?: string | null;
+}) => Promise<{
+  skills: Array<{
+    _id: Types.ObjectId;
+    name: string;
+    description: string;
+    author: Types.ObjectId;
+    /**
+     * When `true`, the skill is excluded from the catalog injected into
+     * the agent's additional_instructions and the model cannot invoke it
+     * via the `skill` tool. Manual `$` invocation is unaffected.
+     */
+    disableModelInvocation?: boolean;
+    /**
+     * When `false`, the skill is hidden from the `$` popover and rejected
+     * by the manual-invocation resolver. Defaults to `true`.
+     */
+    userInvocable?: boolean;
+    /** True for deployment-directory skills that are loaded in memory. */
+    deployment?: boolean;
+  }>;
+  has_more?: boolean;
+  after?: string | null;
+}>;
 
 const SKILL_CATALOG_LIMIT = 100;
 const MIN_SKILL_CATALOG_LIMIT = 1;
@@ -153,7 +226,7 @@ export interface ResolveModelSpecSkillIdsParams {
   /** Full VIEW-accessible skill IDs for this user before model-spec scoping. */
   accessibleSkillIds: Types.ObjectId[];
   /** DB lookup: name → skill doc constrained to the user's accessible IDs. */
-  getSkillByName?: InitializeAgentDbMethods['getSkillByName'];
+  getSkillByName?: TGetSkillByName;
 }
 
 /**
@@ -331,7 +404,7 @@ export interface InjectSkillCatalogParams {
   toolRegistry: LCToolRegistry | undefined;
   accessibleSkillIds: Types.ObjectId[];
   contextWindowTokens: number;
-  listSkillsByAccess: InitializeAgentDbMethods['listSkillsByAccess'];
+  listSkillsByAccess: TListSkillsByAccess | undefined;
   /** When true, registers bash_tool alongside skill + read_file. */
   codeEnvAvailable?: boolean;
   /** When true, bash_tool registers with the hedged stateful-session description. */
@@ -349,6 +422,15 @@ export interface InjectSkillCatalogParams {
 export interface InjectSkillCatalogResult {
   toolDefinitions: LCTool[] | undefined;
   skillCount: number;
+  /**
+   * Tool names the skills capability manages this run: the `skill` tool (when
+   * anything is model-invocable) and `read_file` (always, for primed skill
+   * references). `bash_tool` is excluded even when this call registers it —
+   * it belongs to the `execute_code` capability, which reports it itself.
+   * `initializeAgent` records these under the `skills` marker so spec
+   * selections naming `skills` govern exactly these definitions.
+   */
+  toolNames: string[];
   /**
    * IDs of skills the runtime is authorized to resolve via `getSkillByName`.
    * Includes `disable-model-invocation: true` skills even though they're
@@ -404,6 +486,7 @@ export async function injectSkillCatalog(
     return {
       toolDefinitions: inputDefs,
       skillCount: 0,
+      toolNames: [],
       activeSkillIds: [],
       activeSkillNames: new Set<string>(),
     };
@@ -469,6 +552,7 @@ export async function injectSkillCatalog(
     return {
       toolDefinitions: inputDefs,
       skillCount: 0,
+      toolNames: [],
       activeSkillIds: [],
       activeSkillNames: new Set<string>(),
     };
@@ -590,9 +674,15 @@ export async function injectSkillCatalog(
   });
   workingDefs = codeExecResult.toolDefinitions;
 
+  const toolNames =
+    catalogVisibleSkills.length > 0
+      ? [skillToolDef.name, ReadFileToolDefinition.name]
+      : [ReadFileToolDefinition.name];
+
   return {
     toolDefinitions: workingDefs,
     skillCount: catalogVisibleSkills.length,
+    toolNames,
     activeSkillIds: executableSkills.map((s) => s._id),
     activeSkillNames: new Set<string>(executableSkills.map((s) => s.name)),
   };

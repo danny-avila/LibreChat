@@ -20,15 +20,11 @@ jest.mock('librechat-data-provider', () => ({
   },
 }));
 
-jest.mock(
-  '@librechat/client',
-  () => ({
-    BirthdayIcon: () => <span data-testid="birthday-icon" />,
-    TooltipAnchor: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-    SplitText: ({ text }: { text: string }) => <span>{text}</span>,
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/client', () => ({
+  BirthdayIcon: () => <span data-testid="birthday-icon" />,
+  TooltipAnchor: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
+  SplitText: ({ text }: { text: string }) => <span>{text}</span>,
+}));
 
 jest.mock('~/Providers', () => ({
   useChatContext: () => ({ conversation: mockConversation }),
@@ -43,15 +39,11 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/hooks', () => ({
   useAuthContext: () => ({ user: undefined }),
+  useGreeting: () => 'Welcome',
   useLocalize: () => (key: string) => {
     const translations: Record<string, string> = {
       com_agents_contact: 'Contact',
       com_agents_no_contact_available: 'No contact available',
-      com_ui_good_morning: 'Good morning',
-      com_ui_good_afternoon: 'Good afternoon',
-      com_ui_good_evening: 'Good evening',
-      com_ui_late_night: 'Good evening',
-      com_ui_weekend_morning: 'Good morning',
     };
     return translations[key] || key;
   },
@@ -106,7 +98,7 @@ describe('Landing agent contact', () => {
         id: 'agent-1',
         name: 'Portal Remote Agent',
         description: 'Remote Agent Showcase',
-        owner_contact: { name: 'Owner User', email: 'owner@example.com' },
+        owner_contact: { name: 'Owner User' },
       },
     };
 
@@ -115,10 +107,8 @@ describe('Landing agent contact', () => {
     expect(screen.getByText('Portal Remote Agent')).toBeInTheDocument();
     expect(screen.getByText('Remote Agent Showcase')).toBeInTheDocument();
     expect(screen.getByText('Contact:')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Owner User' })).toHaveAttribute(
-      'href',
-      'mailto:owner@example.com',
-    );
+    expect(screen.getByText('Owner User')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Owner User' })).not.toBeInTheDocument();
   });
 
   it('does not show contact when the selected agent is missing from agentsMap', () => {

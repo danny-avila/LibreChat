@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/docker-smoke.yml'
       - '.dockerignore'
+      - 'Dockerfile'
       - 'Dockerfile.multi'
       - 'package.json'
       - 'package-lock.json'
@@ -17,9 +18,11 @@ on:
       - 'packages/client/**'
       - 'packages/data-provider/**'
       - 'packages/data-schemas/**'
+      - '!**.md'
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: docker-smoke-${{ github.workflow }}-${{ github.ref }}
@@ -31,13 +34,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build client package target
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.multi
@@ -45,21 +48,59 @@ jobs:
           push: false
           target: client-package-build
 
+  # The plain single-stage Dockerfile ships via dev-images/tag-images but had no
+  # PR-time validation. The npm build pipeline itself is already smoked on every
+  # matching PR by the Dockerfile.multi jobs above, so the full build here is
+  # gated to changes of the Dockerfile or the build-context definition.
+  node-image-smoke:
+    name: Node image smoke (plain Dockerfile builds)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Detect plain Dockerfile changes
+        id: paths
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            dockerfile:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - '.github/workflows/docker-smoke.yml'
+
+      - name: Set up Docker Buildx
+        if: github.event_name == 'workflow_dispatch' || steps.paths.outputs.dockerfile == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build node image
+        if: github.event_name == 'workflow_dispatch' || steps.paths.outputs.dockerfile == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: false
+          target: node
+          cache-from: type=gha,scope=docker-smoke-node
+          cache-to: type=gha,mode=max,scope=docker-smoke-node
+
   api-runtime-smoke:
     name: API runtime smoke (production image boots)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Build the real production image (final `api-build` stage), which installs
       # with `npm ci --omit=dev` — the same prune that, in prod, exposed runtime
       # dependencies the tsdown bundle externalizes but were never declared.
       - name: Build production image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.multi
