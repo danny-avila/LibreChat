@@ -5,7 +5,9 @@ import path from 'node:path';
 import {
   ABORT_MESSAGE,
   BAML_WORKER_ABORT_GRACE_MS,
+  MAX_TRANSCRIPT_ENTRIES,
   PORT_VERSION_MESSAGE,
+  TRANSCRIPT_TOO_LARGE_MESSAGE,
   TRANSPORT_FAILED_MESSAGE,
   TRANSPORT_TIMEOUT_MESSAGE,
   UNCOMPILED_CLIENT_MESSAGE,
@@ -92,6 +94,7 @@ interface ScenarioResult {
   }>;
   readonly setTimeoutLog?: readonly number[];
   readonly error?: string;
+  readonly workerConstructed?: boolean;
 }
 
 /** JSON scenario config understood by `__fixtures__/runtimeScenario.mjs`. See its header for the full shape. */
@@ -221,6 +224,48 @@ describe('Behavior 4.1 — exact port input and failure semantics', () => {
     expect(result.providerRequestCount).toBe(0);
     // Synchronous precheck: no worker was ever created for this to take real time.
     expect(result.elapsedMs).toBeLessThan(50);
+    expect(result.workerConstructed).toBe(false);
+  });
+
+  it('rejects an oversize transcript as schema_mismatch before any worker exists — call and stream both, with zero worker CONSTRUCTION, not merely zero provider requests', () => {
+    const oversizeTranscript = Array.from({ length: MAX_TRANSCRIPT_ENTRIES + 1 }, () => ({
+      role: 'system',
+      content: '',
+    }));
+
+    const callResult = runScenario(
+      CALL_SCENARIO({ input: { text: 'x', transcript: oversizeTranscript } }),
+    );
+    expect(callResult.outcome).toBe('yieldedFailure');
+    expect(callResult.value).toEqual({
+      kind: 'failure',
+      failure: { code: 'schema_mismatch', message: TRANSCRIPT_TOO_LARGE_MESSAGE },
+    });
+    expect(callResult.providerRequestCount).toBe(0);
+    expect(callResult.workerConstructed).toBe(false);
+
+    const streamResult = runScenario(
+      STREAM_SCENARIO({ input: { text: 'x', transcript: oversizeTranscript } }),
+    );
+    expect(streamResult.outcome).toBe('yieldedFailure');
+    expect(streamResult.chunks).toEqual([
+      {
+        kind: 'failure',
+        failure: { code: 'schema_mismatch', message: TRANSCRIPT_TOO_LARGE_MESSAGE },
+      },
+    ]);
+    expect(streamResult.providerRequestCount).toBe(0);
+    expect(streamResult.workerConstructed).toBe(false);
+  });
+
+  it('workerConstructed genuinely reflects real worker creation — an ordinary call constructs exactly one, proving the precheck assertions above are not vacuous', () => {
+    const callResult = runScenario(CALL_SCENARIO());
+    expect(callResult.outcome).toBe('resolved');
+    expect(callResult.workerConstructed).toBe(true);
+
+    const streamResult = runScenario(STREAM_SCENARIO());
+    expect(streamResult.outcome).toBe('resolved');
+    expect(streamResult.workerConstructed).toBe(true);
   });
 
   it.each(['NotCompiled', 'openrouter', 'OPENROUTER', '['])(

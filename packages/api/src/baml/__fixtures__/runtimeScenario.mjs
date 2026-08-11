@@ -28,6 +28,7 @@ import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 
 const PACKAGE_ROOT = path.resolve(import.meta.dirname, '../../..');
 const RUNTIME_URL = pathToFileURL(path.join(PACKAGE_ROOT, 'dist/baml/runtime.mjs')).href;
@@ -285,9 +286,21 @@ const main = async () => {
   });
 
   const diagnostics = [];
+  // Whether `runtime.mts` actually constructed a worker thread for this
+  // operation, not merely whether a provider request went out — a scenario
+  // that short-circuits in `precheck()` (an oversize transcript, an
+  // unsupported port version) must never reach `new Worker(...)` at all.
+  let workerConstructed = false;
+  const workers = {
+    createWorker: (url) => {
+      workerConstructed = true;
+      return new Worker(url);
+    },
+  };
   const functions = createBamlFunctionSet({
     clientName: scenario.clientName,
     timers,
+    workers,
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
   });
 
@@ -353,6 +366,7 @@ const main = async () => {
   }
 
   result.elapsedMs = Date.now() - start;
+  result.workerConstructed = workerConstructed;
 
   // The parent settles the caller's promise the instant it decides the outcome,
   // strictly before it finishes tearing the worker/connection down (that is the

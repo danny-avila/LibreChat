@@ -112,6 +112,62 @@ export const isWireTurnPlan = (value: unknown): value is WireTurnPlan =>
   Array.isArray(value.tools) &&
   value.tools.every(isWireToolSelection);
 
+/**
+ * Flattens one native tool selection (`{tool: <literal>, ...fields}`) to the
+ * wire shape. Returns `null` for anything that is not at least a record with a
+ * string `tool` discriminator. The caller MUST NOT filter a `null` out of an
+ * array of selections — doing so silently drops a malformed selection instead
+ * of surfacing it as a parse failure, which is the coercive-flattening bug
+ * this function exists to make impossible.
+ */
+export const toWireToolSelection = (selection: unknown): WireToolSelection | null => {
+  if (!isRecord(selection) || typeof selection.tool !== 'string') {
+    return null;
+  }
+  const { tool, ...rest } = selection;
+  const args: Record<string, string | number | boolean | null> = {};
+  for (const [key, value] of Object.entries(rest)) {
+    if (value === null) {
+      args[key] = null;
+      continue;
+    }
+    const kind = typeof value;
+    args[key] =
+      kind === 'string' || kind === 'number' || kind === 'boolean'
+        ? (value as string | number | boolean)
+        : String(value);
+  }
+  return { name: tool, args };
+};
+
+export type ChunkCandidateResult =
+  | { readonly ok: true; readonly value: WireTurnPlan }
+  | { readonly ok: false };
+
+/**
+ * Honestly assembles one raw native stream snapshot's `reply`/`tools` fields
+ * into a validated `WireTurnPlan`, or reports that the snapshot is
+ * structurally invalid.
+ *
+ * `undefined` is the one benign case in either field — bridge 0.15.0 leaves a
+ * field unset while it is still being populated, which is the absence of a
+ * claim, not a malformed one — so it becomes the field's neutral default.
+ * Every other unexpected shape (a wrong-typed `reply`, a non-array `tools`, an
+ * unmappable tool selection) is passed through to `isWireTurnPlan` rather than
+ * silently coerced to that same neutral default: coercing it away is exactly
+ * what would make a genuine model parse failure indistinguishable from "no
+ * data yet".
+ */
+export const toChunkCandidate = (rawReply: unknown, rawTools: unknown): ChunkCandidateResult => {
+  const reply = rawReply === undefined ? null : rawReply;
+  let tools: unknown = rawTools === undefined ? [] : rawTools;
+  if (Array.isArray(tools)) {
+    tools = tools.map(toWireToolSelection);
+  }
+  const candidate = { reply, tools };
+  return isWireTurnPlan(candidate) ? { ok: true, value: candidate } : { ok: false };
+};
+
 export interface PartialTextCursor {
   readonly emitted: string;
   readonly terminal: boolean;
