@@ -61,7 +61,7 @@ describe('useSpeechSettingsInit', () => {
     },
   );
 
-  it('normalizes legacy providers even when no external provider is reported', async () => {
+  it('falls back migrated providers when no external provider is reported', async () => {
     localStorage.setItem('engineSTT', JSON.stringify('openai'));
     localStorage.setItem('engineTTS', JSON.stringify('elevenlabs'));
     mockUseGetCustomConfigSpeechQuery.mockReturnValue({
@@ -73,13 +73,34 @@ describe('useSpeechSettingsInit', () => {
 
     await waitFor(() => {
       expect(result.current).toEqual({
-        engineSTT: 'external',
-        engineTTS: 'external',
+        engineSTT: 'browser',
+        engineTTS: 'browser',
         speechSettingsInitialized: true,
       });
     });
-    expect(localStorage.getItem('engineSTT')).toBe(JSON.stringify('external'));
-    expect(localStorage.getItem('engineTTS')).toBe(JSON.stringify('external'));
+    expect(localStorage.getItem('engineSTT')).toBe(JSON.stringify('browser'));
+    expect(localStorage.getItem('engineTTS')).toBe(JSON.stringify('browser'));
+  });
+
+  it('falls back saved external engines when their providers are unavailable', async () => {
+    localStorage.setItem('engineSTT', JSON.stringify('external'));
+    localStorage.setItem('engineTTS', JSON.stringify('external'));
+    mockUseGetCustomConfigSpeechQuery.mockReturnValue({
+      data: { sttExternal: false, ttsExternal: false },
+      isFetched: true,
+    });
+
+    const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
+
+    await waitFor(() => {
+      expect(result.current).toEqual({
+        engineSTT: 'browser',
+        engineTTS: 'browser',
+        speechSettingsInitialized: true,
+      });
+    });
+    expect(localStorage.getItem('engineSTT')).toBe(JSON.stringify('browser'));
+    expect(localStorage.getItem('engineTTS')).toBe(JSON.stringify('browser'));
   });
 
   it.each(['browser', 'external'])('preserves the valid engine "%s"', async (engine) => {
@@ -212,4 +233,20 @@ describe('useSpeechSettingsInit', () => {
 
     expect(result.current.speechSettingsInitialized).toBe(false);
   });
+
+  it.each(['engineSTT', 'engineTTS'])(
+    'keeps speech controls disabled after an error when only %s is saved',
+    (savedEngine) => {
+      localStorage.setItem(savedEngine, JSON.stringify('browser'));
+      mockUseGetCustomConfigSpeechQuery.mockReturnValue({
+        data: undefined,
+        isFetched: true,
+        isError: true,
+      });
+
+      const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
+
+      expect(result.current.speechSettingsInitialized).toBe(false);
+    },
+  );
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useGetCustomConfigSpeechQuery } from 'librechat-data-provider/react-query';
-import { TTSEndpoints } from '~/common';
+import { STTEndpoints, TTSEndpoints } from '~/common';
 import { logger } from '~/utils';
 import store from '~/store';
 
@@ -13,6 +13,7 @@ const VALID_TTS_ENGINES: string[] = [TTSEndpoints.browser, TTSEndpoints.external
  */
 export default function useSpeechSettingsInit(isAuthenticated: boolean) {
   const { data, isError, isFetched } = useGetCustomConfigSpeechQuery({ enabled: isAuthenticated });
+  const [engineSTT, setEngineSTT] = useRecoilState<string>(store.engineSTT);
   const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
   const setSpeechSettingsInitialized = useSetRecoilState(store.speechSettingsInitialized);
 
@@ -22,7 +23,7 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
     speechToText: useSetRecoilState(store.speechToText),
     textToSpeech: useSetRecoilState(store.textToSpeech),
     cacheTTS: useSetRecoilState(store.cacheTTS),
-    engineSTT: useSetRecoilState(store.engineSTT),
+    engineSTT: setEngineSTT,
     languageSTT: useSetRecoilState(store.languageSTT),
     autoTranscribeAudio: useSetRecoilState(store.autoTranscribeAudio),
     decibelValue: useSetRecoilState(store.decibelValue),
@@ -43,10 +44,16 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
 
     if (!isFetched) return;
 
-    if (isError && localStorage.getItem('engineSTT') === null) {
+    if (
+      isError &&
+      (localStorage.getItem('engineSTT') === null || localStorage.getItem('engineTTS') === null)
+    ) {
       setSpeechSettingsInitialized(false);
       return;
     }
+
+    const hasSavedEngineSTT = localStorage.getItem('engineSTT') !== null;
+    const hasSavedEngineTTS = localStorage.getItem('engineTTS') !== null;
 
     if (data && data.message !== 'not_found') {
       logger.log('Initializing speech settings from config:', data);
@@ -64,8 +71,31 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
       });
     }
 
+    const configuredEngineSTT = hasSavedEngineSTT ? engineSTT : data?.engineSTT;
+    const configuredEngineTTS = hasSavedEngineTTS ? engineTTS : data?.engineTTS;
+    const sttExternalUnavailable = data?.sttExternal != null && !data.sttExternal;
+    const ttsExternalUnavailable = data?.ttsExternal != null && !data.ttsExternal;
+
+    if (sttExternalUnavailable && configuredEngineSTT === STTEndpoints.external) {
+      setEngineSTT(STTEndpoints.browser);
+    }
+    if (ttsExternalUnavailable && configuredEngineTTS === TTSEndpoints.external) {
+      setEngineTTS(TTSEndpoints.browser);
+    }
+
     setSpeechSettingsInitialized(true);
-  }, [isAuthenticated, data, isError, isFetched, setSpeechSettingsInitialized, setters]);
+  }, [
+    data,
+    engineSTT,
+    engineTTS,
+    isAuthenticated,
+    isError,
+    isFetched,
+    setEngineSTT,
+    setEngineTTS,
+    setSpeechSettingsInitialized,
+    setters,
+  ]);
 
   useEffect(() => {
     if (VALID_TTS_ENGINES.includes(engineTTS)) return;
