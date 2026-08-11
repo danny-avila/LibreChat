@@ -287,6 +287,21 @@ describe('parseFrontmatter', () => {
     );
   });
 
+  it('rejects case-colliding recognized frontmatter keys', () => {
+    const raw = `---\nname: duplicate-case\ndescription: Duplicate key variants.\nallowed-tools:\n  - execute_code\nAllowed-Tools:\n  - web_search\n---\n\nbody`;
+
+    expect(parseFrontmatter(raw)).toEqual(
+      expect.objectContaining({
+        name: '',
+        description: '',
+        invalidBooleans: [],
+        parseError: expect.stringContaining(
+          'Recognized frontmatter keys "allowed-tools" and "Allowed-Tools" both resolve to "allowed-tools"',
+        ),
+      }),
+    );
+  });
+
   it('ignores always-apply appearing outside the frontmatter block', () => {
     const raw = `---\nname: n\ndescription: d\n---\n\nalways-apply: true (but this is in the body)`;
     const result = parseFrontmatter(raw);

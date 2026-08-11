@@ -23,6 +23,7 @@ export {
   inferSkillFileCategory,
   validateSkillFrontmatter,
   getCanonicalSkillFrontmatterKey,
+  normalizeSkillFrontmatterKeys,
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
   AUDIT_SCHEMA_VERSION,

@@ -1,5 +1,5 @@
 import yaml from 'js-yaml';
-import { getCanonicalSkillFrontmatterKey } from '@librechat/data-schemas';
+import { normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
 
 export type ParsedSkillMarkdown = {
   name: string;
@@ -65,17 +65,6 @@ function stripInlineComment(value: string): string {
   return value.trim();
 }
 
-function normalizeFrontmatterKeys(frontmatter: Record<string, unknown>): Record<string, unknown> {
-  return Object.entries(frontmatter).reduce<Record<string, unknown>>(
-    (acc, [key, value]) => {
-      const normalizedKey = getCanonicalSkillFrontmatterKey(key) ?? key;
-      acc[normalizedKey] = value;
-      return acc;
-    },
-    Object.create(null) as Record<string, unknown>,
-  );
-}
-
 function parseBoolean(value: unknown, rawValue?: string): boolean | undefined {
   const raw = rawValue === undefined ? undefined : stripInlineComment(rawValue).toLowerCase();
   if (typeof value === 'boolean') {
@@ -124,7 +113,19 @@ export function parseSkillMarkdown(raw: string): ParsedSkillMarkdown {
       parseError: error instanceof Error ? error.message : 'Invalid YAML frontmatter',
     };
   }
-  const frontmatter = isPlainObject(parsed) ? normalizeFrontmatterKeys(parsed) : {};
+  let frontmatter: Record<string, unknown> = {};
+  if (isPlainObject(parsed)) {
+    const normalized = normalizeSkillFrontmatterKeys(parsed);
+    if ('error' in normalized) {
+      return {
+        name: '',
+        description: '',
+        invalidBooleans: [],
+        parseError: normalized.error,
+      };
+    }
+    frontmatter = normalized.frontmatter;
+  }
   const nameValue = getCaseInsensitive(frontmatter, 'name');
   const descriptionValue = getCaseInsensitive(frontmatter, 'description');
   const whenToUseValue = getCaseInsensitive(frontmatter, 'when-to-use');

@@ -14,6 +14,7 @@ import {
   validateSkillDescription,
   validateSkillFrontmatter,
   getCanonicalSkillFrontmatterKey,
+  normalizeSkillFrontmatterKeys,
   validateAlwaysApply,
   validateRelativePath,
   inferSkillFileCategory,
@@ -263,6 +264,32 @@ describe('skill validation helpers', () => {
       expect(getCanonicalSkillFrontmatterKey('Allowed-Tools')).toBe('allowed-tools');
       expect(getCanonicalSkillFrontmatterKey('ALWAYSAPPLY')).toBe('alwaysApply');
       expect(getCanonicalSkillFrontmatterKey('customConfig')).toBeUndefined();
+      expect(
+        normalizeSkillFrontmatterKeys({
+          'Allowed-Tools': ['execute_code'],
+          customConfig: { mode: 'strict' },
+        }),
+      ).toEqual({
+        frontmatter: {
+          'allowed-tools': ['execute_code'],
+          customConfig: { mode: 'strict' },
+        },
+      });
+    });
+
+    it('rejects case-colliding recognized keys', () => {
+      const frontmatter = {
+        'allowed-tools': ['read_file'],
+        'Allowed-Tools': ['execute_code'],
+      };
+
+      expect(normalizeSkillFrontmatterKeys(frontmatter)).toEqual({
+        error:
+          'Recognized frontmatter keys "allowed-tools" and "Allowed-Tools" both resolve to "allowed-tools"',
+      });
+      expect(validateSkillFrontmatter(frontmatter)).toEqual([
+        expect.objectContaining({ field: 'frontmatter', code: 'DUPLICATE_KEY' }),
+      ]);
     });
 
     it('accepts an undefined or empty frontmatter', () => {
@@ -505,6 +532,9 @@ describe('skill validation helpers', () => {
       /* Empty string → not extracted; an explicit empty array is the
          author's way to say "no extras". */
       expect(deriveStructuredFrontmatterFields({ 'allowed-tools': '' })).toEqual({});
+      expect(deriveStructuredFrontmatterFields({ 'Allowed-Tools': 'execute_code' })).toEqual({
+        allowedTools: ['execute_code'],
+      });
     });
 
     it('passes through array allowed-tools, dropping non-string entries', () => {
@@ -578,6 +608,42 @@ describe('Skill CRUD methods', () => {
         severity: 'warning',
       }),
     ]);
+  });
+
+  it('canonicalizes recognized frontmatter variants before persistence and derivation', async () => {
+    const { skill, warnings } = await methods.createSkill(
+      makeSkillInput({
+        name: 'case-variant-frontmatter',
+        frontmatter: {
+          name: 'case-variant-frontmatter',
+          'Allowed-Tools': ['execute_code'],
+          'User-Invocable': false,
+        },
+      }),
+    );
+
+    expect(skill.frontmatter).toMatchObject({
+      'allowed-tools': ['execute_code'],
+      'user-invocable': false,
+    });
+    expect(skill.frontmatter).not.toHaveProperty('Allowed-Tools');
+    expect(skill.allowedTools).toEqual(['execute_code']);
+    expect(skill.userInvocable).toBe(false);
+    expect(warnings).toEqual([]);
+  });
+
+  it('rejects case-colliding recognized frontmatter keys', async () => {
+    await expect(
+      methods.createSkill(
+        makeSkillInput({
+          name: 'case-collision-frontmatter',
+          frontmatter: {
+            'allowed-tools': ['read_file'],
+            'Allowed-Tools': ['execute_code'],
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
   });
 
   it('creates a skill whose frontmatter carries a references list', async () => {

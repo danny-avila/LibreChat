@@ -276,6 +276,27 @@ export function getCanonicalSkillFrontmatterKey(key: string): string | undefined
   return CANONICAL_FRONTMATTER_KEYS.get(key.toLowerCase());
 }
 
+export function normalizeSkillFrontmatterKeys(
+  frontmatter: Record<string, unknown>,
+): { frontmatter: Record<string, unknown> } | { error: string } {
+  const normalized = Object.create(null) as Record<string, unknown>;
+  const recognizedKeys = new Map<string, string>();
+  for (const [key, value] of Object.entries(frontmatter)) {
+    const canonicalKey = getCanonicalSkillFrontmatterKey(key);
+    if (canonicalKey) {
+      const previousKey = recognizedKeys.get(canonicalKey);
+      if (previousKey) {
+        return {
+          error: `Recognized frontmatter keys "${previousKey}" and "${key}" both resolve to "${canonicalKey}"`,
+        };
+      }
+      recognizedKeys.set(canonicalKey, key);
+    }
+    normalized[canonicalKey ?? key] = value;
+  }
+  return { frontmatter: normalized };
+}
+
 const FRONTMATTER_MAX_STRING = 2000;
 const FRONTMATTER_MAX_ARRAY = 100;
 const FRONTMATTER_MAX_DEPTH = 4;
@@ -403,8 +424,19 @@ export function validateSkillFrontmatter(frontmatter: unknown): ValidationIssue[
     ];
   }
 
+  const normalized = normalizeSkillFrontmatterKeys(frontmatter);
+  if ('error' in normalized) {
+    return [
+      {
+        field: 'frontmatter',
+        code: 'DUPLICATE_KEY',
+        message: normalized.error,
+      },
+    ];
+  }
+
   const issues: ValidationIssue[] = [];
-  for (const [key, value] of Object.entries(frontmatter)) {
+  for (const [key, value] of Object.entries(normalized.frontmatter)) {
     if (!isValidFrontmatterKey(key)) {
       issues.push({
         field: 'frontmatter',
@@ -608,6 +640,11 @@ export function deriveStructuredFrontmatterFields(
   if (!frontmatter || typeof frontmatter !== 'object') {
     return {};
   }
+  const normalized = normalizeSkillFrontmatterKeys(frontmatter);
+  if ('error' in normalized) {
+    return {};
+  }
+  frontmatter = normalized.frontmatter;
   const derived: {
     disableModelInvocation?: boolean;
     userInvocable?: boolean;
@@ -1101,6 +1138,13 @@ export function createSkillMethods(
   }
 
   async function createSkill(data: CreateSkillInput): Promise<CreateSkillResult> {
+    const normalizedFrontmatter = isPlainObject(data.frontmatter)
+      ? normalizeSkillFrontmatterKeys(data.frontmatter)
+      : undefined;
+    const frontmatter =
+      normalizedFrontmatter && 'frontmatter' in normalizedFrontmatter
+        ? normalizedFrontmatter.frontmatter
+        : data.frontmatter;
     /* Parse body's always-apply status once — reused for validation
        (below) and derivation in `resolveAlwaysApplyFromInput`. Avoids
        parsing the same YAML frontmatter block twice per create. */
@@ -1111,7 +1155,7 @@ export function createSkillMethods(
       ...validateSkillDescription(data.description),
       ...validateSkillBody(data.body),
       ...validateSkillDisplayTitle(data.displayTitle),
-      ...validateSkillFrontmatter(data.frontmatter),
+      ...validateSkillFrontmatter(frontmatter),
       ...validateAlwaysApply(data.alwaysApply),
     ];
     /* Body-level `always-apply:` only needs to be well-formed when a
@@ -1124,7 +1168,7 @@ export function createSkillMethods(
     if (
       bodyAlwaysApply?.status === 'invalid' &&
       typeof data.alwaysApply !== 'boolean' &&
-      getAlwaysApplyFrontmatterValue(data.frontmatter) === undefined
+      getAlwaysApplyFrontmatterValue(frontmatter) === undefined
     ) {
       issues.push({
         field: 'body.frontmatter.alwaysApply',
@@ -1160,13 +1204,13 @@ export function createSkillMethods(
       throw error;
     }
 
-    const derived = deriveStructuredFrontmatterFields(data.frontmatter);
+    const derived = deriveStructuredFrontmatterFields(frontmatter);
     const doc = await Skill.create({
       name: data.name,
       displayTitle: data.displayTitle,
       description: data.description,
       body: data.body ?? '',
-      frontmatter: data.frontmatter ?? {},
+      frontmatter: frontmatter ?? {},
       category: data.category ?? '',
       author: data.author,
       authorName: data.authorName,
@@ -1176,7 +1220,7 @@ export function createSkillMethods(
       fileCount: 0,
       alwaysApply: resolveAlwaysApplyFromInput(
         data.alwaysApply,
-        data.frontmatter,
+        frontmatter,
         data.body,
         false,
         bodyAlwaysApply,
@@ -1422,6 +1466,13 @@ export function createSkillMethods(
     if (!isValidObjectIdString(id)) {
       return { status: 'not_found' };
     }
+    const normalizedFrontmatter = isPlainObject(update.frontmatter)
+      ? normalizeSkillFrontmatterKeys(update.frontmatter)
+      : undefined;
+    const frontmatter =
+      normalizedFrontmatter && 'frontmatter' in normalizedFrontmatter
+        ? normalizedFrontmatter.frontmatter
+        : update.frontmatter;
 
     /* Parse body's always-apply status once — reused for validation
        (precedence-aware, below) and the derivation cascade further
@@ -1436,8 +1487,7 @@ export function createSkillMethods(
     if (update.body !== undefined) issues.push(...validateSkillBody(update.body));
     if (update.displayTitle !== undefined)
       issues.push(...validateSkillDisplayTitle(update.displayTitle));
-    if (update.frontmatter !== undefined)
-      issues.push(...validateSkillFrontmatter(update.frontmatter));
+    if (update.frontmatter !== undefined) issues.push(...validateSkillFrontmatter(frontmatter));
     if (update.alwaysApply !== undefined) issues.push(...validateAlwaysApply(update.alwaysApply));
     /* Body-level `always-apply:` only needs to be well-formed when a
        higher-precedence source won't override it (see
@@ -1448,7 +1498,7 @@ export function createSkillMethods(
     if (
       bodyAlwaysApply?.status === 'invalid' &&
       update.alwaysApply === undefined &&
-      getAlwaysApplyFrontmatterValue(update.frontmatter) === undefined
+      getAlwaysApplyFrontmatterValue(frontmatter) === undefined
     ) {
       issues.push({
         field: 'body.frontmatter.alwaysApply',
@@ -1475,14 +1525,14 @@ export function createSkillMethods(
     if (update.source !== undefined) setPayload.source = update.source;
     if (update.sourceMetadata !== undefined) setPayload.sourceMetadata = update.sourceMetadata;
     if (update.frontmatter !== undefined) {
-      setPayload.frontmatter = update.frontmatter;
+      setPayload.frontmatter = frontmatter;
       /**
        * Derived columns track frontmatter — when frontmatter changes, the
        * derived view must follow. Fields the new frontmatter omits are
        * unset (back to schema default) so removing `disable-model-invocation`
        * from a SKILL.md re-enables model invocation on the next save.
        */
-      const derived = deriveStructuredFrontmatterFields(update.frontmatter);
+      const derived = deriveStructuredFrontmatterFields(frontmatter);
       for (const key of ['disableModelInvocation', 'userInvocable', 'allowedTools'] as const) {
         if (derived[key] !== undefined) {
           setPayload[key] = derived[key];
@@ -1522,7 +1572,7 @@ export function createSkillMethods(
       derivedAlwaysApply = update.alwaysApply;
     }
     if (derivedAlwaysApply === undefined && update.frontmatter !== undefined) {
-      const fromFrontmatter = getAlwaysApplyFrontmatterValue(update.frontmatter);
+      const fromFrontmatter = getAlwaysApplyFrontmatterValue(frontmatter);
       if (typeof fromFrontmatter === 'boolean') {
         derivedAlwaysApply = fromFrontmatter;
       }
