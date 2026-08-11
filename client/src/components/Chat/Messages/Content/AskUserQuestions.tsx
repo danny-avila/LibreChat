@@ -1,5 +1,5 @@
-import { Check, ChevronUp, TriangleAlert } from 'lucide-react';
 import { Button, TextareaAutosize } from '@librechat/client';
+import { Check, ChevronUp, TriangleAlert } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
 import useAskQuestionsForm from '~/hooks/Input/useAskQuestionsForm';
 import { splitOtherOption } from '~/utils/approval';
@@ -59,10 +59,7 @@ export default function AskUserQuestions({
                 </p>
               )}
               {choices.length > 0 && (
-                <div
-                  className="mt-2 flex flex-wrap gap-2"
-                  role={question.multiSelect === true ? 'group' : 'radiogroup'}
-                >
+                <div className="mt-2 flex flex-wrap gap-2" role="group">
                   {choices.map((option) => {
                     const isSelected = selected.includes(option.value);
                     return (
@@ -71,8 +68,9 @@ export default function AskUserQuestions({
                         type="button"
                         size="sm"
                         variant={isSelected ? 'submit' : 'outline'}
-                        role={question.multiSelect === true ? 'checkbox' : 'radio'}
-                        aria-checked={isSelected}
+                        role={question.multiSelect === true ? 'checkbox' : undefined}
+                        aria-checked={question.multiSelect === true ? isSelected : undefined}
+                        aria-pressed={question.multiSelect === true ? undefined : isSelected}
                         disabled={form.locked}
                         className="h-auto min-h-9 max-w-full whitespace-normal py-1.5 text-left [overflow-wrap:anywhere]"
                         onClick={() => form.selectOption(question, option.value)}

@@ -49,7 +49,7 @@ describe('AskUserQuestions', () => {
     const submit = screen.getByRole('button', { name: 'Submit' });
     expect(submit).toBeDisabled();
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Staging' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Staging' }));
     fireEvent.change(screen.getByRole('textbox', { name: /Which time window/ }), {
       target: { value: 'Last seven days' },
     });

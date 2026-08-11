@@ -1172,11 +1172,17 @@ function askUserQuestionResponses(label, toolNames) {
         id: `call_e2e_ask_user_question_${label}`,
         name: ASK_USER_QUESTION_TOOL_NAME,
         args: {
-          question: `Which environment should Bombadil use for ${label}?`,
-          description: 'This deterministic pause exercises the HITL answer and resume lifecycle.',
-          options: [
-            { label: 'Staging', value: 'staging' },
-            { label: 'Production', value: 'production' },
+          questions: [
+            {
+              id: 'environment',
+              question: `Which environment should Bombadil use for ${label}?`,
+              description:
+                'This deterministic pause exercises the HITL answer and resume lifecycle.',
+              options: [
+                { label: 'Staging', value: 'staging' },
+                { label: 'Production', value: 'production' },
+              ],
+            },
           ],
         },
         type: 'tool_call',
@@ -1716,8 +1722,13 @@ function deferredHitlInvocationResponse({ graph, messages, options, runManager }
           id: askCallId,
           name: ASK_USER_QUESTION_NAME,
           args: {
-            question: `Continue deferred schema check ${label}?`,
-            options: [{ label: `Continue ${label}`, value: `continue-${label}` }],
+            questions: [
+              {
+                id: 'confirmation',
+                question: `Continue deferred schema check ${label}?`,
+                options: [{ label: `Continue ${label}`, value: `continue-${label}` }],
+              },
+            ],
           },
           type: 'tool_call',
         },
