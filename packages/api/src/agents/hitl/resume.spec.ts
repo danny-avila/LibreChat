@@ -18,7 +18,10 @@ import {
   createContentIndexOffsetHandlers,
   hydrateResumeRunSteps,
   attachAskUserQuestionAnswer,
+  attachAskUserQuestionAnswers,
   attachAskUserQuestionArgs,
+  buildResolvedAskUserQuestion,
+  appendResolvedAskUserQuestion,
 } from './resume';
 
 describe('mapToolApprovalResolutions', () => {
@@ -580,6 +583,46 @@ describe('attachAskUserQuestionAnswer', () => {
     expect(JSON.parse(toolCall.output)).toEqual({
       answers: { environment: 'staging', window: '7d' },
     });
+  });
+});
+
+describe('durable ask-user answers', () => {
+  it('builds a typed stamp from the validated pending action', () => {
+    const pendingAction = {
+      payload: {
+        type: 'ask_user_question',
+        question: 'Which env?',
+        tool_call_id: 'ask-2',
+      },
+    } as Agents.PendingAction;
+
+    expect(buildResolvedAskUserQuestion(pendingAction, { answer: 'production' })).toEqual({
+      request: 'Which env?',
+      output: 'production',
+      toolCallId: 'ask-2',
+    });
+  });
+
+  it('accumulates exact-ID answers and replaces a repeated tool call', () => {
+    const first = { request: 'First?', output: 'one', toolCallId: 'ask-1' };
+    const second = { request: 'Second?', output: 'two', toolCallId: 'ask-2' };
+    const corrected = { request: 'First?', output: 'corrected', toolCallId: 'ask-1' };
+
+    expect(appendResolvedAskUserQuestion([first, second], corrected)).toEqual([second, corrected]);
+  });
+
+  it('reconstructs multiple retained answers in one content pass', () => {
+    const content = [
+      { type: 'tool_call', tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' } },
+      { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
+    ];
+    const next = attachAskUserQuestionAnswers(content, [
+      { request: 'First?', output: 'one', toolCallId: 'ask-1' },
+      { request: 'Second?', output: 'two', toolCallId: 'ask-2' },
+    ]);
+
+    expect(next.map((part) => part.tool_call.output)).toEqual(['one', 'two']);
+    expect(next.map((part) => JSON.parse(part.tool_call.args))).toEqual(['First?', 'Second?']);
   });
 });
 

@@ -501,11 +501,13 @@ describe('Agent Abort Endpoint', () => {
             { type: 'tool_call', tool_call: { id: 'tc1', name: 'ask_user_question', args: '' } },
           ];
           const content = options.transformAbortContent(rawContent, {
-            resolvedAskUserQuestion: {
-              request: question,
-              output: 'prod',
-              toolCallId: 'tc1',
-            },
+            resolvedAskUserQuestions: [
+              {
+                request: question,
+                output: 'prod',
+                toolCallId: 'tc1',
+              },
+            ],
           });
           const result = {
             success: true,
@@ -562,7 +564,7 @@ describe('Agent Abort Endpoint', () => {
             },
           ];
           const content = options.transformAbortContent(rawContent, {
-            resolvedAskUserQuestion: { request: priorQuestion, output: 'staging' },
+            resolvedAskUserQuestions: [{ request: priorQuestion, output: 'staging' }],
             pendingAction: {
               payload: {
                 type: 'ask_user_question',
@@ -620,11 +622,13 @@ describe('Agent Abort Endpoint', () => {
             },
           ];
           const content = options.transformAbortContent(rawContent, {
-            resolvedAskUserQuestion: {
-              request: priorQuestion,
-              output: 'staging',
-              toolCallId: 'prior-call',
-            },
+            resolvedAskUserQuestions: [
+              {
+                request: priorQuestion,
+                output: 'staging',
+                toolCallId: 'prior-call',
+              },
+            ],
             pendingAction: {
               payload: {
                 type: 'ask_user_question',

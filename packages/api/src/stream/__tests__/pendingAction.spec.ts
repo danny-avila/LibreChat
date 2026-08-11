@@ -67,10 +67,12 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
       expect(
         await manager.approvals.resolve(streamId, firstAction.actionId, {
-          resolvedAskUserQuestion: {
-            request: 'Which environment?',
-            output: 'staging',
-          },
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
         }),
       ).toBe(true);
 
@@ -78,7 +80,7 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
 
       await expect(manager.getJob(streamId)).resolves.toMatchObject({
         status: 'requires_action',
-        metadata: { resolvedAskUserQuestion: undefined },
+        metadata: { resolvedAskUserQuestions: undefined },
       });
     });
 
@@ -89,11 +91,13 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
       expect(
         await manager.approvals.resolve(streamId, firstAction.actionId, {
-          resolvedAskUserQuestion: {
-            request: 'Which environment?',
-            output: 'staging',
-            toolCallId: 'ask-1',
-          },
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+              toolCallId: 'ask-1',
+            },
+          ],
         }),
       ).toBe(true);
 
@@ -102,11 +106,13 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       await expect(manager.getJob(streamId)).resolves.toMatchObject({
         status: 'requires_action',
         metadata: {
-          resolvedAskUserQuestion: {
-            request: 'Which environment?',
-            output: 'staging',
-            toolCallId: 'ask-1',
-          },
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+              toolCallId: 'ask-1',
+            },
+          ],
         },
       });
     });

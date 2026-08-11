@@ -1,7 +1,7 @@
 import type { Agents } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
-import type { ResolvedAskUserQuestion } from '../stream/interfaces/IJobStore';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
+import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
 import type { ServerSentEvent } from './events';
 
 export interface GenerationJobMetadata {
@@ -53,7 +53,7 @@ export interface GenerationJobMetadata {
   /** Set when the job is paused for human review (status === 'requires_action') */
   pendingAction?: Agents.PendingAction;
   /** Accepted ask-user answer retained until this generation terminalizes. */
-  resolvedAskUserQuestion?: ResolvedAskUserQuestion;
+  resolvedAskUserQuestions?: ResolvedAskUserQuestion[];
 }
 
 export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';

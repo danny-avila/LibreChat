@@ -22,8 +22,8 @@ import type {
   SteerReceipt,
   SteerReceiptInput,
   ParkedSteerClaim,
-  ResolvedAskUserQuestion,
 } from '~/stream/interfaces/IJobStore';
+import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
   JobCreationSupersededError,
@@ -4070,7 +4070,7 @@ export class RedisJobStore implements IJobStoreV2 {
       contextUsage: data.contextUsage || undefined,
       tokenUsage: data.tokenUsage || undefined,
       pendingAction: this.parsePendingAction(data.pendingAction),
-      resolvedAskUserQuestion: this.parseResolvedAskUserQuestion(data.resolvedAskUserQuestion),
+      resolvedAskUserQuestions: this.parseResolvedAskUserQuestions(data.resolvedAskUserQuestions),
       pendingActionId: data.pendingActionId || undefined,
       lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
       /** `markActivityLabels` persists this, so it has to be read back:
@@ -4226,34 +4226,43 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   /** Parse the accepted ask answer retained across resume ownership transfer. */
-  private parseResolvedAskUserQuestion(
+  private parseResolvedAskUserQuestions(
     raw: string | undefined,
-  ): ResolvedAskUserQuestion | undefined {
+  ): ResolvedAskUserQuestion[] | undefined {
     if (!raw) {
       return undefined;
     }
     try {
       const value = JSON.parse(raw) as unknown;
-      if (value == null || typeof value !== 'object' || Array.isArray(value)) {
-        logger.warn('[RedisJobStore] Dropping malformed resolvedAskUserQuestion record');
+      if (!Array.isArray(value)) {
+        logger.warn('[RedisJobStore] Dropping malformed resolvedAskUserQuestions record');
         return undefined;
       }
-      const parsed = value as ResolvedAskUserQuestion;
-      const request = parsed.request;
-      const requestOk =
-        typeof request === 'string' ||
-        (request != null &&
-          typeof request === 'object' &&
-          (typeof (request as Agents.AskUserQuestionRequest).question === 'string' ||
-            Array.isArray((request as Agents.AskUserQuestionsRequest).questions)));
-      const toolCallIdOk = parsed.toolCallId == null || typeof parsed.toolCallId === 'string';
-      if (!requestOk || typeof parsed.output !== 'string' || !toolCallIdOk) {
-        logger.warn('[RedisJobStore] Dropping malformed resolvedAskUserQuestion record');
+      const parsed = value as ResolvedAskUserQuestion[];
+      const valid = parsed.every((answer) => {
+        if (answer == null || typeof answer !== 'object' || Array.isArray(answer)) {
+          return false;
+        }
+        const request = answer.request;
+        const requestOk =
+          typeof request === 'string' ||
+          (request != null &&
+            typeof request === 'object' &&
+            (typeof (request as Agents.AskUserQuestionRequest).question === 'string' ||
+              Array.isArray((request as Agents.AskUserQuestionsRequest).questions)));
+        return (
+          requestOk &&
+          typeof answer.output === 'string' &&
+          (answer.toolCallId == null || typeof answer.toolCallId === 'string')
+        );
+      });
+      if (!valid || parsed.length === 0) {
+        logger.warn('[RedisJobStore] Dropping malformed resolvedAskUserQuestions record');
         return undefined;
       }
       return parsed;
     } catch {
-      logger.warn('[RedisJobStore] Dropping unparseable resolvedAskUserQuestion record');
+      logger.warn('[RedisJobStore] Dropping unparseable resolvedAskUserQuestions record');
       return undefined;
     }
   }

@@ -580,7 +580,7 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
         const aborting = manager.abortJob(streamId, {
           expectedCreatedAt: job.createdAt,
           transformAbortContent: (content, claimedJob) => {
-            transformedWith = claimedJob.resolvedAskUserQuestion;
+            transformedWith = claimedJob.resolvedAskUserQuestions;
             return content;
           },
         });
@@ -590,10 +590,12 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
             streamId,
             action.actionId,
             {
-              resolvedAskUserQuestion: {
-                request: 'Which environment?',
-                output: 'staging',
-              },
+              resolvedAskUserQuestions: [
+                {
+                  request: 'Which environment?',
+                  output: 'staging',
+                },
+              ],
             },
             job.createdAt,
           ),
@@ -601,10 +603,12 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
         releaseSnapshot?.();
 
         await expect(aborting).resolves.toMatchObject({ success: true });
-        expect(transformedWith).toEqual({
-          request: 'Which environment?',
-          output: 'staging',
-        });
+        expect(transformedWith).toEqual([
+          {
+            request: 'Which environment?',
+            output: 'staging',
+          },
+        ]);
       } finally {
         releaseSnapshot?.();
       }

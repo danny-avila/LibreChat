@@ -878,6 +878,57 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(client.resumeCompletion).toHaveBeenCalledWith(expect.objectContaining({ runSteps }));
     });
 
+    it('reapplies retained ask answers before resuming a later tool approval', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            resolvedAskUserQuestions: [
+              {
+                request: 'Which environment?',
+                output: 'staging',
+                toolCallId: 'ask-1',
+              },
+            ],
+          },
+        }),
+      );
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [
+          {
+            type: 'tool_call',
+            tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' },
+          },
+        ],
+        runSteps: [],
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
+      expect(client.resumeCompletion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          seedContent: [
+            expect.objectContaining({
+              tool_call: expect.objectContaining({
+                id: 'ask-1',
+                args: JSON.stringify('Which environment?'),
+                output: 'staging',
+                progress: 1,
+              }),
+            }),
+          ],
+        }),
+      );
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        { preemptCapable: true },
+        1000,
+      );
+    });
+
     it('restores the paused user message files before reconstruction (execute-code files)', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       // The resume body carries no files; the controller must source them from the
@@ -1347,10 +1398,12 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         ACTION_ID,
         {
           preemptCapable: true,
-          resolvedAskUserQuestion: {
-            request: 'What should I name the file?',
-            output: 'call it report.pdf',
-          },
+          resolvedAskUserQuestions: [
+            {
+              request: 'What should I name the file?',
+              output: 'call it report.pdf',
+            },
+          ],
         },
         1000,
       );
@@ -1386,11 +1439,13 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         ACTION_ID,
         {
           preemptCapable: true,
-          resolvedAskUserQuestion: {
-            request: { questions: expect.any(Array) },
-            output: JSON.stringify({ answers }),
-            toolCallId: 'tc1',
-          },
+          resolvedAskUserQuestions: [
+            {
+              request: { questions: expect.any(Array) },
+              output: JSON.stringify({ answers }),
+              toolCallId: 'tc1',
+            },
+          ],
         },
         1000,
       );

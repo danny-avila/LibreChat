@@ -1,6 +1,7 @@
 import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
+import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
 
 /**
@@ -24,14 +25,6 @@ export type JobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires
 /** Immutable wire/storage contract selected when a generation is created.
  * Missing markers on pre-rollout records are interpreted as protocol v1. */
 export type GenerationProtocolVersion = 1 | 2;
-
-/** Ask-user answer captured in the same CAS that consumes its pending action. */
-export interface ResolvedAskUserQuestion {
-  /** String supports pending records written before the structured question shape. */
-  request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest | string;
-  output: string;
-  toolCallId?: string;
-}
 
 /**
  * Serializable job data - no object references, suitable for Redis/external storage
@@ -175,7 +168,7 @@ export interface SerializableJobData {
    * abort can win while the resume controller is still rebuilding the client;
    * retaining the accepted answer here lets that terminal owner stamp it onto
    * the persisted partial response instead of losing it with the request. */
-  resolvedAskUserQuestion?: ResolvedAskUserQuestion;
+  resolvedAskUserQuestions?: ResolvedAskUserQuestion[];
 
   /**
    * Flat mirror of `pendingAction.actionId`, kept as a top-level field so an
@@ -277,7 +270,7 @@ export type JobMetadataPatch = Partial<
     | 'activityPhaseSnapshot'
     | 'preemptCapable'
     | 'generationProtocolVersion'
-    | 'resolvedAskUserQuestion'
+    | 'resolvedAskUserQuestions'
   >
 >;
 

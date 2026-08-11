@@ -10,7 +10,7 @@ const {
   isHITLEnabled,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
-  attachAskUserQuestionAnswer,
+  attachAskUserQuestionAnswers,
   attachAskUserQuestionArgs,
   createMessageFilterPii,
 } = require('@librechat/api');
@@ -637,12 +637,12 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
       // chunk log, which never saw the pause-time stamp applied to the in-process
       // contentParts — stamping inside abortJob (not after) means the LIVE client
       // gets the question too, not just the saved message on reload.
-      const initialResolvedAskUserQuestion = job.metadata?.resolvedAskUserQuestion;
+      const initialResolvedAskUserQuestions = job.metadata?.resolvedAskUserQuestions;
       const agentsCfg = req.config?.endpoints?.agents;
       const shouldPruneCheckpoint =
         isHITLEnabled(agentsCfg?.toolApproval) ||
         job.metadata?.pendingAction != null ||
-        initialResolvedAskUserQuestion != null;
+        initialResolvedAskUserQuestions?.length > 0;
       const checkpointNamespace =
         typeof job.metadata?.checkpointNamespace === 'string'
           ? job.metadata.checkpointNamespace
@@ -664,21 +664,15 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
             return content;
           }
           const abortedAskPayload = abortJobData.pendingAction?.payload;
-          const resolvedAskUserQuestion = abortJobData.resolvedAskUserQuestion;
+          const resolvedAskUserQuestions = abortJobData.resolvedAskUserQuestions ?? [];
           /** ID-less stamps are legacy-only. If this generation has reached a
            * later pause, the previous answer was already seeded before that
            * run started and must not target the new unanswered ask. */
-          const canAttachResolvedAnswer =
-            resolvedAskUserQuestion != null &&
-            (resolvedAskUserQuestion.toolCallId != null || abortJobData.pendingAction == null);
-          const answeredContent = canAttachResolvedAnswer
-            ? attachAskUserQuestionAnswer(
-                content,
-                resolvedAskUserQuestion.request,
-                resolvedAskUserQuestion.output,
-                resolvedAskUserQuestion.toolCallId,
-              )
-            : content;
+          const applicableAnswers =
+            abortJobData.pendingAction == null
+              ? resolvedAskUserQuestions
+              : resolvedAskUserQuestions.filter((answer) => answer.toolCallId != null);
+          const answeredContent = attachAskUserQuestionAnswers(content, applicableAnswers);
           return abortedAskPayload?.type === 'ask_user_question'
             ? attachAskUserQuestionArgs(
                 answeredContent,
