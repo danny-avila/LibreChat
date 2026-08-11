@@ -309,7 +309,7 @@ const ChatForm = memo(function ChatForm({
     textAreaRef,
     submitButtonRef,
     setIsScrollable,
-    disabled: disableInputs,
+    disabled: disableInputs || answerMode.composerLocked,
     // The composer IS the free-form answer box while a question pause is live.
     placeholder: composerReserved ? answerPlaceholder : placeholder,
     // Enter stays live during a run when it can steer/queue instead of send.
@@ -349,18 +349,19 @@ const ChatForm = memo(function ChatForm({
 
   const composerItems = useComposerItems(conversationId, quotesEnabled);
   const attachTarget = useAttachTarget(conversation, disableInputs);
-  const { active: answerModeActive, submitText: submitAnswerText } = answerMode;
+  const { submitText: submitAnswerText } = answerMode;
+  const dictationAnswerModeActive = answerMode.composerAnswers;
   /** The same gate `onSubmit` applies: while a question pause is live the
    *  composer IS the answer box, so a dictated turn has to answer it rather
    *  than start a turn the paused run would drop. */
   const dictationAsk = useCallback<TAskFunction>(
     (props) => {
-      if (answerModeActive && submitAnswerText(props.text)) {
+      if (dictationAnswerModeActive && submitAnswerText(props.text)) {
         return;
       }
       return submitMessage({ text: props.text });
     },
-    [answerModeActive, submitAnswerText, submitMessage],
+    [dictationAnswerModeActive, submitAnswerText, submitMessage],
   );
   const dictation = useDictation({
     ask: dictationAsk,
@@ -368,8 +369,11 @@ const ChatForm = memo(function ChatForm({
     /* Answer mode leaves the run submitting while handing the composer over,
        which is exactly when speech must still reach it: the send button is
        enabled on the same terms. */
-    isSubmitting: isSubmitting && !answerModeActive,
+    isSubmitting: (isSubmitting && !dictationAnswerModeActive) || answerMode.composerLocked,
     filesLoading,
+    /* A dictated question answer is cleared by answer mode only after the
+       resume succeeds. A transient failure must leave the transcript intact. */
+    deferComposerReset: dictationAnswerModeActive,
   });
   const uploadingCount = useMemo(() => {
     let count = 0;

@@ -23,8 +23,8 @@ export const usePopoverZIndex = (): number => {
 };
 
 interface OGDialogProps extends DialogPrimitive.DialogProps {
-  triggerRef?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>;
-  triggerRefs?: React.RefObject<HTMLButtonElement | HTMLInputElement | HTMLDivElement | null>[];
+  triggerRef?: React.RefObject<HTMLElement | null>;
+  triggerRefs?: React.RefObject<HTMLElement | null>[];
 }
 
 const Dialog: React.ForwardRefExoticComponent<OGDialogProps & React.RefAttributes<HTMLDivElement>> =

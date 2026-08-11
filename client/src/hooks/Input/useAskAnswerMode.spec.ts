@@ -62,6 +62,7 @@ describe('useAskAnswerMode', () => {
     );
     expect(result.current.liveAsk).toBe(liveAsk);
     expect(result.current.active).toBe(true);
+    expect(result.current.composerDisabled).toBe(false);
     expect(result.current.popoverVisible).toBe(true);
   });
 
@@ -72,6 +73,7 @@ describe('useAskAnswerMode', () => {
 
     expect(result.current.liveAsk).toBeNull();
     expect(result.current.active).toBe(false);
+    expect(result.current.composerDisabled).toBe(false);
     expect(result.current.popoverVisible).toBe(false);
   });
 
@@ -90,6 +92,7 @@ describe('useAskAnswerMode', () => {
 
     expect(result.current.active).toBe(true);
     expect(result.current.batchMode).toBe(true);
+    expect(result.current.composerDisabled).toBe(true);
     expect(result.current.options).toEqual([]);
     expect(result.current.draftId).toBeNull();
     /** The bounded form owns the answer, so the composer never speaks for it. */
@@ -192,6 +195,7 @@ describe('useAskAnswerMode', () => {
     const { result } = renderHook(() => useAskAnswerMode('conversation-A'));
 
     expect(result.current.submitText('answer from A')).toBe(true);
+    expect(mockResetComposer).not.toHaveBeenCalled();
     finishAnswer?.();
 
     expect(mockResetComposer).toHaveBeenCalledTimes(1);
