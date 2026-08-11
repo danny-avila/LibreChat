@@ -157,11 +157,8 @@ export default function Dropzone({ onFile, isUploading, focusOnMount = false }: 
           'pointer-events-none absolute -inset-x-4 -inset-y-3 z-10 rounded-t-xl',
           'flex items-center justify-center gap-2 text-sm font-medium',
           'transition-opacity duration-200 ease-out motion-reduce:transition-none',
-          /* Alpha modifiers do not work on the `surface-*` tokens: they are
-             plain `var()` colors with no `<alpha-value>`, so `bg-surface-*\/75`
-             computes to fully transparent. Core palette colors take alpha. */
           isDragging
-            ? 'bg-white/70 opacity-100 backdrop-blur-sm dark:bg-black/60'
+            ? 'bg-surface-primary/70 opacity-100 backdrop-blur-sm'
             : 'bg-transparent opacity-0',
         )}
       >

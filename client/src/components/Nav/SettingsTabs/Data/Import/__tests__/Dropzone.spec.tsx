@@ -44,7 +44,8 @@ describe('Dropzone drag and drop', () => {
     const overlay = () => overlayOf(container);
 
     fireEvent.dragEnter(zone, { dataTransfer: transfer() });
-    expect(overlay().className).toContain('opacity-100');
+    expect(overlay()).toHaveClass('bg-surface-primary/70', 'opacity-100');
+    expect(overlay()).not.toHaveClass('bg-surface-overlay/70');
 
     fireEvent.dragEnter(child, { dataTransfer: transfer() });
     fireEvent.dragLeave(child, { dataTransfer: transfer() });

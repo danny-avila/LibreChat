@@ -139,6 +139,20 @@ export class ImportJobStore {
     );
   }
 
+  async patchProgress(
+    userId: string,
+    jobId: string,
+    progress: ImportJob['progress'],
+  ): Promise<ImportJob | null> {
+    return this.withMutationLock<ImportJob | null>(
+      userId,
+      jobId,
+      (writeIfOwned) => this.applyPatch(userId, jobId, { progress }, writeIfOwned),
+      'bounded',
+      () => null,
+    );
+  }
+
   /**
    * Cancels a job and reports the phase it was actually cancelled *from*,
    * read under the same lock as the write. The caller removes the temporary
@@ -212,8 +226,9 @@ export class ImportJobStore {
    * prove it is the only one confirming this job, and starting anyway would
    * restore the duplicate-run race for as long as the store stays degraded.
    * User-facing start and cancel operations return an unavailable result, so
-   * routes can fail closed with a retryable response. Background patches keep
-   * retrying because dropping one can lose progress or terminal details.
+   * routes can fail closed with a retryable response. Required background
+   * state transitions keep retrying, while best-effort progress writes return
+   * without changing the job when the claim is unavailable.
    *
    * A store with no claim helpers is the in-memory fallback, which no second
    * replica can be reading, so `claimed` runs on the in-process lock alone.

@@ -55,7 +55,7 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
           <p className="font-medium">{statusHeading}</p>
 
           {isTerminal && job.phase === 'failed' && job.error != null && (
-            <p className="text-red-500 dark:text-red-400">{job.error}</p>
+            <p className="text-text-destructive">{job.error}</p>
           )}
 
           {isTerminal && job.report && (

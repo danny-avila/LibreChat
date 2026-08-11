@@ -417,16 +417,16 @@ describe('conversation import job API (real router, real Mongo)', () => {
       .post('/api/convos/import')
       .attach('file', bareChatGptExport(), 'bare-export.json')
       .expect(202);
-    const realPatch = ImportJobStore.prototype.patch;
+    const realPatchProgress = ImportJobStore.prototype.patchProgress;
     let injectedFailure = false;
     const patchSpy = jest
-      .spyOn(ImportJobStore.prototype, 'patch')
-      .mockImplementation(function (owner, jobId, patch) {
-        if (!injectedFailure && patch.progress) {
+      .spyOn(ImportJobStore.prototype, 'patchProgress')
+      .mockImplementation(function (owner, jobId, progress) {
+        if (!injectedFailure) {
           injectedFailure = true;
           return Promise.reject(new Error('transient progress cache failure'));
         }
-        return realPatch.call(this, owner, jobId, patch);
+        return realPatchProgress.call(this, owner, jobId, progress);
       });
 
     try {
@@ -439,6 +439,25 @@ describe('conversation import job API (real router, real Mongo)', () => {
       expect(await Conversation.countDocuments({ user: userId })).toBe(1);
     } finally {
       patchSpy.mockRestore();
+    }
+  });
+
+  it('stores the final progress snapshot when every intermediate write is throttled', async () => {
+    const uploaded = await request(app)
+      .post('/api/convos/import')
+      .attach('file', bareChatGptExport(), 'bare-export.json')
+      .expect(202);
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(1);
+
+    try {
+      await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+      const completed = await waitForTerminal(app, uploaded.body.jobId);
+
+      expect(completed.body.phase).toBe('completed');
+      expect(completed.body.progress.conversations).toEqual({ done: 1, total: 1 });
+      expect(completed.body.progress.messages.done).toBeGreaterThan(0);
+    } finally {
+      nowSpy.mockRestore();
     }
   });
 

@@ -458,6 +458,26 @@ describe('ImportJobStore', () => {
         expect((await replicaA.get('u1', jobId))?.phase).toBe('awaiting_confirmation');
       });
 
+      it('returns from a best-effort progress patch when the shared claim is unavailable', async () => {
+        const jobId = await awaitingJob();
+        backing.acquireLock = async () => {
+          throw new Error('Redis unavailable');
+        };
+
+        await expect(
+          replicaA.patchProgress('u1', jobId, {
+            conversations: { done: 1, total: 2 },
+            messages: { done: 3, total: 4 },
+            assets: { done: 5, total: 6 },
+          }),
+        ).resolves.toBeNull();
+        expect((await replicaA.get('u1', jobId))?.progress).toEqual({
+          conversations: { done: 0, total: 0 },
+          messages: { done: 0, total: 0 },
+          assets: { done: 0, total: 0 },
+        });
+      });
+
       it('does not write when the atomic commit reports that ownership was lost', async () => {
         const jobId = await awaitingJob();
         jest.spyOn(backing, 'setIfLockOwned').mockResolvedValueOnce(false);

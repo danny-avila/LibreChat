@@ -542,6 +542,7 @@ async function runImportJob(context, job) {
     });
 
     let lastProgressWrite = 0;
+    let latestProgress = job.progress;
     const report = await runImport({
       filepath: job.filepath,
       userId,
@@ -556,6 +557,7 @@ async function runImportJob(context, job) {
       existingExternalIds: await loadExistingExternalIds(userId, target.source),
       isCancelled: () => importJobs.isCancelled(userId, job.jobId),
       onProgress: async (progress) => {
+        latestProgress = progress;
         /** Throttled because this fires once per conversation and once per
          * asset, and each call is a read and a write against the job store.
          * On a Redis-backed deployment a 10k-conversation import is tens of
@@ -568,7 +570,7 @@ async function runImportJob(context, job) {
         }
         lastProgressWrite = now;
         try {
-          await importJobs.patch(userId, job.jobId, { progress });
+          await importJobs.patchProgress(userId, job.jobId, progress);
         } catch (error) {
           /** Progress is telemetry, not import state. A transient cache error
            * must not abort database or file work that is otherwise healthy. */
@@ -594,12 +596,13 @@ async function runImportJob(context, job) {
      */
     const current = await importJobs.get(userId, job.jobId);
     if (current?.status === 'cancelled') {
-      await importJobs.patch(userId, job.jobId, { report });
+      await importJobs.patch(userId, job.jobId, { report, progress: latestProgress });
       return;
     }
 
     await importJobs.patch(userId, job.jobId, {
       report,
+      progress: latestProgress,
       phase: 'completed',
       status: 'completed',
     });
