@@ -127,7 +127,6 @@ describe('createActivityPhaseWiring', () => {
       pending: false,
     };
     await wiring.hook(batch('tool-1'), new AbortController().signal);
-    parts[0] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } };
 
     parts[3] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } };
     parts[4] = {
@@ -158,6 +157,64 @@ describe('createActivityPhaseWiring', () => {
       activity_start_index: 0,
       activity_count: 2,
     });
+    parts[0] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } };
+    expect(parts.slice(parts[5]?.activity_start_index ?? 5, 5)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tool_call: { id: 'tool-1' } }),
+        expect.objectContaining({ tool_call: { id: 'tool-2' } }),
+      ]),
+    );
+  });
+
+  it('does not claim a visible final answer for a later parent phase', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TEXT, text: 'Earlier final answer', phase: 'final_answer' },
+    ];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Verified the later tool results' })),
+    });
+
+    parts[2] = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Recorded the first later result',
+      tool_call_ids: ['tool-1'],
+      pending: false,
+    };
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    parts[3] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } };
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'final-step',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    expect(parts[4]).toMatchObject({
+      activity_label_type: 'phase',
+      activity_start_index: 1,
+      activity_count: 2,
+    });
+    parts[1] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } };
+    expect(parts.slice(parts[4]?.activity_start_index ?? 4, 4)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tool_call: { id: 'tool-1' } }),
+        expect.objectContaining({ tool_call: { id: 'tool-2' } }),
+      ]),
+    );
   });
 
   it('does not use repeated reasoning to reanchor a missing tool across a phase', async () => {

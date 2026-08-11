@@ -473,9 +473,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     /** Child-label and phase hooks run independently. A child label can claim
      *  its slot before the corresponding tool part reaches the shared content
      *  array, leaving the phase hook with a fallback start index. Re-anchor
-     *  from stable tool ids once the phase closes, when the transcript is
-     *  complete, so an invisible text boundary cannot strand the tool outside
-     *  its parent phase. */
+     *  from stable tool ids when they are available at close; the backward
+     *  scan below claims unresolved leading slots without crossing visible
+     *  answer content. */
     const snapshot = activities.map((activity) => {
       const toolStart = findTrackedToolStart(currentParts, activity);
       return toolStart != null ? { ...activity, startIndex: toolStart } : activity;
@@ -493,7 +493,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       if (
         prior?.type === ContentTypes.STEER ||
         (prior?.type === ContentTypes.ACTIVITY_LABEL && prior.activity_label_type === 'phase') ||
-        (prior?.type === ContentTypes.TEXT && prior.phase === 'final_answer')
+        (prior?.type === ContentTypes.TEXT &&
+          prior.phase === 'final_answer' &&
+          textValue(prior.text).trim().length > 0)
       ) {
         break;
       }
