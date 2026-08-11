@@ -22,6 +22,7 @@ export {
   validateRelativePath,
   inferSkillFileCategory,
   validateSkillFrontmatter,
+  getCanonicalSkillFrontmatterKey,
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
   AUDIT_SCHEMA_VERSION,

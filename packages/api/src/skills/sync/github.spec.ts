@@ -364,6 +364,27 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('preserves unknown frontmatter key casing while canonicalizing recognized keys', async () => {
+    const deps = createDeps({
+      fetchFn: githubFetch(
+        '---\nname: research\ndescription: Research things\nAllowed-Tools:\n  - execute_code\ncustomConfig: camel\ncustomconfig: lower\n---\nBody',
+      ),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        frontmatter: expect.objectContaining({
+          'allowed-tools': ['execute_code'],
+          customConfig: 'camel',
+          customconfig: 'lower',
+        }),
+      }),
+    );
+  });
+
   it('fails duplicate discovered skill names before publishing partial mirrors', async () => {
     const duplicateFetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = input.toString();

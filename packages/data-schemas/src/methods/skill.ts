@@ -268,9 +268,18 @@ const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
   'references',
 ]);
 
+const CANONICAL_FRONTMATTER_KEYS = new Map(
+  Array.from(ALLOWED_FRONTMATTER_KEYS, (key) => [key.toLowerCase(), key]),
+);
+
+export function getCanonicalSkillFrontmatterKey(key: string): string | undefined {
+  return CANONICAL_FRONTMATTER_KEYS.get(key.toLowerCase());
+}
+
 const FRONTMATTER_MAX_STRING = 2000;
 const FRONTMATTER_MAX_ARRAY = 100;
 const FRONTMATTER_MAX_DEPTH = 4;
+const NON_PERSISTABLE_FRONTMATTER_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 type FrontmatterKind = 'string' | 'number' | 'boolean' | 'stringArray';
 
@@ -305,7 +314,23 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isValidFrontmatterKey(key: string): boolean {
-  return !key.includes('\u0000');
+  return !key.includes('\u0000') && !NON_PERSISTABLE_FRONTMATTER_KEYS.has(key);
+}
+
+function containsInvalidFrontmatterKey(value: unknown, depth = 0): boolean {
+  if (depth > FRONTMATTER_MAX_DEPTH) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((nestedValue) => containsInvalidFrontmatterKey(nestedValue, depth + 1));
+  }
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  return Object.entries(value).some(
+    ([key, nestedValue]) =>
+      !isValidFrontmatterKey(key) || containsInvalidFrontmatterKey(nestedValue, depth + 1),
+  );
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -384,7 +409,15 @@ export function validateSkillFrontmatter(frontmatter: unknown): ValidationIssue[
       issues.push({
         field: 'frontmatter',
         code: 'INVALID_KEY',
-        message: 'Frontmatter keys must not contain NUL characters',
+        message: 'Frontmatter keys must be persistable object property names',
+      });
+      continue;
+    }
+    if (containsInvalidFrontmatterKey(value)) {
+      issues.push({
+        field: `frontmatter.${key}`,
+        code: 'INVALID_KEY',
+        message: `"${key}" contains a frontmatter key that cannot be persisted`,
       });
       continue;
     }

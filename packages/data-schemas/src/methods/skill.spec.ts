@@ -13,6 +13,7 @@ import {
   validateSkillName,
   validateSkillDescription,
   validateSkillFrontmatter,
+  getCanonicalSkillFrontmatterKey,
   validateAlwaysApply,
   validateRelativePath,
   inferSkillFileCategory,
@@ -258,6 +259,12 @@ describe('skill validation helpers', () => {
   });
 
   describe('validateSkillFrontmatter', () => {
+    it('canonicalizes recognized keys without rewriting unknown keys', () => {
+      expect(getCanonicalSkillFrontmatterKey('Allowed-Tools')).toBe('allowed-tools');
+      expect(getCanonicalSkillFrontmatterKey('ALWAYSAPPLY')).toBe('alwaysApply');
+      expect(getCanonicalSkillFrontmatterKey('customConfig')).toBeUndefined();
+    });
+
     it('accepts an undefined or empty frontmatter', () => {
       expect(validateSkillFrontmatter(undefined)).toEqual([]);
       expect(validateSkillFrontmatter(null)).toEqual([]);
@@ -318,6 +325,22 @@ describe('skill validation helpers', () => {
         }),
       ]);
       expect(issues.some((i) => i.code === 'UNKNOWN_KEY')).toBe(false);
+    });
+
+    it('rejects object property names that Mongoose cannot persist at any depth', () => {
+      for (const key of ['__proto__', 'constructor', 'prototype']) {
+        const topLevel = validateSkillFrontmatter(Object.fromEntries([[key, 'value']]));
+        const nested = validateSkillFrontmatter({
+          metadata: Object.fromEntries([[key, 'value']]),
+        });
+
+        expect(partitionIssues(topLevel).errors).toEqual([
+          expect.objectContaining({ field: 'frontmatter', code: 'INVALID_KEY' }),
+        ]);
+        expect(partitionIssues(nested).errors).toEqual([
+          expect.objectContaining({ field: 'frontmatter.metadata', code: 'INVALID_KEY' }),
+        ]);
+      }
     });
 
     it('accepts the references key in every shape real SKILL.md files use', () => {

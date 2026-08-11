@@ -1,4 +1,5 @@
 import yaml from 'js-yaml';
+import { getCanonicalSkillFrontmatterKey } from '@librechat/data-schemas';
 
 export type ParsedSkillMarkdown = {
   name: string;
@@ -65,11 +66,14 @@ function stripInlineComment(value: string): string {
 }
 
 function normalizeFrontmatterKeys(frontmatter: Record<string, unknown>): Record<string, unknown> {
-  return Object.entries(frontmatter).reduce<Record<string, unknown>>((acc, [key, value]) => {
-    const normalizedKey = key.toLowerCase();
-    acc[normalizedKey === 'alwaysapply' ? 'alwaysApply' : normalizedKey] = value;
-    return acc;
-  }, {});
+  return Object.entries(frontmatter).reduce<Record<string, unknown>>(
+    (acc, [key, value]) => {
+      const normalizedKey = getCanonicalSkillFrontmatterKey(key) ?? key;
+      acc[normalizedKey] = value;
+      return acc;
+    },
+    Object.create(null) as Record<string, unknown>,
+  );
 }
 
 function parseBoolean(value: unknown, rawValue?: string): boolean | undefined {
