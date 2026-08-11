@@ -470,6 +470,41 @@ describe('Palette', () => {
       expect(mockToggleFavorite).toHaveBeenCalledTimes(1);
     });
 
+    it('exposes named keyboard controls for secondary row actions', async () => {
+      const user = userEvent.setup();
+      const onSelect = jest.fn();
+      const onConfigure = jest.fn();
+      renderPalette({
+        canAttach: false,
+        entries: [
+          entry({
+            key: 'only',
+            label: 'Only Tool',
+            onSelect,
+            modes: [
+              {
+                id: 'configure',
+                label: 'Configure Tool',
+                active: false,
+                icon: <span aria-hidden="true" />,
+                onSelect: onConfigure,
+              },
+            ],
+          }),
+        ],
+      });
+
+      const configure = screen.getByRole('button', { name: 'Configure Tool' });
+      expect(configure.closest('[role="gridcell"]')).not.toHaveAttribute('id');
+
+      await waitFor(() => expect(screen.getByTestId('composer-palette-search')).toHaveFocus());
+      await user.tab();
+      expect(configure).toHaveFocus();
+      await user.keyboard(' ');
+      expect(onConfigure).toHaveBeenCalledTimes(1);
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
     it('exposes a touch-visible named favorite action outside the active gridcell', async () => {
       const user = userEvent.setup();
       const onSelect = jest.fn();
