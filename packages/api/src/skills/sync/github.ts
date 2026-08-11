@@ -475,6 +475,42 @@ function redactErrorText(value: string): string {
   return value.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]');
 }
 
+function escapeDiagnosticControlCharacters(value: string): string {
+  let escaped = '';
+  for (const character of value) {
+    const codePoint = character.charCodeAt(0);
+    if (
+      !(
+        (codePoint >= 0 && codePoint <= 0x1f) ||
+        (codePoint >= 0x7f && codePoint <= 0x9f) ||
+        codePoint === 0x2028 ||
+        codePoint === 0x2029
+      )
+    ) {
+      escaped += character;
+      continue;
+    }
+    switch (character) {
+      case '\n':
+        escaped += '\\n';
+        break;
+      case '\r':
+        escaped += '\\r';
+        break;
+      case '\t':
+        escaped += '\\t';
+        break;
+      default:
+        escaped += `\\u${codePoint.toString(16).padStart(4, '0')}`;
+    }
+  }
+  return escaped;
+}
+
+function sanitizeDiagnosticText(value: string): string {
+  return escapeDiagnosticControlCharacters(redactErrorText(value));
+}
+
 function truncateText(value: string, maxLength: number): string {
   return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
 }
@@ -496,9 +532,12 @@ function summarizeValidationIssues(issues: unknown): string | undefined {
     ) {
       continue;
     }
-    const field = truncateText(redactErrorText(issue.field), VALIDATION_ISSUE_FIELD_MAX);
-    const code = truncateText(redactErrorText(issue.code), VALIDATION_ISSUE_CODE_MAX);
-    const message = truncateText(redactErrorText(issue.message), VALIDATION_ISSUE_MESSAGE_MAX);
+    const field = truncateText(sanitizeDiagnosticText(issue.field), VALIDATION_ISSUE_FIELD_MAX);
+    const code = truncateText(sanitizeDiagnosticText(issue.code), VALIDATION_ISSUE_CODE_MAX);
+    const message = truncateText(
+      sanitizeDiagnosticText(issue.message),
+      VALIDATION_ISSUE_MESSAGE_MAX,
+    );
     summaries.push(`${field} [${code}]: ${message}`);
   }
   if (summaries.length === 0) {
@@ -512,10 +551,10 @@ function summarizeValidationIssues(issues: unknown): string | undefined {
 
 function sanitizeError(error: unknown): { code: string; message: string } {
   if (error instanceof SkillSyncError) {
-    return { code: error.code, message: error.message };
+    return { code: error.code, message: sanitizeDiagnosticText(error.message) };
   }
   if (error instanceof Error) {
-    const message = redactErrorText(error.message);
+    const message = sanitizeDiagnosticText(error.message);
     const validationError = error as Error & { code?: unknown; issues?: unknown };
     if (validationError.code === 'SKILL_VALIDATION_FAILED') {
       const issueSummary = summarizeValidationIssues(validationError.issues);
@@ -570,15 +609,23 @@ function isSourceFatalError(error: unknown): boolean {
 }
 
 function truncateSkipMessage(message: string): string {
-  return message.length > SKIP_MESSAGE_MAX ? `${message.slice(0, SKIP_MESSAGE_MAX - 1)}…` : message;
+  const sanitized = escapeDiagnosticControlCharacters(message);
+  return sanitized.length > SKIP_MESSAGE_MAX
+    ? `${sanitized.slice(0, SKIP_MESSAGE_MAX - 1)}…`
+    : sanitized;
 }
 
 function truncateSkipPath(path: string): string {
-  return path.length > SKIP_PATH_MAX ? `${path.slice(0, SKIP_PATH_MAX - 1)}…` : path;
+  const sanitized = escapeDiagnosticControlCharacters(path);
+  return sanitized.length > SKIP_PATH_MAX ? `${sanitized.slice(0, SKIP_PATH_MAX - 1)}…` : sanitized;
 }
 
 function truncateSkipName(name: string | undefined): string | undefined {
-  return name && name.length > SKIP_NAME_MAX ? `${name.slice(0, SKIP_NAME_MAX - 1)}…` : name;
+  if (!name) {
+    return name;
+  }
+  const sanitized = escapeDiagnosticControlCharacters(name);
+  return sanitized.length > SKIP_NAME_MAX ? `${sanitized.slice(0, SKIP_NAME_MAX - 1)}…` : sanitized;
 }
 
 function buildGitHubHeaders(token: string): HeadersInit {
@@ -1154,17 +1201,23 @@ async function cleanupStoredFiles(params: {
   deps: GitHubSkillSyncDeps;
   files: StoredSkillFileRef[];
   logMessage: string;
+  throwOnError?: boolean;
 }): Promise<void> {
   const seen = new Set<string>();
+  const cleanupErrors: unknown[] = [];
   for (const file of params.files) {
     const key = getStoredFileKey(file);
     if (seen.has(key)) {
       continue;
     }
     seen.add(key);
-    await cleanupFile(params.deps, file).catch((cleanupError) =>
-      logger.error(params.logMessage, cleanupError),
-    );
+    await cleanupFile(params.deps, file).catch((cleanupError) => {
+      cleanupErrors.push(cleanupError);
+      logger.error(params.logMessage, cleanupError);
+    });
+  }
+  if (params.throwOnError && cleanupErrors.length > 0) {
+    throw cleanupErrors[0];
   }
 }
 
@@ -1191,6 +1244,7 @@ async function restoreExistingSkillFiles(params: {
     deps,
     files: savedFiles,
     logMessage: '[GitHubSkillSync] Failed to clean up rolled-back synced file:',
+    throwOnError: true,
   });
 }
 
@@ -1524,13 +1578,18 @@ async function deleteSyncedSkill(
 ): Promise<number> {
   const files = await deps.listSkillFiles(skill._id);
   let deletedFiles = 0;
+  const cleanupErrors: unknown[] = [];
   for (const file of files) {
-    await cleanupFile(deps, file).catch((cleanupError) =>
-      logger.error('[GitHubSkillSync] Failed to clean up mirrored skill file:', cleanupError),
-    );
+    await cleanupFile(deps, file).catch((cleanupError) => {
+      cleanupErrors.push(cleanupError);
+      logger.error('[GitHubSkillSync] Failed to clean up mirrored skill file:', cleanupError);
+    });
     deletedFiles++;
   }
   await deps.deleteSkill(skill._id.toString());
+  if (cleanupErrors.length > 0) {
+    throw cleanupErrors[0];
+  }
   return deletedFiles;
 }
 

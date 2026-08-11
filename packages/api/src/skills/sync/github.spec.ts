@@ -10,6 +10,7 @@ import type {
   SkillSyncStatusInput,
   UpdateSkillInput,
   UpdateSkillResult,
+  UpsertSkillFileInput,
 } from '@librechat/data-schemas';
 import type { GitHubSkillSyncDeps } from './github';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
@@ -573,6 +574,105 @@ describe('createGitHubSkillSyncRunner', () => {
     const statusCalls = (deps.upsertStatus as jest.Mock).mock.calls;
     const status = statusCalls[statusCalls.length - 1]?.[0] as SkillSyncStatusInput;
     expect(status.skippedSkills?.[0].path).toHaveLength(500);
+  });
+
+  it('escapes control characters in skipped skill diagnostics', async () => {
+    const maliciousDirectory = 'broken\n\x1b[31mforged\u2028line\u2029paragraph';
+    const skillMarkdown = '---\nname: broken\ndescription: Broken skill\n---\nBody';
+    const fetchFn = jest.fn(async (input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/commits/')) {
+        return response({ sha: 'commit-sha', commit: { tree: { sha: 'tree-sha' } } });
+      }
+      if (url.includes('/git/trees/tree-sha')) {
+        return response({
+          sha: 'tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'skills',
+              mode: '040000',
+              type: 'tree',
+              sha: 'skills-tree-sha',
+              url: 'https://api.github.test/tree/skills',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/trees/skills-tree-sha')) {
+        return response({
+          sha: 'skills-tree-sha',
+          truncated: false,
+          tree: [
+            {
+              path: 'healthy/SKILL.md',
+              mode: '100644',
+              type: 'blob',
+              sha: 'healthy-skill-sha',
+              size: Buffer.byteLength(skillMarkdown),
+              url: 'https://api.github.test/blob/healthy-skill',
+            },
+            {
+              path: `${maliciousDirectory}/SKILL.md`,
+              mode: '100644',
+              type: 'blob',
+              sha: 'malicious-skill-sha',
+              size: Buffer.byteLength(skillMarkdown),
+              url: 'https://api.github.test/blob/malicious-skill',
+            },
+          ],
+        });
+      }
+      if (url.includes('/git/blobs/malicious-skill-sha')) {
+        return response(blob(skillMarkdown));
+      }
+      if (url.includes('/git/blobs/healthy-skill-sha')) {
+        return response(blob('---\nname: healthy\ndescription: Healthy skill\n---\nHealthy body'));
+      }
+      return response({ message: 'not found' }, 404);
+    }) as unknown as typeof fetch;
+    const deps = createDeps({
+      fetchFn,
+      createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+        if (input.name === 'broken') {
+          throw new Error('validation failed\n\x1b[2Jforged\u2028line\u2029paragraph');
+        }
+        return { skill: makeSkill(input), warnings: [] };
+      }),
+    });
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    try {
+      const result = await createGitHubSkillSyncRunner(deps).runOnce();
+      const warning = warn.mock.calls
+        .map(([message]) => String(message))
+        .find((message) => message.includes(' skipped "'));
+      const statusCalls = (deps.upsertStatus as jest.Mock).mock.calls;
+      const status = statusCalls[statusCalls.length - 1]?.[0] as SkillSyncStatusInput;
+
+      expect(result.status).toBe('completed');
+      expect(warning).toContain('skills/broken\\n\\u001b[31mforged\\u2028line\\u2029paragraph');
+      expect(warning).toContain('validation failed\\n\\u001b[2Jforged\\u2028line\\u2029paragraph');
+      expect(
+        [...(warning ?? '')].every((character) => {
+          const codePoint = character.charCodeAt(0);
+          return !(
+            (codePoint >= 0 && codePoint <= 0x1f) ||
+            (codePoint >= 0x7f && codePoint <= 0x9f) ||
+            codePoint === 0x2028 ||
+            codePoint === 0x2029
+          );
+        }),
+      ).toBe(true);
+      expect(status.skippedSkills?.[0]).toEqual(
+        expect.objectContaining({
+          path: 'skills/broken\\n\\u001b[31mforged\\u2028line\\u2029paragraph',
+          errorMessage: 'validation failed\\n\\u001b[2Jforged\\u2028line\\u2029paragraph',
+        }),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('bounds and caps per-skill warning logs for a pathological source', async () => {
@@ -2279,6 +2379,42 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('fails the source when rollback cannot remove a stored skill file', async () => {
+    const storedFiles: Array<ISkillFile & { _id: Types.ObjectId }> = [];
+    const deleteFile = jest.fn(async () => {
+      throw new Error('storage cleanup unavailable');
+    });
+    const deleteSkill = jest.fn(async () => ({ deleted: true }));
+    const deps = createDeps({
+      listSkillFiles: jest.fn(async () => storedFiles),
+      upsertSkillFile: jest.fn(async (input: UpsertSkillFileInput) => {
+        const file = { ...input, _id: new Types.ObjectId() } as ISkillFile & {
+          _id: Types.ObjectId;
+        };
+        storedFiles.push(file);
+        return file;
+      }),
+      grantPermission: jest.fn(async () => {
+        throw new Error('permission unavailable');
+      }),
+      deleteFile,
+      deleteSkill,
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deleteFile).toHaveBeenCalledTimes(1);
+    expect(deleteSkill).toHaveBeenCalledTimes(1);
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SYNC_ROLLBACK_FAILED',
+        errorMessage: 'Rollback failed after: permission unavailable',
+      }),
+    );
+  });
+
   it('keeps a moved skill mirror when the name it moves into turns out to be duplicated', async () => {
     /* Both discovered paths claim the same name, so neither publishes. The
        mirror the move would have reused is still live and must survive. */
@@ -2707,6 +2843,62 @@ describe('createGitHubSkillSyncRunner', () => {
     );
     expect(deps.deleteFile).not.toHaveBeenCalledWith(
       expect.objectContaining({ filepath: oldFile.filepath }),
+    );
+  });
+
+  it('fails the source when existing-skill rollback cannot remove replacement storage', async () => {
+    const existing = makeSkill({
+      name: 'research',
+      description: 'Old description',
+      body: 'Old body',
+      author: new Types.ObjectId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/research',
+        owner: 'LibreChat',
+        repo: 'skills',
+        ref: 'main',
+        skillPath: 'skills/research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const oldFile = makeSkillFile(existing);
+    const deleteFile = jest.fn(async () => {
+      throw new Error('replacement cleanup unavailable');
+    });
+    const deps = createDeps({
+      findSkillBySourceIdentity: jest.fn(async () => existing),
+      getSkillById: jest.fn(async () => ({ ...existing, version: existing.version + 1 })),
+      getSkillFileByPath: jest.fn(async () => oldFile),
+      listSkillFiles: jest.fn(async () => [oldFile]),
+      upsertSkillFile: jest.fn(async (row) => ({
+        ...oldFile,
+        ...row,
+        _id: oldFile._id,
+        skillId: row.skillId as Types.ObjectId,
+      })),
+      saveBuffer: jest.fn(async () => ({
+        filepath: '/uploads/new-file-id__run.sh',
+        source: 'local',
+      })),
+      deleteFile,
+      updateSkill: jest.fn(async () => ({ status: 'conflict' as const, current: existing })),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deleteFile).toHaveBeenCalledWith(
+      expect.objectContaining({ filepath: '/uploads/new-file-id__run.sh' }),
+    );
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SYNC_ROLLBACK_FAILED',
+        errorMessage: 'Rollback failed after: Skill "research" changed during sync',
+      }),
     );
   });
 

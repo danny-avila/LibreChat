@@ -113,6 +113,15 @@ function isCredentialError(status: ISkillSyncStatus): boolean {
   );
 }
 
+function isPromotedSkippedSkillError(status: ISkillSyncStatus): boolean {
+  const firstSkippedSkill = status.skippedSkills?.[0];
+  return Boolean(
+    firstSkippedSkill &&
+      status.errorCode === firstSkippedSkill.errorCode &&
+      status.errorMessage === firstSkippedSkill.errorMessage,
+  );
+}
+
 function serializeErrorMessage(
   status: ISkillSyncStatus,
   { includeCredentialMetadata }: { includeCredentialMetadata: boolean },
@@ -123,7 +132,7 @@ function serializeErrorMessage(
   if (isCredentialError(status)) {
     return 'GitHub skill sync credentials are not available';
   }
-  if (status.skippedSkillCount > 0) {
+  if (isPromotedSkippedSkillError(status)) {
     return 'One or more GitHub skills could not be synchronized';
   }
   return status.errorMessage;

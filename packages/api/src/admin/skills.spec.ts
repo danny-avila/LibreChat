@@ -259,7 +259,7 @@ describe('createAdminSkillsSyncHandlers', () => {
   it('redacts promoted skipped-skill paths from tenant-scoped status reads', async () => {
     const { handlers } = createHandlers({
       statusErrorCode: 'SKILL_PARSE_FAILED',
-      statusErrorMessage: 'skills/private/SKILL.md: malformed frontmatter',
+      statusErrorMessage: 'skills/broken/SKILL.md: malformed frontmatter',
     });
     const res = createResponse();
 
@@ -277,6 +277,34 @@ describe('createAdminSkillsSyncHandlers', () => {
           expect.objectContaining({
             errorCode: 'SKILL_PARSE_FAILED',
             errorMessage: 'One or more GitHub skills could not be synchronized',
+            skippedSkills: undefined,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('preserves a fatal source error that follows an earlier skipped skill', async () => {
+    const { handlers } = createHandlers({
+      statusErrorCode: 'GITHUB_RATE_LIMITED',
+      statusErrorMessage: 'GitHub request failed with HTTP 403',
+    });
+    const res = createResponse();
+
+    await handlers.getSyncStatus(
+      {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        skillSyncCanReadCredentials: false,
+      } as never,
+      res,
+    );
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [
+          expect.objectContaining({
+            errorCode: 'GITHUB_RATE_LIMITED',
+            errorMessage: 'GitHub request failed with HTTP 403',
             skippedSkills: undefined,
           }),
         ],
