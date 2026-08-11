@@ -51,7 +51,8 @@ router.get('/', async (req, res) => {
         { conversationId, user },
         { sortField, sortOrder, limit: pageSize, cursor },
       );
-    } else if (search) {
+    } else if (search && String(search).trim()) {
+      /** Whitespace-only is "not a search", exactly as the convo and share routes treat it. */
       /**
        * The search branch lives in the route, not in the persistence method: the
        * data-schemas package cannot reach the search module, so it takes resolved

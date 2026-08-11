@@ -27,7 +27,7 @@ import {
   CANDIDATE_CAP,
   CURSOR_VERSION,
   DEFAULT_EMBEDDING_SPACE,
-  MIN_QUERY_LENGTH,
+  MIN_LEXICAL_QUERY_LENGTH,
   TARGET_KIND,
 } from './constants';
 import { runLexicalArms, runVectorArmOrNull, shouldRunVectorArm } from './arms';
@@ -206,7 +206,16 @@ export class PostgresChatSearch implements ChatSearch {
      */
     const limit = Math.max(1, Math.min(request.limit, CANDIDATE_CAP));
 
-    if (query.length < MIN_QUERY_LENGTH) {
+    /**
+     * Only the lexical floor gates the whole search, and it is deliberately
+     * lower than the vector arm's: two characters are a complete query in CJK
+     * and a serviceable prefix anywhere (`ai`, `k8`), and the exact and FTS
+     * arms serve them fine. `MeiliChatSearch` — the other implementation of
+     * this seam — has no gate at all, so a higher floor here silently loses
+     * queries a deployment served yesterday. The vector arm keeps its own
+     * higher threshold in `shouldRunVectorArm`.
+     */
+    if (query.length < MIN_LEXICAL_QUERY_LENGTH) {
       return { hits: [], nextCursor: null, degradations: [] };
     }
 
@@ -247,18 +256,32 @@ export class PostgresChatSearch implements ChatSearch {
     }
 
     const snapshotId = newSnapshotId();
-    await this.snapshots.set(
-      snapshotId,
-      {
-        tenantId: scope.tenantId,
-        userId: scope.userId,
-        target: request.target,
-        queryHash,
-        recordIds: hits.map((hit) => hit.recordId),
-        createdAt: Date.now(),
-      },
-      SNAPSHOT_TTL_MS,
-    );
+    try {
+      await this.snapshots.set(
+        snapshotId,
+        {
+          tenantId: scope.tenantId,
+          userId: scope.userId,
+          target: request.target,
+          queryHash,
+          recordIds: hits.map((hit) => hit.recordId),
+          createdAt: Date.now(),
+        },
+        SNAPSHOT_TTL_MS,
+      );
+    } catch (error) {
+      /**
+       * The store is Redis under multi-pod deployments, and a Redis blip must
+       * not turn results already in hand into "no results": the page is served
+       * without a cursor, which is exactly what a search that fit in one page
+       * returns. Misses are handled; rejections must not be louder than misses.
+       */
+      logger.warn(
+        '[chatSearch] snapshot store write failed; serving this page without a cursor',
+        error,
+      );
+      return { hits: toPublicHits(page), nextCursor: null, degradations };
+    }
 
     return {
       hits: toPublicHits(page),
@@ -284,7 +307,14 @@ export class PostgresChatSearch implements ChatSearch {
     queryHash: string,
     limit: number,
   ): Promise<ChatSearchResult | null> {
-    const stored = await this.snapshots.get(cursor.snapshotId);
+    let stored: Awaited<ReturnType<SnapshotStore['get']>>;
+    try {
+      stored = await this.snapshots.get(cursor.snapshotId);
+    } catch (error) {
+      /** A store rejection is a miss, not an error: the caller re-runs the search. */
+      logger.warn('[chatSearch] snapshot store read failed; restarting pagination', error);
+      return null;
+    }
     const accepted = acceptSnapshot(stored, scope, queryHash);
     if (!accepted.ok) {
       return null;
@@ -304,7 +334,13 @@ export class PostgresChatSearch implements ChatSearch {
      * every page is what keeps a record deleted, expired or made temporary since
      * page one from being served — the reject list is applied per page, not once.
      */
-    const rows = await this.readSnapshotSlice(scope, request.target, slice, request.filters);
+    const rows = await this.readSnapshotSlice(
+      scope,
+      request.target,
+      slice,
+      request.filters,
+      offset,
+    );
     const exhausted = offset + limit >= accepted.snapshot.recordIds.length;
 
     return {
@@ -329,6 +365,7 @@ export class PostgresChatSearch implements ChatSearch {
     target: SearchTarget,
     recordIds: readonly string[],
     filters: SearchFilters | undefined,
+    offset: number,
   ): Promise<readonly ChatSearchHit[]> {
     const kind = TARGET_KIND[target];
     return withScope(this.deps.pool, scope, async (client) => {
@@ -351,8 +388,12 @@ export class PostgresChatSearch implements ChatSearch {
       return rows.map((row) => ({
         recordId: row.record_id,
         conversationId: row.conversation_id ?? '',
-        /** Rank position within the frozen list; the fused score is not re-derived. */
-        score: 1 / (1 + Number(row.position)),
+        /**
+         * Rank position within the whole frozen list — `ordinality` restarts at
+         * 1 per slice, so the page offset is added back or every page's scores
+         * would restart on page one's scale. The fused score is not re-derived.
+         */
+        score: 1 / (offset + Number(row.position)),
         source: 'postgres' as const,
       }));
     });

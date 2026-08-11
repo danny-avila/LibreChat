@@ -48,14 +48,16 @@ export const CANDIDATE_CAP = 200;
 /** The vector arm does not engage below this normalized query length. */
 export const MIN_QUERY_LENGTH = 3;
 
+/**
+ * The floor for the search as a whole, deliberately below the vector arm's:
+ * two characters are a complete word in CJK and a serviceable prefix anywhere,
+ * and the lexical arms serve them fine. A single character buys mostly noise
+ * for a table scan's worth of ILIKE work.
+ */
+export const MIN_LEXICAL_QUERY_LENGTH = 2;
+
 export const TARGET_KIND: Readonly<Record<SearchTarget, SearchKind>> = Object.freeze({
   messages: 'message',
   conversations: 'conversation',
   'shared-links': 'shared-link',
-});
-
-export const KIND_TARGET: Readonly<Record<SearchKind, SearchTarget>> = Object.freeze({
-  message: 'messages',
-  conversation: 'conversations',
-  'shared-link': 'shared-links',
 });

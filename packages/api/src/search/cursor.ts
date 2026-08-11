@@ -2,7 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import type { Scope } from '@librechat/data-schemas';
 import type Keyv from 'keyv';
-import type { SearchTarget, SortDirection, SortField } from './types';
+import type { SearchFilters, SearchTarget } from './types';
 import { CURSOR_VERSION } from './constants';
 
 /**
@@ -115,14 +115,32 @@ export function decodeCursor<T extends SnapshotCursor>(
   }
 }
 
-/** Normalized so the same search re-issued produces the same snapshot key. */
+/**
+ * Normalized so the same search re-issued produces the same snapshot key —
+ * and only the same search. Every filter that changes which records the arms
+ * admit is part of the key: a cursor minted under one filter set must not be
+ * accepted for another, or a stale frozen list is served and the per-page
+ * re-filtering yields near-empty pages under a live cursor. Separators are
+ * written as escapes, never as literal control bytes — see `hash.ts` for why.
+ */
 export function hashQuery(
   query: string,
   target: SearchTarget,
-  filters: Readonly<{ sort?: SortField; direction?: SortDirection }> = {},
+  filters: SearchFilters = {},
 ): string {
+  const tags = [...(filters.tags ?? [])].sort().join('\u001e');
   return createHash('sha256')
-    .update(`${target}${query}${filters.sort ?? ''}${filters.direction ?? ''}`)
+    .update(
+      [
+        target,
+        query,
+        filters.archived === undefined ? '' : String(filters.archived),
+        tags,
+        filters.projectId ?? '',
+        filters.sort ?? '',
+        filters.direction ?? '',
+      ].join('\u001f'),
+    )
     .digest('base64url');
 }
 

@@ -1,8 +1,8 @@
 import Keyv from 'keyv';
 import { createScope } from '@librechat/data-schemas';
 import type { Scope } from '@librechat/data-schemas';
+import type { Snapshot, SnapshotStore } from './cursor';
 import type { SearchPool } from './types';
-import type { Snapshot } from './cursor';
 import {
   hashQuery,
   decodeCursor,
@@ -134,15 +134,31 @@ describePg('PostgresChatSearch', () => {
     }
   });
 
-  it('serves nothing for a query below the minimum length', async () => {
+  it('serves nothing for a query below the lexical floor', async () => {
     const result = await search().search({
       target: 'messages',
       scope: ALICE,
-      query: 'ab',
+      query: 'a',
       limit: 5,
     });
     expect(result.hits).toEqual([]);
     expect(result.nextCursor).toBeNull();
+  });
+
+  /**
+   * Two characters are a complete word in CJK and a serviceable prefix anywhere
+   * — and the other implementation of this seam has no floor at all, so a
+   * higher one here silently loses queries a Meilisearch deployment served
+   * yesterday. Only the vector arm keeps its own higher threshold.
+   */
+  it('serves lexical hits for a two-character query', async () => {
+    const result = await search().search({
+      target: 'messages',
+      scope: ALICE,
+      query: 'qu',
+      limit: 5,
+    });
+    expect(result.hits.length).toBeGreaterThan(0);
   });
 
   describe('snapshot pagination', () => {
@@ -399,6 +415,100 @@ describePg('PostgresChatSearch', () => {
           WHERE tenant_id = $1 AND user_id = $2 AND kind = 'message' AND record_id = $3`,
         [ALICE.tenantId, ALICE.userId, doomed],
       );
+    });
+
+    /**
+     * The filter set is part of the snapshot key: `archived`, `tags` and
+     * `projectId` change which records the arms admit, so a cursor minted
+     * under one filter set must not page another's frozen list — the per-page
+     * re-filtering would quietly serve near-empty pages under a live cursor.
+     */
+    it('refuses a cursor minted under different filters', async () => {
+      const chat = search();
+      const first = await chat.search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 5,
+      });
+      expect(first.nextCursor).not.toBeNull();
+
+      const crossed = await chat.search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 5,
+        cursor: first.nextCursor!,
+        filters: { archived: true },
+      });
+
+      /**
+       * Restarted, not page two: nothing here is archived, so a fresh run
+       * matches nothing and — decisively — mints no cursor, where the stale
+       * frozen list still had pages left to hand out.
+       */
+      expect(crossed.hits).toEqual([]);
+      expect(crossed.nextCursor).toBeNull();
+    });
+  });
+
+  describe('snapshot store resilience', () => {
+    const chatWith = (snapshots: SnapshotStore) =>
+      new PostgresChatSearch({ pool, resolveScope: () => scope, cursorSecret: SECRET, snapshots });
+
+    /**
+     * The store is Redis under multi-pod deployments. A Redis blip must not
+     * turn results already in hand into "no results" — before this, a search
+     * that fit in one page survived the blip while one with more matches
+     * returned empty, which is exactly backwards.
+     */
+    it('serves the page cursorless when the snapshot store write fails', async () => {
+      const failingWrite: SnapshotStore = {
+        get: async () => null,
+        set: async () => {
+          throw new Error('redis unavailable');
+        },
+      };
+
+      const result = await chatWith(failingWrite).search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 5,
+      });
+
+      expect(result.hits).toHaveLength(5);
+      expect(result.nextCursor).toBeNull();
+    });
+
+    it('restarts pagination when the snapshot store read fails', async () => {
+      const memory = createMemorySnapshotStore();
+      const first = await chatWith(memory).search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 5,
+      });
+      expect(first.nextCursor).not.toBeNull();
+
+      const failingRead: SnapshotStore = {
+        get: async () => {
+          throw new Error('redis unavailable');
+        },
+        set: (snapshotId, snapshot, ttlMs) => memory.set(snapshotId, snapshot, ttlMs),
+      };
+
+      /** A store rejection is a miss: page one again, fresh cursor, no error. */
+      const second = await chatWith(failingRead).search({
+        target: 'messages',
+        scope: ALICE,
+        query: 'quarterly',
+        limit: 5,
+        cursor: first.nextCursor!,
+      });
+
+      expect(second.hits.map((hit) => hit.recordId)).toEqual(first.hits.map((hit) => hit.recordId));
+      expect(second.nextCursor).not.toBeNull();
     });
   });
 

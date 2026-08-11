@@ -11,9 +11,10 @@ const { CANDIDATE_CAP } = require('@librechat/api');
  * externally resolved candidate ids and own only filtering, ordering and
  * pagination over the primary store.
  *
- * Every helper returns `undefined` for "not a search" and `[]` for "searched,
- * matched nothing" — the distinction the methods rely on to tell an unfiltered
- * listing from an empty result.
+ * The routes own the "not a search" / "searched, matched nothing" distinction:
+ * they pass `undefined` to the methods for the former and this adapter's `[]`
+ * for the latter, which is what lets a method tell an unfiltered listing from
+ * an empty result.
  */
 
 /** Set by the boot wiring once chat search is configured. */
@@ -66,6 +67,19 @@ async function resolveCandidates(target, query, options = {}) {
       cursor: options.cursor,
       filters: options.filters,
     });
+
+    if (result.degradations?.length) {
+      /**
+       * The one place every search flows through, so the one place a degraded
+       * arm is visible at all — the routes never read `degradations`, and a
+       * vector arm that silently contributes nothing looks exactly like one
+       * that matched nothing. Debug level: this repeats per search, not per
+       * incident.
+       */
+      logger.debug(
+        `[searchCandidates] degraded search (${target}): ${result.degradations.join(', ')}`,
+      );
+    }
 
     const recordIds = [];
     const conversationIds = [];
