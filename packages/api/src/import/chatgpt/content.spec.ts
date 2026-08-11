@@ -1,4 +1,4 @@
-import type { ChatGptMessage, ImportedAsset } from '~/import/types';
+import type { ChatGptMessage, ChatGptPart, ImportedAsset } from '~/import/types';
 import { collectAssetPointers, convertContent } from './content';
 
 function message(content: ChatGptMessage['content']): ChatGptMessage {
@@ -184,7 +184,7 @@ describe('collectAssetPointers', () => {
       message({
         content_type: 'multimodal_text',
         parts: [
-          { content_type: 'image_asset_pointer' },
+          { content_type: 'image_asset_pointer' } as unknown as ChatGptPart,
           { content_type: 'audio_asset_pointer', asset_pointer: '' },
         ],
       }),
