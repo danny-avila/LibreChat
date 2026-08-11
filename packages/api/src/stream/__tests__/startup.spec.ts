@@ -877,7 +877,10 @@ describe('GenerationJobManager startup telemetry', () => {
 
       await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
       expect(predecessorError).not.toHaveBeenCalled();
-      expect(owner.getRuntimeStats().runtimeStateSize).toBe(1);
+      expect(owner.getRuntimeStats()).toMatchObject({
+        runtimeStateSize: 0,
+        fencedRuntimeRetirements: 0,
+      });
 
       await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
       expect(predecessorError).not.toHaveBeenCalled();
@@ -1130,6 +1133,7 @@ describe('GenerationJobManager startup telemetry', () => {
     job.emitter.on('allSubscribersLeft', onAllSubscribersLeft);
     const onError = jest.fn();
     const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    await jest.advanceTimersByTimeAsync(0);
     getJob.mockClear();
     clearContentState.mockClear();
     let signalLookupStarted: (() => void) | undefined;
@@ -1272,6 +1276,7 @@ describe('GenerationJobManager startup telemetry', () => {
     const oldJob = await manager.createJob(streamId, 'user-1', 'conversation-1');
     const oldError = jest.fn();
     const oldSubscription = await manager.subscribe(streamId, () => undefined, undefined, oldError);
+    await jest.advanceTimersByTimeAsync(0);
 
     try {
       await manager.emitChunk(streamId, {
@@ -1323,6 +1328,7 @@ describe('GenerationJobManager startup telemetry', () => {
     const oldJob = await manager.createJob(streamId, 'user-1', 'conversation-1');
     const oldError = jest.fn();
     const oldSubscription = await manager.subscribe(streamId, () => undefined, undefined, oldError);
+    await jest.advanceTimersByTimeAsync(0);
     const originalGetJob = oldJobStore.getJob.bind(oldJobStore);
     let signalLookupStarted: (() => void) | undefined;
     const lookupStarted = new Promise<void>((resolve) => {
@@ -1396,6 +1402,7 @@ describe('GenerationJobManager startup telemetry', () => {
     const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
     const onError = jest.fn();
     const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    await jest.advanceTimersByTimeAsync(0);
 
     try {
       await manager.emitChunk(streamId, {
