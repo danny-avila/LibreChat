@@ -11,12 +11,15 @@ import type {
   WorkerMessage,
   WorkerRequest,
 } from './protocol';
+import { isAbort, isParseFailure, isTransport, messageOf } from './classify';
 import { assertManifestIsCallable, compiledClients } from './manifest';
 import {
   MODEL_ERROR_MESSAGE,
   PARSE_ERROR_MESSAGE,
   TRANSPORT_FAILED_MESSAGE,
   UNCOMPILED_CLIENT_MESSAGE,
+  toChunkCandidate,
+  toWireToolSelection,
 } from './protocol';
 
 /**
@@ -51,68 +54,6 @@ const post = (message: WorkerMessage): void => {
   port.postMessage(message);
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
-const messageOf = (error: unknown): string => {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return isRecord(error) && typeof error.message === 'string' ? error.message : String(error);
-};
-
-const classNameOf = (error: unknown): string =>
-  isRecord(error) && typeof error.className === 'string' ? error.className : '';
-
-/**
- * `baml.errors.LlmClient` straddles the line: it covers both a genuinely failed
- * request AND a request that succeeded but whose body did not match the return
- * type. The second is the model writing something unparseable — a per-turn
- * failure, not a transport fault — and rejecting for it would take down a turn
- * the contract says should surface as a value. The class name alone cannot
- * separate them, so the coercion shape is matched.
- */
-const TRANSPORT_CLASSES = new Set([
-  'baml.errors.Io',
-  'baml.errors.LlmClient',
-  'baml.errors.Timeout',
-]);
-
-/**
- * Retry exhaustion arrives as `baml.errors.DevOther` — the orchestrator's own
- * catch-all — rather than as the underlying `LlmClient` error, so the class name
- * alone would misfile a provider outage as a model failure. The orchestrator's
- * message is the discriminator, matched as a literal substring: no `RegExp` is
- * ever constructed from runtime text here.
- */
-const ORCHESTRATION_EXHAUSTED = 'All orchestration steps failed';
-
-/**
- * A literal test, never a constructed one: building a `RegExp` from a client or
- * model name would let a name containing `[` make the classifier itself throw.
- */
-const COERCION_FAILURE = /Expected .+, got /;
-
-const isAbort = (error: unknown, ctx: BamlCallContext | null): boolean => {
-  if (ctx?.aborted === true) {
-    return true;
-  }
-  const name = error instanceof Error ? error.name : '';
-  return name === 'AbortError' || classNameOf(error).includes('Cancelled');
-};
-
-const isParseFailure = (error: unknown): boolean => COERCION_FAILURE.test(messageOf(error));
-
-const isTransport = (error: unknown): boolean => {
-  if (isParseFailure(error)) {
-    return false;
-  }
-  return (
-    TRANSPORT_CLASSES.has(classNameOf(error)) ||
-    messageOf(error).includes(ORCHESTRATION_EXHAUSTED)
-  );
-};
-
 const failure = (code: WireFailure['code'], message: string, detail?: string): WireFailure =>
   detail == null ? { code, message } : { code, message, detail };
 
@@ -121,28 +62,6 @@ const rejection = (kind: WireRejection['kind'], message: string, detail: string)
   message,
   detail,
 });
-
-/**
- * The host reads the literal discriminator as a plain field: a union-typed BAML
- * parameter cannot discriminate a host map, so `tool` names the variant and the
- * remaining fields are its arguments.
- */
-const toWireSelection = (selection: unknown): WireToolSelection | null => {
-  if (!isRecord(selection) || typeof selection.tool !== 'string') {
-    return null;
-  }
-  const { tool, ...rest } = selection;
-  const args: Record<string, string | number | boolean | null> = {};
-  for (const [key, value] of Object.entries(rest)) {
-    if (value === null) {
-      args[key] = null;
-      continue;
-    }
-    const kind = typeof value;
-    args[key] = kind === 'string' || kind === 'number' || kind === 'boolean' ? (value as string) : String(value);
-  }
-  return { name: tool, args };
-};
 
 /**
  * End of stream, bridge 0.15.0 edition.
@@ -163,12 +82,22 @@ const isExhausted = (snapshot: TurnPlan$stream | null | undefined): boolean => {
   return partial.reply === undefined && partial.tools === undefined;
 };
 
-/** Flattens a generated `TurnPlan` (or its `$stream` partial) to plain data. */
-const toWirePlan = (plan: TurnPlan | TurnPlan$stream): WireTurnPlan => {
+/**
+ * Flattens a generated final `TurnPlan` to plain data. Only used for the fully
+ * resolved result of `runCall`/`stream.final()`: BAML's own compiled parse
+ * already validated that structure and throws (caught and classified in
+ * `start()`) rather than returning something malformed, so a defensive
+ * default here is a genuine "no claim" case, not a hidden parse failure. The
+ * in-flight streaming partials in `runStream` go through `toChunkCandidate`
+ * instead, which does not extend that same trust to an unfinished snapshot.
+ */
+const toWirePlan = (plan: TurnPlan): WireTurnPlan => {
   const source = plan as unknown as { reply?: unknown; tools?: unknown };
   const reply = typeof source.reply === 'string' ? source.reply : null;
   const tools = Array.isArray(source.tools)
-    ? source.tools.map(toWireSelection).filter((tool): tool is WireToolSelection => tool !== null)
+    ? source.tools
+        .map(toWireToolSelection)
+        .filter((tool): tool is WireToolSelection => tool !== null)
     : [];
   return { reply, tools };
 };
@@ -213,7 +142,21 @@ const runStream = async (request: StartRequest, ctx: BamlCallContext): Promise<v
     if (isExhausted(snapshot)) {
       break;
     }
-    const wire = toWirePlan(snapshot as TurnPlan$stream);
+    const raw = snapshot as unknown as { reply?: unknown; tools?: unknown };
+    const candidate = toChunkCandidate(raw.reply, raw.tools);
+    // A snapshot that fails validation is a genuine model parse failure, not
+    // empty text: coercing it to a safe-looking default here would be exactly
+    // the bug this function exists to close. One terminal failure, then stop
+    // pulling — `stream.final()` below is never reached for this operation.
+    if (!candidate.ok) {
+      post({
+        type: 'failure',
+        operationId: request.operationId,
+        failure: failure('parse_error', PARSE_ERROR_MESSAGE),
+      });
+      return;
+    }
+    const wire = candidate.value;
     const serialized = JSON.stringify(wire);
     if (serialized === previous) {
       continue;
@@ -246,7 +189,7 @@ const start = async (request: StartRequest): Promise<void> => {
     await (request.mode === 'call' ? runCall(request, ctx) : runStream(request, ctx));
   } catch (error) {
     const detail = messageOf(error);
-    if (isAbort(error, ctx)) {
+    if (isAbort(error, ctx.aborted === true)) {
       post({ type: 'rejection', operationId, rejection: rejection('abort', 'aborted', detail) });
       return;
     }

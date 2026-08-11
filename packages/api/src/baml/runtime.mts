@@ -10,6 +10,7 @@ import type {
   BamlTurnResult,
 } from '@librechat/agents/baml';
 import type {
+  PartialTextCursor,
   WireFailure,
   WireTurnPlan,
   WorkerMessage,
@@ -26,11 +27,12 @@ import {
   BAML_STREAM_TOTAL_TIMEOUT_MS,
   BAML_WORKER_ABORT_GRACE_MS,
   DECLARED_TOOLS,
-  DIVERGENT_PARTIAL_MESSAGE,
   PORT_VERSION_MESSAGE,
   SUPPORTED_PORT_VERSION,
   TRANSPORT_FAILED_MESSAGE,
   TRANSPORT_TIMEOUT_MESSAGE,
+  consumeCumulativeTextSnapshot,
+  createPartialTextCursor,
   unboundToolMessage,
 } from './protocol';
 
@@ -59,6 +61,20 @@ const REAL_TIMERS: BamlTimers = {
   clearTimeout: (handle) => clearTimeout(handle),
 };
 
+/**
+ * Injected by tests so "was a worker thread ever constructed" is directly
+ * observable instead of inferred from side effects like elapsed time or
+ * provider request count. A precheck failure (an oversize transcript, an
+ * unsupported port version) must never reach this factory at all.
+ */
+export interface BamlWorkerFactory {
+  readonly createWorker: (url: URL) => Worker;
+}
+
+const REAL_WORKER_FACTORY: BamlWorkerFactory = {
+  createWorker: (url) => new Worker(url),
+};
+
 /** Native error text goes here and nowhere else; the caller redacts and logs it. */
 export interface BamlDiagnostic {
   readonly clientName: string;
@@ -71,6 +87,7 @@ export interface BamlRuntimeOptions {
   readonly clientName: string;
   readonly onDiagnostic?: (diagnostic: BamlDiagnostic) => void;
   readonly timers?: BamlTimers;
+  readonly workers?: BamlWorkerFactory;
 }
 
 type OperationEvent =
@@ -84,6 +101,7 @@ interface OperationParams {
   readonly input: WorkerTurnInput;
   readonly signal?: AbortSignal;
   readonly timers: BamlTimers;
+  readonly workers: BamlWorkerFactory;
   readonly onDiagnostic?: (diagnostic: BamlDiagnostic) => void;
 }
 
@@ -95,9 +113,9 @@ interface OperationParams {
  * listener, the worker listeners, the deadlines, and the thread itself.
  */
 async function* runOperation(params: OperationParams): AsyncGenerator<OperationEvent, void, void> {
-  const { mode, clientName, input, signal, timers, onDiagnostic } = params;
+  const { mode, clientName, input, signal, timers, workers, onDiagnostic } = params;
   const operationId = randomUUID();
-  const worker = new Worker(WORKER_URL);
+  const worker = workers.createWorker(WORKER_URL);
 
   const queue: OperationEvent[] = [];
   let wake: (() => void) | null = null;
@@ -273,11 +291,6 @@ const publicFailure = (failure: WireFailure): BamlToolFailure => ({
   ...(failure.toolName == null ? {} : { toolName: failure.toolName }),
 });
 
-const divergentPartial = (): BamlToolFailure => ({
-  code: 'parse_error',
-  message: DIVERGENT_PARTIAL_MESSAGE,
-});
-
 /**
  * A selection the caller did not bind this turn is reported, not dispatched and
  * not dropped: a host whose model keeps choosing an unbound tool would otherwise
@@ -359,6 +372,7 @@ export const createBamlFunctionSet = (options: BamlRuntimeOptions): BamlFunction
   }
 
   const timers = options.timers ?? REAL_TIMERS;
+  const workers = options.workers ?? REAL_WORKER_FACTORY;
   const onDiagnostic = options.onDiagnostic;
 
   const operationParams = (
@@ -370,6 +384,7 @@ export const createBamlFunctionSet = (options: BamlRuntimeOptions): BamlFunction
     clientName,
     input: worker,
     timers,
+    workers,
     ...(onDiagnostic == null ? {} : { onDiagnostic }),
     ...(input.signal == null ? {} : { signal: input.signal }),
   });
@@ -403,7 +418,7 @@ export const createBamlFunctionSet = (options: BamlRuntimeOptions): BamlFunction
         return;
       }
 
-      let emitted = '';
+      let cursor: PartialTextCursor = createPartialTextCursor();
       let toolTurn = false;
 
       for await (const event of runOperation(operationParams('stream', input, checked.worker))) {
@@ -417,14 +432,11 @@ export const createBamlFunctionSet = (options: BamlRuntimeOptions): BamlFunction
             yield toolCallsOutcome(event.plan, input.allowedTools);
             return;
           }
-          const text = event.plan.reply ?? '';
-          if (!text.startsWith(emitted)) {
-            yield { kind: 'failure', failure: divergentPartial() };
-            return;
-          }
-          const tail = text.slice(emitted.length);
-          if (tail.length > 0) {
-            yield { kind: 'text', text: tail };
+          const step = consumeCumulativeTextSnapshot(cursor, event.plan);
+          if (step.emission?.kind === 'failure') {
+            yield { kind: 'failure', failure: publicFailure(step.emission.failure) };
+          } else if (step.emission?.kind === 'text') {
+            yield { kind: 'text', text: step.emission.text };
           }
           return;
         }
@@ -436,24 +448,19 @@ export const createBamlFunctionSet = (options: BamlRuntimeOptions): BamlFunction
           continue;
         }
 
-        // A null reply is the absence of a text claim, not a retraction of one:
-        // the model has produced no answer text yet. Only a non-null string that
-        // fails to extend what was already emitted is a divergence.
-        if (event.snapshot.reply === null) {
-          continue;
-        }
-
-        const snapshot = event.snapshot.reply;
-        if (snapshot === emitted) {
-          continue;
-        }
-        if (!snapshot.startsWith(emitted)) {
-          yield { kind: 'failure', failure: divergentPartial() };
+        // `event.snapshot` crossed the worker boundary as runtime input, not a
+        // trusted value — `consumeCumulativeTextSnapshot` is the one place that
+        // owns the prefix/duplicate/divergence rules, so every chunk goes
+        // through it rather than a second, hand-rolled copy of the same rules.
+        const step = consumeCumulativeTextSnapshot(cursor, event.snapshot);
+        cursor = step.cursor;
+        if (step.emission?.kind === 'failure') {
+          yield { kind: 'failure', failure: publicFailure(step.emission.failure) };
           return;
         }
-        const delta = snapshot.slice(emitted.length);
-        emitted = snapshot;
-        yield { kind: 'text', text: delta };
+        if (step.emission?.kind === 'text') {
+          yield { kind: 'text', text: step.emission.text };
+        }
       }
 
       throw new BamlTransportError(TRANSPORT_FAILED_MESSAGE);
