@@ -5,6 +5,7 @@ import type { QueryEmbedder } from './search';
 import { createKeyvSnapshotStore, createMemorySnapshotStore } from './cursor';
 import { MeiliChatSearch, meiliSearchConfigured } from './meili';
 import { cacheConfig, standardCache } from '../cache';
+import { assertManagedRoleUrl } from './roles';
 import { PostgresChatSearch } from './search';
 import { createSearchPool } from './pool';
 
@@ -97,6 +98,13 @@ export function createChatSearch(options: ChatSearchOptions = {}): ChatSearchRun
     return null;
   }
 
+  if (!options.pool) {
+    assertManagedRoleUrl(
+      'CHAT_SEARCH_DATABASE_URL',
+      process.env.CHAT_SEARCH_DATABASE_URL as string,
+      'reader',
+    );
+  }
   const pool =
     options.pool ??
     createSearchPool({

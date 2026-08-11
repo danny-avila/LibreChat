@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { createScope } from '@librechat/data-schemas';
+import { createScope, logger } from '@librechat/data-schemas';
 import type { MeiliSearchFn, MeiliSearchParams } from './meili';
 import { chatSearchConfigured, createChatSearch } from './service';
 import { PostgresChatSearch } from './search';
@@ -197,6 +197,29 @@ describe('chat search backend selection', () => {
 
       expect(sent.filter).toBe('user = "alice"');
     });
+  });
+
+  /**
+   * The reader slot naming this deployment's writer would serve correctly
+   * scoped rows — the query predicates scope on their own — with the
+   * row-security layer beneath them silently gone. Refused at boot; an unknown
+   * name only warns, since policies apply to a role's members.
+   */
+  it('refuses a reader URL that names the writer role', () => {
+    process.env.CHAT_SEARCH_ENABLED = 'true';
+    process.env.CHAT_SEARCH_DATABASE_URL = 'postgres://chat_search_writer:pw@localhost:5435/x';
+
+    expect(() => createChatSearch({ mongoose })).toThrow(/must connect as chat_search_reader/);
+  });
+
+  it('warns but builds when the reader URL names an unknown role', () => {
+    process.env.CHAT_SEARCH_ENABLED = 'true';
+    process.env.CHAT_SEARCH_DATABASE_URL = 'postgres://svc_member:pw@localhost:5435/x';
+    const warn = jest.spyOn(logger, 'warn');
+
+    const runtime = createChatSearch({ mongoose });
+    expect(runtime?.chatSearch).toBeInstanceOf(PostgresChatSearch);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('svc_member'));
   });
 
   /**
