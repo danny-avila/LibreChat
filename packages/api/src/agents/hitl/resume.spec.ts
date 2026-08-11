@@ -747,7 +747,10 @@ describe('durable ask-user answers', () => {
   });
 
   it('does not bind a missing-content answer to a later ask', () => {
-    const content = [
+    const content: Array<{
+      type: string;
+      tool_call: { id: string; name: string; args: string; output?: string };
+    }> = [
       { type: 'tool_call', tool_call: { id: 'later-ask', name: 'ask_user_question', args: '' } },
     ];
 
