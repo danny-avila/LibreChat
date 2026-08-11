@@ -154,10 +154,10 @@ export const limiterCache = (prefix: string): RedisStore | undefined => {
   if (!cacheConfig.USE_REDIS) {
     return undefined;
   }
-  // RedisStore sends raw commands through `call()`, which bypasses ioredis's
-  // configured keyPrefix, including for the Lua scripts used by increment().
-  // Include the deployment prefix here so rate limits stay inside the same
-  // keyspace as every other cache.
+  // rate-limit-redis supplies uppercase command names to `call()`. In the
+  // pinned ioredis version, dynamic-command key metadata is case-sensitive,
+  // so those calls bypass the configured keyPrefix, including EVALSHA keys.
+  // Include the deployment prefix here exactly once.
   prefix = prefix.endsWith(':') ? prefix : `${prefix}:`;
   const deploymentPrefix = cacheConfig.REDIS_KEY_PREFIX
     ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}`

@@ -59,13 +59,17 @@ describe('limiterCache', () => {
     expect(testStore!.prefix).toBe('Cache-Integration-Test::test-limiter:');
     expect(typeof testStore!.sendCommand).toBe('function');
 
-    // RedisStore uses raw commands, so its own prefix must isolate Lua-script
-    // increments instead of relying on ioredis's keyPrefix option.
+    // rate-limit-redis sends uppercase dynamic commands. The pinned ioredis
+    // key lookup is case-sensitive, so these raw calls bypass keyPrefix and
+    // RedisStore must carry the deployment prefix itself.
     const limiterKey = 'rate-limit-user:123';
     testStore!.init({ windowMs: 60_000 } as Parameters<RedisStore['init']>[0]);
     await expect(testStore!.increment(limiterKey)).resolves.toMatchObject({ totalHits: 1 });
     expect(await ioredisClient!.call('GET', `${testStore!.prefix}${limiterKey}`)).toBe('1');
     expect(await ioredisClient!.call('GET', `test-limiter:${limiterKey}`)).toBeNull();
+    expect(
+      await ioredisClient!.call('GET', `Cache-Integration-Test::${testStore!.prefix}${limiterKey}`),
+    ).toBeNull();
     await testStore!.resetKey(limiterKey);
     expect(await ioredisClient!.call('GET', `${testStore!.prefix}${limiterKey}`)).toBeNull();
 

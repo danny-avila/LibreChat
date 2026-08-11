@@ -23,11 +23,11 @@ import {
   useAssistantsMapContext,
   BadgeRowProvider,
 } from '~/Providers';
+import { cn, getModelSpec, hasIncompleteFiles, removeFocusRings } from '~/utils';
 import useComposerRestore from '~/hooks/Input/useComposerRestore';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import useComposerItems from '~/hooks/Input/useComposerItems';
-import { cn, getModelSpec, removeFocusRings } from '~/utils';
 import useAttachTarget from '~/hooks/Input/useAttachTarget';
 import InterruptSteerButton from './InterruptSteerButton';
 import Hints, { composerHintId } from './Composer/Hints';
@@ -60,7 +60,6 @@ interface ChatFormProps {
   setFiles: FileSetter;
   conversation: TConversation | null;
   isSubmitting: boolean;
-  filesLoading: boolean;
   setFilesLoading: React.Dispatch<React.SetStateAction<boolean>>;
   newConversation: ConvoGenerator;
   handleStopGenerating: (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -74,7 +73,6 @@ const ChatForm = memo(function ChatForm({
   setFiles,
   conversation,
   isSubmitting,
-  filesLoading,
   setFilesLoading,
   newConversation,
   handleStopGenerating,
@@ -122,6 +120,7 @@ const ChatForm = memo(function ChatForm({
     () => getModelSpec({ specName: conversation?.spec, startupConfig }),
     [conversation?.spec, startupConfig],
   );
+  const filesLoading = useMemo(() => hasIncompleteFiles(files), [files]);
   /** Agents and assistants carry their own tool configuration, so the composer's
    *  ephemeral tool controls only apply elsewhere, and a spec can suppress them
    *  outright. Same gate the old `showEphemeralBadges` prop applied. */
@@ -679,7 +678,6 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
     setFiles,
     conversation,
     isSubmitting,
-    filesLoading,
     setFilesLoading,
     newConversation,
     handleStopGenerating,
@@ -738,7 +736,6 @@ function ChatFormWrapper({ index = 0, placeholder }: { index?: number; placehold
       setFiles={setFiles}
       conversation={stableConversation}
       isSubmitting={isSubmitting}
-      filesLoading={filesLoading}
       setFilesLoading={setFilesLoading}
       newConversation={stableNewConversation}
       handleStopGenerating={stableHandleStop}
