@@ -61,28 +61,25 @@ export const projectTranscript = (entries: readonly BamlTranscriptEntry[]): Tran
       userMessage = text;
     }
 
-    if (entry.role !== TOOL_ROLE) {
-      total += text.length;
-      if (total > MAX_TRANSCRIPT_TEXT_CHARS) {
+    let line: string;
+    if (entry.role === TOOL_ROLE) {
+      if (text.length > MAX_TOOL_RESULT_CHARS) {
         return tooLarge();
       }
-      lines.push(`${entry.role}: ${text}`);
-      continue;
+      const call = entry.toolCallId == null ? undefined : callsById.get(entry.toolCallId);
+      const name = call?.name ?? 'unknown';
+      const args = JSON.stringify(call?.args ?? {});
+      line = `<tool_result name="${name}" args=${args}>${text}</tool_result>`;
+    } else {
+      line = `${entry.role}: ${text}`;
     }
 
-    if (text.length > MAX_TOOL_RESULT_CHARS) {
+    const separatorChars = lines.length === 0 ? 0 : 1;
+    const nextTotal = total + separatorChars + line.length;
+    if (nextTotal > MAX_TRANSCRIPT_TEXT_CHARS) {
       return tooLarge();
     }
-
-    const call = entry.toolCallId == null ? undefined : callsById.get(entry.toolCallId);
-    const name = call?.name ?? 'unknown';
-    const args = JSON.stringify(call?.args ?? {});
-    const line = `<tool_result name="${name}" args=${args}>${text}</tool_result>`;
-
-    total += line.length;
-    if (total > MAX_TRANSCRIPT_TEXT_CHARS) {
-      return tooLarge();
-    }
+    total = nextTotal;
     lines.push(line);
   }
 
