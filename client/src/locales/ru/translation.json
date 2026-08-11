@@ -1144,6 +1144,7 @@
   "com_ui_run_code": "Выполнить код",
   "com_ui_run_code_error": "Произошла ошибка при выполнении кода",
   "com_ui_save": "Сохранить",
+  "com_ui_save_badge_changes": "Сохранить изменения значков?",
   "com_ui_save_key_error": "Не удалось сохранить API-ключ. Повторите попытку.",
   "com_ui_save_key_success": "API-ключ сохранен успешно",
   "com_ui_save_submit": "Сохранить и отправить",

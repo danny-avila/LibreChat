@@ -1652,6 +1652,7 @@
   "com_ui_running_n_agents": "Keyri {{0}} fulltrúa",
   "com_ui_sandbox_starting": "Ræsi öruggt umhverfi",
   "com_ui_save": "Vista",
+  "com_ui_save_badge_changes": "Vista breytingar á merkimiða (e. badge)?",
   "com_ui_save_key_error": "Ekki tókst að vista API-lykil. Reyndu aftur.",
   "com_ui_save_key_success": "API-lykill vistaður",
   "com_ui_save_submit": "Vista og senda",

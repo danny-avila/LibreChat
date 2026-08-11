@@ -1650,6 +1650,7 @@
   "com_ui_running_n_agents": "Uruchamianie agentów {{0}}",
   "com_ui_sandbox_starting": "Uruchamianie środowiska piaskownicy",
   "com_ui_save": "Zapisz",
+  "com_ui_save_badge_changes": "Zapisać zmiany odznaki?",
   "com_ui_save_key_error": "Nie udało się zapisać klucza API. Spróbuj ponownie.",
   "com_ui_save_key_success": "Klucz API zapisany pomyślnie",
   "com_ui_save_submit": "Zapisz i wyślij",

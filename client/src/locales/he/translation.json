@@ -1650,6 +1650,7 @@
   "com_ui_running_n_agents": "מריץ {{0}} סוכנים",
   "com_ui_sandbox_starting": "מפעיל סביבת ארגז חול",
   "com_ui_save": "שמור",
+  "com_ui_save_badge_changes": "האם לשמור את השינויים בתגים?",
   "com_ui_save_key_error": "שמירת מפתח ה-API נכשלה. אנא נסה שוב.",
   "com_ui_save_key_success": "מפתח ה-API נשמר בהצלחה",
   "com_ui_save_submit": "שמור ושלח",

@@ -279,7 +279,7 @@ function Palette({
   useEffect(() => () => setLift(0), [setLift]);
 
   const baselineRef = useRef<number | null>(null);
-  useLayoutEffect(() => {
+  const updateLift = useCallback(() => {
     if (!mounted) {
       baselineRef.current = null;
       setLift(0);
@@ -296,9 +296,29 @@ function Palette({
       return;
     }
     const needed = popupHeight + POPOVER_GUTTER + VIEWPORT_PADDING;
-    setLift(Math.max(0, Math.ceil(needed - (window.innerHeight - baselineRef.current))));
+    const viewport = window.visualViewport;
+    const viewportBottom =
+      viewport != null ? viewport.offsetTop + viewport.height : window.innerHeight;
+    setLift(Math.max(0, Math.ceil(needed - (viewportBottom - baselineRef.current))));
     follow();
   }, [mounted, popupHeight, setLift, anchorRef, follow]);
+
+  useLayoutEffect(updateLift, [updateLift]);
+
+  useEffect(() => {
+    if (!mounted) {
+      return;
+    }
+    const viewport = window.visualViewport;
+    window.addEventListener('resize', updateLift);
+    viewport?.addEventListener('resize', updateLift);
+    viewport?.addEventListener('scroll', updateLift);
+    return () => {
+      window.removeEventListener('resize', updateLift);
+      viewport?.removeEventListener('resize', updateLift);
+      viewport?.removeEventListener('scroll', updateLift);
+    };
+  }, [mounted, updateLift]);
 
   const favorites = useToolFavorites();
   const query = search.trim().toLowerCase();

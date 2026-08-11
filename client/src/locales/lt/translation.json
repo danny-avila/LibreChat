@@ -1535,6 +1535,7 @@
   "com_ui_running_command": "Vykdoma komanda",
   "com_ui_running_n_agents": "Vykdomi {{0}} agentai",
   "com_ui_save": "Išsaugoti",
+  "com_ui_save_badge_changes": "Išsaugoti ženklelio pakeitimus?",
   "com_ui_save_key_error": "Nepavyko išsaugoti API rakto. Bandykite dar kartą.",
   "com_ui_save_key_success": "API raktas sėkmingai išsaugotas",
   "com_ui_save_submit": "Išsaugoti ir pateikti",

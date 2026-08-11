@@ -1658,6 +1658,7 @@
   "com_ui_running_n_agents": "Darbojas {{0}} aģenti",
   "com_ui_sandbox_starting": "Smilšu kastes vides palaišana",
   "com_ui_save": "Saglabāt",
+  "com_ui_save_badge_changes": "Vai saglabāt emblēmas izmaiņas?",
   "com_ui_save_key_error": "Neizdevās saglabāt API atslēgu. Lūdzu, mēģiniet vēlreiz.",
   "com_ui_save_key_success": "API atslēga veiksmīgi saglabāta",
   "com_ui_save_submit": "Saglabāt un nosūtīt",

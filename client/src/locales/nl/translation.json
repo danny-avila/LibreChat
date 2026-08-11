@@ -986,6 +986,7 @@
   "com_ui_run_code": "Code Uitvoeren",
   "com_ui_run_code_error": "Er is een fout opgetreden bij het uitvoeren van de code",
   "com_ui_save": "Opslaan",
+  "com_ui_save_badge_changes": "Badge wijzigingen opslaan?",
   "com_ui_save_submit": "Opslaan & Indienen",
   "com_ui_saved": "Opgeslagen!",
   "com_ui_saving": "Opslaan...",
