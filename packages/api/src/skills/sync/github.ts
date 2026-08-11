@@ -44,6 +44,10 @@ const MAX_RECORDED_SKIPPED_SKILLS = 20;
 const SKIP_PATH_MAX = 500;
 const SKIP_NAME_MAX = 128;
 const SKIP_MESSAGE_MAX = 500;
+const VALIDATION_ISSUE_LIMIT = 5;
+const VALIDATION_ISSUE_FIELD_MAX = 100;
+const VALIDATION_ISSUE_CODE_MAX = 64;
+const VALIDATION_ISSUE_MESSAGE_MAX = 250;
 
 export const GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION =
   'Use a GitHub fine-grained personal access token scoped to the selected repository with read-only Contents and Metadata permissions.';
@@ -465,14 +469,62 @@ function serializeDate(date: Date): string {
   return date.toISOString();
 }
 
+function redactErrorText(value: string): string {
+  return value.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]');
+}
+
+function truncateText(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+}
+
+function summarizeValidationIssues(issues: unknown): string | undefined {
+  if (!Array.isArray(issues)) {
+    return undefined;
+  }
+  const summaries: string[] = [];
+  for (const rawIssue of issues.slice(0, VALIDATION_ISSUE_LIMIT)) {
+    if (!rawIssue || typeof rawIssue !== 'object') {
+      continue;
+    }
+    const issue = rawIssue as Partial<ValidationIssue>;
+    if (
+      typeof issue.field !== 'string' ||
+      typeof issue.code !== 'string' ||
+      typeof issue.message !== 'string'
+    ) {
+      continue;
+    }
+    const field = truncateText(redactErrorText(issue.field), VALIDATION_ISSUE_FIELD_MAX);
+    const code = truncateText(redactErrorText(issue.code), VALIDATION_ISSUE_CODE_MAX);
+    const message = truncateText(redactErrorText(issue.message), VALIDATION_ISSUE_MESSAGE_MAX);
+    summaries.push(`${field} [${code}]: ${message}`);
+  }
+  if (summaries.length === 0) {
+    return undefined;
+  }
+  if (issues.length > VALIDATION_ISSUE_LIMIT) {
+    summaries.push(`+${issues.length - VALIDATION_ISSUE_LIMIT} more issue(s)`);
+  }
+  return summaries.join('; ');
+}
+
 function sanitizeError(error: unknown): { code: string; message: string } {
   if (error instanceof SkillSyncError) {
     return { code: error.code, message: error.message };
   }
   if (error instanceof Error) {
+    const message = redactErrorText(error.message);
+    const validationError = error as Error & { code?: unknown; issues?: unknown };
+    if (validationError.code === 'SKILL_VALIDATION_FAILED') {
+      const issueSummary = summarizeValidationIssues(validationError.issues);
+      return {
+        code: 'SKILL_VALIDATION_FAILED',
+        message: truncateSkipMessage(issueSummary ? `${message}: ${issueSummary}` : message),
+      };
+    }
     return {
       code: 'SYNC_FAILED',
-      message: error.message.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]'),
+      message,
     };
   }
   return { code: 'SYNC_FAILED', message: 'Unknown skill sync failure' };

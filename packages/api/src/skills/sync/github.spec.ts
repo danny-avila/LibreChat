@@ -612,6 +612,79 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(status.skippedSkills?.[0].name).toHaveLength(128);
   });
 
+  it('preserves bounded validation details for a skipped skill', async () => {
+    const validationError = new Error('Skill validation failed') as Error & {
+      code: string;
+      issues: Array<{ field: string; code: string; message: string }>;
+    };
+    validationError.code = 'SKILL_VALIDATION_FAILED';
+    validationError.issues = [
+      {
+        field: 'frontmatter.alwaysApply',
+        code: 'INVALID_TYPE',
+        message: '"always-apply" must be a boolean',
+      },
+      {
+        field: 'body',
+        code: 'INVALID_BODY',
+        message: `Bearer github_pat_secret ${'x'.repeat(700)}`,
+      },
+    ];
+    const deps = createDeps({
+      fetchFn: multiSkillFetch([
+        {
+          dir: 'research',
+          markdown: '---\nname: research\ndescription: Research things\n---\nBody',
+        },
+        {
+          dir: 'broken',
+          markdown: '---\nname: broken\ndescription: Broken\n---\nBody',
+        },
+      ]),
+      createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+        if (input.name === 'broken') {
+          throw validationError;
+        }
+        return { skill: makeSkill(input), warnings: [] };
+      }),
+    });
+    const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+
+    try {
+      const result = await createGitHubSkillSyncRunner(deps).runOnce();
+      const statusCalls = (deps.upsertStatus as jest.Mock).mock.calls;
+      const status = statusCalls[statusCalls.length - 1]?.[0] as SkillSyncStatusInput;
+      const skipped = status.skippedSkills?.[0];
+      const warningText = warn.mock.calls.map(([message]) => String(message)).join('\n');
+
+      expect(result.status).toBe('completed');
+      expect(status).toEqual(
+        expect.objectContaining({
+          status: 'partial',
+          syncedSkillCount: 1,
+          skippedSkillCount: 1,
+        }),
+      );
+      expect(skipped).toEqual(
+        expect.objectContaining({
+          path: 'skills/broken',
+          name: 'broken',
+          errorCode: 'SKILL_VALIDATION_FAILED',
+        }),
+      );
+      expect(skipped?.errorMessage).toContain('frontmatter.alwaysApply [INVALID_TYPE]');
+      expect(skipped?.errorMessage).toContain('Bearer [redacted]');
+      expect(skipped?.errorMessage).not.toContain('github_pat_secret');
+      expect(skipped?.errorMessage?.length).toBeLessThanOrEqual(500);
+      expect(skipped?.errorMessage).toMatch(/…$/);
+      expect(warningText).toContain('frontmatter.alwaysApply [INVALID_TYPE]');
+      expect(warningText).toContain('Bearer [redacted]');
+      expect(warningText).not.toContain('github_pat_secret');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('logs the validation warnings of a synced skill instead of swallowing them', async () => {
     /* An unrecognized frontmatter key no longer fails the skill, so the log is
        the only place a maintainer learns the upstream SKILL.md carries one:
