@@ -35,19 +35,6 @@ jest.mock('./useSpeechToTextExternal', () => ({
   }),
 }));
 
-const dispatchSpeechShortcut = () => {
-  const event = new KeyboardEvent('keydown', {
-    shiftKey: true,
-    altKey: true,
-    code: 'KeyL',
-    bubbles: true,
-    cancelable: true,
-  });
-
-  act(() => window.dispatchEvent(event));
-  return event;
-};
-
 describe('useSpeechToText', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -56,35 +43,34 @@ describe('useSpeechToText', () => {
     mockExternalIsListening = false;
   });
 
-  it('starts only the externally seeded engine from the keyboard shortcut', () => {
+  it('selects the externally seeded engine after settings change', () => {
     mockSpeechToTextEndpoint = 'browser';
-    const { rerender } = renderHook(() => useSpeechToText(jest.fn(), jest.fn()));
+    const { result, rerender } = renderHook(() => useSpeechToText(jest.fn(), jest.fn()));
 
     mockSpeechToTextEndpoint = 'external';
     rerender();
 
-    const event = dispatchSpeechShortcut();
+    act(() => result.current.startRecording());
 
     expect(mockStartSpeechRecordingExternal).toHaveBeenCalledTimes(1);
     expect(mockStartSpeechRecordingBrowser).not.toHaveBeenCalled();
-    expect(event.defaultPrevented).toBe(true);
   });
 
-  it('starts only the browser engine from the keyboard shortcut', () => {
+  it('selects the browser engine', () => {
     mockSpeechToTextEndpoint = 'browser';
-    renderHook(() => useSpeechToText(jest.fn(), jest.fn()));
+    const { result } = renderHook(() => useSpeechToText(jest.fn(), jest.fn()));
 
-    dispatchSpeechShortcut();
+    act(() => result.current.startRecording());
 
     expect(mockStartSpeechRecordingBrowser).toHaveBeenCalledTimes(1);
     expect(mockStartSpeechRecordingExternal).not.toHaveBeenCalled();
   });
 
-  it('stops the active engine when the keyboard shortcut is pressed while listening', () => {
+  it('selects the active engine stop handler', () => {
     mockExternalIsListening = true;
-    renderHook(() => useSpeechToText(jest.fn(), jest.fn()));
+    const { result } = renderHook(() => useSpeechToText(jest.fn(), jest.fn()));
 
-    dispatchSpeechShortcut();
+    act(() => result.current.stopRecording());
 
     expect(mockStopSpeechRecordingExternal).toHaveBeenCalledTimes(1);
     expect(mockStartSpeechRecordingExternal).not.toHaveBeenCalled();

@@ -24,6 +24,7 @@ const useSpeechSettingsHarness = (isAuthenticated = true) => {
   return {
     engineSTT: useRecoilValue(store.engineSTT),
     engineTTS: useRecoilValue(store.engineTTS),
+    speechSettingsInitialized: useRecoilValue(store.speechSettingsInitialized),
   };
 };
 
@@ -32,6 +33,7 @@ describe('useSpeechSettingsInit', () => {
     localStorage.clear();
     mockUseGetCustomConfigSpeechQuery.mockReturnValue({
       data: { sttExternal: true, ttsExternal: true },
+      isFetched: true,
     });
   });
 
@@ -64,12 +66,17 @@ describe('useSpeechSettingsInit', () => {
     localStorage.setItem('engineTTS', JSON.stringify('elevenlabs'));
     mockUseGetCustomConfigSpeechQuery.mockReturnValue({
       data: { sttExternal: false, ttsExternal: false },
+      isFetched: true,
     });
 
     const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
 
     await waitFor(() => {
-      expect(result.current).toEqual({ engineSTT: 'external', engineTTS: 'external' });
+      expect(result.current).toEqual({
+        engineSTT: 'external',
+        engineTTS: 'external',
+        speechSettingsInitialized: true,
+      });
     });
     expect(localStorage.getItem('engineSTT')).toBe(JSON.stringify('external'));
     expect(localStorage.getItem('engineTTS')).toBe(JSON.stringify('external'));
@@ -82,16 +89,20 @@ describe('useSpeechSettingsInit', () => {
     const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
 
     await waitFor(() => {
-      expect(result.current).toEqual({ engineSTT: engine, engineTTS: engine });
+      expect(result.current).toEqual({
+        engineSTT: engine,
+        engineTTS: engine,
+        speechSettingsInitialized: true,
+      });
     });
   });
 
   it.each([
-    ['loading', { data: undefined, isFetched: false, isError: false }],
-    ['error', { data: undefined, isFetched: true, isError: true }],
+    ['loading', { data: undefined, isFetched: false, isError: false }, false],
+    ['error', { data: undefined, isFetched: true, isError: true }, true],
   ])(
     'normalizes legacy providers while the speech configuration query is in the %s state',
-    async (_state, queryResult) => {
+    async (_state, queryResult, speechSettingsInitialized) => {
       localStorage.setItem('engineSTT', JSON.stringify('openai'));
       localStorage.setItem('engineTTS', JSON.stringify('localai'));
       mockUseGetCustomConfigSpeechQuery.mockReturnValue(queryResult);
@@ -99,7 +110,11 @@ describe('useSpeechSettingsInit', () => {
       const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
 
       await waitFor(() => {
-        expect(result.current).toEqual({ engineSTT: 'external', engineTTS: 'external' });
+        expect(result.current).toEqual({
+          engineSTT: 'external',
+          engineTTS: 'external',
+          speechSettingsInitialized,
+        });
       });
       expect(localStorage.getItem('engineSTT')).toBe(JSON.stringify('external'));
       expect(localStorage.getItem('engineTTS')).toBe(JSON.stringify('external'));
@@ -113,7 +128,11 @@ describe('useSpeechSettingsInit', () => {
     const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
 
     await waitFor(() => {
-      expect(result.current).toEqual({ engineSTT: 'browser', engineTTS: 'browser' });
+      expect(result.current).toEqual({
+        engineSTT: 'browser',
+        engineTTS: 'browser',
+        speechSettingsInitialized: true,
+      });
     });
     expect(localStorage.getItem('engineSTT')).toBe(JSON.stringify('browser'));
     expect(localStorage.getItem('engineTTS')).toBe(JSON.stringify('browser'));
@@ -127,12 +146,17 @@ describe('useSpeechSettingsInit', () => {
         engineSTT: 'external',
         engineTTS: 'external',
       },
+      isFetched: true,
     });
 
     const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
 
     await waitFor(() => {
-      expect(result.current).toEqual({ engineSTT: 'external', engineTTS: 'external' });
+      expect(result.current).toEqual({
+        engineSTT: 'external',
+        engineTTS: 'external',
+        speechSettingsInitialized: true,
+      });
     });
     expect(localStorage.getItem('engineSTT')).toBe(JSON.stringify('external'));
     expect(localStorage.getItem('engineTTS')).toBe(JSON.stringify('external'));
@@ -141,12 +165,51 @@ describe('useSpeechSettingsInit', () => {
   it('does not write browser defaults before a server default is provided', () => {
     mockUseGetCustomConfigSpeechQuery.mockReturnValue({
       data: { sttExternal: false, ttsExternal: false },
+      isFetched: true,
     });
 
     const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
 
-    expect(result.current).toEqual({ engineSTT: 'browser', engineTTS: 'browser' });
+    expect(result.current).toEqual({
+      engineSTT: 'browser',
+      engineTTS: 'browser',
+      speechSettingsInitialized: true,
+    });
     expect(localStorage.getItem('engineSTT')).toBeNull();
     expect(localStorage.getItem('engineTTS')).toBeNull();
+  });
+
+  it('keeps speech controls disabled until configuration initialization settles', () => {
+    mockUseGetCustomConfigSpeechQuery.mockReturnValue({
+      data: undefined,
+      isFetched: false,
+    });
+
+    const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
+
+    expect(result.current.speechSettingsInitialized).toBe(false);
+  });
+
+  it('enables speech controls after a missing configuration response', async () => {
+    mockUseGetCustomConfigSpeechQuery.mockReturnValue({
+      data: { message: 'not_found' },
+      isFetched: true,
+    });
+
+    const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
+
+    await waitFor(() => expect(result.current.speechSettingsInitialized).toBe(true));
+  });
+
+  it('keeps speech controls disabled after a configuration error on fresh storage', () => {
+    mockUseGetCustomConfigSpeechQuery.mockReturnValue({
+      data: undefined,
+      isFetched: true,
+      isError: true,
+    });
+
+    const { result } = renderHook(() => useSpeechSettingsHarness(), { wrapper });
+
+    expect(result.current.speechSettingsInitialized).toBe(false);
   });
 });

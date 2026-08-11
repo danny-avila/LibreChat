@@ -1,10 +1,12 @@
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import { MicOff } from 'lucide-react';
+import { useRecoilValue } from 'recoil';
 import { Button, useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
 import { globalAudioId, type TAskFunction } from '~/common';
 import { useChatFormContext } from '~/Providers';
 import { cn } from '~/utils';
+import store from '~/store';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
 export default memo(function AudioRecorder({
@@ -22,6 +24,8 @@ export default memo(function AudioRecorder({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { speechToTextEndpoint } = useGetAudioSettings();
+  const speechSettingsInitialized = useRecoilValue(store.speechSettingsInitialized);
+  const recorderDisabled = disabled || !speechSettingsInitialized;
 
   const existingTextRef = useRef<string>('');
   const isSubmittingRef = useRef(isSubmitting);
@@ -80,18 +84,37 @@ export default memo(function AudioRecorder({
     onTranscriptionComplete,
   );
 
-  const handleStartRecording = async () => {
+  const handleStartRecording = useCallback(() => {
     existingTextRef.current = getValues('text') || '';
     startRecording();
-  };
+  }, [getValues, startRecording]);
 
-  const handleStopRecording = async () => {
+  const handleStopRecording = useCallback(() => {
     stopRecording();
     /** For browser STT, clear the reference since text was already being updated */
     if (!isExternalSTT(speechToTextEndpoint)) {
       existingTextRef.current = '';
     }
-  };
+  }, [speechToTextEndpoint, stopRecording]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!event.shiftKey || !event.altKey || event.code !== 'KeyL' || recorderDisabled) {
+        return;
+      }
+
+      event.preventDefault();
+      if (isListening === true) {
+        handleStopRecording();
+        return;
+      }
+
+      handleStartRecording();
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleStartRecording, handleStopRecording, isListening, recorderDisabled]);
 
   const renderIcon = () => {
     if (isListening === true) {
@@ -114,7 +137,7 @@ export default memo(function AudioRecorder({
           size="icon"
           aria-label={localize('com_ui_use_micrphone')}
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
-          disabled={disabled}
+          disabled={recorderDisabled}
           className={cn('size-9 rounded-full p-1')}
           aria-pressed={isListening}
         >

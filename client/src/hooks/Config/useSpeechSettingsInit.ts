@@ -12,8 +12,9 @@ const VALID_TTS_ENGINES: string[] = [TTSEndpoints.browser, TTSEndpoints.external
  * configuration on first load (only when the user is authenticated)
  */
 export default function useSpeechSettingsInit(isAuthenticated: boolean) {
-  const { data } = useGetCustomConfigSpeechQuery({ enabled: isAuthenticated });
+  const { data, isError, isFetched } = useGetCustomConfigSpeechQuery({ enabled: isAuthenticated });
   const [engineTTS, setEngineTTS] = useRecoilState<string>(store.engineTTS);
+  const setSpeechSettingsInitialized = useSetRecoilState(store.speechSettingsInitialized);
 
   const setters = useRef({
     conversationMode: useSetRecoilState(store.conversationMode),
@@ -35,22 +36,36 @@ export default function useSpeechSettingsInit(isAuthenticated: boolean) {
   }).current;
 
   useEffect(() => {
-    if (!isAuthenticated || !data || data.message === 'not_found') return;
+    if (!isAuthenticated) {
+      setSpeechSettingsInitialized(false);
+      return;
+    }
 
-    logger.log('Initializing speech settings from config:', data);
+    if (!isFetched) return;
 
-    Object.entries(data).forEach(([key, value]) => {
-      if (key === 'sttExternal' || key === 'ttsExternal') return;
+    if (isError && localStorage.getItem('engineSTT') === null) {
+      setSpeechSettingsInitialized(false);
+      return;
+    }
 
-      if (localStorage.getItem(key) !== null) return;
+    if (data && data.message !== 'not_found') {
+      logger.log('Initializing speech settings from config:', data);
 
-      const setter = setters[key as keyof typeof setters];
-      if (setter) {
-        logger.log(`Setting default speech setting: ${key} = ${value}`);
-        setter(value as any);
-      }
-    });
-  }, [isAuthenticated, data, setters]);
+      Object.entries(data).forEach(([key, value]) => {
+        if (key === 'sttExternal' || key === 'ttsExternal') return;
+
+        if (localStorage.getItem(key) !== null) return;
+
+        const setter = setters[key as keyof typeof setters];
+        if (setter) {
+          logger.log(`Setting default speech setting: ${key} = ${value}`);
+          setter(value as any);
+        }
+      });
+    }
+
+    setSpeechSettingsInitialized(true);
+  }, [isAuthenticated, data, isError, isFetched, setSpeechSettingsInitialized, setters]);
 
   useEffect(() => {
     if (VALID_TTS_ENGINES.includes(engineTTS)) return;
