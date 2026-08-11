@@ -1,7 +1,7 @@
 import type { Agents } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
-import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ResolvedAskUserQuestion } from '../stream/interfaces/IJobStore';
+import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
 import type { ServerSentEvent } from './events';
 
 export interface GenerationJobMetadata {
