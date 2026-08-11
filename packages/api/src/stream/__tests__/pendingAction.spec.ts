@@ -62,18 +62,52 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
 
     test('a later pause clears the resolved answer used to seed the resumed run', async () => {
       const streamId = 'stream-repause-clears-answer';
-      await manager.createJob(streamId, 'user-1', undefined, {
-        resolvedAskUserQuestion: {
-          request: 'Which environment?',
-          output: 'staging',
-        },
-      });
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
+      expect(
+        await manager.approvals.resolve(streamId, firstAction.actionId, {
+          resolvedAskUserQuestion: {
+            request: 'Which environment?',
+            output: 'staging',
+          },
+        }),
+      ).toBe(true);
 
       expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
 
       await expect(manager.getJob(streamId)).resolves.toMatchObject({
         status: 'requires_action',
         metadata: { resolvedAskUserQuestion: undefined },
+      });
+    });
+
+    test('a later pause retains an exact-ID answer for cross-replica reconstruction', async () => {
+      const streamId = 'stream-repause-retains-exact-answer';
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
+      expect(
+        await manager.approvals.resolve(streamId, firstAction.actionId, {
+          resolvedAskUserQuestion: {
+            request: 'Which environment?',
+            output: 'staging',
+            toolCallId: 'ask-1',
+          },
+        }),
+      ).toBe(true);
+
+      expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
+
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        metadata: {
+          resolvedAskUserQuestion: {
+            request: 'Which environment?',
+            output: 'staging',
+            toolCallId: 'ask-1',
+          },
+        },
       });
     });
 

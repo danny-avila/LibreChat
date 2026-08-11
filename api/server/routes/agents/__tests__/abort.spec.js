@@ -600,6 +600,68 @@ describe('Agent Abort Endpoint', () => {
         expect(JSON.parse(currentAsk.tool_call.args)).toEqual(currentQuestion);
       });
 
+      it('reconstructs an exact-ID prior answer alongside a later pending ask', async () => {
+        const jobStreamId = 'test-stream-123';
+        const priorQuestion = { question: 'Which environment?' };
+        const currentQuestion = { question: 'Approve deployment?' };
+
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+        });
+        mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
+          const rawContent = [
+            {
+              type: 'tool_call',
+              tool_call: { id: 'prior-call', name: 'ask_user_question', args: '' },
+            },
+            {
+              type: 'tool_call',
+              tool_call: { id: 'current-call', name: 'ask_user_question', args: '' },
+            },
+          ];
+          const content = options.transformAbortContent(rawContent, {
+            resolvedAskUserQuestion: {
+              request: priorQuestion,
+              output: 'staging',
+              toolCallId: 'prior-call',
+            },
+            pendingAction: {
+              payload: {
+                type: 'ask_user_question',
+                question: currentQuestion,
+                tool_call_id: 'current-call',
+              },
+            },
+          });
+          const result = {
+            success: true,
+            jobData: {
+              userMessage: { messageId: 'user-msg-123' },
+              responseMessageId: 'response-msg-456',
+              conversationId: jobStreamId,
+            },
+            content,
+            text: '',
+          };
+          await options.beforePublish(result);
+          return result;
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: jobStreamId });
+
+        expect(response.status).toBe(200);
+        const savedMessage = mockSaveMessage.mock.calls
+          .map(([, message]) => message)
+          .find((message) => message.isCreatedByUser === false);
+        const [priorAsk, currentAsk] = savedMessage.content;
+        expect(priorAsk.tool_call.output).toBe('staging');
+        expect(JSON.parse(priorAsk.tool_call.args)).toEqual(priorQuestion);
+        expect(currentAsk.tool_call.output).toBeUndefined();
+        expect(JSON.parse(currentAsk.tool_call.args)).toEqual(currentQuestion);
+      });
+
       it('should handle saveMessage errors gracefully', async () => {
         const jobStreamId = 'test-stream-123';
 
