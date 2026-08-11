@@ -1253,6 +1253,75 @@ describePg('projector', () => {
     }, 60_000);
   });
 
+  /**
+   * The epoch fence covers documents and outbox writes; these pin that a
+   * deposed holder's *side effects* are fenced too. Each one was a real leak:
+   * a drain that deleted Mongo events it failed to apply (self-inflicted
+   * event loss — sharpest for tombstones, which the poll cannot re-discover),
+   * a poll cursor advanced past a page nothing landed from, and lease losses
+   * spending real poison-row budget on healthy records.
+   */
+  describe('deposed holder', () => {
+    /** Another pod took the lease: the running holder's epoch is now stale. */
+    const depose = () => pool.query('UPDATE chat_search.lease SET epoch = epoch + 1');
+
+    it('leaves the batch queued and unstruck when the lease is lost mid-drain', async () => {
+      await models.Conversation.create({
+        conversationId: 'c-drain-deposed',
+        user: 'alice',
+        title: 'Deposed',
+        endpoint: 'openAI',
+      });
+      const queued = await models.SearchEvent.countDocuments({});
+      expect(queued).toBeGreaterThan(0);
+      await depose();
+
+      const outcome = await projector.drain();
+
+      expect(outcome.consumed).toBe(0);
+      expect(await models.SearchEvent.countDocuments({})).toBe(queued);
+      const { rows } = await pool.query<{ count: string }>(
+        'SELECT count(*) AS count FROM chat_search.failures',
+      );
+      expect(Number(rows[0].count)).toBe(0);
+      expect(await projected()).toHaveLength(0);
+    });
+
+    it('does not advance the shared poll cursor past a page it failed to land', async () => {
+      await models.Conversation.create({
+        conversationId: 'c-poll-deposed',
+        user: 'alice',
+        title: 'Poll',
+        endpoint: 'openAI',
+      });
+      await depose();
+
+      await projector.safetyPoll();
+
+      const { rows } = await pool.query('SELECT kind FROM chat_search.poll_cursor');
+      expect(rows).toHaveLength(0);
+      expect(await projected()).toHaveLength(0);
+    });
+
+    it('abandons reconciliation without spending quarantine budget', async () => {
+      await models.Conversation.create({
+        conversationId: 'c-rec-deposed',
+        user: 'alice',
+        title: 'Rec',
+        endpoint: 'openAI',
+      });
+      await depose();
+
+      expect(await projector.reconcile()).toBe(0);
+
+      const { rows } = await pool.query<{ count: string }>(
+        'SELECT count(*) AS count FROM chat_search.failures',
+      );
+      expect(Number(rows[0].count)).toBe(0);
+      expect(await projected()).toHaveLength(0);
+    });
+  });
+
   describe('leadership', () => {
     it('lets only one projector lead at a time', async () => {
       const second = new Projector(
@@ -1343,6 +1412,91 @@ describePg('projector', () => {
       await waitFor(() => projector.isLeader, 30_000);
       expect(projector.epoch).not.toBeNull();
     }, 60_000);
+
+    /**
+     * A *throwing* election is treated like a lost one: PostgreSQL restarting
+     * under a rolling deploy must leave a standby retrying, not every pod
+     * parked for the life of the process with events TTLing out.
+     */
+    it('enters standby after a transient election failure and recovers', async () => {
+      await projector.stop();
+
+      let failing = true;
+      const flaky = new Proxy(pool, {
+        get(target, prop, receiver) {
+          if (failing && (prop === 'connect' || prop === 'query')) {
+            return () =>
+              Promise.reject(
+                Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), {
+                  code: 'ECONNREFUSED',
+                }),
+              );
+          }
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      const standby = new Projector(
+        { pool: flaky, mongoose, source: createMongoSourceReader(mongoose), startupCatchUp: false },
+        {
+          readSearchEvents: (limit) => readSearchEvents(mongoose, limit),
+          deleteSearchEvents: (ids) =>
+            deleteSearchEvents(mongoose, ids as mongoose.Types.ObjectId[]),
+          dedupeSearchEvents,
+        },
+      );
+
+      try {
+        expect(await standby.start()).toBe(false);
+        expect(standby.isLeader).toBe(false);
+
+        failing = false;
+        await waitFor(() => standby.isLeader, 30_000);
+      } finally {
+        await standby.stop();
+      }
+    }, 60_000);
+
+    /**
+     * A missing lease table is provisioning state a retry cannot fix, and boot
+     * relies on the throw to close the writer pool — the transient path above
+     * must not swallow it.
+     */
+    it('rethrows a provisioning-class election failure', async () => {
+      await projector.stop();
+
+      const unprovisioned = new Proxy(pool, {
+        get(target, prop, receiver) {
+          if (prop === 'connect' || prop === 'query') {
+            return () =>
+              Promise.reject(
+                Object.assign(new Error('relation "chat_search.lease" does not exist'), {
+                  code: '42P01',
+                }),
+              );
+          }
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      const parked = new Projector(
+        {
+          pool: unprovisioned,
+          mongoose,
+          source: createMongoSourceReader(mongoose),
+          startupCatchUp: false,
+        },
+        {
+          readSearchEvents: (limit) => readSearchEvents(mongoose, limit),
+          deleteSearchEvents: (ids) =>
+            deleteSearchEvents(mongoose, ids as mongoose.Types.ObjectId[]),
+          dedupeSearchEvents,
+        },
+      );
+
+      await expect(parked.start()).rejects.toThrow(/does not exist/);
+      await parked.stop();
+    });
 
     it('projects nothing while it does not hold the lease', async () => {
       await projector.stop();

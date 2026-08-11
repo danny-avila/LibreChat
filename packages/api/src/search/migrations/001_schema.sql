@@ -212,10 +212,7 @@ CREATE TABLE IF NOT EXISTS chat_search.outbox (
 CREATE INDEX IF NOT EXISTS outbox_key_idx
   ON chat_search.outbox (tenant_id, user_id, kind, record_id, outbox_seq DESC);
 
--- Outbox retention is time-based: the lease-holding projector deletes rows older
--- than 24 hours during each reconciliation pass, regardless of downstream
--- consumption (pinned by `trims outbox rows past the retention window and keeps
--- the rest`). This index is what keeps that delete a range scan.
+-- Retention trim: rows are removed once applied, retained 24h for audit replay.
 CREATE INDEX IF NOT EXISTS outbox_enqueued_idx
   ON chat_search.outbox (enqueued_at);
 

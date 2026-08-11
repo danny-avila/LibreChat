@@ -1,6 +1,9 @@
+import os from 'os';
+import fs from 'fs';
+import path from 'path';
 import { Pool } from 'pg';
-import { randomBytes } from 'crypto';
 import { logger } from '@librechat/data-schemas';
+import { createHash, randomBytes } from 'crypto';
 import type { PoolClient } from 'pg';
 import type { SearchPool } from './types';
 import {
@@ -8,6 +11,7 @@ import {
   assertRoleCredentialsConfigured,
   managedRoleNames,
   migrate,
+  migrationsDir,
   provisionChatSearch,
   readMigrations,
   REQUIRED_EXTENSIONS,
@@ -34,6 +38,16 @@ import {
 /** Prose in a migration is not executable SQL; assertions target statements only. */
 const statementsOf = (sql: string): string => sql.replace(/--[^\n]*/g, '');
 
+/** Raw file bytes, deliberately not `readMigrations()`: the freeze pin is on what is on disk, before prefix rendering. */
+const readRawMigrationFiles = (): ReadonlyArray<[string, string]> =>
+  fs
+    .readdirSync(migrationsDir())
+    .filter((filename) => filename.endsWith('.sql'))
+    .sort()
+    .map((filename) => [filename, fs.readFileSync(path.join(migrationsDir(), filename), 'utf8')]);
+
+const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex');
+
 describe('migration files', () => {
   it('are ordered, idempotent SQL with stable checksums', () => {
     const migrations = readMigrations();
@@ -43,10 +57,37 @@ describe('migration files', () => {
       '003_policies.sql',
       '004_poll.sql',
       '005_reconcile.sql',
+      '006_tiebreak.sql',
     ]);
     for (const migration of migrations) {
       expect(migration.checksum).toMatch(/^[0-9a-f]{64}$/);
       expect(migration.sql.length).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * An applied migration file is frozen: its checksum is recorded by every
+   * provisioned database, and the runner treats an applied file whose text
+   * changed as drift — so an in-place amendment, however small, parks
+   * projection on every deployment the previous layer already provisioned.
+   * These are the parent layer's shipped bytes; changing this table is only
+   * correct alongside a deliberate re-provisioning story. New DDL goes in a
+   * new file.
+   */
+  it('never amends a file the parent layer shipped', () => {
+    const frozen = new Map([
+      ['001_schema.sql', '49c277f38d8602c85c18ae3146c4a088d845ca9fe6c49f1207f218118081755d'],
+      ['002_roles.sql', '25e9e5a595ac51790c4ed3cb5f9cbd4d7ffea1c8cd1af2f434afb139d0bfc080'],
+      ['003_policies.sql', 'fc2adbdb1289ef22c2062d4c03a3686d7adfeb8ad5a2403a9a3af059d72d66e7'],
+      ['004_poll.sql', '645c503b7df9d3f2234830dabee45f145d120bf6b3996278529a6e57b4eba533'],
+      ['005_reconcile.sql', '8831b93885bfa4a394c786db9dfd2b2d8aa467a66cfe97a87f40915612ae96d1'],
+    ]);
+    for (const [filename, sql] of readRawMigrationFiles()) {
+      const expected = frozen.get(filename);
+      if (expected === undefined) {
+        continue;
+      }
+      expect(`${filename} ${sha256(sql)}`).toBe(`${filename} ${expected}`);
     }
   });
 
@@ -614,6 +655,7 @@ describePg('provisioning from an empty database', () => {
       '003_policies.sql',
       '004_poll.sql',
       '005_reconcile.sql',
+      '006_tiebreak.sql',
     ]);
     await expect(findRoleViolations(pool)).resolves.toEqual([]);
   }, 60_000);
@@ -762,6 +804,66 @@ describePg('a role password the client rewrites before hashing', () => {
 });
 
 const PREFLIGHT_DB = 'preflight';
+
+/**
+ * The stacked-rollout path: a database the parent layer provisioned (001–005
+ * applied, checksums recorded) upgrades to this layer. The run must apply
+ * exactly the new file. This is the regression shape behind the freeze pin
+ * above — an amended old file is reported as checksum drift here, and boot
+ * treats failed provisioning as "projection will not run", cluster-wide.
+ */
+const UPGRADE_DB = 'upgrade';
+
+describePg('provisioning a database the parent layer already provisioned', () => {
+  const OLD_ENV = process.env;
+  let pool: SearchPool;
+
+  beforeAll(async () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: PROVISION_PASSWORD,
+      CHAT_SEARCH_WRITER_PASSWORD: PROVISION_PASSWORD,
+      CHAT_SEARCH_READER_PASSWORD: PROVISION_PASSWORD,
+    };
+    pool = await createIsolatedDatabase(UPGRADE_DB);
+  }, 60_000);
+
+  afterAll(async () => {
+    process.env = OLD_ENV;
+    if (pool) {
+      await dropIsolatedDatabase(pool, UPGRADE_DB);
+    }
+  });
+
+  it('applies only the new migration, never drift', async () => {
+    const parentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-search-parent-'));
+    for (const [filename, sql] of readRawMigrationFiles()) {
+      if (filename !== '006_tiebreak.sql') {
+        fs.writeFileSync(path.join(parentDir, filename), sql);
+      }
+    }
+    process.env.CHAT_SEARCH_MIGRATIONS_DIR = parentDir;
+    try {
+      expect(await migrate(pool)).toEqual([
+        '001_schema.sql',
+        '002_roles.sql',
+        '003_policies.sql',
+        '004_poll.sql',
+        '005_reconcile.sql',
+      ]);
+    } finally {
+      delete process.env.CHAT_SEARCH_MIGRATIONS_DIR;
+      fs.rmSync(parentDir, { recursive: true, force: true });
+    }
+
+    expect(await migrate(pool)).toEqual(['006_tiebreak.sql']);
+
+    const { rows } = await pool.query<{ mongo_id: string }>(
+      `SELECT mongo_id FROM chat_search.poll_cursor LIMIT 0`,
+    );
+    expect(rows).toEqual([]);
+  }, 120_000);
+});
 
 describePg('provisioning preflight', () => {
   let pool: SearchPool;

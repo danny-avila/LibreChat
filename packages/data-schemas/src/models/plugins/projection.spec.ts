@@ -467,7 +467,6 @@ describe('search-sync projection plugin', () => {
         name: 'probe',
         isEnabled: () => true,
         upsert: async () => undefined,
-        remove: async () => undefined,
         async removeMany(conditions: FilterQuery<unknown>): Promise<void> {
           const docs = await Probe.find(conditions).lean();
           liveDocsSeen.push(docs.length);

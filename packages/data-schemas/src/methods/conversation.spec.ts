@@ -1020,6 +1020,42 @@ describe('Conversation Operations', () => {
       expect(personal?.count).toBe(0);
     });
 
+    /**
+     * The tombstones ride the `deleteMany` hook alone. An explicit enqueue in
+     * `deleteConvos` once doubled every event — and uncapped, on the caller's
+     * request path — so this pins "once per conversation, exactly".
+     */
+    it('tombstones each deleted conversation exactly once, through the hook alone', async () => {
+      const SearchEvent = mongoose.models.SearchEvent as mongoose.Model<{
+        kind: string;
+        recordId: string;
+        op: string;
+      }>;
+      process.env.CHAT_SEARCH_ENABLED = 'true';
+      try {
+        const ids = [uuidv4(), uuidv4()];
+        for (const conversationId of ids) {
+          await Conversation.create({
+            conversationId,
+            user: 'user123',
+            endpoint: EModelEndpoint.openAI,
+          });
+        }
+        await SearchEvent.deleteMany({});
+
+        await deleteConvos('user123', {});
+
+        const events = await SearchEvent.find(
+          { kind: 'conversation', op: 'tombstone' },
+          { recordId: 1, _id: 0 },
+        ).lean();
+        expect(events.map((event) => event.recordId).sort()).toEqual([...ids].sort());
+      } finally {
+        delete process.env.CHAT_SEARCH_ENABLED;
+        await (mongoose.models.SearchEvent as mongoose.Model<unknown>).deleteMany({});
+      }
+    });
+
     it('should decrement a shared tag once per deleted conversation when clearing all', async () => {
       await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
       await Conversation.create({

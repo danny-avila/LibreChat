@@ -3,8 +3,6 @@ import type { Pool, PoolClient } from 'pg';
 /** Row `kind` discriminator stored in `chat_search.documents`. */
 export type SearchKind = 'message' | 'conversation' | 'shared-link';
 
-export type SearchOp = 'upsert' | 'tombstone';
-
 export type SearchRecordKey = Readonly<{
   tenantId: string;
   userId: string;
@@ -25,11 +23,6 @@ export type ProjectionSource = SearchRecordKey & {
   sourceUpdatedAt: Date | null;
   expiresAt: Date | null;
   unfinished: boolean;
-};
-
-export type ProjectionEvent = SearchRecordKey & {
-  op: SearchOp;
-  eventId: string;
 };
 
 export type EmbeddingWrite = SearchRecordKey & {

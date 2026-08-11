@@ -16,7 +16,6 @@ import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
-import { enqueueSearchEvents } from '~/search/events';
 import logger from '~/config/winston';
 
 export interface ConversationMethods {
@@ -880,20 +879,13 @@ export function createConversationMethods(
       }
 
       /**
-       * Explicit tombstones alongside the `deleteMany` hook: this method already
-       * holds the exact keys it removed, so the projector learns them without a
-       * second read and without depending on middleware that bulk paths skip.
+       * Tombstones ride the `deleteMany` hook alone. An explicit enqueue here
+       * once doubled it — same keys, but uncapped where the hook caps at
+       * `DELETE_MANY_EVENT_CAP`, so clearing a large history issued one
+       * unbounded insertMany on the caller's request plus a duplicate of every
+       * capped event. The hook covers the cap's worth and reconciliation sweeps
+       * the remainder, exactly as on every other bulk deletion path.
        */
-      await enqueueSearchEvents(
-        mongoose,
-        conversations.map((conversation) => ({
-          tenantId: conversation.tenantId ?? null,
-          userId: user,
-          kind: 'conversation' as const,
-          recordId: conversation.conversationId,
-          op: 'tombstone' as const,
-        })),
-      );
 
       /**
        * Post-delete cleanup is best-effort: the conversations are already gone, so a
