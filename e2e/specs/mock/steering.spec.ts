@@ -59,10 +59,10 @@ function isSteerRequest(response: Response) {
 /** Select the MCP server from the composer palette. */
 async function selectEphemeralMCP(page: Page) {
   await page.getByRole('button', { name: 'Attach and tools' }).click();
-  const serverItem = page.getByRole('option', { name: new RegExp(MCP_SERVER_TITLE) });
+  const serverItem = page.getByRole('button', { name: new RegExp(MCP_SERVER_TITLE) });
   await expect(serverItem).toBeVisible();
   await serverItem.click();
-  await expect(serverItem).toHaveAttribute('aria-checked', 'true');
+  await expect(serverItem).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('listitem', { name: MCP_SERVER_TITLE, exact: true })).toBeVisible();
 }

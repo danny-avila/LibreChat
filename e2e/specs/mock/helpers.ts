@@ -77,10 +77,10 @@ export async function selectModelSpec(page: Page, label: string) {
 /** Toggle a built-in tool row on from the composer palette and wait for its chip. */
 async function enableBuiltinTool(page: Page, label: string) {
   await page.getByRole('button', { name: 'Attach and tools' }).click();
-  const row = page.getByRole('option', { name: label, exact: true });
+  const row = page.getByRole('button', { name: label, exact: true });
   await expect(row).toBeVisible();
   await row.click();
-  await expect(row).toHaveAttribute('aria-checked', 'true');
+  await expect(row).toHaveAttribute('aria-pressed', 'true');
   await page.keyboard.press('Escape');
   await expect(
     page.getByTestId('composer-active-builtin').filter({ hasText: label }),
