@@ -55,6 +55,7 @@ COPY api/package*.json ./api/
 # present in EVERY stage that installs — both the full `base` install and the
 # `--omit=dev` install in the final stage, which share this ancestor.
 COPY vendor ./vendor
+RUN echo "DEBUG vendor contents:" && ls -la /app/vendor && sha256sum /app/vendor/*.tgz || echo "DEBUG vendor MISSING OR EMPTY"
 
 # Install all dependencies for every build
 FROM base-min AS base
