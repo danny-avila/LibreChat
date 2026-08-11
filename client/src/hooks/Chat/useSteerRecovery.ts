@@ -3,9 +3,9 @@ import { useRecoilCallback } from 'recoil';
 import type { Snapshot } from 'recoil';
 import type { PendingSteer } from '~/store/families';
 import { getSteerErrorCode, resolveAcknowledgedSteer } from '~/hooks/Chat/useSteering';
+import { carriedSteerContext, isLegacyDeliveryUncertain } from '~/utils';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useSteerMessageMutation } from '~/data-provider';
-import { carriedSteerContext } from '~/utils';
 import store from '~/store';
 
 /**
@@ -110,7 +110,7 @@ export default function useSteerRecovery(conversationId: string) {
           .getLoadable(store.pendingSteersByConvoId(conversationId))
           .getValue()
           .find((item) => item.steerId === steerId);
-        if (!steer) {
+        if (!steer || isLegacyDeliveryUncertain(steer)) {
           return;
         }
         markStatus(steerId, 'sending');
@@ -194,7 +194,7 @@ export default function useSteerRecovery(conversationId: string) {
           .getLoadable(store.pendingSteersByConvoId(conversationId))
           .getValue()
           .find((item) => item.steerId === steerId);
-        if (!steer) {
+        if (!steer || isLegacyDeliveryUncertain(steer)) {
           return;
         }
         queueSteer(steer);

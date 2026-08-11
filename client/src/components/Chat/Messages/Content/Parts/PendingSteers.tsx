@@ -6,10 +6,10 @@ import useSteerEscalate from '~/hooks/Chat/useSteerEscalate';
 import useSteerRecovery from '~/hooks/Chat/useSteerRecovery';
 import { hasLiveRunPause } from '~/hooks/Chat/useSteering';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import { cn, isLegacyDeliveryUncertain } from '~/utils';
 import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import SteerPart from './SteerPart';
-import { cn } from '~/utils';
 import store from '~/store';
 
 const ACTION_CLASS =
@@ -57,60 +57,75 @@ function PendingSteers({ conversationId }: PendingSteersProps) {
 
   return (
     <div role="list" aria-label={localize('com_ui_steer_in_flight')} data-testid="pending-steers">
-      {steers.map((steer) => (
-        <div
-          key={steer.steerId}
-          role="listitem"
-          className={cn(steer.status !== 'failed' && 'opacity-60')}
-        >
-          <SteerPart
-            steer={steer.text}
-            files={steer.files}
-            steerId={steer.steerId}
-            createdAt={steer.createdAt}
-          />
-          {steer.status === 'failed' ? (
-            <div className="-mt-2 mb-2 flex items-center gap-3 pl-9 text-xs">
-              <span className="text-text-destructive">
-                {localize('com_ui_steer_failed_inline')}
-              </span>
-              <button type="button" onClick={() => retry(steer.steerId)} className={ACTION_CLASS}>
-                {localize('com_ui_retry')}
-              </button>
-              <button
-                type="button"
-                onClick={() => sendAsNew(steer.steerId)}
-                className={ACTION_CLASS}
-              >
-                {localize('com_ui_send_as_new')}
-              </button>
-            </div>
-          ) : (
-            <div className="-mt-2 mb-2 flex items-center gap-2 pl-9 text-xs text-text-secondary">
-              <span>
-                {localize(
-                  steer.preempt === true ? 'com_ui_steer_in_flight_preempt' : 'com_ui_sending',
+      {steers.map((steer) => {
+        const deliveryUncertain = isLegacyDeliveryUncertain(steer);
+        return (
+          <div
+            key={steer.steerId}
+            role="listitem"
+            className={cn(steer.status !== 'failed' && 'opacity-60')}
+          >
+            <SteerPart
+              steer={steer.text}
+              files={steer.files}
+              steerId={steer.steerId}
+              createdAt={steer.createdAt}
+            />
+            {steer.status === 'failed' ? (
+              <div className="-mt-2 mb-2 flex items-center gap-3 pl-9 text-xs">
+                <span className="text-text-destructive">
+                  {localize(
+                    deliveryUncertain
+                      ? 'com_ui_steer_delivery_uncertain'
+                      : 'com_ui_steer_failed_inline',
+                  )}
+                </span>
+                {!deliveryUncertain && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => retry(steer.steerId)}
+                      className={ACTION_CLASS}
+                    >
+                      {localize('com_ui_retry')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => sendAsNew(steer.steerId)}
+                      className={ACTION_CLASS}
+                    >
+                      {localize('com_ui_send_as_new')}
+                    </button>
+                  </>
                 )}
-              </span>
-              {/* Only a `pending` steer can be armed: `sending` has no server id
-                  yet, and one already interrupting has nothing left to escalate. */}
-              {steer.status === 'pending' && steer.preempt !== true && (
-                <EscalateNowButton
-                  surface="bubble"
-                  messageText={steer.text}
-                  disabled={paused === true || interruptPending}
-                  onClick={() =>
-                    escalate({
-                      steerId: steer.steerId,
-                      generationCreatedAt: steer.generationCreatedAt,
-                    })
-                  }
-                />
-              )}
-            </div>
-          )}
-        </div>
-      ))}
+              </div>
+            ) : (
+              <div className="-mt-2 mb-2 flex items-center gap-2 pl-9 text-xs text-text-secondary">
+                <span>
+                  {localize(
+                    steer.preempt === true ? 'com_ui_steer_in_flight_preempt' : 'com_ui_sending',
+                  )}
+                </span>
+                {/* Only a `pending` steer can be armed: `sending` has no server id
+                    yet, and one already interrupting has nothing left to escalate. */}
+                {steer.status === 'pending' && steer.preempt !== true && (
+                  <EscalateNowButton
+                    surface="bubble"
+                    messageText={steer.text}
+                    disabled={paused === true || interruptPending}
+                    onClick={() =>
+                      escalate({
+                        steerId: steer.steerId,
+                        generationCreatedAt: steer.generationCreatedAt,
+                      })
+                    }
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

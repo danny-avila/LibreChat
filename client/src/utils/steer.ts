@@ -5,9 +5,17 @@ import type {
   TSteerAppliedEvent,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import type { QueuedMessage, QueuedMessageOrigin } from '~/store/families';
+import type { PendingSteer, QueuedMessage, QueuedMessageOrigin } from '~/store/families';
 
 type SteerPart = Extract<TMessageContentParts, { type: ContentTypes.STEER }>;
+
+/** Protocol v1 cannot correlate an ambiguous failed POST with server state.
+ * Retrying or rerouting it could duplicate words the server already accepted. */
+export function isLegacyDeliveryUncertain(
+  steer: Pick<PendingSteer, 'deliveryUncertain' | 'generationProtocolVersion'>,
+): boolean {
+  return steer.deliveryUncertain === true && steer.generationProtocolVersion !== 2;
+}
 
 /** Returns the steer content part when `part` is one, else undefined. */
 export function getSteerPart(part: TMessageContentParts | undefined): SteerPart | undefined {
