@@ -524,6 +524,7 @@ const ContentParts = memo(function ContentParts({
           {hasParallelContent && (
             <Sources messageId={messageId} conversationId={conversationId || undefined} />
           )}
+          {filesSlot}
           {renderPendingSkills()}
           {phaseSegments.map((segment, index) =>
             segment.type === 'phase' ? (

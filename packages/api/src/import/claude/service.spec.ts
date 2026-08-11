@@ -111,14 +111,28 @@ describe('inspectExport for a Claude export', () => {
     expect(inspected.summary.conversations).toBe(2);
   });
 
-  it('rejects a later shard containing a malformed Claude entry', async () => {
+  it('inspects intact shards and reports a malformed later shard during import', async () => {
     const valid = claudeConversation('valid', 'Valid');
     const filepath = await writeZip({
       'conversations-000.json': JSON.stringify([valid]),
       'conversations-001.json': JSON.stringify([valid, null]),
     });
+    const inspected = await inspectExport(filepath);
+    const { sink, recorded } = recorder();
 
-    await expect(inspectExport(filepath)).rejects.toThrow('Unsupported import type');
+    expect(inspected.summary).toMatchObject({ conversations: 1, shards: 1 });
+
+    const report = await runImport({
+      ...BASE,
+      filepath,
+      format: inspected.format,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(recorded.conversations).toHaveLength(1);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain('conversations-001.json');
   });
 
   /** `uuid` is the external id the skip set and the `importedFrom` marker are

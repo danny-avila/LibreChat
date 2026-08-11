@@ -365,18 +365,6 @@ function atImportCapacity() {
   return activeImportStages >= MAX_CONCURRENT_IMPORT_STAGES;
 }
 
-/** Runs the archive inspection under the process-wide ceiling, so a burst of
- * uploads queues behind the ceiling as 429s instead of parsing every archive
- * at once. */
-async function inspectUnderCapacity(filepath) {
-  activeImportStages += 1;
-  try {
-    return await inspectExport(filepath);
-  } finally {
-    activeImportStages = Math.max(activeImportStages - 1, 0);
-  }
-}
-
 function handleUpload(req, res, next) {
   uploadSingle(req, res, (err) => {
     if (err && err.code === 'LIMIT_FILE_SIZE') {
@@ -527,9 +515,13 @@ async function runImportJob(context, job) {
      * assets no committed conversation claimed: a run cancelled between the
      * asset phase and the first conversation would otherwise leave every file
      * it created referenced by nothing and exempt from every sweep. */
-    const storageContext = { config: appConfig, user: { id: userId } };
+    const storageContext = { config: appConfig, user: { id: userId, tenantId } };
     const releaseAsset = async (asset) => {
-      await backendFor(asset.type).fns.deleteFile(storageContext, asset);
+      await backendFor(asset.type).fns.deleteFile(storageContext, {
+        ...asset,
+        user: userId,
+        tenantId,
+      });
       await db.deleteFiles([asset.file_id], userId);
     };
     const batch = createImportBatchBuilder(userId, appConfig?.interfaceConfig);
@@ -695,8 +687,9 @@ router.post(
     const isZip = path.extname(req.file.originalname).toLowerCase() === '.zip';
 
     let inspected;
+    activeImportStages += 1;
     try {
-      inspected = await inspectUnderCapacity(req.file.path);
+      inspected = await inspectExport(req.file.path);
     } catch (error) {
       if (!isZip && error instanceof Error && error.message === 'Unsupported import type') {
         await importLegacyConversation(req, res);
@@ -707,6 +700,8 @@ router.post(
         message: sanitizeImportError(error, `Error inspecting import file for user ${req.user.id}`),
       });
       return;
+    } finally {
+      activeImportStages = Math.max(activeImportStages - 1, 0);
     }
 
     try {

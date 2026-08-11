@@ -33,6 +33,17 @@ jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(() => ({ saveBuffer: jest.fn() })),
 }));
 
+const mockLegacy = { release: null, started: null };
+jest.mock('~/server/utils/import', () => ({
+  importConversations: jest.fn(
+    () =>
+      new Promise((resolve) => {
+        mockLegacy.started?.();
+        mockLegacy.release = resolve;
+      }),
+  ),
+}));
+
 /** Holds the run open. Everything else in the package stays real: the point
  * is to observe the ceiling while a genuine run occupies its slot, and a run
  * over these fixtures finishes far too quickly to observe otherwise. */
@@ -109,6 +120,8 @@ describe('import concurrency ceiling', () => {
   beforeEach(() => {
     userId = new mongoose.Types.ObjectId().toString();
     mockRun.release = null;
+    mockLegacy.release = null;
+    mockLegacy.started = null;
   });
 
   /** The per-user limit lets a second account through; the node-wide ceiling
@@ -143,5 +156,24 @@ describe('import concurrency ceiling', () => {
     }
 
     await request(app).post('/api/convos/import').attach('file', filepath).expect(202);
+  });
+
+  it('keeps a legacy import inside the process-wide capacity slot', async () => {
+    const legacyStarted = new Promise((resolve) => {
+      mockLegacy.started = resolve;
+    });
+    const legacy = request(app)
+      .post('/api/convos/import')
+      .attach('file', Buffer.from('{"version":1,"history":[]}'), 'legacy.json');
+
+    const legacyResponse = legacy.then((response) => response);
+    await legacyStarted;
+
+    userId = new mongoose.Types.ObjectId().toString();
+    const filepath = await buildChatGptExportZip();
+    await request(app).post('/api/convos/import').attach('file', filepath).expect(429);
+
+    mockLegacy.release();
+    expect((await legacyResponse).status).toBe(201);
   });
 });

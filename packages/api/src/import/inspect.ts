@@ -15,6 +15,7 @@ interface ShardTotals {
   conversations: number;
   archived: number;
   starred: number;
+  shards: number;
 }
 
 function tallyChatGptShard(conversations: ChatGptConversation[], totals: ShardTotals): void {
@@ -57,46 +58,56 @@ export async function inspectExport(
      * a header: the shards have to be parsed. Each one is parsed, tallied
      * and dropped before the next is read, so peak heap stays at a single
      * shard rather than the whole export. The format is decided by the first
-     * shard's parsed shape, the only thing distinguishing a Claude export
-     * (whose conversations carry `chat_messages`) or a Grok one (an object
-     * keyed by `conversations`) from a ChatGPT one. */
-    const totals: ShardTotals = { conversations: 0, archived: 0, starred: 0 };
+     * valid shard's parsed shape, the only thing distinguishing a Claude
+     * export (whose conversations carry `chat_messages`) or a Grok one (an
+     * object keyed by `conversations`) from a ChatGPT one. Malformed shards
+     * are left for `runImport` to report and skip. */
+    const totals: ShardTotals = { conversations: 0, archived: 0, starred: 0, shards: 0 };
     let format: ExportFormat | null = null;
 
     for (const shard of layout.conversationShards) {
-      const parsed: unknown = JSON.parse((await archive.read(shard)).toString('utf8'));
-
-      if (format === null) {
-        format = detectExportFormat(parsed);
-        if (format === null) {
-          throw new Error('Unsupported import type');
+      try {
+        const parsed: unknown = JSON.parse((await archive.read(shard)).toString('utf8'));
+        const shardFormat = detectExportFormat(parsed);
+        if (shardFormat === null || (format !== null && shardFormat !== format)) {
+          continue;
         }
-      }
+        format ??= shardFormat;
 
-      if (format === 'grok') {
-        if (!isGrokExport(parsed)) {
-          throw new Error('Unsupported import type');
+        if (format === 'grok') {
+          if (!isGrokExport(parsed)) {
+            continue;
+          }
+          tallyGrokExport(parsed, totals);
+          totals.shards += 1;
+          continue;
         }
-        tallyGrokExport(parsed, totals);
+
+        if (!Array.isArray(parsed)) {
+          continue;
+        }
+
+        if (format === 'claude') {
+          if (!hasClaudeConversationShape(parsed)) {
+            continue;
+          }
+          totals.conversations += parsed.length;
+          totals.shards += 1;
+          continue;
+        }
+
+        if (!hasChatGptConversationShape(parsed)) {
+          continue;
+        }
+        tallyChatGptShard(parsed as ChatGptConversation[], totals);
+        totals.shards += 1;
+      } catch {
         continue;
       }
+    }
 
-      if (!Array.isArray(parsed)) {
-        throw new Error('Unsupported import type');
-      }
-
-      if (format === 'claude') {
-        if (!hasClaudeConversationShape(parsed)) {
-          throw new Error('Unsupported import type');
-        }
-        totals.conversations += parsed.length;
-        continue;
-      }
-
-      if (!hasChatGptConversationShape(parsed)) {
-        throw new Error('Unsupported import type');
-      }
-      tallyChatGptShard(parsed as ChatGptConversation[], totals);
+    if (format === null || totals.shards === 0) {
+      throw new Error('Unsupported import type');
     }
 
     if (format === 'grok') {
@@ -111,7 +122,7 @@ export async function inspectExport(
           source: 'grok',
           manifestVersion: null,
           conversations: totals.conversations,
-          shards: layout.conversationShards.length,
+          shards: totals.shards,
           assets: 0,
           assetBytes: 0,
           archived: 0,
@@ -130,7 +141,7 @@ export async function inspectExport(
           source: 'claude',
           manifestVersion: null,
           conversations: totals.conversations,
-          shards: layout.conversationShards.length,
+          shards: totals.shards,
           assets: 0,
           assetBytes: 0,
           archived: 0,
@@ -151,7 +162,7 @@ export async function inspectExport(
         source: layout.version === null ? 'chatgpt-legacy' : 'chatgpt',
         manifestVersion: layout.version,
         conversations: totals.conversations,
-        shards: layout.conversationShards.length,
+        shards: totals.shards,
         assets: layout.assetEntries.length,
         assetBytes,
         archived: totals.archived,

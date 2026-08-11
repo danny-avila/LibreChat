@@ -58,6 +58,34 @@ describe('inspectExport', () => {
     await expect(inspectExport(filepath)).rejects.toThrow(/Unsupported import type/);
   });
 
+  it('counts intact shards after a malformed shard and leaves recovery to the import run', async () => {
+    const JSZip = (await import('jszip')).default;
+    const fs = await import('fs');
+    const os = await import('os');
+    const path = await import('path');
+
+    const valid = {
+      conversation_id: 'valid-1',
+      title: 'Valid',
+      create_time: 1700000000,
+      update_time: 1700000100,
+      mapping: {},
+    };
+    const zip = new JSZip();
+    zip.file('conversations-000.json', JSON.stringify([valid]));
+    zip.file('conversations-001.json', '{malformed');
+    const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-import-recoverable-inspect-'));
+    const filepath = path.join(dir, 'recoverable.zip');
+    fs.writeFileSync(filepath, buffer);
+
+    const inspected = await inspectExport(filepath);
+
+    expect(inspected.format).toBe('chatgpt');
+    expect(inspected.summary.conversations).toBe(1);
+    expect(inspected.summary.shards).toBe(1);
+  });
+
   it('rejects an archive with no recognizable conversations', async () => {
     const JSZip = (await import('jszip')).default;
     const fs = await import('fs');

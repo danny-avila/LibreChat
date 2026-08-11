@@ -40,6 +40,7 @@ jest.mock('~/server/utils/import/defaults', () => ({
 /** Every `saveBuffer` the job pipeline issued, so a test can assert which
  * storage base path each asset type was written under. */
 const mockSavedAssets = [];
+const mockDeletedAssets = [];
 /**
  * The real local storage strategy writes under the repo's `client/public`
  * tree. This route test only cares that the job pipeline calls `saveBuffer`
@@ -57,6 +58,9 @@ jest.mock('~/server/services/Files/strategies', () => ({
       const filepath = nodePath.join(dir, fileName);
       nodeFs.writeFileSync(filepath, buffer);
       return filepath;
+    },
+    deleteFile: async (req, file) => {
+      mockDeletedAssets.push({ req, file });
     },
   })),
 }));
@@ -282,6 +286,7 @@ describe('conversation import job API (real router, real Mongo)', () => {
     await Conversation.deleteMany({});
     await User.deleteMany({});
     userId = new mongoose.Types.ObjectId().toString();
+    mockDeletedAssets.length = 0;
     await User.create({ _id: userId, username: 'importer', email: 'importer@test.com' });
   });
 
@@ -697,6 +702,32 @@ describe('conversation import job API (real router, real Mongo)', () => {
     expect(failed.body.phase).toBe('failed');
     expect(typeof failed.body.error).toBe('string');
     expect(fs.existsSync(storedFilepath)).toBe(false);
+  });
+
+  it('supplies owner metadata when rolling back stored assets', async () => {
+    const db = require('~/models');
+    const createFile = jest.spyOn(db, 'createFile').mockRejectedValue(new Error('row failed'));
+    const filepath = await buildMixedAssetExportZip();
+
+    try {
+      const uploaded = await request(app)
+        .post('/api/convos/import')
+        .attach('file', filepath)
+        .expect(202);
+
+      await request(app).post(`/api/convos/import/jobs/${uploaded.body.jobId}/start`).expect(202);
+      await waitForTerminal(app, uploaded.body.jobId);
+
+      expect(mockDeletedAssets.length).toBeGreaterThan(0);
+      for (const deleted of mockDeletedAssets) {
+        expect(deleted.req.user).toEqual({ id: userId, tenantId: undefined });
+        expect(deleted.file).toEqual(
+          expect.objectContaining({ user: userId, tenantId: undefined }),
+        );
+      }
+    } finally {
+      createFile.mockRestore();
+    }
   });
 
   it('cancels an inspected job, removes its temp archive, and 404s an unknown job', async () => {

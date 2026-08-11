@@ -26,6 +26,7 @@ jest.mock('~/Providers', () => {
     SearchContext: {
       Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     },
+    useSearchContext: () => ({ searchResults: undefined }),
   };
 });
 
@@ -508,6 +509,32 @@ describe('ContentParts: message files', () => {
     );
 
     expect(screen.getByTestId('parallel-renderer')).toBeInTheDocument();
+    expect(screen.getAllByTestId('content-file')).toHaveLength(1);
+  });
+
+  it('renders the file once when completed activity phases segment the content', () => {
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Research',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_count: 1,
+      pending: false,
+    } as unknown as TMessageContentParts;
+
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[
+          { type: ContentTypes.TEXT, text: 'working' } as TMessageContentParts,
+          phase,
+          { type: ContentTypes.TEXT, text: 'done' } as TMessageContentParts,
+        ]}
+        files={[pdf]}
+      />,
+    );
+
+    expect(screen.getByTestId('activity-phase-group')).toBeInTheDocument();
     expect(screen.getAllByTestId('content-file')).toHaveLength(1);
   });
 

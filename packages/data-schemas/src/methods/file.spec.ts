@@ -86,6 +86,28 @@ describe('File Methods', () => {
       expect(file?.file_id).toBe(fileId);
       expect(file?.expiresAt).toBeUndefined();
     });
+
+    it('preserves the retention deadline when the upload TTL is disabled', async () => {
+      const fileId = uuidv4();
+      const userId = new mongoose.Types.ObjectId();
+      const expiredAt = new Date('2030-01-01T00:00:00.000Z');
+
+      const file = await fileMethods.createFile(
+        {
+          file_id: fileId,
+          user: userId,
+          filename: 'retained.txt',
+          filepath: '/uploads/retained.txt',
+          type: 'text/plain',
+          bytes: 200,
+          expiredAt,
+        },
+        true,
+      );
+
+      expect(file?.expiresAt).toBeUndefined();
+      expect(file?.expiredAt).toEqual(expiredAt);
+    });
   });
 
   describe('claimCodeFile', () => {
