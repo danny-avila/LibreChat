@@ -658,7 +658,13 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
         expectedCreatedAt: job.createdAt,
         transformAbortContent: (content) =>
           abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
-            ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
+            ? attachAskUserQuestionArgs(
+                content,
+                Array.isArray(abortedAskPayload.questions)
+                  ? { questions: abortedAskPayload.questions }
+                  : abortedAskPayload.question,
+                abortedAskPayload.tool_call_id,
+              )
             : content,
         /** Persist every parent-row prerequisite before publishing the ordinary
          * abort FINAL. That frame can immediately drain a queued follow-up, whose

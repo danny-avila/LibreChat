@@ -381,9 +381,15 @@ export function useResumeSubmit() {
   );
 
   const submitAskAnswer = useCallback(
-    (actionId: string, answer: string, opts?: { onSuccess?: () => void }) => {
+    (
+      actionId: string,
+      resolution: string | Record<string, string>,
+      opts?: { onSuccess?: () => void },
+    ) => {
       const fields = buildResumeFields();
-      if (!fields || answer.length === 0) {
+      const isBatch = typeof resolution !== 'string';
+      const hasAnswer = isBatch ? Object.keys(resolution).length > 0 : resolution.length > 0;
+      if (!fields || !hasAnswer) {
         return;
       }
       if (submittingAskActionIdsRef.current.has(actionId)) {
@@ -392,7 +398,11 @@ export function useResumeSubmit() {
       submittingAskActionIdsRef.current.add(actionId);
       setAskStatus(actionId, 'submitting');
       askMutation.mutate(
-        { ...fields, actionId, answer },
+        {
+          ...fields,
+          actionId,
+          ...(isBatch ? { answers: resolution } : { answer: resolution }),
+        },
         {
           onSuccess: () => {
             setAskStatus(actionId, 'submitted');
@@ -408,7 +418,7 @@ export function useResumeSubmit() {
             if (messages && chatContext?.setMessages) {
               let changed = false;
               const next = messages.map((message) => {
-                const resolved = resolveAskUserQuestionPart(message, actionId, answer);
+                const resolved = resolveAskUserQuestionPart(message, actionId, resolution);
                 if (resolved !== message) {
                   changed = true;
                 }

@@ -1,5 +1,10 @@
 const axios = require('axios');
-const { isEnabled, getReferencedQuotes, mergeQuotedText } = require('@librechat/api');
+const {
+  isEnabled,
+  getReferencedQuotes,
+  mergeQuotedText,
+  serializeAskUserAnswerVariants,
+} = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
 const denyRequest = require('./denyRequest');
@@ -31,6 +36,18 @@ async function moderateText(req, res, next) {
     const inputs = [];
     if (safeText.length > 0) {
       inputs.push(safeText);
+    }
+    if (
+      req.body.answers != null &&
+      typeof req.body.answers === 'object' &&
+      !Array.isArray(req.body.answers)
+    ) {
+      for (const answer of Object.values(req.body.answers)) {
+        if (typeof answer === 'string' && answer.length > 0) {
+          inputs.push(answer);
+        }
+      }
+      inputs.push(...serializeAskUserAnswerVariants(req.body.answers));
     }
     const quotes = getReferencedQuotes(req.body.quotes);
     if (quotes != null) {

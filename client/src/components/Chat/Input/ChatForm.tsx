@@ -173,6 +173,9 @@ const ChatForm = memo(function ChatForm({
   }, []);
 
   const answerMode = useAskAnswerMode(conversationId);
+  const answerPlaceholder = answerMode.batchMode
+    ? localize('com_ui_answer_questions_above')
+    : (answerMode.otherLabel ?? localize('com_ui_something_else'));
 
   useAutoSave({
     files,
@@ -386,9 +389,7 @@ const ChatForm = memo(function ChatForm({
     setIsScrollable,
     disabled: disableInputs,
     // The composer IS the free-form answer box while a question pause is live.
-    placeholder: answerMode.active
-      ? (answerMode.otherLabel ?? localize('com_ui_something_else'))
-      : placeholder,
+    placeholder: answerMode.active ? answerPlaceholder : placeholder,
     // Enter stays live during a run when it can steer/queue instead of send.
     allowSubmitWhileGenerating: steering.duringRunActive,
     onDuringRunModifier: steering.duringRunActive ? handleDuringRunModifier : undefined,
@@ -595,7 +596,11 @@ const ChatForm = memo(function ChatForm({
                           textAreaRef as React.MutableRefObject<HTMLTextAreaElement | null>
                         ).current = e;
                       }}
-                      disabled={disableInputs || isNotAppendable}
+                      disabled={
+                        disableInputs ||
+                        isNotAppendable ||
+                        (answerMode.active && answerMode.batchMode)
+                      }
                       onPaste={handlePaste}
                       onKeyDown={(e) => {
                         // Answer mode consumes option-navigation keys from the
@@ -698,6 +703,7 @@ const ChatForm = memo(function ChatForm({
                             filesLoading ||
                             disableInputs ||
                             isNotAppendable ||
+                            (answerMode.active && answerMode.batchMode) ||
                             (isSubmitting && !answerMode.active)
                           }
                         />

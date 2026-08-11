@@ -75,6 +75,27 @@ describe('useAskAnswerMode', () => {
     expect(result.current.popoverVisible).toBe(false);
   });
 
+  it('keeps batch mode active while reserving answers for the bounded form', () => {
+    mockUseGetMessages.mockReturnValue({
+      data: {
+        ...liveAsk,
+        questions: [
+          { id: 'environment', question: 'Which environment?' },
+          { id: 'window', question: 'Which window?' },
+        ],
+      },
+    });
+
+    const { result } = renderHook(() => useAskAnswerMode('conversation-1'));
+
+    expect(result.current.active).toBe(true);
+    expect(result.current.batchMode).toBe(true);
+    expect(result.current.options).toEqual([]);
+    expect(result.current.draftId).toBeNull();
+    expect(result.current.submitText('must stay out of the normal send path')).toBe(true);
+    expect(mockSubmitAskAnswer).not.toHaveBeenCalled();
+  });
+
   it('disables the query and forces liveAsk null for a new (unsaved) conversation', () => {
     mockUseGetMessages.mockReturnValue({ data: liveAsk });
 

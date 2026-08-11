@@ -3,6 +3,7 @@ import type {
   ToolApprovalDecision,
   ToolApprovalDecisionMap,
   AskUserQuestionResolution,
+  AskUserQuestionsResolution,
   EventHandler,
   RunStep,
 } from '@librechat/agents';
@@ -55,6 +56,112 @@ export function mapAskUserAnswer(
   resolution: Agents.AskUserQuestionResolution,
 ): AskUserQuestionResolution {
   return { answer: resolution.answer };
+}
+
+/** Translate batched ask-user wire answers into the SDK's resume value. */
+export function mapAskUserAnswers(
+  resolution: Agents.AskUserQuestionsResolution,
+): AskUserQuestionsResolution {
+  return { answers: resolution.answers };
+}
+
+const MAX_ASK_ANSWER_LENGTH = 16_000;
+const ASK_QUESTION_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+const MAX_ASK_QUESTIONS = 4;
+
+/**
+ * Serialize every ordering a validated batch can take after the SDK rebuilds
+ * its answer map in question order. Batches are capped at four questions, so
+ * this remains bounded at 24 candidates and lets pre-controller PII/moderation
+ * checks inspect the exact ToolMessage even for a crafted key order.
+ */
+export function serializeAskUserAnswerVariants(answers: unknown): string[] {
+  if (answers == null || typeof answers !== 'object' || Array.isArray(answers)) {
+    return [];
+  }
+  const entries = Object.entries(answers);
+  if (
+    entries.length === 0 ||
+    entries.length > MAX_ASK_QUESTIONS ||
+    entries.some(([, value]) => typeof value !== 'string')
+  ) {
+    return [];
+  }
+
+  const variants: string[] = [];
+  const visit = (remaining: Array<[string, unknown]>, ordered: Array<[string, unknown]>) => {
+    if (remaining.length === 0) {
+      const normalized = Object.create(null) as Record<string, unknown>;
+      for (const [key, value] of ordered) {
+        normalized[key] = value;
+      }
+      variants.push(JSON.stringify({ answers: normalized }));
+      return;
+    }
+    for (let index = 0; index < remaining.length; index++) {
+      visit(
+        [...remaining.slice(0, index), ...remaining.slice(index + 1)],
+        [...ordered, remaining[index]],
+      );
+    }
+  };
+  visit(entries, []);
+  return variants;
+}
+
+interface AskUserResumeBody {
+  answer?: unknown;
+  answers?: unknown;
+}
+
+type AskUserResumeResult =
+  | { resumeValue: AskUserQuestionResolution | AskUserQuestionsResolution }
+  | { status: 400; error: string };
+
+/** Validate an ask-user resume payload and translate it to the SDK contract. */
+export function resolveAskUserQuestionResume(
+  payload: Agents.AskUserQuestionInterruptPayload,
+  body: AskUserResumeBody,
+): AskUserResumeResult {
+  if (!Array.isArray(payload.questions)) {
+    if (typeof body.answer !== 'string' || body.answer.length === 0) {
+      return { status: 400, error: 'An answer is required' };
+    }
+    if (body.answer.length > MAX_ASK_ANSWER_LENGTH) {
+      return { status: 400, error: 'Answer exceeds the maximum length' };
+    }
+    return { resumeValue: mapAskUserAnswer({ answer: body.answer }) };
+  }
+
+  if (payload.questions.length === 0 || payload.questions.length > MAX_ASK_QUESTIONS) {
+    return { status: 400, error: 'The pending question batch is invalid' };
+  }
+  if (body.answers == null || typeof body.answers !== 'object' || Array.isArray(body.answers)) {
+    return { status: 400, error: 'Answers are required for every question' };
+  }
+
+  const submittedAnswers = body.answers as Record<string, unknown>;
+  const answers: Record<string, string> = Object.create(null);
+  const expectedIds = new Set<string>();
+  for (const question of payload.questions) {
+    const { id } = question;
+    if (typeof id !== 'string' || !ASK_QUESTION_ID_PATTERN.test(id) || expectedIds.has(id)) {
+      return { status: 400, error: 'The pending question batch is invalid' };
+    }
+    expectedIds.add(id);
+    const answer = Object.getOwnPropertyDescriptor(submittedAnswers, id)?.value;
+    if (typeof answer !== 'string' || answer.length === 0) {
+      return { status: 400, error: 'Answers are required for every question' };
+    }
+    if (answer.length > MAX_ASK_ANSWER_LENGTH) {
+      return { status: 400, error: 'An answer exceeds the maximum length' };
+    }
+    answers[id] = answer;
+  }
+  if (Object.keys(submittedAnswers).some((id) => !expectedIds.has(id))) {
+    return { status: 400, error: 'Answers contain an unknown question id' };
+  }
+  return { resumeValue: mapAskUserAnswers({ answers }) };
 }
 
 /**
@@ -350,8 +457,8 @@ export function attachAskUserQuestionAnswer<
   TPart extends { type?: string; tool_call?: { id?: string; name?: string; output?: unknown } },
 >(
   content: TPart[],
-  question: Agents.AskUserQuestionRequest,
-  answer: string,
+  request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest,
+  output: string,
   toolCallId?: string,
 ): TPart[] {
   const index = findAskPartIndex(
@@ -368,8 +475,8 @@ export function attachAskUserQuestionAnswer<
     ...part,
     tool_call: {
       ...part.tool_call,
-      args: JSON.stringify(question),
-      output: answer,
+      args: JSON.stringify(request),
+      output,
       progress: 1,
     },
   };
@@ -391,7 +498,11 @@ export function attachAskUserQuestionArgs<
     type?: string;
     tool_call?: { id?: string; name?: string; args?: unknown; output?: unknown };
   },
->(content: TPart[], question: Agents.AskUserQuestionRequest, toolCallId?: string): TPart[] {
+>(
+  content: TPart[],
+  request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest,
+  toolCallId?: string,
+): TPart[] {
   const index = findAskPartIndex(content, toolCallId, (part) => {
     const toolCall = part.tool_call;
     const hasArgs =
@@ -406,6 +517,6 @@ export function attachAskUserQuestionArgs<
   }
   const part = content[index];
   const next = [...content];
-  next[index] = { ...part, tool_call: { ...part.tool_call, args: JSON.stringify(question) } };
+  next[index] = { ...part, tool_call: { ...part.tool_call, args: JSON.stringify(request) } };
   return next;
 }

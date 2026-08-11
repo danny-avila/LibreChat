@@ -2371,7 +2371,9 @@ class AgentClient extends BaseClient {
     if (interrupt.payload?.type === 'ask_user_question' && Array.isArray(this.contentParts)) {
       const stamped = attachAskUserQuestionArgs(
         this.contentParts,
-        interrupt.payload.question,
+        Array.isArray(interrupt.payload.questions)
+          ? { questions: interrupt.payload.questions }
+          : interrupt.payload.question,
         interrupt.payload.tool_call_id,
       );
       if (stamped !== this.contentParts) {

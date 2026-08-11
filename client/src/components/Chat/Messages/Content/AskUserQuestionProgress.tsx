@@ -1,9 +1,9 @@
 import { useContext } from 'react';
 import { MessageCircleQuestion } from 'lucide-react';
+import parseJsonField, { parseJsonFieldOccurrences } from './Parts/parseJsonField';
 import { collectLiveAskToolCallIds } from '~/utils/approval';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { ChatContext } from '~/Providers/ChatContext';
-import parseJsonField from './Parts/parseJsonField';
 import { useLocalize } from '~/hooks';
 
 /**
@@ -13,9 +13,8 @@ import { useLocalize } from '~/hooks';
  * interactive card). Without it a long question, many options, or several
  * parallel questions leave a dead gap after the last streamed token.
  *
- * The question text streams in live: `question` is the schema's first (and
- * only required) property, so providers emit it as the first args key and
- * `parseJsonField`'s partial-JSON path can render it delta by delta.
+ * The first question text streams in live from either the legacy top-level
+ * field or the first item in the batched `questions` array.
  *
  * Mounted only for a live, unanswered call ({@link AskUserQuestionCall}
  * gates on `isSubmitting`), so the live-ask subscription below never runs
@@ -35,7 +34,23 @@ export default function AskUserQuestionProgress({
     enabled,
     select: collectLiveAskToolCallIds,
   });
-  const question = parseJsonField(args, 'question');
+  const legacyQuestion = parseJsonField(args, 'question');
+  const batchQuestion = (() => {
+    if (typeof args === 'string') {
+      return parseJsonFieldOccurrences(args, 'question')[0] ?? '';
+    }
+    const questions = args?.questions;
+    if (!Array.isArray(questions)) {
+      return '';
+    }
+    const first = questions[0];
+    if (first == null || typeof first !== 'object') {
+      return '';
+    }
+    const firstQuestion = (first as { question?: unknown }).question;
+    return typeof firstQuestion === 'string' ? firstQuestion : '';
+  })();
+  const question = legacyQuestion || batchQuestion;
 
   /**
    * THIS call's pause went interactive: the popover (or the interactive card)

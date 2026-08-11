@@ -380,10 +380,25 @@ export namespace Agents {
     multiSelect?: boolean;
   }
 
+  /** One independently answerable question in a batched clarification. */
+  export interface AskUserQuestionBatchItem extends AskUserQuestionRequest {
+    /** Batch-unique identifier used to map the submitted answer. */
+    id: string;
+    /** Optional short heading rendered above the question. */
+    header?: string;
+  }
+
+  /** Input shape for one tool call that asks several related questions. */
+  export interface AskUserQuestionsRequest {
+    questions: AskUserQuestionBatchItem[];
+  }
+
   /** Interrupt payload for an ask-user-question pause. */
   export interface AskUserQuestionInterruptPayload {
     type: 'ask_user_question';
     question: AskUserQuestionRequest;
+    /** Present for a batched clarification; `question` remains the first-item fallback. */
+    questions?: AskUserQuestionBatchItem[];
     /**
      * The ask tool call that raised this interrupt (mirrors the SDK field,
      * present from `@librechat/agents` > 3.3.8). Lets the question/answer
@@ -476,6 +491,11 @@ export namespace Agents {
   /** Wire format for an ask-user-question response. */
   export interface AskUserQuestionResolution {
     answer: string;
+  }
+
+  /** Wire format for a batched ask-user-question response. */
+  export interface AskUserQuestionsResolution {
+    answers: Record<string, string>;
   }
 
   export interface ExtendedMessageContent {

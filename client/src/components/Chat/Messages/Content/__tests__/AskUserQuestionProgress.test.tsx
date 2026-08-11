@@ -51,6 +51,28 @@ describe('AskUserQuestionProgress', () => {
     expect(screen.getByText('Café or "bar"')).toBeInTheDocument();
   });
 
+  test('streams the first question from partial batched args', () => {
+    render(
+      <AskUserQuestionProgress
+        args={'{"questions":[{"id":"environment","question":"Which environ'}
+        toolCallId="call_1"
+      />,
+    );
+
+    expect(screen.getByText('Which environ')).toBeInTheDocument();
+  });
+
+  test('reads the first question from settled batched args', () => {
+    render(
+      <AskUserQuestionProgress
+        args={{ questions: [{ id: 'environment', question: 'Which environment?' }] }}
+        toolCallId="call_1"
+      />,
+    );
+
+    expect(screen.getByText('Which environment?')).toBeInTheDocument();
+  });
+
   test('renders a skeleton line before any question text streams', () => {
     render(<AskUserQuestionProgress args="" toolCallId="call_1" />);
 

@@ -166,6 +166,20 @@ function makeAskUserJob(overrides = {}) {
   return job;
 }
 
+function makeAskUserBatchJob(overrides = {}) {
+  const job = makeToolApprovalJob(overrides);
+  job.metadata.pendingAction.payload = {
+    type: 'ask_user_question',
+    question: { question: 'Which environment?' },
+    questions: [
+      { id: 'environment', question: 'Which environment?' },
+      { id: 'window', question: 'Which time window?' },
+    ],
+    tool_call_id: 'tc1',
+  };
+  return job;
+}
+
 /** A mock reconstructed client for the post-ACK path. */
 function makeClient(overrides = {}) {
   return {
@@ -627,6 +641,30 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/maximum length/i);
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('400 when a batched answer omits a question or includes an unknown id', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserBatchJob());
+      const missing = await post({
+        conversationId: CONVO_ID,
+        actionId: ACTION_ID,
+        agent_id: AGENT_ID,
+        endpoint: 'agents',
+        answers: { environment: 'staging' },
+      });
+      expect(missing.status).toBe(400);
+      expect(missing.body.error).toMatch(/every question/i);
+
+      mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserBatchJob());
+      const extra = await post({
+        conversationId: CONVO_ID,
+        actionId: ACTION_ID,
+        agent_id: AGENT_ID,
+        endpoint: 'agents',
+        answers: { environment: 'staging', window: '7d', region: 'us-east-2' },
+      });
+      expect(extra.status).toBe(400);
+      expect(extra.body.error).toMatch(/unknown question id/i);
     });
 
     it('400 on an unsupported pending-action type', async () => {
@@ -1310,6 +1348,26 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
         undefined,
         1000,
         { persistencePending: true },
+      );
+    });
+
+    it('resumes a batched ask_user_question with answers keyed by question id', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserBatchJob());
+      const answers = { environment: 'staging', window: '7d' };
+      const res = await post({
+        conversationId: CONVO_ID,
+        actionId: ACTION_ID,
+        agent_id: AGENT_ID,
+        endpoint: 'agents',
+        answers,
+      });
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
+      expect(client.resumeCompletion).toHaveBeenCalledWith(
+        expect.objectContaining({ resumeValue: { answers } }),
       );
     });
 
