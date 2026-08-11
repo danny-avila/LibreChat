@@ -109,7 +109,9 @@ function contentPartText(part: PersistedContentPart | null): string {
 }
 
 function messageText(message: PersistedMessage): string {
-  return message.text ?? message.content?.map(contentPartText).join('\n') ?? '';
+  return [message.text, ...(message.content?.map(contentPartText) ?? [])]
+    .filter((value): value is string => Boolean(value))
+    .join('\n');
 }
 
 async function getConversationId(page: Page): Promise<string> {
