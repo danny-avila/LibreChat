@@ -1,8 +1,8 @@
 import { Providers } from '@librechat/agents';
 import { EModelEndpoint } from 'librechat-data-provider';
+import type { BamlFunctionSet } from '@librechat/agents/baml';
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import type { BamlFunctionSet } from '@librechat/agents/baml';
 import type { ServerRequest } from '~/types';
 
 const mockCreateBamlFunctions = jest.fn();

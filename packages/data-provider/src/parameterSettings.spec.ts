@@ -1,11 +1,11 @@
-import { EModelEndpoint, Providers } from './types';
+import type { SettingDefinition } from './generate';
 import {
   paramSettings,
   presetSettings,
   agentParamSettings,
   applyModelAwareDefaults,
 } from './parameterSettings';
-import type { SettingDefinition } from './generate';
+import { EModelEndpoint, Providers } from './types';
 
 const googleParams = paramSettings[EModelEndpoint.google] as SettingDefinition[];
 const maxOut = (params: SettingDefinition[]) => params.find((p) => p.key === 'maxOutputTokens');

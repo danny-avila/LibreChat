@@ -1,7 +1,7 @@
+import path from 'node:path';
+import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import {
   ABORT_MESSAGE,
   BAML_WORKER_ABORT_GRACE_MS,

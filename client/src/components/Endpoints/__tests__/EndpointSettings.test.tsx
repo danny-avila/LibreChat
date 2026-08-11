@@ -3,8 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QueryKeys, Providers, EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, TEndpointsConfig, TModelsConfig } from 'librechat-data-provider';
 import { render, screen } from 'test/layout-test-utils';
-import { ChatContext } from '~/Providers';
 import EndpointSettings from '../EndpointSettings';
+import { ChatContext } from '~/Providers';
 
 /**
  * Behavior 3.2 — the picklist stays available while settings render nothing.

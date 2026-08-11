@@ -38,8 +38,6 @@ import type {
 } from '~/types';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
 import type { TFilterFilesByAgentAccess } from './resources';
-import { setAgentRuntimeOptions } from '~/agents/runtime';
-import { isBamlInitializeResult } from '~/types';
 import {
   injectSkillCatalog,
   resolveManualSkills,
@@ -66,9 +64,11 @@ import {
 } from './tools';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
+import { setAgentRuntimeOptions } from '~/agents/runtime';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
+import { isBamlInitializeResult } from '~/types';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
 

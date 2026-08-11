@@ -16,13 +16,13 @@ import type {
   AnthropicModelOptions,
 } from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
-import { isBamlEndpoint } from '~/endpoints/custom/provider';
-import { createBamlFunctions } from '~/baml/loader';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
+import { isBamlEndpoint } from '~/endpoints/custom/provider';
 import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getScopedTokenConfigKey } from '~/endpoints/keys';
 import { getCustomEndpointConfig } from '~/app/config';
+import { createBamlFunctions } from '~/baml/loader';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';

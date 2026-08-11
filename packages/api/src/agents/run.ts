@@ -48,7 +48,6 @@ import {
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
-import { getAgentRuntimeOptions } from '~/agents/runtime';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
@@ -61,6 +60,7 @@ import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
+import { getAgentRuntimeOptions } from '~/agents/runtime';
 import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
