@@ -16,13 +16,22 @@ function validateRGB(rgb: string): boolean {
 }
 
 function mapColors(colors: IThemeRGB): Array<[string, string]> {
-  return themeColorTokens.reduce<Array<[string, string]>>((variables, token) => {
+  const variables = themeColorTokens.reduce<Array<[string, string]>>((result, token) => {
     const value = colors[token];
     if (value !== undefined) {
-      variables.push([colorProperty(token), value]);
+      result.push([colorProperty(token), value]);
     }
-    return variables;
+    return result;
   }, []);
+
+  if (
+    colors['rgb-surface-composer-hover'] === undefined &&
+    colors['rgb-surface-hover'] !== undefined
+  ) {
+    variables.push(['--surface-composer-hover', colors['rgb-surface-hover']]);
+  }
+
+  return variables;
 }
 
 function mapAppearance(appearance: IThemeAppearance): Array<[string, string]> {

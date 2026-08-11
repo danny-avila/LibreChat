@@ -33,6 +33,7 @@ export const defaultTheme: IThemeRGB = {
   'rgb-surface-active-alt': '227 227 227', // #e3e3e3 (gray-200)
   'rgb-surface-hover': '227 227 227', // #e3e3e3 (gray-200)
   'rgb-surface-hover-alt': '205 205 205', // #cdcdcd (gray-300)
+  'rgb-surface-composer-hover': '227 227 227', // #e3e3e3 (gray-200)
   'rgb-surface-primary': '255 255 255', // #fff (white)
   'rgb-surface-primary-alt': '247 247 248', // #f7f7f8 (gray-50)
   'rgb-surface-primary-contrast': '236 236 236', // #ececec (gray-100)
@@ -85,7 +86,7 @@ export const defaultTheme: IThemeRGB = {
   'rgb-text-on-status': '255 255 255', // #fff (white)
 
   // Brand colors
-  'rgb-brand-purple': '171 104 255', // #ab68ff
+  'rgb-brand-purple': '126 34 206', // #7e22ce (purple-700)
 
   // Presentation
   'rgb-presentation': '255 255 255', // #fff (white)

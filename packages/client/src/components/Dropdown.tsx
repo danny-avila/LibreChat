@@ -137,8 +137,8 @@ const Dropdown: React.FC<DropdownProps> = ({
         store={selectProps}
         disabled={disabled}
         className={cn(
-          'relative inline-flex items-center justify-between rounded-xl border border-border-light bg-surface-primary py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-surface-hover hover:text-text-primary',
-          'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-surface-primary disabled:hover:text-text-primary',
+          'relative inline-flex items-center justify-between rounded-xl border border-border-light bg-transparent py-2 text-sm text-text-primary transition-all duration-200 ease-in-out hover:bg-surface-hover hover:text-text-primary',
+          'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-text-primary',
           /** Horizontal padding would squeeze the icon, which flex-shrinks to fit */
           iconOnly ? 'size-10 justify-center px-0' : 'w-fit gap-2 px-3',
           className,
