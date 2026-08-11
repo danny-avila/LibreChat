@@ -1,13 +1,17 @@
 const { SystemRoles } = require('librechat-data-provider');
 
 let capturedVerifyCallback;
+let capturedStrategyOptions;
 jest.mock('passport-jwt', () => ({
   Strategy: jest.fn((opts, verifyCallback) => {
+    capturedStrategyOptions = opts;
     capturedVerifyCallback = verifyCallback;
     return { name: 'jwt' };
   }),
   ExtractJwt: {
     fromAuthHeaderAsBearerToken: jest.fn(() => 'mock-extractor'),
+    fromHeader: jest.fn((name) => `mock-header-extractor:${name}`),
+    fromExtractors: jest.fn((extractors) => extractors),
   },
 }));
 
@@ -71,5 +75,38 @@ describe('jwtStrategy', () => {
     const { user } = await invokeVerify({ id: 'missing' });
 
     expect(user).toBe(false);
+  });
+});
+
+describe('jwtStrategy token extraction', () => {
+  const originalHeader = process.env.JWT_AUTH_HEADER;
+
+  afterEach(() => {
+    if (originalHeader === undefined) {
+      delete process.env.JWT_AUTH_HEADER;
+    } else {
+      process.env.JWT_AUTH_HEADER = originalHeader;
+    }
+  });
+
+  it('reads the Authorization header when JWT_AUTH_HEADER is unset', () => {
+    delete process.env.JWT_AUTH_HEADER;
+    jwtLogin();
+    expect(capturedStrategyOptions.jwtFromRequest).toBe('mock-extractor');
+  });
+
+  it('ignores an empty JWT_AUTH_HEADER', () => {
+    process.env.JWT_AUTH_HEADER = '';
+    jwtLogin();
+    expect(capturedStrategyOptions.jwtFromRequest).toBe('mock-extractor');
+  });
+
+  it('prefers JWT_AUTH_HEADER and keeps Authorization as the fallback', () => {
+    process.env.JWT_AUTH_HEADER = 'x-original-authorization';
+    jwtLogin();
+    expect(capturedStrategyOptions.jwtFromRequest).toEqual([
+      'mock-header-extractor:x-original-authorization',
+      'mock-extractor',
+    ]);
   });
 });
