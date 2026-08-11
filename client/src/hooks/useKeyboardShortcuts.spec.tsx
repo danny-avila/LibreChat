@@ -126,7 +126,7 @@ function appendComposerForm({ hidden = false }: { hidden?: boolean } = {}) {
 /** A composer form carrying the palette disclosure the upload shortcut clicks.
  *  Identified by test id rather than by `id`, which two mounted composers
  *  cannot share. */
-function appendPaletteForm() {
+function appendPaletteForm({ uploadShortcut = true }: { uploadShortcut?: boolean } = {}) {
   const onClick = jest.fn();
   const form = document.createElement('form');
   const textarea = document.createElement('textarea');
@@ -135,6 +135,7 @@ function appendPaletteForm() {
   const button = document.createElement('button');
   button.type = 'button';
   button.dataset.testid = 'composer-palette-button';
+  button.dataset.uploadShortcut = String(uploadShortcut);
   button.addEventListener('click', onClick);
   form.append(textarea, anchor, button);
   document.body.appendChild(form);
@@ -550,6 +551,19 @@ describe('upload file shortcut', () => {
 
     expect(only.onClick).toHaveBeenCalledTimes(1);
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('does not cancel dictation or fall through to another pane', () => {
+    renderHarness();
+    const other = appendPaletteForm();
+    const dictating = appendPaletteForm({ uploadShortcut: false });
+    dictating.anchor.focus();
+
+    const event = dispatchKey({ key: 'u', ctrlKey: true, shiftKey: true }, dictating.anchor);
+
+    expect(dictating.onClick).not.toHaveBeenCalled();
+    expect(other.onClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
   });
 });
 

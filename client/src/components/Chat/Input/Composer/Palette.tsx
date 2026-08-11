@@ -979,6 +979,7 @@ function Palette({
               />
             }
             data-testid="composer-palette-button"
+            data-upload-shortcut={String(!dictating)}
             className={cn(
               'text-text-secondary hover:text-text-primary',
               /* The close mark carries the same weight whichever job it is

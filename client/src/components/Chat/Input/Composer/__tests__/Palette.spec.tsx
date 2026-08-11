@@ -104,7 +104,13 @@ const ATTACH: AttachEntry[] = [
 ];
 
 function renderPalette(
-  over: { canAttach?: boolean; entries?: PaletteEntry[]; onContainerClick?: () => void } = {},
+  over: {
+    canAttach?: boolean;
+    entries?: PaletteEntry[];
+    onContainerClick?: () => void;
+    dictating?: boolean;
+    onCancel?: () => void;
+  } = {},
 ) {
   const anchorRef = { current: document.createElement('div') };
   const view = render(
@@ -122,6 +128,8 @@ function renderPalette(
           setFilesLoading={jest.fn()}
           canAttach={over.canAttach ?? true}
           entries={over.entries ?? ENTRIES}
+          dictating={over.dictating}
+          onCancel={over.onCancel}
           anchorRef={anchorRef as React.RefObject<HTMLElement>}
         />
       </div>
@@ -162,6 +170,17 @@ describe('Palette', () => {
     mockFavoriteKeys = [];
     mockRecentFiles = [];
     mockAttachEntries = ATTACH;
+  });
+
+  it('does not advertise its cancel state as the upload shortcut target', () => {
+    const onCancel = jest.fn();
+    renderPalette({ dictating: true, onCancel });
+
+    expect(screen.getByTestId('composer-palette-button')).toHaveAttribute(
+      'data-upload-shortcut',
+      'false',
+    );
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
   describe('section order', () => {

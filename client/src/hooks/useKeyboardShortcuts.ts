@@ -738,11 +738,18 @@ export function useShortcutActions(): ShortcutAction[] {
       '[data-testid="composer-palette-button"]',
     );
     if (scoped != null) {
+      /* During dictation this disclosure becomes Cancel. The upload shortcut
+         must remain a no-op instead of discarding the focused pane's take, and
+         must not fall through to a different pane. */
+      if (scoped.dataset.uploadShortcut !== 'true') {
+        return false;
+      }
       return clickTarget(scoped);
     }
     const btn =
-      document.querySelector<HTMLElement>('[data-testid="composer-palette-button"]') ??
-      document.querySelector<HTMLButtonElement>('#attach-file');
+      document.querySelector<HTMLElement>(
+        '[data-testid="composer-palette-button"][data-upload-shortcut="true"]',
+      ) ?? document.querySelector<HTMLButtonElement>('#attach-file');
     return clickTarget(btn);
   }, []);
 
