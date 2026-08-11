@@ -143,7 +143,7 @@ function MessagesViewContent({
                 </div>
               ) : (
                 <>
-                  <div ref={screenshotTargetRef}>
+                  <div ref={screenshotTargetRef} data-testid="screenshot-target">
                     <MultiMessage
                       messagesTree={_messagesTree}
                       messageId={conversationId ?? null}
