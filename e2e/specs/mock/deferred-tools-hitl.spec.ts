@@ -141,12 +141,15 @@ test.describe('deferred tools across HITL resume', () => {
         name: new RegExp(`${escapeRegExp(optionLabel)}$`),
       });
       await expect(option).toBeVisible();
+      await option.click();
+      const submit = page.getByRole('button', { name: 'Submit', exact: true });
+      await expect(submit).toBeEnabled();
       const [resumeRequest, resumeResponse] = await Promise.all([
         page.waitForRequest(isResumeRequest),
         page.waitForResponse(
           (candidate) => isResumeRequest(candidate.request()) && candidate.status() === 200,
         ),
-        option.click(),
+        submit.click(),
       ]);
 
       const conversationId = conversationPath.replace('/c/', '');
