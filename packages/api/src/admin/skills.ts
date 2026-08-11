@@ -117,10 +117,16 @@ function serializeErrorMessage(
   status: ISkillSyncStatus,
   { includeCredentialMetadata }: { includeCredentialMetadata: boolean },
 ): string | undefined {
-  if (includeCredentialMetadata || !isCredentialError(status)) {
+  if (includeCredentialMetadata) {
     return status.errorMessage;
   }
-  return 'GitHub skill sync credentials are not available';
+  if (isCredentialError(status)) {
+    return 'GitHub skill sync credentials are not available';
+  }
+  if (status.skippedSkillCount > 0) {
+    return 'One or more GitHub skills could not be synchronized';
+  }
+  return status.errorMessage;
 }
 
 function serializeSourceStatus(

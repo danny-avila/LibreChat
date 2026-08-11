@@ -543,6 +543,75 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
+  it('bounds a skipped skill path so the partial status remains persistable', async () => {
+    const longDirectory = 'a'.repeat(600);
+    const deps = createDeps({
+      fetchFn: multiSkillFetch([
+        {
+          dir: 'research',
+          markdown: '---\nname: research\ndescription: Research things\n---\nBody',
+        },
+        { dir: longDirectory, markdown: '---\nname: [\n---\nBody' },
+      ]),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'partial',
+        syncedSkillCount: 1,
+        skippedSkillCount: 1,
+        skippedSkills: [
+          expect.objectContaining({
+            path: expect.stringMatching(/^skills\/a+…$/),
+          }),
+        ],
+      }),
+    );
+    const statusCalls = (deps.upsertStatus as jest.Mock).mock.calls;
+    const status = statusCalls[statusCalls.length - 1]?.[0] as SkillSyncStatusInput;
+    expect(status.skippedSkills?.[0].path).toHaveLength(500);
+  });
+
+  it('bounds a skipped skill name so the partial status remains persistable', async () => {
+    const longName = 'b'.repeat(600);
+    const deps = createDeps({
+      fetchFn: multiSkillFetch([
+        {
+          dir: 'research',
+          markdown: '---\nname: research\ndescription: Research things\n---\nBody',
+        },
+        {
+          dir: 'oversized-name',
+          markdown: `---\nname: ${longName}\ndescription: Invalid name\n---\nBody`,
+        },
+      ]),
+      createSkill: jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
+        if (input.name === longName) {
+          throw new Error('Skill validation failed');
+        }
+        return { skill: makeSkill(input), warnings: [] };
+      }),
+    });
+
+    const result = await createGitHubSkillSyncRunner(deps).runOnce();
+
+    expect(result.status).toBe('completed');
+    const statusCalls = (deps.upsertStatus as jest.Mock).mock.calls;
+    const status = statusCalls[statusCalls.length - 1]?.[0] as SkillSyncStatusInput;
+    expect(status).toEqual(
+      expect.objectContaining({
+        status: 'partial',
+        syncedSkillCount: 1,
+        skippedSkillCount: 1,
+      }),
+    );
+    expect(status.skippedSkills?.[0].name).toMatch(/^b+…$/);
+    expect(status.skippedSkills?.[0].name).toHaveLength(128);
+  });
+
   it('logs the validation warnings of a synced skill instead of swallowing them', async () => {
     /* An unrecognized frontmatter key no longer fails the skill, so the log is
        the only place a maintainer learns the upstream SKILL.md carries one:
@@ -1332,15 +1401,17 @@ describe('createGitHubSkillSyncRunner', () => {
     };
     const staleSkill = makeExisting('librechat-skills:skills/removed', staleId, 'renamed');
     const syncedSkill = makeExisting('librechat-skills:skills/research', existingId, 'research');
-    const deletedIds = new Set<string>();
+    const persistedSkills = new Map(
+      [staleSkill, syncedSkill].map((skill) => [skill._id.toString(), skill]),
+    );
     let restoredSkill: (ISkill & { _id: Types.ObjectId }) | undefined;
     const createSkill = jest.fn(async (input: CreateSkillInput): Promise<CreateSkillResult> => {
       restoredSkill = makeSkill(input);
+      persistedSkills.set(restoredSkill._id.toString(), restoredSkill);
       return { skill: restoredSkill, warnings: [] };
     });
     const deleteSkill = jest.fn(async (id: string) => {
-      deletedIds.add(id);
-      return { deleted: true };
+      return { deleted: persistedSkills.delete(id) };
     });
     const deps = createDeps({
       fetchFn: githubFetch('---\nname: renamed\ndescription: Renamed skill\n---\nBody'),
@@ -1350,9 +1421,7 @@ describe('createGitHubSkillSyncRunner', () => {
       getSkillById: jest.fn(async (id) =>
         id.toString() === existingId.toString() ? syncedSkill : null,
       ),
-      listSkillsBySource: jest.fn(async () =>
-        [staleSkill, syncedSkill].filter((skill) => !deletedIds.has(skill._id.toString())),
-      ),
+      listSkillsBySource: jest.fn(async () => [...persistedSkills.values()]),
       createSkill,
       deleteSkill,
       updateSkill: jest.fn(async () => ({ status: 'conflict' as const, current: syncedSkill })),
@@ -1362,6 +1431,7 @@ describe('createGitHubSkillSyncRunner', () => {
 
     expect(result.status).toBe('failed');
     expect(deleteSkill).toHaveBeenCalledWith(staleId.toString());
+    expect(deleteSkill).toHaveBeenCalledTimes(1);
     expect(createSkill).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'renamed',
@@ -1373,10 +1443,66 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.grantPermission).toHaveBeenCalledWith(
       expect.objectContaining({ resourceId: restoredSkill?._id }),
     );
+    expect(persistedSkills.has(restoredSkill?._id.toString() ?? '')).toBe(true);
     /* The deletion was undone, and the run no longer stops here, so the status
        must not persist a count for work that was rolled back. */
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({ deletedSkillCount: 0, deletedFileCount: 0 }),
+    );
+  });
+
+  it('fails the source when stale mirror deletion can leave partial persisted state', async () => {
+    const staleId = new Types.ObjectId();
+    const existingId = new Types.ObjectId();
+    const author = makeSourceAuthorId();
+    const makeExisting = (
+      upstreamId: string,
+      _id: Types.ObjectId,
+      name: string,
+    ): ISkill & { _id: Types.ObjectId } => {
+      const skill = makeSkill({
+        name,
+        description: `${name} skill`,
+        author,
+        authorName: 'GitHub Sync',
+        source: 'github',
+        sourceMetadata: { provider: 'github', sourceId: 'librechat-skills', upstreamId },
+      });
+      skill._id = _id;
+      return skill;
+    };
+    const staleSkill = makeExisting('librechat-skills:skills/removed', staleId, 'renamed');
+    const syncedSkill = makeExisting('librechat-skills:skills/research', existingId, 'research');
+    const deleteSkill = jest.fn(async (id: string) => {
+      if (id === staleId.toString()) {
+        throw new Error('skill file deletion unavailable');
+      }
+      return { deleted: true };
+    });
+    const deps = createDeps({
+      fetchFn: githubFetch('---\nname: renamed\ndescription: Renamed skill\n---\nBody'),
+      findSkillBySourceIdentity: jest.fn(async ({ upstreamId }) =>
+        upstreamId === 'librechat-skills:skills/research' ? syncedSkill : null,
+      ),
+      getSkillById: jest.fn(async (id) =>
+        id.toString() === existingId.toString() ? syncedSkill : null,
+      ),
+      listSkillsBySource: jest.fn(async () => [staleSkill, syncedSkill]),
+      deleteSkill,
+      updateSkill: jest.fn(),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('failed');
+    expect(deleteSkill).toHaveBeenCalledWith(staleId.toString());
+    expect(deps.updateSkill).not.toHaveBeenCalled();
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'failed',
+        errorCode: 'SYNC_ROLLBACK_FAILED',
+        errorMessage: 'Stale mirror deletion failed: skill file deletion unavailable',
+      }),
     );
   });
 
@@ -1565,8 +1691,21 @@ describe('createGitHubSkillSyncRunner', () => {
   });
 
   it('marks a source failed and skips mirror deletion when SKILL.md frontmatter is malformed', async () => {
+    const movedMirror = makeSkill({
+      name: 'research',
+      description: 'Last known good description',
+      author: makeSourceAuthorId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/old-research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
     const deps = createDeps({
       fetchFn: githubFetch('---\nname: [\n---\nBody'),
+      listSkillsBySource: jest.fn(async () => [movedMirror]),
     });
     const runner = createGitHubSkillSyncRunner(deps);
     const result = await runner.runOnce();
@@ -1580,6 +1719,63 @@ describe('createGitHubSkillSyncRunner', () => {
         errorCode: 'SKILL_PARSE_FAILED',
         errorMessage: expect.stringContaining('skills/research/SKILL.md'),
         skippedSkillCount: 1,
+      }),
+    );
+  });
+
+  it('does not create a conflicting moved skill after another skill fails preparation', async () => {
+    const lastKnownGood = makeSkill({
+      name: 'research',
+      description: 'Last known good description',
+      author: makeSourceAuthorId(),
+      authorName: 'GitHub Sync',
+      source: 'github',
+      sourceMetadata: {
+        provider: 'github',
+        sourceId: 'librechat-skills',
+        upstreamId: 'librechat-skills:skills/old-research',
+      },
+    }) as ISkill & { _id: Types.ObjectId };
+    const deps = createDeps({
+      fetchFn: multiSkillFetch([
+        { dir: 'broken', markdown: '---\nname: [\n---\nBody' },
+        {
+          dir: 'healthy',
+          markdown: '---\nname: research\ndescription: Healthy replacement candidate\n---\nBody',
+        },
+        {
+          dir: 'unique',
+          markdown: '---\nname: analysis\ndescription: Independent healthy skill\n---\nBody',
+        },
+      ]),
+      listSkillsBySource: jest.fn(async () => [lastKnownGood]),
+    });
+    const runner = createGitHubSkillSyncRunner(deps);
+    const result = await runner.runOnce();
+
+    expect(result.status).toBe('completed');
+    expect(deps.updateSkill).not.toHaveBeenCalled();
+    expect(deps.deleteSkill).not.toHaveBeenCalled();
+    expect(deps.createSkill).toHaveBeenCalledTimes(1);
+    expect(deps.createSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'analysis',
+        sourceMetadata: expect.objectContaining({
+          upstreamId: 'librechat-skills:skills/unique',
+        }),
+      }),
+    );
+    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'partial',
+        syncedSkillCount: 1,
+        skippedSkillCount: 2,
+        skippedSkills: expect.arrayContaining([
+          expect.objectContaining({
+            path: 'skills/healthy',
+            errorCode: 'SKILL_MOVE_AMBIGUOUS',
+          }),
+        ]),
       }),
     );
   });

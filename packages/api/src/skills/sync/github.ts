@@ -41,6 +41,8 @@ const PROVIDER: SkillSyncProvider = 'github';
 const LOCK_LEASE_MS = 30 * 60 * 1000;
 /** Keeps a pathological source from writing an unbounded status document. */
 const MAX_RECORDED_SKIPPED_SKILLS = 20;
+const SKIP_PATH_MAX = 500;
+const SKIP_NAME_MAX = 128;
 const SKIP_MESSAGE_MAX = 500;
 
 export const GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION =
@@ -502,12 +504,27 @@ function makeRollbackFailure(error: unknown): SkillSyncError {
   );
 }
 
+function makeStaleDeletionFailure(error: unknown): SkillSyncError {
+  return new SkillSyncError(
+    'SYNC_ROLLBACK_FAILED',
+    `Stale mirror deletion failed: ${sanitizeError(error).message}`,
+  );
+}
+
 function isSourceFatalError(error: unknown): boolean {
   return error instanceof SkillSyncError && SOURCE_FATAL_ERROR_CODES.has(error.code);
 }
 
 function truncateSkipMessage(message: string): string {
   return message.length > SKIP_MESSAGE_MAX ? `${message.slice(0, SKIP_MESSAGE_MAX - 1)}…` : message;
+}
+
+function truncateSkipPath(path: string): string {
+  return path.length > SKIP_PATH_MAX ? `${path.slice(0, SKIP_PATH_MAX - 1)}…` : path;
+}
+
+function truncateSkipName(name: string | undefined): string | undefined {
+  return name && name.length > SKIP_NAME_MAX ? `${name.slice(0, SKIP_NAME_MAX - 1)}…` : name;
 }
 
 function buildGitHubHeaders(token: string): HeadersInit {
@@ -1344,7 +1361,11 @@ async function deleteNameConflictingStaleSkill(params: {
   const { deletedFileCount, deletedSkill } = await deleteSyncedSkillForRestore(
     params.deps,
     staleSkill,
-  );
+  ).catch((error) => {
+    /* deleteSkill can remove the skill row before a later file deletion fails.
+       The caller has no complete journal to restore from in that case. */
+    throw makeStaleDeletionFailure(error);
+  });
   const staleSkillId = staleSkill._id.toString();
 
   return {
@@ -1583,14 +1604,15 @@ async function syncSource(params: {
         return;
       }
       skippedSkills.push({
-        path,
-        name,
+        path: truncateSkipPath(path),
+        name: truncateSkipName(name),
         errorCode: sanitized.code,
         errorMessage: truncateSkipMessage(sanitized.message),
       });
     };
     const syncedAt = new Date();
     const preparedSkills: PreparedDiscoveredSkill[] = [];
+    let canReconcileStaleSkills = true;
     /* Built from everything discovered upstream, not just what prepared
        cleanly: a skill that failed to prepare is still present in the
        repository, so it must not look stale or like a rename target. */
@@ -1621,6 +1643,10 @@ async function syncSource(params: {
         });
         preparedSkills.push({ discovered, prepared });
       } catch (error) {
+        /* Until preparation succeeds, a moved skill cannot be matched to the
+           mirror that still carries its old upstream id. Keep stale mirrors
+           for this run rather than deleting a last-known-good moved skill. */
+        canReconcileStaleSkills = false;
         seenUpstreamIds.add(makeUpstreamId(source, discovered.rootPath));
         recordSkippedSkill({ path: discovered.rootPath, error });
       }
@@ -1635,7 +1661,7 @@ async function syncSource(params: {
     const markMovedMirrorAsSeen = async (
       prepared: PreparedRemoteSkill,
     ): Promise<(ISkill & { _id: Types.ObjectId }) | null> => {
-      if (prepared.existing) {
+      if (prepared.existing || !canReconcileStaleSkills) {
         return null;
       }
       const movedExisting = findMovedSourceSkill({
@@ -1677,6 +1703,20 @@ async function syncSource(params: {
       discovered,
       prepared,
     }: PreparedDiscoveredSkill): Promise<void> => {
+      if (!prepared.existing && !canReconcileStaleSkills) {
+        const ambiguousMovedMirror = findMovedSourceSkill({
+          source,
+          prepared,
+          existingSyncedSkills: await getExistingSyncedSkills(),
+          excludedUpstreamIds: discoveredUpstreamIds,
+        });
+        if (ambiguousMovedMirror) {
+          throw new SkillSyncError(
+            'SKILL_MOVE_AMBIGUOUS',
+            `Skill "${prepared.createInput.name}" may have moved, but another skill could not be prepared`,
+          );
+        }
+      }
       const movedExisting = await markMovedMirrorAsSeen(prepared);
       const effectivePrepared: PreparedRemoteSkill = movedExisting
         ? { ...prepared, existing: movedExisting }
@@ -1718,7 +1758,7 @@ async function syncSource(params: {
             assertNotCancelled,
             journal,
           });
-          if (prepared.existing) {
+          if (prepared.existing && canReconcileStaleSkills) {
             staleConflictCleanup = await deleteNameConflictingStaleSkill({
               deps,
               source,
@@ -1770,6 +1810,14 @@ async function syncSource(params: {
                would otherwise be persisted for work that was undone, and the
                reconcile pass would count the restored mirror a second time. */
             if (restored) {
+              const restoredUpstreamId = getSourceMetadataString(
+                staleConflictCleanup.deletedSkill.skill,
+                'upstreamId',
+              );
+              if (restoredUpstreamId) {
+                seenUpstreamIds.add(restoredUpstreamId);
+              }
+              existingSyncedSkills = null;
               counts.deletedSkillCount -= staleConflictCleanup.deletedSkillCount;
               counts.deletedFileCount -= staleConflictCleanup.deletedFileCount;
             } else {
@@ -1859,7 +1907,7 @@ async function syncSource(params: {
         skill.sourceMetadata && typeof skill.sourceMetadata.upstreamId === 'string'
           ? skill.sourceMetadata.upstreamId
           : '';
-      if (seenUpstreamIds.has(upstreamId)) {
+      if (!canReconcileStaleSkills || seenUpstreamIds.has(upstreamId)) {
         continue;
       }
       counts.deletedFileCount += await deleteSyncedSkill(deps, skill);

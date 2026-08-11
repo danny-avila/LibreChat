@@ -256,6 +256,34 @@ describe('createAdminSkillsSyncHandlers', () => {
     );
   });
 
+  it('redacts promoted skipped-skill paths from tenant-scoped status reads', async () => {
+    const { handlers } = createHandlers({
+      statusErrorCode: 'SKILL_PARSE_FAILED',
+      statusErrorMessage: 'skills/private/SKILL.md: malformed frontmatter',
+    });
+    const res = createResponse();
+
+    await handlers.getSyncStatus(
+      {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        skillSyncCanReadCredentials: false,
+      } as never,
+      res,
+    );
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [
+          expect.objectContaining({
+            errorCode: 'SKILL_PARSE_FAILED',
+            errorMessage: 'One or more GitHub skills could not be synchronized',
+            skippedSkills: undefined,
+          }),
+        ],
+      }),
+    );
+  });
+
   it('includes credential summaries and source credential metadata for platform status reads', async () => {
     const { handlers } = createHandlers({
       statusErrorCode: 'MISSING_CREDENTIAL',

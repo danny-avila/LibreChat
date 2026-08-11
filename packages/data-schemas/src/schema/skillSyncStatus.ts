@@ -5,8 +5,12 @@ const skippedSkillSchema = new Schema<ISkillSyncSkippedSkill>(
   {
     path: {
       type: String,
-      required: true,
+      default: null,
       maxlength: 500,
+      validate: {
+        validator: (value: unknown) => typeof value === 'string',
+        message: 'Path is required',
+      },
     },
     name: {
       type: String,
