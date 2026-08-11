@@ -1,8 +1,10 @@
 const cookies = require('cookie');
 const passport = require('passport');
 const { logger } = require('@librechat/data-schemas');
+const { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } = require('librechat-data-provider');
 const {
   isEnabled,
+  clearCloudFrontCookies,
   tenantContextMiddleware,
   getAuthFailureReasonCategory,
   buildSafeAuthLogContext,
@@ -74,7 +76,13 @@ const enforceTwoFactorPolicy = (req, res) => {
     return false;
   }
 
+  clearCloudFrontCookies(res, {
+    userId: getAuthenticatedUserId(req.user),
+    tenantId: req.user?.tenantId ?? req.user?.orgId,
+    storageRegion: req.user?.storageRegion,
+  });
   return res.status(403).json({
+    code: TWO_FACTOR_ENROLLMENT_REQUIRED_CODE,
     twoFAPending: true,
     twoFASetupRequired: true,
     tempToken: generateTwoFactorSetupToken(

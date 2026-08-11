@@ -19,6 +19,8 @@ export { MAX_SUBAGENTS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
+export const TWO_FACTOR_ENROLLMENT_REQUIRED_CODE = 'TWO_FACTOR_ENROLLMENT_REQUIRED' as const;
+
 const TWO_FACTOR_POLICY_PROVIDERS = new Set(['local', 'ldap']);
 
 export function isTwoFactorPolicyProvider(provider: string | null | undefined): boolean {

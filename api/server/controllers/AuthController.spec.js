@@ -37,6 +37,7 @@ jest.mock('@librechat/api', () => ({
     }
     return params;
   }),
+  clearCloudFrontCookies: jest.fn(),
   generateTwoFactorSetupToken: jest.fn(() => 'setup-token'),
   isTwoFactorEnrollmentRequired: jest.fn(() => false),
 }));
@@ -46,6 +47,7 @@ const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
 const {
   isEnabled,
+  clearCloudFrontCookies,
   findOpenIDUser,
   buildOpenIDRefreshParams,
   generateTwoFactorSetupToken,
@@ -840,6 +842,7 @@ describe('refreshController – LibreChat path', () => {
       process.env.JWT_SECRET,
     );
     expect(res.send).toHaveBeenCalledWith({
+      code: 'TWO_FACTOR_ENROLLMENT_REQUIRED',
       twoFAPending: true,
       twoFASetupRequired: true,
       tempToken: 'setup-token',
@@ -854,6 +857,11 @@ describe('refreshController – LibreChat path', () => {
     expect(setAuthTokens).not.toHaveBeenCalled();
     expect(deleteSession).toHaveBeenCalledWith({ sessionId: 'session-id' });
     expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+    expect(clearCloudFrontCookies).toHaveBeenCalledWith(res, {
+      userId: 'local-user-id',
+      tenantId: undefined,
+      storageRegion: undefined,
+    });
 
     findSession.mockResolvedValue(null);
     jest.clearAllMocks();

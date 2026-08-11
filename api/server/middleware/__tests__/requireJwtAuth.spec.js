@@ -68,6 +68,7 @@ jest.mock('@librechat/api', () => {
     normalizeContextValue(req.headers?.['x-correlation-id']);
   return {
     isEnabled: jest.fn(() => false),
+    clearCloudFrontCookies: jest.fn(),
     generateTwoFactorSetupToken: jest.fn(() => 'setup-token'),
     isTwoFactorEnrollmentRequired: jest.fn(() => false),
     recordRumProxyRequest: jest.fn(),
@@ -108,6 +109,7 @@ const { requireRumProxyAuth } = requireJwtAuth;
 const { getTenantId, getUserId, logger } = require('@librechat/data-schemas');
 const {
   isEnabled,
+  clearCloudFrontCookies,
   maybeRefreshCloudFrontAuthCookiesMiddleware,
   recordRumProxyRequest,
   generateTwoFactorSetupToken,
@@ -158,6 +160,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     mockRegisteredStrategies = new Set(['jwt']);
     isEnabled.mockReturnValue(false);
     isTwoFactorEnrollmentRequired.mockReturnValue(false);
+    clearCloudFrontCookies.mockClear();
     maybeRefreshCloudFrontAuthCookiesMiddleware.mockClear();
     logger.debug.mockClear();
     logger.info.mockClear();
@@ -217,8 +220,14 @@ describe('requireJwtAuth tenant context chaining', () => {
     requireJwtAuth(req, res, next);
 
     expect(generateTwoFactorSetupToken).toHaveBeenCalledWith('user-123', process.env.JWT_SECRET);
+    expect(clearCloudFrontCookies).toHaveBeenCalledWith(res, {
+      userId: 'user-123',
+      tenantId: undefined,
+      storageRegion: undefined,
+    });
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({
+      code: 'TWO_FACTOR_ENROLLMENT_REQUIRED',
       twoFAPending: true,
       twoFASetupRequired: true,
       tempToken: 'setup-token',

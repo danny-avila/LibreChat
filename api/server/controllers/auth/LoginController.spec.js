@@ -1,12 +1,14 @@
 const mockGenerateTwoFactorSetupToken = jest.fn(() => 'setup-token');
 const mockGenerate2FATempToken = jest.fn(() => 'challenge-token');
 const mockSetAuthTokens = jest.fn(() => Promise.resolve('auth-token'));
+const mockClearCloudFrontCookies = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn() },
 }));
 
 jest.mock('@librechat/api', () => ({
+  clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
   generateTwoFactorSetupToken: (...args) => mockGenerateTwoFactorSetupToken(...args),
   isTwoFactorEnrollmentRequired: (user) =>
     process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION === 'true' &&
@@ -77,7 +79,13 @@ describe('loginController', () => {
     await loginController(req, res);
 
     expect(mockGenerateTwoFactorSetupToken).toHaveBeenCalledWith('user-2', 'jwt-secret');
+    expect(mockClearCloudFrontCookies).toHaveBeenCalledWith(res, {
+      userId: 'user-2',
+      tenantId: undefined,
+      storageRegion: undefined,
+    });
     expect(res.json).toHaveBeenCalledWith({
+      code: 'TWO_FACTOR_ENROLLMENT_REQUIRED',
       twoFAPending: true,
       twoFASetupRequired: true,
       tempToken: 'setup-token',

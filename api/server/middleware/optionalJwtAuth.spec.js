@@ -1,6 +1,7 @@
 const mockAuthenticate = jest.fn();
 const mockTenantContextMiddleware = jest.fn((_req, _res, next) => next());
 const mockIsTwoFactorEnrollmentRequired = jest.fn(() => false);
+const mockClearCloudFrontCookies = jest.fn();
 
 jest.mock('passport', () => ({
   _strategy: jest.fn(() => undefined),
@@ -11,6 +12,7 @@ jest.mock(
   '@librechat/api',
   () => ({
     isEnabled: jest.fn(() => false),
+    clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
     isTwoFactorEnrollmentRequired: (...args) => mockIsTwoFactorEnrollmentRequired(...args),
     tenantContextMiddleware: (...args) => mockTenantContextMiddleware(...args),
   }),
@@ -24,7 +26,7 @@ const run = (user) => {
   const res = {};
   const next = jest.fn();
   optionalJwtAuth(req, res, next);
-  return { req, next };
+  return { req, res, next };
 };
 
 describe('optionalJwtAuth', () => {
@@ -51,10 +53,15 @@ describe('optionalJwtAuth', () => {
     const user = { id: 'viewer-required', provider: 'local', twoFactorEnabled: false };
     mockIsTwoFactorEnrollmentRequired.mockReturnValue(true);
 
-    const { req, next } = run(user);
+    const { req, res, next } = run(user);
 
     expect(req.user).toBeUndefined();
     expect(req.authStrategy).toBeUndefined();
+    expect(mockClearCloudFrontCookies).toHaveBeenCalledWith(res, {
+      userId: 'viewer-required',
+      tenantId: undefined,
+      storageRegion: undefined,
+    });
     expect(mockTenantContextMiddleware).not.toHaveBeenCalled();
     expect(next).toHaveBeenCalledTimes(1);
   });

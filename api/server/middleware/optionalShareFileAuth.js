@@ -1,6 +1,10 @@
 const cookie = require('cookie');
 const jwt = require('jsonwebtoken');
-const { isEnabled, isTwoFactorEnrollmentRequired } = require('@librechat/api');
+const {
+  isEnabled,
+  clearCloudFrontCookies,
+  isTwoFactorEnrollmentRequired,
+} = require('@librechat/api');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { getUserById, findSession } = require('~/models');
@@ -37,11 +41,20 @@ const getOpenIdUserId = (parsed, req) => {
   return verifySignedUserId(parsed.openid_user_id);
 };
 
-const clearUserWhenEnrollmentIsRequired = (req) => {
+const clearCloudFrontCookiesForUser = (res, user) => {
+  clearCloudFrontCookies(res, {
+    userId: user.id?.toString?.() ?? user._id?.toString?.(),
+    tenantId: user.tenantId ?? user.orgId,
+    storageRegion: user.storageRegion,
+  });
+};
+
+const clearUserWhenEnrollmentIsRequired = (req, res) => {
   if (!isTwoFactorEnrollmentRequired(req.user)) {
     return false;
   }
 
+  clearCloudFrontCookiesForUser(res, req.user);
   delete req.user;
   delete req.authStrategy;
   return true;
@@ -57,7 +70,7 @@ const clearUserWhenEnrollmentIsRequired = (req) => {
  */
 const optionalShareFileAuth = async (req, res, next) => {
   if (req.user) {
-    clearUserWhenEnrollmentIsRequired(req);
+    clearUserWhenEnrollmentIsRequired(req, res);
     return next();
   }
 
@@ -82,7 +95,9 @@ const optionalShareFileAuth = async (req, res, next) => {
     const user = await runAsSystem(() =>
       getUserById(userId, '-password -__v -totpSecret -backupCodes'),
     );
-    if (user && !isTwoFactorEnrollmentRequired(user)) {
+    if (user && isTwoFactorEnrollmentRequired(user)) {
+      clearCloudFrontCookiesForUser(res, user);
+    } else if (user) {
       user.id = user._id.toString();
       if (!user.role) {
         user.role = SystemRoles.USER;

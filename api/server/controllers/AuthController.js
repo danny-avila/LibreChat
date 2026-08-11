@@ -2,9 +2,11 @@ const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
 const openIdClient = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
+const { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } = require('librechat-data-provider');
 const {
   math,
   isEnabled,
+  clearCloudFrontCookies,
   findOpenIDUser,
   getOpenIdIssuer,
   buildOpenIDRefreshParams,
@@ -76,7 +78,13 @@ const sanitizeUserForAuthResponse = (user) => {
 const sendTwoFactorSetupRequired = async (res, user, session) => {
   await deleteSession({ sessionId: session._id });
   res.clearCookie('refreshToken');
+  clearCloudFrontCookies(res, {
+    userId: user._id.toString(),
+    tenantId: user.tenantId ?? user.orgId,
+    storageRegion: user.storageRegion,
+  });
   return res.status(200).send({
+    code: TWO_FACTOR_ENROLLMENT_REQUIRED_CODE,
     twoFAPending: true,
     twoFASetupRequired: true,
     tempToken: generateTwoFactorSetupToken(user._id.toString(), process.env.JWT_SECRET),

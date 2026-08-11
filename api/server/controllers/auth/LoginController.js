@@ -1,5 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
-const { isTwoFactorEnrollmentRequired, generateTwoFactorSetupToken } = require('@librechat/api');
+const { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } = require('librechat-data-provider');
+const {
+  clearCloudFrontCookies,
+  generateTwoFactorSetupToken,
+  isTwoFactorEnrollmentRequired,
+} = require('@librechat/api');
 const { generate2FATempToken } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
 
@@ -15,11 +20,17 @@ const loginController = async (req, res) => {
     }
 
     if (isTwoFactorEnrollmentRequired(req.user)) {
+      clearCloudFrontCookies(res, {
+        userId: req.user._id.toString(),
+        tenantId: req.user.tenantId ?? req.user.orgId,
+        storageRegion: req.user.storageRegion,
+      });
       const tempToken = generateTwoFactorSetupToken(
         req.user._id.toString(),
         process.env.JWT_SECRET,
       );
       return res.status(200).json({
+        code: TWO_FACTOR_ENROLLMENT_REQUIRED_CODE,
         twoFAPending: true,
         twoFASetupRequired: true,
         tempToken,

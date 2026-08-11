@@ -2,6 +2,7 @@ const cookies = require('cookie');
 const passport = require('passport');
 const {
   isEnabled,
+  clearCloudFrontCookies,
   tenantContextMiddleware,
   isTwoFactorEnrollmentRequired,
 } = require('@librechat/api');
@@ -25,6 +26,11 @@ const optionalJwtAuth = (req, res, next) => {
     }
     if (user) {
       if (isTwoFactorEnrollmentRequired(user)) {
+        clearCloudFrontCookies(res, {
+          userId: user.id?.toString?.() ?? user._id?.toString?.(),
+          tenantId: user.tenantId ?? user.orgId,
+          storageRegion: user.storageRegion,
+        });
         delete req.user;
         delete req.authStrategy;
         return next();

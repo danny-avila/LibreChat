@@ -594,6 +594,7 @@ export type TLoginResponse = {
   twoFAPending?: boolean;
   twoFASetupRequired?: boolean;
   tempToken?: string;
+  code?: 'TWO_FACTOR_ENROLLMENT_REQUIRED';
 };
 
 /** Shared payload for any operation that requires OTP or backup-code verification. */
@@ -700,6 +701,7 @@ export type TRefreshTokenResponse = {
   twoFAPending?: boolean;
   twoFASetupRequired?: boolean;
   tempToken?: string;
+  code?: 'TWO_FACTOR_ENROLLMENT_REQUIRED';
 };
 
 export type TCheckUserKeyResponse = {

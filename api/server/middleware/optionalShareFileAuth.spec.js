@@ -3,12 +3,14 @@ const mockGetUserById = jest.fn();
 const mockFindSession = jest.fn();
 const mockRunAsSystem = jest.fn((fn) => fn());
 const mockIsTwoFactorEnrollmentRequired = jest.fn(() => false);
+const mockClearCloudFrontCookies = jest.fn();
 
 jest.mock('jsonwebtoken', () => ({ verify: (...args) => mockVerify(...args) }));
 jest.mock(
   '@librechat/api',
   () => ({
     isEnabled: (v) => v === 'true' || v === true,
+    clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
     isTwoFactorEnrollmentRequired: (...args) => mockIsTwoFactorEnrollmentRequired(...args),
   }),
   { virtual: true },
@@ -66,6 +68,11 @@ describe('optionalShareFileAuth', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(req.user).toBeUndefined();
     expect(req.authStrategy).toBeUndefined();
+    expect(mockClearCloudFrontCookies).toHaveBeenCalledWith(expect.any(Object), {
+      userId: 'u1',
+      tenantId: undefined,
+      storageRegion: undefined,
+    });
     expect(mockGetUserById).not.toHaveBeenCalled();
     expect(mockFindSession).not.toHaveBeenCalled();
   });
@@ -99,6 +106,11 @@ describe('optionalShareFileAuth', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(req.user).toBeUndefined();
+    expect(mockClearCloudFrontCookies).toHaveBeenCalledWith(expect.any(Object), {
+      userId: 'viewer-required',
+      tenantId: undefined,
+      storageRegion: undefined,
+    });
     expect(mockGetUserById).toHaveBeenCalledTimes(1);
   });
 
