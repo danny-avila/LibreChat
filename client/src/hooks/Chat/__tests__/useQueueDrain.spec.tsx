@@ -40,6 +40,9 @@ function setup(
     setters.setRunEnd = useSetRecoilState(store.runEndByIndex(INDEX));
     setters.setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(INDEX));
     setters.setQueue = useSetRecoilState(store.queuedMessagesByConvoId(CONVO_ID));
+    setters.queueRef = {
+      current: useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID)),
+    };
     setters.setNewConvoQueue = useSetRecoilState(
       store.queuedMessagesByConvoId(Constants.NEW_CONVO),
     );
@@ -744,6 +747,31 @@ describe('useQueueDrain', () => {
         expect(ask).toHaveBeenCalledWith({ text: 'still wanted' }, emptyOverrides),
       );
       expect(ask).toHaveBeenCalledTimes(1);
+    });
+
+    it('restores a refused skipped row after its claimed predecessor', async () => {
+      claimQueuedIntent('q-claimed');
+      const { ask, setters } = setup(({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [
+          queuedMessage('q-claimed', 'being taken back'),
+          queuedMessage('q-next', 'temporarily refused'),
+          queuedMessage('q-tail', 'still last'),
+        ]);
+      });
+      ask.mockReturnValue(false);
+
+      act(() => {
+        setters.setRunEnd!(runEnd());
+      });
+
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(setters.queueRef?.current.map((item) => item.id)).toEqual([
+          'q-claimed',
+          'q-next',
+          'q-tail',
+        ]),
+      );
     });
 
     it('sends nothing when the only queued row is claimed', async () => {

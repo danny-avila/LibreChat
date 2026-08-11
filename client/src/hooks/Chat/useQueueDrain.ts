@@ -7,6 +7,7 @@ import type { TAskFunction } from '~/common';
 import { acquireQueueSendLock, releaseQueueSendLock, hasQueuedIntent } from '~/utils/queueIntent';
 import { useMarkFilesUsageMutation } from '~/data-provider';
 import { mergeQueuedMessages } from '~/utils/queue';
+import { insertQueuedOrigin } from '~/utils/steer';
 import store from '~/store';
 
 /** Mirrors the server's per-request cap on a usage touch. */
@@ -277,10 +278,8 @@ export default function useQueueDrain(
 
   const restoreQueued = useRecoilCallback(
     ({ set }) =>
-      (convoId: string, item: QueuedMessage) => {
-        set(store.queuedMessagesByConvoId(convoId), (prev) =>
-          prev.some((queued) => queued.id === item.id) ? prev : [item, ...prev],
-        );
+      (convoId: string, origin: QueuedMessageOrigin) => {
+        set(store.queuedMessagesByConvoId(convoId), (prev) => insertQueuedOrigin(prev, origin));
       },
     [],
   );
@@ -359,7 +358,7 @@ export default function useQueueDrain(
       // in the query cache yet, right after navigating back). Restore the
       // item so the user's text is never silently dropped, the chip stays
       // available for manual send.
-      restoreQueued(conversationId, next);
+      restoreQueued(conversationId, queuedMessageOrigin);
       /** Popping and restoring leaves the held set identical, so the renewal
        *  effect sees no change and will not re-run. Draining normally does
        *  change the set, and renews itself. Fire-and-forget: send-time
