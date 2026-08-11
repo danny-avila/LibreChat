@@ -510,6 +510,8 @@
   "com_nav_export_include_endpoint_options": "Include endpoint options",
   "com_nav_export_recursive": "Recursive",
   "com_nav_export_recursive_or_sequential": "Recursive or sequential?",
+  "com_nav_export_screenshot_error": "Couldn't capture the screenshot. Try a different export type.",
+  "com_nav_export_screenshot_too_large": "This conversation is too large to export as a screenshot. Try a different export type.",
   "com_nav_export_type": "Type",
   "com_nav_external": "External",
   "com_nav_font_size": "Message Font Size",
