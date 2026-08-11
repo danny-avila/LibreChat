@@ -4233,8 +4233,13 @@ export class RedisJobStore implements IJobStoreV2 {
       return undefined;
     }
     try {
-      const parsed = JSON.parse(raw) as ResolvedAskUserQuestion;
-      const request = parsed?.request;
+      const value = JSON.parse(raw) as unknown;
+      if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+        logger.warn('[RedisJobStore] Dropping malformed resolvedAskUserQuestion record');
+        return undefined;
+      }
+      const parsed = value as ResolvedAskUserQuestion;
+      const request = parsed.request;
       const requestOk =
         typeof request === 'string' ||
         (request != null &&

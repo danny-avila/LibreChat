@@ -352,6 +352,28 @@ describe('RedisJobStore', () => {
     });
   });
 
+  test.each(['null', '42', '"answer"', '[]'])(
+    'drops non-object resolved ask-user metadata: %s',
+    async (resolvedAskUserQuestion) => {
+      const redis = {
+        isCluster: true,
+        hgetall: jest.fn().mockResolvedValue({
+          streamId: 'stream-malformed-answer',
+          userId: 'user-1',
+          status: 'running',
+          createdAt: '100',
+          resolvedAskUserQuestion,
+        }),
+      } as unknown as Cluster;
+      const store = new RedisJobStore(redis);
+
+      await expect(store.getJob('stream-malformed-answer')).resolves.toMatchObject({
+        streamId: 'stream-malformed-answer',
+        resolvedAskUserQuestion: undefined,
+      });
+    },
+  );
+
   test('atomically resets predecessor state when creating a replacement', async () => {
     const evalJobCreation = jest
       .fn()
