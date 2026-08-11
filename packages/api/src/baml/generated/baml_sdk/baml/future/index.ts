@@ -20,40 +20,35 @@ import { defineFunction, defineInstanceFunction, type BamlType } from "@boundary
 export class AllFailed$stream<E> {
   errors!: E[];
   $types?: { E?: BamlType };
-  constructor(init: {
-    errors: E[];
-    $types?: { E?: BamlType };
-  }) {
+  constructor(init: { errors: E[]; $types?: { E?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["E"] as const;
+  static readonly $generic = ['E'] as const;
 }
 
 export class Future$stream<T, E> {
   $types?: { T?: BamlType; E?: BamlType };
-  constructor(init: {
-    $types?: { T?: BamlType; E?: BamlType };
-  }) {
+  constructor(init: { $types?: { T?: BamlType; E?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "E"] as const;
+  static readonly $generic = ['T', 'E'] as const;
 }
 
 /**
  * BEP-034 — concurrency via `spawn` / `await`.
- * 
+ *
  * `Future<T, E>` is the handle returned by `spawn { body }`. Awaiting
  * a future blocks the current thread until the future settles; on
  * settle, `await` either yields the value or re-throws the future's
  * error.
- * 
+ *
  * Sys-op calls (e.g. `http.fetch`, `fs.read`) are not futures — they
  * return their value directly and yield cooperatively under the hood.
  * To run one concurrently, wrap it in `spawn { ... }`.
- * 
+ *
  * The class is opaque to user code — its fields are runtime-managed.
  * All operations on a future go through the methods declared below.
- * 
+ *
  * State transitions: `Pending` → (`Ready` | `Error` | `Cancelled`).
  * Once settled, a future never changes state again.
  * Surface enumeration mirroring the runtime's `bex_vm_types::FutureRead`
@@ -61,82 +56,128 @@ export class Future$stream<T, E> {
  * a future to BAML code.
  */
 export enum FutureState {
-  Pending = "Pending",
-  Ready = "Ready",
-  Error = "Error",
-  Cancelled = "Cancelled",
+  Pending = 'Pending',
+  Ready = 'Ready',
+  Error = 'Error',
+  Cancelled = 'Cancelled',
 }
 
 export class Future<T, E> {
   $types?: { T?: BamlType; E?: BamlType };
-  constructor(init: {
-    $types?: { T?: BamlType; E?: BamlType };
-  }) {
+  constructor(init: { $types?: { T?: BamlType; E?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "E"] as const;
-/**
- * Request cancellation of the future. If the future is already
- * settled, this is a no-op and returns `false`. Otherwise the
- * future's cancel token fires; the spawned thread will throw
- * `baml.panics.Cancelled` at its next `await` point.
- * 
- * Returns `true` if a transition to the Cancelled state was
- * performed, `false` if the future was already settled.
- */
-  cancel = defineInstanceFunction("baml.future.Future.cancel", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => boolean;
-/**
- * Request cancellation of the future. If the future is already
- * settled, this is a no-op and returns `false`. Otherwise the
- * future's cancel token fires; the spawned thread will throw
- * `baml.panics.Cancelled` at its next `await` point.
- * 
- * Returns `true` if a transition to the Cancelled state was
- * performed, `false` if the future was already settled.
- */
-  cancel_async = defineInstanceFunction("baml.future.Future.cancel", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<boolean>;
-/**
- * `true` if the future has reached a terminal state (Ready, Error,
- * or Cancelled). Once `true`, this method's result never changes.
- */
-  is_settled = defineInstanceFunction("baml.future.Future.is_settled", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => boolean;
-/**
- * `true` if the future has reached a terminal state (Ready, Error,
- * or Cancelled). Once `true`, this method's result never changes.
- */
-  is_settled_async = defineInstanceFunction("baml.future.Future.is_settled", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<boolean>;
-/**
- * `true` if the future was cancelled before producing a value.
- * Implies `is_settled() == true`.
- */
-  is_cancelled = defineInstanceFunction("baml.future.Future.is_cancelled", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => boolean;
-/**
- * `true` if the future was cancelled before producing a value.
- * Implies `is_settled() == true`.
- */
-  is_cancelled_async = defineInstanceFunction("baml.future.Future.is_cancelled", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<boolean>;
-/**
- * `true` if the future settled with a successful value. Implies
- * `is_settled() == true`.
- */
-  is_result = defineInstanceFunction("baml.future.Future.is_result", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => boolean;
-/**
- * `true` if the future settled with a successful value. Implies
- * `is_settled() == true`.
- */
-  is_result_async = defineInstanceFunction("baml.future.Future.is_result", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<boolean>;
-/**
- * `true` if the future settled with an error. Implies
- * `is_settled() == true`.
- */
-  is_error = defineInstanceFunction("baml.future.Future.is_error", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => boolean;
-/**
- * `true` if the future settled with an error. Implies
- * `is_settled() == true`.
- */
-  is_error_async = defineInstanceFunction("baml.future.Future.is_error", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<boolean>;
-  state = defineInstanceFunction("baml.future.Future.state", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => FutureState;
-  state_async = defineInstanceFunction("baml.future.Future.state", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<FutureState>;
+  static readonly $generic = ['T', 'E'] as const;
+  /**
+   * Request cancellation of the future. If the future is already
+   * settled, this is a no-op and returns `false`. Otherwise the
+   * future's cancel token fires; the spawned thread will throw
+   * `baml.panics.Cancelled` at its next `await` point.
+   *
+   * Returns `true` if a transition to the Cancelled state was
+   * performed, `false` if the future was already settled.
+   */
+  cancel = defineInstanceFunction('baml.future.Future.cancel', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => boolean;
+  /**
+   * Request cancellation of the future. If the future is already
+   * settled, this is a no-op and returns `false`. Otherwise the
+   * future's cancel token fires; the spawned thread will throw
+   * `baml.panics.Cancelled` at its next `await` point.
+   *
+   * Returns `true` if a transition to the Cancelled state was
+   * performed, `false` if the future was already settled.
+   */
+  cancel_async = defineInstanceFunction('baml.future.Future.cancel', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => Promise<boolean>;
+  /**
+   * `true` if the future has reached a terminal state (Ready, Error,
+   * or Cancelled). Once `true`, this method's result never changes.
+   */
+  is_settled = defineInstanceFunction(
+    'baml.future.Future.is_settled',
+    'sync',
+    ['self'],
+    undefined,
+    { classTypeParams: ['T', 'E'] },
+  ).bind(this) as () => boolean;
+  /**
+   * `true` if the future has reached a terminal state (Ready, Error,
+   * or Cancelled). Once `true`, this method's result never changes.
+   */
+  is_settled_async = defineInstanceFunction(
+    'baml.future.Future.is_settled',
+    'async',
+    ['self'],
+    undefined,
+    { classTypeParams: ['T', 'E'] },
+  ).bind(this) as () => Promise<boolean>;
+  /**
+   * `true` if the future was cancelled before producing a value.
+   * Implies `is_settled() == true`.
+   */
+  is_cancelled = defineInstanceFunction(
+    'baml.future.Future.is_cancelled',
+    'sync',
+    ['self'],
+    undefined,
+    { classTypeParams: ['T', 'E'] },
+  ).bind(this) as () => boolean;
+  /**
+   * `true` if the future was cancelled before producing a value.
+   * Implies `is_settled() == true`.
+   */
+  is_cancelled_async = defineInstanceFunction(
+    'baml.future.Future.is_cancelled',
+    'async',
+    ['self'],
+    undefined,
+    { classTypeParams: ['T', 'E'] },
+  ).bind(this) as () => Promise<boolean>;
+  /**
+   * `true` if the future settled with a successful value. Implies
+   * `is_settled() == true`.
+   */
+  is_result = defineInstanceFunction('baml.future.Future.is_result', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => boolean;
+  /**
+   * `true` if the future settled with a successful value. Implies
+   * `is_settled() == true`.
+   */
+  is_result_async = defineInstanceFunction(
+    'baml.future.Future.is_result',
+    'async',
+    ['self'],
+    undefined,
+    { classTypeParams: ['T', 'E'] },
+  ).bind(this) as () => Promise<boolean>;
+  /**
+   * `true` if the future settled with an error. Implies
+   * `is_settled() == true`.
+   */
+  is_error = defineInstanceFunction('baml.future.Future.is_error', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => boolean;
+  /**
+   * `true` if the future settled with an error. Implies
+   * `is_settled() == true`.
+   */
+  is_error_async = defineInstanceFunction(
+    'baml.future.Future.is_error',
+    'async',
+    ['self'],
+    undefined,
+    { classTypeParams: ['T', 'E'] },
+  ).bind(this) as () => Promise<boolean>;
+  state = defineInstanceFunction('baml.future.Future.state', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => FutureState;
+  state_async = defineInstanceFunction('baml.future.Future.state', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => Promise<FutureState>;
 }
 
 /**
@@ -148,7 +189,13 @@ export class Future<T, E> {
  * the losers KEEP RUNNING on a failure (they are not cancelled). Throws the
  * first error encountered in input order.
  */
-export const all_complete = defineFunction("baml.future.all_complete", "sync", ["futures"], undefined, { typeParams: ["T", "E"] }) as <T, E>(futures: null[]) => null;
+export const all_complete = defineFunction(
+  'baml.future.all_complete',
+  'sync',
+  ['futures'],
+  undefined,
+  { typeParams: ['T', 'E'] },
+) as <T, E>(futures: null[]) => null;
 
 /**
  * BEP-034 combinators over a homogeneous array of futures (all sharing value
@@ -159,31 +206,41 @@ export const all_complete = defineFunction("baml.future.all_complete", "sync", [
  * the losers KEEP RUNNING on a failure (they are not cancelled). Throws the
  * first error encountered in input order.
  */
-export const all_complete_async = defineFunction("baml.future.all_complete", "async", ["futures"], undefined, { typeParams: ["T", "E"] }) as <T, E>(futures: null[]) => Promise<null>;
+export const all_complete_async = defineFunction(
+  'baml.future.all_complete',
+  'async',
+  ['futures'],
+  undefined,
+  { typeParams: ['T', 'E'] },
+) as <T, E>(futures: null[]) => Promise<null>;
 
 /**
  * Await every future and return their values in input order, like
  * `all_complete`, but on the FIRST failure the remaining futures are
  * cancelled before the error is re-thrown (JS `Promise.all`). Use
  * `all_complete` instead when losers have side effects that must finish.
- * 
+ *
  * Note: failures are observed in input order (not strictly first-to-fail in
  * wall-clock time); the value contract — every value, or one error — is the
  * same either way.
  */
-export const all = defineFunction("baml.future.all", "sync", ["futures"], undefined, { typeParams: ["T", "E"] }) as <T, E>(futures: null[]) => null;
+export const all = defineFunction('baml.future.all', 'sync', ['futures'], undefined, {
+  typeParams: ['T', 'E'],
+}) as <T, E>(futures: null[]) => null;
 
 /**
  * Await every future and return their values in input order, like
  * `all_complete`, but on the FIRST failure the remaining futures are
  * cancelled before the error is re-thrown (JS `Promise.all`). Use
  * `all_complete` instead when losers have side effects that must finish.
- * 
+ *
  * Note: failures are observed in input order (not strictly first-to-fail in
  * wall-clock time); the value contract — every value, or one error — is the
  * same either way.
  */
-export const all_async = defineFunction("baml.future.all", "async", ["futures"], undefined, { typeParams: ["T", "E"] }) as <T, E>(futures: null[]) => Promise<null>;
+export const all_async = defineFunction('baml.future.all', 'async', ['futures'], undefined, {
+  typeParams: ['T', 'E'],
+}) as <T, E>(futures: null[]) => Promise<null>;
 
 /**
  * The error `any` throws when EVERY input future failed. `errors` holds the
@@ -192,13 +249,10 @@ export const all_async = defineFunction("baml.future.all", "async", ["futures"],
 export class AllFailed<E> {
   errors!: E[];
   $types?: { E?: BamlType };
-  constructor(init: {
-    errors: E[];
-    $types?: { E?: BamlType };
-  }) {
+  constructor(init: { errors: E[]; $types?: { E?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["E"] as const;
+  static readonly $generic = ['E'] as const;
 }
 
 /**
@@ -209,7 +263,13 @@ export class AllFailed<E> {
  * are already running, so this only decides *which* settled first; it never
  * re-throws (callers `await futures[i]` to observe the value or error).
  */
-export const __await_any = defineFunction("baml.future.__await_any", "sync", ["futures"], undefined, { typeParams: ["T", "E"] }) as <T, E>(futures: null[]) => number;
+export const __await_any = defineFunction(
+  'baml.future.__await_any',
+  'sync',
+  ['futures'],
+  undefined,
+  { typeParams: ['T', 'E'] },
+) as <T, E>(futures: null[]) => number;
 
 /**
  * BEP-034 internal primitive: suspend until the FIRST of `futures` settles —
@@ -219,7 +279,13 @@ export const __await_any = defineFunction("baml.future.__await_any", "sync", ["f
  * are already running, so this only decides *which* settled first; it never
  * re-throws (callers `await futures[i]` to observe the value or error).
  */
-export const __await_any_async = defineFunction("baml.future.__await_any", "async", ["futures"], undefined, { typeParams: ["T", "E"] }) as <T, E>(futures: null[]) => Promise<number>;
+export const __await_any_async = defineFunction(
+  'baml.future.__await_any',
+  'async',
+  ['futures'],
+  undefined,
+  { typeParams: ['T', 'E'] },
+) as <T, E>(futures: null[]) => Promise<number>;
 
 /**
  * Settle with the FIRST future to settle, whether it succeeds or fails; the
@@ -227,7 +293,9 @@ export const __await_any_async = defineFunction("baml.future.__await_any", "asyn
  * one input therefore wins the race — use `any` when you want the first
  * SUCCESS. Racing an empty array never settles (matching JS).
  */
-export const race = defineFunction("baml.future.race", "sync", ["futures"], undefined, { typeParams: ["T", "E"] }) as <T, E>(futures: null[]) => null;
+export const race = defineFunction('baml.future.race', 'sync', ['futures'], undefined, {
+  typeParams: ['T', 'E'],
+}) as <T, E>(futures: null[]) => null;
 
 /**
  * Settle with the FIRST future to settle, whether it succeeds or fails; the
@@ -235,7 +303,9 @@ export const race = defineFunction("baml.future.race", "sync", ["futures"], unde
  * one input therefore wins the race — use `any` when you want the first
  * SUCCESS. Racing an empty array never settles (matching JS).
  */
-export const race_async = defineFunction("baml.future.race", "async", ["futures"], undefined, { typeParams: ["T", "E"] }) as <T, E>(futures: null[]) => Promise<null>;
+export const race_async = defineFunction('baml.future.race', 'async', ['futures'], undefined, {
+  typeParams: ['T', 'E'],
+}) as <T, E>(futures: null[]) => Promise<null>;
 
 /**
  * Settle with the first future to SUCCEED; the remaining futures are then
@@ -243,7 +313,9 @@ export const race_async = defineFunction("baml.future.race", "async", ["futures"
  * carrying all the errors in input order. Cancelled inputs are skipped (they
  * neither win nor contribute an error).
  */
-export const any = defineFunction("baml.future.any", "sync", ["futures"], undefined, { typeParams: ["T", "Err"] }) as <T, Err>(futures: null[]) => null;
+export const any = defineFunction('baml.future.any', 'sync', ['futures'], undefined, {
+  typeParams: ['T', 'Err'],
+}) as <T, Err>(futures: null[]) => null;
 
 /**
  * Settle with the first future to SUCCEED; the remaining futures are then
@@ -251,4 +323,6 @@ export const any = defineFunction("baml.future.any", "sync", ["futures"], undefi
  * carrying all the errors in input order. Cancelled inputs are skipped (they
  * neither win nor contribute an error).
  */
-export const any_async = defineFunction("baml.future.any", "async", ["futures"], undefined, { typeParams: ["T", "Err"] }) as <T, Err>(futures: null[]) => Promise<null>;
+export const any_async = defineFunction('baml.future.any', 'async', ['futures'], undefined, {
+  typeParams: ['T', 'Err'],
+}) as <T, Err>(futures: null[]) => Promise<null>;

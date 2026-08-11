@@ -12,7 +12,7 @@
 // baml-cli is available with the baml package.
 
 import { defineFunction } from "@boundaryml/baml-bridge";
-import type * as baml from "../../baml/index.js";
+import type * as baml from '../../baml/index.js';
 
 /**
  * Thrown when YAML text cannot be parsed as a single JSON-compatible YAML
@@ -20,9 +20,7 @@ import type * as baml from "../../baml/index.js";
  */
 export class YamlParseError$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -33,9 +31,7 @@ export class YamlParseError$stream {
  */
 export class YamlParseError {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -43,23 +39,16 @@ export class YamlParseError {
 /**
  * @throws YamlParseError
  */
-export const parse = defineFunction("baml.yaml.parse", "sync", ["s"]) as (s: string) => baml.json.json;
+export const parse = defineFunction('baml.yaml.parse', 'sync', ['s']) as (
+  s: string,
+) => baml.json.json;
 
 /**
  * @throws YamlParseError
  */
-export const parse_async = defineFunction("baml.yaml.parse", "async", ["s"]) as (s: string) => Promise<baml.json.json>;
-
-/**
- * Parses YAML text and decodes it to `T`, honoring user-defined `baml.FromJson`
- * overrides (via `baml.json.from_json<T>`). The YAML counterpart of
- * `baml.json.deserialize<T>`. Parsing throws `YamlParseError`; decoding the
- * resulting `json` into `T` throws `JsonDecodeError` (decoding never re-parses,
- * so no `JsonParseError` arises here).
- * @throws YamlParseError
- * @throws JsonDecodeError
- */
-export const deserialize = defineFunction("baml.yaml.deserialize", "sync", ["s"], undefined, { typeParams: ["T"] }) as <T>(s: string) => T;
+export const parse_async = defineFunction('baml.yaml.parse', 'async', ['s']) as (
+  s: string,
+) => Promise<baml.json.json>;
 
 /**
  * Parses YAML text and decodes it to `T`, honoring user-defined `baml.FromJson`
@@ -70,4 +59,23 @@ export const deserialize = defineFunction("baml.yaml.deserialize", "sync", ["s"]
  * @throws YamlParseError
  * @throws JsonDecodeError
  */
-export const deserialize_async = defineFunction("baml.yaml.deserialize", "async", ["s"], undefined, { typeParams: ["T"] }) as <T>(s: string) => Promise<T>;
+export const deserialize = defineFunction('baml.yaml.deserialize', 'sync', ['s'], undefined, {
+  typeParams: ['T'],
+}) as <T>(s: string) => T;
+
+/**
+ * Parses YAML text and decodes it to `T`, honoring user-defined `baml.FromJson`
+ * overrides (via `baml.json.from_json<T>`). The YAML counterpart of
+ * `baml.json.deserialize<T>`. Parsing throws `YamlParseError`; decoding the
+ * resulting `json` into `T` throws `JsonDecodeError` (decoding never re-parses,
+ * so no `JsonParseError` arises here).
+ * @throws YamlParseError
+ * @throws JsonDecodeError
+ */
+export const deserialize_async = defineFunction(
+  'baml.yaml.deserialize',
+  'async',
+  ['s'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(s: string) => Promise<T>;

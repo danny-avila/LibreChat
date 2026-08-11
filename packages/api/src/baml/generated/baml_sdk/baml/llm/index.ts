@@ -12,8 +12,8 @@
 // baml-cli is available with the baml package.
 
 import type { BamlHandle as _BamlHandle } from "@boundaryml/baml-bridge";
-import { defineFunction, defineInstanceFunction, type BamlType } from "@boundaryml/baml-bridge";
-import type * as baml from "../../baml/index.js";
+import { defineFunction, defineInstanceFunction, type BamlType } from '@boundaryml/baml-bridge';
+import type * as baml from '../../baml/index.js';
 
 /**
  * Attributes:
@@ -42,10 +42,7 @@ export class ExecutionContext$stream {
 export class OrchestrationStep {
   primitive_client!: PrimitiveClient;
   delay_ms!: number;
-  constructor(init: {
-    primitive_client: PrimitiveClient;
-    delay_ms: number;
-  }) {
+  constructor(init: { primitive_client: PrimitiveClient; delay_ms: number }) {
     Object.assign(this, init);
   }
 }
@@ -53,19 +50,14 @@ export class OrchestrationStep {
 export class OrchestrationStep$stream {
   primitive_client!: PrimitiveClient$stream | null;
   delay_ms!: number | null;
-  constructor(init: {
-    primitive_client: PrimitiveClient$stream | null;
-    delay_ms: number | null;
-  }) {
+  constructor(init: { primitive_client: PrimitiveClient$stream | null; delay_ms: number | null }) {
     Object.assign(this, init);
   }
 }
 
 export class PlannerState$stream {
   rr_client_names!: string[];
-  constructor(init: {
-    rr_client_names: string[];
-  }) {
+  constructor(init: { rr_client_names: string[] }) {
     Object.assign(this, init);
   }
 }
@@ -96,15 +88,33 @@ export class ExecutionContext {
 
 export class PlannerState {
   rr_client_names!: string[];
-  constructor(init: {
-    rr_client_names: string[];
-  }) {
+  constructor(init: { rr_client_names: string[] }) {
     Object.assign(this, init);
   }
-  rr_local_offset = defineInstanceFunction("baml.llm.PlannerState.rr_local_offset", "sync", ["self", "client_name"]).bind(this) as (client_name: string) => number;
-  rr_local_offset_async = defineInstanceFunction("baml.llm.PlannerState.rr_local_offset", "async", ["self", "client_name"]).bind(this) as (client_name: string) => Promise<number>;
-  rr_pick_index = defineInstanceFunction("baml.llm.PlannerState.rr_pick_index", "sync", ["self", "client_name", "counter", "sub_client_count"]).bind(this) as (client_name: string, counter: number, sub_client_count: number) => number;
-  rr_pick_index_async = defineInstanceFunction("baml.llm.PlannerState.rr_pick_index", "async", ["self", "client_name", "counter", "sub_client_count"]).bind(this) as (client_name: string, counter: number, sub_client_count: number) => Promise<number>;
+  rr_local_offset = defineInstanceFunction('baml.llm.PlannerState.rr_local_offset', 'sync', [
+    'self',
+    'client_name',
+  ]).bind(this) as (client_name: string) => number;
+  rr_local_offset_async = defineInstanceFunction('baml.llm.PlannerState.rr_local_offset', 'async', [
+    'self',
+    'client_name',
+  ]).bind(this) as (client_name: string) => Promise<number>;
+  rr_pick_index = defineInstanceFunction('baml.llm.PlannerState.rr_pick_index', 'sync', [
+    'self',
+    'client_name',
+    'counter',
+    'sub_client_count',
+  ]).bind(this) as (client_name: string, counter: number, sub_client_count: number) => number;
+  rr_pick_index_async = defineInstanceFunction('baml.llm.PlannerState.rr_pick_index', 'async', [
+    'self',
+    'client_name',
+    'counter',
+    'sub_client_count',
+  ]).bind(this) as (
+    client_name: string,
+    counter: number,
+    sub_client_count: number,
+  ) => Promise<number>;
 }
 
 /**
@@ -115,7 +125,10 @@ export class PlannerState {
  * renders the prompt — so only look one up for the legacy `#"..."#` path.
  * @throws InvalidArgument
  */
-export const prompt_template_for = defineFunction("baml.llm.prompt_template_for", "sync", ["function_name", "prompt_closure"]) as (function_name: string, prompt_closure: (arg0: Context) => PromptAst | null) => string;
+export const prompt_template_for = defineFunction('baml.llm.prompt_template_for', 'sync', [
+  'function_name',
+  'prompt_closure',
+]) as (function_name: string, prompt_closure: (arg0: Context) => PromptAst | null) => string;
 
 /**
  * Renders the Jinja prompt template for `function_name` with the given `args` using `client`'s configuration.
@@ -125,57 +138,123 @@ export const prompt_template_for = defineFunction("baml.llm.prompt_template_for"
  * renders the prompt — so only look one up for the legacy `#"..."#` path.
  * @throws InvalidArgument
  */
-export const prompt_template_for_async = defineFunction("baml.llm.prompt_template_for", "async", ["function_name", "prompt_closure"]) as (function_name: string, prompt_closure: (arg0: Context) => PromptAst | null) => Promise<string>;
+export const prompt_template_for_async = defineFunction('baml.llm.prompt_template_for', 'async', [
+  'function_name',
+  'prompt_closure',
+]) as (
+  function_name: string,
+  prompt_closure: (arg0: Context) => PromptAst | null,
+) => Promise<string>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const render_prompt = defineFunction("baml.llm.render_prompt", "sync", ["client", "function_name", "args"], ["prompt_closure"]) as (client: Client, function_name: string, args: { [key: string]: unknown }, $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined) => PromptAst;
+export const render_prompt = defineFunction(
+  'baml.llm.render_prompt',
+  'sync',
+  ['client', 'function_name', 'args'],
+  ['prompt_closure'],
+) as (
+  client: Client,
+  function_name: string,
+  args: { [key: string]: unknown },
+  $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined,
+) => PromptAst;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const render_prompt_async = defineFunction("baml.llm.render_prompt", "async", ["client", "function_name", "args"], ["prompt_closure"]) as (client: Client, function_name: string, args: { [key: string]: unknown }, $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined) => Promise<PromptAst>;
+export const render_prompt_async = defineFunction(
+  'baml.llm.render_prompt',
+  'async',
+  ['client', 'function_name', 'args'],
+  ['prompt_closure'],
+) as (
+  client: Client,
+  function_name: string,
+  args: { [key: string]: unknown },
+  $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined,
+) => Promise<PromptAst>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const build_request = defineFunction("baml.llm.build_request", "sync", ["client", "function_name", "args"], ["prompt_closure"]) as (client: Client, function_name: string, args: { [key: string]: unknown }, $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined) => baml.http.Request;
+export const build_request = defineFunction(
+  'baml.llm.build_request',
+  'sync',
+  ['client', 'function_name', 'args'],
+  ['prompt_closure'],
+) as (
+  client: Client,
+  function_name: string,
+  args: { [key: string]: unknown },
+  $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined,
+) => baml.http.Request;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const build_request_async = defineFunction("baml.llm.build_request", "async", ["client", "function_name", "args"], ["prompt_closure"]) as (client: Client, function_name: string, args: { [key: string]: unknown }, $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined) => Promise<baml.http.Request>;
+export const build_request_async = defineFunction(
+  'baml.llm.build_request',
+  'async',
+  ['client', 'function_name', 'args'],
+  ['prompt_closure'],
+) as (
+  client: Client,
+  function_name: string,
+  args: { [key: string]: unknown },
+  $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined,
+) => Promise<baml.http.Request>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const build_request_stream = defineFunction("baml.llm.build_request_stream", "sync", ["client", "function_name", "args"], ["prompt_closure"]) as (client: Client, function_name: string, args: { [key: string]: unknown }, $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined) => baml.http.Request;
+export const build_request_stream = defineFunction(
+  'baml.llm.build_request_stream',
+  'sync',
+  ['client', 'function_name', 'args'],
+  ['prompt_closure'],
+) as (
+  client: Client,
+  function_name: string,
+  args: { [key: string]: unknown },
+  $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined,
+) => baml.http.Request;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const build_request_stream_async = defineFunction("baml.llm.build_request_stream", "async", ["client", "function_name", "args"], ["prompt_closure"]) as (client: Client, function_name: string, args: { [key: string]: unknown }, $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined) => Promise<baml.http.Request>;
+export const build_request_stream_async = defineFunction(
+  'baml.llm.build_request_stream',
+  'async',
+  ['client', 'function_name', 'args'],
+  ['prompt_closure'],
+) as (
+  client: Client,
+  function_name: string,
+  args: { [key: string]: unknown },
+  $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined,
+) => Promise<baml.http.Request>;
 
 /**
  * UNSAFE: do not call from user code
- * 
+ *
  * Used by LLM function `$parse` companions, which pass
  * `<STREAM_EXPANDED, ORIGINAL>` as explicit type args.
  * Only parses full responses, not partials.
- * 
+ *
  * `$parse` is a purely local, network-free parse of an existing JSON string
  * into the function's return type, so a schema mismatch (e.g. an out-of-enum
  * value) is a *parse* failure — not an LLM/client failure. The underlying
@@ -186,15 +265,17 @@ export const build_request_stream_async = defineFunction("baml.llm.build_request
  * `catch (baml.errors.ParseError)` pattern is reachable (no E0063).
  * @throws ParseError
  */
-export const parse = defineFunction("baml.llm.parse", "sync", ["json"], undefined, { typeParams: ["TStream", "TFinal"] }) as <TStream, TFinal>(json: string) => TFinal;
+export const parse = defineFunction('baml.llm.parse', 'sync', ['json'], undefined, {
+  typeParams: ['TStream', 'TFinal'],
+}) as <TStream, TFinal>(json: string) => TFinal;
 
 /**
  * UNSAFE: do not call from user code
- * 
+ *
  * Used by LLM function `$parse` companions, which pass
  * `<STREAM_EXPANDED, ORIGINAL>` as explicit type args.
  * Only parses full responses, not partials.
- * 
+ *
  * `$parse` is a purely local, network-free parse of an existing JSON string
  * into the function's return type, so a schema mismatch (e.g. an out-of-enum
  * value) is a *parse* failure — not an LLM/client failure. The underlying
@@ -205,11 +286,13 @@ export const parse = defineFunction("baml.llm.parse", "sync", ["json"], undefine
  * `catch (baml.errors.ParseError)` pattern is reachable (no E0063).
  * @throws ParseError
  */
-export const parse_async = defineFunction("baml.llm.parse", "async", ["json"], undefined, { typeParams: ["TStream", "TFinal"] }) as <TStream, TFinal>(json: string) => Promise<TFinal>;
+export const parse_async = defineFunction('baml.llm.parse', 'async', ['json'], undefined, {
+  typeParams: ['TStream', 'TFinal'],
+}) as <TStream, TFinal>(json: string) => Promise<TFinal>;
 
 /**
  * UNSAFE: do not call from user code
- * 
+ *
  * Call an LLM function and return its full result.
  * @throws DevOther
  * @throws InvalidArgument
@@ -218,11 +301,22 @@ export const parse_async = defineFunction("baml.llm.parse", "async", ["json"], u
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const call_llm_function = defineFunction("baml.llm.call_llm_function", "sync", ["client", "function_name", "args"], ["prompt_closure"], { typeParams: ["T"] }) as <T>(client: Client, function_name: string, args: { [key: string]: unknown }, $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined) => T;
+export const call_llm_function = defineFunction(
+  'baml.llm.call_llm_function',
+  'sync',
+  ['client', 'function_name', 'args'],
+  ['prompt_closure'],
+  { typeParams: ['T'] },
+) as <T>(
+  client: Client,
+  function_name: string,
+  args: { [key: string]: unknown },
+  $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined,
+) => T;
 
 /**
  * UNSAFE: do not call from user code
- * 
+ *
  * Call an LLM function and return its full result.
  * @throws DevOther
  * @throws InvalidArgument
@@ -231,13 +325,24 @@ export const call_llm_function = defineFunction("baml.llm.call_llm_function", "s
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const call_llm_function_async = defineFunction("baml.llm.call_llm_function", "async", ["client", "function_name", "args"], ["prompt_closure"], { typeParams: ["T"] }) as <T>(client: Client, function_name: string, args: { [key: string]: unknown }, $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined) => Promise<T>;
+export const call_llm_function_async = defineFunction(
+  'baml.llm.call_llm_function',
+  'async',
+  ['client', 'function_name', 'args'],
+  ['prompt_closure'],
+  { typeParams: ['T'] },
+) as <T>(
+  client: Client,
+  function_name: string,
+  args: { [key: string]: unknown },
+  $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined,
+) => Promise<T>;
 
 /**
  * UNSAFE: do not call from user code
- * 
+ *
  * The streaming counterpart of `call_llm_function`.
- * 
+ *
  * Sends the request and returns a `Stream<TStream, TFinal>` which can be used to consume the data as it arrives.
  * @throws DevOther
  * @throws InvalidArgument
@@ -246,13 +351,24 @@ export const call_llm_function_async = defineFunction("baml.llm.call_llm_functio
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const stream_llm_function = defineFunction("baml.llm.stream_llm_function", "sync", ["client", "function_name", "args"], ["prompt_closure"], { typeParams: ["TStream", "TFinal"] }) as <TStream, TFinal>(client: Client, function_name: string, args: { [key: string]: unknown }, $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined) => Stream<TStream, TFinal>;
+export const stream_llm_function = defineFunction(
+  'baml.llm.stream_llm_function',
+  'sync',
+  ['client', 'function_name', 'args'],
+  ['prompt_closure'],
+  { typeParams: ['TStream', 'TFinal'] },
+) as <TStream, TFinal>(
+  client: Client,
+  function_name: string,
+  args: { [key: string]: unknown },
+  $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined,
+) => Stream<TStream, TFinal>;
 
 /**
  * UNSAFE: do not call from user code
- * 
+ *
  * The streaming counterpart of `call_llm_function`.
- * 
+ *
  * Sends the request and returns a `Stream<TStream, TFinal>` which can be used to consume the data as it arrives.
  * @throws DevOther
  * @throws InvalidArgument
@@ -261,16 +377,25 @@ export const stream_llm_function = defineFunction("baml.llm.stream_llm_function"
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const stream_llm_function_async = defineFunction("baml.llm.stream_llm_function", "async", ["client", "function_name", "args"], ["prompt_closure"], { typeParams: ["TStream", "TFinal"] }) as <TStream, TFinal>(client: Client, function_name: string, args: { [key: string]: unknown }, $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined) => Promise<Stream<TStream, TFinal>>;
+export const stream_llm_function_async = defineFunction(
+  'baml.llm.stream_llm_function',
+  'async',
+  ['client', 'function_name', 'args'],
+  ['prompt_closure'],
+  { typeParams: ['TStream', 'TFinal'] },
+) as <TStream, TFinal>(
+  client: Client,
+  function_name: string,
+  args: { [key: string]: unknown },
+  $opts?: { prompt_closure?: (arg0: Context) => PromptAst | null | undefined } | undefined,
+) => Promise<Stream<TStream, TFinal>>;
 
 /**
  * Provider-specific options for `anthropic` clients.
  */
 export class AnthropicOptions$stream {
   max_tokens!: number | null;
-  constructor(init: {
-    max_tokens: number | null;
-  }) {
+  constructor(init: { max_tokens: number | null }) {
     Object.assign(this, init);
   }
 }
@@ -349,7 +474,7 @@ export class Client$stream {
  * Carries the same per-attempt data BAML's Jinja runtime injects today
  * (client info, runtime tags, output-format schema), resolved AFTER the
  * orchestrator picks the client for this attempt — preserving lazy eval.
- * 
+ *
  * `output_format` is the default-rendered schema string for the call's return
  * type — the dominant `${ctx.output_format}` usage, byte-equivalent to Jinja's
  * `{{ ctx.output_format }}`. `output_format_with(...)` re-renders the schema
@@ -402,7 +527,7 @@ export class ContextClient$stream {
 
 /**
  * Provider-specific options for `google-ai` clients.
- * 
+ *
  * The Google Cloud fields are ignored while the client uses the Gemini API.
  * When `enterprise` or a `GOOGLE_GENAI_USE_*` environment flag selects the
  * Vertex backend, they have exactly the same meaning as on `VertexAiOptions`.
@@ -457,9 +582,7 @@ export class MediaUrlHandler$stream {
  */
 export class OutputFormat$stream {
   _data!: _BamlHandle;
-  constructor(init: {
-    _data: _BamlHandle;
-  }) {
+  constructor(init: { _data: _BamlHandle }) {
     Object.assign(this, init);
   }
 }
@@ -488,7 +611,13 @@ export class PrimitiveClientOptions$stream {
   allowed_roles!: string[] | null;
   remap_roles!: { [key: string]: string } | null;
   api_key!: string | null;
-  provider_options!: AnthropicOptions$stream | AzureOpenAiOptions$stream | BedrockOptions$stream | GoogleAiOptions$stream | VertexAiOptions$stream | null;
+  provider_options!:
+    | AnthropicOptions$stream
+    | AzureOpenAiOptions$stream
+    | BedrockOptions$stream
+    | GoogleAiOptions$stream
+    | VertexAiOptions$stream
+    | null;
   media_url_handler!: MediaUrlHandler$stream | null;
   headers!: { [key: string]: string };
   query_params!: { [key: string]: string };
@@ -504,7 +633,13 @@ export class PrimitiveClientOptions$stream {
     allowed_roles: string[] | null;
     remap_roles: { [key: string]: string } | null;
     api_key: string | null;
-    provider_options: AnthropicOptions$stream | AzureOpenAiOptions$stream | BedrockOptions$stream | GoogleAiOptions$stream | VertexAiOptions$stream | null;
+    provider_options:
+      | AnthropicOptions$stream
+      | AzureOpenAiOptions$stream
+      | BedrockOptions$stream
+      | GoogleAiOptions$stream
+      | VertexAiOptions$stream
+      | null;
     media_url_handler: MediaUrlHandler$stream | null;
     headers: { [key: string]: string };
     query_params: { [key: string]: string };
@@ -523,9 +658,7 @@ export class PrimitiveClientOptions$stream {
  */
 export class PromptAst$stream {
   _data!: _BamlHandle;
-  constructor(init: {
-    _data: _BamlHandle;
-  }) {
+  constructor(init: { _data: _BamlHandle }) {
     Object.assign(this, init);
   }
 }
@@ -545,10 +678,7 @@ export class PromptAst$stream {
 export class PromptMessage$stream {
   role!: string | null;
   content!: string | null;
-  constructor(init: {
-    role: string | null;
-    content: string | null;
-  }) {
+  constructor(init: { role: string | null; content: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -585,20 +715,17 @@ export class RetryPolicy$stream {
 export class Role$stream {
   name!: string | null;
   metadata!: { [key: string]: unknown };
-  constructor(init: {
-    name: string | null;
-    metadata: { [key: string]: unknown };
-  }) {
+  constructor(init: { name: string | null; metadata: { [key: string]: unknown } }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * `Stream` provides a streaming interface for LLM calls.
- * 
+ *
  * It is a pull-based interface: the sse stream is only flushed into the accumulator
  * and the value is only parsed when `next()` or `final()` is called.
- * 
+ *
  * Created by `<LLM function>$stream` companion functions,
  * internally using `baml.llm.stream_llm_function`.
  */
@@ -617,14 +744,12 @@ export class Stream$stream<TStream, TFinal> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["TStream", "TFinal"] as const;
+  static readonly $generic = ['TStream', 'TFinal'] as const;
 }
 
 export class StreamAccumulator$stream {
   _handle!: _BamlHandle;
-  constructor(init: {
-    _handle: _BamlHandle;
-  }) {
+  constructor(init: { _handle: _BamlHandle }) {
     Object.assign(this, init);
   }
 }
@@ -632,19 +757,16 @@ export class StreamAccumulator$stream {
 /**
  * DO NOT USE FROM USER CODE
  * Cached data for a stream. Contains type information, assert check cache, etc.
- * 
+ *
  * Intended for use in `baml.llm.Stream`
  */
 export class StreamCache$stream<TStream, TFinal> {
   _data!: _BamlHandle;
   $types?: { TStream?: BamlType; TFinal?: BamlType };
-  constructor(init: {
-    _data: _BamlHandle;
-    $types?: { TStream?: BamlType; TFinal?: BamlType };
-  }) {
+  constructor(init: { _data: _BamlHandle; $types?: { TStream?: BamlType; TFinal?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["TStream", "TFinal"] as const;
+  static readonly $generic = ['TStream', 'TFinal'] as const;
 }
 
 /**
@@ -689,10 +811,7 @@ export class VertexAiOptions$stream {
 export class PromptMessage {
   role!: string;
   content!: string;
-  constructor(init: {
-    role: string;
-    content: string;
-  }) {
+  constructor(init: { role: string; content: string }) {
     Object.assign(this, init);
   }
 }
@@ -706,37 +825,47 @@ export class PromptMessage {
  */
 export class PromptAst {
   _data!: _BamlHandle;
-  constructor(init: {
-    _data: _BamlHandle;
-  }) {
+  constructor(init: { _data: _BamlHandle }) {
     Object.assign(this, init);
   }
-/**
- * The rendered prompt as readable plain text: each chat message rendered as a
- * `[role]` header line followed by its content, messages separated by a blank
- * line (role-less content has no header). This is also what
- * `string.from(prompt)`, string interpolation, and `to_string` yield.
- */
-  text = defineInstanceFunction("baml.llm.PromptAst.text", "sync", ["self"]).bind(this) as () => string;
-/**
- * The rendered prompt as readable plain text: each chat message rendered as a
- * `[role]` header line followed by its content, messages separated by a blank
- * line (role-less content has no header). This is also what
- * `string.from(prompt)`, string interpolation, and `to_string` yield.
- */
-  text_async = defineInstanceFunction("baml.llm.PromptAst.text", "async", ["self"]).bind(this) as () => Promise<string>;
-/**
- * The rendered prompt as an ordered list of chat messages (role + text
- * content). The primary structured accessor for offline prompt inspection.
- */
-  messages = defineInstanceFunction("baml.llm.PromptAst.messages", "sync", ["self"]).bind(this) as () => PromptMessage[];
-/**
- * The rendered prompt as an ordered list of chat messages (role + text
- * content). The primary structured accessor for offline prompt inspection.
- */
-  messages_async = defineInstanceFunction("baml.llm.PromptAst.messages", "async", ["self"]).bind(this) as () => Promise<PromptMessage[]>;
-  to_string = defineInstanceFunction("baml.llm.PromptAst.to_string", "sync", ["self"]).bind(this) as () => string;
-  to_string_async = defineInstanceFunction("baml.llm.PromptAst.to_string", "async", ["self"]).bind(this) as () => Promise<string>;
+  /**
+   * The rendered prompt as readable plain text: each chat message rendered as a
+   * `[role]` header line followed by its content, messages separated by a blank
+   * line (role-less content has no header). This is also what
+   * `string.from(prompt)`, string interpolation, and `to_string` yield.
+   */
+  text = defineInstanceFunction('baml.llm.PromptAst.text', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  /**
+   * The rendered prompt as readable plain text: each chat message rendered as a
+   * `[role]` header line followed by its content, messages separated by a blank
+   * line (role-less content has no header). This is also what
+   * `string.from(prompt)`, string interpolation, and `to_string` yield.
+   */
+  text_async = defineInstanceFunction('baml.llm.PromptAst.text', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  /**
+   * The rendered prompt as an ordered list of chat messages (role + text
+   * content). The primary structured accessor for offline prompt inspection.
+   */
+  messages = defineInstanceFunction('baml.llm.PromptAst.messages', 'sync', ['self']).bind(
+    this,
+  ) as () => PromptMessage[];
+  /**
+   * The rendered prompt as an ordered list of chat messages (role + text
+   * content). The primary structured accessor for offline prompt inspection.
+   */
+  messages_async = defineInstanceFunction('baml.llm.PromptAst.messages', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<PromptMessage[]>;
+  to_string = defineInstanceFunction('baml.llm.PromptAst.to_string', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  to_string_async = defineInstanceFunction('baml.llm.PromptAst.to_string', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
 }
 
 /**
@@ -747,9 +876,7 @@ export class PromptAst {
  */
 export class OutputFormat {
   _data!: _BamlHandle;
-  constructor(init: {
-    _data: _BamlHandle;
-  }) {
+  constructor(init: { _data: _BamlHandle }) {
     Object.assign(this, init);
   }
 }
@@ -768,10 +895,7 @@ export class OutputFormat {
 export class Role {
   name!: string;
   metadata!: { [key: string]: unknown };
-  constructor(init: {
-    name: string;
-    metadata: { [key: string]: unknown };
-  }) {
+  constructor(init: { name: string; metadata: { [key: string]: unknown } }) {
     Object.assign(this, init);
   }
 }
@@ -802,7 +926,7 @@ export class ContextClient {
  * Carries the same per-attempt data BAML's Jinja runtime injects today
  * (client info, runtime tags, output-format schema), resolved AFTER the
  * orchestrator picks the client for this attempt — preserving lazy eval.
- * 
+ *
  * `output_format` is the default-rendered schema string for the call's return
  * type — the dominant `${ctx.output_format}` usage, byte-equivalent to Jinja's
  * `{{ ctx.output_format }}`. `output_format_with(...)` re-renders the schema
@@ -830,27 +954,85 @@ export class Context {
   }) {
     Object.assign(this, init);
   }
-/**
- * BEP-049 §10 (M5b.2). Render the return type's schema with custom options —
- * the parameterized form of `output_format`. Each option defaults to `null`
- * (auto); a supplied value overrides that aspect of the rendering.
- */
-  output_format_with = defineInstanceFunction("baml.llm.Context.output_format_with", "sync", ["self"], ["prefix", "or_splitter", "enum_value_prefix", "hoisted_class_prefix", "always_hoist_enums", "quote_class_fields", "hoist_classes", "map_style", "render_null_as"]).bind(this) as ($opts?: { prefix?: string | null | undefined; or_splitter?: string | null | undefined; enum_value_prefix?: string | null | undefined; hoisted_class_prefix?: string | null | undefined; always_hoist_enums?: boolean | null | undefined; quote_class_fields?: boolean | null | undefined; hoist_classes?: string[] | null | undefined; map_style?: string | null | undefined; render_null_as?: string | null | undefined } | undefined) => string;
-/**
- * BEP-049 §10 (M5b.2). Render the return type's schema with custom options —
- * the parameterized form of `output_format`. Each option defaults to `null`
- * (auto); a supplied value overrides that aspect of the rendering.
- */
-  output_format_with_async = defineInstanceFunction("baml.llm.Context.output_format_with", "async", ["self"], ["prefix", "or_splitter", "enum_value_prefix", "hoisted_class_prefix", "always_hoist_enums", "quote_class_fields", "hoist_classes", "map_style", "render_null_as"]).bind(this) as ($opts?: { prefix?: string | null | undefined; or_splitter?: string | null | undefined; enum_value_prefix?: string | null | undefined; hoisted_class_prefix?: string | null | undefined; always_hoist_enums?: boolean | null | undefined; quote_class_fields?: boolean | null | undefined; hoist_classes?: string[] | null | undefined; map_style?: string | null | undefined; render_null_as?: string | null | undefined } | undefined) => Promise<string>;
+  /**
+   * BEP-049 §10 (M5b.2). Render the return type's schema with custom options —
+   * the parameterized form of `output_format`. Each option defaults to `null`
+   * (auto); a supplied value overrides that aspect of the rendering.
+   */
+  output_format_with = defineInstanceFunction(
+    'baml.llm.Context.output_format_with',
+    'sync',
+    ['self'],
+    [
+      'prefix',
+      'or_splitter',
+      'enum_value_prefix',
+      'hoisted_class_prefix',
+      'always_hoist_enums',
+      'quote_class_fields',
+      'hoist_classes',
+      'map_style',
+      'render_null_as',
+    ],
+  ).bind(this) as (
+    $opts?:
+      | {
+          prefix?: string | null | undefined;
+          or_splitter?: string | null | undefined;
+          enum_value_prefix?: string | null | undefined;
+          hoisted_class_prefix?: string | null | undefined;
+          always_hoist_enums?: boolean | null | undefined;
+          quote_class_fields?: boolean | null | undefined;
+          hoist_classes?: string[] | null | undefined;
+          map_style?: string | null | undefined;
+          render_null_as?: string | null | undefined;
+        }
+      | undefined,
+  ) => string;
+  /**
+   * BEP-049 §10 (M5b.2). Render the return type's schema with custom options —
+   * the parameterized form of `output_format`. Each option defaults to `null`
+   * (auto); a supplied value overrides that aspect of the rendering.
+   */
+  output_format_with_async = defineInstanceFunction(
+    'baml.llm.Context.output_format_with',
+    'async',
+    ['self'],
+    [
+      'prefix',
+      'or_splitter',
+      'enum_value_prefix',
+      'hoisted_class_prefix',
+      'always_hoist_enums',
+      'quote_class_fields',
+      'hoist_classes',
+      'map_style',
+      'render_null_as',
+    ],
+  ).bind(this) as (
+    $opts?:
+      | {
+          prefix?: string | null | undefined;
+          or_splitter?: string | null | undefined;
+          enum_value_prefix?: string | null | undefined;
+          hoisted_class_prefix?: string | null | undefined;
+          always_hoist_enums?: boolean | null | undefined;
+          quote_class_fields?: boolean | null | undefined;
+          hoist_classes?: string[] | null | undefined;
+          map_style?: string | null | undefined;
+          render_null_as?: string | null | undefined;
+        }
+      | undefined,
+  ) => Promise<string>;
 }
 
 /**
  * The routing strategy of an LLM client.
  */
 export enum ClientType {
-  Primitive = "Primitive",
-  Fallback = "Fallback",
-  RoundRobin = "RoundRobin",
+  Primitive = 'Primitive',
+  Fallback = 'Fallback',
+  RoundRobin = 'RoundRobin',
 }
 
 /**
@@ -869,30 +1051,54 @@ export class RetryPolicy {
   }) {
     Object.assign(this, init);
   }
-/**
- * Initial backoff delay (ms) as a float; defaults to 200 when unset.
- */
-  initial_delay_or_default = defineInstanceFunction("baml.llm.RetryPolicy.initial_delay_or_default", "sync", ["self"]).bind(this) as () => number;
-/**
- * Initial backoff delay (ms) as a float; defaults to 200 when unset.
- */
-  initial_delay_or_default_async = defineInstanceFunction("baml.llm.RetryPolicy.initial_delay_or_default", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Backoff growth multiplier; defaults to 1.5 when unset.
- */
-  multiplier_or_default = defineInstanceFunction("baml.llm.RetryPolicy.multiplier_or_default", "sync", ["self"]).bind(this) as () => number;
-/**
- * Backoff growth multiplier; defaults to 1.5 when unset.
- */
-  multiplier_or_default_async = defineInstanceFunction("baml.llm.RetryPolicy.multiplier_or_default", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Maximum backoff delay (ms) as a float; defaults to 10000 when unset.
- */
-  max_delay_or_default = defineInstanceFunction("baml.llm.RetryPolicy.max_delay_or_default", "sync", ["self"]).bind(this) as () => number;
-/**
- * Maximum backoff delay (ms) as a float; defaults to 10000 when unset.
- */
-  max_delay_or_default_async = defineInstanceFunction("baml.llm.RetryPolicy.max_delay_or_default", "async", ["self"]).bind(this) as () => Promise<number>;
+  /**
+   * Initial backoff delay (ms) as a float; defaults to 200 when unset.
+   */
+  initial_delay_or_default = defineInstanceFunction(
+    'baml.llm.RetryPolicy.initial_delay_or_default',
+    'sync',
+    ['self'],
+  ).bind(this) as () => number;
+  /**
+   * Initial backoff delay (ms) as a float; defaults to 200 when unset.
+   */
+  initial_delay_or_default_async = defineInstanceFunction(
+    'baml.llm.RetryPolicy.initial_delay_or_default',
+    'async',
+    ['self'],
+  ).bind(this) as () => Promise<number>;
+  /**
+   * Backoff growth multiplier; defaults to 1.5 when unset.
+   */
+  multiplier_or_default = defineInstanceFunction(
+    'baml.llm.RetryPolicy.multiplier_or_default',
+    'sync',
+    ['self'],
+  ).bind(this) as () => number;
+  /**
+   * Backoff growth multiplier; defaults to 1.5 when unset.
+   */
+  multiplier_or_default_async = defineInstanceFunction(
+    'baml.llm.RetryPolicy.multiplier_or_default',
+    'async',
+    ['self'],
+  ).bind(this) as () => Promise<number>;
+  /**
+   * Maximum backoff delay (ms) as a float; defaults to 10000 when unset.
+   */
+  max_delay_or_default = defineInstanceFunction(
+    'baml.llm.RetryPolicy.max_delay_or_default',
+    'sync',
+    ['self'],
+  ).bind(this) as () => number;
+  /**
+   * Maximum backoff delay (ms) as a float; defaults to 10000 when unset.
+   */
+  max_delay_or_default_async = defineInstanceFunction(
+    'baml.llm.RetryPolicy.max_delay_or_default',
+    'async',
+    ['self'],
+  ).bind(this) as () => Promise<number>;
 }
 
 /**
@@ -914,148 +1120,259 @@ export class Client {
   }) {
     Object.assign(this, init);
   }
-/**
- * Build the primitive client this client resolves to.
- * 
- * `lenient` controls how the generated constructor reads `env.X` client
- * options: when true, a missing variable yields "" instead of panicking.
- * Only the offline `render_prompt` path passes `true` — it needs the
- * client's provider/role metadata to render a prompt but never its
- * credentials. Every network path keeps the default `false`, so a missing
- * `api_key` env var still panics for `$call` / `$build_request`.
- * @throws InvalidArgument
- */
-  to_primitive_client = defineInstanceFunction("baml.llm.Client.to_primitive_client", "sync", ["self"], ["lenient"]).bind(this) as ($opts?: { lenient?: boolean | undefined } | undefined) => PrimitiveClient;
-/**
- * Build the primitive client this client resolves to.
- * 
- * `lenient` controls how the generated constructor reads `env.X` client
- * options: when true, a missing variable yields "" instead of panicking.
- * Only the offline `render_prompt` path passes `true` — it needs the
- * client's provider/role metadata to render a prompt but never its
- * credentials. Every network path keeps the default `false`, so a missing
- * `api_key` env var still panics for `$call` / `$build_request`.
- * @throws InvalidArgument
- */
-  to_primitive_client_async = defineInstanceFunction("baml.llm.Client.to_primitive_client", "async", ["self"], ["lenient"]).bind(this) as ($opts?: { lenient?: boolean | undefined } | undefined) => Promise<PrimitiveClient>;
-  get_constructor = defineInstanceFunction("baml.llm.Client.get_constructor", "sync", ["self"]).bind(this) as () => (arg0: boolean) => PrimitiveClient;
-  get_constructor_async = defineInstanceFunction("baml.llm.Client.get_constructor", "async", ["self"]).bind(this) as () => Promise<(arg0: boolean) => PrimitiveClient>;
-/**
- * @throws InvalidArgument
- */
-  build_attempt = defineInstanceFunction("baml.llm.Client.build_attempt", "sync", ["self"]).bind(this) as () => OrchestrationStep[];
-/**
- * @throws InvalidArgument
- */
-  build_attempt_async = defineInstanceFunction("baml.llm.Client.build_attempt", "async", ["self"]).bind(this) as () => Promise<OrchestrationStep[]>;
-/**
- * @throws InvalidArgument
- */
-  build_attempt_with_state = defineInstanceFunction("baml.llm.Client.build_attempt_with_state", "sync", ["self", "planner_state"]).bind(this) as (planner_state: PlannerState) => OrchestrationStep[];
-/**
- * @throws InvalidArgument
- */
-  build_attempt_with_state_async = defineInstanceFunction("baml.llm.Client.build_attempt_with_state", "async", ["self", "planner_state"]).bind(this) as (planner_state: PlannerState) => Promise<OrchestrationStep[]>;
-/**
- * @throws InvalidArgument
- */
-  build_plan = defineInstanceFunction("baml.llm.Client.build_plan", "sync", ["self"]).bind(this) as () => OrchestrationStep[];
-/**
- * @throws InvalidArgument
- */
-  build_plan_async = defineInstanceFunction("baml.llm.Client.build_plan", "async", ["self"]).bind(this) as () => Promise<OrchestrationStep[]>;
-/**
- * @throws InvalidArgument
- */
-  build_plan_with_state = defineInstanceFunction("baml.llm.Client.build_plan_with_state", "sync", ["self", "planner_state"]).bind(this) as (planner_state: PlannerState) => OrchestrationStep[];
-/**
- * @throws InvalidArgument
- */
-  build_plan_with_state_async = defineInstanceFunction("baml.llm.Client.build_plan_with_state", "async", ["self", "planner_state"]).bind(this) as (planner_state: PlannerState) => Promise<OrchestrationStep[]>;
-/**
- * @throws DevOther
- * @throws InvalidArgument
- * @throws Io
- * @throws LlmClient
- * @throws RenderPrompt
- * @throws Timeout
- */
-  execute_stream = defineInstanceFunction("baml.llm.Client.execute_stream", "sync", ["self", "context", "inherited_delay_ms"], undefined, { typeParams: ["TStream", "TFinal"] }).bind(this) as <TStream, TFinal>(context: ExecutionContext, inherited_delay_ms: number) => Stream<TStream, TFinal>;
-/**
- * @throws DevOther
- * @throws InvalidArgument
- * @throws Io
- * @throws LlmClient
- * @throws RenderPrompt
- * @throws Timeout
- */
-  execute_stream_async = defineInstanceFunction("baml.llm.Client.execute_stream", "async", ["self", "context", "inherited_delay_ms"], undefined, { typeParams: ["TStream", "TFinal"] }).bind(this) as <TStream, TFinal>(context: ExecutionContext, inherited_delay_ms: number) => Promise<Stream<TStream, TFinal>>;
-/**
- * @throws DevOther
- * @throws InvalidArgument
- * @throws Io
- * @throws LlmClient
- * @throws RenderPrompt
- * @throws Timeout
- */
-  execute_once_stream = defineInstanceFunction("baml.llm.Client.execute_once_stream", "sync", ["self", "context", "active_delay_ms"], undefined, { typeParams: ["TStream", "TFinal"] }).bind(this) as <TStream, TFinal>(context: ExecutionContext, active_delay_ms: number) => Stream<TStream, TFinal>;
-/**
- * @throws DevOther
- * @throws InvalidArgument
- * @throws Io
- * @throws LlmClient
- * @throws RenderPrompt
- * @throws Timeout
- */
-  execute_once_stream_async = defineInstanceFunction("baml.llm.Client.execute_once_stream", "async", ["self", "context", "active_delay_ms"], undefined, { typeParams: ["TStream", "TFinal"] }).bind(this) as <TStream, TFinal>(context: ExecutionContext, active_delay_ms: number) => Promise<Stream<TStream, TFinal>>;
-/**
- * DO NOT CALL FROM USER CODE
- * @throws InvalidArgument
- * @throws LlmClient
- */
-  __make_stream = defineInstanceFunction("baml.llm.Client.__make_stream", "sync", ["self", "sse"], undefined, { typeParams: ["TStream", "TFinal"] }).bind(this) as <TStream, TFinal>(sse: baml.http.SseStream) => Stream<TStream, TFinal>;
-/**
- * DO NOT CALL FROM USER CODE
- * @throws InvalidArgument
- * @throws LlmClient
- */
-  __make_stream_async = defineInstanceFunction("baml.llm.Client.__make_stream", "async", ["self", "sse"], undefined, { typeParams: ["TStream", "TFinal"] }).bind(this) as <TStream, TFinal>(sse: baml.http.SseStream) => Promise<Stream<TStream, TFinal>>;
-/**
- * @throws DevOther
- * @throws InvalidArgument
- * @throws Io
- * @throws LlmClient
- * @throws RenderPrompt
- * @throws Timeout
- */
-  execute_oneshot = defineInstanceFunction("baml.llm.Client.execute_oneshot", "sync", ["self", "context", "inherited_delay_ms"], undefined, { typeParams: ["T"] }).bind(this) as <T>(context: ExecutionContext, inherited_delay_ms: number) => T;
-/**
- * @throws DevOther
- * @throws InvalidArgument
- * @throws Io
- * @throws LlmClient
- * @throws RenderPrompt
- * @throws Timeout
- */
-  execute_oneshot_async = defineInstanceFunction("baml.llm.Client.execute_oneshot", "async", ["self", "context", "inherited_delay_ms"], undefined, { typeParams: ["T"] }).bind(this) as <T>(context: ExecutionContext, inherited_delay_ms: number) => Promise<T>;
-/**
- * @throws DevOther
- * @throws InvalidArgument
- * @throws Io
- * @throws LlmClient
- * @throws RenderPrompt
- * @throws Timeout
- */
-  execute_once_oneshot = defineInstanceFunction("baml.llm.Client.execute_once_oneshot", "sync", ["self", "context", "active_delay_ms"], undefined, { typeParams: ["T"] }).bind(this) as <T>(context: ExecutionContext, active_delay_ms: number) => T;
-/**
- * @throws DevOther
- * @throws InvalidArgument
- * @throws Io
- * @throws LlmClient
- * @throws RenderPrompt
- * @throws Timeout
- */
-  execute_once_oneshot_async = defineInstanceFunction("baml.llm.Client.execute_once_oneshot", "async", ["self", "context", "active_delay_ms"], undefined, { typeParams: ["T"] }).bind(this) as <T>(context: ExecutionContext, active_delay_ms: number) => Promise<T>;
+  /**
+   * Build the primitive client this client resolves to.
+   *
+   * `lenient` controls how the generated constructor reads `env.X` client
+   * options: when true, a missing variable yields "" instead of panicking.
+   * Only the offline `render_prompt` path passes `true` — it needs the
+   * client's provider/role metadata to render a prompt but never its
+   * credentials. Every network path keeps the default `false`, so a missing
+   * `api_key` env var still panics for `$call` / `$build_request`.
+   * @throws InvalidArgument
+   */
+  to_primitive_client = defineInstanceFunction(
+    'baml.llm.Client.to_primitive_client',
+    'sync',
+    ['self'],
+    ['lenient'],
+  ).bind(this) as ($opts?: { lenient?: boolean | undefined } | undefined) => PrimitiveClient;
+  /**
+   * Build the primitive client this client resolves to.
+   *
+   * `lenient` controls how the generated constructor reads `env.X` client
+   * options: when true, a missing variable yields "" instead of panicking.
+   * Only the offline `render_prompt` path passes `true` — it needs the
+   * client's provider/role metadata to render a prompt but never its
+   * credentials. Every network path keeps the default `false`, so a missing
+   * `api_key` env var still panics for `$call` / `$build_request`.
+   * @throws InvalidArgument
+   */
+  to_primitive_client_async = defineInstanceFunction(
+    'baml.llm.Client.to_primitive_client',
+    'async',
+    ['self'],
+    ['lenient'],
+  ).bind(this) as (
+    $opts?: { lenient?: boolean | undefined } | undefined,
+  ) => Promise<PrimitiveClient>;
+  get_constructor = defineInstanceFunction('baml.llm.Client.get_constructor', 'sync', [
+    'self',
+  ]).bind(this) as () => (arg0: boolean) => PrimitiveClient;
+  get_constructor_async = defineInstanceFunction('baml.llm.Client.get_constructor', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<(arg0: boolean) => PrimitiveClient>;
+  /**
+   * @throws InvalidArgument
+   */
+  build_attempt = defineInstanceFunction('baml.llm.Client.build_attempt', 'sync', ['self']).bind(
+    this,
+  ) as () => OrchestrationStep[];
+  /**
+   * @throws InvalidArgument
+   */
+  build_attempt_async = defineInstanceFunction('baml.llm.Client.build_attempt', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<OrchestrationStep[]>;
+  /**
+   * @throws InvalidArgument
+   */
+  build_attempt_with_state = defineInstanceFunction(
+    'baml.llm.Client.build_attempt_with_state',
+    'sync',
+    ['self', 'planner_state'],
+  ).bind(this) as (planner_state: PlannerState) => OrchestrationStep[];
+  /**
+   * @throws InvalidArgument
+   */
+  build_attempt_with_state_async = defineInstanceFunction(
+    'baml.llm.Client.build_attempt_with_state',
+    'async',
+    ['self', 'planner_state'],
+  ).bind(this) as (planner_state: PlannerState) => Promise<OrchestrationStep[]>;
+  /**
+   * @throws InvalidArgument
+   */
+  build_plan = defineInstanceFunction('baml.llm.Client.build_plan', 'sync', ['self']).bind(
+    this,
+  ) as () => OrchestrationStep[];
+  /**
+   * @throws InvalidArgument
+   */
+  build_plan_async = defineInstanceFunction('baml.llm.Client.build_plan', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<OrchestrationStep[]>;
+  /**
+   * @throws InvalidArgument
+   */
+  build_plan_with_state = defineInstanceFunction('baml.llm.Client.build_plan_with_state', 'sync', [
+    'self',
+    'planner_state',
+  ]).bind(this) as (planner_state: PlannerState) => OrchestrationStep[];
+  /**
+   * @throws InvalidArgument
+   */
+  build_plan_with_state_async = defineInstanceFunction(
+    'baml.llm.Client.build_plan_with_state',
+    'async',
+    ['self', 'planner_state'],
+  ).bind(this) as (planner_state: PlannerState) => Promise<OrchestrationStep[]>;
+  /**
+   * @throws DevOther
+   * @throws InvalidArgument
+   * @throws Io
+   * @throws LlmClient
+   * @throws RenderPrompt
+   * @throws Timeout
+   */
+  execute_stream = defineInstanceFunction(
+    'baml.llm.Client.execute_stream',
+    'sync',
+    ['self', 'context', 'inherited_delay_ms'],
+    undefined,
+    { typeParams: ['TStream', 'TFinal'] },
+  ).bind(this) as <TStream, TFinal>(
+    context: ExecutionContext,
+    inherited_delay_ms: number,
+  ) => Stream<TStream, TFinal>;
+  /**
+   * @throws DevOther
+   * @throws InvalidArgument
+   * @throws Io
+   * @throws LlmClient
+   * @throws RenderPrompt
+   * @throws Timeout
+   */
+  execute_stream_async = defineInstanceFunction(
+    'baml.llm.Client.execute_stream',
+    'async',
+    ['self', 'context', 'inherited_delay_ms'],
+    undefined,
+    { typeParams: ['TStream', 'TFinal'] },
+  ).bind(this) as <TStream, TFinal>(
+    context: ExecutionContext,
+    inherited_delay_ms: number,
+  ) => Promise<Stream<TStream, TFinal>>;
+  /**
+   * @throws DevOther
+   * @throws InvalidArgument
+   * @throws Io
+   * @throws LlmClient
+   * @throws RenderPrompt
+   * @throws Timeout
+   */
+  execute_once_stream = defineInstanceFunction(
+    'baml.llm.Client.execute_once_stream',
+    'sync',
+    ['self', 'context', 'active_delay_ms'],
+    undefined,
+    { typeParams: ['TStream', 'TFinal'] },
+  ).bind(this) as <TStream, TFinal>(
+    context: ExecutionContext,
+    active_delay_ms: number,
+  ) => Stream<TStream, TFinal>;
+  /**
+   * @throws DevOther
+   * @throws InvalidArgument
+   * @throws Io
+   * @throws LlmClient
+   * @throws RenderPrompt
+   * @throws Timeout
+   */
+  execute_once_stream_async = defineInstanceFunction(
+    'baml.llm.Client.execute_once_stream',
+    'async',
+    ['self', 'context', 'active_delay_ms'],
+    undefined,
+    { typeParams: ['TStream', 'TFinal'] },
+  ).bind(this) as <TStream, TFinal>(
+    context: ExecutionContext,
+    active_delay_ms: number,
+  ) => Promise<Stream<TStream, TFinal>>;
+  /**
+   * DO NOT CALL FROM USER CODE
+   * @throws InvalidArgument
+   * @throws LlmClient
+   */
+  __make_stream = defineInstanceFunction(
+    'baml.llm.Client.__make_stream',
+    'sync',
+    ['self', 'sse'],
+    undefined,
+    { typeParams: ['TStream', 'TFinal'] },
+  ).bind(this) as <TStream, TFinal>(sse: baml.http.SseStream) => Stream<TStream, TFinal>;
+  /**
+   * DO NOT CALL FROM USER CODE
+   * @throws InvalidArgument
+   * @throws LlmClient
+   */
+  __make_stream_async = defineInstanceFunction(
+    'baml.llm.Client.__make_stream',
+    'async',
+    ['self', 'sse'],
+    undefined,
+    { typeParams: ['TStream', 'TFinal'] },
+  ).bind(this) as <TStream, TFinal>(sse: baml.http.SseStream) => Promise<Stream<TStream, TFinal>>;
+  /**
+   * @throws DevOther
+   * @throws InvalidArgument
+   * @throws Io
+   * @throws LlmClient
+   * @throws RenderPrompt
+   * @throws Timeout
+   */
+  execute_oneshot = defineInstanceFunction(
+    'baml.llm.Client.execute_oneshot',
+    'sync',
+    ['self', 'context', 'inherited_delay_ms'],
+    undefined,
+    { typeParams: ['T'] },
+  ).bind(this) as <T>(context: ExecutionContext, inherited_delay_ms: number) => T;
+  /**
+   * @throws DevOther
+   * @throws InvalidArgument
+   * @throws Io
+   * @throws LlmClient
+   * @throws RenderPrompt
+   * @throws Timeout
+   */
+  execute_oneshot_async = defineInstanceFunction(
+    'baml.llm.Client.execute_oneshot',
+    'async',
+    ['self', 'context', 'inherited_delay_ms'],
+    undefined,
+    { typeParams: ['T'] },
+  ).bind(this) as <T>(context: ExecutionContext, inherited_delay_ms: number) => Promise<T>;
+  /**
+   * @throws DevOther
+   * @throws InvalidArgument
+   * @throws Io
+   * @throws LlmClient
+   * @throws RenderPrompt
+   * @throws Timeout
+   */
+  execute_once_oneshot = defineInstanceFunction(
+    'baml.llm.Client.execute_once_oneshot',
+    'sync',
+    ['self', 'context', 'active_delay_ms'],
+    undefined,
+    { typeParams: ['T'] },
+  ).bind(this) as <T>(context: ExecutionContext, active_delay_ms: number) => T;
+  /**
+   * @throws DevOther
+   * @throws InvalidArgument
+   * @throws Io
+   * @throws LlmClient
+   * @throws RenderPrompt
+   * @throws Timeout
+   */
+  execute_once_oneshot_async = defineInstanceFunction(
+    'baml.llm.Client.execute_once_oneshot',
+    'async',
+    ['self', 'context', 'active_delay_ms'],
+    undefined,
+    { typeParams: ['T'] },
+  ).bind(this) as <T>(context: ExecutionContext, active_delay_ms: number) => Promise<T>;
 }
 
 export class MediaUrlHandler {
@@ -1084,7 +1401,13 @@ export class PrimitiveClientOptions {
   allowed_roles!: string[] | null;
   remap_roles!: { [key: string]: string } | null;
   api_key!: string | null;
-  provider_options!: AnthropicOptions | AzureOpenAiOptions | BedrockOptions | GoogleAiOptions | VertexAiOptions | null;
+  provider_options!:
+    | AnthropicOptions
+    | AzureOpenAiOptions
+    | BedrockOptions
+    | GoogleAiOptions
+    | VertexAiOptions
+    | null;
   media_url_handler!: MediaUrlHandler | null;
   headers!: { [key: string]: string };
   query_params!: { [key: string]: string };
@@ -1100,7 +1423,13 @@ export class PrimitiveClientOptions {
     allowed_roles: string[] | null;
     remap_roles: { [key: string]: string } | null;
     api_key: string | null;
-    provider_options: AnthropicOptions | AzureOpenAiOptions | BedrockOptions | GoogleAiOptions | VertexAiOptions | null;
+    provider_options:
+      | AnthropicOptions
+      | AzureOpenAiOptions
+      | BedrockOptions
+      | GoogleAiOptions
+      | VertexAiOptions
+      | null;
     media_url_handler: MediaUrlHandler | null;
     headers: { [key: string]: string };
     query_params: { [key: string]: string };
@@ -1133,16 +1462,14 @@ export class AzureOpenAiOptions {
  */
 export class AnthropicOptions {
   max_tokens!: number | null;
-  constructor(init: {
-    max_tokens: number | null;
-  }) {
+  constructor(init: { max_tokens: number | null }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * Provider-specific options for `google-ai` clients.
- * 
+ *
  * The Google Cloud fields are ignored while the client uses the Gemini API.
  * When `enterprise` or a `GOOGLE_GENAI_USE_*` environment flag selects the
  * Vertex backend, they have exactly the same meaning as on `VertexAiOptions`.
@@ -1233,226 +1560,355 @@ export class BedrockOptions {
 
 export class StreamAccumulator {
   _handle!: _BamlHandle;
-  constructor(init: {
-    _handle: _BamlHandle;
-  }) {
+  constructor(init: { _handle: _BamlHandle }) {
     Object.assign(this, init);
   }
-/**
- * @throws LlmClient
- */
-  add_events = defineInstanceFunction("baml.llm.StreamAccumulator.add_events", "sync", ["self", "events"]).bind(this) as (events: string) => null;
-/**
- * @throws LlmClient
- */
-  add_events_async = defineInstanceFunction("baml.llm.StreamAccumulator.add_events", "async", ["self", "events"]).bind(this) as (events: string) => Promise<null>;
-/**
- * @throws LlmClient
- */
-  content = defineInstanceFunction("baml.llm.StreamAccumulator.content", "sync", ["self"]).bind(this) as () => string;
-/**
- * @throws LlmClient
- */
-  content_async = defineInstanceFunction("baml.llm.StreamAccumulator.content", "async", ["self"]).bind(this) as () => Promise<string>;
-/**
- * @throws LlmClient
- */
-  is_done = defineInstanceFunction("baml.llm.StreamAccumulator.is_done", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * @throws LlmClient
- */
-  is_done_async = defineInstanceFunction("baml.llm.StreamAccumulator.is_done", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * @throws LlmClient
- */
-  model = defineInstanceFunction("baml.llm.StreamAccumulator.model", "sync", ["self"]).bind(this) as () => string | null;
-/**
- * @throws LlmClient
- */
-  model_async = defineInstanceFunction("baml.llm.StreamAccumulator.model", "async", ["self"]).bind(this) as () => Promise<string | null>;
-/**
- * @throws LlmClient
- */
-  finish_reason = defineInstanceFunction("baml.llm.StreamAccumulator.finish_reason", "sync", ["self"]).bind(this) as () => string | null;
-/**
- * @throws LlmClient
- */
-  finish_reason_async = defineInstanceFunction("baml.llm.StreamAccumulator.finish_reason", "async", ["self"]).bind(this) as () => Promise<string | null>;
-/**
- * @throws LlmClient
- */
-  input_tokens = defineInstanceFunction("baml.llm.StreamAccumulator.input_tokens", "sync", ["self"]).bind(this) as () => number | null;
-/**
- * @throws LlmClient
- */
-  input_tokens_async = defineInstanceFunction("baml.llm.StreamAccumulator.input_tokens", "async", ["self"]).bind(this) as () => Promise<number | null>;
-/**
- * @throws LlmClient
- */
-  output_tokens = defineInstanceFunction("baml.llm.StreamAccumulator.output_tokens", "sync", ["self"]).bind(this) as () => number | null;
-/**
- * @throws LlmClient
- */
-  output_tokens_async = defineInstanceFunction("baml.llm.StreamAccumulator.output_tokens", "async", ["self"]).bind(this) as () => Promise<number | null>;
+  /**
+   * @throws LlmClient
+   */
+  add_events = defineInstanceFunction('baml.llm.StreamAccumulator.add_events', 'sync', [
+    'self',
+    'events',
+  ]).bind(this) as (events: string) => null;
+  /**
+   * @throws LlmClient
+   */
+  add_events_async = defineInstanceFunction('baml.llm.StreamAccumulator.add_events', 'async', [
+    'self',
+    'events',
+  ]).bind(this) as (events: string) => Promise<null>;
+  /**
+   * @throws LlmClient
+   */
+  content = defineInstanceFunction('baml.llm.StreamAccumulator.content', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  /**
+   * @throws LlmClient
+   */
+  content_async = defineInstanceFunction('baml.llm.StreamAccumulator.content', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<string>;
+  /**
+   * @throws LlmClient
+   */
+  is_done = defineInstanceFunction('baml.llm.StreamAccumulator.is_done', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * @throws LlmClient
+   */
+  is_done_async = defineInstanceFunction('baml.llm.StreamAccumulator.is_done', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<boolean>;
+  /**
+   * @throws LlmClient
+   */
+  model = defineInstanceFunction('baml.llm.StreamAccumulator.model', 'sync', ['self']).bind(
+    this,
+  ) as () => string | null;
+  /**
+   * @throws LlmClient
+   */
+  model_async = defineInstanceFunction('baml.llm.StreamAccumulator.model', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string | null>;
+  /**
+   * @throws LlmClient
+   */
+  finish_reason = defineInstanceFunction('baml.llm.StreamAccumulator.finish_reason', 'sync', [
+    'self',
+  ]).bind(this) as () => string | null;
+  /**
+   * @throws LlmClient
+   */
+  finish_reason_async = defineInstanceFunction(
+    'baml.llm.StreamAccumulator.finish_reason',
+    'async',
+    ['self'],
+  ).bind(this) as () => Promise<string | null>;
+  /**
+   * @throws LlmClient
+   */
+  input_tokens = defineInstanceFunction('baml.llm.StreamAccumulator.input_tokens', 'sync', [
+    'self',
+  ]).bind(this) as () => number | null;
+  /**
+   * @throws LlmClient
+   */
+  input_tokens_async = defineInstanceFunction('baml.llm.StreamAccumulator.input_tokens', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<number | null>;
+  /**
+   * @throws LlmClient
+   */
+  output_tokens = defineInstanceFunction('baml.llm.StreamAccumulator.output_tokens', 'sync', [
+    'self',
+  ]).bind(this) as () => number | null;
+  /**
+   * @throws LlmClient
+   */
+  output_tokens_async = defineInstanceFunction(
+    'baml.llm.StreamAccumulator.output_tokens',
+    'async',
+    ['self'],
+  ).bind(this) as () => Promise<number | null>;
 }
 
 /**
  * DO NOT USE FROM USER CODE
  * Cached data for a stream. Contains type information, assert check cache, etc.
- * 
+ *
  * Intended for use in `baml.llm.Stream`
  */
 export class StreamCache<TStream, TFinal> {
   _data!: _BamlHandle;
   $types?: { TStream?: BamlType; TFinal?: BamlType };
-  constructor(init: {
-    _data: _BamlHandle;
-    $types?: { TStream?: BamlType; TFinal?: BamlType };
-  }) {
+  constructor(init: { _data: _BamlHandle; $types?: { TStream?: BamlType; TFinal?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["TStream", "TFinal"] as const;
-/**
- * DO NOT CALL FROM USER CODE
- */
-  static new = defineFunction("baml.llm.StreamCache.new", "sync", ["t_stream", "t_final"]) as <TStream, TFinal>(t_stream: null, t_final: null) => StreamCache<TStream, TFinal>;
-/**
- * DO NOT CALL FROM USER CODE
- */
-  static new_async = defineFunction("baml.llm.StreamCache.new", "async", ["t_stream", "t_final"]) as <TStream, TFinal>(t_stream: null, t_final: null) => Promise<StreamCache<TStream, TFinal>>;
+  static readonly $generic = ['TStream', 'TFinal'] as const;
+  /**
+   * DO NOT CALL FROM USER CODE
+   */
+  static new = defineFunction('baml.llm.StreamCache.new', 'sync', ['t_stream', 't_final']) as <
+    TStream,
+    TFinal,
+  >(
+    t_stream: null,
+    t_final: null,
+  ) => StreamCache<TStream, TFinal>;
+  /**
+   * DO NOT CALL FROM USER CODE
+   */
+  static new_async = defineFunction('baml.llm.StreamCache.new', 'async', [
+    't_stream',
+    't_final',
+  ]) as <TStream, TFinal>(t_stream: null, t_final: null) => Promise<StreamCache<TStream, TFinal>>;
 }
 
-import { BamlStream as Stream } from "@boundaryml/baml-bridge";
+import { BamlStream as Stream } from '@boundaryml/baml-bridge';
 export { Stream };
 
 export class PrimitiveClient {
   name!: string;
   provider!: string;
   options!: PrimitiveClientOptions;
-  constructor(init: {
-    name: string;
-    provider: string;
-    options: PrimitiveClientOptions;
-  }) {
+  constructor(init: { name: string; provider: string; options: PrimitiveClientOptions }) {
     Object.assign(this, init);
   }
-/**
- * @throws RenderPrompt
- */
-  render_prompt = defineInstanceFunction("baml.llm.PrimitiveClient.render_prompt", "sync", ["self", "template", "args", "return_type"]).bind(this) as (template: string, args: { [key: string]: unknown }, return_type: null) => PromptAst;
-/**
- * @throws RenderPrompt
- */
-  render_prompt_async = defineInstanceFunction("baml.llm.PrimitiveClient.render_prompt", "async", ["self", "template", "args", "return_type"]).bind(this) as (template: string, args: { [key: string]: unknown }, return_type: null) => Promise<PromptAst>;
-/**
- * @throws RenderPrompt
- * @throws LlmClient
- */
-  specialize_prompt = defineInstanceFunction("baml.llm.PrimitiveClient.specialize_prompt", "sync", ["self", "prompt"]).bind(this) as (prompt: PromptAst) => PromptAst;
-/**
- * @throws RenderPrompt
- * @throws LlmClient
- */
-  specialize_prompt_async = defineInstanceFunction("baml.llm.PrimitiveClient.specialize_prompt", "async", ["self", "prompt"]).bind(this) as (prompt: PromptAst) => Promise<PromptAst>;
-/**
- * BEP-049 M5: turn a function's prompt into a request-ready (specialized)
- * `PromptAst`, dispatching on mode. A new-mode `prompt`…`` compiles to a
- * `(Context) -> PromptAst` closure rendered against a per-attempt `Context`;
- * a legacy `#"..."#` function (null closure) renders the stored Jinja
- * `template`. This is the SINGLE source of truth for prompt rendering: the
- * orchestrator (`execute_once_oneshot` / `execute_stream`) and the static
- * `render_prompt` / `build_request` companions both call it, so the playground
- * preview/cURL and actual execution render byte-identically.
- * @throws RenderPrompt
- * @throws LlmClient
- */
-  render_specialized_prompt = defineInstanceFunction("baml.llm.PrimitiveClient.render_specialized_prompt", "sync", ["self", "template", "args", "return_type", "prompt_closure"]).bind(this) as (template: string, args: { [key: string]: unknown }, return_type: null, prompt_closure: (arg0: Context) => PromptAst | null) => PromptAst;
-/**
- * BEP-049 M5: turn a function's prompt into a request-ready (specialized)
- * `PromptAst`, dispatching on mode. A new-mode `prompt`…`` compiles to a
- * `(Context) -> PromptAst` closure rendered against a per-attempt `Context`;
- * a legacy `#"..."#` function (null closure) renders the stored Jinja
- * `template`. This is the SINGLE source of truth for prompt rendering: the
- * orchestrator (`execute_once_oneshot` / `execute_stream`) and the static
- * `render_prompt` / `build_request` companions both call it, so the playground
- * preview/cURL and actual execution render byte-identically.
- * @throws RenderPrompt
- * @throws LlmClient
- */
-  render_specialized_prompt_async = defineInstanceFunction("baml.llm.PrimitiveClient.render_specialized_prompt", "async", ["self", "template", "args", "return_type", "prompt_closure"]).bind(this) as (template: string, args: { [key: string]: unknown }, return_type: null, prompt_closure: (arg0: Context) => PromptAst | null) => Promise<PromptAst>;
-/**
- * @throws LlmClient
- */
-  build_request = defineInstanceFunction("baml.llm.PrimitiveClient.build_request", "sync", ["self", "prompt", "return_type"]).bind(this) as (prompt: PromptAst, return_type: null) => baml.http.Request;
-/**
- * @throws LlmClient
- */
-  build_request_async = defineInstanceFunction("baml.llm.PrimitiveClient.build_request", "async", ["self", "prompt", "return_type"]).bind(this) as (prompt: PromptAst, return_type: null) => Promise<baml.http.Request>;
-/**
- * @throws LlmClient
- */
-  build_request_stream = defineInstanceFunction("baml.llm.PrimitiveClient.build_request_stream", "sync", ["self", "prompt", "return_type"]).bind(this) as (prompt: PromptAst, return_type: null) => baml.http.Request;
-/**
- * @throws LlmClient
- */
-  build_request_stream_async = defineInstanceFunction("baml.llm.PrimitiveClient.build_request_stream", "async", ["self", "prompt", "return_type"]).bind(this) as (prompt: PromptAst, return_type: null) => Promise<baml.http.Request>;
-/**
- * @throws LlmClient
- */
-  new_stream_accumulator = defineInstanceFunction("baml.llm.PrimitiveClient.new_stream_accumulator", "sync", ["self"]).bind(this) as () => StreamAccumulator;
-/**
- * @throws LlmClient
- */
-  new_stream_accumulator_async = defineInstanceFunction("baml.llm.PrimitiveClient.new_stream_accumulator", "async", ["self"]).bind(this) as () => Promise<StreamAccumulator>;
-/**
- * @throws LlmClient
- */
-  validate_finish_reason = defineInstanceFunction("baml.llm.PrimitiveClient.validate_finish_reason", "sync", ["self", "finish_reason"]).bind(this) as (finish_reason: string) => null;
-/**
- * @throws LlmClient
- */
-  validate_finish_reason_async = defineInstanceFunction("baml.llm.PrimitiveClient.validate_finish_reason", "async", ["self", "finish_reason"]).bind(this) as (finish_reason: string) => Promise<null>;
-/**
- * DO NOT CALL FROM USER CODE
- * Requires the response to be done (no partials).
- * 
- * The `type_def` parameter is automatically threaded by the compiler from
- * the call-site type argument `<T>` — callers write `primitive.parse<T>(body)`
- * without passing an explicit type value.
- * @throws LlmClient
- */
-  parse = defineInstanceFunction("baml.llm.PrimitiveClient.parse", "sync", ["self", "http_response_body"], undefined, { typeParams: ["T"] }).bind(this) as <T>(http_response_body: string) => T;
-/**
- * DO NOT CALL FROM USER CODE
- * Requires the response to be done (no partials).
- * 
- * The `type_def` parameter is automatically threaded by the compiler from
- * the call-site type argument `<T>` — callers write `primitive.parse<T>(body)`
- * without passing an explicit type value.
- * @throws LlmClient
- */
-  parse_async = defineInstanceFunction("baml.llm.PrimitiveClient.parse", "async", ["self", "http_response_body"], undefined, { typeParams: ["T"] }).bind(this) as <T>(http_response_body: string) => Promise<T>;
+  /**
+   * @throws RenderPrompt
+   */
+  render_prompt = defineInstanceFunction('baml.llm.PrimitiveClient.render_prompt', 'sync', [
+    'self',
+    'template',
+    'args',
+    'return_type',
+  ]).bind(this) as (
+    template: string,
+    args: { [key: string]: unknown },
+    return_type: null,
+  ) => PromptAst;
+  /**
+   * @throws RenderPrompt
+   */
+  render_prompt_async = defineInstanceFunction('baml.llm.PrimitiveClient.render_prompt', 'async', [
+    'self',
+    'template',
+    'args',
+    'return_type',
+  ]).bind(this) as (
+    template: string,
+    args: { [key: string]: unknown },
+    return_type: null,
+  ) => Promise<PromptAst>;
+  /**
+   * @throws RenderPrompt
+   * @throws LlmClient
+   */
+  specialize_prompt = defineInstanceFunction('baml.llm.PrimitiveClient.specialize_prompt', 'sync', [
+    'self',
+    'prompt',
+  ]).bind(this) as (prompt: PromptAst) => PromptAst;
+  /**
+   * @throws RenderPrompt
+   * @throws LlmClient
+   */
+  specialize_prompt_async = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.specialize_prompt',
+    'async',
+    ['self', 'prompt'],
+  ).bind(this) as (prompt: PromptAst) => Promise<PromptAst>;
+  /**
+   * BEP-049 M5: turn a function's prompt into a request-ready (specialized)
+   * `PromptAst`, dispatching on mode. A new-mode `prompt`…`` compiles to a
+   * `(Context) -> PromptAst` closure rendered against a per-attempt `Context`;
+   * a legacy `#"..."#` function (null closure) renders the stored Jinja
+   * `template`. This is the SINGLE source of truth for prompt rendering: the
+   * orchestrator (`execute_once_oneshot` / `execute_stream`) and the static
+   * `render_prompt` / `build_request` companions both call it, so the playground
+   * preview/cURL and actual execution render byte-identically.
+   * @throws RenderPrompt
+   * @throws LlmClient
+   */
+  render_specialized_prompt = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.render_specialized_prompt',
+    'sync',
+    ['self', 'template', 'args', 'return_type', 'prompt_closure'],
+  ).bind(this) as (
+    template: string,
+    args: { [key: string]: unknown },
+    return_type: null,
+    prompt_closure: (arg0: Context) => PromptAst | null,
+  ) => PromptAst;
+  /**
+   * BEP-049 M5: turn a function's prompt into a request-ready (specialized)
+   * `PromptAst`, dispatching on mode. A new-mode `prompt`…`` compiles to a
+   * `(Context) -> PromptAst` closure rendered against a per-attempt `Context`;
+   * a legacy `#"..."#` function (null closure) renders the stored Jinja
+   * `template`. This is the SINGLE source of truth for prompt rendering: the
+   * orchestrator (`execute_once_oneshot` / `execute_stream`) and the static
+   * `render_prompt` / `build_request` companions both call it, so the playground
+   * preview/cURL and actual execution render byte-identically.
+   * @throws RenderPrompt
+   * @throws LlmClient
+   */
+  render_specialized_prompt_async = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.render_specialized_prompt',
+    'async',
+    ['self', 'template', 'args', 'return_type', 'prompt_closure'],
+  ).bind(this) as (
+    template: string,
+    args: { [key: string]: unknown },
+    return_type: null,
+    prompt_closure: (arg0: Context) => PromptAst | null,
+  ) => Promise<PromptAst>;
+  /**
+   * @throws LlmClient
+   */
+  build_request = defineInstanceFunction('baml.llm.PrimitiveClient.build_request', 'sync', [
+    'self',
+    'prompt',
+    'return_type',
+  ]).bind(this) as (prompt: PromptAst, return_type: null) => baml.http.Request;
+  /**
+   * @throws LlmClient
+   */
+  build_request_async = defineInstanceFunction('baml.llm.PrimitiveClient.build_request', 'async', [
+    'self',
+    'prompt',
+    'return_type',
+  ]).bind(this) as (prompt: PromptAst, return_type: null) => Promise<baml.http.Request>;
+  /**
+   * @throws LlmClient
+   */
+  build_request_stream = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.build_request_stream',
+    'sync',
+    ['self', 'prompt', 'return_type'],
+  ).bind(this) as (prompt: PromptAst, return_type: null) => baml.http.Request;
+  /**
+   * @throws LlmClient
+   */
+  build_request_stream_async = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.build_request_stream',
+    'async',
+    ['self', 'prompt', 'return_type'],
+  ).bind(this) as (prompt: PromptAst, return_type: null) => Promise<baml.http.Request>;
+  /**
+   * @throws LlmClient
+   */
+  new_stream_accumulator = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.new_stream_accumulator',
+    'sync',
+    ['self'],
+  ).bind(this) as () => StreamAccumulator;
+  /**
+   * @throws LlmClient
+   */
+  new_stream_accumulator_async = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.new_stream_accumulator',
+    'async',
+    ['self'],
+  ).bind(this) as () => Promise<StreamAccumulator>;
+  /**
+   * @throws LlmClient
+   */
+  validate_finish_reason = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.validate_finish_reason',
+    'sync',
+    ['self', 'finish_reason'],
+  ).bind(this) as (finish_reason: string) => null;
+  /**
+   * @throws LlmClient
+   */
+  validate_finish_reason_async = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.validate_finish_reason',
+    'async',
+    ['self', 'finish_reason'],
+  ).bind(this) as (finish_reason: string) => Promise<null>;
+  /**
+   * DO NOT CALL FROM USER CODE
+   * Requires the response to be done (no partials).
+   *
+   * The `type_def` parameter is automatically threaded by the compiler from
+   * the call-site type argument `<T>` — callers write `primitive.parse<T>(body)`
+   * without passing an explicit type value.
+   * @throws LlmClient
+   */
+  parse = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.parse',
+    'sync',
+    ['self', 'http_response_body'],
+    undefined,
+    { typeParams: ['T'] },
+  ).bind(this) as <T>(http_response_body: string) => T;
+  /**
+   * DO NOT CALL FROM USER CODE
+   * Requires the response to be done (no partials).
+   *
+   * The `type_def` parameter is automatically threaded by the compiler from
+   * the call-site type argument `<T>` — callers write `primitive.parse<T>(body)`
+   * without passing an explicit type value.
+   * @throws LlmClient
+   */
+  parse_async = defineInstanceFunction(
+    'baml.llm.PrimitiveClient.parse',
+    'async',
+    ['self', 'http_response_body'],
+    undefined,
+    { typeParams: ['T'] },
+  ).bind(this) as <T>(http_response_body: string) => Promise<T>;
 }
 
 /**
  * @throws InvalidArgument
  */
-export const from_shorthand = defineFunction("baml.llm.from_shorthand", "sync", ["shorthand"]) as (shorthand: string) => PrimitiveClient;
+export const from_shorthand = defineFunction('baml.llm.from_shorthand', 'sync', ['shorthand']) as (
+  shorthand: string,
+) => PrimitiveClient;
 
 /**
  * @throws InvalidArgument
  */
-export const from_shorthand_async = defineFunction("baml.llm.from_shorthand", "async", ["shorthand"]) as (shorthand: string) => Promise<PrimitiveClient>;
+export const from_shorthand_async = defineFunction('baml.llm.from_shorthand', 'async', [
+  'shorthand',
+]) as (shorthand: string) => Promise<PrimitiveClient>;
 
 /**
  * @throws InvalidArgument
  */
-export const get_jinja_template = defineFunction("baml.llm.get_jinja_template", "sync", ["function_name"]) as (function_name: string) => string;
+export const get_jinja_template = defineFunction('baml.llm.get_jinja_template', 'sync', [
+  'function_name',
+]) as (function_name: string) => string;
 
 /**
  * @throws InvalidArgument
  */
-export const get_jinja_template_async = defineFunction("baml.llm.get_jinja_template", "async", ["function_name"]) as (function_name: string) => Promise<string>;
+export const get_jinja_template_async = defineFunction('baml.llm.get_jinja_template', 'async', [
+  'function_name',
+]) as (function_name: string) => Promise<string>;
 
 /**
  * BEP-049 §10 (M5d). Assemble a `PromptAst` from a tagged template's flattened
@@ -1462,7 +1918,10 @@ export const get_jinja_template_async = defineFunction("baml.llm.get_jinja_templ
  * becomes a single `PromptAst::Simple`. This replaces the magic-delimiter role
  * mechanism of the Jinja path with direct structural assembly.
  */
-export const assemble_prompt_ast = defineFunction("baml.llm.assemble_prompt_ast", "sync", ["parts", "values"]) as (parts: string[], values: unknown[]) => PromptAst;
+export const assemble_prompt_ast = defineFunction('baml.llm.assemble_prompt_ast', 'sync', [
+  'parts',
+  'values',
+]) as (parts: string[], values: unknown[]) => PromptAst;
 
 /**
  * BEP-049 §10 (M5d). Assemble a `PromptAst` from a tagged template's flattened
@@ -1472,7 +1931,10 @@ export const assemble_prompt_ast = defineFunction("baml.llm.assemble_prompt_ast"
  * becomes a single `PromptAst::Simple`. This replaces the magic-delimiter role
  * mechanism of the Jinja path with direct structural assembly.
  */
-export const assemble_prompt_ast_async = defineFunction("baml.llm.assemble_prompt_ast", "async", ["parts", "values"]) as (parts: string[], values: unknown[]) => Promise<PromptAst>;
+export const assemble_prompt_ast_async = defineFunction('baml.llm.assemble_prompt_ast', 'async', [
+  'parts',
+  'values',
+]) as (parts: string[], values: unknown[]) => Promise<PromptAst>;
 
 /**
  * BEP-049 §11. Coerce a tagged prompt's interpolated `values` for assembly so
@@ -1486,7 +1948,9 @@ export const assemble_prompt_ast_async = defineFunction("baml.llm.assemble_promp
  * — except a `Role` marker (from `${role(...)}`), which stays raw so
  * `assemble_prompt_ast` can still use it to split the prompt into chat messages.
  */
-export const render_prompt_values = defineFunction("baml.llm.render_prompt_values", "sync", ["values"]) as (values: unknown[]) => unknown[];
+export const render_prompt_values = defineFunction('baml.llm.render_prompt_values', 'sync', [
+  'values',
+]) as (values: unknown[]) => unknown[];
 
 /**
  * BEP-049 §11. Coerce a tagged prompt's interpolated `values` for assembly so
@@ -1500,7 +1964,9 @@ export const render_prompt_values = defineFunction("baml.llm.render_prompt_value
  * — except a `Role` marker (from `${role(...)}`), which stays raw so
  * `assemble_prompt_ast` can still use it to split the prompt into chat messages.
  */
-export const render_prompt_values_async = defineFunction("baml.llm.render_prompt_values", "async", ["values"]) as (values: unknown[]) => Promise<unknown[]>;
+export const render_prompt_values_async = defineFunction('baml.llm.render_prompt_values', 'async', [
+  'values',
+]) as (values: unknown[]) => Promise<unknown[]>;
 
 /**
  * BEP-049 §10 (M5b). Render `return_type`'s schema with default options — the
@@ -1508,7 +1974,9 @@ export const render_prompt_values_async = defineFunction("baml.llm.render_prompt
  * calls this with the call's return type to populate `Context.output_format`,
  * producing output byte-equivalent to the legacy Jinja `{{ ctx.output_format }}`.
  */
-export const render_output_format = defineFunction("baml.llm.render_output_format", "sync", ["return_type"]) as (return_type: null) => string;
+export const render_output_format = defineFunction('baml.llm.render_output_format', 'sync', [
+  'return_type',
+]) as (return_type: null) => string;
 
 /**
  * BEP-049 §10 (M5b). Render `return_type`'s schema with default options — the
@@ -1516,21 +1984,27 @@ export const render_output_format = defineFunction("baml.llm.render_output_forma
  * calls this with the call's return type to populate `Context.output_format`,
  * producing output byte-equivalent to the legacy Jinja `{{ ctx.output_format }}`.
  */
-export const render_output_format_async = defineFunction("baml.llm.render_output_format", "async", ["return_type"]) as (return_type: null) => Promise<string>;
+export const render_output_format_async = defineFunction('baml.llm.render_output_format', 'async', [
+  'return_type',
+]) as (return_type: null) => Promise<string>;
 
 /**
  * BEP-049 §10 (M5b.2). Build the opaque output-format schema handle for
  * `return_type`, for `Context._output_format`. The orchestrator builds this
  * once per attempt; `ctx.output_format_with(...)` renders it with options.
  */
-export const build_output_format = defineFunction("baml.llm.build_output_format", "sync", ["return_type"]) as (return_type: null) => OutputFormat;
+export const build_output_format = defineFunction('baml.llm.build_output_format', 'sync', [
+  'return_type',
+]) as (return_type: null) => OutputFormat;
 
 /**
  * BEP-049 §10 (M5b.2). Build the opaque output-format schema handle for
  * `return_type`, for `Context._output_format`. The orchestrator builds this
  * once per attempt; `ctx.output_format_with(...)` renders it with options.
  */
-export const build_output_format_async = defineFunction("baml.llm.build_output_format", "async", ["return_type"]) as (return_type: null) => Promise<OutputFormat>;
+export const build_output_format_async = defineFunction('baml.llm.build_output_format', 'async', [
+  'return_type',
+]) as (return_type: null) => Promise<OutputFormat>;
 
 /**
  * BEP-049 §10 (M5e). Assemble the per-attempt `Context` a `prompt`…`` closure
@@ -1539,7 +2013,10 @@ export const build_output_format_async = defineFunction("baml.llm.build_output_f
  * client for this attempt, so `${if (ctx.client.provider == ...)}` and
  * `${ctx.output_format}` see the live client/type. Shared by oneshot + stream.
  */
-export const build_prompt_context = defineFunction("baml.llm.build_prompt_context", "sync", ["primitive", "return_type"]) as (primitive: PrimitiveClient, return_type: null) => Context;
+export const build_prompt_context = defineFunction('baml.llm.build_prompt_context', 'sync', [
+  'primitive',
+  'return_type',
+]) as (primitive: PrimitiveClient, return_type: null) => Context;
 
 /**
  * BEP-049 §10 (M5e). Assemble the per-attempt `Context` a `prompt`…`` closure
@@ -1548,54 +2025,99 @@ export const build_prompt_context = defineFunction("baml.llm.build_prompt_contex
  * client for this attempt, so `${if (ctx.client.provider == ...)}` and
  * `${ctx.output_format}` see the live client/type. Shared by oneshot + stream.
  */
-export const build_prompt_context_async = defineFunction("baml.llm.build_prompt_context", "async", ["primitive", "return_type"]) as (primitive: PrimitiveClient, return_type: null) => Promise<Context>;
+export const build_prompt_context_async = defineFunction('baml.llm.build_prompt_context', 'async', [
+  'primitive',
+  'return_type',
+]) as (primitive: PrimitiveClient, return_type: null) => Promise<Context>;
 
 /**
  * The `role(...)` constructor passed into a `prompt` body lambda. Builds a
  * typed `Role` marker; `prompt` threads this in as the body's `role` parameter.
  */
-export const make_role = defineFunction("baml.llm.make_role", "sync", ["name"]) as (name: string) => Role;
+export const make_role = defineFunction('baml.llm.make_role', 'sync', ['name']) as (
+  name: string,
+) => Role;
 
 /**
  * The `role(...)` constructor passed into a `prompt` body lambda. Builds a
  * typed `Role` marker; `prompt` threads this in as the body's `role` parameter.
  */
-export const make_role_async = defineFunction("baml.llm.make_role", "async", ["name"]) as (name: string) => Promise<Role>;
+export const make_role_async = defineFunction('baml.llm.make_role', 'async', ['name']) as (
+  name: string,
+) => Promise<Role>;
 
-export const prompt = defineFunction("baml.llm.prompt", "sync", ["body"]) as (body: (role: (arg0: string) => Role, ctx: Context) => baml.TaggedString) => (arg0: Context) => PromptAst;
+export const prompt = defineFunction('baml.llm.prompt', 'sync', ['body']) as (
+  body: (role: (arg0: string) => Role, ctx: Context) => baml.TaggedString,
+) => (arg0: Context) => PromptAst;
 
-export const prompt_async = defineFunction("baml.llm.prompt", "async", ["body"]) as (body: (role: (arg0: string) => Role, ctx: Context) => baml.TaggedString) => Promise<(arg0: Context) => PromptAst>;
+export const prompt_async = defineFunction('baml.llm.prompt', 'async', ['body']) as (
+  body: (role: (arg0: string) => Role, ctx: Context) => baml.TaggedString,
+) => Promise<(arg0: Context) => PromptAst>;
 
 /**
  * @throws InvalidArgument
  */
-export const get_return_type = defineFunction("baml.llm.get_return_type", "sync", ["function_name"]) as (function_name: string) => null;
+export const get_return_type = defineFunction('baml.llm.get_return_type', 'sync', [
+  'function_name',
+]) as (function_name: string) => null;
 
 /**
  * @throws InvalidArgument
  */
-export const get_return_type_async = defineFunction("baml.llm.get_return_type", "async", ["function_name"]) as (function_name: string) => Promise<null>;
+export const get_return_type_async = defineFunction('baml.llm.get_return_type', 'async', [
+  'function_name',
+]) as (function_name: string) => Promise<null>;
 
 /**
  * DO NOT CALL FROM USER CODE
  * @throws LlmClient
  */
-export const __sap_parse_final = defineFunction("baml.llm.__sap_parse_final", "sync", ["json", "cache"], undefined, { typeParams: ["TStream", "TFinal"] }) as <TStream, TFinal>(json: string, cache: StreamCache<TStream, TFinal>) => TFinal;
+export const __sap_parse_final = defineFunction(
+  'baml.llm.__sap_parse_final',
+  'sync',
+  ['json', 'cache'],
+  undefined,
+  { typeParams: ['TStream', 'TFinal'] },
+) as <TStream, TFinal>(json: string, cache: StreamCache<TStream, TFinal>) => TFinal;
 
 /**
  * DO NOT CALL FROM USER CODE
  * @throws LlmClient
  */
-export const __sap_parse_final_async = defineFunction("baml.llm.__sap_parse_final", "async", ["json", "cache"], undefined, { typeParams: ["TStream", "TFinal"] }) as <TStream, TFinal>(json: string, cache: StreamCache<TStream, TFinal>) => Promise<TFinal>;
+export const __sap_parse_final_async = defineFunction(
+  'baml.llm.__sap_parse_final',
+  'async',
+  ['json', 'cache'],
+  undefined,
+  { typeParams: ['TStream', 'TFinal'] },
+) as <TStream, TFinal>(json: string, cache: StreamCache<TStream, TFinal>) => Promise<TFinal>;
 
 /**
  * DO NOT CALL FROM USER CODE
  * @throws LlmClient
  */
-export const __sap_parse_partial = defineFunction("baml.llm.__sap_parse_partial", "sync", ["json", "cache"], undefined, { typeParams: ["TStream", "TFinal"] }) as <TStream, TFinal>(json: string, cache: StreamCache<TStream, TFinal>) => TStream | baml.stream.StreamNoYield;
+export const __sap_parse_partial = defineFunction(
+  'baml.llm.__sap_parse_partial',
+  'sync',
+  ['json', 'cache'],
+  undefined,
+  { typeParams: ['TStream', 'TFinal'] },
+) as <TStream, TFinal>(
+  json: string,
+  cache: StreamCache<TStream, TFinal>,
+) => TStream | baml.stream.StreamNoYield;
 
 /**
  * DO NOT CALL FROM USER CODE
  * @throws LlmClient
  */
-export const __sap_parse_partial_async = defineFunction("baml.llm.__sap_parse_partial", "async", ["json", "cache"], undefined, { typeParams: ["TStream", "TFinal"] }) as <TStream, TFinal>(json: string, cache: StreamCache<TStream, TFinal>) => Promise<TStream | baml.stream.StreamNoYield>;
+export const __sap_parse_partial_async = defineFunction(
+  'baml.llm.__sap_parse_partial',
+  'async',
+  ['json', 'cache'],
+  undefined,
+  { typeParams: ['TStream', 'TFinal'] },
+) as <TStream, TFinal>(
+  json: string,
+  cache: StreamCache<TStream, TFinal>,
+) => Promise<TStream | baml.stream.StreamNoYield>;

@@ -12,7 +12,7 @@
 // baml-cli is available with the baml package.
 
 import type { BamlHandle as _BamlHandle } from "@boundaryml/baml-bridge";
-import { defineFunction, defineInstanceFunction } from "@boundaryml/baml-bridge";
+import { defineFunction, defineInstanceFunction } from '@boundaryml/baml-bridge';
 
 /**
  * A single entry returned by `read_dir`.
@@ -34,16 +34,14 @@ export class DirEntry$stream {
 
 /**
  * A handle to an open file. Use `baml.fs.open` to obtain one.
- * 
+ *
  * Every `File.*` method can throw `InvalidArgument` when the underlying
  * handle has already been closed (e.g. by a prior `close()`); read-string
  * methods can additionally throw `ParseError` on non-UTF-8 input.
  */
 export class File$stream {
   _handle!: _BamlHandle;
-  constructor(init: {
-    _handle: _BamlHandle;
-  }) {
+  constructor(init: { _handle: _BamlHandle }) {
     Object.assign(this, init);
   }
 }
@@ -56,196 +54,239 @@ export class File$stream {
  */
 export class MkdirOptions$stream {
   recursive!: boolean | null;
-  constructor(init: {
-    recursive: boolean | null;
-  }) {
+  constructor(init: { recursive: boolean | null }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * A handle to an open file. Use `baml.fs.open` to obtain one.
- * 
+ *
  * Every `File.*` method can throw `InvalidArgument` when the underlying
  * handle has already been closed (e.g. by a prior `close()`); read-string
  * methods can additionally throw `ParseError` on non-UTF-8 input.
  */
 export class File {
   _handle!: _BamlHandle;
-  constructor(init: {
-    _handle: _BamlHandle;
-  }) {
+  constructor(init: { _handle: _BamlHandle }) {
     Object.assign(this, init);
   }
-/**
- * Reads the entire remaining file contents as a UTF-8 string.
- * @throws Io
- * @throws InvalidArgument
- * @throws ParseError
- */
-  text = defineInstanceFunction("baml.fs.File.text", "sync", ["self"]).bind(this) as () => string;
-/**
- * Reads the entire remaining file contents as a UTF-8 string.
- * @throws Io
- * @throws InvalidArgument
- * @throws ParseError
- */
-  text_async = defineInstanceFunction("baml.fs.File.text", "async", ["self"]).bind(this) as () => Promise<string>;
-/**
- * Reads the entire remaining file contents as raw bytes.
- * @throws Io
- * @throws InvalidArgument
- */
-  bytes = defineInstanceFunction("baml.fs.File.bytes", "sync", ["self"]).bind(this) as () => Uint8Array;
-/**
- * Reads the entire remaining file contents as raw bytes.
- * @throws Io
- * @throws InvalidArgument
- */
-  bytes_async = defineInstanceFunction("baml.fs.File.bytes", "async", ["self"]).bind(this) as () => Promise<Uint8Array>;
-/**
- * Reads up to `n` bytes from the file and returns them as a UTF-8 string.
- * @throws Io
- * @throws InvalidArgument
- * @throws ParseError
- */
-  read = defineInstanceFunction("baml.fs.File.read", "sync", ["self", "n"]).bind(this) as (n: number) => string;
-/**
- * Reads up to `n` bytes from the file and returns them as a UTF-8 string.
- * @throws Io
- * @throws InvalidArgument
- * @throws ParseError
- */
-  read_async = defineInstanceFunction("baml.fs.File.read", "async", ["self", "n"]).bind(this) as (n: number) => Promise<string>;
-/**
- * Reads up to `n` bytes from the file and returns them as raw bytes.
- * @throws Io
- * @throws InvalidArgument
- */
-  read_bytes = defineInstanceFunction("baml.fs.File.read_bytes", "sync", ["self", "n"]).bind(this) as (n: number) => Uint8Array;
-/**
- * Reads up to `n` bytes from the file and returns them as raw bytes.
- * @throws Io
- * @throws InvalidArgument
- */
-  read_bytes_async = defineInstanceFunction("baml.fs.File.read_bytes", "async", ["self", "n"]).bind(this) as (n: number) => Promise<Uint8Array>;
-/**
- * Closes the file handle, flushing any pending writes.
- * @throws Io
- * @throws InvalidArgument
- */
-  close = defineInstanceFunction("baml.fs.File.close", "sync", ["self"]).bind(this) as () => null;
-/**
- * Closes the file handle, flushing any pending writes.
- * @throws Io
- * @throws InvalidArgument
- */
-  close_async = defineInstanceFunction("baml.fs.File.close", "async", ["self"]).bind(this) as () => Promise<null>;
-/**
- * Moves the file cursor. `whence` is `"start"`, `"current"`, or `"end"`. Returns the new cursor position in bytes.
- * 
- * Throws `InvalidArgument` if `offset` is negative when paired with
- * `whence="start"` (the underlying syscall takes an unsigned offset).
- * @throws Io
- * @throws InvalidArgument
- */
-  seek_from = defineInstanceFunction("baml.fs.File.seek_from", "sync", ["self", "whence", "offset"]).bind(this) as (whence: "start" | "current" | "end", offset: number) => number;
-/**
- * Moves the file cursor. `whence` is `"start"`, `"current"`, or `"end"`. Returns the new cursor position in bytes.
- * 
- * Throws `InvalidArgument` if `offset` is negative when paired with
- * `whence="start"` (the underlying syscall takes an unsigned offset).
- * @throws Io
- * @throws InvalidArgument
- */
-  seek_from_async = defineInstanceFunction("baml.fs.File.seek_from", "async", ["self", "whence", "offset"]).bind(this) as (whence: "start" | "current" | "end", offset: number) => Promise<number>;
-/**
- * Writes `data` to the file at the current cursor position. Returns the number of bytes written.
- * @throws Io
- * @throws InvalidArgument
- */
-  write = defineInstanceFunction("baml.fs.File.write", "sync", ["self", "data"]).bind(this) as (data: string) => number;
-/**
- * Writes `data` to the file at the current cursor position. Returns the number of bytes written.
- * @throws Io
- * @throws InvalidArgument
- */
-  write_async = defineInstanceFunction("baml.fs.File.write", "async", ["self", "data"]).bind(this) as (data: string) => Promise<number>;
-/**
- * Writes raw bytes `data` to the file at the current cursor position. Returns the number of bytes written.
- * @throws Io
- * @throws InvalidArgument
- */
-  write_bytes = defineInstanceFunction("baml.fs.File.write_bytes", "sync", ["self", "data"]).bind(this) as (data: Uint8Array) => number;
-/**
- * Writes raw bytes `data` to the file at the current cursor position. Returns the number of bytes written.
- * @throws Io
- * @throws InvalidArgument
- */
-  write_bytes_async = defineInstanceFunction("baml.fs.File.write_bytes", "async", ["self", "data"]).bind(this) as (data: Uint8Array) => Promise<number>;
+  /**
+   * Reads the entire remaining file contents as a UTF-8 string.
+   * @throws Io
+   * @throws InvalidArgument
+   * @throws ParseError
+   */
+  text = defineInstanceFunction('baml.fs.File.text', 'sync', ['self']).bind(this) as () => string;
+  /**
+   * Reads the entire remaining file contents as a UTF-8 string.
+   * @throws Io
+   * @throws InvalidArgument
+   * @throws ParseError
+   */
+  text_async = defineInstanceFunction('baml.fs.File.text', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  /**
+   * Reads the entire remaining file contents as raw bytes.
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  bytes = defineInstanceFunction('baml.fs.File.bytes', 'sync', ['self']).bind(
+    this,
+  ) as () => Uint8Array;
+  /**
+   * Reads the entire remaining file contents as raw bytes.
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  bytes_async = defineInstanceFunction('baml.fs.File.bytes', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<Uint8Array>;
+  /**
+   * Reads up to `n` bytes from the file and returns them as a UTF-8 string.
+   * @throws Io
+   * @throws InvalidArgument
+   * @throws ParseError
+   */
+  read = defineInstanceFunction('baml.fs.File.read', 'sync', ['self', 'n']).bind(this) as (
+    n: number,
+  ) => string;
+  /**
+   * Reads up to `n` bytes from the file and returns them as a UTF-8 string.
+   * @throws Io
+   * @throws InvalidArgument
+   * @throws ParseError
+   */
+  read_async = defineInstanceFunction('baml.fs.File.read', 'async', ['self', 'n']).bind(this) as (
+    n: number,
+  ) => Promise<string>;
+  /**
+   * Reads up to `n` bytes from the file and returns them as raw bytes.
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  read_bytes = defineInstanceFunction('baml.fs.File.read_bytes', 'sync', ['self', 'n']).bind(
+    this,
+  ) as (n: number) => Uint8Array;
+  /**
+   * Reads up to `n` bytes from the file and returns them as raw bytes.
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  read_bytes_async = defineInstanceFunction('baml.fs.File.read_bytes', 'async', ['self', 'n']).bind(
+    this,
+  ) as (n: number) => Promise<Uint8Array>;
+  /**
+   * Closes the file handle, flushing any pending writes.
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  close = defineInstanceFunction('baml.fs.File.close', 'sync', ['self']).bind(this) as () => null;
+  /**
+   * Closes the file handle, flushing any pending writes.
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  close_async = defineInstanceFunction('baml.fs.File.close', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<null>;
+  /**
+   * Moves the file cursor. `whence` is `"start"`, `"current"`, or `"end"`. Returns the new cursor position in bytes.
+   *
+   * Throws `InvalidArgument` if `offset` is negative when paired with
+   * `whence="start"` (the underlying syscall takes an unsigned offset).
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  seek_from = defineInstanceFunction('baml.fs.File.seek_from', 'sync', [
+    'self',
+    'whence',
+    'offset',
+  ]).bind(this) as (whence: 'start' | 'current' | 'end', offset: number) => number;
+  /**
+   * Moves the file cursor. `whence` is `"start"`, `"current"`, or `"end"`. Returns the new cursor position in bytes.
+   *
+   * Throws `InvalidArgument` if `offset` is negative when paired with
+   * `whence="start"` (the underlying syscall takes an unsigned offset).
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  seek_from_async = defineInstanceFunction('baml.fs.File.seek_from', 'async', [
+    'self',
+    'whence',
+    'offset',
+  ]).bind(this) as (whence: 'start' | 'current' | 'end', offset: number) => Promise<number>;
+  /**
+   * Writes `data` to the file at the current cursor position. Returns the number of bytes written.
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  write = defineInstanceFunction('baml.fs.File.write', 'sync', ['self', 'data']).bind(this) as (
+    data: string,
+  ) => number;
+  /**
+   * Writes `data` to the file at the current cursor position. Returns the number of bytes written.
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  write_async = defineInstanceFunction('baml.fs.File.write', 'async', ['self', 'data']).bind(
+    this,
+  ) as (data: string) => Promise<number>;
+  /**
+   * Writes raw bytes `data` to the file at the current cursor position. Returns the number of bytes written.
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  write_bytes = defineInstanceFunction('baml.fs.File.write_bytes', 'sync', ['self', 'data']).bind(
+    this,
+  ) as (data: Uint8Array) => number;
+  /**
+   * Writes raw bytes `data` to the file at the current cursor position. Returns the number of bytes written.
+   * @throws Io
+   * @throws InvalidArgument
+   */
+  write_bytes_async = defineInstanceFunction('baml.fs.File.write_bytes', 'async', [
+    'self',
+    'data',
+  ]).bind(this) as (data: Uint8Array) => Promise<number>;
 }
 
 /**
  * Opens the file at `path` with the given `mode`.
- * 
+ *
  * Mode values: `"r"` (read), `"r+"` (read/write), `"w"` (write/truncate),
  * `"w+"` (read/write/truncate), `"a"` (append), `"a+"` (read/append).
  * @throws Io
  * @throws InvalidArgument
  */
-export const open = defineFunction("baml.fs.open", "sync", ["path", "mode"]) as (path: string, mode: "r" | "r+" | "w" | "w+" | "a" | "a+") => File;
+export const open = defineFunction('baml.fs.open', 'sync', ['path', 'mode']) as (
+  path: string,
+  mode: 'r' | 'r+' | 'w' | 'w+' | 'a' | 'a+',
+) => File;
 
 /**
  * Opens the file at `path` with the given `mode`.
- * 
+ *
  * Mode values: `"r"` (read), `"r+"` (read/write), `"w"` (write/truncate),
  * `"w+"` (read/write/truncate), `"a"` (append), `"a+"` (read/append).
  * @throws Io
  * @throws InvalidArgument
  */
-export const open_async = defineFunction("baml.fs.open", "async", ["path", "mode"]) as (path: string, mode: "r" | "r+" | "w" | "w+" | "a" | "a+") => Promise<File>;
+export const open_async = defineFunction('baml.fs.open', 'async', ['path', 'mode']) as (
+  path: string,
+  mode: 'r' | 'r+' | 'w' | 'w+' | 'a' | 'a+',
+) => Promise<File>;
 
 /**
  * Returns `true` if a file or directory exists at `path`.
  * @throws Io
  */
-export const exists = defineFunction("baml.fs.exists", "sync", ["path"]) as (path: string) => boolean;
+export const exists = defineFunction('baml.fs.exists', 'sync', ['path']) as (
+  path: string,
+) => boolean;
 
 /**
  * Returns `true` if a file or directory exists at `path`.
  * @throws Io
  */
-export const exists_async = defineFunction("baml.fs.exists", "async", ["path"]) as (path: string) => Promise<boolean>;
+export const exists_async = defineFunction('baml.fs.exists', 'async', ['path']) as (
+  path: string,
+) => Promise<boolean>;
 
 /**
  * Removes the file at `path`. Throws `Io` if the file does not exist or cannot be deleted.
- * 
+ *
  * This handles regular files only. To delete a directory use `remove_dir`
  * (empty directories) or `remove_dir_all` (directory trees).
  * @throws Io
  */
-export const remove = defineFunction("baml.fs.remove", "sync", ["path"]) as (path: string) => null;
+export const remove = defineFunction('baml.fs.remove', 'sync', ['path']) as (path: string) => null;
 
 /**
  * Removes the file at `path`. Throws `Io` if the file does not exist or cannot be deleted.
- * 
+ *
  * This handles regular files only. To delete a directory use `remove_dir`
  * (empty directories) or `remove_dir_all` (directory trees).
  * @throws Io
  */
-export const remove_async = defineFunction("baml.fs.remove", "async", ["path"]) as (path: string) => Promise<null>;
+export const remove_async = defineFunction('baml.fs.remove', 'async', ['path']) as (
+  path: string,
+) => Promise<null>;
 
 /**
  * Returns the size of the file at `path` in bytes.
  * @throws Io
  */
-export const size = defineFunction("baml.fs.size", "sync", ["path"]) as (path: string) => number;
+export const size = defineFunction('baml.fs.size', 'sync', ['path']) as (path: string) => number;
 
 /**
  * Returns the size of the file at `path` in bytes.
  * @throws Io
  */
-export const size_async = defineFunction("baml.fs.size", "async", ["path"]) as (path: string) => Promise<number>;
+export const size_async = defineFunction('baml.fs.size', 'async', ['path']) as (
+  path: string,
+) => Promise<number>;
 
 /**
  * Reads the entire contents of the file at `path` as a UTF-8 string.
@@ -253,7 +294,7 @@ export const size_async = defineFunction("baml.fs.size", "async", ["path"]) as (
  * @throws Io
  * @throws ParseError
  */
-export const read = defineFunction("baml.fs.read", "sync", ["path"]) as (path: string) => string;
+export const read = defineFunction('baml.fs.read', 'sync', ['path']) as (path: string) => string;
 
 /**
  * Reads the entire contents of the file at `path` as a UTF-8 string.
@@ -261,31 +302,45 @@ export const read = defineFunction("baml.fs.read", "sync", ["path"]) as (path: s
  * @throws Io
  * @throws ParseError
  */
-export const read_async = defineFunction("baml.fs.read", "async", ["path"]) as (path: string) => Promise<string>;
+export const read_async = defineFunction('baml.fs.read', 'async', ['path']) as (
+  path: string,
+) => Promise<string>;
 
 /**
  * Writes `content` to the file at `path`, creating or truncating it. Returns the number of bytes written.
  * @throws Io
  */
-export const write = defineFunction("baml.fs.write", "sync", ["path", "content"]) as (path: string, content: string) => number;
+export const write = defineFunction('baml.fs.write', 'sync', ['path', 'content']) as (
+  path: string,
+  content: string,
+) => number;
 
 /**
  * Writes `content` to the file at `path`, creating or truncating it. Returns the number of bytes written.
  * @throws Io
  */
-export const write_async = defineFunction("baml.fs.write", "async", ["path", "content"]) as (path: string, content: string) => Promise<number>;
+export const write_async = defineFunction('baml.fs.write', 'async', ['path', 'content']) as (
+  path: string,
+  content: string,
+) => Promise<number>;
 
 /**
  * Writes raw bytes `content` to the file at `path`, creating or truncating it. Returns the number of bytes written.
  * @throws Io
  */
-export const write_bytes = defineFunction("baml.fs.write_bytes", "sync", ["path", "content"]) as (path: string, content: Uint8Array) => number;
+export const write_bytes = defineFunction('baml.fs.write_bytes', 'sync', ['path', 'content']) as (
+  path: string,
+  content: Uint8Array,
+) => number;
 
 /**
  * Writes raw bytes `content` to the file at `path`, creating or truncating it. Returns the number of bytes written.
  * @throws Io
  */
-export const write_bytes_async = defineFunction("baml.fs.write_bytes", "async", ["path", "content"]) as (path: string, content: Uint8Array) => Promise<number>;
+export const write_bytes_async = defineFunction('baml.fs.write_bytes', 'async', [
+  'path',
+  'content',
+]) as (path: string, content: Uint8Array) => Promise<number>;
 
 /**
  * A single entry returned by `read_dir`.
@@ -295,12 +350,7 @@ export class DirEntry {
   is_dir!: boolean;
   is_file!: boolean;
   is_symlink!: boolean;
-  constructor(init: {
-    name: string;
-    is_dir: boolean;
-    is_file: boolean;
-    is_symlink: boolean;
-  }) {
+  constructor(init: { name: string; is_dir: boolean; is_file: boolean; is_symlink: boolean }) {
     Object.assign(this, init);
   }
 }
@@ -313,9 +363,7 @@ export class DirEntry {
  */
 export class MkdirOptions {
   recursive!: boolean;
-  constructor(init: {
-    recursive: boolean;
-  }) {
+  constructor(init: { recursive: boolean }) {
     Object.assign(this, init);
   }
 }
@@ -324,39 +372,53 @@ export class MkdirOptions {
  * Returns an array of directory entries for the directory at `path`.
  * @throws Io
  */
-export const read_dir = defineFunction("baml.fs.read_dir", "sync", ["path"]) as (path: string) => DirEntry[];
+export const read_dir = defineFunction('baml.fs.read_dir', 'sync', ['path']) as (
+  path: string,
+) => DirEntry[];
 
 /**
  * Returns an array of directory entries for the directory at `path`.
  * @throws Io
  */
-export const read_dir_async = defineFunction("baml.fs.read_dir", "async", ["path"]) as (path: string) => Promise<DirEntry[]>;
+export const read_dir_async = defineFunction('baml.fs.read_dir', 'async', ['path']) as (
+  path: string,
+) => Promise<DirEntry[]>;
 
 /**
  * Creates the directory at `path`. Pass `MkdirOptions { recursive: true }` to create parent directories.
  * @throws Io
  */
-export const mkdir = defineFunction("baml.fs.mkdir", "sync", ["path", "options"]) as (path: string, options: MkdirOptions) => null;
+export const mkdir = defineFunction('baml.fs.mkdir', 'sync', ['path', 'options']) as (
+  path: string,
+  options: MkdirOptions,
+) => null;
 
 /**
  * Creates the directory at `path`. Pass `MkdirOptions { recursive: true }` to create parent directories.
  * @throws Io
  */
-export const mkdir_async = defineFunction("baml.fs.mkdir", "async", ["path", "options"]) as (path: string, options: MkdirOptions) => Promise<null>;
+export const mkdir_async = defineFunction('baml.fs.mkdir', 'async', ['path', 'options']) as (
+  path: string,
+  options: MkdirOptions,
+) => Promise<null>;
 
 /**
  * Removes the empty directory at `path`. Throws `Io` if `path` is not a
  * directory, is not empty, or does not exist. Mirrors Bun's `fs.promises.rmdir`.
  * @throws Io
  */
-export const remove_dir = defineFunction("baml.fs.remove_dir", "sync", ["path"]) as (path: string) => null;
+export const remove_dir = defineFunction('baml.fs.remove_dir', 'sync', ['path']) as (
+  path: string,
+) => null;
 
 /**
  * Removes the empty directory at `path`. Throws `Io` if `path` is not a
  * directory, is not empty, or does not exist. Mirrors Bun's `fs.promises.rmdir`.
  * @throws Io
  */
-export const remove_dir_async = defineFunction("baml.fs.remove_dir", "async", ["path"]) as (path: string) => Promise<null>;
+export const remove_dir_async = defineFunction('baml.fs.remove_dir', 'async', ['path']) as (
+  path: string,
+) => Promise<null>;
 
 /**
  * Recursively removes the directory at `path` and all of its contents.
@@ -366,7 +428,9 @@ export const remove_dir_async = defineFunction("baml.fs.remove_dir", "async", ["
  * throws `Io` if `path` is a regular file.
  * @throws Io
  */
-export const remove_dir_all = defineFunction("baml.fs.remove_dir_all", "sync", ["path"]) as (path: string) => null;
+export const remove_dir_all = defineFunction('baml.fs.remove_dir_all', 'sync', ['path']) as (
+  path: string,
+) => null;
 
 /**
  * Recursively removes the directory at `path` and all of its contents.
@@ -376,4 +440,6 @@ export const remove_dir_all = defineFunction("baml.fs.remove_dir_all", "sync", [
  * throws `Io` if `path` is a regular file.
  * @throws Io
  */
-export const remove_dir_all_async = defineFunction("baml.fs.remove_dir_all", "async", ["path"]) as (path: string) => Promise<null>;
+export const remove_dir_all_async = defineFunction('baml.fs.remove_dir_all', 'async', ['path']) as (
+  path: string,
+) => Promise<null>;

@@ -18,9 +18,7 @@ import type { BamlHandle as _BamlHandle } from "@boundaryml/baml-bridge";
  */
 export class Audio$stream {
   _data!: _BamlHandle;
-  constructor(init: {
-    _data: _BamlHandle;
-  }) {
+  constructor(init: { _data: _BamlHandle }) {
     Object.assign(this, init);
   }
 }
@@ -30,9 +28,7 @@ export class Audio$stream {
  */
 export class Image$stream {
   _data!: _BamlHandle;
-  constructor(init: {
-    _data: _BamlHandle;
-  }) {
+  constructor(init: { _data: _BamlHandle }) {
     Object.assign(this, init);
   }
 }
@@ -42,9 +38,7 @@ export class Image$stream {
  */
 export class Pdf$stream {
   _data!: _BamlHandle;
-  constructor(init: {
-    _data: _BamlHandle;
-  }) {
+  constructor(init: { _data: _BamlHandle }) {
     Object.assign(this, init);
   }
 }
@@ -54,21 +48,19 @@ export class Pdf$stream {
  */
 export class Video$stream {
   _data!: _BamlHandle;
-  constructor(init: {
-    _data: _BamlHandle;
-  }) {
+  constructor(init: { _data: _BamlHandle }) {
     Object.assign(this, init);
   }
 }
 
-import { BamlPdf as Pdf } from "@boundaryml/baml-bridge";
+import { BamlPdf as Pdf } from '@boundaryml/baml-bridge';
 export { Pdf };
 
-import { BamlAudio as Audio } from "@boundaryml/baml-bridge";
+import { BamlAudio as Audio } from '@boundaryml/baml-bridge';
 export { Audio };
 
-import { BamlVideo as Video } from "@boundaryml/baml-bridge";
+import { BamlVideo as Video } from '@boundaryml/baml-bridge';
 export { Video };
 
-import { BamlImage as Image } from "@boundaryml/baml-bridge";
+import { BamlImage as Image } from '@boundaryml/baml-bridge';
 export { Image };

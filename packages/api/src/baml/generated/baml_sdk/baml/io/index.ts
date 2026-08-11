@@ -16,51 +16,63 @@ import { defineFunction } from "@boundaryml/baml-bridge";
 /**
  * Reads a line of text from stdin. If `prompt` is provided, it is printed first (without a newline).
  */
-export const input = defineFunction("baml.io.input", "sync", ["prompt"]) as (prompt: string | null) => string;
+export const input = defineFunction('baml.io.input', 'sync', ['prompt']) as (
+  prompt: string | null,
+) => string;
 
 /**
  * Reads a line of text from stdin. If `prompt` is provided, it is printed first (without a newline).
  */
-export const input_async = defineFunction("baml.io.input", "async", ["prompt"]) as (prompt: string | null) => Promise<string>;
+export const input_async = defineFunction('baml.io.input', 'async', ['prompt']) as (
+  prompt: string | null,
+) => Promise<string>;
 
 /**
  * Write `s` to stdout with no trailing newline. Flushes immediately so the
  * bytes are visible before the next sysop or await suspends the thread.
  */
-export const print = defineFunction("baml.io.print", "sync", ["s"]) as (s: string) => null;
+export const print = defineFunction('baml.io.print', 'sync', ['s']) as (s: string) => null;
 
 /**
  * Write `s` to stdout with no trailing newline. Flushes immediately so the
  * bytes are visible before the next sysop or await suspends the thread.
  */
-export const print_async = defineFunction("baml.io.print", "async", ["s"]) as (s: string) => Promise<null>;
+export const print_async = defineFunction('baml.io.print', 'async', ['s']) as (
+  s: string,
+) => Promise<null>;
 
 /**
  * Write `s` to stdout followed by a newline.
  */
-export const println = defineFunction("baml.io.println", "sync", ["s"]) as (s: string) => null;
+export const println = defineFunction('baml.io.println', 'sync', ['s']) as (s: string) => null;
 
 /**
  * Write `s` to stdout followed by a newline.
  */
-export const println_async = defineFunction("baml.io.println", "async", ["s"]) as (s: string) => Promise<null>;
+export const println_async = defineFunction('baml.io.println', 'async', ['s']) as (
+  s: string,
+) => Promise<null>;
 
 /**
  * Like `print` but writes to stderr.
  */
-export const eprint = defineFunction("baml.io.eprint", "sync", ["s"]) as (s: string) => null;
+export const eprint = defineFunction('baml.io.eprint', 'sync', ['s']) as (s: string) => null;
 
 /**
  * Like `print` but writes to stderr.
  */
-export const eprint_async = defineFunction("baml.io.eprint", "async", ["s"]) as (s: string) => Promise<null>;
+export const eprint_async = defineFunction('baml.io.eprint', 'async', ['s']) as (
+  s: string,
+) => Promise<null>;
 
 /**
  * Like `println` but writes to stderr.
  */
-export const eprintln = defineFunction("baml.io.eprintln", "sync", ["s"]) as (s: string) => null;
+export const eprintln = defineFunction('baml.io.eprintln', 'sync', ['s']) as (s: string) => null;
 
 /**
  * Like `println` but writes to stderr.
  */
-export const eprintln_async = defineFunction("baml.io.eprintln", "async", ["s"]) as (s: string) => Promise<null>;
+export const eprintln_async = defineFunction('baml.io.eprintln', 'async', ['s']) as (
+  s: string,
+) => Promise<null>;

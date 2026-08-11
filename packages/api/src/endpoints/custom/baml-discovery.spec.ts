@@ -168,9 +168,7 @@ describe('BAML endpoint discovery', () => {
       fetchModels: jest.fn(),
     });
 
-    const otherTenant = await loadConfigModels(
-      requestFor(appConfigWith([]), 'user-2'),
-    );
+    const otherTenant = await loadConfigModels(requestFor(appConfigWith([]), 'user-2'));
 
     expect(otherTenant['Team-BAML']).toBeUndefined();
   });

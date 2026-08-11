@@ -85,9 +85,7 @@ describe('agent runtime carrier', () => {
 
     expect(typeof AGENT_RUNTIME_CARRIER).toBe('symbol');
     expect(Object.getOwnPropertySymbols(agent)).toContain(AGENT_RUNTIME_CARRIER);
-    expect(
-      Object.getOwnPropertyDescriptor(agent, AGENT_RUNTIME_CARRIER)?.enumerable,
-    ).toBe(false);
+    expect(Object.getOwnPropertyDescriptor(agent, AGENT_RUNTIME_CARRIER)?.enumerable).toBe(false);
   });
 });
 

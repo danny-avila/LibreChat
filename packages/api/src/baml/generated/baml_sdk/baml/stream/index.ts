@@ -24,7 +24,7 @@ export class StreamFinished$stream {
 
 /**
  * (internal)
- * 
+ *
  * A sentinel used when a partial parse didn't return anything and we should wait for more data.
  */
 export class StreamNoYield$stream {
@@ -46,7 +46,7 @@ export class StreamFinished {
 
 /**
  * (internal)
- * 
+ *
  * A sentinel used when a partial parse didn't return anything and we should wait for more data.
  */
 export class StreamNoYield {

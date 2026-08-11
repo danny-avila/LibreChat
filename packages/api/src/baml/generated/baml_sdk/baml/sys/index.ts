@@ -12,7 +12,7 @@
 // baml-cli is available with the baml package.
 
 import { defineFunction, defineInstanceFunction } from "@boundaryml/baml-bridge";
-import type * as baml from "../../baml/index.js";
+import type * as baml from '../../baml/index.js';
 
 /**
  * Options for `exec` and `shell`.
@@ -45,11 +45,7 @@ export class ShellOutput$stream {
   stdout!: Uint8Array;
   stderr!: Uint8Array;
   exit_code!: number | null;
-  constructor(init: {
-    stdout: Uint8Array;
-    stderr: Uint8Array;
-    exit_code: number | null;
-  }) {
+  constructor(init: { stdout: Uint8Array; stderr: Uint8Array; exit_code: number | null }) {
     Object.assign(this, init);
   }
 }
@@ -85,21 +81,21 @@ export class ShellOutput {
   stdout!: Uint8Array;
   stderr!: Uint8Array;
   exit_code!: number;
-  constructor(init: {
-    stdout: Uint8Array;
-    stderr: Uint8Array;
-    exit_code: number;
-  }) {
+  constructor(init: { stdout: Uint8Array; stderr: Uint8Array; exit_code: number }) {
     Object.assign(this, init);
   }
-/**
- * Returns `true` if the process exited with code `0`.
- */
-  ok = defineInstanceFunction("baml.sys.ShellOutput.ok", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns `true` if the process exited with code `0`.
- */
-  ok_async = defineInstanceFunction("baml.sys.ShellOutput.ok", "async", ["self"]).bind(this) as () => Promise<boolean>;
+  /**
+   * Returns `true` if the process exited with code `0`.
+   */
+  ok = defineInstanceFunction('baml.sys.ShellOutput.ok', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns `true` if the process exited with code `0`.
+   */
+  ok_async = defineInstanceFunction('baml.sys.ShellOutput.ok', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
 }
 
 /**
@@ -107,65 +103,93 @@ export class ShellOutput {
  * @throws Io
  * @throws Timeout
  */
-export const exec = defineFunction("baml.sys.exec", "sync", ["program", "args", "options"]) as (program: string, args: string[] | null, options: ProcessOptions | null) => ShellOutput;
+export const exec = defineFunction('baml.sys.exec', 'sync', ['program', 'args', 'options']) as (
+  program: string,
+  args: string[] | null,
+  options: ProcessOptions | null,
+) => ShellOutput;
 
 /**
  * Runs `program` with the given `args` and returns its output. Throws on I/O failure or timeout.
  * @throws Io
  * @throws Timeout
  */
-export const exec_async = defineFunction("baml.sys.exec", "async", ["program", "args", "options"]) as (program: string, args: string[] | null, options: ProcessOptions | null) => Promise<ShellOutput>;
+export const exec_async = defineFunction('baml.sys.exec', 'async', [
+  'program',
+  'args',
+  'options',
+]) as (
+  program: string,
+  args: string[] | null,
+  options: ProcessOptions | null,
+) => Promise<ShellOutput>;
 
 /**
  * Runs a shell `command` string (passed to `/bin/sh -c`) and returns its output.
  * @throws Io
  * @throws Timeout
  */
-export const shell = defineFunction("baml.sys.shell", "sync", ["command", "options"]) as (command: string, options: ProcessOptions | null) => ShellOutput;
+export const shell = defineFunction('baml.sys.shell', 'sync', ['command', 'options']) as (
+  command: string,
+  options: ProcessOptions | null,
+) => ShellOutput;
 
 /**
  * Runs a shell `command` string (passed to `/bin/sh -c`) and returns its output.
  * @throws Io
  * @throws Timeout
  */
-export const shell_async = defineFunction("baml.sys.shell", "async", ["command", "options"]) as (command: string, options: ProcessOptions | null) => Promise<ShellOutput>;
+export const shell_async = defineFunction('baml.sys.shell', 'async', ['command', 'options']) as (
+  command: string,
+  options: ProcessOptions | null,
+) => Promise<ShellOutput>;
 
 /**
  * Suspends the current thread for `delay`.
  * @throws Io
  */
-export const sleep = defineFunction("baml.sys.sleep", "sync", ["delay"]) as (delay: baml.time.Duration) => null;
+export const sleep = defineFunction('baml.sys.sleep', 'sync', ['delay']) as (
+  delay: baml.time.Duration,
+) => null;
 
 /**
  * Suspends the current thread for `delay`.
  * @throws Io
  */
-export const sleep_async = defineFunction("baml.sys.sleep", "async", ["delay"]) as (delay: baml.time.Duration) => Promise<null>;
+export const sleep_async = defineFunction('baml.sys.sleep', 'async', ['delay']) as (
+  delay: baml.time.Duration,
+) => Promise<null>;
 
-export const panic = defineFunction("baml.sys.panic", "sync", ["message"]) as (message: string) => null;
+export const panic = defineFunction('baml.sys.panic', 'sync', ['message']) as (
+  message: string,
+) => null;
 
-export const panic_async = defineFunction("baml.sys.panic", "async", ["message"]) as (message: string) => Promise<null>;
+export const panic_async = defineFunction('baml.sys.panic', 'async', ['message']) as (
+  message: string,
+) => Promise<null>;
 
-export const exit = defineFunction("baml.sys.exit", "sync", ["code"]) as (code: number) => null;
+export const exit = defineFunction('baml.sys.exit', 'sync', ['code']) as (code: number) => null;
 
-export const exit_async = defineFunction("baml.sys.exit", "async", ["code"]) as (code: number) => Promise<null>;
+export const exit_async = defineFunction('baml.sys.exit', 'async', ['code']) as (
+  code: number,
+) => Promise<null>;
 
 /**
  * Returns the current time as milliseconds since the Unix epoch (UTC).
  */
-export const now_ms = defineFunction("baml.sys.now_ms", "sync", []) as () => number;
+export const now_ms = defineFunction('baml.sys.now_ms', 'sync', []) as () => number;
 
 /**
  * Returns the current time as milliseconds since the Unix epoch (UTC).
  */
-export const now_ms_async = defineFunction("baml.sys.now_ms", "async", []) as () => Promise<number>;
+export const now_ms_async = defineFunction('baml.sys.now_ms', 'async', []) as () => Promise<number>;
 
 /**
  * Returns the command-line arguments passed to the BAML program, as an array of strings.
  */
-export const argv = defineFunction("baml.sys.argv", "sync", []) as () => string[];
+export const argv = defineFunction('baml.sys.argv', 'sync', []) as () => string[];
 
 /**
  * Returns the command-line arguments passed to the BAML program, as an array of strings.
  */
-export const argv_async = defineFunction("baml.sys.argv", "async", []) as () => Promise<string[]>;
+export const argv_async = defineFunction('baml.sys.argv', 'async', []) as () => Promise<string[]>;

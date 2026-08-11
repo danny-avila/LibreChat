@@ -16,129 +16,161 @@ import { defineFunction } from "@boundaryml/baml-bridge";
 /**
  * Asserts that `condition` is `true`. Panics with a failure message if not.
  */
-export const is_true = defineFunction("assert.is_true", "sync", ["condition"]) as (condition: boolean) => null;
+export const is_true = defineFunction('assert.is_true', 'sync', ['condition']) as (
+  condition: boolean,
+) => null;
 
 /**
  * Asserts that `condition` is `true`. Panics with a failure message if not.
  */
-export const is_true_async = defineFunction("assert.is_true", "async", ["condition"]) as (condition: boolean) => Promise<null>;
+export const is_true_async = defineFunction('assert.is_true', 'async', ['condition']) as (
+  condition: boolean,
+) => Promise<null>;
 
 /**
  * Asserts that `value` is not `null`. Panics if it is.
  */
-export const not_null = defineFunction("assert.not_null", "sync", ["value"]) as (value: unknown | null) => null;
+export const not_null = defineFunction('assert.not_null', 'sync', ['value']) as (
+  value: unknown | null,
+) => null;
 
 /**
  * Asserts that `value` is not `null`. Panics if it is.
  */
-export const not_null_async = defineFunction("assert.not_null", "async", ["value"]) as (value: unknown | null) => Promise<null>;
+export const not_null_async = defineFunction('assert.not_null', 'async', ['value']) as (
+  value: unknown | null,
+) => Promise<null>;
 
 /**
  * Converts any assertion operand into a user-facing string.
- * 
+ *
  * Parameters:
  * - `value`: The operand value to render.
- * 
+ *
  * Returns:
  * - A JSON-style string representation for panic messages.
- * 
+ *
  * Errors/Panics:
  * - Never throws. Falls back to a placeholder when serialization fails.
  */
-export const format_operand = defineFunction("assert.format_operand", "sync", ["value"]) as (value: unknown) => string;
+export const format_operand = defineFunction('assert.format_operand', 'sync', ['value']) as (
+  value: unknown,
+) => string;
 
 /**
  * Converts any assertion operand into a user-facing string.
- * 
+ *
  * Parameters:
  * - `value`: The operand value to render.
- * 
+ *
  * Returns:
  * - A JSON-style string representation for panic messages.
- * 
+ *
  * Errors/Panics:
  * - Never throws. Falls back to a placeholder when serialization fails.
  */
-export const format_operand_async = defineFunction("assert.format_operand", "async", ["value"]) as (value: unknown) => Promise<string>;
+export const format_operand_async = defineFunction('assert.format_operand', 'async', ['value']) as (
+  value: unknown,
+) => Promise<string>;
 
 /**
  * Asserts that `actual` equals `expected` exactly. Panics if they differ.
- * 
+ *
  * Parameters:
  * - `actual`: The observed value.
  * - `expected`: The expected value.
- * 
+ *
  * Returns:
  * - `null` when `actual` and `expected` are exactly equal.
- * 
+ *
  * Errors/Panics:
  * - Panics when `actual != expected`.
  * - For floating-point values this comparison is exact; prefer
  *   `assert.approx_equal(actual, expected, eps)` when comparing computed
  *   results within a tolerance.
  */
-export const equal = defineFunction("assert.equal", "sync", ["actual", "expected"]) as (actual: unknown, expected: unknown) => null;
+export const equal = defineFunction('assert.equal', 'sync', ['actual', 'expected']) as (
+  actual: unknown,
+  expected: unknown,
+) => null;
 
 /**
  * Asserts that `actual` equals `expected` exactly. Panics if they differ.
- * 
+ *
  * Parameters:
  * - `actual`: The observed value.
  * - `expected`: The expected value.
- * 
+ *
  * Returns:
  * - `null` when `actual` and `expected` are exactly equal.
- * 
+ *
  * Errors/Panics:
  * - Panics when `actual != expected`.
  * - For floating-point values this comparison is exact; prefer
  *   `assert.approx_equal(actual, expected, eps)` when comparing computed
  *   results within a tolerance.
  */
-export const equal_async = defineFunction("assert.equal", "async", ["actual", "expected"]) as (actual: unknown, expected: unknown) => Promise<null>;
+export const equal_async = defineFunction('assert.equal', 'async', ['actual', 'expected']) as (
+  actual: unknown,
+  expected: unknown,
+) => Promise<null>;
 
 /**
  * Asserts that two floats are within `eps` of each other.
- * 
+ *
  * Parameters:
  * - `actual`: The observed floating-point value.
  * - `expected`: The expected floating-point value.
  * - `eps`: The maximum allowed absolute difference (`|actual - expected|`).
- * 
+ *
  * Returns:
  * - `null` when `|actual - expected| <= eps`.
- * 
+ *
  * Errors/Panics:
  * - Panics when `eps` is negative or NaN.
  * - Panics when the absolute difference exceeds `eps` or cannot be compared
  *   (for example, when `actual`/`expected` produce NaN deltas).
  */
-export const approx_equal = defineFunction("assert.approx_equal", "sync", ["actual", "expected", "eps"]) as (actual: number, expected: number, eps: number) => null;
+export const approx_equal = defineFunction('assert.approx_equal', 'sync', [
+  'actual',
+  'expected',
+  'eps',
+]) as (actual: number, expected: number, eps: number) => null;
 
 /**
  * Asserts that two floats are within `eps` of each other.
- * 
+ *
  * Parameters:
  * - `actual`: The observed floating-point value.
  * - `expected`: The expected floating-point value.
  * - `eps`: The maximum allowed absolute difference (`|actual - expected|`).
- * 
+ *
  * Returns:
  * - `null` when `|actual - expected| <= eps`.
- * 
+ *
  * Errors/Panics:
  * - Panics when `eps` is negative or NaN.
  * - Panics when the absolute difference exceeds `eps` or cannot be compared
  *   (for example, when `actual`/`expected` produce NaN deltas).
  */
-export const approx_equal_async = defineFunction("assert.approx_equal", "async", ["actual", "expected", "eps"]) as (actual: number, expected: number, eps: number) => Promise<null>;
+export const approx_equal_async = defineFunction('assert.approx_equal', 'async', [
+  'actual',
+  'expected',
+  'eps',
+]) as (actual: number, expected: number, eps: number) => Promise<null>;
 
 /**
  * Asserts that `haystack` contains `needle` as a substring. Panics if not.
  */
-export const contains = defineFunction("assert.contains", "sync", ["haystack", "needle"]) as (haystack: string, needle: string) => null;
+export const contains = defineFunction('assert.contains', 'sync', ['haystack', 'needle']) as (
+  haystack: string,
+  needle: string,
+) => null;
 
 /**
  * Asserts that `haystack` contains `needle` as a substring. Panics if not.
  */
-export const contains_async = defineFunction("assert.contains", "async", ["haystack", "needle"]) as (haystack: string, needle: string) => Promise<null>;
+export const contains_async = defineFunction('assert.contains', 'async', [
+  'haystack',
+  'needle',
+]) as (haystack: string, needle: string) => Promise<null>;

@@ -17,14 +17,10 @@ export class ArrayIterator$stream<T> {
   arr!: T[];
   idx!: number | null;
   $types?: { T?: BamlType };
-  constructor(init: {
-    arr: T[];
-    idx: number | null;
-    $types?: { T?: BamlType };
-  }) {
+  constructor(init: { arr: T[]; idx: number | null; $types?: { T?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T"] as const;
+  static readonly $generic = ['T'] as const;
 }
 
 export class Chain$stream<T, E, E2> {
@@ -40,7 +36,7 @@ export class Chain$stream<T, E, E2> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "E", "E2"] as const;
+  static readonly $generic = ['T', 'E', 'E2'] as const;
 }
 
 export class Done {
@@ -66,7 +62,7 @@ export class Filter$stream<T, E, E2> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "E", "E2"] as const;
+  static readonly $generic = ['T', 'E', 'E2'] as const;
 }
 
 export class FilterMap$stream<T, R, E, E2> {
@@ -80,7 +76,7 @@ export class FilterMap$stream<T, R, E, E2> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "R", "E", "E2"] as const;
+  static readonly $generic = ['T', 'R', 'E', 'E2'] as const;
 }
 
 export class FlatMap$stream<T, R, E, E2, E3> {
@@ -96,7 +92,7 @@ export class FlatMap$stream<T, R, E, E2, E3> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "R", "E", "E2", "E3"] as const;
+  static readonly $generic = ['T', 'R', 'E', 'E2', 'E3'] as const;
 }
 
 export class Flatten$stream<I, R, E, E3> {
@@ -110,7 +106,7 @@ export class Flatten$stream<I, R, E, E3> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["I", "R", "E", "E3"] as const;
+  static readonly $generic = ['I', 'R', 'E', 'E3'] as const;
 }
 
 export class Map$stream<T, R, E, E2> {
@@ -124,7 +120,7 @@ export class Map$stream<T, R, E, E2> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "R", "E", "E2"] as const;
+  static readonly $generic = ['T', 'R', 'E', 'E2'] as const;
 }
 
 export class Peekable$stream<T, E> {
@@ -140,18 +136,14 @@ export class Peekable$stream<T, E> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "E"] as const;
+  static readonly $generic = ['T', 'E'] as const;
 }
 
 export class Range$stream {
   i!: number | null;
   max!: number | null;
   step!: number | null;
-  constructor(init: {
-    i: number | null;
-    max: number | null;
-    step: number | null;
-  }) {
+  constructor(init: { i: number | null; max: number | null; step: number | null }) {
     Object.assign(this, init);
   }
 }
@@ -160,14 +152,10 @@ export class Repeat$stream<T> {
   value!: T | null;
   count!: number | null;
   $types?: { T?: BamlType };
-  constructor(init: {
-    value: T | null;
-    count: number | null;
-    $types?: { T?: BamlType };
-  }) {
+  constructor(init: { value: T | null; count: number | null; $types?: { T?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T"] as const;
+  static readonly $generic = ['T'] as const;
 }
 
 export class StepBy$stream<T, E> {
@@ -183,70 +171,112 @@ export class StepBy$stream<T, E> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "E"] as const;
+  static readonly $generic = ['T', 'E'] as const;
 }
 
-export const flatten = defineFunction("baml.iter.flatten", "sync", ["src"], undefined, { typeParams: ["R", "E", "E3", "I"] }) as <R, E, E3, I>(src: unknown) => unknown;
+export const flatten = defineFunction('baml.iter.flatten', 'sync', ['src'], undefined, {
+  typeParams: ['R', 'E', 'E3', 'I'],
+}) as <R, E, E3, I>(src: unknown) => unknown;
 
-export const flatten_async = defineFunction("baml.iter.flatten", "async", ["src"], undefined, { typeParams: ["R", "E", "E3", "I"] }) as <R, E, E3, I>(src: unknown) => Promise<unknown>;
+export const flatten_async = defineFunction('baml.iter.flatten', 'async', ['src'], undefined, {
+  typeParams: ['R', 'E', 'E3', 'I'],
+}) as <R, E, E3, I>(src: unknown) => Promise<unknown>;
 
 export class ArrayIterator<T> {
   arr!: T[];
   idx!: number;
   $types?: { T?: BamlType };
-  constructor(init: {
-    arr: T[];
-    idx: number;
-    $types?: { T?: BamlType };
-  }) {
+  constructor(init: { arr: T[]; idx: number; $types?: { T?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T"] as const;
-  static new = defineFunction("baml.iter.ArrayIterator.new", "sync", ["arr"]) as <T>(arr: T[]) => ArrayIterator<T>;
-  static new_async = defineFunction("baml.iter.ArrayIterator.new", "async", ["arr"]) as <T>(arr: T[]) => Promise<ArrayIterator<T>>;
-  iter = defineInstanceFunction("baml.iter.ArrayIterator.iter", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.ArrayIterator.iter", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.ArrayIterator.next", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => T | Done;
-  next_async = defineInstanceFunction("baml.iter.ArrayIterator.next", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<T | Done>;
+  static readonly $generic = ['T'] as const;
+  static new = defineFunction('baml.iter.ArrayIterator.new', 'sync', ['arr']) as <T>(
+    arr: T[],
+  ) => ArrayIterator<T>;
+  static new_async = defineFunction('baml.iter.ArrayIterator.new', 'async', ['arr']) as <T>(
+    arr: T[],
+  ) => Promise<ArrayIterator<T>>;
+  iter = defineInstanceFunction('baml.iter.ArrayIterator.iter', 'sync', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction(
+    'baml.iter.ArrayIterator.iter',
+    'async',
+    ['self'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.ArrayIterator.next', 'sync', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => T | Done;
+  next_async = defineInstanceFunction(
+    'baml.iter.ArrayIterator.next',
+    'async',
+    ['self'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as () => Promise<T | Done>;
 }
 
 export class Range {
   i!: number;
   max!: number;
   step!: number;
-  constructor(init: {
-    i: number;
-    max: number;
-    step: number;
-  }) {
+  constructor(init: { i: number; max: number; step: number }) {
     Object.assign(this, init);
   }
-  static new = defineFunction("baml.iter.Range.new", "sync", ["min", "max"], ["step"]) as (min: number, max: number, $opts?: { step?: number | undefined } | undefined) => Range;
-  static new_async = defineFunction("baml.iter.Range.new", "async", ["min", "max"], ["step"]) as (min: number, max: number, $opts?: { step?: number | undefined } | undefined) => Promise<Range>;
-  iter = defineInstanceFunction("baml.iter.Range.iter", "sync", ["self"]).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.Range.iter", "async", ["self"]).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.Range.next", "sync", ["self"]).bind(this) as () => number | Done;
-  next_async = defineInstanceFunction("baml.iter.Range.next", "async", ["self"]).bind(this) as () => Promise<number | Done>;
+  static new = defineFunction('baml.iter.Range.new', 'sync', ['min', 'max'], ['step']) as (
+    min: number,
+    max: number,
+    $opts?: { step?: number | undefined } | undefined,
+  ) => Range;
+  static new_async = defineFunction('baml.iter.Range.new', 'async', ['min', 'max'], ['step']) as (
+    min: number,
+    max: number,
+    $opts?: { step?: number | undefined } | undefined,
+  ) => Promise<Range>;
+  iter = defineInstanceFunction('baml.iter.Range.iter', 'sync', ['self']).bind(
+    this,
+  ) as () => unknown;
+  iter_async = defineInstanceFunction('baml.iter.Range.iter', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.Range.next', 'sync', ['self']).bind(this) as () =>
+    | number
+    | Done;
+  next_async = defineInstanceFunction('baml.iter.Range.next', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number | Done>;
 }
 
 export class Repeat<T> {
   value!: T;
   count!: number;
   $types?: { T?: BamlType };
-  constructor(init: {
-    value: T;
-    count: number;
-    $types?: { T?: BamlType };
-  }) {
+  constructor(init: { value: T; count: number; $types?: { T?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T"] as const;
-  static new = defineFunction("baml.iter.Repeat.new", "sync", ["value"], ["count"]) as <T>(value: T, $opts?: { count?: number | undefined } | undefined) => Repeat<T>;
-  static new_async = defineFunction("baml.iter.Repeat.new", "async", ["value"], ["count"]) as <T>(value: T, $opts?: { count?: number | undefined } | undefined) => Promise<Repeat<T>>;
-  iter = defineInstanceFunction("baml.iter.Repeat.iter", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.Repeat.iter", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.Repeat.next", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => T | Done;
-  next_async = defineInstanceFunction("baml.iter.Repeat.next", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<T | Done>;
+  static readonly $generic = ['T'] as const;
+  static new = defineFunction('baml.iter.Repeat.new', 'sync', ['value'], ['count']) as <T>(
+    value: T,
+    $opts?: { count?: number | undefined } | undefined,
+  ) => Repeat<T>;
+  static new_async = defineFunction('baml.iter.Repeat.new', 'async', ['value'], ['count']) as <T>(
+    value: T,
+    $opts?: { count?: number | undefined } | undefined,
+  ) => Promise<Repeat<T>>;
+  iter = defineInstanceFunction('baml.iter.Repeat.iter', 'sync', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction('baml.iter.Repeat.iter', 'async', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.Repeat.next', 'sync', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => T | Done;
+  next_async = defineInstanceFunction('baml.iter.Repeat.next', 'async', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => Promise<T | Done>;
 }
 
 export class Map<T, R, E, E2> {
@@ -260,11 +290,19 @@ export class Map<T, R, E, E2> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "R", "E", "E2"] as const;
-  iter = defineInstanceFunction("baml.iter.Map.iter", "sync", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2"] }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.Map.iter", "async", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2"] }).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.Map.next", "sync", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2"] }).bind(this) as () => R | Done;
-  next_async = defineInstanceFunction("baml.iter.Map.next", "async", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2"] }).bind(this) as () => Promise<R | Done>;
+  static readonly $generic = ['T', 'R', 'E', 'E2'] as const;
+  iter = defineInstanceFunction('baml.iter.Map.iter', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2'],
+  }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction('baml.iter.Map.iter', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2'],
+  }).bind(this) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.Map.next', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2'],
+  }).bind(this) as () => R | Done;
+  next_async = defineInstanceFunction('baml.iter.Map.next', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2'],
+  }).bind(this) as () => Promise<R | Done>;
 }
 
 export class Filter<T, E, E2> {
@@ -278,11 +316,19 @@ export class Filter<T, E, E2> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "E", "E2"] as const;
-  iter = defineInstanceFunction("baml.iter.Filter.iter", "sync", ["self"], undefined, { classTypeParams: ["T", "E", "E2"] }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.Filter.iter", "async", ["self"], undefined, { classTypeParams: ["T", "E", "E2"] }).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.Filter.next", "sync", ["self"], undefined, { classTypeParams: ["T", "E", "E2"] }).bind(this) as () => T | Done;
-  next_async = defineInstanceFunction("baml.iter.Filter.next", "async", ["self"], undefined, { classTypeParams: ["T", "E", "E2"] }).bind(this) as () => Promise<T | Done>;
+  static readonly $generic = ['T', 'E', 'E2'] as const;
+  iter = defineInstanceFunction('baml.iter.Filter.iter', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E', 'E2'],
+  }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction('baml.iter.Filter.iter', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E', 'E2'],
+  }).bind(this) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.Filter.next', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E', 'E2'],
+  }).bind(this) as () => T | Done;
+  next_async = defineInstanceFunction('baml.iter.Filter.next', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E', 'E2'],
+  }).bind(this) as () => Promise<T | Done>;
 }
 
 export class FilterMap<T, R, E, E2> {
@@ -296,11 +342,19 @@ export class FilterMap<T, R, E, E2> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "R", "E", "E2"] as const;
-  iter = defineInstanceFunction("baml.iter.FilterMap.iter", "sync", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2"] }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.FilterMap.iter", "async", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2"] }).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.FilterMap.next", "sync", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2"] }).bind(this) as () => R | Done;
-  next_async = defineInstanceFunction("baml.iter.FilterMap.next", "async", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2"] }).bind(this) as () => Promise<R | Done>;
+  static readonly $generic = ['T', 'R', 'E', 'E2'] as const;
+  iter = defineInstanceFunction('baml.iter.FilterMap.iter', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2'],
+  }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction('baml.iter.FilterMap.iter', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2'],
+  }).bind(this) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.FilterMap.next', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2'],
+  }).bind(this) as () => R | Done;
+  next_async = defineInstanceFunction('baml.iter.FilterMap.next', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2'],
+  }).bind(this) as () => Promise<R | Done>;
 }
 
 export class FlatMap<T, R, E, E2, E3> {
@@ -316,11 +370,19 @@ export class FlatMap<T, R, E, E2, E3> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "R", "E", "E2", "E3"] as const;
-  iter = defineInstanceFunction("baml.iter.FlatMap.iter", "sync", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2", "E3"] }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.FlatMap.iter", "async", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2", "E3"] }).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.FlatMap.next", "sync", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2", "E3"] }).bind(this) as () => R | Done;
-  next_async = defineInstanceFunction("baml.iter.FlatMap.next", "async", ["self"], undefined, { classTypeParams: ["T", "R", "E", "E2", "E3"] }).bind(this) as () => Promise<R | Done>;
+  static readonly $generic = ['T', 'R', 'E', 'E2', 'E3'] as const;
+  iter = defineInstanceFunction('baml.iter.FlatMap.iter', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2', 'E3'],
+  }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction('baml.iter.FlatMap.iter', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2', 'E3'],
+  }).bind(this) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.FlatMap.next', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2', 'E3'],
+  }).bind(this) as () => R | Done;
+  next_async = defineInstanceFunction('baml.iter.FlatMap.next', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'R', 'E', 'E2', 'E3'],
+  }).bind(this) as () => Promise<R | Done>;
 }
 
 export class Flatten<I, R, E, E3> {
@@ -334,11 +396,19 @@ export class Flatten<I, R, E, E3> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["I", "R", "E", "E3"] as const;
-  iter = defineInstanceFunction("baml.iter.Flatten.iter", "sync", ["self"], undefined, { classTypeParams: ["I", "R", "E", "E3"] }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.Flatten.iter", "async", ["self"], undefined, { classTypeParams: ["I", "R", "E", "E3"] }).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.Flatten.next", "sync", ["self"], undefined, { classTypeParams: ["I", "R", "E", "E3"] }).bind(this) as () => R | Done;
-  next_async = defineInstanceFunction("baml.iter.Flatten.next", "async", ["self"], undefined, { classTypeParams: ["I", "R", "E", "E3"] }).bind(this) as () => Promise<R | Done>;
+  static readonly $generic = ['I', 'R', 'E', 'E3'] as const;
+  iter = defineInstanceFunction('baml.iter.Flatten.iter', 'sync', ['self'], undefined, {
+    classTypeParams: ['I', 'R', 'E', 'E3'],
+  }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction('baml.iter.Flatten.iter', 'async', ['self'], undefined, {
+    classTypeParams: ['I', 'R', 'E', 'E3'],
+  }).bind(this) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.Flatten.next', 'sync', ['self'], undefined, {
+    classTypeParams: ['I', 'R', 'E', 'E3'],
+  }).bind(this) as () => R | Done;
+  next_async = defineInstanceFunction('baml.iter.Flatten.next', 'async', ['self'], undefined, {
+    classTypeParams: ['I', 'R', 'E', 'E3'],
+  }).bind(this) as () => Promise<R | Done>;
 }
 
 export class Peekable<T, E> {
@@ -354,13 +424,25 @@ export class Peekable<T, E> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "E"] as const;
-  peek = defineInstanceFunction("baml.iter.Peekable.peek", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => T | Done;
-  peek_async = defineInstanceFunction("baml.iter.Peekable.peek", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<T | Done>;
-  iter = defineInstanceFunction("baml.iter.Peekable.iter", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.Peekable.iter", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.Peekable.next", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => T | Done;
-  next_async = defineInstanceFunction("baml.iter.Peekable.next", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<T | Done>;
+  static readonly $generic = ['T', 'E'] as const;
+  peek = defineInstanceFunction('baml.iter.Peekable.peek', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => T | Done;
+  peek_async = defineInstanceFunction('baml.iter.Peekable.peek', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => Promise<T | Done>;
+  iter = defineInstanceFunction('baml.iter.Peekable.iter', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction('baml.iter.Peekable.iter', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.Peekable.next', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => T | Done;
+  next_async = defineInstanceFunction('baml.iter.Peekable.next', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => Promise<T | Done>;
 }
 
 export class StepBy<T, E> {
@@ -376,11 +458,19 @@ export class StepBy<T, E> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "E"] as const;
-  iter = defineInstanceFunction("baml.iter.StepBy.iter", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.StepBy.iter", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.StepBy.next", "sync", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => T | Done;
-  next_async = defineInstanceFunction("baml.iter.StepBy.next", "async", ["self"], undefined, { classTypeParams: ["T", "E"] }).bind(this) as () => Promise<T | Done>;
+  static readonly $generic = ['T', 'E'] as const;
+  iter = defineInstanceFunction('baml.iter.StepBy.iter', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction('baml.iter.StepBy.iter', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.StepBy.next', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => T | Done;
+  next_async = defineInstanceFunction('baml.iter.StepBy.next', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E'],
+  }).bind(this) as () => Promise<T | Done>;
 }
 
 export class Chain<T, E, E2> {
@@ -396,9 +486,17 @@ export class Chain<T, E, E2> {
   }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T", "E", "E2"] as const;
-  iter = defineInstanceFunction("baml.iter.Chain.iter", "sync", ["self"], undefined, { classTypeParams: ["T", "E", "E2"] }).bind(this) as () => unknown;
-  iter_async = defineInstanceFunction("baml.iter.Chain.iter", "async", ["self"], undefined, { classTypeParams: ["T", "E", "E2"] }).bind(this) as () => Promise<unknown>;
-  next = defineInstanceFunction("baml.iter.Chain.next", "sync", ["self"], undefined, { classTypeParams: ["T", "E", "E2"] }).bind(this) as () => T | Done;
-  next_async = defineInstanceFunction("baml.iter.Chain.next", "async", ["self"], undefined, { classTypeParams: ["T", "E", "E2"] }).bind(this) as () => Promise<T | Done>;
+  static readonly $generic = ['T', 'E', 'E2'] as const;
+  iter = defineInstanceFunction('baml.iter.Chain.iter', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E', 'E2'],
+  }).bind(this) as () => unknown;
+  iter_async = defineInstanceFunction('baml.iter.Chain.iter', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E', 'E2'],
+  }).bind(this) as () => Promise<unknown>;
+  next = defineInstanceFunction('baml.iter.Chain.next', 'sync', ['self'], undefined, {
+    classTypeParams: ['T', 'E', 'E2'],
+  }).bind(this) as () => T | Done;
+  next_async = defineInstanceFunction('baml.iter.Chain.next', 'async', ['self'], undefined, {
+    classTypeParams: ['T', 'E', 'E2'],
+  }).bind(this) as () => Promise<T | Done>;
 }

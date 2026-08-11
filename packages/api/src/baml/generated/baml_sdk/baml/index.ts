@@ -12,48 +12,48 @@
 // baml-cli is available with the baml package.
 
 import { defineFunction, defineInstanceFunction, type BamlType } from "@boundaryml/baml-bridge";
-import type * as baml from "../baml/index.js";
-export * as csv from "./csv/index.js";
-export * as env from "./env/index.js";
-export * as errors from "./errors/index.js";
-export * as fs from "./fs/index.js";
-export * as future from "./future/index.js";
-export * as glob from "./glob/index.js";
-export * as host from "./host/index.js";
-export * as http from "./http/index.js";
-export * as id from "./id/index.js";
-export * as io from "./io/index.js";
-export * as iter from "./iter/index.js";
-export * as json from "./json/index.js";
-export * as llm from "./llm/index.js";
-export * as media from "./media/index.js";
-export * as net from "./net/index.js";
-export * as ops from "./ops/index.js";
-export * as panics from "./panics/index.js";
-export * as spawn from "./spawn/index.js";
-export * as stream from "./stream/index.js";
-export * as sys from "./sys/index.js";
-export * as time from "./time/index.js";
-export * as toml from "./toml/index.js";
-export * as yaml from "./yaml/index.js";
+import type * as baml from '../baml/index.js';
+export * as csv from './csv/index.js';
+export * as env from './env/index.js';
+export * as errors from './errors/index.js';
+export * as fs from './fs/index.js';
+export * as future from './future/index.js';
+export * as glob from './glob/index.js';
+export * as host from './host/index.js';
+export * as http from './http/index.js';
+export * as id from './id/index.js';
+export * as io from './io/index.js';
+export * as iter from './iter/index.js';
+export * as json from './json/index.js';
+export * as llm from './llm/index.js';
+export * as media from './media/index.js';
+export * as net from './net/index.js';
+export * as ops from './ops/index.js';
+export * as panics from './panics/index.js';
+export * as spawn from './spawn/index.js';
+export * as stream from './stream/index.js';
+export * as sys from './sys/index.js';
+export * as time from './time/index.js';
+export * as toml from './toml/index.js';
+export * as yaml from './yaml/index.js';
 
 /**
  * Arbitrary-precision signed integer.
- * 
+ *
  * # Bitwise on negatives
- * 
+ *
  * `&`, `|`, `^` use two's-complement semantics — bigints are treated as if
  * they had an infinite sign-extended bit string. So `(-1n) & 1n == 1n`,
  * `(-1n) | 0n == -1n`, `(-1n) ^ 0n == -1n`. This matches JavaScript `BigInt`
  * and Python `int`.
- * 
+ *
  * # Panics
- * 
+ *
  * Bigint operators and methods can raise the following unrecoverable
  * panics. These are not declared via `throws` because they signal that
  * the program tried to do something invalid (rather than a recoverable
  * runtime condition):
- * 
+ *
  * - `baml.panics.DivisionByZero` — `a / 0n` or `a % 0n`.
  * - `baml.panics.NegativeBitShift` — `a << -1n` or `a >> -1n`. The shift
  *   count must be non-negative.
@@ -72,21 +72,21 @@ export class Bigint$stream {
 
 /**
  * Arbitrary-precision signed integer.
- * 
+ *
  * # Bitwise on negatives
- * 
+ *
  * `&`, `|`, `^` use two's-complement semantics — bigints are treated as if
  * they had an infinite sign-extended bit string. So `(-1n) & 1n == 1n`,
  * `(-1n) | 0n == -1n`, `(-1n) ^ 0n == -1n`. This matches JavaScript `BigInt`
  * and Python `int`.
- * 
+ *
  * # Panics
- * 
+ *
  * Bigint operators and methods can raise the following unrecoverable
  * panics. These are not declared via `throws` because they signal that
  * the program tried to do something invalid (rather than a recoverable
  * runtime condition):
- * 
+ *
  * - `baml.panics.DivisionByZero` — `a / 0n` or `a % 0n`.
  * - `baml.panics.NegativeBitShift` — `a << -1n` or `a >> -1n`. The shift
  *   count must be non-negative.
@@ -101,258 +101,290 @@ export class Bigint {
   constructor(init: {}) {
     Object.assign(this, init);
   }
-/**
- * Parses `text` as a base-ten signed integer.
- * 
- * Accepts an optional leading `+` or `-` sign followed by one or more
- * ASCII digits. No surrounding whitespace, no underscore separators,
- * no hex / octal / binary prefix (`0x` / `0o` / `0b`), no Unicode digits,
- * no scientific notation. Callers needing those should preprocess the
- * string.
- * 
- * Throws `ParseError` if `text` is empty or contains a non-digit character.
- * 
- * # Examples
- * ```
- * bigint.parse("42")       // 42n
- * bigint.parse("-7")       // -7n
- * bigint.parse("+0")       // 0n
- * bigint.parse("")         // throws — empty
- * bigint.parse("12a")      // throws — non-digit
- * bigint.parse("0x2a")     // throws — hex prefix not accepted
- * bigint.parse("1_000")    // throws — underscores not accepted
- * bigint.parse(" 5 ")      // throws — whitespace not allowed; trim first
- * bigint.parse("99999999999999999999")  // 99999999999999999999n
- * ```
- * @throws ParseError
- */
-  static parse = defineFunction("baml.Bigint.parse", "sync", ["text"]) as (text: string) => bigint;
-/**
- * Parses `text` as a base-ten signed integer.
- * 
- * Accepts an optional leading `+` or `-` sign followed by one or more
- * ASCII digits. No surrounding whitespace, no underscore separators,
- * no hex / octal / binary prefix (`0x` / `0o` / `0b`), no Unicode digits,
- * no scientific notation. Callers needing those should preprocess the
- * string.
- * 
- * Throws `ParseError` if `text` is empty or contains a non-digit character.
- * 
- * # Examples
- * ```
- * bigint.parse("42")       // 42n
- * bigint.parse("-7")       // -7n
- * bigint.parse("+0")       // 0n
- * bigint.parse("")         // throws — empty
- * bigint.parse("12a")      // throws — non-digit
- * bigint.parse("0x2a")     // throws — hex prefix not accepted
- * bigint.parse("1_000")    // throws — underscores not accepted
- * bigint.parse(" 5 ")      // throws — whitespace not allowed; trim first
- * bigint.parse("99999999999999999999")  // 99999999999999999999n
- * ```
- * @throws ParseError
- */
-  static parse_async = defineFunction("baml.Bigint.parse", "async", ["text"]) as (text: string) => Promise<bigint>;
-/**
- * Returns a uniformly distributed random integer in the half-open range
- * `[lower, upper)`.
- * 
- * Throws `InvalidArgument` if `lower >= upper` (the range would be empty).
- * Uses the host's cryptographic entropy source — no user-supplied RNG
- * handle.
- * 
- * # Examples
- * ```
- * bigint.random(0n, 10n)         // some value in {0, 1, ..., 9}
- * bigint.random(-5n, 5n)         // some value in {-5, -4, ..., 4}
- * bigint.random(0n, 1n)          // always 0  (single-element range)
- * bigint.random(5n, 5n)          // throws — empty range
- * bigint.random(10n, 0n)         // throws — lower > upper
- * ```
- * @throws InvalidArgument
- */
-  static random = defineFunction("baml.Bigint.random", "sync", ["lower", "upper"]) as (lower: bigint, upper: bigint) => bigint;
-/**
- * Returns a uniformly distributed random integer in the half-open range
- * `[lower, upper)`.
- * 
- * Throws `InvalidArgument` if `lower >= upper` (the range would be empty).
- * Uses the host's cryptographic entropy source — no user-supplied RNG
- * handle.
- * 
- * # Examples
- * ```
- * bigint.random(0n, 10n)         // some value in {0, 1, ..., 9}
- * bigint.random(-5n, 5n)         // some value in {-5, -4, ..., 4}
- * bigint.random(0n, 1n)          // always 0  (single-element range)
- * bigint.random(5n, 5n)          // throws — empty range
- * bigint.random(10n, 0n)         // throws — lower > upper
- * ```
- * @throws InvalidArgument
- */
-  static random_async = defineFunction("baml.Bigint.random", "async", ["lower", "upper"]) as (lower: bigint, upper: bigint) => Promise<bigint>;
-/**
- * Returns the absolute value of `self`.
- * # Examples
- * ```
- * (-7n).abs()         // 7n
- * (3n).abs()          // 3n
- * (0n).abs()          // 0n
- * ```
- */
-  abs = defineInstanceFunction("baml.Bigint.abs", "sync", ["self"]).bind(this) as () => bigint;
-/**
- * Returns the absolute value of `self`.
- * # Examples
- * ```
- * (-7n).abs()         // 7n
- * (3n).abs()          // 3n
- * (0n).abs()          // 0n
- * ```
- */
-  abs_async = defineInstanceFunction("baml.Bigint.abs", "async", ["self"]).bind(this) as () => Promise<bigint>;
-/**
- * Returns the smaller of `self` and `other`.
- * 
- * # Examples
- * ```
- * (3n).min(5n)   // 3n
- * (3n).min(3)   // 3n (note we cast up from `int` to `bigint` here)
- * (-2n).min(0n)  // -2n
- * ```
- */
-  min = defineInstanceFunction("baml.Bigint.min", "sync", ["self", "other"]).bind(this) as (other: bigint) => bigint;
-/**
- * Returns the smaller of `self` and `other`.
- * 
- * # Examples
- * ```
- * (3n).min(5n)   // 3n
- * (3n).min(3)   // 3n (note we cast up from `int` to `bigint` here)
- * (-2n).min(0n)  // -2n
- * ```
- */
-  min_async = defineInstanceFunction("baml.Bigint.min", "async", ["self", "other"]).bind(this) as (other: bigint) => Promise<bigint>;
-/**
- * Returns the larger of `self` and `other`.
- * 
- * # Examples
- * ```
- * (3n).max(5n)   // 5n
- * (3n).max(3)   // 3n (note we cast up from `int` to `bigint` here)
- * (-2n).max(0n)  // 0n
- * ```
- */
-  max = defineInstanceFunction("baml.Bigint.max", "sync", ["self", "other"]).bind(this) as (other: bigint) => bigint;
-/**
- * Returns the larger of `self` and `other`.
- * 
- * # Examples
- * ```
- * (3n).max(5n)   // 5n
- * (3n).max(3)   // 3n (note we cast up from `int` to `bigint` here)
- * (-2n).max(0n)  // 0n
- * ```
- */
-  max_async = defineInstanceFunction("baml.Bigint.max", "async", ["self", "other"]).bind(this) as (other: bigint) => Promise<bigint>;
-/**
- * Clamps `self` into the range `[min, max]`.
- * 
- * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
- * if `min > max` the result is always `min` (the lower-clamp wins because
- * it runs after the upper-clamp).
- * 
- * # Examples
- * ```
- * (5n).clamp(0n, 10n)    // 5n
- * (-3n).clamp(0, 10)   // 0n (note we cast up from `int` to `bigint` here)
- * (15n).clamp(0n, 10n)   // 10n
- * ```
- */
-  clamp = defineInstanceFunction("baml.Bigint.clamp", "sync", ["self", "min", "max"]).bind(this) as (min: bigint, max: bigint) => bigint;
-/**
- * Clamps `self` into the range `[min, max]`.
- * 
- * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
- * if `min > max` the result is always `min` (the lower-clamp wins because
- * it runs after the upper-clamp).
- * 
- * # Examples
- * ```
- * (5n).clamp(0n, 10n)    // 5n
- * (-3n).clamp(0, 10)   // 0n (note we cast up from `int` to `bigint` here)
- * (15n).clamp(0n, 10n)   // 10n
- * ```
- */
-  clamp_async = defineInstanceFunction("baml.Bigint.clamp", "async", ["self", "min", "max"]).bind(this) as (min: bigint, max: bigint) => Promise<bigint>;
-/**
- * Returns the integer square root of `self` — that is, the largest `bigint`
- * `r` such that `r * r <= self`.
- * 
- * Throws `InvalidArgument` if `self` is negative.
- * 
- * # Examples
- * ```
- * (10n).isqrt()   // 3n
- * (16n).isqrt()   // 4n
- * (0n).isqrt()    // 0n
- * (-1n).isqrt()   // throws
- * ```
- * @throws InvalidArgument
- */
-  isqrt = defineInstanceFunction("baml.Bigint.isqrt", "sync", ["self"]).bind(this) as () => bigint;
-/**
- * Returns the integer square root of `self` — that is, the largest `bigint`
- * `r` such that `r * r <= self`.
- * 
- * Throws `InvalidArgument` if `self` is negative.
- * 
- * # Examples
- * ```
- * (10n).isqrt()   // 3n
- * (16n).isqrt()   // 4n
- * (0n).isqrt()    // 0n
- * (-1n).isqrt()   // throws
- * ```
- * @throws InvalidArgument
- */
-  isqrt_async = defineInstanceFunction("baml.Bigint.isqrt", "async", ["self"]).bind(this) as () => Promise<bigint>;
-  pow = defineInstanceFunction("baml.Bigint.pow", "sync", ["self", "exp"]).bind(this) as (exp: bigint) => bigint;
-  pow_async = defineInstanceFunction("baml.Bigint.pow", "async", ["self", "exp"]).bind(this) as (exp: bigint) => Promise<bigint>;
-/**
- * Returns the integer logarithm of `self` in the given `base`, rounded
- * down — i.e. the largest `n` such that `base ** n <= self`.
- * 
- * Throws `InvalidArgument` if `self <= 0` or `base < 2`.
- * 
- * # Examples
- * ```
- * (1000n).ilog(10n)   // 3n
- * (1024n).ilog(2n)    // 10n
- * (1n).ilog(10n)      // 0n
- * (0n).ilog(10n)      // throws
- * (10n).ilog(1n)      // throws
- * ```
- * @throws InvalidArgument
- */
-  ilog = defineInstanceFunction("baml.Bigint.ilog", "sync", ["self", "base"]).bind(this) as (base: bigint) => bigint;
-/**
- * Returns the integer logarithm of `self` in the given `base`, rounded
- * down — i.e. the largest `n` such that `base ** n <= self`.
- * 
- * Throws `InvalidArgument` if `self <= 0` or `base < 2`.
- * 
- * # Examples
- * ```
- * (1000n).ilog(10n)   // 3n
- * (1024n).ilog(2n)    // 10n
- * (1n).ilog(10n)      // 0n
- * (0n).ilog(10n)      // throws
- * (10n).ilog(1n)      // throws
- * ```
- * @throws InvalidArgument
- */
-  ilog_async = defineInstanceFunction("baml.Bigint.ilog", "async", ["self", "base"]).bind(this) as (base: bigint) => Promise<bigint>;
+  /**
+   * Parses `text` as a base-ten signed integer.
+   *
+   * Accepts an optional leading `+` or `-` sign followed by one or more
+   * ASCII digits. No surrounding whitespace, no underscore separators,
+   * no hex / octal / binary prefix (`0x` / `0o` / `0b`), no Unicode digits,
+   * no scientific notation. Callers needing those should preprocess the
+   * string.
+   *
+   * Throws `ParseError` if `text` is empty or contains a non-digit character.
+   *
+   * # Examples
+   * ```
+   * bigint.parse("42")       // 42n
+   * bigint.parse("-7")       // -7n
+   * bigint.parse("+0")       // 0n
+   * bigint.parse("")         // throws — empty
+   * bigint.parse("12a")      // throws — non-digit
+   * bigint.parse("0x2a")     // throws — hex prefix not accepted
+   * bigint.parse("1_000")    // throws — underscores not accepted
+   * bigint.parse(" 5 ")      // throws — whitespace not allowed; trim first
+   * bigint.parse("99999999999999999999")  // 99999999999999999999n
+   * ```
+   * @throws ParseError
+   */
+  static parse = defineFunction('baml.Bigint.parse', 'sync', ['text']) as (text: string) => bigint;
+  /**
+   * Parses `text` as a base-ten signed integer.
+   *
+   * Accepts an optional leading `+` or `-` sign followed by one or more
+   * ASCII digits. No surrounding whitespace, no underscore separators,
+   * no hex / octal / binary prefix (`0x` / `0o` / `0b`), no Unicode digits,
+   * no scientific notation. Callers needing those should preprocess the
+   * string.
+   *
+   * Throws `ParseError` if `text` is empty or contains a non-digit character.
+   *
+   * # Examples
+   * ```
+   * bigint.parse("42")       // 42n
+   * bigint.parse("-7")       // -7n
+   * bigint.parse("+0")       // 0n
+   * bigint.parse("")         // throws — empty
+   * bigint.parse("12a")      // throws — non-digit
+   * bigint.parse("0x2a")     // throws — hex prefix not accepted
+   * bigint.parse("1_000")    // throws — underscores not accepted
+   * bigint.parse(" 5 ")      // throws — whitespace not allowed; trim first
+   * bigint.parse("99999999999999999999")  // 99999999999999999999n
+   * ```
+   * @throws ParseError
+   */
+  static parse_async = defineFunction('baml.Bigint.parse', 'async', ['text']) as (
+    text: string,
+  ) => Promise<bigint>;
+  /**
+   * Returns a uniformly distributed random integer in the half-open range
+   * `[lower, upper)`.
+   *
+   * Throws `InvalidArgument` if `lower >= upper` (the range would be empty).
+   * Uses the host's cryptographic entropy source — no user-supplied RNG
+   * handle.
+   *
+   * # Examples
+   * ```
+   * bigint.random(0n, 10n)         // some value in {0, 1, ..., 9}
+   * bigint.random(-5n, 5n)         // some value in {-5, -4, ..., 4}
+   * bigint.random(0n, 1n)          // always 0  (single-element range)
+   * bigint.random(5n, 5n)          // throws — empty range
+   * bigint.random(10n, 0n)         // throws — lower > upper
+   * ```
+   * @throws InvalidArgument
+   */
+  static random = defineFunction('baml.Bigint.random', 'sync', ['lower', 'upper']) as (
+    lower: bigint,
+    upper: bigint,
+  ) => bigint;
+  /**
+   * Returns a uniformly distributed random integer in the half-open range
+   * `[lower, upper)`.
+   *
+   * Throws `InvalidArgument` if `lower >= upper` (the range would be empty).
+   * Uses the host's cryptographic entropy source — no user-supplied RNG
+   * handle.
+   *
+   * # Examples
+   * ```
+   * bigint.random(0n, 10n)         // some value in {0, 1, ..., 9}
+   * bigint.random(-5n, 5n)         // some value in {-5, -4, ..., 4}
+   * bigint.random(0n, 1n)          // always 0  (single-element range)
+   * bigint.random(5n, 5n)          // throws — empty range
+   * bigint.random(10n, 0n)         // throws — lower > upper
+   * ```
+   * @throws InvalidArgument
+   */
+  static random_async = defineFunction('baml.Bigint.random', 'async', ['lower', 'upper']) as (
+    lower: bigint,
+    upper: bigint,
+  ) => Promise<bigint>;
+  /**
+   * Returns the absolute value of `self`.
+   * # Examples
+   * ```
+   * (-7n).abs()         // 7n
+   * (3n).abs()          // 3n
+   * (0n).abs()          // 0n
+   * ```
+   */
+  abs = defineInstanceFunction('baml.Bigint.abs', 'sync', ['self']).bind(this) as () => bigint;
+  /**
+   * Returns the absolute value of `self`.
+   * # Examples
+   * ```
+   * (-7n).abs()         // 7n
+   * (3n).abs()          // 3n
+   * (0n).abs()          // 0n
+   * ```
+   */
+  abs_async = defineInstanceFunction('baml.Bigint.abs', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<bigint>;
+  /**
+   * Returns the smaller of `self` and `other`.
+   *
+   * # Examples
+   * ```
+   * (3n).min(5n)   // 3n
+   * (3n).min(3)   // 3n (note we cast up from `int` to `bigint` here)
+   * (-2n).min(0n)  // -2n
+   * ```
+   */
+  min = defineInstanceFunction('baml.Bigint.min', 'sync', ['self', 'other']).bind(this) as (
+    other: bigint,
+  ) => bigint;
+  /**
+   * Returns the smaller of `self` and `other`.
+   *
+   * # Examples
+   * ```
+   * (3n).min(5n)   // 3n
+   * (3n).min(3)   // 3n (note we cast up from `int` to `bigint` here)
+   * (-2n).min(0n)  // -2n
+   * ```
+   */
+  min_async = defineInstanceFunction('baml.Bigint.min', 'async', ['self', 'other']).bind(this) as (
+    other: bigint,
+  ) => Promise<bigint>;
+  /**
+   * Returns the larger of `self` and `other`.
+   *
+   * # Examples
+   * ```
+   * (3n).max(5n)   // 5n
+   * (3n).max(3)   // 3n (note we cast up from `int` to `bigint` here)
+   * (-2n).max(0n)  // 0n
+   * ```
+   */
+  max = defineInstanceFunction('baml.Bigint.max', 'sync', ['self', 'other']).bind(this) as (
+    other: bigint,
+  ) => bigint;
+  /**
+   * Returns the larger of `self` and `other`.
+   *
+   * # Examples
+   * ```
+   * (3n).max(5n)   // 5n
+   * (3n).max(3)   // 3n (note we cast up from `int` to `bigint` here)
+   * (-2n).max(0n)  // 0n
+   * ```
+   */
+  max_async = defineInstanceFunction('baml.Bigint.max', 'async', ['self', 'other']).bind(this) as (
+    other: bigint,
+  ) => Promise<bigint>;
+  /**
+   * Clamps `self` into the range `[min, max]`.
+   *
+   * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
+   * if `min > max` the result is always `min` (the lower-clamp wins because
+   * it runs after the upper-clamp).
+   *
+   * # Examples
+   * ```
+   * (5n).clamp(0n, 10n)    // 5n
+   * (-3n).clamp(0, 10)   // 0n (note we cast up from `int` to `bigint` here)
+   * (15n).clamp(0n, 10n)   // 10n
+   * ```
+   */
+  clamp = defineInstanceFunction('baml.Bigint.clamp', 'sync', ['self', 'min', 'max']).bind(
+    this,
+  ) as (min: bigint, max: bigint) => bigint;
+  /**
+   * Clamps `self` into the range `[min, max]`.
+   *
+   * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
+   * if `min > max` the result is always `min` (the lower-clamp wins because
+   * it runs after the upper-clamp).
+   *
+   * # Examples
+   * ```
+   * (5n).clamp(0n, 10n)    // 5n
+   * (-3n).clamp(0, 10)   // 0n (note we cast up from `int` to `bigint` here)
+   * (15n).clamp(0n, 10n)   // 10n
+   * ```
+   */
+  clamp_async = defineInstanceFunction('baml.Bigint.clamp', 'async', ['self', 'min', 'max']).bind(
+    this,
+  ) as (min: bigint, max: bigint) => Promise<bigint>;
+  /**
+   * Returns the integer square root of `self` — that is, the largest `bigint`
+   * `r` such that `r * r <= self`.
+   *
+   * Throws `InvalidArgument` if `self` is negative.
+   *
+   * # Examples
+   * ```
+   * (10n).isqrt()   // 3n
+   * (16n).isqrt()   // 4n
+   * (0n).isqrt()    // 0n
+   * (-1n).isqrt()   // throws
+   * ```
+   * @throws InvalidArgument
+   */
+  isqrt = defineInstanceFunction('baml.Bigint.isqrt', 'sync', ['self']).bind(this) as () => bigint;
+  /**
+   * Returns the integer square root of `self` — that is, the largest `bigint`
+   * `r` such that `r * r <= self`.
+   *
+   * Throws `InvalidArgument` if `self` is negative.
+   *
+   * # Examples
+   * ```
+   * (10n).isqrt()   // 3n
+   * (16n).isqrt()   // 4n
+   * (0n).isqrt()    // 0n
+   * (-1n).isqrt()   // throws
+   * ```
+   * @throws InvalidArgument
+   */
+  isqrt_async = defineInstanceFunction('baml.Bigint.isqrt', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<bigint>;
+  pow = defineInstanceFunction('baml.Bigint.pow', 'sync', ['self', 'exp']).bind(this) as (
+    exp: bigint,
+  ) => bigint;
+  pow_async = defineInstanceFunction('baml.Bigint.pow', 'async', ['self', 'exp']).bind(this) as (
+    exp: bigint,
+  ) => Promise<bigint>;
+  /**
+   * Returns the integer logarithm of `self` in the given `base`, rounded
+   * down — i.e. the largest `n` such that `base ** n <= self`.
+   *
+   * Throws `InvalidArgument` if `self <= 0` or `base < 2`.
+   *
+   * # Examples
+   * ```
+   * (1000n).ilog(10n)   // 3n
+   * (1024n).ilog(2n)    // 10n
+   * (1n).ilog(10n)      // 0n
+   * (0n).ilog(10n)      // throws
+   * (10n).ilog(1n)      // throws
+   * ```
+   * @throws InvalidArgument
+   */
+  ilog = defineInstanceFunction('baml.Bigint.ilog', 'sync', ['self', 'base']).bind(this) as (
+    base: bigint,
+  ) => bigint;
+  /**
+   * Returns the integer logarithm of `self` in the given `base`, rounded
+   * down — i.e. the largest `n` such that `base ** n <= self`.
+   *
+   * Throws `InvalidArgument` if `self <= 0` or `base < 2`.
+   *
+   * # Examples
+   * ```
+   * (1000n).ilog(10n)   // 3n
+   * (1024n).ilog(2n)    // 10n
+   * (1n).ilog(10n)      // 0n
+   * (0n).ilog(10n)      // throws
+   * (10n).ilog(1n)      // throws
+   * ```
+   * @throws InvalidArgument
+   */
+  ilog_async = defineInstanceFunction('baml.Bigint.ilog', 'async', ['self', 'base']).bind(this) as (
+    base: bigint,
+  ) => Promise<bigint>;
 }
 
 /**
@@ -373,47 +405,75 @@ export class Bool {
   }
 }
 
-export const _compare_shim = defineFunction("baml._compare_shim", "sync", ["a", "b"], undefined, { typeParams: ["T"] }) as <T>(a: T, b: T) => number;
+export const _compare_shim = defineFunction('baml._compare_shim', 'sync', ['a', 'b'], undefined, {
+  typeParams: ['T'],
+}) as <T>(a: T, b: T) => number;
 
-export const _compare_shim_async = defineFunction("baml._compare_shim", "async", ["a", "b"], undefined, { typeParams: ["T"] }) as <T>(a: T, b: T) => Promise<number>;
+export const _compare_shim_async = defineFunction(
+  'baml._compare_shim',
+  'async',
+  ['a', 'b'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(a: T, b: T) => Promise<number>;
 
 /**
  * Three-way compares two floats by IEEE 754 `totalOrder` (`f64::total_cmp`).
- * 
+ *
  * Internal shim backing `Comparable for float` (above) and kept bit-exact
  * with the float comparator inside the native `_rust_sort`; not part of the
  * public `Comparable`/`Sortable` surface.
  */
-export const _float_total_cmp = defineFunction("baml._float_total_cmp", "sync", ["a", "b"]) as (a: number, b: number) => number;
+export const _float_total_cmp = defineFunction('baml._float_total_cmp', 'sync', ['a', 'b']) as (
+  a: number,
+  b: number,
+) => number;
 
 /**
  * Three-way compares two floats by IEEE 754 `totalOrder` (`f64::total_cmp`).
- * 
+ *
  * Internal shim backing `Comparable for float` (above) and kept bit-exact
  * with the float comparator inside the native `_rust_sort`; not part of the
  * public `Comparable`/`Sortable` surface.
  */
-export const _float_total_cmp_async = defineFunction("baml._float_total_cmp", "async", ["a", "b"]) as (a: number, b: number) => Promise<number>;
+export const _float_total_cmp_async = defineFunction('baml._float_total_cmp', 'async', [
+  'a',
+  'b',
+]) as (a: number, b: number) => Promise<number>;
 
-export const _is_primitive_array = defineFunction("baml._is_primitive_array", "sync", ["arr"], undefined, { typeParams: ["T"] }) as <T>(arr: T[]) => boolean;
+export const _is_primitive_array = defineFunction(
+  'baml._is_primitive_array',
+  'sync',
+  ['arr'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(arr: T[]) => boolean;
 
-export const _is_primitive_array_async = defineFunction("baml._is_primitive_array", "async", ["arr"], undefined, { typeParams: ["T"] }) as <T>(arr: T[]) => Promise<boolean>;
+export const _is_primitive_array_async = defineFunction(
+  'baml._is_primitive_array',
+  'async',
+  ['arr'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(arr: T[]) => Promise<boolean>;
 
-export const _rust_sort = defineFunction("baml._rust_sort", "sync", ["arr"], undefined, { typeParams: ["A"] }) as <A>(arr: A) => A;
+export const _rust_sort = defineFunction('baml._rust_sort', 'sync', ['arr'], undefined, {
+  typeParams: ['A'],
+}) as <A>(arr: A) => A;
 
-export const _rust_sort_async = defineFunction("baml._rust_sort", "async", ["arr"], undefined, { typeParams: ["A"] }) as <A>(arr: A) => Promise<A>;
+export const _rust_sort_async = defineFunction('baml._rust_sort', 'async', ['arr'], undefined, {
+  typeParams: ['A'],
+}) as <A>(arr: A) => Promise<A>;
 
 /**
  * An ordered, growable collection of elements of type T.
  */
 export class Array$stream<T> {
   $types?: { T?: BamlType };
-  constructor(init: {
-    $types?: { T?: BamlType };
-  }) {
+  constructor(init: { $types?: { T?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T"] as const;
+  static readonly $generic = ['T'] as const;
 }
 
 /**
@@ -421,12 +481,10 @@ export class Array$stream<T> {
  */
 export class Map$stream<K, V> {
   $types?: { K?: BamlType; V?: BamlType };
-  constructor(init: {
-    $types?: { K?: BamlType; V?: BamlType };
-  }) {
+  constructor(init: { $types?: { K?: BamlType; V?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["K", "V"] as const;
+  static readonly $generic = ['K', 'V'] as const;
 }
 
 /**
@@ -434,308 +492,574 @@ export class Map$stream<K, V> {
  */
 export class Array<T> {
   $types?: { T?: BamlType };
-  constructor(init: {
-    $types?: { T?: BamlType };
-  }) {
+  constructor(init: { $types?: { T?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["T"] as const;
-/**
- * Builds a new array of `length` elements, each equal to `value`.
- * 
- * This is the idiomatic way to allocate a runtime-sized, pre-initialized
- * buffer — Fenwick trees, DP tables, adjacency lists — without a manual
- * `while`/`push` loop. (Remember a 1-indexed structure needs `length + 1`
- * slots.)
- * 
- * # Parameters
- * - `length`: the number of elements to create. A negative or zero `length`
- *   produces an empty array.
- * - `value`: the value stored in every slot.
- * 
- * # Warning
- * `Array.filled` reuses the exact same `value` for every slot. For reference
- * types (arrays, maps, class instances), every slot aliases the same object.
- * Mutating one slot mutates all slots.
- * 
- * To get independent per-slot values, use `Array.generate`, which calls a
- * factory once per index:
- * ```
- * Array.generate(3, (i: int) -> int[] { [] })   // three independent []s
- * ```
- * 
- * # Returns
- * A fresh `T[]` of length `max(length, 0)` with every element equal to
- * `value`.
- * 
- * Never throws.
- * 
- * # Examples
- * ```
- * Array.filled(3, 0)     // [0, 0, 0]
- * Array.filled(0, 0)     // []
- * Array.filled(-1, 0)    // []
- * Array.filled(2, "x")   // ["x", "x"]
- * Array.filled(3, [])    // aliases the same inner array in all 3 slots
- * ```
- */
-  static filled = defineFunction("baml.Array.filled", "sync", ["length", "value"]) as <T>(length: number, value: T) => T[];
-/**
- * Builds a new array of `length` elements, each equal to `value`.
- * 
- * This is the idiomatic way to allocate a runtime-sized, pre-initialized
- * buffer — Fenwick trees, DP tables, adjacency lists — without a manual
- * `while`/`push` loop. (Remember a 1-indexed structure needs `length + 1`
- * slots.)
- * 
- * # Parameters
- * - `length`: the number of elements to create. A negative or zero `length`
- *   produces an empty array.
- * - `value`: the value stored in every slot.
- * 
- * # Warning
- * `Array.filled` reuses the exact same `value` for every slot. For reference
- * types (arrays, maps, class instances), every slot aliases the same object.
- * Mutating one slot mutates all slots.
- * 
- * To get independent per-slot values, use `Array.generate`, which calls a
- * factory once per index:
- * ```
- * Array.generate(3, (i: int) -> int[] { [] })   // three independent []s
- * ```
- * 
- * # Returns
- * A fresh `T[]` of length `max(length, 0)` with every element equal to
- * `value`.
- * 
- * Never throws.
- * 
- * # Examples
- * ```
- * Array.filled(3, 0)     // [0, 0, 0]
- * Array.filled(0, 0)     // []
- * Array.filled(-1, 0)    // []
- * Array.filled(2, "x")   // ["x", "x"]
- * Array.filled(3, [])    // aliases the same inner array in all 3 slots
- * ```
- */
-  static filled_async = defineFunction("baml.Array.filled", "async", ["length", "value"]) as <T>(length: number, value: T) => Promise<T[]>;
-/**
- * Builds a new array of `length` elements by calling `f` once per index.
- * 
- * `f` is invoked with each index `0, 1, ..., length - 1` in order, and its
- * result is stored in that slot. Unlike `Array.filled`, which reuses one
- * shared value, `generate` produces an **independent value per slot** — the
- * alias-free way to build runtime-sized buffers of reference types (rows of a
- * grid, per-slot maps or class instances). It mirrors JavaScript's
- * `Array.from({ length }, f)` and a Python list comprehension.
- * 
- * # Parameters
- * - `length`: the number of elements to create. A negative or zero `length`
- *   produces an empty array and never calls `f`.
- * - `f`: called once per index to produce that slot's value. Any error it
- *   throws propagates to the caller, halting generation.
- * 
- * # Returns
- * A fresh `T[]` of length `max(length, 0)` whose element `i` is `f(i)`.
- * 
- * # Examples
- * ```
- * Array.generate(3, (i: int) -> int { i * i })      // [0, 1, 4]
- * Array.generate(0, (i: int) -> int { i })          // []
- * // A 2D grid with independent rows (mutating one row leaves the rest):
- * Array.generate(rows, (r: int) -> int[] { Array.filled(cols, 0) })
- * ```
- */
-  static generate = defineFunction("baml.Array.generate", "sync", ["length", "f"], undefined, { typeParams: ["E"] }) as <T, E>(length: number, f: (arg0: number) => T) => T[];
-/**
- * Builds a new array of `length` elements by calling `f` once per index.
- * 
- * `f` is invoked with each index `0, 1, ..., length - 1` in order, and its
- * result is stored in that slot. Unlike `Array.filled`, which reuses one
- * shared value, `generate` produces an **independent value per slot** — the
- * alias-free way to build runtime-sized buffers of reference types (rows of a
- * grid, per-slot maps or class instances). It mirrors JavaScript's
- * `Array.from({ length }, f)` and a Python list comprehension.
- * 
- * # Parameters
- * - `length`: the number of elements to create. A negative or zero `length`
- *   produces an empty array and never calls `f`.
- * - `f`: called once per index to produce that slot's value. Any error it
- *   throws propagates to the caller, halting generation.
- * 
- * # Returns
- * A fresh `T[]` of length `max(length, 0)` whose element `i` is `f(i)`.
- * 
- * # Examples
- * ```
- * Array.generate(3, (i: int) -> int { i * i })      // [0, 1, 4]
- * Array.generate(0, (i: int) -> int { i })          // []
- * // A 2D grid with independent rows (mutating one row leaves the rest):
- * Array.generate(rows, (r: int) -> int[] { Array.filled(cols, 0) })
- * ```
- */
-  static generate_async = defineFunction("baml.Array.generate", "async", ["length", "f"], undefined, { typeParams: ["E"] }) as <T, E>(length: number, f: (arg0: number) => T) => Promise<T[]>;
-/**
- * Returns the number of elements in the array.
- */
-  length = defineInstanceFunction("baml.Array.length", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => number;
-/**
- * Returns the number of elements in the array.
- */
-  length_async = defineInstanceFunction("baml.Array.length", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<number>;
-/**
- * Returns the element at `index`, or `null` if out of bounds.
- * 
- * Negative indices count from the end: `-1` is the last element.
- * 
- * # Examples
- * ```
- * [10, 20, 30].at(0)    // 10
- * [10, 20, 30].at(-1)   // 30
- * [10, 20, 30].at(99)   // null
- * [10, 20, 30].at(-99)  // null
- * ```
- */
-  at = defineInstanceFunction("baml.Array.at", "sync", ["self", "index"], undefined, { classTypeParams: ["T"] }).bind(this) as (index: number) => T | null;
-/**
- * Returns the element at `index`, or `null` if out of bounds.
- * 
- * Negative indices count from the end: `-1` is the last element.
- * 
- * # Examples
- * ```
- * [10, 20, 30].at(0)    // 10
- * [10, 20, 30].at(-1)   // 30
- * [10, 20, 30].at(99)   // null
- * [10, 20, 30].at(-99)  // null
- * ```
- */
-  at_async = defineInstanceFunction("baml.Array.at", "async", ["self", "index"], undefined, { classTypeParams: ["T"] }).bind(this) as (index: number) => Promise<T | null>;
-  push = defineInstanceFunction("baml.Array.push", "sync", ["self", "item"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T) => number;
-  push_async = defineInstanceFunction("baml.Array.push", "async", ["self", "item"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T) => Promise<number>;
-  pop = defineInstanceFunction("baml.Array.pop", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => T | null;
-  pop_async = defineInstanceFunction("baml.Array.pop", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<T | null>;
-  remove_at = defineInstanceFunction("baml.Array.remove_at", "sync", ["self", "index"], undefined, { classTypeParams: ["T"] }).bind(this) as (index: number) => T | null;
-  remove_at_async = defineInstanceFunction("baml.Array.remove_at", "async", ["self", "index"], undefined, { classTypeParams: ["T"] }).bind(this) as (index: number) => Promise<T | null>;
-/**
- * Returns a new array with the elements of `self` followed by the elements of `other`.
- */
-  concat = defineInstanceFunction("baml.Array.concat", "sync", ["self", "other"], undefined, { classTypeParams: ["T"] }).bind(this) as (other: T[]) => T[];
-/**
- * Returns a new array with the elements of `self` followed by the elements of `other`.
- */
-  concat_async = defineInstanceFunction("baml.Array.concat", "async", ["self", "other"], undefined, { classTypeParams: ["T"] }).bind(this) as (other: T[]) => Promise<T[]>;
-/**
- * Calls `fn` once for each element in the array.
- */
-  for_each = defineInstanceFunction("baml.Array.for_each", "sync", ["self", "fn"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(fn: (arg0: T) => null) => null;
-/**
- * Calls `fn` once for each element in the array.
- */
-  for_each_async = defineInstanceFunction("baml.Array.for_each", "async", ["self", "fn"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(fn: (arg0: T) => null) => Promise<null>;
-  filter = defineInstanceFunction("baml.Array.filter", "sync", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => T[];
-  filter_async = defineInstanceFunction("baml.Array.filter", "async", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<T[]>;
-/**
- * Returns a new array containing the non-null results of `fn` applied to
- * every element. The function is called once per element, left-to-right.
- * Does not mutate `self`. For a lazy version, use `iter().filter_map(fn)`.
- */
-  filter_map = defineInstanceFunction("baml.Array.filter_map", "sync", ["self", "fn"], undefined, { typeParams: ["U", "E"], classTypeParams: ["T"] }).bind(this) as <U, E>(fn: (arg0: T) => U | null) => U[];
-/**
- * Returns a new array containing the non-null results of `fn` applied to
- * every element. The function is called once per element, left-to-right.
- * Does not mutate `self`. For a lazy version, use `iter().filter_map(fn)`.
- */
-  filter_map_async = defineInstanceFunction("baml.Array.filter_map", "async", ["self", "fn"], undefined, { typeParams: ["U", "E"], classTypeParams: ["T"] }).bind(this) as <U, E>(fn: (arg0: T) => U | null) => Promise<U[]>;
-/**
- * Returns a new array with the elements in reverse order. Does not mutate `self`.
- */
-  reverse = defineInstanceFunction("baml.Array.reverse", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => T[];
-/**
- * Returns a new array with the elements in reverse order. Does not mutate `self`.
- */
-  reverse_async = defineInstanceFunction("baml.Array.reverse", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<T[]>;
-  sort_by = defineInstanceFunction("baml.Array.sort_by", "sync", ["self", "compare"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(compare: (arg0: T, arg1: T) => number) => T[];
-  sort_by_async = defineInstanceFunction("baml.Array.sort_by", "async", ["self", "compare"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(compare: (arg0: T, arg1: T) => number) => Promise<T[]>;
-  sort_by_key = defineInstanceFunction("baml.Array.sort_by_key", "sync", ["self", "key"], undefined, { typeParams: ["U", "E"], classTypeParams: ["T"] }).bind(this) as <U, E>(key: (arg0: T) => U) => T[];
-  sort_by_key_async = defineInstanceFunction("baml.Array.sort_by_key", "async", ["self", "key"], undefined, { typeParams: ["U", "E"], classTypeParams: ["T"] }).bind(this) as <U, E>(key: (arg0: T) => U) => Promise<T[]>;
-/**
- * Returns a sub-array from index `start` (inclusive) to `end` (exclusive).
- * 
- * Negative indices count from the end. Out-of-range indices are clamped, and
- * an `end` that resolves at or before `start` yields an empty array.
- * 
- * # Examples
- * ```
- * [1, 2, 3, 4].slice(1, 3)   // [2, 3]
- * [1, 2, 3].slice(-2, 3)     // [2, 3]
- * [1, 2, 3].slice(2, 1)      // []
- * ```
- */
-  slice = defineInstanceFunction("baml.Array.slice", "sync", ["self", "start", "end"], undefined, { classTypeParams: ["T"] }).bind(this) as (start: number, end: number) => T[];
-/**
- * Returns a sub-array from index `start` (inclusive) to `end` (exclusive).
- * 
- * Negative indices count from the end. Out-of-range indices are clamped, and
- * an `end` that resolves at or before `start` yields an empty array.
- * 
- * # Examples
- * ```
- * [1, 2, 3, 4].slice(1, 3)   // [2, 3]
- * [1, 2, 3].slice(-2, 3)     // [2, 3]
- * [1, 2, 3].slice(2, 1)      // []
- * ```
- */
-  slice_async = defineInstanceFunction("baml.Array.slice", "async", ["self", "start", "end"], undefined, { classTypeParams: ["T"] }).bind(this) as (start: number, end: number) => Promise<T[]>;
-  join = defineInstanceFunction("baml.Array.join", "sync", ["self", "separator"], undefined, { classTypeParams: ["T"] }).bind(this) as (separator: string) => string;
-  join_async = defineInstanceFunction("baml.Array.join", "async", ["self", "separator"], undefined, { classTypeParams: ["T"] }).bind(this) as (separator: string) => Promise<string>;
-  map = defineInstanceFunction("baml.Array.map", "sync", ["self", "f"], undefined, { typeParams: ["U", "E"], classTypeParams: ["T"] }).bind(this) as <U, E>(f: (arg0: T) => U) => U[];
-  map_async = defineInstanceFunction("baml.Array.map", "async", ["self", "f"], undefined, { typeParams: ["U", "E"], classTypeParams: ["T"] }).bind(this) as <U, E>(f: (arg0: T) => U) => Promise<U[]>;
-  some = defineInstanceFunction("baml.Array.some", "sync", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => boolean;
-  some_async = defineInstanceFunction("baml.Array.some", "async", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<boolean>;
-  every = defineInstanceFunction("baml.Array.every", "sync", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => boolean;
-  every_async = defineInstanceFunction("baml.Array.every", "async", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<boolean>;
-  find = defineInstanceFunction("baml.Array.find", "sync", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => T | null;
-  find_async = defineInstanceFunction("baml.Array.find", "async", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<T | null>;
-  find_index = defineInstanceFunction("baml.Array.find_index", "sync", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => number | null;
-  find_index_async = defineInstanceFunction("baml.Array.find_index", "async", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<number | null>;
-  find_last = defineInstanceFunction("baml.Array.find_last", "sync", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => T | null;
-  find_last_async = defineInstanceFunction("baml.Array.find_last", "async", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<T | null>;
-  find_last_index = defineInstanceFunction("baml.Array.find_last_index", "sync", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => number | null;
-  find_last_index_async = defineInstanceFunction("baml.Array.find_last_index", "async", ["self", "predicate"], undefined, { typeParams: ["E"], classTypeParams: ["T"] }).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<number | null>;
-  includes = defineInstanceFunction("baml.Array.includes", "sync", ["self", "item"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T) => boolean;
-  includes_async = defineInstanceFunction("baml.Array.includes", "async", ["self", "item"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T) => Promise<boolean>;
-  index_of = defineInstanceFunction("baml.Array.index_of", "sync", ["self", "item"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T) => number | null;
-  index_of_async = defineInstanceFunction("baml.Array.index_of", "async", ["self", "item"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T) => Promise<number | null>;
-  last_index_of = defineInstanceFunction("baml.Array.last_index_of", "sync", ["self", "item"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T) => number | null;
-  last_index_of_async = defineInstanceFunction("baml.Array.last_index_of", "async", ["self", "item"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T) => Promise<number | null>;
-  reduce = defineInstanceFunction("baml.Array.reduce", "sync", ["self", "reducer", "initial"], undefined, { typeParams: ["A", "E"], classTypeParams: ["T"] }).bind(this) as <A, E>(reducer: (arg0: A, arg1: T) => A, initial: A) => A;
-  reduce_async = defineInstanceFunction("baml.Array.reduce", "async", ["self", "reducer", "initial"], undefined, { typeParams: ["A", "E"], classTypeParams: ["T"] }).bind(this) as <A, E>(reducer: (arg0: A, arg1: T) => A, initial: A) => Promise<A>;
-  flat_map = defineInstanceFunction("baml.Array.flat_map", "sync", ["self", "f"], undefined, { typeParams: ["U", "E"], classTypeParams: ["T"] }).bind(this) as <U, E>(f: (arg0: T) => U[]) => U[];
-  flat_map_async = defineInstanceFunction("baml.Array.flat_map", "async", ["self", "f"], undefined, { typeParams: ["U", "E"], classTypeParams: ["T"] }).bind(this) as <U, E>(f: (arg0: T) => U[]) => Promise<U[]>;
-  clear = defineInstanceFunction("baml.Array.clear", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => null;
-  clear_async = defineInstanceFunction("baml.Array.clear", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<null>;
-  shift = defineInstanceFunction("baml.Array.shift", "sync", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => T | null;
-  shift_async = defineInstanceFunction("baml.Array.shift", "async", ["self"], undefined, { classTypeParams: ["T"] }).bind(this) as () => Promise<T | null>;
-  unshift = defineInstanceFunction("baml.Array.unshift", "sync", ["self", "item"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T) => number;
-  unshift_async = defineInstanceFunction("baml.Array.unshift", "async", ["self", "item"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T) => Promise<number>;
-/**
- * @throws InvalidArgument
- */
-  insert = defineInstanceFunction("baml.Array.insert", "sync", ["self", "item", "idx"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T, idx: number) => number;
-/**
- * @throws InvalidArgument
- */
-  insert_async = defineInstanceFunction("baml.Array.insert", "async", ["self", "item", "idx"], undefined, { classTypeParams: ["T"] }).bind(this) as (item: T, idx: number) => Promise<number>;
-/**
- * @throws InvalidArgument
- */
-  splice = defineInstanceFunction("baml.Array.splice", "sync", ["self", "start", "count", "replace"], undefined, { classTypeParams: ["T"] }).bind(this) as (start: number, count: number, replace: T[]) => null;
-/**
- * @throws InvalidArgument
- */
-  splice_async = defineInstanceFunction("baml.Array.splice", "async", ["self", "start", "count", "replace"], undefined, { classTypeParams: ["T"] }).bind(this) as (start: number, count: number, replace: T[]) => Promise<null>;
+  static readonly $generic = ['T'] as const;
+  /**
+   * Builds a new array of `length` elements, each equal to `value`.
+   *
+   * This is the idiomatic way to allocate a runtime-sized, pre-initialized
+   * buffer — Fenwick trees, DP tables, adjacency lists — without a manual
+   * `while`/`push` loop. (Remember a 1-indexed structure needs `length + 1`
+   * slots.)
+   *
+   * # Parameters
+   * - `length`: the number of elements to create. A negative or zero `length`
+   *   produces an empty array.
+   * - `value`: the value stored in every slot.
+   *
+   * # Warning
+   * `Array.filled` reuses the exact same `value` for every slot. For reference
+   * types (arrays, maps, class instances), every slot aliases the same object.
+   * Mutating one slot mutates all slots.
+   *
+   * To get independent per-slot values, use `Array.generate`, which calls a
+   * factory once per index:
+   * ```
+   * Array.generate(3, (i: int) -> int[] { [] })   // three independent []s
+   * ```
+   *
+   * # Returns
+   * A fresh `T[]` of length `max(length, 0)` with every element equal to
+   * `value`.
+   *
+   * Never throws.
+   *
+   * # Examples
+   * ```
+   * Array.filled(3, 0)     // [0, 0, 0]
+   * Array.filled(0, 0)     // []
+   * Array.filled(-1, 0)    // []
+   * Array.filled(2, "x")   // ["x", "x"]
+   * Array.filled(3, [])    // aliases the same inner array in all 3 slots
+   * ```
+   */
+  static filled = defineFunction('baml.Array.filled', 'sync', ['length', 'value']) as <T>(
+    length: number,
+    value: T,
+  ) => T[];
+  /**
+   * Builds a new array of `length` elements, each equal to `value`.
+   *
+   * This is the idiomatic way to allocate a runtime-sized, pre-initialized
+   * buffer — Fenwick trees, DP tables, adjacency lists — without a manual
+   * `while`/`push` loop. (Remember a 1-indexed structure needs `length + 1`
+   * slots.)
+   *
+   * # Parameters
+   * - `length`: the number of elements to create. A negative or zero `length`
+   *   produces an empty array.
+   * - `value`: the value stored in every slot.
+   *
+   * # Warning
+   * `Array.filled` reuses the exact same `value` for every slot. For reference
+   * types (arrays, maps, class instances), every slot aliases the same object.
+   * Mutating one slot mutates all slots.
+   *
+   * To get independent per-slot values, use `Array.generate`, which calls a
+   * factory once per index:
+   * ```
+   * Array.generate(3, (i: int) -> int[] { [] })   // three independent []s
+   * ```
+   *
+   * # Returns
+   * A fresh `T[]` of length `max(length, 0)` with every element equal to
+   * `value`.
+   *
+   * Never throws.
+   *
+   * # Examples
+   * ```
+   * Array.filled(3, 0)     // [0, 0, 0]
+   * Array.filled(0, 0)     // []
+   * Array.filled(-1, 0)    // []
+   * Array.filled(2, "x")   // ["x", "x"]
+   * Array.filled(3, [])    // aliases the same inner array in all 3 slots
+   * ```
+   */
+  static filled_async = defineFunction('baml.Array.filled', 'async', ['length', 'value']) as <T>(
+    length: number,
+    value: T,
+  ) => Promise<T[]>;
+  /**
+   * Builds a new array of `length` elements by calling `f` once per index.
+   *
+   * `f` is invoked with each index `0, 1, ..., length - 1` in order, and its
+   * result is stored in that slot. Unlike `Array.filled`, which reuses one
+   * shared value, `generate` produces an **independent value per slot** — the
+   * alias-free way to build runtime-sized buffers of reference types (rows of a
+   * grid, per-slot maps or class instances). It mirrors JavaScript's
+   * `Array.from({ length }, f)` and a Python list comprehension.
+   *
+   * # Parameters
+   * - `length`: the number of elements to create. A negative or zero `length`
+   *   produces an empty array and never calls `f`.
+   * - `f`: called once per index to produce that slot's value. Any error it
+   *   throws propagates to the caller, halting generation.
+   *
+   * # Returns
+   * A fresh `T[]` of length `max(length, 0)` whose element `i` is `f(i)`.
+   *
+   * # Examples
+   * ```
+   * Array.generate(3, (i: int) -> int { i * i })      // [0, 1, 4]
+   * Array.generate(0, (i: int) -> int { i })          // []
+   * // A 2D grid with independent rows (mutating one row leaves the rest):
+   * Array.generate(rows, (r: int) -> int[] { Array.filled(cols, 0) })
+   * ```
+   */
+  static generate = defineFunction('baml.Array.generate', 'sync', ['length', 'f'], undefined, {
+    typeParams: ['E'],
+  }) as <T, E>(length: number, f: (arg0: number) => T) => T[];
+  /**
+   * Builds a new array of `length` elements by calling `f` once per index.
+   *
+   * `f` is invoked with each index `0, 1, ..., length - 1` in order, and its
+   * result is stored in that slot. Unlike `Array.filled`, which reuses one
+   * shared value, `generate` produces an **independent value per slot** — the
+   * alias-free way to build runtime-sized buffers of reference types (rows of a
+   * grid, per-slot maps or class instances). It mirrors JavaScript's
+   * `Array.from({ length }, f)` and a Python list comprehension.
+   *
+   * # Parameters
+   * - `length`: the number of elements to create. A negative or zero `length`
+   *   produces an empty array and never calls `f`.
+   * - `f`: called once per index to produce that slot's value. Any error it
+   *   throws propagates to the caller, halting generation.
+   *
+   * # Returns
+   * A fresh `T[]` of length `max(length, 0)` whose element `i` is `f(i)`.
+   *
+   * # Examples
+   * ```
+   * Array.generate(3, (i: int) -> int { i * i })      // [0, 1, 4]
+   * Array.generate(0, (i: int) -> int { i })          // []
+   * // A 2D grid with independent rows (mutating one row leaves the rest):
+   * Array.generate(rows, (r: int) -> int[] { Array.filled(cols, 0) })
+   * ```
+   */
+  static generate_async = defineFunction(
+    'baml.Array.generate',
+    'async',
+    ['length', 'f'],
+    undefined,
+    { typeParams: ['E'] },
+  ) as <T, E>(length: number, f: (arg0: number) => T) => Promise<T[]>;
+  /**
+   * Returns the number of elements in the array.
+   */
+  length = defineInstanceFunction('baml.Array.length', 'sync', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => number;
+  /**
+   * Returns the number of elements in the array.
+   */
+  length_async = defineInstanceFunction('baml.Array.length', 'async', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => Promise<number>;
+  /**
+   * Returns the element at `index`, or `null` if out of bounds.
+   *
+   * Negative indices count from the end: `-1` is the last element.
+   *
+   * # Examples
+   * ```
+   * [10, 20, 30].at(0)    // 10
+   * [10, 20, 30].at(-1)   // 30
+   * [10, 20, 30].at(99)   // null
+   * [10, 20, 30].at(-99)  // null
+   * ```
+   */
+  at = defineInstanceFunction('baml.Array.at', 'sync', ['self', 'index'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (index: number) => T | null;
+  /**
+   * Returns the element at `index`, or `null` if out of bounds.
+   *
+   * Negative indices count from the end: `-1` is the last element.
+   *
+   * # Examples
+   * ```
+   * [10, 20, 30].at(0)    // 10
+   * [10, 20, 30].at(-1)   // 30
+   * [10, 20, 30].at(99)   // null
+   * [10, 20, 30].at(-99)  // null
+   * ```
+   */
+  at_async = defineInstanceFunction('baml.Array.at', 'async', ['self', 'index'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (index: number) => Promise<T | null>;
+  push = defineInstanceFunction('baml.Array.push', 'sync', ['self', 'item'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (item: T) => number;
+  push_async = defineInstanceFunction('baml.Array.push', 'async', ['self', 'item'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (item: T) => Promise<number>;
+  pop = defineInstanceFunction('baml.Array.pop', 'sync', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => T | null;
+  pop_async = defineInstanceFunction('baml.Array.pop', 'async', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => Promise<T | null>;
+  remove_at = defineInstanceFunction('baml.Array.remove_at', 'sync', ['self', 'index'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (index: number) => T | null;
+  remove_at_async = defineInstanceFunction(
+    'baml.Array.remove_at',
+    'async',
+    ['self', 'index'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (index: number) => Promise<T | null>;
+  /**
+   * Returns a new array with the elements of `self` followed by the elements of `other`.
+   */
+  concat = defineInstanceFunction('baml.Array.concat', 'sync', ['self', 'other'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (other: T[]) => T[];
+  /**
+   * Returns a new array with the elements of `self` followed by the elements of `other`.
+   */
+  concat_async = defineInstanceFunction(
+    'baml.Array.concat',
+    'async',
+    ['self', 'other'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (other: T[]) => Promise<T[]>;
+  /**
+   * Calls `fn` once for each element in the array.
+   */
+  for_each = defineInstanceFunction('baml.Array.for_each', 'sync', ['self', 'fn'], undefined, {
+    typeParams: ['E'],
+    classTypeParams: ['T'],
+  }).bind(this) as <E>(fn: (arg0: T) => null) => null;
+  /**
+   * Calls `fn` once for each element in the array.
+   */
+  for_each_async = defineInstanceFunction(
+    'baml.Array.for_each',
+    'async',
+    ['self', 'fn'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(fn: (arg0: T) => null) => Promise<null>;
+  filter = defineInstanceFunction('baml.Array.filter', 'sync', ['self', 'predicate'], undefined, {
+    typeParams: ['E'],
+    classTypeParams: ['T'],
+  }).bind(this) as <E>(predicate: (arg0: T) => boolean) => T[];
+  filter_async = defineInstanceFunction(
+    'baml.Array.filter',
+    'async',
+    ['self', 'predicate'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<T[]>;
+  /**
+   * Returns a new array containing the non-null results of `fn` applied to
+   * every element. The function is called once per element, left-to-right.
+   * Does not mutate `self`. For a lazy version, use `iter().filter_map(fn)`.
+   */
+  filter_map = defineInstanceFunction('baml.Array.filter_map', 'sync', ['self', 'fn'], undefined, {
+    typeParams: ['U', 'E'],
+    classTypeParams: ['T'],
+  }).bind(this) as <U, E>(fn: (arg0: T) => U | null) => U[];
+  /**
+   * Returns a new array containing the non-null results of `fn` applied to
+   * every element. The function is called once per element, left-to-right.
+   * Does not mutate `self`. For a lazy version, use `iter().filter_map(fn)`.
+   */
+  filter_map_async = defineInstanceFunction(
+    'baml.Array.filter_map',
+    'async',
+    ['self', 'fn'],
+    undefined,
+    { typeParams: ['U', 'E'], classTypeParams: ['T'] },
+  ).bind(this) as <U, E>(fn: (arg0: T) => U | null) => Promise<U[]>;
+  /**
+   * Returns a new array with the elements in reverse order. Does not mutate `self`.
+   */
+  reverse = defineInstanceFunction('baml.Array.reverse', 'sync', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => T[];
+  /**
+   * Returns a new array with the elements in reverse order. Does not mutate `self`.
+   */
+  reverse_async = defineInstanceFunction('baml.Array.reverse', 'async', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => Promise<T[]>;
+  sort_by = defineInstanceFunction('baml.Array.sort_by', 'sync', ['self', 'compare'], undefined, {
+    typeParams: ['E'],
+    classTypeParams: ['T'],
+  }).bind(this) as <E>(compare: (arg0: T, arg1: T) => number) => T[];
+  sort_by_async = defineInstanceFunction(
+    'baml.Array.sort_by',
+    'async',
+    ['self', 'compare'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(compare: (arg0: T, arg1: T) => number) => Promise<T[]>;
+  sort_by_key = defineInstanceFunction(
+    'baml.Array.sort_by_key',
+    'sync',
+    ['self', 'key'],
+    undefined,
+    { typeParams: ['U', 'E'], classTypeParams: ['T'] },
+  ).bind(this) as <U, E>(key: (arg0: T) => U) => T[];
+  sort_by_key_async = defineInstanceFunction(
+    'baml.Array.sort_by_key',
+    'async',
+    ['self', 'key'],
+    undefined,
+    { typeParams: ['U', 'E'], classTypeParams: ['T'] },
+  ).bind(this) as <U, E>(key: (arg0: T) => U) => Promise<T[]>;
+  /**
+   * Returns a sub-array from index `start` (inclusive) to `end` (exclusive).
+   *
+   * Negative indices count from the end. Out-of-range indices are clamped, and
+   * an `end` that resolves at or before `start` yields an empty array.
+   *
+   * # Examples
+   * ```
+   * [1, 2, 3, 4].slice(1, 3)   // [2, 3]
+   * [1, 2, 3].slice(-2, 3)     // [2, 3]
+   * [1, 2, 3].slice(2, 1)      // []
+   * ```
+   */
+  slice = defineInstanceFunction('baml.Array.slice', 'sync', ['self', 'start', 'end'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (start: number, end: number) => T[];
+  /**
+   * Returns a sub-array from index `start` (inclusive) to `end` (exclusive).
+   *
+   * Negative indices count from the end. Out-of-range indices are clamped, and
+   * an `end` that resolves at or before `start` yields an empty array.
+   *
+   * # Examples
+   * ```
+   * [1, 2, 3, 4].slice(1, 3)   // [2, 3]
+   * [1, 2, 3].slice(-2, 3)     // [2, 3]
+   * [1, 2, 3].slice(2, 1)      // []
+   * ```
+   */
+  slice_async = defineInstanceFunction(
+    'baml.Array.slice',
+    'async',
+    ['self', 'start', 'end'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (start: number, end: number) => Promise<T[]>;
+  join = defineInstanceFunction('baml.Array.join', 'sync', ['self', 'separator'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (separator: string) => string;
+  join_async = defineInstanceFunction(
+    'baml.Array.join',
+    'async',
+    ['self', 'separator'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (separator: string) => Promise<string>;
+  map = defineInstanceFunction('baml.Array.map', 'sync', ['self', 'f'], undefined, {
+    typeParams: ['U', 'E'],
+    classTypeParams: ['T'],
+  }).bind(this) as <U, E>(f: (arg0: T) => U) => U[];
+  map_async = defineInstanceFunction('baml.Array.map', 'async', ['self', 'f'], undefined, {
+    typeParams: ['U', 'E'],
+    classTypeParams: ['T'],
+  }).bind(this) as <U, E>(f: (arg0: T) => U) => Promise<U[]>;
+  some = defineInstanceFunction('baml.Array.some', 'sync', ['self', 'predicate'], undefined, {
+    typeParams: ['E'],
+    classTypeParams: ['T'],
+  }).bind(this) as <E>(predicate: (arg0: T) => boolean) => boolean;
+  some_async = defineInstanceFunction(
+    'baml.Array.some',
+    'async',
+    ['self', 'predicate'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<boolean>;
+  every = defineInstanceFunction('baml.Array.every', 'sync', ['self', 'predicate'], undefined, {
+    typeParams: ['E'],
+    classTypeParams: ['T'],
+  }).bind(this) as <E>(predicate: (arg0: T) => boolean) => boolean;
+  every_async = defineInstanceFunction(
+    'baml.Array.every',
+    'async',
+    ['self', 'predicate'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<boolean>;
+  find = defineInstanceFunction('baml.Array.find', 'sync', ['self', 'predicate'], undefined, {
+    typeParams: ['E'],
+    classTypeParams: ['T'],
+  }).bind(this) as <E>(predicate: (arg0: T) => boolean) => T | null;
+  find_async = defineInstanceFunction(
+    'baml.Array.find',
+    'async',
+    ['self', 'predicate'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<T | null>;
+  find_index = defineInstanceFunction(
+    'baml.Array.find_index',
+    'sync',
+    ['self', 'predicate'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(predicate: (arg0: T) => boolean) => number | null;
+  find_index_async = defineInstanceFunction(
+    'baml.Array.find_index',
+    'async',
+    ['self', 'predicate'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<number | null>;
+  find_last = defineInstanceFunction(
+    'baml.Array.find_last',
+    'sync',
+    ['self', 'predicate'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(predicate: (arg0: T) => boolean) => T | null;
+  find_last_async = defineInstanceFunction(
+    'baml.Array.find_last',
+    'async',
+    ['self', 'predicate'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<T | null>;
+  find_last_index = defineInstanceFunction(
+    'baml.Array.find_last_index',
+    'sync',
+    ['self', 'predicate'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(predicate: (arg0: T) => boolean) => number | null;
+  find_last_index_async = defineInstanceFunction(
+    'baml.Array.find_last_index',
+    'async',
+    ['self', 'predicate'],
+    undefined,
+    { typeParams: ['E'], classTypeParams: ['T'] },
+  ).bind(this) as <E>(predicate: (arg0: T) => boolean) => Promise<number | null>;
+  includes = defineInstanceFunction('baml.Array.includes', 'sync', ['self', 'item'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (item: T) => boolean;
+  includes_async = defineInstanceFunction(
+    'baml.Array.includes',
+    'async',
+    ['self', 'item'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (item: T) => Promise<boolean>;
+  index_of = defineInstanceFunction('baml.Array.index_of', 'sync', ['self', 'item'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (item: T) => number | null;
+  index_of_async = defineInstanceFunction(
+    'baml.Array.index_of',
+    'async',
+    ['self', 'item'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (item: T) => Promise<number | null>;
+  last_index_of = defineInstanceFunction(
+    'baml.Array.last_index_of',
+    'sync',
+    ['self', 'item'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (item: T) => number | null;
+  last_index_of_async = defineInstanceFunction(
+    'baml.Array.last_index_of',
+    'async',
+    ['self', 'item'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (item: T) => Promise<number | null>;
+  reduce = defineInstanceFunction(
+    'baml.Array.reduce',
+    'sync',
+    ['self', 'reducer', 'initial'],
+    undefined,
+    { typeParams: ['A', 'E'], classTypeParams: ['T'] },
+  ).bind(this) as <A, E>(reducer: (arg0: A, arg1: T) => A, initial: A) => A;
+  reduce_async = defineInstanceFunction(
+    'baml.Array.reduce',
+    'async',
+    ['self', 'reducer', 'initial'],
+    undefined,
+    { typeParams: ['A', 'E'], classTypeParams: ['T'] },
+  ).bind(this) as <A, E>(reducer: (arg0: A, arg1: T) => A, initial: A) => Promise<A>;
+  flat_map = defineInstanceFunction('baml.Array.flat_map', 'sync', ['self', 'f'], undefined, {
+    typeParams: ['U', 'E'],
+    classTypeParams: ['T'],
+  }).bind(this) as <U, E>(f: (arg0: T) => U[]) => U[];
+  flat_map_async = defineInstanceFunction(
+    'baml.Array.flat_map',
+    'async',
+    ['self', 'f'],
+    undefined,
+    { typeParams: ['U', 'E'], classTypeParams: ['T'] },
+  ).bind(this) as <U, E>(f: (arg0: T) => U[]) => Promise<U[]>;
+  clear = defineInstanceFunction('baml.Array.clear', 'sync', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => null;
+  clear_async = defineInstanceFunction('baml.Array.clear', 'async', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => Promise<null>;
+  shift = defineInstanceFunction('baml.Array.shift', 'sync', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => T | null;
+  shift_async = defineInstanceFunction('baml.Array.shift', 'async', ['self'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as () => Promise<T | null>;
+  unshift = defineInstanceFunction('baml.Array.unshift', 'sync', ['self', 'item'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (item: T) => number;
+  unshift_async = defineInstanceFunction(
+    'baml.Array.unshift',
+    'async',
+    ['self', 'item'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (item: T) => Promise<number>;
+  /**
+   * @throws InvalidArgument
+   */
+  insert = defineInstanceFunction('baml.Array.insert', 'sync', ['self', 'item', 'idx'], undefined, {
+    classTypeParams: ['T'],
+  }).bind(this) as (item: T, idx: number) => number;
+  /**
+   * @throws InvalidArgument
+   */
+  insert_async = defineInstanceFunction(
+    'baml.Array.insert',
+    'async',
+    ['self', 'item', 'idx'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (item: T, idx: number) => Promise<number>;
+  /**
+   * @throws InvalidArgument
+   */
+  splice = defineInstanceFunction(
+    'baml.Array.splice',
+    'sync',
+    ['self', 'start', 'count', 'replace'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (start: number, count: number, replace: T[]) => null;
+  /**
+   * @throws InvalidArgument
+   */
+  splice_async = defineInstanceFunction(
+    'baml.Array.splice',
+    'async',
+    ['self', 'start', 'count', 'replace'],
+    undefined,
+    { classTypeParams: ['T'] },
+  ).bind(this) as (start: number, count: number, replace: T[]) => Promise<null>;
 }
 
 /**
@@ -743,117 +1067,235 @@ export class Array<T> {
  */
 export class Map<K, V> {
   $types?: { K?: BamlType; V?: BamlType };
-  constructor(init: {
-    $types?: { K?: BamlType; V?: BamlType };
-  }) {
+  constructor(init: { $types?: { K?: BamlType; V?: BamlType } }) {
     Object.assign(this, init);
   }
-  static readonly $generic = ["K", "V"] as const;
-/**
- * Returns the number of entries in the map.
- */
-  length = defineInstanceFunction("baml.Map.length", "sync", ["self"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as () => number;
-/**
- * Returns the number of entries in the map.
- */
-  length_async = defineInstanceFunction("baml.Map.length", "async", ["self"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as () => Promise<number>;
-  has = defineInstanceFunction("baml.Map.has", "sync", ["self", "key"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as (key: K) => boolean;
-  has_async = defineInstanceFunction("baml.Map.has", "async", ["self", "key"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as (key: K) => Promise<boolean>;
-  keys = defineInstanceFunction("baml.Map.keys", "sync", ["self"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as () => K[];
-  keys_async = defineInstanceFunction("baml.Map.keys", "async", ["self"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as () => Promise<K[]>;
-/**
- * Returns an array of all values in the map. Order matches `keys()`.
- */
-  values = defineInstanceFunction("baml.Map.values", "sync", ["self"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as () => V[];
-/**
- * Returns an array of all values in the map. Order matches `keys()`.
- */
-  values_async = defineInstanceFunction("baml.Map.values", "async", ["self"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as () => Promise<V[]>;
-  set = defineInstanceFunction("baml.Map.set", "sync", ["self", "key", "value"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as (key: K, value: V) => V | null;
-  set_async = defineInstanceFunction("baml.Map.set", "async", ["self", "key", "value"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as (key: K, value: V) => Promise<V | null>;
-  get = defineInstanceFunction("baml.Map.get", "sync", ["self", "key"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as (key: K) => V | null;
-  get_async = defineInstanceFunction("baml.Map.get", "async", ["self", "key"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as (key: K) => Promise<V | null>;
-  delete = defineInstanceFunction("baml.Map.delete", "sync", ["self", "key"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as (key: K) => V | null;
-  delete_async = defineInstanceFunction("baml.Map.delete", "async", ["self", "key"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as (key: K) => Promise<V | null>;
-  get_or_insert = defineInstanceFunction("baml.Map.get_or_insert", "sync", ["self", "key", "default"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as (key: K, default_: V) => V;
-  get_or_insert_async = defineInstanceFunction("baml.Map.get_or_insert", "async", ["self", "key", "default"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as (key: K, default_: V) => Promise<V>;
-  clear = defineInstanceFunction("baml.Map.clear", "sync", ["self"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as () => null;
-  clear_async = defineInstanceFunction("baml.Map.clear", "async", ["self"], undefined, { classTypeParams: ["K", "V"] }).bind(this) as () => Promise<null>;
+  static readonly $generic = ['K', 'V'] as const;
+  /**
+   * Returns the number of entries in the map.
+   */
+  length = defineInstanceFunction('baml.Map.length', 'sync', ['self'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as () => number;
+  /**
+   * Returns the number of entries in the map.
+   */
+  length_async = defineInstanceFunction('baml.Map.length', 'async', ['self'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as () => Promise<number>;
+  has = defineInstanceFunction('baml.Map.has', 'sync', ['self', 'key'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as (key: K) => boolean;
+  has_async = defineInstanceFunction('baml.Map.has', 'async', ['self', 'key'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as (key: K) => Promise<boolean>;
+  keys = defineInstanceFunction('baml.Map.keys', 'sync', ['self'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as () => K[];
+  keys_async = defineInstanceFunction('baml.Map.keys', 'async', ['self'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as () => Promise<K[]>;
+  /**
+   * Returns an array of all values in the map. Order matches `keys()`.
+   */
+  values = defineInstanceFunction('baml.Map.values', 'sync', ['self'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as () => V[];
+  /**
+   * Returns an array of all values in the map. Order matches `keys()`.
+   */
+  values_async = defineInstanceFunction('baml.Map.values', 'async', ['self'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as () => Promise<V[]>;
+  set = defineInstanceFunction('baml.Map.set', 'sync', ['self', 'key', 'value'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as (key: K, value: V) => V | null;
+  set_async = defineInstanceFunction('baml.Map.set', 'async', ['self', 'key', 'value'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as (key: K, value: V) => Promise<V | null>;
+  get = defineInstanceFunction('baml.Map.get', 'sync', ['self', 'key'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as (key: K) => V | null;
+  get_async = defineInstanceFunction('baml.Map.get', 'async', ['self', 'key'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as (key: K) => Promise<V | null>;
+  delete = defineInstanceFunction('baml.Map.delete', 'sync', ['self', 'key'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as (key: K) => V | null;
+  delete_async = defineInstanceFunction('baml.Map.delete', 'async', ['self', 'key'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as (key: K) => Promise<V | null>;
+  get_or_insert = defineInstanceFunction(
+    'baml.Map.get_or_insert',
+    'sync',
+    ['self', 'key', 'default'],
+    undefined,
+    { classTypeParams: ['K', 'V'] },
+  ).bind(this) as (key: K, default_: V) => V;
+  get_or_insert_async = defineInstanceFunction(
+    'baml.Map.get_or_insert',
+    'async',
+    ['self', 'key', 'default'],
+    undefined,
+    { classTypeParams: ['K', 'V'] },
+  ).bind(this) as (key: K, default_: V) => Promise<V>;
+  clear = defineInstanceFunction('baml.Map.clear', 'sync', ['self'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as () => null;
+  clear_async = defineInstanceFunction('baml.Map.clear', 'async', ['self'], undefined, {
+    classTypeParams: ['K', 'V'],
+  }).bind(this) as () => Promise<null>;
 }
 
-export const _sum_int = defineFunction("baml._sum_int", "sync", ["values"]) as (values: number[]) => number;
+export const _sum_int = defineFunction('baml._sum_int', 'sync', ['values']) as (
+  values: number[],
+) => number;
 
-export const _sum_int_async = defineFunction("baml._sum_int", "async", ["values"]) as (values: number[]) => Promise<number>;
+export const _sum_int_async = defineFunction('baml._sum_int', 'async', ['values']) as (
+  values: number[],
+) => Promise<number>;
 
-export const _sum_float = defineFunction("baml._sum_float", "sync", ["values"]) as (values: number[]) => number;
+export const _sum_float = defineFunction('baml._sum_float', 'sync', ['values']) as (
+  values: number[],
+) => number;
 
-export const _sum_float_async = defineFunction("baml._sum_float", "async", ["values"]) as (values: number[]) => Promise<number>;
-
-/**
- * @throws InvalidArgument
- */
-export const _mean_float = defineFunction("baml._mean_float", "sync", ["values"]) as (values: number[]) => number;
-
-/**
- * @throws InvalidArgument
- */
-export const _mean_float_async = defineFunction("baml._mean_float", "async", ["values"]) as (values: number[]) => Promise<number>;
+export const _sum_float_async = defineFunction('baml._sum_float', 'async', ['values']) as (
+  values: number[],
+) => Promise<number>;
 
 /**
  * @throws InvalidArgument
  */
-export const _median_float = defineFunction("baml._median_float", "sync", ["values"]) as (values: number[]) => number;
+export const _mean_float = defineFunction('baml._mean_float', 'sync', ['values']) as (
+  values: number[],
+) => number;
 
 /**
  * @throws InvalidArgument
  */
-export const _median_float_async = defineFunction("baml._median_float", "async", ["values"]) as (values: number[]) => Promise<number>;
+export const _mean_float_async = defineFunction('baml._mean_float', 'async', ['values']) as (
+  values: number[],
+) => Promise<number>;
 
-export const _to_string_default = defineFunction("baml._to_string_default", "sync", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => string;
+/**
+ * @throws InvalidArgument
+ */
+export const _median_float = defineFunction('baml._median_float', 'sync', ['values']) as (
+  values: number[],
+) => number;
 
-export const _to_string_default_async = defineFunction("baml._to_string_default", "async", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => Promise<string>;
+/**
+ * @throws InvalidArgument
+ */
+export const _median_float_async = defineFunction('baml._median_float', 'async', ['values']) as (
+  values: number[],
+) => Promise<number>;
 
-export const _to_string_shim = defineFunction("baml._to_string_shim", "sync", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => string;
+export const _to_string_default = defineFunction(
+  'baml._to_string_default',
+  'sync',
+  ['value'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(value: T) => string;
 
-export const _to_string_shim_async = defineFunction("baml._to_string_shim", "async", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => Promise<string>;
+export const _to_string_default_async = defineFunction(
+  'baml._to_string_default',
+  'async',
+  ['value'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(value: T) => Promise<string>;
 
-export const _cleanup_begin = defineFunction("baml._cleanup_begin", "sync", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => boolean;
+export const _to_string_shim = defineFunction(
+  'baml._to_string_shim',
+  'sync',
+  ['value'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(value: T) => string;
 
-export const _cleanup_begin_async = defineFunction("baml._cleanup_begin", "async", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => Promise<boolean>;
+export const _to_string_shim_async = defineFunction(
+  'baml._to_string_shim',
+  'async',
+  ['value'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(value: T) => Promise<string>;
+
+export const _cleanup_begin = defineFunction('baml._cleanup_begin', 'sync', ['value'], undefined, {
+  typeParams: ['T'],
+}) as <T>(value: T) => boolean;
+
+export const _cleanup_begin_async = defineFunction(
+  'baml._cleanup_begin',
+  'async',
+  ['value'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(value: T) => Promise<boolean>;
 
 /**
  * @throws JsonSerializationError
  */
-export const _to_json_default = defineFunction("baml._to_json_default", "sync", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => baml.json.json;
+export const _to_json_default = defineFunction(
+  'baml._to_json_default',
+  'sync',
+  ['value'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(value: T) => baml.json.json;
 
 /**
  * @throws JsonSerializationError
  */
-export const _to_json_default_async = defineFunction("baml._to_json_default", "async", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => Promise<baml.json.json>;
+export const _to_json_default_async = defineFunction(
+  'baml._to_json_default',
+  'async',
+  ['value'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(value: T) => Promise<baml.json.json>;
 
 /**
  * @throws JsonSerializationError
  */
-export const _to_json_shim = defineFunction("baml._to_json_shim", "sync", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => baml.json.json;
+export const _to_json_shim = defineFunction('baml._to_json_shim', 'sync', ['value'], undefined, {
+  typeParams: ['T'],
+}) as <T>(value: T) => baml.json.json;
 
 /**
  * @throws JsonSerializationError
  */
-export const _to_json_shim_async = defineFunction("baml._to_json_shim", "async", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => Promise<baml.json.json>;
+export const _to_json_shim_async = defineFunction(
+  'baml._to_json_shim',
+  'async',
+  ['value'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(value: T) => Promise<baml.json.json>;
 
 /**
  * @throws JsonDecodeError
  */
-export const _from_json_shim = defineFunction("baml._from_json_shim", "sync", ["j"], undefined, { typeParams: ["T"] }) as <T>(j: baml.json.json) => T;
+export const _from_json_shim = defineFunction('baml._from_json_shim', 'sync', ['j'], undefined, {
+  typeParams: ['T'],
+}) as <T>(j: baml.json.json) => T;
 
 /**
  * @throws JsonDecodeError
  */
-export const _from_json_shim_async = defineFunction("baml._from_json_shim", "async", ["j"], undefined, { typeParams: ["T"] }) as <T>(j: baml.json.json) => Promise<T>;
+export const _from_json_shim_async = defineFunction(
+  'baml._from_json_shim',
+  'async',
+  ['j'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(j: baml.json.json) => Promise<T>;
 
 /**
  * The structured value a tagged template literal produces.
- * 
+ *
  * BEP-049 §10. A `tag` ` `…` ` call site lowers to `tag(body = () -> TaggedString { … })`;
  * when `body()` runs it returns this struct. The invariant is
  * `parts.length == values.length + 1` (literals and values alternate, starting and
@@ -868,25 +1310,34 @@ export const _from_json_shim_async = defineFunction("baml._from_json_shim", "asy
 export class TaggedString$stream {
   parts!: string[];
   values!: unknown[];
-  constructor(init: {
-    parts: string[];
-    values: unknown[];
-  }) {
+  constructor(init: { parts: string[]; values: unknown[] }) {
     Object.assign(this, init);
   }
 }
 
-export const deep_copy = defineFunction("baml.deep_copy", "sync", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => T;
+export const deep_copy = defineFunction('baml.deep_copy', 'sync', ['value'], undefined, {
+  typeParams: ['T'],
+}) as <T>(value: T) => T;
 
-export const deep_copy_async = defineFunction("baml.deep_copy", "async", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => Promise<T>;
+export const deep_copy_async = defineFunction('baml.deep_copy', 'async', ['value'], undefined, {
+  typeParams: ['T'],
+}) as <T>(value: T) => Promise<T>;
 
-export const deep_equals = defineFunction("baml.deep_equals", "sync", ["a", "b"], undefined, { typeParams: ["T"] }) as <T>(a: T, b: T) => boolean;
+export const deep_equals = defineFunction('baml.deep_equals', 'sync', ['a', 'b'], undefined, {
+  typeParams: ['T'],
+}) as <T>(a: T, b: T) => boolean;
 
-export const deep_equals_async = defineFunction("baml.deep_equals", "async", ["a", "b"], undefined, { typeParams: ["T"] }) as <T>(a: T, b: T) => Promise<boolean>;
+export const deep_equals_async = defineFunction(
+  'baml.deep_equals',
+  'async',
+  ['a', 'b'],
+  undefined,
+  { typeParams: ['T'] },
+) as <T>(a: T, b: T) => Promise<boolean>;
 
 /**
  * The structured value a tagged template literal produces.
- * 
+ *
  * BEP-049 §10. A `tag` ` `…` ` call site lowers to `tag(body = () -> TaggedString { … })`;
  * when `body()` runs it returns this struct. The invariant is
  * `parts.length == values.length + 1` (literals and values alternate, starting and
@@ -901,17 +1352,14 @@ export const deep_equals_async = defineFunction("baml.deep_equals", "async", ["a
 export class TaggedString {
   parts!: string[];
   values!: unknown[];
-  constructor(init: {
-    parts: string[];
-    values: unknown[];
-  }) {
+  constructor(init: { parts: string[]; values: unknown[] }) {
     Object.assign(this, init);
   }
 }
 
 /**
  * A 64-bit IEEE 754 floating-point number (f64).
- * 
+ *
  * Note: division by zero (`x / 0.0`) does not follow raw IEEE — it throws a
  * catchable `baml.panics.DivisionByZero` rather than yielding `±inf`/`NaN`,
  * matching integer division. `inf` and `NaN` still arise from `float.inf()` /
@@ -926,7 +1374,7 @@ export class Float$stream {
 
 /**
  * A 64-bit IEEE 754 floating-point number (f64).
- * 
+ *
  * Note: division by zero (`x / 0.0`) does not follow raw IEEE — it throws a
  * catchable `baml.panics.DivisionByZero` rather than yielding `±inf`/`NaN`,
  * matching integer division. `inf` and `NaN` still arise from `float.inf()` /
@@ -937,752 +1385,857 @@ export class Float {
   constructor(init: {}) {
     Object.assign(this, init);
   }
-/**
- * Parses `text` as a floating-point number.
- * 
- * Accepts decimal notation (`1.5`, `-0.25`), scientific notation
- * (`1e3`, `-1.5E-3`), and the special tokens `inf` / `infinity` / `nan`
- * (case-insensitive). An optional leading `+` or `-` sign is allowed.
- * No surrounding whitespace, no underscore separators.
- * 
- * Throws `ParseError` if `text` cannot be parsed. Note that successfully
- * parsing `"nan"` gives a NaN value — use `result.is_nan()` to detect it
- * rather than equality.
- * 
- * # Examples
- * ```
- * float.parse("1.5")        // 1.5
- * float.parse("-0.25")      // -0.25
- * float.parse("1e3")        // 1000.0
- * float.parse("inf")        // +infinity
- * float.parse("NaN")        // NaN
- * float.parse("")           // throws — empty
- * float.parse("hello")      // throws — non-numeric
- * float.parse(" 1.0 ")      // throws — whitespace not allowed; trim first
- * ```
- * @throws ParseError
- */
-  static parse = defineFunction("baml.Float.parse", "sync", ["text"]) as (text: string) => number;
-/**
- * Parses `text` as a floating-point number.
- * 
- * Accepts decimal notation (`1.5`, `-0.25`), scientific notation
- * (`1e3`, `-1.5E-3`), and the special tokens `inf` / `infinity` / `nan`
- * (case-insensitive). An optional leading `+` or `-` sign is allowed.
- * No surrounding whitespace, no underscore separators.
- * 
- * Throws `ParseError` if `text` cannot be parsed. Note that successfully
- * parsing `"nan"` gives a NaN value — use `result.is_nan()` to detect it
- * rather than equality.
- * 
- * # Examples
- * ```
- * float.parse("1.5")        // 1.5
- * float.parse("-0.25")      // -0.25
- * float.parse("1e3")        // 1000.0
- * float.parse("inf")        // +infinity
- * float.parse("NaN")        // NaN
- * float.parse("")           // throws — empty
- * float.parse("hello")      // throws — non-numeric
- * float.parse(" 1.0 ")      // throws — whitespace not allowed; trim first
- * ```
- * @throws ParseError
- */
-  static parse_async = defineFunction("baml.Float.parse", "async", ["text"]) as (text: string) => Promise<number>;
-  static random = defineFunction("baml.Float.random", "sync", []) as () => number;
-  static random_async = defineFunction("baml.Float.random", "async", []) as () => Promise<number>;
-/**
- * Returns π, the ratio of a circle's circumference to its diameter,
- * rounded to f64 precision (~15 decimal digits).
- */
-  static pi = defineFunction("baml.Float.pi", "sync", []) as () => number;
-/**
- * Returns π, the ratio of a circle's circumference to its diameter,
- * rounded to f64 precision (~15 decimal digits).
- */
-  static pi_async = defineFunction("baml.Float.pi", "async", []) as () => Promise<number>;
-/**
- * Returns Euler's number `e`, the base of the natural logarithm.
- */
-  static e = defineFunction("baml.Float.e", "sync", []) as () => number;
-/**
- * Returns Euler's number `e`, the base of the natural logarithm.
- */
-  static e_async = defineFunction("baml.Float.e", "async", []) as () => Promise<number>;
-/**
- * Returns the golden ratio `φ = (1 + √5) / 2`, approximately `1.618`.
- */
-  static golden_ratio = defineFunction("baml.Float.golden_ratio", "sync", []) as () => number;
-/**
- * Returns the golden ratio `φ = (1 + √5) / 2`, approximately `1.618`.
- */
-  static golden_ratio_async = defineFunction("baml.Float.golden_ratio", "async", []) as () => Promise<number>;
-/**
- * Returns a NaN value. Use `x.is_nan()` (not equality) to test for NaN.
- */
-  static nan = defineFunction("baml.Float.nan", "sync", []) as () => number;
-/**
- * Returns a NaN value. Use `x.is_nan()` (not equality) to test for NaN.
- */
-  static nan_async = defineFunction("baml.Float.nan", "async", []) as () => Promise<number>;
-/**
- * Returns positive infinity. Use `-float.inf()` for negative infinity.
- */
-  static inf = defineFunction("baml.Float.inf", "sync", []) as () => number;
-/**
- * Returns positive infinity. Use `-float.inf()` for negative infinity.
- */
-  static inf_async = defineFunction("baml.Float.inf", "async", []) as () => Promise<number>;
-/**
- * Returns `true` if `self` is NaN (a "not a number" sentinel produced by
- * invalid operations such as `(-1.0).sqrt()` or `float.inf() - float.inf()`).
- * Note `0.0 / 0.0` throws `DivisionByZero` rather than producing NaN.
- * 
- * NaN is the only float value that is not equal to itself (`x != x` iff
- * `x.is_nan()`), so this predicate is the only correct way to test for NaN.
- * 
- * # Examples
- * ```
- * (0.0).is_nan()         // false
- * float.nan().is_nan()   // true
- * float.inf().is_nan()   // false
- * ```
- */
-  is_nan = defineInstanceFunction("baml.Float.is_nan", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns `true` if `self` is NaN (a "not a number" sentinel produced by
- * invalid operations such as `(-1.0).sqrt()` or `float.inf() - float.inf()`).
- * Note `0.0 / 0.0` throws `DivisionByZero` rather than producing NaN.
- * 
- * NaN is the only float value that is not equal to itself (`x != x` iff
- * `x.is_nan()`), so this predicate is the only correct way to test for NaN.
- * 
- * # Examples
- * ```
- * (0.0).is_nan()         // false
- * float.nan().is_nan()   // true
- * float.inf().is_nan()   // false
- * ```
- */
-  is_nan_async = defineInstanceFunction("baml.Float.is_nan", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns `true` if `self` is positive or negative infinity.
- * 
- * # Examples
- * ```
- * float.inf().is_infinite()                 // true
- * (-float.inf()).is_infinite()              // true
- * (1000000.0 * 1000000.0).is_infinite()     // false  (1e12, large but finite)
- * float.nan().is_infinite()                 // false
- * ```
- */
-  is_infinite = defineInstanceFunction("baml.Float.is_infinite", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns `true` if `self` is positive or negative infinity.
- * 
- * # Examples
- * ```
- * float.inf().is_infinite()                 // true
- * (-float.inf()).is_infinite()              // true
- * (1000000.0 * 1000000.0).is_infinite()     // false  (1e12, large but finite)
- * float.nan().is_infinite()                 // false
- * ```
- */
-  is_infinite_async = defineInstanceFunction("baml.Float.is_infinite", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns `true` if `self` is neither NaN nor infinite (i.e. an ordinary
- * finite float, including subnormals and `±0.0`).
- * 
- * # Examples
- * ```
- * (3.14).is_finite()         // true
- * (0.0).is_finite()          // true
- * float.inf().is_finite()    // false
- * float.nan().is_finite()    // false
- * ```
- */
-  is_finite = defineInstanceFunction("baml.Float.is_finite", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns `true` if `self` is neither NaN nor infinite (i.e. an ordinary
- * finite float, including subnormals and `±0.0`).
- * 
- * # Examples
- * ```
- * (3.14).is_finite()         // true
- * (0.0).is_finite()          // true
- * float.inf().is_finite()    // false
- * float.nan().is_finite()    // false
- * ```
- */
-  is_finite_async = defineInstanceFunction("baml.Float.is_finite", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns the absolute value of `self`. Preserves NaN.
- * 
- * # Examples
- * ```
- * (-3.5).abs()           // 3.5
- * (3.5).abs()            // 3.5
- * (-0.0).abs()           // 0.0
- * float.nan().abs()      // NaN
- * ```
- */
-  abs = defineInstanceFunction("baml.Float.abs", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the absolute value of `self`. Preserves NaN.
- * 
- * # Examples
- * ```
- * (-3.5).abs()           // 3.5
- * (3.5).abs()            // 3.5
- * (-0.0).abs()           // 0.0
- * float.nan().abs()      // NaN
- * ```
- */
-  abs_async = defineInstanceFunction("baml.Float.abs", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the smaller of `self` and `other`.
- * 
- * **NaN handling:** if exactly one operand is NaN, returns the non-NaN one
- * (ergonomic NaN suppression — matches Rust `f64::min`). If both are NaN,
- * the result is NaN. Use `is_nan()` upstream if you need stricter handling.
- * 
- * # Examples
- * ```
- * (3.0).min(5.0)              // 3.0
- * (3.0).min(float.nan())      // 3.0  (NaN suppressed)
- * float.nan().min(float.nan()) // NaN
- * ```
- */
-  min = defineInstanceFunction("baml.Float.min", "sync", ["self", "other"]).bind(this) as (other: number) => number;
-/**
- * Returns the smaller of `self` and `other`.
- * 
- * **NaN handling:** if exactly one operand is NaN, returns the non-NaN one
- * (ergonomic NaN suppression — matches Rust `f64::min`). If both are NaN,
- * the result is NaN. Use `is_nan()` upstream if you need stricter handling.
- * 
- * # Examples
- * ```
- * (3.0).min(5.0)              // 3.0
- * (3.0).min(float.nan())      // 3.0  (NaN suppressed)
- * float.nan().min(float.nan()) // NaN
- * ```
- */
-  min_async = defineInstanceFunction("baml.Float.min", "async", ["self", "other"]).bind(this) as (other: number) => Promise<number>;
-/**
- * Returns the larger of `self` and `other`.
- * 
- * NaN handling matches `min`: a non-NaN operand is preferred over NaN.
- */
-  max = defineInstanceFunction("baml.Float.max", "sync", ["self", "other"]).bind(this) as (other: number) => number;
-/**
- * Returns the larger of `self` and `other`.
- * 
- * NaN handling matches `min`: a non-NaN operand is preferred over NaN.
- */
-  max_async = defineInstanceFunction("baml.Float.max", "async", ["self", "other"]).bind(this) as (other: number) => Promise<number>;
-/**
- * Clamps `self` into the range `[min, max]`.
- * 
- * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
- * if `min > max` the result is always `min` (the lower-clamp wins because
- * it runs after the upper-clamp).
- * 
- * NaN propagates through both `min` and `max` calls — if `self` is NaN,
- * the result is NaN.
- * 
- * # Examples
- * ```
- * (5.0).clamp(0.0, 10.0)     // 5.0
- * (-3.0).clamp(0.0, 10.0)    // 0.0
- * (15.0).clamp(0.0, 10.0)    // 10.0
- * ```
- */
-  clamp = defineInstanceFunction("baml.Float.clamp", "sync", ["self", "min", "max"]).bind(this) as (min: number, max: number) => number;
-/**
- * Clamps `self` into the range `[min, max]`.
- * 
- * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
- * if `min > max` the result is always `min` (the lower-clamp wins because
- * it runs after the upper-clamp).
- * 
- * NaN propagates through both `min` and `max` calls — if `self` is NaN,
- * the result is NaN.
- * 
- * # Examples
- * ```
- * (5.0).clamp(0.0, 10.0)     // 5.0
- * (-3.0).clamp(0.0, 10.0)    // 0.0
- * (15.0).clamp(0.0, 10.0)    // 10.0
- * ```
- */
-  clamp_async = defineInstanceFunction("baml.Float.clamp", "async", ["self", "min", "max"]).bind(this) as (min: number, max: number) => Promise<number>;
-/**
- * Returns the largest integer ≤ `self`, as a float.
- * Preserves the sign of `±0.0` and propagates NaN/±∞.
- * 
- * # Examples
- * ```
- * (3.7).floor()    // 3.0
- * (-1.5).floor()   // -2.0
- * (3.0).floor()    // 3.0
- * ```
- */
-  floor = defineInstanceFunction("baml.Float.floor", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the largest integer ≤ `self`, as a float.
- * Preserves the sign of `±0.0` and propagates NaN/±∞.
- * 
- * # Examples
- * ```
- * (3.7).floor()    // 3.0
- * (-1.5).floor()   // -2.0
- * (3.0).floor()    // 3.0
- * ```
- */
-  floor_async = defineInstanceFunction("baml.Float.floor", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the smallest integer ≥ `self`, as a float.
- * Preserves the sign of `±0.0` and propagates NaN/±∞.
- * 
- * # Examples
- * ```
- * (3.2).ceil()    // 4.0
- * (-1.5).ceil()   // -1.0
- * ```
- */
-  ceil = defineInstanceFunction("baml.Float.ceil", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the smallest integer ≥ `self`, as a float.
- * Preserves the sign of `±0.0` and propagates NaN/±∞.
- * 
- * # Examples
- * ```
- * (3.2).ceil()    // 4.0
- * (-1.5).ceil()   // -1.0
- * ```
- */
-  ceil_async = defineInstanceFunction("baml.Float.ceil", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the integer nearest to `self`, with ties rounded away from zero
- * (so `0.5 → 1.0`, `-0.5 → -1.0`, `1.5 → 2.0`).
- * 
- * # Examples
- * ```
- * (1.5).round()    // 2.0
- * (-1.5).round()   // -2.0
- * (1.4).round()    // 1.0
- * (1.6).round()    // 2.0
- * ```
- */
-  round = defineInstanceFunction("baml.Float.round", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the integer nearest to `self`, with ties rounded away from zero
- * (so `0.5 → 1.0`, `-0.5 → -1.0`, `1.5 → 2.0`).
- * 
- * # Examples
- * ```
- * (1.5).round()    // 2.0
- * (-1.5).round()   // -2.0
- * (1.4).round()    // 1.0
- * (1.6).round()    // 2.0
- * ```
- */
-  round_async = defineInstanceFunction("baml.Float.round", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns `self` truncated toward zero — i.e. the integer part with the
- * fractional part discarded.
- * 
- * # Examples
- * ```
- * (3.7).trunc()    // 3.0
- * (-3.7).trunc()   // -3.0
- * ```
- */
-  trunc = defineInstanceFunction("baml.Float.trunc", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns `self` truncated toward zero — i.e. the integer part with the
- * fractional part discarded.
- * 
- * # Examples
- * ```
- * (3.7).trunc()    // 3.0
- * (-3.7).trunc()   // -3.0
- * ```
- */
-  trunc_async = defineInstanceFunction("baml.Float.trunc", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the fractional part of `self` (`self - self.trunc()`).
- * 
- * # Examples
- * ```
- * (3.7).fract()    // 0.7
- * (-3.7).fract()   // -0.7
- * (5.0).fract()    // 0.0
- * ```
- */
-  fract = defineInstanceFunction("baml.Float.fract", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the fractional part of `self` (`self - self.trunc()`).
- * 
- * # Examples
- * ```
- * (3.7).fract()    // 0.7
- * (-3.7).fract()   // -0.7
- * (5.0).fract()    // 0.0
- * ```
- */
-  fract_async = defineInstanceFunction("baml.Float.fract", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Like `floor`, but returns `int`. Throws if the floored value would not
- * fit in `int` or `self` is NaN.
- * @throws InvalidArgument
- */
-  ifloor = defineInstanceFunction("baml.Float.ifloor", "sync", ["self"]).bind(this) as () => number;
-/**
- * Like `floor`, but returns `int`. Throws if the floored value would not
- * fit in `int` or `self` is NaN.
- * @throws InvalidArgument
- */
-  ifloor_async = defineInstanceFunction("baml.Float.ifloor", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Like `ceil`, but returns `int`. Throws if the ceiled value would not fit
- * in `int` or `self` is NaN.
- * @throws InvalidArgument
- */
-  iceil = defineInstanceFunction("baml.Float.iceil", "sync", ["self"]).bind(this) as () => number;
-/**
- * Like `ceil`, but returns `int`. Throws if the ceiled value would not fit
- * in `int` or `self` is NaN.
- * @throws InvalidArgument
- */
-  iceil_async = defineInstanceFunction("baml.Float.iceil", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Like `round`, but returns `int`. Throws if the rounded value would not
- * fit in `int` or `self` is NaN.
- * @throws InvalidArgument
- */
-  iround = defineInstanceFunction("baml.Float.iround", "sync", ["self"]).bind(this) as () => number;
-/**
- * Like `round`, but returns `int`. Throws if the rounded value would not
- * fit in `int` or `self` is NaN.
- * @throws InvalidArgument
- */
-  iround_async = defineInstanceFunction("baml.Float.iround", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Like `trunc`, but returns `int`. Throws if the integer part would not
- * fit in `int` or `self` is NaN/±∞.
- * @throws InvalidArgument
- */
-  itrunc = defineInstanceFunction("baml.Float.itrunc", "sync", ["self"]).bind(this) as () => number;
-/**
- * Like `trunc`, but returns `int`. Throws if the integer part would not
- * fit in `int` or `self` is NaN/±∞.
- * @throws InvalidArgument
- */
-  itrunc_async = defineInstanceFunction("baml.Float.itrunc", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the square root of `self`. For negative inputs returns NaN.
- * 
- * # Examples
- * ```
- * (4.0).sqrt()       // 2.0
- * (2.0).sqrt()       // 1.4142...
- * (-1.0).sqrt()      // NaN
- * (0.0).sqrt()       // 0.0
- * ```
- */
-  sqrt = defineInstanceFunction("baml.Float.sqrt", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the square root of `self`. For negative inputs returns NaN.
- * 
- * # Examples
- * ```
- * (4.0).sqrt()       // 2.0
- * (2.0).sqrt()       // 1.4142...
- * (-1.0).sqrt()      // NaN
- * (0.0).sqrt()       // 0.0
- * ```
- */
-  sqrt_async = defineInstanceFunction("baml.Float.sqrt", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns `self ** exp` (floating-point exponentiation).
- * 
- * Returns NaN for inputs where the mathematical value is not real (e.g.
- * negative base raised to a non-integer power).
- * 
- * # Examples
- * ```
- * (2.0).pow(10.0)         // 1024.0
- * (2.0).pow(-1.0)         // 0.5
- * (2.0).pow(0.5)          // sqrt(2)
- * (-1.0).pow(0.5)         // NaN
- * ```
- */
-  pow = defineInstanceFunction("baml.Float.pow", "sync", ["self", "exp"]).bind(this) as (exp: number) => number;
-/**
- * Returns `self ** exp` (floating-point exponentiation).
- * 
- * Returns NaN for inputs where the mathematical value is not real (e.g.
- * negative base raised to a non-integer power).
- * 
- * # Examples
- * ```
- * (2.0).pow(10.0)         // 1024.0
- * (2.0).pow(-1.0)         // 0.5
- * (2.0).pow(0.5)          // sqrt(2)
- * (-1.0).pow(0.5)         // NaN
- * ```
- */
-  pow_async = defineInstanceFunction("baml.Float.pow", "async", ["self", "exp"]).bind(this) as (exp: number) => Promise<number>;
-/**
- * Returns the logarithm of `self` in the given `base`. Equivalent to
- * `self.ln() / base.ln()`.
- * 
- * The boundary behavior follows directly from that formula:
- * - `self < 0` → NaN  (since `ln(negative) = NaN`)
- * - `self == 0`, `base > 0`, `base != 1` → `-∞`
- * - `base < 0` → NaN
- * - `base == 0`, `self > 0` → `±0` (sign opposite of `ln(self)`, since
- *   `±finite / -∞ = ∓0`)
- * - `base == 1`, `self > 0`, `self != 1` → `±∞` (sign matches `ln(self)`,
- *   since `ln(1) == +0.0` and `±finite / +0.0 = ±∞`)
- * - `base == 1`, `self == 1` → NaN (`0 / 0`)
- * 
- * # Examples
- * ```
- * (1000.0).log(10.0)   // 3.0
- * (8.0).log(2.0)       // 3.0
- * (-1.0).log(10.0)     // NaN
- * (0.0).log(10.0)      // -infinity
- * (2.0).log(1.0)       // +infinity
- * (1.0).log(1.0)       // NaN
- * ```
- */
-  log = defineInstanceFunction("baml.Float.log", "sync", ["self", "base"]).bind(this) as (base: number) => number;
-/**
- * Returns the logarithm of `self` in the given `base`. Equivalent to
- * `self.ln() / base.ln()`.
- * 
- * The boundary behavior follows directly from that formula:
- * - `self < 0` → NaN  (since `ln(negative) = NaN`)
- * - `self == 0`, `base > 0`, `base != 1` → `-∞`
- * - `base < 0` → NaN
- * - `base == 0`, `self > 0` → `±0` (sign opposite of `ln(self)`, since
- *   `±finite / -∞ = ∓0`)
- * - `base == 1`, `self > 0`, `self != 1` → `±∞` (sign matches `ln(self)`,
- *   since `ln(1) == +0.0` and `±finite / +0.0 = ±∞`)
- * - `base == 1`, `self == 1` → NaN (`0 / 0`)
- * 
- * # Examples
- * ```
- * (1000.0).log(10.0)   // 3.0
- * (8.0).log(2.0)       // 3.0
- * (-1.0).log(10.0)     // NaN
- * (0.0).log(10.0)      // -infinity
- * (2.0).log(1.0)       // +infinity
- * (1.0).log(1.0)       // NaN
- * ```
- */
-  log_async = defineInstanceFunction("baml.Float.log", "async", ["self", "base"]).bind(this) as (base: number) => Promise<number>;
-/**
- * Returns the Euclidean distance `sqrt(self² + other²)`, computed in a way
- * that avoids spurious overflow even when both magnitudes are large.
- * 
- * # Examples
- * ```
- * (3.0).hypot(4.0)    // 5.0
- * (0.0).hypot(0.0)    // 0.0
- * ```
- */
-  hypot = defineInstanceFunction("baml.Float.hypot", "sync", ["self", "other"]).bind(this) as (other: number) => number;
-/**
- * Returns the Euclidean distance `sqrt(self² + other²)`, computed in a way
- * that avoids spurious overflow even when both magnitudes are large.
- * 
- * # Examples
- * ```
- * (3.0).hypot(4.0)    // 5.0
- * (0.0).hypot(0.0)    // 0.0
- * ```
- */
-  hypot_async = defineInstanceFunction("baml.Float.hypot", "async", ["self", "other"]).bind(this) as (other: number) => Promise<number>;
-/**
- * Sine of `self` (in radians).
- */
-  sin = defineInstanceFunction("baml.Float.sin", "sync", ["self"]).bind(this) as () => number;
-/**
- * Sine of `self` (in radians).
- */
-  sin_async = defineInstanceFunction("baml.Float.sin", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Cosine of `self` (in radians).
- */
-  cos = defineInstanceFunction("baml.Float.cos", "sync", ["self"]).bind(this) as () => number;
-/**
- * Cosine of `self` (in radians).
- */
-  cos_async = defineInstanceFunction("baml.Float.cos", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Tangent of `self` (in radians). Very large near odd multiples of π/2.
- */
-  tan = defineInstanceFunction("baml.Float.tan", "sync", ["self"]).bind(this) as () => number;
-/**
- * Tangent of `self` (in radians). Very large near odd multiples of π/2.
- */
-  tan_async = defineInstanceFunction("baml.Float.tan", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Inverse sine, returning a value in `[-π/2, π/2]`.
- * Returns NaN if `self` is outside `[-1, 1]`.
- */
-  asin = defineInstanceFunction("baml.Float.asin", "sync", ["self"]).bind(this) as () => number;
-/**
- * Inverse sine, returning a value in `[-π/2, π/2]`.
- * Returns NaN if `self` is outside `[-1, 1]`.
- */
-  asin_async = defineInstanceFunction("baml.Float.asin", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Inverse cosine, returning a value in `[0, π]`.
- * Returns NaN if `self` is outside `[-1, 1]`.
- */
-  acos = defineInstanceFunction("baml.Float.acos", "sync", ["self"]).bind(this) as () => number;
-/**
- * Inverse cosine, returning a value in `[0, π]`.
- * Returns NaN if `self` is outside `[-1, 1]`.
- */
-  acos_async = defineInstanceFunction("baml.Float.acos", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Inverse tangent, returning a value in `(-π/2, π/2)`.
- */
-  atan = defineInstanceFunction("baml.Float.atan", "sync", ["self"]).bind(this) as () => number;
-/**
- * Inverse tangent, returning a value in `(-π/2, π/2)`.
- */
-  atan_async = defineInstanceFunction("baml.Float.atan", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the angle (in radians) of the vector `(other, self)` — i.e. the
- * angle from the positive x-axis to the point `(x = other, y = self)`.
- * The result is in `[-π, π]`.
- * 
- * # Examples
- * ```
- * (1.0).atan2(1.0)        // π/4    (45°)
- * (1.0).atan2(0.0)        // π/2    (90°, due north)
- * (0.0).atan2(-1.0)       // π      (180°, due west)
- * ```
- */
-  atan2 = defineInstanceFunction("baml.Float.atan2", "sync", ["self", "other"]).bind(this) as (other: number) => number;
-/**
- * Returns the angle (in radians) of the vector `(other, self)` — i.e. the
- * angle from the positive x-axis to the point `(x = other, y = self)`.
- * The result is in `[-π, π]`.
- * 
- * # Examples
- * ```
- * (1.0).atan2(1.0)        // π/4    (45°)
- * (1.0).atan2(0.0)        // π/2    (90°, due north)
- * (0.0).atan2(-1.0)       // π      (180°, due west)
- * ```
- */
-  atan2_async = defineInstanceFunction("baml.Float.atan2", "async", ["self", "other"]).bind(this) as (other: number) => Promise<number>;
-/**
- * Hyperbolic sine.
- */
-  sinh = defineInstanceFunction("baml.Float.sinh", "sync", ["self"]).bind(this) as () => number;
-/**
- * Hyperbolic sine.
- */
-  sinh_async = defineInstanceFunction("baml.Float.sinh", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Hyperbolic cosine.
- */
-  cosh = defineInstanceFunction("baml.Float.cosh", "sync", ["self"]).bind(this) as () => number;
-/**
- * Hyperbolic cosine.
- */
-  cosh_async = defineInstanceFunction("baml.Float.cosh", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Hyperbolic tangent. Bounded to `(-1, 1)`.
- */
-  tanh = defineInstanceFunction("baml.Float.tanh", "sync", ["self"]).bind(this) as () => number;
-/**
- * Hyperbolic tangent. Bounded to `(-1, 1)`.
- */
-  tanh_async = defineInstanceFunction("baml.Float.tanh", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Inverse hyperbolic sine. Domain: all reals.
- */
-  asinh = defineInstanceFunction("baml.Float.asinh", "sync", ["self"]).bind(this) as () => number;
-/**
- * Inverse hyperbolic sine. Domain: all reals.
- */
-  asinh_async = defineInstanceFunction("baml.Float.asinh", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Inverse hyperbolic cosine. Domain: `[1, ∞)`. Returns NaN for `self < 1`.
- */
-  acosh = defineInstanceFunction("baml.Float.acosh", "sync", ["self"]).bind(this) as () => number;
-/**
- * Inverse hyperbolic cosine. Domain: `[1, ∞)`. Returns NaN for `self < 1`.
- */
-  acosh_async = defineInstanceFunction("baml.Float.acosh", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Inverse hyperbolic tangent. Domain: `(-1, 1)`. Returns NaN outside that
- * range, and ±∞ at the endpoints.
- */
-  atanh = defineInstanceFunction("baml.Float.atanh", "sync", ["self"]).bind(this) as () => number;
-/**
- * Inverse hyperbolic tangent. Domain: `(-1, 1)`. Returns NaN outside that
- * range, and ±∞ at the endpoints.
- */
-  atanh_async = defineInstanceFunction("baml.Float.atanh", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Converts `self` from degrees to radians.
- */
-  to_radians = defineInstanceFunction("baml.Float.to_radians", "sync", ["self"]).bind(this) as () => number;
-/**
- * Converts `self` from degrees to radians.
- */
-  to_radians_async = defineInstanceFunction("baml.Float.to_radians", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Converts `self` from radians to degrees.
- */
-  to_degrees = defineInstanceFunction("baml.Float.to_degrees", "sync", ["self"]).bind(this) as () => number;
-/**
- * Converts `self` from radians to degrees.
- */
-  to_degrees_async = defineInstanceFunction("baml.Float.to_degrees", "async", ["self"]).bind(this) as () => Promise<number>;
+  /**
+   * Parses `text` as a floating-point number.
+   *
+   * Accepts decimal notation (`1.5`, `-0.25`), scientific notation
+   * (`1e3`, `-1.5E-3`), and the special tokens `inf` / `infinity` / `nan`
+   * (case-insensitive). An optional leading `+` or `-` sign is allowed.
+   * No surrounding whitespace, no underscore separators.
+   *
+   * Throws `ParseError` if `text` cannot be parsed. Note that successfully
+   * parsing `"nan"` gives a NaN value — use `result.is_nan()` to detect it
+   * rather than equality.
+   *
+   * # Examples
+   * ```
+   * float.parse("1.5")        // 1.5
+   * float.parse("-0.25")      // -0.25
+   * float.parse("1e3")        // 1000.0
+   * float.parse("inf")        // +infinity
+   * float.parse("NaN")        // NaN
+   * float.parse("")           // throws — empty
+   * float.parse("hello")      // throws — non-numeric
+   * float.parse(" 1.0 ")      // throws — whitespace not allowed; trim first
+   * ```
+   * @throws ParseError
+   */
+  static parse = defineFunction('baml.Float.parse', 'sync', ['text']) as (text: string) => number;
+  /**
+   * Parses `text` as a floating-point number.
+   *
+   * Accepts decimal notation (`1.5`, `-0.25`), scientific notation
+   * (`1e3`, `-1.5E-3`), and the special tokens `inf` / `infinity` / `nan`
+   * (case-insensitive). An optional leading `+` or `-` sign is allowed.
+   * No surrounding whitespace, no underscore separators.
+   *
+   * Throws `ParseError` if `text` cannot be parsed. Note that successfully
+   * parsing `"nan"` gives a NaN value — use `result.is_nan()` to detect it
+   * rather than equality.
+   *
+   * # Examples
+   * ```
+   * float.parse("1.5")        // 1.5
+   * float.parse("-0.25")      // -0.25
+   * float.parse("1e3")        // 1000.0
+   * float.parse("inf")        // +infinity
+   * float.parse("NaN")        // NaN
+   * float.parse("")           // throws — empty
+   * float.parse("hello")      // throws — non-numeric
+   * float.parse(" 1.0 ")      // throws — whitespace not allowed; trim first
+   * ```
+   * @throws ParseError
+   */
+  static parse_async = defineFunction('baml.Float.parse', 'async', ['text']) as (
+    text: string,
+  ) => Promise<number>;
+  static random = defineFunction('baml.Float.random', 'sync', []) as () => number;
+  static random_async = defineFunction('baml.Float.random', 'async', []) as () => Promise<number>;
+  /**
+   * Returns π, the ratio of a circle's circumference to its diameter,
+   * rounded to f64 precision (~15 decimal digits).
+   */
+  static pi = defineFunction('baml.Float.pi', 'sync', []) as () => number;
+  /**
+   * Returns π, the ratio of a circle's circumference to its diameter,
+   * rounded to f64 precision (~15 decimal digits).
+   */
+  static pi_async = defineFunction('baml.Float.pi', 'async', []) as () => Promise<number>;
+  /**
+   * Returns Euler's number `e`, the base of the natural logarithm.
+   */
+  static e = defineFunction('baml.Float.e', 'sync', []) as () => number;
+  /**
+   * Returns Euler's number `e`, the base of the natural logarithm.
+   */
+  static e_async = defineFunction('baml.Float.e', 'async', []) as () => Promise<number>;
+  /**
+   * Returns the golden ratio `φ = (1 + √5) / 2`, approximately `1.618`.
+   */
+  static golden_ratio = defineFunction('baml.Float.golden_ratio', 'sync', []) as () => number;
+  /**
+   * Returns the golden ratio `φ = (1 + √5) / 2`, approximately `1.618`.
+   */
+  static golden_ratio_async = defineFunction(
+    'baml.Float.golden_ratio',
+    'async',
+    [],
+  ) as () => Promise<number>;
+  /**
+   * Returns a NaN value. Use `x.is_nan()` (not equality) to test for NaN.
+   */
+  static nan = defineFunction('baml.Float.nan', 'sync', []) as () => number;
+  /**
+   * Returns a NaN value. Use `x.is_nan()` (not equality) to test for NaN.
+   */
+  static nan_async = defineFunction('baml.Float.nan', 'async', []) as () => Promise<number>;
+  /**
+   * Returns positive infinity. Use `-float.inf()` for negative infinity.
+   */
+  static inf = defineFunction('baml.Float.inf', 'sync', []) as () => number;
+  /**
+   * Returns positive infinity. Use `-float.inf()` for negative infinity.
+   */
+  static inf_async = defineFunction('baml.Float.inf', 'async', []) as () => Promise<number>;
+  /**
+   * Returns `true` if `self` is NaN (a "not a number" sentinel produced by
+   * invalid operations such as `(-1.0).sqrt()` or `float.inf() - float.inf()`).
+   * Note `0.0 / 0.0` throws `DivisionByZero` rather than producing NaN.
+   *
+   * NaN is the only float value that is not equal to itself (`x != x` iff
+   * `x.is_nan()`), so this predicate is the only correct way to test for NaN.
+   *
+   * # Examples
+   * ```
+   * (0.0).is_nan()         // false
+   * float.nan().is_nan()   // true
+   * float.inf().is_nan()   // false
+   * ```
+   */
+  is_nan = defineInstanceFunction('baml.Float.is_nan', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns `true` if `self` is NaN (a "not a number" sentinel produced by
+   * invalid operations such as `(-1.0).sqrt()` or `float.inf() - float.inf()`).
+   * Note `0.0 / 0.0` throws `DivisionByZero` rather than producing NaN.
+   *
+   * NaN is the only float value that is not equal to itself (`x != x` iff
+   * `x.is_nan()`), so this predicate is the only correct way to test for NaN.
+   *
+   * # Examples
+   * ```
+   * (0.0).is_nan()         // false
+   * float.nan().is_nan()   // true
+   * float.inf().is_nan()   // false
+   * ```
+   */
+  is_nan_async = defineInstanceFunction('baml.Float.is_nan', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns `true` if `self` is positive or negative infinity.
+   *
+   * # Examples
+   * ```
+   * float.inf().is_infinite()                 // true
+   * (-float.inf()).is_infinite()              // true
+   * (1000000.0 * 1000000.0).is_infinite()     // false  (1e12, large but finite)
+   * float.nan().is_infinite()                 // false
+   * ```
+   */
+  is_infinite = defineInstanceFunction('baml.Float.is_infinite', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns `true` if `self` is positive or negative infinity.
+   *
+   * # Examples
+   * ```
+   * float.inf().is_infinite()                 // true
+   * (-float.inf()).is_infinite()              // true
+   * (1000000.0 * 1000000.0).is_infinite()     // false  (1e12, large but finite)
+   * float.nan().is_infinite()                 // false
+   * ```
+   */
+  is_infinite_async = defineInstanceFunction('baml.Float.is_infinite', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns `true` if `self` is neither NaN nor infinite (i.e. an ordinary
+   * finite float, including subnormals and `±0.0`).
+   *
+   * # Examples
+   * ```
+   * (3.14).is_finite()         // true
+   * (0.0).is_finite()          // true
+   * float.inf().is_finite()    // false
+   * float.nan().is_finite()    // false
+   * ```
+   */
+  is_finite = defineInstanceFunction('baml.Float.is_finite', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns `true` if `self` is neither NaN nor infinite (i.e. an ordinary
+   * finite float, including subnormals and `±0.0`).
+   *
+   * # Examples
+   * ```
+   * (3.14).is_finite()         // true
+   * (0.0).is_finite()          // true
+   * float.inf().is_finite()    // false
+   * float.nan().is_finite()    // false
+   * ```
+   */
+  is_finite_async = defineInstanceFunction('baml.Float.is_finite', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns the absolute value of `self`. Preserves NaN.
+   *
+   * # Examples
+   * ```
+   * (-3.5).abs()           // 3.5
+   * (3.5).abs()            // 3.5
+   * (-0.0).abs()           // 0.0
+   * float.nan().abs()      // NaN
+   * ```
+   */
+  abs = defineInstanceFunction('baml.Float.abs', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Returns the absolute value of `self`. Preserves NaN.
+   *
+   * # Examples
+   * ```
+   * (-3.5).abs()           // 3.5
+   * (3.5).abs()            // 3.5
+   * (-0.0).abs()           // 0.0
+   * float.nan().abs()      // NaN
+   * ```
+   */
+  abs_async = defineInstanceFunction('baml.Float.abs', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the smaller of `self` and `other`.
+   *
+   * **NaN handling:** if exactly one operand is NaN, returns the non-NaN one
+   * (ergonomic NaN suppression — matches Rust `f64::min`). If both are NaN,
+   * the result is NaN. Use `is_nan()` upstream if you need stricter handling.
+   *
+   * # Examples
+   * ```
+   * (3.0).min(5.0)              // 3.0
+   * (3.0).min(float.nan())      // 3.0  (NaN suppressed)
+   * float.nan().min(float.nan()) // NaN
+   * ```
+   */
+  min = defineInstanceFunction('baml.Float.min', 'sync', ['self', 'other']).bind(this) as (
+    other: number,
+  ) => number;
+  /**
+   * Returns the smaller of `self` and `other`.
+   *
+   * **NaN handling:** if exactly one operand is NaN, returns the non-NaN one
+   * (ergonomic NaN suppression — matches Rust `f64::min`). If both are NaN,
+   * the result is NaN. Use `is_nan()` upstream if you need stricter handling.
+   *
+   * # Examples
+   * ```
+   * (3.0).min(5.0)              // 3.0
+   * (3.0).min(float.nan())      // 3.0  (NaN suppressed)
+   * float.nan().min(float.nan()) // NaN
+   * ```
+   */
+  min_async = defineInstanceFunction('baml.Float.min', 'async', ['self', 'other']).bind(this) as (
+    other: number,
+  ) => Promise<number>;
+  /**
+   * Returns the larger of `self` and `other`.
+   *
+   * NaN handling matches `min`: a non-NaN operand is preferred over NaN.
+   */
+  max = defineInstanceFunction('baml.Float.max', 'sync', ['self', 'other']).bind(this) as (
+    other: number,
+  ) => number;
+  /**
+   * Returns the larger of `self` and `other`.
+   *
+   * NaN handling matches `min`: a non-NaN operand is preferred over NaN.
+   */
+  max_async = defineInstanceFunction('baml.Float.max', 'async', ['self', 'other']).bind(this) as (
+    other: number,
+  ) => Promise<number>;
+  /**
+   * Clamps `self` into the range `[min, max]`.
+   *
+   * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
+   * if `min > max` the result is always `min` (the lower-clamp wins because
+   * it runs after the upper-clamp).
+   *
+   * NaN propagates through both `min` and `max` calls — if `self` is NaN,
+   * the result is NaN.
+   *
+   * # Examples
+   * ```
+   * (5.0).clamp(0.0, 10.0)     // 5.0
+   * (-3.0).clamp(0.0, 10.0)    // 0.0
+   * (15.0).clamp(0.0, 10.0)    // 10.0
+   * ```
+   */
+  clamp = defineInstanceFunction('baml.Float.clamp', 'sync', ['self', 'min', 'max']).bind(this) as (
+    min: number,
+    max: number,
+  ) => number;
+  /**
+   * Clamps `self` into the range `[min, max]`.
+   *
+   * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
+   * if `min > max` the result is always `min` (the lower-clamp wins because
+   * it runs after the upper-clamp).
+   *
+   * NaN propagates through both `min` and `max` calls — if `self` is NaN,
+   * the result is NaN.
+   *
+   * # Examples
+   * ```
+   * (5.0).clamp(0.0, 10.0)     // 5.0
+   * (-3.0).clamp(0.0, 10.0)    // 0.0
+   * (15.0).clamp(0.0, 10.0)    // 10.0
+   * ```
+   */
+  clamp_async = defineInstanceFunction('baml.Float.clamp', 'async', ['self', 'min', 'max']).bind(
+    this,
+  ) as (min: number, max: number) => Promise<number>;
+  /**
+   * Returns the largest integer ≤ `self`, as a float.
+   * Preserves the sign of `±0.0` and propagates NaN/±∞.
+   *
+   * # Examples
+   * ```
+   * (3.7).floor()    // 3.0
+   * (-1.5).floor()   // -2.0
+   * (3.0).floor()    // 3.0
+   * ```
+   */
+  floor = defineInstanceFunction('baml.Float.floor', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Returns the largest integer ≤ `self`, as a float.
+   * Preserves the sign of `±0.0` and propagates NaN/±∞.
+   *
+   * # Examples
+   * ```
+   * (3.7).floor()    // 3.0
+   * (-1.5).floor()   // -2.0
+   * (3.0).floor()    // 3.0
+   * ```
+   */
+  floor_async = defineInstanceFunction('baml.Float.floor', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the smallest integer ≥ `self`, as a float.
+   * Preserves the sign of `±0.0` and propagates NaN/±∞.
+   *
+   * # Examples
+   * ```
+   * (3.2).ceil()    // 4.0
+   * (-1.5).ceil()   // -1.0
+   * ```
+   */
+  ceil = defineInstanceFunction('baml.Float.ceil', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Returns the smallest integer ≥ `self`, as a float.
+   * Preserves the sign of `±0.0` and propagates NaN/±∞.
+   *
+   * # Examples
+   * ```
+   * (3.2).ceil()    // 4.0
+   * (-1.5).ceil()   // -1.0
+   * ```
+   */
+  ceil_async = defineInstanceFunction('baml.Float.ceil', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the integer nearest to `self`, with ties rounded away from zero
+   * (so `0.5 → 1.0`, `-0.5 → -1.0`, `1.5 → 2.0`).
+   *
+   * # Examples
+   * ```
+   * (1.5).round()    // 2.0
+   * (-1.5).round()   // -2.0
+   * (1.4).round()    // 1.0
+   * (1.6).round()    // 2.0
+   * ```
+   */
+  round = defineInstanceFunction('baml.Float.round', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Returns the integer nearest to `self`, with ties rounded away from zero
+   * (so `0.5 → 1.0`, `-0.5 → -1.0`, `1.5 → 2.0`).
+   *
+   * # Examples
+   * ```
+   * (1.5).round()    // 2.0
+   * (-1.5).round()   // -2.0
+   * (1.4).round()    // 1.0
+   * (1.6).round()    // 2.0
+   * ```
+   */
+  round_async = defineInstanceFunction('baml.Float.round', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns `self` truncated toward zero — i.e. the integer part with the
+   * fractional part discarded.
+   *
+   * # Examples
+   * ```
+   * (3.7).trunc()    // 3.0
+   * (-3.7).trunc()   // -3.0
+   * ```
+   */
+  trunc = defineInstanceFunction('baml.Float.trunc', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Returns `self` truncated toward zero — i.e. the integer part with the
+   * fractional part discarded.
+   *
+   * # Examples
+   * ```
+   * (3.7).trunc()    // 3.0
+   * (-3.7).trunc()   // -3.0
+   * ```
+   */
+  trunc_async = defineInstanceFunction('baml.Float.trunc', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the fractional part of `self` (`self - self.trunc()`).
+   *
+   * # Examples
+   * ```
+   * (3.7).fract()    // 0.7
+   * (-3.7).fract()   // -0.7
+   * (5.0).fract()    // 0.0
+   * ```
+   */
+  fract = defineInstanceFunction('baml.Float.fract', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Returns the fractional part of `self` (`self - self.trunc()`).
+   *
+   * # Examples
+   * ```
+   * (3.7).fract()    // 0.7
+   * (-3.7).fract()   // -0.7
+   * (5.0).fract()    // 0.0
+   * ```
+   */
+  fract_async = defineInstanceFunction('baml.Float.fract', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Like `floor`, but returns `int`. Throws if the floored value would not
+   * fit in `int` or `self` is NaN.
+   * @throws InvalidArgument
+   */
+  ifloor = defineInstanceFunction('baml.Float.ifloor', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Like `floor`, but returns `int`. Throws if the floored value would not
+   * fit in `int` or `self` is NaN.
+   * @throws InvalidArgument
+   */
+  ifloor_async = defineInstanceFunction('baml.Float.ifloor', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Like `ceil`, but returns `int`. Throws if the ceiled value would not fit
+   * in `int` or `self` is NaN.
+   * @throws InvalidArgument
+   */
+  iceil = defineInstanceFunction('baml.Float.iceil', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Like `ceil`, but returns `int`. Throws if the ceiled value would not fit
+   * in `int` or `self` is NaN.
+   * @throws InvalidArgument
+   */
+  iceil_async = defineInstanceFunction('baml.Float.iceil', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Like `round`, but returns `int`. Throws if the rounded value would not
+   * fit in `int` or `self` is NaN.
+   * @throws InvalidArgument
+   */
+  iround = defineInstanceFunction('baml.Float.iround', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Like `round`, but returns `int`. Throws if the rounded value would not
+   * fit in `int` or `self` is NaN.
+   * @throws InvalidArgument
+   */
+  iround_async = defineInstanceFunction('baml.Float.iround', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Like `trunc`, but returns `int`. Throws if the integer part would not
+   * fit in `int` or `self` is NaN/±∞.
+   * @throws InvalidArgument
+   */
+  itrunc = defineInstanceFunction('baml.Float.itrunc', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Like `trunc`, but returns `int`. Throws if the integer part would not
+   * fit in `int` or `self` is NaN/±∞.
+   * @throws InvalidArgument
+   */
+  itrunc_async = defineInstanceFunction('baml.Float.itrunc', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the square root of `self`. For negative inputs returns NaN.
+   *
+   * # Examples
+   * ```
+   * (4.0).sqrt()       // 2.0
+   * (2.0).sqrt()       // 1.4142...
+   * (-1.0).sqrt()      // NaN
+   * (0.0).sqrt()       // 0.0
+   * ```
+   */
+  sqrt = defineInstanceFunction('baml.Float.sqrt', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Returns the square root of `self`. For negative inputs returns NaN.
+   *
+   * # Examples
+   * ```
+   * (4.0).sqrt()       // 2.0
+   * (2.0).sqrt()       // 1.4142...
+   * (-1.0).sqrt()      // NaN
+   * (0.0).sqrt()       // 0.0
+   * ```
+   */
+  sqrt_async = defineInstanceFunction('baml.Float.sqrt', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns `self ** exp` (floating-point exponentiation).
+   *
+   * Returns NaN for inputs where the mathematical value is not real (e.g.
+   * negative base raised to a non-integer power).
+   *
+   * # Examples
+   * ```
+   * (2.0).pow(10.0)         // 1024.0
+   * (2.0).pow(-1.0)         // 0.5
+   * (2.0).pow(0.5)          // sqrt(2)
+   * (-1.0).pow(0.5)         // NaN
+   * ```
+   */
+  pow = defineInstanceFunction('baml.Float.pow', 'sync', ['self', 'exp']).bind(this) as (
+    exp: number,
+  ) => number;
+  /**
+   * Returns `self ** exp` (floating-point exponentiation).
+   *
+   * Returns NaN for inputs where the mathematical value is not real (e.g.
+   * negative base raised to a non-integer power).
+   *
+   * # Examples
+   * ```
+   * (2.0).pow(10.0)         // 1024.0
+   * (2.0).pow(-1.0)         // 0.5
+   * (2.0).pow(0.5)          // sqrt(2)
+   * (-1.0).pow(0.5)         // NaN
+   * ```
+   */
+  pow_async = defineInstanceFunction('baml.Float.pow', 'async', ['self', 'exp']).bind(this) as (
+    exp: number,
+  ) => Promise<number>;
+  /**
+   * Returns the logarithm of `self` in the given `base`. Equivalent to
+   * `self.ln() / base.ln()`.
+   *
+   * The boundary behavior follows directly from that formula:
+   * - `self < 0` → NaN  (since `ln(negative) = NaN`)
+   * - `self == 0`, `base > 0`, `base != 1` → `-∞`
+   * - `base < 0` → NaN
+   * - `base == 0`, `self > 0` → `±0` (sign opposite of `ln(self)`, since
+   *   `±finite / -∞ = ∓0`)
+   * - `base == 1`, `self > 0`, `self != 1` → `±∞` (sign matches `ln(self)`,
+   *   since `ln(1) == +0.0` and `±finite / +0.0 = ±∞`)
+   * - `base == 1`, `self == 1` → NaN (`0 / 0`)
+   *
+   * # Examples
+   * ```
+   * (1000.0).log(10.0)   // 3.0
+   * (8.0).log(2.0)       // 3.0
+   * (-1.0).log(10.0)     // NaN
+   * (0.0).log(10.0)      // -infinity
+   * (2.0).log(1.0)       // +infinity
+   * (1.0).log(1.0)       // NaN
+   * ```
+   */
+  log = defineInstanceFunction('baml.Float.log', 'sync', ['self', 'base']).bind(this) as (
+    base: number,
+  ) => number;
+  /**
+   * Returns the logarithm of `self` in the given `base`. Equivalent to
+   * `self.ln() / base.ln()`.
+   *
+   * The boundary behavior follows directly from that formula:
+   * - `self < 0` → NaN  (since `ln(negative) = NaN`)
+   * - `self == 0`, `base > 0`, `base != 1` → `-∞`
+   * - `base < 0` → NaN
+   * - `base == 0`, `self > 0` → `±0` (sign opposite of `ln(self)`, since
+   *   `±finite / -∞ = ∓0`)
+   * - `base == 1`, `self > 0`, `self != 1` → `±∞` (sign matches `ln(self)`,
+   *   since `ln(1) == +0.0` and `±finite / +0.0 = ±∞`)
+   * - `base == 1`, `self == 1` → NaN (`0 / 0`)
+   *
+   * # Examples
+   * ```
+   * (1000.0).log(10.0)   // 3.0
+   * (8.0).log(2.0)       // 3.0
+   * (-1.0).log(10.0)     // NaN
+   * (0.0).log(10.0)      // -infinity
+   * (2.0).log(1.0)       // +infinity
+   * (1.0).log(1.0)       // NaN
+   * ```
+   */
+  log_async = defineInstanceFunction('baml.Float.log', 'async', ['self', 'base']).bind(this) as (
+    base: number,
+  ) => Promise<number>;
+  /**
+   * Returns the Euclidean distance `sqrt(self² + other²)`, computed in a way
+   * that avoids spurious overflow even when both magnitudes are large.
+   *
+   * # Examples
+   * ```
+   * (3.0).hypot(4.0)    // 5.0
+   * (0.0).hypot(0.0)    // 0.0
+   * ```
+   */
+  hypot = defineInstanceFunction('baml.Float.hypot', 'sync', ['self', 'other']).bind(this) as (
+    other: number,
+  ) => number;
+  /**
+   * Returns the Euclidean distance `sqrt(self² + other²)`, computed in a way
+   * that avoids spurious overflow even when both magnitudes are large.
+   *
+   * # Examples
+   * ```
+   * (3.0).hypot(4.0)    // 5.0
+   * (0.0).hypot(0.0)    // 0.0
+   * ```
+   */
+  hypot_async = defineInstanceFunction('baml.Float.hypot', 'async', ['self', 'other']).bind(
+    this,
+  ) as (other: number) => Promise<number>;
+  /**
+   * Sine of `self` (in radians).
+   */
+  sin = defineInstanceFunction('baml.Float.sin', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Sine of `self` (in radians).
+   */
+  sin_async = defineInstanceFunction('baml.Float.sin', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Cosine of `self` (in radians).
+   */
+  cos = defineInstanceFunction('baml.Float.cos', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Cosine of `self` (in radians).
+   */
+  cos_async = defineInstanceFunction('baml.Float.cos', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Tangent of `self` (in radians). Very large near odd multiples of π/2.
+   */
+  tan = defineInstanceFunction('baml.Float.tan', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Tangent of `self` (in radians). Very large near odd multiples of π/2.
+   */
+  tan_async = defineInstanceFunction('baml.Float.tan', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Inverse sine, returning a value in `[-π/2, π/2]`.
+   * Returns NaN if `self` is outside `[-1, 1]`.
+   */
+  asin = defineInstanceFunction('baml.Float.asin', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Inverse sine, returning a value in `[-π/2, π/2]`.
+   * Returns NaN if `self` is outside `[-1, 1]`.
+   */
+  asin_async = defineInstanceFunction('baml.Float.asin', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Inverse cosine, returning a value in `[0, π]`.
+   * Returns NaN if `self` is outside `[-1, 1]`.
+   */
+  acos = defineInstanceFunction('baml.Float.acos', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Inverse cosine, returning a value in `[0, π]`.
+   * Returns NaN if `self` is outside `[-1, 1]`.
+   */
+  acos_async = defineInstanceFunction('baml.Float.acos', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Inverse tangent, returning a value in `(-π/2, π/2)`.
+   */
+  atan = defineInstanceFunction('baml.Float.atan', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Inverse tangent, returning a value in `(-π/2, π/2)`.
+   */
+  atan_async = defineInstanceFunction('baml.Float.atan', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the angle (in radians) of the vector `(other, self)` — i.e. the
+   * angle from the positive x-axis to the point `(x = other, y = self)`.
+   * The result is in `[-π, π]`.
+   *
+   * # Examples
+   * ```
+   * (1.0).atan2(1.0)        // π/4    (45°)
+   * (1.0).atan2(0.0)        // π/2    (90°, due north)
+   * (0.0).atan2(-1.0)       // π      (180°, due west)
+   * ```
+   */
+  atan2 = defineInstanceFunction('baml.Float.atan2', 'sync', ['self', 'other']).bind(this) as (
+    other: number,
+  ) => number;
+  /**
+   * Returns the angle (in radians) of the vector `(other, self)` — i.e. the
+   * angle from the positive x-axis to the point `(x = other, y = self)`.
+   * The result is in `[-π, π]`.
+   *
+   * # Examples
+   * ```
+   * (1.0).atan2(1.0)        // π/4    (45°)
+   * (1.0).atan2(0.0)        // π/2    (90°, due north)
+   * (0.0).atan2(-1.0)       // π      (180°, due west)
+   * ```
+   */
+  atan2_async = defineInstanceFunction('baml.Float.atan2', 'async', ['self', 'other']).bind(
+    this,
+  ) as (other: number) => Promise<number>;
+  /**
+   * Hyperbolic sine.
+   */
+  sinh = defineInstanceFunction('baml.Float.sinh', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Hyperbolic sine.
+   */
+  sinh_async = defineInstanceFunction('baml.Float.sinh', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Hyperbolic cosine.
+   */
+  cosh = defineInstanceFunction('baml.Float.cosh', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Hyperbolic cosine.
+   */
+  cosh_async = defineInstanceFunction('baml.Float.cosh', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Hyperbolic tangent. Bounded to `(-1, 1)`.
+   */
+  tanh = defineInstanceFunction('baml.Float.tanh', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Hyperbolic tangent. Bounded to `(-1, 1)`.
+   */
+  tanh_async = defineInstanceFunction('baml.Float.tanh', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Inverse hyperbolic sine. Domain: all reals.
+   */
+  asinh = defineInstanceFunction('baml.Float.asinh', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Inverse hyperbolic sine. Domain: all reals.
+   */
+  asinh_async = defineInstanceFunction('baml.Float.asinh', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Inverse hyperbolic cosine. Domain: `[1, ∞)`. Returns NaN for `self < 1`.
+   */
+  acosh = defineInstanceFunction('baml.Float.acosh', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Inverse hyperbolic cosine. Domain: `[1, ∞)`. Returns NaN for `self < 1`.
+   */
+  acosh_async = defineInstanceFunction('baml.Float.acosh', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Inverse hyperbolic tangent. Domain: `(-1, 1)`. Returns NaN outside that
+   * range, and ±∞ at the endpoints.
+   */
+  atanh = defineInstanceFunction('baml.Float.atanh', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Inverse hyperbolic tangent. Domain: `(-1, 1)`. Returns NaN outside that
+   * range, and ±∞ at the endpoints.
+   */
+  atanh_async = defineInstanceFunction('baml.Float.atanh', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Converts `self` from degrees to radians.
+   */
+  to_radians = defineInstanceFunction('baml.Float.to_radians', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Converts `self` from degrees to radians.
+   */
+  to_radians_async = defineInstanceFunction('baml.Float.to_radians', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Converts `self` from radians to degrees.
+   */
+  to_degrees = defineInstanceFunction('baml.Float.to_degrees', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Converts `self` from radians to degrees.
+   */
+  to_degrees_async = defineInstanceFunction('baml.Float.to_degrees', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
 }
 
 /**
  * Truncates `value` toward zero and returns the integer part, **saturating**
  * to the `int` range and mapping NaN to `0` — it never throws.
- * 
+ *
  * Private helper (leading `_`; formerly the public `baml.math.trunc`) backing
  * internal retry-delay math in `baml.llm`. User code should prefer the
  * range-checked, throwing `float.itrunc()` (or the float-returning
  * `float.trunc()`); this saturating form is intentionally not public surface.
  */
-export const _trunc_to_int = defineFunction("baml._trunc_to_int", "sync", ["value"]) as (value: number) => number;
+export const _trunc_to_int = defineFunction('baml._trunc_to_int', 'sync', ['value']) as (
+  value: number,
+) => number;
 
 /**
  * Truncates `value` toward zero and returns the integer part, **saturating**
  * to the `int` range and mapping NaN to `0` — it never throws.
- * 
+ *
  * Private helper (leading `_`; formerly the public `baml.math.trunc`) backing
  * internal retry-delay math in `baml.llm`. User code should prefer the
  * range-checked, throwing `float.itrunc()` (or the float-returning
  * `float.trunc()`); this saturating form is intentionally not public surface.
  */
-export const _trunc_to_int_async = defineFunction("baml._trunc_to_int", "async", ["value"]) as (value: number) => Promise<number>;
+export const _trunc_to_int_async = defineFunction('baml._trunc_to_int', 'async', ['value']) as (
+  value: number,
+) => Promise<number>;
 
 /**
  * A 63-bit signed integer. Range: -2^62 to 2^62-1
  * (`-4_611_686_018_427_387_904` to `4_611_686_018_427_387_903`).
- * 
+ *
  * The value is stored in a 64-bit machine word with one bit reserved for the
  * runtime's pointer/value tag, so the usable range is 63-bit, not 64-bit. Use
  * `bigint` for arbitrary-precision integers.
- * 
+ *
  * Arithmetic (`+`, `-`, `*`, `/`, unary `-`) that would leave this range
  * throws a catchable `baml.panics.IntegerOverflow` rather than wrapping or
  * crashing; `/` and `%` by zero throw `baml.panics.DivisionByZero`.
@@ -1696,11 +2249,11 @@ export class Int$stream {
 /**
  * A 63-bit signed integer. Range: -2^62 to 2^62-1
  * (`-4_611_686_018_427_387_904` to `4_611_686_018_427_387_903`).
- * 
+ *
  * The value is stored in a 64-bit machine word with one bit reserved for the
  * runtime's pointer/value tag, so the usable range is 63-bit, not 64-bit. Use
  * `bigint` for arbitrary-precision integers.
- * 
+ *
  * Arithmetic (`+`, `-`, `*`, `/`, unary `-`) that would leave this range
  * throws a catchable `baml.panics.IntegerOverflow` rather than wrapping or
  * crashing; `/` and `%` by zero throw `baml.panics.DivisionByZero`.
@@ -1709,480 +2262,545 @@ export class Int {
   constructor(init: {}) {
     Object.assign(this, init);
   }
-/**
- * Parses `text` as a base-ten signed integer.
- * 
- * Accepts an optional leading `+` or `-` sign followed by one or more
- * ASCII digits. No surrounding whitespace, no underscores, no other
- * numeric formats. The result must fit in the `int` range (63-bit signed).
- * 
- * Throws `ParseError` if `text` is empty, contains a non-digit character,
- * or represents a value outside the `int` range.
- * 
- * # Examples
- * ```
- * int.parse("42")       // 42
- * int.parse("-7")       // -7
- * int.parse("+0")       // 0
- * int.parse("")         // throws — empty
- * int.parse("12a")      // throws — non-digit
- * int.parse(" 5 ")      // throws — whitespace not allowed; trim first
- * int.parse("99999999999999999999")  // throws — out of range
- * ```
- * @throws ParseError
- */
-  static parse = defineFunction("baml.Int.parse", "sync", ["text"]) as (text: string) => number;
-/**
- * Parses `text` as a base-ten signed integer.
- * 
- * Accepts an optional leading `+` or `-` sign followed by one or more
- * ASCII digits. No surrounding whitespace, no underscores, no other
- * numeric formats. The result must fit in the `int` range (63-bit signed).
- * 
- * Throws `ParseError` if `text` is empty, contains a non-digit character,
- * or represents a value outside the `int` range.
- * 
- * # Examples
- * ```
- * int.parse("42")       // 42
- * int.parse("-7")       // -7
- * int.parse("+0")       // 0
- * int.parse("")         // throws — empty
- * int.parse("12a")      // throws — non-digit
- * int.parse(" 5 ")      // throws — whitespace not allowed; trim first
- * int.parse("99999999999999999999")  // throws — out of range
- * ```
- * @throws ParseError
- */
-  static parse_async = defineFunction("baml.Int.parse", "async", ["text"]) as (text: string) => Promise<number>;
-/**
- * Returns a uniformly distributed random integer in the half-open range
- * `[lower, upper)`.
- * 
- * Throws `InvalidArgument` if `lower >= upper` (the range would be empty).
- * Uses the host's cryptographic entropy source — no user-supplied RNG
- * handle. The largest representable half-open range is supported (e.g.
- * `random(int.min_value(), int.max_value())` returns a value in
- * `[int.min_value(), int.max_value())`; `int.max_value()` itself is never
- * returned).
- * 
- * # Examples
- * ```
- * int.random(0, 10)         // some value in {0, 1, ..., 9}
- * int.random(-5, 5)         // some value in {-5, -4, ..., 4}
- * int.random(0, 1)          // always 0  (single-element range)
- * int.random(5, 5)          // throws — empty range
- * int.random(10, 0)         // throws — lower > upper
- * ```
- * @throws InvalidArgument
- */
-  static random = defineFunction("baml.Int.random", "sync", ["lower", "upper"]) as (lower: number, upper: number) => number;
-/**
- * Returns a uniformly distributed random integer in the half-open range
- * `[lower, upper)`.
- * 
- * Throws `InvalidArgument` if `lower >= upper` (the range would be empty).
- * Uses the host's cryptographic entropy source — no user-supplied RNG
- * handle. The largest representable half-open range is supported (e.g.
- * `random(int.min_value(), int.max_value())` returns a value in
- * `[int.min_value(), int.max_value())`; `int.max_value()` itself is never
- * returned).
- * 
- * # Examples
- * ```
- * int.random(0, 10)         // some value in {0, 1, ..., 9}
- * int.random(-5, 5)         // some value in {-5, -4, ..., 4}
- * int.random(0, 1)          // always 0  (single-element range)
- * int.random(5, 5)          // throws — empty range
- * int.random(10, 0)         // throws — lower > upper
- * ```
- * @throws InvalidArgument
- */
-  static random_async = defineFunction("baml.Int.random", "async", ["lower", "upper"]) as (lower: number, upper: number) => Promise<number>;
-/**
- * Returns the largest representable `int`, equal to `2^62 - 1`
- * (`4_611_686_018_427_387_903`).
- * 
- * Note: BAML integers are 63-bit signed (the runtime reserves one bit
- * for the tagged-pointer Value encoding). Values outside the
- * `[min_value(), max_value()]` range cannot round-trip through int.
- */
-  static max_value = defineFunction("baml.Int.max_value", "sync", []) as () => number;
-/**
- * Returns the largest representable `int`, equal to `2^62 - 1`
- * (`4_611_686_018_427_387_903`).
- * 
- * Note: BAML integers are 63-bit signed (the runtime reserves one bit
- * for the tagged-pointer Value encoding). Values outside the
- * `[min_value(), max_value()]` range cannot round-trip through int.
- */
-  static max_value_async = defineFunction("baml.Int.max_value", "async", []) as () => Promise<number>;
-/**
- * Returns the smallest representable `int`, equal to `-2^62`
- * (`-4_611_686_018_427_387_904`). Note `int.min_value().abs()` throws.
- */
-  static min_value = defineFunction("baml.Int.min_value", "sync", []) as () => number;
-/**
- * Returns the smallest representable `int`, equal to `-2^62`
- * (`-4_611_686_018_427_387_904`). Note `int.min_value().abs()` throws.
- */
-  static min_value_async = defineFunction("baml.Int.min_value", "async", []) as () => Promise<number>;
-/**
- * Returns the absolute value of `self`.
- * 
- * Throws `InvalidArgument` for `int.min_value()` because its absolute value
- * (`2^62`) does not fit in an `int`.
- * 
- * # Examples
- * ```
- * (-7).abs()         // 7
- * (3).abs()          // 3
- * (0).abs()          // 0
- * int.min_value().abs()  // throws — overflow
- * ```
- * @throws InvalidArgument
- */
-  abs = defineInstanceFunction("baml.Int.abs", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the absolute value of `self`.
- * 
- * Throws `InvalidArgument` for `int.min_value()` because its absolute value
- * (`2^62`) does not fit in an `int`.
- * 
- * # Examples
- * ```
- * (-7).abs()         // 7
- * (3).abs()          // 3
- * (0).abs()          // 0
- * int.min_value().abs()  // throws — overflow
- * ```
- * @throws InvalidArgument
- */
-  abs_async = defineInstanceFunction("baml.Int.abs", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the smaller of `self` and `other`.
- * 
- * # Examples
- * ```
- * (3).min(5)   // 3
- * (3).min(3)   // 3
- * (-2).min(0)  // -2
- * ```
- */
-  min = defineInstanceFunction("baml.Int.min", "sync", ["self", "other"]).bind(this) as (other: number) => number;
-/**
- * Returns the smaller of `self` and `other`.
- * 
- * # Examples
- * ```
- * (3).min(5)   // 3
- * (3).min(3)   // 3
- * (-2).min(0)  // -2
- * ```
- */
-  min_async = defineInstanceFunction("baml.Int.min", "async", ["self", "other"]).bind(this) as (other: number) => Promise<number>;
-/**
- * Returns the larger of `self` and `other`.
- * 
- * # Examples
- * ```
- * (3).max(5)   // 5
- * (3).max(3)   // 3
- * (-2).max(0)  // 0
- * ```
- */
-  max = defineInstanceFunction("baml.Int.max", "sync", ["self", "other"]).bind(this) as (other: number) => number;
-/**
- * Returns the larger of `self` and `other`.
- * 
- * # Examples
- * ```
- * (3).max(5)   // 5
- * (3).max(3)   // 3
- * (-2).max(0)  // 0
- * ```
- */
-  max_async = defineInstanceFunction("baml.Int.max", "async", ["self", "other"]).bind(this) as (other: number) => Promise<number>;
-/**
- * Clamps `self` into the range `[min, max]`.
- * 
- * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
- * if `min > max` the result is always `min` (the lower-clamp wins because
- * it runs after the upper-clamp).
- * 
- * # Examples
- * ```
- * (5).clamp(0, 10)    // 5
- * (-3).clamp(0, 10)   // 0
- * (15).clamp(0, 10)   // 10
- * ```
- */
-  clamp = defineInstanceFunction("baml.Int.clamp", "sync", ["self", "min", "max"]).bind(this) as (min: number, max: number) => number;
-/**
- * Clamps `self` into the range `[min, max]`.
- * 
- * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
- * if `min > max` the result is always `min` (the lower-clamp wins because
- * it runs after the upper-clamp).
- * 
- * # Examples
- * ```
- * (5).clamp(0, 10)    // 5
- * (-3).clamp(0, 10)   // 0
- * (15).clamp(0, 10)   // 10
- * ```
- */
-  clamp_async = defineInstanceFunction("baml.Int.clamp", "async", ["self", "min", "max"]).bind(this) as (min: number, max: number) => Promise<number>;
-/**
- * Returns the integer square root of `self` — that is, the largest `int`
- * `r` such that `r * r <= self`.
- * 
- * Throws `InvalidArgument` if `self` is negative.
- * 
- * # Examples
- * ```
- * (10).isqrt()   // 3
- * (16).isqrt()   // 4
- * (0).isqrt()    // 0
- * (-1).isqrt()   // throws
- * ```
- * @throws InvalidArgument
- */
-  isqrt = defineInstanceFunction("baml.Int.isqrt", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the integer square root of `self` — that is, the largest `int`
- * `r` such that `r * r <= self`.
- * 
- * Throws `InvalidArgument` if `self` is negative.
- * 
- * # Examples
- * ```
- * (10).isqrt()   // 3
- * (16).isqrt()   // 4
- * (0).isqrt()    // 0
- * (-1).isqrt()   // throws
- * ```
- * @throws InvalidArgument
- */
-  isqrt_async = defineInstanceFunction("baml.Int.isqrt", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns `self ** exp`. Saturates on overflow (positive overflow returns
- * `int.max_value()`, negative overflow returns `int.min_value()`).
- * 
- * `0 ** 0` returns `1`, by convention.
- * 
- * If `exp` is negative the result is `0`, since the mathematical value
- * `self ** -n = 1 / self ** n` is in `(-1, 1)` for `|self| > 1` and rounds
- * to zero. (For `self == 1` or `self == -1` the value is `±1` which rounds
- * to itself; this implementation still returns `0` for negative exponents
- * uniformly.)
- * 
- * # Examples
- * ```
- * (2).pow(10)      // 1024
- * (2).pow(0)       // 1
- * (0).pow(0)       // 1   (convention)
- * (2).pow(-1)      // 0
- * (10).pow(100)    // saturates to int.max_value()
- * (-2).pow(3)      // -8
- * ```
- */
-  pow = defineInstanceFunction("baml.Int.pow", "sync", ["self", "exp"]).bind(this) as (exp: number) => number;
-/**
- * Returns `self ** exp`. Saturates on overflow (positive overflow returns
- * `int.max_value()`, negative overflow returns `int.min_value()`).
- * 
- * `0 ** 0` returns `1`, by convention.
- * 
- * If `exp` is negative the result is `0`, since the mathematical value
- * `self ** -n = 1 / self ** n` is in `(-1, 1)` for `|self| > 1` and rounds
- * to zero. (For `self == 1` or `self == -1` the value is `±1` which rounds
- * to itself; this implementation still returns `0` for negative exponents
- * uniformly.)
- * 
- * # Examples
- * ```
- * (2).pow(10)      // 1024
- * (2).pow(0)       // 1
- * (0).pow(0)       // 1   (convention)
- * (2).pow(-1)      // 0
- * (10).pow(100)    // saturates to int.max_value()
- * (-2).pow(3)      // -8
- * ```
- */
-  pow_async = defineInstanceFunction("baml.Int.pow", "async", ["self", "exp"]).bind(this) as (exp: number) => Promise<number>;
-/**
- * Returns the integer logarithm of `self` in the given `base`, rounded
- * down — i.e. the largest `n` such that `base ** n <= self`.
- * 
- * Throws `InvalidArgument` if `self <= 0` or `base < 2`.
- * 
- * # Examples
- * ```
- * (1000).ilog(10)   // 3
- * (1024).ilog(2)    // 10
- * (1).ilog(10)      // 0
- * (0).ilog(10)      // throws
- * (10).ilog(1)      // throws
- * ```
- * @throws InvalidArgument
- */
-  ilog = defineInstanceFunction("baml.Int.ilog", "sync", ["self", "base"]).bind(this) as (base: number) => number;
-/**
- * Returns the integer logarithm of `self` in the given `base`, rounded
- * down — i.e. the largest `n` such that `base ** n <= self`.
- * 
- * Throws `InvalidArgument` if `self <= 0` or `base < 2`.
- * 
- * # Examples
- * ```
- * (1000).ilog(10)   // 3
- * (1024).ilog(2)    // 10
- * (1).ilog(10)      // 0
- * (0).ilog(10)      // throws
- * (10).ilog(1)      // throws
- * ```
- * @throws InvalidArgument
- */
-  ilog_async = defineInstanceFunction("baml.Int.ilog", "async", ["self", "base"]).bind(this) as (base: number) => Promise<number>;
-/**
- * Returns the number of leading zero bits in the 64-bit two's-complement
- * representation of `self`.
- * 
- * # Examples
- * ```
- * (0).leading_zeros()  // 64
- * (1).leading_zeros()  // 63
- * (-1).leading_zeros() // 0  (all-ones)
- * ```
- */
-  leading_zeros = defineInstanceFunction("baml.Int.leading_zeros", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the number of leading zero bits in the 64-bit two's-complement
- * representation of `self`.
- * 
- * # Examples
- * ```
- * (0).leading_zeros()  // 64
- * (1).leading_zeros()  // 63
- * (-1).leading_zeros() // 0  (all-ones)
- * ```
- */
-  leading_zeros_async = defineInstanceFunction("baml.Int.leading_zeros", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the number of leading one bits in the 64-bit two's-complement
- * representation of `self`.
- * 
- * # Examples
- * ```
- * (0).leading_ones()   // 0
- * (-1).leading_ones()  // 64
- * ```
- */
-  leading_ones = defineInstanceFunction("baml.Int.leading_ones", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the number of leading one bits in the 64-bit two's-complement
- * representation of `self`.
- * 
- * # Examples
- * ```
- * (0).leading_ones()   // 0
- * (-1).leading_ones()  // 64
- * ```
- */
-  leading_ones_async = defineInstanceFunction("baml.Int.leading_ones", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the number of trailing zero bits.
- * 
- * # Examples
- * ```
- * (0).trailing_zeros()  // 64
- * (8).trailing_zeros()  // 3   (binary 1000)
- * (1).trailing_zeros()  // 0
- * ```
- */
-  trailing_zeros = defineInstanceFunction("baml.Int.trailing_zeros", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the number of trailing zero bits.
- * 
- * # Examples
- * ```
- * (0).trailing_zeros()  // 64
- * (8).trailing_zeros()  // 3   (binary 1000)
- * (1).trailing_zeros()  // 0
- * ```
- */
-  trailing_zeros_async = defineInstanceFunction("baml.Int.trailing_zeros", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the number of trailing one bits.
- * 
- * # Examples
- * ```
- * (7).trailing_ones()   // 3   (binary 111)
- * (8).trailing_ones()   // 0
- * (-1).trailing_ones()  // 64
- * ```
- */
-  trailing_ones = defineInstanceFunction("baml.Int.trailing_ones", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the number of trailing one bits.
- * 
- * # Examples
- * ```
- * (7).trailing_ones()   // 3   (binary 111)
- * (8).trailing_ones()   // 0
- * (-1).trailing_ones()  // 64
- * ```
- */
-  trailing_ones_async = defineInstanceFunction("baml.Int.trailing_ones", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the total number of zero bits in the 64-bit two's-complement
- * representation of `self`.
- * 
- * # Examples
- * ```
- * (0).count_zeros()   // 64
- * (-1).count_zeros()  // 0
- * ```
- */
-  count_zeros = defineInstanceFunction("baml.Int.count_zeros", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the total number of zero bits in the 64-bit two's-complement
- * representation of `self`.
- * 
- * # Examples
- * ```
- * (0).count_zeros()   // 64
- * (-1).count_zeros()  // 0
- * ```
- */
-  count_zeros_async = defineInstanceFunction("baml.Int.count_zeros", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the total number of one bits in the 64-bit two's-complement
- * representation of `self`. Also known as the population count or
- * "popcount".
- * 
- * # Examples
- * ```
- * (0).count_ones()   // 0
- * (7).count_ones()   // 3
- * (-1).count_ones()  // 64
- * ```
- */
-  count_ones = defineInstanceFunction("baml.Int.count_ones", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the total number of one bits in the 64-bit two's-complement
- * representation of `self`. Also known as the population count or
- * "popcount".
- * 
- * # Examples
- * ```
- * (0).count_ones()   // 0
- * (7).count_ones()   // 3
- * (-1).count_ones()  // 64
- * ```
- */
-  count_ones_async = defineInstanceFunction("baml.Int.count_ones", "async", ["self"]).bind(this) as () => Promise<number>;
+  /**
+   * Parses `text` as a base-ten signed integer.
+   *
+   * Accepts an optional leading `+` or `-` sign followed by one or more
+   * ASCII digits. No surrounding whitespace, no underscores, no other
+   * numeric formats. The result must fit in the `int` range (63-bit signed).
+   *
+   * Throws `ParseError` if `text` is empty, contains a non-digit character,
+   * or represents a value outside the `int` range.
+   *
+   * # Examples
+   * ```
+   * int.parse("42")       // 42
+   * int.parse("-7")       // -7
+   * int.parse("+0")       // 0
+   * int.parse("")         // throws — empty
+   * int.parse("12a")      // throws — non-digit
+   * int.parse(" 5 ")      // throws — whitespace not allowed; trim first
+   * int.parse("99999999999999999999")  // throws — out of range
+   * ```
+   * @throws ParseError
+   */
+  static parse = defineFunction('baml.Int.parse', 'sync', ['text']) as (text: string) => number;
+  /**
+   * Parses `text` as a base-ten signed integer.
+   *
+   * Accepts an optional leading `+` or `-` sign followed by one or more
+   * ASCII digits. No surrounding whitespace, no underscores, no other
+   * numeric formats. The result must fit in the `int` range (63-bit signed).
+   *
+   * Throws `ParseError` if `text` is empty, contains a non-digit character,
+   * or represents a value outside the `int` range.
+   *
+   * # Examples
+   * ```
+   * int.parse("42")       // 42
+   * int.parse("-7")       // -7
+   * int.parse("+0")       // 0
+   * int.parse("")         // throws — empty
+   * int.parse("12a")      // throws — non-digit
+   * int.parse(" 5 ")      // throws — whitespace not allowed; trim first
+   * int.parse("99999999999999999999")  // throws — out of range
+   * ```
+   * @throws ParseError
+   */
+  static parse_async = defineFunction('baml.Int.parse', 'async', ['text']) as (
+    text: string,
+  ) => Promise<number>;
+  /**
+   * Returns a uniformly distributed random integer in the half-open range
+   * `[lower, upper)`.
+   *
+   * Throws `InvalidArgument` if `lower >= upper` (the range would be empty).
+   * Uses the host's cryptographic entropy source — no user-supplied RNG
+   * handle. The largest representable half-open range is supported (e.g.
+   * `random(int.min_value(), int.max_value())` returns a value in
+   * `[int.min_value(), int.max_value())`; `int.max_value()` itself is never
+   * returned).
+   *
+   * # Examples
+   * ```
+   * int.random(0, 10)         // some value in {0, 1, ..., 9}
+   * int.random(-5, 5)         // some value in {-5, -4, ..., 4}
+   * int.random(0, 1)          // always 0  (single-element range)
+   * int.random(5, 5)          // throws — empty range
+   * int.random(10, 0)         // throws — lower > upper
+   * ```
+   * @throws InvalidArgument
+   */
+  static random = defineFunction('baml.Int.random', 'sync', ['lower', 'upper']) as (
+    lower: number,
+    upper: number,
+  ) => number;
+  /**
+   * Returns a uniformly distributed random integer in the half-open range
+   * `[lower, upper)`.
+   *
+   * Throws `InvalidArgument` if `lower >= upper` (the range would be empty).
+   * Uses the host's cryptographic entropy source — no user-supplied RNG
+   * handle. The largest representable half-open range is supported (e.g.
+   * `random(int.min_value(), int.max_value())` returns a value in
+   * `[int.min_value(), int.max_value())`; `int.max_value()` itself is never
+   * returned).
+   *
+   * # Examples
+   * ```
+   * int.random(0, 10)         // some value in {0, 1, ..., 9}
+   * int.random(-5, 5)         // some value in {-5, -4, ..., 4}
+   * int.random(0, 1)          // always 0  (single-element range)
+   * int.random(5, 5)          // throws — empty range
+   * int.random(10, 0)         // throws — lower > upper
+   * ```
+   * @throws InvalidArgument
+   */
+  static random_async = defineFunction('baml.Int.random', 'async', ['lower', 'upper']) as (
+    lower: number,
+    upper: number,
+  ) => Promise<number>;
+  /**
+   * Returns the largest representable `int`, equal to `2^62 - 1`
+   * (`4_611_686_018_427_387_903`).
+   *
+   * Note: BAML integers are 63-bit signed (the runtime reserves one bit
+   * for the tagged-pointer Value encoding). Values outside the
+   * `[min_value(), max_value()]` range cannot round-trip through int.
+   */
+  static max_value = defineFunction('baml.Int.max_value', 'sync', []) as () => number;
+  /**
+   * Returns the largest representable `int`, equal to `2^62 - 1`
+   * (`4_611_686_018_427_387_903`).
+   *
+   * Note: BAML integers are 63-bit signed (the runtime reserves one bit
+   * for the tagged-pointer Value encoding). Values outside the
+   * `[min_value(), max_value()]` range cannot round-trip through int.
+   */
+  static max_value_async = defineFunction(
+    'baml.Int.max_value',
+    'async',
+    [],
+  ) as () => Promise<number>;
+  /**
+   * Returns the smallest representable `int`, equal to `-2^62`
+   * (`-4_611_686_018_427_387_904`). Note `int.min_value().abs()` throws.
+   */
+  static min_value = defineFunction('baml.Int.min_value', 'sync', []) as () => number;
+  /**
+   * Returns the smallest representable `int`, equal to `-2^62`
+   * (`-4_611_686_018_427_387_904`). Note `int.min_value().abs()` throws.
+   */
+  static min_value_async = defineFunction(
+    'baml.Int.min_value',
+    'async',
+    [],
+  ) as () => Promise<number>;
+  /**
+   * Returns the absolute value of `self`.
+   *
+   * Throws `InvalidArgument` for `int.min_value()` because its absolute value
+   * (`2^62`) does not fit in an `int`.
+   *
+   * # Examples
+   * ```
+   * (-7).abs()         // 7
+   * (3).abs()          // 3
+   * (0).abs()          // 0
+   * int.min_value().abs()  // throws — overflow
+   * ```
+   * @throws InvalidArgument
+   */
+  abs = defineInstanceFunction('baml.Int.abs', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Returns the absolute value of `self`.
+   *
+   * Throws `InvalidArgument` for `int.min_value()` because its absolute value
+   * (`2^62`) does not fit in an `int`.
+   *
+   * # Examples
+   * ```
+   * (-7).abs()         // 7
+   * (3).abs()          // 3
+   * (0).abs()          // 0
+   * int.min_value().abs()  // throws — overflow
+   * ```
+   * @throws InvalidArgument
+   */
+  abs_async = defineInstanceFunction('baml.Int.abs', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the smaller of `self` and `other`.
+   *
+   * # Examples
+   * ```
+   * (3).min(5)   // 3
+   * (3).min(3)   // 3
+   * (-2).min(0)  // -2
+   * ```
+   */
+  min = defineInstanceFunction('baml.Int.min', 'sync', ['self', 'other']).bind(this) as (
+    other: number,
+  ) => number;
+  /**
+   * Returns the smaller of `self` and `other`.
+   *
+   * # Examples
+   * ```
+   * (3).min(5)   // 3
+   * (3).min(3)   // 3
+   * (-2).min(0)  // -2
+   * ```
+   */
+  min_async = defineInstanceFunction('baml.Int.min', 'async', ['self', 'other']).bind(this) as (
+    other: number,
+  ) => Promise<number>;
+  /**
+   * Returns the larger of `self` and `other`.
+   *
+   * # Examples
+   * ```
+   * (3).max(5)   // 5
+   * (3).max(3)   // 3
+   * (-2).max(0)  // 0
+   * ```
+   */
+  max = defineInstanceFunction('baml.Int.max', 'sync', ['self', 'other']).bind(this) as (
+    other: number,
+  ) => number;
+  /**
+   * Returns the larger of `self` and `other`.
+   *
+   * # Examples
+   * ```
+   * (3).max(5)   // 5
+   * (3).max(3)   // 3
+   * (-2).max(0)  // 0
+   * ```
+   */
+  max_async = defineInstanceFunction('baml.Int.max', 'async', ['self', 'other']).bind(this) as (
+    other: number,
+  ) => Promise<number>;
+  /**
+   * Clamps `self` into the range `[min, max]`.
+   *
+   * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
+   * if `min > max` the result is always `min` (the lower-clamp wins because
+   * it runs after the upper-clamp).
+   *
+   * # Examples
+   * ```
+   * (5).clamp(0, 10)    // 5
+   * (-3).clamp(0, 10)   // 0
+   * (15).clamp(0, 10)   // 10
+   * ```
+   */
+  clamp = defineInstanceFunction('baml.Int.clamp', 'sync', ['self', 'min', 'max']).bind(this) as (
+    min: number,
+    max: number,
+  ) => number;
+  /**
+   * Clamps `self` into the range `[min, max]`.
+   *
+   * Equivalent to `self.min(max).max(min)`. Callers should pass `min <= max`;
+   * if `min > max` the result is always `min` (the lower-clamp wins because
+   * it runs after the upper-clamp).
+   *
+   * # Examples
+   * ```
+   * (5).clamp(0, 10)    // 5
+   * (-3).clamp(0, 10)   // 0
+   * (15).clamp(0, 10)   // 10
+   * ```
+   */
+  clamp_async = defineInstanceFunction('baml.Int.clamp', 'async', ['self', 'min', 'max']).bind(
+    this,
+  ) as (min: number, max: number) => Promise<number>;
+  /**
+   * Returns the integer square root of `self` — that is, the largest `int`
+   * `r` such that `r * r <= self`.
+   *
+   * Throws `InvalidArgument` if `self` is negative.
+   *
+   * # Examples
+   * ```
+   * (10).isqrt()   // 3
+   * (16).isqrt()   // 4
+   * (0).isqrt()    // 0
+   * (-1).isqrt()   // throws
+   * ```
+   * @throws InvalidArgument
+   */
+  isqrt = defineInstanceFunction('baml.Int.isqrt', 'sync', ['self']).bind(this) as () => number;
+  /**
+   * Returns the integer square root of `self` — that is, the largest `int`
+   * `r` such that `r * r <= self`.
+   *
+   * Throws `InvalidArgument` if `self` is negative.
+   *
+   * # Examples
+   * ```
+   * (10).isqrt()   // 3
+   * (16).isqrt()   // 4
+   * (0).isqrt()    // 0
+   * (-1).isqrt()   // throws
+   * ```
+   * @throws InvalidArgument
+   */
+  isqrt_async = defineInstanceFunction('baml.Int.isqrt', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns `self ** exp`. Saturates on overflow (positive overflow returns
+   * `int.max_value()`, negative overflow returns `int.min_value()`).
+   *
+   * `0 ** 0` returns `1`, by convention.
+   *
+   * If `exp` is negative the result is `0`, since the mathematical value
+   * `self ** -n = 1 / self ** n` is in `(-1, 1)` for `|self| > 1` and rounds
+   * to zero. (For `self == 1` or `self == -1` the value is `±1` which rounds
+   * to itself; this implementation still returns `0` for negative exponents
+   * uniformly.)
+   *
+   * # Examples
+   * ```
+   * (2).pow(10)      // 1024
+   * (2).pow(0)       // 1
+   * (0).pow(0)       // 1   (convention)
+   * (2).pow(-1)      // 0
+   * (10).pow(100)    // saturates to int.max_value()
+   * (-2).pow(3)      // -8
+   * ```
+   */
+  pow = defineInstanceFunction('baml.Int.pow', 'sync', ['self', 'exp']).bind(this) as (
+    exp: number,
+  ) => number;
+  /**
+   * Returns `self ** exp`. Saturates on overflow (positive overflow returns
+   * `int.max_value()`, negative overflow returns `int.min_value()`).
+   *
+   * `0 ** 0` returns `1`, by convention.
+   *
+   * If `exp` is negative the result is `0`, since the mathematical value
+   * `self ** -n = 1 / self ** n` is in `(-1, 1)` for `|self| > 1` and rounds
+   * to zero. (For `self == 1` or `self == -1` the value is `±1` which rounds
+   * to itself; this implementation still returns `0` for negative exponents
+   * uniformly.)
+   *
+   * # Examples
+   * ```
+   * (2).pow(10)      // 1024
+   * (2).pow(0)       // 1
+   * (0).pow(0)       // 1   (convention)
+   * (2).pow(-1)      // 0
+   * (10).pow(100)    // saturates to int.max_value()
+   * (-2).pow(3)      // -8
+   * ```
+   */
+  pow_async = defineInstanceFunction('baml.Int.pow', 'async', ['self', 'exp']).bind(this) as (
+    exp: number,
+  ) => Promise<number>;
+  /**
+   * Returns the integer logarithm of `self` in the given `base`, rounded
+   * down — i.e. the largest `n` such that `base ** n <= self`.
+   *
+   * Throws `InvalidArgument` if `self <= 0` or `base < 2`.
+   *
+   * # Examples
+   * ```
+   * (1000).ilog(10)   // 3
+   * (1024).ilog(2)    // 10
+   * (1).ilog(10)      // 0
+   * (0).ilog(10)      // throws
+   * (10).ilog(1)      // throws
+   * ```
+   * @throws InvalidArgument
+   */
+  ilog = defineInstanceFunction('baml.Int.ilog', 'sync', ['self', 'base']).bind(this) as (
+    base: number,
+  ) => number;
+  /**
+   * Returns the integer logarithm of `self` in the given `base`, rounded
+   * down — i.e. the largest `n` such that `base ** n <= self`.
+   *
+   * Throws `InvalidArgument` if `self <= 0` or `base < 2`.
+   *
+   * # Examples
+   * ```
+   * (1000).ilog(10)   // 3
+   * (1024).ilog(2)    // 10
+   * (1).ilog(10)      // 0
+   * (0).ilog(10)      // throws
+   * (10).ilog(1)      // throws
+   * ```
+   * @throws InvalidArgument
+   */
+  ilog_async = defineInstanceFunction('baml.Int.ilog', 'async', ['self', 'base']).bind(this) as (
+    base: number,
+  ) => Promise<number>;
+  /**
+   * Returns the number of leading zero bits in the 64-bit two's-complement
+   * representation of `self`.
+   *
+   * # Examples
+   * ```
+   * (0).leading_zeros()  // 64
+   * (1).leading_zeros()  // 63
+   * (-1).leading_zeros() // 0  (all-ones)
+   * ```
+   */
+  leading_zeros = defineInstanceFunction('baml.Int.leading_zeros', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Returns the number of leading zero bits in the 64-bit two's-complement
+   * representation of `self`.
+   *
+   * # Examples
+   * ```
+   * (0).leading_zeros()  // 64
+   * (1).leading_zeros()  // 63
+   * (-1).leading_zeros() // 0  (all-ones)
+   * ```
+   */
+  leading_zeros_async = defineInstanceFunction('baml.Int.leading_zeros', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the number of leading one bits in the 64-bit two's-complement
+   * representation of `self`.
+   *
+   * # Examples
+   * ```
+   * (0).leading_ones()   // 0
+   * (-1).leading_ones()  // 64
+   * ```
+   */
+  leading_ones = defineInstanceFunction('baml.Int.leading_ones', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Returns the number of leading one bits in the 64-bit two's-complement
+   * representation of `self`.
+   *
+   * # Examples
+   * ```
+   * (0).leading_ones()   // 0
+   * (-1).leading_ones()  // 64
+   * ```
+   */
+  leading_ones_async = defineInstanceFunction('baml.Int.leading_ones', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the number of trailing zero bits.
+   *
+   * # Examples
+   * ```
+   * (0).trailing_zeros()  // 64
+   * (8).trailing_zeros()  // 3   (binary 1000)
+   * (1).trailing_zeros()  // 0
+   * ```
+   */
+  trailing_zeros = defineInstanceFunction('baml.Int.trailing_zeros', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Returns the number of trailing zero bits.
+   *
+   * # Examples
+   * ```
+   * (0).trailing_zeros()  // 64
+   * (8).trailing_zeros()  // 3   (binary 1000)
+   * (1).trailing_zeros()  // 0
+   * ```
+   */
+  trailing_zeros_async = defineInstanceFunction('baml.Int.trailing_zeros', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the number of trailing one bits.
+   *
+   * # Examples
+   * ```
+   * (7).trailing_ones()   // 3   (binary 111)
+   * (8).trailing_ones()   // 0
+   * (-1).trailing_ones()  // 64
+   * ```
+   */
+  trailing_ones = defineInstanceFunction('baml.Int.trailing_ones', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Returns the number of trailing one bits.
+   *
+   * # Examples
+   * ```
+   * (7).trailing_ones()   // 3   (binary 111)
+   * (8).trailing_ones()   // 0
+   * (-1).trailing_ones()  // 64
+   * ```
+   */
+  trailing_ones_async = defineInstanceFunction('baml.Int.trailing_ones', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the total number of zero bits in the 64-bit two's-complement
+   * representation of `self`.
+   *
+   * # Examples
+   * ```
+   * (0).count_zeros()   // 64
+   * (-1).count_zeros()  // 0
+   * ```
+   */
+  count_zeros = defineInstanceFunction('baml.Int.count_zeros', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Returns the total number of zero bits in the 64-bit two's-complement
+   * representation of `self`.
+   *
+   * # Examples
+   * ```
+   * (0).count_zeros()   // 64
+   * (-1).count_zeros()  // 0
+   * ```
+   */
+  count_zeros_async = defineInstanceFunction('baml.Int.count_zeros', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the total number of one bits in the 64-bit two's-complement
+   * representation of `self`. Also known as the population count or
+   * "popcount".
+   *
+   * # Examples
+   * ```
+   * (0).count_ones()   // 0
+   * (7).count_ones()   // 3
+   * (-1).count_ones()  // 64
+   * ```
+   */
+  count_ones = defineInstanceFunction('baml.Int.count_ones', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Returns the total number of one bits in the 64-bit two's-complement
+   * representation of `self`. Also known as the population count or
+   * "popcount".
+   *
+   * # Examples
+   * ```
+   * (0).count_ones()   // 0
+   * (7).count_ones()   // 3
+   * (-1).count_ones()  // 64
+   * ```
+   */
+  count_ones_async = defineInstanceFunction('baml.Int.count_ones', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
 }
 
 /**
@@ -2205,7 +2823,7 @@ export class Null {
 
 /**
  * A UTF-8 encoded string.
- * 
+ *
  * String literals use double quotes: `"hello"`. Multiline strings use the `#"..."#` syntax.
  * All methods returning a new string do not mutate `self` unless noted otherwise.
  */
@@ -2217,7 +2835,7 @@ export class String$stream {
 
 /**
  * A UTF-8 encoded string.
- * 
+ *
  * String literals use double quotes: `"hello"`. Multiline strings use the `#"..."#` syntax.
  * All methods returning a new string do not mutate `self` unless noted otherwise.
  */
@@ -2225,949 +2843,1146 @@ export class String {
   constructor(init: {}) {
     Object.assign(this, init);
   }
-/**
- * Renders any value as a human-readable string.
- * 
- * If `value`'s runtime type implements `baml.ToString`, its `to_string`
- * override is used; otherwise a default structural rendering is produced.
- * Never throws.
- * 
- * ```
- * string.from(42)            // "42"
- * string.from(true)          // "true"
- * string.from([1, 2, 3])     // "[1, 2, 3]"
- * ```
- * 
- * Ideally this would read:
- * 
- * ```
- * if (value is baml.ToString) { value.to_string() }
- * else { root._to_string_default(value) }
- * ```
- * 
- * but that does not work from the stdlib today. `is <interface>` and
- * interface method dispatch are resolved at *compile time* by expanding the
- * interface to its known implementor classes, and that implementor set is
- * per-package: it is built from the package's dependencies + itself, never
- * its dependents. `string.from` lives in the `baml` package, which a user's
- * `implements baml.ToString` sits *above*, so from here the implementor set
- * for `baml.ToString` is empty — the `is` test folds to constant `false` and
- * the override never dispatches. (Same boundary `Sortable.sort`'s
- * `_compare_shim` and `baml.json.to_json` work around.)
- * 
- * So dispatch is resolved on `value`'s *runtime* class via
- * `baml._to_string_shim` instead. TODO: once Kai's TIR rework lands (it moves
- * interface conformance checks to runtime), replace this with the literal
- * `is baml.ToString` form above and drop `_to_string_shim`.
- */
-  static from = defineFunction("baml.String.from", "sync", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => string;
-/**
- * Renders any value as a human-readable string.
- * 
- * If `value`'s runtime type implements `baml.ToString`, its `to_string`
- * override is used; otherwise a default structural rendering is produced.
- * Never throws.
- * 
- * ```
- * string.from(42)            // "42"
- * string.from(true)          // "true"
- * string.from([1, 2, 3])     // "[1, 2, 3]"
- * ```
- * 
- * Ideally this would read:
- * 
- * ```
- * if (value is baml.ToString) { value.to_string() }
- * else { root._to_string_default(value) }
- * ```
- * 
- * but that does not work from the stdlib today. `is <interface>` and
- * interface method dispatch are resolved at *compile time* by expanding the
- * interface to its known implementor classes, and that implementor set is
- * per-package: it is built from the package's dependencies + itself, never
- * its dependents. `string.from` lives in the `baml` package, which a user's
- * `implements baml.ToString` sits *above*, so from here the implementor set
- * for `baml.ToString` is empty — the `is` test folds to constant `false` and
- * the override never dispatches. (Same boundary `Sortable.sort`'s
- * `_compare_shim` and `baml.json.to_json` work around.)
- * 
- * So dispatch is resolved on `value`'s *runtime* class via
- * `baml._to_string_shim` instead. TODO: once Kai's TIR rework lands (it moves
- * interface conformance checks to runtime), replace this with the literal
- * `is baml.ToString` form above and drop `_to_string_shim`.
- */
-  static from_async = defineFunction("baml.String.from", "async", ["value"], undefined, { typeParams: ["T"] }) as <T>(value: T) => Promise<string>;
-/**
- * Decodes a `uint8array` of UTF-8 bytes into a string.
- * 
- * Throws `InvalidArgument` if `utf8` is not valid UTF-8. To decode bytes
- * with replacement characters (lossy), use `uint8array.to_string()`
- * instead, which substitutes U+FFFD for invalid sequences.
- * 
- * # Examples
- * ```
- * string.from_utf8(b"\x68\x69")          // "hi"
- * string.from_utf8(b"\xC3\xA9")          // "é"
- * string.from_utf8(b"\xFF")              // throws — 0xFF is invalid UTF-8
- * ```
- * @throws InvalidArgument
- */
-  static from_utf8 = defineFunction("baml.String.from_utf8", "sync", ["utf8"]) as (utf8: Uint8Array) => string;
-/**
- * Decodes a `uint8array` of UTF-8 bytes into a string.
- * 
- * Throws `InvalidArgument` if `utf8` is not valid UTF-8. To decode bytes
- * with replacement characters (lossy), use `uint8array.to_string()`
- * instead, which substitutes U+FFFD for invalid sequences.
- * 
- * # Examples
- * ```
- * string.from_utf8(b"\x68\x69")          // "hi"
- * string.from_utf8(b"\xC3\xA9")          // "é"
- * string.from_utf8(b"\xFF")              // throws — 0xFF is invalid UTF-8
- * ```
- * @throws InvalidArgument
- */
-  static from_utf8_async = defineFunction("baml.String.from_utf8", "async", ["utf8"]) as (utf8: Uint8Array) => Promise<string>;
-/**
- * Builds a string from an array of Unicode code points.
- * 
- * Each value in `unicode` must be in the range `[0, 0x10FFFF]` and must
- * not be a UTF-16 surrogate (the range `[0xD800, 0xDFFF]`). Throws
- * `InvalidArgument` on any invalid value, identifying the offending
- * position in the array.
- * 
- * # Examples
- * ```
- * string.from_code_points([104, 105])         // "hi"
- * string.from_code_points([233])              // "é"
- * string.from_code_points([128017])           // "🐑"
- * string.from_code_points([-1])               // throws — out of range
- * string.from_code_points([55296])            // throws — surrogate (U+D800)
- * ```
- * @throws InvalidArgument
- */
-  static from_code_points = defineFunction("baml.String.from_code_points", "sync", ["unicode"]) as (unicode: number[]) => string;
-/**
- * Builds a string from an array of Unicode code points.
- * 
- * Each value in `unicode` must be in the range `[0, 0x10FFFF]` and must
- * not be a UTF-16 surrogate (the range `[0xD800, 0xDFFF]`). Throws
- * `InvalidArgument` on any invalid value, identifying the offending
- * position in the array.
- * 
- * # Examples
- * ```
- * string.from_code_points([104, 105])         // "hi"
- * string.from_code_points([233])              // "é"
- * string.from_code_points([128017])           // "🐑"
- * string.from_code_points([-1])               // throws — out of range
- * string.from_code_points([55296])            // throws — surrogate (U+D800)
- * ```
- * @throws InvalidArgument
- */
-  static from_code_points_async = defineFunction("baml.String.from_code_points", "async", ["unicode"]) as (unicode: number[]) => Promise<string>;
-/**
- * Returns the number of **Unicode code points** (characters) in the string.
- * 
- * This is `O(1)` — the count is cached at construction time. For ASCII
- * text it equals `byte_length()`, but for strings with multi-byte UTF-8
- * characters they differ.
- * 
- * # Examples
- * ```
- * "hello".length()  // 5
- * "héllo".length()  // 5
- * "😀".length()     // 1
- * "".length()       // 0
- * ```
- */
-  length = defineInstanceFunction("baml.String.length", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the number of **Unicode code points** (characters) in the string.
- * 
- * This is `O(1)` — the count is cached at construction time. For ASCII
- * text it equals `byte_length()`, but for strings with multi-byte UTF-8
- * characters they differ.
- * 
- * # Examples
- * ```
- * "hello".length()  // 5
- * "héllo".length()  // 5
- * "😀".length()     // 1
- * "".length()       // 0
- * ```
- */
-  length_async = defineInstanceFunction("baml.String.length", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Alias for `length()`.
- */
-  char_count = defineInstanceFunction("baml.String.char_count", "sync", ["self"]).bind(this) as () => number;
-/**
- * Alias for `length()`.
- */
-  char_count_async = defineInstanceFunction("baml.String.char_count", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the length of the string in **UTF-8 bytes**.
- * 
- * This is `O(1)`. Useful for serialization, network I/O, and buffer
- * allocation where byte size matters.
- * 
- * # Examples
- * ```
- * "hello".byte_length()  // 5
- * "héllo".byte_length()  // 6
- * "😀".byte_length()     // 4
- * ```
- */
-  byte_length = defineInstanceFunction("baml.String.byte_length", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the length of the string in **UTF-8 bytes**.
- * 
- * This is `O(1)`. Useful for serialization, network I/O, and buffer
- * allocation where byte size matters.
- * 
- * # Examples
- * ```
- * "hello".byte_length()  // 5
- * "héllo".byte_length()  // 6
- * "😀".byte_length()     // 4
- * ```
- */
-  byte_length_async = defineInstanceFunction("baml.String.byte_length", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the string with all Unicode characters converted to lowercase.
- */
-  to_lower_case = defineInstanceFunction("baml.String.to_lower_case", "sync", ["self"]).bind(this) as () => string;
-/**
- * Returns the string with all Unicode characters converted to lowercase.
- */
-  to_lower_case_async = defineInstanceFunction("baml.String.to_lower_case", "async", ["self"]).bind(this) as () => Promise<string>;
-/**
- * Returns the string with all Unicode characters converted to uppercase.
- */
-  to_upper_case = defineInstanceFunction("baml.String.to_upper_case", "sync", ["self"]).bind(this) as () => string;
-/**
- * Returns the string with all Unicode characters converted to uppercase.
- */
-  to_upper_case_async = defineInstanceFunction("baml.String.to_upper_case", "async", ["self"]).bind(this) as () => Promise<string>;
-/**
- * Returns the string with leading and trailing whitespace removed.
- * 
- * Whitespace is defined per Unicode `White_Space` and includes ASCII spaces,
- * tabs, newlines, and carriage returns as well as Unicode whitespace.
- * 
- * # Examples
- * ```
- * "  hi  ".trim()    // "hi"
- * "\n\thi\n".trim()  // "hi"
- * "hi".trim()        // "hi"
- * ```
- */
-  trim = defineInstanceFunction("baml.String.trim", "sync", ["self"]).bind(this) as () => string;
-/**
- * Returns the string with leading and trailing whitespace removed.
- * 
- * Whitespace is defined per Unicode `White_Space` and includes ASCII spaces,
- * tabs, newlines, and carriage returns as well as Unicode whitespace.
- * 
- * # Examples
- * ```
- * "  hi  ".trim()    // "hi"
- * "\n\thi\n".trim()  // "hi"
- * "hi".trim()        // "hi"
- * ```
- */
-  trim_async = defineInstanceFunction("baml.String.trim", "async", ["self"]).bind(this) as () => Promise<string>;
-/**
- * Returns the string with leading whitespace removed (trailing whitespace
- * is preserved). Whitespace follows Unicode `White_Space`.
- * 
- * # Examples
- * ```
- * "  hi  ".trim_start()  // "hi  "
- * "\nhi".trim_start()    // "hi"
- * ```
- */
-  trim_start = defineInstanceFunction("baml.String.trim_start", "sync", ["self"]).bind(this) as () => string;
-/**
- * Returns the string with leading whitespace removed (trailing whitespace
- * is preserved). Whitespace follows Unicode `White_Space`.
- * 
- * # Examples
- * ```
- * "  hi  ".trim_start()  // "hi  "
- * "\nhi".trim_start()    // "hi"
- * ```
- */
-  trim_start_async = defineInstanceFunction("baml.String.trim_start", "async", ["self"]).bind(this) as () => Promise<string>;
-/**
- * Returns the string with trailing whitespace removed (leading whitespace
- * is preserved). Whitespace follows Unicode `White_Space`.
- * 
- * # Examples
- * ```
- * "  hi  ".trim_end()  // "  hi"
- * "hi\n".trim_end()    // "hi"
- * ```
- */
-  trim_end = defineInstanceFunction("baml.String.trim_end", "sync", ["self"]).bind(this) as () => string;
-/**
- * Returns the string with trailing whitespace removed (leading whitespace
- * is preserved). Whitespace follows Unicode `White_Space`.
- * 
- * # Examples
- * ```
- * "  hi  ".trim_end()  // "  hi"
- * "hi\n".trim_end()    // "hi"
- * ```
- */
-  trim_end_async = defineInstanceFunction("baml.String.trim_end", "async", ["self"]).bind(this) as () => Promise<string>;
-/**
- * Returns true if `search` appears anywhere in the string.
- */
-  includes = defineInstanceFunction("baml.String.includes", "sync", ["self", "search"]).bind(this) as (search: string) => boolean;
-/**
- * Returns true if `search` appears anywhere in the string.
- */
-  includes_async = defineInstanceFunction("baml.String.includes", "async", ["self", "search"]).bind(this) as (search: string) => Promise<boolean>;
-/**
- * Returns true if the string starts with `prefix`.
- */
-  starts_with = defineInstanceFunction("baml.String.starts_with", "sync", ["self", "prefix"]).bind(this) as (prefix: string) => boolean;
-/**
- * Returns true if the string starts with `prefix`.
- */
-  starts_with_async = defineInstanceFunction("baml.String.starts_with", "async", ["self", "prefix"]).bind(this) as (prefix: string) => Promise<boolean>;
-/**
- * Returns true if the string ends with `suffix`.
- */
-  ends_with = defineInstanceFunction("baml.String.ends_with", "sync", ["self", "suffix"]).bind(this) as (suffix: string) => boolean;
-/**
- * Returns true if the string ends with `suffix`.
- */
-  ends_with_async = defineInstanceFunction("baml.String.ends_with", "async", ["self", "suffix"]).bind(this) as (suffix: string) => Promise<boolean>;
-/**
- * Splits the string by `delimiter` and returns an array of substrings.
- * 
- * # Examples
- * ```
- * "a,b,c".split(",")     // ["a", "b", "c"]
- * "hello".split("")      // ["h", "e", "l", "l", "o"]
- * "no match".split(",")  // ["no match"]
- * ```
- */
-  split = defineInstanceFunction("baml.String.split", "sync", ["self", "delimiter"]).bind(this) as (delimiter: string) => string[];
-/**
- * Splits the string by `delimiter` and returns an array of substrings.
- * 
- * # Examples
- * ```
- * "a,b,c".split(",")     // ["a", "b", "c"]
- * "hello".split("")      // ["h", "e", "l", "l", "o"]
- * "no match".split(",")  // ["no match"]
- * ```
- */
-  split_async = defineInstanceFunction("baml.String.split", "async", ["self", "delimiter"]).bind(this) as (delimiter: string) => Promise<string[]>;
-/**
- * Returns the string's Unicode code points as one-character strings.
- * 
- * # Examples
- * ```
- * "hello".chars()  // ["h", "e", "l", "l", "o"]
- * "é😀".chars()    // ["é", "😀"]
- * "".chars()       // []
- * ```
- */
-  chars = defineInstanceFunction("baml.String.chars", "sync", ["self"]).bind(this) as () => string[];
-/**
- * Returns the string's Unicode code points as one-character strings.
- * 
- * # Examples
- * ```
- * "hello".chars()  // ["h", "e", "l", "l", "o"]
- * "é😀".chars()    // ["é", "😀"]
- * "".chars()       // []
- * ```
- */
-  chars_async = defineInstanceFunction("baml.String.chars", "async", ["self"]).bind(this) as () => Promise<string[]>;
-/**
- * Splits the string into lines, recognizing both `\n` and `\r\n` as line
- * terminators. The terminator is **not** included in the returned strings.
- * A final terminator does not produce a trailing empty string.
- * 
- * # Examples
- * ```
- * "a\nb\nc".lines()    // ["a", "b", "c"]
- * "a\nb\n".lines()     // ["a", "b"]      (no trailing empty)
- * "a\r\nb".lines()     // ["a", "b"]      (CRLF handled)
- * "".lines()           // []
- * "\n".lines()         // [""]
- * ```
- */
-  lines = defineInstanceFunction("baml.String.lines", "sync", ["self"]).bind(this) as () => string[];
-/**
- * Splits the string into lines, recognizing both `\n` and `\r\n` as line
- * terminators. The terminator is **not** included in the returned strings.
- * A final terminator does not produce a trailing empty string.
- * 
- * # Examples
- * ```
- * "a\nb\nc".lines()    // ["a", "b", "c"]
- * "a\nb\n".lines()     // ["a", "b"]      (no trailing empty)
- * "a\r\nb".lines()     // ["a", "b"]      (CRLF handled)
- * "".lines()           // []
- * "\n".lines()         // [""]
- * ```
- */
-  lines_async = defineInstanceFunction("baml.String.lines", "async", ["self"]).bind(this) as () => Promise<string[]>;
-/**
- * Returns the substring between two **character** offsets `[start, end)`.
- * 
- * Both `start` and `end` are codepoint indices, matching `length()`. Negative
- * indices count from the end. The resolved offsets are clamped to
- * `[0, length()]`, and an `end` that resolves at or before `start` yields an
- * empty string. Never throws.
- * 
- * # Examples
- * ```
- * "hello world".substring(0, 5)   // "hello"
- * "hello".substring(2, 100)       // "llo" (end clamped)
- * "hello".substring(-3, -1)       // "ll" (counts from the end)
- * "😀hello".substring(0, 1)       // "😀"
- * "😀hello".substring(1, 4)       // "hel"
- * ```
- */
-  substring = defineInstanceFunction("baml.String.substring", "sync", ["self", "start", "end"]).bind(this) as (start: number, end: number) => string;
-/**
- * Returns the substring between two **character** offsets `[start, end)`.
- * 
- * Both `start` and `end` are codepoint indices, matching `length()`. Negative
- * indices count from the end. The resolved offsets are clamped to
- * `[0, length()]`, and an `end` that resolves at or before `start` yields an
- * empty string. Never throws.
- * 
- * # Examples
- * ```
- * "hello world".substring(0, 5)   // "hello"
- * "hello".substring(2, 100)       // "llo" (end clamped)
- * "hello".substring(-3, -1)       // "ll" (counts from the end)
- * "😀hello".substring(0, 1)       // "😀"
- * "😀hello".substring(1, 4)       // "hel"
- * ```
- */
-  substring_async = defineInstanceFunction("baml.String.substring", "async", ["self", "start", "end"]).bind(this) as (start: number, end: number) => Promise<string>;
-/**
- * Replaces the first occurrence of `search` with `replacement`.
- */
-  replace = defineInstanceFunction("baml.String.replace", "sync", ["self", "search", "replacement"]).bind(this) as (search: string, replacement: string) => string;
-/**
- * Replaces the first occurrence of `search` with `replacement`.
- */
-  replace_async = defineInstanceFunction("baml.String.replace", "async", ["self", "search", "replacement"]).bind(this) as (search: string, replacement: string) => Promise<string>;
-/**
- * Returns the **character index** of the first occurrence of `search`, or
- * `null` if not found.
- * 
- * # Examples
- * ```
- * "hello world".index_of("world")  // 6
- * "héllo".index_of("l")            // 2
- * "😀hello".index_of("h")          // 1
- * "abc".index_of("z")              // null
- * ```
- */
-  index_of = defineInstanceFunction("baml.String.index_of", "sync", ["self", "search"]).bind(this) as (search: string) => number | null;
-/**
- * Returns the **character index** of the first occurrence of `search`, or
- * `null` if not found.
- * 
- * # Examples
- * ```
- * "hello world".index_of("world")  // 6
- * "héllo".index_of("l")            // 2
- * "😀hello".index_of("h")          // 1
- * "abc".index_of("z")              // null
- * ```
- */
-  index_of_async = defineInstanceFunction("baml.String.index_of", "async", ["self", "search"]).bind(this) as (search: string) => Promise<number | null>;
-  char_at = defineInstanceFunction("baml.String.char_at", "sync", ["self", "index"]).bind(this) as (index: number) => string;
-  char_at_async = defineInstanceFunction("baml.String.char_at", "async", ["self", "index"]).bind(this) as (index: number) => Promise<string>;
-  code_point_at = defineInstanceFunction("baml.String.code_point_at", "sync", ["self", "index"]).bind(this) as (index: number) => number;
-  code_point_at_async = defineInstanceFunction("baml.String.code_point_at", "async", ["self", "index"]).bind(this) as (index: number) => Promise<number>;
-/**
- * Returns a new string that repeats `self` the given number of times.
- * Negative counts are treated as 0.
- * 
- * # Examples
- * ```
- * "ab".repeat(3)   // "ababab"
- * "hi".repeat(0)   // ""
- * "hi".repeat(-1)  // ""
- * ```
- */
-  repeat = defineInstanceFunction("baml.String.repeat", "sync", ["self", "count"]).bind(this) as (count: number) => string;
-/**
- * Returns a new string that repeats `self` the given number of times.
- * Negative counts are treated as 0.
- * 
- * # Examples
- * ```
- * "ab".repeat(3)   // "ababab"
- * "hi".repeat(0)   // ""
- * "hi".repeat(-1)  // ""
- * ```
- */
-  repeat_async = defineInstanceFunction("baml.String.repeat", "async", ["self", "count"]).bind(this) as (count: number) => Promise<string>;
-/**
- * Returns true if the string contains the given `substring`.
- */
-  matches = defineInstanceFunction("baml.String.matches", "sync", ["self", "substring"]).bind(this) as (substring: string) => boolean;
-/**
- * Returns true if the string contains the given `substring`.
- */
-  matches_async = defineInstanceFunction("baml.String.matches", "async", ["self", "substring"]).bind(this) as (substring: string) => Promise<boolean>;
-/**
- * Replaces all occurrences of `search` with `replacement`.
- */
-  replace_all = defineInstanceFunction("baml.String.replace_all", "sync", ["self", "search", "replacement"]).bind(this) as (search: string, replacement: string) => string;
-/**
- * Replaces all occurrences of `search` with `replacement`.
- */
-  replace_all_async = defineInstanceFunction("baml.String.replace_all", "async", ["self", "search", "replacement"]).bind(this) as (search: string, replacement: string) => Promise<string>;
-/**
- * Returns true if every character is numeric per Unicode (general categories
- * `Nd`, `Nl`, `No` — decimal digits, letter-numbers, and other-numbers).
- * Empty string returns true.
- * 
- * # Examples
- * ```
- * "12345".is_numeric()  // true
- * "Ⅷ".is_numeric()      // true (Roman numeral, Nl)
- * "12a".is_numeric()    // false
- * "".is_numeric()       // true (vacuous)
- * ```
- */
-  is_numeric = defineInstanceFunction("baml.String.is_numeric", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is numeric per Unicode (general categories
- * `Nd`, `Nl`, `No` — decimal digits, letter-numbers, and other-numbers).
- * Empty string returns true.
- * 
- * # Examples
- * ```
- * "12345".is_numeric()  // true
- * "Ⅷ".is_numeric()      // true (Roman numeral, Nl)
- * "12a".is_numeric()    // false
- * "".is_numeric()       // true (vacuous)
- * ```
- */
-  is_numeric_async = defineInstanceFunction("baml.String.is_numeric", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is a Unicode letter (general category `L`).
- * Empty string returns true.
- * 
- * # Examples
- * ```
- * "héllo".is_alphabetic()  // true
- * "漢字".is_alphabetic()    // true
- * "abc1".is_alphabetic()   // false
- * ```
- */
-  is_alphabetic = defineInstanceFunction("baml.String.is_alphabetic", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is a Unicode letter (general category `L`).
- * Empty string returns true.
- * 
- * # Examples
- * ```
- * "héllo".is_alphabetic()  // true
- * "漢字".is_alphabetic()    // true
- * "abc1".is_alphabetic()   // false
- * ```
- */
-  is_alphabetic_async = defineInstanceFunction("baml.String.is_alphabetic", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is alphabetic OR numeric per Unicode.
- * Empty string returns true. Equivalent to checking each char passes
- * `is_alphabetic` or `is_numeric`.
- * 
- * # Examples
- * ```
- * "abc123".is_alphanumeric()  // true
- * "héllo7".is_alphanumeric()  // true
- * "a b".is_alphanumeric()     // false (space is not)
- * ```
- */
-  is_alphanumeric = defineInstanceFunction("baml.String.is_alphanumeric", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is alphabetic OR numeric per Unicode.
- * Empty string returns true. Equivalent to checking each char passes
- * `is_alphabetic` or `is_numeric`.
- * 
- * # Examples
- * ```
- * "abc123".is_alphanumeric()  // true
- * "héllo7".is_alphanumeric()  // true
- * "a b".is_alphanumeric()     // false (space is not)
- * ```
- */
-  is_alphanumeric_async = defineInstanceFunction("baml.String.is_alphanumeric", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is uppercase per Unicode (general
- * category `Lu`, plus other chars with the `Uppercase` property).
- * Empty string returns true. Note: digits and most symbols are neither
- * upper- nor lowercase.
- * 
- * # Examples
- * ```
- * "HELLO".is_uppercase()  // true
- * "Hello".is_uppercase()  // false
- * "123".is_uppercase()    // false (digits aren't uppercase)
- * ```
- */
-  is_uppercase = defineInstanceFunction("baml.String.is_uppercase", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is uppercase per Unicode (general
- * category `Lu`, plus other chars with the `Uppercase` property).
- * Empty string returns true. Note: digits and most symbols are neither
- * upper- nor lowercase.
- * 
- * # Examples
- * ```
- * "HELLO".is_uppercase()  // true
- * "Hello".is_uppercase()  // false
- * "123".is_uppercase()    // false (digits aren't uppercase)
- * ```
- */
-  is_uppercase_async = defineInstanceFunction("baml.String.is_uppercase", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is lowercase per Unicode (general
- * category `Ll`, plus other chars with the `Lowercase` property).
- * Empty string returns true.
- * 
- * # Examples
- * ```
- * "hello".is_lowercase()  // true
- * "Hello".is_lowercase()  // false
- * ```
- */
-  is_lowercase = defineInstanceFunction("baml.String.is_lowercase", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is lowercase per Unicode (general
- * category `Ll`, plus other chars with the `Lowercase` property).
- * Empty string returns true.
- * 
- * # Examples
- * ```
- * "hello".is_lowercase()  // true
- * "Hello".is_lowercase()  // false
- * ```
- */
-  is_lowercase_async = defineInstanceFunction("baml.String.is_lowercase", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is whitespace per Unicode (`White_Space`
- * property — includes space, tab, newline, NBSP, and other Unicode
- * whitespace). Empty string returns true.
- * 
- * # Examples
- * ```
- * "   ".is_whitespace()      // true
- * " \t\n".is_whitespace()    // true
- * "a b".is_whitespace()      // false
- * ```
- */
-  is_whitespace = defineInstanceFunction("baml.String.is_whitespace", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is whitespace per Unicode (`White_Space`
- * property — includes space, tab, newline, NBSP, and other Unicode
- * whitespace). Empty string returns true.
- * 
- * # Examples
- * ```
- * "   ".is_whitespace()      // true
- * " \t\n".is_whitespace()    // true
- * "a b".is_whitespace()      // false
- * ```
- */
-  is_whitespace_async = defineInstanceFunction("baml.String.is_whitespace", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is a control character per Unicode
- * (general category `Cc`). Empty string returns true.
- * 
- * # Examples
- * ```
- * "\n\t".is_control()  // true
- * "a".is_control()     // false
- * ```
- */
-  is_control = defineInstanceFunction("baml.String.is_control", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is a control character per Unicode
- * (general category `Cc`). Empty string returns true.
- * 
- * # Examples
- * ```
- * "\n\t".is_control()  // true
- * "a".is_control()     // false
- * ```
- */
-  is_control_async = defineInstanceFunction("baml.String.is_control", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is a "graphic" character — that is,
- * not a control character and not whitespace. Empty string returns true.
- * 
- * This is a convenience predicate for "visible/printing" characters. It
- * uses the Unicode definition of control and whitespace.
- * 
- * # Examples
- * ```
- * "abc".is_graphic()      // true
- * "héllo".is_graphic()    // true
- * "a b".is_graphic()      // false (space is not graphic)
- * "a\n".is_graphic()      // false (newline is control)
- * ```
- */
-  is_graphic = defineInstanceFunction("baml.String.is_graphic", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is a "graphic" character — that is,
- * not a control character and not whitespace. Empty string returns true.
- * 
- * This is a convenience predicate for "visible/printing" characters. It
- * uses the Unicode definition of control and whitespace.
- * 
- * # Examples
- * ```
- * "abc".is_graphic()      // true
- * "héllo".is_graphic()    // true
- * "a b".is_graphic()      // false (space is not graphic)
- * "a\n".is_graphic()      // false (newline is control)
- * ```
- */
-  is_graphic_async = defineInstanceFunction("baml.String.is_graphic", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is ASCII (i.e. has a code point in
- * `[0x00, 0x7F]`). Empty string returns true.
- * 
- * # Examples
- * ```
- * "hello".is_ascii()    // true
- * "héllo".is_ascii()    // false (`é` is U+00E9)
- * ```
- */
-  is_ascii = defineInstanceFunction("baml.String.is_ascii", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is ASCII (i.e. has a code point in
- * `[0x00, 0x7F]`). Empty string returns true.
- * 
- * # Examples
- * ```
- * "hello".is_ascii()    // true
- * "héllo".is_ascii()    // false (`é` is U+00E9)
- * ```
- */
-  is_ascii_async = defineInstanceFunction("baml.String.is_ascii", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is an ASCII decimal digit (`0`..=`9`).
- * Empty string returns true. Stricter than `is_numeric`, which accepts
- * non-ASCII numerals.
- * 
- * # Examples
- * ```
- * "12345".is_ascii_numeric()  // true
- * "Ⅷ".is_ascii_numeric()      // false (Roman numeral)
- * ```
- */
-  is_ascii_numeric = defineInstanceFunction("baml.String.is_ascii_numeric", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is an ASCII decimal digit (`0`..=`9`).
- * Empty string returns true. Stricter than `is_numeric`, which accepts
- * non-ASCII numerals.
- * 
- * # Examples
- * ```
- * "12345".is_ascii_numeric()  // true
- * "Ⅷ".is_ascii_numeric()      // false (Roman numeral)
- * ```
- */
-  is_ascii_numeric_async = defineInstanceFunction("baml.String.is_ascii_numeric", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is an ASCII letter (`A`..=`Z` or
- * `a`..=`z`). Empty string returns true.
- */
-  is_ascii_alphabetic = defineInstanceFunction("baml.String.is_ascii_alphabetic", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is an ASCII letter (`A`..=`Z` or
- * `a`..=`z`). Empty string returns true.
- */
-  is_ascii_alphabetic_async = defineInstanceFunction("baml.String.is_ascii_alphabetic", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is an ASCII letter or digit. Empty
- * string returns true.
- */
-  is_ascii_alphanumeric = defineInstanceFunction("baml.String.is_ascii_alphanumeric", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is an ASCII letter or digit. Empty
- * string returns true.
- */
-  is_ascii_alphanumeric_async = defineInstanceFunction("baml.String.is_ascii_alphanumeric", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is an ASCII uppercase letter
- * (`A`..=`Z`). Empty string returns true.
- */
-  is_ascii_uppercase = defineInstanceFunction("baml.String.is_ascii_uppercase", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is an ASCII uppercase letter
- * (`A`..=`Z`). Empty string returns true.
- */
-  is_ascii_uppercase_async = defineInstanceFunction("baml.String.is_ascii_uppercase", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is an ASCII lowercase letter
- * (`a`..=`z`). Empty string returns true.
- */
-  is_ascii_lowercase = defineInstanceFunction("baml.String.is_ascii_lowercase", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is an ASCII lowercase letter
- * (`a`..=`z`). Empty string returns true.
- */
-  is_ascii_lowercase_async = defineInstanceFunction("baml.String.is_ascii_lowercase", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is ASCII whitespace: space (`\x20`),
- * horizontal tab (`\t`), line feed (`\n`), form feed (`\x0C`), or
- * carriage return (`\r`). Note this is narrower than `is_whitespace`,
- * which accepts Unicode whitespace like NBSP.
- */
-  is_ascii_whitespace = defineInstanceFunction("baml.String.is_ascii_whitespace", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is ASCII whitespace: space (`\x20`),
- * horizontal tab (`\t`), line feed (`\n`), form feed (`\x0C`), or
- * carriage return (`\r`). Note this is narrower than `is_whitespace`,
- * which accepts Unicode whitespace like NBSP.
- */
-  is_ascii_whitespace_async = defineInstanceFunction("baml.String.is_ascii_whitespace", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is an ASCII control character — code
- * points `[0x00, 0x1F]` plus DEL (`0x7F`). Empty string returns true.
- */
-  is_ascii_control = defineInstanceFunction("baml.String.is_ascii_control", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is an ASCII control character — code
- * points `[0x00, 0x1F]` plus DEL (`0x7F`). Empty string returns true.
- */
-  is_ascii_control_async = defineInstanceFunction("baml.String.is_ascii_control", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is an ASCII "graphic" character —
- * printable, non-space, non-control: code points `[0x21, 0x7E]`. Note
- * the ASCII space is *not* graphic. Empty string returns true.
- */
-  is_ascii_graphic = defineInstanceFunction("baml.String.is_ascii_graphic", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is an ASCII "graphic" character —
- * printable, non-space, non-control: code points `[0x21, 0x7E]`. Note
- * the ASCII space is *not* graphic. Empty string returns true.
- */
-  is_ascii_graphic_async = defineInstanceFunction("baml.String.is_ascii_graphic", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns true if every character is an ASCII hexadecimal digit:
- * `0`..=`9`, `a`..=`f`, or `A`..=`F`. Empty string returns true.
- * 
- * # Examples
- * ```
- * "deadBEEF".is_ascii_hex()  // true
- * "0x123".is_ascii_hex()     // false (`x` is not a hex digit)
- * ```
- */
-  is_ascii_hex = defineInstanceFunction("baml.String.is_ascii_hex", "sync", ["self"]).bind(this) as () => boolean;
-/**
- * Returns true if every character is an ASCII hexadecimal digit:
- * `0`..=`9`, `a`..=`f`, or `A`..=`F`. Empty string returns true.
- * 
- * # Examples
- * ```
- * "deadBEEF".is_ascii_hex()  // true
- * "0x123".is_ascii_hex()     // false (`x` is not a hex digit)
- * ```
- */
-  is_ascii_hex_async = defineInstanceFunction("baml.String.is_ascii_hex", "async", ["self"]).bind(this) as () => Promise<boolean>;
-/**
- * Returns the string encoded as a `uint8array` of UTF-8 bytes.
- * 
- * The resulting byte array has length `self.byte_length()`. Inverse of the
- * static `string.from_utf8(bytes)`.
- * 
- * # Examples
- * ```
- * "hi".to_utf8()     // [0x68, 0x69]
- * "é".to_utf8()      // [0xC3, 0xA9]
- * "".to_utf8()       // []
- * ```
- */
-  to_utf8 = defineInstanceFunction("baml.String.to_utf8", "sync", ["self"]).bind(this) as () => Uint8Array;
-/**
- * Returns the string encoded as a `uint8array` of UTF-8 bytes.
- * 
- * The resulting byte array has length `self.byte_length()`. Inverse of the
- * static `string.from_utf8(bytes)`.
- * 
- * # Examples
- * ```
- * "hi".to_utf8()     // [0x68, 0x69]
- * "é".to_utf8()      // [0xC3, 0xA9]
- * "".to_utf8()       // []
- * ```
- */
-  to_utf8_async = defineInstanceFunction("baml.String.to_utf8", "async", ["self"]).bind(this) as () => Promise<Uint8Array>;
-/**
- * Returns the string's Unicode code points as an array of `int`s.
- * 
- * This is the exact inverse of `string.from_code_points`: for any string
- * `s`, `string.from_code_points(s.to_code_points())` equals `s`. The result
- * has one element per character (`self.length()` elements), each in
- * `[0, 0x10FFFF]`. Never throws.
- * 
- * Use this for char → integer mappings (checksums, base-N encoding, hashing,
- * character classification) instead of indexing into a literal alphabet
- * string.
- * 
- * # Examples
- * ```
- * "hi".to_code_points()    // [104, 105]
- * "é".to_code_points()     // [233]
- * "🐑".to_code_points()    // [128017]
- * "".to_code_points()      // []
- * ```
- */
-  to_code_points = defineInstanceFunction("baml.String.to_code_points", "sync", ["self"]).bind(this) as () => number[];
-/**
- * Returns the string's Unicode code points as an array of `int`s.
- * 
- * This is the exact inverse of `string.from_code_points`: for any string
- * `s`, `string.from_code_points(s.to_code_points())` equals `s`. The result
- * has one element per character (`self.length()` elements), each in
- * `[0, 0x10FFFF]`. Never throws.
- * 
- * Use this for char → integer mappings (checksums, base-N encoding, hashing,
- * character classification) instead of indexing into a literal alphabet
- * string.
- * 
- * # Examples
- * ```
- * "hi".to_code_points()    // [104, 105]
- * "é".to_code_points()     // [233]
- * "🐑".to_code_points()    // [128017]
- * "".to_code_points()      // []
- * ```
- */
-  to_code_points_async = defineInstanceFunction("baml.String.to_code_points", "async", ["self"]).bind(this) as () => Promise<number[]>;
+  /**
+   * Renders any value as a human-readable string.
+   *
+   * If `value`'s runtime type implements `baml.ToString`, its `to_string`
+   * override is used; otherwise a default structural rendering is produced.
+   * Never throws.
+   *
+   * ```
+   * string.from(42)            // "42"
+   * string.from(true)          // "true"
+   * string.from([1, 2, 3])     // "[1, 2, 3]"
+   * ```
+   *
+   * Ideally this would read:
+   *
+   * ```
+   * if (value is baml.ToString) { value.to_string() }
+   * else { root._to_string_default(value) }
+   * ```
+   *
+   * but that does not work from the stdlib today. `is <interface>` and
+   * interface method dispatch are resolved at *compile time* by expanding the
+   * interface to its known implementor classes, and that implementor set is
+   * per-package: it is built from the package's dependencies + itself, never
+   * its dependents. `string.from` lives in the `baml` package, which a user's
+   * `implements baml.ToString` sits *above*, so from here the implementor set
+   * for `baml.ToString` is empty — the `is` test folds to constant `false` and
+   * the override never dispatches. (Same boundary `Sortable.sort`'s
+   * `_compare_shim` and `baml.json.to_json` work around.)
+   *
+   * So dispatch is resolved on `value`'s *runtime* class via
+   * `baml._to_string_shim` instead. TODO: once Kai's TIR rework lands (it moves
+   * interface conformance checks to runtime), replace this with the literal
+   * `is baml.ToString` form above and drop `_to_string_shim`.
+   */
+  static from = defineFunction('baml.String.from', 'sync', ['value'], undefined, {
+    typeParams: ['T'],
+  }) as <T>(value: T) => string;
+  /**
+   * Renders any value as a human-readable string.
+   *
+   * If `value`'s runtime type implements `baml.ToString`, its `to_string`
+   * override is used; otherwise a default structural rendering is produced.
+   * Never throws.
+   *
+   * ```
+   * string.from(42)            // "42"
+   * string.from(true)          // "true"
+   * string.from([1, 2, 3])     // "[1, 2, 3]"
+   * ```
+   *
+   * Ideally this would read:
+   *
+   * ```
+   * if (value is baml.ToString) { value.to_string() }
+   * else { root._to_string_default(value) }
+   * ```
+   *
+   * but that does not work from the stdlib today. `is <interface>` and
+   * interface method dispatch are resolved at *compile time* by expanding the
+   * interface to its known implementor classes, and that implementor set is
+   * per-package: it is built from the package's dependencies + itself, never
+   * its dependents. `string.from` lives in the `baml` package, which a user's
+   * `implements baml.ToString` sits *above*, so from here the implementor set
+   * for `baml.ToString` is empty — the `is` test folds to constant `false` and
+   * the override never dispatches. (Same boundary `Sortable.sort`'s
+   * `_compare_shim` and `baml.json.to_json` work around.)
+   *
+   * So dispatch is resolved on `value`'s *runtime* class via
+   * `baml._to_string_shim` instead. TODO: once Kai's TIR rework lands (it moves
+   * interface conformance checks to runtime), replace this with the literal
+   * `is baml.ToString` form above and drop `_to_string_shim`.
+   */
+  static from_async = defineFunction('baml.String.from', 'async', ['value'], undefined, {
+    typeParams: ['T'],
+  }) as <T>(value: T) => Promise<string>;
+  /**
+   * Decodes a `uint8array` of UTF-8 bytes into a string.
+   *
+   * Throws `InvalidArgument` if `utf8` is not valid UTF-8. To decode bytes
+   * with replacement characters (lossy), use `uint8array.to_string()`
+   * instead, which substitutes U+FFFD for invalid sequences.
+   *
+   * # Examples
+   * ```
+   * string.from_utf8(b"\x68\x69")          // "hi"
+   * string.from_utf8(b"\xC3\xA9")          // "é"
+   * string.from_utf8(b"\xFF")              // throws — 0xFF is invalid UTF-8
+   * ```
+   * @throws InvalidArgument
+   */
+  static from_utf8 = defineFunction('baml.String.from_utf8', 'sync', ['utf8']) as (
+    utf8: Uint8Array,
+  ) => string;
+  /**
+   * Decodes a `uint8array` of UTF-8 bytes into a string.
+   *
+   * Throws `InvalidArgument` if `utf8` is not valid UTF-8. To decode bytes
+   * with replacement characters (lossy), use `uint8array.to_string()`
+   * instead, which substitutes U+FFFD for invalid sequences.
+   *
+   * # Examples
+   * ```
+   * string.from_utf8(b"\x68\x69")          // "hi"
+   * string.from_utf8(b"\xC3\xA9")          // "é"
+   * string.from_utf8(b"\xFF")              // throws — 0xFF is invalid UTF-8
+   * ```
+   * @throws InvalidArgument
+   */
+  static from_utf8_async = defineFunction('baml.String.from_utf8', 'async', ['utf8']) as (
+    utf8: Uint8Array,
+  ) => Promise<string>;
+  /**
+   * Builds a string from an array of Unicode code points.
+   *
+   * Each value in `unicode` must be in the range `[0, 0x10FFFF]` and must
+   * not be a UTF-16 surrogate (the range `[0xD800, 0xDFFF]`). Throws
+   * `InvalidArgument` on any invalid value, identifying the offending
+   * position in the array.
+   *
+   * # Examples
+   * ```
+   * string.from_code_points([104, 105])         // "hi"
+   * string.from_code_points([233])              // "é"
+   * string.from_code_points([128017])           // "🐑"
+   * string.from_code_points([-1])               // throws — out of range
+   * string.from_code_points([55296])            // throws — surrogate (U+D800)
+   * ```
+   * @throws InvalidArgument
+   */
+  static from_code_points = defineFunction('baml.String.from_code_points', 'sync', ['unicode']) as (
+    unicode: number[],
+  ) => string;
+  /**
+   * Builds a string from an array of Unicode code points.
+   *
+   * Each value in `unicode` must be in the range `[0, 0x10FFFF]` and must
+   * not be a UTF-16 surrogate (the range `[0xD800, 0xDFFF]`). Throws
+   * `InvalidArgument` on any invalid value, identifying the offending
+   * position in the array.
+   *
+   * # Examples
+   * ```
+   * string.from_code_points([104, 105])         // "hi"
+   * string.from_code_points([233])              // "é"
+   * string.from_code_points([128017])           // "🐑"
+   * string.from_code_points([-1])               // throws — out of range
+   * string.from_code_points([55296])            // throws — surrogate (U+D800)
+   * ```
+   * @throws InvalidArgument
+   */
+  static from_code_points_async = defineFunction('baml.String.from_code_points', 'async', [
+    'unicode',
+  ]) as (unicode: number[]) => Promise<string>;
+  /**
+   * Returns the number of **Unicode code points** (characters) in the string.
+   *
+   * This is `O(1)` — the count is cached at construction time. For ASCII
+   * text it equals `byte_length()`, but for strings with multi-byte UTF-8
+   * characters they differ.
+   *
+   * # Examples
+   * ```
+   * "hello".length()  // 5
+   * "héllo".length()  // 5
+   * "😀".length()     // 1
+   * "".length()       // 0
+   * ```
+   */
+  length = defineInstanceFunction('baml.String.length', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Returns the number of **Unicode code points** (characters) in the string.
+   *
+   * This is `O(1)` — the count is cached at construction time. For ASCII
+   * text it equals `byte_length()`, but for strings with multi-byte UTF-8
+   * characters they differ.
+   *
+   * # Examples
+   * ```
+   * "hello".length()  // 5
+   * "héllo".length()  // 5
+   * "😀".length()     // 1
+   * "".length()       // 0
+   * ```
+   */
+  length_async = defineInstanceFunction('baml.String.length', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Alias for `length()`.
+   */
+  char_count = defineInstanceFunction('baml.String.char_count', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Alias for `length()`.
+   */
+  char_count_async = defineInstanceFunction('baml.String.char_count', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the length of the string in **UTF-8 bytes**.
+   *
+   * This is `O(1)`. Useful for serialization, network I/O, and buffer
+   * allocation where byte size matters.
+   *
+   * # Examples
+   * ```
+   * "hello".byte_length()  // 5
+   * "héllo".byte_length()  // 6
+   * "😀".byte_length()     // 4
+   * ```
+   */
+  byte_length = defineInstanceFunction('baml.String.byte_length', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Returns the length of the string in **UTF-8 bytes**.
+   *
+   * This is `O(1)`. Useful for serialization, network I/O, and buffer
+   * allocation where byte size matters.
+   *
+   * # Examples
+   * ```
+   * "hello".byte_length()  // 5
+   * "héllo".byte_length()  // 6
+   * "😀".byte_length()     // 4
+   * ```
+   */
+  byte_length_async = defineInstanceFunction('baml.String.byte_length', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the string with all Unicode characters converted to lowercase.
+   */
+  to_lower_case = defineInstanceFunction('baml.String.to_lower_case', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  /**
+   * Returns the string with all Unicode characters converted to lowercase.
+   */
+  to_lower_case_async = defineInstanceFunction('baml.String.to_lower_case', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  /**
+   * Returns the string with all Unicode characters converted to uppercase.
+   */
+  to_upper_case = defineInstanceFunction('baml.String.to_upper_case', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  /**
+   * Returns the string with all Unicode characters converted to uppercase.
+   */
+  to_upper_case_async = defineInstanceFunction('baml.String.to_upper_case', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  /**
+   * Returns the string with leading and trailing whitespace removed.
+   *
+   * Whitespace is defined per Unicode `White_Space` and includes ASCII spaces,
+   * tabs, newlines, and carriage returns as well as Unicode whitespace.
+   *
+   * # Examples
+   * ```
+   * "  hi  ".trim()    // "hi"
+   * "\n\thi\n".trim()  // "hi"
+   * "hi".trim()        // "hi"
+   * ```
+   */
+  trim = defineInstanceFunction('baml.String.trim', 'sync', ['self']).bind(this) as () => string;
+  /**
+   * Returns the string with leading and trailing whitespace removed.
+   *
+   * Whitespace is defined per Unicode `White_Space` and includes ASCII spaces,
+   * tabs, newlines, and carriage returns as well as Unicode whitespace.
+   *
+   * # Examples
+   * ```
+   * "  hi  ".trim()    // "hi"
+   * "\n\thi\n".trim()  // "hi"
+   * "hi".trim()        // "hi"
+   * ```
+   */
+  trim_async = defineInstanceFunction('baml.String.trim', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  /**
+   * Returns the string with leading whitespace removed (trailing whitespace
+   * is preserved). Whitespace follows Unicode `White_Space`.
+   *
+   * # Examples
+   * ```
+   * "  hi  ".trim_start()  // "hi  "
+   * "\nhi".trim_start()    // "hi"
+   * ```
+   */
+  trim_start = defineInstanceFunction('baml.String.trim_start', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  /**
+   * Returns the string with leading whitespace removed (trailing whitespace
+   * is preserved). Whitespace follows Unicode `White_Space`.
+   *
+   * # Examples
+   * ```
+   * "  hi  ".trim_start()  // "hi  "
+   * "\nhi".trim_start()    // "hi"
+   * ```
+   */
+  trim_start_async = defineInstanceFunction('baml.String.trim_start', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  /**
+   * Returns the string with trailing whitespace removed (leading whitespace
+   * is preserved). Whitespace follows Unicode `White_Space`.
+   *
+   * # Examples
+   * ```
+   * "  hi  ".trim_end()  // "  hi"
+   * "hi\n".trim_end()    // "hi"
+   * ```
+   */
+  trim_end = defineInstanceFunction('baml.String.trim_end', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  /**
+   * Returns the string with trailing whitespace removed (leading whitespace
+   * is preserved). Whitespace follows Unicode `White_Space`.
+   *
+   * # Examples
+   * ```
+   * "  hi  ".trim_end()  // "  hi"
+   * "hi\n".trim_end()    // "hi"
+   * ```
+   */
+  trim_end_async = defineInstanceFunction('baml.String.trim_end', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  /**
+   * Returns true if `search` appears anywhere in the string.
+   */
+  includes = defineInstanceFunction('baml.String.includes', 'sync', ['self', 'search']).bind(
+    this,
+  ) as (search: string) => boolean;
+  /**
+   * Returns true if `search` appears anywhere in the string.
+   */
+  includes_async = defineInstanceFunction('baml.String.includes', 'async', ['self', 'search']).bind(
+    this,
+  ) as (search: string) => Promise<boolean>;
+  /**
+   * Returns true if the string starts with `prefix`.
+   */
+  starts_with = defineInstanceFunction('baml.String.starts_with', 'sync', ['self', 'prefix']).bind(
+    this,
+  ) as (prefix: string) => boolean;
+  /**
+   * Returns true if the string starts with `prefix`.
+   */
+  starts_with_async = defineInstanceFunction('baml.String.starts_with', 'async', [
+    'self',
+    'prefix',
+  ]).bind(this) as (prefix: string) => Promise<boolean>;
+  /**
+   * Returns true if the string ends with `suffix`.
+   */
+  ends_with = defineInstanceFunction('baml.String.ends_with', 'sync', ['self', 'suffix']).bind(
+    this,
+  ) as (suffix: string) => boolean;
+  /**
+   * Returns true if the string ends with `suffix`.
+   */
+  ends_with_async = defineInstanceFunction('baml.String.ends_with', 'async', [
+    'self',
+    'suffix',
+  ]).bind(this) as (suffix: string) => Promise<boolean>;
+  /**
+   * Splits the string by `delimiter` and returns an array of substrings.
+   *
+   * # Examples
+   * ```
+   * "a,b,c".split(",")     // ["a", "b", "c"]
+   * "hello".split("")      // ["h", "e", "l", "l", "o"]
+   * "no match".split(",")  // ["no match"]
+   * ```
+   */
+  split = defineInstanceFunction('baml.String.split', 'sync', ['self', 'delimiter']).bind(this) as (
+    delimiter: string,
+  ) => string[];
+  /**
+   * Splits the string by `delimiter` and returns an array of substrings.
+   *
+   * # Examples
+   * ```
+   * "a,b,c".split(",")     // ["a", "b", "c"]
+   * "hello".split("")      // ["h", "e", "l", "l", "o"]
+   * "no match".split(",")  // ["no match"]
+   * ```
+   */
+  split_async = defineInstanceFunction('baml.String.split', 'async', ['self', 'delimiter']).bind(
+    this,
+  ) as (delimiter: string) => Promise<string[]>;
+  /**
+   * Returns the string's Unicode code points as one-character strings.
+   *
+   * # Examples
+   * ```
+   * "hello".chars()  // ["h", "e", "l", "l", "o"]
+   * "é😀".chars()    // ["é", "😀"]
+   * "".chars()       // []
+   * ```
+   */
+  chars = defineInstanceFunction('baml.String.chars', 'sync', ['self']).bind(
+    this,
+  ) as () => string[];
+  /**
+   * Returns the string's Unicode code points as one-character strings.
+   *
+   * # Examples
+   * ```
+   * "hello".chars()  // ["h", "e", "l", "l", "o"]
+   * "é😀".chars()    // ["é", "😀"]
+   * "".chars()       // []
+   * ```
+   */
+  chars_async = defineInstanceFunction('baml.String.chars', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string[]>;
+  /**
+   * Splits the string into lines, recognizing both `\n` and `\r\n` as line
+   * terminators. The terminator is **not** included in the returned strings.
+   * A final terminator does not produce a trailing empty string.
+   *
+   * # Examples
+   * ```
+   * "a\nb\nc".lines()    // ["a", "b", "c"]
+   * "a\nb\n".lines()     // ["a", "b"]      (no trailing empty)
+   * "a\r\nb".lines()     // ["a", "b"]      (CRLF handled)
+   * "".lines()           // []
+   * "\n".lines()         // [""]
+   * ```
+   */
+  lines = defineInstanceFunction('baml.String.lines', 'sync', ['self']).bind(
+    this,
+  ) as () => string[];
+  /**
+   * Splits the string into lines, recognizing both `\n` and `\r\n` as line
+   * terminators. The terminator is **not** included in the returned strings.
+   * A final terminator does not produce a trailing empty string.
+   *
+   * # Examples
+   * ```
+   * "a\nb\nc".lines()    // ["a", "b", "c"]
+   * "a\nb\n".lines()     // ["a", "b"]      (no trailing empty)
+   * "a\r\nb".lines()     // ["a", "b"]      (CRLF handled)
+   * "".lines()           // []
+   * "\n".lines()         // [""]
+   * ```
+   */
+  lines_async = defineInstanceFunction('baml.String.lines', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string[]>;
+  /**
+   * Returns the substring between two **character** offsets `[start, end)`.
+   *
+   * Both `start` and `end` are codepoint indices, matching `length()`. Negative
+   * indices count from the end. The resolved offsets are clamped to
+   * `[0, length()]`, and an `end` that resolves at or before `start` yields an
+   * empty string. Never throws.
+   *
+   * # Examples
+   * ```
+   * "hello world".substring(0, 5)   // "hello"
+   * "hello".substring(2, 100)       // "llo" (end clamped)
+   * "hello".substring(-3, -1)       // "ll" (counts from the end)
+   * "😀hello".substring(0, 1)       // "😀"
+   * "😀hello".substring(1, 4)       // "hel"
+   * ```
+   */
+  substring = defineInstanceFunction('baml.String.substring', 'sync', [
+    'self',
+    'start',
+    'end',
+  ]).bind(this) as (start: number, end: number) => string;
+  /**
+   * Returns the substring between two **character** offsets `[start, end)`.
+   *
+   * Both `start` and `end` are codepoint indices, matching `length()`. Negative
+   * indices count from the end. The resolved offsets are clamped to
+   * `[0, length()]`, and an `end` that resolves at or before `start` yields an
+   * empty string. Never throws.
+   *
+   * # Examples
+   * ```
+   * "hello world".substring(0, 5)   // "hello"
+   * "hello".substring(2, 100)       // "llo" (end clamped)
+   * "hello".substring(-3, -1)       // "ll" (counts from the end)
+   * "😀hello".substring(0, 1)       // "😀"
+   * "😀hello".substring(1, 4)       // "hel"
+   * ```
+   */
+  substring_async = defineInstanceFunction('baml.String.substring', 'async', [
+    'self',
+    'start',
+    'end',
+  ]).bind(this) as (start: number, end: number) => Promise<string>;
+  /**
+   * Replaces the first occurrence of `search` with `replacement`.
+   */
+  replace = defineInstanceFunction('baml.String.replace', 'sync', [
+    'self',
+    'search',
+    'replacement',
+  ]).bind(this) as (search: string, replacement: string) => string;
+  /**
+   * Replaces the first occurrence of `search` with `replacement`.
+   */
+  replace_async = defineInstanceFunction('baml.String.replace', 'async', [
+    'self',
+    'search',
+    'replacement',
+  ]).bind(this) as (search: string, replacement: string) => Promise<string>;
+  /**
+   * Returns the **character index** of the first occurrence of `search`, or
+   * `null` if not found.
+   *
+   * # Examples
+   * ```
+   * "hello world".index_of("world")  // 6
+   * "héllo".index_of("l")            // 2
+   * "😀hello".index_of("h")          // 1
+   * "abc".index_of("z")              // null
+   * ```
+   */
+  index_of = defineInstanceFunction('baml.String.index_of', 'sync', ['self', 'search']).bind(
+    this,
+  ) as (search: string) => number | null;
+  /**
+   * Returns the **character index** of the first occurrence of `search`, or
+   * `null` if not found.
+   *
+   * # Examples
+   * ```
+   * "hello world".index_of("world")  // 6
+   * "héllo".index_of("l")            // 2
+   * "😀hello".index_of("h")          // 1
+   * "abc".index_of("z")              // null
+   * ```
+   */
+  index_of_async = defineInstanceFunction('baml.String.index_of', 'async', ['self', 'search']).bind(
+    this,
+  ) as (search: string) => Promise<number | null>;
+  char_at = defineInstanceFunction('baml.String.char_at', 'sync', ['self', 'index']).bind(this) as (
+    index: number,
+  ) => string;
+  char_at_async = defineInstanceFunction('baml.String.char_at', 'async', ['self', 'index']).bind(
+    this,
+  ) as (index: number) => Promise<string>;
+  code_point_at = defineInstanceFunction('baml.String.code_point_at', 'sync', [
+    'self',
+    'index',
+  ]).bind(this) as (index: number) => number;
+  code_point_at_async = defineInstanceFunction('baml.String.code_point_at', 'async', [
+    'self',
+    'index',
+  ]).bind(this) as (index: number) => Promise<number>;
+  /**
+   * Returns a new string that repeats `self` the given number of times.
+   * Negative counts are treated as 0.
+   *
+   * # Examples
+   * ```
+   * "ab".repeat(3)   // "ababab"
+   * "hi".repeat(0)   // ""
+   * "hi".repeat(-1)  // ""
+   * ```
+   */
+  repeat = defineInstanceFunction('baml.String.repeat', 'sync', ['self', 'count']).bind(this) as (
+    count: number,
+  ) => string;
+  /**
+   * Returns a new string that repeats `self` the given number of times.
+   * Negative counts are treated as 0.
+   *
+   * # Examples
+   * ```
+   * "ab".repeat(3)   // "ababab"
+   * "hi".repeat(0)   // ""
+   * "hi".repeat(-1)  // ""
+   * ```
+   */
+  repeat_async = defineInstanceFunction('baml.String.repeat', 'async', ['self', 'count']).bind(
+    this,
+  ) as (count: number) => Promise<string>;
+  /**
+   * Returns true if the string contains the given `substring`.
+   */
+  matches = defineInstanceFunction('baml.String.matches', 'sync', ['self', 'substring']).bind(
+    this,
+  ) as (substring: string) => boolean;
+  /**
+   * Returns true if the string contains the given `substring`.
+   */
+  matches_async = defineInstanceFunction('baml.String.matches', 'async', [
+    'self',
+    'substring',
+  ]).bind(this) as (substring: string) => Promise<boolean>;
+  /**
+   * Replaces all occurrences of `search` with `replacement`.
+   */
+  replace_all = defineInstanceFunction('baml.String.replace_all', 'sync', [
+    'self',
+    'search',
+    'replacement',
+  ]).bind(this) as (search: string, replacement: string) => string;
+  /**
+   * Replaces all occurrences of `search` with `replacement`.
+   */
+  replace_all_async = defineInstanceFunction('baml.String.replace_all', 'async', [
+    'self',
+    'search',
+    'replacement',
+  ]).bind(this) as (search: string, replacement: string) => Promise<string>;
+  /**
+   * Returns true if every character is numeric per Unicode (general categories
+   * `Nd`, `Nl`, `No` — decimal digits, letter-numbers, and other-numbers).
+   * Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "12345".is_numeric()  // true
+   * "Ⅷ".is_numeric()      // true (Roman numeral, Nl)
+   * "12a".is_numeric()    // false
+   * "".is_numeric()       // true (vacuous)
+   * ```
+   */
+  is_numeric = defineInstanceFunction('baml.String.is_numeric', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is numeric per Unicode (general categories
+   * `Nd`, `Nl`, `No` — decimal digits, letter-numbers, and other-numbers).
+   * Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "12345".is_numeric()  // true
+   * "Ⅷ".is_numeric()      // true (Roman numeral, Nl)
+   * "12a".is_numeric()    // false
+   * "".is_numeric()       // true (vacuous)
+   * ```
+   */
+  is_numeric_async = defineInstanceFunction('baml.String.is_numeric', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is a Unicode letter (general category `L`).
+   * Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "héllo".is_alphabetic()  // true
+   * "漢字".is_alphabetic()    // true
+   * "abc1".is_alphabetic()   // false
+   * ```
+   */
+  is_alphabetic = defineInstanceFunction('baml.String.is_alphabetic', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is a Unicode letter (general category `L`).
+   * Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "héllo".is_alphabetic()  // true
+   * "漢字".is_alphabetic()    // true
+   * "abc1".is_alphabetic()   // false
+   * ```
+   */
+  is_alphabetic_async = defineInstanceFunction('baml.String.is_alphabetic', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is alphabetic OR numeric per Unicode.
+   * Empty string returns true. Equivalent to checking each char passes
+   * `is_alphabetic` or `is_numeric`.
+   *
+   * # Examples
+   * ```
+   * "abc123".is_alphanumeric()  // true
+   * "héllo7".is_alphanumeric()  // true
+   * "a b".is_alphanumeric()     // false (space is not)
+   * ```
+   */
+  is_alphanumeric = defineInstanceFunction('baml.String.is_alphanumeric', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is alphabetic OR numeric per Unicode.
+   * Empty string returns true. Equivalent to checking each char passes
+   * `is_alphabetic` or `is_numeric`.
+   *
+   * # Examples
+   * ```
+   * "abc123".is_alphanumeric()  // true
+   * "héllo7".is_alphanumeric()  // true
+   * "a b".is_alphanumeric()     // false (space is not)
+   * ```
+   */
+  is_alphanumeric_async = defineInstanceFunction('baml.String.is_alphanumeric', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is uppercase per Unicode (general
+   * category `Lu`, plus other chars with the `Uppercase` property).
+   * Empty string returns true. Note: digits and most symbols are neither
+   * upper- nor lowercase.
+   *
+   * # Examples
+   * ```
+   * "HELLO".is_uppercase()  // true
+   * "Hello".is_uppercase()  // false
+   * "123".is_uppercase()    // false (digits aren't uppercase)
+   * ```
+   */
+  is_uppercase = defineInstanceFunction('baml.String.is_uppercase', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is uppercase per Unicode (general
+   * category `Lu`, plus other chars with the `Uppercase` property).
+   * Empty string returns true. Note: digits and most symbols are neither
+   * upper- nor lowercase.
+   *
+   * # Examples
+   * ```
+   * "HELLO".is_uppercase()  // true
+   * "Hello".is_uppercase()  // false
+   * "123".is_uppercase()    // false (digits aren't uppercase)
+   * ```
+   */
+  is_uppercase_async = defineInstanceFunction('baml.String.is_uppercase', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is lowercase per Unicode (general
+   * category `Ll`, plus other chars with the `Lowercase` property).
+   * Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "hello".is_lowercase()  // true
+   * "Hello".is_lowercase()  // false
+   * ```
+   */
+  is_lowercase = defineInstanceFunction('baml.String.is_lowercase', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is lowercase per Unicode (general
+   * category `Ll`, plus other chars with the `Lowercase` property).
+   * Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "hello".is_lowercase()  // true
+   * "Hello".is_lowercase()  // false
+   * ```
+   */
+  is_lowercase_async = defineInstanceFunction('baml.String.is_lowercase', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is whitespace per Unicode (`White_Space`
+   * property — includes space, tab, newline, NBSP, and other Unicode
+   * whitespace). Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "   ".is_whitespace()      // true
+   * " \t\n".is_whitespace()    // true
+   * "a b".is_whitespace()      // false
+   * ```
+   */
+  is_whitespace = defineInstanceFunction('baml.String.is_whitespace', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is whitespace per Unicode (`White_Space`
+   * property — includes space, tab, newline, NBSP, and other Unicode
+   * whitespace). Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "   ".is_whitespace()      // true
+   * " \t\n".is_whitespace()    // true
+   * "a b".is_whitespace()      // false
+   * ```
+   */
+  is_whitespace_async = defineInstanceFunction('baml.String.is_whitespace', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is a control character per Unicode
+   * (general category `Cc`). Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "\n\t".is_control()  // true
+   * "a".is_control()     // false
+   * ```
+   */
+  is_control = defineInstanceFunction('baml.String.is_control', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is a control character per Unicode
+   * (general category `Cc`). Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "\n\t".is_control()  // true
+   * "a".is_control()     // false
+   * ```
+   */
+  is_control_async = defineInstanceFunction('baml.String.is_control', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is a "graphic" character — that is,
+   * not a control character and not whitespace. Empty string returns true.
+   *
+   * This is a convenience predicate for "visible/printing" characters. It
+   * uses the Unicode definition of control and whitespace.
+   *
+   * # Examples
+   * ```
+   * "abc".is_graphic()      // true
+   * "héllo".is_graphic()    // true
+   * "a b".is_graphic()      // false (space is not graphic)
+   * "a\n".is_graphic()      // false (newline is control)
+   * ```
+   */
+  is_graphic = defineInstanceFunction('baml.String.is_graphic', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is a "graphic" character — that is,
+   * not a control character and not whitespace. Empty string returns true.
+   *
+   * This is a convenience predicate for "visible/printing" characters. It
+   * uses the Unicode definition of control and whitespace.
+   *
+   * # Examples
+   * ```
+   * "abc".is_graphic()      // true
+   * "héllo".is_graphic()    // true
+   * "a b".is_graphic()      // false (space is not graphic)
+   * "a\n".is_graphic()      // false (newline is control)
+   * ```
+   */
+  is_graphic_async = defineInstanceFunction('baml.String.is_graphic', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is ASCII (i.e. has a code point in
+   * `[0x00, 0x7F]`). Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "hello".is_ascii()    // true
+   * "héllo".is_ascii()    // false (`é` is U+00E9)
+   * ```
+   */
+  is_ascii = defineInstanceFunction('baml.String.is_ascii', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is ASCII (i.e. has a code point in
+   * `[0x00, 0x7F]`). Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "hello".is_ascii()    // true
+   * "héllo".is_ascii()    // false (`é` is U+00E9)
+   * ```
+   */
+  is_ascii_async = defineInstanceFunction('baml.String.is_ascii', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is an ASCII decimal digit (`0`..=`9`).
+   * Empty string returns true. Stricter than `is_numeric`, which accepts
+   * non-ASCII numerals.
+   *
+   * # Examples
+   * ```
+   * "12345".is_ascii_numeric()  // true
+   * "Ⅷ".is_ascii_numeric()      // false (Roman numeral)
+   * ```
+   */
+  is_ascii_numeric = defineInstanceFunction('baml.String.is_ascii_numeric', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is an ASCII decimal digit (`0`..=`9`).
+   * Empty string returns true. Stricter than `is_numeric`, which accepts
+   * non-ASCII numerals.
+   *
+   * # Examples
+   * ```
+   * "12345".is_ascii_numeric()  // true
+   * "Ⅷ".is_ascii_numeric()      // false (Roman numeral)
+   * ```
+   */
+  is_ascii_numeric_async = defineInstanceFunction('baml.String.is_ascii_numeric', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is an ASCII letter (`A`..=`Z` or
+   * `a`..=`z`). Empty string returns true.
+   */
+  is_ascii_alphabetic = defineInstanceFunction('baml.String.is_ascii_alphabetic', 'sync', [
+    'self',
+  ]).bind(this) as () => boolean;
+  /**
+   * Returns true if every character is an ASCII letter (`A`..=`Z` or
+   * `a`..=`z`). Empty string returns true.
+   */
+  is_ascii_alphabetic_async = defineInstanceFunction('baml.String.is_ascii_alphabetic', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is an ASCII letter or digit. Empty
+   * string returns true.
+   */
+  is_ascii_alphanumeric = defineInstanceFunction('baml.String.is_ascii_alphanumeric', 'sync', [
+    'self',
+  ]).bind(this) as () => boolean;
+  /**
+   * Returns true if every character is an ASCII letter or digit. Empty
+   * string returns true.
+   */
+  is_ascii_alphanumeric_async = defineInstanceFunction(
+    'baml.String.is_ascii_alphanumeric',
+    'async',
+    ['self'],
+  ).bind(this) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is an ASCII uppercase letter
+   * (`A`..=`Z`). Empty string returns true.
+   */
+  is_ascii_uppercase = defineInstanceFunction('baml.String.is_ascii_uppercase', 'sync', [
+    'self',
+  ]).bind(this) as () => boolean;
+  /**
+   * Returns true if every character is an ASCII uppercase letter
+   * (`A`..=`Z`). Empty string returns true.
+   */
+  is_ascii_uppercase_async = defineInstanceFunction('baml.String.is_ascii_uppercase', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is an ASCII lowercase letter
+   * (`a`..=`z`). Empty string returns true.
+   */
+  is_ascii_lowercase = defineInstanceFunction('baml.String.is_ascii_lowercase', 'sync', [
+    'self',
+  ]).bind(this) as () => boolean;
+  /**
+   * Returns true if every character is an ASCII lowercase letter
+   * (`a`..=`z`). Empty string returns true.
+   */
+  is_ascii_lowercase_async = defineInstanceFunction('baml.String.is_ascii_lowercase', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is ASCII whitespace: space (`\x20`),
+   * horizontal tab (`\t`), line feed (`\n`), form feed (`\x0C`), or
+   * carriage return (`\r`). Note this is narrower than `is_whitespace`,
+   * which accepts Unicode whitespace like NBSP.
+   */
+  is_ascii_whitespace = defineInstanceFunction('baml.String.is_ascii_whitespace', 'sync', [
+    'self',
+  ]).bind(this) as () => boolean;
+  /**
+   * Returns true if every character is ASCII whitespace: space (`\x20`),
+   * horizontal tab (`\t`), line feed (`\n`), form feed (`\x0C`), or
+   * carriage return (`\r`). Note this is narrower than `is_whitespace`,
+   * which accepts Unicode whitespace like NBSP.
+   */
+  is_ascii_whitespace_async = defineInstanceFunction('baml.String.is_ascii_whitespace', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is an ASCII control character — code
+   * points `[0x00, 0x1F]` plus DEL (`0x7F`). Empty string returns true.
+   */
+  is_ascii_control = defineInstanceFunction('baml.String.is_ascii_control', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is an ASCII control character — code
+   * points `[0x00, 0x1F]` plus DEL (`0x7F`). Empty string returns true.
+   */
+  is_ascii_control_async = defineInstanceFunction('baml.String.is_ascii_control', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is an ASCII "graphic" character —
+   * printable, non-space, non-control: code points `[0x21, 0x7E]`. Note
+   * the ASCII space is *not* graphic. Empty string returns true.
+   */
+  is_ascii_graphic = defineInstanceFunction('baml.String.is_ascii_graphic', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is an ASCII "graphic" character —
+   * printable, non-space, non-control: code points `[0x21, 0x7E]`. Note
+   * the ASCII space is *not* graphic. Empty string returns true.
+   */
+  is_ascii_graphic_async = defineInstanceFunction('baml.String.is_ascii_graphic', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<boolean>;
+  /**
+   * Returns true if every character is an ASCII hexadecimal digit:
+   * `0`..=`9`, `a`..=`f`, or `A`..=`F`. Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "deadBEEF".is_ascii_hex()  // true
+   * "0x123".is_ascii_hex()     // false (`x` is not a hex digit)
+   * ```
+   */
+  is_ascii_hex = defineInstanceFunction('baml.String.is_ascii_hex', 'sync', ['self']).bind(
+    this,
+  ) as () => boolean;
+  /**
+   * Returns true if every character is an ASCII hexadecimal digit:
+   * `0`..=`9`, `a`..=`f`, or `A`..=`F`. Empty string returns true.
+   *
+   * # Examples
+   * ```
+   * "deadBEEF".is_ascii_hex()  // true
+   * "0x123".is_ascii_hex()     // false (`x` is not a hex digit)
+   * ```
+   */
+  is_ascii_hex_async = defineInstanceFunction('baml.String.is_ascii_hex', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<boolean>;
+  /**
+   * Returns the string encoded as a `uint8array` of UTF-8 bytes.
+   *
+   * The resulting byte array has length `self.byte_length()`. Inverse of the
+   * static `string.from_utf8(bytes)`.
+   *
+   * # Examples
+   * ```
+   * "hi".to_utf8()     // [0x68, 0x69]
+   * "é".to_utf8()      // [0xC3, 0xA9]
+   * "".to_utf8()       // []
+   * ```
+   */
+  to_utf8 = defineInstanceFunction('baml.String.to_utf8', 'sync', ['self']).bind(
+    this,
+  ) as () => Uint8Array;
+  /**
+   * Returns the string encoded as a `uint8array` of UTF-8 bytes.
+   *
+   * The resulting byte array has length `self.byte_length()`. Inverse of the
+   * static `string.from_utf8(bytes)`.
+   *
+   * # Examples
+   * ```
+   * "hi".to_utf8()     // [0x68, 0x69]
+   * "é".to_utf8()      // [0xC3, 0xA9]
+   * "".to_utf8()       // []
+   * ```
+   */
+  to_utf8_async = defineInstanceFunction('baml.String.to_utf8', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<Uint8Array>;
+  /**
+   * Returns the string's Unicode code points as an array of `int`s.
+   *
+   * This is the exact inverse of `string.from_code_points`: for any string
+   * `s`, `string.from_code_points(s.to_code_points())` equals `s`. The result
+   * has one element per character (`self.length()` elements), each in
+   * `[0, 0x10FFFF]`. Never throws.
+   *
+   * Use this for char → integer mappings (checksums, base-N encoding, hashing,
+   * character classification) instead of indexing into a literal alphabet
+   * string.
+   *
+   * # Examples
+   * ```
+   * "hi".to_code_points()    // [104, 105]
+   * "é".to_code_points()     // [233]
+   * "🐑".to_code_points()    // [128017]
+   * "".to_code_points()      // []
+   * ```
+   */
+  to_code_points = defineInstanceFunction('baml.String.to_code_points', 'sync', ['self']).bind(
+    this,
+  ) as () => number[];
+  /**
+   * Returns the string's Unicode code points as an array of `int`s.
+   *
+   * This is the exact inverse of `string.from_code_points`: for any string
+   * `s`, `string.from_code_points(s.to_code_points())` equals `s`. The result
+   * has one element per character (`self.length()` elements), each in
+   * `[0, 0x10FFFF]`. Never throws.
+   *
+   * Use this for char → integer mappings (checksums, base-N encoding, hashing,
+   * character classification) instead of indexing into a literal alphabet
+   * string.
+   *
+   * # Examples
+   * ```
+   * "hi".to_code_points()    // [104, 105]
+   * "é".to_code_points()     // [233]
+   * "🐑".to_code_points()    // [128017]
+   * "".to_code_points()      // []
+   * ```
+   */
+  to_code_points_async = defineInstanceFunction('baml.String.to_code_points', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<number[]>;
 }
 
 /**
  * Companion class for the built-in `type` primitive.
- * 
+ *
  * The BAML `type` primitive represents a runtime type value returned by
  * `reflect.type_of<T>()`. This class provides methods on `type` values,
  * mirroring how `class String` provides methods on `string`.
- * 
+ *
  * Users never construct `Type` directly; they receive `type` values via
  * `reflect.type_of<User>()` and call methods on them.
  */
@@ -3179,11 +3994,11 @@ export class TypeValue$stream {
 
 /**
  * Companion class for the built-in `type` primitive.
- * 
+ *
  * The BAML `type` primitive represents a runtime type value returned by
  * `reflect.type_of<T>()`. This class provides methods on `type` values,
  * mirroring how `class String` provides methods on `string`.
- * 
+ *
  * Users never construct `Type` directly; they receive `type` values via
  * `reflect.type_of<User>()` and call methods on them.
  */
@@ -3191,21 +4006,44 @@ export class TypeValue {
   constructor(init: {}) {
     Object.assign(this, init);
   }
-  to_string = defineInstanceFunction("baml.TypeValue.to_string", "sync", ["self"]).bind(this) as () => string;
-  to_string_async = defineInstanceFunction("baml.TypeValue.to_string", "async", ["self"]).bind(this) as () => Promise<string>;
-  _to_string_impl = defineInstanceFunction("baml.TypeValue._to_string_impl", "sync", ["self"]).bind(this) as () => string;
-  _to_string_impl_async = defineInstanceFunction("baml.TypeValue._to_string_impl", "async", ["self"]).bind(this) as () => Promise<string>;
-  implements = defineInstanceFunction("baml.TypeValue.implements", "sync", ["self", "other"]).bind(this) as (other: null) => boolean;
-  implements_async = defineInstanceFunction("baml.TypeValue.implements", "async", ["self", "other"]).bind(this) as (other: null) => Promise<boolean>;
-  implemented_by = defineInstanceFunction("baml.TypeValue.implemented_by", "sync", ["self", "other"]).bind(this) as (other: null) => boolean;
-  implemented_by_async = defineInstanceFunction("baml.TypeValue.implemented_by", "async", ["self", "other"]).bind(this) as (other: null) => Promise<boolean>;
-  implementors = defineInstanceFunction("baml.TypeValue.implementors", "sync", ["self"]).bind(this) as () => null[];
-  implementors_async = defineInstanceFunction("baml.TypeValue.implementors", "async", ["self"]).bind(this) as () => Promise<null[]>;
+  to_string = defineInstanceFunction('baml.TypeValue.to_string', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  to_string_async = defineInstanceFunction('baml.TypeValue.to_string', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  _to_string_impl = defineInstanceFunction('baml.TypeValue._to_string_impl', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  _to_string_impl_async = defineInstanceFunction('baml.TypeValue._to_string_impl', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<string>;
+  implements = defineInstanceFunction('baml.TypeValue.implements', 'sync', ['self', 'other']).bind(
+    this,
+  ) as (other: null) => boolean;
+  implements_async = defineInstanceFunction('baml.TypeValue.implements', 'async', [
+    'self',
+    'other',
+  ]).bind(this) as (other: null) => Promise<boolean>;
+  implemented_by = defineInstanceFunction('baml.TypeValue.implemented_by', 'sync', [
+    'self',
+    'other',
+  ]).bind(this) as (other: null) => boolean;
+  implemented_by_async = defineInstanceFunction('baml.TypeValue.implemented_by', 'async', [
+    'self',
+    'other',
+  ]).bind(this) as (other: null) => Promise<boolean>;
+  implementors = defineInstanceFunction('baml.TypeValue.implementors', 'sync', ['self']).bind(
+    this,
+  ) as () => null[];
+  implementors_async = defineInstanceFunction('baml.TypeValue.implementors', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<null[]>;
 }
 
 /**
  * A mutable, growable array of bytes (u8 values in the range 0–255).
- * 
+ *
  * Used for binary data such as file contents, network payloads, and encoded strings.
  * `push` silently masks values to u8; `from_array` throws `InvalidArgument` for out-of-range values.
  */
@@ -3217,7 +4055,7 @@ export class Uint8Array$stream {
 
 /**
  * A mutable, growable array of bytes (u8 values in the range 0–255).
- * 
+ *
  * Used for binary data such as file contents, network payloads, and encoded strings.
  * `push` silently masks values to u8; `from_array` throws `InvalidArgument` for out-of-range values.
  */
@@ -3225,182 +4063,255 @@ export class Uint8Array {
   constructor(init: {}) {
     Object.assign(this, init);
   }
-/**
- * Creates a new `uint8array` of the given size, filled with zeros.
- * 
- * Throws an error if the `size` is out of range (e.g. negative).
- * Panics if the allocation would cause an OOM.
- * @throws InvalidArgument
- */
-  static zeroes = defineFunction("baml.Uint8Array.zeroes", "sync", ["size"]) as (size: number) => Uint8Array;
-/**
- * Creates a new `uint8array` of the given size, filled with zeros.
- * 
- * Throws an error if the `size` is out of range (e.g. negative).
- * Panics if the allocation would cause an OOM.
- * @throws InvalidArgument
- */
-  static zeroes_async = defineFunction("baml.Uint8Array.zeroes", "async", ["size"]) as (size: number) => Promise<Uint8Array>;
-/**
- * Creates a `uint8array` from an array of integers.
- * 
- * Throws `InvalidArgument` if any value is outside the range 0–255.
- * @throws InvalidArgument
- */
-  static from_array = defineFunction("baml.Uint8Array.from_array", "sync", ["array"]) as (array: number[]) => Uint8Array;
-/**
- * Creates a `uint8array` from an array of integers.
- * 
- * Throws `InvalidArgument` if any value is outside the range 0–255.
- * @throws InvalidArgument
- */
-  static from_array_async = defineFunction("baml.Uint8Array.from_array", "async", ["array"]) as (array: number[]) => Promise<Uint8Array>;
-/**
- * Decodes a hexadecimal string (e.g. `"deadbeef"`) into bytes.
- * 
- * Throws `InvalidArgument` if the input contains non-hex characters or has an odd length.
- * @throws InvalidArgument
- */
-  static from_hex = defineFunction("baml.Uint8Array.from_hex", "sync", ["hex"]) as (hex: string) => Uint8Array;
-/**
- * Decodes a hexadecimal string (e.g. `"deadbeef"`) into bytes.
- * 
- * Throws `InvalidArgument` if the input contains non-hex characters or has an odd length.
- * @throws InvalidArgument
- */
-  static from_hex_async = defineFunction("baml.Uint8Array.from_hex", "async", ["hex"]) as (hex: string) => Promise<Uint8Array>;
-/**
- * Decodes a standard Base64-encoded string into bytes.
- * 
- * Accepts both standard (`+/`) and URL-safe (`-_`) alphabets, with or without padding.
- * 
- * # Examples
- * ```
- * uint8array.from_base64("aGVsbG8=")   // [104, 101, 108, 108, 111]  ("hello")
- * ```
- * 
- * Throws `InvalidArgument` if the input is not valid Base64.
- * @throws InvalidArgument
- */
-  static from_base64 = defineFunction("baml.Uint8Array.from_base64", "sync", ["base64"]) as (base64: string) => Uint8Array;
-/**
- * Decodes a standard Base64-encoded string into bytes.
- * 
- * Accepts both standard (`+/`) and URL-safe (`-_`) alphabets, with or without padding.
- * 
- * # Examples
- * ```
- * uint8array.from_base64("aGVsbG8=")   // [104, 101, 108, 108, 111]  ("hello")
- * ```
- * 
- * Throws `InvalidArgument` if the input is not valid Base64.
- * @throws InvalidArgument
- */
-  static from_base64_async = defineFunction("baml.Uint8Array.from_base64", "async", ["base64"]) as (base64: string) => Promise<Uint8Array>;
-/**
- * Returns the number of bytes in the array.
- */
-  length = defineInstanceFunction("baml.Uint8Array.length", "sync", ["self"]).bind(this) as () => number;
-/**
- * Returns the number of bytes in the array.
- */
-  length_async = defineInstanceFunction("baml.Uint8Array.length", "async", ["self"]).bind(this) as () => Promise<number>;
-/**
- * Returns the byte at `index`, or `null` if out of bounds.
- * 
- * Negative indices count from the end: `-1` is the last byte.
- */
-  at = defineInstanceFunction("baml.Uint8Array.at", "sync", ["self", "index"]).bind(this) as (index: number) => number | null;
-/**
- * Returns the byte at `index`, or `null` if out of bounds.
- * 
- * Negative indices count from the end: `-1` is the last byte.
- */
-  at_async = defineInstanceFunction("baml.Uint8Array.at", "async", ["self", "index"]).bind(this) as (index: number) => Promise<number | null>;
-  push = defineInstanceFunction("baml.Uint8Array.push", "sync", ["self", "item"]).bind(this) as (item: number) => number;
-  push_async = defineInstanceFunction("baml.Uint8Array.push", "async", ["self", "item"]).bind(this) as (item: number) => Promise<number>;
-  pop = defineInstanceFunction("baml.Uint8Array.pop", "sync", ["self"]).bind(this) as () => number | null;
-  pop_async = defineInstanceFunction("baml.Uint8Array.pop", "async", ["self"]).bind(this) as () => Promise<number | null>;
-/**
- * Returns a new `uint8array` containing the concatenation of the two arrays.
- */
-  concat = defineInstanceFunction("baml.Uint8Array.concat", "sync", ["self", "other"]).bind(this) as (other: Uint8Array) => Uint8Array;
-/**
- * Returns a new `uint8array` containing the concatenation of the two arrays.
- */
-  concat_async = defineInstanceFunction("baml.Uint8Array.concat", "async", ["self", "other"]).bind(this) as (other: Uint8Array) => Promise<Uint8Array>;
-/**
- * Returns `true` if the array contains the given number.
- * If the item is not a `u8`, this will always return `false`.
- */
-  includes = defineInstanceFunction("baml.Uint8Array.includes", "sync", ["self", "item"]).bind(this) as (item: number) => boolean;
-/**
- * Returns `true` if the array contains the given number.
- * If the item is not a `u8`, this will always return `false`.
- */
-  includes_async = defineInstanceFunction("baml.Uint8Array.includes", "async", ["self", "item"]).bind(this) as (item: number) => Promise<boolean>;
-/**
- * Returns a new `uint8array` with the bytes in reverse order.
- */
-  reverse = defineInstanceFunction("baml.Uint8Array.reverse", "sync", ["self"]).bind(this) as () => Uint8Array;
-/**
- * Returns a new `uint8array` with the bytes in reverse order.
- */
-  reverse_async = defineInstanceFunction("baml.Uint8Array.reverse", "async", ["self"]).bind(this) as () => Promise<Uint8Array>;
-/**
- * Returns a new `uint8array` with the bytes from `start` (inclusive) to
- * `end` (exclusive).
- * 
- * Negative indices count from the end. Out-of-range indices are clamped, and
- * an `end` that resolves at or before `start` yields an empty array.
- */
-  slice = defineInstanceFunction("baml.Uint8Array.slice", "sync", ["self", "start", "end"]).bind(this) as (start: number, end: number) => Uint8Array;
-/**
- * Returns a new `uint8array` with the bytes from `start` (inclusive) to
- * `end` (exclusive).
- * 
- * Negative indices count from the end. Out-of-range indices are clamped, and
- * an `end` that resolves at or before `start` yields an empty array.
- */
-  slice_async = defineInstanceFunction("baml.Uint8Array.slice", "async", ["self", "start", "end"]).bind(this) as (start: number, end: number) => Promise<Uint8Array>;
-/**
- * Returns the bytes as an array of integers, each in the range 0–255.
- */
-  to_array = defineInstanceFunction("baml.Uint8Array.to_array", "sync", ["self"]).bind(this) as () => number[];
-/**
- * Returns the bytes as an array of integers, each in the range 0–255.
- */
-  to_array_async = defineInstanceFunction("baml.Uint8Array.to_array", "async", ["self"]).bind(this) as () => Promise<number[]>;
-/**
- * Encodes the bytes as a lowercase hexadecimal string (e.g. `"deadbeef"`).
- */
-  to_hex = defineInstanceFunction("baml.Uint8Array.to_hex", "sync", ["self"]).bind(this) as () => string;
-/**
- * Encodes the bytes as a lowercase hexadecimal string (e.g. `"deadbeef"`).
- */
-  to_hex_async = defineInstanceFunction("baml.Uint8Array.to_hex", "async", ["self"]).bind(this) as () => Promise<string>;
-/**
- * Encodes the bytes as a standard Base64 string (with `=` padding).
- * 
- * # Examples
- * ```
- * "hello".to_utf8().to_base64()   // "aGVsbG8="
- * ```
- */
-  to_base64 = defineInstanceFunction("baml.Uint8Array.to_base64", "sync", ["self"]).bind(this) as () => string;
-/**
- * Encodes the bytes as a standard Base64 string (with `=` padding).
- * 
- * # Examples
- * ```
- * "hello".to_utf8().to_base64()   // "aGVsbG8="
- * ```
- */
-  to_base64_async = defineInstanceFunction("baml.Uint8Array.to_base64", "async", ["self"]).bind(this) as () => Promise<string>;
-  to_string = defineInstanceFunction("baml.Uint8Array.to_string", "sync", ["self"]).bind(this) as () => string;
-  to_string_async = defineInstanceFunction("baml.Uint8Array.to_string", "async", ["self"]).bind(this) as () => Promise<string>;
-  _to_string_impl = defineInstanceFunction("baml.Uint8Array._to_string_impl", "sync", ["self"]).bind(this) as () => string;
-  _to_string_impl_async = defineInstanceFunction("baml.Uint8Array._to_string_impl", "async", ["self"]).bind(this) as () => Promise<string>;
-  sort = defineInstanceFunction("baml.Uint8Array.sort", "sync", ["self"]).bind(this) as () => null;
-  sort_async = defineInstanceFunction("baml.Uint8Array.sort", "async", ["self"]).bind(this) as () => Promise<null>;
+  /**
+   * Creates a new `uint8array` of the given size, filled with zeros.
+   *
+   * Throws an error if the `size` is out of range (e.g. negative).
+   * Panics if the allocation would cause an OOM.
+   * @throws InvalidArgument
+   */
+  static zeroes = defineFunction('baml.Uint8Array.zeroes', 'sync', ['size']) as (
+    size: number,
+  ) => Uint8Array;
+  /**
+   * Creates a new `uint8array` of the given size, filled with zeros.
+   *
+   * Throws an error if the `size` is out of range (e.g. negative).
+   * Panics if the allocation would cause an OOM.
+   * @throws InvalidArgument
+   */
+  static zeroes_async = defineFunction('baml.Uint8Array.zeroes', 'async', ['size']) as (
+    size: number,
+  ) => Promise<Uint8Array>;
+  /**
+   * Creates a `uint8array` from an array of integers.
+   *
+   * Throws `InvalidArgument` if any value is outside the range 0–255.
+   * @throws InvalidArgument
+   */
+  static from_array = defineFunction('baml.Uint8Array.from_array', 'sync', ['array']) as (
+    array: number[],
+  ) => Uint8Array;
+  /**
+   * Creates a `uint8array` from an array of integers.
+   *
+   * Throws `InvalidArgument` if any value is outside the range 0–255.
+   * @throws InvalidArgument
+   */
+  static from_array_async = defineFunction('baml.Uint8Array.from_array', 'async', ['array']) as (
+    array: number[],
+  ) => Promise<Uint8Array>;
+  /**
+   * Decodes a hexadecimal string (e.g. `"deadbeef"`) into bytes.
+   *
+   * Throws `InvalidArgument` if the input contains non-hex characters or has an odd length.
+   * @throws InvalidArgument
+   */
+  static from_hex = defineFunction('baml.Uint8Array.from_hex', 'sync', ['hex']) as (
+    hex: string,
+  ) => Uint8Array;
+  /**
+   * Decodes a hexadecimal string (e.g. `"deadbeef"`) into bytes.
+   *
+   * Throws `InvalidArgument` if the input contains non-hex characters or has an odd length.
+   * @throws InvalidArgument
+   */
+  static from_hex_async = defineFunction('baml.Uint8Array.from_hex', 'async', ['hex']) as (
+    hex: string,
+  ) => Promise<Uint8Array>;
+  /**
+   * Decodes a standard Base64-encoded string into bytes.
+   *
+   * Accepts both standard (`+/`) and URL-safe (`-_`) alphabets, with or without padding.
+   *
+   * # Examples
+   * ```
+   * uint8array.from_base64("aGVsbG8=")   // [104, 101, 108, 108, 111]  ("hello")
+   * ```
+   *
+   * Throws `InvalidArgument` if the input is not valid Base64.
+   * @throws InvalidArgument
+   */
+  static from_base64 = defineFunction('baml.Uint8Array.from_base64', 'sync', ['base64']) as (
+    base64: string,
+  ) => Uint8Array;
+  /**
+   * Decodes a standard Base64-encoded string into bytes.
+   *
+   * Accepts both standard (`+/`) and URL-safe (`-_`) alphabets, with or without padding.
+   *
+   * # Examples
+   * ```
+   * uint8array.from_base64("aGVsbG8=")   // [104, 101, 108, 108, 111]  ("hello")
+   * ```
+   *
+   * Throws `InvalidArgument` if the input is not valid Base64.
+   * @throws InvalidArgument
+   */
+  static from_base64_async = defineFunction('baml.Uint8Array.from_base64', 'async', ['base64']) as (
+    base64: string,
+  ) => Promise<Uint8Array>;
+  /**
+   * Returns the number of bytes in the array.
+   */
+  length = defineInstanceFunction('baml.Uint8Array.length', 'sync', ['self']).bind(
+    this,
+  ) as () => number;
+  /**
+   * Returns the number of bytes in the array.
+   */
+  length_async = defineInstanceFunction('baml.Uint8Array.length', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number>;
+  /**
+   * Returns the byte at `index`, or `null` if out of bounds.
+   *
+   * Negative indices count from the end: `-1` is the last byte.
+   */
+  at = defineInstanceFunction('baml.Uint8Array.at', 'sync', ['self', 'index']).bind(this) as (
+    index: number,
+  ) => number | null;
+  /**
+   * Returns the byte at `index`, or `null` if out of bounds.
+   *
+   * Negative indices count from the end: `-1` is the last byte.
+   */
+  at_async = defineInstanceFunction('baml.Uint8Array.at', 'async', ['self', 'index']).bind(
+    this,
+  ) as (index: number) => Promise<number | null>;
+  push = defineInstanceFunction('baml.Uint8Array.push', 'sync', ['self', 'item']).bind(this) as (
+    item: number,
+  ) => number;
+  push_async = defineInstanceFunction('baml.Uint8Array.push', 'async', ['self', 'item']).bind(
+    this,
+  ) as (item: number) => Promise<number>;
+  pop = defineInstanceFunction('baml.Uint8Array.pop', 'sync', ['self']).bind(this) as () =>
+    | number
+    | null;
+  pop_async = defineInstanceFunction('baml.Uint8Array.pop', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number | null>;
+  /**
+   * Returns a new `uint8array` containing the concatenation of the two arrays.
+   */
+  concat = defineInstanceFunction('baml.Uint8Array.concat', 'sync', ['self', 'other']).bind(
+    this,
+  ) as (other: Uint8Array) => Uint8Array;
+  /**
+   * Returns a new `uint8array` containing the concatenation of the two arrays.
+   */
+  concat_async = defineInstanceFunction('baml.Uint8Array.concat', 'async', ['self', 'other']).bind(
+    this,
+  ) as (other: Uint8Array) => Promise<Uint8Array>;
+  /**
+   * Returns `true` if the array contains the given number.
+   * If the item is not a `u8`, this will always return `false`.
+   */
+  includes = defineInstanceFunction('baml.Uint8Array.includes', 'sync', ['self', 'item']).bind(
+    this,
+  ) as (item: number) => boolean;
+  /**
+   * Returns `true` if the array contains the given number.
+   * If the item is not a `u8`, this will always return `false`.
+   */
+  includes_async = defineInstanceFunction('baml.Uint8Array.includes', 'async', [
+    'self',
+    'item',
+  ]).bind(this) as (item: number) => Promise<boolean>;
+  /**
+   * Returns a new `uint8array` with the bytes in reverse order.
+   */
+  reverse = defineInstanceFunction('baml.Uint8Array.reverse', 'sync', ['self']).bind(
+    this,
+  ) as () => Uint8Array;
+  /**
+   * Returns a new `uint8array` with the bytes in reverse order.
+   */
+  reverse_async = defineInstanceFunction('baml.Uint8Array.reverse', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<Uint8Array>;
+  /**
+   * Returns a new `uint8array` with the bytes from `start` (inclusive) to
+   * `end` (exclusive).
+   *
+   * Negative indices count from the end. Out-of-range indices are clamped, and
+   * an `end` that resolves at or before `start` yields an empty array.
+   */
+  slice = defineInstanceFunction('baml.Uint8Array.slice', 'sync', ['self', 'start', 'end']).bind(
+    this,
+  ) as (start: number, end: number) => Uint8Array;
+  /**
+   * Returns a new `uint8array` with the bytes from `start` (inclusive) to
+   * `end` (exclusive).
+   *
+   * Negative indices count from the end. Out-of-range indices are clamped, and
+   * an `end` that resolves at or before `start` yields an empty array.
+   */
+  slice_async = defineInstanceFunction('baml.Uint8Array.slice', 'async', [
+    'self',
+    'start',
+    'end',
+  ]).bind(this) as (start: number, end: number) => Promise<Uint8Array>;
+  /**
+   * Returns the bytes as an array of integers, each in the range 0–255.
+   */
+  to_array = defineInstanceFunction('baml.Uint8Array.to_array', 'sync', ['self']).bind(
+    this,
+  ) as () => number[];
+  /**
+   * Returns the bytes as an array of integers, each in the range 0–255.
+   */
+  to_array_async = defineInstanceFunction('baml.Uint8Array.to_array', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<number[]>;
+  /**
+   * Encodes the bytes as a lowercase hexadecimal string (e.g. `"deadbeef"`).
+   */
+  to_hex = defineInstanceFunction('baml.Uint8Array.to_hex', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  /**
+   * Encodes the bytes as a lowercase hexadecimal string (e.g. `"deadbeef"`).
+   */
+  to_hex_async = defineInstanceFunction('baml.Uint8Array.to_hex', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  /**
+   * Encodes the bytes as a standard Base64 string (with `=` padding).
+   *
+   * # Examples
+   * ```
+   * "hello".to_utf8().to_base64()   // "aGVsbG8="
+   * ```
+   */
+  to_base64 = defineInstanceFunction('baml.Uint8Array.to_base64', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  /**
+   * Encodes the bytes as a standard Base64 string (with `=` padding).
+   *
+   * # Examples
+   * ```
+   * "hello".to_utf8().to_base64()   // "aGVsbG8="
+   * ```
+   */
+  to_base64_async = defineInstanceFunction('baml.Uint8Array.to_base64', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  to_string = defineInstanceFunction('baml.Uint8Array.to_string', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  to_string_async = defineInstanceFunction('baml.Uint8Array.to_string', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<string>;
+  _to_string_impl = defineInstanceFunction('baml.Uint8Array._to_string_impl', 'sync', [
+    'self',
+  ]).bind(this) as () => string;
+  _to_string_impl_async = defineInstanceFunction('baml.Uint8Array._to_string_impl', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<string>;
+  sort = defineInstanceFunction('baml.Uint8Array.sort', 'sync', ['self']).bind(this) as () => null;
+  sort_async = defineInstanceFunction('baml.Uint8Array.sort', 'async', ['self']).bind(
+    this,
+  ) as () => Promise<null>;
 }

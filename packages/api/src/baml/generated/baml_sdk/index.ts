@@ -12,12 +12,12 @@
 // baml-cli is available with the baml package.
 
 import { initializeRuntimeFromBytecode, setTypeMap } from "@boundaryml/baml-bridge";
-import * as _inlinedbaml from "./_inlinedbaml.js";
-import { _TYPE_MAP } from "./_typemap.js";
+import * as _inlinedbaml from './_inlinedbaml.js';
+import { _TYPE_MAP } from './_typemap.js';
 
 initializeRuntimeFromBytecode(_inlinedbaml.BYTECODE);
 setTypeMap(_TYPE_MAP);
 
-export * as baml from "./baml/index.js";
-export * as host from "./host/index.js";
-export * as vendor from "./vendor/index.js";
+export * as baml from './baml/index.js';
+export * as host from './host/index.js';
+export * as vendor from './vendor/index.js';

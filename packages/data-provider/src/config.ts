@@ -2025,7 +2025,9 @@ export const bamlEndpointIssues = (
  * valid; publishing all three as `baml` keeps the read side from having to know
  * about the other two.
  */
-export const normalizeBamlEndpoint = (endpoint: Record<string, unknown>): Record<string, unknown> => {
+export const normalizeBamlEndpoint = (
+  endpoint: Record<string, unknown>,
+): Record<string, unknown> => {
   if (!isBamlEndpoint(endpoint)) {
     return endpoint;
   }

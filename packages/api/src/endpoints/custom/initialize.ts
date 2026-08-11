@@ -147,7 +147,9 @@ async function initializeBaml({
     endpointTokenConfig:
       endpointConfig.tokenConfig == null
         ? undefined
-        : toBillingTokenConfig(endpointConfig.tokenConfig as Record<string, Record<string, number>>),
+        : toBillingTokenConfig(
+            endpointConfig.tokenConfig as Record<string, Record<string, number>>,
+          ),
   };
 }
 

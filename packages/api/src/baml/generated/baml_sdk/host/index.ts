@@ -12,15 +12,12 @@
 // baml-cli is available with the baml package.
 
 import { defineFunction } from "@boundaryml/baml-bridge";
-import type * as baml from "../baml/index.js";
+import type * as baml from '../baml/index.js';
 
 export class GetWeather$stream {
-  tool!: "get_weather";
+  tool!: 'get_weather';
   city!: string | null;
-  constructor(init: {
-    tool: "get_weather";
-    city: string | null;
-  }) {
+  constructor(init: { tool: 'get_weather'; city: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -34,43 +31,31 @@ export class GetWeather$stream {
 export class TurnPlan$stream {
   reply!: string | null;
   tools!: (GetWeather$stream | WebSearch$stream)[];
-  constructor(init: {
-    reply: string | null;
-    tools: (GetWeather$stream | WebSearch$stream)[];
-  }) {
+  constructor(init: { reply: string | null; tools: (GetWeather$stream | WebSearch$stream)[] }) {
     Object.assign(this, init);
   }
 }
 
 export class WebSearch$stream {
-  tool!: "web_search";
+  tool!: 'web_search';
   query!: string | null;
-  constructor(init: {
-    tool: "web_search";
-    query: string | null;
-  }) {
+  constructor(init: { tool: 'web_search'; query: string | null }) {
     Object.assign(this, init);
   }
 }
 
 export class GetWeather {
-  tool!: "get_weather";
+  tool!: 'get_weather';
   city!: string;
-  constructor(init: {
-    tool: "get_weather";
-    city: string;
-  }) {
+  constructor(init: { tool: 'get_weather'; city: string }) {
     Object.assign(this, init);
   }
 }
 
 export class WebSearch {
-  tool!: "web_search";
+  tool!: 'web_search';
   query!: string;
-  constructor(init: {
-    tool: "web_search";
-    query: string;
-  }) {
+  constructor(init: { tool: 'web_search'; query: string }) {
     Object.assign(this, init);
   }
 }
@@ -84,10 +69,7 @@ export class WebSearch {
 export class TurnPlan {
   reply!: string | null;
   tools!: (GetWeather | WebSearch)[];
-  constructor(init: {
-    reply: string | null;
-    tools: (GetWeather | WebSearch)[];
-  }) {
+  constructor(init: { reply: string | null; tools: (GetWeather | WebSearch)[] }) {
     Object.assign(this, init);
   }
 }
@@ -96,23 +78,29 @@ export class TurnPlan {
  * The one prompt definition. Every direct client function interpolates this,
  * so two clients differ only by provider model and retry policy — which is
  * exactly what the compiled-runtime acceptance test asserts.
- * 
+ *
  * `allowed_tools` is the caller's CURRENT bound subset, never the compiled
  * superset: a tool that exists in `TurnPlan` but is not bound this turn must
  * not be offered.
  */
-export const turn_protocol = defineFunction("user.host.turn_protocol", "sync", ["transcript", "allowed_tools"]) as (transcript: string, allowed_tools: string[]) => string;
+export const turn_protocol = defineFunction('user.host.turn_protocol', 'sync', [
+  'transcript',
+  'allowed_tools',
+]) as (transcript: string, allowed_tools: string[]) => string;
 
 /**
  * The one prompt definition. Every direct client function interpolates this,
  * so two clients differ only by provider model and retry policy — which is
  * exactly what the compiled-runtime acceptance test asserts.
- * 
+ *
  * `allowed_tools` is the caller's CURRENT bound subset, never the compiled
  * superset: a tool that exists in `TurnPlan` but is not bound this turn must
  * not be offered.
  */
-export const turn_protocol_async = defineFunction("user.host.turn_protocol", "async", ["transcript", "allowed_tools"]) as (transcript: string, allowed_tools: string[]) => Promise<string>;
+export const turn_protocol_async = defineFunction('user.host.turn_protocol', 'async', [
+  'transcript',
+  'allowed_tools',
+]) as (transcript: string, allowed_tools: string[]) => Promise<string>;
 
 /**
  * @throws DevOther
@@ -122,7 +110,17 @@ export const turn_protocol_async = defineFunction("user.host.turn_protocol", "as
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const HostTurnOpenRouter = defineFunction("user.host.HostTurnOpenRouter", "sync", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => TurnPlan;
+export const HostTurnOpenRouter = defineFunction(
+  'user.host.HostTurnOpenRouter',
+  'sync',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => TurnPlan;
 
 /**
  * @throws DevOther
@@ -132,71 +130,170 @@ export const HostTurnOpenRouter = defineFunction("user.host.HostTurnOpenRouter",
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const HostTurnOpenRouter_async = defineFunction("user.host.HostTurnOpenRouter", "async", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<TurnPlan>;
+export const HostTurnOpenRouter_async = defineFunction(
+  'user.host.HostTurnOpenRouter',
+  'async',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<TurnPlan>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouter$build_request = defineFunction("user.host.HostTurnOpenRouter$build_request", "sync", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => baml.http.Request;
+export const HostTurnOpenRouter$build_request = defineFunction(
+  'user.host.HostTurnOpenRouter$build_request',
+  'sync',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => baml.http.Request;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouter$build_request_async = defineFunction("user.host.HostTurnOpenRouter$build_request", "async", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<baml.http.Request>;
+export const HostTurnOpenRouter$build_request_async = defineFunction(
+  'user.host.HostTurnOpenRouter$build_request',
+  'async',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<baml.http.Request>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouter$build_request_stream = defineFunction("user.host.HostTurnOpenRouter$build_request_stream", "sync", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => baml.http.Request;
+export const HostTurnOpenRouter$build_request_stream = defineFunction(
+  'user.host.HostTurnOpenRouter$build_request_stream',
+  'sync',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => baml.http.Request;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouter$build_request_stream_async = defineFunction("user.host.HostTurnOpenRouter$build_request_stream", "async", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<baml.http.Request>;
+export const HostTurnOpenRouter$build_request_stream_async = defineFunction(
+  'user.host.HostTurnOpenRouter$build_request_stream',
+  'async',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<baml.http.Request>;
 
 /**
  * @throws ParseError
  */
-export const HostTurnOpenRouter$parse = defineFunction("user.host.HostTurnOpenRouter$parse", "sync", ["json"], ["client"]) as (json: string, $opts?: { client?: baml.llm.Client | undefined } | undefined) => TurnPlan;
+export const HostTurnOpenRouter$parse = defineFunction(
+  'user.host.HostTurnOpenRouter$parse',
+  'sync',
+  ['json'],
+  ['client'],
+) as (json: string, $opts?: { client?: baml.llm.Client | undefined } | undefined) => TurnPlan;
 
 /**
  * @throws ParseError
  */
-export const HostTurnOpenRouter$parse_async = defineFunction("user.host.HostTurnOpenRouter$parse", "async", ["json"], ["client"]) as (json: string, $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<TurnPlan>;
+export const HostTurnOpenRouter$parse_async = defineFunction(
+  'user.host.HostTurnOpenRouter$parse',
+  'async',
+  ['json'],
+  ['client'],
+) as (
+  json: string,
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<TurnPlan>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  */
-export const HostTurnOpenRouter$parse_stream = defineFunction("user.host.HostTurnOpenRouter$parse_stream", "sync", ["sse"], ["client"]) as (sse: baml.http.SseStream, $opts?: { client?: baml.llm.Client | undefined } | undefined) => baml.llm.Stream<TurnPlan$stream | null, TurnPlan>;
+export const HostTurnOpenRouter$parse_stream = defineFunction(
+  'user.host.HostTurnOpenRouter$parse_stream',
+  'sync',
+  ['sse'],
+  ['client'],
+) as (
+  sse: baml.http.SseStream,
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => baml.llm.Stream<TurnPlan$stream | null, TurnPlan>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  */
-export const HostTurnOpenRouter$parse_stream_async = defineFunction("user.host.HostTurnOpenRouter$parse_stream", "async", ["sse"], ["client"]) as (sse: baml.http.SseStream, $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<baml.llm.Stream<TurnPlan$stream | null, TurnPlan>>;
+export const HostTurnOpenRouter$parse_stream_async = defineFunction(
+  'user.host.HostTurnOpenRouter$parse_stream',
+  'async',
+  ['sse'],
+  ['client'],
+) as (
+  sse: baml.http.SseStream,
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<baml.llm.Stream<TurnPlan$stream | null, TurnPlan>>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouter$render_prompt = defineFunction("user.host.HostTurnOpenRouter$render_prompt", "sync", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => baml.llm.PromptAst;
+export const HostTurnOpenRouter$render_prompt = defineFunction(
+  'user.host.HostTurnOpenRouter$render_prompt',
+  'sync',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => baml.llm.PromptAst;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouter$render_prompt_async = defineFunction("user.host.HostTurnOpenRouter$render_prompt", "async", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<baml.llm.PromptAst>;
+export const HostTurnOpenRouter$render_prompt_async = defineFunction(
+  'user.host.HostTurnOpenRouter$render_prompt',
+  'async',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<baml.llm.PromptAst>;
 
 /**
  * @throws DevOther
@@ -206,7 +303,17 @@ export const HostTurnOpenRouter$render_prompt_async = defineFunction("user.host.
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const HostTurnOpenRouter$stream = defineFunction("user.host.HostTurnOpenRouter$stream", "sync", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => baml.llm.Stream<TurnPlan$stream | null, TurnPlan>;
+export const HostTurnOpenRouter$stream = defineFunction(
+  'user.host.HostTurnOpenRouter$stream',
+  'sync',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => baml.llm.Stream<TurnPlan$stream | null, TurnPlan>;
 
 /**
  * @throws DevOther
@@ -216,7 +323,17 @@ export const HostTurnOpenRouter$stream = defineFunction("user.host.HostTurnOpenR
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const HostTurnOpenRouter$stream_async = defineFunction("user.host.HostTurnOpenRouter$stream", "async", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<baml.llm.Stream<TurnPlan$stream | null, TurnPlan>>;
+export const HostTurnOpenRouter$stream_async = defineFunction(
+  'user.host.HostTurnOpenRouter$stream',
+  'async',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<baml.llm.Stream<TurnPlan$stream | null, TurnPlan>>;
 
 /**
  * @throws DevOther
@@ -226,7 +343,17 @@ export const HostTurnOpenRouter$stream_async = defineFunction("user.host.HostTur
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const HostTurnOpenRouterFast = defineFunction("user.host.HostTurnOpenRouterFast", "sync", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => TurnPlan;
+export const HostTurnOpenRouterFast = defineFunction(
+  'user.host.HostTurnOpenRouterFast',
+  'sync',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => TurnPlan;
 
 /**
  * @throws DevOther
@@ -236,71 +363,170 @@ export const HostTurnOpenRouterFast = defineFunction("user.host.HostTurnOpenRout
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const HostTurnOpenRouterFast_async = defineFunction("user.host.HostTurnOpenRouterFast", "async", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<TurnPlan>;
+export const HostTurnOpenRouterFast_async = defineFunction(
+  'user.host.HostTurnOpenRouterFast',
+  'async',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<TurnPlan>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouterFast$build_request = defineFunction("user.host.HostTurnOpenRouterFast$build_request", "sync", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => baml.http.Request;
+export const HostTurnOpenRouterFast$build_request = defineFunction(
+  'user.host.HostTurnOpenRouterFast$build_request',
+  'sync',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => baml.http.Request;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouterFast$build_request_async = defineFunction("user.host.HostTurnOpenRouterFast$build_request", "async", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<baml.http.Request>;
+export const HostTurnOpenRouterFast$build_request_async = defineFunction(
+  'user.host.HostTurnOpenRouterFast$build_request',
+  'async',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<baml.http.Request>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouterFast$build_request_stream = defineFunction("user.host.HostTurnOpenRouterFast$build_request_stream", "sync", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => baml.http.Request;
+export const HostTurnOpenRouterFast$build_request_stream = defineFunction(
+  'user.host.HostTurnOpenRouterFast$build_request_stream',
+  'sync',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => baml.http.Request;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouterFast$build_request_stream_async = defineFunction("user.host.HostTurnOpenRouterFast$build_request_stream", "async", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<baml.http.Request>;
+export const HostTurnOpenRouterFast$build_request_stream_async = defineFunction(
+  'user.host.HostTurnOpenRouterFast$build_request_stream',
+  'async',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<baml.http.Request>;
 
 /**
  * @throws ParseError
  */
-export const HostTurnOpenRouterFast$parse = defineFunction("user.host.HostTurnOpenRouterFast$parse", "sync", ["json"], ["client"]) as (json: string, $opts?: { client?: baml.llm.Client | undefined } | undefined) => TurnPlan;
+export const HostTurnOpenRouterFast$parse = defineFunction(
+  'user.host.HostTurnOpenRouterFast$parse',
+  'sync',
+  ['json'],
+  ['client'],
+) as (json: string, $opts?: { client?: baml.llm.Client | undefined } | undefined) => TurnPlan;
 
 /**
  * @throws ParseError
  */
-export const HostTurnOpenRouterFast$parse_async = defineFunction("user.host.HostTurnOpenRouterFast$parse", "async", ["json"], ["client"]) as (json: string, $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<TurnPlan>;
+export const HostTurnOpenRouterFast$parse_async = defineFunction(
+  'user.host.HostTurnOpenRouterFast$parse',
+  'async',
+  ['json'],
+  ['client'],
+) as (
+  json: string,
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<TurnPlan>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  */
-export const HostTurnOpenRouterFast$parse_stream = defineFunction("user.host.HostTurnOpenRouterFast$parse_stream", "sync", ["sse"], ["client"]) as (sse: baml.http.SseStream, $opts?: { client?: baml.llm.Client | undefined } | undefined) => baml.llm.Stream<TurnPlan$stream | null, TurnPlan>;
+export const HostTurnOpenRouterFast$parse_stream = defineFunction(
+  'user.host.HostTurnOpenRouterFast$parse_stream',
+  'sync',
+  ['sse'],
+  ['client'],
+) as (
+  sse: baml.http.SseStream,
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => baml.llm.Stream<TurnPlan$stream | null, TurnPlan>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  */
-export const HostTurnOpenRouterFast$parse_stream_async = defineFunction("user.host.HostTurnOpenRouterFast$parse_stream", "async", ["sse"], ["client"]) as (sse: baml.http.SseStream, $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<baml.llm.Stream<TurnPlan$stream | null, TurnPlan>>;
+export const HostTurnOpenRouterFast$parse_stream_async = defineFunction(
+  'user.host.HostTurnOpenRouterFast$parse_stream',
+  'async',
+  ['sse'],
+  ['client'],
+) as (
+  sse: baml.http.SseStream,
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<baml.llm.Stream<TurnPlan$stream | null, TurnPlan>>;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouterFast$render_prompt = defineFunction("user.host.HostTurnOpenRouterFast$render_prompt", "sync", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => baml.llm.PromptAst;
+export const HostTurnOpenRouterFast$render_prompt = defineFunction(
+  'user.host.HostTurnOpenRouterFast$render_prompt',
+  'sync',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => baml.llm.PromptAst;
 
 /**
  * @throws InvalidArgument
  * @throws LlmClient
  * @throws RenderPrompt
  */
-export const HostTurnOpenRouterFast$render_prompt_async = defineFunction("user.host.HostTurnOpenRouterFast$render_prompt", "async", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<baml.llm.PromptAst>;
+export const HostTurnOpenRouterFast$render_prompt_async = defineFunction(
+  'user.host.HostTurnOpenRouterFast$render_prompt',
+  'async',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<baml.llm.PromptAst>;
 
 /**
  * @throws DevOther
@@ -310,7 +536,17 @@ export const HostTurnOpenRouterFast$render_prompt_async = defineFunction("user.h
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const HostTurnOpenRouterFast$stream = defineFunction("user.host.HostTurnOpenRouterFast$stream", "sync", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => baml.llm.Stream<TurnPlan$stream | null, TurnPlan>;
+export const HostTurnOpenRouterFast$stream = defineFunction(
+  'user.host.HostTurnOpenRouterFast$stream',
+  'sync',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => baml.llm.Stream<TurnPlan$stream | null, TurnPlan>;
 
 /**
  * @throws DevOther
@@ -320,4 +556,14 @@ export const HostTurnOpenRouterFast$stream = defineFunction("user.host.HostTurnO
  * @throws RenderPrompt
  * @throws Timeout
  */
-export const HostTurnOpenRouterFast$stream_async = defineFunction("user.host.HostTurnOpenRouterFast$stream", "async", ["user_message", "transcript", "allowed_tools"], ["client"]) as (user_message: string, transcript: string, allowed_tools: string[], $opts?: { client?: baml.llm.Client | undefined } | undefined) => Promise<baml.llm.Stream<TurnPlan$stream | null, TurnPlan>>;
+export const HostTurnOpenRouterFast$stream_async = defineFunction(
+  'user.host.HostTurnOpenRouterFast$stream',
+  'async',
+  ['user_message', 'transcript', 'allowed_tools'],
+  ['client'],
+) as (
+  user_message: string,
+  transcript: string,
+  allowed_tools: string[],
+  $opts?: { client?: baml.llm.Client | undefined } | undefined,
+) => Promise<baml.llm.Stream<TurnPlan$stream | null, TurnPlan>>;

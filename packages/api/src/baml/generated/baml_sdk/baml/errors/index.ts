@@ -12,14 +12,14 @@
 // baml-cli is available with the baml package.
 
 import type { BamlHandle as _BamlHandle } from "@boundaryml/baml-bridge";
-import { defineInstanceFunction } from "@boundaryml/baml-bridge";
+import { defineInstanceFunction } from '@boundaryml/baml-bridge';
 
 /**
  * The temporal context of a thrown error: the error value itself, where it
  * was thrown, and the error it superseded while the scope was unwinding (its
  * `cause`), if any. Bound by the second parameter of a `catch (e, ctx)`
  * handler.
- * 
+ *
  * The chain runs newest → oldest through `cause`; `root_cause` walks to the
  * original failure at the tail, and `to_string` renders the whole chain
  * Python-style ("During handling of the above error, another error occurred").
@@ -42,7 +42,7 @@ export class ErrorContext$stream {
  * was thrown, and the error it superseded while the scope was unwinding (its
  * `cause`), if any. Bound by the second parameter of a `catch (e, ctx)`
  * handler.
- * 
+ *
  * The chain runs newest → oldest through `cause`; `root_cause` walks to the
  * original failure at the tail, and `to_string` renders the whole chain
  * Python-style ("During handling of the above error, another error occurred").
@@ -51,27 +51,37 @@ export class ErrorContext {
   error!: unknown;
   stack_trace!: StackTrace;
   cause!: ErrorContext | null;
-  constructor(init: {
-    error: unknown;
-    stack_trace: StackTrace;
-    cause: ErrorContext | null;
-  }) {
+  constructor(init: { error: unknown; stack_trace: StackTrace; cause: ErrorContext | null }) {
     Object.assign(this, init);
   }
-/**
- * The original error at the tail of the cause chain — walks `cause` to the
- * deepest link. Returns `self` when nothing was superseded.
- */
-  root_cause = defineInstanceFunction("baml.errors.ErrorContext.root_cause", "sync", ["self"]).bind(this) as () => ErrorContext;
-/**
- * The original error at the tail of the cause chain — walks `cause` to the
- * deepest link. Returns `self` when nothing was superseded.
- */
-  root_cause_async = defineInstanceFunction("baml.errors.ErrorContext.root_cause", "async", ["self"]).bind(this) as () => Promise<ErrorContext>;
-  to_string = defineInstanceFunction("baml.errors.ErrorContext.to_string", "sync", ["self"]).bind(this) as () => string;
-  to_string_async = defineInstanceFunction("baml.errors.ErrorContext.to_string", "async", ["self"]).bind(this) as () => Promise<string>;
-  _to_string_impl = defineInstanceFunction("baml.errors.ErrorContext._to_string_impl", "sync", ["self"]).bind(this) as () => string;
-  _to_string_impl_async = defineInstanceFunction("baml.errors.ErrorContext._to_string_impl", "async", ["self"]).bind(this) as () => Promise<string>;
+  /**
+   * The original error at the tail of the cause chain — walks `cause` to the
+   * deepest link. Returns `self` when nothing was superseded.
+   */
+  root_cause = defineInstanceFunction('baml.errors.ErrorContext.root_cause', 'sync', ['self']).bind(
+    this,
+  ) as () => ErrorContext;
+  /**
+   * The original error at the tail of the cause chain — walks `cause` to the
+   * deepest link. Returns `self` when nothing was superseded.
+   */
+  root_cause_async = defineInstanceFunction('baml.errors.ErrorContext.root_cause', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<ErrorContext>;
+  to_string = defineInstanceFunction('baml.errors.ErrorContext.to_string', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  to_string_async = defineInstanceFunction('baml.errors.ErrorContext.to_string', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<string>;
+  _to_string_impl = defineInstanceFunction('baml.errors.ErrorContext._to_string_impl', 'sync', [
+    'self',
+  ]).bind(this) as () => string;
+  _to_string_impl_async = defineInstanceFunction(
+    'baml.errors.ErrorContext._to_string_impl',
+    'async',
+    ['self'],
+  ).bind(this) as () => Promise<string>;
 }
 
 /**
@@ -79,9 +89,7 @@ export class ErrorContext {
  */
 export class AccessError$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -92,9 +100,7 @@ export class AccessError$stream {
  */
 export class CompilationError$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -104,9 +110,7 @@ export class CompilationError$stream {
  */
 export class DevOther$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -118,9 +122,7 @@ export class DevOther$stream {
  */
 export class GenericSdkError$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -147,9 +149,7 @@ export class HostCallable$stream {
  */
 export class InvalidArgument$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -159,9 +159,7 @@ export class InvalidArgument$stream {
  */
 export class Io$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -171,9 +169,7 @@ export class Io$stream {
  */
 export class LlmClient$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -183,9 +179,7 @@ export class LlmClient$stream {
  */
 export class NotImplemented$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -196,9 +190,7 @@ export class NotImplemented$stream {
  */
 export class ParseError$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -208,9 +200,7 @@ export class ParseError$stream {
  */
 export class RenderPrompt$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -221,10 +211,7 @@ export class RenderPrompt$stream {
 export class Timeout$stream {
   message!: string | null;
   duration_ms!: number | null;
-  constructor(init: {
-    message: string | null;
-    duration_ms: number | null;
-  }) {
+  constructor(init: { message: string | null; duration_ms: number | null }) {
     Object.assign(this, init);
   }
 }
@@ -239,9 +226,7 @@ export class Timeout$stream {
  */
 export class TypeMismatch$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -251,9 +236,7 @@ export class TypeMismatch$stream {
  */
 export class Unsupported$stream {
   message!: string | null;
-  constructor(init: {
-    message: string | null;
-  }) {
+  constructor(init: { message: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -263,9 +246,7 @@ export class Unsupported$stream {
  */
 export class InvalidArgument {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -276,9 +257,7 @@ export class InvalidArgument {
  */
 export class ParseError {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -288,9 +267,7 @@ export class ParseError {
  */
 export class Io {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -301,10 +278,7 @@ export class Io {
 export class Timeout {
   message!: string;
   duration_ms!: number | null;
-  constructor(init: {
-    message: string;
-    duration_ms: number | null;
-  }) {
+  constructor(init: { message: string; duration_ms: number | null }) {
     Object.assign(this, init);
   }
 }
@@ -314,9 +288,7 @@ export class Timeout {
  */
 export class Unsupported {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -326,9 +298,7 @@ export class Unsupported {
  */
 export class AccessError {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -338,9 +308,7 @@ export class AccessError {
  */
 export class RenderPrompt {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -350,9 +318,7 @@ export class RenderPrompt {
  */
 export class NotImplemented {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -362,9 +328,7 @@ export class NotImplemented {
  */
 export class LlmClient {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -374,9 +338,7 @@ export class LlmClient {
  */
 export class DevOther {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -405,9 +367,7 @@ export class HostCallable {
  */
 export class GenericSdkError {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -418,9 +378,7 @@ export class GenericSdkError {
  */
 export class CompilationError {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -435,9 +393,7 @@ export class CompilationError {
  */
 export class TypeMismatch {
   message!: string;
-  constructor(init: {
-    message: string;
-  }) {
+  constructor(init: { message: string }) {
     Object.assign(this, init);
   }
 }
@@ -449,11 +405,7 @@ export class StackFrame$stream {
   file!: string | null;
   line!: number | null;
   function_name!: string | null;
-  constructor(init: {
-    file: string | null;
-    line: number | null;
-    function_name: string | null;
-  }) {
+  constructor(init: { file: string | null; line: number | null; function_name: string | null }) {
     Object.assign(this, init);
   }
 }
@@ -463,9 +415,7 @@ export class StackFrame$stream {
  */
 export class StackTrace$stream {
   frames!: StackFrame$stream[];
-  constructor(init: {
-    frames: StackFrame$stream[];
-  }) {
+  constructor(init: { frames: StackFrame$stream[] }) {
     Object.assign(this, init);
   }
 }
@@ -477,11 +427,7 @@ export class StackFrame {
   file!: string;
   line!: number;
   function_name!: string;
-  constructor(init: {
-    file: string;
-    line: number;
-    function_name: string;
-  }) {
+  constructor(init: { file: string; line: number; function_name: string }) {
     Object.assign(this, init);
   }
 }
@@ -491,13 +437,21 @@ export class StackFrame {
  */
 export class StackTrace {
   frames!: StackFrame[];
-  constructor(init: {
-    frames: StackFrame[];
-  }) {
+  constructor(init: { frames: StackFrame[] }) {
     Object.assign(this, init);
   }
-  to_string = defineInstanceFunction("baml.errors.StackTrace.to_string", "sync", ["self"]).bind(this) as () => string;
-  to_string_async = defineInstanceFunction("baml.errors.StackTrace.to_string", "async", ["self"]).bind(this) as () => Promise<string>;
-  _to_string_impl = defineInstanceFunction("baml.errors.StackTrace._to_string_impl", "sync", ["self"]).bind(this) as () => string;
-  _to_string_impl_async = defineInstanceFunction("baml.errors.StackTrace._to_string_impl", "async", ["self"]).bind(this) as () => Promise<string>;
+  to_string = defineInstanceFunction('baml.errors.StackTrace.to_string', 'sync', ['self']).bind(
+    this,
+  ) as () => string;
+  to_string_async = defineInstanceFunction('baml.errors.StackTrace.to_string', 'async', [
+    'self',
+  ]).bind(this) as () => Promise<string>;
+  _to_string_impl = defineInstanceFunction('baml.errors.StackTrace._to_string_impl', 'sync', [
+    'self',
+  ]).bind(this) as () => string;
+  _to_string_impl_async = defineInstanceFunction(
+    'baml.errors.StackTrace._to_string_impl',
+    'async',
+    ['self'],
+  ).bind(this) as () => Promise<string>;
 }
