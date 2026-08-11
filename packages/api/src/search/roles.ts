@@ -160,8 +160,13 @@ export type RoleViolation = {
  * come from `pg_class` live, so one introduced by a later migration is in scope
  * the moment it exists; the privileges come from `aclexplode` on the relation's
  * own ACL, so a privilege type this file predates is reported without being
- * named here. Grants to `PUBLIC` are read the same way, since a `PUBLIC` grant
- * reaches the reader like any other.
+ * named here. Privileges are read on a second axis too: `GRANT SELECT (col) ON
+ * t` lives in `pg_attribute.attacl` and never appears in the relation ACL, yet
+ * on the tables no policy protects a single column grant reads per-tenant keys.
+ * The migrations never issue column grants, so any column privilege for the
+ * reader or `PUBLIC` is drift, serving tables included. Grants to `PUBLIC` are
+ * read the same way on both axes, since a `PUBLIC` grant reaches the reader
+ * like any other.
  *
  * Grants and policies are all it reads. A privilege the reader could reach by `SET ROLE`,
  * because someone made it a member of another role, is not covered here.
@@ -268,6 +273,34 @@ export async function findRoleViolations(
     violations.push({
       role: row.grantee,
       problem: `has ${row.privilege} on chat_search.${row.relname}`,
+    });
+  }
+
+  const { rows: columnGrantRows } = await pool.query<{
+    relname: string;
+    attname: string;
+    grantee: string;
+    privilege: string;
+  }>(
+    `SELECT c.relname,
+            att.attname,
+            COALESCE(pg_get_userbyid(NULLIF(a.grantee, 0)), 'PUBLIC') AS grantee,
+            a.privilege_type AS privilege
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       JOIN pg_attribute att
+         ON att.attrelid = c.oid AND att.attnum > 0 AND NOT att.attisdropped
+       CROSS JOIN LATERAL aclexplode(att.attacl) AS a
+      WHERE n.nspname = 'chat_search'
+        AND c.relkind = ANY($1::"char"[])
+        AND (a.grantee = 0 OR a.grantee = to_regrole($2)::oid)
+      ORDER BY c.relname, att.attname, grantee, a.privilege_type`,
+    [[...GRANTABLE_RELKINDS], names.reader],
+  );
+  for (const row of columnGrantRows) {
+    violations.push({
+      role: row.grantee,
+      problem: `has column-level ${row.privilege} on chat_search.${row.relname}.${row.attname}`,
     });
   }
 

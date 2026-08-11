@@ -488,7 +488,39 @@ const DIVERGENT_MUSICAL_CONTROLS = /[\u{1D173}-\u{1D17A}]/u;
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/;
 
 /**
- * Refuses the three password classes that cannot be provisioned into a working
+ * RFC 4013 §2.3 output classes libpq's prohibition pass refuses outright:
+ * private use (C.3), non-characters (C.4), surrogates (C.5), inappropriate for
+ * plain text (C.6), ideographic description (C.7), display-order controls
+ * (C.8), tagging (C.9), and the non-ASCII controls of C.2.2 that survive
+ * mapping. `pg` runs no prohibition pass at all — see `assertUsablePassword`
+ * for why that only matters when SASLprep also rewrites the string.
+ */
+const PROHIBITED_PREP_OUTPUT =
+  /[\u0340\u0341\u06DD\u070F\u200E\u200F\u2028\u2029\u202A-\u202E\u2061-\u2063\u206A-\u206F\u2FF0-\u2FFB\uFFF9-\uFFFD\p{Co}\p{Cs}]|\p{Noncharacter_Code_Point}|[\u{E0001}\u{E0020}-\u{E007F}]/u;
+
+/** RFC 3454 Table D.1 — the RandALCat side of SASLprep's bidirectional rule. */
+const RAND_AL_CAT =
+  /[\u05BE\u05C0\u05C3\u05D0-\u05EA\u05F0-\u05F4\u061B\u061F\u0621-\u063A\u0640-\u064A\u066D-\u066F\u0671-\u06D5\u06DD\u06E5\u06E6\u06FA-\u06FE\u0700-\u070D\u0710\u0712-\u072C\u0780-\u07A5\u07B1\u200F\uFB1D\uFB1F-\uFB28\uFB2A-\uFB36\uFB38-\uFB3C\uFB3E\uFB40\uFB41\uFB43\uFB44\uFB46-\uFBB1\uFBD3-\uFD3D\uFD50-\uFD8F\uFD92-\uFDC7\uFDF0-\uFDFC\uFE70-\uFE74\uFE76-\uFEFC]/u;
+
+/**
+ * RFC 3454 §6 as libpq applies it to its own prep output: a string containing
+ * any RandALCat character must start and end with one and contain no LCat
+ * character. LCat is approximated as "letter outside Table D.1", which only
+ * over-reports strings the real rule fails anyway.
+ */
+function violatesBidiRule(prepped: string): boolean {
+  if (!RAND_AL_CAT.test(prepped)) {
+    return false;
+  }
+  const chars = [...prepped];
+  if (!RAND_AL_CAT.test(chars[0]) || !RAND_AL_CAT.test(chars[chars.length - 1])) {
+    return true;
+  }
+  return chars.some((ch) => !RAND_AL_CAT.test(ch) && /\p{L}/u.test(ch));
+}
+
+/**
+ * Refuses the four password classes that cannot be provisioned into a working
  * login, before a verifier no client will ever match is stored for one of them.
  *
  * A control character is where `pg` and libpq part company: libpq's SASLprep
@@ -504,6 +536,13 @@ const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/;
  *
  * A password made entirely of characters SASLprep deletes preps to the empty
  * string, which `pg` refuses to send at all.
+ *
+ * A password that mixes characters SASLprep rewrites with characters it
+ * prohibits (RFC 4013 §2.3, or the bidirectional rule) splits the clients a
+ * fourth way: libpq's prohibition pass rejects the string and falls back to
+ * hashing the raw bytes, while `pg` — which has no prohibition pass — hashes
+ * the normalized ones. When SASLprep leaves the string untouched the two paths
+ * coincide and the password works, so only the intersection is refused.
  */
 function assertUsablePassword(envKey: string, password: string): void {
   if (DIVERGENT_MUSICAL_CONTROLS.test(password)) {
@@ -521,10 +560,19 @@ function assertUsablePassword(envKey: string, password: string): void {
         'the usual cause.',
     );
   }
-  if (saslprep(password) === '') {
+  const prepped = saslprep(password);
+  if (prepped === '') {
     throw new Error(
       `[chatSearch] ${envKey} is empty once SASLprep removes its zero-width and ` +
         'commonly-mapped-to-nothing characters, and an empty password cannot authenticate.',
+    );
+  }
+  if (prepped !== password && (PROHIBITED_PREP_OUTPUT.test(prepped) || violatesBidiRule(prepped))) {
+    throw new Error(
+      `[chatSearch] ${envKey} mixes characters SASLprep rewrites with characters it prohibits ` +
+        '(RFC 4013 §2.3: private-use, non-character, bidirectional and related classes). libpq ' +
+        'rejects such a password and hashes it unchanged while node-pg normalizes it first, so ' +
+        'no stored verifier can satisfy both clients.',
     );
   }
 }

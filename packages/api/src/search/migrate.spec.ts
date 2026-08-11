@@ -202,6 +202,57 @@ describe('role credentials', () => {
     );
   });
 
+  /**
+   * libpq's prohibition pass (RFC 4013 §2.3) rejects the private-use character
+   * and falls back to hashing the raw bytes; `pg` has no prohibition pass and
+   * hashes the normalized ones. They only disagree when SASLprep actually
+   * rewrites the string — U+FB01 normalizes to `fi` — so that intersection is
+   * refused…
+   */
+  it('refuses a prohibited character alongside a SASLprep rewrite', () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: 'supplied',
+      CHAT_SEARCH_WRITER_PASSWORD: 'x\uFB01\uE000',
+      CHAT_SEARCH_READER_PASSWORD: 'supplied',
+    };
+    expect(() => assertRoleCredentialsConfigured()).toThrow(
+      /CHAT_SEARCH_WRITER_PASSWORD mixes characters SASLprep rewrites/,
+    );
+  });
+
+  /**
+   * …and only that intersection: with nothing for SASLprep to rewrite, libpq's
+   * raw fallback and pg's prep output are byte-identical, both clients
+   * authenticate, and refusing would reject a working password.
+   */
+  it('accepts a prohibited character when SASLprep leaves the password untouched', () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: 'supplied',
+      CHAT_SEARCH_WRITER_PASSWORD: 'x\uE000y',
+      CHAT_SEARCH_READER_PASSWORD: 'supplied',
+    };
+    expect(() => assertRoleCredentialsConfigured()).not.toThrow();
+  });
+
+  /**
+   * The bidirectional half of the same prohibition pass: Hebrew first and last
+   * with a Latin letter in between (the `fi` U+FB01 normalizes to) violates
+   * RFC 3454 §6, so libpq falls back to raw bytes while `pg` normalizes.
+   */
+  it('refuses a bidi-invalid password alongside a SASLprep rewrite', () => {
+    process.env = {
+      ...OLD_ENV,
+      CHAT_SEARCH_OWNER_PASSWORD: '\u05E9\uFB01\u05DD',
+      CHAT_SEARCH_WRITER_PASSWORD: 'supplied',
+      CHAT_SEARCH_READER_PASSWORD: 'supplied',
+    };
+    expect(() => assertRoleCredentialsConfigured()).toThrow(
+      /CHAT_SEARCH_OWNER_PASSWORD mixes characters SASLprep rewrites/,
+    );
+  });
+
   it('refuses a password SASLprep deletes down to nothing', () => {
     process.env = {
       ...OLD_ENV,
@@ -518,6 +569,36 @@ describePg('chat_search migrations (live PostgreSQL)', () => {
       [READER_ROLE],
     );
     expect(rows[0]).toEqual({ outbox: false, watermark: false });
+  });
+
+  /**
+   * Column grants live in `pg_attribute.attacl`, not the relation ACL, so an
+   * audit reading only `relacl` certifies this state as clean — while a
+   * `SET ROLE` reader session reads both tenants' outbox keys, because the
+   * outbox has no policy protecting it. The audit must see both ACL axes.
+   */
+  it('reports a column-level grant the relation ACL never mentions', async () => {
+    await pool.query(`GRANT SELECT (tenant_id, user_id) ON chat_search.outbox TO ${READER_ROLE}`);
+    try {
+      const violations = await findRoleViolations(pool);
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          {
+            role: READER_ROLE,
+            problem: 'has column-level SELECT on chat_search.outbox.tenant_id',
+          },
+          {
+            role: READER_ROLE,
+            problem: 'has column-level SELECT on chat_search.outbox.user_id',
+          },
+        ]),
+      );
+    } finally {
+      await pool.query(
+        `REVOKE SELECT (tenant_id, user_id) ON chat_search.outbox FROM ${READER_ROLE}`,
+      );
+    }
+    await expect(findRoleViolations(pool)).resolves.toEqual([]);
   });
 });
 
