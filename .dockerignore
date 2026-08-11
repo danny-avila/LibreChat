@@ -9,10 +9,9 @@
 # Specific patterns to ignore
 data-node
 meili_data*
-librechat*
-# vendor/ ships a vendored @librechat/agents tarball that Dockerfile.multi
-# copies in before `npm ci`; librechat* above would otherwise exclude it.
-!vendor/**
+# Anchored to root: unanchored `librechat*` also matched
+# vendor/librechat-agents-*.tgz, which Dockerfile.multi needs for `npm ci`.
+/librechat*.yaml
 Dockerfile*
 docs
 
