@@ -11,6 +11,6 @@ export const REDIS_ABORT_ACK_TIMEOUT_MS = 3_000;
 export const REDIS_ABORT_TERMINAL_GRACE_MS =
   REDIS_ABORT_ACK_TIMEOUT_MS + REDIS_EVENT_REORDER_TIMEOUT_MS * 2;
 
-/** Absolute subscriber hold cap when a durable replacement receipt remains
- * pending because its creator stopped making progress. */
+/** Maximum time spent inspecting a durable replacement handoff. One final
+ * event-reordering grace may follow before the captured subscriber is recycled. */
 export const REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS = 30_000;

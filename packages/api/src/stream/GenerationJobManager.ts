@@ -5453,7 +5453,13 @@ class GenerationJobManagerClass {
   ): Promise<'none' | 'pending' | 'settled'> {
     try {
       const current = (await this.jobStore.getJob(streamId)) as CreatedJobData | null;
-      if (current == null || current.createdAt <= predecessorCreatedAt) {
+      if (current == null) {
+        /** A fenced append proves that a newer durable owner existed. Its job
+         * may disappear after publishing predecessor DONE but before this poll,
+         * so absence is a settled handoff that still needs delivery grace. */
+        return 'settled';
+      }
+      if (current.createdAt <= predecessorCreatedAt) {
         return 'none';
       }
       const receipts =
@@ -5471,6 +5477,32 @@ class GenerationJobManagerClass {
     }
   }
 
+  private async getReplacementHandoffStateBeforeDeadline(
+    streamId: string,
+    predecessorCreatedAt: number,
+    deadlineAt: number,
+  ): Promise<'none' | 'pending' | 'settled' | 'deadline'> {
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) {
+      return 'deadline';
+    }
+
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.getReplacementHandoffState(streamId, predecessorCreatedAt),
+        new Promise<'deadline'>((resolve) => {
+          deadlineTimer = setTimeout(() => resolve('deadline'), remainingMs);
+          deadlineTimer.unref?.();
+        }),
+      ]);
+    } finally {
+      if (deadlineTimer != null) {
+        clearTimeout(deadlineTimer);
+      }
+    }
+  }
+
   private scheduleFencedRuntimeRetirement(
     streamId: string,
     runtime: RuntimeJobState,
@@ -5480,7 +5512,12 @@ class GenerationJobManagerClass {
     requestedDelayMs = REDIS_ABORT_TERMINAL_GRACE_MS,
   ): void {
     const remainingMs = REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS - (Date.now() - startedAt);
-    const delayMs = Math.max(1, Math.min(requestedDelayMs, remainingMs));
+    /** Handoff inspection is capped at 30 seconds. Once inspection ends, the
+     * final delivery grace is intentionally un-clamped and may extend the
+     * generation-scoped hold by one reorder window. */
+    const delayMs = postHandoffGraceApplied
+      ? Math.max(1, requestedDelayMs)
+      : Math.max(1, Math.min(requestedDelayMs, remainingMs));
     const retirement = setTimeout(() => {
       void this.finishFencedRuntimeRetirement(
         streamId,
@@ -5503,24 +5540,31 @@ class GenerationJobManagerClass {
     if (this.shuttingDown) {
       return;
     }
-    let handoffState: 'none' | 'pending' | 'settled' = 'none';
-    if (Date.now() - startedAt < REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS) {
-      handoffState = await this.getReplacementHandoffState(streamId, runtime.createdAt);
-    }
-    if (this.shuttingDown) {
-      return;
-    }
-    if (Date.now() - startedAt < REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS) {
-      if (handoffState === 'pending') {
+    if (!postHandoffGraceApplied) {
+      const deadlineAt = startedAt + REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS;
+      const handoffState = await this.getReplacementHandoffStateBeforeDeadline(
+        streamId,
+        runtime.createdAt,
+        deadlineAt,
+      );
+      if (this.shuttingDown) {
+        return;
+      }
+      if (handoffState === 'pending' && Date.now() < deadlineAt) {
         this.scheduleFencedRuntimeRetirement(streamId, runtime, startedAt, true);
         return;
       }
-      if ((handoffPendingObserved || handoffState === 'settled') && !postHandoffGraceApplied) {
+      if (
+        handoffPendingObserved ||
+        handoffState === 'pending' ||
+        handoffState === 'settled' ||
+        handoffState === 'deadline'
+      ) {
         this.scheduleFencedRuntimeRetirement(
           streamId,
           runtime,
           startedAt,
-          handoffPendingObserved,
+          handoffPendingObserved || handoffState === 'pending',
           true,
           REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
         );

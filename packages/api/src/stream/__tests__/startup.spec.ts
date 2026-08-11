@@ -5,6 +5,7 @@ import {
   REDIS_ABORT_ACK_TIMEOUT_MS,
   REDIS_ABORT_TERMINAL_GRACE_MS,
   REDIS_EVENT_REORDER_TIMEOUT_MS,
+  REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS,
 } from '~/stream/internal/transportTiming';
 import {
   GenerationJobManagerClass,
@@ -888,6 +889,158 @@ describe('GenerationJobManager startup telemetry', () => {
       markStartedSpy.mockRestore();
       predecessorSubscription?.unsubscribe();
       await Promise.all([owner.destroy(), replacer.destroy()]);
+    }
+  });
+
+  it('bounds a stalled replacement lookup before recycling the fenced subscriber', async () => {
+    const streamId = 'stream-fenced-handoff-lookup-stalled';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new InMemoryEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+    const job = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, undefined, onError);
+    const getJobSpy = jest.spyOn(jobStore, 'getJob');
+    jest.useFakeTimers();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      getJobSpy.mockImplementation(() => new Promise<null>(() => undefined));
+
+      expect(job.abortController.signal.aborted).toBe(true);
+      await jest.advanceTimersByTimeAsync(REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS);
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+
+      expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      getJobSpy.mockRestore();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('lets queued predecessor done drain after its successor job disappears', async () => {
+    const streamId = 'stream-fenced-handoff-successor-gone';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new DeferredEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+    const predecessor = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, onDone, onError);
+    jest.useFakeTimers();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      await jest.advanceTimersByTimeAsync(1);
+      const successor = await jobStore.createJob(
+        streamId,
+        'user-1',
+        'conversation-1',
+        undefined,
+        { generationProtocolVersion: 2 },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'successor-gone-attempt',
+      );
+      eventTransport.emitDone(streamId, { final: true }, predecessor.createdAt);
+      await jobStore.deleteJob(streamId, successor.createdAt);
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS - 1);
+
+      expect(onDone).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+
+      eventTransport.flushDeliveries();
+
+      expect(onDone).toHaveBeenCalledWith({ final: true });
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      subscription?.unsubscribe();
+      await manager.destroy();
+    }
+  });
+
+  it('preserves a full terminal drain when a pending handoff settles at its deadline', async () => {
+    const streamId = 'stream-fenced-handoff-deadline-drain';
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    const eventTransport = new DeferredEventTransport();
+    registerChunkPublicationCapability(eventTransport, async () => false);
+    const manager = new GenerationJobManagerClass();
+    manager.configure({ jobStore, eventTransport, isRedis: false });
+    manager.initialize();
+    const predecessor = await manager.createJob(streamId, 'user-1', 'conversation-1');
+    const onDone = jest.fn();
+    const onError = jest.fn();
+    const subscription = await manager.subscribe(streamId, () => undefined, onDone, onError);
+    jest.useFakeTimers();
+
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: [{ type: 'text', text: 'tail' }] } },
+      });
+      await jest.advanceTimersByTimeAsync(1);
+      const successor = await jobStore.createJob(
+        streamId,
+        'user-1',
+        'conversation-1',
+        undefined,
+        { generationProtocolVersion: 2 },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'deadline-successor-attempt',
+      );
+
+      await jest.advanceTimersByTimeAsync(REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS - 2);
+      eventTransport.emitDone(streamId, { final: true }, predecessor.createdAt);
+      await jobStore.acknowledgeReplacedJobs?.(streamId, successor.creationAttemptId!, [
+        predecessor.createdAt,
+      ]);
+      await jest.advanceTimersByTimeAsync(1);
+
+      expect(onDone).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+
+      eventTransport.flushDeliveries();
+
+      expect(onDone).toHaveBeenCalledWith({ final: true });
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+      subscription?.unsubscribe();
+      await manager.destroy();
     }
   });
 
