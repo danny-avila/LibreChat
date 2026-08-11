@@ -719,13 +719,15 @@ function Palette({
             key={row.key}
             data-row-key={row.key}
             style={style}
-            role="presentation"
-            className={cn(
-              'flex items-end px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary',
-              arrived && 'animate-composer-palette-row',
-            )}
+            role="row"
+            className={cn('flex', arrived && 'animate-composer-palette-row')}
           >
-            {row.label}
+            <div
+              role="columnheader"
+              className="flex flex-1 items-end px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+            >
+              {row.label}
+            </div>
           </div>
         );
       }
@@ -738,25 +740,36 @@ function Palette({
             key={row.key}
             data-row-key={row.key}
             style={style}
-            id={paletteRowId(row.key)}
-            role="option"
-            aria-selected={isActive}
+            role="row"
             onClick={(event) => handleRowClick(event, index)}
             onMouseEnter={() => {
               setActiveKey(row.key);
               setScrollToActive(false);
             }}
             className={cn(
-              'flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm text-text-secondary',
+              'flex rounded-lg text-sm text-text-secondary',
               isActive && 'bg-surface-hover',
               arrived && 'animate-composer-palette-row',
             )}
           >
-            <ChevronDown
-              aria-hidden="true"
-              className={cn('animate-composer-icon size-4 shrink-0', expanded && '-rotate-180')}
-            />
-            <span className="truncate">{row.label}</span>
+            <div
+              id={paletteRowId(row.key)}
+              role="gridcell"
+              aria-selected={isActive}
+              className="min-w-0 flex-1"
+            >
+              <button
+                type="button"
+                tabIndex={-1}
+                className="flex h-full w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 text-left"
+              >
+                <ChevronDown
+                  aria-hidden="true"
+                  className={cn('animate-composer-icon size-4 shrink-0', expanded && '-rotate-180')}
+                />
+                <span className="truncate">{row.label}</span>
+              </button>
+            </div>
           </div>
         );
       }
@@ -768,42 +781,53 @@ function Palette({
             key={row.key}
             data-row-key={row.key}
             style={style}
-            id={paletteRowId(row.key)}
-            role="option"
-            aria-selected={isActive}
+            role="row"
             onClick={(event) => handleRowClick(event, index)}
             onMouseEnter={() => {
               setActiveKey(row.key);
               setScrollToActive(false);
             }}
             className={cn(
-              'flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm text-text-secondary',
+              'flex rounded-lg text-sm text-text-secondary',
               isActive && 'bg-surface-hover',
               arrived && 'animate-composer-palette-row',
             )}
           >
-            {/* Painted as a background rather than an `img`: these thumbnails
-                are often unreachable (remote storage, expired links), and a
-                background degrades to an empty tile instead of a broken glyph. */}
-            {file.type?.startsWith('image') === true ? (
-              <span
-                aria-hidden="true"
-                style={{ backgroundImage: `url(${file.filepath})` }}
-                className="size-7 shrink-0 rounded-md bg-surface-tertiary bg-cover bg-center"
-              />
-            ) : (
-              <FilePreview
-                file={file}
-                fileType={getFileType(file.type)}
-                className="size-7 rounded-md"
-              />
-            )}
-            <span className="flex min-w-0 flex-1 flex-col justify-center">
-              <span className="truncate">{file.filename}</span>
-              <span className="truncate text-xs text-text-secondary opacity-80">
-                {formatFileDate(file)}
-              </span>
-            </span>
+            <div
+              id={paletteRowId(row.key)}
+              role="gridcell"
+              aria-selected={isActive}
+              className="min-w-0 flex-1"
+            >
+              <button
+                type="button"
+                tabIndex={-1}
+                className="flex h-full w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 text-left"
+              >
+                {/* Painted as a background rather than an `img`: these thumbnails
+                    are often unreachable (remote storage, expired links), and a
+                    background degrades to an empty tile instead of a broken glyph. */}
+                {file.type?.startsWith('image') === true ? (
+                  <span
+                    aria-hidden="true"
+                    style={{ backgroundImage: `url(${file.filepath})` }}
+                    className="size-7 shrink-0 rounded-md bg-surface-tertiary bg-cover bg-center"
+                  />
+                ) : (
+                  <FilePreview
+                    file={file}
+                    fileType={getFileType(file.type)}
+                    className="size-7 rounded-md"
+                  />
+                )}
+                <span className="flex min-w-0 flex-1 flex-col justify-center">
+                  <span className="truncate">{file.filename}</span>
+                  <span className="truncate text-xs text-text-secondary opacity-80">
+                    {formatFileDate(file)}
+                  </span>
+                </span>
+              </button>
+            </div>
           </div>
         );
       }
@@ -824,20 +848,14 @@ function Palette({
           key={row.key}
           data-row-key={row.key}
           style={style}
-          id={paletteRowId(row.key)}
-          role="option"
-          aria-selected={isActive}
-          aria-checked={isEntry ? checked : undefined}
-          aria-label={
-            favorited ? `${label}, ${localize('com_ui_tools_view_favorites')}` : undefined
-          }
+          role="row"
           onClick={(event) => handleRowClick(event, index)}
           onMouseEnter={() => {
             setActiveKey(row.key);
             setScrollToActive(false);
           }}
           className={cn(
-            'group/row relative flex cursor-pointer items-center gap-2.5 rounded-lg px-2 text-sm',
+            'group/row relative flex items-stretch gap-1 rounded-lg text-sm',
             /* On-state reads as a left accent plus full-strength text, rather
                than a tick competing with the keyboard highlight for meaning. */
             checked ? 'text-text-primary' : 'text-text-secondary',
@@ -846,79 +864,100 @@ function Palette({
             departing && 'animate-composer-palette-row-out pointer-events-none',
           )}
         >
-          {checked && (
-            <span
-              aria-hidden="true"
-              className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-text-primary"
-            />
-          )}
-          <span className="shrink-0 text-accent-primary" aria-hidden="true">
-            {icon}
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col justify-center">
-            <span className={cn('truncate', checked && 'font-medium')}>{label}</span>
-            {description != null && description !== '' && (
-              <span className="truncate text-xs text-text-secondary opacity-80">{description}</span>
-            )}
-          </span>
-          {/* Modes ride on the parent row rather than a row of their own.
-              Pointer targets rather than buttons, like the star: an `option`
-              must not own focusable children, and a hidden button is still
-              click-focusable, which strands a reader inside a hidden subtree.
-              The chip in the bar carries the keyboard-reachable equivalent. */}
-          {modes != null &&
-            modes.map((mode) =>
-              mode.icon != null ? (
-                <span
-                  key={mode.id}
-                  role="presentation"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    mode.onSelect();
-                  }}
-                  className="shrink-0 rounded p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
-                >
-                  {mode.icon}
-                </span>
-              ) : (
-                <span
-                  key={mode.id}
-                  role="presentation"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    mode.onSelect();
-                  }}
-                  className={cn(
-                    'shrink-0 rounded-full border px-2 py-0.5 text-[11px] transition-colors',
-                    mode.active
-                      ? 'border-transparent bg-surface-active-alt text-text-primary'
-                      : 'border-border-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-                  )}
-                >
-                  {mode.label}
-                </span>
-              ),
-            )}
-          {isEntry && (
-            <span
-              role="presentation"
-              onClick={(e) => {
-                e.stopPropagation();
-                favorites.toggleFavorite(row.entry.itemType, row.entry.itemId);
-              }}
-              className={cn(
-                'shrink-0 rounded p-1 transition-colors',
-                favorited
-                  ? 'text-accent-primary hover:text-accent-primary-hover'
-                  : 'text-text-secondary opacity-0 hover:text-text-primary group-hover/row:opacity-100',
-              )}
-            >
-              <Star
-                className="h-4 w-4"
-                fill={favorited ? 'currentColor' : 'none'}
+          <div
+            id={paletteRowId(row.key)}
+            role="gridcell"
+            aria-selected={isActive}
+            className="flex min-w-0 flex-1 items-center"
+          >
+            {checked && (
+              <span
                 aria-hidden="true"
+                className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-text-primary"
               />
-            </span>
+            )}
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-pressed={isEntry ? checked : undefined}
+              aria-label={
+                favorited ? `${label}, ${localize('com_ui_tools_view_favorites')}` : undefined
+              }
+              className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg px-2 text-left"
+            >
+              <span className="shrink-0 text-accent-primary" aria-hidden="true">
+                {icon}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col justify-center">
+                <span className={cn('truncate', checked && 'font-medium')}>{label}</span>
+                {description != null && description !== '' && (
+                  <span className="truncate text-xs text-text-secondary opacity-80">
+                    {description}
+                  </span>
+                )}
+              </span>
+            </button>
+            {/* Modes stay in the selection cell because their equivalent chips
+                in the composer already provide the keyboard path. */}
+            {modes != null &&
+              modes.map((mode) =>
+                mode.icon != null ? (
+                  <span
+                    key={mode.id}
+                    role="presentation"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      mode.onSelect();
+                    }}
+                    className="shrink-0 rounded p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                  >
+                    {mode.icon}
+                  </span>
+                ) : (
+                  <span
+                    key={mode.id}
+                    role="presentation"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      mode.onSelect();
+                    }}
+                    className={cn(
+                      'shrink-0 rounded-full border px-2 py-0.5 text-[11px] transition-colors',
+                      mode.active
+                        ? 'border-transparent bg-surface-active-alt text-text-primary'
+                        : 'border-border-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+                    )}
+                  >
+                    {mode.label}
+                  </span>
+                ),
+              )}
+          </div>
+          {isEntry && (
+            <div role="gridcell" className="flex shrink-0 items-center pr-1">
+              <IconButton
+                size="xs"
+                shape="square"
+                label={localize(favorited ? 'com_ui_unfavorite' : 'com_ui_favorite')}
+                aria-pressed={favorited}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  favorites.toggleFavorite(row.entry.itemType, row.entry.itemId);
+                }}
+                className={cn(
+                  'opacity-100 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 [@media(hover:hover)]:opacity-0',
+                  favorited
+                    ? 'text-accent-primary hover:text-accent-primary-hover'
+                    : 'text-text-secondary hover:text-text-primary',
+                )}
+              >
+                <Star
+                  className="h-4 w-4"
+                  fill={favorited ? 'currentColor' : 'none'}
+                  aria-hidden="true"
+                />
+              </IconButton>
+            </div>
           )}
         </div>
       );
@@ -1038,9 +1077,10 @@ function Palette({
                 ref={inputRef}
                 role="combobox"
                 /* The input only exists while the popover is open, and the
-                   listbox below stays mounted (empty on a dry search), so the
+                   grid below stays mounted (empty on a dry search), so the
                    widget state cannot contradict what is on screen. */
                 aria-expanded="true"
+                aria-haspopup="grid"
                 autoComplete="off"
                 aria-controls={listId}
                 aria-activedescendant={
@@ -1064,8 +1104,8 @@ function Palette({
             {rows.length === 0 && (
               /* A search that matches nothing is a state change with nothing
                  to focus, so it has to be said rather than only drawn. A
-                 sibling of the listbox, not a replacement: the combobox keeps
-                 pointing at the (empty) list it controls. */
+                 sibling of the grid, not a replacement: the combobox keeps
+                 pointing at the empty collection it controls. */
               <div
                 role="status"
                 aria-live="polite"
@@ -1077,7 +1117,7 @@ function Palette({
             <div
               ref={listBodyRef}
               id={listId}
-              role="listbox"
+              role="grid"
               aria-label={localize('com_ui_composer_palette')}
               className={cn(
                 'composer-palette-rows',

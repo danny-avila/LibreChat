@@ -49,6 +49,7 @@ import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '~/u
 import { markComposerFilesTaken } from '~/utils/composerFiles';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useLatestMessage } from '~/hooks/Messages';
+import { insertQueuedMessage } from '~/utils/queue';
 import { useSetFilesToDelete } from '~/hooks/Files';
 import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
@@ -1052,9 +1053,7 @@ export default function useSteering({
             }),
           ...(options?.front && { priority: true }),
         };
-        set(store.queuedMessagesByConvoId(queueKey), (prev) =>
-          [...prev, item].sort(compareQueuedMessages),
-        );
+        set(store.queuedMessagesByConvoId(queueKey), (prev) => insertQueuedMessage(prev, item));
         if (options?.skipUsageMark !== true) {
           markQueuedFilesUsage(options?.files);
         }
