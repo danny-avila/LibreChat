@@ -27,7 +27,8 @@ const getUserLimiterKey = (req) => {
     return `user:${userId.toString()}`;
   }
 
-  const tempToken = req.body?.tempToken;
+  const tempToken =
+    req.body?.tempToken ?? req.body?.acknowledgementToken ?? req.body?.finalizationToken;
   if (typeof tempToken === 'string' && tempToken) {
     return `temp:${hashLimiterKey(tempToken)}`;
   }
@@ -58,7 +59,9 @@ const createHandler = (limiter) => async (req, res) => {
     windowInMinutes,
   };
 
-  const userId = getTempTokenUserId(req.body?.tempToken);
+  const userId = getTempTokenUserId(
+    req.body?.tempToken ?? req.body?.acknowledgementToken ?? req.body?.finalizationToken,
+  );
   if (userId && !req.user) {
     req.user = { id: userId };
   } else if (userId && !req.user.id && !req.user._id) {

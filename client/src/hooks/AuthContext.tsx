@@ -26,8 +26,13 @@ import {
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
+import {
+  isSafeRedirect,
+  getPostLoginRedirect,
+  clearPostLoginRedirect,
+  persistRedirectToSession,
+} from '~/utils';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
-import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -36,6 +41,10 @@ const AuthContext = (import.meta.hot?.data?.__AuthContext ??
 if (import.meta.hot) {
   import.meta.hot.data.__AuthContext = AuthContext;
 }
+
+const isRequiredTwoFactorSetupRoute = (): boolean =>
+  window.location.pathname.endsWith('/login/2fa/setup') &&
+  !!new URLSearchParams(window.location.search).get('tempToken');
 
 const AuthContextProvider = ({
   authConfig,
@@ -79,16 +88,12 @@ const AuthContextProvider = ({
           setQueriesEnabled(true);
         }
 
-        const searchParams = new URLSearchParams(window.location.search);
-        const postLoginRedirect = getPostLoginRedirect(searchParams);
-
         const logoutRedirect = logoutRedirectRef.current;
         logoutRedirectRef.current = undefined;
 
+        /** Callers resolve the post-login destination, so it is consumed exactly once per sign-in. */
         const finalRedirect =
-          logoutRedirect ??
-          postLoginRedirect ??
-          (redirect && isSafeRedirect(redirect) ? redirect : null);
+          logoutRedirect ?? (redirect && isSafeRedirect(redirect) ? redirect : null);
 
         if (finalRedirect == null) {
           return;
@@ -108,6 +113,10 @@ const AuthContextProvider = ({
     onSuccess: (data: t.TLoginResponse) => {
       const { user, token, twoFAPending, twoFASetupRequired, tempToken } = data;
       if (twoFASetupRequired) {
+        const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
+        if (redirectTo) {
+          persistRedirectToSession(redirectTo);
+        }
         navigate(`/login/2fa/setup?tempToken=${tempToken}`, { replace: true });
         return;
       }
@@ -116,7 +125,9 @@ const AuthContextProvider = ({
         return;
       }
       setError(undefined);
-      setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
+      const redirect =
+        getPostLoginRedirect(new URLSearchParams(window.location.search)) ?? '/c/new';
+      setUserContext({ token, isAuthenticated: true, user, redirect });
     },
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
@@ -165,12 +176,27 @@ const AuthContextProvider = ({
 
   const logout = useCallback(
     (redirect?: string) => {
+      clearPostLoginRedirect();
       if (redirect) {
         logoutRedirectRef.current = redirect;
       }
       logoutUser.mutate(undefined);
     },
     [logoutUser],
+  );
+
+  const completeAuthentication = useCallback(
+    (authenticatedToken: string, authenticatedUser: t.TUser) => {
+      const redirect =
+        getPostLoginRedirect(new URLSearchParams(window.location.search)) ?? '/c/new';
+      setUser(authenticatedUser);
+      setToken(authenticatedToken);
+      setTokenHeader(authenticatedToken);
+      setIsAuthenticated(true);
+      setQueriesEnabled(true);
+      navigate(redirect, { replace: true });
+    },
+    [navigate, setQueriesEnabled, setUser],
   );
 
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
@@ -195,10 +221,22 @@ const AuthContextProvider = ({
         if (isExternalRedirectRef.current) {
           return;
         }
-        const { user, token = '' } = data ?? {};
+        const { user, token = '', twoFASetupRequired, tempToken } = data ?? {};
+        if (twoFASetupRequired && tempToken) {
+          const baseUrl = apiBaseUrl();
+          const rawPath = window.location.pathname;
+          const strippedPath =
+            baseUrl && (rawPath === baseUrl || rawPath.startsWith(baseUrl + '/'))
+              ? rawPath.slice(baseUrl.length) || '/'
+              : rawPath;
+          const currentUrl = `${strippedPath}${window.location.search}${window.location.hash}`;
+          persistRedirectToSession(currentUrl);
+          navigate(`/login/2fa/setup?tempToken=${encodeURIComponent(tempToken)}`, {
+            replace: true,
+          });
+          return;
+        }
         if (token) {
-          const storedRedirect = sessionStorage.getItem(SESSION_KEY);
-          sessionStorage.removeItem(SESSION_KEY);
           const baseUrl = apiBaseUrl();
           const rawPath = window.location.pathname;
           const strippedPath =
@@ -208,12 +246,15 @@ const AuthContextProvider = ({
           const currentUrl = `${strippedPath}${window.location.search}`;
           const fallbackRedirect = isSafeRedirect(currentUrl) ? currentUrl : '/c/new';
           const redirect =
-            storedRedirect && isSafeRedirect(storedRedirect) ? storedRedirect : fallbackRedirect;
+            getPostLoginRedirect(new URLSearchParams(window.location.search)) ?? fallbackRedirect;
           setUserContext({ user, token, isAuthenticated: true, redirect });
           return;
         }
         console.log('Token is not present. User is not authenticated.');
         if (authConfig?.test === true) {
+          return;
+        }
+        if (isRequiredTwoFactorSetupRoute()) {
           return;
         }
         navigate(buildLoginRedirectUrl());
@@ -224,6 +265,9 @@ const AuthContextProvider = ({
         }
         console.log('refreshToken mutation error:', error);
         if (authConfig?.test === true) {
+          return;
+        }
+        if (isRequiredTwoFactorSetupRoute()) {
           return;
         }
         navigate(buildLoginRedirectUrl());
@@ -286,6 +330,7 @@ const AuthContextProvider = ({
       error,
       login,
       logout,
+      completeAuthentication,
       setError,
       roles: {
         [SystemRoles.USER]: userRole,
@@ -307,6 +352,7 @@ const AuthContextProvider = ({
       customRole,
       login,
       logout,
+      completeAuthentication,
     ],
   );
 

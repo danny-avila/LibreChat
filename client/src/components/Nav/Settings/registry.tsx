@@ -579,7 +579,7 @@ export const registry: SettingEntry[] = [
     tab: ACCOUNT,
     section: 'security',
     labelKey: 'com_ui_settings_label_2fa',
-    show: (ctx) => ctx.isLocalProvider,
+    show: (ctx) => ctx.isTwoFactorPolicyProvider,
     Component: EnableTwoFactorItem,
   },
   {
@@ -587,7 +587,7 @@ export const registry: SettingEntry[] = [
     tab: ACCOUNT,
     section: 'security',
     labelKey: 'com_ui_settings_label_backup_codes',
-    show: (ctx) => ctx.isLocalProvider && ctx.twoFactorEnabled,
+    show: (ctx) => ctx.isTwoFactorPolicyProvider && ctx.twoFactorEnabled,
     Component: BackupCodesItem,
   },
   // Account · Billing

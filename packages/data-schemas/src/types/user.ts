@@ -43,6 +43,10 @@ export interface IUser extends Document {
     used: boolean;
     usedAt?: Date | null;
   }>;
+  /** SHA-256 hash of the one-time nonce that authorizes the backup-code acknowledgement step. */
+  twoFactorAcknowledgementNonceHash?: string | null;
+  /** SHA-256 hash of the one-time nonce that authorizes required-enrollment finalization. */
+  twoFactorFinalizationNonceHash?: string | null;
   refreshToken?: Array<{
     refreshToken: string;
   }>;
@@ -62,6 +66,29 @@ export interface IUser extends Document {
   tenantId?: string;
   federatedTokens?: OIDCTokens;
   openidTokens?: OIDCTokens;
+}
+
+/**
+ * Predicates that bind a required two-factor enrollment mutation to the exact state its
+ * caller observed. Every supplied field is ANDed into the compare-and-swap filter, so a
+ * concurrent regeneration, acknowledgement, or finalization loses the race and fails closed.
+ */
+export interface TwoFactorEnrollmentGuard {
+  pendingTotpSecret?: string;
+  pendingBackupCodes?: NonNullable<IUser['pendingBackupCodes']>;
+  twoFactorAcknowledgementNonceHash?: string;
+  twoFactorFinalizationNonceHash?: string;
+}
+
+/** Fields a required two-factor enrollment step may write; `null` clears the stored value. */
+export interface TwoFactorEnrollmentUpdate {
+  totpSecret?: string | null;
+  backupCodes?: NonNullable<IUser['backupCodes']>;
+  twoFactorEnabled?: boolean;
+  pendingTotpSecret?: string | null;
+  pendingBackupCodes?: NonNullable<IUser['pendingBackupCodes']>;
+  twoFactorAcknowledgementNonceHash?: string | null;
+  twoFactorFinalizationNonceHash?: string | null;
 }
 
 export interface OIDCTokens {

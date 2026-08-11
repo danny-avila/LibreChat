@@ -19,6 +19,12 @@ export { MAX_SUBAGENTS } from './limits';
 
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
 
+const TWO_FACTOR_POLICY_PROVIDERS = new Set(['local', 'ldap']);
+
+export function isTwoFactorPolicyProvider(provider: string | null | undefined): boolean {
+  return provider == null || TWO_FACTOR_POLICY_PROVIDERS.has(provider);
+}
+
 export const BASE_ONLY_CONFIG_SECTIONS = [] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */

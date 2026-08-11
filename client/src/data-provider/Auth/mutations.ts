@@ -195,3 +195,21 @@ export const useConfirmTwoFactorSetupMutation = (): UseMutationResult<
   unknown
 > =>
   useMutation((payload: t.TConfirm2FASetupRequest) => dataService.confirmTwoFactorSetup(payload));
+
+export const useAcknowledgeTwoFactorSetupMutation = (): UseMutationResult<
+  t.TAcknowledge2FASetupResponse,
+  unknown,
+  t.TAcknowledge2FASetupRequest,
+  unknown
+> =>
+  useMutation((payload: t.TAcknowledge2FASetupRequest) =>
+    dataService.acknowledgeTwoFactorSetup(payload),
+  );
+
+export const useFinalizeTwoFactorSetupMutation = (): UseMutationResult<
+  t.TFinalize2FASetupResponse,
+  unknown,
+  t.TFinalize2FASetupRequest,
+  unknown
+> =>
+  useMutation((payload: t.TFinalize2FASetupRequest) => dataService.finalizeTwoFactorSetup(payload));

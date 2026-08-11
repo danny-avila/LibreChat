@@ -4,6 +4,7 @@ import {
   bedrockModels,
   configSchema,
   excludedKeys,
+  isTwoFactorPolicyProvider,
   resolveEndpointType,
   webSearchSchema,
 } from './config';
@@ -19,6 +20,16 @@ const endpointsConfig: TEndpointsConfig = {
   'Some Endpoint': { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
+
+describe('isTwoFactorPolicyProvider', () => {
+  it.each(['local', 'ldap', null, undefined])('includes provider %s', (provider) => {
+    expect(isTwoFactorPolicyProvider(provider)).toBe(true);
+  });
+
+  it.each(['openid', 'google', 'saml'])('excludes federated provider %s', (provider) => {
+    expect(isTwoFactorPolicyProvider(provider)).toBe(false);
+  });
+});
 
 describe('excludedKeys', () => {
   it.each(['_id', 'user', 'conversationId', '__v'])('excludes system field "%s"', (field) => {

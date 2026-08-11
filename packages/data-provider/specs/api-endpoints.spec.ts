@@ -6,6 +6,8 @@ import {
   buildLoginRedirectUrl,
   enableTwoFactorSetup,
   confirmTwoFactorSetup,
+  acknowledgeTwoFactorSetup,
+  finalizeTwoFactorSetup,
 } from '../src/api-endpoints';
 
 describe('buildLoginRedirectUrl', () => {
@@ -98,5 +100,7 @@ describe('required two-factor setup endpoints', () => {
   it('uses the purpose-specific setup paths', () => {
     expect(enableTwoFactorSetup()).toBe('/api/auth/2fa/setup');
     expect(confirmTwoFactorSetup()).toBe('/api/auth/2fa/setup/confirm');
+    expect(acknowledgeTwoFactorSetup()).toBe('/api/auth/2fa/setup/acknowledge');
+    expect(finalizeTwoFactorSetup()).toBe('/api/auth/2fa/setup/finalize');
   });
 });

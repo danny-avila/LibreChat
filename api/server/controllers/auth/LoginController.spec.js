@@ -8,7 +8,10 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   generateTwoFactorSetupToken: (...args) => mockGenerateTwoFactorSetupToken(...args),
-  isEnabled: (value) => typeof value === 'string' && value.trim().toLowerCase() === 'true',
+  isTwoFactorEnrollmentRequired: (user) =>
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION === 'true' &&
+    !user.twoFactorEnabled &&
+    (user.provider == null || ['local', 'ldap'].includes(user.provider)),
 }));
 
 jest.mock('~/server/services/twoFactorService', () => ({
@@ -105,5 +108,18 @@ describe('loginController', () => {
         id: 'user-3',
       },
     });
+  });
+
+  it('does not apply local enrollment policy to federated users', async () => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+    const req = {
+      user: { _id: 'user-4', provider: 'openid', email: 'federated@example.com' },
+    };
+    const res = createResponse();
+
+    await loginController(req, res);
+
+    expect(mockGenerateTwoFactorSetupToken).not.toHaveBeenCalled();
+    expect(mockSetAuthTokens).toHaveBeenCalledWith('user-4', res, null, req);
   });
 });

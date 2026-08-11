@@ -1,6 +1,7 @@
 import {
   persistRedirectToSession,
   getPostLoginRedirect,
+  peekPostLoginRedirect,
   isSafeRedirect,
   SESSION_KEY,
 } from '../redirect';
@@ -147,6 +148,18 @@ describe('getPostLoginRedirect', () => {
     const params = new URLSearchParams();
     getPostLoginRedirect(params);
     expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+  });
+});
+
+describe('peekPostLoginRedirect', () => {
+  beforeEach(() => sessionStorage.clear());
+
+  it('preserves a safe stored destination across repeated setup mounts', () => {
+    sessionStorage.setItem(SESSION_KEY, '/c/deep-link?model=test');
+
+    expect(peekPostLoginRedirect(new URLSearchParams())).toBe('/c/deep-link?model=test');
+    expect(peekPostLoginRedirect(new URLSearchParams())).toBe('/c/deep-link?model=test');
+    expect(sessionStorage.getItem(SESSION_KEY)).toBe('/c/deep-link?model=test');
   });
 });
 

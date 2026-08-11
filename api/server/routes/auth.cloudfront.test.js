@@ -6,6 +6,8 @@ const mockForceRefreshCloudFrontAuthCookies = jest.fn();
 jest.mock('@librechat/api', () => ({
   createSetBalanceConfig: jest.fn(() => (req, res, next) => next()),
   requireTwoFactorSetupToken: jest.fn((req, res, next) => next()),
+  requireTwoFactorSetupAcknowledgementToken: jest.fn((req, res, next) => next()),
+  requireTwoFactorSetupFinalizationToken: jest.fn((req, res, next) => next()),
   forceRefreshCloudFrontAuthCookies: (...args) => mockForceRefreshCloudFrontAuthCookies(...args),
   blockTwoFactorDisableWhenRequired: jest.fn((req, res, next) => next()),
 }));
@@ -29,6 +31,8 @@ jest.mock('~/server/controllers/TwoFactorController', () => ({
 jest.mock('~/server/controllers/auth/TwoFactorAuthController', () => ({
   verify2FAWithTempToken: jest.fn((req, res) => res.status(200).end()),
   confirm2FASetupWithTempToken: jest.fn((req, res) => res.status(200).end()),
+  acknowledge2FASetup: jest.fn((req, res) => res.status(200).end()),
+  finalize2FASetup: jest.fn((req, res) => res.status(200).end()),
 }));
 
 jest.mock('~/server/controllers/auth/LogoutController', () => ({
@@ -54,6 +58,8 @@ jest.mock('~/server/middleware', () => {
     logHeaders: pass,
     loginLimiter: pass,
     setTwoFactorTempUser: pass,
+    setTwoFactorAcknowledgementTempUser: pass,
+    setTwoFactorFinalizationTempUser: pass,
     twoFactorTempLimiter: pass,
     checkBan: pass,
     validateEmailLogin: pass,

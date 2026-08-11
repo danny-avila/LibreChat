@@ -24,8 +24,9 @@ export const DisableTwoFactorToggle: React.FC<DisableTwoFactorToggleProps> = ({
     <Button
       ref={buttonRef}
       variant={enabled ? 'destructive' : 'outline'}
-      onClick={onChange}
-      disabled={disabled || isDisableBlockedByPolicy}
+      onClick={isDisableBlockedByPolicy ? undefined : onChange}
+      disabled={disabled}
+      aria-disabled={isDisableBlockedByPolicy || disabled || undefined}
       className={isDisableBlockedByPolicy ? 'cursor-not-allowed' : undefined}
       aria-haspopup="dialog"
       aria-controls="two-factor-authentication-dialog"
@@ -44,10 +45,9 @@ export const DisableTwoFactorToggle: React.FC<DisableTwoFactorToggleProps> = ({
           <TooltipAnchor
             description={localize('com_ui_2fa_required')}
             aria-label={`${buttonLabel}: ${localize('com_ui_2fa_required')}`}
-            tabIndex={0}
             data-testid="required-2fa-disable-control"
             className="inline-flex cursor-not-allowed rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2"
-            render={<span>{actionButton}</span>}
+            render={actionButton}
           />
         ) : (
           actionButton

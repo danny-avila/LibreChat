@@ -16,6 +16,7 @@ jest.mock('~/strategies', () => ({ getOpenIdConfig: jest.fn(), getOpenIdEmail: j
 jest.mock('openid-client', () => ({ refreshTokenGrant: jest.fn() }));
 jest.mock('~/models', () => ({
   deleteAllUserSessions: jest.fn(),
+  deleteSession: jest.fn(),
   getUserById: jest.fn(),
   findSession: jest.fn(),
   updateUser: jest.fn(),
@@ -36,12 +37,20 @@ jest.mock('@librechat/api', () => ({
     }
     return params;
   }),
+  generateTwoFactorSetupToken: jest.fn(() => 'setup-token'),
+  isTwoFactorEnrollmentRequired: jest.fn(() => false),
 }));
 
 const openIdClient = require('openid-client');
 const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, findOpenIDUser, buildOpenIDRefreshParams } = require('@librechat/api');
+const {
+  isEnabled,
+  findOpenIDUser,
+  buildOpenIDRefreshParams,
+  generateTwoFactorSetupToken,
+  isTwoFactorEnrollmentRequired,
+} = require('@librechat/api');
 const { graphTokenController, refreshController } = require('./AuthController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const {
@@ -50,7 +59,7 @@ const {
   setAuthTokens,
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
-const { getUserById, findSession, updateUser } = require('~/models');
+const { deleteSession, getUserById, findSession, updateUser } = require('~/models');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
@@ -750,7 +759,8 @@ describe('refreshController – LibreChat path', () => {
     process.env.JWT_REFRESH_SECRET = refreshSecret;
     process.env.NODE_ENV = 'test';
     setAuthTokens.mockResolvedValue('local-app-token');
-    findSession.mockResolvedValue({ expiration: new Date(Date.now() + 60_000) });
+    findSession.mockResolvedValue({ _id: 'session-id', expiration: new Date(Date.now() + 60_000) });
+    isTwoFactorEnrollmentRequired.mockReturnValue(false);
 
     const refreshToken = jwt.sign({ id: 'local-user-id' }, refreshSecret, {
       expiresIn: '1h',
@@ -764,6 +774,7 @@ describe('refreshController – LibreChat path', () => {
       status: jest.fn().mockReturnThis(),
       send: jest.fn().mockReturnThis(),
       redirect: jest.fn(),
+      clearCookie: jest.fn(),
     };
   });
 
@@ -800,7 +811,7 @@ describe('refreshController – LibreChat path', () => {
     expect(setAuthTokens).toHaveBeenCalledWith(
       'local-user-id',
       res,
-      { expiration: expect.any(Date) },
+      expect.objectContaining({ expiration: expect.any(Date) }),
       req,
     );
     expect(sentPayload).toEqual({
@@ -810,6 +821,98 @@ describe('refreshController – LibreChat path', () => {
         email: 'local@example.com',
       },
     });
+  });
+
+  it('requires enrollment before issuing tokens from an existing local refresh session', async () => {
+    const user = {
+      _id: 'local-user-id',
+      provider: 'local',
+      twoFactorEnabled: false,
+      email: 'local@example.com',
+    };
+    getUserById.mockResolvedValue(user);
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+
+    await refreshController(req, res);
+
+    expect(generateTwoFactorSetupToken).toHaveBeenCalledWith(
+      'local-user-id',
+      process.env.JWT_SECRET,
+    );
+    expect(res.send).toHaveBeenCalledWith({
+      twoFAPending: true,
+      twoFASetupRequired: true,
+      tempToken: 'setup-token',
+    });
+    expect(findSession).toHaveBeenCalledWith(
+      {
+        userId: 'local-user-id',
+        refreshToken: expect.any(String),
+      },
+      { lean: false },
+    );
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(deleteSession).toHaveBeenCalledWith({ sessionId: 'session-id' });
+    expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+
+    findSession.mockResolvedValue(null);
+    jest.clearAllMocks();
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+
+    await refreshController(req, res);
+
+    expect(generateTwoFactorSetupToken).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('does not issue an enrollment token for a revoked local refresh session', async () => {
+    getUserById.mockResolvedValue({
+      _id: 'local-user-id',
+      provider: 'local',
+      twoFactorEnabled: false,
+    });
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+    findSession.mockResolvedValue(null);
+
+    await refreshController(req, res);
+
+    expect(generateTwoFactorSetupToken).not.toHaveBeenCalled();
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.send).toHaveBeenCalledWith('Refresh token expired or not found for this user');
+  });
+
+  it('does not issue an enrollment token for an expired local refresh session', async () => {
+    getUserById.mockResolvedValue({
+      _id: 'local-user-id',
+      provider: 'local',
+      twoFactorEnabled: false,
+    });
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+    findSession.mockResolvedValue({ expiration: new Date(Date.now() - 60_000) });
+
+    await refreshController(req, res);
+
+    expect(generateTwoFactorSetupToken).not.toHaveBeenCalled();
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.send).toHaveBeenCalledWith('Refresh token expired or not found for this user');
+  });
+
+  it('preserves CI refresh compatibility without session lookup', async () => {
+    process.env.NODE_ENV = 'CI';
+    getUserById.mockResolvedValue({
+      _id: 'local-user-id',
+      provider: 'local',
+      twoFactorEnabled: false,
+    });
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+
+    await refreshController(req, res);
+
+    expect(findSession).not.toHaveBeenCalled();
+    expect(generateTwoFactorSetupToken).not.toHaveBeenCalled();
+    expect(setAuthTokens).toHaveBeenCalledWith('local-user-id', res, null, req);
   });
 
   it('sanitizes user documents before returning CI refresh responses', async () => {

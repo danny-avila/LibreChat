@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import AuthLayout from '~/components/Auth/AuthLayout';
-import { REDIRECT_PARAM, SESSION_KEY } from '~/utils';
+import { getPostLoginRedirect } from '~/utils';
 
 const headerMap: Record<string, TranslationKeys> = {
   '/login': 'com_auth_welcome_back',
@@ -30,19 +30,30 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
   const navigate = useNavigate();
   const location = useLocation();
 
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+
+  /**
+   * Only an already-authenticated arrival is this layout's to redirect. When authentication
+   * completes while an auth route is mounted, the auth context has already consumed the pending
+   * destination and navigated there; re-resolving it here would find nothing left and replace that
+   * destination with `/c/new`.
+   */
   useEffect(() => {
-    if (isAuthenticated) {
-      const hasPendingRedirect =
-        new URLSearchParams(window.location.search).has(REDIRECT_PARAM) ||
-        sessionStorage.getItem(SESSION_KEY) != null;
-      if (!hasPendingRedirect) {
-        navigate('/c/new', { replace: true });
-      }
+    if (!isAuthenticated) {
+      return;
     }
+    const destination =
+      getPostLoginRedirect(new URLSearchParams(window.location.search)) ?? '/c/new';
+    navigateRef.current(destination, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only by design; see comment above
+  }, []);
+
+  useEffect(() => {
     if (data) {
       setStartupConfig(data);
     }
-  }, [isAuthenticated, navigate, data]);
+  }, [data]);
 
   useEffect(() => {
     document.title = startupConfig?.appTitle || 'LibreChat';

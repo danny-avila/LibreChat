@@ -14,13 +14,15 @@ describe('DisableTwoFactorToggle', () => {
     const onChange = jest.fn();
     render(<DisableTwoFactorToggle enabled={true} required={true} onChange={onChange} />);
 
-    const button = screen.getByRole('button', { name: 'com_ui_2fa_disable' });
+    const button = screen.getByRole('button', {
+      name: 'com_ui_2fa_disable: com_ui_2fa_required',
+    });
     const tooltipTrigger = screen.getByTestId('required-2fa-disable-control');
 
-    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
     expect(button).toHaveClass('cursor-not-allowed');
     expect(tooltipTrigger).toHaveClass('cursor-not-allowed');
-    expect(tooltipTrigger).toHaveAttribute('tabindex', '0');
+    expect(tooltipTrigger).toBe(button);
 
     fireEvent.mouseEnter(tooltipTrigger);
     fireEvent.mouseMove(tooltipTrigger, { screenX: 1 });

@@ -35,6 +35,7 @@ let mockCapturedLogoutOptions: {
 };
 
 const mockRefreshMutate = jest.fn();
+let capturedAuthContext: ReturnType<typeof useAuthContext> | undefined;
 
 jest.mock('~/data-provider', () => ({
   useLoginUserMutation: jest.fn(
@@ -69,6 +70,7 @@ const authConfig: TAuthConfig = { loginRedirect: '/login', test: true };
 
 function TestConsumer() {
   const ctx = useAuthContext();
+  capturedAuthContext = ctx;
   return (
     <div
       data-testid="consumer"
@@ -118,10 +120,13 @@ function renderProviderLive() {
 describe('AuthContextProvider two-factor login handoff', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    sessionStorage.clear();
+    capturedAuthContext = undefined;
     window.history.replaceState({}, '', '/login');
   });
 
   afterEach(() => {
+    sessionStorage.clear();
     window.history.replaceState({}, '', '/');
   });
 
@@ -139,6 +144,42 @@ describe('AuthContextProvider two-factor login handoff', () => {
     expect(mockNavigate).toHaveBeenCalledWith('/login/2fa/setup?tempToken=setup-token', {
       replace: true,
     });
+  });
+
+  it('retains a non-default destination through setup reload and consumes it after completion', () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/login?redirect_to=%2Fc%2Fredirect-lifecycle-proof%3Fmodel%3Dtest',
+    );
+    const firstRender = renderProvider();
+
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({
+        twoFAPending: true,
+        twoFASetupRequired: true,
+        tempToken: 'setup-token',
+      });
+    });
+
+    expect(sessionStorage.getItem(SESSION_KEY)).toBe('/c/redirect-lifecycle-proof?model=test');
+    firstRender.unmount();
+    window.history.replaceState({}, '', '/login/2fa/setup?tempToken=setup-token');
+    renderProvider();
+
+    act(() => {
+      capturedAuthContext?.completeAuthentication('auth-token', { id: 'user-1' } as never);
+    });
+
+    expect(mockNavigate).toHaveBeenLastCalledWith('/c/redirect-lifecycle-proof?model=test', {
+      replace: true,
+    });
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+
+    act(() => {
+      capturedAuthContext?.completeAuthentication('auth-token', { id: 'user-1' } as never);
+    });
+    expect(mockNavigate).toHaveBeenLastCalledWith('/c/new', { replace: true });
   });
 
   it('keeps enrolled users on the existing verification route', () => {
@@ -326,6 +367,24 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
     jest.useRealTimers();
   });
 
+  it('routes an unenrolled refresh session to setup and preserves the requested destination', () => {
+    window.history.replaceState({}, '', '/c/requested?model=test#latest');
+    renderProviderLive();
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ twoFASetupRequired: true, tempToken: 'setup token' });
+    });
+
+    expect(sessionStorage.getItem(SESSION_KEY)).toBe('/c/requested?model=test#latest');
+    expect(mockNavigate).toHaveBeenCalledWith('/login/2fa/setup?tempToken=setup%20token', {
+      replace: true,
+    });
+  });
+
   it('navigates to current URL when no stored redirect exists', () => {
     jest.useFakeTimers();
     window.history.replaceState({}, '', '/c/new');
@@ -347,6 +406,34 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith('/c/new', { replace: true });
     jest.useRealTimers();
+  });
+
+  it('keeps a required setup route mounted when refresh fails after reload', () => {
+    window.history.replaceState({}, '', '/login/2fa/setup?tempToken=setup-token');
+    renderProviderLive();
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onError: (error: Error) => void },
+    ];
+
+    act(() => refreshOptions.onError(new Error('No refresh session')));
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe('/login/2fa/setup');
+  });
+
+  it('keeps a required setup route mounted when refresh returns no token after reload', () => {
+    window.history.replaceState({}, '', '/login/2fa/setup?tempToken=setup-token');
+    renderProviderLive();
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => refreshOptions.onSuccess({}));
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe('/login/2fa/setup');
   });
 
   it('does not re-trigger silentRefresh after successful redirect', () => {

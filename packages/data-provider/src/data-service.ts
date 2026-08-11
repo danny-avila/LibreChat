@@ -1341,6 +1341,18 @@ export function confirmTwoFactorSetup(
   return request.post(endpoints.confirmTwoFactorSetup(), payload);
 }
 
+export function acknowledgeTwoFactorSetup(
+  payload: t.TAcknowledge2FASetupRequest,
+): Promise<t.TAcknowledge2FASetupResponse> {
+  return request.post(endpoints.acknowledgeTwoFactorSetup(), payload);
+}
+
+export function finalizeTwoFactorSetup(
+  payload: t.TFinalize2FASetupRequest,
+): Promise<t.TFinalize2FASetupResponse> {
+  return request.post(endpoints.finalizeTwoFactorSetup(), payload);
+}
+
 export function verifyTwoFactor(payload: t.TVerify2FARequest): Promise<t.TVerify2FAResponse> {
   return request.post(endpoints.verifyTwoFactor(), payload);
 }

@@ -1,14 +1,83 @@
 import jwt from 'jsonwebtoken';
+import { createHash } from 'node:crypto';
+import type {
+  IUser,
+  TwoFactorEnrollmentGuard,
+  TwoFactorEnrollmentUpdate,
+} from '@librechat/data-schemas';
 import type { NextFunction, Request, Response } from 'express';
+import type { TwoFactorEnrollmentDependencies, TwoFactorEnrollmentRequest } from './twoFactor';
 import {
   confirmTwoFactorSetup,
+  finalizeTwoFactorSetup,
+  acknowledgeTwoFactorSetup,
+  TWO_FACTOR_TOKEN_PURPOSE,
+  generateTwoFactorSetupFinalizationToken,
+  generateTwoFactorSetupAcknowledgementToken,
+  generateTwoFactorLoginChallengeToken,
   generateTwoFactorSetupToken,
+  isTwoFactorEnrollmentRequired,
+  isTwoFactorSetupEligible,
   requireTwoFactorSetupToken,
+  requireTwoFactorSetupFinalizationToken,
+  requireTwoFactorSetupAcknowledgementToken,
   verifyTwoFactorSetupToken,
+  verifyTwoFactorSetupFinalizationToken,
+  verifyTwoFactorSetupAcknowledgementToken,
+  verifyTwoFactorLoginChallengeToken,
   blockTwoFactorDisableWhenRequired,
 } from './twoFactor';
 
 const jwtSecret = 'two-factor-setup-test-secret';
+const nonce = 'test-nonce';
+
+const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
+
+describe('isTwoFactorEnrollmentRequired', () => {
+  const originalPolicy = process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
+
+  afterAll(() => {
+    if (originalPolicy === undefined) {
+      delete process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
+    } else {
+      process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = originalPolicy;
+    }
+  });
+
+  it.each(['local', 'ldap', undefined])('requires enrollment for %s users', (provider) => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+
+    expect(isTwoFactorEnrollmentRequired({ provider, twoFactorEnabled: false })).toBe(true);
+  });
+
+  it.each(['openid', 'google', 'saml'])('preserves federated provider scope for %s', (provider) => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+
+    expect(isTwoFactorEnrollmentRequired({ provider, twoFactorEnabled: false })).toBe(false);
+  });
+
+  it('does not require enrollment for enrolled users or when policy is disabled', () => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+    expect(isTwoFactorEnrollmentRequired({ provider: 'local', twoFactorEnabled: true })).toBe(
+      false,
+    );
+
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
+    expect(isTwoFactorEnrollmentRequired({ provider: 'local', twoFactorEnabled: false })).toBe(
+      false,
+    );
+  });
+});
+
+describe('isTwoFactorSetupEligible', () => {
+  it.each(['local', 'ldap', undefined])('allows %s users', (provider) => {
+    expect(isTwoFactorSetupEligible({ provider })).toBe(true);
+  });
+
+  it.each(['openid', 'google', 'saml'])('rejects federated %s users', (provider) => {
+    expect(isTwoFactorSetupEligible({ provider })).toBe(false);
+  });
+});
 
 function createResponse(): Response {
   return {
@@ -18,26 +87,213 @@ function createResponse(): Response {
 }
 
 describe('two-factor setup tokens', () => {
-  it('round-trips a purpose-scoped setup token', () => {
-    const token = generateTwoFactorSetupToken('user-1', jwtSecret);
+  it('round-trips only a purpose-scoped login challenge token', () => {
+    const loginToken = generateTwoFactorLoginChallengeToken('user-1', jwtSecret);
+    const setupToken = generateTwoFactorSetupToken('user-1', jwtSecret);
+    const acknowledgementToken = generateTwoFactorSetupAcknowledgementToken(
+      'user-1',
+      nonce,
+      jwtSecret,
+    );
+    const finalizationToken = generateTwoFactorSetupFinalizationToken('user-1', nonce, jwtSecret);
 
-    expect(verifyTwoFactorSetupToken(token, jwtSecret)).toBe('user-1');
+    expect(verifyTwoFactorLoginChallengeToken(loginToken, jwtSecret)).toBe('user-1');
+    expect(verifyTwoFactorLoginChallengeToken(setupToken, jwtSecret)).toBeUndefined();
+    expect(verifyTwoFactorLoginChallengeToken(acknowledgementToken, jwtSecret)).toBeUndefined();
+    expect(verifyTwoFactorLoginChallengeToken(finalizationToken, jwtSecret)).toBeUndefined();
+  });
+
+  it('round-trips a purpose-scoped setup token', () => {
+    const token = generateTwoFactorSetupToken('user-2', jwtSecret);
+
+    expect(verifyTwoFactorSetupToken(token, jwtSecret)).toBe('user-2');
   });
 
   it('rejects a normal 2FA challenge token for setup', () => {
-    const token = jwt.sign({ userId: 'user-1', twoFAPending: true }, jwtSecret, {
+    const token = jwt.sign(
+      { userId: 'user-1', purpose: TWO_FACTOR_TOKEN_PURPOSE.LOGIN_CHALLENGE },
+      jwtSecret,
+      { expiresIn: '5m' },
+    );
+
+    expect(verifyTwoFactorSetupToken(token, jwtSecret)).toBeUndefined();
+    expect(verifyTwoFactorSetupFinalizationToken(token, jwtSecret)).toBeUndefined();
+  });
+
+  it('rejects legacy purpose-less tokens', () => {
+    const token = jwt.sign({ userId: 'user-1', twoFASetupRequired: true }, jwtSecret, {
       expiresIn: '5m',
     });
 
     expect(verifyTwoFactorSetupToken(token, jwtSecret)).toBeUndefined();
+    expect(verifyTwoFactorSetupFinalizationToken(token, jwtSecret)).toBeUndefined();
   });
 
   it('rejects expired setup tokens', () => {
-    const token = jwt.sign({ userId: 'user-1', twoFASetupRequired: true }, jwtSecret, {
-      expiresIn: -1,
-    });
+    const token = jwt.sign(
+      { userId: 'user-1', purpose: TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP },
+      jwtSecret,
+      { expiresIn: -1 },
+    );
 
     expect(verifyTwoFactorSetupToken(token, jwtSecret)).toBeUndefined();
+  });
+
+  it('round-trips only purpose-scoped finalization credentials', () => {
+    const token = generateTwoFactorSetupFinalizationToken('user-1', nonce, jwtSecret);
+    const setupToken = generateTwoFactorSetupToken('user-1', jwtSecret);
+
+    expect(verifyTwoFactorSetupFinalizationToken(token, jwtSecret)).toEqual({
+      userId: 'user-1',
+      nonce,
+    });
+    expect(verifyTwoFactorSetupFinalizationToken(setupToken, jwtSecret)).toBeUndefined();
+    expect(verifyTwoFactorSetupToken(token, jwtSecret)).toBeUndefined();
+  });
+
+  it('round-trips only purpose-scoped acknowledgement credentials', () => {
+    const token = generateTwoFactorSetupAcknowledgementToken('user-1', nonce, jwtSecret);
+    const setupToken = generateTwoFactorSetupToken('user-1', jwtSecret);
+    const finalizationToken = generateTwoFactorSetupFinalizationToken('user-1', nonce, jwtSecret);
+
+    expect(verifyTwoFactorSetupAcknowledgementToken(token, jwtSecret)).toEqual({
+      userId: 'user-1',
+      nonce,
+    });
+    expect(verifyTwoFactorSetupAcknowledgementToken(setupToken, jwtSecret)).toBeUndefined();
+    expect(verifyTwoFactorSetupAcknowledgementToken(finalizationToken, jwtSecret)).toBeUndefined();
+  });
+
+  it.each([
+    ['acknowledgement', generateTwoFactorSetupAcknowledgementToken],
+    ['finalization', generateTwoFactorSetupFinalizationToken],
+  ])('rejects a nonce-less %s credential', (_label, generate) => {
+    const purpose =
+      generate === generateTwoFactorSetupAcknowledgementToken
+        ? TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_ACKNOWLEDGEMENT
+        : TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_FINALIZATION;
+    const token = jwt.sign({ userId: 'user-1', purpose }, jwtSecret, { expiresIn: '5m' });
+
+    expect(verifyTwoFactorSetupAcknowledgementToken(token, jwtSecret)).toBeUndefined();
+    expect(verifyTwoFactorSetupFinalizationToken(token, jwtSecret)).toBeUndefined();
+  });
+});
+
+describe('requireTwoFactorSetupAcknowledgementToken', () => {
+  beforeEach(() => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+    process.env.JWT_SECRET = jwtSecret;
+  });
+
+  it('attaches the acknowledgement identity and its one-time nonce', () => {
+    const req = {
+      body: {
+        acknowledgementToken: generateTwoFactorSetupAcknowledgementToken(
+          'user-5',
+          nonce,
+          jwtSecret,
+        ),
+      },
+    } as Request;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireTwoFactorSetupAcknowledgementToken(req, res, next);
+
+    expect(req.user).toEqual({ id: 'user-5' });
+    expect((req as TwoFactorEnrollmentRequest).twoFactorEnrollmentNonce).toBe(nonce);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    generateTwoFactorSetupToken('user-5', jwtSecret),
+    generateTwoFactorSetupFinalizationToken('user-5', nonce, jwtSecret),
+    generateTwoFactorLoginChallengeToken('user-5', jwtSecret),
+  ])('rejects a wrong-purpose token', (acknowledgementToken) => {
+    const req = { body: { acknowledgementToken } } as Request;
+    const res = createResponse();
+    const next = jest.fn();
+
+    requireTwoFactorSetupAcknowledgementToken(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('requireTwoFactorSetupFinalizationToken', () => {
+  const originalPolicy = process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
+  const originalSecret = process.env.JWT_SECRET;
+
+  beforeEach(() => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+    process.env.JWT_SECRET = jwtSecret;
+  });
+
+  afterAll(() => {
+    if (originalPolicy === undefined) {
+      delete process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
+    } else {
+      process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = originalPolicy;
+    }
+    if (originalSecret === undefined) {
+      delete process.env.JWT_SECRET;
+    } else {
+      process.env.JWT_SECRET = originalSecret;
+    }
+  });
+
+  it('attaches the finalization identity and its one-time nonce', () => {
+    const req = {
+      body: {
+        finalizationToken: generateTwoFactorSetupFinalizationToken('user-4', nonce, jwtSecret),
+      },
+    } as Request;
+    const res = createResponse();
+    const next = jest.fn() as jest.MockedFunction<NextFunction>;
+
+    requireTwoFactorSetupFinalizationToken(req, res, next);
+
+    expect(req.user).toEqual({ id: 'user-4' });
+    expect((req as TwoFactorEnrollmentRequest).twoFactorEnrollmentNonce).toBe(nonce);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects invalid and wrong-purpose tokens', () => {
+    const tokens = [
+      'invalid',
+      generateTwoFactorSetupToken('user-4', jwtSecret),
+      generateTwoFactorSetupAcknowledgementToken('user-4', nonce, jwtSecret),
+      generateTwoFactorLoginChallengeToken('user-4', jwtSecret),
+      jwt.sign({ userId: 'user-4' }, jwtSecret),
+    ];
+
+    for (const finalizationToken of tokens) {
+      const req = { body: { finalizationToken } } as Request;
+      const res = createResponse();
+      const next = jest.fn() as jest.MockedFunction<NextFunction>;
+
+      requireTwoFactorSetupFinalizationToken(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+    }
+  });
+
+  it('rejects finalization when global enforcement is disabled', () => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
+    const req = {
+      body: {
+        finalizationToken: generateTwoFactorSetupFinalizationToken('user-4', nonce, jwtSecret),
+      },
+    } as Request;
+    const res = createResponse();
+    const next = jest.fn() as jest.MockedFunction<NextFunction>;
+
+    requireTwoFactorSetupFinalizationToken(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 });
 
@@ -101,64 +357,506 @@ describe('requireTwoFactorSetupToken', () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
   });
+
+  it('rejects login challenge, acknowledgement, and finalization tokens', () => {
+    const tokens = [
+      jwt.sign({ userId: 'user-2', purpose: TWO_FACTOR_TOKEN_PURPOSE.LOGIN_CHALLENGE }, jwtSecret),
+      generateTwoFactorSetupAcknowledgementToken('user-2', nonce, jwtSecret),
+      generateTwoFactorSetupFinalizationToken('user-2', nonce, jwtSecret),
+    ];
+
+    for (const tempToken of tokens) {
+      const req = { body: { tempToken } } as Request;
+      const res = createResponse();
+      const next = jest.fn() as jest.MockedFunction<NextFunction>;
+
+      requireTwoFactorSetupToken(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+    }
+  });
 });
 
-describe('confirmTwoFactorSetup', () => {
-  const user = {
+type BackupCode = NonNullable<IUser['backupCodes']>[number];
+
+interface EnrollmentDocument {
+  _id: string;
+  provider?: string;
+  twoFactorEnabled: boolean;
+  totpSecret?: string | null;
+  backupCodes?: BackupCode[];
+  pendingTotpSecret?: string | null;
+  pendingBackupCodes?: BackupCode[];
+  twoFactorAcknowledgementNonceHash?: string | null;
+  twoFactorFinalizationNonceHash?: string | null;
+}
+
+const ELIGIBLE_PROVIDERS = new Set(['local', 'ldap']);
+
+/**
+ * A faithful in-memory stand-in for the guarded `updateTwoFactorEnrollment` write: it reproduces
+ * the invariant filter (unenrolled, policy-eligible provider) plus exact-value predicates, so
+ * replay and race behaviour is exercised for real rather than stubbed.
+ */
+function createEnrollmentStore(overrides: Partial<EnrollmentDocument> = {}) {
+  let doc: EnrollmentDocument = {
     _id: 'user-3',
+    provider: 'local',
     twoFactorEnabled: false,
     pendingTotpSecret: 'encrypted-secret',
-    pendingBackupCodes: [{ codeHash: 'hash', used: false }],
+    pendingBackupCodes: [{ codeHash: 'staged-hash', used: false }],
+    twoFactorAcknowledgementNonceHash: null,
+    twoFactorFinalizationNonceHash: null,
+    ...overrides,
+  };
+  const writes: TwoFactorEnrollmentUpdate[] = [];
+
+  const matchesGuard = (guard: TwoFactorEnrollmentGuard): boolean => {
+    if (doc.twoFactorEnabled) {
+      return false;
+    }
+    if (doc.provider != null && !ELIGIBLE_PROVIDERS.has(doc.provider)) {
+      return false;
+    }
+    return Object.entries(guard).every(
+      ([key, value]) =>
+        JSON.stringify(doc[key as keyof EnrollmentDocument] ?? null) ===
+        JSON.stringify(value ?? null),
+    );
   };
 
-  function createDependencies(overrides = {}) {
-    return {
-      getUserById: jest.fn().mockResolvedValue(user),
-      getTOTPSecret: jest.fn().mockResolvedValue('plain-secret'),
-      verifyTOTP: jest.fn().mockResolvedValue(true),
-      updateUser: jest.fn().mockResolvedValue({ ...user, twoFactorEnabled: true }),
-      ...overrides,
-    };
-  }
+  const deps: TwoFactorEnrollmentDependencies = {
+    getUserById: jest.fn(async () => ({ ...doc }) as unknown as IUser),
+    getTOTPSecret: jest.fn().mockResolvedValue('plain-secret'),
+    verifyTOTP: jest.fn().mockResolvedValue(true),
+    generateBackupCodes: jest.fn(async () => ({
+      plainCodes: [`code-${writes.length + 1}`],
+      codeObjects: [{ codeHash: `hash-${writes.length + 1}`, used: false, usedAt: null }],
+    })),
+    updateTwoFactorEnrollment: jest.fn(async (_userId, guard, update) => {
+      if (!matchesGuard(guard)) {
+        return null;
+      }
+      writes.push(update);
+      doc = { ...doc, ...update };
+      return { ...doc } as unknown as IUser;
+    }),
+  };
 
-  it('promotes pending credentials only after a valid TOTP', async () => {
-    const deps = createDependencies();
-    const updatedUser = { ...user, twoFactorEnabled: true };
+  return {
+    deps,
+    writes,
+    read: () => ({ ...doc }),
+    mutate: (patch: Partial<EnrollmentDocument>) => {
+      doc = { ...doc, ...patch };
+    },
+  };
+}
 
-    const result = await confirmTwoFactorSetup('user-3', '123456', deps);
+describe('required two-factor enrollment lifecycle', () => {
+  const originalPolicy = process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
 
-    expect(result).toEqual({ ok: true, user: updatedUser });
-    expect(deps.updateUser).toHaveBeenCalledWith('user-3', {
-      totpSecret: 'encrypted-secret',
-      backupCodes: [{ codeHash: 'hash', used: false }],
-      twoFactorEnabled: true,
-      pendingTotpSecret: null,
-      pendingBackupCodes: [],
+  beforeEach(() => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+  });
+
+  afterAll(() => {
+    if (originalPolicy === undefined) {
+      delete process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
+    } else {
+      process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = originalPolicy;
+    }
+  });
+
+  it('stages deliverable codes and an acknowledgement nonce without enabling 2FA', async () => {
+    const store = createEnrollmentStore();
+
+    const result = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.plainCodes).toEqual(['code-1']);
+    expect(store.read()).toMatchObject({
+      twoFactorEnabled: false,
+      pendingTotpSecret: 'encrypted-secret',
+      pendingBackupCodes: [{ codeHash: 'hash-1', used: false, usedAt: null }],
+      twoFactorAcknowledgementNonceHash: sha256(result.acknowledgementNonce),
+      twoFactorFinalizationNonceHash: null,
+    });
+    expect(store.read().totpSecret).toBeFalsy();
+    expect(isTwoFactorEnrollmentRequired(result.user)).toBe(true);
+    expect(store.deps.updateTwoFactorEnrollment).toHaveBeenCalledTimes(1);
+    expect(store.deps.updateTwoFactorEnrollment).toHaveBeenCalledWith(
+      'user-3',
+      {
+        pendingTotpSecret: 'encrypted-secret',
+        pendingBackupCodes: [{ codeHash: 'staged-hash', used: false }],
+      },
+      expect.objectContaining({ twoFactorFinalizationNonceHash: null }),
+    );
+  });
+
+  it('stays retryable after a lost confirmation response, rotating codes and nonces', async () => {
+    const store = createEnrollmentStore();
+
+    const first = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    const second = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) {
+      return;
+    }
+    expect(second.plainCodes).not.toEqual(first.plainCodes);
+    expect(second.acknowledgementNonce).not.toBe(first.acknowledgementNonce);
+    expect(store.read()).toMatchObject({
+      twoFactorEnabled: false,
+      twoFactorAcknowledgementNonceHash: sha256(second.acknowledgementNonce),
+    });
+
+    const stale = await acknowledgeTwoFactorSetup('user-3', first.acknowledgementNonce, store.deps);
+
+    expect(stale).toEqual({
+      ok: false,
+      status: 400,
+      message: 'This two-factor setup step expired. Confirm your code again.',
     });
   });
 
   it('rejects users who already have 2FA enabled', async () => {
-    const deps = createDependencies({
-      getUserById: jest.fn().mockResolvedValue({ ...user, twoFactorEnabled: true }),
-    });
+    const store = createEnrollmentStore({ twoFactorEnabled: true });
 
-    const result = await confirmTwoFactorSetup('user-3', '123456', deps);
+    const result = await confirmTwoFactorSetup('user-3', '123456', store.deps);
 
     expect(result).toEqual({
       ok: false,
       status: 400,
       message: '2FA setup is not available for this user',
     });
-    expect(deps.updateUser).not.toHaveBeenCalled();
+    expect(store.deps.generateBackupCodes).not.toHaveBeenCalled();
+    expect(store.deps.updateTwoFactorEnrollment).not.toHaveBeenCalled();
+  });
+
+  it('rejects a federated provider before generating anything', async () => {
+    const store = createEnrollmentStore({ provider: 'openid' });
+
+    const result = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+
+    expect(result).toEqual({
+      ok: false,
+      status: 400,
+      message: '2FA setup is not available for this user',
+    });
+    expect(store.deps.generateBackupCodes).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid TOTP without mutating the user', async () => {
-    const deps = createDependencies({ verifyTOTP: jest.fn().mockResolvedValue(false) });
+    const store = createEnrollmentStore();
+    (store.deps.verifyTOTP as jest.Mock).mockResolvedValue(false);
 
-    const result = await confirmTwoFactorSetup('user-3', '000000', deps);
+    const result = await confirmTwoFactorSetup('user-3', '000000', store.deps);
 
     expect(result).toEqual({ ok: false, status: 400, message: 'Invalid token' });
-    expect(deps.updateUser).not.toHaveBeenCalled();
+    expect(store.deps.generateBackupCodes).not.toHaveBeenCalled();
+    expect(store.deps.updateTwoFactorEnrollment).not.toHaveBeenCalled();
+  });
+
+  it('rejects confirmation when the deployment policy flips off before the write', async () => {
+    const store = createEnrollmentStore();
+    (store.deps.verifyTOTP as jest.Mock).mockImplementation(async () => {
+      process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
+      return true;
+    });
+
+    const result = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+
+    expect(result).toEqual({
+      ok: false,
+      status: 400,
+      message: '2FA setup is not available for this user',
+    });
+    expect(store.deps.generateBackupCodes).toHaveBeenCalledTimes(1);
+    expect(store.deps.updateTwoFactorEnrollment).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a concurrent setup regeneration moves the pending snapshot', async () => {
+    const store = createEnrollmentStore();
+    (store.deps.verifyTOTP as jest.Mock).mockImplementation(async () => {
+      store.mutate({ pendingBackupCodes: [{ codeHash: 'regenerated', used: false }] });
+      return true;
+    });
+
+    const result = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+
+    expect(result).toEqual({
+      ok: false,
+      status: 400,
+      message: '2FA setup is not available for this user',
+    });
+    expect(store.read().twoFactorAcknowledgementNonceHash).toBeNull();
+  });
+
+  it('exchanges the acknowledgement nonce for a finalization nonce without enabling 2FA', async () => {
+    const store = createEnrollmentStore();
+    const confirmed = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    if (!confirmed.ok) {
+      throw new Error('confirmation should succeed');
+    }
+
+    const result = await acknowledgeTwoFactorSetup(
+      'user-3',
+      confirmed.acknowledgementNonce,
+      store.deps,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(store.read()).toMatchObject({
+      twoFactorEnabled: false,
+      twoFactorAcknowledgementNonceHash: null,
+      twoFactorFinalizationNonceHash: sha256(result.finalizationNonce),
+    });
+    expect(store.read().totpSecret).toBeFalsy();
+    expect(isTwoFactorEnrollmentRequired(result.user)).toBe(true);
+  });
+
+  it('rejects a replayed acknowledgement credential without issuing anything', async () => {
+    const store = createEnrollmentStore();
+    const confirmed = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    if (!confirmed.ok) {
+      throw new Error('confirmation should succeed');
+    }
+    const first = await acknowledgeTwoFactorSetup(
+      'user-3',
+      confirmed.acknowledgementNonce,
+      store.deps,
+    );
+    if (!first.ok) {
+      throw new Error('acknowledgement should succeed');
+    }
+
+    const replay = await acknowledgeTwoFactorSetup(
+      'user-3',
+      confirmed.acknowledgementNonce,
+      store.deps,
+    );
+
+    expect(replay.ok).toBe(false);
+    expect(store.read().twoFactorFinalizationNonceHash).toBe(sha256(first.finalizationNonce));
+  });
+
+  it('rejects acknowledgement when the deployment policy is disabled', async () => {
+    const store = createEnrollmentStore({ twoFactorAcknowledgementNonceHash: sha256('nonce-a') });
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
+
+    const result = await acknowledgeTwoFactorSetup('user-3', 'nonce-a', store.deps);
+
+    expect(result).toEqual({
+      ok: false,
+      status: 400,
+      message: '2FA setup is not available for this user',
+    });
+    expect(store.deps.updateTwoFactorEnrollment).not.toHaveBeenCalled();
+  });
+
+  it('promotes only at finalization and clears every enrollment field', async () => {
+    const store = createEnrollmentStore();
+    const confirmed = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    if (!confirmed.ok) {
+      throw new Error('confirmation should succeed');
+    }
+    const acknowledged = await acknowledgeTwoFactorSetup(
+      'user-3',
+      confirmed.acknowledgementNonce,
+      store.deps,
+    );
+    if (!acknowledged.ok) {
+      throw new Error('acknowledgement should succeed');
+    }
+
+    const result = await finalizeTwoFactorSetup(
+      'user-3',
+      acknowledged.finalizationNonce,
+      store.deps,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(store.read()).toMatchObject({
+      twoFactorEnabled: true,
+      totpSecret: 'encrypted-secret',
+      backupCodes: [{ codeHash: 'hash-1', used: false, usedAt: null }],
+      pendingTotpSecret: null,
+      pendingBackupCodes: [],
+      twoFactorAcknowledgementNonceHash: null,
+      twoFactorFinalizationNonceHash: null,
+    });
+    expect(result.ok && isTwoFactorEnrollmentRequired(result.user)).toBe(false);
+  });
+
+  it('rejects a replayed finalization credential without a second promotion', async () => {
+    const store = createEnrollmentStore();
+    const confirmed = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    if (!confirmed.ok) {
+      throw new Error('confirmation should succeed');
+    }
+    const acknowledged = await acknowledgeTwoFactorSetup(
+      'user-3',
+      confirmed.acknowledgementNonce,
+      store.deps,
+    );
+    if (!acknowledged.ok) {
+      throw new Error('acknowledgement should succeed');
+    }
+    await finalizeTwoFactorSetup('user-3', acknowledged.finalizationNonce, store.deps);
+    const writesAfterFirst = store.writes.length;
+
+    const replay = await finalizeTwoFactorSetup(
+      'user-3',
+      acknowledged.finalizationNonce,
+      store.deps,
+    );
+
+    expect(replay).toEqual({
+      ok: false,
+      status: 400,
+      message: '2FA setup is not available for this user',
+    });
+    expect(store.writes).toHaveLength(writesAfterFirst);
+  });
+
+  it('rejects finalization carrying a stale nonce after a re-confirmation', async () => {
+    const store = createEnrollmentStore();
+    const confirmed = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    if (!confirmed.ok) {
+      throw new Error('confirmation should succeed');
+    }
+    const acknowledged = await acknowledgeTwoFactorSetup(
+      'user-3',
+      confirmed.acknowledgementNonce,
+      store.deps,
+    );
+    if (!acknowledged.ok) {
+      throw new Error('acknowledgement should succeed');
+    }
+    await confirmTwoFactorSetup('user-3', '123456', store.deps);
+
+    const result = await finalizeTwoFactorSetup(
+      'user-3',
+      acknowledged.finalizationNonce,
+      store.deps,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: 400,
+      message: 'This two-factor setup step expired. Confirm your code again.',
+    });
+    expect(store.read().twoFactorEnabled).toBe(false);
+  });
+
+  it('rejects finalization without a nonce before reading the user', async () => {
+    const store = createEnrollmentStore();
+
+    const result = await finalizeTwoFactorSetup('user-3', undefined, store.deps);
+
+    expect(result).toEqual({
+      ok: false,
+      status: 400,
+      message: 'This two-factor setup step expired. Confirm your code again.',
+    });
+    expect(store.deps.getUserById).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a federated provider transition', { provider: 'openid' }],
+    ['an already-enabled transition', { twoFactorEnabled: true }],
+  ])('rejects finalization after %s', async (_label, transition) => {
+    const store = createEnrollmentStore();
+    const confirmed = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    if (!confirmed.ok) {
+      throw new Error('confirmation should succeed');
+    }
+    const acknowledged = await acknowledgeTwoFactorSetup(
+      'user-3',
+      confirmed.acknowledgementNonce,
+      store.deps,
+    );
+    if (!acknowledged.ok) {
+      throw new Error('acknowledgement should succeed');
+    }
+    store.mutate(transition);
+
+    const result = await finalizeTwoFactorSetup(
+      'user-3',
+      acknowledged.finalizationNonce,
+      store.deps,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: 400,
+      message: '2FA setup is not available for this user',
+    });
+    expect(store.read().totpSecret).toBeFalsy();
+  });
+
+  it('rejects finalization when the deployment policy is disabled', async () => {
+    const store = createEnrollmentStore();
+    const confirmed = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    if (!confirmed.ok) {
+      throw new Error('confirmation should succeed');
+    }
+    const acknowledged = await acknowledgeTwoFactorSetup(
+      'user-3',
+      confirmed.acknowledgementNonce,
+      store.deps,
+    );
+    if (!acknowledged.ok) {
+      throw new Error('acknowledgement should succeed');
+    }
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
+
+    const result = await finalizeTwoFactorSetup(
+      'user-3',
+      acknowledged.finalizationNonce,
+      store.deps,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      status: 400,
+      message: '2FA setup is not available for this user',
+    });
+    expect(store.read().twoFactorEnabled).toBe(false);
+  });
+
+  it('rejects finalization once the pending setup has been cleared', async () => {
+    const store = createEnrollmentStore();
+    const confirmed = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    if (!confirmed.ok) {
+      throw new Error('confirmation should succeed');
+    }
+    const acknowledged = await acknowledgeTwoFactorSetup(
+      'user-3',
+      confirmed.acknowledgementNonce,
+      store.deps,
+    );
+    if (!acknowledged.ok) {
+      throw new Error('acknowledgement should succeed');
+    }
+    store.mutate({ pendingTotpSecret: null, pendingBackupCodes: [] });
+
+    const result = await finalizeTwoFactorSetup(
+      'user-3',
+      acknowledged.finalizationNonce,
+      store.deps,
+    );
+
+    expect(result).toEqual({ ok: false, status: 400, message: '2FA setup not initiated' });
   });
 });
 
@@ -188,6 +886,18 @@ describe('blockTwoFactorDisableWhenRequired', () => {
   it('allows disabling 2FA when it is optional', () => {
     process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
     const req = {} as Request;
+    const res = createResponse();
+    const next = jest.fn() as jest.MockedFunction<NextFunction>;
+
+    blockTwoFactorDisableWhenRequired(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('allows federated users to manage provider-exempt 2FA', () => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+    const req = { user: { provider: 'openid' } } as Partial<Request> as Request;
     const res = createResponse();
     const next = jest.fn() as jest.MockedFunction<NextFunction>;
 

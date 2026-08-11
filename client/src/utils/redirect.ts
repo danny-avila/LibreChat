@@ -18,14 +18,21 @@ export function isSafeRedirect(url: string): boolean {
  * cleans up both sources, and returns the validated target (or null).
  */
 export function getPostLoginRedirect(searchParams: URLSearchParams): string | null {
+  const target = peekPostLoginRedirect(searchParams);
+  sessionStorage.removeItem(SESSION_KEY);
+  return target;
+}
+
+/** Drops a pending destination, so a later sign-in starts from a clean slate. */
+export function clearPostLoginRedirect(): void {
+  sessionStorage.removeItem(SESSION_KEY);
+}
+
+export function peekPostLoginRedirect(searchParams: URLSearchParams): string | null {
   const urlRedirect = searchParams.get(REDIRECT_PARAM);
   const storedRedirect = sessionStorage.getItem(SESSION_KEY);
 
   const target = urlRedirect ?? storedRedirect;
-
-  if (storedRedirect) {
-    sessionStorage.removeItem(SESSION_KEY);
-  }
 
   if (target == null || !isSafeRedirect(target)) {
     return null;

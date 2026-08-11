@@ -17,6 +17,7 @@ interface BackupPhaseProps {
   backupCodes: string[];
   onDownload: () => void;
   downloaded: boolean;
+  isCompleting?: boolean;
 }
 
 export const BackupPhase: React.FC<BackupPhaseProps> = ({
@@ -24,6 +25,7 @@ export const BackupPhase: React.FC<BackupPhaseProps> = ({
   onDownload,
   downloaded,
   onNext,
+  isCompleting = false,
 }) => {
   const localize = useLocalize();
 
@@ -49,12 +51,17 @@ export const BackupPhase: React.FC<BackupPhaseProps> = ({
         ))}
       </div>
       <div className="flex gap-4">
-        <Button variant="outline" onClick={onDownload} className="flex-1 gap-2">
+        <Button
+          variant="outline"
+          onClick={onDownload}
+          className="flex-1 gap-2"
+          aria-label={localize('com_ui_download_backup')}
+        >
           <Download className="h-4 w-4" aria-hidden="true" />
           <span className="hidden sm:inline">{localize('com_ui_download_backup')}</span>
         </Button>
-        <Button onClick={onNext} disabled={!downloaded} className="flex-1">
-          {localize('com_ui_complete_setup')}
+        <Button onClick={onNext} disabled={!downloaded || isCompleting} className="flex-1">
+          {isCompleting ? localize('com_ui_loading') : localize('com_ui_complete_setup')}
         </Button>
       </div>
     </motion.div>

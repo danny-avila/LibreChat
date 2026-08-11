@@ -1,5 +1,7 @@
 const validatePasswordReset = require('./validatePasswordReset');
 const setTwoFactorTempUser = require('./setTwoFactorTempUser');
+const { setTwoFactorAcknowledgementTempUser, setTwoFactorFinalizationTempUser } =
+  setTwoFactorTempUser;
 const validateRegistration = require('./validateRegistration');
 const buildEndpointOption = require('./buildEndpointOption');
 const validateEmailLogin = require('./validateEmailLogin');
@@ -42,6 +44,8 @@ module.exports = {
   requireJwtAuth,
   requireRumProxyAuth,
   setTwoFactorTempUser,
+  setTwoFactorAcknowledgementTempUser,
+  setTwoFactorFinalizationTempUser,
   checkInviteUser,
   requireLdapAuth,
   requireLocalAuth,

@@ -5,8 +5,8 @@ const request = require('supertest');
 const originalEnv = process.env;
 const jwtSecret = 'test-two-factor-secret';
 
-const createToken = (userId) =>
-  jwt.sign({ userId, twoFAPending: true }, jwtSecret, { expiresIn: '5m' });
+const createToken = (userId, purpose = 'login_2fa_challenge') =>
+  jwt.sign({ userId, purpose }, jwtSecret, { expiresIn: '5m' });
 
 const createApp = () => {
   jest.resetModules();
@@ -28,6 +28,8 @@ const createApp = () => {
   }));
 
   const setTwoFactorTempUser = require('../setTwoFactorTempUser');
+  const { setTwoFactorAcknowledgementTempUser, setTwoFactorFinalizationTempUser } =
+    setTwoFactorTempUser;
   const twoFactorTempLimiter = require('./twoFactorTempLimiter');
   const { logViolation } = require('~/cache');
 
@@ -35,6 +37,12 @@ const createApp = () => {
   app.set('trust proxy', 1);
   app.use(express.json());
   app.post('/verify', setTwoFactorTempUser, twoFactorTempLimiter, (req, res) =>
+    res.status(204).end(),
+  );
+  app.post('/finalize', setTwoFactorFinalizationTempUser, twoFactorTempLimiter, (req, res) =>
+    res.status(204).end(),
+  );
+  app.post('/acknowledge', setTwoFactorAcknowledgementTempUser, twoFactorTempLimiter, (req, res) =>
     res.status(204).end(),
   );
 
@@ -107,5 +115,81 @@ describe('twoFactorTempLimiter', () => {
       max: '2',
       windowInMinutes: 5,
     });
+  });
+
+  it.each([
+    ['login challenge', 'tempToken', 'login_2fa_challenge'],
+    ['required setup', 'tempToken', 'required_2fa_setup'],
+    ['required acknowledgement', 'acknowledgementToken', 'required_2fa_acknowledgement'],
+    ['required finalization', 'finalizationToken', 'required_2fa_finalization'],
+  ])('applies the same per-user limit to a %s token', async (_name, field, purpose) => {
+    const { app, logViolation } = createApp();
+    const token = createToken('user-shared', purpose);
+
+    await request(app)
+      .post('/verify')
+      .set('X-Forwarded-For', '203.0.113.10')
+      .send({ [field]: token })
+      .expect(204);
+    await request(app)
+      .post('/verify')
+      .set('X-Forwarded-For', '203.0.113.11')
+      .send({ [field]: token })
+      .expect(204);
+    await request(app)
+      .post('/verify')
+      .set('X-Forwarded-For', '203.0.113.12')
+      .send({ [field]: token })
+      .expect(429);
+
+    expect(logViolation.mock.calls[0][0].user).toEqual({ id: 'user-shared' });
+  });
+
+  it('binds finalization limiting to the finalization token when both fields are present', async () => {
+    const { app, logViolation } = createApp();
+    const finalizationToken = createToken('finalization-user', 'required_2fa_finalization');
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await request(app)
+        .post('/finalize')
+        .set('X-Forwarded-For', `203.0.113.${20 + attempt}`)
+        .send({
+          tempToken: createToken(`decoy-${attempt}`),
+          finalizationToken,
+        })
+        .expect(204);
+    }
+
+    await request(app)
+      .post('/finalize')
+      .set('X-Forwarded-For', '203.0.113.22')
+      .send({ tempToken: createToken('decoy-2'), finalizationToken })
+      .expect(429);
+
+    expect(logViolation.mock.calls[0][0].user).toEqual({ id: 'finalization-user' });
+  });
+
+  it('binds acknowledgement limiting to the acknowledgement token when a decoy setup token is present', async () => {
+    const { app, logViolation } = createApp();
+    const acknowledgementToken = createToken(
+      'acknowledgement-user',
+      'required_2fa_acknowledgement',
+    );
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await request(app)
+        .post('/acknowledge')
+        .set('X-Forwarded-For', `203.0.113.${30 + attempt}`)
+        .send({ tempToken: createToken(`decoy-${attempt}`), acknowledgementToken })
+        .expect(204);
+    }
+
+    await request(app)
+      .post('/acknowledge')
+      .set('X-Forwarded-For', '203.0.113.32')
+      .send({ tempToken: createToken('decoy-2'), acknowledgementToken })
+      .expect(429);
+
+    expect(logViolation.mock.calls[0][0].user).toEqual({ id: 'acknowledgement-user' });
   });
 });

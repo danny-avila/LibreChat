@@ -8,6 +8,8 @@ const {
   findOpenIDUser,
   getOpenIdIssuer,
   buildOpenIDRefreshParams,
+  generateTwoFactorSetupToken,
+  isTwoFactorEnrollmentRequired,
 } = require('@librechat/api');
 const {
   requestPasswordReset,
@@ -19,6 +21,7 @@ const {
 } = require('~/server/services/AuthService');
 const {
   deleteAllUserSessions,
+  deleteSession,
   getUserById,
   findSession,
   updateUser,
@@ -60,10 +63,24 @@ const sanitizeUserForAuthResponse = (user) => {
     __v: _v,
     totpSecret: _ts,
     backupCodes: _bc,
+    pendingTotpSecret: _pts,
+    pendingBackupCodes: _pbc,
+    twoFactorAcknowledgementNonceHash: _ackNonce,
+    twoFactorFinalizationNonceHash: _finalNonce,
     federatedTokens: _ft,
     ...safeUser
   } = source;
   return safeUser;
+};
+
+const sendTwoFactorSetupRequired = async (res, user, session) => {
+  await deleteSession({ sessionId: session._id });
+  res.clearCookie('refreshToken');
+  return res.status(200).send({
+    twoFAPending: true,
+    twoFASetupRequired: true,
+    tempToken: generateTwoFactorSetupToken(user._id.toString(), process.env.JWT_SECRET),
+  });
 };
 
 const getValidOpenIDReuseUserId = (parsedCookies) => {
@@ -285,6 +302,9 @@ const refreshController = async (req, res) => {
     );
 
     if (session && session.expiration > new Date()) {
+      if (isTwoFactorEnrollmentRequired(user)) {
+        return sendTwoFactorSetupRequired(res, user, session);
+      }
       const token = await setAuthTokens(userId, res, session, req);
 
       res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });

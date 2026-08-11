@@ -1,7 +1,7 @@
 /* eslint-disable i18next/no-literal-string */
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import StartupLayout from '~/routes/Layouts/Startup';
 import { SESSION_KEY } from '~/utils';
 
@@ -32,6 +32,20 @@ function NewConversation() {
   return <div data-testid="new-conversation">New Conversation</div>;
 }
 
+/** Reproduces the real sequence: the layout mounts unauthenticated, then authentication lands. */
+function AuthFlipRoute() {
+  const [isAuthenticated, setIsAuthenticated] = React.useState(false);
+
+  return (
+    <div>
+      <button data-testid="authenticate" onClick={() => setIsAuthenticated(true)}>
+        authenticate
+      </button>
+      <StartupLayout isAuthenticated={isAuthenticated} />
+    </div>
+  );
+}
+
 const createTestRouter = (initialEntry: string, isAuthenticated: boolean) =>
   createMemoryRouter(
     [
@@ -43,6 +57,10 @@ const createTestRouter = (initialEntry: string, isAuthenticated: boolean) =>
       {
         path: '/c/new',
         element: <NewConversation />,
+      },
+      {
+        path: '/c/:conversationId',
+        element: <div data-testid="requested-conversation" />,
       },
     ],
     { initialEntries: [initialEntry] },
@@ -69,27 +87,50 @@ describe('StartupLayout — redirect race condition', () => {
     });
   });
 
-  it('does NOT navigate to /c/new when redirect_to URL param is present', async () => {
+  it('navigates to the URL redirect when authentication completes', async () => {
     window.history.replaceState({}, '', '/login?redirect_to=%2Fc%2Fabc123');
 
     const router = createTestRouter('/login?redirect_to=%2Fc%2Fabc123', true);
     render(<RouterProvider router={router} />);
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    expect(router.state.location.pathname).toBe('/login');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/c/abc123'));
   });
 
-  it('does NOT navigate to /c/new when sessionStorage redirect is present', async () => {
+  it('navigates to the stored redirect when authentication completes', async () => {
     window.history.replaceState({}, '', '/login');
     sessionStorage.setItem(SESSION_KEY, '/c/abc123');
 
     const router = createTestRouter('/login', true);
     render(<RouterProvider router={router} />);
 
+    await waitFor(() => expect(router.state.location.pathname).toBe('/c/abc123'));
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+  });
+
+  it('leaves the pending redirect alone when authentication completes after mount', async () => {
+    window.history.replaceState({}, '', '/login');
+    sessionStorage.setItem(SESSION_KEY, '/c/abc123');
+
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/login',
+          element: <AuthFlipRoute />,
+          children: [{ index: true, element: <ChildRoute /> }],
+        },
+        { path: '/c/new', element: <NewConversation /> },
+        { path: '/c/:conversationId', element: <div data-testid="requested-conversation" /> },
+      ],
+      { initialEntries: ['/login'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    fireEvent.click(screen.getByTestId('authenticate'));
     await new Promise((resolve) => setTimeout(resolve, 100));
 
+    /** The auth context owns this transition, so the stored destination must still be intact. */
     expect(router.state.location.pathname).toBe('/login');
+    expect(sessionStorage.getItem(SESSION_KEY)).toBe('/c/abc123');
   });
 
   it('does NOT navigate when not authenticated', async () => {

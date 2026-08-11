@@ -3,6 +3,11 @@ import { useSetRecoilState } from 'recoil';
 import { SmartphoneIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
+  isTwoFactorPolicyProvider,
+  type TUser,
+  type TVerify2FARequest,
+} from 'librechat-data-provider';
+import {
   OGDialog,
   useToastContext,
   OGDialogContent,
@@ -10,7 +15,6 @@ import {
   OGDialogTitle,
   Progress,
 } from '@librechat/client';
-import type { TUser, TVerify2FARequest } from 'librechat-data-provider';
 import type { Variants } from 'framer-motion';
 import {
   useConfirmTwoFactorMutation,
@@ -68,7 +72,9 @@ const TwoFactorAuthentication: React.FC = () => {
     disable: -1,
   };
   const currentStep = phaseIndex[phase];
-  const isTwoFactorRequired = startupConfig?.twoFactorAuthenticationRequired === true;
+  const isTwoFactorRequired =
+    startupConfig?.twoFactorAuthenticationRequired === true &&
+    isTwoFactorPolicyProvider(user?.provider);
 
   const resetState = useCallback(() => {
     if (user?.twoFactorEnabled && otpauthUrl) {

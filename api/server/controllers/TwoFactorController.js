@@ -11,6 +11,12 @@ const { getUserById, updateUser } = require('~/models');
 
 const safeAppTitle = (process.env.APP_TITLE || 'LibreChat').replace(/\s+/g, '');
 
+/** Any change to the pending or live 2FA credentials strands an in-flight required enrollment. */
+const CLEARED_ENROLLMENT_NONCES = {
+  twoFactorAcknowledgementNonceHash: null,
+  twoFactorFinalizationNonceHash: null,
+};
+
 /**
  * Enable 2FA for the user by generating a new TOTP secret and backup codes.
  * The secret is encrypted and stored, and 2FA is marked as disabled until confirmed.
@@ -46,6 +52,7 @@ const enable2FA = async (req, res) => {
     const user = await updateUser(userId, {
       pendingTotpSecret: encryptedSecret,
       pendingBackupCodes: codeObjects,
+      ...CLEARED_ENROLLMENT_NONCES,
     });
 
     const email = user.email || (existingUser && existingUser.email) || '';
@@ -115,6 +122,7 @@ const confirm2FA = async (req, res) => {
         twoFactorEnabled: true,
         pendingTotpSecret: null,
         pendingBackupCodes: [],
+        ...CLEARED_ENROLLMENT_NONCES,
       };
       if (user.pendingBackupCodes?.length) {
         update.backupCodes = user.pendingBackupCodes;
@@ -157,6 +165,7 @@ const disable2FA = async (req, res) => {
       twoFactorEnabled: false,
       pendingTotpSecret: null,
       pendingBackupCodes: [],
+      ...CLEARED_ENROLLMENT_NONCES,
     });
     return res.status(200).json();
   } catch (err) {

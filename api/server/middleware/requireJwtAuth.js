@@ -9,6 +9,8 @@ const {
   maybeRefreshCloudFrontAuthCookiesMiddleware,
   recordRumProxyRequest,
   getValidOpenIdReuseUserId,
+  generateTwoFactorSetupToken,
+  isTwoFactorEnrollmentRequired,
 } = require('@librechat/api');
 
 const hasPassportStrategy = (strategy) =>
@@ -63,6 +65,24 @@ const getRumProxyEndpoint = (req) => {
 
 const isOpenIdReuseUser = (strategy, user, openIdReuseUserId) =>
   strategy !== 'openidJwt' || getAuthenticatedUserId(user) === openIdReuseUserId;
+
+const isTwoFactorPolicyAllowlisted = (req) =>
+  req.method === 'POST' && req.baseUrl === '/api/auth' && req.path === '/logout';
+
+const enforceTwoFactorPolicy = (req, res) => {
+  if (!isTwoFactorEnrollmentRequired(req.user) || isTwoFactorPolicyAllowlisted(req)) {
+    return false;
+  }
+
+  return res.status(403).json({
+    twoFAPending: true,
+    twoFASetupRequired: true,
+    tempToken: generateTwoFactorSetupToken(
+      getAuthenticatedUserId(req.user),
+      process.env.JWT_SECRET,
+    ),
+  });
+};
 
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
@@ -183,6 +203,9 @@ const requireJwtAuth = (req, res, next) => {
       req.user = user;
       req.authStrategy = strategy;
       logFallbackSuccess(strategy);
+      if (enforceTwoFactorPolicy(req, res)) {
+        return;
+      }
       tenantContextMiddleware(req, res, (tenantErr) => {
         if (tenantErr) {
           return next(tenantErr);

@@ -2,6 +2,8 @@ const express = require('express');
 const {
   createSetBalanceConfig,
   requireTwoFactorSetupToken,
+  requireTwoFactorSetupAcknowledgementToken,
+  requireTwoFactorSetupFinalizationToken,
   forceRefreshCloudFrontAuthCookies,
   blockTwoFactorDisableWhenRequired,
 } = require('@librechat/api');
@@ -22,6 +24,8 @@ const {
 const {
   verify2FAWithTempToken,
   confirm2FASetupWithTempToken,
+  acknowledge2FASetup,
+  finalize2FASetup,
 } = require('~/server/controllers/auth/TwoFactorAuthController');
 const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const { loginController } = require('~/server/controllers/auth/LoginController');
@@ -112,6 +116,22 @@ router.post(
   middleware.checkBan,
   requireTwoFactorSetupToken,
   confirm2FASetupWithTempToken,
+);
+router.post(
+  '/2fa/setup/acknowledge',
+  middleware.setTwoFactorAcknowledgementTempUser,
+  middleware.twoFactorTempLimiter,
+  middleware.checkBan,
+  requireTwoFactorSetupAcknowledgementToken,
+  acknowledge2FASetup,
+);
+router.post(
+  '/2fa/setup/finalize',
+  middleware.setTwoFactorFinalizationTempUser,
+  middleware.twoFactorTempLimiter,
+  middleware.checkBan,
+  requireTwoFactorSetupFinalizationToken,
+  finalize2FASetup,
 );
 router.post(
   '/2fa/verify-temp',

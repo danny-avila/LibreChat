@@ -44,7 +44,7 @@ export interface SettingsContextValue {
   hasUserProvidedEndpoints: boolean;
   hasMultiConvo: boolean;
   hasPrompts: boolean;
-  isLocalProvider: boolean;
+  isTwoFactorPolicyProvider: boolean;
   twoFactorEnabled: boolean;
   allowAccountDeletion: boolean;
   aboutEnabled: boolean;

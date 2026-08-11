@@ -116,6 +116,16 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       select: false,
       default: undefined,
     },
+    twoFactorAcknowledgementNonceHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
+    twoFactorFinalizationNonceHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
     refreshToken: {
       type: [SessionSchema],
     },

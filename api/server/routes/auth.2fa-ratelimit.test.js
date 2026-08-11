@@ -2,16 +2,26 @@ const express = require('express');
 const request = require('supertest');
 
 const mockSetTwoFactorTempUser = jest.fn((req, res, next) => next());
+const mockSetTwoFactorAcknowledgementTempUser = jest.fn((req, res, next) => next());
+const mockSetTwoFactorFinalizationTempUser = jest.fn((req, res, next) => next());
 const mockTwoFactorTempLimiter = jest.fn((req, res, next) => next());
 const mockCheckBan = jest.fn((req, res, next) => next());
 const mockRequireTwoFactorSetupToken = jest.fn((req, res, next) => next());
+const mockRequireTwoFactorSetupAcknowledgementToken = jest.fn((req, res, next) => next());
+const mockRequireTwoFactorSetupFinalizationToken = jest.fn((req, res, next) => next());
 const mockVerify2FAWithTempToken = jest.fn((req, res) => res.status(204).end());
 const mockEnable2FA = jest.fn((req, res) => res.status(204).end());
 const mockConfirm2FASetupWithTempToken = jest.fn((req, res) => res.status(204).end());
+const mockAcknowledge2FASetup = jest.fn((req, res) => res.status(204).end());
+const mockFinalize2FASetup = jest.fn((req, res) => res.status(204).end());
 
 jest.mock('@librechat/api', () => ({
   createSetBalanceConfig: jest.fn(() => (req, res, next) => next()),
   requireTwoFactorSetupToken: (...args) => mockRequireTwoFactorSetupToken(...args),
+  requireTwoFactorSetupAcknowledgementToken: (...args) =>
+    mockRequireTwoFactorSetupAcknowledgementToken(...args),
+  requireTwoFactorSetupFinalizationToken: (...args) =>
+    mockRequireTwoFactorSetupFinalizationToken(...args),
   forceRefreshCloudFrontAuthCookies: jest.fn(),
   blockTwoFactorDisableWhenRequired: jest.fn((req, res, next) => next()),
 }));
@@ -35,6 +45,8 @@ jest.mock('~/server/controllers/TwoFactorController', () => ({
 jest.mock('~/server/controllers/auth/TwoFactorAuthController', () => ({
   verify2FAWithTempToken: (...args) => mockVerify2FAWithTempToken(...args),
   confirm2FASetupWithTempToken: (...args) => mockConfirm2FASetupWithTempToken(...args),
+  acknowledge2FASetup: (...args) => mockAcknowledge2FASetup(...args),
+  finalize2FASetup: (...args) => mockFinalize2FASetup(...args),
 }));
 
 jest.mock('~/server/controllers/auth/LogoutController', () => ({
@@ -60,6 +72,9 @@ jest.mock('~/server/middleware', () => {
     logHeaders: pass,
     loginLimiter: pass,
     setTwoFactorTempUser: (...args) => mockSetTwoFactorTempUser(...args),
+    setTwoFactorAcknowledgementTempUser: (...args) =>
+      mockSetTwoFactorAcknowledgementTempUser(...args),
+    setTwoFactorFinalizationTempUser: (...args) => mockSetTwoFactorFinalizationTempUser(...args),
     twoFactorTempLimiter: (...args) => mockTwoFactorTempLimiter(...args),
     checkBan: (...args) => mockCheckBan(...args),
     validateEmailLogin: pass,
@@ -83,16 +98,84 @@ describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockSetTwoFactorTempUser.mockImplementation((req, res, next) => next());
+    mockSetTwoFactorAcknowledgementTempUser.mockImplementation((req, res, next) => next());
+    mockSetTwoFactorFinalizationTempUser.mockImplementation((req, res, next) => next());
     mockTwoFactorTempLimiter.mockImplementation((req, res, next) => next());
     mockCheckBan.mockImplementation((req, res, next) => next());
     mockRequireTwoFactorSetupToken.mockImplementation((req, res, next) => next());
+    mockRequireTwoFactorSetupAcknowledgementToken.mockImplementation((req, res, next) => next());
+    mockRequireTwoFactorSetupFinalizationToken.mockImplementation((req, res, next) => next());
     mockVerify2FAWithTempToken.mockImplementation((req, res) => res.status(204).end());
     mockEnable2FA.mockImplementation((req, res) => res.status(204).end());
     mockConfirm2FASetupWithTempToken.mockImplementation((req, res) => res.status(204).end());
+    mockAcknowledge2FASetup.mockImplementation((req, res) => res.status(204).end());
+    mockFinalize2FASetup.mockImplementation((req, res) => res.status(204).end());
 
     app = express();
     app.use(express.json());
     app.use('/api/auth', authRouter);
+  });
+
+  it('protects finalization with limiting, ban checks, and purpose validation', async () => {
+    await request(app)
+      .post('/api/auth/2fa/setup/finalize')
+      .send({ finalizationToken: 'finalization-token' })
+      .expect(204);
+
+    expect(mockSetTwoFactorFinalizationTempUser).toHaveBeenCalledTimes(1);
+    expect(mockTwoFactorTempLimiter).toHaveBeenCalledTimes(1);
+    expect(mockCheckBan).toHaveBeenCalledTimes(1);
+    expect(mockRequireTwoFactorSetupFinalizationToken).toHaveBeenCalledTimes(1);
+    expect(mockFinalize2FASetup).toHaveBeenCalledTimes(1);
+    expect(mockSetTwoFactorFinalizationTempUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockTwoFactorTempLimiter.mock.invocationCallOrder[0],
+    );
+    expect(mockTwoFactorTempLimiter.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCheckBan.mock.invocationCallOrder[0],
+    );
+    expect(mockCheckBan.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRequireTwoFactorSetupFinalizationToken.mock.invocationCallOrder[0],
+    );
+    expect(mockRequireTwoFactorSetupFinalizationToken.mock.invocationCallOrder[0]).toBeLessThan(
+      mockFinalize2FASetup.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('protects acknowledgement with field-specific identity, limiting, ban checks, and purpose validation', async () => {
+    await request(app)
+      .post('/api/auth/2fa/setup/acknowledge')
+      .send({ acknowledgementToken: 'acknowledgement-token' })
+      .expect(204);
+
+    expect(mockSetTwoFactorAcknowledgementTempUser).toHaveBeenCalledTimes(1);
+    expect(mockTwoFactorTempLimiter).toHaveBeenCalledTimes(1);
+    expect(mockCheckBan).toHaveBeenCalledTimes(1);
+    expect(mockRequireTwoFactorSetupAcknowledgementToken).toHaveBeenCalledTimes(1);
+    expect(mockAcknowledge2FASetup).toHaveBeenCalledTimes(1);
+    expect(mockSetTwoFactorAcknowledgementTempUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockTwoFactorTempLimiter.mock.invocationCallOrder[0],
+    );
+    expect(mockTwoFactorTempLimiter.mock.invocationCallOrder[0]).toBeLessThan(
+      mockCheckBan.mock.invocationCallOrder[0],
+    );
+    expect(mockCheckBan.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRequireTwoFactorSetupAcknowledgementToken.mock.invocationCallOrder[0],
+    );
+    expect(mockRequireTwoFactorSetupAcknowledgementToken.mock.invocationCallOrder[0]).toBeLessThan(
+      mockAcknowledge2FASetup.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not finalize after the limiter or ban check rejects the request', async () => {
+    mockCheckBan.mockImplementation((req, res) => res.status(403).json({ message: 'Banned' }));
+
+    await request(app)
+      .post('/api/auth/2fa/setup/finalize')
+      .send({ finalizationToken: 'finalization-token' })
+      .expect(403);
+
+    expect(mockRequireTwoFactorSetupFinalizationToken).not.toHaveBeenCalled();
+    expect(mockFinalize2FASetup).not.toHaveBeenCalled();
   });
 
   it.each([
