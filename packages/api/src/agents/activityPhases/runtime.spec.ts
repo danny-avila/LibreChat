@@ -158,7 +158,7 @@ describe('createActivityPhaseWiring', () => {
       activity_count: 2,
     });
     parts[0] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } };
-    expect(parts.slice(parts[5]?.activity_start_index ?? 5, 5)).toEqual(
+    expect(parts.slice(0, 5)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ tool_call: { id: 'tool-1' } }),
         expect.objectContaining({ tool_call: { id: 'tool-2' } }),
@@ -209,7 +209,7 @@ describe('createActivityPhaseWiring', () => {
       activity_count: 2,
     });
     parts[1] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } };
-    expect(parts.slice(parts[4]?.activity_start_index ?? 4, 4)).toEqual(
+    expect(parts.slice(1, 4)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ tool_call: { id: 'tool-1' } }),
         expect.objectContaining({ tool_call: { id: 'tool-2' } }),
