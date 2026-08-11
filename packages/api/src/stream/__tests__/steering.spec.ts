@@ -614,6 +614,46 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
       }
     });
 
+    test('abortJob transforms content before filtering shifts reconstructed indices', async () => {
+      const streamId = 'abort-transform-before-filter';
+      const job = await manager.createJob(streamId, 'user-1');
+      jobStore.setContentParts(
+        streamId,
+        [
+          { type: 'text', text: '' },
+          {
+            type: 'tool_call',
+            tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' },
+          },
+        ],
+        job.createdAt,
+      );
+
+      const result = await manager.abortJob(streamId, {
+        expectedCreatedAt: job.createdAt,
+        transformAbortContent: (content) => {
+          expect(content).toHaveLength(2);
+          const next = [...content];
+          next[1] = {
+            ...next[1],
+            tool_call: {
+              ...next[1].tool_call,
+              output: 'staging',
+              progress: 1,
+            },
+          };
+          return next;
+        },
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.content).toEqual([
+        expect.objectContaining({
+          tool_call: expect.objectContaining({ output: 'staging', progress: 1 }),
+        }),
+      ]);
+    });
+
     test('abortJob publishes nothing when natural completion wins its terminal CAS', async () => {
       const streamId = 'steer-abort-loses-terminal-race';
       const eventTransport = new InMemoryEventTransport();

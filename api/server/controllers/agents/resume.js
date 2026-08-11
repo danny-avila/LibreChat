@@ -666,12 +666,11 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         askRequest,
       );
       if (resolvedAskContentIndex < 0) {
-        return sendGenerationJson(
-          res,
-          409,
-          { error: 'Pending question content is unavailable; reconnect and retry' },
-          generationProtocolVersion,
-        );
+        // Legacy streams can omit the paused ask tool part while retaining
+        // earlier text. Keep the answer as an unindexed legacy stamp so the
+        // resume is not permanently blocked; a later reconstruction can bind
+        // it once the missing ask part is available.
+        resolvedAskContentIndex = undefined;
       }
     }
   }

@@ -3491,8 +3491,8 @@ class GenerationJobManagerClass {
    * - Emits abort signal via Redis pub/sub
    * - The replica running generation receives signal and aborts its AbortController
    *
-   * `options.transformAbortContent` rewrites the persistable content BEFORE the
-   * final SSE is emitted (and before it is returned for the DB save), so a
+   * `options.transformAbortContent` rewrites the reconstructed content BEFORE
+   * persistence filtering and the final SSE (and before it is returned for the DB save), so a
    * host-side stamp — e.g. re-attaching a paused `ask_user_question`'s args
    * that the Redis chunk-log reconstruction dropped — reaches the LIVE client
    * too, not just the saved message. Pure/optional; identity when omitted.
@@ -3740,7 +3740,6 @@ class GenerationJobManagerClass {
         const committed = await this.jobStore.getContentParts(streamId, jobData.createdAt);
         if (committed) {
           content = committed.content;
-          abortContent = filterPersistableAbortContent(content);
         }
       } catch (contentError) {
         logger.warn(
@@ -3749,11 +3748,15 @@ class GenerationJobManagerClass {
         );
       }
       if (options?.transformAbortContent) {
-        abortContent = options.transformAbortContent(
-          abortContent as TMessageContentParts[],
+        content = options.transformAbortContent(
+          content as TMessageContentParts[],
           jobData,
-        ) as typeof abortContent;
+        ) as typeof content;
       }
+      // Answer stamps use ordinals from the unfiltered chunk reconstruction.
+      // Filter only after the transform so sparse/empty/OAuth parts cannot
+      // shift a retained ID-less ask answer onto a different tool call.
+      abortContent = filterPersistableAbortContent(content);
       shouldPersistAbortContent = abortContent.length > 0;
       text = shouldPersistAbortContent
         ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })

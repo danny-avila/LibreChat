@@ -1429,6 +1429,39 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       );
     });
 
+    it('retains an ID-less answer when earlier text exists but the ask part is missing', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserJob());
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [{ type: 'text', text: 'Let me check.' }],
+      });
+
+      const res = await post({
+        conversationId: CONVO_ID,
+        actionId: ACTION_ID,
+        agent_id: AGENT_ID,
+        endpoint: 'agents',
+        answer: 'call it report.pdf',
+      });
+
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        {
+          preemptCapable: true,
+          resolvedAskUserQuestions: [
+            {
+              request: 'What should I name the file?',
+              output: 'call it report.pdf',
+            },
+          ],
+        },
+        1000,
+      );
+    });
+
     it('resumes a batched ask_user_question with answers keyed by question id', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserBatchJob());
       const answers = { environment: 'staging', window: '7d' };
