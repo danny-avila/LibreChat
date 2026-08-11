@@ -1,6 +1,6 @@
 import React, { forwardRef } from 'react';
 import { useWatch } from 'react-hook-form';
-import { SendIcon, TooltipAnchor } from '@librechat/client';
+import { SendIcon, IconButton, TooltipAnchor } from '@librechat/client';
 import type { Control } from 'react-hook-form';
 import { cn, isSubmittableMessage } from '~/utils';
 import { useLocalize } from '~/hooks';
@@ -19,20 +19,21 @@ const SubmitButton = React.memo(
       <TooltipAnchor
         description={localize('com_nav_send_message')}
         render={
-          <button
+          <IconButton
             ref={ref}
-            aria-label={localize('com_nav_send_message')}
+            label={localize('com_nav_send_message')}
+            variant="primary"
+            size="theme"
+            shape="theme"
             disabled={props.disabled}
-            className={cn(
-              'flex size-9 items-center justify-center rounded-full bg-text-primary text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-30',
-            )}
+            className="duration-theme-normal disabled:opacity-30"
             data-testid="send-button"
             type="submit"
           >
             <span className="" data-state="closed">
               <SendIcon size={18} />
             </span>
-          </button>
+          </IconButton>
         }
       />
     );
