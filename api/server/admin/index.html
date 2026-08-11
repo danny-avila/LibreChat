@@ -364,8 +364,25 @@
         </div>
         <div class="table-scroll" style="max-height:420px;">
           <table>
-            <thead><tr><th>일시 (KST)</th><th>기준일</th><th>상태</th><th>신규</th><th>메타</th><th>파일</th><th>성공</th><th>오류</th><th>소요</th></tr></thead>
-            <tbody id="sync-history-tbody"><tr class="empty-row"><td colspan="9">로딩 중...</td></tr></tbody>
+            <thead><tr><th>일시 (KST)</th><th>기준일</th><th>상태</th><th>신규</th><th>메타</th><th>파일</th><th>성공</th><th>오류</th><th>소요</th><th>검증</th></tr></thead>
+            <tbody id="sync-history-tbody"><tr class="empty-row"><td colspan="10">로딩 중...</td></tr></tbody>
+          </table>
+        </div>
+        <div style="padding:6px 16px 10px; font-size:12px; color:#6b7280;">행을 클릭하면 항목별 처리 로그와 스토리지 검증 결과를 볼 수 있습니다</div>
+      </div>
+
+      <div class="table-panel" id="sync-detail-panel" style="display:none;">
+        <div class="table-header">
+          <span class="table-title">실행 상세</span>
+          <span class="table-sub" id="sync-detail-sub"></span>
+          <button class="btn-export" style="margin-left:auto;" id="btn-sync-verify">검증 실행</button>
+          <button class="btn-refresh" id="sync-detail-close">닫기</button>
+        </div>
+        <div id="sync-verify-report" style="padding:10px 16px 0; font-size:13px; color:#374151;"></div>
+        <div class="table-scroll" style="max-height:420px;">
+          <table>
+            <thead><tr><th>#</th><th>유형</th><th>매터</th><th>문서</th><th>상태</th><th>내용</th></tr></thead>
+            <tbody id="sync-detail-tbody"></tbody>
           </table>
         </div>
       </div>
