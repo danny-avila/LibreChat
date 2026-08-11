@@ -32,11 +32,21 @@ import {
   tombstoneDocument,
   upsertDocument,
 } from './writer';
-import { acquireLease, assertLeaseEpoch } from './lease';
+import { acquireLease, assertLeaseEpoch, LeaseLostError } from './lease';
 import { withTransaction } from './pool';
 import { contentHash } from './hash';
 
 const KINDS: readonly SearchKind[] = ['message', 'conversation', 'shared-link'];
+
+/**
+ * SQLSTATE classes that mean the database itself is not provisioned for this
+ * layer — a missing schema, table or grant (42*), or a missing database (3D*).
+ * A retry loop cannot fix either; everything else can heal behind a standby.
+ */
+function isProvisioningError(error: unknown): boolean {
+  const code = (error as { code?: string }).code;
+  return typeof code === 'string' && (code.startsWith('42') || code.startsWith('3D'));
+}
 
 const DRAIN_BATCH = 500;
 const SCAN_BATCH = 500;
@@ -138,7 +148,14 @@ export class Projector {
    * complete scan concurrently (pinned by `does not start a second
    * reconciliation while one is in flight`).
    */
-  private reconciling = false;
+  /**
+   * Keyed by epoch, not a boolean: a same-pod lose-and-reacquire while a
+   * deposed pass is still unwinding must not leave the *new* term's
+   * reconciliations silently returning 0 until the zombie finishes. The old
+   * pass's writes are epoch-fenced either way; overlap costs wasted reads, a
+   * suppressed new term costs up to an hour of repairs.
+   */
+  private reconcilingEpoch: number | null = null;
   /**
    * Per kind: where a scan pass still in progress resumes.
    *
@@ -265,6 +282,22 @@ export class Projector {
           }
           await withTransaction(this.deps.pool, (client) => clearFailure(client, event));
         } catch (error) {
+          /**
+           * A lost lease fails every event still in this batch, and the events
+           * themselves are fine — deleting them here would be self-inflicted
+           * event loss, sharpest for tombstones, which the safety poll cannot
+           * re-discover. The whole batch stays queued for the next holder;
+           * everything already applied re-applies idempotently under its
+           * version guard. Not a poison-row strike either: the failure counter
+           * is for records, and leadership flaps would spend real quarantine
+           * budget on healthy ones.
+           */
+          if (error instanceof LeaseLostError) {
+            logger.warn(
+              '[chatSearch] projector lease lost mid-drain; leaving the batch queued for the next holder',
+            );
+            return { consumed: 0, projected, tombstoned, skipped, failed };
+          }
           failed++;
           logger.error('[chatSearch] failed to project a record', error);
           await withTransaction(this.deps.pool, (client) =>
@@ -278,7 +311,8 @@ export class Projector {
      * Every event read is consumed, including the ones that failed: the failure
      * counter drives the poison-row policy, and the safety poll re-discovers a
      * record whose event was dropped. Leaving failures in the queue would let one
-     * malformed document stall everything queued behind it.
+     * malformed document stall everything queued behind it. The one exception is
+     * a lost lease, which returns above without consuming anything.
      */
     await this.queue.deleteSearchEvents(events.map((event) => event._id));
 
@@ -341,33 +375,45 @@ export class Projector {
    * next scan re-select the same earliest page and the poll never reaches newer
    * rows at all. The guard makes that unrepresentable regardless of caller.
    */
-  private async writePollCursor(kind: SearchKind, cursor: SourceCursor | null): Promise<void> {
+  private async writePollCursor(
+    kind: SearchKind,
+    cursor: SourceCursor | null,
+    epoch: number,
+  ): Promise<void> {
     if (!cursor) {
       return;
     }
-    await this.deps.pool.query(
-      /**
-       * `-infinity` stands in for the untimestamped region so the row comparison
-       * stays total. A literal NULL in a row comparison yields NULL, the guard
-       * fails, and the cursor would never advance out of that region at all.
-       * `mongo_id` is the third keyset component: record ids are only unique per
-       * user and tenant, so a page boundary inside an equal `(updated_at,
-       * record_id)` group needs it to advance without skipping the rest of the
-       * group.
-       */
-      `INSERT INTO chat_search.poll_cursor (kind, updated_at, record_id, mongo_id, scanned_at)
-       VALUES ($1, $2, $3, $4, now())
-       ON CONFLICT (kind) DO UPDATE SET
-         updated_at = excluded.updated_at,
-         record_id = excluded.record_id,
-         mongo_id = excluded.mongo_id,
-         scanned_at = now()
-       WHERE (COALESCE(excluded.updated_at, '-infinity'::timestamptz), excluded.record_id,
-              excluded.mongo_id)
-           > (COALESCE(chat_search.poll_cursor.updated_at, '-infinity'::timestamptz),
-              chat_search.poll_cursor.record_id, chat_search.poll_cursor.mongo_id)`,
-      [kind, cursor.updatedAt, cursor.recordId, cursor.id],
-    );
+    /**
+     * Fenced like every other shared write: the cursor is cluster state, and a
+     * deposed holder advancing it past a page whose rows it failed to land
+     * would make the new leader skip that page until reconciliation.
+     */
+    await withTransaction(this.deps.pool, async (client) => {
+      await assertLeaseEpoch(client, epoch);
+      await client.query(
+        /**
+         * `-infinity` stands in for the untimestamped region so the row comparison
+         * stays total. A literal NULL in a row comparison yields NULL, the guard
+         * fails, and the cursor would never advance out of that region at all.
+         * `mongo_id` is the third keyset component: record ids are only unique per
+         * user and tenant, so a page boundary inside an equal `(updated_at,
+         * record_id)` group needs it to advance without skipping the rest of the
+         * group.
+         */
+        `INSERT INTO chat_search.poll_cursor (kind, updated_at, record_id, mongo_id, scanned_at)
+         VALUES ($1, $2, $3, $4, now())
+         ON CONFLICT (kind) DO UPDATE SET
+           updated_at = excluded.updated_at,
+           record_id = excluded.record_id,
+           mongo_id = excluded.mongo_id,
+           scanned_at = now()
+         WHERE (COALESCE(excluded.updated_at, '-infinity'::timestamptz), excluded.record_id,
+                excluded.mongo_id)
+             > (COALESCE(chat_search.poll_cursor.updated_at, '-infinity'::timestamptz),
+                chat_search.poll_cursor.record_id, chat_search.poll_cursor.mongo_id)`,
+        [kind, cursor.updatedAt, cursor.recordId, cursor.id],
+      );
+    });
   }
 
   /** Safety net: keyset scan that catches whatever the queue never carried. */
@@ -388,6 +434,15 @@ export class Projector {
        * alive at its in-memory position, which the persisted cursor cannot carry
        * while the pass is still inside the overlap window behind it.
        */
+      if (this.lease?.epoch !== epoch) {
+        /**
+         * A pass deposed mid-flight must not leave its position behind: on this
+         * pod the next term starts a fresh pass from the persisted cursor, and
+         * an in-memory resume written by the old term would skip the window the
+         * new term still owes a re-scan.
+         */
+        return projected;
+      }
       if (page.sources.length < this.scanBatch) {
         this.scanResume.delete(kind);
       } else if (page.cursor) {
@@ -425,6 +480,11 @@ export class Projector {
             projected++;
           }
         } catch (error) {
+          /** Same shape as the drain: a lost lease is not a record failure. */
+          if (error instanceof LeaseLostError) {
+            logger.warn('[chatSearch] projector lease lost mid-poll; abandoning the pass');
+            return projected;
+          }
           logger.error('[chatSearch] safety poll failed to project a record', error);
           await withTransaction(this.deps.pool, (client) =>
             recordFailure(client, source, error),
@@ -432,7 +492,15 @@ export class Projector {
         }
       }
 
-      await this.writePollCursor(kind, page.cursor);
+      try {
+        await this.writePollCursor(kind, page.cursor, epoch);
+      } catch (error) {
+        if (error instanceof LeaseLostError) {
+          logger.warn('[chatSearch] projector lease lost before persisting the poll cursor');
+          return projected;
+        }
+        throw error;
+      }
     }
     return projected;
   }
@@ -512,6 +580,14 @@ export class Projector {
         tombstoned += await this.tombstoneReopened(reopened, epoch, readAt);
         refreshed += await this.project(drifted, epoch, readAt, 'refresh a drifted record');
       } catch (error) {
+        /**
+         * A deposed pass unwinds instead of grinding through every remaining
+         * window logging fence errors; the caller's epoch key lets the new
+         * term reconcile immediately.
+         */
+        if (error instanceof LeaseLostError) {
+          throw error;
+        }
         logger.error('[chatSearch] reconciliation failed for a key window', error);
       }
 
@@ -543,6 +619,9 @@ export class Projector {
           applied++;
         }
       } catch (error) {
+        if (error instanceof LeaseLostError) {
+          throw error;
+        }
         logger.error('[chatSearch] reconciliation failed to bury a reopened record', error);
       }
     }
@@ -576,6 +655,9 @@ export class Projector {
           applied++;
         }
       } catch (error) {
+        if (error instanceof LeaseLostError) {
+          throw error;
+        }
         logger.error(`[chatSearch] reconciliation failed to ${what}`, error);
       }
     }
@@ -601,6 +683,9 @@ export class Projector {
           missingFromProjection(client, kind, batch),
         );
       } catch (error) {
+        if (error instanceof LeaseLostError) {
+          throw error;
+        }
         logger.error('[chatSearch] reconciliation could not resolve a missing-key batch', error);
         continue;
       }
@@ -656,10 +741,10 @@ export class Projector {
     if (epoch == null) {
       return 0;
     }
-    if (this.reconciling) {
+    if (this.reconcilingEpoch === epoch) {
       return 0;
     }
-    this.reconciling = true;
+    this.reconcilingEpoch = epoch;
 
     try {
       let tombstoned = 0;
@@ -687,8 +772,16 @@ export class Projector {
         logger.info(`[chatSearch] trimmed ${trimmed} outbox rows past the retention window`);
       }
       return tombstoned;
+    } catch (error) {
+      if (error instanceof LeaseLostError) {
+        logger.warn('[chatSearch] projector lease lost mid-reconciliation; abandoning the pass');
+        return 0;
+      }
+      throw error;
     } finally {
-      this.reconciling = false;
+      if (this.reconcilingEpoch === epoch) {
+        this.reconcilingEpoch = null;
+      }
     }
   }
 
@@ -724,7 +817,27 @@ export class Projector {
       return this.isLeader;
     }
     this.stopped = false;
-    const acquired = await this.acquire();
+    let acquired: boolean;
+    try {
+      acquired = await this.acquire();
+    } catch (error) {
+      /**
+       * A missing lease table or a revoked grant is provisioning state no retry
+       * can fix — rethrown, and boot closes the pool (pinned by `leaves no
+       * writer connection behind when the projector fails to start`). Anything
+       * else — PostgreSQL restarting under a rolling deploy, a network blip —
+       * is exactly the transient a standby exists to outlive, so a *throwing*
+       * election is treated like a lost one. Propagating it instead parks every
+       * pod for the life of the process: no projector anywhere, events TTLing
+       * out, recovery only by restart.
+       */
+      if (isProvisioningError(error)) {
+        throw error;
+      }
+      logger.warn('[chatSearch] projector lease acquisition failed; standing by', error);
+      this.scheduleStandby();
+      return false;
+    }
     if (!acquired) {
       logger.info('[chatSearch] another pod holds the projector lease; standing by');
       this.scheduleStandby();
@@ -745,6 +858,12 @@ export class Projector {
 
     this.running = true;
     this.standbyDelayMs = STANDBY_RETRY_MS;
+    /**
+     * A fresh term trusts only the persisted cursor. An in-memory resume left
+     * by — or racing in from — a previous term's still-unwinding poll pass
+     * would skip the overlap window this term owes a re-scan.
+     */
+    this.scanResume.clear();
     logger.info(`[chatSearch] projector started at epoch ${this.lease.epoch}`);
 
     this.schedule(() => this.drain(), this.drainMs, 'drain');

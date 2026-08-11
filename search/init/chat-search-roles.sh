@@ -51,7 +51,11 @@ owner_role="${role_prefix}chat_search_owner"
 writer_role="${role_prefix}chat_search_writer"
 reader_role="${role_prefix}chat_search_reader"
 
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'PSQL'
+psql -v ON_ERROR_STOP=1 \
+  -v owner_role="$owner_role" \
+  -v writer_role="$writer_role" \
+  -v reader_role="$reader_role" \
+  --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-'PSQL'
 -- Passwords come from the container environment via psql's backtick shell
 -- exec (runs in the postgres image's own shell, not bash string
 -- interpolation), then :'var' asks psql to SQL-quote the literal safely.

@@ -725,14 +725,6 @@ export function createMeiliSink(schema: Schema, options: MongoMeiliOptions): Sea
       await callHook(document, document.postSaveHook);
     },
 
-    async remove(doc: SearchSyncDocument): Promise<void> {
-      const document = asDocument(doc);
-      if (!document) {
-        return;
-      }
-      await callHook(document, document.postRemoveHook);
-    },
-
     /**
      * `deleteMany` yields no documents, so the affected primary keys are read
      * back from Mongo before the delete lands.

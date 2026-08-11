@@ -85,8 +85,6 @@ export type InternalHit = ChatSearchHit & {
   projectionVersion: number;
 };
 
-export type SearchOp = 'upsert' | 'tombstone';
-
 export type SearchRecordKey = Readonly<{
   tenantId: string;
   userId: string;
@@ -107,11 +105,6 @@ export type ProjectionSource = SearchRecordKey & {
   sourceUpdatedAt: Date | null;
   expiresAt: Date | null;
   unfinished: boolean;
-};
-
-export type ProjectionEvent = SearchRecordKey & {
-  op: SearchOp;
-  eventId: string;
 };
 
 export type EmbeddingWrite = SearchRecordKey & {

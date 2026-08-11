@@ -33,6 +33,11 @@ The full stack was brought up for real and torn down again afterward:
 - All four containers reached Docker `healthy` status from a fresh volume.
 - `chat-search-roles.sh` ran cleanly on `chat_search_db` init: `chat_search`
   schema created, all three roles created, zero errors in container logs.
+  (That run predates the role-prefix rewrite; the current script text was
+  re-verified 2026-08-11 against a real PostgreSQL 17.8 server — fresh-create
+  and idempotent re-run paths, prefixed role names, and a SCRAM login as the
+  created reader — and CI now executes the script on every PR, twice, in the
+  `test-packages-api` job.)
 - Role attributes confirmed via `pg_roles`: `chat_search_owner`,
   `chat_search_writer`, `chat_search_reader` are all `rolsuper=f`,
   `rolbypassrls=f`, `rolcreaterole=f`, `rolcreatedb=f`. Only the bootstrap

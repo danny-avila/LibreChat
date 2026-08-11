@@ -279,12 +279,14 @@ export function createMongoSourceReader(
        * content under another's scope.
        */
       const wanted = new Set(
-        keys.map((key) => `${normalizeTenantId(key.tenantId)}${key.userId}${key.recordId}`),
+        keys.map(
+          (key) => `${normalizeTenantId(key.tenantId)}\u001f${key.userId}\u001f${key.recordId}`,
+        ),
       );
       const sources: ProjectionSource[] = [];
       for (const doc of docs) {
         const source = toProjectionSource(kind, doc);
-        if (wanted.has(`${source.tenantId}${source.userId}${source.recordId}`)) {
+        if (wanted.has(`${source.tenantId}\u001f${source.userId}\u001f${source.recordId}`)) {
           sources.push(source);
         }
       }

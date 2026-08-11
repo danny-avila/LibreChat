@@ -24,7 +24,6 @@ export interface SearchSink {
   readonly name: string;
   isEnabled(): boolean;
   upsert(doc: SearchSyncDocument, origin: SearchSyncOrigin): Promise<void>;
-  remove(doc: SearchSyncDocument): Promise<void>;
   removeMany(conditions: FilterQuery<unknown>): Promise<void>;
 }
 

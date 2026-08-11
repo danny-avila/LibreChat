@@ -42,7 +42,4 @@ const searchEventSchema: Schema<ISearchEvent> = new Schema<ISearchEvent>(
   { versionKey: false, minimize: false },
 );
 
-/** Drain order. `_id` alone is enough: the drain deletes what it consumes. */
-searchEventSchema.index({ _id: 1, createdAt: 1 });
-
 export default searchEventSchema;

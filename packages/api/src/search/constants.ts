@@ -24,7 +24,6 @@ export const SWEEP_INTERVAL_MS = 3_600_000;
 /** Age past which the projector's reconciliation pass deletes outbox rows. */
 export const OUTBOX_RETENTION_HOURS = 24;
 export const LEASE_TTL_MS = 30_000;
-export const LEASE_RENEW_MS = 10_000;
 
 /**
  * How long a pod that lost the election waits before trying again, and the
