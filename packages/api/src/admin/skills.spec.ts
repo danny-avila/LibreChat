@@ -52,7 +52,14 @@ function createSourceStatus(overrides: Partial<SourceStatus> = {}): SourceStatus
 function createHandlers({
   statusErrorCode,
   statusErrorMessage,
-}: { statusErrorCode?: string; statusErrorMessage?: string } = {}) {
+  skippedSkillPath = 'skills/broken',
+  skippedSkillErrorMessage = 'skills/broken/SKILL.md: malformed frontmatter',
+}: {
+  statusErrorCode?: string;
+  statusErrorMessage?: string;
+  skippedSkillPath?: string;
+  skippedSkillErrorMessage?: string;
+} = {}) {
   const runner = {
     getStatus: jest.fn(async () => ({
       enabled: true,
@@ -63,10 +70,10 @@ function createHandlers({
           skippedSkillCount: 1,
           skippedSkills: [
             {
-              path: 'skills/broken',
+              path: skippedSkillPath,
               name: 'broken',
               errorCode: 'SKILL_PARSE_FAILED',
-              errorMessage: 'skills/broken/SKILL.md: malformed frontmatter',
+              errorMessage: skippedSkillErrorMessage,
             },
           ],
           errorCode: statusErrorCode,
@@ -93,10 +100,10 @@ function createHandlers({
           skippedSkillCount: 1,
           skippedSkills: [
             {
-              path: 'skills/broken',
+              path: skippedSkillPath,
               name: 'broken',
               errorCode: 'SKILL_PARSE_FAILED',
-              errorMessage: 'skills/broken/SKILL.md: malformed frontmatter',
+              errorMessage: skippedSkillErrorMessage,
             },
           ],
           errorCode: statusErrorCode,
@@ -278,6 +285,36 @@ describe('createAdminSkillsSyncHandlers', () => {
             errorCode: 'SKILL_PARSE_FAILED',
             errorMessage: 'One or more GitHub skills could not be synchronized',
             skippedSkills: undefined,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('does not mistake a promoted skipped-skill path for a credential failure', async () => {
+    const errorMessage = 'skills/credential-helper/SKILL.md: malformed frontmatter';
+    const { handlers } = createHandlers({
+      statusErrorCode: 'SKILL_PARSE_FAILED',
+      statusErrorMessage: errorMessage,
+      skippedSkillPath: 'skills/credential-helper',
+      skippedSkillErrorMessage: errorMessage,
+    });
+    const res = createResponse();
+
+    await handlers.getSyncStatus(
+      {
+        user: { id: 'user-1', tenantId: 'tenant-a' },
+        skillSyncCanReadCredentials: false,
+      } as never,
+      res,
+    );
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [
+          expect.objectContaining({
+            errorCode: 'SKILL_PARSE_FAILED',
+            errorMessage: 'One or more GitHub skills could not be synchronized',
           }),
         ],
       }),

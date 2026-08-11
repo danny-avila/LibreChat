@@ -129,11 +129,11 @@ function serializeErrorMessage(
   if (includeCredentialMetadata) {
     return status.errorMessage;
   }
-  if (isCredentialError(status)) {
-    return 'GitHub skill sync credentials are not available';
-  }
   if (isPromotedSkippedSkillError(status)) {
     return 'One or more GitHub skills could not be synchronized';
+  }
+  if (isCredentialError(status)) {
+    return 'GitHub skill sync credentials are not available';
   }
   return status.errorMessage;
 }
