@@ -22,6 +22,7 @@ import {
   attachAskUserQuestionArgs,
   buildResolvedAskUserQuestion,
   appendResolvedAskUserQuestion,
+  findAskUserQuestionContentIndex,
 } from './resume';
 
 describe('mapToolApprovalResolutions', () => {
@@ -606,6 +607,24 @@ describe('durable ask-user answers', () => {
     });
   });
 
+  it('associates an ID-less answer with its pause-time content slot', () => {
+    const pendingAction = {
+      actionId: 'action-legacy',
+      streamId: 'stream-1',
+      createdAt: 1,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Newest?' },
+      },
+    } satisfies Agents.PendingAction;
+
+    expect(buildResolvedAskUserQuestion(pendingAction, { answer: 'yes' }, 2)).toEqual({
+      request: { question: 'Newest?' },
+      output: 'yes',
+      contentIndex: 2,
+    });
+  });
+
   it('accumulates exact-ID answers and replaces a repeated tool call', () => {
     const first = { request: 'First?', output: 'one', toolCallId: 'ask-1' };
     const second = { request: 'Second?', output: 'two', toolCallId: 'ask-2' };
@@ -644,6 +663,24 @@ describe('durable ask-user answers', () => {
 
     expect(next[0].tool_call.output).toBe('one');
     expect(next[1].tool_call.output).toBeUndefined();
+  });
+
+  it('targets the pause-time slot when an ID-less action has multiple empty asks', () => {
+    const request = { question: 'Newest?' };
+    const content: Array<{
+      type: string;
+      tool_call: { id: string; name: string; args: string; output?: string };
+    }> = [
+      { type: 'tool_call', tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' } },
+      { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
+    ];
+    const contentIndex = findAskUserQuestionContentIndex(content, undefined, request);
+
+    const next = attachAskUserQuestionAnswers(content, [{ request, output: 'yes', contentIndex }]);
+
+    expect(contentIndex).toBe(1);
+    expect(next[0].tool_call.output).toBeUndefined();
+    expect(next[1].tool_call.output).toBe('yes');
   });
 
   it('consumes a legacy stamp already present on content before a later ask', () => {

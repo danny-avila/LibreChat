@@ -8,6 +8,7 @@ const {
   buildResolvedAskUserQuestion,
   appendResolvedAskUserQuestion,
   attachAskUserQuestionAnswers,
+  findAskUserQuestionContentIndex,
   findUndecidedToolCalls,
   findDisallowedDecisions,
   findIncompleteDecisions,
@@ -648,7 +649,34 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       generationProtocolVersion,
     );
   }
-  const resolvedAskUserQuestion = buildResolvedAskUserQuestion(pendingAction, req.body);
+  let resolvedAskContentIndex;
+  if (pendingAction.payload.type === 'ask_user_question' && !pendingAction.payload.tool_call_id) {
+    const answerSnapshot = await GenerationJobManager.getResumeState(streamId, job.createdAt);
+    if (answerSnapshot == null) {
+      return sendGenerationJson(res, 409, { code: 'RUN_REPLACED' }, generationProtocolVersion);
+    }
+    const askRequest = Array.isArray(pendingAction.payload.questions)
+      ? { questions: pendingAction.payload.questions }
+      : pendingAction.payload.question;
+    resolvedAskContentIndex = findAskUserQuestionContentIndex(
+      answerSnapshot.aggregatedContent,
+      undefined,
+      askRequest,
+    );
+    if (resolvedAskContentIndex < 0) {
+      return sendGenerationJson(
+        res,
+        409,
+        { error: 'Pending question content is unavailable; reconnect and retry' },
+        generationProtocolVersion,
+      );
+    }
+  }
+  const resolvedAskUserQuestion = buildResolvedAskUserQuestion(
+    pendingAction,
+    req.body,
+    resolvedAskContentIndex,
+  );
   const resolvedAskUserQuestions = appendResolvedAskUserQuestion(
     job.metadata?.resolvedAskUserQuestions,
     resolvedAskUserQuestion,

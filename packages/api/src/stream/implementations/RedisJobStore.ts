@@ -4253,7 +4253,9 @@ export class RedisJobStore implements IJobStoreV2 {
         return (
           requestOk &&
           typeof answer.output === 'string' &&
-          (answer.toolCallId == null || typeof answer.toolCallId === 'string')
+          (answer.toolCallId == null || typeof answer.toolCallId === 'string') &&
+          (answer.contentIndex == null ||
+            (Number.isSafeInteger(answer.contentIndex) && answer.contentIndex >= 0))
         );
       });
       if (!valid || parsed.length === 0) {

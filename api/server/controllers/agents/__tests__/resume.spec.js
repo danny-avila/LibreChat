@@ -1378,6 +1378,18 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
     it('resumes an ask_user_question with the free-form answer', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserJob());
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [
+          {
+            type: 'tool_call',
+            tool_call: { id: 'older-ask', name: 'ask_user_question', args: '' },
+          },
+          {
+            type: 'tool_call',
+            tool_call: { id: 'current-ask', name: 'ask_user_question', args: '' },
+          },
+        ],
+      });
       const res = await post({
         conversationId: CONVO_ID,
         actionId: ACTION_ID,
@@ -1402,6 +1414,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
             {
               request: 'What should I name the file?',
               output: 'call it report.pdf',
+              contentIndex: 1,
             },
           ],
         },

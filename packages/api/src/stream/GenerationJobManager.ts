@@ -6324,8 +6324,8 @@ class GenerationJobManagerClass {
       // cross-replica client can rebuild the prompt from resumeState. Client-safe
       // projection: the stored record's resumeContext/requestFingerprint stay server-only.
       pendingAction:
-        jobData.status === 'requires_action' && !isPendingActionStale(jobData)
-          ? toClientPendingAction(jobData.pendingAction)
+        verifiedJob.status === 'requires_action' && !isPendingActionStale(verifiedJob)
+          ? toClientPendingAction(verifiedJob.pendingAction)
           : undefined,
       pendingSteers: pendingSteers.length > 0 ? pendingSteers : undefined,
     } satisfies t.ResumeState;

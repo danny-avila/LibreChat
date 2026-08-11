@@ -360,27 +360,32 @@ describe('RedisJobStore', () => {
     });
   });
 
-  test.each(['null', '42', '"answer"', '{}', '[]', '[null]'])(
-    'drops malformed resolved ask-user metadata: %s',
-    async (resolvedAskUserQuestions) => {
-      const redis = {
-        isCluster: true,
-        hgetall: jest.fn().mockResolvedValue({
-          streamId: 'stream-malformed-answer',
-          userId: 'user-1',
-          status: 'running',
-          createdAt: '100',
-          resolvedAskUserQuestions,
-        }),
-      } as unknown as Cluster;
-      const store = new RedisJobStore(redis);
-
-      await expect(store.getJob('stream-malformed-answer')).resolves.toMatchObject({
+  test.each([
+    'null',
+    '42',
+    '"answer"',
+    '{}',
+    '[]',
+    '[null]',
+    '[{"request":"Question?","output":"answer","contentIndex":-1}]',
+  ])('drops malformed resolved ask-user metadata: %s', async (resolvedAskUserQuestions) => {
+    const redis = {
+      isCluster: true,
+      hgetall: jest.fn().mockResolvedValue({
         streamId: 'stream-malformed-answer',
-        resolvedAskUserQuestions: undefined,
-      });
-    },
-  );
+        userId: 'user-1',
+        status: 'running',
+        createdAt: '100',
+        resolvedAskUserQuestions,
+      }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(store.getJob('stream-malformed-answer')).resolves.toMatchObject({
+      streamId: 'stream-malformed-answer',
+      resolvedAskUserQuestions: undefined,
+    });
+  });
 
   test('atomically resets predecessor state when creating a replacement', async () => {
     const evalJobCreation = jest
