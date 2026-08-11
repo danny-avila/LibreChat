@@ -1034,6 +1034,7 @@
   "com_ui_run_code": "Виконати код",
   "com_ui_run_code_error": "Під час виконання коду сталася помилка",
   "com_ui_save": "Зберегти",
+  "com_ui_save_badge_changes": "Зберегти зміни бейджів?",
   "com_ui_save_submit": "Зберегти та надіслати",
   "com_ui_saved": "Збережено!",
   "com_ui_saving": "Збереження...",

@@ -135,7 +135,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
       <ChatContext.Provider value={chatHelpers}>
         <AddedChatContext.Provider value={addedChatHelpers}>
           <Presentation>
-            <div className="relative flex h-full w-full flex-col">
+            <div data-chat-pane={index} className="relative flex h-full w-full flex-col">
               <h1 className="sr-only">{pageHeading}</h1>
               <Header
                 parentConversationId={parentConversationId}

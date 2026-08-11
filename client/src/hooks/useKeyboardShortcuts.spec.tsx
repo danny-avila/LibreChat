@@ -142,7 +142,11 @@ function appendPaletteForm({ uploadShortcut = true }: { uploadShortcut?: boolean
   return { form, textarea, anchor, onClick };
 }
 
-function appendEscalationButton(surface: 'bubble' | 'queued', active = false) {
+function appendEscalationButton(
+  surface: 'bubble' | 'queued',
+  active = false,
+  parent: HTMLElement = document.body,
+) {
   const onClick = jest.fn();
   const button = document.createElement('button');
   button.dataset.escalateSteer = surface;
@@ -150,7 +154,7 @@ function appendEscalationButton(surface: 'bubble' | 'queued', active = false) {
     button.dataset.escalateSteerActive = 'true';
   }
   button.addEventListener('click', onClick);
-  document.body.appendChild(button);
+  parent.appendChild(button);
   return { button, onClick };
 }
 
@@ -371,6 +375,26 @@ describe('global shortcut dispatch', () => {
     dispatchKey({ key: '.', ctrlKey: true, shiftKey: true });
 
     expect(newest.onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps escalation inside the pane containing keyboard focus', () => {
+    renderHarness();
+    const focusedPane = document.createElement('section');
+    const otherPane = document.createElement('section');
+    focusedPane.dataset.chatPane = '0';
+    otherPane.dataset.chatPane = '1';
+    const textarea = document.createElement('textarea');
+    const focused = appendEscalationButton('bubble', false, focusedPane);
+    const other = appendEscalationButton('bubble', true, otherPane);
+    focusedPane.appendChild(textarea);
+    document.body.append(focusedPane, otherPane);
+    textarea.focus();
+
+    const event = dispatchKey({ key: '.', ctrlKey: true, shiftKey: true }, textarea);
+
+    expect(focused.onClick).toHaveBeenCalledTimes(1);
+    expect(other.onClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it('dispatches the escalation shortcut by physical key on a non-US layout', () => {

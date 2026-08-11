@@ -636,15 +636,15 @@ export function useShortcutActions(): ShortcutAction[] {
    *  button's semantics. A waiting steer bubble beats a queued follow-up (it
    *  is closer to the run); newest-last matches how both stacks append. */
   const handleEscalateSteer = useCallback(() => {
-    const active = document.querySelector<HTMLButtonElement>('[data-escalate-steer-active="true"]');
+    const focusedPane = document.activeElement?.closest<HTMLElement>('[data-chat-pane]');
+    const scope: ParentNode = focusedPane ?? document;
+    const active = scope.querySelector<HTMLButtonElement>('[data-escalate-steer-active="true"]');
     if (clickTarget(active)) {
       return true;
     }
 
     const pick = (surface: string) => {
-      const list = document.querySelectorAll<HTMLButtonElement>(
-        `[data-escalate-steer="${surface}"]`,
-      );
+      const list = scope.querySelectorAll<HTMLButtonElement>(`[data-escalate-steer="${surface}"]`);
       for (let i = list.length - 1; i >= 0; i--) {
         if (!isUnavailableElement(list[i])) {
           return list[i];
