@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: primetric-mcp-server
-          image: billechatacr.azurecr.io/primetric-mcp-server:v2
+          image: billechatacr.azurecr.io/primetric-mcp-server:v3
           ports:
             - containerPort: 3092
           env:
