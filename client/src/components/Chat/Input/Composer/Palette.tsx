@@ -897,42 +897,46 @@ function Palette({
                 )}
               </span>
             </button>
-            {/* Modes stay in the selection cell because their equivalent chips
-                in the composer already provide the keyboard path. */}
-            {modes != null &&
-              modes.map((mode) =>
+          </div>
+          {modes != null && modes.length > 0 && (
+            <div role="gridcell" className="flex shrink-0 items-center gap-1">
+              {modes.map((mode) =>
                 mode.icon != null ? (
-                  <span
+                  <IconButton
                     key={mode.id}
-                    role="presentation"
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    size="xs"
+                    shape="square"
+                    label={mode.label}
+                    onClick={(event) => {
+                      event.stopPropagation();
                       mode.onSelect();
                     }}
-                    className="shrink-0 rounded p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                    className="text-text-secondary hover:text-text-primary"
                   >
-                    {mode.icon}
-                  </span>
+                    <span aria-hidden="true">{mode.icon}</span>
+                  </IconButton>
                 ) : (
-                  <span
+                  <button
                     key={mode.id}
-                    role="presentation"
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    type="button"
+                    aria-pressed={mode.active}
+                    onClick={(event) => {
+                      event.stopPropagation();
                       mode.onSelect();
                     }}
                     className={cn(
-                      'shrink-0 rounded-full border px-2 py-0.5 text-[11px] transition-colors',
+                      'min-h-6 shrink-0 rounded-full border px-2 py-0.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
                       mode.active
                         ? 'border-transparent bg-surface-active-alt text-text-primary'
                         : 'border-border-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary',
                     )}
                   >
                     {mode.label}
-                  </span>
+                  </button>
                 ),
               )}
-          </div>
+            </div>
+          )}
           {isEntry && (
             <div role="gridcell" className="flex shrink-0 items-center pr-1">
               <IconButton
