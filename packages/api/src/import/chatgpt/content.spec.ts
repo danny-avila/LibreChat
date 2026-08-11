@@ -178,4 +178,18 @@ describe('collectAssetPointers', () => {
     );
     expect(pointers).toEqual(['sediment://file_9']);
   });
+
+  it('ignores image and audio parts with missing or empty pointers', () => {
+    const pointers = collectAssetPointers(
+      message({
+        content_type: 'multimodal_text',
+        parts: [
+          { content_type: 'image_asset_pointer' },
+          { content_type: 'audio_asset_pointer', asset_pointer: '' },
+        ],
+      }),
+    );
+
+    expect(pointers).toEqual([]);
+  });
 });

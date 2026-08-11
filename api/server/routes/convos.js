@@ -11,8 +11,10 @@ const {
   GROK_ENDPOINT,
   inspectExport,
   ImportJobStore,
+  ZipBombError,
   deleteAgentCheckpoints,
   sanitizeImportError,
+  extractLegacyArchiveEntry,
   resolveImportMaxFileSize,
   resolveImportMaxConcurrency,
   restoreTenantContextFromReq,
@@ -625,11 +627,11 @@ async function runImportJob(context, job) {
  * @param {object} res
  * @returns {Promise<void>}
  */
-async function importLegacyConversation(req, res) {
+async function importLegacyConversation(req, res, filepath = req.file.path) {
   try {
     /* TODO: optimize to return imported conversations and add manually */
     await importConversations({
-      filepath: req.file.path,
+      filepath,
       requestUserId: req.user.id,
       userRole: req.user.role,
       interfaceConfig: req.config?.interfaceConfig,
@@ -639,6 +641,21 @@ async function importLegacyConversation(req, res) {
     logger.error('Error processing file', error);
     res.status(500).send('Error processing file');
   }
+}
+
+async function importLegacyZip(req, res) {
+  const extracted = await extractLegacyArchiveEntry(req.file.path);
+  if (!extracted) {
+    return false;
+  }
+  try {
+    await importLegacyConversation(req, res, extracted.filepath);
+  } finally {
+    await extracted
+      .cleanup()
+      .catch((error) => logger.warn('[import] Could not remove extracted legacy archive', error));
+  }
+  return true;
 }
 
 /**
@@ -692,8 +709,26 @@ router.post(
       inspected = await inspectExport(req.file.path);
     } catch (error) {
       if (!isZip && error instanceof Error && error.message === 'Unsupported import type') {
-        await importLegacyConversation(req, res);
+        try {
+          await importLegacyConversation(req, res);
+        } finally {
+          await fs.promises.unlink(req.file.path).catch(() => undefined);
+        }
         return;
+      }
+      if (
+        isZip &&
+        error instanceof Error &&
+        (error.message === 'Unsupported import type' || error instanceof ZipBombError)
+      ) {
+        try {
+          if (await importLegacyZip(req, res)) {
+            await fs.promises.unlink(req.file.path).catch(() => undefined);
+            return;
+          }
+        } catch (legacyError) {
+          logger.error('Error processing legacy import archive', legacyError);
+        }
       }
       await fs.promises.unlink(req.file.path).catch(() => undefined);
       res.status(400).json({

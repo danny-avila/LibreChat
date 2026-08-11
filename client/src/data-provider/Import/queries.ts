@@ -10,6 +10,7 @@ const TRANSIENT_RETRIES = 3;
 
 /** The subset of React Query's `Query` that the interval callback reads. */
 type ImportJobQueryState = { state: { status: string; error?: unknown } };
+type ImportJobMountQuery = { state: { data?: TImportJob } };
 
 const TERMINAL_PHASES = new Set<TImportJob['phase']>([
   'awaiting_confirmation',
@@ -57,6 +58,9 @@ export const importJobRefetchInterval = (
   return TERMINAL_PHASES.has(data.phase) ? false : POLL_MS;
 };
 
+export const importJobRefetchOnMount = (query: ImportJobMountQuery): boolean =>
+  query.state.data?.phase === 'awaiting_confirmation';
+
 /**
  * Fetches a single import job and, the moment a fetch reveals the job has
  * stopped running, invalidates the conversation list so the sidebar reflects
@@ -101,14 +105,10 @@ export const useImportJobQuery = (
         !isJobGone(error) && failureCount < TRANSIENT_RETRIES,
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
-      /**
-       * Once mounted, `refetchInterval` alone keeps an active job fresh;
-       * a stale-but-cached job needs no forced refetch on remount. This
-       * also avoids re-running the completion side effect in
-       * `fetchImportJob` every time the panel is closed and reopened
-       * after the job has already finished.
-       */
-      refetchOnMount: false,
+      /** A confirmation can be accepted or cancelled by another mounted
+       * observer. Refresh that idle phase when the panel remounts, while
+       * retaining settled results without repeating completion side effects. */
+      refetchOnMount: importJobRefetchOnMount,
       refetchInterval: importJobRefetchInterval,
     },
   );

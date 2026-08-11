@@ -3,11 +3,9 @@ import path from 'path';
 import zlib from 'zlib';
 import yauzl from 'yauzl';
 import { megabyte } from 'librechat-data-provider';
-
 import type { Readable } from 'stream';
-
+import { resolveImportMaxFileSize, resolveImportMaxShardSize } from '~/utils/import';
 import { ZipBombError } from '~/files/documents/zipSafety';
-import { resolveImportMaxShardSize } from '~/utils/import';
 import { ImportFileTooLargeError } from './errors';
 
 export { ZipBombError };
@@ -436,4 +434,47 @@ export async function openArchive(
     read,
     close: () => zipfile.close(),
   };
+}
+
+export interface LegacyArchiveEntry {
+  filepath: string;
+  cleanup(): Promise<void>;
+}
+
+/** Extracts a sole JSON entry through the archive reader's path and size
+ * checks so the legacy importer can consume a ZIP without handling archives. */
+export async function extractLegacyArchiveEntry(
+  filepath: string,
+): Promise<LegacyArchiveEntry | null> {
+  const maxBytes = resolveImportMaxFileSize();
+  const archive = await openArchive(filepath, {
+    maxEntryBytes: maxBytes,
+    maxTotalBytes: maxBytes,
+  });
+
+  try {
+    if (
+      archive.bare ||
+      archive.entries.length !== 1 ||
+      path.extname(archive.entries[0].name).toLowerCase() !== '.json'
+    ) {
+      return null;
+    }
+
+    const buffer = await archive.read(archive.entries[0].name);
+    const directory = await fs.promises.mkdtemp(path.join(path.dirname(filepath), 'legacy-'));
+    const extracted = path.join(directory, 'legacy.json');
+    try {
+      await fs.promises.writeFile(extracted, buffer, { mode: 0o600 });
+    } catch (error) {
+      await fs.promises.rm(directory, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+    return {
+      filepath: extracted,
+      cleanup: () => fs.promises.rm(directory, { recursive: true, force: true }),
+    };
+  } finally {
+    archive.close();
+  }
 }

@@ -4,7 +4,12 @@ import { QueryKeys, dataService } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TImportJob } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { fetchImportJob, importJobRefetchInterval, useImportJobQuery } from '../queries';
+import {
+  fetchImportJob,
+  importJobRefetchInterval,
+  importJobRefetchOnMount,
+  useImportJobQuery,
+} from '../queries';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -96,6 +101,13 @@ describe('importJobRefetchInterval', () => {
   });
 });
 
+describe('importJobRefetchOnMount', () => {
+  it('refreshes a cached confirmation but retains completed-job caching', () => {
+    expect(importJobRefetchOnMount({ state: { data: job('awaiting_confirmation') } })).toBe(true);
+    expect(importJobRefetchOnMount({ state: { data: job('completed') } })).toBe(false);
+  });
+});
+
 describe('fetchImportJob', () => {
   it('invalidates the conversation list when the job has just completed', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -147,6 +159,36 @@ describe('fetchImportJob', () => {
 });
 
 describe('useImportJobQuery', () => {
+  it('refetches a cached confirmation on remount', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData([QueryKeys.importJob, 'job-1'], job('awaiting_confirmation'));
+    const mockGetImportJob = dataService.getImportJob as jest.MockedFunction<
+      typeof dataService.getImportJob
+    >;
+    mockGetImportJob.mockResolvedValue(job('completed'));
+
+    const { result, unmount } = renderHook(() => useImportJobQuery('job-1'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.data?.phase).toBe('completed'));
+    expect(mockGetImportJob).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it('retains a cached completed job without refetching on remount', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData([QueryKeys.importJob, 'job-1'], job('completed'));
+
+    const { result, unmount } = renderHook(() => useImportJobQuery('job-1'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    expect(result.current.data?.phase).toBe('completed');
+    expect(dataService.getImportJob).not.toHaveBeenCalled();
+    unmount();
+  });
+
   it('surfaces the error without retrying when the job is gone', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retryDelay: 0 } } });
     const mockGetImportJob = dataService.getImportJob as jest.MockedFunction<

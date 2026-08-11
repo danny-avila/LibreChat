@@ -29,6 +29,30 @@ describe('ingestAssets', () => {
     cleanupFixtureExport();
   });
 
+  it('reports invalid runtime pointers without dereferencing them', async () => {
+    const archive: Archive = {
+      entries: [],
+      bare: false,
+      read: async () => Buffer.alloc(0),
+      close: () => undefined,
+    };
+
+    const result = await ingestAssets({
+      archive,
+      layout: resolveLayout(archive.entries, null),
+      userId: 'u1',
+      tenantId: undefined,
+      pointers: [undefined as never, ''],
+      deps: {
+        saveBuffer: async () => ({ filepath: '', source: 'local' }),
+        createFile: async () => null,
+      },
+    });
+
+    expect(result.unavailable).toBe(2);
+    expect(result.errors).toEqual(['Invalid empty asset pointer', 'Invalid empty asset pointer']);
+  });
+
   it('imports referenced assets and reports the missing ones', async () => {
     const filepath = await buildFixtureExport();
     const archive = await openArchive(filepath);

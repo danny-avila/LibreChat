@@ -452,19 +452,19 @@ describe('Import panel', () => {
     expect(status).toHaveFocus();
   });
 
-  it('shows a success toast and never starts a job when the upload finishes synchronously', () => {
+  it('shows the localized success toast and never starts a job for a legacy import', () => {
     render(<Import />);
     expect(screen.getByRole('button', { name: /import data import$/i })).toBeInTheDocument();
 
     act(() => {
-      capturedUploadOptions.onSuccess?.({ message: 'Imported 3 conversations' });
+      capturedUploadOptions.onSuccess?.({ message: 'Conversation(s) imported successfully' });
     });
 
     expect(screen.getByRole('button', { name: /import data import$/i })).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     expect(dataProvider.useImportJobQuery).not.toHaveBeenCalledWith(expect.stringMatching(/.+/));
     expect(showToast).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Imported 3 conversations', severity: 'success' }),
+      expect.objectContaining({ message: 'Import complete', severity: 'success' }),
     );
   });
 

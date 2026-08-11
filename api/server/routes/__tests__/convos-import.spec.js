@@ -5,6 +5,7 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const multer = require('multer');
+const JSZip = require('jszip');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const {
   buildChatGptExportZip,
@@ -212,7 +213,7 @@ function bareChatGptExport() {
   );
 }
 
-function chatbotUiExport() {
+function chatbotUiExport(content = 'Hi') {
   return Buffer.from(
     JSON.stringify({
       version: 1,
@@ -221,13 +222,19 @@ function chatbotUiExport() {
           model: { id: 'gpt-4o-mini' },
           name: 'Chatbot UI convo',
           messages: [
-            { role: 'user', content: 'Hi' },
+            { role: 'user', content },
             { role: 'assistant', content: 'Hello!' },
           ],
         },
       ],
     }),
   );
+}
+
+async function zippedLegacyExport(name = 'exports/chatbotui.json', content) {
+  const zip = new JSZip();
+  zip.file(name, chatbotUiExport(content));
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 }
 
 describe('conversation import job API (real router, real Mongo)', () => {
@@ -659,6 +666,54 @@ describe('conversation import job API (real router, real Mongo)', () => {
     expect(res.body.message).toBe('Conversation(s) imported successfully');
     const savedConvos = await Conversation.countDocuments({ user: userId });
     expect(savedConvos).toBe(1);
+  });
+
+  it('imports a sole ChatbotUI JSON entry from a ZIP through the bounded legacy path', async () => {
+    const res = await request(app)
+      .post('/api/convos/import')
+      .attach('file', await zippedLegacyExport(), 'chatbotui-export.zip')
+      .expect(201);
+
+    expect(res.body.message).toBe('Conversation(s) imported successfully');
+    expect(await Conversation.countDocuments({ user: userId })).toBe(1);
+  });
+
+  it('accepts the ZIP workflow offered for a legacy JSON over the bare-file shard limit', async () => {
+    const previousLimit = process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES;
+    process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES = '512';
+    const content = 'x'.repeat(1024);
+
+    try {
+      const bare = await request(app)
+        .post('/api/convos/import')
+        .attach('file', chatbotUiExport(content), 'chatbotui-export.json')
+        .expect(400);
+      expect(bare.body.message).toMatch(/compress it into a \.zip/i);
+
+      await request(app)
+        .post('/api/convos/import')
+        .attach('file', await zippedLegacyExport('chatbotui.json', content), 'chatbotui-export.zip')
+        .expect(201);
+      expect(await Conversation.countDocuments({ user: userId })).toBe(1);
+    } finally {
+      if (previousLimit === undefined) {
+        delete process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES;
+      } else {
+        process.env.CONVERSATION_IMPORT_MAX_SHARD_SIZE_BYTES = previousLimit;
+      }
+    }
+  });
+
+  it('rejects traversal in a legacy ZIP and cleans up the upload', async () => {
+    const uploadIndex = uploadDirs.length;
+    const res = await request(app)
+      .post('/api/convos/import')
+      .attach('file', await zippedLegacyExport('../chatbotui.json'), 'chatbotui-export.zip')
+      .expect(400);
+
+    expect(res.body.message).toBe('The uploaded archive is corrupt or could not be read');
+    const userDir = path.join(uploadDirs[uploadIndex], 'temp', userId);
+    expect(fs.existsSync(userDir) ? fs.readdirSync(userDir) : []).toEqual([]);
   });
 
   it('returns a sanitized message, not the raw archive error, when a zip fails to open', async () => {

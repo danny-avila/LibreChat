@@ -17,6 +17,7 @@ export { convertGrokConversation } from './grok/convert';
 export { GROK_SOURCE, GROK_ENDPOINT } from './grok/service';
 export { ImportFileTooLargeError, sanitizeImportError } from './errors';
 export { ZipBombError } from './archive';
+export { extractLegacyArchiveEntry } from './archive';
 
 export type { StartTransitionResult } from './job';
 export type { ImportJob, ImportPhase, ImportReport, ImportSummary, ImportProgress } from './types';

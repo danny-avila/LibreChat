@@ -98,7 +98,10 @@ export default function Import() {
         trackJob(data.jobId);
         return;
       }
-      showToast({ message: data.message, severity: NotificationSeverity.SUCCESS });
+      showToast({
+        message: localize('com_ui_import_conversation_success'),
+        severity: NotificationSeverity.SUCCESS,
+      });
     },
     onError: (error: unknown) => {
       const uploadError = getUploadErrorMessage(error);

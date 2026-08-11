@@ -23,10 +23,14 @@ function referenceOf(part: ChatGptPart): AssetReference | null {
     return pointer ? { pointer } : null;
   }
   if (part.content_type === 'image_asset_pointer') {
-    return { pointer: part.asset_pointer, width: part.width, height: part.height };
+    return typeof part.asset_pointer === 'string' && part.asset_pointer.trim().length > 0
+      ? { pointer: part.asset_pointer, width: part.width, height: part.height }
+      : null;
   }
   if (part.content_type === 'audio_asset_pointer') {
-    return { pointer: part.asset_pointer };
+    return typeof part.asset_pointer === 'string' && part.asset_pointer.trim().length > 0
+      ? { pointer: part.asset_pointer }
+      : null;
   }
   return null;
 }

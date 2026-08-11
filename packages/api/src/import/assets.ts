@@ -394,6 +394,14 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
   let processed = 0;
 
   for (const pointer of unique) {
+    if (typeof pointer !== 'string' || pointer.trim().length === 0) {
+      unavailable += 1;
+      processed += 1;
+      recordError(errors, 'Invalid empty asset pointer');
+      await input.onProgress?.(processed);
+      continue;
+    }
+
     if (input.isCancelled) {
       try {
         if (await input.isCancelled()) {
