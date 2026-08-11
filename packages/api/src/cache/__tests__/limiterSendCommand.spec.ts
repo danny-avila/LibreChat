@@ -3,7 +3,7 @@ import { createClusterSafeSendCommand } from '../limiterSendCommand';
 
 describe('createClusterSafeSendCommand', () => {
   it('falls back to EVAL with the cached script when a cluster node returns NOSCRIPT', async () => {
-    const execute = jest.fn<SendCommandFn>();
+    const execute = jest.fn<ReturnType<SendCommandFn>, Parameters<SendCommandFn>>();
     execute
       .mockResolvedValueOnce('script-sha')
       .mockRejectedValueOnce(new Error('NOSCRIPT No matching script. Please use EVAL.'))

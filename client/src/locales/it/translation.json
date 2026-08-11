@@ -1794,7 +1794,6 @@
   "com_ui_running_n_agents": "Lanciando {{0}} agenti",
   "com_ui_sandbox_starting": "Avvio ambiente sandbox in corso",
   "com_ui_save": "Salva",
-  "com_ui_save_badge_changes": "Salvare le modifiche ai badge?",
   "com_ui_save_key_error": "Impossibile salvare la chiave API. Riprova.",
   "com_ui_save_key_success": "Chiave API salvata con successo",
   "com_ui_save_submit": "Salva e Invia",

@@ -1328,7 +1328,6 @@
   "com_ui_run_code_error": "Det oppstod ein feil under køyring av koden.",
   "com_ui_running": "Køyrer ...",
   "com_ui_save": "Lagre",
-  "com_ui_save_badge_changes": "Lagre merkeendringar?",
   "com_ui_save_key_error": "Klarte ikkje å lagre API-nøkkelen. Prøv igjen.",
   "com_ui_save_key_success": "API-nøkkelen er lagra.",
   "com_ui_save_submit": "Lagre og send inn",

@@ -1710,7 +1710,6 @@
   "com_ui_running_n_agents": "Executando {{0}} agentes",
   "com_ui_sandbox_starting": "Iniciando ambiente sandbox",
   "com_ui_save": "Salvar",
-  "com_ui_save_badge_changes": "Salvar alterações dos emblemas?",
   "com_ui_save_key_error": "Falha ao salvar a chave de API. Por favor, tente novamente.",
   "com_ui_save_key_success": "Chave de API salva com sucesso",
   "com_ui_save_submit": "Salvar & Enviar",

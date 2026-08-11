@@ -1682,7 +1682,6 @@
   "com_ui_running_n_agents": "{{0}} 個のエージェントを実行中",
   "com_ui_sandbox_starting": "サンドボックス環境の開始",
   "com_ui_save": "保存",
-  "com_ui_save_badge_changes": "バッジの変更を保存しますか？",
   "com_ui_save_key_error": "APIキーの保存に失敗しました。もう一度お試しください。",
   "com_ui_save_key_success": "APIキーの保存に成功",
   "com_ui_save_submit": "保存 & 送信",

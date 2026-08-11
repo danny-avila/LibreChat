@@ -1532,7 +1532,6 @@
   "com_ui_running_command": "Komut çalıştırılıyor",
   "com_ui_running_n_agents": "{{0}} aracı çalıştırılıyor",
   "com_ui_save": "Kaydet",
-  "com_ui_save_badge_changes": "Rozet değişiklikleri kaydedilsin mi?",
   "com_ui_save_key_error": "API anahtarı kaydedilemedi. Lütfen tekrar deneyin.",
   "com_ui_save_key_success": "API anahtarı başarıyla kaydedildi",
   "com_ui_save_submit": "Kaydet ve Gönder",
