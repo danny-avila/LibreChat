@@ -48,6 +48,7 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
+import { hasDeploymentPluginHooks, registerDeploymentPluginHooks } from '~/plugins/runtime';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
@@ -1644,6 +1645,22 @@ export async function createRun({
     if (steering.preemptHook != null && isSteerPreemptSupported()) {
       hooks.register('PreemptBoundary', { hooks: [steering.preemptHook] });
     }
+  }
+  /**
+   * Deployment-plugin hooks (Agent Plugins `ai.librechat/hooks/hooks.json`)
+   * register last so internal policy hooks (HITL, labels, steering) keep
+   * their ordering. Empty unless the operator installed plugins with hook
+   * documents AND opted in via DEPLOYMENT_PLUGIN_HOOKS at startup — the
+   * registry only carries executable plans when capabilities were supplied
+   * to initializeDeploymentPlugins. The conversation id doubles as the
+   * plugin "session", giving SessionStart its once-per-conversation scope.
+   */
+  if (hasDeploymentPluginHooks()) {
+    hooks = hooks ?? new HookRegistry();
+    registerDeploymentPluginHooks({
+      registry: hooks,
+      context: { sessionId: requestBody?.conversationId },
+    });
   }
 
   const streamLimits = resolveStreamLimits(agentsEndpointConfig);

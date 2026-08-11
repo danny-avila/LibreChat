@@ -29,6 +29,7 @@ const {
   initializeDeploymentSkills,
   initializeDeploymentPlugins,
   getDeploymentPluginSkills,
+  getDeploymentPluginHookCapabilities,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
@@ -155,7 +156,12 @@ const startServer = async () => {
   const appConfig = await getAppConfig({ baseOnly: true });
   initializeFileStorage(appConfig);
   const projectRoot = path.resolve(__dirname, '../..');
-  await initializeDeploymentPlugins({ projectRoot });
+  // Plugin hooks execute only when the operator opts in via DEPLOYMENT_PLUGIN_HOOKS;
+  // without it, declared hook documents load as parsed-but-inert with a warning.
+  await initializeDeploymentPlugins({
+    projectRoot,
+    hookCapabilities: getDeploymentPluginHookCapabilities(),
+  });
   await initializeDeploymentSkills({
     projectRoot,
     additionalSkills: getDeploymentPluginSkills(),
