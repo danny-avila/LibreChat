@@ -1823,8 +1823,6 @@
   "com_ui_running_n_agents": "Running {{0}} agents",
   "com_ui_sandbox_starting": "Starting sandbox environment",
   "com_ui_save": "Save",
-  "com_ui_save_badge_changes": "Save badge changes?",
-  "com_ui_save_changes": "Save Changes",
   "com_ui_save_key_error": "Failed to save API key. Please try again.",
   "com_ui_save_key_success": "API key saved successfully",
   "com_ui_save_submit": "Save & Submit",

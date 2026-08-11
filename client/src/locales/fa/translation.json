@@ -1265,7 +1265,6 @@
   "com_ui_run_code": "کد را اجرا کنید",
   "com_ui_run_code_error": "در اجرای کد خطایی روی داد",
   "com_ui_save": "ذخیره کنید",
-  "com_ui_save_badge_changes": "تغییرات نشان ذخیره شود؟",
   "com_ui_save_key_error": "ذخیره کلید API ناموفق بود. لطفاً دوباره تلاش کنید.",
   "com_ui_save_key_success": "کلید API با موفقیت ذخیره شد",
   "com_ui_save_submit": "ذخیره و ارسال کنید",
