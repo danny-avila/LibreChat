@@ -9,8 +9,9 @@
 # Specific patterns to ignore
 data-node
 meili_data*
-# Anchored to root: unanchored `librechat*` also matched
-# vendor/librechat-agents-*.tgz, which Dockerfile.multi needs for `npm ci`.
+# Anchored to root so this only matches librechat.yaml/librechat.example.yaml
+# and not similarly-named paths elsewhere in the tree (unanchored `librechat*`
+# would match at any depth).
 /librechat*.yaml
 Dockerfile*
 docs
