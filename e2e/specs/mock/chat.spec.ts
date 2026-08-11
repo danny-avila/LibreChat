@@ -60,7 +60,7 @@ const composer = (page: Page) => page.locator('form');
 async function openProviderFileChooser(page: Page) {
   // Uploads live in the composer palette (the old AttachFileMenu is gone).
   await page.getByRole('button', { name: 'Attach and tools' }).click();
-  const uploadOption = page.getByRole('option', { name: 'Upload to Provider', exact: true });
+  const uploadOption = page.getByRole('button', { name: 'Upload to Provider', exact: true });
   await expect(uploadOption).toBeVisible();
 
   const fileChooserPromise = page.waitForEvent('filechooser');
