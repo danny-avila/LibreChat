@@ -439,7 +439,7 @@ describe('ContentParts — activity phase state', () => {
   });
 });
 
-describe('ContentParts — message files', () => {
+describe('ContentParts: message files', () => {
   const pdf = {
     file_id: 'f1',
     filename: 'report.pdf',

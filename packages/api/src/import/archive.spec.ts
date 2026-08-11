@@ -40,7 +40,7 @@ async function writeZipEntries(files: ZipEntryFixture[]): Promise<string> {
 }
 
 /**
- * Builds compressible-but-varied JSON well over 64 KB — large enough that
+ * Builds compressible-but-varied JSON well over 64 KB, large enough that
  * inflating it requires more than a single internal zlib output chunk.
  * This is the exact shape of entry that stalled forever under yauzl
  * 3.2.1's inflating `openReadStream` on Node 24 (see `archive.ts`); a
@@ -147,7 +147,7 @@ describe('openArchive', () => {
   });
 
   /**
-   * A ChatGPT run reads every shard twice — once to scan for assets, once to
+   * A ChatGPT run reads every shard twice: once to scan for assets, once to
    * convert. Charging both passes made a legitimate export over half the cap
    * fail partway through the second one with a zip-bomb error. The cap bounds
    * how much distinct data the archive can yield; a re-read yields nothing new

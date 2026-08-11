@@ -140,7 +140,7 @@ function sourceOfCitation(citation: ClaudeCitation): OrganicSource | null {
  * Collapses citations onto their spans in one pass. Claude emits one citation
  * per source, so several citations can share identical offsets; those become a
  * single group rendered as a composite anchor list. A citation whose offsets are
- * unusable — out of bounds, empty, or landing inside a code region — still
+ * unusable (out of bounds, empty, or landing inside a code region) still
  * registers its source (so it stays listed in the message's sources) but
  * contributes no marker.
  */

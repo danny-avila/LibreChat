@@ -39,7 +39,7 @@ export default function Progress({ job, onCancel, onReset, isCancelling }: Progr
       {/* The live region carries the phase heading and the final outcome, and
           deliberately not the counter. `role="status"` is implicitly
           `aria-atomic`, so everything inside it is re-announced in full on
-          every change — and the counter moves every two seconds for the length
+          every change, and the counter moves every two seconds for the length
           of a multi-minute import, which would flood the polite queue and
           starve every other announcement in the app. The numbers stay
           available on demand through the progress bar's `aria-valuetext`.

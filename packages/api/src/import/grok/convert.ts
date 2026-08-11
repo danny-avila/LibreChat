@@ -18,8 +18,8 @@ export interface GrokConvertOptions {
 }
 
 export interface ConvertedGrokConversation extends ConvertedConversation {
-  /** Responses the export recorded no text for — aborted or `partial`
-   * generations — which are skipped so they render as nothing rather than as an
+  /** Responses the export recorded no text for (aborted or `partial`
+   * generations), which are skipped so they render as nothing rather than as an
    * empty bubble. Their children re-parent onto the nearest emitted ancestor. */
   dropped: number;
 }
@@ -31,7 +31,7 @@ interface PreparedResponse {
 
 /**
  * Reads either timestamp encoding a Grok export uses: an ISO string on the
- * conversation, and MongoDB Extended JSON on every response — canonical
+ * conversation, and MongoDB Extended JSON on every response: canonical
  * (`{ $date: { $numberLong: '<ms>' } }`) in the exports measured so far, with
  * the relaxed `{ $date: '<iso>' }` form accepted for free.
  */

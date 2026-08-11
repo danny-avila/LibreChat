@@ -48,7 +48,7 @@ export type CreateFileFn = (
   disableTTL: boolean,
 ) => Promise<{ file_id: string } | null>;
 
-/** Removes one already-ingested asset — its storage object and its file row.
+/** Removes one already-ingested asset: its storage object and its file row.
  * Optional so a provider with no assets, or a caller that cannot delete, is
  * unaffected. */
 export type DeleteAssetFn = (asset: ImportedAsset) => Promise<void>;
@@ -81,8 +81,8 @@ export interface IngestInput {
    * the full pointer. Covers generated (`sediment://`) images, which never
    * appear in `metadata.attachments`. */
   references?: Map<string, AssetReference>;
-  /** Called with the number of pointers processed so far — imported,
-   * missing from the archive, or failed — so the count always reaches the
+  /** Called with the number of pointers processed so far (imported,
+   * missing from the archive, or failed), so the count always reaches the
    * total the caller derived from the same pointer list. */
   onProgress?: (done: number) => void | Promise<void>;
   isCancelled?: () => Promise<boolean>;
@@ -199,7 +199,7 @@ function normalizeImageExtension(filename: string, mime: string): string {
  *
  * With one exception: an *image* claim is only ever honoured by the bytes.
  * Both the manifest and the filename are attacker-controlled export content,
- * and the resolved type decides which backend the asset lands on — an
+ * and the resolved type decides which backend the asset lands on: an
  * `image/*` type sends it to the `images` base, which on the local strategy
  * is `client/public/images`, served with no auth unless `secureImageLinks`
  * is on. So a crafted `image/png` wrapping SVG or HTML would otherwise be
@@ -229,7 +229,7 @@ function resolveMime(
  * both attacker-controlled export content, and both have been observed to
  * carry the asset's original nested location rather than a bare leaf name
  * (e.g. `<conversation-id>/audio/<file>.wav`). Splitting on both `/` and `\`
- * — a crafted export can use either — and keeping only the final segment
+ * (a crafted export can use either) and keeping only the final segment
  * strips any traversal (`../../etc/passwd` -> `passwd`) before the name ever
  * reaches a filesystem path, and gives the user a readable file name instead
  * of a directory prefix they never saw in ChatGPT.
@@ -259,7 +259,7 @@ function resolveOriginalName(
  * The name map is optional decoration, so any shape other than an object of
  * strings is discarded rather than allowed to fail the assets that reference
  * it. `JSON.parse` succeeds for `null`, an array, and a nested object, and each
- * of those reaches `originalLeafName` and throws on `.split` — losing an
+ * of those reaches `originalLeafName` and throws on `.split`, losing an
  * attachment over a cosmetic file the import does not need.
  */
 function asNameMap(parsed: unknown): Record<string, string> {
@@ -329,7 +329,7 @@ async function ingestOne(
   const type = resolveMime(attachment, originalName, buffer);
   const fileId = uuidv4();
   /** `originalName` is already a leaf (no separators), but it is still
-   * attacker-controlled export content — `sanitizeFilename` is the one
+   * attacker-controlled export content; `sanitizeFilename` is the one
    * vetted place that turns it into a safe storage-path segment (ASCII
    * punctuation allow-list, dotfile guard, NAME_MAX truncation). The
    * `fileId` prefix is a fresh `uuidv4()` per asset, so two entries whose
@@ -357,7 +357,7 @@ async function ingestOne(
     );
   } catch (error) {
     /** The bytes are in storage but no row points at them, and the caller only
-     * learns an asset exists once this function resolves — so nothing else
+     * learns an asset exists once this function resolves, so nothing else
      * could ever find this object to clean up. */
     try {
       await deps.deleteFile?.({ file_id: fileId, filepath, filename: originalName, type });

@@ -2,8 +2,8 @@
  * The import engine's public surface.
  *
  * Named rather than `export *`: `@librechat/api` is a published package, so a
- * barrel re-export freezes every internal helper — archive readers, manifest
- * resolution, the tree repair, the asset ingester — into an API that external
+ * barrel re-export freezes every internal helper (archive readers, manifest
+ * resolution, the tree repair, the asset ingester) into an API that external
  * consumers can depend on and this package then has to keep. Everything below
  * is consumed by `/api`; anything else is deliberately internal.
  */

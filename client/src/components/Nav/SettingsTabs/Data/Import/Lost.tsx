@@ -7,7 +7,7 @@ interface LostProps {
 }
 
 /**
- * Shown when the job status request fails — most often a 404 after the job
+ * Shown when the job status request fails, most often a 404 after the job
  * TTL expired or the cache was evicted. Without it the panel sits on a
  * spinner forever while polling a job that will never appear.
  */

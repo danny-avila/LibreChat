@@ -177,6 +177,71 @@ describe('runImport', () => {
     expect(recorded.conversations).toHaveLength(1);
   });
 
+  /** `existingExternalIds` is typed `Set<string>` but filled from parsed JSON.
+   * Adding a missing `conversation_id` to it once made every later id-less
+   * conversation in the same export test as a duplicate, so an export carrying
+   * two of them imported one and silently dropped the rest. */
+  it('imports every conversation whose conversation_id is missing or not a string', async () => {
+    const filepath = await writeZip({
+      'conversations.json': JSON.stringify([
+        { title: 'First without id', mapping: {} },
+        { title: 'Second without id', mapping: {} },
+        { title: 'First null id', conversation_id: null, mapping: {} },
+        { title: 'Second null id', conversation_id: null, mapping: {} },
+        { title: 'First empty id', conversation_id: '', mapping: {} },
+        { title: 'Second empty id', conversation_id: '', mapping: {} },
+      ]),
+    });
+    const { sink, recorded } = recorder();
+
+    const report = await runImport({
+      filepath,
+      userId: 'u1',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(6);
+    expect(report.skipped).toBe(0);
+    expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
+      'First without id',
+      'Second without id',
+      'First null id',
+      'Second null id',
+      'First empty id',
+      'Second empty id',
+    ]);
+  });
+
+  it('still dedupes conversations that do carry a usable conversation_id', async () => {
+    const filepath = await writeZip({
+      'conversations.json': JSON.stringify([
+        { title: 'First', conversation_id: 'ext-dup', mapping: {} },
+        { title: 'Second', conversation_id: 'ext-dup', mapping: {} },
+        { title: 'Other', conversation_id: 'ext-other', mapping: {} },
+      ]),
+    });
+    const { sink, recorded } = recorder();
+
+    const report = await runImport({
+      filepath,
+      userId: 'u1',
+      defaultModel: 'gpt-4o',
+      deps: DEPS,
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(2);
+    expect(report.skipped).toBe(1);
+    expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
+      'First',
+      'Other',
+    ]);
+  });
+
   /** Re-uploading a finished export used to ingest every asset before the
    * conversation loop reached the skip check, leaving a second copy of every
    * file and storage object behind that nothing referenced. */
@@ -211,7 +276,11 @@ describe('runImport', () => {
    * writes it. Claiming its assets at buffer time meant a flush that rejected
    * left those files behind, referenced by a conversation that was never
    * written and skipped by the cleanup. */
-  it('releases assets whose conversations were buffered but never flushed', async () => {
+  /** A rejected save does not prove nothing was written: a bulk write can
+   * commit and still reject. Releasing the buffered conversations' assets on
+   * that rejection deleted the images of conversations that did commit, so the
+   * pointers are claimed instead and only storage is wasted. */
+  it('keeps the assets of conversations buffered into a save that rejected', async () => {
     const filepath = await buildFixtureExport();
     const deleted: string[] = [];
     const recorded: string[] = [];
@@ -243,8 +312,7 @@ describe('runImport', () => {
     ).rejects.toThrow('mongo unavailable');
 
     expect(recorded.length).toBeGreaterThan(0);
-    /** Every asset the fixture ships, since no conversation was committed. */
-    expect(deleted).toHaveLength(3);
+    expect(deleted).toEqual([]);
   });
 
   it('reports progress as it advances', async () => {
@@ -771,6 +839,33 @@ describe('runImport asset cleanup', () => {
     expect(report.assetsImported).toBeGreaterThan(0);
     expect(recorded.conversations).toEqual([]);
     expect(deleted).toHaveLength(report.assetsImported);
+  });
+
+  /** The incremental flush is ambiguous for the same reason the final save is,
+   * so the conversations buffered up to that point keep their assets. Only the
+   * later conversations the run never reached are genuinely unreferenced: the
+   * fixture's first conversation claims one of its three assets, and the two
+   * belonging to the conversation that was never converted are released. */
+  it('keeps the assets buffered before an incremental flush rejected', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink } = recorder();
+    const { deleted, deps } = recordingDeps();
+    sink.maybeFlush = async () => {
+      throw new Error('write concern timeout');
+    };
+
+    await expect(
+      runImport({
+        filepath,
+        userId: 'u1',
+        defaultModel: 'gpt-4o',
+        deps,
+        batch: sink,
+        existingExternalIds: new Set(),
+      }),
+    ).rejects.toThrow('write concern timeout');
+
+    expect(deleted).toHaveLength(2);
   });
 
   it('is a no-op when the caller supplies no delete function', async () => {

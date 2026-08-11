@@ -49,7 +49,7 @@ export default function Import() {
   /**
    * Seeded from `localStorage` so closing the settings dialog, navigating,
    * or reloading during a multi-minute import rejoins the running job
-   * instead of losing its progress, cancel button, and final report — and
+   * instead of losing its progress, cancel button, and final report; and
    * instead of tempting a second upload, which would duplicate every
    * conversation the first run had not yet committed.
    */
@@ -71,7 +71,7 @@ export default function Import() {
   const isGone = isJobError && isJobGone(jobError);
   /**
    * Only a job the server says no longer exists is lost. A transient failure
-   * on the way there — a 503, a dropped connection — leaves the import
+   * on the way there (a 503, a dropped connection) leaves the import
    * running, so the last status we hold keeps rendering while the query
    * retries; swapping in the "job lost" card there hid a live import behind a
    * dead end. With no status to fall back on there is nothing to show but the

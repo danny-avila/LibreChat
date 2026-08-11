@@ -10,11 +10,20 @@ jest.mock('~/models', () => ({
   deleteMessages: jest.fn().mockResolvedValue({ deletedCount: 0 }),
 }));
 
-const { bulkSaveConvos, bulkSaveMessages, getConvosQueried, deleteMessages } = require('~/models');
+const {
+  bulkSaveConvos,
+  bulkSaveMessages,
+  bulkIncrementTagCounts,
+  getConvosQueried,
+  deleteMessages,
+} = require('~/models');
 
 describe('ImportBatchBuilder flushing', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    bulkSaveMessages.mockResolvedValue(undefined);
+    bulkSaveConvos.mockResolvedValue(undefined);
+    bulkIncrementTagCounts.mockResolvedValue(undefined);
     getConvosQueried.mockResolvedValue({ conversations: [], nextCursor: null, convoMap: {} });
   });
 
@@ -96,71 +105,119 @@ describe('ImportBatchBuilder flushing', () => {
     expect(bulkSaveConvos).not.toHaveBeenCalled();
   });
 
-  /** Messages go in first, so a failed conversation write leaves rows nothing
-   * points at. A retry mints fresh message ids, so they are never reused and
-   * would otherwise pile up on every re-import. */
-  it('removes the messages it wrote when the conversation write fails', async () => {
-    bulkSaveConvos.mockRejectedValueOnce(new Error('conversation write failed'));
+  /** Messages go in first, so a message write that fails before any
+   * conversation write leaves rows nothing points at. A retry mints fresh
+   * message ids, so they are never reused and would otherwise pile up on every
+   * re-import. This is the one window in which the conversation write is known
+   * not to have started, so it is the one window cleanup may run in. */
+  it('removes the messages it wrote when the message write fails', async () => {
+    bulkSaveMessages.mockRejectedValueOnce(new Error('message write failed'));
 
     const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
     builder.startConversation();
     const message = builder.addUserMessage('hello');
     builder.finishConversation('Chat', new Date());
 
-    await expect(builder.saveBatch()).rejects.toThrow('conversation write failed');
+    await expect(builder.saveBatch()).rejects.toThrow('message write failed');
 
+    expect(bulkSaveConvos).not.toHaveBeenCalled();
     expect(deleteMessages).toHaveBeenCalledWith({
       user: 'u1',
       messageId: { $in: [message.messageId] },
     });
   });
 
-  it('keeps messages whose conversation committed before an ambiguous write failure', async () => {
+  /** A bulk write can commit and still reject: a write concern timeout, a
+   * dropped response, a partially applied batch. Deleting the messages on that
+   * rejection turns a committed conversation into a permanently empty one. */
+  it('keeps every message when the conversation write rejects ambiguously', async () => {
     bulkSaveConvos.mockRejectedValueOnce(new Error('conversation write outcome unknown'));
 
     const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
     builder.startConversation();
-    const committedMessage = builder.addUserMessage('committed');
-    const { conversation: committed } = builder.finishConversation('Committed', new Date());
+    builder.addUserMessage('first');
+    builder.finishConversation('First', new Date());
     builder.startConversation();
-    const orphanedMessage = builder.addUserMessage('orphaned');
-    const { conversation: orphaned } = builder.finishConversation('Orphaned', new Date());
-    getConvosQueried.mockResolvedValueOnce({
-      conversations: [committed],
-      nextCursor: null,
-      convoMap: { [committed.conversationId]: committed },
-    });
+    builder.addUserMessage('second');
+    builder.finishConversation('Second', new Date());
 
     await expect(builder.saveBatch()).rejects.toThrow('conversation write outcome unknown');
 
-    expect(getConvosQueried).toHaveBeenCalledWith(
-      'u1',
-      [{ conversationId: committed.conversationId }, { conversationId: orphaned.conversationId }],
-      null,
-      2,
-    );
-    expect(deleteMessages).toHaveBeenCalledWith({
-      user: 'u1',
-      messageId: { $in: [orphanedMessage.messageId] },
-    });
-    expect(deleteMessages.mock.calls[0][0].messageId.$in).not.toContain(committedMessage.messageId);
+    expect(deleteMessages).not.toHaveBeenCalled();
   });
 
-  it('deletes no messages when every conversation committed before the write rejected', async () => {
-    bulkSaveConvos.mockRejectedValueOnce(new Error('write concern timeout'));
+  /** Retention-aware readers apply `getVisibleConversationRetentionFilter`,
+   * which hides the temporary and expired conversations an import creates, so
+   * a committed conversation reads back as absent and its messages look
+   * orphaned. No existence probe may gate the cleanup. */
+  it('never probes for the conversations it wrote', async () => {
+    bulkSaveConvos.mockRejectedValueOnce(new Error('conversation write outcome unknown'));
 
     const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
     builder.startConversation();
     builder.addUserMessage('hello');
-    const { conversation } = builder.finishConversation('Committed', new Date());
-    getConvosQueried.mockResolvedValueOnce({
-      conversations: [conversation],
-      nextCursor: null,
-      convoMap: { [conversation.conversationId]: conversation },
-    });
+    builder.finishConversation('Temporary', new Date());
 
-    await expect(builder.saveBatch()).rejects.toThrow('write concern timeout');
+    await expect(builder.saveBatch()).rejects.toThrow('conversation write outcome unknown');
 
+    expect(getConvosQueried).not.toHaveBeenCalled();
     expect(deleteMessages).not.toHaveBeenCalled();
+  });
+
+  /** Tag maintenance only runs once the commit markers exist, so its failure
+   * proves the conversations were written. */
+  it('keeps every message when tag maintenance fails after the conversations committed', async () => {
+    bulkIncrementTagCounts.mockRejectedValueOnce(new Error('tag write failed'));
+
+    const builder = new ImportBatchBuilder('u1', undefined, { flushThreshold: 5 });
+    builder.startConversation();
+    builder.addUserMessage('hello');
+    builder.finishConversation('Chat', new Date());
+
+    await expect(builder.saveBatch()).rejects.toThrow('tag write failed');
+
+    expect(bulkSaveConvos).toHaveBeenCalledTimes(1);
+    expect(deleteMessages).not.toHaveBeenCalled();
+  });
+});
+
+describe('ImportBatchBuilder importedFrom marker', () => {
+  const finish = (externalId) => {
+    const builder = new ImportBatchBuilder('u1');
+    builder.startConversation();
+    builder.addUserMessage('hello');
+    const { conversation } = builder.finishConversation('Chat', new Date(), {
+      importedFrom: { source: 'chatgpt', externalId },
+    });
+    return conversation;
+  };
+
+  it('keeps the marker when the export carries a usable id', () => {
+    expect(finish('abc-123').importedFrom).toEqual({ source: 'chatgpt', externalId: 'abc-123' });
+  });
+
+  /** `convoSchema` declares `importedFrom.externalId` required, and every
+   * import write goes through `bulkSaveConvos`, whose `updateOne` upserts run
+   * no validators. A marker built from an id-less export therefore reached the
+   * database as an invalid subdocument instead of being rejected. */
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['empty', ''],
+    ['not a string', 42],
+  ])('drops the marker when the id is %s', (_label, externalId) => {
+    const conversation = finish(externalId);
+
+    expect(conversation.importedFrom).toBeUndefined();
+    expect('importedFrom' in conversation).toBe(false);
+  });
+
+  it('leaves a conversation with no marker alone', () => {
+    const builder = new ImportBatchBuilder('u1');
+    builder.startConversation();
+    builder.addUserMessage('hello');
+    const { conversation } = builder.finishConversation('Chat', new Date());
+
+    expect('importedFrom' in conversation).toBe(false);
   });
 });

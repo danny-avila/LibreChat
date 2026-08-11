@@ -104,7 +104,7 @@ export function convertContent(
   }
 
   /**
-   * `tether_browsing_display` and `tether_quote` carry no `parts` at all — the
+   * `tether_browsing_display` and `tether_quote` carry no `parts` at all: the
    * payload sits in `result`, `text`, or `content`. `isEmitted` still saves
    * these messages, so returning empty here rendered them as blank bubbles and
    * lost every browsed page and quotation in the export.

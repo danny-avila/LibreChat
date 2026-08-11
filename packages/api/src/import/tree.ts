@@ -28,8 +28,8 @@ const SAFE = 2;
  * loop. Real exports occasionally reference an ancestor as its own descendant;
  * `buildTree` requires an acyclic graph so this must run before rendering.
  *
- * Colouring each node once makes this linear. The obvious form — a fresh `Set`
- * per message, re-walking the whole ancestor chain — is quadratic and measured
+ * Colouring each node once makes this linear. The obvious form (a fresh `Set`
+ * per message, re-walking the whole ancestor chain) is quadratic and measured
  * at 1.06 s for a single 5,000-message conversation and 5.1 s at 10,000, which
  * a long real thread reaches. A walk that arrives at a node already proven
  * `SAFE` stops there instead of re-deriving the rest of the chain.
@@ -90,7 +90,7 @@ export function enforceOrdering<T extends TreeNode>(messages: T[], byId: Map<str
 
   /** Walked with a moving index rather than `shift()`: shifting re-indexes the
    * whole remaining array on every step, which turns this single BFS quadratic
-   * on a wide or flat tree — and conversion runs synchronously on the event
+   * on a wide or flat tree, and conversion runs synchronously on the event
    * loop, so that stalls unrelated requests. */
   const queue = [...(children.get(Constants.NO_PARENT) ?? [])];
   for (let index = 0; index < queue.length; index++) {

@@ -113,7 +113,7 @@ describe('convertContent', () => {
     expect(JSON.stringify(result)).not.toContain('asset_pointer');
   });
 
-  /** `tether_browsing_display` and `tether_quote` carry no `parts` — the
+  /** `tether_browsing_display` and `tether_quote` carry no `parts`: the
    * payload sits in `result`, `text`, or `content`. `isEmitted` saves these
    * messages regardless, so an empty return rendered them as blank bubbles. */
   it.each([

@@ -316,7 +316,7 @@ describe('conversation import job API (real router, real Mongo)', () => {
   });
 
   /** `client/public/images` is served statically, and authentication over it
-   * is off unless `secureImageLinks` is enabled — so an imported PDF or audio
+   * is off unless `secureImageLinks` is enabled, so an imported PDF or audio
    * file written to the strategy's default base would be anonymously
    * retrievable by URL. Only images, which already render from that tree,
    * belong there. */

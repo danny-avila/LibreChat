@@ -58,7 +58,7 @@ function errorCode(error: Error): string | undefined {
  * server's absolute upload path in `.message`, and a raw `ZipBombError`
  * or archive-parsing error can embed attacker-controlled entry names;
  * none of that detail is ever forwarded. The original error is logged
- * here, server-side, and only here — callers should not also log it.
+ * here, server-side, and only here; callers should not also log it.
  */
 export function sanitizeImportError(error: unknown, context: string): string {
   const normalized = error instanceof Error ? error : new Error(String(error));
@@ -85,7 +85,7 @@ export function sanitizeImportError(error: unknown, context: string): string {
 
 /** How many per-item failures a report keeps. A systematically broken export
  * produces one entry per conversation and per asset, and the whole array is
- * serialized into the job's cache record and returned in full on every poll —
+ * serialized into the job's cache record and returned in full on every poll,
  * so an uncapped list is hundreds of KB of Redis value and response body for
  * an import that told the user nothing more than the first hundred would. */
 export const MAX_REPORT_ERRORS = 100;

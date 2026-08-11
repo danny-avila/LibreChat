@@ -471,7 +471,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
      * `user` narrows the id filter rather than replacing it.
      *
      * Replacing it made `deleteFiles([oneId], user)` delete every file that
-     * user owns, which reads exactly like the opposite of what it does — a
+     * user owns, which reads exactly like the opposite of what it does: a
      * caller removing one file would silently wipe the account's attachments.
      * Passing no ids (or an empty array) with a user still means "everything
      * this user owns", which is how account deletion calls it.

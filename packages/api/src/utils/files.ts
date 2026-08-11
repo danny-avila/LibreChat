@@ -98,7 +98,7 @@ export function resolveUploadErrorMessage(
  * @param maxBytes - Byte budget for the returned name. Callers that prepend
  * their own prefix (an upload id, say) must reduce this by the prefix's length,
  * or the combined path component exceeds `NAME_MAX` and the write fails with
- * `ENAMETOOLONG` — precisely the failure this function exists to prevent.
+ * `ENAMETOOLONG`, precisely the failure this function exists to prevent.
  */
 export function sanitizeFilename(
   inputName: string,

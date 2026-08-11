@@ -755,7 +755,7 @@ export type TImportCompleted = {
  * Response from the import endpoint. The upload is inspected by content,
  * not extension, so the same route can either start a background job
  * (ChatGPT, Claude, and Grok exports) or complete synchronously (every other
- * supported format) — narrow with `isImportJobStarted` rather than assuming
+ * supported format). Narrow with `isImportJobStarted` rather than assuming
  * shape.
  */
 export type TImportResponse = TImportJobStarted | TImportCompleted;

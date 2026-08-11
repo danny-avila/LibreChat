@@ -5,6 +5,7 @@ import type { ConvertedGrokConversation } from './convert';
 import type { Archive } from '~/import/archive';
 import { recordError, sanitizeImportError } from '~/import/errors';
 import { convertGrokConversation } from './convert';
+import { isUsableExternalId } from '~/import/sink';
 import { isGrokExport } from '~/import/manifest';
 
 export const GROK_SOURCE = 'grok';
@@ -14,8 +15,8 @@ export const GROK_SOURCE = 'grok';
  * endpoint whose name each deployment chooses in `librechat.yaml`, so a
  * conversation stamped with it would fail endpoint and model validation
  * anywhere xAI is not configured. Imported Grok conversations therefore carry
- * the deployment-universal OpenAI endpoint — the same choice the ChatGPT and
- * ChatbotUI paths make — while each message keeps its raw Grok model slug.
+ * the deployment-universal OpenAI endpoint (the same choice the ChatGPT and
+ * ChatbotUI paths make) while each message keeps its raw Grok model slug.
  */
 export const GROK_ENDPOINT: EModelEndpoint = EModelEndpoint.openAI;
 
@@ -126,8 +127,15 @@ export async function runGrokImport(context: ProviderImportContext): Promise<voi
 
       let externalId = '';
       try {
-        externalId = entry.conversation.id;
-        if (input.existingExternalIds.has(externalId)) {
+        const rawId = entry.conversation.id;
+        /** Only a real id may key the skip set: adding `undefined` once makes
+         * every later id-less conversation in the same export test as a
+         * duplicate and get silently dropped. They are imported instead, just
+         * not deduped. */
+        const dedupable = isUsableExternalId(rawId);
+        externalId = dedupable ? rawId : '';
+
+        if (dedupable && input.existingExternalIds.has(rawId)) {
           report.skipped += 1;
         } else {
           const converted = writeGrokConversation(entry, input);
@@ -135,7 +143,9 @@ export async function runGrokImport(context: ProviderImportContext): Promise<voi
           report.imported += 1;
           /** The skip set is a snapshot taken at job start, so an id repeated
            * within one export would otherwise import twice. */
-          input.existingExternalIds.add(externalId);
+          if (dedupable) {
+            input.existingExternalIds.add(rawId);
+          }
         }
       } catch (error) {
         const label = externalId || 'conversation';

@@ -18,13 +18,13 @@ const DEFAULT_MAX_TOTAL_BYTES = 4096 * megabyte;
  * Hard ceiling on the per-entry cap, whatever a deployment configures. V8 caps
  * a string at 536,870,888 characters (`buffer.constants.MAX_STRING_LENGTH`),
  * just under 512 MiB, so a larger entry can never survive the
- * `.toString('utf8')` every reader performs — allowing one would trade a clear
+ * `.toString('utf8')` every reader performs; allowing one would trade a clear
  * rejection for an opaque V8 allocation failure.
  */
 const ABSOLUTE_MAX_ENTRY_BYTES = 512 * megabyte;
 /** Local file header signature every ZIP file begins with. Its absence
  * means the upload is a bare file (e.g. a legacy un-zipped ChatGPT
- * `.json` export), not that it is malformed — `openArchive` wraps it in a
+ * `.json` export), not that it is malformed; `openArchive` wraps it in a
  * single-entry `Archive` instead of attempting to parse it as a zip. */
 const ZIP_SIGNATURE = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 
@@ -41,6 +41,11 @@ export interface ArchiveOptions {
 
 export interface Archive {
   entries: ArchiveEntry[];
+  /** True when the upload was not a zip at all and has been wrapped in a
+   * synthetic single-entry archive. Layout resolution needs the distinction:
+   * a bare upload's sole entry is the export by definition, where a zip's sole
+   * entry is only a shard if it looks like one. */
+  bare: boolean;
   read(name: string): Promise<Buffer>;
   close(): void;
 }
@@ -52,8 +57,8 @@ type ArchiveLimits = Required<ArchiveOptions>;
  * one archive instance so the aggregate cap is enforced against real bytes
  * rather than the (spoofable) central directory total.
  *
- * Counted once per distinct entry. A ChatGPT run reads every shard twice —
- * once to scan for assets, once to convert — and charging both passes made a
+ * Counted once per distinct entry. A ChatGPT run reads every shard twice,
+ * once to scan for assets, once to convert, and charging both passes made a
  * legitimate export over half the cap fail partway through the second one with
  * a zip-bomb error. What the cap bounds is how much distinct data the archive
  * can yield; re-reading an entry yields nothing new, and each read is still
@@ -155,7 +160,7 @@ function indexEntries(
       }
 
       /** Cheap early reject from the central directory's declared sizes.
-       * This field is attacker-controlled and not trusted on its own —
+       * This field is attacker-controlled and not trusted on its own:
        * `ArchiveTotals` re-checks the real, streamed byte count on every
        * `read()` call regardless of what this loop found. */
       total += entry.uncompressedSize;
@@ -179,7 +184,7 @@ function indexEntries(
  * bytes instead of routing them through yauzl's own inflate pipe. See the
  * module-level note above `inflateEntry` for why that pipe must never be
  * used. yauzl rejects `decompress` outright for a STORED entry (its bytes
- * are never inflated to begin with, so the option is meaningless) —
+ * are never inflated to begin with, so the option is meaningless);
  * `openReadStream(entry, callback)` already returns those raw.
  */
 function openEntryStream(zipfile: yauzl.ZipFile, entry: yauzl.Entry): Promise<Readable> {
@@ -207,7 +212,7 @@ function openEntryStream(zipfile: yauzl.ZipFile, entry: yauzl.Entry): Promise<Re
 /**
  * Drains a raw (non-inflated) entry stream into a single buffer. The cap
  * checked here is the compressed byte count, not the eventual decompressed
- * size — for a STORED entry (`compressionMethod === 0`) the two are
+ * size: for a STORED entry (`compressionMethod === 0`) the two are
  * identical, and for a DEFLATE entry the compressed stream can only be
  * marginally larger than the uncompressed content (deflate's stored-block
  * fallback adds a few bytes per 64 KB block at worst), so this still
@@ -240,7 +245,7 @@ function readRawEntry(readStream: Readable, name: string, limits: ArchiveLimits)
  *
  * On Node 24.16.0 with yauzl 3.2.1, `openReadStream(entry, cb)` (the
  * default, inflating path) stalls for any entry whose decompressed output
- * needs more than one internal zlib chunk (roughly 64 KB) — the stream
+ * needs more than one internal zlib chunk (roughly 64 KB): the stream
  * emits no `data`, `end`, or `error`, so a caller awaiting the read hangs
  * forever. Confirmed against a 778 MB real ChatGPT export: a 2-byte entry
  * completed instantly, a 453 KB entry never returned in any
@@ -367,6 +372,7 @@ async function openSingleFileArchive(
 
   return {
     entries: [{ name, bytes: stat.size }],
+    bare: true,
     read,
     close: () => undefined,
   };
@@ -426,6 +432,7 @@ export async function openArchive(
       name: entry.fileName,
       bytes: entry.uncompressedSize,
     })),
+    bare: false,
     read,
     close: () => zipfile.close(),
   };

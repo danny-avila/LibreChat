@@ -110,7 +110,7 @@ async function importChatBotUiConvo(
  * Imports Claude conversations from provided JSON data.
  * Delegates conversion of each conversation to `convertClaudeConversation`, the
  * same engine `runImport` uses for zipped Claude exports, so a bare
- * `conversations.json` upload and a zip archive produce identical messages —
+ * `conversations.json` upload and a zip archive produce identical messages:
  * branching, tool calls, reasoning, attachment extractions and citations
  * included. A Claude export ships no binaries in either shape, so nothing is
  * lost by this path not resolving assets.

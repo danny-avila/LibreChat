@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import type { ExportFormat, GrokExport } from './types';
+import type { ClaudeConversation, ExportFormat, GrokExport } from './types';
 import type { ArchiveEntry } from './archive';
 
 export const MANIFEST_ENTRY = 'export_manifest.json';
@@ -94,7 +94,11 @@ function grokShards(entries: ArchiveEntry[]): string[] {
   return shards;
 }
 
-function shardsFromFilenames(entries: ArchiveEntry[], present: Set<string>): string[] {
+function shardsFromFilenames(
+  entries: ArchiveEntry[],
+  present: Set<string>,
+  bare: boolean,
+): string[] {
   if (present.has(CONVERSATIONS_LOGICAL)) {
     return [CONVERSATIONS_LOGICAL];
   }
@@ -124,9 +128,14 @@ function shardsFromFilenames(entries: ArchiveEntry[], present: Set<string>): str
   }
 
   /** Multer accepts a bare export by its JSON MIME type even when the client
-   * filename has no `.json` suffix. A single-file archive has no other
-   * metadata available here, so its sole non-manifest entry is the shard and
-   * content validation decides whether it is a supported provider export. */
+   * filename has no `.json` suffix, so an extensionless upload still has to
+   * reach content validation. Restricted to a genuinely bare upload: extending
+   * it to zips made the sole entry of any archive a shard, so a zip holding
+   * only `readme.txt` was parsed as JSON and reported as a corrupt archive
+   * rather than an unsupported import type. */
+  if (!bare) {
+    return [];
+  }
   const bareEntries = entries.filter((entry) => entry.name !== MANIFEST_ENTRY);
   return bareEntries.length === 1 ? [bareEntries[0].name] : [];
 }
@@ -148,19 +157,27 @@ export function hasChatGptConversationShape(conversations: unknown[]): boolean {
 }
 
 /**
+ * Both fields the rest of the Claude path depends on, checked for their real
+ * types rather than mere presence. `uuid` is the external id the skip set is
+ * keyed by and the `importedFrom` marker a re-import dedupes against, so a
+ * missing or non-string one silently imports duplicates on every run; a
+ * `chat_messages` that is not an array is iterated as one during conversion.
+ * Presence alone let both through.
+ */
+export function isClaudeConversation(value: unknown): value is ClaudeConversation {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const { uuid, chat_messages: chatMessages } = value as Partial<ClaudeConversation>;
+  return typeof uuid === 'string' && uuid.length > 0 && Array.isArray(chatMessages);
+}
+
+/**
  * Counterpart to `hasChatGptConversationShape` for Claude exports, whose
  * conversations carry a flat `chat_messages` array instead of a `mapping` tree.
  */
 export function hasClaudeConversationShape(conversations: unknown[]): boolean {
-  return (
-    conversations.length > 0 &&
-    conversations.every(
-      (conversation) =>
-        typeof conversation === 'object' &&
-        conversation !== null &&
-        'chat_messages' in conversation,
-    )
-  );
+  return conversations.length > 0 && conversations.every(isClaudeConversation);
 }
 
 /**
@@ -211,9 +228,15 @@ export function detectExportFormat(parsed: unknown): ExportFormat | null {
   return null;
 }
 
+/**
+ * @param bare - Whether the upload was a single non-zip file rather than an
+ *   archive. Defaults to the strict reading, so only a caller that knows it
+ *   holds a bare upload opts into the extensionless fallback.
+ */
 export function resolveLayout(
   entries: ArchiveEntry[],
   manifest: ExportManifest | null,
+  bare = false,
 ): ExportLayout {
   const present = new Set(entries.map((entry) => entry.name));
 
@@ -223,7 +246,7 @@ export function resolveLayout(
   const useManifest = fromManifest.found.length > 0;
   const conversationShards = useManifest
     ? fromManifest.found
-    : shardsFromFilenames(entries, present);
+    : shardsFromFilenames(entries, present, bare);
 
   return {
     version: manifest?.version ?? null,

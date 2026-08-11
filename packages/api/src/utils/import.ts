@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 
-/** 1 GiB — default max file size for conversation imports */
+/** 1 GiB: default max file size for conversation imports */
 export const DEFAULT_IMPORT_MAX_FILE_SIZE = 1073741824;
 
 /** Resolves the import file-size limit from the env var, falling back to the 1 GiB default */
@@ -46,14 +46,14 @@ export function resolveImportMaxConcurrency(): number {
   return parsed;
 }
 
-/** 256 MiB — default cap on a single decompressed archive entry. */
+/** 256 MiB: default cap on a single decompressed archive entry. */
 export const DEFAULT_IMPORT_MAX_SHARD_SIZE = 268435456;
 
 /**
  * Resolves the per-entry decompression cap.
  *
  * A shard is buffered, decoded to a string, and `JSON.parse`d, which peaks at
- * roughly 3.2x its size in heap — so this bounds what one import can cost the
+ * roughly 3.2x its size in heap, so this bounds what one import can cost the
  * process, and a small crafted archive can reach that ceiling as easily as a
  * real export. 256 MiB is far above any shard a real export ships (ChatGPT
  * shards deliberately, and a monolithic Claude or Grok file is orders of

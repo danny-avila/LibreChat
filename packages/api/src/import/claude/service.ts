@@ -91,7 +91,7 @@ export function writeConversation(
  * file and image a conversation references is counted as unavailable instead.
  * Without assets to resolve up front there is also nothing to pre-scan, so each
  * shard is read exactly once and its conversation count folded into the progress
- * total as it is converted — a single 86 MB `conversations.json` is never parsed
+ * total as it is converted: a single 86 MB `conversations.json` is never parsed
  * twice just to learn its length.
  */
 export async function runClaudeImport(context: ProviderImportContext): Promise<void> {

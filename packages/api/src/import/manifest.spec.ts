@@ -1,5 +1,12 @@
 import type { ArchiveEntry } from './archive';
-import { isGrokExport, parseManifest, resolveLayout, detectExportFormat } from './manifest';
+import {
+  isGrokExport,
+  parseManifest,
+  resolveLayout,
+  detectExportFormat,
+  isClaudeConversation,
+  hasClaudeConversationShape,
+} from './manifest';
 
 function entries(...names: string[]): ArchiveEntry[] {
   return names.map((name) => ({ name, bytes: 10 }));
@@ -116,8 +123,27 @@ describe('resolveLayout', () => {
   });
 
   it('falls back to a lone bare upload whose accepted MIME type supplied no json suffix', () => {
-    const layout = resolveLayout(entries('my-export'), null);
+    const layout = resolveLayout(entries('my-export'), null, true);
     expect(layout.conversationShards).toEqual(['my-export']);
+  });
+
+  /** The extensionless fallback exists for a bare MIME-only upload. Letting it
+   * claim the sole entry of a zip too made any single-file archive a shard, so
+   * a zip holding one `readme.txt` was parsed as JSON and surfaced as a corrupt
+   * archive instead of an unsupported import type. */
+  it('does not treat the sole extensionless entry of a zip as a shard', () => {
+    const layout = resolveLayout(entries('readme.txt'), null);
+    expect(layout.conversationShards).toEqual([]);
+  });
+
+  it('does not treat a lone non-json zip entry as a shard even with an asset sibling', () => {
+    const layout = resolveLayout(entries('readme.txt', 'file-abc.dat'), null);
+    expect(layout.conversationShards).toEqual([]);
+  });
+
+  it('still resolves a lone json zip entry without the bare fallback', () => {
+    const layout = resolveLayout(entries('my-export.json'), null);
+    expect(layout.conversationShards).toEqual(['my-export.json']);
   });
 
   it('ignores manifest shards that are absent from the archive', () => {
@@ -262,6 +288,66 @@ describe('detectExportFormat', () => {
 
   it('rejects a Claude array containing a malformed later entry', () => {
     expect(detectExportFormat([{ uuid: 'c1', chat_messages: [] }, null])).toBeNull();
+  });
+
+  /** `uuid` keys the skip set and the `importedFrom` marker a re-import
+   * dedupes against, and `chat_messages` is iterated as an array during
+   * conversion. Presence alone let a missing, empty or wrongly typed value
+   * through onto the Claude path. */
+  it('rejects a Claude array whose uuid is missing, empty or not a string', () => {
+    expect(detectExportFormat([{ chat_messages: [] }])).toBeNull();
+    expect(detectExportFormat([{ uuid: '', chat_messages: [] }])).toBeNull();
+    expect(detectExportFormat([{ uuid: 42, chat_messages: [] }])).toBeNull();
+    expect(detectExportFormat([{ uuid: null, chat_messages: [] }])).toBeNull();
+  });
+
+  it('rejects a Claude array whose chat_messages is not an array', () => {
+    expect(detectExportFormat([{ uuid: 'c1', chat_messages: null }])).toBeNull();
+    expect(detectExportFormat([{ uuid: 'c1', chat_messages: 'nope' }])).toBeNull();
+    expect(detectExportFormat([{ uuid: 'c1', chat_messages: {} }])).toBeNull();
+    expect(detectExportFormat([{ uuid: 'c1' }])).toBeNull();
+  });
+
+  it('rejects a Claude array whose malformed entry follows valid ones', () => {
+    expect(
+      detectExportFormat([
+        { uuid: 'c1', chat_messages: [] },
+        { uuid: 'c2', chat_messages: null },
+      ]),
+    ).toBeNull();
+  });
+});
+
+describe('isClaudeConversation', () => {
+  it('accepts a conversation carrying both required fields', () => {
+    expect(isClaudeConversation({ uuid: 'c1', chat_messages: [] })).toBe(true);
+    expect(isClaudeConversation({ uuid: 'c1', chat_messages: [{ text: 'hi' }] })).toBe(true);
+  });
+
+  it('rejects anything that is not an object', () => {
+    expect(isClaudeConversation(null)).toBe(false);
+    expect(isClaudeConversation(undefined)).toBe(false);
+    expect(isClaudeConversation('c1')).toBe(false);
+  });
+
+  it('rejects a malformed uuid or chat_messages', () => {
+    expect(isClaudeConversation({ uuid: '', chat_messages: [] })).toBe(false);
+    expect(isClaudeConversation({ uuid: 42, chat_messages: [] })).toBe(false);
+    expect(isClaudeConversation({ uuid: 'c1', chat_messages: null })).toBe(false);
+    expect(isClaudeConversation({ uuid: 'c1' })).toBe(false);
+  });
+});
+
+describe('hasClaudeConversationShape', () => {
+  it('requires a nonempty array of well-formed conversations', () => {
+    expect(hasClaudeConversationShape([{ uuid: 'c1', chat_messages: [] }])).toBe(true);
+    expect(hasClaudeConversationShape([])).toBe(false);
+    expect(
+      hasClaudeConversationShape([
+        { uuid: 'c1', chat_messages: [] },
+        { uuid: 'c2', chat_messages: undefined },
+      ]),
+    ).toBe(false);
   });
 });
 

@@ -252,7 +252,7 @@ export type GrokTimestamp =
   | null;
 
 /** One turn of a Grok conversation. `message` is plain text in every response
- * of a real export — Grok ships no content blocks — while the reasoning,
+ * of a real export (Grok ships no content blocks), while the reasoning,
  * search and attachment fields it can carry alongside are out of scope. */
 export interface GrokResponse {
   _id: string;
@@ -354,7 +354,7 @@ export type ExportFormat = 'chatgpt' | 'claude' | 'grok';
 /**
  * The job vocabulary is declared once, in `librechat-data-provider`, and
  * aliased here. It is the contract between this package and the client, and
- * the route that serves it (`GET /import/jobs/:jobId`) is untyped JS — so two
+ * the route that serves it (`GET /import/jobs/:jobId`) is untyped JS, so two
  * hand-maintained copies could drift silently, and the first symptom would be
  * a client that polls a phase it does not recognise forever.
  */

@@ -124,7 +124,7 @@ export function convertClaudeConversation(
 
     /** An export that carries no `parent_message_uuid` at all (the field is
      * absent rather than null) has no tree to rebuild, so its messages chain in
-     * array order — the shape the pre-branching importer always produced. An
+     * array order, the shape the pre-branching importer always produced. An
      * explicit `null` is a real root and is left alone. */
     const parentMessageId =
       message.parent_message_uuid === undefined

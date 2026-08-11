@@ -24,6 +24,7 @@ import { collectAssetReferences } from './chatgpt/content';
 import { convertConversation } from './chatgpt/convert';
 import { runClaudeImport } from './claude/service';
 import { runGrokImport } from './grok/service';
+import { isUsableExternalId } from './sink';
 import { openArchive } from './archive';
 import { ingestAssets } from './assets';
 
@@ -40,7 +41,7 @@ interface ExportScan {
    * does not go on to ingest assets for a partial pointer list. */
   cancelled?: boolean;
   /** The format the first shard that parsed turned out to be. A Claude or Grok
-   * export aborts the scan immediately — neither has assets a conversation can
+   * export aborts the scan immediately; neither has assets a conversation can
    * resolve, so nothing this pass collects applies to them. */
   format: ExportFormat;
 }
@@ -49,7 +50,7 @@ class ShardShapeError extends Error {}
 
 /** Minimum gap between cancellation reads inside the conversation loop. The
  * job store can be Redis, so an unthrottled check is a network round trip per
- * conversation — tens of thousands of them on a large export, for a signal a
+ * conversation, tens of thousands of them on a large export, for a signal a
  * user produces at most once. The first check is never delayed, and a second
  * of extra work after a cancel is under the client's own poll interval. */
 const CANCEL_CHECK_INTERVAL_MS = 1000;
@@ -185,7 +186,10 @@ async function scanExport(
       scan.shards.push(shard);
       scan.conversations += conversations.length;
       for (const conv of conversations) {
-        if (existingExternalIds.has(conv.conversation_id)) {
+        if (
+          isUsableExternalId(conv.conversation_id) &&
+          existingExternalIds.has(conv.conversation_id)
+        ) {
           continue;
         }
         scanConversation(conv, scan, seen);
@@ -247,9 +251,10 @@ function importConversation(
   );
 
   /** Held pending, not claimed. The conversation is only buffered at this
-   * point; a flush that rejects loses it, and an asset claimed here would then
-   * survive the cleanup with nothing referencing it. `commitPending` promotes
-   * these once a flush actually lands. */
+   * point, so an asset claimed here would survive the cleanup with nothing
+   * referencing it if the run ends before the buffer is written.
+   * `commitPending` promotes these once a flush lands, and
+   * `claimPendingOnFailure` promotes them when one rejects ambiguously. */
   for (const message of converted.messages) {
     for (const pointer of message.assetPointers) {
       pendingPointers.add(pointer);
@@ -263,7 +268,7 @@ function importConversation(
  * Deletes assets no committed conversation ended up referencing.
  *
  * The asset phase runs to completion before the first conversation is written,
- * so cancelling during it — or failing anywhere after it — otherwise leaves
+ * so cancelling during it, or failing anywhere after it, otherwise leaves
  * every ingested file permanently orphaned: the rows are created with the TTL
  * disabled, and nothing else knows they exist. `expiresAt` is not an
  * alternative here; it is a MongoDB TTL index that drops the row and leaves
@@ -295,12 +300,12 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
   const archive = await openArchive(input.filepath);
   /** Assets ingested this run, and the pointers a committed conversation
    * claimed. Declared out here so the `finally` can release the difference on
-   * every exit path — completed, cancelled, or thrown. */
+   * every exit path: completed, cancelled, or thrown. */
   const ingested = new Map<string, ImportedAsset>();
   /** Claimed: referenced by a conversation the sink has actually committed. */
   const usedPointers = new Set<string>();
   /** Buffered but not yet flushed. Promoted on a successful flush, dropped if
-   * one rejects — the conversations it held were never written. */
+   * one rejects: the conversations it held were never written. */
   const pendingPointers = new Set<string>();
 
   const commitPending = (): void => {
@@ -308,6 +313,26 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
       usedPointers.add(pointer);
     }
     pendingPointers.clear();
+  };
+
+  /**
+   * Claims the buffered pointers when a flush rejects, then rethrows.
+   *
+   * A rejected bulk write does not mean nothing was written: it can commit and
+   * still reject on a write concern timeout, a dropped response or a partially
+   * applied batch, which is why the batch builder no longer removes the
+   * messages of a failed conversation write either. Dropping the pointers here
+   * would send their assets to `releaseUnusedAssets`, so a conversation that
+   * did commit would come back with every image deleted from storage. An
+   * orphaned asset only costs storage, so the ambiguous case keeps it.
+   */
+  const claimPendingOnFailure = async <T>(flush: () => Promise<T>): Promise<T> => {
+    try {
+      return await flush();
+    } catch (error) {
+      commitPending();
+      throw error;
+    }
   };
 
   const report: ImportReport = {
@@ -321,7 +346,7 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
   try {
     const hasManifest = archive.entries.some((entry) => entry.name === MANIFEST_ENTRY);
     const manifest = hasManifest ? parseManifest(await archive.read(MANIFEST_ENTRY)) : null;
-    const layout = resolveLayout(archive.entries, manifest);
+    const layout = resolveLayout(archive.entries, manifest, archive.bare);
 
     /** A shard the manifest declares but the archive omits is missing data, not
      * an absent feature: without this the run imports what survived and reports
@@ -432,7 +457,10 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
           break;
         }
 
-        if (input.existingExternalIds.has(conv.conversation_id)) {
+        const externalId = conv.conversation_id;
+        const dedupable = isUsableExternalId(externalId);
+
+        if (dedupable && input.existingExternalIds.has(externalId)) {
           report.skipped += 1;
           progress.conversations.done += 1;
           /** Published like any other advance: re-importing a finished export
@@ -451,10 +479,12 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
           );
           report.imported += 1;
           /** The skip set is a snapshot taken once at job start, so without
-           * this a `conversation_id` appearing twice in one export — across
-           * shards, or because the user concatenated two exports — imports as
+           * this a `conversation_id` appearing twice in one export (across
+           * shards, or because the user concatenated two exports) imports as
            * two separate conversations. */
-          input.existingExternalIds.add(conv.conversation_id);
+          if (dedupable) {
+            input.existingExternalIds.add(externalId);
+          }
         } catch (error) {
           recordError(
             report.errors,
@@ -463,14 +493,14 @@ export async function runImport(input: RunImportInput): Promise<ImportReport> {
         }
 
         progress.conversations.done += 1;
-        if (await input.batch.maybeFlush()) {
+        if (await claimPendingOnFailure(() => input.batch.maybeFlush())) {
           commitPending();
         }
         await input.onProgress?.(progress);
       }
     }
 
-    await input.batch.saveBatch();
+    await claimPendingOnFailure(() => input.batch.saveBatch());
     commitPending();
     return report;
   } catch (error) {

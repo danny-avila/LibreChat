@@ -16,7 +16,7 @@ export const GROK_ASSET_PATH = `ttl/30d/export_data/${GROK_EXPORT_UUID}/prod-mc-
 
 const createdDirs: string[] = [];
 
-/** The out-of-scope fields a real response carries beside `message` — reasoning
+/** The out-of-scope fields a real response carries beside `message`: reasoning
  * traces, search results, aborted-generation flags and an echo of the URLs
  * already present in the text. Included verbatim so every suite proves the
  * converter ignores them rather than tripping over them. */

@@ -42,7 +42,7 @@ describe('buildFixtureExport', () => {
  * The fixture's structures, not its layout.
  *
  * `CITE` is U+E202, which renders as nothing in an editor and in a diff, so
- * "tidying" it away is a plausible accident rather than a hypothetical one —
+ * "tidying" it away is a plausible accident rather than a hypothetical one,
  * and every citation assertion downstream would still pass, because they match
  * on the text before the marker. These guards fail loudly instead.
  */

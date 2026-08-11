@@ -120,6 +120,32 @@ describe('inspectExport for a Claude export', () => {
 
     await expect(inspectExport(filepath)).rejects.toThrow('Unsupported import type');
   });
+
+  /** `uuid` is the external id the skip set and the `importedFrom` marker are
+   * keyed by, so a missing or wrongly typed one imports duplicates on every
+   * re-import instead of being skipped. Presence of `chat_messages` alone used
+   * to be the whole check. */
+  it('rejects a shard whose conversation uuid is missing, empty or not a string', async () => {
+    for (const uuid of [undefined, '', 42, null]) {
+      const filepath = await writeZip({
+        'conversations.json': JSON.stringify([{ ...claudeConversation('valid', 'Valid'), uuid }]),
+      });
+
+      await expect(inspectExport(filepath)).rejects.toThrow('Unsupported import type');
+    }
+  });
+
+  it('rejects a shard whose chat_messages is not an array', async () => {
+    for (const chatMessages of [undefined, null, 'nope', {}]) {
+      const filepath = await writeZip({
+        'conversations.json': JSON.stringify([
+          { ...claudeConversation('valid', 'Valid'), chat_messages: chatMessages },
+        ]),
+      });
+
+      await expect(inspectExport(filepath)).rejects.toThrow('Unsupported import type');
+    }
+  });
 });
 
 describe('runImport for a Claude export', () => {
@@ -422,6 +448,61 @@ describe('runImport for a Claude export', () => {
     expect(report.errors[0]).toContain('expected Claude conversation objects');
     expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
       'After malformed shard',
+    ]);
+  });
+
+  /** Same shard error contract as any other shape mismatch: the shard is
+   * recorded and skipped, the next one still imports. Before the uuid and
+   * chat_messages types were checked, this shard imported a conversation whose
+   * `importedFrom.externalId` was undefined, so every re-import duplicated it. */
+  it('skips a shard whose conversation uuid is not a string and continues', async () => {
+    const filepath = await writeZip({
+      'conversations-000.json': JSON.stringify([
+        { ...claudeConversation('unused', 'Bad uuid'), uuid: 42 },
+      ]),
+      'conversations-001.json': JSON.stringify([claudeConversation('good', 'Good shard')]),
+    });
+    const { sink, recorded } = recorder();
+
+    const report = await runImport({
+      ...BASE,
+      filepath,
+      format: 'claude',
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(1);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain('conversations-000.json');
+    expect(report.errors[0]).toContain('expected Claude conversation objects');
+    expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
+      'Good shard',
+    ]);
+  });
+
+  it('skips a shard whose chat_messages is not an array and continues', async () => {
+    const filepath = await writeZip({
+      'conversations-000.json': JSON.stringify([
+        { ...claudeConversation('bad-messages', 'Bad messages'), chat_messages: null },
+      ]),
+      'conversations-001.json': JSON.stringify([claudeConversation('good', 'Good shard')]),
+    });
+    const { sink, recorded } = recorder();
+
+    const report = await runImport({
+      ...BASE,
+      filepath,
+      format: 'claude',
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(1);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain('expected Claude conversation objects');
+    expect(recorded.conversations.map((conversation) => conversation.title)).toEqual([
+      'Good shard',
     ]);
   });
 });

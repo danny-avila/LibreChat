@@ -33,7 +33,7 @@ const storage = multer.diskStorage({
  * that the stored name is prefixed with the per-upload id: an import job
  * keeps reading its archive long after the upload request ends (inspect →
  * confirm → run, up to the job TTL), so two uploads of the same
- * `conversations.zip` must not resolve to one path — otherwise the second
+ * `conversations.zip` must not resolve to one path; otherwise the second
  * overwrites the archive the first is still importing, and cancelling
  * either deletes the other's file.
  */
@@ -63,7 +63,7 @@ const IMPORT_MIME_TYPES = new Set(['application/json', 'text/json']);
  *
  * A declared JSON MIME type is accepted without the extension, which API
  * clients and some drag-and-drop sources rely on. That is safe because the
- * upload's actual content is inspected before anything is imported — the
+ * upload's actual content is inspected before anything is imported: the
  * filter only decides whether the bytes are worth writing to disk.
  */
 const importFileFilter = (req, file, cb) => {

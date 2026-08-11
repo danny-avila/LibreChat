@@ -4,7 +4,7 @@
  * Every URL in an archive is attacker-controlled, and the citation renderers
  * put them straight into `href`/`src` (`Web/Sources.tsx`, `SourceHovercard`,
  * `Citation`) with no transform of their own. React 18 still emits
- * `javascript:` URLs — it only warns — and a shared conversation carries its
+ * `javascript:` URLs (it only warns), and a shared conversation carries its
  * search results verbatim to every viewer (`SENSITIVE_SHARED_FILE_FIELDS`
  * deliberately preserves them), so an unfiltered link is stored XSS against
  * whoever opens the share.

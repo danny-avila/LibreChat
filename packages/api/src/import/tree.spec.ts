@@ -39,7 +39,7 @@ describe('breakCycles', () => {
   });
 
   /** Only the message that closes the loop is rooted. A descendant hanging off
-   * a cycle keeps its parent — severing it too would split one conversation
+   * a cycle keeps its parent; severing it too would split one conversation
    * into two unrelated top-level threads. */
   it('roots the cycle itself, not a descendant visited first', () => {
     const messages = [node('d', 'a', 4), node('a', 'c', 1), node('b', 'a', 2), node('c', 'b', 3)];

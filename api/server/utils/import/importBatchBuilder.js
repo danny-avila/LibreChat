@@ -15,7 +15,6 @@ const {
   bulkSaveConvos,
   bulkSaveMessages,
   bulkIncrementTagCounts,
-  getConvosQueried,
 } = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
@@ -138,6 +137,17 @@ class ImportBatchBuilder {
       ...this.getRetentionFields(),
     };
     convo._id && delete convo._id;
+    /** `convoSchema` declares `importedFrom.externalId` required, but every
+     * import writes through `bulkSaveConvos`, whose `updateOne` upserts run no
+     * validators. An export whose own conversation id is missing or wrongly
+     * typed would otherwise store a marker that violates its own schema. The
+     * marker is dropped rather than half-filled: an id-less conversation is
+     * not dedupable either way, because `loadExistingExternalIds` skips falsy
+     * ids when it reads the markers back. */
+    const externalId = convo.importedFrom?.externalId;
+    if (convo.importedFrom && (typeof externalId !== 'string' || externalId.length === 0)) {
+      delete convo.importedFrom;
+    }
     this.conversations.push(convo);
 
     return { conversation: convo, messages: this.messages };
@@ -167,62 +177,61 @@ class ImportBatchBuilder {
     this.conversations = [];
     this.messages = [];
 
+    /** The only window in which cleanup is provably safe. No conversation
+     * write has been issued yet, so nothing can point at these messages now or
+     * later, whatever partial state the rejected message write left behind. */
     try {
       await bulkSaveMessages(messages, true);
-      /** Conversation rows are the commit markers for their messages. Keep
-       * this write separate from tag maintenance so a fast tag failure cannot
-       * start cleanup while the conversation write is still in flight. */
-      await bulkSaveConvos(conversations);
-      await bulkIncrementTagCounts(
-        this.requestUserId,
-        conversations.flatMap((convo) => convo.tags),
-      );
-      logger.debug(
-        `user: ${this.requestUserId} | Added ${conversations.length} conversations and ${messages.length} messages to the DB.`,
-      );
     } catch (error) {
-      logger.error('Error saving batch', error);
-      await this.discardOrphanedMessages(messages, conversations);
+      logger.error('Error saving batch messages', error);
+      await this.discardOrphanedMessages(messages);
       throw error;
     }
+
+    /** Past this point the outcome of the conversation write is unknowable
+     * from a rejection alone: a bulk write can commit and still reject (write
+     * concern timeout, a dropped response, a partially applied batch). Deleting
+     * the messages on that rejection turns a committed conversation into a
+     * permanently empty one, which is worse than the orphaned rows it was
+     * meant to avoid, so nothing is removed here. Tag maintenance runs after
+     * for the same reason: it can only fail once the commit markers exist.
+     */
+    await bulkSaveConvos(conversations);
+    await bulkIncrementTagCounts(
+      this.requestUserId,
+      conversations.flatMap((convo) => convo.tags),
+    );
+    logger.debug(
+      `user: ${this.requestUserId} | Added ${conversations.length} conversations and ${messages.length} messages to the DB.`,
+    );
   }
 
   /**
-   * Removes messages whose conversations never made it to the DB. Messages are
-   * written first on purpose, so a failed conversation write leaves rows no
-   * conversation points at: invisible to the user, not skipped by a retry
-   * (every run mints fresh message ids), and so duplicated on every re-import.
-   * Scoped to this user and to the ids this flush wrote. Best effort, and
-   * never allowed to mask the original failure.
-   * A rejected bulk write has an ambiguous outcome, so the database is queried
-   * for the batch's commit markers before anything is removed. This also
-   * covers failures after the conversation write, such as tag maintenance.
-   * @param {Array<{ messageId: string, conversationId: string }>} messages - the messages this flush wrote
-   * @param {Array<{ conversationId: string }>} conversations - the conversations this flush attempted
+   * Removes messages whose conversations were never written. Messages are
+   * written first on purpose, so a message write that fails before any
+   * conversation write leaves rows no conversation points at: invisible to the
+   * user, not skipped by a retry (every run mints fresh message ids), and so
+   * duplicated on every re-import.
+   *
+   * Only ever called from that one window. Once `bulkSaveConvos` has been
+   * issued the messages may belong to a committed conversation and are kept,
+   * because no existence probe can settle it: reading the conversations back
+   * answers a different question than "did this write commit", and the
+   * retention-aware readers hide exactly the temporary and expired
+   * conversations an import creates.
+   *
+   * Scoped to this user and to the freshly minted ids this flush wrote. Best
+   * effort, and never allowed to mask the original failure.
+   * @param {Array<{ messageId: string }>} messages - the messages this flush wrote
    */
-  async discardOrphanedMessages(messages, conversations) {
+  async discardOrphanedMessages(messages) {
     if (messages.length === 0) {
       return;
     }
     try {
-      let convoMap = {};
-      if (conversations.length > 0) {
-        ({ convoMap } = await getConvosQueried(
-          this.requestUserId,
-          conversations.map(({ conversationId }) => ({ conversationId })),
-          null,
-          conversations.length,
-        ));
-      }
-      const orphanedMessageIds = messages
-        .filter((message) => convoMap[message.conversationId] == null)
-        .map((message) => message.messageId);
-      if (orphanedMessageIds.length === 0) {
-        return;
-      }
       await deleteMessages({
         user: this.requestUserId,
-        messageId: { $in: orphanedMessageIds },
+        messageId: { $in: messages.map(({ messageId }) => messageId) },
       });
     } catch (cleanupError) {
       logger.error(

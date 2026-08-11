@@ -29,6 +29,21 @@ export interface ConversationOverrides {
   importedFrom: { source: string; externalId: string };
 }
 
+/**
+ * Whether an export's own conversation id can key the skip set.
+ *
+ * `existingExternalIds` is typed `Set<string>` but is filled from parsed JSON,
+ * so a missing or wrongly typed id reaches it as `undefined`. Adding that once
+ * makes every later id-less conversation in the same run test as a duplicate
+ * and get silently skipped, so an export carrying two of them imports one and
+ * drops the rest. Conversations that fail this check are still imported; they
+ * are simply not deduped, which is what an absent id already means to
+ * `loadExistingExternalIds` when it reads the markers back.
+ */
+export function isUsableExternalId(externalId: unknown): externalId is string {
+  return typeof externalId === 'string' && externalId.length > 0;
+}
+
 export interface BatchSink {
   startConversation(endpoint?: string): void;
   saveMessage(details: SaveMessageDetails): void;

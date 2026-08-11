@@ -123,7 +123,7 @@ function buildAttachments(citations: ImportedCitations[]): ImportAttachment[] | 
 
 /**
  * Assistant images render from nested `image_file` content parts
- * (`Part.tsx`), not from `message.files` — the only consumer of that field
+ * (`Part.tsx`), not from `message.files`; the only consumer of that field
  * is gated on `isCreatedByUser`. Non-image assets stay on `message.files`,
  * which the legacy renderer surfaces for messages that carry no content.
  */
@@ -142,7 +142,7 @@ function buildImageParts(files: ImportedAsset[]): ImageFilePart[] {
  * renderer mounts: an assistant message routed to the legacy renderer
  * (`MultiMessage` dispatches on `message.content`) drops every anchor.
  * So content is emitted whenever the message carries reasoning, citation
- * attachments, or images — and withheld otherwise, leaving plain text on
+ * attachments, or images, and withheld otherwise, leaving plain text on
  * the exact path it rendered on before.
  */
 function buildContent(
@@ -243,7 +243,7 @@ export function convertConversation(
     pinned: conv.is_starred === true || conv.pinned_time != null,
     /** The conversation's model is what its *next* prompt is sent with, so it
      * has to be a model this deployment actually serves. `default_model_slug`
-     * is a historical ChatGPT identifier — `auto`, `research`, `gpt-5-t` — that
+     * is a historical ChatGPT identifier (`auto`, `research`, `gpt-5-t`) that
      * no endpoint accepts, and setting it here would leave every imported
      * conversation unusable until the user picked a model by hand. The
      * per-message `model` keeps the historical slug for display, which is

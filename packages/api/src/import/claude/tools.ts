@@ -25,8 +25,8 @@ export function createToolRegistry(): ToolRegistry {
 /**
  * `FileAuthoringCall` reads `file_path` and `content`, but Claude exports the
  * same call as `path` and `file_text` (measured: 453 of 457 `create_file`
- * blocks send `{description, file_text, path}`). Renaming here — rather than
- * teaching the shared card a second vocabulary — keeps the adapter's knowledge
+ * blocks send `{description, file_text, path}`). Renaming here, rather than
+ * teaching the shared card a second vocabulary, keeps the adapter's knowledge
  * of the export format inside the importer.
  */
 const ARG_ALIASES: Record<string, Record<string, string>> = {

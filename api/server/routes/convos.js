@@ -327,11 +327,17 @@ const MAX_CONCURRENT_IMPORTS_PER_USER = 1;
  * map bounds what one account can start; it says nothing about aggregate work,
  * so twenty accounts each inside their own limit are still twenty concurrent
  * shard parses on one process. Inspection is counted with the runs because it
- * is the same cost in the same heap — it decompresses and JSON-parses the
+ * is the same cost in the same heap: it decompresses and JSON-parses the
  * whole export in the upload request to build the summary.
  */
 const MAX_CONCURRENT_IMPORT_STAGES = resolveImportMaxConcurrency();
 let activeImportStages = 0;
+/**
+ * `Retry-After` for a start that could not take the job's cross-replica claim.
+ * Sized to the claim's own TTL (`IMPORT_JOB_LOCK_TTL`), which is the longest a
+ * claim taken by a replica that then died can keep the job unstartable.
+ */
+const IMPORT_CLAIM_RETRY_AFTER_SECONDS = 60;
 /** Minimum gap between job-store progress writes. The client polls every two
  * seconds, so anything below that is written for nobody to read. */
 const PROGRESS_WRITE_INTERVAL_MS = 500;
@@ -431,7 +437,7 @@ function resolveJobTarget(job) {
   switch (job.summary?.source) {
     case 'claude':
       return { format: 'claude', endpoint: EModelEndpoint.anthropic, source: 'claude' };
-    /** xAI has no first-class endpoint, so Grok conversations land on OpenAI —
+    /** xAI has no first-class endpoint, so Grok conversations land on OpenAI;
      * see `GROK_ENDPOINT`, which this must stay in step with. */
     case 'grok':
       return { format: 'grok', endpoint: GROK_ENDPOINT, source: GROK_SOURCE };
@@ -451,8 +457,8 @@ function resolveJobTarget(job) {
  * Runs a confirmed import job to completion in the background, updating the
  * job record as it progresses. Never throws: failures are recorded on the job
  * itself so a polling client observes a `failed` phase instead of a dropped
- * connection. Every step — including building the storage strategy and
- * batch builder — runs inside the try/finally so a synchronous setup
+ * connection. Every step (including building the storage strategy and
+ * batch builder) runs inside the try/finally so a synchronous setup
  * failure still marks the job `failed` and still cleans up the temp file,
  * instead of leaving the job pinned at `phase: 'conversations'` forever.
  * @param {object} req - The Express request that created/confirmed the job.
@@ -464,7 +470,7 @@ async function runImportJob(context, job) {
   try {
     /**
      * `sweepStaleTempUploads` deletes temp uploads by mtime alone, and the job
-     * TTL matches its age cutoff — so a job confirmed just short of a day after
+     * TTL matches its age cutoff, so a job confirmed just short of a day after
      * its upload would have its archive removed out from under the run. Marking
      * the file as touched when the run claims it restarts that clock, which is
      * the only signal the sweep can see.
@@ -472,9 +478,9 @@ async function runImportJob(context, job) {
     await fs.promises.utimes(job.filepath, new Date(), new Date()).catch(() => undefined);
 
     /**
-     * Both backends are resolved up front — a misconfigured strategy is a
+     * Both backends are resolved up front (a misconfigured strategy is a
      * setup failure that should fail the job immediately, not surface as a
-     * per-asset error halfway through — but the choice between them is made
+     * per-asset error halfway through), but the choice between them is made
      * per asset. A deployment can point `fileStrategies.image` and
      * `fileStrategies.document` at different places, and an export mixes
      * images with audio, video, and PDFs; fixing `isImage: true` for the whole
@@ -518,7 +524,7 @@ async function runImportJob(context, job) {
 
     /** The strategy's delete takes a request-shaped object for its paths and
      * owner; the background run has both on its snapshot. Used to release
-     * assets no committed conversation claimed — a run cancelled between the
+     * assets no committed conversation claimed: a run cancelled between the
      * asset phase and the first conversation would otherwise leave every file
      * it created referenced by nothing and exempt from every sweep. */
     const storageContext = { config: appConfig, user: { id: userId } };
@@ -618,7 +624,7 @@ async function runImportJob(context, job) {
  * Reached only for uploads that are neither a zip nor recognizable ChatGPT,
  * Claude or Grok content: ChatbotUI and LibreChat exports are detected by CONTENT
  * (`getImporter`, invoked inside `importConversations`), not by file extension.
- * The `.zip` exclusion is load-bearing — this path reads `req.file.path` as
+ * The `.zip` exclusion is load-bearing: this path reads `req.file.path` as
  * JSON, which no archive can satisfy.
  * @param {object} req
  * @param {object} res
@@ -646,7 +652,7 @@ async function importLegacyConversation(req, res) {
  * `.zip` uploads and bare `.json` ChatGPT, Claude and Grok exports share one
  * pipeline: `openArchive` wraps a non-zip file in a single-entry archive, so
  * `inspectExport` sees the same shape either way and this request only
- * inspects the upload and returns a summary awaiting confirmation — the
+ * inspects the upload and returns a summary awaiting confirmation; the
  * actual import runs after POST /import/jobs/:jobId/start. A bare `.json`
  * upload matching none of those shapes (ChatbotUI, LibreChat) falls back to
  * the legacy synchronous importer, which is the only path that understands
@@ -666,7 +672,7 @@ router.post(
   restoreTenantContextFromReq,
   async (req, res) => {
     /** Multer leaves `req.file` undefined for a non-multipart body or a
-     * multipart body with no `file` part, and reports neither as an error — so
+     * multipart body with no `file` part, and reports neither as an error, so
      * without this the handler throws a TypeError and the client gets a 500
      * with no JSON message for what is plainly a bad request. */
     if (!req.file) {
@@ -724,23 +730,29 @@ router.post(
  * Confirms an inspected import job and starts running it in the background.
  * The phase transition out of `awaiting_confirmation` is atomic (see
  * `ImportJobStore.confirmStart`), so a second `/start` call for the same
- * job — a double-click, a client retry, a replay — never launches a
+ * job (a double-click, a client retry, a replay) never launches a
  * second background run over the same archive: `importedFrom` is not a
  * unique index (a deliberate choice, see Task 13), so a duplicate run
  * would otherwise duplicate conversations the first run has not yet
  * committed.
  *
- * That guarantee, and the concurrency ceilings below, hold within one
- * process. Both the transition lock and the counters are process-local, so a
- * deployment running several replicas behind a shared job store can admit the
- * same job twice from two replicas, and its aggregate ceiling is
- * `replicas × CONVERSATION_IMPORT_MAX_CONCURRENT`. Making that airtight needs
- * a distributed compare-and-set and a distributed semaphore; until then,
- * imports belong on a single node.
+ * That guarantee holds across replicas too: the transition takes a
+ * `SET NX PX` claim on the shared job store, so of two replicas confirming the
+ * same job one starts it and the other is told it is no longer awaiting
+ * confirmation. A single-node deployment on the in-memory job store keeps the
+ * in-process lock, which is the whole of what such a store can be shared by.
+ *
+ * The concurrency ceilings below are a separate matter and remain per node:
+ * they bound the heap of the process enforcing them, so the aggregate ceiling
+ * of a deployment is `replicas x CONVERSATION_IMPORT_MAX_CONCURRENT`. That is
+ * a resource limit, not a correctness one, since each job now runs on exactly
+ * one replica.
  * @route POST /import/jobs/:jobId/start
  * @returns {object} 202 - the job has started
  * @returns {object} 404 - no such job for this user
  * @returns {object} 409 - the job already started, completed, failed, or was cancelled
+ * @returns {object} 503 - the shared job store could not hand out the claim, so
+ *   the job is untouched and the client should retry
  */
 router.post(
   '/import/jobs/:jobId/start',
@@ -759,6 +771,16 @@ router.post(
      * honest answer is that this job already started. */
     if (result.status === 'conflict') {
       res.status(409).json({ message: 'Import job is not awaiting confirmation' });
+      return;
+    }
+    /** The shared store could not hand out the job's claim, so this replica
+     * cannot prove it is the only one confirming. Nothing was written: the job
+     * is still awaiting confirmation, so this is retryable rather than a
+     * failure of the job itself, and the client's retry starts it once the
+     * store recovers. */
+    if (result.status === 'lock_unavailable') {
+      res.set('Retry-After', String(IMPORT_CLAIM_RETRY_AFTER_SECONDS));
+      res.status(503).json({ message: 'Import service is busy, try again shortly' });
       return;
     }
 
@@ -831,6 +853,8 @@ router.get('/import/jobs/:jobId', async (req, res) => {
  * @route DELETE /import/jobs/:jobId
  * @returns {object} 200 - the job was cancelled
  * @returns {object} 404 - no such job for this user
+ * @returns {object} 503 - the shared job store could not hand out the claim,
+ *   so the job and upload are untouched and the client should retry
  */
 router.delete('/import/jobs/:jobId', async (req, res) => {
   const job = await importJobs.get(req.user.id, req.params.jobId);
@@ -838,7 +862,16 @@ router.delete('/import/jobs/:jobId', async (req, res) => {
     res.status(404).json({ message: 'Import job not found' });
     return;
   }
-  const { previousPhase } = await importJobs.cancel(req.user.id, job.jobId);
+  const { status, previousPhase } = await importJobs.cancel(req.user.id, job.jobId);
+  if (status === 'lock_unavailable') {
+    res.set('Retry-After', String(IMPORT_CLAIM_RETRY_AFTER_SECONDS));
+    res.status(503).json({ message: 'Import service is busy, try again shortly' });
+    return;
+  }
+  if (status === 'not_found') {
+    res.status(404).json({ message: 'Import job not found' });
+    return;
+  }
   if (previousPhase === 'awaiting_confirmation') {
     await fs.promises.unlink(job.filepath).catch(() => undefined);
   }

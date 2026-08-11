@@ -286,6 +286,7 @@ describe('ingestAssets', () => {
         { name: ASSET_NAMES_ENTRY, bytes: 32 },
         { name: 'file-one.dat', bytes: imageWithHtmlSuffix.byteLength },
       ],
+      bare: false,
       read: async (entry: string) =>
         entry === ASSET_NAMES_ENTRY
           ? Buffer.from(JSON.stringify({ 'file-one.dat': 'payload.html' }))
@@ -794,6 +795,7 @@ describe('ingestAssets with a malformed asset-name map', () => {
         { name: ASSET_NAMES_ENTRY, bytes: names.length },
         { name: 'file-one.dat', bytes: 4 },
       ],
+      bare: false,
       read: async (entry: string) =>
         entry === ASSET_NAMES_ENTRY ? Buffer.from(names) : Buffer.from([0x89, 0x50, 0x4e, 0x47]),
       close: () => undefined,
@@ -860,6 +862,7 @@ describe('ingestAssets storage strategy', () => {
         { name: 'png-one.dat', bytes: 4 },
         { name: 'pdf-one.dat', bytes: 4 },
       ],
+      bare: false,
       read: async (entry: string) =>
         entry === 'png-one.dat'
           ? Buffer.from([0x89, 0x50, 0x4e, 0x47])
@@ -894,6 +897,7 @@ describe('ingestAssets storage strategy', () => {
     const sources: string[] = [];
     const archive: Archive = {
       entries: [{ name: 'pdf-one.dat', bytes: 4 }],
+      bare: false,
       read: async () => Buffer.from([0x25, 0x50, 0x44, 0x46]),
       close: () => undefined,
     };
@@ -924,6 +928,7 @@ describe('ingestAssets storage strategy', () => {
 describe('ingestAssets retention', () => {
   const archive: Archive = {
     entries: [{ name: 'png-one.dat', bytes: 4 }],
+    bare: false,
     read: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]),
     close: () => undefined,
   };

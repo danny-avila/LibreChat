@@ -24,7 +24,7 @@ const TERMINAL_PHASES = new Set<TImportJob['phase']>([
  * refreshed even though the import as a whole did not succeed. */
 const WROTE_CONVERSATIONS = new Set<TImportJob['phase']>(['completed', 'failed', 'cancelled']);
 
-/** A job the server will never return again — as opposed to a request that
+/** A job the server will never return again, as opposed to a request that
  * failed on the way there. Only the former is worth giving up on. */
 export const isJobGone = (error: unknown): boolean =>
   (error as { response?: { status?: number } })?.response?.status === 404;
@@ -38,7 +38,7 @@ export const isJobGone = (error: unknown): boolean =>
  * waiting on the user to confirm before it starts, so continuing to poll
  * would burn requests for nothing.
  *
- * A 404 also stops it — a job lost to TTL expiry, cache eviction, or a server
+ * A 404 also stops it: a job lost to TTL expiry, cache eviction, or a server
  * restart on the default in-memory backend will never reappear. Any other
  * failure keeps polling: a dropped connection or a single 5xx says nothing
  * about the import, which is still running server-side, and abandoning the
@@ -60,7 +60,7 @@ export const importJobRefetchInterval = (
 /**
  * Fetches a single import job and, the moment a fetch reveals the job has
  * stopped running, invalidates the conversation list so the sidebar reflects
- * what the background job wrote to the database — succeeded or not, since a
+ * what the background job wrote to the database, succeeded or not, since a
  * run that stops partway leaves everything it already flushed behind.
  *
  * This lives in the fetcher itself rather than in `useQuery`'s `onSuccess`

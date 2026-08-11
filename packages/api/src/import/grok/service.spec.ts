@@ -264,6 +264,43 @@ describe('runImport for a Grok export', () => {
     expect(recorded.conversations[0].convo.importedFrom.externalId).toBe('grok-retried');
   });
 
+  /** `existingExternalIds` is typed `Set<string>` but filled from parsed JSON.
+   * Adding a missing id to it once made every later id-less conversation in
+   * the same export test as a duplicate, so an export carrying two of them
+   * imported one and silently dropped the rest. */
+  it('imports every conversation whose id is missing or not a string', async () => {
+    const conversation = (id: unknown, title: string) => ({
+      conversation: { id, title, create_time: '2026-07-15T10:00:00Z' },
+      responses: [],
+    });
+    const filepath = await writeZip({
+      'prod-grok-backend.json': JSON.stringify({
+        conversations: [
+          conversation('grok-real', 'Has an id'),
+          conversation(undefined, 'First without id'),
+          conversation(undefined, 'Second without id'),
+          conversation(null, 'First null id'),
+          conversation(null, 'Second null id'),
+          conversation('', 'First empty id'),
+          conversation('', 'Second empty id'),
+        ],
+      }),
+    });
+    const { sink, recorded } = recorder();
+
+    const report = await runImport({
+      ...BASE,
+      filepath,
+      format: 'grok',
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(7);
+    expect(report.skipped).toBe(0);
+    expect(recorded.conversations).toHaveLength(7);
+  });
+
   it('reports progress with the shard total folded in and no asset phase', async () => {
     const filepath = await buildGrokFixtureExport();
     const { sink } = recorder();

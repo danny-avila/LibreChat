@@ -46,7 +46,7 @@ export async function inspectExport(
   try {
     const hasManifest = archive.entries.some((entry) => entry.name === MANIFEST_ENTRY);
     const manifest = hasManifest ? parseManifest(await archive.read(MANIFEST_ENTRY)) : null;
-    const layout = resolveLayout(archive.entries, manifest);
+    const layout = resolveLayout(archive.entries, manifest, archive.bare);
 
     if (layout.conversationShards.length === 0) {
       throw new Error('Unsupported import type');
@@ -54,7 +54,7 @@ export async function inspectExport(
 
     /** The conversation, archived and starred counts the confirmation screen
      * shows exist nowhere but inside the shards, so they cannot be read from
-     * a header — the shards have to be parsed. Each one is parsed, tallied
+     * a header: the shards have to be parsed. Each one is parsed, tallied
      * and dropped before the next is read, so peak heap stays at a single
      * shard rather than the whole export. The format is decided by the first
      * shard's parsed shape, the only thing distinguishing a Claude export
@@ -101,7 +101,7 @@ export async function inspectExport(
 
     if (format === 'grok') {
       /** A Grok export's binaries belong to its `media_posts`, which no
-       * conversation references, and it has no archived flag — so both
+       * conversation references, and it has no archived flag, so both
        * counters are structurally zero rather than untallied. `starred` is a
        * real per-conversation field and is counted. */
       return {

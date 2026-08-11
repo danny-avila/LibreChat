@@ -146,7 +146,7 @@ type ContentPartsProps = {
   isLatestMessage?: boolean;
   /**
    * The message's own attachments. Images among them already render as
-   * `image_file` parts, so only the rest are shown here — but the rest have
+   * `image_file` parts, so only the rest are shown here, but the rest have
    * no content part at all, and `Container` (the only other consumer of this
    * field) is never reached by a message that has content. Without this, an
    * assistant turn that carries both reasoning and a generated file renders
