@@ -422,6 +422,72 @@ describe('ingestAssets', () => {
     archive.close();
   });
 
+  it('keeps cancellation-store failures best-effort so created assets stay visible', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+
+    let cancelChecks = 0;
+    const result = await ingestAssets({
+      archive,
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      pointers: ['file-service://file-one', 'file-service://file-two'],
+      isCancelled: async () => {
+        cancelChecks += 1;
+        if (cancelChecks === 2) {
+          throw new Error('cancellation store unavailable');
+        }
+        return false;
+      },
+      deps: {
+        saveBuffer: async ({ fileName }) => ({
+          filepath: `/uploads/u1/${fileName}`,
+          source: 'local',
+        }),
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(result.imported).toBe(2);
+    expect(result.map.size).toBe(2);
+    archive.close();
+  });
+
+  it('reserves the UUID prefix inside the filesystem filename byte limit', async () => {
+    const filepath = await buildFixtureExport();
+    const archive = await openArchive(filepath);
+    const layout = resolveLayout(
+      archive.entries,
+      parseManifest(await archive.read('export_manifest.json')),
+    );
+    const originalName = `${'a'.repeat(251)}.txt`;
+    let storedName = '';
+
+    const result = await ingestAssets({
+      archive: withAssetNames(archive, JSON.stringify({ 'file-one.dat': originalName })),
+      layout,
+      userId: 'u1',
+      tenantId: undefined,
+      pointers: ['file-service://file-one'],
+      deps: {
+        saveBuffer: async ({ fileName }) => {
+          storedName = fileName;
+          return { filepath: `/uploads/u1/${fileName}`, source: 'local' };
+        },
+        createFile: async (data) => ({ file_id: data.file_id as string }),
+      },
+    });
+
+    expect(Buffer.byteLength(storedName, 'utf8')).toBeLessThanOrEqual(255);
+    expect(result.map.get('file-service://file-one')?.filename).toBe(originalName);
+    archive.close();
+  });
+
   it('ingests a pointer referenced multiple times exactly once', async () => {
     const filepath = await buildFixtureExport();
     const archive = await openArchive(filepath);

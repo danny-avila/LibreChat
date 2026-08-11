@@ -4,6 +4,7 @@ import path from 'path';
 import JSZip from 'jszip';
 
 import type { SaveMessageDetails, ConversationOverrides } from './sink';
+import type { ImportPhase } from './types';
 
 import { buildFixtureExport, cleanupFixtureExport } from './__data__/fixture';
 import * as archiveModule from './archive';
@@ -834,6 +835,42 @@ describe('runImport asset cleanup', () => {
         }
       },
       isCancelled: async () => assetsDone,
+    });
+
+    expect(report.assetsImported).toBeGreaterThan(0);
+    expect(recorded.conversations).toEqual([]);
+    expect(deleted).toHaveLength(report.assetsImported);
+  });
+
+  it('can clean up assets after a cancellation-store read fails during ingestion', async () => {
+    const filepath = await buildFixtureExport();
+    const { sink, recorded } = recorder();
+    const { deleted, deps } = recordingDeps();
+    let phase: ImportPhase = 'queued';
+    let assetChecks = 0;
+
+    const report = await runImport({
+      filepath,
+      userId: 'u1',
+      defaultModel: 'gpt-4o',
+      deps,
+      batch: sink,
+      existingExternalIds: new Set(),
+      onPhase: async (nextPhase) => {
+        phase = nextPhase;
+      },
+      isCancelled: async () => {
+        if (phase === 'conversations') {
+          return true;
+        }
+        if (phase === 'assets') {
+          assetChecks += 1;
+          if (assetChecks === 2) {
+            throw new Error('cancellation store unavailable');
+          }
+        }
+        return false;
+      },
     });
 
     expect(report.assetsImported).toBeGreaterThan(0);

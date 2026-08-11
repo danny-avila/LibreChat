@@ -714,6 +714,7 @@ router.post(
         summary: inspected.summary,
         phase: 'awaiting_confirmation',
       });
+      await fs.promises.utimes(req.file.path, new Date(), new Date()).catch(() => undefined);
       res.status(202).json({ jobId: job.jobId, summary: updated.summary });
     } catch (error) {
       await fs.promises.unlink(req.file.path).catch(() => undefined);

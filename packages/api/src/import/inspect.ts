@@ -3,6 +3,7 @@ import type { ExportLayout } from './manifest';
 import {
   MANIFEST_ENTRY,
   isGrokExport,
+  isGrokConversationEntry,
   parseManifest,
   resolveLayout,
   detectExportFormat,
@@ -32,6 +33,9 @@ function tallyChatGptShard(conversations: ChatGptConversation[], totals: ShardTo
 
 function tallyGrokExport(parsed: GrokExport, totals: ShardTotals): void {
   for (const entry of parsed.conversations) {
+    if (!isGrokConversationEntry(entry)) {
+      continue;
+    }
     totals.conversations += 1;
     if (entry.conversation?.starred === true) {
       totals.starred += 1;

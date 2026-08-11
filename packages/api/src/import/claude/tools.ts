@@ -167,8 +167,9 @@ export function completeToolCall(
   const rendered = renderResult(block.content ?? [], sources);
   const output = block.is_error === true ? `Error:\n${rendered.text}` : rendered.text;
 
-  const byId = block.tool_use_id ? registry.byId.get(block.tool_use_id) : undefined;
-  const target = byId ?? registry.pending.shift() ?? null;
+  const hasExplicitId = block.tool_use_id != null;
+  const byId = hasExplicitId ? registry.byId.get(block.tool_use_id as string) : undefined;
+  const target = hasExplicitId ? (byId ?? null) : (registry.pending.shift() ?? null);
 
   if (target) {
     target.output = output;

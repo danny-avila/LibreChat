@@ -160,6 +160,28 @@ describe('completeToolCall', () => {
       },
     });
   });
+
+  it('does not positionally match a result whose explicit id is unknown', () => {
+    const registry = createToolRegistry();
+    const sources = createSourceIndex();
+    const first = beginToolCall(registry, use('tu-1', 'view'));
+    const second = beginToolCall(registry, use('tu-2', 'view'));
+
+    const unmatched = completeToolCall(
+      registry,
+      result('missing', 'view', [{ type: 'text', text: 'wrong' }]),
+      sources,
+    );
+
+    expect(unmatched.target).toBeNull();
+    expect(first[ContentTypes.TOOL_CALL].output).toBeUndefined();
+    expect(second[ContentTypes.TOOL_CALL].output).toBeUndefined();
+
+    completeToolCall(registry, result('tu-1', 'view', [{ type: 'text', text: 'one' }]), sources);
+    completeToolCall(registry, result('tu-2', 'view', [{ type: 'text', text: 'two' }]), sources);
+    expect(first[ContentTypes.TOOL_CALL].output).toBe('one');
+    expect(second[ContentTypes.TOOL_CALL].output).toBe('two');
+  });
 });
 
 describe('file-authoring arg aliases', () => {

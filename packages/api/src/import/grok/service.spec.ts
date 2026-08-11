@@ -126,6 +126,25 @@ describe('inspectExport for a Grok export', () => {
     await expect(inspectExport(filepath)).rejects.toThrow(/Unsupported import type/);
   });
 
+  it('counts valid records in a Grok shard that also contains a malformed record', async () => {
+    const filepath = await writeZip({
+      [GROK_ENTRY_PATH]: JSON.stringify({
+        conversations: [
+          { conversation: { id: 'ok-1', starred: true }, responses: [] },
+          null,
+          { conversation: { id: 'ok-2' }, responses: [] },
+        ],
+      }),
+    });
+
+    const inspected = await inspectExport(filepath);
+
+    expect(inspected.format).toBe('grok');
+    expect(inspected.summary.conversations).toBe(2);
+    expect(inspected.summary.starred).toBe(1);
+    expect(inspected.summary.shards).toBe(1);
+  });
+
   it('does not mistake a Claude or ChatGPT export for a Grok one', async () => {
     const chatgpt = await writeZip({
       'conversations.json': JSON.stringify([{ conversation_id: 'c1', mapping: {} }]),
@@ -391,6 +410,35 @@ describe('runImport for a Grok export', () => {
 
     expect(report.imported).toBe(2);
     expect(report.errors).toHaveLength(1);
+    expect(recorded.conversations.map((entry) => entry.convo.importedFrom.externalId)).toEqual([
+      'ok-1',
+      'ok-2',
+    ]);
+  });
+
+  it('reports a malformed Grok record and imports valid records around it', async () => {
+    const filepath = await writeZip({
+      [GROK_ENTRY_PATH]: JSON.stringify({
+        conversations: [
+          { conversation: { id: 'ok-1', title: 'First' }, responses: [] },
+          null,
+          { conversation: { id: 'ok-2', title: 'Second' }, responses: [] },
+        ],
+      }),
+    });
+    const { sink, recorded } = recorder();
+
+    const report = await runImport({
+      ...BASE,
+      filepath,
+      format: 'grok',
+      batch: sink,
+      existingExternalIds: new Set(),
+    });
+
+    expect(report.imported).toBe(2);
+    expect(report.errors).toHaveLength(1);
+    expect(report.errors[0]).toContain('malformed Grok conversation record');
     expect(recorded.conversations.map((entry) => entry.convo.importedFrom.externalId)).toEqual([
       'ok-1',
       'ok-2',

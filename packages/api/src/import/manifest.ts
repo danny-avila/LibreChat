@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import type { ClaudeConversation, ExportFormat, GrokExport } from './types';
+import type { GrokExport, ExportFormat, ClaudeConversation, GrokConversationEntry } from './types';
 import type { ArchiveEntry } from './archive';
 
 export const MANIFEST_ENTRY = 'export_manifest.json';
@@ -190,16 +190,23 @@ export function hasClaudeConversationShape(conversations: unknown[]): boolean {
  * `{ "conversations": [] }` is any number of things and stays unsupported,
  * where an empty ChatGPT array is grandfathered onto the ChatGPT path.
  */
+export function isGrokConversationEntry(entry: unknown): entry is GrokConversationEntry {
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+    return false;
+  }
+  const { conversation } = entry as GrokConversationEntry;
+  return typeof conversation === 'object' && conversation !== null && !Array.isArray(conversation);
+}
+
 export function isGrokExport(parsed: unknown): parsed is GrokExport {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     return false;
   }
-  const { conversations } = parsed as GrokExport;
+  const { conversations } = parsed as { conversations?: unknown };
   if (!Array.isArray(conversations) || conversations.length === 0) {
     return false;
   }
-  const [first] = conversations;
-  return typeof first === 'object' && first !== null && 'conversation' in first;
+  return conversations.some(isGrokConversationEntry);
 }
 
 /**

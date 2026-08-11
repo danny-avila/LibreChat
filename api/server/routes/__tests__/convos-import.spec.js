@@ -320,6 +320,28 @@ describe('conversation import job API (real router, real Mongo)', () => {
     expect(savedConvos).toBe(2);
   });
 
+  it('starts archive sweep eligibility when the inspected job is created', async () => {
+    const filepath = await buildChatGptExportZip();
+    const uploadIndex = uploadDirs.length;
+    const realCreate = ImportJobStore.prototype.create;
+    const oldTime = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    const createSpy = jest
+      .spyOn(ImportJobStore.prototype, 'create')
+      .mockImplementation(function (input) {
+        fs.utimesSync(input.filepath, oldTime, oldTime);
+        return realCreate.call(this, input);
+      });
+
+    try {
+      await request(app).post('/api/convos/import').attach('file', filepath).expect(202);
+
+      const storedFilepath = storedUpload(uploadDirs[uploadIndex], userId);
+      expect(fs.statSync(storedFilepath).mtimeMs).toBeGreaterThan(Date.now() - 60_000);
+    } finally {
+      createSpy.mockRestore();
+    }
+  });
+
   /** `client/public/images` is served statically, and authentication over it
    * is off unless `secureImageLinks` is enabled, so an imported PDF or audio
    * file written to the strategy's default base would be anonymously

@@ -3,10 +3,10 @@ import type { SaveMessageDetails, RunImportInput, ProviderImportContext } from '
 import type { GrokExport, ImportProgress, GrokConversationEntry } from '~/import/types';
 import type { ConvertedGrokConversation } from './convert';
 import type { Archive } from '~/import/archive';
+import { isGrokExport, isGrokConversationEntry } from '~/import/manifest';
 import { recordError, sanitizeImportError } from '~/import/errors';
 import { convertGrokConversation } from './convert';
 import { isUsableExternalId } from '~/import/sink';
-import { isGrokExport } from '~/import/manifest';
 
 export const GROK_SOURCE = 'grok';
 
@@ -123,6 +123,13 @@ export async function runGrokImport(context: ProviderImportContext): Promise<voi
       if (input.isCancelled && (await input.isCancelled())) {
         cancelled = true;
         break;
+      }
+
+      if (!isGrokConversationEntry(entry)) {
+        recordError(report.errors, `${shard}: malformed Grok conversation record`);
+        progress.conversations.done += 1;
+        await input.onProgress?.(progress);
+        continue;
       }
 
       let externalId = '';

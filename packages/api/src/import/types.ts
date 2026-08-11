@@ -286,7 +286,7 @@ export interface GrokConversationEntry {
  * `media_posts` sit beside `conversations` and are out of scope, so they are
  * deliberately absent from this type rather than parsed and ignored. */
 export interface GrokExport {
-  conversations: GrokConversationEntry[];
+  conversations: unknown[];
 }
 
 export interface ImportAttachment {

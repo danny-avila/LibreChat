@@ -260,6 +260,11 @@ describe('isGrokExport', () => {
     expect(isGrokExport({ conversations: [entry], projects: [], media_posts: [] })).toBe(true);
   });
 
+  it('accepts mixed Grok records when a valid envelope remains reachable', () => {
+    expect(isGrokExport({ conversations: [entry, null] })).toBe(true);
+    expect(isGrokExport({ conversations: [null, entry] })).toBe(true);
+  });
+
   it('rejects every shape that is not identifiably Grok', () => {
     expect(isGrokExport({ conversations: [] })).toBe(false);
     expect(isGrokExport({ conversations: 'nope' })).toBe(false);

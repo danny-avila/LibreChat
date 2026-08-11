@@ -5,8 +5,8 @@ import type { ChatGptAttachment, ImportedAsset } from './types';
 import type { AssetReference } from './chatgpt/content';
 import type { ExportLayout } from './manifest';
 import type { Archive } from './archive';
+import { FILENAME_SEGMENT_MAX_BYTES, sanitizeFilename } from '~/utils/files';
 import { recordError, sanitizeImportError } from './errors';
-import { sanitizeFilename } from '~/utils/files';
 import { ASSET_NAMES_ENTRY } from './manifest';
 
 export interface SaveBufferInput {
@@ -335,7 +335,9 @@ async function ingestOne(
    * `fileId` prefix is a fresh `uuidv4()` per asset, so two entries whose
    * names sanitize to the same string still land at distinct paths. */
   const storageName = normalizeImageExtension(originalName, type);
-  const fileName = `${fileId}-${sanitizeFilename(storageName)}`;
+  const prefix = `${fileId}-`;
+  const nameBytes = FILENAME_SEGMENT_MAX_BYTES - Buffer.byteLength(prefix, 'utf8');
+  const fileName = `${prefix}${sanitizeFilename(storageName, nameBytes)}`;
 
   const { filepath, source } = await deps.saveBuffer({ userId, buffer, fileName, type, tenantId });
 
@@ -392,8 +394,14 @@ export async function ingestAssets(input: IngestInput): Promise<IngestResult> {
   let processed = 0;
 
   for (const pointer of unique) {
-    if (input.isCancelled && (await input.isCancelled())) {
-      break;
+    if (input.isCancelled) {
+      try {
+        if (await input.isCancelled()) {
+          break;
+        }
+      } catch (error) {
+        logger.error('[import] Could not read asset-import cancellation state', error);
+      }
     }
 
     const entryName = pointerToEntry(pointer);
