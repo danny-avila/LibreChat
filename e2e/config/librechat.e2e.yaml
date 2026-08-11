@@ -122,7 +122,7 @@ endpoints:
       titleConvo: false
       modelDisplayLabel: 'Mock Provider D'
 
-    # Activity labels are enabled ONLY here. They get a dedicated endpoint
+    # Child-only activity labels are enabled here. They get a dedicated endpoint
     # because a label collapses its tool group (a labeled block auto-collapses
     # even at one call), which hides the tool cards other specs assert on —
     # enabling this on a shared endpoint broke steering.spec.ts. Provider D is
@@ -142,6 +142,24 @@ endpoints:
       activityLabel: true
       activityModel: 'mock-label-model'
 
+    # Parent activity phases need at least two sequential logical activities
+    # and have their own generated summary. Keep that behavior isolated from
+    # Provider E's child-label coverage so each endpoint exercises one config
+    # gate without changing the rendering assumptions of unrelated specs.
+    - name: 'Mock Provider F'
+      apiKey: 'e2e-mock-key-f'
+      baseURL: 'http://127.0.0.1:8889/v1'
+      models:
+        default:
+          - 'mock-model-f'
+        fetch: false
+      titleConvo: false
+      modelDisplayLabel: 'Mock Provider F'
+      activityLabel: true
+      activityModel: 'mock-label-model'
+      activityPhaseLabel: true
+      activityPhaseModel: 'mock-phase-label-model'
+
 modelSpecs:
   prioritize: true
   # Enforcement would reject sends from the non-spec paths addedEndpoints
@@ -153,6 +171,7 @@ modelSpecs:
     - 'Mock Provider C'
     - 'Mock Provider D'
     - 'Mock Provider E'
+    - 'Mock Provider F'
     - 'agents'
   list:
     - name: 'e2e-mock-provider-a'

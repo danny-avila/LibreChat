@@ -105,6 +105,221 @@ describe('createActivityPhaseWiring', () => {
     expect(emitLabelEvent).toHaveBeenCalledTimes(2);
   });
 
+  it('reanchors a tool that lands after the phase hook observes its child label', async () => {
+    const parts: LooseContentPart[] = [];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Verified both delayed tool results' })),
+    });
+
+    /** The child-label hook can synchronously reserve its slot before the
+     *  tool event reaches the shared content array. A tool-only provider turn
+     *  can also leave an empty final-answer part between the tool and label;
+     *  that invisible boundary must not strand the tool outside the phase. */
+    parts[1] = { type: ContentTypes.TEXT, text: '', phase: 'final_answer' };
+    parts[2] = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Recorded the first delayed result',
+      tool_call_ids: ['tool-1'],
+      pending: false,
+    };
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+
+    parts[3] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } };
+    parts[4] = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Recorded the second delayed result',
+      tool_call_ids: ['tool-2'],
+      pending: false,
+    };
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'final-step',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    expect(parts[5]).toMatchObject({
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_count: 2,
+    });
+    parts[0] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } };
+    expect(parts.slice(0, 5)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tool_call: { id: 'tool-1' } }),
+        expect.objectContaining({ tool_call: { id: 'tool-2' } }),
+      ]),
+    );
+  });
+
+  it('does not claim a visible final answer for a later parent phase', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TEXT, text: 'Earlier final answer', phase: 'final_answer' },
+    ];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Verified the later tool results' })),
+    });
+
+    parts[2] = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Recorded the first later result',
+      tool_call_ids: ['tool-1'],
+      pending: false,
+    };
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    parts[3] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } };
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'final-step',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    expect(parts[4]).toMatchObject({
+      activity_label_type: 'phase',
+      activity_start_index: 1,
+      activity_count: 2,
+    });
+    parts[1] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } };
+    expect(parts.slice(1, 4)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tool_call: { id: 'tool-1' } }),
+        expect.objectContaining({ tool_call: { id: 'tool-2' } }),
+      ]),
+    );
+  });
+
+  it('does not use repeated reasoning to reanchor a missing tool across a phase', async () => {
+    const repeatedReasoning = 'Compared the same deployment paths.';
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.THINK, think: repeatedReasoning },
+      {
+        type: ContentTypes.ACTIVITY_LABEL,
+        activity_label: '',
+        activity_label_type: 'phase',
+        activity_start_index: 0,
+        activity_count: 2,
+        pending: false,
+      },
+    ];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => {
+        if (stepId === 'missing-tool-reasoning') return 2;
+        if (stepId === 'current-reasoning') return 4;
+        return undefined;
+      },
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Verified the current deployment path' })),
+    });
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_REASONING_DELTA]: { handle: jest.fn() },
+    });
+
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'missing-tool-reasoning',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'think' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    parts[2] = { type: ContentTypes.THINK, think: repeatedReasoning };
+    handlers?.[GraphEvents.ON_REASONING_DELTA]?.handle(
+      GraphEvents.ON_REASONING_DELTA,
+      {
+        id: 'missing-tool-reasoning',
+        delta: { content: { type: ContentTypes.THINK, think: repeatedReasoning } },
+      },
+      undefined,
+      undefined,
+    );
+    parts[3] = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Recorded a result before its tool arrived',
+      tool_call_ids: ['missing-tool'],
+      pending: false,
+    };
+    await wiring.hook(batch('missing-tool'), new AbortController().signal);
+
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'current-reasoning',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'think' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    parts[4] = { type: ContentTypes.THINK, think: repeatedReasoning };
+    handlers?.[GraphEvents.ON_REASONING_DELTA]?.handle(
+      GraphEvents.ON_REASONING_DELTA,
+      {
+        id: 'current-reasoning',
+        delta: { content: { type: ContentTypes.THINK, think: repeatedReasoning } },
+      },
+      undefined,
+      undefined,
+    );
+
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'final-step',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+
+    expect(parts[5]).toMatchObject({
+      activity_label_type: 'phase',
+      activity_start_index: 2,
+      activity_count: 2,
+    });
+  });
+
   it('does not spend a phase call on one logical activity', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
