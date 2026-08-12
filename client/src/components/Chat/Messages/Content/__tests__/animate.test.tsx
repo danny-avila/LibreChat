@@ -45,6 +45,16 @@ describe('splitWords', () => {
     expect(parts.join('')).toBe('これは日本語のテストです');
     expect(parts.length).toBeGreaterThan(1);
   });
+
+  it('segments kana-only Japanese text without any Han characters', () => {
+    const hiragana = splitWords('こんにちはせかい');
+    expect(hiragana.join('')).toBe('こんにちはせかい');
+    expect(hiragana.length).toBeGreaterThan(1);
+
+    const katakana = splitWords('カタカナテキスト');
+    expect(katakana.join('')).toBe('カタカナテキスト');
+    expect(katakana.length).toBeGreaterThan(1);
+  });
 });
 
 describe('classifyValue', () => {
