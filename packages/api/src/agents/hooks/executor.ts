@@ -7,6 +7,7 @@ import type { PluginHookExecutor, PluginHookExecutionRequest } from './runtime';
 import type { PluginHookCapabilities } from './compatibility';
 import type { PluginHookHandler } from './schema';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
+import { createReaper } from './reaper';
 
 const MAX_CAPTURED_STREAM_BYTES = 1_048_576;
 const MAX_REASON_LENGTH = 2_000;
@@ -354,66 +355,6 @@ function capturedText(stream: CapturedStream): string {
   return Buffer.concat(stream.chunks).toString('utf8');
 }
 
-/**
- * POSIX children detach into their own process group so an abort can kill the
- * whole tree — a hook that launches descendants (`worker & wait`) would
- * otherwise leave them running with the captured stdio open. Windows has no
- * group signal; `taskkill /t` walks the tree there, with `/f` on the
- * SIGKILL pass, falling back to a direct kill if `taskkill` is unavailable.
- */
-function killTree(child: ReturnType<typeof spawn>, killSignal: NodeJS.Signals): void {
-  const pid = child.pid;
-  if (typeof pid !== 'number') {
-    child.kill(killSignal);
-    return;
-  }
-  if (process.platform === 'win32') {
-    const force = killSignal === 'SIGKILL' ? ['/f'] : [];
-    try {
-      spawn('taskkill', ['/pid', String(pid), '/t', ...force], { stdio: 'ignore' }).once(
-        'error',
-        () => child.kill(killSignal),
-      );
-    } catch {
-      child.kill(killSignal);
-    }
-    return;
-  }
-  try {
-    process.kill(-pid, killSignal);
-  } catch {
-    child.kill(killSignal);
-  }
-}
-
-function groupExists(pid: number): boolean {
-  try {
-    process.kill(-pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Whether a forced escalation pass can still accomplish anything. POSIX group
- * signals reach descendants even after the wrapper dies, so the group is
- * probed directly. Windows `taskkill /t` walks the tree from the root
- * process, so once Node has observed the root's exit the pass can reap
- * nothing and a late signal could only hit a recycled PID; orphaned
- * SIGTERM-ignoring descendants there are an accepted platform limitation
- * without Job Objects.
- */
-function escalationTargetAlive(child: ReturnType<typeof spawn>): boolean {
-  if (typeof child.pid !== 'number') {
-    return false;
-  }
-  if (process.platform === 'win32') {
-    return child.exitCode === null && child.signalCode === null;
-  }
-  return groupExists(child.pid);
-}
-
 function runCommand(
   invocation: ShellInvocation,
   payload: string,
@@ -431,29 +372,9 @@ function runCommand(
     });
     const stdout: CapturedStream = { chunks: [], bytes: 0 };
     const stderr: CapturedStream = { chunks: [], bytes: 0 };
-    let killTimer: NodeJS.Timeout | undefined;
-    /**
-     * Escalation must survive the wrapper's `close` — a SIGTERM-ignoring
-     * descendant can outlive the shell on POSIX — yet must never signal
-     * blindly: a fully-dead tree's numeric id could be recycled during the
-     * grace window. Both hazards resolve through `escalationTargetAlive`:
-     * `close` cancels escalation only when a pass could no longer reap
-     * anything, and the deadline re-checks before delivering the kill. The
-     * residual check-to-signal race is unavoidable without pidfd support
-     * and needs survivors at close AND full tree death AND a recycled id
-     * inside the same window.
-     */
-    const reapTree = () => {
-      killTree(child, 'SIGTERM');
-      killTimer = setTimeout(() => {
-        if (!escalationTargetAlive(child)) {
-          return;
-        }
-        killTree(child, 'SIGKILL');
-      }, killGraceMs);
-      killTimer.unref?.();
-    };
-    signal.addEventListener('abort', reapTree, { once: true });
+    const reaper = createReaper(child, killGraceMs);
+    const onAbort = (): void => reaper.reap();
+    signal.addEventListener('abort', onAbort, { once: true });
 
     child.stdout.on('data', (chunk: Buffer) => {
       appendCapped(stdout, chunk);
@@ -462,24 +383,12 @@ function runCommand(
       appendCapped(stderr, chunk);
     });
     child.on('error', (error) => {
-      signal.removeEventListener('abort', reapTree);
+      signal.removeEventListener('abort', onAbort);
       reject(error);
     });
     child.on('close', (code) => {
-      signal.removeEventListener('abort', reapTree);
-      if (killTimer !== undefined && !escalationTargetAlive(child)) {
-        clearTimeout(killTimer);
-      }
-      /**
-       * A hook that backgrounds a worker and exits normally would otherwise
-       * leak it: async handlers are unsupported, so no lifecycle owns a
-       * process that outlives the wrapper. A group left alive after a
-       * normal close is reaped with the same term-then-escalate sequence
-       * an abort uses.
-       */
-      if (killTimer === undefined && escalationTargetAlive(child)) {
-        reapTree();
-      }
+      signal.removeEventListener('abort', onAbort);
+      reaper.onClose();
       resolve({ code, stdout: capturedText(stdout), stderr: capturedText(stderr) });
     });
     child.stdin.on('error', () => {
