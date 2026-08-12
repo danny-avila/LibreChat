@@ -57,21 +57,21 @@ test.describe('message hover actions', () => {
      *  would be checking the wrong state and pass for the wrong reason. */
     await expect(stopButton(page)).toBeVisible();
 
-    /** Copy proves the toolbar mounted, so the absences below read as "withheld"
-     *  rather than "nothing rendered yet". The streaming row is the last one, so
-     *  its actions never fade and this needs no hover to stay stable. */
-    await expect(streaming.getByRole('button', { name: 'Copy to clipboard' })).toHaveCSS(
-      'opacity',
-      '1',
-    );
+    /** Copying half a sentence is never what the reader wants, so the response
+     *  offers nothing at all until it settles. */
+    const streamingCopy = streaming.getByRole('button', { name: 'Copy to clipboard' });
+    await expect(streamingCopy).toHaveCount(0);
     await expect(streamingEdit).toHaveCount(0);
     await expect(streamingFork).toHaveCount(0);
 
-    /** The turn above it is settled, so the stream must not strip its actions. */
+    /** The settled turn above carries the positive control: the toolbar system is
+     *  mounted and working, so the absences above read as "withheld" rather than
+     *  "nothing rendered yet". */
     await expect(userTurn(page).locator('button[id^="edit-"]')).toBeEnabled();
 
     /** ...and the response earns them back, or "withheld" would just be "gone". */
     await expect(stopButton(page)).toBeHidden({ timeout: 60000 });
+    await expect(streamingCopy).toBeEnabled();
     await expect(streamingEdit).toBeEnabled();
     await expect(streamingFork).toBeEnabled();
   });

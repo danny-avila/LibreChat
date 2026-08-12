@@ -197,21 +197,23 @@ const HoverButtons = ({
       )}
 
       {/* Copy Button */}
-      <HoverButton
-        onClick={handleCopy}
-        title={
-          isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
-        }
-        icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
-        isLast={isLast}
-        className={cn(
-          'ml-0 flex items-center gap-1.5 text-xs',
-          isSubmitting && isCreatedByUser
-            ? 'group-hover:opacity-100 [@media(hover:hover)]:opacity-0'
-            : '',
-        )}
-        dataTestId={!isCreatedByUser ? 'copy-response-button' : undefined}
-      />
+      {!isActiveStreamingMessage && (
+        <HoverButton
+          onClick={handleCopy}
+          title={
+            isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
+          }
+          icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
+          isLast={isLast}
+          className={cn(
+            'ml-0 flex items-center gap-1.5 text-xs',
+            isSubmitting && isCreatedByUser
+              ? 'group-hover:opacity-100 [@media(hover:hover)]:opacity-0'
+              : '',
+          )}
+          dataTestId={!isCreatedByUser ? 'copy-response-button' : undefined}
+        />
+      )}
 
       {/* Edit Button */}
       {isEditableEndpoint && !hideEditButton && (

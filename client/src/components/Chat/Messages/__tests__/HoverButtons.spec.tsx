@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { render, screen } from '@testing-library/react';
 import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { EModelEndpoint, type TConversation, type TMessage } from 'librechat-data-provider';
@@ -83,7 +83,7 @@ describe('HoverButtons edit affordance', () => {
     expect(editButton).not.toHaveClass('pointer-events-none', 'opacity-0', '!opacity-0');
   });
 
-  it('omits edit without reserving space on the actively streaming assistant message', () => {
+  it('offers no actions at all on the actively streaming assistant message', () => {
     const assistantMessage = {
       ...userMessage,
       messageId: 'assistant-1',
@@ -98,9 +98,11 @@ describe('HoverButtons edit affordance', () => {
       latestMessageId: assistantMessage.messageId,
     });
 
+    /** Copying, forking or editing half a sentence all act on text that is about
+     *  to change, so the response carries nothing until it settles. */
     expect(container.querySelector(`#edit-${assistantMessage.messageId}`)).toBeNull();
-    expect(screen.getByTestId('copy-response-button')).toBeEnabled();
-    expect(container.querySelectorAll('button')).toHaveLength(1);
+    expect(screen.queryByTestId('copy-response-button')).toBeNull();
+    expect(container.querySelectorAll('button')).toHaveLength(0);
   });
 
   it('offers copy for an error response', () => {
