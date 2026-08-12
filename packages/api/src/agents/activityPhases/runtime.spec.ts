@@ -860,11 +860,14 @@ describe('createActivityPhaseWiring', () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
     ];
+    const stepIndexes = new Map([
+      ['root-text', 1],
+      ['commentary', 3],
+    ]);
     const generatePhase = jest.fn(async () => ({ label: 'Completed the commentary phase' }));
     const wiring = createActivityPhaseWiring({
       getContentParts: () => parts,
-      getStepIndex: (stepId) =>
-        stepId === 'root-text' ? 1 : stepId === 'commentary' ? 3 : undefined,
+      getStepIndex: (stepId) => stepIndexes.get(stepId),
       bumpIndexOffset: jest.fn(),
       emitLabelEvent: jest.fn(async () => undefined),
       trackPendingFill: jest.fn(),
