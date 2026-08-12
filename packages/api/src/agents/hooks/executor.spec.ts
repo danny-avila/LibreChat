@@ -4,7 +4,11 @@ import path from 'path';
 import type { HookInput, HookEvent } from '@librechat/agents';
 import type { PluginHookExecutionRequest } from './runtime';
 import type { PluginHookHandler } from './schema';
-import { commandExecutorCapabilities, createCommandExecutor } from './executor';
+import {
+  commandExecutorCapabilities,
+  createCommandExecutor,
+  getWindowsHandlerIssue,
+} from './executor';
 
 let pluginRoot: string;
 let pluginData: string;
@@ -26,6 +30,8 @@ function request(
     pluginId: 'demo',
     sourceEvent: 'PreToolUse',
     targetEvent: 'PreToolUse' as HookEvent,
+    groupIndex: 0,
+    handlerIndex: 0,
     handler,
     input: PRE_TOOL_INPUT,
     payload: {
@@ -125,6 +131,64 @@ describe('createCommandExecutor', () => {
       matcher: 'web_search',
       requiresToolNameTranslation: true,
     });
+  });
+
+  test('rejects matchers naming Claude built-ins with no runtime equivalent', () => {
+    const translate = (matcher: string) =>
+      commandExecutorCapabilities.translateMatcher?.({
+        sourceEvent: 'PreToolUse',
+        targetEvent: 'PreToolUse',
+        matcher,
+      });
+    expect(translate('Glob')).toBeUndefined();
+    expect(translate('Task|my_mcp_tool')).toBeUndefined();
+    expect(translate('^(Bash|WebFetch)$')).toBeUndefined();
+    expect(translate('Grepish')).toBe('Grepish');
+  });
+
+  test('presents aliased tool inputs under Claude field names', () => {
+    const translate = (toolName: string, toolInput: Record<string, unknown>) =>
+      commandExecutorCapabilities.toPluginToolInput?.({
+        sourceEvent: 'PreToolUse',
+        targetEvent: 'PreToolUse',
+        toolName,
+        toolInput,
+      });
+    expect(translate('create_file', { path: '/a.md', content: 'x', overwrite: true })).toEqual({
+      file_path: '/a.md',
+      content: 'x',
+      overwrite: true,
+    });
+    expect(
+      translate('edit_file', {
+        path: '/a.md',
+        old_text: 'foo',
+        new_text: 'bar',
+        edits: [{ old_text: 'a', new_text: 'b' }],
+      }),
+    ).toEqual({
+      file_path: '/a.md',
+      old_string: 'foo',
+      new_string: 'bar',
+      edits: [{ old_string: 'a', new_string: 'b' }],
+    });
+    expect(translate('read_file', { intent: 'read', path: '/a.md' })).toEqual({
+      intent: 'read',
+      file_path: '/a.md',
+    });
+    expect(translate('bash_tool', { command: 'ls' })).toEqual({ command: 'ls' });
+    expect(translate('my_mcp_tool', { path: '/a.md' })).toEqual({ path: '/a.md' });
+  });
+
+  test('rejects portable-only command handlers on Windows at plan time', () => {
+    const portable: PluginHookHandler = { type: 'command', command: 'echo ok' };
+    expect(getWindowsHandlerIssue(portable, 'win32')).toContain('commandWindows');
+    expect(getWindowsHandlerIssue(portable, 'linux')).toBeUndefined();
+    expect(
+      getWindowsHandlerIssue({ ...portable, commandWindows: 'Write-Output ok' }, 'win32'),
+    ).toBeUndefined();
+    expect(getWindowsHandlerIssue({ ...portable, shell: 'powershell' }, 'win32')).toBeUndefined();
+    expect(getWindowsHandlerIssue({ type: 'prompt', prompt: 'check' }, 'win32')).toBeUndefined();
   });
 
   test('leaves matchers for non-tool events untranslated', () => {

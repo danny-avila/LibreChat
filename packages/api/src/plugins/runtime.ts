@@ -15,35 +15,10 @@ import {
 } from '~/agents/hooks';
 import { getDeploymentPluginRegistry } from './deployment';
 import { DEPLOYMENT_PLUGIN_HOOKS_ENV } from './constants';
+import { getPluginHookOnceStore } from './once';
 import { isEnabled } from '~/utils/common';
 
-const MAX_TRACKED_FIRINGS = 10_000;
 const KEY_SEPARATOR = '\u0000';
-
-/**
- * Hook registration is per-run, so the runtime's own SessionStart and `once`
- * dedup only spans one run. This process-wide FIFO extends both across runs
- * of the same conversation. Per-process by design: a multi-replica deployment
- * fires once per replica per conversation, which over-fires rather than
- * drops. Keys are scoped to the authenticated user so caller-supplied
- * conversation ids cannot collide across principals, and to the handler so
- * one handler firing never suppresses a sibling declared on the same event.
- */
-const firedOnceKeys = new Set<string>();
-
-function markFiredOnce(key: string): boolean {
-  if (firedOnceKeys.has(key)) {
-    return false;
-  }
-  if (firedOnceKeys.size >= MAX_TRACKED_FIRINGS) {
-    const oldest = firedOnceKeys.values().next().value;
-    if (oldest !== undefined) {
-      firedOnceKeys.delete(oldest);
-    }
-  }
-  firedOnceKeys.add(key);
-  return true;
-}
 
 function handlerIdentity(handler: PluginHookHandler): string {
   return JSON.stringify(
@@ -61,12 +36,21 @@ function onceKey(
     pluginId,
     request.payload.session_id,
     request.sourceEvent,
-    String(request.groupIndex ?? ''),
-    String(request.handlerIndex ?? ''),
+    String(request.groupIndex),
+    String(request.handlerIndex),
     handlerIdentity(request.handler),
   ].join(KEY_SEPARATOR);
 }
 
+/**
+ * Hook registration is per-run, so the runtime's own SessionStart and `once`
+ * dedup only spans one run. The once store extends both across runs of the
+ * same conversation (see `once.ts` for the store's ownership and eviction
+ * contract). Keys are scoped to the authenticated user so caller-supplied
+ * conversation ids cannot collide across principals, and to the declaration
+ * position and handler identity so one handler firing never suppresses a
+ * sibling declared on the same event.
+ */
 function withOnceDedup(
   pluginId: string,
   userId: string | undefined,
@@ -77,10 +61,14 @@ function withOnceDedup(
     execute(request, signal): HookOutput | Promise<HookOutput> {
       const oncePerSession =
         request.sourceEvent === 'SessionStart' || request.handler.once === true;
-      if (oncePerSession && !markFiredOnce(onceKey(pluginId, userId, request))) {
-        return {};
+      if (!oncePerSession) {
+        return executor.execute(request, signal);
       }
-      return executor.execute(request, signal);
+      const first = getPluginHookOnceStore().markOnce(onceKey(pluginId, userId, request));
+      if (first instanceof Promise) {
+        return first.then((isFirst) => (isFirst ? executor.execute(request, signal) : {}));
+      }
+      return first ? executor.execute(request, signal) : {};
     },
   };
 }

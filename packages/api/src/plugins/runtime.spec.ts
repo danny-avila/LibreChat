@@ -32,7 +32,7 @@ const HOOKS_DOCUMENT = {
         hooks: [
           {
             type: 'command',
-            command: `node -e 'let d="";process.stdin.on("data",(c)=>{d+=c;}).on("end",()=>{const p=JSON.parse(d);console.log(JSON.stringify(p.tool_name==="Write"?{decision:"deny",reason:"alias-guarded"}:{}));});'`,
+            command: `node -e 'let d="";process.stdin.on("data",(c)=>{d+=c;}).on("end",()=>{const p=JSON.parse(d);const claudeShaped=p.tool_name==="Write"&&p.tool_input.file_path==="/workspace/report.md"&&p.tool_input.path===undefined;console.log(JSON.stringify(claudeShaped?{decision:"deny",reason:"alias-guarded"}:{}));});'`,
           },
         ],
       },

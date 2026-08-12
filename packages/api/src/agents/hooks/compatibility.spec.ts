@@ -36,6 +36,37 @@ describe('planPluginHooks', () => {
     ]);
   });
 
+  test('marks handlers unsupported when the executor rejects them for the host', () => {
+    const plan = planPluginHooks(
+      document({
+        PreToolUse: [
+          { matcher: '^write_file$', hooks: [{ type: 'command', command: 'check' }] },
+          {
+            matcher: '^read_file$',
+            hooks: [{ type: 'command', command: 'check', commandWindows: 'check.ps1' }],
+          },
+        ],
+      }),
+      {
+        handlerTypes: new Set(['command']),
+        translateMatcher: ({ matcher }: { matcher: string }) => matcher,
+        supportsHandler: ({ handler }) =>
+          handler.commandWindows === undefined ? 'host requires commandWindows' : undefined,
+      },
+    );
+
+    expect(plan.summary).toEqual({ declared: 2, ready: 1, unsupported: 1 });
+    expect(plan.entries[0].status).toBe('unsupported');
+    expect(plan.entries[0].issues).toEqual([
+      expect.objectContaining({
+        code: 'unsupported_handler',
+        severity: 'error',
+        message: 'host requires commandWindows',
+      }),
+    ]);
+    expect(plan.entries[1].status).toBe('ready');
+  });
+
   test('maps SessionStart to RunStart with an explicit lifecycle warning', () => {
     const plan = planPluginHooks(
       document({

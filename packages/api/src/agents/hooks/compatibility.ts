@@ -92,6 +92,19 @@ export interface PluginHookToolNameTranslation {
   toolName: string;
 }
 
+export interface PluginHookToolInputTranslation {
+  sourceEvent: string;
+  targetEvent: HookEvent;
+  /** LibreChat runtime name of the invoked tool. */
+  toolName: string;
+  toolInput: Record<string, unknown>;
+}
+
+export interface PluginHookHandlerSupport {
+  sourceEvent: string;
+  handler: PluginHookHandler;
+}
+
 export interface PluginHookConditionMatch {
   sourceEvent: string;
   targetEvent: HookEvent;
@@ -107,6 +120,10 @@ export interface PluginHookCapabilities {
   ) => string | PluginHookMatcherTranslationResult | undefined;
   /** Maps a LibreChat runtime tool name back into the plugin's source namespace. */
   toPluginToolName?: (input: PluginHookToolNameTranslation) => string;
+  /** Presents a runtime tool input under the plugin's source field names. */
+  toPluginToolInput?: (input: PluginHookToolInputTranslation) => Record<string, unknown>;
+  /** Returns an error message when the executor cannot run this handler on the current host. */
+  supportsHandler?: (input: PluginHookHandlerSupport) => string | undefined;
   /** Evaluates Claude permission-rule syntax before a conditional handler executes. */
   matchCondition?: (input: PluginHookConditionMatch) => boolean;
   async?: boolean;
@@ -290,6 +307,10 @@ function getHandlerIssues(
       severity: 'error',
       message: `The configured executor does not support ${handler.type} hook handlers`,
     });
+  }
+  const supportMessage = capabilities.supportsHandler?.({ sourceEvent, handler });
+  if (supportMessage !== undefined) {
+    issues.push({ code: 'unsupported_handler', severity: 'error', message: supportMessage });
   }
   if (handler.type === 'prompt' && PROMPT_UNSUPPORTED_EVENTS.has(sourceEvent)) {
     issues.push({

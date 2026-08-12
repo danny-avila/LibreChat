@@ -65,8 +65,8 @@ export interface PluginHookExecutionRequest {
   targetEvent: HookEvent;
   handler: PluginHookHandler;
   /** Declaration position in the source document; distinguishes identical handlers under different matchers. */
-  groupIndex?: number;
-  handlerIndex?: number;
+  groupIndex: number;
+  handlerIndex: number;
   condition?: string;
   input: HookInput;
   payload: PluginHookPayload;
@@ -107,6 +107,10 @@ export interface PluginHookRegistration {
 interface PluginHookPayloadState {
   compactTrigger?: string;
   toPluginToolName?: (toolName: string) => string;
+  toPluginToolInput?: (
+    toolName: string,
+    toolInput: Record<string, unknown>,
+  ) => Record<string, unknown>;
 }
 
 function getSessionId(input: HookInput, context: PluginHookRuntimeContext): string {
@@ -129,6 +133,14 @@ function getPluginToolName(toolName: string, state: PluginHookPayloadState): str
     throw new Error(`No plugin tool-name mapping is available for "${toolName}"`);
   }
   return translated;
+}
+
+function getPluginToolInput(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  state: PluginHookPayloadState,
+): Record<string, unknown> {
+  return state.toPluginToolInput?.(toolName, toolInput) ?? toolInput;
 }
 
 function getMessageText(message: unknown): string | undefined {
@@ -163,7 +175,7 @@ function toPluginBatchToolCall(
   const toolResponse = entry.status === 'success' ? entry.toolOutput : entry.error;
   return {
     tool_name: getPluginToolName(entry.toolName, state),
-    tool_input: entry.toolInput,
+    tool_input: getPluginToolInput(entry.toolName, entry.toolInput, state),
     tool_use_id: entry.toolUseId,
     ...(toolResponse !== undefined && { tool_response: toolResponse }),
   };
@@ -214,14 +226,14 @@ export function createPluginHookPayload(
       return {
         ...payload,
         tool_name: getPluginToolName(input.toolName, state),
-        tool_input: input.toolInput,
+        tool_input: getPluginToolInput(input.toolName, input.toolInput, state),
         tool_use_id: input.toolUseId,
       };
     case 'PostToolUse':
       return {
         ...payload,
         tool_name: getPluginToolName(input.toolName, state),
-        tool_input: input.toolInput,
+        tool_input: getPluginToolInput(input.toolName, input.toolInput, state),
         tool_use_id: input.toolUseId,
         tool_response: input.toolOutput,
       };
@@ -229,7 +241,7 @@ export function createPluginHookPayload(
       return {
         ...payload,
         tool_name: getPluginToolName(input.toolName, state),
-        tool_input: input.toolInput,
+        tool_input: getPluginToolInput(input.toolName, input.toolInput, state),
         tool_use_id: input.toolUseId,
         error: input.error,
       };
@@ -245,7 +257,7 @@ export function createPluginHookPayload(
       return {
         ...payload,
         tool_name: getPluginToolName(input.toolName, state),
-        tool_input: input.toolInput,
+        tool_input: getPluginToolInput(input.toolName, input.toolInput, state),
         tool_use_id: input.toolUseId,
         reason: input.reason,
       };
@@ -352,6 +364,17 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
               targetEvent,
               toolName,
             });
+    const toolInputTranslator = executor.capabilities.toPluginToolInput;
+    const toPluginToolInput =
+      toolInputTranslator === undefined
+        ? undefined
+        : (toolName: string, toolInput: Record<string, unknown>): Record<string, unknown> =>
+            toolInputTranslator({
+              sourceEvent: entry.sourceEvent,
+              targetEvent,
+              toolName,
+              toolInput,
+            });
     const hook: HookCallback<HookEvent> = (input, signal) => {
       const sessionId = getSessionId(input, context);
       const compactTrigger = compactTriggers.get(sessionId);
@@ -399,7 +422,7 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
             targetEvent,
             condition: entry.condition,
             toolName: getPluginToolName(input.toolName, { toPluginToolName }),
-            toolInput: input.toolInput,
+            toolInput: getPluginToolInput(input.toolName, input.toolInput, { toPluginToolInput }),
           });
         } catch {
           return {};
@@ -435,6 +458,7 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
           payload: createPluginHookPayload(entry.sourceEvent, input, context, {
             compactTrigger,
             toPluginToolName,
+            toPluginToolInput,
           }),
         },
         signal,

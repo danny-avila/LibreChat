@@ -1,8 +1,12 @@
 import { spawn } from 'node:child_process';
+import { Tools } from 'librechat-data-provider';
 import { logger } from '@librechat/data-schemas';
-import type { HookOutput, ToolDecision, StopDecision } from '@librechat/agents';
+import { BashExecutionToolDefinition, ReadFileToolDefinition } from '@librechat/agents';
+import type { HookEvent, HookOutput, ToolDecision, StopDecision } from '@librechat/agents';
 import type { PluginHookExecutor, PluginHookExecutionRequest } from './runtime';
 import type { PluginHookCapabilities } from './compatibility';
+import type { PluginHookHandler } from './schema';
+import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 
 const MAX_CAPTURED_STREAM_BYTES = 1_048_576;
 const MAX_REASON_LENGTH = 2_000;
@@ -12,44 +16,142 @@ const BLOCKING_EXIT_CODE = 2;
 
 const TOOL_DECISIONS: ReadonlySet<string> = new Set<ToolDecision>(['allow', 'deny', 'ask']);
 const STOP_DECISIONS: ReadonlySet<string> = new Set<StopDecision>(['continue', 'block']);
-const DENY_DECISION_EVENTS: ReadonlySet<string> = new Set([
-  'PreToolUse',
-  'UserPromptSubmit',
-  'SubagentStart',
-]);
 const STDOUT_CONTEXT_EVENTS: ReadonlySet<string> = new Set(['SessionStart', 'UserPromptSubmit']);
 const PASSTHROUGH_ENV_VARS = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ'] as const;
 
+interface EventTraits {
+  /** Whether the matcher queries a runtime tool name, enabling alias translation. */
+  toolMatcher: boolean;
+  /** Decision vocabulary a hook output may use for this event. */
+  decisions: 'tool' | 'stop';
+  /** Blocking output shape produced by the exit-code-2 contract. */
+  exitTwo: 'deny' | 'block' | 'prevent';
+}
+
 /**
- * Claude-compatible tool aliases mapped to their LibreChat runtime names.
- * Without this a plugin authored against Claude's namespace (`Bash`, `Write`)
- * would plan as ready yet register a matcher that never fires — a silently
- * bypassed guard. Names outside the table pass through verbatim, since the
- * runtime namespace is open-ended (MCP and per-agent tools).
+ * Exhaustive per-event semantics. `satisfies Record<HookEvent, ...>` makes the
+ * compiler demand an answer for every current and future engine event, so a
+ * new event can never silently inherit an unconsidered default.
  */
-const RUNTIME_TOOL_BY_PLUGIN: ReadonlyMap<string, string> = new Map([
-  ['Bash', 'bash_tool'],
-  ['Write', 'create_file'],
-  ['Edit', 'edit_file'],
-  ['Read', 'read_file'],
-  ['WebSearch', 'web_search'],
-]);
-const PLUGIN_TOOL_BY_RUNTIME: ReadonlyMap<string, string> = new Map(
-  Array.from(RUNTIME_TOOL_BY_PLUGIN, ([plugin, runtime]) => [runtime, plugin]),
+const EVENT_TRAITS = {
+  RunStart: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },
+  UserPromptSubmit: { toolMatcher: false, decisions: 'tool', exitTwo: 'deny' },
+  PreToolUse: { toolMatcher: true, decisions: 'tool', exitTwo: 'deny' },
+  PostToolUse: { toolMatcher: true, decisions: 'tool', exitTwo: 'prevent' },
+  PostToolUseFailure: { toolMatcher: true, decisions: 'tool', exitTwo: 'prevent' },
+  PostToolBatch: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },
+  PreemptBoundary: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },
+  PermissionDenied: { toolMatcher: true, decisions: 'tool', exitTwo: 'prevent' },
+  SubagentStart: { toolMatcher: false, decisions: 'tool', exitTwo: 'deny' },
+  SubagentStop: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },
+  Stop: { toolMatcher: false, decisions: 'stop', exitTwo: 'block' },
+  StopFailure: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },
+  PreCompact: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },
+  PostCompact: { toolMatcher: false, decisions: 'tool', exitTwo: 'prevent' },
+} as const satisfies Record<HookEvent, EventTraits>;
+
+function renameFields(
+  input: Record<string, unknown>,
+  fields: Readonly<Record<string, string>>,
+): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    output[fields[key] ?? key] = value;
+  }
+  return output;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const FILE_FIELDS: Readonly<Record<string, string>> = Object.freeze({ path: 'file_path' });
+const EDIT_FIELDS: Readonly<Record<string, string>> = Object.freeze({
+  path: 'file_path',
+  old_text: 'old_string',
+  new_text: 'new_string',
+});
+const EDIT_BATCH_FIELDS: Readonly<Record<string, string>> = Object.freeze({
+  old_text: 'old_string',
+  new_text: 'new_string',
+});
+
+function toClaudeFileInput(toolInput: Record<string, unknown>): Record<string, unknown> {
+  return renameFields(toolInput, FILE_FIELDS);
+}
+
+function toClaudeEditInput(toolInput: Record<string, unknown>): Record<string, unknown> {
+  const renamed = renameFields(toolInput, EDIT_FIELDS);
+  if (Array.isArray(renamed.edits)) {
+    renamed.edits = renamed.edits.map((edit) =>
+      isPlainObject(edit) ? renameFields(edit, EDIT_BATCH_FIELDS) : edit,
+    );
+  }
+  return renamed;
+}
+
+interface ClaudeToolAlias {
+  claudeName: string;
+  runtimeName: string;
+  /** Presents the runtime tool arguments under Claude's field names. */
+  toPluginInput?: (toolInput: Record<string, unknown>) => Record<string, unknown>;
+}
+
+/**
+ * Claude-compatible tool aliases, with runtime names imported from their
+ * canonical definitions rather than restated as literals — a hand-maintained
+ * parallel table is how the `WebSearch` mapping was originally missed.
+ * Without this table a plugin authored against Claude's namespace (`Bash`,
+ * `Write`) would plan as ready yet register a matcher that never fires — a
+ * silently bypassed guard. `bash_tool` and `web_search` share Claude's
+ * load-bearing field names (`command`, `query`), so only the file tools
+ * need input translation.
+ */
+const CLAUDE_TOOL_ALIASES: readonly ClaudeToolAlias[] = [
+  { claudeName: 'Bash', runtimeName: BashExecutionToolDefinition.name },
+  { claudeName: 'Write', runtimeName: CREATE_FILE_TOOL_NAME, toPluginInput: toClaudeFileInput },
+  { claudeName: 'Edit', runtimeName: EDIT_FILE_TOOL_NAME, toPluginInput: toClaudeEditInput },
+  {
+    claudeName: 'Read',
+    runtimeName: ReadFileToolDefinition.name,
+    toPluginInput: toClaudeFileInput,
+  },
+  { claudeName: 'WebSearch', runtimeName: Tools.web_search },
+];
+const ALIAS_BY_CLAUDE: ReadonlyMap<string, ClaudeToolAlias> = new Map(
+  CLAUDE_TOOL_ALIASES.map((alias) => [alias.claudeName, alias]),
+);
+const ALIAS_BY_RUNTIME: ReadonlyMap<string, ClaudeToolAlias> = new Map(
+  CLAUDE_TOOL_ALIASES.map((alias) => [alias.runtimeName, alias]),
 );
 const ALIAS_TOKEN_PATTERN = new RegExp(
-  `\\b(${Array.from(RUNTIME_TOOL_BY_PLUGIN.keys()).join('|')})\\b`,
+  `\\b(${CLAUDE_TOOL_ALIASES.map((alias) => alias.claudeName).join('|')})\\b`,
   'g',
 );
 /** Character classes and escapes where token substitution could corrupt regex semantics. */
 const UNSAFE_ALIAS_CONTEXT = /[\\[\]]/;
-/** Events whose matcher queries a tool name; alias translation applies only here. */
-const TOOL_MATCHER_EVENTS: ReadonlySet<string> = new Set([
-  'PreToolUse',
-  'PostToolUse',
-  'PostToolUseFailure',
-  'PermissionDenied',
-]);
+
+/**
+ * Claude built-ins with no LibreChat runtime equivalent. A tool matcher naming
+ * one is rejected as unmapped at plan time: passing it through would register
+ * a guard that plans ready and never fires — the same silent-bypass failure
+ * mode the alias table exists to prevent.
+ */
+const UNSUPPORTED_CLAUDE_TOOLS = [
+  'Task',
+  'Glob',
+  'Grep',
+  'MultiEdit',
+  'NotebookEdit',
+  'TodoWrite',
+  'WebFetch',
+  'BashOutput',
+  'KillShell',
+  'ExitPlanMode',
+  'AskUserQuestion',
+  'SlashCommand',
+] as const;
+const UNSUPPORTED_TOOL_PATTERN = new RegExp(`\\b(?:${UNSUPPORTED_CLAUDE_TOOLS.join('|')})\\b`);
 
 function containsAliasToken(matcher: string): boolean {
   ALIAS_TOKEN_PATTERN.lastIndex = 0;
@@ -57,20 +159,46 @@ function containsAliasToken(matcher: string): boolean {
 }
 
 /**
+ * Plan-time gate for handlers the executor cannot run on the current host:
+ * Windows has no portable `bash`, so a command handler must declare
+ * `commandWindows` or `shell: "powershell"` to be executable there. Exported
+ * with an explicit platform parameter for direct testing off-Windows.
+ */
+export function getWindowsHandlerIssue(
+  handler: PluginHookHandler,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  if (platform !== 'win32' || handler.type !== 'command') {
+    return undefined;
+  }
+  if (handler.shell === 'powershell' || handler.commandWindows !== undefined) {
+    return undefined;
+  }
+  return 'Windows hosts run command hooks with PowerShell; declare commandWindows or shell "powershell"';
+}
+
+/**
  * Capabilities of the command executor, shared by plan time (plugin loading)
  * and run time (hook registration) so a handler the loader marked `ready` is
  * always executable. Alias tokens translate in exact matchers ("Bash|Write")
  * and in regex matchers ("^(Write|Edit)$") via word-bounded substitution; a
- * regex whose alias sits in a character class or escape is rejected as
- * unmapped — a loud plan-time diagnostic beats a guard that never fires.
- * Payload `tool_name`s are presented in the plugin's namespace (the Claude
- * alias where one exists) for both translated and native matchers, so one
- * hook script works unchanged across both.
+ * regex whose alias sits in a character class or escape — or any matcher
+ * naming a Claude built-in with no runtime equivalent — is rejected as
+ * unmapped, a loud plan-time diagnostic instead of a guard that never fires.
+ * Payloads are presented entirely in the plugin's namespace: `tool_name`
+ * maps back to the Claude alias and `tool_input` fields are renamed to
+ * Claude's schema, so one hook script works unchanged across both.
  */
 export const commandExecutorCapabilities: PluginHookCapabilities = {
   handlerTypes: new Set(['command']),
   translateMatcher: ({ matcher, targetEvent }) => {
-    if (!TOOL_MATCHER_EVENTS.has(targetEvent) || !containsAliasToken(matcher)) {
+    if (EVENT_TRAITS[targetEvent].toolMatcher !== true) {
+      return matcher;
+    }
+    if (UNSUPPORTED_TOOL_PATTERN.test(matcher)) {
+      return undefined;
+    }
+    if (!containsAliasToken(matcher)) {
       return matcher;
     }
     if (UNSAFE_ALIAS_CONTEXT.test(matcher)) {
@@ -79,11 +207,14 @@ export const commandExecutorCapabilities: PluginHookCapabilities = {
     ALIAS_TOKEN_PATTERN.lastIndex = 0;
     const mapped = matcher.replace(
       ALIAS_TOKEN_PATTERN,
-      (alias) => RUNTIME_TOOL_BY_PLUGIN.get(alias) ?? alias,
+      (claudeName) => ALIAS_BY_CLAUDE.get(claudeName)?.runtimeName ?? claudeName,
     );
     return { matcher: mapped, requiresToolNameTranslation: true };
   },
-  toPluginToolName: ({ toolName }) => PLUGIN_TOOL_BY_RUNTIME.get(toolName) ?? toolName,
+  toPluginToolName: ({ toolName }) => ALIAS_BY_RUNTIME.get(toolName)?.claudeName ?? toolName,
+  toPluginToolInput: ({ toolName, toolInput }) =>
+    ALIAS_BY_RUNTIME.get(toolName)?.toPluginInput?.(toolInput) ?? toolInput,
+  supportsHandler: ({ handler }) => getWindowsHandlerIssue(handler),
   sessionLifecycle: true,
 };
 
@@ -143,10 +274,12 @@ interface ShellInvocation {
 }
 
 /**
- * POSIX hosts run `bash -c <command>` with `args` bound to `$1..$n`; Windows
- * hosts honor `commandWindows`/`shell: powershell` and fold `args` onto the
- * command line. Handler-declared `shell: powershell` is ignored off-Windows —
- * the portable `command` string is authoritative there.
+ * POSIX hosts run `bash -c <command>` with `args` bound to `$1..$n`. Windows
+ * hosts run PowerShell and require `commandWindows` or `shell: powershell` —
+ * enforced at plan time via `supportsHandler`, and again here so a portable
+ * POSIX command never silently runs through a shell it was not written for.
+ * Handler-declared `shell: powershell` is ignored off-Windows — the portable
+ * `command` string is authoritative there.
  */
 function buildInvocation(
   request: PluginHookExecutionRequest,
@@ -160,7 +293,10 @@ function buildInvocation(
   }
   const command = expandVariables(rawCommand, options);
   const args = (handler.args ?? []).map((arg) => expandVariables(arg, options));
-  if (isWindows && (handler.shell === 'powershell' || handler.commandWindows !== undefined)) {
+  if (isWindows) {
+    if (handler.shell !== 'powershell' && handler.commandWindows === undefined) {
+      return undefined;
+    }
     const quotedArgs = args.map((arg) => `'${arg.replace(/'/g, "''")}'`);
     return {
       executable: 'powershell.exe',
@@ -193,18 +329,32 @@ function capturedText(stream: CapturedStream): string {
  * POSIX children detach into their own process group so an abort can kill the
  * whole tree — a hook that launches descendants (`worker & wait`) would
  * otherwise leave them running with the captured stdio open. Windows has no
- * group kill; `child.kill()` is the best available fallback there.
+ * group signal; `taskkill /t` walks the tree there, with `/f` on the
+ * SIGKILL pass, falling back to a direct kill if `taskkill` is unavailable.
  */
 function killTree(child: ReturnType<typeof spawn>, killSignal: NodeJS.Signals): void {
-  if (process.platform !== 'win32' && typeof child.pid === 'number') {
-    try {
-      process.kill(-child.pid, killSignal);
-      return;
-    } catch {
-      /* The group may already be gone; fall through to the direct kill. */
-    }
+  const pid = child.pid;
+  if (typeof pid !== 'number') {
+    child.kill(killSignal);
+    return;
   }
-  child.kill(killSignal);
+  if (process.platform === 'win32') {
+    const force = killSignal === 'SIGKILL' ? ['/f'] : [];
+    try {
+      spawn('taskkill', ['/pid', String(pid), '/t', ...force], { stdio: 'ignore' }).once(
+        'error',
+        () => child.kill(killSignal),
+      );
+    } catch {
+      child.kill(killSignal);
+    }
+    return;
+  }
+  try {
+    process.kill(-pid, killSignal);
+  } catch {
+    child.kill(killSignal);
+  }
 }
 
 function runCommand(
@@ -258,10 +408,6 @@ function truncate(value: string, limit: number): string {
   return value.length > limit ? value.slice(0, limit) : value;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /**
  * Accepts only the SDK output fields a plugin command may set. Decisions are
  * validated against the target event's legal set; message-injection fields
@@ -276,7 +422,8 @@ function sanitizeOutput(
   options: CommandExecutorOptions,
 ): HookOutput {
   const output: Record<string, unknown> = {};
-  const decisions = request.targetEvent === 'Stop' ? STOP_DECISIONS : TOOL_DECISIONS;
+  const decisions =
+    EVENT_TRAITS[request.targetEvent].decisions === 'stop' ? STOP_DECISIONS : TOOL_DECISIONS;
   if (typeof raw.decision === 'string' && decisions.has(raw.decision)) {
     output.decision =
       raw.decision === 'ask' && options.allowAskDecision !== true ? 'deny' : raw.decision;
@@ -310,10 +457,11 @@ function parseCompletion(
   const label = `[pluginHooks] ${request.pluginId} ${request.sourceEvent}`;
   if (completion.code === BLOCKING_EXIT_CODE) {
     const reason = truncate(completion.stderr.trim(), MAX_REASON_LENGTH);
-    if (request.targetEvent === 'Stop') {
+    const exitTwo = EVENT_TRAITS[request.targetEvent].exitTwo;
+    if (exitTwo === 'block') {
       return { decision: 'block', ...(reason && { reason }) };
     }
-    if (DENY_DECISION_EVENTS.has(request.targetEvent)) {
+    if (exitTwo === 'deny') {
       return { decision: 'deny', ...(reason && { reason }) };
     }
     /** Events with no decision channel block by preventing the next model turn. */
