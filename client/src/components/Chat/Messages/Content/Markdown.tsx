@@ -1,9 +1,7 @@
 import React, { memo, useMemo, useRef, useEffect } from 'react';
-import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { useMediaQuery } from '@librechat/client';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from './markdownConfig';
-import { smoothStreamingAtom } from '~/store/smoothStreaming';
+import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
 import { FADE_HYDRATION_THRESHOLD } from './animate';
 import { useMessageContext } from '~/Providers';
@@ -18,12 +16,11 @@ type TContentProps = {
 
 const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TContentProps) {
   const { isSubmitting = false } = useMessageContext();
-  const smoothStreaming = useAtomValue(smoothStreamingAtom);
-  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const smoothStreaming = useSmoothStreaming();
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
 
-  const animate = smoothStreaming && !reducedMotion && isLatestMessage && isSubmitting;
+  const animate = smoothStreaming && isLatestMessage && isSubmitting;
 
   // Hydration signal for the fade: substantial content already present at the
   // render where `animate` flips on means resumed/switched-to/follow-up
@@ -53,7 +50,7 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
     return (
       <div className="absolute">
         <p className="relative">
-          <span className={isLatestMessage ? 'result-thinking' : ''} />
+          <span className={isLatestMessage && !smoothStreaming ? 'result-thinking' : ''} />
         </p>
       </div>
     );
