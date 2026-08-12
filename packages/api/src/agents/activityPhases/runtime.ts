@@ -164,13 +164,19 @@ function buildSignal(signal?: AbortSignal): AbortSignal {
     : timeout;
 }
 
+function definedPartIndices(parts: ReadonlyArray<LooseContentPart | null | undefined>): number[] {
+  return Object.keys(parts).map(Number);
+}
+
 function findLastPartIndex(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   type: string,
 ): number {
-  for (let i = parts.length - 1; i >= 0; i--) {
-    if (parts[i]?.type === type) {
-      return i;
+  const indices = definedPartIndices(parts);
+  for (let position = indices.length - 1; position >= 0; position -= 1) {
+    const index = indices[position];
+    if (parts[index]?.type === type) {
+      return index;
     }
   }
   return Math.max(0, parts.length - 1);
@@ -181,14 +187,14 @@ function findBatchStart(
   toolCallIds: Set<string>,
 ): number {
   let first = -1;
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
+  for (const index of definedPartIndices(parts)) {
+    const part = parts[index];
     if (
       part?.type === ContentTypes.TOOL_CALL &&
       typeof part.tool_call?.id === 'string' &&
       toolCallIds.has(part.tool_call.id)
     ) {
-      first = first < 0 ? i : Math.min(first, i);
+      first = first < 0 ? index : Math.min(first, index);
     }
   }
   return first >= 0 ? first : Math.max(0, parts.length - 1);
@@ -205,9 +211,12 @@ function findTrackedStart(
   const excerpt = activity.thinkingExcerpts?.[0]?.trim();
   if (excerpt) {
     const needle = excerpt.slice(0, 80);
-    for (let i = 0; i < parts.length; i++) {
-      if (parts[i]?.type === ContentTypes.THINK && textValue(parts[i]?.think).includes(needle)) {
-        return i;
+    for (const index of definedPartIndices(parts)) {
+      if (
+        parts[index]?.type === ContentTypes.THINK &&
+        textValue(parts[index]?.think).includes(needle)
+      ) {
+        return index;
       }
     }
   }
@@ -241,7 +250,7 @@ function findReasoningStart(
   if (startIndex != null && matches(parts[startIndex])) {
     return startIndex;
   }
-  for (let index = 0; index < parts.length; index += 1) {
+  for (const index of definedPartIndices(parts)) {
     if (matches(parts[index])) {
       return index;
     }
@@ -316,9 +325,10 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const initialSnapshot = deps.initialSnapshot?.version === 1 ? deps.initialSnapshot : undefined;
   let generated = Math.max(
     initialSnapshot?.generated ?? 0,
-    content.filter(
-      (part) => part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type === 'phase',
-    ).length,
+    definedPartIndices(content).filter((index) => {
+      const part = content[index];
+      return part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type === 'phase';
+    }).length,
   );
   let activities: TrackedActivity[] =
     initialSnapshot?.activities.map((activity) => ({
@@ -333,15 +343,14 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     initialSnapshot?.partialActivityCount ??
     activities.filter((activity) => activity.status === 'partial').length;
   const overflowToolCallIds = new Set(initialSnapshot?.overflowToolCallIds ?? []);
-  const rebasedOverflowToolIndexes = content
-    .map((part, index) => ({ part, index }))
-    .filter(
-      ({ part }) =>
-        part?.type === ContentTypes.TOOL_CALL &&
-        typeof part.tool_call?.id === 'string' &&
-        overflowToolCallIds.has(part.tool_call.id),
-    )
-    .map(({ index }) => index);
+  const rebasedOverflowToolIndexes = definedPartIndices(content).filter((index) => {
+    const part = content[index];
+    return (
+      part?.type === ContentTypes.TOOL_CALL &&
+      typeof part.tool_call?.id === 'string' &&
+      overflowToolCallIds.has(part.tool_call.id)
+    );
+  });
   let overflowActivityStartIndex =
     rebasedOverflowToolIndexes.length > 0
       ? Math.max(...rebasedOverflowToolIndexes)
@@ -477,7 +486,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         };
         let child = childLabelIndex == null ? undefined : parts[childLabelIndex];
         if (!matchesToolIds(child) && toolCallIds != null && toolCallIds.length > 0) {
-          child = parts.find(matchesToolIds);
+          child = definedPartIndices(parts)
+            .map((index) => parts[index])
+            .find(matchesToolIds);
         }
         if (!matchesToolIds(child)) {
           return activity;
@@ -618,14 +629,16 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     const ids = new Set(input.entries.map((entry) => entry.toolUseId));
     const parts = deps.getContentParts();
     let childLabelIndex: number | undefined;
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const part = parts[i];
+    const indices = definedPartIndices(parts);
+    for (let position = indices.length - 1; position >= 0; position -= 1) {
+      const index = indices[position];
+      const part = parts[index];
       if (part?.type !== ContentTypes.ACTIVITY_LABEL || part.activity_label_type === 'phase') {
         continue;
       }
       const childIds = Array.isArray(part.tool_call_ids) ? part.tool_call_ids : [];
       if (childIds.some((id) => typeof id === 'string' && ids.has(id))) {
-        childLabelIndex = i;
+        childLabelIndex = index;
         break;
       }
     }
