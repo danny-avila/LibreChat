@@ -2300,8 +2300,12 @@ class AgentClient extends BaseClient {
      *  SDK event lands after the phase closes; scanning retained identities
      *  in an unchanged array would skip that hole and move the bound past the
      *  delayed tool before it arrives. */
-    const previousDefinedIndexes = Object.keys(previousParts).map(Number);
-    const currentDefinedIndexes = Object.keys(this.contentParts).map(Number);
+    const previousDefinedIndexes = Object.keys(previousParts)
+      .map(Number)
+      .filter((index) => previousParts[index] != null);
+    const currentDefinedIndexes = Object.keys(this.contentParts)
+      .map(Number)
+      .filter((index) => this.contentParts[index] != null);
     if (previousParts.length === this.contentParts.length) {
       const unchanged =
         previousDefinedIndexes.length === currentDefinedIndexes.length &&
