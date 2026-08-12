@@ -180,6 +180,34 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
     expect(phase.activity_end_index).toBe(1);
   });
 
+  it('keeps an appended phase before the final text when all phase children are filtered', () => {
+    const final = textPart('final');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Completed both reasoning activities',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+    };
+    const ctx = {
+      options: { agent: { hide_sequential_outputs: true } },
+      contentParts: [
+        { type: ContentTypes.THINK, think: 'first' },
+        { type: ContentTypes.THINK, think: 'second' },
+        final,
+        phase,
+      ],
+    };
+    const previousParts = [...ctx.contentParts];
+
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(ctx.contentParts).toEqual([final, phase]);
+    expect(phase.activity_start_index).toBe(0);
+    expect(phase.activity_end_index).toBe(0);
+  });
+
   it('is a no-op when hide_sequential_outputs is off', () => {
     const parts = [textPart('a'), textPart('b')];
     const ctx = { options: { agent: { hide_sequential_outputs: false } }, contentParts: parts };

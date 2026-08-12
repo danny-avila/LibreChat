@@ -35,15 +35,29 @@ function isVisibleContentPart(part: TMessageContentParts | undefined): boolean {
 }
 
 function isLogicallyEarlierPhaseMarker(
-  part: TMessageContentParts | undefined,
+  parts: ReadonlyArray<TMessageContentParts | undefined>,
   index: number,
 ): boolean {
+  const part = parts[index];
   const label = getActivityLabelPart(part);
-  return (
-    isPhaseActivityLabel(label) &&
-    typeof label?.activity_end_index === 'number' &&
-    label.activity_end_index < index
-  );
+  if (!isPhaseActivityLabel(label) || typeof label?.activity_end_index !== 'number') {
+    return false;
+  }
+  const endIndex = Math.max(0, Math.min(index, label.activity_end_index));
+  if (endIndex >= index) {
+    return false;
+  }
+  return parts.slice(endIndex, index).some((trailingPart) => {
+    if (!isVisibleContentPart(trailingPart)) {
+      return false;
+    }
+    if (trailingPart?.type !== ContentTypes.TEXT) {
+      return true;
+    }
+    const text =
+      typeof trailingPart.text === 'string' ? trailingPart.text : trailingPart.text?.value;
+    return typeof text === 'string' && text.length > 0;
+  });
 }
 
 export function isPhaseActivityLabel(part: ActivityLabelPart | undefined): boolean {
@@ -175,7 +189,7 @@ export function lastVisibleContentIdx(
   const parts = content ?? [];
   let last = parts.length - 1;
   while (last >= 0 && last in parts) {
-    if (isVisibleContentPart(parts[last]) && !isLogicallyEarlierPhaseMarker(parts[last], last)) {
+    if (isVisibleContentPart(parts[last]) && !isLogicallyEarlierPhaseMarker(parts, last)) {
       return last;
     }
     last -= 1;
@@ -191,7 +205,7 @@ export function lastVisibleContentIdx(
     if (
       index <= last &&
       isVisibleContentPart(parts[index]) &&
-      !isLogicallyEarlierPhaseMarker(parts[index], index)
+      !isLogicallyEarlierPhaseMarker(parts, index)
     ) {
       return index;
     }

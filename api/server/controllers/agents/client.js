@@ -2356,6 +2356,16 @@ class AgentClient extends BaseClient {
           }
         }
       }
+      if (!foundRetainedPart && hasExplicitEnd) {
+        for (let index = previousEndIndex; index < previousMarkerIndex; index += 1) {
+          const retainedIndex = retainedIndexes.get(previousParts[index]);
+          if (retainedIndex != null && retainedIndex < markerIndex) {
+            nextStartIndex = retainedIndex;
+            nextEndIndex = retainedIndex;
+            break;
+          }
+        }
+      }
       marker.activity_start_index = nextStartIndex;
       if (hasExplicitEnd) {
         marker.activity_end_index = Math.max(nextStartIndex, nextEndIndex);

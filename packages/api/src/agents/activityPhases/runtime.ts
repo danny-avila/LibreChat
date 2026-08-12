@@ -741,14 +741,35 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const complete = () => {
     let finalTextIndex =
       lastRootTextStepId == null ? undefined : deps.getStepIndex?.(lastRootTextStepId);
+    const parts = deps.getContentParts();
     if (finalTextIndex == null) {
-      const parts = deps.getContentParts();
       for (let index = parts.length - 1; index >= 0; index -= 1) {
         const part = parts[index];
         if (part?.type === ContentTypes.TEXT && part.groupId == null) {
           finalTextIndex = index;
           break;
         }
+      }
+    }
+    if (finalTextIndex != null) {
+      const candidateFinalTextIndex = finalTextIndex;
+      const hasLaterActivityPart = parts.some(
+        (part, index) =>
+          index > candidateFinalTextIndex &&
+          (part?.type === ContentTypes.TOOL_CALL ||
+            part?.type === ContentTypes.THINK ||
+            (part?.type === ContentTypes.ACTIVITY_LABEL &&
+              part.activity_label_type !== 'phase')),
+      );
+      const hasLaterTrackedActivity = activities.some(
+        (activity) => activity.startIndex >= candidateFinalTextIndex,
+      );
+      const hasLaterPendingReasoning = [...pendingReasoning.values()].some(
+        (reasoning) =>
+          reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex,
+      );
+      if (hasLaterActivityPart || hasLaterTrackedActivity || hasLaterPendingReasoning) {
+        finalTextIndex = undefined;
       }
     }
     close(undefined, finalTextIndex);

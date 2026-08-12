@@ -105,6 +105,19 @@ describe('lastVisibleContentIdx', () => {
     sparse[1] = tool;
     expect(lastVisibleContentIdx(sparse)).toBe(1);
   });
+
+  it('keeps an appended phase marker as the visible tail when its final slot is empty', () => {
+    const phase = labelPart({ activity_label: 'Completed the investigation', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 1,
+      activity_count: 2,
+    });
+    const emptyText = { type: ContentTypes.TEXT, text: '' } as TMessageContentParts;
+
+    expect(lastVisibleContentIdx([tool, emptyText, phase as never])).toBe(2);
+  });
 });
 
 describe('groupActivityPhases', () => {
