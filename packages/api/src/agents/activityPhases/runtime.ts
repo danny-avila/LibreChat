@@ -228,6 +228,25 @@ function findTrackedToolStart(
   return undefined;
 }
 
+function hasTrackedToolAtOrAfter(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  activity: TrackedActivity,
+  index: number,
+): boolean {
+  const toolCallIds = new Set(activity.toolCallIds ?? []);
+  if (toolCallIds.size === 0) {
+    return false;
+  }
+  return parts
+    .slice(index)
+    .some(
+      (part) =>
+        part?.type === ContentTypes.TOOL_CALL &&
+        typeof part.tool_call?.id === 'string' &&
+        toolCallIds.has(part.tool_call.id),
+    );
+}
+
 function findReasoningStart(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   text: string,
@@ -753,10 +772,15 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     }
     if (finalTextIndex != null) {
       const candidateFinalTextIndex = finalTextIndex;
-      const hasLaterTrackedActivity = activities.some(
-        (activity) =>
-          (findTrackedToolStart(parts, activity) ?? activity.startIndex) >= candidateFinalTextIndex,
-      );
+      const hasLaterTrackedActivity = activities.some((activity) => {
+        if (hasTrackedToolAtOrAfter(parts, activity, candidateFinalTextIndex)) {
+          return true;
+        }
+        return (
+          findTrackedToolStart(parts, activity) == null &&
+          activity.startIndex >= candidateFinalTextIndex
+        );
+      });
       const hasLaterPendingReasoning = [...pendingReasoning.values()].some(
         (reasoning) =>
           reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex,

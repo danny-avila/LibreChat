@@ -1037,6 +1037,58 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  it('keeps a parallel tool batch grouped when it straddles the last root text', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'parallel-1' } },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the parallel workflow' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'root-text' ? 2 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    const parallelBatch = batch('parallel-1');
+    parallelBatch.entries.push({
+      ...parallelBatch.entries[0],
+      toolUseId: 'parallel-2',
+      toolInput: { query: 'parallel-2' },
+      toolOutput: 'parallel-2-result',
+    });
+    await wiring.hook(parallelBatch, new AbortController().signal);
+    const handler = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+    })?.[GraphEvents.ON_RUN_STEP];
+    handler?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'root-text',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    parts[2] = { type: ContentTypes.TEXT, text: 'The parallel work may be complete.' };
+    parts[3] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'parallel-2' } };
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(generatePhase).toHaveBeenCalledTimes(1);
+    expect(parts[4]).toMatchObject({
+      activity_start_index: 0,
+      activity_end_index: 4,
+      activity_count: 2,
+    });
+  });
+
   it('preserves mixed batch failures as a partial phase outcome', async () => {
     const mixed = batch('tool-1');
     mixed.entries.push({
