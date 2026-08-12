@@ -233,12 +233,14 @@ describe('groupActivityPhases', () => {
     expect(segments?.[0]).toMatchObject({
       type: 'phase',
       startIndex: 0,
-      content: [tool, undefined, child],
+      content: [tool, child],
+      contentIndices: [0, 2],
     });
     expect(segments?.[1]).toMatchObject({
       type: 'content',
       startIndex: 1,
-      content: [final, undefined],
+      content: [final],
+      contentIndices: [1],
     });
     expect(lastVisibleContentIdx(content)).toBe(1);
   });
@@ -269,7 +271,9 @@ describe('groupActivityPhases', () => {
     });
     if (segments?.[0]?.type === 'phase') {
       expect(segments[0].content[0]).toBe(tool);
-      expect(segments[0].content[9_998]).toBe(child);
+      expect(segments[0].content[1]).toBe(child);
+      expect(segments[0].contentIndices).toEqual([0, 9_998]);
+      expect(segments[0].content).toHaveLength(2);
     }
   });
 

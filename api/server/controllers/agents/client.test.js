@@ -265,6 +265,26 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
     expect(phase.activity_start_index).toBe(0);
   });
 
+  it('rebases explicit bounds using only defined sparse slots', () => {
+    const toolCall = toolCallPart('tc-large-sparse');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Searched the sparse transcript',
+      activity_label_type: 'phase',
+      activity_start_index: 5,
+      activity_end_index: 999_999,
+    };
+    const previousParts = [];
+    previousParts[5] = toolCall;
+    previousParts[999_999] = phase;
+    const ctx = { options: { agent: {} }, contentParts: [toolCall, phase] };
+
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(phase.activity_start_index).toBe(0);
+    expect(phase.activity_end_index).toBe(1);
+  });
+
   it('preserves a sparse phase reservation when completion does not reshape content', () => {
     const firstTool = toolCallPart('tool-1');
     const secondTool = toolCallPart('tool-2');

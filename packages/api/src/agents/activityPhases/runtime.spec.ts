@@ -802,6 +802,57 @@ describe('createActivityPhaseWiring', () => {
     expect(parts[15]).toMatchObject({ activity_end_index: 14, activity_count: 14 });
   });
 
+  it('drops a stale reasoning-only overflow anchor after HITL compaction', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TEXT, text: 'The compacted answer is complete.' },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the resumed workflow' }));
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 14,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: Array.from({ length: 13 }, (_, index) => ({
+          startIndex: 0,
+          status: 'success' as const,
+          thinkingExcerpts: [`Retained reasoning ${index} that was filtered on pause.`],
+        })),
+        overflowActivityStartIndex: 30,
+        overflowReasoningExcerpt: 'Overflow reasoning that was filtered on pause.',
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'root-text' ? 0 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'root-text',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[1]).toMatchObject({ activity_end_index: 0, activity_count: 14 });
+  });
+
   it('retains an earlier overflow ID when delayed tools materialize in reverse order', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-b' } },

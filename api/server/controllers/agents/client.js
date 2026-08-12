@@ -2300,26 +2300,35 @@ class AgentClient extends BaseClient {
      *  SDK event lands after the phase closes; scanning retained identities
      *  in an unchanged array would skip that hole and move the bound past the
      *  delayed tool before it arrives. */
+    const previousDefinedIndexes = Object.keys(previousParts).map(Number);
+    const currentDefinedIndexes = Object.keys(this.contentParts).map(Number);
     if (previousParts.length === this.contentParts.length) {
-      let unchanged = true;
-      for (let index = 0; index < previousParts.length; index += 1) {
-        if (previousParts[index] !== this.contentParts[index]) {
-          unchanged = false;
-          break;
-        }
-      }
+      const unchanged =
+        previousDefinedIndexes.length === currentDefinedIndexes.length &&
+        previousDefinedIndexes.every(
+          (index, position) =>
+            index === currentDefinedIndexes[position] &&
+            previousParts[index] === this.contentParts[index],
+        );
       if (unchanged) {
         return;
       }
     }
     const retainedIndexes = new Map();
-    for (let index = 0; index < this.contentParts.length; index += 1) {
+    for (const index of currentDefinedIndexes) {
       const part = this.contentParts[index];
       if (part != null) {
         retainedIndexes.set(part, index);
       }
     }
-    for (let markerIndex = 0; markerIndex < this.contentParts.length; markerIndex += 1) {
+    const previousIndexesByPart = new Map();
+    for (const index of previousDefinedIndexes) {
+      const part = previousParts[index];
+      if (part != null) {
+        previousIndexesByPart.set(part, index);
+      }
+    }
+    for (const markerIndex of currentDefinedIndexes) {
       const marker = this.contentParts[markerIndex];
       if (
         marker?.type !== ContentTypes.ACTIVITY_LABEL ||
@@ -2328,8 +2337,8 @@ class AgentClient extends BaseClient {
       ) {
         continue;
       }
-      const previousMarkerIndex = previousParts.indexOf(marker);
-      if (previousMarkerIndex < 0) {
+      const previousMarkerIndex = previousIndexesByPart.get(marker);
+      if (previousMarkerIndex == null) {
         continue;
       }
       const previousStartIndex = Math.min(
@@ -2343,7 +2352,10 @@ class AgentClient extends BaseClient {
       let nextStartIndex = markerIndex;
       let nextEndIndex = markerIndex;
       let foundRetainedPart = false;
-      for (let index = previousStartIndex; index < previousEndIndex; index += 1) {
+      for (const index of previousDefinedIndexes) {
+        if (index < previousStartIndex || index >= previousEndIndex) {
+          continue;
+        }
         const retainedIndex = retainedIndexes.get(previousParts[index]);
         if (retainedIndex != null && retainedIndex < markerIndex) {
           if (!foundRetainedPart) {
@@ -2357,7 +2369,10 @@ class AgentClient extends BaseClient {
         }
       }
       if (!foundRetainedPart && hasExplicitEnd) {
-        for (let index = previousEndIndex; index < previousMarkerIndex; index += 1) {
+        for (const index of previousDefinedIndexes) {
+          if (index < previousEndIndex || index >= previousMarkerIndex) {
+            continue;
+          }
           const retainedIndex = retainedIndexes.get(previousParts[index]);
           if (retainedIndex != null && retainedIndex < markerIndex) {
             nextStartIndex = retainedIndex;

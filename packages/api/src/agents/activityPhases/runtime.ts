@@ -40,6 +40,8 @@ export interface ActivityPhaseSnapshot {
   activities: TrackedActivity[];
   overflowActivityStartIndex?: number;
   overflowToolCallIds?: string[];
+  /** Stable anchor for reasoning-only overflow after HITL content compaction. */
+  overflowReasoningExcerpt?: string;
   assistantContext: string[];
   pendingReasoning: Array<{
     key: string;
@@ -210,17 +212,31 @@ function findTrackedStart(
   }
   const excerpt = activity.thinkingExcerpts?.[0]?.trim();
   if (excerpt) {
-    const needle = excerpt.slice(0, 80);
-    for (const index of definedPartIndices(parts)) {
-      if (
-        parts[index]?.type === ContentTypes.THINK &&
-        textValue(parts[index]?.think).includes(needle)
-      ) {
-        return index;
-      }
+    const reasoningStart = findReasoningExcerptStart(parts, excerpt);
+    if (reasoningStart != null) {
+      return reasoningStart;
     }
   }
   return Math.min(activity.startIndex, Math.max(0, parts.length - 1));
+}
+
+function findReasoningExcerptStart(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  excerpt: string,
+): number | undefined {
+  const needle = excerpt.trim().slice(0, 80);
+  if (!needle) {
+    return undefined;
+  }
+  for (const index of definedPartIndices(parts)) {
+    if (
+      parts[index]?.type === ContentTypes.THINK &&
+      textValue(parts[index]?.think).includes(needle)
+    ) {
+      return index;
+    }
+  }
+  return undefined;
 }
 
 function findTrackedToolStart(
@@ -351,10 +367,27 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       overflowToolCallIds.has(part.tool_call.id)
     );
   });
+  const overflowReasoningNeedle = initialSnapshot?.overflowReasoningExcerpt?.slice(0, 80);
+  let rebasedOverflowReasoningIndex: number | undefined;
+  if (overflowReasoningNeedle) {
+    for (const index of definedPartIndices(content)) {
+      const part = content[index];
+      if (
+        part?.type === ContentTypes.THINK &&
+        textValue(part.think).includes(overflowReasoningNeedle)
+      ) {
+        rebasedOverflowReasoningIndex = index;
+      }
+    }
+  }
   let overflowActivityStartIndex =
     rebasedOverflowToolIndexes.length > 0
-      ? Math.max(...rebasedOverflowToolIndexes)
-      : initialSnapshot?.overflowActivityStartIndex;
+      ? Math.max(...rebasedOverflowToolIndexes, rebasedOverflowReasoningIndex ?? -1)
+      : (rebasedOverflowReasoningIndex ??
+        (initialSnapshot?.overflowReasoningExcerpt == null
+          ? initialSnapshot?.overflowActivityStartIndex
+          : undefined));
+  let overflowReasoningExcerpt = initialSnapshot?.overflowReasoningExcerpt;
   const contributingAgentIds = new Set(initialSnapshot?.agentIds ?? []);
   let assistantContext = (initialSnapshot?.assistantContext ?? []).slice(-MAX_CONTEXT_ITEMS);
   const pendingReasoning = new Map<string, { text: string; agentId?: string; startIndex?: number }>(
@@ -386,6 +419,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     partialActivityCount = 0;
     overflowActivityStartIndex = undefined;
     overflowToolCallIds.clear();
+    overflowReasoningExcerpt = undefined;
     contributingAgentIds.clear();
     lastRootTextStepId = undefined;
     lastRootTextWasSemantic = false;
@@ -407,6 +441,10 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       if (overflowActivityStartIndex == null || activity.startIndex > overflowActivityStartIndex) {
         overflowActivityStartIndex = activity.startIndex;
       }
+      const reasoningExcerpt = activity.thinkingExcerpts?.at(-1)?.trim();
+      if (reasoningExcerpt && activity.startIndex >= overflowActivityStartIndex) {
+        overflowReasoningExcerpt = reasoningExcerpt.slice(0, MAX_EXCERPT_CHARS);
+      }
       for (const id of activity.toolCallIds ?? []) {
         overflowToolCallIds.add(id);
       }
@@ -422,6 +460,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     agentIds: [...contributingAgentIds],
     ...(overflowActivityStartIndex != null && { overflowActivityStartIndex }),
     ...(overflowToolCallIds.size > 0 && { overflowToolCallIds: [...overflowToolCallIds] }),
+    ...(overflowReasoningExcerpt != null && { overflowReasoningExcerpt }),
     activities: activities.map((activity) => ({
       ...activity,
       ...(activity.entries != null && {
@@ -817,6 +856,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         const toolCallIds = activity.toolCallIds ?? [];
         if (toolCallIds.some((id) => trailingToolIds.has(id))) {
           return true;
+        }
+        const reasoningExcerpt = activity.thinkingExcerpts?.[0];
+        if (toolCallIds.length === 0 && reasoningExcerpt) {
+          const reasoningStart = findReasoningExcerptStart(parts, reasoningExcerpt);
+          return reasoningStart != null && reasoningStart >= candidateFinalTextIndex;
         }
         return (
           !toolCallIds.some((id) => materializedToolIds.has(id)) &&

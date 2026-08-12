@@ -13,11 +13,13 @@ export type ActivityPhaseSegment =
   | {
       type: 'content';
       content: Array<TMessageContentParts | undefined>;
+      contentIndices: number[];
       startIndex: number;
     }
   | {
       type: 'phase';
       content: Array<TMessageContentParts | undefined>;
+      contentIndices: number[];
       startIndex: number;
       labelPart: ActivityLabelPart;
       labelIndex: number;
@@ -165,22 +167,25 @@ export function groupActivityPhases(
 
   const segments: ActivityPhaseSegment[] = [];
   let cursor = 0;
-  /** Disjoint slices copy every ordinary part at most once. A phase slice can
-   *  remain sparse when it adopts a late child label across trailing text;
-   *  `startIndex` preserves the label's absolute transcript coordinate. */
-  const slice = (start: number, end: number) => {
-    const segmentContent = new Array<TMessageContentParts | undefined>(end - start);
+  /** Disjoint slices copy every ordinary part at most once. Segments stay
+   *  compact even when provider indexes are sparse; `contentIndices` retains
+   *  each part's absolute transcript coordinate for stable keys and grouping. */
+  const slice = (start: number, end: number, excluded?: ReadonlySet<number>) => {
+    const segmentContent: Array<TMessageContentParts | undefined> = [];
+    const contentIndices: number[] = [];
     let hasContent = false;
     for (const index of definedIndices) {
-      if (index < start || index >= end) {
+      if (index < start || index >= end || excluded?.has(index) === true) {
         continue;
       }
       const part = content[index];
-      segmentContent[index - start] = part;
+      segmentContent.push(part);
+      contentIndices.push(index);
       hasContent ||= isVisibleContentPart(part);
     }
     return {
       content: segmentContent,
+      contentIndices,
       startIndex: start,
       hasContent,
     };
@@ -206,14 +211,15 @@ export function groupActivityPhases(
       segments.push({
         type: 'content',
         content: adjacent.content,
+        contentIndices: adjacent.contentIndices,
         startIndex: adjacent.startIndex,
       });
     }
     const phase = slice(start, end);
     if (lateLabelIndices.length > 0) {
-      phase.content.length = index - start;
       for (const lateLabelIndex of lateLabelIndices) {
-        phase.content[lateLabelIndex - start] = content[lateLabelIndex];
+        phase.content.push(content[lateLabelIndex]);
+        phase.contentIndices.push(lateLabelIndex);
       }
       phase.hasContent ||= lateLabelIndices.some((lateLabelIndex) =>
         isVisibleContentPart(content[lateLabelIndex]),
@@ -222,19 +228,18 @@ export function groupActivityPhases(
     segments.push({
       type: 'phase',
       content: phase.content,
+      contentIndices: phase.contentIndices,
       startIndex: phase.startIndex,
       labelPart: part,
       labelIndex: index,
       hasContent: phase.hasContent,
     });
     if (end < index) {
-      const trailing = slice(end, index);
-      for (const lateLabelIndex of lateLabelIndices) {
-        trailing.content[lateLabelIndex - end] = undefined;
-      }
+      const trailing = slice(end, index, new Set(lateLabelIndices));
       segments.push({
         type: 'content',
         content: trailing.content,
+        contentIndices: trailing.contentIndices,
         startIndex: trailing.startIndex,
       });
     }
@@ -245,6 +250,7 @@ export function groupActivityPhases(
     segments.push({
       type: 'content',
       content: adjacent.content,
+      contentIndices: adjacent.contentIndices,
       startIndex: adjacent.startIndex,
     });
   }
