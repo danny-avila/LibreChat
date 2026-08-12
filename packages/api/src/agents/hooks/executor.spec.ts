@@ -121,6 +121,21 @@ describe('createCommandExecutor', () => {
     expect(translate('Bashful|write_file')).toBe('Bashful|write_file');
     expect(translate('[Bash]')).toBeUndefined();
     expect(translate('Bash\\d')).toBeUndefined();
+    expect(translate('WebSearch')).toEqual({
+      matcher: 'web_search',
+      requiresToolNameTranslation: true,
+    });
+  });
+
+  test('leaves matchers for non-tool events untranslated', () => {
+    const executor = createCommandExecutor({ pluginRoot, pluginData });
+    expect(
+      executor.capabilities.translateMatcher?.({
+        sourceEvent: 'StopFailure',
+        targetEvent: 'StopFailure',
+        matcher: '^Bash failed$',
+      }),
+    ).toBe('^Bash failed$');
   });
 
   test('returns sanitized JSON stdout and drops host-only or invalid fields', async () => {

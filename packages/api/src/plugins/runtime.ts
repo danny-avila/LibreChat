@@ -129,7 +129,8 @@ export function registerDeploymentPluginHooks(
   let registered = 0;
   for (const plugin of getExecutableHookPlugins()) {
     const document = plugin.hooks?.document;
-    if (document === undefined) {
+    const plan = plugin.hooks?.plan;
+    if (document === undefined || plan === undefined) {
       continue;
     }
     const pluginId = plugin.manifest.name;
@@ -147,6 +148,8 @@ export function registerDeploymentPluginHooks(
         pluginId,
         registry: options.registry,
         document,
+        /** Load-time plan, computed with the same static executor capabilities. */
+        plan,
         executor,
         context: { ...options.context, cwd: plugin.root },
       });

@@ -32,6 +32,7 @@ const RUNTIME_TOOL_BY_PLUGIN: ReadonlyMap<string, string> = new Map([
   ['Write', 'create_file'],
   ['Edit', 'edit_file'],
   ['Read', 'read_file'],
+  ['WebSearch', 'web_search'],
 ]);
 const PLUGIN_TOOL_BY_RUNTIME: ReadonlyMap<string, string> = new Map(
   Array.from(RUNTIME_TOOL_BY_PLUGIN, ([plugin, runtime]) => [runtime, plugin]),
@@ -42,6 +43,13 @@ const ALIAS_TOKEN_PATTERN = new RegExp(
 );
 /** Character classes and escapes where token substitution could corrupt regex semantics. */
 const UNSAFE_ALIAS_CONTEXT = /[\\[\]]/;
+/** Events whose matcher queries a tool name; alias translation applies only here. */
+const TOOL_MATCHER_EVENTS: ReadonlySet<string> = new Set([
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'PermissionDenied',
+]);
 
 function containsAliasToken(matcher: string): boolean {
   ALIAS_TOKEN_PATTERN.lastIndex = 0;
@@ -61,8 +69,8 @@ function containsAliasToken(matcher: string): boolean {
  */
 export const commandExecutorCapabilities: PluginHookCapabilities = {
   handlerTypes: new Set(['command']),
-  translateMatcher: ({ matcher }) => {
-    if (!containsAliasToken(matcher)) {
+  translateMatcher: ({ matcher, targetEvent }) => {
+    if (!TOOL_MATCHER_EVENTS.has(targetEvent) || !containsAliasToken(matcher)) {
       return matcher;
     }
     if (UNSAFE_ALIAS_CONTEXT.test(matcher)) {

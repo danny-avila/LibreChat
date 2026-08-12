@@ -89,6 +89,12 @@ export interface RegisterPluginHooksOptions {
   registry: HookRegistry;
   document: PluginHooksDocument;
   executor: PluginHookExecutor;
+  /**
+   * Plan already computed from `document` with the SAME executor capabilities
+   * (e.g. at plugin load). Supplying it skips re-planning up to 512 handlers
+   * on every run; omitted, the document is planned here.
+   */
+  plan?: PluginHookPlan;
   context?: PluginHookRuntimeContext;
 }
 
@@ -306,7 +312,7 @@ function getHandlerIdentity(
 
 export function registerPluginHooks(options: RegisterPluginHooksOptions): PluginHookRegistration {
   const { pluginId, registry, document, executor, context = {} } = options;
-  const plan = planPluginHooks(document, executor.capabilities);
+  const plan = options.plan ?? planPluginHooks(document, executor.capabilities);
   const unregisters: Array<() => void> = [];
   const compactTriggers = new Map<string, string>();
   const executedHandlers = new WeakMap<HookInput, Set<string>>();
