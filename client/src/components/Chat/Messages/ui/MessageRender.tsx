@@ -12,8 +12,8 @@ import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
-import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
+import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { MessageContext } from '~/Providers';
 import store from '~/store';
@@ -156,10 +156,13 @@ const MessageRender = memo(function MessageRender({
       isEditing={edit}
       footer={
         <SubRow classes={cn('text-xs', msg.isCreatedByUser && 'justify-end')}>
+          {/* A user turn is right-aligned, so its retry navigation belongs at the
+              outer edge under the bubble rather than inboard of the actions. */}
           <SiblingSwitch
             siblingIdx={siblingIdx}
             siblingCount={siblingCount}
             setSiblingIdx={setSiblingIdx}
+            className={cn(msg.isCreatedByUser === true && 'order-last')}
           />
           <HoverButtons
             index={index}

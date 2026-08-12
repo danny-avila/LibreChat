@@ -4,12 +4,15 @@ import type { TMessageProps } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-type TSiblingSwitchProps = Pick<TMessageProps, 'siblingIdx' | 'siblingCount' | 'setSiblingIdx'>;
+type TSiblingSwitchProps = Pick<TMessageProps, 'siblingIdx' | 'siblingCount' | 'setSiblingIdx'> & {
+  className?: string;
+};
 
 export default function SiblingSwitch({
   siblingIdx,
   siblingCount,
   setSiblingIdx,
+  className,
 }: TSiblingSwitchProps) {
   const localize = useLocalize();
 
@@ -36,7 +39,10 @@ export default function SiblingSwitch({
 
   return siblingCount > 1 ? (
     <nav
-      className="visible flex items-center justify-center gap-2 self-center pt-0 text-xs"
+      className={cn(
+        'visible flex items-center justify-center gap-2 self-center pt-0 text-xs',
+        className,
+      )}
       aria-label={localize('com_ui_sibling_navigation')}
     >
       <Button
