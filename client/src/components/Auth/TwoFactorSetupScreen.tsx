@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { clearTwoFactorSetupToken, readTwoFactorSetupToken } from 'librechat-data-provider';
 import {
   useAcknowledgeTwoFactorSetupMutation,
   useConfirmTwoFactorSetupMutation,
@@ -32,7 +33,11 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
   const localize = useLocalize();
   const { completeAuthentication } = useAuthContext();
   const phaseRef = useRef<HTMLDivElement>(null);
-  const tempToken = searchParams.get('tempToken')?.trim() ?? '';
+  /**
+   * Read once at mount: the credential arrives out of band rather than in the query string, and
+   * consuming it on completion must not flip the screen to the expired state mid-navigation.
+   */
+  const [tempToken] = useState(readTwoFactorSetupToken);
   const [phase, setPhase] = useState<SetupPhaseName>('setup');
   const [secret, setSecret] = useState('');
   const [otpauthUrl, setOtpauthUrl] = useState('');
@@ -62,6 +67,7 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
       if (!isExpiredSetupCredential(mutationError)) {
         return false;
       }
+      clearTwoFactorSetupToken();
       navigate(restartLoginPath, { replace: true });
       return true;
     },

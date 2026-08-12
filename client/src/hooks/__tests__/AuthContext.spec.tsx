@@ -6,6 +6,7 @@ import { RecoilRoot } from 'recoil';
 import { MemoryRouter } from 'react-router-dom';
 import { render, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { persistTwoFactorSetupToken, readTwoFactorSetupToken } from 'librechat-data-provider';
 import type { TAuthConfig } from '~/common';
 import { AuthContextProvider, useAuthContext } from '../AuthContext';
 import { SESSION_KEY } from '~/utils';
@@ -141,9 +142,9 @@ describe('AuthContextProvider two-factor login handoff', () => {
       });
     });
 
-    expect(mockNavigate).toHaveBeenCalledWith('/login/2fa/setup?tempToken=setup-token', {
-      replace: true,
-    });
+    expect(mockNavigate).toHaveBeenCalledWith('/login/2fa/setup', { replace: true });
+    /** The credential is handed over out of band, never through the address bar. */
+    expect(readTwoFactorSetupToken()).toBe('setup-token');
   });
 
   it('retains a non-default destination through setup reload and consumes it after completion', () => {
@@ -164,7 +165,7 @@ describe('AuthContextProvider two-factor login handoff', () => {
 
     expect(sessionStorage.getItem(SESSION_KEY)).toBe('/c/redirect-lifecycle-proof?model=test');
     firstRender.unmount();
-    window.history.replaceState({}, '', '/login/2fa/setup?tempToken=setup-token');
+    window.history.replaceState({}, '', '/login/2fa/setup');
     renderProvider();
 
     act(() => {
@@ -380,9 +381,9 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
     });
 
     expect(sessionStorage.getItem(SESSION_KEY)).toBe('/c/requested?model=test#latest');
-    expect(mockNavigate).toHaveBeenCalledWith('/login/2fa/setup?tempToken=setup%20token', {
-      replace: true,
-    });
+    expect(mockNavigate).toHaveBeenCalledWith('/login/2fa/setup', { replace: true });
+    /** Carried verbatim rather than URL-encoded, because it never enters a URL. */
+    expect(readTwoFactorSetupToken()).toBe('setup token');
   });
 
   it('navigates to current URL when no stored redirect exists', () => {
@@ -409,7 +410,8 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
   });
 
   it('keeps a required setup route mounted when refresh fails after reload', () => {
-    window.history.replaceState({}, '', '/login/2fa/setup?tempToken=setup-token');
+    window.history.replaceState({}, '', '/login/2fa/setup');
+    persistTwoFactorSetupToken('setup-token');
     renderProviderLive();
     const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
       unknown,
@@ -423,7 +425,8 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
   });
 
   it('keeps a required setup route mounted when refresh returns no token after reload', () => {
-    window.history.replaceState({}, '', '/login/2fa/setup?tempToken=setup-token');
+    window.history.replaceState({}, '', '/login/2fa/setup');
+    persistTwoFactorSetupToken('setup-token');
     renderProviderLive();
     const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
       unknown,

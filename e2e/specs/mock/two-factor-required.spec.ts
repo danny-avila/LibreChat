@@ -4,7 +4,8 @@ import type { Route } from '@playwright/test';
 /** A non-default destination: reaching it proves the deep link outlived the whole enrollment. */
 const DEEP_LINK = '/c/redirect-lifecycle-proof?model=test';
 const DEEP_LINK_PATTERN = /\/c\/redirect-lifecycle-proof\?model=test$/;
-const SETUP_ROUTE_PATTERN = /\/login\/2fa\/setup\?tempToken=setup-token$/;
+/** No query string: the setup credential is handed over out of band, never through the URL. */
+const SETUP_ROUTE_PATTERN = /\/login\/2fa\/setup$/;
 
 const ENROLLED_USER = {
   id: 'user-1',
@@ -86,6 +87,9 @@ test.describe('required two-factor enrollment', () => {
     await page.getByRole('button', { name: 'Continue' }).click();
 
     await expect(page).toHaveURL(SETUP_ROUTE_PATTERN);
+    expect(await page.evaluate(() => window.sessionStorage.getItem('two_factor_setup_token'))).toBe(
+      'setup-token',
+    );
     await page.reload();
     await expect(page).toHaveURL(SETUP_ROUTE_PATTERN);
     const generateButton = page.getByRole('button', { name: 'Generate QR Code' });

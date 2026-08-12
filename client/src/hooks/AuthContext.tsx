@@ -16,6 +16,9 @@ import {
   setTokenHeader,
   isSystemRoleName,
   buildLoginRedirectUrl,
+  readTwoFactorSetupToken,
+  clearTwoFactorSetupToken,
+  persistTwoFactorSetupToken,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { ReactNode } from 'react';
@@ -51,8 +54,7 @@ const getLoginErrorText = (error: TResError | unknown): string | undefined =>
   (error as TResError)?.message;
 
 const isRequiredTwoFactorSetupRoute = (): boolean =>
-  window.location.pathname.endsWith('/login/2fa/setup') &&
-  !!new URLSearchParams(window.location.search).get('tempToken');
+  window.location.pathname.endsWith('/login/2fa/setup') && !!readTwoFactorSetupToken();
 
 const AuthContextProvider = ({
   authConfig,
@@ -125,7 +127,8 @@ const AuthContextProvider = ({
         if (redirectTo) {
           persistRedirectToSession(redirectTo);
         }
-        navigate(`/login/2fa/setup?tempToken=${tempToken}`, { replace: true });
+        persistTwoFactorSetupToken(tempToken ?? '');
+        navigate('/login/2fa/setup', { replace: true });
         return;
       }
       if (twoFAPending) {
@@ -184,6 +187,7 @@ const AuthContextProvider = ({
   const logout = useCallback(
     (redirect?: string) => {
       clearPostLoginRedirect();
+      clearTwoFactorSetupToken();
       if (redirect) {
         logoutRedirectRef.current = redirect;
       }
@@ -196,6 +200,8 @@ const AuthContextProvider = ({
     (authenticatedToken: string, authenticatedUser: t.TUser) => {
       const redirect =
         getPostLoginRedirect(new URLSearchParams(window.location.search)) ?? '/c/new';
+      /** The enrollment credential has done its job; do not leave it live in the tab. */
+      clearTwoFactorSetupToken();
       setUser(authenticatedUser);
       setToken(authenticatedToken);
       setTokenHeader(authenticatedToken);
@@ -238,9 +244,8 @@ const AuthContextProvider = ({
               : rawPath;
           const currentUrl = `${strippedPath}${window.location.search}${window.location.hash}`;
           persistRedirectToSession(currentUrl);
-          navigate(`/login/2fa/setup?tempToken=${encodeURIComponent(tempToken)}`, {
-            replace: true,
-          });
+          persistTwoFactorSetupToken(tempToken);
+          navigate('/login/2fa/setup', { replace: true });
           return;
         }
         if (token) {

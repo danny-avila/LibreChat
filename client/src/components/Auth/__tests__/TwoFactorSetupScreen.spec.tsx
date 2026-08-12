@@ -2,6 +2,7 @@
  * @jest-environment @happy-dom/jest-environment
  */
 import React, { useCallback, useState } from 'react';
+import { persistTwoFactorSetupToken } from 'librechat-data-provider';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, MemoryRouter, RouterProvider, useNavigate } from 'react-router-dom';
 import type { TUser } from 'librechat-data-provider';
@@ -72,7 +73,10 @@ jest.mock('~/components/Nav/SettingsTabs/Account/TwoFactorPhases', () => ({
   ),
 }));
 
-function renderScreen(initialEntry = '/login/2fa/setup?tempToken=setup-token') {
+function renderScreen(tempToken: string | null = 'setup-token', initialEntry = '/login/2fa/setup') {
+  if (tempToken != null) {
+    persistTwoFactorSetupToken(tempToken);
+  }
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <TwoFactorSetupScreen />
@@ -113,7 +117,7 @@ describe('TwoFactorSetupScreen', () => {
   });
 
   it('rejects direct visits without a temporary setup token', () => {
-    renderScreen('/login/2fa/setup');
+    renderScreen(null);
 
     expect(screen.getByRole('alert')).toHaveTextContent('com_auth_two_factor_setup_expired');
     expect(screen.queryByTestId('generate')).not.toBeInTheDocument();
@@ -186,6 +190,7 @@ describe('TwoFactorSetupScreen', () => {
 
   it('keeps startup unauthenticated until backup acknowledgement, then reaches the safe destination', () => {
     sessionStorage.setItem('post_login_redirect_to', '/c/requested?model=test');
+    persistTwoFactorSetupToken('setup-token');
     const createRouter = () =>
       createMemoryRouter(
         [
@@ -198,7 +203,7 @@ describe('TwoFactorSetupScreen', () => {
         ],
         {
           basename: '/chat',
-          initialEntries: ['/chat/login/2fa/setup?tempToken=setup-token'],
+          initialEntries: ['/chat/login/2fa/setup'],
         },
       );
     const initialRouter = createRouter();

@@ -3,6 +3,7 @@ import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
 import type * as t from './types';
 import { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } from './config';
+import { persistTwoFactorSetupToken } from './twoFactor';
 import { setTokenHeader } from './headers-helpers';
 import * as endpoints from './api-endpoints';
 
@@ -215,12 +216,14 @@ const redirectToTwoFactorSetupOnce = (tempToken: string) => {
 
   const loginRedirect = endpoints.buildLoginRedirectUrl();
   const redirectTo = new URL(loginRedirect, window.location.origin).searchParams.get('redirect_to');
-  const searchParams = new URLSearchParams({ tempToken });
+  const searchParams = new URLSearchParams();
   if (redirectTo) {
     searchParams.set('redirect_to', redirectTo);
   }
+  const query = searchParams.toString();
 
-  const href = `${endpoints.apiBaseUrl()}/login/2fa/setup?${searchParams.toString()}`;
+  const href = `${endpoints.apiBaseUrl()}/login/2fa/setup${query ? `?${query}` : ''}`;
+  persistTwoFactorSetupToken(tempToken);
   setTokenHeader(undefined);
   setAuthRedirectStartedAt();
   window.dispatchEvent(new CustomEvent(AUTH_REDIRECT_EVENT, { detail: { href } }));

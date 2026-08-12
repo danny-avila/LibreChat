@@ -49,6 +49,7 @@ import * as dataService from './data-service';
 /* general helpers */
 export * from './utils';
 export * from './actions';
+export * from './twoFactor';
 export { default as createPayload } from './createPayload';
 // /* react query hooks */
 // export * from './react-query/react-query-service';
