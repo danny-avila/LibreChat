@@ -4,6 +4,7 @@ import type { TMessage, TActivityLabelEvent, TMessageContentParts } from 'librec
 type ActivityLabelPart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> & {
   activity_label_type?: 'phase';
   activity_start_index?: number;
+  activity_end_index?: number;
   activity_count?: number;
   agent_ids?: string[];
 };
@@ -30,6 +31,18 @@ function isVisibleContentPart(part: TMessageContentParts | undefined): boolean {
       part.type === ContentTypes.ACTIVITY_LABEL &&
       getActivityLabelText(getActivityLabelPart(part)).length === 0
     )
+  );
+}
+
+function isLogicallyEarlierPhaseMarker(
+  part: TMessageContentParts | undefined,
+  index: number,
+): boolean {
+  const label = getActivityLabelPart(part);
+  return (
+    isPhaseActivityLabel(label) &&
+    typeof label?.activity_end_index === 'number' &&
+    label.activity_end_index < index
   );
 }
 
@@ -109,6 +122,7 @@ export function groupActivityPhases(
       cursor,
       Math.min(index, Math.max(0, part.activity_start_index ?? index)),
     );
+    const end = Math.max(start, Math.min(index, Math.max(0, part.activity_end_index ?? index)));
     if (start > cursor) {
       const adjacent = slice(cursor, start);
       segments.push({
@@ -117,7 +131,7 @@ export function groupActivityPhases(
         startIndex: adjacent.startIndex,
       });
     }
-    const phase = slice(start, index);
+    const phase = slice(start, end);
     segments.push({
       type: 'phase',
       content: phase.content,
@@ -126,6 +140,14 @@ export function groupActivityPhases(
       labelIndex: index,
       hasContent: phase.hasContent,
     });
+    if (end < index) {
+      const trailing = slice(end, index);
+      segments.push({
+        type: 'content',
+        content: trailing.content,
+        startIndex: trailing.startIndex,
+      });
+    }
     cursor = index + 1;
   }
   if (cursor < content.length) {
@@ -153,7 +175,7 @@ export function lastVisibleContentIdx(
   const parts = content ?? [];
   let last = parts.length - 1;
   while (last >= 0 && last in parts) {
-    if (isVisibleContentPart(parts[last])) {
+    if (isVisibleContentPart(parts[last]) && !isLogicallyEarlierPhaseMarker(parts[last], last)) {
       return last;
     }
     last -= 1;
@@ -166,7 +188,11 @@ export function lastVisibleContentIdx(
   const definedIndices = Object.keys(parts);
   for (let i = definedIndices.length - 1; i >= 0; i -= 1) {
     const index = Number(definedIndices[i]);
-    if (index <= last && isVisibleContentPart(parts[index])) {
+    if (
+      index <= last &&
+      isVisibleContentPart(parts[index]) &&
+      !isLogicallyEarlierPhaseMarker(parts[index], index)
+    ) {
       return index;
     }
   }
@@ -221,6 +247,7 @@ export function applyActivityLabelPart(message: TMessage, event: TActivityLabelE
     existing.pending === part.pending &&
     existing.activity_label_type === incoming.activity_label_type &&
     existing.activity_start_index === incoming.activity_start_index &&
+    existing.activity_end_index === incoming.activity_end_index &&
     existing.activity_count === incoming.activity_count
   ) {
     return message;

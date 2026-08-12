@@ -1356,12 +1356,14 @@ export default function useResumableSSE(
         const phasePart = event.part as TActivityLabelEvent['part'] & {
           activity_label_type?: 'phase';
           activity_start_index?: number;
+          activity_end_index?: number;
         };
         let offsetEvent = event;
         if (prefixLength > 0) {
           let offsetPart: TActivityLabelEvent['part'] & {
             activity_label_type?: 'phase';
             activity_start_index?: number;
+            activity_end_index?: number;
           } = phasePart;
           if (
             phasePart.activity_label_type === 'phase' &&
@@ -1384,6 +1386,11 @@ export default function useResumableSSE(
             offsetPart = {
               ...phasePart,
               activity_start_index: activityStartIndex,
+              ...(typeof phasePart.activity_end_index === 'number' && {
+                activity_end_index:
+                  phasePart.activity_end_index +
+                  (activityStartIndex - phasePart.activity_start_index),
+              }),
             };
           }
           offsetEvent = {

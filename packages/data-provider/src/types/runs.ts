@@ -102,6 +102,7 @@ export type TActivityLabelEvent = {
     activity_label_type?: 'phase';
     tool_call_ids?: string[];
     activity_start_index?: number;
+    activity_end_index?: number;
     activity_count?: number;
     agent_ids?: string[];
     counts?: {

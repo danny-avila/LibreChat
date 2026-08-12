@@ -27,6 +27,7 @@ type PersistedContentPart = {
   activity_label?: string;
   activity_label_type?: string;
   activity_start_index?: number;
+  activity_end_index?: number;
   activity_count?: number;
   pending?: boolean;
   tool_call?: { id?: string };
@@ -210,8 +211,12 @@ test.describe('parent activity phases', () => {
       pending: false,
     });
     expect(phasePart?.activity_start_index).toBeGreaterThanOrEqual(0);
-    expect(phasePart?.activity_start_index).toBeLessThan(phaseIndex);
-    const phaseChildren = content.slice(phasePart?.activity_start_index ?? phaseIndex, phaseIndex);
+    expect(phasePart?.activity_end_index).toBeGreaterThan(phasePart?.activity_start_index ?? -1);
+    expect(phasePart?.activity_end_index).toBeLessThanOrEqual(phaseIndex);
+    const phaseChildren = content.slice(
+      phasePart?.activity_start_index ?? phaseIndex,
+      phasePart?.activity_end_index ?? phaseIndex,
+    );
     expect(phaseChildren.map((part) => part?.tool_call?.id).filter(Boolean)).toEqual(
       expect.arrayContaining([firstToolCallId, secondToolCallId]),
     );
@@ -219,7 +224,7 @@ test.describe('parent activity phases', () => {
       expect.arrayContaining([childLabels.first, childLabels.second]),
     );
     const finalTextIndex = content.findIndex((part) => contentPartText(part).includes(finalText));
-    expect(finalTextIndex).toBeGreaterThan(phaseIndex);
+    expect(finalTextIndex).toBe(phasePart?.activity_end_index);
 
     await page.reload();
     const reloadedParent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);

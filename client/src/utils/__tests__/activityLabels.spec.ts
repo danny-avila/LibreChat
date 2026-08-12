@@ -129,6 +129,32 @@ describe('groupActivityPhases', () => {
     }
   });
 
+  it('renders an appended parent marker before the final text using its explicit end', () => {
+    const phase = labelPart({ activity_label: 'Completed the full investigation', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+    const final = { type: ContentTypes.TEXT, text: 'Final answer' } as TMessageContentParts;
+    const segments = groupActivityPhases([tool, tool, final, phase as never]);
+
+    expect(segments).toHaveLength(2);
+    expect(segments?.[0]).toMatchObject({
+      type: 'phase',
+      labelIndex: 3,
+      startIndex: 0,
+      content: [tool, tool],
+    });
+    expect(segments?.[1]).toMatchObject({
+      type: 'content',
+      startIndex: 2,
+      content: [final],
+    });
+    expect(lastVisibleContentIdx([tool, tool, final, phase as never])).toBe(2);
+  });
+
   it('leaves pending or empty parent markers on the feature-off path', () => {
     const pending = labelPart();
     Object.assign(pending, { activity_label_type: 'phase', activity_start_index: 0 });

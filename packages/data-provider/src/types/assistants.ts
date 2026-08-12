@@ -662,6 +662,8 @@ export type TMessageContentParts =
       tool_call_ids?: string[];
       /** Parent phase bounds and telemetry. */
       activity_start_index?: number;
+      /** Exclusive end of the grouped content; may precede the marker itself. */
+      activity_end_index?: number;
       activity_count?: number;
       agent_ids?: string[];
       /** ok = all tools succeeded, failed = all failed, partial = mixed. */

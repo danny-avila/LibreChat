@@ -87,6 +87,8 @@ export interface ActivityPhaseWiring {
   ) => Record<string, EventHandler> | undefined;
   /** A steer is a hard semantic boundary; incomplete evidence is discarded. */
   drop: () => void;
+  /** Finalizes unphased evidence once the root AgentRun has actually completed. */
+  complete: () => void;
   /** Bounded state needed to continue the same phase after a HITL pause. */
   snapshot: () => ActivityPhaseSnapshot;
 }
@@ -301,9 +303,9 @@ export function createAssistantPhaseStampingHandlers(
 }
 
 /**
- * Collects run-wide logical activities and emits one parent summary at a text
- * boundary. The summary call is detached; the boundary only pays the cheap
- * synchronous slot claim needed to keep streamed content indices stable.
+ * Collects run-wide logical activities and emits one parent summary at an
+ * explicit final-answer boundary or root-run completion. The summary call is
+ * detached; final-answer streams only pay the synchronous slot reservation.
  */
 export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): ActivityPhaseWiring {
   const maxPerRun = deps.maxPerRun ?? DEFAULT_MAX_PER_RUN;
@@ -345,6 +347,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     string,
     { kind: 'text' | 'think'; phase?: AssistantTextPhase; captureContext?: boolean }
   >();
+  let lastRootTextStepId: string | undefined;
 
   const clear = () => {
     activities = [];
@@ -356,6 +359,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     failedActivityCount = 0;
     partialActivityCount = 0;
     contributingAgentIds.clear();
+    lastRootTextStepId = undefined;
   };
 
   const trackActivity = (activity: TrackedActivity) => {
@@ -456,14 +460,14 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     );
   };
 
-  const close = (closingTextPhase?: AssistantTextPhase, hardBoundary = false) => {
+  const close = (closingTextPhase?: AssistantTextPhase, requestedEndIndex?: number) => {
     addPendingReasoning();
     if (generated >= maxPerRun) {
       clear();
       return;
     }
     if (activityCount < MIN_ACTIVITIES) {
-      if (hardBoundary) clear();
+      clear();
       return;
     }
 
@@ -509,11 +513,13 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       phaseStatus = 'partial';
     }
     const index = deps.getContentParts().length;
+    const endIndex = Math.max(startIndex, Math.min(index, requestedEndIndex ?? index));
     const part: LooseContentPart = {
       type: ContentTypes.ACTIVITY_LABEL,
       [ContentTypes.ACTIVITY_LABEL]: '',
       activity_label_type: 'phase',
       activity_start_index: startIndex,
+      activity_end_index: endIndex,
       activity_count: totalActivityCount,
       ...(agentIds.length > 0 && { agent_ids: agentIds }),
       status: phaseStatus,
@@ -664,27 +670,24 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
               }
               return result;
             } else {
+              if (step.groupId == null) {
+                lastRootTextStepId = step.id;
+              }
               if (phase === 'final_answer' && step.groupId == null) {
                 addPendingReasoning(step.agentId ?? 'root');
                 stepKinds.set(step.id, { kind, phase, captureContext: false });
-                close(phase, true);
+                close(phase);
               } else {
                 if (phase == null && step.groupId == null) {
                   addPendingReasoning(step.agentId ?? 'root');
                 }
-                const closesPhase =
-                  phase == null && step.groupId == null && activityCount >= MIN_ACTIVITIES;
                 stepKinds.set(step.id, {
                   kind,
                   ...(phase != null && { phase }),
-                  captureContext: !closesPhase,
+                  captureContext: true,
                 });
-                if (closesPhase) {
-                  close(undefined, false);
-                } else {
-                  assistantContext.push('');
-                  if (assistantContext.length > MAX_CONTEXT_ITEMS) assistantContext.shift();
-                }
+                assistantContext.push('');
+                if (assistantContext.length > MAX_CONTEXT_ITEMS) assistantContext.shift();
               }
             }
           }
@@ -735,5 +738,21 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     return wrapped;
   };
 
-  return { hook, handlers: wrapHandlers, drop: clear, snapshot };
+  const complete = () => {
+    let finalTextIndex =
+      lastRootTextStepId == null ? undefined : deps.getStepIndex?.(lastRootTextStepId);
+    if (finalTextIndex == null) {
+      const parts = deps.getContentParts();
+      for (let index = parts.length - 1; index >= 0; index -= 1) {
+        const part = parts[index];
+        if (part?.type === ContentTypes.TEXT && part.groupId == null) {
+          finalTextIndex = index;
+          break;
+        }
+      }
+    }
+    close(undefined, finalTextIndex);
+  };
+
+  return { hook, handlers: wrapHandlers, drop: clear, complete, snapshot };
 }

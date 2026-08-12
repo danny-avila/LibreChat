@@ -142,7 +142,7 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
   const textPart = (text) => ({ type: ContentTypes.TEXT, text });
   const toolCallPart = (id) => ({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
 
-  it('keeps only the last part + tool_call parts when hide_sequential_outputs is on', () => {
+  it('keeps only the last non-label part + tool_call parts when filtering is on', () => {
     const ctx = {
       options: { agent: { hide_sequential_outputs: true } },
       contentParts: [
@@ -154,6 +154,30 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
     };
     AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
     expect(ctx.contentParts).toEqual([toolCallPart('tc1'), textPart('final')]);
+  });
+
+  it('keeps the final text when a parent phase marker is appended after it', () => {
+    const tool = toolCallPart('tc1');
+    const final = textPart('final');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Completed the investigation',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+    };
+    const ctx = {
+      options: { agent: { hide_sequential_outputs: true } },
+      contentParts: [textPart('intermediate'), tool, final, phase],
+    };
+    const previousParts = [...ctx.contentParts];
+
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(ctx.contentParts).toEqual([tool, final, phase]);
+    expect(phase.activity_start_index).toBe(0);
+    expect(phase.activity_end_index).toBe(1);
   });
 
   it('is a no-op when hide_sequential_outputs is off', () => {
@@ -171,6 +195,7 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
       activity_label: 'Resolved the session issue',
       activity_label_type: 'phase',
       activity_start_index: 0,
+      activity_end_index: 2,
     };
     const final = textPart('final');
     const previousParts = [reasoning, activityTool, phase, final];
@@ -185,6 +210,7 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
 
     expect(ctx.contentParts).toEqual([skillCard, activityTool, phase, final]);
     expect(phase.activity_start_index).toBe(1);
+    expect(phase.activity_end_index).toBe(2);
   });
 
   it('rebases phase bounds over reshaped sparse content without retaining holes', () => {
@@ -253,6 +279,28 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
       'tool-1',
       'tool-2',
     ]);
+  });
+});
+
+describe('AgentClient - activity phase completion', () => {
+  it('completes an uninterrupted root run', () => {
+    const complete = jest.fn();
+    AgentClient.prototype.completeActivityPhase.call(
+      {},
+      { getInterrupt: () => undefined },
+      { complete },
+    );
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains phase state when the root run pauses for HITL', () => {
+    const complete = jest.fn();
+    AgentClient.prototype.completeActivityPhase.call(
+      {},
+      { getInterrupt: () => ({ payload: { type: 'tool_approval' } }) },
+      { complete },
+    );
+    expect(complete).not.toHaveBeenCalled();
   });
 });
 

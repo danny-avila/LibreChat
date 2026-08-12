@@ -85,6 +85,7 @@ describe('createActivityPhaseWiring', () => {
       type: ContentTypes.ACTIVITY_LABEL,
       activity_label_type: 'phase',
       activity_start_index: 0,
+      activity_end_index: 2,
       activity_count: 2,
       pending: true,
     });
@@ -799,7 +800,86 @@ describe('createActivityPhaseWiring', () => {
       undefined,
     );
     await flushDetached();
+    expect(generatePhase).not.toHaveBeenCalled();
+
+    parts[2] = { type: ContentTypes.TEXT, text: 'Finished the run' };
+    wiring.complete();
+    await flushDetached();
     expect(generatePhase).toHaveBeenCalledTimes(1);
+    expect(parts[3]).toMatchObject({
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+  });
+
+  it('summarizes all unphased activities once at root-run completion', async () => {
+    const parts: LooseContentPart[] = [];
+    const stepIndexes = new Map([
+      ['intermediate-text', 2],
+      ['final-text', 5],
+    ]);
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the full investigation' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => stepIndexes.get(stepId),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    const handler = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+    })?.[GraphEvents.ON_RUN_STEP];
+
+    parts[0] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } };
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    parts[1] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } };
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    handler?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'intermediate-text',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    parts[2] = { type: ContentTypes.TEXT, text: 'I will try another approach.' };
+
+    parts[3] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-3' } };
+    await wiring.hook(batch('tool-3'), new AbortController().signal);
+    parts[4] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-4' } };
+    await wiring.hook(batch('tool-4'), new AbortController().signal);
+    handler?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'final-text',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    parts[5] = { type: ContentTypes.TEXT, text: 'The investigation is complete.' };
+
+    expect(generatePhase).not.toHaveBeenCalled();
+    wiring.complete();
+    await flushDetached();
+
+    expect(generatePhase).toHaveBeenCalledTimes(1);
+    expect(generatePhase).toHaveBeenCalledWith(expect.objectContaining({ totalActivityCount: 4 }));
+    expect(parts[6]).toMatchObject({
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 5,
+      activity_count: 4,
+    });
   });
 
   it('preserves mixed batch failures as a partial phase outcome', async () => {
