@@ -108,52 +108,6 @@ const configureGenerationStreams = () => {
 };
 
 const startServer = async () => {
-  try {
-    const os = require('os');
-    logger.warn(
-      `[DEBUG-ARCH] platform=${process.platform} arch=${process.arch} cpuModel=${os.cpus()?.[0]?.model} totalmem=${os.totalmem()}`,
-    );
-    const { Worker } = require('worker_threads');
-    const path = require('path');
-    const workerPath = path.resolve(__dirname, '../../packages/api/dist/baml/worker.mjs');
-    logger.warn(`[DEBUG-ARCH] spawning test worker at ${workerPath}`);
-    await new Promise((resolve) => {
-      let settled = false;
-      const w = new Worker(workerPath);
-      const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        logger.warn('[DEBUG-ARCH] test worker: TIMEOUT (no error/exit within 8s) - likely fine, awaiting real work');
-        w.terminate();
-        resolve();
-      }, 8000);
-      w.on('error', (e) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        let msg = `[DEBUG-ARCH] test worker ERROR: ${e.message}`;
-        let c = e.cause;
-        let depth = 0;
-        while (c && depth < 10) {
-          msg += ` | cause: ${c.message || c}`;
-          c = c.cause;
-          depth++;
-        }
-        logger.warn(msg);
-        resolve();
-      });
-      w.on('exit', (code) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        logger.warn(`[DEBUG-ARCH] test worker exited early with code ${code}`);
-        resolve();
-      });
-    });
-  } catch (debugErr) {
-    logger.warn(`[DEBUG-ARCH] diagnostic block itself failed: ${debugErr.message}`);
-  }
-
   const { metricsMiddleware, metricsRouter } = createMetrics();
   if (!process.env.METRICS_SECRET) {
     logger.warn('[metrics] METRICS_SECRET is not set - /metrics will return 401 for all requests');
