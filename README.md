@@ -58,14 +58,14 @@
 - **Unified Agent Builder:** A redesigned Tools marketplace brings together Skills, MCP, Code Interpreter, orchestration, Programmatic Tool Calling, model-spec controls, and per-tool background and intent settings.
 - **Readable Agent activity:** Generated activity-group headers, parent phase summaries, and live tool intent labels make long reasoning and tool runs easier to scan.
 - **Code Interpreter workflows:** Code and shell tools can run in the background, sandbox images return as viewable artifacts, and highly experimental stateful sessions can reuse prewarmed conversation workspaces.
-- **Agent extensibility:** Experimental Agent Plugins can bundle deployment Skills and MCP servers, while explicit subagents initialize only when selected.
+- **Agent extensibility:** Experimental Agent Plugins can bundle deployment Skills, MCP servers, and opt-in command hooks, while explicit subagents initialize only when selected.
 - **Memory, context, and identity:** Agents can manage memory with optional per-agent isolation, expose support contacts safely, and show a more faithful Context Usage gauge.
 - **Sharing and files:** Shared conversations show a badge and update at a stable URL, while signed-in viewers can continue them as personal copies.
 - **Artifact workflows:** Open previews fullscreen, export Mermaid diagrams as SVG or PNG, and download original Office files from the artifact panel.
 - **Models and reasoning:** Added GPT-5.6 with Responses API reasoning controls, Claude Opus 5 and Sonnet 5, Gemini 3.6 Flash, and Gemini 3.5 Flash-Lite.
 - **Langfuse observability:** Configure encrypted Langfuse connections in-app, optionally fan out traces by tenant, and suppress central export per run.
 - **Administration and security:** Delegate config sections, encrypt registered secrets, enforce SSRF checks for speech, OCR, and web tools, and generate unique temporary credentials when secrets are blank.
-- **Navigation and responsiveness:** A dock-style message rail, warmer conversation switches, virtualized search, and faster Agent startup keep large workspaces responsive.
+- **Navigation and responsiveness:** A dock-style message rail, warmer conversation switches, virtualized search, smooth streamed text, and faster Agent startup keep large workspaces responsive.
 - **Streaming and tool reliability:** Adaptive provider smoothing, Redis delta batching, dynamic MCP tool refresh, runtime OAuth recovery, and Agent stream circuit breakers improve long-running workflows.
 - **Deployment and reliability:** Added configurable HTTP timeouts, Amazon DocumentDB 5.0+ support, low-noise Redis and browser observability, and a rolling-upgrade-safe generation protocol.
 
