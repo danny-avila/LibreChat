@@ -35,7 +35,7 @@ const LoadingFallback = () => {
       <div className="markdown prose dark:prose-invert light w-full break-words">
         <div className="absolute">
           <p className="submitting relative">
-            <span className={smoothStreaming ? '' : 'result-thinking'} />
+            <span className={cn('result-thinking', smoothStreaming && 'result-thinking-fade')} />
           </p>
         </div>
       </div>

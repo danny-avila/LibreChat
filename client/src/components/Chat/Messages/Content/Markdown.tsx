@@ -6,7 +6,7 @@ import MarkdownErrorBoundary from './MarkdownErrorBoundary';
 import { FADE_HYDRATION_THRESHOLD } from './animate';
 import { useMessageContext } from '~/Providers';
 import MarkdownBlocks from './MarkdownBlocks';
-import { preprocessLaTeX } from '~/utils';
+import { preprocessLaTeX, cn } from '~/utils';
 import store from '~/store';
 
 type TContentProps = {
@@ -50,7 +50,12 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
     return (
       <div className="absolute">
         <p className="relative">
-          <span className={isLatestMessage && !smoothStreaming ? 'result-thinking' : ''} />
+          <span
+            className={cn(
+              isLatestMessage && 'result-thinking',
+              isLatestMessage && smoothStreaming && 'result-thinking-fade',
+            )}
+          />
         </p>
       </div>
     );

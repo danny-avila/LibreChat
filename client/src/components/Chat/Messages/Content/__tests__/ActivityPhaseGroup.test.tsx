@@ -12,15 +12,6 @@ const labelPart = {
 } as unknown as Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }>;
 
 describe('ActivityPhaseGroup', () => {
-  // The pulsing cursor only renders while the smooth streaming fade is off.
-  beforeAll(() => {
-    localStorage.setItem('smoothStreaming', JSON.stringify(false));
-  });
-
-  afterAll(() => {
-    localStorage.removeItem('smoothStreaming');
-  });
-
   test('renders a streaming cursor after an active tail phase', () => {
     const { container } = render(
       <ActivityPhaseGroup labelPart={labelPart} hasContent showCursor>
