@@ -331,7 +331,7 @@ export default function EditContentParts({
                 aria-keyshortcuts="Control+Enter Meta+Enter Control+S Meta+S Escape"
                 disabled={isBusy}
                 minRows={3}
-                className="max-h-[65vh] min-h-24 w-full resize-y rounded-lg border border-border-medium bg-surface-tertiary-alt px-3 py-2 text-sm font-normal text-text-primary focus-visible:border-border-heavy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary disabled:opacity-50 md:max-h-[75vh]"
+                className="max-h-[65vh] min-h-24 w-full resize-y rounded-lg border border-border-medium bg-surface-tertiary-alt px-3 py-2 text-sm font-normal text-text-primary focus-visible:outline-none disabled:opacity-50 md:max-h-[75vh]"
               />
             </label>
           );
