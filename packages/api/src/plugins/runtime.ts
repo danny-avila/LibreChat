@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import type { HookRegistry, HookOutput } from '@librechat/agents';
 import type {
@@ -20,10 +21,18 @@ import { isEnabled } from '~/utils/common';
 
 const KEY_SEPARATOR = '\u0000';
 
+/**
+ * Compact stable digest of a handler declaration. The declaration indexes
+ * already identify the handler positionally; this distinguishes an edited
+ * handler at the same position without storing its full body — commands run
+ * to 32 KB and may carry 256 similarly sized args, which would otherwise be
+ * copied into every retained conversation scope.
+ */
 function handlerIdentity(handler: PluginHookHandler): string {
-  return JSON.stringify(
+  const canonical = JSON.stringify(
     Object.entries(handler).sort(([left], [right]) => left.localeCompare(right)),
   );
+  return createHash('sha256').update(canonical).digest('base64url').slice(0, 22);
 }
 
 /** Conversation scope: caller-supplied session ids cannot collide across principals. */
@@ -162,7 +171,14 @@ export function registerDeploymentPluginHooks(
         /** Load-time plan, computed with the same static executor capabilities. */
         plan,
         executor,
-        context: { ...options.context, cwd: plugin.root },
+        /**
+         * The caller's working directory passes through untouched: payload
+         * `cwd` reports the run's session context, which a guard may use to
+         * resolve relative tool paths. The plugin's own installation path
+         * reaches commands as `PLUGIN_ROOT`/`CLAUDE_PLUGIN_ROOT`, and the
+         * executor separately runs each process from that directory.
+         */
+        context: options.context,
       });
       registered += registration.registered;
     } catch (error) {

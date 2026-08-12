@@ -369,6 +369,21 @@ describe('createCommandExecutor', () => {
     ).resolves.toEqual({ decision: 'allow' });
   });
 
+  test('falls back to the Claude decision when the native field is malformed', async () => {
+    await expect(
+      execute({
+        type: 'command',
+        command: `printf '%s' '{"decision":null,"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"protected"}}'`,
+      }),
+    ).resolves.toEqual({ decision: 'deny', reason: 'protected' });
+    await expect(
+      execute({
+        type: 'command',
+        command: `printf '%s' '{"decision":"maybe","reason":42,"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"unrecognized native"}}'`,
+      }),
+    ).resolves.toEqual({ decision: 'deny', reason: 'unrecognized native' });
+  });
+
   test('ignores non-blocking failures', async () => {
     const output = await execute({ type: 'command', command: 'echo oops >&2; exit 1' });
     expect(output).toEqual({});

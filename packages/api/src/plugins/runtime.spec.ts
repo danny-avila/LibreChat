@@ -328,6 +328,49 @@ describe('registerDeploymentPluginHooks', () => {
     expect(lines).toEqual(['sibling', 'sibling', 'sibling', 'started', 'started', 'started']);
   });
 
+  it("reports the caller's working directory in hook payloads", async () => {
+    await writePlugin('cwd', {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: '^write_file$',
+            hooks: [
+              {
+                type: 'command',
+                command: `node -e 'let d="";process.stdin.on("data",(c)=>{d+=c;}).on("end",()=>{const p=JSON.parse(d);console.log(JSON.stringify({decision:"deny",reason:p.cwd+"|"+process.cwd()}));});'`,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await initialize();
+
+    const registry = new HookRegistry();
+    registerDeploymentPluginHooks({
+      registry,
+      context: { sessionId: 'conversation-cwd', cwd: '/workspace/session' },
+    });
+
+    const result = await executeHooks({
+      registry,
+      matchQuery: 'write_file',
+      input: {
+        hook_event_name: 'PreToolUse',
+        runId: 'run-1',
+        toolName: 'write_file',
+        toolInput: {},
+        toolUseId: 'tool-1',
+      },
+    });
+    /** Payload carries the session cwd; the process still runs from the plugin root. */
+    expect(result).toEqual(
+      expect.objectContaining({
+        reason: `/workspace/session|${path.join(pluginsDir, 'cwd')}`,
+      }),
+    );
+  });
+
   it('presents Claude payloads to matcherless tool guards', async () => {
     await writePlugin('wildcard', {
       hooks: {

@@ -17,6 +17,12 @@ const BLOCKING_EXIT_CODE = 2;
 
 const TOOL_DECISIONS: ReadonlySet<string> = new Set<ToolDecision>(['allow', 'deny', 'ask']);
 const STOP_DECISIONS: ReadonlySet<string> = new Set<StopDecision>(['continue', 'block']);
+/** Every decision token either dialect can express; anything else is malformed. */
+const RECOGNIZED_DECISIONS: ReadonlySet<string> = new Set([
+  ...TOOL_DECISIONS,
+  ...STOP_DECISIONS,
+  'approve',
+]);
 const STDOUT_CONTEXT_EVENTS: ReadonlySet<string> = new Set(['SessionStart', 'UserPromptSubmit']);
 const PASSTHROUGH_ENV_VARS = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ'] as const;
 
@@ -483,13 +489,25 @@ function sanitizeOutput(
  * `decision`/`reason`, `hookSpecificOutput.additionalContext` surfaces,
  * `continue: false` becomes `preventContinuation`, and the legacy decisions
  * map (`approve` → `allow`; `block` → `deny` on events that block by
- * denying). Native fields always win when both dialects appear.
+ * denying). Native fields win when both dialects appear — but only when
+ * valid: a malformed native value (`"decision": null`, an unrecognized
+ * token) is stripped before the dialect merge so it cannot suppress a valid
+ * Claude decision into a silent allow.
  */
 function normalizeOutput(
   raw: Record<string, unknown>,
   request: PluginHookExecutionRequest,
 ): Record<string, unknown> {
   const output: Record<string, unknown> = { ...raw };
+  if (typeof output.decision !== 'string' || !RECOGNIZED_DECISIONS.has(output.decision)) {
+    delete output.decision;
+  }
+  if (typeof output.reason !== 'string') {
+    delete output.reason;
+  }
+  if (typeof output.additionalContext !== 'string') {
+    delete output.additionalContext;
+  }
   if (raw.continue === false && output.preventContinuation === undefined) {
     output.preventContinuation = true;
   }
