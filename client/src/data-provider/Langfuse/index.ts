@@ -40,6 +40,7 @@ export const useUpdateLangfuseConnectionMutation = (): UseMutationResult<
       mutationKey: [MutationKeys.updateLangfuseConnection],
       onSuccess: (data) => {
         queryClient.setQueryData([QueryKeys.langfuseConnection], data);
+        queryClient.removeQueries([QueryKeys.langfuseSessionLink]);
       },
     },
   );
