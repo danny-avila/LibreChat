@@ -441,7 +441,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       if (overflowActivityStartIndex == null || activity.startIndex > overflowActivityStartIndex) {
         overflowActivityStartIndex = activity.startIndex;
       }
-      const reasoningExcerpt = activity.thinkingExcerpts?.at(-1)?.trim();
+      const reasoningExcerpts = activity.thinkingExcerpts;
+      const reasoningExcerpt = reasoningExcerpts?.[reasoningExcerpts.length - 1]?.trim();
       if (reasoningExcerpt && activity.startIndex >= overflowActivityStartIndex) {
         overflowReasoningExcerpt = reasoningExcerpt.slice(0, MAX_EXCERPT_CHARS);
       }
