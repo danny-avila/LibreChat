@@ -8,6 +8,10 @@ import {
   MAX_COALESCED_EVENTS,
   resolveCoalesceWindowMs,
 } from '~/stream/internal/coalescing';
+import {
+  REDIS_ABORT_ACK_TIMEOUT_MS,
+  REDIS_EVENT_REORDER_TIMEOUT_MS,
+} from '~/stream/internal/timing';
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 
@@ -196,16 +200,10 @@ const PUBLISH_REPLACED_DONE_LUA =
   'redis.call("EXPIRE", KEYS[1], ttl) end local seq = val - 1 ' +
   'redis.call("PUBLISH", ARGV[1], ARGV[2] .. string.format("%d", seq) .. ARGV[3]) return seq';
 
-/** Max time (ms) to wait for out-of-order messages before force-flushing */
-const REORDER_TIMEOUT_MS = 500;
 /** Max messages to buffer before force-flushing (prevents memory issues) */
 const MAX_BUFFER_SIZE = 100;
 /** Rolling-upgrade recovery window after a legacy job hash expires without an epoch marker. */
 const GENERATION_EPOCH_GRACE_TTL_SECONDS = 300;
-/** A replacement remains fail-closed if its exact generation owner cannot
- * acknowledge promptly. Redis pub/sub is local-network traffic; this budget
- * tolerates reconnect jitter without holding an HTTP request indefinitely. */
-const ABORT_ACK_TIMEOUT_MS = 3000;
 /** Durable owner proof outlives receipt retries and process-local subscriptions. */
 const ABORT_ACK_TTL_SECONDS = 86400;
 
@@ -870,7 +868,7 @@ export class RedisEventTransport implements IEventTransport {
         );
         this.forceFlushBuffer(streamId, streamState);
       }
-    }, REORDER_TIMEOUT_MS);
+    }, REDIS_EVENT_REORDER_TIMEOUT_MS);
   }
 
   /** Deliver a message to all handlers */
@@ -1257,11 +1255,7 @@ export class RedisEventTransport implements IEventTransport {
     return (await this.publisher.get(KEYS.abortAck(streamId, generationId))) === '1';
   }
 
-  private async publishAbortAcknowledgement(
-    streamId: string,
-    generationId: number,
-    abortRequestId: string,
-  ): Promise<void> {
+  async recordAbortAcknowledgement(streamId: string, generationId: number): Promise<boolean> {
     try {
       await this.publisher.set(
         KEYS.abortAck(streamId, generationId),
@@ -1269,8 +1263,19 @@ export class RedisEventTransport implements IEventTransport {
         'EX',
         ABORT_ACK_TTL_SECONDS,
       );
+      return true;
     } catch (error) {
       logger.error(`[RedisEventTransport] Failed to persist generation abort proof:`, error);
+      return false;
+    }
+  }
+
+  private async publishAbortAcknowledgement(
+    streamId: string,
+    generationId: number,
+    abortRequestId: string,
+  ): Promise<void> {
+    if (!(await this.recordAbortAcknowledgement(streamId, generationId))) {
       // A live acknowledgement is only useful if a racing or inherited receipt
       // can prove the same owner stop after this subscription disappears. A
       // SET that committed despite a lost reply is recovered by the requester's
@@ -1316,7 +1321,7 @@ export class RedisEventTransport implements IEventTransport {
           (acknowledged) => this.settleAbortAck(streamId, state, abortRequestId, acknowledged),
           () => this.settleAbortAck(streamId, state, abortRequestId, false),
         );
-      }, ABORT_ACK_TIMEOUT_MS);
+      }, REDIS_ABORT_ACK_TIMEOUT_MS);
       state.abortAckWaiters.set(abortRequestId, { generationId, resolve, timeout });
     });
 

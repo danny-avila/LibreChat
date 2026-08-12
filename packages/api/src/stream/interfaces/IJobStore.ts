@@ -1273,6 +1273,10 @@ export interface IEventTransport {
    * the replica owning that generation processes the abort. */
   emitAbortConfirmed?(streamId: string, generationId: number): Promise<boolean>;
 
+  /** Persist proof that this process synchronously stopped the exact generation.
+   * A delayed replacement can use the proof after the owner's listeners retire. */
+  recordAbortAcknowledgement?(streamId: string, generationId: number): Promise<boolean>;
+
   /** Publish a predecessor DONE only while the current job's opaque creation
    * attempt still carries that predecessor in its durable receipt chain. */
   emitReplacedDoneConfirmed?(
