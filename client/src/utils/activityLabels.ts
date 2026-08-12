@@ -47,7 +47,12 @@ function isLogicallyEarlierPhaseMarker(
   if (endIndex >= index) {
     return false;
   }
-  return parts.slice(endIndex, index).some((trailingPart) => {
+  return Object.keys(parts).some((key) => {
+    const trailingIndex = Number(key);
+    if (trailingIndex < endIndex || trailingIndex >= index) {
+      return false;
+    }
+    const trailingPart = parts[trailingIndex];
     if (!isVisibleContentPart(trailingPart)) {
       return false;
     }
