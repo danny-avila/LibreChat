@@ -12,6 +12,7 @@ const promptUsageLimiter = require('./promptUsageLimiter');
 const verifyEmailLimiter = require('./verifyEmailLimiter');
 const resetPasswordLimiter = require('./resetPasswordLimiter');
 const twoFactorTempLimiter = require('./twoFactorTempLimiter');
+const { twoFactorSetupLimiter } = twoFactorTempLimiter;
 const verifyEmailSubmissionLimiter = require('./verifyEmailSubmissionLimiter');
 const resetPasswordSubmissionLimiter = require('./resetPasswordSubmissionLimiter');
 
@@ -31,4 +32,5 @@ module.exports = {
   verifyEmailSubmissionLimiter,
   resetPasswordSubmissionLimiter,
   twoFactorTempLimiter,
+  twoFactorSetupLimiter,
 };

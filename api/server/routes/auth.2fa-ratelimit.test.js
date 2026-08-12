@@ -5,6 +5,7 @@ const mockSetTwoFactorTempUser = jest.fn((req, res, next) => next());
 const mockSetTwoFactorAcknowledgementTempUser = jest.fn((req, res, next) => next());
 const mockSetTwoFactorFinalizationTempUser = jest.fn((req, res, next) => next());
 const mockTwoFactorTempLimiter = jest.fn((req, res, next) => next());
+const mockTwoFactorSetupLimiter = jest.fn((req, res, next) => next());
 const mockCheckBan = jest.fn((req, res, next) => next());
 const mockRequireTwoFactorSetupToken = jest.fn((req, res, next) => next());
 const mockRequireTwoFactorSetupAcknowledgementToken = jest.fn((req, res, next) => next());
@@ -76,6 +77,7 @@ jest.mock('~/server/middleware', () => {
       mockSetTwoFactorAcknowledgementTempUser(...args),
     setTwoFactorFinalizationTempUser: (...args) => mockSetTwoFactorFinalizationTempUser(...args),
     twoFactorTempLimiter: (...args) => mockTwoFactorTempLimiter(...args),
+    twoFactorSetupLimiter: (...args) => mockTwoFactorSetupLimiter(...args),
     checkBan: (...args) => mockCheckBan(...args),
     validateEmailLogin: pass,
     requireLocalAuth: pass,
@@ -101,6 +103,7 @@ describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
     mockSetTwoFactorAcknowledgementTempUser.mockImplementation((req, res, next) => next());
     mockSetTwoFactorFinalizationTempUser.mockImplementation((req, res, next) => next());
     mockTwoFactorTempLimiter.mockImplementation((req, res, next) => next());
+    mockTwoFactorSetupLimiter.mockImplementation((req, res, next) => next());
     mockCheckBan.mockImplementation((req, res, next) => next());
     mockRequireTwoFactorSetupToken.mockImplementation((req, res, next) => next());
     mockRequireTwoFactorSetupAcknowledgementToken.mockImplementation((req, res, next) => next());
@@ -123,14 +126,16 @@ describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
       .expect(204);
 
     expect(mockSetTwoFactorFinalizationTempUser).toHaveBeenCalledTimes(1);
-    expect(mockTwoFactorTempLimiter).toHaveBeenCalledTimes(1);
+    expect(mockTwoFactorSetupLimiter).toHaveBeenCalledTimes(1);
+    /** Redeeming a nonce checks no guessable code, so it must not draw on the code-attempt quota. */
+    expect(mockTwoFactorTempLimiter).not.toHaveBeenCalled();
     expect(mockCheckBan).toHaveBeenCalledTimes(1);
     expect(mockRequireTwoFactorSetupFinalizationToken).toHaveBeenCalledTimes(1);
     expect(mockFinalize2FASetup).toHaveBeenCalledTimes(1);
     expect(mockSetTwoFactorFinalizationTempUser.mock.invocationCallOrder[0]).toBeLessThan(
-      mockTwoFactorTempLimiter.mock.invocationCallOrder[0],
+      mockTwoFactorSetupLimiter.mock.invocationCallOrder[0],
     );
-    expect(mockTwoFactorTempLimiter.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockTwoFactorSetupLimiter.mock.invocationCallOrder[0]).toBeLessThan(
       mockCheckBan.mock.invocationCallOrder[0],
     );
     expect(mockCheckBan.mock.invocationCallOrder[0]).toBeLessThan(
@@ -148,14 +153,15 @@ describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
       .expect(204);
 
     expect(mockSetTwoFactorAcknowledgementTempUser).toHaveBeenCalledTimes(1);
-    expect(mockTwoFactorTempLimiter).toHaveBeenCalledTimes(1);
+    expect(mockTwoFactorSetupLimiter).toHaveBeenCalledTimes(1);
+    expect(mockTwoFactorTempLimiter).not.toHaveBeenCalled();
     expect(mockCheckBan).toHaveBeenCalledTimes(1);
     expect(mockRequireTwoFactorSetupAcknowledgementToken).toHaveBeenCalledTimes(1);
     expect(mockAcknowledge2FASetup).toHaveBeenCalledTimes(1);
     expect(mockSetTwoFactorAcknowledgementTempUser.mock.invocationCallOrder[0]).toBeLessThan(
-      mockTwoFactorTempLimiter.mock.invocationCallOrder[0],
+      mockTwoFactorSetupLimiter.mock.invocationCallOrder[0],
     );
-    expect(mockTwoFactorTempLimiter.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockTwoFactorSetupLimiter.mock.invocationCallOrder[0]).toBeLessThan(
       mockCheckBan.mock.invocationCallOrder[0],
     );
     expect(mockCheckBan.mock.invocationCallOrder[0]).toBeLessThan(
@@ -179,29 +185,32 @@ describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
   });
 
   it.each([
-    ['/api/auth/2fa/setup', mockEnable2FA],
-    ['/api/auth/2fa/setup/confirm', mockConfirm2FASetupWithTempToken],
-  ])('protects %s with temp-token limiting and setup validation', async (path, controller) => {
-    await request(app).post(path).send({ tempToken: 'temp-token' }).expect(204);
+    ['/api/auth/2fa/setup', mockEnable2FA, mockTwoFactorSetupLimiter],
+    ['/api/auth/2fa/setup/confirm', mockConfirm2FASetupWithTempToken, mockTwoFactorTempLimiter],
+  ])(
+    'protects %s with temp-token limiting and setup validation',
+    async (path, controller, limiter) => {
+      await request(app).post(path).send({ tempToken: 'temp-token' }).expect(204);
 
-    expect(mockSetTwoFactorTempUser).toHaveBeenCalledTimes(1);
-    expect(mockTwoFactorTempLimiter).toHaveBeenCalledTimes(1);
-    expect(mockCheckBan).toHaveBeenCalledTimes(1);
-    expect(mockRequireTwoFactorSetupToken).toHaveBeenCalledTimes(1);
-    expect(controller).toHaveBeenCalledTimes(1);
-    expect(mockSetTwoFactorTempUser.mock.invocationCallOrder[0]).toBeLessThan(
-      mockTwoFactorTempLimiter.mock.invocationCallOrder[0],
-    );
-    expect(mockTwoFactorTempLimiter.mock.invocationCallOrder[0]).toBeLessThan(
-      mockCheckBan.mock.invocationCallOrder[0],
-    );
-    expect(mockCheckBan.mock.invocationCallOrder[0]).toBeLessThan(
-      mockRequireTwoFactorSetupToken.mock.invocationCallOrder[0],
-    );
-    expect(mockRequireTwoFactorSetupToken.mock.invocationCallOrder[0]).toBeLessThan(
-      controller.mock.invocationCallOrder[0],
-    );
-  });
+      expect(mockSetTwoFactorTempUser).toHaveBeenCalledTimes(1);
+      expect(limiter).toHaveBeenCalledTimes(1);
+      expect(mockCheckBan).toHaveBeenCalledTimes(1);
+      expect(mockRequireTwoFactorSetupToken).toHaveBeenCalledTimes(1);
+      expect(controller).toHaveBeenCalledTimes(1);
+      expect(mockSetTwoFactorTempUser.mock.invocationCallOrder[0]).toBeLessThan(
+        limiter.mock.invocationCallOrder[0],
+      );
+      expect(limiter.mock.invocationCallOrder[0]).toBeLessThan(
+        mockCheckBan.mock.invocationCallOrder[0],
+      );
+      expect(mockCheckBan.mock.invocationCallOrder[0]).toBeLessThan(
+        mockRequireTwoFactorSetupToken.mock.invocationCallOrder[0],
+      );
+      expect(mockRequireTwoFactorSetupToken.mock.invocationCallOrder[0]).toBeLessThan(
+        controller.mock.invocationCallOrder[0],
+      );
+    },
+  );
 
   it('sets the temp user before limiting, checking bans, and verifying temp 2FA tokens', async () => {
     await request(app).post('/api/auth/2fa/verify-temp').send({ token: '123456' }).expect(204);

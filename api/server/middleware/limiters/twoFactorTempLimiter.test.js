@@ -8,7 +8,7 @@ const jwtSecret = 'test-two-factor-secret';
 const createToken = (userId, purpose = 'login_2fa_challenge') =>
   jwt.sign({ userId, purpose }, jwtSecret, { expiresIn: '5m' });
 
-const createApp = (max = '2') => {
+const createApp = (max = '2', setupMax = '2') => {
   jest.resetModules();
   process.env = {
     ...originalEnv,
@@ -17,6 +17,8 @@ const createApp = (max = '2') => {
     LOGIN_WINDOW: '5',
     TWO_FACTOR_TEMP_MAX: max,
     TWO_FACTOR_TEMP_WINDOW: '5',
+    TWO_FACTOR_SETUP_MAX: setupMax,
+    TWO_FACTOR_SETUP_WINDOW: '5',
   };
 
   jest.doMock('@librechat/api', () => ({
@@ -31,6 +33,7 @@ const createApp = (max = '2') => {
   const { setTwoFactorAcknowledgementTempUser, setTwoFactorFinalizationTempUser } =
     setTwoFactorTempUser;
   const twoFactorTempLimiter = require('./twoFactorTempLimiter');
+  const { twoFactorSetupLimiter } = twoFactorTempLimiter;
   const { logViolation } = require('~/cache');
 
   const app = express();
@@ -43,6 +46,13 @@ const createApp = (max = '2') => {
     res.status(204).end(),
   );
   app.post('/acknowledge', setTwoFactorAcknowledgementTempUser, twoFactorTempLimiter, (req, res) =>
+    res.status(204).end(),
+  );
+  /** Mirrors the production split: code checks on one quota, enrollment transitions on the other. */
+  app.post('/setup/confirm', setTwoFactorTempUser, twoFactorTempLimiter, (req, res) =>
+    res.status(204).end(),
+  );
+  app.post('/setup/finalize', setTwoFactorFinalizationTempUser, twoFactorSetupLimiter, (req, res) =>
     res.status(204).end(),
   );
 
@@ -201,6 +211,67 @@ describe('twoFactorTempLimiter', () => {
       .expect(429);
 
     expect(logViolation.mock.calls[0][0].user).toEqual({ id: 'finalization-user' });
+  });
+
+  /**
+   * Sharing one quota let a handful of wrong codes strand a user who already held their backup
+   * codes: confirmation succeeded, then finalization was refused and nothing was ever promoted.
+   */
+  it('keeps exhausted code attempts from blocking enrollment transitions', async () => {
+    const { app, logViolation } = createApp();
+    const tempToken = createToken('split-user', 'required_2fa_setup');
+    const finalizationToken = createToken('split-user', 'required_2fa_finalization');
+
+    await request(app)
+      .post('/setup/confirm')
+      .set('X-Forwarded-For', '203.0.113.40')
+      .send({ tempToken, token: '000000' })
+      .expect(204);
+    await request(app)
+      .post('/setup/confirm')
+      .set('X-Forwarded-For', '203.0.113.41')
+      .send({ tempToken, token: '000001' })
+      .expect(204);
+    await request(app)
+      .post('/setup/confirm')
+      .set('X-Forwarded-For', '203.0.113.42')
+      .send({ tempToken, token: '000002' })
+      .expect(429);
+
+    const finalized = await request(app)
+      .post('/setup/finalize')
+      .set('X-Forwarded-For', '203.0.113.43')
+      .send({ finalizationToken })
+      .expect(204);
+
+    expect(finalized.status).toBe(204);
+    /** Only the exhausted code attempt was a violation; finalization drew on its own budget. */
+    expect(logViolation).toHaveBeenCalledTimes(1);
+    expect(logViolation.mock.calls[0][3]).toMatchObject({ limiter: 'user', max: '2' });
+  });
+
+  it('still bounds the enrollment transition quota on its own budget', async () => {
+    const { app, logViolation } = createApp('7', '2');
+    const finalizationToken = createToken('transition-user', 'required_2fa_finalization');
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await request(app)
+        .post('/setup/finalize')
+        .set('X-Forwarded-For', `203.0.113.${50 + attempt}`)
+        .send({ finalizationToken })
+        .expect(204);
+    }
+
+    const response = await request(app)
+      .post('/setup/finalize')
+      .set('X-Forwarded-For', '203.0.113.52')
+      .send({ finalizationToken })
+      .expect(429);
+
+    expect(response.body).toEqual({
+      message: 'Too many two-factor setup requests, please try again after 5 minutes.',
+    });
+    expect(logViolation.mock.calls[0][0].user).toEqual({ id: 'transition-user' });
   });
 
   it('binds acknowledgement limiting to the acknowledgement token when a decoy setup token is present', async () => {

@@ -64,6 +64,7 @@ jest.mock('~/server/middleware', () => {
     setTwoFactorAcknowledgementTempUser: pass,
     setTwoFactorFinalizationTempUser: pass,
     twoFactorTempLimiter: pass,
+    twoFactorSetupLimiter: pass,
     checkBan: (...args) => mockCheckBan(...args),
     validateEmailLogin: pass,
     requireLocalAuth: pass,

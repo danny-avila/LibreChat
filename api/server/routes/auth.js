@@ -104,7 +104,7 @@ router.post('/2fa/verify', middleware.requireJwtAuth, verify2FA);
 router.post(
   '/2fa/setup',
   middleware.setTwoFactorTempUser,
-  middleware.twoFactorTempLimiter,
+  middleware.twoFactorSetupLimiter,
   middleware.checkBan,
   requireTwoFactorSetupToken,
   enable2FA,
@@ -120,7 +120,7 @@ router.post(
 router.post(
   '/2fa/setup/acknowledge',
   middleware.setTwoFactorAcknowledgementTempUser,
-  middleware.twoFactorTempLimiter,
+  middleware.twoFactorSetupLimiter,
   middleware.checkBan,
   requireTwoFactorSetupAcknowledgementToken,
   acknowledge2FASetup,
@@ -128,7 +128,7 @@ router.post(
 router.post(
   '/2fa/setup/finalize',
   middleware.setTwoFactorFinalizationTempUser,
-  middleware.twoFactorTempLimiter,
+  middleware.twoFactorSetupLimiter,
   middleware.checkBan,
   requireTwoFactorSetupFinalizationToken,
   finalize2FASetup,
