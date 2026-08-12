@@ -722,7 +722,7 @@ describe('createActivityPhaseWiring', () => {
     expect(snapshot.activityCount).toBe(20);
     expect(snapshot.activities).toHaveLength(13);
     expect(snapshot.overflowActivityStartIndex).toBe(19);
-    expect(snapshot.overflowToolCallIds).toEqual(['tool-19']);
+    expect(snapshot.overflowToolCallIds).toHaveLength(7);
   });
 
   it('retains every overflow tool ID tied at the latest boundary', async () => {
@@ -800,6 +800,58 @@ describe('createActivityPhaseWiring', () => {
     await flushDetached();
 
     expect(parts[15]).toMatchObject({ activity_end_index: 14, activity_count: 14 });
+  });
+
+  it('retains an earlier overflow ID when delayed tools materialize in reverse order', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-b' } },
+      { type: ContentTypes.TEXT, text: 'This answer arrived between delayed tools.' },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-a' } },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the delayed workflow' }));
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 15,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: Array.from({ length: 13 }, () => ({
+          startIndex: 0,
+          status: 'success' as const,
+        })),
+        overflowActivityStartIndex: 20,
+        overflowToolCallIds: ['overflow-a', 'overflow-b'],
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'root-text' ? 1 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'root-text',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[3]).toMatchObject({ activity_end_index: 3, activity_count: 15 });
   });
 
   it('keeps post-cap activities grouped after the last root text', async () => {

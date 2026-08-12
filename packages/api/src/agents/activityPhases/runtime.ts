@@ -230,25 +230,6 @@ function findTrackedToolStart(
   return undefined;
 }
 
-function hasTrackedToolAtOrAfter(
-  parts: ReadonlyArray<LooseContentPart | null | undefined>,
-  activity: TrackedActivity,
-  index: number,
-): boolean {
-  const toolCallIds = new Set(activity.toolCallIds ?? []);
-  if (toolCallIds.size === 0) {
-    return false;
-  }
-  return parts
-    .slice(index)
-    .some(
-      (part) =>
-        part?.type === ContentTypes.TOOL_CALL &&
-        typeof part.tool_call?.id === 'string' &&
-        toolCallIds.has(part.tool_call.id),
-    );
-}
-
 function findReasoningStart(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   text: string,
@@ -416,12 +397,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     } else {
       if (overflowActivityStartIndex == null || activity.startIndex > overflowActivityStartIndex) {
         overflowActivityStartIndex = activity.startIndex;
-        overflowToolCallIds.clear();
       }
-      if (activity.startIndex === overflowActivityStartIndex) {
-        for (const id of activity.toolCallIds ?? []) {
-          overflowToolCallIds.add(id);
-        }
+      for (const id of activity.toolCallIds ?? []) {
+        overflowToolCallIds.add(id);
       }
     }
   };
@@ -809,26 +787,35 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     }
     if (finalTextIndex != null) {
       const candidateFinalTextIndex = finalTextIndex;
+      const materializedToolIds = new Set<string>();
+      const trailingToolIds = new Set<string>();
+      for (const key of Object.keys(parts)) {
+        const index = Number(key);
+        const part = parts[index];
+        if (part?.type !== ContentTypes.TOOL_CALL || typeof part.tool_call?.id !== 'string') {
+          continue;
+        }
+        materializedToolIds.add(part.tool_call.id);
+        if (index >= candidateFinalTextIndex) {
+          trailingToolIds.add(part.tool_call.id);
+        }
+      }
       const hasLaterTrackedActivity = activities.some((activity) => {
-        if (hasTrackedToolAtOrAfter(parts, activity, candidateFinalTextIndex)) {
+        const toolCallIds = activity.toolCallIds ?? [];
+        if (toolCallIds.some((id) => trailingToolIds.has(id))) {
           return true;
         }
         return (
-          findTrackedToolStart(parts, activity) == null &&
+          !toolCallIds.some((id) => materializedToolIds.has(id)) &&
           activity.startIndex >= candidateFinalTextIndex
         );
       });
+      const overflowIds = [...overflowToolCallIds];
       const hasLaterOverflowActivity =
-        (overflowActivityStartIndex != null &&
-          overflowActivityStartIndex >= candidateFinalTextIndex) ||
-        parts
-          .slice(candidateFinalTextIndex)
-          .some(
-            (part) =>
-              part?.type === ContentTypes.TOOL_CALL &&
-              typeof part.tool_call?.id === 'string' &&
-              overflowToolCallIds.has(part.tool_call.id),
-          );
+        overflowIds.some((id) => trailingToolIds.has(id)) ||
+        (!overflowIds.some((id) => materializedToolIds.has(id)) &&
+          overflowActivityStartIndex != null &&
+          overflowActivityStartIndex >= candidateFinalTextIndex);
       const hasLaterPendingReasoning = [...pendingReasoning.values()].some(
         (reasoning) =>
           reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex,

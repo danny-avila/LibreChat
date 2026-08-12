@@ -215,7 +215,9 @@ export function groupActivityPhases(
       for (const lateLabelIndex of lateLabelIndices) {
         phase.content[lateLabelIndex - start] = content[lateLabelIndex];
       }
-      phase.hasContent = phase.content.some(isVisibleContentPart);
+      phase.hasContent ||= lateLabelIndices.some((lateLabelIndex) =>
+        isVisibleContentPart(content[lateLabelIndex]),
+      );
     }
     segments.push({
       type: 'phase',
