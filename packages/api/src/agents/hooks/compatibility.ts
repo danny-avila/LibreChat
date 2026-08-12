@@ -138,6 +138,13 @@ export interface PluginHookPlanEntry {
   handlerIndex: number;
   sourceMatcher?: string;
   matcher?: string;
+  /**
+   * Set when the matcher was authored against the plugin's alias namespace
+   * and translated to runtime tool names; payload name/input reverse
+   * translation applies only to such declarations — a native-authored
+   * matcher keeps native payloads.
+   */
+  requiresToolNameTranslation?: boolean;
   condition?: string;
   timeoutMs?: number;
   handler: PluginHookHandler;
@@ -366,6 +373,7 @@ function getHandlerIssues(
 interface MatcherPlan {
   sourceMatcher?: string;
   matcher?: string;
+  requiresToolNameTranslation?: boolean;
   issues: PluginHookCompatibilityIssue[];
 }
 
@@ -498,7 +506,12 @@ function planMatcher(
       message: 'Translated tool matchers require a reverse tool-name mapping for plugin payloads',
     });
   }
-  return { sourceMatcher, matcher, issues };
+  return {
+    sourceMatcher,
+    matcher,
+    ...(requiresToolNameTranslation && { requiresToolNameTranslation }),
+    issues,
+  };
 }
 
 function hasError(issues: readonly PluginHookCompatibilityIssue[]): boolean {
@@ -558,6 +571,9 @@ export function planPluginHooks(
             sourceMatcher: matcherPlan.sourceMatcher,
           }),
           ...(matcherPlan.matcher !== undefined && { matcher: matcherPlan.matcher }),
+          ...(matcherPlan.requiresToolNameTranslation === true && {
+            requiresToolNameTranslation: true,
+          }),
           ...(condition !== undefined && { condition }),
           handler,
           status,

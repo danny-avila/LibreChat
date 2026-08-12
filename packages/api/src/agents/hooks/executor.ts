@@ -432,19 +432,19 @@ function runCommand(
     const stdout: CapturedStream = { chunks: [], bytes: 0 };
     const stderr: CapturedStream = { chunks: [], bytes: 0 };
     let killTimer: NodeJS.Timeout | undefined;
-    const onAbort = () => {
+    /**
+     * Escalation must survive the wrapper's `close` — a SIGTERM-ignoring
+     * descendant can outlive the shell on POSIX — yet must never signal
+     * blindly: a fully-dead tree's numeric id could be recycled during the
+     * grace window. Both hazards resolve through `escalationTargetAlive`:
+     * `close` cancels escalation only when a pass could no longer reap
+     * anything, and the deadline re-checks before delivering the kill. The
+     * residual check-to-signal race is unavoidable without pidfd support
+     * and needs survivors at close AND full tree death AND a recycled id
+     * inside the same window.
+     */
+    const reapTree = () => {
       killTree(child, 'SIGTERM');
-      /**
-       * Escalation must survive the wrapper's `close` — a SIGTERM-ignoring
-       * descendant can outlive the shell on POSIX — yet must never signal
-       * blindly: a fully-dead tree's numeric id could be recycled during the
-       * grace window. Both hazards resolve through `escalationTargetAlive`:
-       * `close` cancels escalation only when a pass could no longer reap
-       * anything, and the deadline re-checks before delivering the kill. The
-       * residual check-to-signal race is unavoidable without pidfd support
-       * and needs survivors at close AND full tree death AND a recycled id
-       * inside the same window.
-       */
       killTimer = setTimeout(() => {
         if (!escalationTargetAlive(child)) {
           return;
@@ -453,7 +453,7 @@ function runCommand(
       }, killGraceMs);
       killTimer.unref?.();
     };
-    signal.addEventListener('abort', onAbort, { once: true });
+    signal.addEventListener('abort', reapTree, { once: true });
 
     child.stdout.on('data', (chunk: Buffer) => {
       appendCapped(stdout, chunk);
@@ -462,13 +462,23 @@ function runCommand(
       appendCapped(stderr, chunk);
     });
     child.on('error', (error) => {
-      signal.removeEventListener('abort', onAbort);
+      signal.removeEventListener('abort', reapTree);
       reject(error);
     });
     child.on('close', (code) => {
-      signal.removeEventListener('abort', onAbort);
+      signal.removeEventListener('abort', reapTree);
       if (killTimer !== undefined && !escalationTargetAlive(child)) {
         clearTimeout(killTimer);
+      }
+      /**
+       * A hook that backgrounds a worker and exits normally would otherwise
+       * leak it: async handlers are unsupported, so no lifecycle owns a
+       * process that outlives the wrapper. A group left alive after a
+       * normal close is reaped with the same term-then-escalate sequence
+       * an abort uses.
+       */
+      if (killTimer === undefined && escalationTargetAlive(child)) {
+        reapTree();
       }
       resolve({ code, stdout: capturedText(stdout), stderr: capturedText(stderr) });
     });

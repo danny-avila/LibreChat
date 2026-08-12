@@ -47,6 +47,9 @@ function onceKey(pluginId: string, request: PluginHookExecutionRequest): string 
  * same conversation (see `once.ts` for the store's ownership and eviction
  * contract). Keys carry the declaration position and handler identity so one
  * handler firing never suppresses a sibling declared on the same event.
+ * Suppression happens in `shouldExecute` — before the runtime's per-input
+ * dedup slot is claimed — so a spent declaration never shadows an identical
+ * handler declared under an overlapping matcher.
  */
 function withOnceDedup(
   pluginId: string,
@@ -55,24 +58,25 @@ function withOnceDedup(
 ): PluginHookExecutor {
   return {
     capabilities: executor.capabilities,
-    execute(request, signal): HookOutput | Promise<HookOutput> {
+    shouldExecute(request): boolean | Promise<boolean> {
       const oncePerSession =
         request.sourceEvent === 'SessionStart' || request.handler.once === true;
       if (!oncePerSession) {
-        return executor.execute(request, signal);
+        return true;
       }
       const scope = onceScope(userId, request.payload.session_id);
       const first = getPluginHookOnceStore().markOnce(scope, onceKey(pluginId, request));
       if (first instanceof Promise) {
-        return first
-          .catch((error) => {
-            /** A failed store lookup fails open — over-firing is the store's documented direction. */
-            logger.warn(`[pluginHooks] Once-store lookup failed for plugin "${pluginId}"`, error);
-            return true;
-          })
-          .then((isFirst) => (isFirst ? executor.execute(request, signal) : {}));
+        return first.catch((error) => {
+          /** A failed store lookup fails open — over-firing is the store's documented direction. */
+          logger.warn(`[pluginHooks] Once-store lookup failed for plugin "${pluginId}"`, error);
+          return true;
+        });
       }
-      return first ? executor.execute(request, signal) : {};
+      return first;
+    },
+    execute(request, signal): HookOutput | Promise<HookOutput> {
+      return executor.execute(request, signal);
     },
   };
 }

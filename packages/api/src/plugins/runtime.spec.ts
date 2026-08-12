@@ -182,6 +182,86 @@ describe('registerDeploymentPluginHooks', () => {
     expect(result).toEqual(expect.objectContaining({ decision: 'deny', reason: 'alias-guarded' }));
   });
 
+  it('keeps native payloads for matchers authored in the runtime namespace', async () => {
+    await writePlugin('native', {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: '^create_file$',
+            hooks: [
+              {
+                type: 'command',
+                command: `node -e 'let d="";process.stdin.on("data",(c)=>{d+=c;}).on("end",()=>{const p=JSON.parse(d);const nativeShaped=p.tool_name==="create_file"&&p.tool_input.path==="/workspace/native.md"&&p.tool_input.file_path===undefined;console.log(JSON.stringify(nativeShaped?{decision:"deny",reason:"native-guarded"}:{}));});'`,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await initialize();
+
+    const registry = new HookRegistry();
+    registerDeploymentPluginHooks({ registry, context: { sessionId: 'conversation-native' } });
+
+    const result = await executeHooks({
+      registry,
+      matchQuery: 'create_file',
+      input: {
+        hook_event_name: 'PreToolUse',
+        runId: 'run-1',
+        toolName: 'create_file',
+        toolInput: { path: '/workspace/native.md' },
+        toolUseId: 'tool-1',
+      },
+    });
+    expect(result).toEqual(expect.objectContaining({ decision: 'deny', reason: 'native-guarded' }));
+  });
+
+  it('lets an overlapping once declaration fire after its sibling is spent', async () => {
+    const onceHandler = {
+      type: 'command',
+      command: 'echo fired >> "$PLUGIN_DATA/overlap.log"',
+      once: true,
+    };
+    await writePlugin('overlap', {
+      hooks: {
+        PreToolUse: [
+          { matcher: 'write_file|read_file', hooks: [onceHandler] },
+          { matcher: '^read_file$', hooks: [onceHandler] },
+        ],
+      },
+    });
+    await initialize();
+
+    const firePreToolUse = async (toolName: string) => {
+      const registry = new HookRegistry();
+      registerDeploymentPluginHooks({ registry, context: { sessionId: 'conversation-overlap' } });
+      await executeHooks({
+        registry,
+        matchQuery: toolName,
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId: `run-${Math.random()}`,
+          toolName,
+          toolInput: {},
+          toolUseId: 'tool-1',
+        },
+      });
+    };
+
+    /** Spends the broad declaration's once key. */
+    await firePreToolUse('write_file');
+    /**
+     * The spent broad declaration must not claim the per-input dedup slot,
+     * or the narrow declaration's independent once-key would never fire.
+     */
+    await firePreToolUse('read_file');
+    await firePreToolUse('read_file');
+
+    const log = await fs.promises.readFile(path.join(dataDir, 'overlap', 'overlap.log'), 'utf8');
+    expect(log.trim().split('\n')).toHaveLength(2);
+  });
+
   it('serves the run seam through the plugin hook source', async () => {
     await writePlugin('seam');
     await initialize();

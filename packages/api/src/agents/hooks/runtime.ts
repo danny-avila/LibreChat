@@ -78,6 +78,14 @@ export interface PluginHookExecutionRequest {
  */
 export interface PluginHookExecutor {
   capabilities: PluginHookCapabilities;
+  /**
+   * Pre-execution gate consulted before the declaration claims its per-input
+   * dedup slot. A suppressed declaration (for example, once-state already
+   * recorded) must decline here rather than no-op inside `execute`, so an
+   * identical handler under an overlapping matcher can still claim the slot
+   * and fire independently.
+   */
+  shouldExecute?(request: PluginHookExecutionRequest): boolean | Promise<boolean>;
   execute(
     request: PluginHookExecutionRequest,
     signal: AbortSignal,
@@ -354,7 +362,14 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
     const handlerIdentity = getHandlerIdentity(entry.sourceEvent, entry.handler, entry.condition);
     const seenSessionIds = entry.sourceEvent === 'SessionStart' ? new Set<string>() : undefined;
     const firedSessionIds = entry.handler.once === true ? new Set<string>() : undefined;
-    const toolNameTranslator = executor.capabilities.toPluginToolName;
+    /**
+     * Payloads follow the declaration's own namespace: only a matcher that
+     * required alias translation gets reverse name/input translation — a
+     * native-authored matcher (for example `^create_file$`) keeps the native
+     * names and fields it matched on.
+     */
+    const translated = entry.requiresToolNameTranslation === true;
+    const toolNameTranslator = translated ? executor.capabilities.toPluginToolName : undefined;
     const toPluginToolName =
       toolNameTranslator === undefined
         ? undefined
@@ -364,7 +379,7 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
               targetEvent,
               toolName,
             });
-    const toolInputTranslator = executor.capabilities.toPluginToolInput;
+    const toolInputTranslator = translated ? executor.capabilities.toPluginToolInput : undefined;
     const toPluginToolInput =
       toolInputTranslator === undefined
         ? undefined
@@ -439,30 +454,44 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
         firedSessionIds?.add(sessionId);
         return {};
       }
-      if (handlersForInput) {
-        handlersForInput.add(handlerIdentity);
-      } else {
-        executedHandlers.set(input, new Set([handlerIdentity]));
+      const request: PluginHookExecutionRequest = {
+        pluginId,
+        sourceEvent: entry.sourceEvent,
+        targetEvent,
+        handler: entry.handler,
+        groupIndex: entry.groupIndex,
+        handlerIndex: entry.handlerIndex,
+        ...(entry.condition !== undefined && { condition: entry.condition }),
+        input,
+        payload: createPluginHookPayload(entry.sourceEvent, input, context, {
+          compactTrigger,
+          toPluginToolName,
+          toPluginToolInput,
+        }),
+      };
+      /**
+       * The per-input dedup slot is claimed only by a declaration that will
+       * actually run: one the executor suppresses (spent once-state) must
+       * not consume it, or an identical handler under an overlapping matcher
+       * could never claim the slot and would be permanently shadowed.
+       */
+      const claimAndExecute = (): HookOutput | Promise<HookOutput> => {
+        if (handlersForInput) {
+          handlersForInput.add(handlerIdentity);
+        } else {
+          executedHandlers.set(input, new Set([handlerIdentity]));
+        }
+        firedSessionIds?.add(sessionId);
+        return executor.execute(request, signal);
+      };
+      const shouldRun = executor.shouldExecute?.(request) ?? true;
+      if (shouldRun === true) {
+        return claimAndExecute();
       }
-      firedSessionIds?.add(sessionId);
-      return executor.execute(
-        {
-          pluginId,
-          sourceEvent: entry.sourceEvent,
-          targetEvent,
-          handler: entry.handler,
-          groupIndex: entry.groupIndex,
-          handlerIndex: entry.handlerIndex,
-          ...(entry.condition !== undefined && { condition: entry.condition }),
-          input,
-          payload: createPluginHookPayload(entry.sourceEvent, input, context, {
-            compactTrigger,
-            toPluginToolName,
-            toPluginToolInput,
-          }),
-        },
-        signal,
-      );
+      if (shouldRun === false) {
+        return {};
+      }
+      return shouldRun.then((run) => (run ? claimAndExecute() : {}));
     };
     const runtimeFiltered =
       entry.sourceEvent === 'SessionStart' ||
