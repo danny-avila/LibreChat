@@ -940,3 +940,7 @@ export type TLangfuseConnectionTestErrorCode =
 export type TLangfuseConnectionTestResponse =
   | { success: true }
   | { success: false; errorCode: TLangfuseConnectionTestErrorCode };
+
+export type TLangfuseSessionLinkResponse = {
+  url: string | null;
+};

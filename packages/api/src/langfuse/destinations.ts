@@ -29,7 +29,7 @@ export type LangfuseScoreDestination = {
   authorization: string;
 };
 
-function getDestinationId(baseUrl: string, projectId: string): string {
+export function getLangfuseDestinationId(baseUrl: string, projectId: string): string {
   return createHash('sha256')
     .update(`${baseUrl.replace(/\/+$/, '')}\n${projectId}`)
     .digest('hex');
@@ -127,7 +127,7 @@ async function getCentralScoreDestination(
   const baseUrl = getCentralEnvBaseUrl();
   const projectId = await resolveCentralProjectId(baseUrl, publicKey, secretKey, waitForProjectId);
   return {
-    id: projectId ? getDestinationId(baseUrl, projectId) : undefined,
+    id: projectId ? getLangfuseDestinationId(baseUrl, projectId) : undefined,
     name: 'central',
     baseUrl,
     authorization: toBasicAuthorization(publicKey, secretKey),
@@ -161,7 +161,9 @@ function getTenantScoreDestination(appConfig?: AppConfig): LangfuseScoreDestinat
   }
 
   return {
-    id: config?.projectId ? getDestinationId(destination.baseUrl, config.projectId) : undefined,
+    id: config?.projectId
+      ? getLangfuseDestinationId(destination.baseUrl, config.projectId)
+      : undefined,
     name: 'tenant',
     baseUrl: destination.baseUrl,
     authorization: toBasicAuthorization(tenantCredentials.publicKey, tenantCredentials.secretKey),
@@ -183,7 +185,9 @@ function getConfiguredScoreDestination(
   }
 
   return {
-    id: config?.projectId ? getDestinationId(destination.baseUrl, config.projectId) : undefined,
+    id: config?.projectId
+      ? getLangfuseDestinationId(destination.baseUrl, config.projectId)
+      : undefined,
     name: 'connection',
     baseUrl: destination.baseUrl,
     authorization: toBasicAuthorization(credentials.publicKey, credentials.secretKey),

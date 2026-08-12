@@ -8,6 +8,7 @@ import type { ServerRequest } from '~/types/http';
 // after CREDS_KEY is set above (encryptV3 reads the key at module load).
 let encryptV3: typeof import('@librechat/data-schemas').encryptV3;
 let createAdminLangfuseHandlers: typeof import('./langfuse').createAdminLangfuseHandlers;
+let getLangfuseDestinationId: typeof import('../langfuse/destinations').getLangfuseDestinationId;
 const realFetch = global.fetch;
 
 function projectResponse(projectId = 'project-1') {
@@ -21,6 +22,7 @@ function projectResponse(projectId = 'project-1') {
 beforeAll(async () => {
   ({ encryptV3 } = await import('@librechat/data-schemas'));
   ({ createAdminLangfuseHandlers } = await import('./langfuse'));
+  ({ getLangfuseDestinationId } = await import('../langfuse/destinations'));
 });
 
 beforeEach(() => {
@@ -101,6 +103,7 @@ function createHandlers(overrides = {}) {
         isActive,
       }),
     ),
+    getMessages: jest.fn().mockResolvedValue([]),
     invalidateConfigCaches: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -294,6 +297,71 @@ describe('createAdminLangfuseHandlers', () => {
       await handlers.getConnection(mockReq(), res);
 
       expect(findConfigByPrincipal).toHaveBeenCalledWith('role', '__base__');
+    });
+  });
+
+  describe('getSessionLink', () => {
+    const storedConnection = {
+      enabled: true,
+      destination: 'eu',
+      projectId: 'project-1',
+      publicKey: 'pk-lf-1',
+      secretKey: 'encrypted-secret',
+    };
+
+    it('returns the session URL when this user has a sampled message for the project', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(baseConfigDoc(storedConnection)),
+        getMessages: jest.fn().mockResolvedValue([{ _id: 'message-1' }]),
+      });
+      const res = mockRes();
+
+      await handlers.getSessionLink(mockReq({ params: { conversationId: 'conversation-1' } }), res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({
+        url: 'https://cloud.langfuse.com/project/project-1/sessions/conversation-1',
+      });
+      expect(deps.getMessages).toHaveBeenCalledWith(
+        {
+          user: 'u1',
+          conversationId: 'conversation-1',
+          langfuseSampled: true,
+          langfuseDestinationIds: getLangfuseDestinationId(
+            'https://cloud.langfuse.com',
+            'project-1',
+          ),
+        },
+        '_id',
+        { sort: false, limit: 1 },
+      );
+    });
+
+    it('does not link a conversation without a sampled message for the current project', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(baseConfigDoc(storedConnection)),
+      });
+      const res = mockRes();
+
+      await handlers.getSessionLink(mockReq({ params: { conversationId: 'conversation-1' } }), res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ url: null });
+      expect(deps.getMessages).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not query messages when the saved connection is disabled', async () => {
+      const { handlers, deps } = createHandlers({
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue(baseConfigDoc({ ...storedConnection, enabled: false })),
+      });
+      const res = mockRes();
+
+      await handlers.getSessionLink(mockReq({ params: { conversationId: 'conversation-1' } }), res);
+
+      expect(res.body).toEqual({ url: null });
+      expect(deps.getMessages).not.toHaveBeenCalled();
     });
   });
 

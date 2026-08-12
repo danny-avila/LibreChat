@@ -1,3 +1,4 @@
+import { ExternalLink } from 'lucide-react';
 import type { TokenUsageView } from '~/hooks/Chat/useTokenUsage';
 import type { CurrencyConfig } from '~/utils';
 import { groupToolTokens, formatTokens, formatCost } from '~/utils';
@@ -30,9 +31,15 @@ interface BreakdownProps {
   view: TokenUsageView;
   showCost: boolean;
   currency?: CurrencyConfig;
+  langfuseSessionUrl?: string;
 }
 
-export default function Breakdown({ view, showCost, currency }: BreakdownProps) {
+export default function Breakdown({
+  view,
+  showCost,
+  currency,
+  langfuseSessionUrl,
+}: BreakdownProps) {
   const localize = useLocalize();
   const { usedTokens, maxTokens, percent, snapshot, snapshotActive, branchUsage, hasUsage } = view;
   /** Show the all-branches total only when it (a) exceeds the active branch —
@@ -213,6 +220,21 @@ export default function Breakdown({ view, showCost, currency }: BreakdownProps) 
               </div>
             )}
           </div>
+        </>
+      )}
+
+      {langfuseSessionUrl && (
+        <>
+          <div className="border-t border-border-light" role="separator" />
+          <a
+            href={langfuseSessionUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-between gap-2 text-sm text-text-primary hover:underline"
+          >
+            <span>{localize('com_ui_langfuse_view_session')}</span>
+            <ExternalLink className="size-4 shrink-0" aria-hidden="true" />
+          </a>
         </>
       )}
     </div>
