@@ -299,6 +299,7 @@ export const EDITING_ALLOWED_SHORTCUTS: ReadonlySet<ShortcutActionId> = new Set(
   'showShortcuts',
   'submitMessage',
   'escalateSteer',
+  'uploadFile',
 ]);
 
 export type ShortcutAction = ShortcutDefinition & {
