@@ -758,8 +758,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           index > candidateFinalTextIndex &&
           (part?.type === ContentTypes.TOOL_CALL ||
             part?.type === ContentTypes.THINK ||
-            (part?.type === ContentTypes.ACTIVITY_LABEL &&
-              part.activity_label_type !== 'phase')),
+            (part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type !== 'phase')),
       );
       const hasLaterTrackedActivity = activities.some(
         (activity) => activity.startIndex >= candidateFinalTextIndex,
