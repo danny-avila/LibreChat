@@ -1,17 +1,34 @@
 # v0.8.7
 
 # Base node image
-FROM node:24.16.0-alpine AS node
+#
+# glibc (Debian slim), not Alpine: the BAML native bridge's musl artifact
+# (`@boundaryml/baml-bridge-linux-x64-musl`) is an upstream packaging defect —
+# it is actually glibc-linked (NEEDED: ld-linux-x86-64.so.2, libc.so.6,
+# libgcc_s.so.1), not a real musl build. Tracked as AF-o4v; filed upstream at
+# https://github.com/BoundaryML/baml/issues/4355. Alpine + gcompat (a partial
+# glibc ABI shim) loads the binary in local Docker but fails on Railway's
+# container runtime with "Error loading shared library ld-linux-x86-64.so.2:
+# No such file or directory" even though gcompat's copy of that file is
+# present in the image — a runtime dynamic-linker behavior difference (likely
+# a sandboxed runtime such as gVisor) that no Dockerfile-level shim can close.
+# On glibc, the bridge's isMusl() check returns false and npm/the loader
+# select the correctly-built `-gnu` package instead, so the buggy musl
+# artifact is never touched.
+FROM node:24.16.0-bookworm-slim AS node
 
-RUN apk upgrade --no-cache
-RUN apk add --no-cache jemalloc
-RUN apk add --no-cache python3 py3-pip uv
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libjemalloc2 \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set environment variable to use jemalloc
-ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
+# Set environment variable to use jemalloc (Debian multi-arch path, not
+# Alpine's /usr/lib/libjemalloc.so.2)
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
 
 # Add `uv` for extended MCP support
-COPY --from=ghcr.io/astral-sh/uv:0.9.5-python3.12-alpine /usr/local/bin/uv /usr/local/bin/uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.9.5 /uv /uvx /bin/
 RUN uv --version
 
 # Set configurable max-old-space-size with default
