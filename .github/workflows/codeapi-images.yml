@@ -1,0 +1,91 @@
+# Builds the self-hosted Code Interpreter (codeapi) images into BilleChat's ACR.
+# Source lives in ClickHouse/code-interpreter, which publishes no images, so we
+# build them ourselves on an amd64 runner and consume them from helm.
+name: CodeAPI Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: ClickHouse/code-interpreter git ref to build
+        required: false
+        default: main
+      tag:
+        description: Image tag to push (defaults to the source short SHA)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  SOURCE_REPO: ClickHouse/code-interpreter
+
+jobs:
+  build:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: codeapi-api
+            dockerfile: service/Dockerfile
+            target: api
+          - image: codeapi-worker
+            dockerfile: service/Dockerfile
+            target: worker
+          - image: codeapi-file-server
+            dockerfile: service/Dockerfile
+            target: production
+          - image: codeapi-tool-call-server
+            dockerfile: service/Dockerfile.tool-call-server
+            target: production
+          - image: codeapi-egress-gateway
+            dockerfile: service/Dockerfile.egress-gateway
+            target: production
+          # Compiles Python/Node/Bun into a read-only ext4 block root, so it is
+          # far heavier than the service images and needs the disk reclaim below.
+          - image: codeapi-sandbox-runner
+            dockerfile: api/Dockerfile
+            target: sandbox-runner-baked
+    steps:
+      - name: Checkout code-interpreter
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ inputs.ref }}
+
+      - name: Reclaim runner disk
+        if: matrix.image == 'codeapi-sandbox-runner'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
+
+      - name: Resolve tag
+        id: meta
+        run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="$(git rev-parse --short=7 HEAD)"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        env:
+          REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          IMAGE="${REGISTRY}/${{ matrix.image }}"
+          echo "${ACR_PASSWORD}" | docker login "${REGISTRY}" -u "${ACR_USERNAME}" --password-stdin
+          docker build \
+            --target "${{ matrix.target }}" \
+            -f "${{ matrix.dockerfile }}" \
+            -t "${IMAGE}:${TAG}" \
+            -t "${IMAGE}:latest" \
+            .
+          docker push "${IMAGE}:${TAG}"
+          docker push "${IMAGE}:latest"
