@@ -36,6 +36,46 @@ describe('planPluginHooks', () => {
     ]);
   });
 
+  test('gives matcherless tool declarations the document namespace', () => {
+    const plan = planPluginHooks(
+      document({
+        PreToolUse: [{ hooks: [{ type: 'command', command: 'audit' }] }],
+        PostToolBatch: [{ hooks: [{ type: 'command', command: 'record' }] }],
+        Stop: [{ hooks: [{ type: 'command', command: 'verify' }] }],
+      }),
+      {
+        handlerTypes: new Set(['command']),
+        translateMatcher: ({ matcher }: { matcher: string }) => matcher,
+        toPluginToolName: ({ toolName }) => toolName,
+      },
+    );
+
+    expect(plan.summary.ready).toBe(3);
+    expect(
+      plan.entries.map(({ targetEvent, requiresToolNameTranslation, translatedToolNames }) => ({
+        targetEvent,
+        requiresToolNameTranslation,
+        translatedToolNames,
+      })),
+    ).toEqual([
+      {
+        targetEvent: 'PreToolUse',
+        requiresToolNameTranslation: true,
+        translatedToolNames: undefined,
+      },
+      {
+        targetEvent: 'PostToolBatch',
+        requiresToolNameTranslation: true,
+        translatedToolNames: undefined,
+      },
+      {
+        targetEvent: 'Stop',
+        requiresToolNameTranslation: undefined,
+        translatedToolNames: undefined,
+      },
+    ]);
+  });
+
   test('marks handlers unsupported when the executor rejects them for the host', () => {
     const plan = planPluginHooks(
       document({

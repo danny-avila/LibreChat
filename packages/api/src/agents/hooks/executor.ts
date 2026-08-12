@@ -127,13 +127,16 @@ const ALIAS_BY_RUNTIME: ReadonlyMap<string, ClaudeToolAlias> = new Map(
 );
 /**
  * Alias tokens count only when delimited by characters that cannot appear in
- * a runtime tool name (word characters, hyphens, dots). A `\b` boundary is
- * not enough: action tool names preserve hyphens, so `deploy-Bash-v2_...` is
- * one literal tool name whose embedded alias must never be rewritten — the
- * rewritten matcher would silently stop matching the real tool.
+ * a runtime tool name (word characters and hyphens). A `\b` boundary is not
+ * enough: action tool names preserve hyphens, so `deploy-Bash-v2_...` is one
+ * literal tool name whose embedded alias must never be rewritten — the
+ * rewritten matcher would silently stop matching the real tool. Dots are
+ * deliberately NOT name characters: runtime names never contain them (action
+ * ids underscore domain dots), while regex forms like `^Bash.*$` put a
+ * metacharacter directly after the alias and must still translate.
  */
-const TOOL_NAME_BOUNDARY_BEFORE = '(?<![\\w.-])';
-const TOOL_NAME_BOUNDARY_AFTER = '(?![\\w.-])';
+const TOOL_NAME_BOUNDARY_BEFORE = '(?<![\\w-])';
+const TOOL_NAME_BOUNDARY_AFTER = '(?![\\w-])';
 const ALIAS_TOKEN_PATTERN = new RegExp(
   `${TOOL_NAME_BOUNDARY_BEFORE}(${CLAUDE_TOOL_ALIASES.map((alias) => alias.claudeName).join(
     '|',
@@ -299,13 +302,20 @@ function buildCommandEnv(
   /** Reserved names win last so an allowlist entry can never override them. */
   env.PLUGIN_ROOT = options.pluginRoot;
   env.PLUGIN_DATA = options.pluginData;
+  env.CLAUDE_PLUGIN_ROOT = options.pluginRoot;
   return env;
 }
 
-/** Agent Plugins §9.2 expansion applied to hook commands: one literal, non-recursive pass. */
+/**
+ * Agent Plugins §9.2 expansion applied to hook commands: one literal,
+ * non-recursive pass. `CLAUDE_PLUGIN_ROOT` is Claude Code's spelling of the
+ * plugin root — hooks authored for Claude use it in every standard command —
+ * and it is also exported in the child environment for unbraced references.
+ */
 function expandVariables(value: string, options: CommandExecutorOptions): string {
-  return value.replace(/\$\{(PLUGIN_ROOT|PLUGIN_DATA)\}/g, (_match, name: string) =>
-    name === 'PLUGIN_ROOT' ? options.pluginRoot : options.pluginData,
+  return value.replace(
+    /\$\{(PLUGIN_ROOT|PLUGIN_DATA|CLAUDE_PLUGIN_ROOT)\}/g,
+    (_match, name: string) => (name === 'PLUGIN_DATA' ? options.pluginData : options.pluginRoot),
   );
 }
 

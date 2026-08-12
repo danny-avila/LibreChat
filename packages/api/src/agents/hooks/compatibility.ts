@@ -38,6 +38,9 @@ const TOOL_NAME_EVENTS = new Set<HookEvent>([
   'PermissionDenied',
 ]);
 
+/** Events whose payloads carry tool names/inputs, including the matcherless batch event. */
+const TOOL_PAYLOAD_EVENTS = new Set<HookEvent>([...TOOL_NAME_EVENTS, 'PostToolBatch']);
+
 const GENERAL_EXACT_MATCHER = /^[-A-Za-z0-9_,| ]+$/;
 const NARROW_EXACT_MATCHER = /^[A-Za-z0-9_|]+$/;
 const NARROW_EXACT_MATCHER_EVENTS = new Set(['FileChanged', 'StopFailure']);
@@ -406,6 +409,20 @@ function planMatcher(
           },
         ],
       };
+    }
+    /**
+     * A matcherless (or wildcard) declaration carries no namespace evidence
+     * of its own, so it inherits the document's: hook documents are Claude
+     * artifacts, and a wildcard guard inspecting standard Claude names or
+     * fields must receive them. Declaration-wide translation (no produced
+     * names) presents every aliased runtime tool in the plugin namespace.
+     */
+    if (
+      targetEvent !== undefined &&
+      TOOL_PAYLOAD_EVENTS.has(targetEvent) &&
+      capabilities.toPluginToolName !== undefined
+    ) {
+      return { requiresToolNameTranslation: true, issues: [] };
     }
     return { issues: [] };
   }

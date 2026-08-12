@@ -35,6 +35,8 @@ function onceKey(pluginId: string, request: PluginHookExecutionRequest): string 
   return [
     pluginId,
     request.sourceEvent,
+    /** SessionStart dedupes per lifecycle source: startup must not suppress resume. */
+    request.payload.source ?? '',
     String(request.groupIndex),
     String(request.handlerIndex),
     handlerIdentity(request.handler),

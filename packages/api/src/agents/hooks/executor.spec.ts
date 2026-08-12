@@ -131,11 +131,16 @@ describe('createCommandExecutor', () => {
       translatedToolNames: ['create_file', 'edit_file'],
     });
     expect(translate('Bashful|write_file')).toBe('Bashful|write_file');
-    /** Hyphen- and dot-joined names are single tool names, never alias sites. */
+    /** Hyphen-joined names are single tool names, never alias sites. */
     expect(translate('deploy-Bash-v2_action_example_com')).toBe(
       'deploy-Bash-v2_action_example_com',
     );
-    expect(translate('my.Read.tool')).toBe('my.Read.tool');
+    /** Regex metacharacters delimit aliases — runtime names never contain dots. */
+    expect(translate('^Bash.*$')).toEqual({
+      matcher: '^bash_tool.*$',
+      requiresToolNameTranslation: true,
+      translatedToolNames: ['bash_tool'],
+    });
     expect(translate('[Bash]')).toBeUndefined();
     expect(translate('Bash\\d')).toBeUndefined();
     expect(translate('WebSearch')).toEqual({
@@ -351,6 +356,16 @@ describe('createCommandExecutor', () => {
     });
     expect(output).toEqual({
       reason: `${path.join(pluginRoot, 'scripts/check.sh')} ${pluginData}`,
+    });
+  });
+
+  test('expands the Claude plugin-root spelling in commands and the environment', async () => {
+    const output = await execute({
+      type: 'command',
+      command: `printf '{"reason":"%s|%s"}' "\${CLAUDE_PLUGIN_ROOT}/hooks/check.py" "$CLAUDE_PLUGIN_ROOT"`,
+    });
+    expect(output).toEqual({
+      reason: `${path.join(pluginRoot, 'hooks/check.py')}|${pluginRoot}`,
     });
   });
 

@@ -72,9 +72,9 @@ async function initialize(): Promise<void> {
   });
 }
 
-async function fireRunStart(sessionId: string): Promise<void> {
+async function fireRunStart(sessionId: string, sessionStartSource?: string): Promise<void> {
   const registry = new HookRegistry();
-  registerDeploymentPluginHooks({ registry, context: { sessionId } });
+  registerDeploymentPluginHooks({ registry, context: { sessionId, sessionStartSource } });
   await executeHooks({
     registry,
     input: { hook_event_name: 'RunStart', runId: `run-${Math.random()}`, messages: [] },
@@ -312,17 +312,56 @@ describe('registerDeploymentPluginHooks', () => {
     expect(getPluginHookSource()).toBeUndefined();
   });
 
-  it('fires every SessionStart handler once per conversation across separate runs', async () => {
+  it('fires every SessionStart handler once per conversation and per lifecycle source', async () => {
     await writePlugin('session');
     await initialize();
 
     await fireRunStart('conversation-a');
     await fireRunStart('conversation-a');
     await fireRunStart('conversation-b');
+    /** A startup firing must not suppress the conversation's resume rebuild. */
+    await fireRunStart('conversation-a', 'resume');
+    await fireRunStart('conversation-a', 'resume');
 
     const log = await fs.promises.readFile(path.join(dataDir, 'session', 'starts.log'), 'utf8');
     const lines = log.trim().split('\n').sort();
-    expect(lines).toEqual(['sibling', 'sibling', 'started', 'started']);
+    expect(lines).toEqual(['sibling', 'sibling', 'sibling', 'started', 'started', 'started']);
+  });
+
+  it('presents Claude payloads to matcherless tool guards', async () => {
+    await writePlugin('wildcard', {
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              {
+                type: 'command',
+                command: `node -e 'let d="";process.stdin.on("data",(c)=>{d+=c;}).on("end",()=>{const p=JSON.parse(d);const claudeShaped=p.tool_name==="Write"&&p.tool_input.file_path==="/workspace/wild.md"&&p.tool_input.path===undefined;console.log(JSON.stringify(claudeShaped?{decision:"deny",reason:"wildcard-guarded"}:{}));});'`,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await initialize();
+
+    const registry = new HookRegistry();
+    registerDeploymentPluginHooks({ registry, context: { sessionId: 'conversation-wild' } });
+
+    const result = await executeHooks({
+      registry,
+      matchQuery: 'create_file',
+      input: {
+        hook_event_name: 'PreToolUse',
+        runId: 'run-1',
+        toolName: 'create_file',
+        toolInput: { path: '/workspace/wild.md' },
+        toolUseId: 'tool-1',
+      },
+    });
+    expect(result).toEqual(
+      expect.objectContaining({ decision: 'deny', reason: 'wildcard-guarded' }),
+    );
   });
 
   it('persists once-only state per declaration across runs of the same conversation', async () => {
