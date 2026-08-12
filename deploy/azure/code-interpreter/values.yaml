@@ -1,0 +1,178 @@
+# Self-hosted Code Interpreter (codeapi) for BilleChat on AKS.
+#
+# Upstream chart: ClickHouse/code-interpreter, helm/codeapi
+# Images are built by .github/workflows/codeapi-images.yml into billechatacr.
+#
+# Secrets are NOT stored here. They are applied via `--set` from GitHub secrets
+# (see deploy/azure/README.md) or from the pre-created `codeapi-jwt-verifier`
+# secret for the LibreChat verifier key.
+#
+# Sizing note: the cluster is 2x Standard_D4s_v5 (3860m allocatable CPU each)
+# already running LibreChat, Mongo, Postgres, Meilisearch and two MCP servers,
+# so every component runs a single replica.
+
+global:
+  storageClass: managed-csi
+
+hardenedSandboxMode: true
+
+api:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: billechatacr.azurecr.io/codeapi-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 3112
+  extraEnv:
+    # LibreChat mints EdDSA JWTs with the matching private key; the verifier
+    # public key is mounted from a secret created out-of-band.
+    - name: CODEAPI_AUTH_PROVIDER
+      value: librechat-jwt
+    - name: CODEAPI_JWT_PUBLIC_KEY
+      valueFrom:
+        secretKeyRef:
+          name: codeapi-jwt-verifier
+          key: public-key
+    - name: CODEAPI_JWT_KID
+      value: billechat-codeapi-2026-08
+    - name: CODEAPI_JWT_ISSUER
+      value: librechat
+    - name: CODEAPI_JWT_AUDIENCE
+      value: codeapi
+    - name: CODEAPI_JWT_ALLOWED_ALGS
+      value: EdDSA
+
+workerSandbox:
+  enabled: true
+  replicaCount: 1
+  workerImage:
+    repository: billechatacr.azurecr.io/codeapi-worker
+    tag: latest
+    pullPolicy: IfNotPresent
+  sandboxImage:
+    repository: billechatacr.azurecr.io/codeapi-sandbox-runner
+    tag: latest
+    pullPolicy: IfNotPresent
+  # Nodes are Standard_D4s_v5 and expose /dev/kvm with vmx, so the sandbox runs
+  # under its own guest kernel with NsJail inside rather than sharing the host.
+  kvmEnabled: true
+  # A hostPath mount leaves the device cgroup closed for non-privileged
+  # containers, so /dev/kvm opens with EPERM. The device plugin in
+  # kvm-device-plugin.yaml is what actually grants access.
+  kvmDevicePlugin:
+    enabled: true
+    resourceName: squat.ai/kvm
+  launcher:
+    vcpus: 2
+    ramMib: 2048
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 1500m
+      memory: 3Gi
+  serviceWorker:
+    replicaCount: 1
+  sandboxRunner:
+    replicaCount: 1
+  config:
+    pythonConcurrency: 1
+    otherConcurrency: 4
+  packages:
+    source: image
+
+fileServer:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: billechatacr.azurecr.io/codeapi-file-server
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+
+toolCallServer:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: billechatacr.azurecr.io/codeapi-tool-call-server
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3033
+
+egressGateway:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: billechatacr.azurecr.io/codeapi-egress-gateway
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3190
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+
+minio:
+  enabled: true
+  mode: standalone
+  # Bitnami retired its public Docker Hub catalog, so the tags this chart pins
+  # only resolve under bitnamilegacy.
+  image:
+    registry: docker.io
+    repository: bitnamilegacy/minio
+  clientImage:
+    registry: docker.io
+    repository: bitnamilegacy/minio-client
+  console:
+    image:
+      registry: docker.io
+      repository: bitnamilegacy/minio-object-browser
+  defaultInitContainers:
+    volumePermissions:
+      image:
+        registry: docker.io
+        repository: bitnamilegacy/os-shell
+  # The data volume is a RWO Azure Disk, so a rolling update deadlocks: the new
+  # pod cannot attach until the old one releases the disk, and the old one is
+  # not scaled down until the new one is Ready. rollingUpdate must be nulled or
+  # the API server rejects it alongside Recreate.
+  updateStrategy:
+    type: Recreate
+    rollingUpdate: null
+  persistence:
+    enabled: true
+    size: 10Gi
+  defaultBuckets: codeapi-files
+
+networkPolicy:
+  enabled: true
+  otel:
+    enabled: false
+  toolCallServer:
+    allowExternalEgress: false
+
+metrics:
+  enabled: false

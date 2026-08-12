@@ -61,6 +61,19 @@ librechat:
     AZURE_OPENAI_ENDPOINT: "https://micha-mm146vwy-swedencentral.services.ai.azure.com"
     OPENAI_API_VERSION: "2024-12-01-preview"
 
+    # Code Interpreter — self-hosted sandbox in this namespace.
+    # Manifests: deploy/azure/code-interpreter/
+    # Auth is EdDSA JWT only; LIBRECHAT_CODE_API_KEY is no longer read by the
+    # app. LibreChat signs with the private key below, codeapi verifies with the
+    # matching public key from the `codeapi-jwt-verifier` secret.
+    LIBRECHAT_CODE_BASEURL: "http://codeapi-api.billechat.svc.cluster.local:3112/v1"
+    CODEAPI_AUTH_PROVIDER: "librechat-jwt"
+    CODEAPI_JWT_KID: "billechat-codeapi-2026-08"
+    CODEAPI_JWT_ISSUER: "librechat"
+    CODEAPI_JWT_AUDIENCE: "codeapi"
+    CODEAPI_JWT_ALGORITHM: "EdDSA"
+    CODEAPI_JWT_PRIVATE_KEY_BASE64: "override-via-pipeline"
+
     # Auth — Entra ID OpenID
     ALLOW_EMAIL_LOGIN: "false"
     ALLOW_REGISTRATION: "false"

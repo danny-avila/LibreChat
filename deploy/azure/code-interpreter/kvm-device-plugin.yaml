@@ -1,0 +1,72 @@
+# Advertises /dev/kvm as the schedulable extended resource `squat.ai/kvm`.
+#
+# A hostPath mount alone is not sufficient: Kubernetes leaves the device cgroup
+# closed for non-privileged containers, so opening /dev/kvm fails with EPERM
+# even though the node exposes it as mode 0666. A device plugin is what grants
+# access without giving the sandbox privileged mode.
+#
+# kubevirt/device-plugin-kvm was tried first and panics against a modern kubelet
+# (its published image is years stale), so this uses squat/generic-device-plugin.
+#
+# Consumed by deploy/azure/code-interpreter/values.yaml via
+# workerSandbox.kvmDevicePlugin.resourceName = squat.ai/kvm
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: generic-device-plugin
+  namespace: kube-system
+  labels:
+    app: generic-device-plugin
+spec:
+  selector:
+    matchLabels:
+      app: generic-device-plugin
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: generic-device-plugin
+    spec:
+      priorityClassName: system-node-critical
+      tolerations:
+        - operator: Exists
+          effect: NoExecute
+        - operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: generic-device-plugin
+          image: ghcr.io/squat/generic-device-plugin:9f48a39ca5c9044ccf3900cf13cbb811777c23b9
+          args:
+            - --log-level=info
+            - --device
+            - |
+              name: kvm
+              groups:
+                - count: 100
+                  paths:
+                    - path: /dev/kvm
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: device-plugin
+              mountPath: /var/lib/kubelet/device-plugins
+            - name: dev
+              mountPath: /dev
+      volumes:
+        - name: device-plugin
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+        - name: dev
+          hostPath:
+            path: /dev
