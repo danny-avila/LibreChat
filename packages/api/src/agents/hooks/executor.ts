@@ -124,8 +124,19 @@ const ALIAS_BY_CLAUDE: ReadonlyMap<string, ClaudeToolAlias> = new Map(
 const ALIAS_BY_RUNTIME: ReadonlyMap<string, ClaudeToolAlias> = new Map(
   CLAUDE_TOOL_ALIASES.map((alias) => [alias.runtimeName, alias]),
 );
+/**
+ * Alias tokens count only when delimited by characters that cannot appear in
+ * a runtime tool name (word characters, hyphens, dots). A `\b` boundary is
+ * not enough: action tool names preserve hyphens, so `deploy-Bash-v2_...` is
+ * one literal tool name whose embedded alias must never be rewritten — the
+ * rewritten matcher would silently stop matching the real tool.
+ */
+const TOOL_NAME_BOUNDARY_BEFORE = '(?<![\\w.-])';
+const TOOL_NAME_BOUNDARY_AFTER = '(?![\\w.-])';
 const ALIAS_TOKEN_PATTERN = new RegExp(
-  `\\b(${CLAUDE_TOOL_ALIASES.map((alias) => alias.claudeName).join('|')})\\b`,
+  `${TOOL_NAME_BOUNDARY_BEFORE}(${CLAUDE_TOOL_ALIASES.map((alias) => alias.claudeName).join(
+    '|',
+  )})${TOOL_NAME_BOUNDARY_AFTER}`,
   'g',
 );
 /** Character classes and escapes where token substitution could corrupt regex semantics. */
@@ -151,7 +162,11 @@ const UNSUPPORTED_CLAUDE_TOOLS = [
   'AskUserQuestion',
   'SlashCommand',
 ] as const;
-const UNSUPPORTED_TOOL_PATTERN = new RegExp(`\\b(?:${UNSUPPORTED_CLAUDE_TOOLS.join('|')})\\b`);
+const UNSUPPORTED_TOOL_PATTERN = new RegExp(
+  `${TOOL_NAME_BOUNDARY_BEFORE}(?:${UNSUPPORTED_CLAUDE_TOOLS.join(
+    '|',
+  )})${TOOL_NAME_BOUNDARY_AFTER}`,
+);
 
 function containsAliasToken(matcher: string): boolean {
   ALIAS_TOKEN_PATTERN.lastIndex = 0;
@@ -159,22 +174,31 @@ function containsAliasToken(matcher: string): boolean {
 }
 
 /**
- * Plan-time gate for handlers the executor cannot run on the current host:
+ * Plan-time gate for handlers the executor cannot run on the current host.
  * Windows has no portable `bash`, so a command handler must declare
- * `commandWindows` or `shell: "powershell"` to be executable there. Exported
- * with an explicit platform parameter for direct testing off-Windows.
+ * `commandWindows` or `shell: "powershell"` to be executable there; POSIX
+ * hosts run the portable `command` with bash, so a handler declaring
+ * `shell: "powershell"` without a separate `commandWindows` variant marks
+ * its only command as PowerShell syntax that bash would fail open on.
+ * Exported with an explicit platform parameter for direct testing.
  */
-export function getWindowsHandlerIssue(
+export function getShellHandlerIssue(
   handler: PluginHookHandler,
   platform: NodeJS.Platform = process.platform,
 ): string | undefined {
-  if (platform !== 'win32' || handler.type !== 'command') {
+  if (handler.type !== 'command') {
     return undefined;
   }
-  if (handler.shell === 'powershell' || handler.commandWindows !== undefined) {
-    return undefined;
+  if (platform === 'win32') {
+    if (handler.shell === 'powershell' || handler.commandWindows !== undefined) {
+      return undefined;
+    }
+    return 'Windows hosts run command hooks with PowerShell; declare commandWindows or shell "powershell"';
   }
-  return 'Windows hosts run command hooks with PowerShell; declare commandWindows or shell "powershell"';
+  if (handler.shell === 'powershell' && handler.commandWindows === undefined) {
+    return 'This host runs command hooks with bash; shell "powershell" requires a commandWindows variant so the portable command stays bash-compatible';
+  }
+  return undefined;
 }
 
 /**
@@ -214,7 +238,7 @@ export const commandExecutorCapabilities: PluginHookCapabilities = {
   toPluginToolName: ({ toolName }) => ALIAS_BY_RUNTIME.get(toolName)?.claudeName ?? toolName,
   toPluginToolInput: ({ toolName, toolInput }) =>
     ALIAS_BY_RUNTIME.get(toolName)?.toPluginInput?.(toolInput) ?? toolInput,
-  supportsHandler: ({ handler }) => getWindowsHandlerIssue(handler),
+  supportsHandler: ({ handler }) => getShellHandlerIssue(handler),
   sessionLifecycle: true,
 };
 
@@ -277,11 +301,11 @@ interface ShellInvocation {
 
 /**
  * POSIX hosts run `bash -c <command>` with `args` bound to `$1..$n`. Windows
- * hosts run PowerShell and require `commandWindows` or `shell: powershell` —
- * enforced at plan time via `supportsHandler`, and again here so a portable
- * POSIX command never silently runs through a shell it was not written for.
- * Handler-declared `shell: powershell` is ignored off-Windows — the portable
- * `command` string is authoritative there.
+ * hosts run PowerShell and require `commandWindows` or `shell: powershell`.
+ * Both directions are enforced at plan time via `supportsHandler` and again
+ * here, so a command never silently runs through a shell it was not written
+ * for: a PowerShell-only handler is skipped on POSIX, while a handler with
+ * both variants runs its portable `command` there.
  */
 function buildInvocation(
   request: PluginHookExecutionRequest,
@@ -304,6 +328,9 @@ function buildInvocation(
       executable: 'powershell.exe',
       argv: ['-NoLogo', '-NoProfile', '-Command', [command, ...quotedArgs].join(' ')],
     };
+  }
+  if (handler.shell === 'powershell' && handler.commandWindows === undefined) {
+    return undefined;
   }
   return { executable: 'bash', argv: ['-c', command, 'bash', ...args] };
 }

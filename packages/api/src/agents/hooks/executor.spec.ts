@@ -7,7 +7,7 @@ import type { PluginHookHandler } from './schema';
 import {
   commandExecutorCapabilities,
   createCommandExecutor,
-  getWindowsHandlerIssue,
+  getShellHandlerIssue,
 } from './executor';
 
 let pluginRoot: string;
@@ -125,6 +125,11 @@ describe('createCommandExecutor', () => {
       requiresToolNameTranslation: true,
     });
     expect(translate('Bashful|write_file')).toBe('Bashful|write_file');
+    /** Hyphen- and dot-joined names are single tool names, never alias sites. */
+    expect(translate('deploy-Bash-v2_action_example_com')).toBe(
+      'deploy-Bash-v2_action_example_com',
+    );
+    expect(translate('my.Read.tool')).toBe('my.Read.tool');
     expect(translate('[Bash]')).toBeUndefined();
     expect(translate('Bash\\d')).toBeUndefined();
     expect(translate('WebSearch')).toEqual({
@@ -144,6 +149,7 @@ describe('createCommandExecutor', () => {
     expect(translate('Task|my_mcp_tool')).toBeUndefined();
     expect(translate('^(Bash|WebFetch)$')).toBeUndefined();
     expect(translate('Grepish')).toBe('Grepish');
+    expect(translate('my-Task-runner')).toBe('my-Task-runner');
   });
 
   test('presents aliased tool inputs under Claude field names', () => {
@@ -180,15 +186,34 @@ describe('createCommandExecutor', () => {
     expect(translate('my_mcp_tool', { path: '/a.md' })).toEqual({ path: '/a.md' });
   });
 
-  test('rejects portable-only command handlers on Windows at plan time', () => {
+  test('rejects handlers whose only command targets the wrong host shell', () => {
     const portable: PluginHookHandler = { type: 'command', command: 'echo ok' };
-    expect(getWindowsHandlerIssue(portable, 'win32')).toContain('commandWindows');
-    expect(getWindowsHandlerIssue(portable, 'linux')).toBeUndefined();
+    expect(getShellHandlerIssue(portable, 'win32')).toContain('commandWindows');
+    expect(getShellHandlerIssue(portable, 'linux')).toBeUndefined();
     expect(
-      getWindowsHandlerIssue({ ...portable, commandWindows: 'Write-Output ok' }, 'win32'),
+      getShellHandlerIssue({ ...portable, commandWindows: 'Write-Output ok' }, 'win32'),
     ).toBeUndefined();
-    expect(getWindowsHandlerIssue({ ...portable, shell: 'powershell' }, 'win32')).toBeUndefined();
-    expect(getWindowsHandlerIssue({ type: 'prompt', prompt: 'check' }, 'win32')).toBeUndefined();
+    expect(getShellHandlerIssue({ ...portable, shell: 'powershell' }, 'win32')).toBeUndefined();
+    expect(getShellHandlerIssue({ type: 'prompt', prompt: 'check' }, 'win32')).toBeUndefined();
+    /** A PowerShell-only command cannot run through bash on POSIX hosts. */
+    expect(getShellHandlerIssue({ ...portable, shell: 'powershell' }, 'linux')).toContain(
+      'commandWindows',
+    );
+    expect(
+      getShellHandlerIssue(
+        { ...portable, shell: 'powershell', commandWindows: 'Write-Output ok' },
+        'linux',
+      ),
+    ).toBeUndefined();
+  });
+
+  test('skips execution for PowerShell-only handlers on POSIX hosts', async () => {
+    const output = await execute({
+      type: 'command',
+      command: 'Write-Output should-not-run',
+      shell: 'powershell',
+    });
+    expect(output).toEqual({});
   });
 
   test('leaves matchers for non-tool events untranslated', () => {

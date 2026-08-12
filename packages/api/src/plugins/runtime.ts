@@ -64,7 +64,13 @@ function withOnceDedup(
       const scope = onceScope(userId, request.payload.session_id);
       const first = getPluginHookOnceStore().markOnce(scope, onceKey(pluginId, request));
       if (first instanceof Promise) {
-        return first.then((isFirst) => (isFirst ? executor.execute(request, signal) : {}));
+        return first
+          .catch((error) => {
+            /** A failed store lookup fails open — over-firing is the store's documented direction. */
+            logger.warn(`[pluginHooks] Once-store lookup failed for plugin "${pluginId}"`, error);
+            return true;
+          })
+          .then((isFirst) => (isFirst ? executor.execute(request, signal) : {}));
       }
       return first ? executor.execute(request, signal) : {};
     },
@@ -117,9 +123,13 @@ export function registerDeploymentPluginHooks(
     /**
      * Refreshes the conversation's once-state retention on every run, so even
      * rarely-matching `once` handlers keep their keys while the conversation
-     * stays active.
+     * stays active. A failed refresh only risks earlier eviction, so an async
+     * store's rejection is logged rather than failing run construction.
      */
-    void getPluginHookOnceStore().touch(onceScope(options.context?.userId, sessionId));
+    const touched = getPluginHookOnceStore().touch(onceScope(options.context?.userId, sessionId));
+    if (touched instanceof Promise) {
+      touched.catch((error) => logger.warn('[pluginHooks] Once-store touch failed', error));
+    }
   }
   let registered = 0;
   for (const plugin of getExecutableHookPlugins()) {
