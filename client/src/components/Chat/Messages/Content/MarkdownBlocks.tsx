@@ -4,11 +4,13 @@ import type { PluggableList } from 'unified';
 import type { ElementType } from 'react';
 import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
 import { splitMarkdownIntoBlocks } from './splitMarkdown';
+import { createFadePlugin } from './animate';
 
 type SharedProps = {
   remarkPlugins: PluggableList;
   rehypePlugins: PluggableList;
   components: { [nodeType: string]: ElementType };
+  animate?: boolean;
 };
 
 type MarkdownBlockProps = SharedProps & {
@@ -34,7 +36,17 @@ const MarkdownBlock = memo(
     remarkPlugins,
     rehypePlugins,
     components,
+    animate = false,
   }: MarkdownBlockProps) {
+    // One fade-plugin instance per block: its closure tracks this block's
+    // character offsets so only newly streamed words animate. When `animate`
+    // flips off at stream end, the plain plugin array renders the settled
+    // block without wrapper spans.
+    const fadePlugin = useMemo(() => (animate ? createFadePlugin() : null), [animate]);
+    const blockRehypePlugins = useMemo(
+      () => (fadePlugin == null ? rehypePlugins : [...rehypePlugins, fadePlugin]),
+      [fadePlugin, rehypePlugins],
+    );
     return (
       <ArtifactProvider baseIndex={artifactBaseIndex}>
         <CodeBlockProvider baseIndex={codeBaseIndex} mermaidBaseIndex={mermaidBaseIndex}>
@@ -42,7 +54,7 @@ const MarkdownBlock = memo(
             /** @ts-ignore */
             remarkPlugins={remarkPlugins}
             /** @ts-ignore */
-            rehypePlugins={rehypePlugins}
+            rehypePlugins={blockRehypePlugins}
             components={components}
           >
             {content}
@@ -55,7 +67,8 @@ const MarkdownBlock = memo(
     prev.content === next.content &&
     prev.codeBaseIndex === next.codeBaseIndex &&
     prev.artifactBaseIndex === next.artifactBaseIndex &&
-    prev.mermaidBaseIndex === next.mermaidBaseIndex,
+    prev.mermaidBaseIndex === next.mermaidBaseIndex &&
+    prev.animate === next.animate,
 );
 MarkdownBlock.displayName = 'MarkdownBlock';
 
@@ -75,6 +88,7 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
   remarkPlugins,
   rehypePlugins,
   components,
+  animate,
 }: MarkdownBlocksProps) {
   const blocks = useMemo(() => {
     let codeBaseIndex = 0;
@@ -106,6 +120,7 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
           remarkPlugins={remarkPlugins}
           rehypePlugins={rehypePlugins}
           components={components}
+          animate={animate}
         />
       ))}
     </>

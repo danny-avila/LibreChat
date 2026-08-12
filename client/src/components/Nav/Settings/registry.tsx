@@ -35,6 +35,7 @@ import { ClearChats } from '../SettingsTabs/Data/ClearChats';
 import { TokenCredits, AutoRefill } from './BillingControls';
 import AdminPanel from '../SettingsTabs/General/AdminPanel';
 import SharedLinks from '../SettingsTabs/Data/SharedLinks';
+import { smoothStreamingAtom } from '~/store/smoothStreaming';
 import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
 import Avatar from '../SettingsTabs/Account/Avatar';
@@ -273,6 +274,19 @@ export const registry: SettingEntry[] = [
       stateAtom: showThinkingAtom,
       localizationKey: 'com_nav_show_thinking',
       switchId: 'showThinking',
+    }),
+  },
+  {
+    id: 'smoothStreaming',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_smooth_streaming',
+    keywords: ['smooth', 'streaming', 'fade', 'animation', 'animate'],
+    Component: toggleControl({
+      stateAtom: smoothStreamingAtom,
+      localizationKey: 'com_nav_smooth_streaming',
+      switchId: 'smoothStreaming',
+      hoverCardText: 'com_nav_info_smooth_streaming',
     }),
   },
   {

@@ -6,6 +6,7 @@ import type { FocusEvent, FC } from 'react';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
+import { AnimatedText } from '../animate';
 import { cn } from '~/utils';
 
 /**
@@ -14,12 +15,15 @@ import { cn } from '~/utils';
  */
 export const ThinkingContent: FC<{
   children: React.ReactNode;
-}> = memo(({ children }) => {
+  animate?: boolean;
+}> = memo(({ children, animate = false }) => {
   const fontSize = useAtomValue(fontSizeAtom);
+  const content =
+    animate && typeof children === 'string' ? <AnimatedText text={children} /> : children;
 
   return (
     <div className="relative rounded-lg border border-border-light bg-surface-secondary p-3 pb-8 text-text-secondary">
-      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{children}</p>
+      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{content}</p>
     </div>
   );
 });

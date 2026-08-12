@@ -1,8 +1,11 @@
 import React, { memo, useMemo } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from './markdownConfig';
+import { smoothStreamingAtom } from '~/store/smoothStreaming';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
 import MarkdownBlocks from './MarkdownBlocks';
+import { useMessageContext } from '~/Providers';
 import { preprocessLaTeX } from '~/utils';
 import store from '~/store';
 
@@ -12,6 +15,8 @@ type TContentProps = {
 };
 
 const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TContentProps) {
+  const { isSubmitting = false } = useMessageContext();
+  const smoothStreaming = useAtomValue(smoothStreamingAtom);
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
 
@@ -39,6 +44,7 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
         remarkPlugins={getRemarkPlugins()}
         rehypePlugins={getRehypePlugins()}
         components={getMarkdownComponents()}
+        animate={smoothStreaming && isLatestMessage && isSubmitting}
       />
     </MarkdownErrorBoundary>
   );
