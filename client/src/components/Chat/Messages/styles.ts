@@ -9,10 +9,15 @@ type HoverButtonStyleOptions = {
 /**
  * Shared appearance for the message hover actions.
  *
- * The actions fade in with the row on pointer devices. A button that opened a
- * surface (the editor, the fork popover, a submitted rating) reports
- * `isActive` and keeps full opacity, so its trigger stays on screen once the
- * pointer leaves the row for whatever it opened.
+ * The actions fade in with the row on pointer devices. When a button opens a
+ * surface (the editor, the fork popover, a submitted rating) it reports
+ * `isActive`, and the whole toolbar stays opaque for as long as that surface is
+ * open, so the pointer can leave the row without the actions vanishing out from
+ * under whatever it opened.
+ *
+ * The marker is deliberately not the legacy `active` class: `HoverButtons`
+ * pins that one to the edit button of every assistant message, which would
+ * hold the entire toolbar open on every assistant row.
  */
 export const hoverButtonClasses = ({
   isActive = false,
@@ -24,9 +29,9 @@ export const hoverButtonClasses = ({
     'hover:text-text-primary hover:bg-surface-hover',
     'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
     !isLast &&
-      !isActive &&
       'group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0',
+    'group-has-[.hover-button-active]:visible group-has-[.hover-button-active]:opacity-100',
     'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',
-    isActive && 'active text-text-primary bg-surface-hover',
+    isActive && 'hover-button-active active text-text-primary bg-surface-hover',
     className,
   );

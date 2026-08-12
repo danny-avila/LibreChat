@@ -118,7 +118,11 @@ test.describe('message hover actions', () => {
     await expect(row.getByTestId('message-text-editor')).toBeVisible();
     await expect(editButton).toHaveCSS('opacity', '1');
 
-    await page.keyboard.press('Escape');
+    /** Escape only lands while the textarea holds focus, and the pointer left the
+     *  row several steps ago, so close the editor through its own control. */
+    await row.hover();
+    await row.getByRole('button', { name: 'Cancel' }).click();
+    await expect(row.getByTestId('message-text-editor')).toHaveCount(0);
     await page.mouse.move(0, 0);
     await expect(forkButton).toHaveCSS('opacity', '0');
 
@@ -127,5 +131,55 @@ test.describe('message hover actions', () => {
     await forkButton.click();
     await page.mouse.move(0, 0);
     await expect(forkButton).toHaveCSS('opacity', '1');
+  });
+
+  /**
+   * Holding only the trigger open leaves the rest of the toolbar faded, so the row
+   * reads as a single floating button while its surface is open. Any active action
+   * keeps every sibling opaque.
+   */
+  test('keeps the whole toolbar visible while one action is open', async ({ page }) => {
+    test.setTimeout(120000);
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    expect((await sendMessageAndWaitForCompletion(page, 'First turn.')).ok()).toBeTruthy();
+    expect((await sendMessageAndWaitForCompletion(page, 'Second turn.')).ok()).toBeTruthy();
+
+    const row = messagesView(page)
+      .locator('.message-render')
+      .filter({ has: page.locator('.user-turn') })
+      .first();
+    const editButton = row.locator('button[id^="edit-"]');
+    const forkButton = row.getByRole('button', { name: 'Open Fork Menu' });
+    const copyButton = row.getByRole('button', { name: 'Copy to clipboard' });
+
+    await row.hover();
+    await expect(editButton).toBeEnabled();
+    await page.mouse.move(0, 0);
+    await expect(copyButton).toHaveCSS('opacity', '0');
+    await expect(forkButton).toHaveCSS('opacity', '0');
+
+    await row.hover();
+    await forkButton.click();
+    await page.mouse.move(0, 0);
+
+    await expect(forkButton).toHaveCSS('opacity', '1');
+    await expect(copyButton).toHaveCSS('opacity', '1');
+    await expect(editButton).toHaveCSS('opacity', '1');
+
+    /** Closing by Escape rather than the trigger is the path that used to strand the
+     *  fork button in its active state, which would now pin the whole toolbar open. */
+    /** Closing by Escape rather than the trigger is the path that used to strand the
+     *  fork button in its active state, which would now pin the whole toolbar open.
+     *  Escape hands focus back to the trigger, so drop it before measuring the fade
+     *  or `group-focus-within` keeps the row lit on its own. */
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.popover-animate')).toHaveCount(0);
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    await page.mouse.move(0, 0);
+    await expect(copyButton).toHaveCSS('opacity', '0');
+    await expect(forkButton).toHaveCSS('opacity', '0');
   });
 });

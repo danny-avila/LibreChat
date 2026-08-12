@@ -8,9 +8,23 @@ describe('hoverButtonClasses', () => {
     expect(hoverButtonClasses()).toContain('group-hover:opacity-100');
   });
 
-  it('keeps an active action opaque so an opened surface keeps its trigger', () => {
-    expect(hoverButtonClasses({ isActive: true })).not.toContain(FADE);
+  it('marks an active action so the toolbar can key off it', () => {
+    expect(hoverButtonClasses({ isActive: true })).toContain('hover-button-active');
     expect(hoverButtonClasses({ isActive: true })).toContain('active');
+  });
+
+  it('keeps every action opaque while any of them is active', () => {
+    expect(hoverButtonClasses()).toContain('group-has-[.hover-button-active]:opacity-100');
+    expect(hoverButtonClasses({ isActive: true })).toContain(
+      'group-has-[.hover-button-active]:opacity-100',
+    );
+    expect(hoverButtonClasses({ isLast: true })).toContain(
+      'group-has-[.hover-button-active]:opacity-100',
+    );
+  });
+
+  it('does not use the legacy active class as the marker', () => {
+    expect(hoverButtonClasses()).not.toContain('group-has-[.active]');
   });
 
   it('never fades the actions on the last row', () => {
