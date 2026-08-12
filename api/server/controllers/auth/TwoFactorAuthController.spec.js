@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 
 const mockSetAuthTokens = jest.fn(() => Promise.resolve('auth-token'));
+const mockDeleteAllUserSessions = jest.fn(() => Promise.resolve({ deletedCount: 0 }));
 const mockGetTOTPSecret = jest.fn();
 const mockVerifyTOTP = jest.fn();
 const mockVerifyBackupCode = jest.fn();
@@ -23,6 +24,7 @@ jest.mock('~/server/services/AuthService', () => ({
 jest.mock('~/models', () => ({
   getUserById: (...args) => store.getUserById(...args),
   updateTwoFactorEnrollment: (...args) => store.updateTwoFactorEnrollment(...args),
+  deleteAllUserSessions: (...args) => mockDeleteAllUserSessions(...args),
 }));
 
 const ELIGIBLE_PROVIDERS = new Set(['local', 'ldap']);
@@ -350,6 +352,29 @@ describe('finalize2FASetup', () => {
       });
     },
   );
+
+  it('revokes pre-enrollment sessions before minting the enrolled one', async () => {
+    const finalizationToken = await reachFinalization();
+
+    await runFinalize(finalizationToken);
+
+    expect(mockDeleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user-1' });
+    /** Revoking after minting would drop the session this response hands back. */
+    expect(mockDeleteAllUserSessions.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSetAuthTokens.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('leaves existing sessions alone when finalization is rejected', async () => {
+    const finalizationToken = await reachFinalization();
+    store.doc.pendingTotpSecret = null;
+
+    const res = await runFinalize(finalizationToken);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockDeleteAllUserSessions).not.toHaveBeenCalled();
+    expect(mockSetAuthTokens).not.toHaveBeenCalled();
+  });
 
   it('rejects a replayed finalization credential without a second session', async () => {
     const finalizationToken = await reachFinalization();

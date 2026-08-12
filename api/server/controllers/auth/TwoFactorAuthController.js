@@ -14,7 +14,7 @@ const {
   generateBackupCodes,
 } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { getUserById, updateTwoFactorEnrollment } = require('~/models');
+const { getUserById, updateTwoFactorEnrollment, deleteAllUserSessions } = require('~/models');
 
 const sanitizeUser = (user) => {
   const userData = user.toObject ? user.toObject() : { ...user };
@@ -161,6 +161,12 @@ const finalize2FASetup = async (req, res) => {
     }
 
     const userData = sanitizeUser(result.user);
+    /**
+     * Sessions opened before enrollment were only held back by `twoFactorEnabled` being false.
+     * Promotion lifts that block, so drop them before minting the enrolled session; otherwise a
+     * pre-enrollment refresh token could be exchanged for access without ever presenting a code.
+     */
+    await deleteAllUserSessions({ userId: result.user._id.toString() });
     const authToken = await setAuthTokens(result.user._id, res, null, req);
     return res.status(200).json({ token: authToken, user: userData });
   } catch (err) {
