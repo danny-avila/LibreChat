@@ -3198,6 +3198,9 @@ class AgentClient extends BaseClient {
         // The resumed run can pause AGAIN (another tool, a follow-up question), and this
         // controller owns that lifecycle, so it must keep the HITL wiring on the rebuilt run.
         hitlCapable: true,
+        // Plugin SessionStart hooks match on the lifecycle source; a rebuilt run is a
+        // resume, not a fresh startup.
+        sessionStartSource: 'resume',
         toolInputValidationErrors: this.toolInputValidationErrors,
         // Steering stays live across a pause/resume cycle: steers queued while
         // the resumed segment runs drain at its tool-batch boundaries.

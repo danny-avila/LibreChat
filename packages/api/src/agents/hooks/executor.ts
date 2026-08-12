@@ -21,15 +21,48 @@ const STDOUT_CONTEXT_EVENTS: ReadonlySet<string> = new Set(['SessionStart', 'Use
 const PASSTHROUGH_ENV_VARS = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ'] as const;
 
 /**
+ * Claude-compatible tool aliases mapped to their LibreChat runtime names.
+ * Without this a plugin authored against Claude's namespace (`Bash`, `Write`)
+ * would plan as ready yet register a matcher that never fires — a silently
+ * bypassed guard. Names outside the table pass through verbatim, since the
+ * runtime namespace is open-ended (MCP and per-agent tools).
+ */
+const RUNTIME_TOOL_BY_PLUGIN: ReadonlyMap<string, string> = new Map([
+  ['Bash', 'bash_tool'],
+  ['Write', 'create_file'],
+  ['Edit', 'edit_file'],
+  ['Read', 'read_file'],
+]);
+const PLUGIN_TOOL_BY_RUNTIME: ReadonlyMap<string, string> = new Map(
+  Array.from(RUNTIME_TOOL_BY_PLUGIN, ([plugin, runtime]) => [runtime, plugin]),
+);
+
+/**
  * Capabilities of the command executor, shared by plan time (plugin loading)
  * and run time (hook registration) so a handler the loader marked `ready` is
- * always executable. Matchers pass through untranslated: deployment-plugin
- * hooks address tools by their LibreChat runtime names, so the plugin and
- * runtime namespaces are one and the same.
+ * always executable. Exact matcher values translate through the Claude alias
+ * table above; payload `tool_name`s are presented in the plugin's namespace
+ * (the Claude alias where one exists) for both translated and native
+ * matchers, so one hook script works unchanged across both.
  */
 export const commandExecutorCapabilities: PluginHookCapabilities = {
   handlerTypes: new Set(['command']),
-  translateMatcher: ({ matcher }) => matcher,
+  translateMatcher: ({ matcher }) => {
+    let translated = false;
+    const mapped = matcher
+      .split('|')
+      .map((value) => {
+        const runtime = RUNTIME_TOOL_BY_PLUGIN.get(value);
+        if (runtime === undefined) {
+          return value;
+        }
+        translated = true;
+        return runtime;
+      })
+      .join('|');
+    return translated ? { matcher: mapped, requiresToolNameTranslation: true } : matcher;
+  },
+  toPluginToolName: ({ toolName }) => PLUGIN_TOOL_BY_RUNTIME.get(toolName) ?? toolName,
   sessionLifecycle: true,
 };
 
@@ -211,7 +244,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 /**
  * Accepts only the SDK output fields a plugin command may set. Decisions are
  * validated against the target event's legal set; message-injection fields
- * (`injectedMessages`, `allowedDecisions`) stay host-only.
+ * (`injectedMessages`, `allowedDecisions`) stay host-only. `updatedInput` is
+ * also host-only: hooks in one dispatch all receive the original arguments,
+ * so a plugin rewrite would reach the tool without the approval policy ever
+ * re-evaluating it.
  */
 function sanitizeOutput(
   raw: Record<string, unknown>,
@@ -229,9 +265,6 @@ function sanitizeOutput(
   }
   if (typeof raw.additionalContext === 'string') {
     output.additionalContext = truncate(raw.additionalContext, MAX_ADDITIONAL_CONTEXT_LENGTH);
-  }
-  if (request.targetEvent === 'PreToolUse' && isPlainObject(raw.updatedInput)) {
-    output.updatedInput = raw.updatedInput;
   }
   if (request.targetEvent === 'PostToolUse' && 'updatedOutput' in raw) {
     output.updatedOutput = raw.updatedOutput;

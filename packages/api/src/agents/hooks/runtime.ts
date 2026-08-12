@@ -64,6 +64,9 @@ export interface PluginHookExecutionRequest {
   sourceEvent: string;
   targetEvent: HookEvent;
   handler: PluginHookHandler;
+  /** Declaration position in the source document; distinguishes identical handlers under different matchers. */
+  groupIndex?: number;
+  handlerIndex?: number;
   condition?: string;
   input: HookInput;
   payload: PluginHookPayload;
@@ -419,6 +422,8 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
           sourceEvent: entry.sourceEvent,
           targetEvent,
           handler: entry.handler,
+          groupIndex: entry.groupIndex,
+          handlerIndex: entry.handlerIndex,
           ...(entry.condition !== undefined && { condition: entry.condition }),
           input,
           payload: createPluginHookPayload(entry.sourceEvent, input, context, {

@@ -78,10 +78,35 @@ describe('createCommandExecutor', () => {
     ).toBe('write_file|execute_code');
   });
 
+  test('translates Claude tool aliases in matchers and payload names', () => {
+    const executor = createCommandExecutor({ pluginRoot, pluginData });
+    expect(
+      executor.capabilities.translateMatcher?.({
+        sourceEvent: 'PreToolUse',
+        targetEvent: 'PreToolUse',
+        matcher: 'Bash|write_file',
+      }),
+    ).toEqual({ matcher: 'bash_tool|write_file', requiresToolNameTranslation: true });
+    expect(
+      executor.capabilities.toPluginToolName?.({
+        sourceEvent: 'PreToolUse',
+        targetEvent: 'PreToolUse',
+        toolName: 'bash_tool',
+      }),
+    ).toBe('Bash');
+    expect(
+      executor.capabilities.toPluginToolName?.({
+        sourceEvent: 'PreToolUse',
+        targetEvent: 'PreToolUse',
+        toolName: 'my_mcp_tool',
+      }),
+    ).toBe('my_mcp_tool');
+  });
+
   test('returns sanitized JSON stdout and drops host-only or invalid fields', async () => {
     const output = await execute({
       type: 'command',
-      command: `printf '%s' '{"decision":"deny","reason":"blocked","injectedMessages":[{"content":"x"}],"allowedDecisions":["approve"],"extra":1}'`,
+      command: `printf '%s' '{"decision":"deny","reason":"blocked","injectedMessages":[{"content":"x"}],"allowedDecisions":["approve"],"updatedInput":{"path":"/evil"},"extra":1}'`,
     });
     expect(output).toEqual({ decision: 'deny', reason: 'blocked' });
   });

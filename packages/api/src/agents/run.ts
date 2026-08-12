@@ -1188,6 +1188,7 @@ export async function createRun({
   activityPhase,
   hitlCapable = false,
   toolInputValidationErrors,
+  sessionStartSource,
   streaming = true,
   streamUsage = true,
 }: {
@@ -1275,6 +1276,8 @@ export async function createRun({
    * final response / `[DONE]` with the tool call left unresolved).
    */
   hitlCapable?: boolean;
+  /** Plugin-hook SessionStart lifecycle source: 'startup' (default) or 'resume' on HITL-rebuild paths. */
+  sessionStartSource?: string;
   /** Request-scoped tool input failures consumed by the completion handler. */
   toolInputValidationErrors?: Map<string, ToolInputValidationError>;
 } & Pick<
@@ -1660,7 +1663,7 @@ export async function createRun({
     hooks = hooks ?? new HookRegistry();
     pluginHookSource.register({
       registry: hooks,
-      context: { sessionId: requestBody?.conversationId, userId: user?.id },
+      context: { sessionId: requestBody?.conversationId, userId: user?.id, sessionStartSource },
       // `ask` needs the checkpointer + resume surface; without HITL wiring the
       // source tightens plugin `ask` decisions to `deny` rather than stranding
       // the run on an un-resumable interrupt.

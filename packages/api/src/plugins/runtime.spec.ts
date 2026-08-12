@@ -27,6 +27,15 @@ const HOOKS_DOCUMENT = {
           },
         ],
       },
+      {
+        matcher: 'Write',
+        hooks: [
+          {
+            type: 'command',
+            command: `node -e 'let d="";process.stdin.on("data",(c)=>{d+=c;}).on("end",()=>{const p=JSON.parse(d);console.log(JSON.stringify(p.tool_name==="Write"?{decision:"deny",reason:"alias-guarded"}:{}));});'`,
+          },
+        ],
+      },
     ],
     SessionStart: [
       {
@@ -123,7 +132,7 @@ describe('registerDeploymentPluginHooks', () => {
       registry,
       context: { sessionId: 'conversation-1' },
     });
-    expect(registered).toBe(3);
+    expect(registered).toBe(4);
 
     const result = await executeHooks({
       registry,
@@ -152,6 +161,27 @@ describe('registerDeploymentPluginHooks', () => {
     expect(unmatched.decision).toBeUndefined();
   });
 
+  it('fires Claude-alias matchers against runtime tool names with plugin-namespace payloads', async () => {
+    await writePlugin('alias');
+    await initialize();
+
+    const registry = new HookRegistry();
+    registerDeploymentPluginHooks({ registry, context: { sessionId: 'conversation-alias' } });
+
+    const result = await executeHooks({
+      registry,
+      matchQuery: 'create_file',
+      input: {
+        hook_event_name: 'PreToolUse',
+        runId: 'run-1',
+        toolName: 'create_file',
+        toolInput: { path: '/workspace/report.md' },
+        toolUseId: 'tool-1',
+      },
+    });
+    expect(result).toEqual(expect.objectContaining({ decision: 'deny', reason: 'alias-guarded' }));
+  });
+
   it('serves the run seam through the plugin hook source', async () => {
     await writePlugin('seam');
     await initialize();
@@ -162,7 +192,7 @@ describe('registerDeploymentPluginHooks', () => {
     const source = getPluginHookSource();
     expect(source?.hasHooks()).toBe(true);
     const registry = new HookRegistry();
-    expect(source?.register({ registry, context: { sessionId: 'conversation-seam' } })).toBe(3);
+    expect(source?.register({ registry, context: { sessionId: 'conversation-seam' } })).toBe(4);
     setPluginHookSource(undefined);
     expect(getPluginHookSource()).toBeUndefined();
   });
@@ -180,41 +210,45 @@ describe('registerDeploymentPluginHooks', () => {
     expect(lines).toEqual(['sibling', 'sibling', 'started', 'started']);
   });
 
-  it('persists once-only handler state across runs of the same conversation', async () => {
+  it('persists once-only state per declaration across runs of the same conversation', async () => {
+    const onceHandler = {
+      type: 'command',
+      command: 'echo fired >> "$PLUGIN_DATA/once.log"',
+      once: true,
+    };
     await writePlugin('oncely', {
       hooks: {
         PreToolUse: [
-          {
-            hooks: [
-              { type: 'command', command: 'echo fired >> "$PLUGIN_DATA/once.log"', once: true },
-            ],
-          },
+          { matcher: '^write_file$', hooks: [onceHandler] },
+          { matcher: '^read_file$', hooks: [onceHandler] },
         ],
       },
     });
     await initialize();
 
-    const firePreToolUse = async (sessionId: string) => {
+    const firePreToolUse = async (sessionId: string, toolName: string) => {
       const registry = new HookRegistry();
       registerDeploymentPluginHooks({ registry, context: { sessionId } });
       await executeHooks({
         registry,
-        matchQuery: 'write_file',
+        matchQuery: toolName,
         input: {
           hook_event_name: 'PreToolUse',
           runId: `run-${Math.random()}`,
-          toolName: 'write_file',
+          toolName,
           toolInput: {},
           toolUseId: 'tool-1',
         },
       });
     };
 
-    await firePreToolUse('conversation-once');
-    await firePreToolUse('conversation-once');
-    await firePreToolUse('conversation-other');
+    await firePreToolUse('conversation-once', 'write_file');
+    await firePreToolUse('conversation-once', 'write_file');
+    /** A sibling declaration with an identical handler is independently once-only. */
+    await firePreToolUse('conversation-once', 'read_file');
+    await firePreToolUse('conversation-other', 'write_file');
 
     const log = await fs.promises.readFile(path.join(dataDir, 'oncely', 'once.log'), 'utf8');
-    expect(log.trim().split('\n')).toHaveLength(2);
+    expect(log.trim().split('\n')).toHaveLength(3);
   });
 });

@@ -61,6 +61,8 @@ function onceKey(
     pluginId,
     request.payload.session_id,
     request.sourceEvent,
+    String(request.groupIndex ?? ''),
+    String(request.handlerIndex ?? ''),
     handlerIdentity(request.handler),
   ].join(KEY_SEPARATOR);
 }
