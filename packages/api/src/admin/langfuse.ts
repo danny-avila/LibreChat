@@ -10,7 +10,7 @@ import type {
   TLangfuseConnectionTestResponse,
   TLangfuseSessionLinkResponse,
 } from 'librechat-data-provider';
-import type { IConfig } from '@librechat/data-schemas';
+import type { IConfig, MessageMethods } from '@librechat/data-schemas';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { LangfuseTenantDestination } from '~/langfuse/tenantDestinations';
@@ -48,11 +48,7 @@ export interface AdminLangfuseDeps {
     isActive: boolean,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
-  getMessages: (
-    filter: Record<string, unknown>,
-    select?: string,
-    options?: { sort?: false; limit?: number },
-  ) => Promise<unknown[]>;
+  getMessages: MessageMethods['getMessages'];
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
 }
 
@@ -271,7 +267,10 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
 
     const conversationId = (req.params as { conversationId?: string }).conversationId?.trim();
     const userId = req.user?.id ?? req.user?._id?.toString();
-    if (!conversationId || !userId) {
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (!conversationId) {
       return res.status(400).json({ error: 'conversationId is required' });
     }
 
@@ -301,7 +300,8 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       }
 
       const sessionUrl = new URL(destination.baseUrl);
-      sessionUrl.pathname = `/project/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(conversationId)}`;
+      const basePath = sessionUrl.pathname.replace(/\/+$/, '');
+      sessionUrl.pathname = `${basePath}/project/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(conversationId)}`;
       const response: TLangfuseSessionLinkResponse = { url: sessionUrl.toString() };
       return res.status(200).json(response);
     } catch (error) {

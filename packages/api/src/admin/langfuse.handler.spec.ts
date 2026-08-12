@@ -35,6 +35,7 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.LANGFUSE_FANOUT_ENABLED;
   delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  delete process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL;
   delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
   delete process.env.LANGFUSE_PUBLIC_KEY;
   delete process.env.LANGFUSE_SECRET_KEY;
@@ -335,6 +336,34 @@ describe('createAdminLangfuseHandlers', () => {
         '_id',
         { sort: false, limit: 1 },
       );
+    });
+
+    it('preserves a destination base path in the session URL', async () => {
+      process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://langfuse.example/base/path';
+      const { handlers } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(baseConfigDoc(storedConnection)),
+        getMessages: jest.fn().mockResolvedValue([{ _id: 'message-1' }]),
+      });
+      const res = mockRes();
+
+      await handlers.getSessionLink(mockReq({ params: { conversationId: 'conversation-1' } }), res);
+
+      expect(res.body).toEqual({
+        url: 'https://langfuse.example/base/path/project/project-1/sessions/conversation-1',
+      });
+    });
+
+    it('returns 401 when the authenticated user is missing', async () => {
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.getSessionLink(
+        mockReq({ user: undefined, params: { conversationId: 'conversation-1' } }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(401);
+      expect(res.body).toEqual({ error: 'Authentication required' });
     });
 
     it('does not link a conversation without a sampled message for the current project', async () => {
