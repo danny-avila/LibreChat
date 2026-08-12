@@ -8,7 +8,7 @@ import { GitCommit, GitBranchPlus, ListTree } from 'lucide-react';
 import { Button, Label, Checkbox, useToastContext } from '@librechat/client';
 import { TranslationKeys, useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
-import { cn } from '~/utils';
+import { hoverButtonClasses } from './styles';
 import store from '~/store';
 
 interface PopoverButtonProps {
@@ -226,15 +226,7 @@ export default function Fork({
     placement: 'bottom',
   });
 
-  const buttonStyle = cn(
-    'hover-button size-auto rounded-lg p-1.5 text-text-secondary-alt',
-    'hover:text-text-primary hover:bg-surface-hover',
-    'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
-    !isLast &&
-      'group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0',
-    'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',
-    isActive && 'active text-text-primary bg-surface-hover',
-  );
+  const buttonStyle = hoverButtonClasses({ isActive, isLast });
 
   const forkConvo = useForkConvoMutation({
     onSuccess: (data) => {

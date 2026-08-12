@@ -12,6 +12,7 @@ import {
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
+import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
 import { cn } from '~/utils';
@@ -87,16 +88,7 @@ const HoverButton = memo(
     className = '',
     dataTestId,
   }: HoverButtonProps) => {
-    const buttonStyle = cn(
-      'hover-button size-auto rounded-lg p-1.5 text-text-secondary-alt',
-      'hover:text-text-primary hover:bg-surface-hover',
-      'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
-      !isLast &&
-        'group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0',
-      'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',
-      isActive && 'active text-text-primary bg-surface-hover',
-      className,
-    );
+    const buttonStyle = hoverButtonClasses({ isActive, isLast, className });
 
     return (
       <TooltipAnchor
