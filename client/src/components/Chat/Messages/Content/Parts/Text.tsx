@@ -1,6 +1,7 @@
 import { memo, useMemo, ReactElement } from 'react';
 import { useRecoilValue } from 'recoil';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
+import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import Markdown from '~/components/Chat/Messages/Content/Markdown';
 import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -20,7 +21,13 @@ type ContentType =
 const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: TextPartProps) {
   const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
-  const showCursorState = useMemo(() => showCursor && isSubmitting, [showCursor, isSubmitting]);
+  const smoothStreaming = useSmoothStreaming();
+  // The word fade itself indicates streaming, so the trailing block cursor
+  // only shows when the fade is unavailable (setting off or reduced motion).
+  const showCursorState = useMemo(
+    () => showCursor && isSubmitting && !(smoothStreaming && !isCreatedByUser),
+    [showCursor, isSubmitting, smoothStreaming, isCreatedByUser],
+  );
 
   const content: ContentType = useMemo(() => {
     if (!isCreatedByUser) {

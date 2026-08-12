@@ -30,6 +30,7 @@ import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
 import { ForkSettings } from '../SettingsTabs/Chat/ForkSettings';
 import ChatDirection from '../SettingsTabs/Chat/ChatDirection';
 import { DeleteCache } from '../SettingsTabs/Data/DeleteCache';
+import { smoothStreamingAtom } from '~/store/smoothStreaming';
 import { RevokeKeys } from '../SettingsTabs/Data/RevokeKeys';
 import { ClearChats } from '../SettingsTabs/Data/ClearChats';
 import { TokenCredits, AutoRefill } from './BillingControls';
@@ -273,6 +274,19 @@ export const registry: SettingEntry[] = [
       stateAtom: showThinkingAtom,
       localizationKey: 'com_nav_show_thinking',
       switchId: 'showThinking',
+    }),
+  },
+  {
+    id: 'smoothStreaming',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_smooth_streaming',
+    keywords: ['smooth', 'streaming', 'fade', 'animation', 'animate'],
+    Component: toggleControl({
+      stateAtom: smoothStreamingAtom,
+      localizationKey: 'com_nav_smooth_streaming',
+      switchId: 'smoothStreaming',
+      hoverCardText: 'com_nav_info_smooth_streaming',
     }),
   },
   {

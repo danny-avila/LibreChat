@@ -1908,6 +1908,52 @@ html {
   display: none !important;
 }
 
+/* Smooth streaming: one-shot fade-in on newly streamed words.
+   Duration must match FADE_DURATION_MS in Chat/Messages/Content/animate.tsx */
+@keyframes lc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-lc-fade] {
+  animation: lc-fade-in 250ms ease-out both;
+  animation-delay: var(--lc-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-lc-fade] {
+    animation: none;
+  }
+}
+
+/* Pre-first-token dot, restyled to match the word fade: it fades in on the
+   same curve rather than popping, then breathes on opacity instead of the
+   classic size throb, so "run starting" and "text arriving" read as one
+   system. Only applied while the fade is active; without it the dot keeps
+   its original pulseSize behavior. */
+@keyframes lc-dot-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateZ(0) scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: translateZ(0) scale(1);
+  }
+}
+
+.submitting .result-thinking.result-thinking-fade:empty:last-child:after {
+  animation:
+    lc-fade-in 250ms ease-out both,
+    lc-dot-breathe 1.6s ease-in-out 250ms infinite;
+  will-change: opacity, transform;
+}
+
 .webkit-dark-styles,
 .webkit-dark-styles:focus {
   background-clip: content-box;

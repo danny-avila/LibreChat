@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Alert, DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
+import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import Error from '~/components/Messages/Content/Error';
 import { useMessageContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
@@ -26,17 +27,21 @@ const parseThinkingContent = (text: string) => {
   };
 };
 
-const LoadingFallback = () => (
-  <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-visible">
-    <div className="markdown prose dark:prose-invert light w-full break-words">
-      <div className="absolute">
-        <p className="submitting relative">
-          <span className="result-thinking" />
-        </p>
+const LoadingFallback = () => {
+  const smoothStreaming = useSmoothStreaming();
+
+  return (
+    <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-visible">
+      <div className="markdown prose dark:prose-invert light w-full break-words">
+        <div className="absolute">
+          <p className="submitting relative">
+            <span className={cn('result-thinking', smoothStreaming && 'result-thinking-fade')} />
+          </p>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const ErrorBox = ({
   children,
@@ -94,10 +99,13 @@ export const ErrorMessage = ({
 const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplayProps) => {
   const { isSubmitting = false, isLatestMessage = false } = useMessageContext();
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
+  const smoothStreaming = useSmoothStreaming();
 
+  // The word fade itself indicates streaming, so the trailing block cursor
+  // only shows when the fade is unavailable (setting off or reduced motion).
   const showCursorState = useMemo(
-    () => showCursor === true && isSubmitting,
-    [showCursor, isSubmitting],
+    () => showCursor === true && isSubmitting && !(smoothStreaming && !isCreatedByUser),
+    [showCursor, isSubmitting, smoothStreaming, isCreatedByUser],
   );
 
   const content = useMemo(() => {
