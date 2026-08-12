@@ -813,6 +813,49 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  it('keeps semantic commentary inside a completion-finalized phase', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the commentary phase' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'root-commentary' ? 2 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    parts[1] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } };
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    const handler = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+    })?.[GraphEvents.ON_RUN_STEP];
+    handler?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'root-commentary',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'commentary' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    parts[2] = { type: ContentTypes.TEXT, text: 'Intermediate commentary', phase: 'commentary' };
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[3]).toMatchObject({
+      activity_start_index: 0,
+      activity_end_index: 3,
+      activity_count: 2,
+    });
+  });
+
   it('summarizes all unphased activities once at root-run completion', async () => {
     const parts: LooseContentPart[] = [];
     const stepIndexes = new Map([

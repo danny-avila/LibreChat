@@ -670,7 +670,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
               }
               return result;
             } else {
-              if (step.groupId == null) {
+              if (step.groupId == null && phase == null) {
                 lastRootTextStepId = step.id;
               }
               if (phase === 'final_answer' && step.groupId == null) {
@@ -742,7 +742,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     let finalTextIndex =
       lastRootTextStepId == null ? undefined : deps.getStepIndex?.(lastRootTextStepId);
     const parts = deps.getContentParts();
-    if (finalTextIndex == null) {
+    if (lastRootTextStepId != null && finalTextIndex == null) {
       for (let index = parts.length - 1; index >= 0; index -= 1) {
         const part = parts[index];
         if (part?.type === ContentTypes.TEXT && part.groupId == null) {

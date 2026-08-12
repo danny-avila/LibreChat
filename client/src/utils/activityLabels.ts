@@ -60,6 +60,28 @@ function isLogicallyEarlierPhaseMarker(
   });
 }
 
+function isLateActivityLabelConsumedByPhase(
+  parts: ReadonlyArray<TMessageContentParts | undefined>,
+  index: number,
+): boolean {
+  if (getBatchActivityLabelPart(parts[index]) == null) {
+    return false;
+  }
+  for (let markerIndex = index + 1; markerIndex < parts.length; markerIndex += 1) {
+    const marker = getActivityLabelPart(parts[markerIndex]);
+    if (
+      isPhaseActivityLabel(marker) &&
+      marker?.pending !== true &&
+      getActivityLabelText(marker).length > 0 &&
+      typeof marker.activity_end_index === 'number' &&
+      marker.activity_end_index <= index
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function isPhaseActivityLabel(part: ActivityLabelPart | undefined): boolean {
   return part?.activity_label_type === 'phase';
 }
@@ -94,6 +116,15 @@ export function getActivityLabelText(part: ActivityLabelPart | undefined): strin
   return typeof label === 'string' ? label.trim() : '';
 }
 
+/** Maps a completion-local half-open boundary into edited-response coordinates. */
+export function offsetActivityPhaseBoundary(
+  boundary: number,
+  prefixLength: number,
+  foldedFirstPart: boolean,
+): number {
+  return boundary + prefixLength - (foldedFirstPart && boundary <= 1 ? 1 : 0);
+}
+
 /**
  * Partitions completed phase markers into collapsed parent groups while
  * carrying absolute start offsets alongside dense content slices. Empty/pending
@@ -120,8 +151,9 @@ export function groupActivityPhases(
 
   const segments: ActivityPhaseSegment[] = [];
   let cursor = 0;
-  /** Dense, disjoint slices copy every part at most once. `startIndex` carries
-   *  the absolute transcript position into the recursive renderer. */
+  /** Disjoint slices copy every ordinary part at most once. A phase slice can
+   *  remain sparse when it adopts a late child label across trailing text;
+   *  `startIndex` preserves the label's absolute transcript coordinate. */
   const slice = (start: number, end: number) => {
     const segmentContent = content.slice(start, end);
     return {
@@ -137,6 +169,12 @@ export function groupActivityPhases(
       Math.min(index, Math.max(0, part.activity_start_index ?? index)),
     );
     const end = Math.max(start, Math.min(index, Math.max(0, part.activity_end_index ?? index)));
+    const lateLabelIndices: number[] = [];
+    for (let trailingIndex = end; trailingIndex < index; trailingIndex += 1) {
+      if (getBatchActivityLabelPart(content[trailingIndex]) != null) {
+        lateLabelIndices.push(trailingIndex);
+      }
+    }
     if (start > cursor) {
       const adjacent = slice(cursor, start);
       segments.push({
@@ -146,6 +184,13 @@ export function groupActivityPhases(
       });
     }
     const phase = slice(start, end);
+    if (lateLabelIndices.length > 0) {
+      phase.content.length = index - start;
+      for (const lateLabelIndex of lateLabelIndices) {
+        phase.content[lateLabelIndex - start] = content[lateLabelIndex];
+      }
+      phase.hasContent = phase.content.some(isVisibleContentPart);
+    }
     segments.push({
       type: 'phase',
       content: phase.content,
@@ -156,6 +201,9 @@ export function groupActivityPhases(
     });
     if (end < index) {
       const trailing = slice(end, index);
+      for (const lateLabelIndex of lateLabelIndices) {
+        trailing.content[lateLabelIndex - end] = undefined;
+      }
       segments.push({
         type: 'content',
         content: trailing.content,
@@ -189,7 +237,11 @@ export function lastVisibleContentIdx(
   const parts = content ?? [];
   let last = parts.length - 1;
   while (last >= 0 && last in parts) {
-    if (isVisibleContentPart(parts[last]) && !isLogicallyEarlierPhaseMarker(parts, last)) {
+    if (
+      isVisibleContentPart(parts[last]) &&
+      !isLogicallyEarlierPhaseMarker(parts, last) &&
+      !isLateActivityLabelConsumedByPhase(parts, last)
+    ) {
       return last;
     }
     last -= 1;
@@ -205,7 +257,8 @@ export function lastVisibleContentIdx(
     if (
       index <= last &&
       isVisibleContentPart(parts[index]) &&
-      !isLogicallyEarlierPhaseMarker(parts, index)
+      !isLogicallyEarlierPhaseMarker(parts, index) &&
+      !isLateActivityLabelConsumedByPhase(parts, index)
     ) {
       return index;
     }

@@ -4,6 +4,7 @@ import {
   applyActivityLabelPart,
   groupActivityPhases,
   lastVisibleContentIdx,
+  offsetActivityPhaseBoundary,
 } from '../activityLabels';
 
 const buildMessage = (content: TMessage['content']): TMessage =>
@@ -120,6 +121,15 @@ describe('lastVisibleContentIdx', () => {
   });
 });
 
+describe('offsetActivityPhaseBoundary', () => {
+  it('folds only boundaries covered by the merged first completion part', () => {
+    expect(offsetActivityPhaseBoundary(0, 5, true)).toBe(4);
+    expect(offsetActivityPhaseBoundary(1, 5, true)).toBe(5);
+    expect(offsetActivityPhaseBoundary(3, 5, true)).toBe(8);
+    expect(offsetActivityPhaseBoundary(3, 5, false)).toBe(8);
+  });
+});
+
 describe('groupActivityPhases', () => {
   const text = { type: ContentTypes.TEXT, text: 'final answer' } as TMessageContentParts;
   const tool = {
@@ -166,6 +176,38 @@ describe('groupActivityPhases', () => {
       content: [final],
     });
     expect(lastVisibleContentIdx([tool, tool, final, phase as never])).toBe(2);
+  });
+
+  it('keeps a late child label in the phase while leaving final text outside', () => {
+    const child = labelPart({
+      activity_label: 'Recorded the delayed child result',
+      pending: false,
+      tool_call_ids: ['t1'],
+    });
+    const phase = labelPart({ activity_label: 'Completed the investigation', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 1,
+      activity_count: 2,
+    });
+    const final = { type: ContentTypes.TEXT, text: 'Final answer' } as TMessageContentParts;
+    const content = [tool, final, child as never, phase as never];
+
+    const segments = groupActivityPhases(content);
+
+    expect(segments).toHaveLength(2);
+    expect(segments?.[0]).toMatchObject({
+      type: 'phase',
+      startIndex: 0,
+      content: [tool, undefined, child],
+    });
+    expect(segments?.[1]).toMatchObject({
+      type: 'content',
+      startIndex: 1,
+      content: [final, undefined],
+    });
+    expect(lastVisibleContentIdx(content)).toBe(1);
   });
 
   it('leaves pending or empty parent markers on the feature-off path', () => {

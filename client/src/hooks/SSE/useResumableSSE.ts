@@ -45,6 +45,7 @@ import {
   resolveRunEndTarget,
   findSteerMessageIndex,
   applyActivityLabelPart,
+  offsetActivityPhaseBoundary,
   findActivityLabelMessageIndex,
   appendAppliedSteerIds,
   collectAppliedSteerIds,
@@ -1370,6 +1371,7 @@ export default function useResumableSSE(
             typeof phasePart.activity_start_index === 'number'
           ) {
             let activityStartIndex = phasePart.activity_start_index + prefixLength;
+            let foldedFirstPart = false;
             const targetContent = messages[index]?.content;
             /** The first completion text/think part can merge into the
              *  retained edit tail at prefixLength - 1. Tool/nonmatching starts
@@ -1382,14 +1384,17 @@ export default function useResumableSSE(
               targetContent?.[activityStartIndex - 1] != null
             ) {
               activityStartIndex -= 1;
+              foldedFirstPart = true;
             }
             offsetPart = {
               ...phasePart,
               activity_start_index: activityStartIndex,
               ...(typeof phasePart.activity_end_index === 'number' && {
-                activity_end_index:
-                  phasePart.activity_end_index +
-                  (activityStartIndex - phasePart.activity_start_index),
+                activity_end_index: offsetActivityPhaseBoundary(
+                  phasePart.activity_end_index,
+                  prefixLength,
+                  foldedFirstPart,
+                ),
               }),
             };
           }
