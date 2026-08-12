@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, TextareaAutosize } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
+import { Alert, Button, TextareaAutosize } from '@librechat/client';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
-import type { ReactNode } from 'react';
 import type { TMessageContentParts } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import { useMessagesConversation, useMessagesOperations } from '~/Providers';
+import { splitMarkdownIntoBlocks } from './splitMarkdown';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
-import { splitMarkdownIntoBlocks } from './splitMarkdown';
 
 type EditableType = ContentTypes.TEXT | ContentTypes.THINK;
 
@@ -277,20 +277,23 @@ export default function EditContentParts({
     [enterEdit, saveChanges, updateAndRerun],
   );
 
+  /** Both states share the footer's status slot so neither can add a row and
+   *  shift the message below it. */
+  const getStatusMessage = () => {
+    if (rerunRequiresSave) {
+      return localize('com_ui_save_before_rerun');
+    }
+    if (changedParts.length > 0) {
+      return localize('com_ui_unsaved_changes');
+    }
+    return '';
+  };
+
   return (
     <section
       aria-label={localize('com_ui_edit_message')}
-      className="flex w-full min-w-0 flex-col gap-3 rounded-xl border border-border-light bg-surface-secondary p-3"
+      className="flex w-full min-w-0 flex-col gap-2"
     >
-      <header className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-text-primary">
-          {localize('com_ui_edit_message')}
-        </h3>
-        <span className="text-xs text-text-secondary" aria-live="polite">
-          {changedParts.length > 0 ? localize('com_ui_unsaved_changes') : ''}
-        </span>
-      </header>
-
       {saveError && <Alert variant="error">{localize('com_ui_save_message_error')}</Alert>}
 
       <div className="flex min-w-0 flex-col gap-3">
@@ -338,30 +341,34 @@ export default function EditContentParts({
         })}
       </div>
 
-      {rerunRequiresSave && (
-        <p className="text-xs text-text-secondary" aria-live="polite">
-          {localize('com_ui_save_before_rerun')}
-        </p>
-      )}
-
-      <footer className="flex flex-wrap justify-end gap-2">
-        <Button variant="outline" onClick={() => enterEdit(true)} disabled={isSaving}>
-          {localize('com_ui_cancel')}
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => void saveChanges()}
-          disabled={changedParts.length === 0 || isBusy}
+      <footer className="flex items-center justify-between gap-2">
+        <span
+          className="line-clamp-2 min-w-0 flex-1 text-xs text-text-secondary"
+          aria-live="polite"
         >
-          {isSaving ? localize('com_ui_saving') : localize('com_ui_save')}
-        </Button>
-        <Button
-          variant="submit"
-          onClick={updateAndRerun}
-          disabled={changedParts.length === 0 || rerunRequiresSave || isBusy}
-        >
-          {localize('com_ui_update_rerun')}
-        </Button>
+          {getStatusMessage()}
+        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => enterEdit(true)} disabled={isSaving}>
+            {localize('com_ui_cancel')}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void saveChanges()}
+            disabled={changedParts.length === 0 || isBusy}
+          >
+            {isSaving ? localize('com_ui_saving') : localize('com_ui_save')}
+          </Button>
+          <Button
+            size="sm"
+            variant="submit"
+            onClick={updateAndRerun}
+            disabled={changedParts.length === 0 || rerunRequiresSave || isBusy}
+          >
+            {localize('com_ui_update_rerun')}
+          </Button>
+        </div>
       </footer>
     </section>
   );

@@ -6,9 +6,9 @@ import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
 import { useMessagesOperations, useMessagesConversation } from '~/Providers';
 import { useGetAddedConvo } from '~/hooks/Chat';
-import { cn } from '~/utils';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
+import { cn } from '~/utils';
 import store from '~/store';
 
 const EditMessage = ({
@@ -178,16 +178,8 @@ const EditMessage = ({
     <Container message={message}>
       <section
         aria-label={localize('com_ui_edit_message')}
-        className="mt-2 flex w-full flex-col gap-3 rounded-xl border border-border-light bg-surface-secondary p-3"
+        className="mt-2 flex w-full flex-col gap-2"
       >
-        <header className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-text-primary">
-            {localize('com_ui_edit_message')}
-          </h3>
-          <span className="text-xs text-text-secondary" aria-live="polite">
-            {isDirty ? localize('com_ui_unsaved_changes') : ''}
-          </span>
-        </header>
         {saveError && <Alert variant="error">{localize('com_ui_save_message_error')}</Alert>}
         <TextareaAutosize
           {...registerProps}
@@ -209,30 +201,43 @@ const EditMessage = ({
           disabled={isSubmitting || updateMessageMutation.isLoading}
           dir={isRTL ? 'rtl' : 'ltr'}
         />
-        <footer className="flex flex-wrap justify-end gap-2">
-          <Button
-            variant="outline"
-            onClick={() => enterEdit(true)}
-            disabled={updateMessageMutation.isLoading}
+        <footer className="flex items-center justify-between gap-2">
+          <span
+            className="line-clamp-2 min-w-0 flex-1 text-xs text-text-secondary"
+            aria-live="polite"
           >
-            {localize('com_ui_cancel')}
-          </Button>
-          <Button
-            ref={saveButtonRef}
-            variant="outline"
-            disabled={isSubmitting || updateMessageMutation.isLoading || !isDirty || !isValid}
-            onClick={handleSubmit(updateMessage)}
-          >
-            {updateMessageMutation.isLoading ? localize('com_ui_saving') : localize('com_ui_save')}
-          </Button>
-          <Button
-            ref={submitButtonRef}
-            variant="submit"
-            disabled={isSubmitting || updateMessageMutation.isLoading || !isDirty || !isValid}
-            onClick={handleSubmit(resubmitMessage)}
-          >
-            {localize('com_ui_update_rerun')}
-          </Button>
+            {isDirty ? localize('com_ui_unsaved_changes') : ''}
+          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => enterEdit(true)}
+              disabled={updateMessageMutation.isLoading}
+            >
+              {localize('com_ui_cancel')}
+            </Button>
+            <Button
+              ref={saveButtonRef}
+              size="sm"
+              variant="outline"
+              disabled={isSubmitting || updateMessageMutation.isLoading || !isDirty || !isValid}
+              onClick={handleSubmit(updateMessage)}
+            >
+              {updateMessageMutation.isLoading
+                ? localize('com_ui_saving')
+                : localize('com_ui_save')}
+            </Button>
+            <Button
+              ref={submitButtonRef}
+              size="sm"
+              variant="submit"
+              disabled={isSubmitting || updateMessageMutation.isLoading || !isDirty || !isValid}
+              onClick={handleSubmit(resubmitMessage)}
+            >
+              {localize('com_ui_update_rerun')}
+            </Button>
+          </div>
         </footer>
       </section>
     </Container>
