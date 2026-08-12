@@ -199,7 +199,7 @@ const EditMessage = ({
           data-testid="message-text-editor"
           className={cn(
             'max-h-[65vh] min-h-24 w-full resize-y whitespace-pre-wrap break-words rounded-lg',
-            'border border-border-medium bg-surface-primary px-3 py-2 text-sm text-text-primary',
+            'border border-border-medium bg-surface-tertiary-alt px-3 py-2 text-sm text-text-primary',
             'focus-visible:border-border-heavy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
             isRTL ? 'text-right' : 'text-left',
             'disabled:opacity-50 md:max-h-[75vh]',
@@ -209,7 +209,7 @@ const EditMessage = ({
           disabled={isSubmitting || updateMessageMutation.isLoading}
           dir={isRTL ? 'rtl' : 'ltr'}
         />
-        <footer className="flex flex-wrap justify-end gap-2 border-t border-border-light pt-3">
+        <footer className="flex flex-wrap justify-end gap-2">
           <Button
             variant="outline"
             onClick={() => enterEdit(true)}
