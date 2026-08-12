@@ -6,26 +6,16 @@ const mockIsTwoFactorEnrollmentRequired = jest.fn(() => false);
 const mockClearCloudFrontCookies = jest.fn();
 
 jest.mock('jsonwebtoken', () => ({ verify: (...args) => mockVerify(...args) }));
-jest.mock(
-  '@librechat/api',
-  () => ({
-    isEnabled: (v) => v === 'true' || v === true,
-    clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
-    isTwoFactorEnrollmentRequired: (...args) => mockIsTwoFactorEnrollmentRequired(...args),
-  }),
-  { virtual: true },
-);
-jest.mock(
-  '@librechat/data-schemas',
-  () => ({
-    logger: { warn: jest.fn(), error: jest.fn() },
-    runAsSystem: (...args) => mockRunAsSystem(...args),
-  }),
-  { virtual: true },
-);
-jest.mock('librechat-data-provider', () => ({ SystemRoles: { USER: 'USER' } }), {
-  virtual: true,
-});
+jest.mock('@librechat/api', () => ({
+  isEnabled: (v) => v === 'true' || v === true,
+  clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
+  isTwoFactorEnrollmentRequired: (...args) => mockIsTwoFactorEnrollmentRequired(...args),
+}));
+jest.mock('@librechat/data-schemas', () => ({
+  logger: { warn: jest.fn(), error: jest.fn() },
+  runAsSystem: (...args) => mockRunAsSystem(...args),
+}));
+jest.mock('librechat-data-provider', () => ({ SystemRoles: { USER: 'USER' } }));
 jest.mock('~/models', () => ({
   getUserById: (...args) => mockGetUserById(...args),
   findSession: (...args) => mockFindSession(...args),

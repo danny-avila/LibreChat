@@ -8,16 +8,12 @@ jest.mock('passport', () => ({
   authenticate: (...args) => mockAuthenticate(...args),
 }));
 
-jest.mock(
-  '@librechat/api',
-  () => ({
-    isEnabled: jest.fn(() => false),
-    clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
-    isTwoFactorEnrollmentRequired: (...args) => mockIsTwoFactorEnrollmentRequired(...args),
-    tenantContextMiddleware: (...args) => mockTenantContextMiddleware(...args),
-  }),
-  { virtual: true },
-);
+jest.mock('@librechat/api', () => ({
+  isEnabled: jest.fn(() => false),
+  clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
+  isTwoFactorEnrollmentRequired: (...args) => mockIsTwoFactorEnrollmentRequired(...args),
+  tenantContextMiddleware: (...args) => mockTenantContextMiddleware(...args),
+}));
 
 const optionalJwtAuth = require('./optionalJwtAuth');
 
