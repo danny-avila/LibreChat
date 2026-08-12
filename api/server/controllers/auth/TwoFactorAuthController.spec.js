@@ -348,6 +348,7 @@ describe('finalize2FASetup', () => {
           email: 'user@example.com',
           provider,
           twoFactorEnabled: true,
+          twoFactorEnrolledAt: expect.any(Date),
         },
       });
     },
