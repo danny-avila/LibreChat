@@ -1678,7 +1678,17 @@ html {
 
 /* Pre-response dot: enters on the streamed-text fade curve, then breathes
    on opacity — replaces the legacy scale throb so waiting and text arrival
-   share one motion language. */
+   share one motion language.
+
+   Custom CSS exception: this indicator is a `::after` pseudo-element on the
+   `.result-thinking` hook, shown only while an ancestor carries `.submitting`
+   and the hook itself is `:empty`. No `@librechat/client` primitive can
+   express "render only while an ancestor is in state X and I have no
+   children" — a component would have to own that state, which the streaming
+   markdown path deliberately keeps in the DOM so the dot costs no React
+   renders per token. Scoped to the one selector, colored from
+   `--text-primary` so both themes follow, and disabled under
+   prefers-reduced-motion. */
 @keyframes lc-dot-breathe {
   0%,
   100% {
