@@ -38,6 +38,8 @@ export interface ActivityPhaseSnapshot {
   partialActivityCount: number;
   agentIds: string[];
   activities: TrackedActivity[];
+  overflowActivityStartIndex?: number;
+  overflowToolCallIds?: string[];
   assistantContext: string[];
   pendingReasoning: Array<{
     key: string;
@@ -349,6 +351,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   let partialActivityCount =
     initialSnapshot?.partialActivityCount ??
     activities.filter((activity) => activity.status === 'partial').length;
+  let overflowActivityStartIndex = initialSnapshot?.overflowActivityStartIndex;
+  const overflowToolCallIds = new Set(initialSnapshot?.overflowToolCallIds ?? []);
   const contributingAgentIds = new Set(initialSnapshot?.agentIds ?? []);
   let assistantContext = (initialSnapshot?.assistantContext ?? []).slice(-MAX_CONTEXT_ITEMS);
   const pendingReasoning = new Map<string, { text: string; agentId?: string; startIndex?: number }>(
@@ -377,6 +381,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     activityCount = 0;
     failedActivityCount = 0;
     partialActivityCount = 0;
+    overflowActivityStartIndex = undefined;
+    overflowToolCallIds.clear();
     contributingAgentIds.clear();
     lastRootTextStepId = undefined;
   };
@@ -393,6 +399,14 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     }
     if (activities.length < MAX_RETAINED_ACTIVITIES) {
       activities.push(activity);
+    } else {
+      overflowActivityStartIndex = Math.max(
+        overflowActivityStartIndex ?? activity.startIndex,
+        activity.startIndex,
+      );
+      for (const id of activity.toolCallIds ?? []) {
+        overflowToolCallIds.add(id);
+      }
     }
   };
 
@@ -403,6 +417,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     failedActivityCount,
     partialActivityCount,
     agentIds: [...contributingAgentIds],
+    ...(overflowActivityStartIndex != null && { overflowActivityStartIndex }),
+    ...(overflowToolCallIds.size > 0 && { overflowToolCallIds: [...overflowToolCallIds] }),
     activities: activities.map((activity) => ({
       ...activity,
       ...(activity.entries != null && {
@@ -781,11 +797,22 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           activity.startIndex >= candidateFinalTextIndex
         );
       });
+      const hasLaterOverflowActivity =
+        (overflowActivityStartIndex != null &&
+          overflowActivityStartIndex >= candidateFinalTextIndex) ||
+        parts
+          .slice(candidateFinalTextIndex)
+          .some(
+            (part) =>
+              part?.type === ContentTypes.TOOL_CALL &&
+              typeof part.tool_call?.id === 'string' &&
+              overflowToolCallIds.has(part.tool_call.id),
+          );
       const hasLaterPendingReasoning = [...pendingReasoning.values()].some(
         (reasoning) =>
           reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex,
       );
-      if (hasLaterTrackedActivity || hasLaterPendingReasoning) {
+      if (hasLaterTrackedActivity || hasLaterOverflowActivity || hasLaterPendingReasoning) {
         finalTextIndex = undefined;
       }
     }

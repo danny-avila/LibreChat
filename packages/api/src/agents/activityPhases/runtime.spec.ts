@@ -721,6 +721,53 @@ describe('createActivityPhaseWiring', () => {
     const snapshot = wiring.snapshot();
     expect(snapshot.activityCount).toBe(20);
     expect(snapshot.activities).toHaveLength(13);
+    expect(snapshot.overflowActivityStartIndex).toBe(19);
+    expect(snapshot.overflowToolCallIds).toHaveLength(7);
+  });
+
+  it('keeps post-cap activities grouped after the last root text', async () => {
+    const parts: LooseContentPart[] = [];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the extended investigation' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'root-text' ? 13 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    for (let index = 0; index < 13; index += 1) {
+      const id = `tool-${index}`;
+      parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
+      await wiring.hook(batch(id), new AbortController().signal);
+    }
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'root-text',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+    parts[13] = { type: ContentTypes.TEXT, text: 'This may be the final answer.' };
+    parts[14] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-overflow' } };
+    await wiring.hook(batch('tool-overflow'), new AbortController().signal);
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(generatePhase).toHaveBeenCalledTimes(1);
+    expect(parts[15]).toMatchObject({
+      activity_start_index: 0,
+      activity_end_index: 15,
+      activity_count: 14,
+    });
   });
 
   it('keeps a parallel lane final inside the run-wide phase', async () => {

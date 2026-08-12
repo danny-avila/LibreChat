@@ -63,26 +63,29 @@ function isLogicallyEarlierPhaseMarker(
   });
 }
 
-function isLateActivityLabelConsumedByPhase(
+function findLateActivityLabelsConsumedByPhase(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
-  index: number,
-): boolean {
-  if (getBatchActivityLabelPart(parts[index]) == null) {
-    return false;
-  }
-  for (let markerIndex = index + 1; markerIndex < parts.length; markerIndex += 1) {
-    const marker = getActivityLabelPart(parts[markerIndex]);
+): Set<number> {
+  const consumed = new Set<number>();
+  let earliestPhaseEnd: number | undefined;
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const marker = getActivityLabelPart(parts[index]);
     if (
       isPhaseActivityLabel(marker) &&
       marker?.pending !== true &&
       getActivityLabelText(marker).length > 0 &&
-      typeof marker?.activity_end_index === 'number' &&
-      marker.activity_end_index <= index
+      typeof marker?.activity_end_index === 'number'
     ) {
-      return true;
+      earliestPhaseEnd = Math.min(earliestPhaseEnd ?? index, marker.activity_end_index);
+    } else if (
+      earliestPhaseEnd != null &&
+      earliestPhaseEnd <= index &&
+      getBatchActivityLabelPart(parts[index]) != null
+    ) {
+      consumed.add(index);
     }
   }
-  return false;
+  return consumed;
 }
 
 export function isPhaseActivityLabel(part: ActivityLabelPart | undefined): boolean {
@@ -238,12 +241,13 @@ export function lastVisibleContentIdx(
   content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
 ): number {
   const parts = content ?? [];
+  const consumedLateActivityLabels = findLateActivityLabelsConsumedByPhase(parts);
   let last = parts.length - 1;
   while (last >= 0 && last in parts) {
     if (
       isVisibleContentPart(parts[last]) &&
       !isLogicallyEarlierPhaseMarker(parts, last) &&
-      !isLateActivityLabelConsumedByPhase(parts, last)
+      !consumedLateActivityLabels.has(last)
     ) {
       return last;
     }
@@ -261,7 +265,7 @@ export function lastVisibleContentIdx(
       index <= last &&
       isVisibleContentPart(parts[index]) &&
       !isLogicallyEarlierPhaseMarker(parts, index) &&
-      !isLateActivityLabelConsumedByPhase(parts, index)
+      !consumedLateActivityLabels.has(index)
     ) {
       return index;
     }
