@@ -59,6 +59,7 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
+import { getPluginHookSource } from '~/agents/hooks/source';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
 import { buildLangfuseConfig } from '~/langfuse/config';
@@ -1187,6 +1188,7 @@ export async function createRun({
   activityPhase,
   hitlCapable = false,
   toolInputValidationErrors,
+  sessionStartSource,
   streaming = true,
   streamUsage = true,
 }: {
@@ -1274,6 +1276,8 @@ export async function createRun({
    * final response / `[DONE]` with the tool call left unresolved).
    */
   hitlCapable?: boolean;
+  /** Plugin-hook SessionStart lifecycle source: 'startup' (default) or 'resume' on HITL-rebuild paths. */
+  sessionStartSource?: string;
   /** Request-scoped tool input failures consumed by the completion handler. */
   toolInputValidationErrors?: Map<string, ToolInputValidationError>;
 } & Pick<
@@ -1644,6 +1648,34 @@ export async function createRun({
     if (steering.preemptHook != null && isSteerPreemptSupported()) {
       hooks.register('PreemptBoundary', { hooks: [steering.preemptHook] });
     }
+  }
+  /**
+   * Deployment-plugin hooks (Agent Plugins `ai.librechat/hooks/hooks.json`)
+   * register last so internal policy hooks (HITL, labels, steering) keep
+   * their ordering. The source is wired at startup by the plugins package
+   * (see `setPluginHookSource` in api/server/index.js) and stays empty
+   * unless the operator installed plugins with hook documents AND opted in
+   * via DEPLOYMENT_PLUGIN_HOOKS. The conversation id doubles as the plugin
+   * "session", giving SessionStart its once-per-conversation scope.
+   */
+  const pluginHookSource = getPluginHookSource();
+  if (pluginHookSource?.hasHooks() === true) {
+    hooks = hooks ?? new HookRegistry();
+    const primaryAgent = agents[0];
+    pluginHookSource.register({
+      registry: hooks,
+      context: {
+        sessionId: requestBody?.conversationId,
+        userId: user?.id,
+        sessionStartSource,
+        model: primaryAgent?.model_parameters?.model ?? primaryAgent?.model ?? undefined,
+        agentType: primaryAgent?.id,
+      },
+      // `ask` needs the checkpointer + resume surface; without HITL wiring the
+      // source tightens plugin `ask` decisions to `deny` rather than stranding
+      // the run on an un-resumable interrupt.
+      askDecisionSupported: hitl != null,
+    });
   }
 
   const streamLimits = resolveStreamLimits(agentsEndpointConfig);
