@@ -325,10 +325,10 @@ describe('createCommandExecutor', () => {
     await expect(
       execute({ type: 'command', command: `printf '%s' '{"decision":"approve"}'` }),
     ).resolves.toEqual({ decision: 'allow' });
-    /** "block" on events without a deny channel stays invalid and is dropped. */
+    /** "block" on events without a deny channel controls continuation instead. */
     await expect(
       execute(handler, { sourceEvent: 'PostToolUse', targetEvent: 'PostToolUse' }),
-    ).resolves.toEqual({});
+    ).resolves.toEqual({ preventContinuation: true });
   });
 
   test('translates Claude hookSpecificOutput into engine fields', async () => {
@@ -367,6 +367,45 @@ describe('createCommandExecutor', () => {
         command: `printf '%s' '{"decision":"allow","hookSpecificOutput":{"permissionDecision":"deny"}}'`,
       }),
     ).resolves.toEqual({ decision: 'allow' });
+  });
+
+  test('translates a structured block into continuation control on post-tool events', async () => {
+    const handler: PluginHookHandler = {
+      type: 'command',
+      command: `printf '%s' '{"decision":"block","reason":"output leaked a secret"}'`,
+    };
+    await expect(
+      execute(handler, { sourceEvent: 'PostToolUse', targetEvent: 'PostToolUse' }),
+    ).resolves.toEqual({
+      preventContinuation: true,
+      reason: 'output leaked a secret',
+      stopReason: 'output leaked a secret',
+    });
+    await expect(
+      execute(handler, { sourceEvent: 'PostToolUseFailure', targetEvent: 'PostToolUseFailure' }),
+    ).resolves.toEqual({
+      preventContinuation: true,
+      reason: 'output leaked a secret',
+      stopReason: 'output leaked a secret',
+    });
+  });
+
+  test('rejects native decisions from the other event channel', async () => {
+    /** `continue` belongs to the Stop vocabulary; on a tool event it must not
+     *  shadow the Claude decision. */
+    await expect(
+      execute({
+        type: 'command',
+        command: `printf '%s' '{"decision":"continue","hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"blocked"}}'`,
+      }),
+    ).resolves.toEqual({ decision: 'deny', reason: 'blocked' });
+    /** `ask` belongs to the tool vocabulary and is dropped on Stop. */
+    await expect(
+      execute(
+        { type: 'command', command: `printf '%s' '{"decision":"ask"}'` },
+        { sourceEvent: 'Stop', targetEvent: 'Stop' },
+      ),
+    ).resolves.toEqual({});
   });
 
   test('falls back to the Claude decision when the native field is malformed', async () => {

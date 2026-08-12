@@ -17,12 +17,14 @@ const BLOCKING_EXIT_CODE = 2;
 
 const TOOL_DECISIONS: ReadonlySet<string> = new Set<ToolDecision>(['allow', 'deny', 'ask']);
 const STOP_DECISIONS: ReadonlySet<string> = new Set<StopDecision>(['continue', 'block']);
-/** Every decision token either dialect can express; anything else is malformed. */
-const RECOGNIZED_DECISIONS: ReadonlySet<string> = new Set([
-  ...TOOL_DECISIONS,
-  ...STOP_DECISIONS,
-  'approve',
-]);
+/**
+ * Decision tokens accepted as INPUT per channel: the channel's native set
+ * plus the Claude legacy spellings that map into it. A token valid for the
+ * other channel (`continue` on a tool event) is malformed here and must not
+ * suppress a valid Claude decision.
+ */
+const TOOL_INPUT_DECISIONS: ReadonlySet<string> = new Set([...TOOL_DECISIONS, 'approve', 'block']);
+const STOP_INPUT_DECISIONS: ReadonlySet<string> = STOP_DECISIONS;
 const STDOUT_CONTEXT_EVENTS: ReadonlySet<string> = new Set(['SessionStart', 'UserPromptSubmit']);
 const PASSTHROUGH_ENV_VARS = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ'] as const;
 
@@ -489,17 +491,22 @@ function sanitizeOutput(
  * `decision`/`reason`, `hookSpecificOutput.additionalContext` surfaces,
  * `continue: false` becomes `preventContinuation`, and the legacy decisions
  * map (`approve` → `allow`; `block` → `deny` on events that block by
- * denying). Native fields win when both dialects appear — but only when
- * valid: a malformed native value (`"decision": null`, an unrecognized
- * token) is stripped before the dialect merge so it cannot suppress a valid
- * Claude decision into a silent allow.
+ * denying, or into `preventContinuation` where the event has no decision
+ * channel at all). Native fields win when both dialects appear — but only
+ * when valid for THIS event: a malformed value (`"decision": null`) or one
+ * from the other channel's vocabulary (`"continue"` on a tool event) is
+ * stripped before the dialect merge, so it cannot suppress a valid Claude
+ * decision into a silent allow.
  */
 function normalizeOutput(
   raw: Record<string, unknown>,
   request: PluginHookExecutionRequest,
 ): Record<string, unknown> {
+  const traits = EVENT_TRAITS[request.targetEvent];
+  const acceptedDecisions =
+    traits.decisions === 'stop' ? STOP_INPUT_DECISIONS : TOOL_INPUT_DECISIONS;
   const output: Record<string, unknown> = { ...raw };
-  if (typeof output.decision !== 'string' || !RECOGNIZED_DECISIONS.has(output.decision)) {
+  if (typeof output.decision !== 'string' || !acceptedDecisions.has(output.decision)) {
     delete output.decision;
   }
   if (typeof output.reason !== 'string') {
@@ -531,8 +538,21 @@ function normalizeOutput(
   }
   if (output.decision === 'approve') {
     output.decision = 'allow';
-  } else if (output.decision === 'block' && EVENT_TRAITS[request.targetEvent].exitTwo === 'deny') {
-    output.decision = 'deny';
+  } else if (output.decision === 'block' && traits.decisions === 'tool') {
+    if (traits.exitTwo === 'deny') {
+      output.decision = 'deny';
+    } else {
+      /**
+       * Post-tool and other prevent-trait events have no deny channel, so a
+       * structured `block` controls the run the only way it can: by stopping
+       * the next model turn, carrying its reason as the stop reason.
+       */
+      delete output.decision;
+      output.preventContinuation = true;
+      if (output.stopReason === undefined && typeof output.reason === 'string') {
+        output.stopReason = output.reason;
+      }
+    }
   }
   return output;
 }

@@ -15,6 +15,13 @@ export interface PluginHookRuntimeContext {
   sessionId?: string;
   /** Authenticated principal owning the run; scopes cross-run dedup keys. */
   userId?: string;
+  /**
+   * Session working directory for the payload's `cwd`. LibreChat runs supply
+   * none: tool paths address a remote code-execution sandbox, not the API
+   * host where hook commands run, so no host directory describes the run.
+   * Hook commands resolve their own paths from `PLUGIN_ROOT`, which is also
+   * the process working directory.
+   */
   cwd?: string;
   transcriptPath?: string | null;
   permissionMode?: string;
