@@ -753,21 +753,15 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     }
     if (finalTextIndex != null) {
       const candidateFinalTextIndex = finalTextIndex;
-      const hasLaterActivityPart = parts.some(
-        (part, index) =>
-          index > candidateFinalTextIndex &&
-          (part?.type === ContentTypes.TOOL_CALL ||
-            part?.type === ContentTypes.THINK ||
-            (part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type !== 'phase')),
-      );
       const hasLaterTrackedActivity = activities.some(
-        (activity) => activity.startIndex >= candidateFinalTextIndex,
+        (activity) =>
+          (findTrackedToolStart(parts, activity) ?? activity.startIndex) >= candidateFinalTextIndex,
       );
       const hasLaterPendingReasoning = [...pendingReasoning.values()].some(
         (reasoning) =>
           reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex,
       );
-      if (hasLaterActivityPart || hasLaterTrackedActivity || hasLaterPendingReasoning) {
+      if (hasLaterTrackedActivity || hasLaterPendingReasoning) {
         finalTextIndex = undefined;
       }
     }

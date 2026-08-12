@@ -867,6 +867,12 @@ describe('createActivityPhaseWiring', () => {
       undefined,
     );
     parts[5] = { type: ContentTypes.TEXT, text: 'The investigation is complete.' };
+    parts[6] = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Recorded the delayed child result',
+      tool_call_ids: ['tool-4'],
+      pending: false,
+    };
 
     expect(generatePhase).not.toHaveBeenCalled();
     wiring.complete();
@@ -874,7 +880,7 @@ describe('createActivityPhaseWiring', () => {
 
     expect(generatePhase).toHaveBeenCalledTimes(1);
     expect(generatePhase).toHaveBeenCalledWith(expect.objectContaining({ totalActivityCount: 4 }));
-    expect(parts[6]).toMatchObject({
+    expect(parts[7]).toMatchObject({
       activity_label_type: 'phase',
       activity_start_index: 0,
       activity_end_index: 5,
