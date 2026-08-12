@@ -670,8 +670,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
               }
               return result;
             } else {
-              if (step.groupId == null && phase == null) {
-                lastRootTextStepId = step.id;
+              if (step.groupId == null) {
+                lastRootTextStepId = phase == null ? step.id : undefined;
               }
               if (phase === 'final_answer' && step.groupId == null) {
                 addPendingReasoning(step.agentId ?? 'root');

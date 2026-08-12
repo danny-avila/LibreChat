@@ -51,6 +51,9 @@ function isLogicallyEarlierPhaseMarker(
     if (!isVisibleContentPart(trailingPart)) {
       return false;
     }
+    if (getBatchActivityLabelPart(trailingPart) != null) {
+      return false;
+    }
     if (trailingPart?.type !== ContentTypes.TEXT) {
       return true;
     }

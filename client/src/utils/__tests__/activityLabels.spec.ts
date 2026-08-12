@@ -119,6 +119,20 @@ describe('lastVisibleContentIdx', () => {
 
     expect(lastVisibleContentIdx([tool, emptyText, phase as never])).toBe(2);
   });
+
+  it('keeps the phase marker visible when an adopted late label follows an empty final slot', () => {
+    const child = labelPart({ activity_label: 'Recorded the delayed result', pending: false });
+    const phase = labelPart({ activity_label: 'Completed the investigation', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 1,
+      activity_count: 2,
+    });
+    const emptyText = { type: ContentTypes.TEXT, text: '' } as TMessageContentParts;
+
+    expect(lastVisibleContentIdx([tool, emptyText, child as never, phase as never])).toBe(3);
+  });
 });
 
 describe('offsetActivityPhaseBoundary', () => {

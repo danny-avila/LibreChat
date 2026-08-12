@@ -856,6 +856,67 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  it('keeps later semantic commentary inside a phase after unphased root text', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the commentary phase' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) =>
+        stepId === 'root-text' ? 1 : stepId === 'commentary' ? 3 : undefined,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    const handler = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+    })?.[GraphEvents.ON_RUN_STEP];
+    handler?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'root-text',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    parts[1] = { type: ContentTypes.TEXT, text: 'I will keep investigating.' };
+    parts[2] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } };
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    handler?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'commentary',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'commentary' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    parts[3] = {
+      type: ContentTypes.TEXT,
+      text: 'The second search confirmed it.',
+      phase: 'commentary',
+    };
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[4]).toMatchObject({
+      activity_start_index: 0,
+      activity_end_index: 4,
+      activity_count: 2,
+    });
+  });
+
   it('summarizes all unphased activities once at root-run completion', async () => {
     const parts: LooseContentPart[] = [];
     const stepIndexes = new Map([
