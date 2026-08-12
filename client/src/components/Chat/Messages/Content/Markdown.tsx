@@ -4,8 +4,8 @@ import { useRecoilValue } from 'recoil';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from './markdownConfig';
 import { smoothStreamingAtom } from '~/store/smoothStreaming';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
-import MarkdownBlocks from './MarkdownBlocks';
 import { useMessageContext } from '~/Providers';
+import MarkdownBlocks from './MarkdownBlocks';
 import { preprocessLaTeX } from '~/utils';
 import store from '~/store';
 
