@@ -3316,6 +3316,8 @@ describe('MCP Routes', () => {
         name: 'second-server',
         tools: [],
       });
+      expect(logger.debug).toHaveBeenCalledTimes(1);
+      expect(logger.debug).toHaveBeenCalledWith('[getMCPTools] Servers without tools: 2');
       expect(logger.error).toHaveBeenCalledTimes(2);
       expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledTimes(2);
     });

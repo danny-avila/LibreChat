@@ -197,6 +197,7 @@ const getMCPTools = async (req, res) => {
     const mcpServers = {};
 
     const serverToolsMap = new Map();
+    let serversWithoutTools = 0;
     const cacheResults = await Promise.all(
       configuredServers.map(async (serverName) => {
         try {
@@ -230,7 +231,7 @@ const getMCPTools = async (req, res) => {
         continue;
       }
       if (!serverTools) {
-        logger.debug(`[getMCPTools] No tools found for server ${serverName}`);
+        serversWithoutTools++;
         continue;
       }
       serverToolsMap.set(serverName, serverTools);
@@ -245,6 +246,9 @@ const getMCPTools = async (req, res) => {
       }).catch((err) =>
         logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
       );
+    }
+    if (serversWithoutTools > 0) {
+      logger.debug(`[getMCPTools] Servers without tools: ${serversWithoutTools}`);
     }
 
     // Process each configured server
