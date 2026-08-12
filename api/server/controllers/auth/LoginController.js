@@ -1,9 +1,13 @@
 const { logger } = require('@librechat/data-schemas');
-const { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } = require('librechat-data-provider');
+const {
+  TWO_FACTOR_ENROLLMENT_REQUIRED_CODE,
+  TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE,
+} = require('librechat-data-provider');
 const {
   clearCloudFrontCookies,
   generateTwoFactorSetupToken,
   isTwoFactorEnrollmentRequired,
+  isCredentialLoginBlockedByTwoFactorPolicy,
 } = require('@librechat/api');
 const { generate2FATempToken } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
@@ -17,6 +21,16 @@ const loginController = async (req, res) => {
     if (req.user.twoFactorEnabled) {
       const tempToken = generate2FATempToken(req.user._id);
       return res.status(200).json({ twoFAPending: true, tempToken });
+    }
+
+    if (isCredentialLoginBlockedByTwoFactorPolicy(req.user)) {
+      logger.warn(
+        `[loginController] Refused a password login for a federated record under required 2FA [provider: ${req.user.provider}] [Request-IP: ${req.ip}]`,
+      );
+      return res.status(403).json({
+        code: TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE,
+        message: 'Sign in with your identity provider to continue.',
+      });
     }
 
     if (isTwoFactorEnrollmentRequired(req.user)) {

@@ -18,6 +18,8 @@ import {
   generateTwoFactorSetupToken,
   isTwoFactorEnrollmentRequired,
   isTwoFactorSetupEligible,
+  isCredentialLoginBlockedByTwoFactorPolicy,
+  isTokenIssuedBeforeTwoFactorEnrollment,
   requireTwoFactorSetupToken,
   requireTwoFactorSetupFinalizationToken,
   requireTwoFactorSetupAcknowledgementToken,
@@ -76,6 +78,83 @@ describe('isTwoFactorSetupEligible', () => {
 
   it.each(['openid', 'google', 'saml'])('rejects federated %s users', (provider) => {
     expect(isTwoFactorSetupEligible({ provider })).toBe(false);
+  });
+});
+
+describe('isCredentialLoginBlockedByTwoFactorPolicy', () => {
+  const originalPolicy = process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
+
+  afterAll(() => {
+    if (originalPolicy === undefined) {
+      delete process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
+    } else {
+      process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = originalPolicy;
+    }
+  });
+
+  /**
+   * A reset assigns a password without consulting `provider`, and the local strategy authenticates
+   * on the password alone, so a federated record can be signed in with a password.
+   */
+  it.each(['openid', 'google', 'saml'])('blocks a %s record under enforcement', (provider) => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+
+    expect(isCredentialLoginBlockedByTwoFactorPolicy({ provider })).toBe(true);
+  });
+
+  it.each(['local', 'ldap', undefined])('allows %s records under enforcement', (provider) => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+
+    expect(isCredentialLoginBlockedByTwoFactorPolicy({ provider })).toBe(false);
+  });
+
+  it('blocks nothing when the policy is disabled', () => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
+
+    expect(isCredentialLoginBlockedByTwoFactorPolicy({ provider: 'openid' })).toBe(false);
+  });
+
+  it('treats a missing user as nothing to block', () => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+
+    expect(isCredentialLoginBlockedByTwoFactorPolicy(null)).toBe(false);
+  });
+});
+
+describe('isTokenIssuedBeforeTwoFactorEnrollment', () => {
+  const enrolledAt = new Date('2026-01-01T00:00:10.500Z');
+  const enrolledSecond = Math.floor(enrolledAt.getTime() / 1000);
+
+  it('leaves accounts that never enrolled untouched', () => {
+    expect(isTokenIssuedBeforeTwoFactorEnrollment(0, null)).toBe(false);
+    expect(isTokenIssuedBeforeTwoFactorEnrollment(0, undefined)).toBe(false);
+  });
+
+  it('refuses a token issued before the enrolling second', () => {
+    expect(isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond - 1, enrolledAt)).toBe(true);
+  });
+
+  it('keeps the session minted within the enrolling second', () => {
+    expect(isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond, enrolledAt)).toBe(false);
+    expect(isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond + 1, enrolledAt)).toBe(false);
+  });
+
+  it('accepts a stamp that arrives as a string or epoch value', () => {
+    expect(
+      isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond - 1, enrolledAt.toISOString()),
+    ).toBe(true);
+    expect(isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond - 1, enrolledAt.getTime())).toBe(
+      true,
+    );
+  });
+
+  it('refuses an undatable token once the account is enrolled', () => {
+    expect(isTokenIssuedBeforeTwoFactorEnrollment(undefined, enrolledAt)).toBe(true);
+    expect(isTokenIssuedBeforeTwoFactorEnrollment(Number.NaN, enrolledAt)).toBe(true);
+  });
+
+  it('ignores an unparseable stamp rather than locking every session out', () => {
+    expect(isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond, 'not-a-date')).toBe(false);
   });
 });
 
@@ -384,6 +463,7 @@ interface EnrollmentDocument {
   _id: string;
   provider?: string;
   twoFactorEnabled: boolean;
+  twoFactorEnrolledAt?: Date;
   totpSecret?: string | null;
   backupCodes?: BackupCode[];
   pendingTotpSecret?: string | null;
@@ -695,6 +775,57 @@ describe('required two-factor enrollment lifecycle', () => {
       twoFactorFinalizationNonceHash: null,
     });
     expect(result.ok && isTwoFactorEnrollmentRequired(result.user)).toBe(false);
+  });
+
+  it('stamps the cutoff that retires pre-enrollment access tokens', async () => {
+    const store = createEnrollmentStore();
+    const confirmed = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    if (!confirmed.ok) {
+      throw new Error('confirmation should succeed');
+    }
+    const acknowledged = await acknowledgeTwoFactorSetup(
+      'user-3',
+      confirmed.acknowledgementNonce,
+      store.deps,
+    );
+    if (!acknowledged.ok) {
+      throw new Error('acknowledgement should succeed');
+    }
+    const beforeFinalize = Date.now();
+
+    const result = await finalizeTwoFactorSetup(
+      'user-3',
+      acknowledged.finalizationNonce,
+      store.deps,
+    );
+
+    expect(result.ok).toBe(true);
+    const enrolledAt = store.read().twoFactorEnrolledAt;
+    expect(enrolledAt).toBeInstanceOf(Date);
+    expect((enrolledAt as Date).getTime()).toBeGreaterThanOrEqual(beforeFinalize);
+    /** The token minted a moment earlier is now stale, the one finalization returns is not. */
+    expect(
+      isTokenIssuedBeforeTwoFactorEnrollment(
+        Math.floor(beforeFinalize / 1000) - 1,
+        enrolledAt as Date,
+      ),
+    ).toBe(true);
+    expect(
+      isTokenIssuedBeforeTwoFactorEnrollment(Math.ceil(Date.now() / 1000), enrolledAt as Date),
+    ).toBe(false);
+  });
+
+  it('leaves the cutoff unset on the steps that do not promote', async () => {
+    const store = createEnrollmentStore();
+    const confirmed = await confirmTwoFactorSetup('user-3', '123456', store.deps);
+    if (!confirmed.ok) {
+      throw new Error('confirmation should succeed');
+    }
+    expect(store.read().twoFactorEnrolledAt).toBeUndefined();
+
+    await acknowledgeTwoFactorSetup('user-3', confirmed.acknowledgementNonce, store.deps);
+
+    expect(store.read().twoFactorEnrolledAt).toBeUndefined();
   });
 
   it('rejects a replayed finalization credential without a second promotion', async () => {

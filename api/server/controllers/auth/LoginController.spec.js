@@ -2,9 +2,10 @@ const mockGenerateTwoFactorSetupToken = jest.fn(() => 'setup-token');
 const mockGenerate2FATempToken = jest.fn(() => 'challenge-token');
 const mockSetAuthTokens = jest.fn(() => Promise.resolve('auth-token'));
 const mockClearCloudFrontCookies = jest.fn();
+const isPolicyProvider = (provider) => provider == null || ['local', 'ldap'].includes(provider);
 
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { error: jest.fn() },
+  logger: { error: jest.fn(), warn: jest.fn() },
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -13,7 +14,9 @@ jest.mock('@librechat/api', () => ({
   isTwoFactorEnrollmentRequired: (user) =>
     process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION === 'true' &&
     !user.twoFactorEnabled &&
-    (user.provider == null || ['local', 'ldap'].includes(user.provider)),
+    isPolicyProvider(user.provider),
+  isCredentialLoginBlockedByTwoFactorPolicy: (user) =>
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION === 'true' && !isPolicyProvider(user.provider),
 }));
 
 jest.mock('~/server/services/twoFactorService', () => ({
@@ -118,7 +121,7 @@ describe('loginController', () => {
     });
   });
 
-  it('does not apply local enrollment policy to federated users', async () => {
+  it('does not offer local enrollment to federated users', async () => {
     process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
     const req = {
       user: { _id: 'user-4', provider: 'openid', email: 'federated@example.com' },
@@ -128,6 +131,55 @@ describe('loginController', () => {
     await loginController(req, res);
 
     expect(mockGenerateTwoFactorSetupToken).not.toHaveBeenCalled();
-    expect(mockSetAuthTokens).toHaveBeenCalledWith('user-4', res, null, req);
+  });
+
+  /**
+   * A password reset assigns a password without consulting `provider`, so a federated record can
+   * be signed in through the local strategy. Under enforcement that login checks neither the
+   * identity provider's MFA nor this policy, and enrollment cannot remedy it.
+   */
+  it('refuses a password login for a federated record under enforcement', async () => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+    const req = {
+      user: { _id: 'user-4', provider: 'openid', email: 'federated@example.com' },
+    };
+    const res = createResponse();
+
+    await loginController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    /** The code carries the reason: a bare 403 is rendered as a ban by getLoginError. */
+    expect(res.json).toHaveBeenCalledWith({
+      code: 'TWO_FACTOR_FEDERATED_LOGIN_BLOCKED',
+      message: 'Sign in with your identity provider to continue.',
+    });
+    expect(mockSetAuthTokens).not.toHaveBeenCalled();
+    expect(res.send).not.toHaveBeenCalled();
+  });
+
+  it('allows a federated password login that still presents a second factor', async () => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+    const req = { user: { _id: 'user-5', provider: 'openid', twoFactorEnabled: true } };
+    const res = createResponse();
+
+    await loginController(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      twoFAPending: true,
+      tempToken: 'challenge-token',
+    });
+    expect(mockSetAuthTokens).not.toHaveBeenCalled();
+  });
+
+  it('leaves federated password logins alone when enforcement is disabled', async () => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
+    const req = {
+      user: { _id: 'user-6', provider: 'openid', email: 'federated@example.com' },
+    };
+    const res = createResponse();
+
+    await loginController(req, res);
+
+    expect(mockSetAuthTokens).toHaveBeenCalledWith('user-6', res, null, req);
   });
 });

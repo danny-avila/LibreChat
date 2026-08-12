@@ -99,6 +99,10 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    twoFactorEnrolledAt: {
+      type: Date,
+      default: null,
+    },
     totpSecret: {
       type: String,
       select: false,

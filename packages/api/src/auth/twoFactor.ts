@@ -111,6 +111,56 @@ export function isTwoFactorSetupEligible(
   return isTwoFactorPolicyProvider(user?.provider);
 }
 
+/**
+ * Whether a login that presented LibreChat-owned credentials must be refused outright.
+ *
+ * Only the local and LDAP strategies reach this point, so the credential was ours to check. A
+ * record left on a federated provider can still carry a password, because a reset assigns one
+ * without consulting `provider`, and the local strategy authenticates on the password alone. Such
+ * a login satisfies neither the identity provider's MFA nor this policy, and enrollment cannot
+ * remedy it because the account's credentials are not ours to promote. Under enforcement the
+ * federated sign-in path is the only way in.
+ */
+export function isCredentialLoginBlockedByTwoFactorPolicy(
+  user: Partial<Pick<IUser, 'provider'>> | null | undefined,
+): boolean {
+  return (
+    isEnabled(process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION) &&
+    !isTwoFactorPolicyProvider(user?.provider)
+  );
+}
+
+/**
+ * Whether a bearer token was minted before required enrollment promoted the account.
+ *
+ * Access tokens carry no server-side state, so the enrollment gate stops refusing them the moment
+ * `twoFactorEnabled` flips true. A token issued before that flip was only ever accepted because the
+ * account had no second factor yet, so enrollment has to retire it rather than reinstate it.
+ *
+ * `iat` is whole seconds, so the enrollment instant is compared at the same resolution. A token
+ * minted within the enrolling second is kept, which is what makes the session finalization itself
+ * returns survive. A token carrying no `iat` cannot be dated and is refused.
+ */
+export function isTokenIssuedBeforeTwoFactorEnrollment(
+  issuedAtSeconds: number | undefined,
+  enrolledAt: Date | string | number | null | undefined,
+): boolean {
+  if (enrolledAt == null) {
+    return false;
+  }
+
+  const enrolledAtMs = new Date(enrolledAt).getTime();
+  if (Number.isNaN(enrolledAtMs)) {
+    return false;
+  }
+
+  if (typeof issuedAtSeconds !== 'number' || !Number.isFinite(issuedAtSeconds)) {
+    return true;
+  }
+
+  return issuedAtSeconds < Math.floor(enrolledAtMs / 1000);
+}
+
 export function generateTwoFactorSetupToken(userId: string, jwtSecret: string): string {
   return jwt.sign({ userId, purpose: TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP }, jwtSecret, {
     expiresIn: TWO_FACTOR_SETUP_TOKEN_EXPIRY,
@@ -455,6 +505,7 @@ export async function finalizeTwoFactorSetup(
       totpSecret: user.pendingTotpSecret,
       backupCodes: user.pendingBackupCodes,
       twoFactorEnabled: true,
+      twoFactorEnrolledAt: new Date(),
       pendingTotpSecret: null,
       pendingBackupCodes: [],
       twoFactorAcknowledgementNonceHash: null,

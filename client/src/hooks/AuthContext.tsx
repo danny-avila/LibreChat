@@ -42,6 +42,14 @@ if (import.meta.hot) {
   import.meta.hot.data.__AuthContext = AuthContext;
 }
 
+/**
+ * Prefers the response's machine-readable code, because the mapping in `getLoginError` only sees
+ * this string and several distinct failures share a status. Falls back to the thrown message.
+ */
+const getLoginErrorText = (error: TResError | unknown): string | undefined =>
+  (error as { response?: { data?: { code?: string } } })?.response?.data?.code ??
+  (error as TResError)?.message;
+
 const isRequiredTwoFactorSetupRoute = (): boolean =>
   window.location.pathname.endsWith('/login/2fa/setup') &&
   !!new URLSearchParams(window.location.search).get('tempToken');
@@ -130,10 +138,9 @@ const AuthContextProvider = ({
       setUserContext({ token, isAuthenticated: true, user, redirect });
     },
     onError: (error: TResError | unknown) => {
-      const resError = error as TResError;
-      doSetError(resError.message);
+      doSetError(getLoginErrorText(error));
       // Preserve a valid redirect_to across login failures so the deep link survives retries.
-      // Cannot use buildLoginRedirectUrl() here — it reads the current pathname (already /login)
+      // Cannot use buildLoginRedirectUrl() here: it reads the current pathname (already /login)
       // and would return plain /login, dropping the redirect_to destination.
       const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
       const loginPath =

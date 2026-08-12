@@ -21,6 +21,10 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 
 export const TWO_FACTOR_ENROLLMENT_REQUIRED_CODE = 'TWO_FACTOR_ENROLLMENT_REQUIRED' as const;
 
+/** A federated record was refused a password login, so the only way in is its identity provider. */
+export const TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE =
+  'TWO_FACTOR_FEDERATED_LOGIN_BLOCKED' as const;
+
 const TWO_FACTOR_POLICY_PROVIDERS = new Set(['local', 'ldap']);
 
 export function isTwoFactorPolicyProvider(provider: string | null | undefined): boolean {

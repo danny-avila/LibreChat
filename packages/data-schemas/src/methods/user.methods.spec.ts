@@ -570,6 +570,46 @@ describe('User Methods - Database Tests', () => {
       expect(stored?.expiresAt).toBeUndefined();
     });
 
+    test('persists the enrollment cutoff that retires pre-enrollment access tokens', async () => {
+      const { id, pendingBackupCodes } = await createEnrollingUser('cutoff-2fa@example.com', {
+        twoFactorFinalizationNonceHash: FINAL_HASH,
+      });
+      const twoFactorEnrolledAt = new Date();
+
+      const promoted = await methods.updateTwoFactorEnrollment(
+        id,
+        {
+          pendingTotpSecret: 'pending-secret',
+          pendingBackupCodes,
+          twoFactorFinalizationNonceHash: FINAL_HASH,
+        },
+        {
+          totpSecret: 'pending-secret',
+          backupCodes: pendingBackupCodes,
+          twoFactorEnabled: true,
+          twoFactorEnrolledAt,
+          pendingTotpSecret: null,
+          pendingBackupCodes: [],
+          twoFactorAcknowledgementNonceHash: null,
+          twoFactorFinalizationNonceHash: null,
+        },
+      );
+      const stored = await readEnrollment(id);
+
+      expect(promoted).not.toBeNull();
+      /** A path the schema does not declare is dropped in silence, so assert the round trip. */
+      expect(stored?.twoFactorEnrolledAt).toBeInstanceOf(Date);
+      expect(stored?.twoFactorEnrolledAt?.getTime()).toBe(twoFactorEnrolledAt.getTime());
+    });
+
+    test('leaves the enrollment cutoff null until a promotion writes it', async () => {
+      const { id } = await createEnrollingUser('no-cutoff-2fa@example.com');
+
+      const stored = await readEnrollment(id);
+
+      expect(stored?.twoFactorEnrolledAt).toBeNull();
+    });
+
     const concurrentTransitions: Array<[string, Partial<t.IUser>]> = [
       ['regenerated secret', { pendingTotpSecret: 'different-secret' }],
       [

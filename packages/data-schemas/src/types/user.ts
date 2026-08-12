@@ -31,6 +31,11 @@ export interface IUser extends Document {
   plugins?: string[];
   openidIssuer?: string;
   twoFactorEnabled?: boolean;
+  /**
+   * When required enrollment promoted this account. Access tokens are stateless, so this is the
+   * cutoff that retires the ones minted while the account still had no second factor.
+   */
+  twoFactorEnrolledAt?: Date | null;
   totpSecret?: string;
   backupCodes?: Array<{
     codeHash: string;
@@ -85,6 +90,7 @@ export interface TwoFactorEnrollmentUpdate {
   totpSecret?: string | null;
   backupCodes?: NonNullable<IUser['backupCodes']>;
   twoFactorEnabled?: boolean;
+  twoFactorEnrolledAt?: Date;
   pendingTotpSecret?: string | null;
   pendingBackupCodes?: NonNullable<IUser['pendingBackupCodes']>;
   twoFactorAcknowledgementNonceHash?: string | null;
