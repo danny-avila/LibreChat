@@ -2,13 +2,14 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { HookRegistry, executeHooks } from '@librechat/agents';
-import { PLUGIN_MANIFEST_SCHEMA_ID } from './constants';
-import { initializeDeploymentPlugins } from './deployment';
 import {
   getDeploymentPluginHookCapabilities,
   registerDeploymentPluginHooks,
   hasDeploymentPluginHooks,
 } from './runtime';
+import { getPluginHookSource, setPluginHookSource } from '~/agents/hooks';
+import { initializeDeploymentPlugins } from './deployment';
+import { PLUGIN_MANIFEST_SCHEMA_ID } from './constants';
 
 let base: string;
 let pluginsDir: string;
@@ -29,13 +30,16 @@ const HOOKS_DOCUMENT = {
     ],
     SessionStart: [
       {
-        hooks: [{ type: 'command', command: 'echo started >> "$PLUGIN_DATA/starts.log"' }],
+        hooks: [
+          { type: 'command', command: 'echo started >> "$PLUGIN_DATA/starts.log"' },
+          { type: 'command', command: 'echo sibling >> "$PLUGIN_DATA/starts.log"' },
+        ],
       },
     ],
   },
 };
 
-async function writePlugin(name: string): Promise<void> {
+async function writePlugin(name: string, document: object = HOOKS_DOCUMENT): Promise<void> {
   const root = path.join(pluginsDir, name);
   await fs.promises.mkdir(path.join(root, 'ai.librechat', 'hooks'), { recursive: true });
   await fs.promises.writeFile(
@@ -44,7 +48,7 @@ async function writePlugin(name: string): Promise<void> {
   );
   await fs.promises.writeFile(
     path.join(root, 'ai.librechat', 'hooks', 'hooks.json'),
-    JSON.stringify(HOOKS_DOCUMENT),
+    JSON.stringify(document),
   );
 }
 
@@ -119,7 +123,7 @@ describe('registerDeploymentPluginHooks', () => {
       registry,
       context: { sessionId: 'conversation-1' },
     });
-    expect(registered).toBe(2);
+    expect(registered).toBe(3);
 
     const result = await executeHooks({
       registry,
@@ -148,7 +152,22 @@ describe('registerDeploymentPluginHooks', () => {
     expect(unmatched.decision).toBeUndefined();
   });
 
-  it('fires SessionStart once per conversation across separate runs', async () => {
+  it('serves the run seam through the plugin hook source', async () => {
+    await writePlugin('seam');
+    await initialize();
+    setPluginHookSource({
+      hasHooks: hasDeploymentPluginHooks,
+      register: registerDeploymentPluginHooks,
+    });
+    const source = getPluginHookSource();
+    expect(source?.hasHooks()).toBe(true);
+    const registry = new HookRegistry();
+    expect(source?.register({ registry, context: { sessionId: 'conversation-seam' } })).toBe(3);
+    setPluginHookSource(undefined);
+    expect(getPluginHookSource()).toBeUndefined();
+  });
+
+  it('fires every SessionStart handler once per conversation across separate runs', async () => {
     await writePlugin('session');
     await initialize();
 
@@ -157,6 +176,45 @@ describe('registerDeploymentPluginHooks', () => {
     await fireRunStart('conversation-b');
 
     const log = await fs.promises.readFile(path.join(dataDir, 'session', 'starts.log'), 'utf8');
+    const lines = log.trim().split('\n').sort();
+    expect(lines).toEqual(['sibling', 'sibling', 'started', 'started']);
+  });
+
+  it('persists once-only handler state across runs of the same conversation', async () => {
+    await writePlugin('oncely', {
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              { type: 'command', command: 'echo fired >> "$PLUGIN_DATA/once.log"', once: true },
+            ],
+          },
+        ],
+      },
+    });
+    await initialize();
+
+    const firePreToolUse = async (sessionId: string) => {
+      const registry = new HookRegistry();
+      registerDeploymentPluginHooks({ registry, context: { sessionId } });
+      await executeHooks({
+        registry,
+        matchQuery: 'write_file',
+        input: {
+          hook_event_name: 'PreToolUse',
+          runId: `run-${Math.random()}`,
+          toolName: 'write_file',
+          toolInput: {},
+          toolUseId: 'tool-1',
+        },
+      });
+    };
+
+    await firePreToolUse('conversation-once');
+    await firePreToolUse('conversation-once');
+    await firePreToolUse('conversation-other');
+
+    const log = await fs.promises.readFile(path.join(dataDir, 'oncely', 'once.log'), 'utf8');
     expect(log.trim().split('\n')).toHaveLength(2);
   });
 });

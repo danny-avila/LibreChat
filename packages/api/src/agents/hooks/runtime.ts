@@ -13,6 +13,8 @@ import { planPluginHooks } from './compatibility';
 
 export interface PluginHookRuntimeContext {
   sessionId?: string;
+  /** Authenticated principal owning the run; scopes cross-run dedup keys. */
+  userId?: string;
   cwd?: string;
   transcriptPath?: string | null;
   permissionMode?: string;

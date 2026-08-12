@@ -44,8 +44,9 @@ function execute(
   handler: PluginHookHandler,
   overrides: Partial<Omit<PluginHookExecutionRequest, 'handler'>> = {},
   env: NodeJS.ProcessEnv = { PATH: process.env.PATH },
+  executorOptions: { allowAskDecision?: boolean } = {},
 ) {
-  const executor = createCommandExecutor({ pluginRoot, pluginData, env });
+  const executor = createCommandExecutor({ pluginRoot, pluginData, env, ...executorOptions });
   return executor.execute(request(handler, overrides), new AbortController().signal);
 }
 
@@ -109,6 +110,47 @@ describe('createCommandExecutor', () => {
     expect(output).toEqual({ decision: 'block' });
   });
 
+  test('maps exit code 2 on events without a decision channel to preventContinuation', async () => {
+    const handler: PluginHookHandler = { type: 'command', command: 'echo halted >&2; exit 2' };
+    await expect(
+      execute(handler, { sourceEvent: 'UserPromptSubmit', targetEvent: 'UserPromptSubmit' }),
+    ).resolves.toEqual({ decision: 'deny', reason: 'halted' });
+    await expect(
+      execute(handler, { sourceEvent: 'PostToolUse', targetEvent: 'PostToolUse' }),
+    ).resolves.toEqual({ preventContinuation: true, stopReason: 'halted' });
+    await expect(
+      execute(handler, { sourceEvent: 'SessionStart', targetEvent: 'RunStart' }),
+    ).resolves.toEqual({ preventContinuation: true, stopReason: 'halted' });
+  });
+
+  test('tightens ask decisions to deny unless the run supports approvals', async () => {
+    const handler: PluginHookHandler = {
+      type: 'command',
+      command: `printf '%s' '{"decision":"ask","reason":"confirm"}'`,
+    };
+    await expect(execute(handler)).resolves.toEqual({ decision: 'deny', reason: 'confirm' });
+    await expect(
+      execute(handler, {}, { PATH: process.env.PATH }, { allowAskDecision: true }),
+    ).resolves.toEqual({ decision: 'ask', reason: 'confirm' });
+  });
+
+  test('returns an empty output when the payload cannot be serialized', async () => {
+    const output = await execute(
+      { type: 'command', command: 'echo unreachable' },
+      {
+        sourceEvent: 'PostToolUse',
+        targetEvent: 'PostToolUse',
+        payload: {
+          hook_event_name: 'PostToolUse',
+          session_id: 'conversation-1',
+          run_id: 'run-1',
+          tool_response: BigInt(1),
+        },
+      },
+    );
+    expect(output).toEqual({});
+  });
+
   test('accepts stop decisions only for Stop and tool decisions only elsewhere', async () => {
     const handler: PluginHookHandler = {
       type: 'command',
@@ -130,10 +172,15 @@ describe('createCommandExecutor', () => {
       {
         type: 'command',
         command: `printf '{"reason":"%s|%s|%s|%s|%s"}' "$PWD" "$PLUGIN_ROOT" "$PLUGIN_DATA" "$ALLOWED_TOKEN" "\${SECRET_TOKEN:-absent}"`,
-        allowedEnvVars: ['ALLOWED_TOKEN'],
+        allowedEnvVars: ['ALLOWED_TOKEN', 'PLUGIN_ROOT'],
       },
       {},
-      { PATH: process.env.PATH, ALLOWED_TOKEN: 'granted', SECRET_TOKEN: 's3cret' },
+      {
+        PATH: process.env.PATH,
+        ALLOWED_TOKEN: 'granted',
+        SECRET_TOKEN: 's3cret',
+        PLUGIN_ROOT: '/poisoned/by/host/env',
+      },
     );
     expect(output).toEqual({
       reason: `${pluginRoot}|${pluginRoot}|${pluginData}|granted|absent`,
@@ -167,7 +214,7 @@ describe('createCommandExecutor', () => {
       env: { PATH: process.env.PATH },
     });
     const pending = executor.execute(
-      request({ type: 'command', command: 'sleep 30' }),
+      request({ type: 'command', command: 'sleep 30 & wait' }),
       controller.signal,
     );
     setTimeout(() => controller.abort(), 50);

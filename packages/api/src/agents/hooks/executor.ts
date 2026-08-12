@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { logger } from '@librechat/data-schemas';
 import type { HookOutput, ToolDecision, StopDecision } from '@librechat/agents';
-import type { PluginHookCapabilities } from './compatibility';
 import type { PluginHookExecutor, PluginHookExecutionRequest } from './runtime';
+import type { PluginHookCapabilities } from './compatibility';
 
 const MAX_CAPTURED_STREAM_BYTES = 1_048_576;
 const MAX_REASON_LENGTH = 2_000;
@@ -12,6 +12,11 @@ const BLOCKING_EXIT_CODE = 2;
 
 const TOOL_DECISIONS: ReadonlySet<string> = new Set<ToolDecision>(['allow', 'deny', 'ask']);
 const STOP_DECISIONS: ReadonlySet<string> = new Set<StopDecision>(['continue', 'block']);
+const DENY_DECISION_EVENTS: ReadonlySet<string> = new Set([
+  'PreToolUse',
+  'UserPromptSubmit',
+  'SubagentStart',
+]);
 const STDOUT_CONTEXT_EVENTS: ReadonlySet<string> = new Set(['SessionStart', 'UserPromptSubmit']);
 const PASSTHROUGH_ENV_VARS = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ'] as const;
 
@@ -35,6 +40,12 @@ export interface CommandExecutorOptions {
   pluginData: string;
   /** Environment source for the allowlist (defaults to `process.env`). */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Whether `ask` decisions can raise a resumable approval interrupt. Off by
+   * default: without a HITL surface an `ask` is tightened to `deny` so a
+   * plugin's confirmation intent still blocks rather than stranding the run.
+   */
+  allowAskDecision?: boolean;
 }
 
 interface CommandCompletion {
@@ -48,10 +59,7 @@ function buildCommandEnv(
   allowedEnvVars: string[] | undefined,
 ): NodeJS.ProcessEnv {
   const source = options.env ?? process.env;
-  const env: NodeJS.ProcessEnv = {
-    PLUGIN_ROOT: options.pluginRoot,
-    PLUGIN_DATA: options.pluginData,
-  };
+  const env: NodeJS.ProcessEnv = {};
   for (const name of PASSTHROUGH_ENV_VARS) {
     if (source[name] !== undefined) {
       env[name] = source[name];
@@ -62,6 +70,9 @@ function buildCommandEnv(
       env[name] = source[name];
     }
   }
+  /** Reserved names win last so an allowlist entry can never override them. */
+  env.PLUGIN_ROOT = options.pluginRoot;
+  env.PLUGIN_DATA = options.pluginData;
   return env;
 }
 
@@ -96,19 +107,50 @@ function buildInvocation(
   const command = expandVariables(rawCommand, options);
   const args = (handler.args ?? []).map((arg) => expandVariables(arg, options));
   if (isWindows && (handler.shell === 'powershell' || handler.commandWindows !== undefined)) {
+    const quotedArgs = args.map((arg) => `'${arg.replace(/'/g, "''")}'`);
     return {
       executable: 'powershell.exe',
-      argv: ['-NoLogo', '-NoProfile', '-Command', [command, ...args].join(' ')],
+      argv: ['-NoLogo', '-NoProfile', '-Command', [command, ...quotedArgs].join(' ')],
     };
   }
   return { executable: 'bash', argv: ['-c', command, 'bash', ...args] };
 }
 
-function appendCapped(current: string, chunk: Buffer): string {
-  if (current.length >= MAX_CAPTURED_STREAM_BYTES) {
-    return current;
+interface CapturedStream {
+  chunks: Buffer[];
+  bytes: number;
+}
+
+function appendCapped(stream: CapturedStream, chunk: Buffer): void {
+  const remaining = MAX_CAPTURED_STREAM_BYTES - stream.bytes;
+  if (remaining <= 0) {
+    return;
   }
-  return (current + chunk.toString('utf8')).slice(0, MAX_CAPTURED_STREAM_BYTES);
+  const kept = chunk.byteLength > remaining ? chunk.subarray(0, remaining) : chunk;
+  stream.chunks.push(kept);
+  stream.bytes += kept.byteLength;
+}
+
+function capturedText(stream: CapturedStream): string {
+  return Buffer.concat(stream.chunks).toString('utf8');
+}
+
+/**
+ * POSIX children detach into their own process group so an abort can kill the
+ * whole tree — a hook that launches descendants (`worker & wait`) would
+ * otherwise leave them running with the captured stdio open. Windows has no
+ * group kill; `child.kill()` is the best available fallback there.
+ */
+function killTree(child: ReturnType<typeof spawn>, killSignal: NodeJS.Signals): void {
+  if (process.platform !== 'win32' && typeof child.pid === 'number') {
+    try {
+      process.kill(-child.pid, killSignal);
+      return;
+    } catch {
+      /* The group may already be gone; fall through to the direct kill. */
+    }
+  }
+  child.kill(killSignal);
 }
 
 function runCommand(
@@ -122,33 +164,34 @@ function runCommand(
     const child = spawn(invocation.executable, invocation.argv, {
       cwd,
       env,
-      signal,
+      detached: process.platform !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    let stdout = '';
-    let stderr = '';
+    const stdout: CapturedStream = { chunks: [], bytes: 0 };
+    const stderr: CapturedStream = { chunks: [], bytes: 0 };
     let killTimer: NodeJS.Timeout | undefined;
-    const forceKill = () => {
-      killTimer = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS);
+    const onAbort = () => {
+      killTree(child, 'SIGTERM');
+      killTimer = setTimeout(() => killTree(child, 'SIGKILL'), KILL_GRACE_MS);
       killTimer.unref?.();
     };
-    signal.addEventListener('abort', forceKill, { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
 
     child.stdout.on('data', (chunk: Buffer) => {
-      stdout = appendCapped(stdout, chunk);
+      appendCapped(stdout, chunk);
     });
     child.stderr.on('data', (chunk: Buffer) => {
-      stderr = appendCapped(stderr, chunk);
+      appendCapped(stderr, chunk);
     });
     child.on('error', (error) => {
-      signal.removeEventListener('abort', forceKill);
+      signal.removeEventListener('abort', onAbort);
       clearTimeout(killTimer);
       reject(error);
     });
     child.on('close', (code) => {
-      signal.removeEventListener('abort', forceKill);
+      signal.removeEventListener('abort', onAbort);
       clearTimeout(killTimer);
-      resolve({ code, stdout, stderr });
+      resolve({ code, stdout: capturedText(stdout), stderr: capturedText(stderr) });
     });
     child.stdin.on('error', () => {
       /* A handler that never reads stdin closes the pipe early; EPIPE is not a failure. */
@@ -173,11 +216,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function sanitizeOutput(
   raw: Record<string, unknown>,
   request: PluginHookExecutionRequest,
+  options: CommandExecutorOptions,
 ): HookOutput {
   const output: Record<string, unknown> = {};
   const decisions = request.targetEvent === 'Stop' ? STOP_DECISIONS : TOOL_DECISIONS;
   if (typeof raw.decision === 'string' && decisions.has(raw.decision)) {
-    output.decision = raw.decision;
+    output.decision =
+      raw.decision === 'ask' && options.allowAskDecision !== true ? 'deny' : raw.decision;
   }
   if (typeof raw.reason === 'string') {
     output.reason = truncate(raw.reason, MAX_REASON_LENGTH);
@@ -206,14 +251,19 @@ function sanitizeOutput(
 function parseCompletion(
   completion: CommandCompletion,
   request: PluginHookExecutionRequest,
+  options: CommandExecutorOptions,
 ): HookOutput {
   const label = `[pluginHooks] ${request.pluginId} ${request.sourceEvent}`;
   if (completion.code === BLOCKING_EXIT_CODE) {
     const reason = truncate(completion.stderr.trim(), MAX_REASON_LENGTH);
-    return {
-      decision: request.targetEvent === 'Stop' ? 'block' : 'deny',
-      ...(reason && { reason }),
-    };
+    if (request.targetEvent === 'Stop') {
+      return { decision: 'block', ...(reason && { reason }) };
+    }
+    if (DENY_DECISION_EVENTS.has(request.targetEvent)) {
+      return { decision: 'deny', ...(reason && { reason }) };
+    }
+    /** Events with no decision channel block by preventing the next model turn. */
+    return { preventContinuation: true, ...(reason && { stopReason: reason }) };
   }
   if (completion.code !== 0) {
     logger.warn(
@@ -232,7 +282,7 @@ function parseCompletion(
     try {
       const parsed: unknown = JSON.parse(stdout);
       if (isPlainObject(parsed)) {
-        return sanitizeOutput(parsed, request);
+        return sanitizeOutput(parsed, request, options);
       }
     } catch (error) {
       logger.warn(`${label}: stdout is not valid JSON and was ignored`, error);
@@ -262,14 +312,27 @@ export function createCommandExecutor(options: CommandExecutorOptions): PluginHo
     capabilities: commandExecutorCapabilities,
     async execute(request, signal) {
       const invocation = buildInvocation(request, options);
-      if (invocation === undefined) {
+      if (invocation === undefined || signal.aborted) {
         return {};
       }
       const env = buildCommandEnv(options, request.handler.allowedEnvVars);
-      const payload = JSON.stringify(request.payload);
+      let payload: string;
+      try {
+        payload = JSON.stringify(request.payload);
+      } catch (error) {
+        logger.warn(
+          `[pluginHooks] ${request.pluginId} ${request.sourceEvent}: payload could not be serialized`,
+          error,
+        );
+        return {};
+      }
       try {
         const completion = await runCommand(invocation, payload, env, options.pluginRoot, signal);
-        return parseCompletion(completion, request);
+        if (signal.aborted) {
+          logger.warn(`[pluginHooks] ${request.pluginId} ${request.sourceEvent}: command aborted`);
+          return {};
+        }
+        return parseCompletion(completion, request, options);
       } catch (error) {
         if (signal.aborted) {
           logger.warn(`[pluginHooks] ${request.pluginId} ${request.sourceEvent}: command aborted`);

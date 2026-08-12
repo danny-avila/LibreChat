@@ -48,7 +48,6 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
-import { hasDeploymentPluginHooks, registerDeploymentPluginHooks } from '~/plugins/runtime';
 import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
@@ -60,6 +59,7 @@ import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
+import { getPluginHookSource } from '~/agents/hooks/source';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
 import { buildLangfuseConfig } from '~/langfuse/config';
@@ -1649,17 +1649,22 @@ export async function createRun({
   /**
    * Deployment-plugin hooks (Agent Plugins `ai.librechat/hooks/hooks.json`)
    * register last so internal policy hooks (HITL, labels, steering) keep
-   * their ordering. Empty unless the operator installed plugins with hook
-   * documents AND opted in via DEPLOYMENT_PLUGIN_HOOKS at startup — the
-   * registry only carries executable plans when capabilities were supplied
-   * to initializeDeploymentPlugins. The conversation id doubles as the
-   * plugin "session", giving SessionStart its once-per-conversation scope.
+   * their ordering. The source is wired at startup by the plugins package
+   * (see `setPluginHookSource` in api/server/index.js) and stays empty
+   * unless the operator installed plugins with hook documents AND opted in
+   * via DEPLOYMENT_PLUGIN_HOOKS. The conversation id doubles as the plugin
+   * "session", giving SessionStart its once-per-conversation scope.
    */
-  if (hasDeploymentPluginHooks()) {
+  const pluginHookSource = getPluginHookSource();
+  if (pluginHookSource?.hasHooks() === true) {
     hooks = hooks ?? new HookRegistry();
-    registerDeploymentPluginHooks({
+    pluginHookSource.register({
       registry: hooks,
-      context: { sessionId: requestBody?.conversationId },
+      context: { sessionId: requestBody?.conversationId, userId: user?.id },
+      // `ask` needs the checkpointer + resume surface; without HITL wiring the
+      // source tightens plugin `ask` decisions to `deny` rather than stranding
+      // the run on an un-resumable interrupt.
+      askDecisionSupported: hitl != null,
     });
   }
 

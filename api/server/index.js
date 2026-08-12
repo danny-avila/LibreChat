@@ -30,6 +30,9 @@ const {
   initializeDeploymentPlugins,
   getDeploymentPluginSkills,
   getDeploymentPluginHookCapabilities,
+  registerDeploymentPluginHooks,
+  hasDeploymentPluginHooks,
+  setPluginHookSource,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   preAuthTenantMiddleware,
@@ -161,6 +164,12 @@ const startServer = async () => {
   await initializeDeploymentPlugins({
     projectRoot,
     hookCapabilities: getDeploymentPluginHookCapabilities(),
+  });
+  // Hand the run seam its plugin-hook source without a packages/api-internal
+  // agents -> plugins import (see agents/hooks/source.ts).
+  setPluginHookSource({
+    hasHooks: hasDeploymentPluginHooks,
+    register: registerDeploymentPluginHooks,
   });
   await initializeDeploymentSkills({
     projectRoot,
