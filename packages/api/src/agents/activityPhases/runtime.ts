@@ -371,6 +371,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     { kind: 'text' | 'think'; phase?: AssistantTextPhase; captureContext?: boolean }
   >();
   let lastRootTextStepId: string | undefined;
+  let lastRootTextWasSemantic = false;
 
   const clear = () => {
     activities = [];
@@ -385,6 +386,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     overflowToolCallIds.clear();
     contributingAgentIds.clear();
     lastRootTextStepId = undefined;
+    lastRootTextWasSemantic = false;
   };
 
   const trackActivity = (activity: TrackedActivity) => {
@@ -707,6 +709,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
             } else {
               if (step.groupId == null) {
                 lastRootTextStepId = phase == null ? step.id : undefined;
+                lastRootTextWasSemantic = phase != null;
               }
               if (phase === 'final_answer' && step.groupId == null) {
                 addPendingReasoning(step.agentId ?? 'root');
@@ -777,10 +780,10 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     let finalTextIndex =
       lastRootTextStepId == null ? undefined : deps.getStepIndex?.(lastRootTextStepId);
     const parts = deps.getContentParts();
-    if (lastRootTextStepId != null && finalTextIndex == null) {
+    if (!lastRootTextWasSemantic && finalTextIndex == null) {
       for (let index = parts.length - 1; index >= 0; index -= 1) {
         const part = parts[index];
-        if (part?.type === ContentTypes.TEXT && part.groupId == null) {
+        if (part?.type === ContentTypes.TEXT && part.groupId == null && part.phase == null) {
           finalTextIndex = index;
           break;
         }

@@ -770,6 +770,33 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  it('finds an unphased final content part without a retained run-step boundary', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TEXT, text: 'The persisted answer is complete.' },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the persisted workflow' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[3]).toMatchObject({
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+  });
+
   it('keeps a parallel lane final inside the run-wide phase', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
