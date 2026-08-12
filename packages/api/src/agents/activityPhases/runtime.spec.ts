@@ -905,6 +905,57 @@ describe('createActivityPhaseWiring', () => {
     expect(parts[3]).toMatchObject({ activity_end_index: 3, activity_count: 15 });
   });
 
+  it('keeps the overflow fallback while a boundary tool remains unresolved', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-a' } },
+      { type: ContentTypes.TEXT, text: 'This answer preceded a delayed overflow tool.' },
+    ];
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 15,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: Array.from({ length: 13 }, () => ({
+          startIndex: 0,
+          status: 'success' as const,
+        })),
+        overflowActivityStartIndex: 20,
+        overflowToolCallIds: ['overflow-a', 'overflow-b'],
+        overflowBoundaryToolCallIds: ['overflow-a', 'overflow-b'],
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'root-text' ? 1 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed the delayed workflow' })),
+    });
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'root-text',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[2]).toMatchObject({ activity_end_index: 2, activity_count: 15 });
+  });
+
   it('keeps post-cap activities grouped after the last root text', async () => {
     const parts: LooseContentPart[] = [];
     const generatePhase = jest.fn(async () => ({ label: 'Completed the extended investigation' }));

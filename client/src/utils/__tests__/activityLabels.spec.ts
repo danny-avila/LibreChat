@@ -277,6 +277,41 @@ describe('groupActivityPhases', () => {
     }
   });
 
+  it('restores a late child label when the parent label resolves empty', () => {
+    const child = labelPart({
+      activity_label: 'Recorded the delayed child result',
+      pending: false,
+      tool_call_ids: ['t1'],
+    });
+    const phase = labelPart({ pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 1,
+      activity_count: 2,
+    });
+    const final = { type: ContentTypes.TEXT, text: 'Final answer' } as TMessageContentParts;
+    const content = [tool, final, child as never, phase as never];
+
+    const segments = groupActivityPhases(content);
+
+    expect(segments).toEqual([
+      expect.objectContaining({
+        type: 'content',
+        startIndex: 0,
+        content: [tool, child],
+        contentIndices: [0, 2],
+      }),
+      expect.objectContaining({
+        type: 'content',
+        startIndex: 1,
+        content: [final],
+        contentIndices: [1],
+      }),
+    ]);
+    expect(lastVisibleContentIdx(content)).toBe(1);
+  });
+
   it('leaves pending or empty parent markers on the feature-off path', () => {
     const pending = labelPart();
     Object.assign(pending, { activity_label_type: 'phase', activity_start_index: 0 });

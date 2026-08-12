@@ -82,7 +82,6 @@ function findLateActivityLabelsConsumedByPhase(
     if (
       isPhaseActivityLabel(marker) &&
       marker?.pending !== true &&
-      getActivityLabelText(marker).length > 0 &&
       typeof marker?.activity_end_index === 'number'
     ) {
       earliestPhaseEnd = Math.min(earliestPhaseEnd ?? index, marker.activity_end_index);
@@ -142,8 +141,8 @@ export function offsetActivityPhaseBoundary(
 
 /**
  * Partitions completed phase markers into collapsed parent groups while
- * carrying absolute start offsets alongside dense content slices. Empty/pending
- * markers deliberately return no phase segment, preserving feature-off UI.
+ * carrying absolute indexes alongside compact content slices. Pending markers
+ * preserve feature-off UI; finalized empty markers only restore child order.
  */
 export function groupActivityPhases(
   content: Array<TMessageContentParts | undefined> | undefined,
@@ -158,7 +157,6 @@ export function groupActivityPhases(
       ({ part }) =>
         isPhaseActivityLabel(part) &&
         part?.pending !== true &&
-        getActivityLabelText(part).length > 0 &&
         typeof part?.activity_start_index === 'number',
     );
   if (completed.length === 0) {
@@ -167,29 +165,21 @@ export function groupActivityPhases(
 
   const segments: ActivityPhaseSegment[] = [];
   let cursor = 0;
-  /** Disjoint slices copy every ordinary part at most once. Segments stay
-   *  compact even when provider indexes are sparse; `contentIndices` retains
-   *  each part's absolute transcript coordinate for stable keys and grouping. */
-  const slice = (start: number, end: number, excluded?: ReadonlySet<number>) => {
-    const segmentContent: Array<TMessageContentParts | undefined> = [];
-    const contentIndices: number[] = [];
-    let hasContent = false;
-    for (const index of definedIndices) {
-      if (index < start || index >= end || excluded?.has(index) === true) {
-        continue;
-      }
-      const part = content[index];
-      segmentContent.push(part);
-      contentIndices.push(index);
-      hasContent ||= isVisibleContentPart(part);
-    }
-    return {
-      content: segmentContent,
-      contentIndices,
-      startIndex: start,
-      hasContent,
-    };
+  let definedPosition = 0;
+  const collect = () => ({
+    content: [] as Array<TMessageContentParts | undefined>,
+    contentIndices: [] as number[],
+    hasContent: false,
+  });
+  const append = (segment: ReturnType<typeof collect>, partIndex: number) => {
+    const child = content[partIndex];
+    segment.content.push(child);
+    segment.contentIndices.push(partIndex);
+    segment.hasContent ||= isVisibleContentPart(child);
   };
+  /** Phase markers and defined content indexes are both sorted. Walk them in
+   *  lockstep so every ordinary part is classified once, even when a custom
+   *  max permits many parent phases in one long response. */
   for (const { part, index } of completed) {
     if (!part) continue;
     const start = Math.max(
@@ -197,61 +187,80 @@ export function groupActivityPhases(
       Math.min(index, Math.max(0, part.activity_start_index ?? index)),
     );
     const end = Math.max(start, Math.min(index, Math.max(0, part.activity_end_index ?? index)));
-    const lateLabelIndices: number[] = [];
-    for (const trailingIndex of definedIndices) {
-      if (trailingIndex < end || trailingIndex >= index) {
+    const adjacent = collect();
+    const phase = collect();
+    const trailing = collect();
+    while (definedPosition < definedIndices.length && definedIndices[definedPosition] < index) {
+      const childIndex = definedIndices[definedPosition];
+      definedPosition += 1;
+      if (childIndex < cursor) {
         continue;
       }
-      if (getBatchActivityLabelPart(content[trailingIndex]) != null) {
-        lateLabelIndices.push(trailingIndex);
+      if (childIndex < start) {
+        append(adjacent, childIndex);
+      } else if (childIndex < end || getBatchActivityLabelPart(content[childIndex]) != null) {
+        append(phase, childIndex);
+      } else {
+        append(trailing, childIndex);
       }
     }
+    if (definedIndices[definedPosition] === index) {
+      definedPosition += 1;
+    }
     if (start > cursor) {
-      const adjacent = slice(cursor, start);
       segments.push({
         type: 'content',
         content: adjacent.content,
         contentIndices: adjacent.contentIndices,
-        startIndex: adjacent.startIndex,
+        startIndex: cursor,
       });
     }
-    const phase = slice(start, end);
-    if (lateLabelIndices.length > 0) {
-      for (const lateLabelIndex of lateLabelIndices) {
-        phase.content.push(content[lateLabelIndex]);
-        phase.contentIndices.push(lateLabelIndex);
-      }
-      phase.hasContent ||= lateLabelIndices.some((lateLabelIndex) =>
-        isVisibleContentPart(content[lateLabelIndex]),
-      );
+    const labelText = getActivityLabelText(part);
+    if (labelText) {
+      segments.push({
+        type: 'phase',
+        content: phase.content,
+        contentIndices: phase.contentIndices,
+        startIndex: start,
+        labelPart: part,
+        labelIndex: index,
+        hasContent: phase.hasContent,
+      });
+    } else {
+      /** A failed/empty parent stays visually feature-off, but its bounds are
+       *  still authoritative: delayed child labels must move back beside the
+       *  tools they describe instead of rendering after the final answer. */
+      segments.push({
+        type: 'content',
+        content: phase.content,
+        contentIndices: phase.contentIndices,
+        startIndex: start,
+      });
     }
-    segments.push({
-      type: 'phase',
-      content: phase.content,
-      contentIndices: phase.contentIndices,
-      startIndex: phase.startIndex,
-      labelPart: part,
-      labelIndex: index,
-      hasContent: phase.hasContent,
-    });
     if (end < index) {
-      const trailing = slice(end, index, new Set(lateLabelIndices));
       segments.push({
         type: 'content',
         content: trailing.content,
         contentIndices: trailing.contentIndices,
-        startIndex: trailing.startIndex,
+        startIndex: end,
       });
     }
     cursor = index + 1;
   }
   if (cursor < content.length) {
-    const adjacent = slice(cursor, content.length);
+    const adjacent = collect();
+    while (definedPosition < definedIndices.length) {
+      const childIndex = definedIndices[definedPosition];
+      definedPosition += 1;
+      if (childIndex >= cursor) {
+        append(adjacent, childIndex);
+      }
+    }
     segments.push({
       type: 'content',
       content: adjacent.content,
       contentIndices: adjacent.contentIndices,
-      startIndex: adjacent.startIndex,
+      startIndex: cursor,
     });
   }
   return segments;
