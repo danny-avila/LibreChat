@@ -1172,6 +1172,7 @@ const BINARY_EXTENSIONS_NEVER_READABLE = new Set([
   '.xlsx',
   '.ppt',
   '.pptx',
+  '.potx',
   '.odt',
   '.ods',
   '.odp',

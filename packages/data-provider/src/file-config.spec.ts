@@ -98,12 +98,16 @@ describe('inferMimeType', () => {
     expect(inferMimeType('deck.pptx', '')).toBe(
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     );
+    expect(inferMimeType('template.potx', '')).toBe(
+      'application/vnd.openxmlformats-officedocument.presentationml.template',
+    );
   });
 
   it('produces Office types accepted by checkType after inference', () => {
     expect(baseFileConfig.checkType(inferMimeType('report.docx', ''))).toBe(true);
     expect(baseFileConfig.checkType(inferMimeType('sheet.xlsx', ''))).toBe(true);
     expect(baseFileConfig.checkType(inferMimeType('legacy.doc', ''))).toBe(true);
+    expect(baseFileConfig.checkType(inferMimeType('template.potx', ''))).toBe(true);
   });
 });
 
@@ -170,7 +174,8 @@ describe('defaultOCRMimeTypes', () => {
     'application/vnd.oasis.opendocument.spreadsheet',
     'application/vnd.oasis.opendocument.presentation',
     'application/vnd.oasis.opendocument.graphics',
-  ])('matches ODF type for OCR: %s', (mimeType) => {
+    'application/vnd.openxmlformats-officedocument.presentationml.template',
+  ])('matches configured OCR type: %s', (mimeType) => {
     expect(checkOCRType(mimeType)).toBe(true);
   });
 });
@@ -184,7 +189,8 @@ describe('supportedMimeTypes', () => {
     'application/vnd.oasis.opendocument.spreadsheet',
     'application/vnd.oasis.opendocument.presentation',
     'application/vnd.oasis.opendocument.graphics',
-  ])('ODF type flows through supportedMimeTypes: %s', (mimeType) => {
+    'application/vnd.openxmlformats-officedocument.presentationml.template',
+  ])('document type flows through supportedMimeTypes: %s', (mimeType) => {
     expect(checkSupported(mimeType)).toBe(true);
   });
 
@@ -1489,6 +1495,20 @@ describe('getConfiguredMimeAccept', () => {
     expect(accept.has('.pptx')).toBe(false);
     expect(accept.has('audio/*')).toBe(false);
     expect(accept.has('video/*')).toBe(false);
+  });
+
+  it('translates a PowerPoint template allowlist to the template extension and MIME', () => {
+    const templateMime = 'application/vnd.openxmlformats-officedocument.presentationml.template';
+    const accept = toSet(
+      getConfiguredMimeAccept(
+        convertStringsToRegex([
+          '^application/vnd\\.openxmlformats-officedocument\\.presentationml\\.template$',
+        ]),
+        IMAGE_DOC,
+      ),
+    );
+
+    expect(accept).toEqual(new Set(['.potx', templateMime]));
   });
 
   it('emits image/* for an image-only allowlist', () => {
