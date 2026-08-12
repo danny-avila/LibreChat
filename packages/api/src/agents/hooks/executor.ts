@@ -395,6 +395,25 @@ function groupExists(pid: number): boolean {
   }
 }
 
+/**
+ * Whether a forced escalation pass can still accomplish anything. POSIX group
+ * signals reach descendants even after the wrapper dies, so the group is
+ * probed directly. Windows `taskkill /t` walks the tree from the root
+ * process, so once Node has observed the root's exit the pass can reap
+ * nothing and a late signal could only hit a recycled PID; orphaned
+ * SIGTERM-ignoring descendants there are an accepted platform limitation
+ * without Job Objects.
+ */
+function escalationTargetAlive(child: ReturnType<typeof spawn>): boolean {
+  if (typeof child.pid !== 'number') {
+    return false;
+  }
+  if (process.platform === 'win32') {
+    return child.exitCode === null && child.signalCode === null;
+  }
+  return groupExists(child.pid);
+}
+
 function runCommand(
   invocation: ShellInvocation,
   payload: string,
@@ -417,20 +436,18 @@ function runCommand(
       killTree(child, 'SIGTERM');
       /**
        * Escalation must survive the wrapper's `close` — a SIGTERM-ignoring
-       * descendant can outlive the shell — yet must never signal blindly: a
-       * fully-dead group's numeric id could be recycled during the grace
-       * window. Both hazards resolve by probing group liveness (signal 0):
-       * `close` cancels escalation only when the group is verifiably empty,
-       * and the deadline re-probes before delivering SIGKILL. The residual
-       * probe-to-signal race is unavoidable without pidfd support and needs
-       * survivors at close AND full group death AND a recycled group id
+       * descendant can outlive the shell on POSIX — yet must never signal
+       * blindly: a fully-dead tree's numeric id could be recycled during the
+       * grace window. Both hazards resolve through `escalationTargetAlive`:
+       * `close` cancels escalation only when a pass could no longer reap
+       * anything, and the deadline re-checks before delivering the kill. The
+       * residual check-to-signal race is unavoidable without pidfd support
+       * and needs survivors at close AND full tree death AND a recycled id
        * inside the same window.
        */
       killTimer = setTimeout(() => {
-        if (process.platform !== 'win32' && typeof child.pid === 'number') {
-          if (!groupExists(child.pid)) {
-            return;
-          }
+        if (!escalationTargetAlive(child)) {
+          return;
         }
         killTree(child, 'SIGKILL');
       }, killGraceMs);
@@ -450,12 +467,7 @@ function runCommand(
     });
     child.on('close', (code) => {
       signal.removeEventListener('abort', onAbort);
-      if (
-        killTimer !== undefined &&
-        process.platform !== 'win32' &&
-        typeof child.pid === 'number' &&
-        !groupExists(child.pid)
-      ) {
+      if (killTimer !== undefined && !escalationTargetAlive(child)) {
         clearTimeout(killTimer);
       }
       resolve({ code, stdout: capturedText(stdout), stderr: capturedText(stderr) });
