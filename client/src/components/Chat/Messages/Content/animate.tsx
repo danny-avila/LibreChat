@@ -8,9 +8,11 @@ export const FADE_DURATION_MS = 250;
 export const FADE_STAGGER_MS = 25;
 export const FADE_STAGGER_MAX_MS = 250;
 /**
- * A renderer whose very first run already holds more text than this is showing
- * hydrated/resumed content (reconnected stream, conversation switch), not a
- * fresh delta — that content becomes the baseline instead of re-fading.
+ * Text already longer than this when animation starts is hydrated/resumed
+ * content (reconnected stream, conversation switch, follow-up turn), not a
+ * fresh delta — that content becomes the baseline instead of re-fading. The
+ * markdown path evaluates this against the whole message when its `animate`
+ * gate flips on; `AnimatedText` evaluates it against its own first text.
  */
 export const FADE_HYDRATION_THRESHOLD = 120;
 
@@ -52,22 +54,29 @@ export type FadeSegment = {
 
 const WORD_REGEX = /\S+\s*/g;
 const NON_WHITESPACE_REGEX = /\S/;
-const CJK_REGEX = /[\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF]/;
+/**
+ * Scripts written without word-delimiting spaces: Thai, Lao, Myanmar, Khmer,
+ * Tibetan, CJK ideographs/kana, Hangul, and CJK compatibility ideographs.
+ * Whitespace splitting yields one ever-growing part for these, which would
+ * stop fading once its window expires, so they go through Intl.Segmenter.
+ */
+const SPACELESS_REGEX =
+  /[\u0E00-\u0EFF\u0F00-\u0FFF\u1000-\u109F\u1780-\u17FF\u2E80-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF]/;
 
-let cjkSegmenter: Intl.Segmenter | null | undefined;
+let wordSegmenter: Intl.Segmenter | null | undefined;
 
-function getCjkSegmenter(): Intl.Segmenter | null {
-  if (cjkSegmenter === undefined) {
-    cjkSegmenter =
+function getWordSegmenter(): Intl.Segmenter | null {
+  if (wordSegmenter === undefined) {
+    wordSegmenter =
       typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
         ? new Intl.Segmenter(undefined, { granularity: 'word' })
         : null;
   }
-  return cjkSegmenter;
+  return wordSegmenter;
 }
 
-function pushCjkParts(parts: string[], token: string): void {
-  const segmenter = getCjkSegmenter();
+function pushSegmentedParts(parts: string[], token: string): void {
+  const segmenter = getWordSegmenter();
   if (segmenter == null) {
     parts.push(token);
     return;
@@ -98,8 +107,8 @@ export function splitWords(value: string): string[] {
       parts.push(value.slice(index, match.index));
     }
     const token = match[0];
-    if (CJK_REGEX.test(token)) {
-      pushCjkParts(parts, token);
+    if (SPACELESS_REGEX.test(token)) {
+      pushSegmentedParts(parts, token);
     } else {
       parts.push(token);
     }
@@ -225,20 +234,6 @@ function isSkippedElement(node: Element): boolean {
   return typeof className === 'string' && className.startsWith('katex');
 }
 
-function countText(node: Root | Element): number {
-  let count = 0;
-  for (const child of node.children) {
-    if (child.type === 'text') {
-      count += child.value.length;
-      continue;
-    }
-    if (child.type === 'element' && !isSkippedElement(child)) {
-      count += countText(child);
-    }
-  }
-  return count;
-}
-
 function toContent(segment: FadeSegment): ElementContent {
   if (!NON_WHITESPACE_REGEX.test(segment.value)) {
     return { type: 'text', value: segment.value };
@@ -286,20 +281,20 @@ export type FadePlugin = {
  * one-shot CSS fade spans (`[data-lc-fade]`). New-text detection uses
  * document-order character offsets held in the factory closure, so text that
  * was already visible in a previous render mounts as a bare span and never
- * re-animates, even when markdown re-parsing restructures the tree. A first
- * run that already exceeds {@link FADE_HYDRATION_THRESHOLD} is hydrated or
- * resumed content and becomes the baseline without animating. Classification
- * is staged during render and must be published via `commit()` after React
+ * re-animates, even when markdown re-parsing restructures the tree. Pass
+ * `hydrated: true` for renderers created while previously accumulated content
+ * is already showing (resumed stream, conversation switch, follow-up turn):
+ * their first run becomes the baseline without animating. Classification is
+ * staged during render and must be published via `commit()` after React
  * commits (a layout effect), so abandoned renders leave no trace. Create one
  * instance per streaming renderer and drop it (plain plugin array) once the
  * stream ends so the settled message renders without wrapper spans.
  */
-export function createFadePlugin(): FadePlugin {
+export function createFadePlugin(hydrated = false): FadePlugin {
   const state = createFadeState();
   const plugin: Plugin<[], Root> = function rehypeFade() {
     return (tree: Root) => {
-      const suppress = state.firstRun && countText(tree) > FADE_HYDRATION_THRESHOLD;
-      const run = beginRun(state, suppress);
+      const run = beginRun(state, hydrated && state.firstRun);
       for (const child of tree.children) {
         if (child.type === 'element' && !isSkippedElement(child)) {
           transformElement(run, child);

@@ -123,7 +123,9 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
         >
           <div className="relative overflow-hidden" ref={expandRef}>
             <ThinkingContent
-              animate={smoothStreaming && !reducedMotion && effectiveIsSubmitting && isLast}
+              animate={
+                smoothStreaming && !reducedMotion && effectiveIsSubmitting && isLast && isExpanded
+              }
             >
               {reasoningText}
             </ThinkingContent>

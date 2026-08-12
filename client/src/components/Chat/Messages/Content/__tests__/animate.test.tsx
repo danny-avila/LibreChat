@@ -57,6 +57,16 @@ describe('splitWords', () => {
     expect(katakana.join('')).toBe('カタカナテキスト');
     expect(katakana.length).toBeGreaterThan(1);
   });
+
+  it('segments spaceless Southeast Asian scripts', () => {
+    const thai = splitWords('สวัสดีครับผมชื่อจอห์นและนี่คือการทดสอบ');
+    expect(thai.join('')).toBe('สวัสดีครับผมชื่อจอห์นและนี่คือการทดสอบ');
+    expect(thai.length).toBeGreaterThan(1);
+
+    const burmese = splitWords('မင်္ဂလာပါကမ္ဘာကြီး');
+    expect(burmese.join('')).toBe('မင်္ဂလာပါကမ္ဘာကြီး');
+    expect(burmese.length).toBeGreaterThan(1);
+  });
 });
 
 describe('classifyValue', () => {
@@ -190,8 +200,8 @@ describe('createFadePlugin', () => {
     expect(animated).toEqual(['final']);
   });
 
-  it('treats a large hydrated first render as baseline without animating', () => {
-    const fade = createFadePlugin();
+  it('treats the first render of a hydrated plugin as baseline without animating', () => {
+    const fade = createFadePlugin(true);
     const hydrated = `word${' word'.repeat(Math.ceil(FADE_HYDRATION_THRESHOLD / 5) + 4)}`;
     const { container, rerender } = render(renderMarkdown(fade, hydrated));
     expect(container.querySelectorAll('span[data-lc-fade]').length).toBe(0);
@@ -202,6 +212,13 @@ describe('createFadePlugin', () => {
       span.textContent?.trim(),
     );
     expect(animated).toEqual(['appended', 'tail']);
+  });
+
+  it('animates a large first render on a non-hydrated plugin (new block in one chunk)', () => {
+    const fade = createFadePlugin();
+    const large = `word${' word'.repeat(Math.ceil(FADE_HYDRATION_THRESHOLD / 5) + 4)}`;
+    const { container } = render(renderMarkdown(fade, large));
+    expect(container.querySelectorAll('span[data-lc-fade]').length).toBeGreaterThan(0);
   });
 
   it('re-classifies identically when a render is never committed', () => {

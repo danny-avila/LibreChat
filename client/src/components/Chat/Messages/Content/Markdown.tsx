@@ -1,10 +1,11 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useRef, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useMediaQuery } from '@librechat/client';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from './markdownConfig';
 import { smoothStreamingAtom } from '~/store/smoothStreaming';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
+import { FADE_HYDRATION_THRESHOLD } from './animate';
 import { useMessageContext } from '~/Providers';
 import MarkdownBlocks from './MarkdownBlocks';
 import { preprocessLaTeX } from '~/utils';
@@ -21,6 +22,25 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
+
+  const animate = smoothStreaming && !reducedMotion && isLatestMessage && isSubmitting;
+
+  // Hydration signal for the fade: substantial content already present at the
+  // render where `animate` flips on means resumed/switched-to/follow-up
+  // content, which becomes the fade baseline instead of re-animating. The flag
+  // is cleared after that render commits, so blocks mounting later in the same
+  // stream (new paragraphs, however large) always animate.
+  const prevAnimateRef = useRef(false);
+  const hydratedRef = useRef(false);
+  if (animate && !prevAnimateRef.current) {
+    hydratedRef.current = content.length > FADE_HYDRATION_THRESHOLD;
+  }
+  prevAnimateRef.current = animate;
+  useEffect(() => {
+    if (animate) {
+      hydratedRef.current = false;
+    }
+  }, [animate]);
 
   const currentContent = useMemo(() => {
     if (isInitializing) {
@@ -46,7 +66,8 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
         remarkPlugins={getRemarkPlugins()}
         rehypePlugins={getRehypePlugins()}
         components={getMarkdownComponents()}
-        animate={smoothStreaming && !reducedMotion && isLatestMessage && isSubmitting}
+        animate={animate}
+        hydrated={hydratedRef.current}
       />
     </MarkdownErrorBoundary>
   );
