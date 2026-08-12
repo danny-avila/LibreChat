@@ -73,7 +73,7 @@ function isLateActivityLabelConsumedByPhase(
       isPhaseActivityLabel(marker) &&
       marker?.pending !== true &&
       getActivityLabelText(marker).length > 0 &&
-      typeof marker.activity_end_index === 'number' &&
+      typeof marker?.activity_end_index === 'number' &&
       marker.activity_end_index <= index
     ) {
       return true;
