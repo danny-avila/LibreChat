@@ -351,8 +351,20 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   let partialActivityCount =
     initialSnapshot?.partialActivityCount ??
     activities.filter((activity) => activity.status === 'partial').length;
-  let overflowActivityStartIndex = initialSnapshot?.overflowActivityStartIndex;
   const overflowToolCallIds = new Set(initialSnapshot?.overflowToolCallIds ?? []);
+  const rebasedOverflowToolIndexes = content
+    .map((part, index) => ({ part, index }))
+    .filter(
+      ({ part }) =>
+        part?.type === ContentTypes.TOOL_CALL &&
+        typeof part.tool_call?.id === 'string' &&
+        overflowToolCallIds.has(part.tool_call.id),
+    )
+    .map(({ index }) => index);
+  let overflowActivityStartIndex =
+    rebasedOverflowToolIndexes.length > 0
+      ? Math.max(...rebasedOverflowToolIndexes)
+      : initialSnapshot?.overflowActivityStartIndex;
   const contributingAgentIds = new Set(initialSnapshot?.agentIds ?? []);
   let assistantContext = (initialSnapshot?.assistantContext ?? []).slice(-MAX_CONTEXT_ITEMS);
   const pendingReasoning = new Map<string, { text: string; agentId?: string; startIndex?: number }>(
@@ -402,12 +414,12 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     if (activities.length < MAX_RETAINED_ACTIVITIES) {
       activities.push(activity);
     } else {
-      overflowActivityStartIndex = Math.max(
-        overflowActivityStartIndex ?? activity.startIndex,
-        activity.startIndex,
-      );
-      for (const id of activity.toolCallIds ?? []) {
-        overflowToolCallIds.add(id);
+      if (overflowActivityStartIndex == null || activity.startIndex >= overflowActivityStartIndex) {
+        overflowActivityStartIndex = activity.startIndex;
+        overflowToolCallIds.clear();
+        for (const id of activity.toolCallIds ?? []) {
+          overflowToolCallIds.add(id);
+        }
       }
     }
   };

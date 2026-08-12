@@ -725,6 +725,7 @@ export default function useResumableSSE(
    * `editPrefixLength` must no longer be applied — by run steps or labels.
    */
   const editPrefixClearedRef = useRef(false);
+  const editPrefixFirstPartFoldedRef = useRef(false);
   /** Generation the cleared-prefix state above belongs to, so it is dropped
    *  when a new generation starts rather than when a subscribe happens to be
    *  live. Keyed by response message id — the stream id is the conversation
@@ -1057,13 +1058,15 @@ export default function useResumableSSE(
    * the non-resumable transport, the submission passes through untouched.
    */
   const stepHandler = useCallback(
-    (...[event, submission]: Parameters<typeof rawStepHandler>) =>
-      rawStepHandler(
-        event,
-        editPrefixClearedRef.current
-          ? ({ ...submission, editPrefixCleared: true } as EventSubmission)
-          : submission,
-      ),
+    (...[event, submission]: Parameters<typeof rawStepHandler>) => {
+      const eventSubmission = editPrefixClearedRef.current
+        ? ({ ...submission, editPrefixCleared: true } as EventSubmission)
+        : submission;
+      rawStepHandler(event, eventSubmission);
+      if (eventSubmission.editPrefixFirstPartFolded === true) {
+        editPrefixFirstPartFoldedRef.current = true;
+      }
+    },
     [rawStepHandler],
   );
 
@@ -1166,6 +1169,7 @@ export default function useResumableSSE(
       if (prefixStateGenerationIdRef.current !== generationId) {
         prefixStateGenerationIdRef.current = generationId;
         editPrefixClearedRef.current = false;
+        editPrefixFirstPartFoldedRef.current = false;
       }
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
@@ -1371,20 +1375,18 @@ export default function useResumableSSE(
             typeof phasePart.activity_start_index === 'number'
           ) {
             let activityStartIndex = phasePart.activity_start_index + prefixLength;
-            let foldedFirstPart = false;
+            const foldedFirstPart = editPrefixFirstPartFoldedRef.current;
             const targetContent = messages[index]?.content;
-            /** The first completion text/think part can merge into the
-             *  retained edit tail at prefixLength - 1. Tool/nonmatching starts
-             *  occupy the ordinary +prefix slot, so only fold back across the
-             *  recognizable empty merge slot. */
+            /** The step handler records an actual server-index-zero text/think
+             *  merge. An empty +prefix slot is insufficient evidence because
+             *  a delayed tool may not have materialized there yet. */
             if (
               phasePart.activity_start_index === 0 &&
               activityStartIndex > 0 &&
-              targetContent?.[activityStartIndex] == null &&
+              foldedFirstPart &&
               targetContent?.[activityStartIndex - 1] != null
             ) {
               activityStartIndex -= 1;
-              foldedFirstPart = true;
             }
             offsetPart = {
               ...phasePart,

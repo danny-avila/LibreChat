@@ -107,6 +107,25 @@ describe('lastVisibleContentIdx', () => {
     expect(lastVisibleContentIdx(sparse)).toBe(1);
   });
 
+  it('keeps sparse late-label adoption bounded to defined slots', () => {
+    const sparse = new Array<TMessageContentParts | undefined>(10_000);
+    sparse[0] = tool;
+    sparse[9_998] = labelPart({
+      activity_label: 'Recorded the delayed result',
+      pending: false,
+    }) as never;
+    const phase = labelPart({ activity_label: 'Completed the investigation', pending: false });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 1,
+      activity_count: 2,
+    });
+    sparse[9_999] = phase as never;
+
+    expect(lastVisibleContentIdx(sparse)).toBe(9_999);
+  });
+
   it('keeps an appended phase marker as the visible tail when its final slot is empty', () => {
     const phase = labelPart({ activity_label: 'Completed the investigation', pending: false });
     Object.assign(phase, {

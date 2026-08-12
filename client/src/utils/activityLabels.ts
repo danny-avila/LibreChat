@@ -68,7 +68,9 @@ function findLateActivityLabelsConsumedByPhase(
 ): Set<number> {
   const consumed = new Set<number>();
   let earliestPhaseEnd: number | undefined;
-  for (let index = parts.length - 1; index >= 0; index -= 1) {
+  const definedIndices = Object.keys(parts);
+  for (let position = definedIndices.length - 1; position >= 0; position -= 1) {
+    const index = Number(definedIndices[position]);
     const marker = getActivityLabelPart(parts[index]);
     if (
       isPhaseActivityLabel(marker) &&

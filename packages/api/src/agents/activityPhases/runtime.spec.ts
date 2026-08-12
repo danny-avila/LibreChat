@@ -722,7 +722,63 @@ describe('createActivityPhaseWiring', () => {
     expect(snapshot.activityCount).toBe(20);
     expect(snapshot.activities).toHaveLength(13);
     expect(snapshot.overflowActivityStartIndex).toBe(19);
-    expect(snapshot.overflowToolCallIds).toHaveLength(7);
+    expect(snapshot.overflowToolCallIds).toEqual(['tool-19']);
+  });
+
+  it('rebases a resumed overflow anchor after content compaction', async () => {
+    const parts: LooseContentPart[] = Array.from({ length: 13 }, (_, index) => ({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id: `retained-${index}` },
+    }));
+    parts.push(
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-tool' } },
+      { type: ContentTypes.TEXT, text: 'The compacted answer is complete.' },
+    );
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the resumed workflow' }));
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 14,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: Array.from({ length: 13 }, (_, index) => ({
+          startIndex: index,
+          status: 'success' as const,
+          toolCallIds: [`retained-${index}`],
+        })),
+        overflowActivityStartIndex: 30,
+        overflowToolCallIds: ['overflow-tool'],
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'root-text' ? 14 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'root-text',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[15]).toMatchObject({ activity_end_index: 14, activity_count: 14 });
   });
 
   it('keeps post-cap activities grouped after the last root text', async () => {
