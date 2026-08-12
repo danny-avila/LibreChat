@@ -7,6 +7,16 @@ import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from '../ma
 import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
 import Markdown from '../Markdown';
 
+// The pulsing cursor only renders while the smooth streaming fade is off, and
+// the atom caches its first read, so this must be set before any test renders.
+beforeAll(() => {
+  localStorage.setItem('smoothStreaming', JSON.stringify(false));
+});
+
+afterAll(() => {
+  localStorage.removeItem('smoothStreaming');
+});
+
 /**
  * Stub CodeBlock so we can read the blockIndex each executable code block
  * receives, while still exercising the real `code` override's skip/single-line
@@ -202,7 +212,7 @@ describe('MarkdownBlocks DOM equivalence (non-code blocks)', () => {
 });
 
 describe('MarkdownBlocks rendering smoke', () => {
-  it('renders an empty cursor placeholder while initializing', () => {
+  it('renders an empty cursor placeholder while initializing with the fade off', () => {
     const { container } = render(
       <RecoilRoot>
         <Markdown content="" isLatestMessage={true} />

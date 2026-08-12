@@ -47,6 +47,15 @@ jest.mock('../Container', () => ({
 }));
 
 describe('AskUserQuestionCall', () => {
+  // The pulsing cursor only renders while the smooth streaming fade is off.
+  beforeAll(() => {
+    localStorage.setItem('smoothStreaming', JSON.stringify(false));
+  });
+
+  afterAll(() => {
+    localStorage.removeItem('smoothStreaming');
+  });
+
   const args = JSON.stringify({
     question: 'How would you like me to get the data?',
     options: [{ label: 'Use public data', value: 'public' }],
