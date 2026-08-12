@@ -230,11 +230,25 @@ export const commandExecutorCapabilities: PluginHookCapabilities = {
       return undefined;
     }
     ALIAS_TOKEN_PATTERN.lastIndex = 0;
-    const mapped = matcher.replace(
-      ALIAS_TOKEN_PATTERN,
-      (claudeName) => ALIAS_BY_CLAUDE.get(claudeName)?.runtimeName ?? claudeName,
-    );
-    return { matcher: mapped, requiresToolNameTranslation: true };
+    const translatedToolNames = new Set<string>();
+    const mapped = matcher.replace(ALIAS_TOKEN_PATTERN, (claudeName) => {
+      const alias = ALIAS_BY_CLAUDE.get(claudeName);
+      if (alias === undefined) {
+        return claudeName;
+      }
+      translatedToolNames.add(alias.runtimeName);
+      return alias.runtimeName;
+    });
+    /**
+     * The produced names scope reverse payload translation per invocation:
+     * a mixed matcher like "Bash|create_file" translates payloads only for
+     * `bash_tool`, keeping the natively-authored alternative native.
+     */
+    return {
+      matcher: mapped,
+      requiresToolNameTranslation: true,
+      translatedToolNames: Array.from(translatedToolNames),
+    };
   },
   toPluginToolName: ({ toolName }) => ALIAS_BY_RUNTIME.get(toolName)?.claudeName ?? toolName,
   toPluginToolInput: ({ toolName, toolInput }) =>
@@ -386,9 +400,18 @@ function runCommand(
       signal.removeEventListener('abort', onAbort);
       reject(error);
     });
+    /**
+     * Swept at `exit` as well as `close`: a backgrounded descendant holding
+     * the captured pipes delays `close` until it dies, so the exit-time
+     * sweep is what keeps a successful hook from stalling on its own
+     * unsupported worker.
+     */
+    child.on('exit', () => {
+      reaper.sweep();
+    });
     child.on('close', (code) => {
       signal.removeEventListener('abort', onAbort);
-      reaper.onClose();
+      reaper.sweep();
       resolve({ code, stdout: capturedText(stdout), stderr: capturedText(stderr) });
     });
     child.stdin.on('error', () => {

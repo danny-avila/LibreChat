@@ -217,6 +217,41 @@ describe('registerDeploymentPluginHooks', () => {
     expect(result).toEqual(expect.objectContaining({ decision: 'deny', reason: 'native-guarded' }));
   });
 
+  it('keeps native payloads for the native alternative of a mixed-namespace matcher', async () => {
+    await writePlugin('mixed', {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: 'Bash|create_file',
+            hooks: [
+              {
+                type: 'command',
+                command: `node -e 'let d="";process.stdin.on("data",(c)=>{d+=c;}).on("end",()=>{const p=JSON.parse(d);const nativeShaped=p.tool_name==="create_file"&&p.tool_input.path==="/workspace/mixed.md"&&p.tool_input.file_path===undefined;console.log(JSON.stringify(nativeShaped?{decision:"deny",reason:"mixed-native"}:{}));});'`,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await initialize();
+
+    const registry = new HookRegistry();
+    registerDeploymentPluginHooks({ registry, context: { sessionId: 'conversation-mixed' } });
+
+    const result = await executeHooks({
+      registry,
+      matchQuery: 'create_file',
+      input: {
+        hook_event_name: 'PreToolUse',
+        runId: 'run-1',
+        toolName: 'create_file',
+        toolInput: { path: '/workspace/mixed.md' },
+        toolUseId: 'tool-1',
+      },
+    });
+    expect(result).toEqual(expect.objectContaining({ decision: 'deny', reason: 'mixed-native' }));
+  });
+
   it('lets an overlapping once declaration fire after its sibling is spent', async () => {
     const onceHandler = {
       type: 'command',

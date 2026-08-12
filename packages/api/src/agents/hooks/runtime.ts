@@ -363,33 +363,45 @@ export function registerPluginHooks(options: RegisterPluginHooksOptions): Plugin
     const seenSessionIds = entry.sourceEvent === 'SessionStart' ? new Set<string>() : undefined;
     const firedSessionIds = entry.handler.once === true ? new Set<string>() : undefined;
     /**
-     * Payloads follow the declaration's own namespace: only a matcher that
-     * required alias translation gets reverse name/input translation — a
-     * native-authored matcher (for example `^create_file$`) keeps the native
-     * names and fields it matched on.
+     * Payloads follow the namespace each alternative was authored in: only a
+     * matcher that required alias translation gets reverse name/input
+     * translation, and when the plan records which runtime names the
+     * translation produced, it applies per invocation — a mixed matcher like
+     * `Bash|create_file` presents Claude-shaped payloads for `bash_tool` and
+     * native payloads for the natively-authored alternative.
      */
     const translated = entry.requiresToolNameTranslation === true;
+    const translatedNames =
+      translated && entry.translatedToolNames !== undefined
+        ? new Set(entry.translatedToolNames)
+        : undefined;
+    const inTranslatedNamespace = (toolName: string): boolean =>
+      translated && (translatedNames === undefined || translatedNames.has(toolName));
     const toolNameTranslator = translated ? executor.capabilities.toPluginToolName : undefined;
     const toPluginToolName =
       toolNameTranslator === undefined
         ? undefined
         : (toolName: string): string =>
-            toolNameTranslator({
-              sourceEvent: entry.sourceEvent,
-              targetEvent,
-              toolName,
-            });
+            inTranslatedNamespace(toolName)
+              ? toolNameTranslator({
+                  sourceEvent: entry.sourceEvent,
+                  targetEvent,
+                  toolName,
+                })
+              : toolName;
     const toolInputTranslator = translated ? executor.capabilities.toPluginToolInput : undefined;
     const toPluginToolInput =
       toolInputTranslator === undefined
         ? undefined
         : (toolName: string, toolInput: Record<string, unknown>): Record<string, unknown> =>
-            toolInputTranslator({
-              sourceEvent: entry.sourceEvent,
-              targetEvent,
-              toolName,
-              toolInput,
-            });
+            inTranslatedNamespace(toolName)
+              ? toolInputTranslator({
+                  sourceEvent: entry.sourceEvent,
+                  targetEvent,
+                  toolName,
+                  toolInput,
+                })
+              : toolInput;
     const hook: HookCallback<HookEvent> = (input, signal) => {
       const sessionId = getSessionId(input, context);
       const compactTrigger = compactTriggers.get(sessionId);

@@ -92,7 +92,11 @@ describe('createCommandExecutor', () => {
         targetEvent: 'PreToolUse',
         matcher: 'Bash|write_file',
       }),
-    ).toEqual({ matcher: 'bash_tool|write_file', requiresToolNameTranslation: true });
+    ).toEqual({
+      matcher: 'bash_tool|write_file',
+      requiresToolNameTranslation: true,
+      translatedToolNames: ['bash_tool'],
+    });
     expect(
       executor.capabilities.toPluginToolName?.({
         sourceEvent: 'PreToolUse',
@@ -119,10 +123,12 @@ describe('createCommandExecutor', () => {
     expect(translate('^Bash$')).toEqual({
       matcher: '^bash_tool$',
       requiresToolNameTranslation: true,
+      translatedToolNames: ['bash_tool'],
     });
     expect(translate('^(Write|Edit)$')).toEqual({
       matcher: '^(create_file|edit_file)$',
       requiresToolNameTranslation: true,
+      translatedToolNames: ['create_file', 'edit_file'],
     });
     expect(translate('Bashful|write_file')).toBe('Bashful|write_file');
     /** Hyphen- and dot-joined names are single tool names, never alias sites. */
@@ -135,6 +141,7 @@ describe('createCommandExecutor', () => {
     expect(translate('WebSearch')).toEqual({
       matcher: 'web_search',
       requiresToolNameTranslation: true,
+      translatedToolNames: ['web_search'],
     });
   });
 
@@ -408,6 +415,33 @@ describe('createCommandExecutor', () => {
     expect(isGone(survivorPid)).toBe(true);
   });
 
+  test('reaps a pipe-holding worker at root exit instead of stalling until close', async () => {
+    const pidFile = path.join(pluginData, 'holder.pid');
+    const executor = createCommandExecutor({
+      pluginRoot,
+      pluginData,
+      env: { PATH: process.env.PATH },
+      killGraceMs: 250,
+    });
+    /**
+     * The worker keeps the captured pipes open, so `close` cannot fire until
+     * it dies — without the exit-time sweep this execution would stall for
+     * the worker's full 30s lifetime.
+     */
+    const output = await executor.execute(
+      request({
+        type: 'command',
+        command: `bash -c 'trap "" TERM; echo $$ > "$PLUGIN_DATA/holder.pid"; sleep 30' & while [ ! -f "$PLUGIN_DATA/holder.pid" ]; do sleep 0.01; done; printf '%s' '{"reason":"scheduled"}'`,
+      }),
+      new AbortController().signal,
+    );
+    expect(output).toEqual({ reason: 'scheduled' });
+    const holderPid = Number((await fs.promises.readFile(pidFile, 'utf8')).trim());
+    expect(holderPid).toBeGreaterThan(0);
+    await waitFor(() => isGone(holderPid));
+    expect(isGone(holderPid)).toBe(true);
+  });
+
   test('reaps a backgrounded worker that outlives a successful hook', async () => {
     const pidFile = path.join(pluginData, 'worker.pid');
     const executor = createCommandExecutor({
@@ -417,13 +451,13 @@ describe('createCommandExecutor', () => {
       killGraceMs: 250,
     });
     /**
-     * The worker holds the captured pipes until it redirects, so by the time
-     * the wrapper's exit fires `close` the trap is set and the pid recorded.
+     * The wrapper waits for the pid file so the worker's trap is set before
+     * the exit-time sweep can deliver its SIGTERM.
      */
     const output = await executor.execute(
       request({
         type: 'command',
-        command: `bash -c 'trap "" TERM; echo $$ > "$PLUGIN_DATA/worker.pid"; exec >/dev/null 2>&1; while true; do sleep 0.1; done' & printf '%s' '{"reason":"scheduled"}'`,
+        command: `bash -c 'trap "" TERM; echo $$ > "$PLUGIN_DATA/worker.pid"; exec >/dev/null 2>&1; while true; do sleep 0.1; done' & while [ ! -f "$PLUGIN_DATA/worker.pid" ]; do sleep 0.01; done; printf '%s' '{"reason":"scheduled"}'`,
       }),
       new AbortController().signal,
     );

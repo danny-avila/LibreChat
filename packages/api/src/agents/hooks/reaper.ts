@@ -5,12 +5,14 @@ export interface Reaper {
   /** Terminates the process tree now and arms the forced escalation pass. */
   reap(): void;
   /**
-   * Root-close notification: cancels an escalation that can no longer reap
-   * anything, or reaps a group that outlived a clean exit — async handlers
+   * Root exit/close notification: cancels an escalation that can no longer
+   * reap anything, or reaps a group that outlived the root — async handlers
    * are unsupported, so no lifecycle owns a process that survives its
-   * wrapper.
+   * wrapper. Callers notify on `exit` (so a pipe-holding descendant is
+   * terminated promptly instead of stalling `close` until the hook timeout)
+   * and again on `close`; the sweep is idempotent across both.
    */
-  onClose(): void;
+  sweep(): void;
 }
 
 /**
@@ -105,7 +107,7 @@ export function createReaper(child: ChildProcess, killGraceMs: number): Reaper {
   };
   return {
     reap,
-    onClose(): void {
+    sweep(): void {
       if (killTimer !== undefined && !escalationTargetAlive(child)) {
         clearTimeout(killTimer);
         killTimer = undefined;

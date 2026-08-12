@@ -84,6 +84,13 @@ export interface PluginHookMatcherTranslationResult {
   /** Runtime pattern; translations of Claude exact matchers are whole-string anchored. */
   matcher: string;
   requiresToolNameTranslation?: boolean;
+  /**
+   * Runtime tool names the translation produced. Reverse payload translation
+   * applies per invocation to exactly these names, so a mixed matcher like
+   * `Bash|create_file` keeps native payloads for its natively-authored
+   * alternative. Omitted, translation applies to the whole declaration.
+   */
+  translatedToolNames?: string[];
 }
 
 export interface PluginHookToolNameTranslation {
@@ -145,6 +152,8 @@ export interface PluginHookPlanEntry {
    * matcher keeps native payloads.
    */
   requiresToolNameTranslation?: boolean;
+  /** Runtime tool names the translation produced; see the translation result type. */
+  translatedToolNames?: string[];
   condition?: string;
   timeoutMs?: number;
   handler: PluginHookHandler;
@@ -374,6 +383,7 @@ interface MatcherPlan {
   sourceMatcher?: string;
   matcher?: string;
   requiresToolNameTranslation?: boolean;
+  translatedToolNames?: string[];
   issues: PluginHookCompatibilityIssue[];
 }
 
@@ -465,6 +475,8 @@ function planMatcher(
   const translatedMatcher = typeof translation === 'string' ? translation : translation?.matcher;
   const requiresToolNameTranslation =
     typeof translation === 'object' && translation.requiresToolNameTranslation === true;
+  const translatedToolNames =
+    typeof translation === 'object' ? translation.translatedToolNames : undefined;
   if (!translatedMatcher?.trim()) {
     return {
       sourceMatcher,
@@ -510,6 +522,8 @@ function planMatcher(
     sourceMatcher,
     matcher,
     ...(requiresToolNameTranslation && { requiresToolNameTranslation }),
+    ...(requiresToolNameTranslation &&
+      translatedToolNames !== undefined && { translatedToolNames }),
     issues,
   };
 }
@@ -573,6 +587,9 @@ export function planPluginHooks(
           ...(matcherPlan.matcher !== undefined && { matcher: matcherPlan.matcher }),
           ...(matcherPlan.requiresToolNameTranslation === true && {
             requiresToolNameTranslation: true,
+          }),
+          ...(matcherPlan.translatedToolNames !== undefined && {
+            translatedToolNames: matcherPlan.translatedToolNames,
           }),
           ...(condition !== undefined && { condition }),
           handler,

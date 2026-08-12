@@ -66,7 +66,7 @@ describe('createReaper', () => {
     expect(isGone(rootPid)).toBe(true);
   });
 
-  test('onClose reaps a group that outlived a clean root exit', async () => {
+  test('sweep reaps a group that outlived a clean root exit', async () => {
     const pidFile = path.join(base, 'worker.pid');
     const child = run(
       `bash -c 'trap "" TERM; echo $$ > "${pidFile}"; sleep 30' >/dev/null 2>&1 & exit 0`,
@@ -77,7 +77,7 @@ describe('createReaper', () => {
     await waitFor(() => fs.existsSync(pidFile));
     const workerPid = Number((await fs.promises.readFile(pidFile, 'utf8')).trim());
     expect(isGone(workerPid)).toBe(false);
-    reaper.onClose();
+    reaper.sweep();
     await waitFor(() => isGone(workerPid));
     expect(isGone(workerPid)).toBe(true);
   });

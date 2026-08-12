@@ -1661,9 +1661,16 @@ export async function createRun({
   const pluginHookSource = getPluginHookSource();
   if (pluginHookSource?.hasHooks() === true) {
     hooks = hooks ?? new HookRegistry();
+    const primaryAgent = agents[0];
     pluginHookSource.register({
       registry: hooks,
-      context: { sessionId: requestBody?.conversationId, userId: user?.id, sessionStartSource },
+      context: {
+        sessionId: requestBody?.conversationId,
+        userId: user?.id,
+        sessionStartSource,
+        model: primaryAgent?.model_parameters?.model ?? primaryAgent?.model ?? undefined,
+        agentType: primaryAgent?.id,
+      },
       // `ask` needs the checkpointer + resume surface; without HITL wiring the
       // source tightens plugin `ask` decisions to `deny` rather than stranding
       // the run on an un-resumable interrupt.
