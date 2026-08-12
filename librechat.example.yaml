@@ -278,6 +278,11 @@ registration:
 #       apiKey: '${TTS_API_KEY}'
 #       model: ''
 #       voices: ['']
+#     minimax:
+#       apiKey: '${MINIMAX_API_KEY}'
+#       region: 'global_en' # Use 'cn_zh' for the China endpoint
+#       model: 'speech-2.8-hd'
+#       voices: ['English_expressive_narrator']
 #     allowedAddresses:
 #       - 'localhost:8020'
 #       - '127.0.0.1:8020'

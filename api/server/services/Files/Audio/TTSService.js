@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { Readable } = require('stream');
 const { logger } = require('@librechat/data-schemas');
 const {
   genAzureEndpoint,
@@ -10,6 +11,11 @@ const {
 const { extractEnvVariable, TTSProviders } = require('librechat-data-provider');
 const { getRandomVoiceId, createChunkProcessor, splitTextIntoChunks } = require('./streamAudio');
 const { getAppConfig } = require('~/server/services/Config');
+
+const MINIMAX_TTS_ENDPOINTS = {
+  global_en: 'https://api.minimax.io/v1/t2a_v2',
+  cn_zh: 'https://api.minimaxi.com/v1/t2a_v2',
+};
 
 /**
  * Service class for handling Text-to-Speech (TTS) operations.
@@ -25,6 +31,7 @@ class TTSService {
       [TTSProviders.AZURE_OPENAI]: this.azureOpenAIProvider.bind(this),
       [TTSProviders.ELEVENLABS]: this.elevenLabsProvider.bind(this),
       [TTSProviders.LOCALAI]: this.localAIProvider.bind(this),
+      [TTSProviders.MINIMAX]: this.miniMaxProvider.bind(this),
     };
   }
 
@@ -248,6 +255,75 @@ class TTSService {
   }
 
   /**
+   * Prepares the request for MiniMax TTS provider.
+   * @param {Object} ttsSchema - The TTS schema for MiniMax.
+   * @param {string} input - The input text.
+   * @param {string} voice - The selected voice.
+   * @returns {Array} An array containing the URL, data, and headers for the request.
+   * @throws {Error} If the selected voice is not available.
+   */
+  miniMaxProvider(ttsSchema, input, voice) {
+    const url = ttsSchema?.url || MINIMAX_TTS_ENDPOINTS[ttsSchema?.region || 'global_en'];
+
+    if (
+      ttsSchema?.voices &&
+      ttsSchema.voices.length > 0 &&
+      !ttsSchema.voices.includes(voice) &&
+      !ttsSchema.voices.includes('ALL')
+    ) {
+      throw new Error(`Voice ${voice} is not available.`);
+    }
+
+    const data = {
+      model: ttsSchema?.model,
+      text: input,
+      stream: false,
+      output_format: 'hex',
+      language_boost: ttsSchema?.language_boost,
+      voice_setting: {
+        voice_id: ttsSchema?.voices && ttsSchema.voices.length > 0 ? voice : undefined,
+        ...ttsSchema?.voice_settings,
+      },
+      audio_setting: {
+        format: 'mp3',
+        ...ttsSchema?.audio_settings,
+      },
+    };
+
+    const apiKey = resolveConfigSecret(ttsSchema?.apiKey) || '';
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(apiKey && { Authorization: `Bearer ${apiKey}` }),
+    };
+
+    return [url, data, headers];
+  }
+
+  /**
+   * Converts a MiniMax JSON response into the audio stream expected by callers.
+   * @param {Object} response - The Axios response object.
+   * @returns {Object} The Axios response with a readable audio stream.
+   */
+  parseMiniMaxResponse(response) {
+    const statusCode = response.data?.base_resp?.status_code;
+    if (statusCode !== 0) {
+      throw new Error(`MiniMax TTS request failed with status code ${statusCode}`);
+    }
+
+    const audio = response.data?.data?.audio;
+    if (
+      typeof audio !== 'string' ||
+      audio.length === 0 ||
+      audio.length % 2 !== 0 ||
+      /[^\da-f]/i.test(audio)
+    ) {
+      throw new Error('MiniMax TTS response did not contain valid hex audio');
+    }
+
+    return { ...response, data: Readable.from(Buffer.from(audio, 'hex')) };
+  }
+
+  /**
    * Sends a TTS request to the specified provider.
    * @async
    * @param {string} provider - The TTS provider to use.
@@ -270,13 +346,22 @@ class TTSService {
 
     [data, headers].forEach(this.removeUndefined.bind(this));
 
-    const options = { headers, responseType: stream ? 'stream' : 'arraybuffer' };
+    const isMiniMax = provider === TTSProviders.MINIMAX;
+    let responseType = stream ? 'stream' : 'arraybuffer';
+    if (isMiniMax) {
+      responseType = 'json';
+    }
+    const options = {
+      headers,
+      responseType,
+    };
 
     applyAxiosProxyConfig(options, url);
     applySSRFSafeAgentIfDirect(options, url, allowedAddresses);
 
     try {
-      return await axios.post(url, data, options);
+      const response = await axios.post(url, data, options);
+      return isMiniMax ? this.parseMiniMaxResponse(response) : response;
     } catch (error) {
       logAxiosError({ message: `TTS request failed for provider ${provider}:`, error });
       throw error;
