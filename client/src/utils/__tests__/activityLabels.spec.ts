@@ -243,6 +243,36 @@ describe('groupActivityPhases', () => {
     expect(lastVisibleContentIdx(content)).toBe(1);
   });
 
+  it('groups a sparse late child label without walking the empty range', () => {
+    const content = new Array<TMessageContentParts | undefined>(10_000);
+    const child = labelPart({ activity_label: 'Recorded the delayed result', pending: false });
+    const phase = labelPart({
+      activity_label: 'Completed the sparse investigation',
+      pending: false,
+    });
+    Object.assign(phase, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 1,
+      activity_count: 2,
+    });
+    content[0] = tool;
+    content[9_998] = child as never;
+    content[9_999] = phase as never;
+
+    const segments = groupActivityPhases(content);
+
+    expect(segments?.[0]).toMatchObject({
+      type: 'phase',
+      startIndex: 0,
+      labelIndex: 9_999,
+    });
+    if (segments?.[0]?.type === 'phase') {
+      expect(segments[0].content[0]).toBe(tool);
+      expect(segments[0].content[9_998]).toBe(child);
+    }
+  });
+
   it('leaves pending or empty parent markers on the feature-off path', () => {
     const pending = labelPart();
     Object.assign(pending, { activity_label_type: 'phase', activity_start_index: 0 });

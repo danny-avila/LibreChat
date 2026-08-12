@@ -414,9 +414,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     if (activities.length < MAX_RETAINED_ACTIVITIES) {
       activities.push(activity);
     } else {
-      if (overflowActivityStartIndex == null || activity.startIndex >= overflowActivityStartIndex) {
+      if (overflowActivityStartIndex == null || activity.startIndex > overflowActivityStartIndex) {
         overflowActivityStartIndex = activity.startIndex;
         overflowToolCallIds.clear();
+      }
+      if (activity.startIndex === overflowActivityStartIndex) {
         for (const id of activity.toolCallIds ?? []) {
           overflowToolCallIds.add(id);
         }

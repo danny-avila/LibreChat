@@ -144,8 +144,9 @@ export function groupActivityPhases(
   if (!content) {
     return undefined;
   }
-  const completed = content
-    .map((part, index) => ({ part: getActivityLabelPart(part), index }))
+  const definedIndices = Object.keys(content).map(Number);
+  const completed = definedIndices
+    .map((index) => ({ part: getActivityLabelPart(content[index]), index }))
     .filter(
       ({ part }) =>
         isPhaseActivityLabel(part) &&
@@ -163,11 +164,20 @@ export function groupActivityPhases(
    *  remain sparse when it adopts a late child label across trailing text;
    *  `startIndex` preserves the label's absolute transcript coordinate. */
   const slice = (start: number, end: number) => {
-    const segmentContent = content.slice(start, end);
+    const segmentContent = new Array<TMessageContentParts | undefined>(end - start);
+    let hasContent = false;
+    for (const index of definedIndices) {
+      if (index < start || index >= end) {
+        continue;
+      }
+      const part = content[index];
+      segmentContent[index - start] = part;
+      hasContent ||= isVisibleContentPart(part);
+    }
     return {
       content: segmentContent,
       startIndex: start,
-      hasContent: segmentContent.some(isVisibleContentPart),
+      hasContent,
     };
   };
   for (const { part, index } of completed) {
@@ -178,7 +188,10 @@ export function groupActivityPhases(
     );
     const end = Math.max(start, Math.min(index, Math.max(0, part.activity_end_index ?? index)));
     const lateLabelIndices: number[] = [];
-    for (let trailingIndex = end; trailingIndex < index; trailingIndex += 1) {
+    for (const trailingIndex of definedIndices) {
+      if (trailingIndex < end || trailingIndex >= index) {
+        continue;
+      }
       if (getBatchActivityLabelPart(content[trailingIndex]) != null) {
         lateLabelIndices.push(trailingIndex);
       }

@@ -725,6 +725,27 @@ describe('createActivityPhaseWiring', () => {
     expect(snapshot.overflowToolCallIds).toEqual(['tool-19']);
   });
 
+  it('retains every overflow tool ID tied at the latest boundary', async () => {
+    const parts: LooseContentPart[] = [];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({})),
+    });
+    for (let index = 0; index < 13; index += 1) {
+      await wiring.hook(batch(`retained-${index}`), new AbortController().signal);
+    }
+    await wiring.hook(batch('overflow-a'), new AbortController().signal);
+    await wiring.hook(batch('overflow-b'), new AbortController().signal);
+
+    expect(wiring.snapshot()).toMatchObject({
+      overflowActivityStartIndex: 0,
+      overflowToolCallIds: ['overflow-a', 'overflow-b'],
+    });
+  });
+
   it('rebases a resumed overflow anchor after content compaction', async () => {
     const parts: LooseContentPart[] = Array.from({ length: 13 }, (_, index) => ({
       type: ContentTypes.TOOL_CALL,
