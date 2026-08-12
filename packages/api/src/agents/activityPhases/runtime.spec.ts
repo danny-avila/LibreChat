@@ -1071,6 +1071,46 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  it('keeps persisted semantic commentary inside the phase after HITL resume', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TEXT, text: 'I will keep investigating.' },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TEXT, text: 'The second search confirmed it.', phase: 'commentary' },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the resumed commentary' }));
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 2,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [
+          { startIndex: 0, status: 'success', toolCallIds: ['tool-1'] },
+          { startIndex: 2, status: 'success', toolCallIds: ['tool-2'] },
+        ],
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[4]).toMatchObject({
+      activity_start_index: 0,
+      activity_end_index: 4,
+      activity_count: 2,
+    });
+  });
+
   it('summarizes all unphased activities once at root-run completion', async () => {
     const parts: LooseContentPart[] = [];
     const stepIndexes = new Map([

@@ -794,11 +794,15 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     let finalTextIndex =
       lastRootTextStepId == null ? undefined : deps.getStepIndex?.(lastRootTextStepId);
     const parts = deps.getContentParts();
-    if (!lastRootTextWasSemantic && finalTextIndex == null) {
-      for (let index = parts.length - 1; index >= 0; index -= 1) {
+    if (finalTextIndex == null) {
+      const definedIndices = Object.keys(parts);
+      for (let position = definedIndices.length - 1; position >= 0; position -= 1) {
+        const index = Number(definedIndices[position]);
         const part = parts[index];
-        if (part?.type === ContentTypes.TEXT && part.groupId == null && part.phase == null) {
-          finalTextIndex = index;
+        if (part?.type === ContentTypes.TEXT && part.groupId == null) {
+          if (!lastRootTextWasSemantic && part.phase == null) {
+            finalTextIndex = index;
+          }
           break;
         }
       }
