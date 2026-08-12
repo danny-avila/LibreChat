@@ -2213,6 +2213,64 @@ describe('useStepHandler', () => {
       expect(content[1]).toMatchObject({ type: ContentTypes.TOOL_CALL });
     });
 
+    it('does not compact absolute content indices when dropping an answered ask card', () => {
+      const askPart = {
+        type: 'ask_user_question',
+        ask_user_question: { actionId: 'a-sparse', question: { question: 'Which env?' } },
+      } as unknown as TMessageContentParts;
+      const askToolCall = {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'ask-call-sparse',
+          name: 'ask_user_question',
+          args: '{"question":"Which env?"}',
+          type: ToolCallTypes.TOOL_CALL,
+        },
+      } as unknown as TMessageContentParts;
+      const sparseContent = [{ type: ContentTypes.TEXT, text: 'Before' }] as TMessageContentParts[];
+      sparseContent[2] = askToolCall;
+      sparseContent[3] = askPart;
+      const paused = createResponseMessage({ content: sparseContent });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.syncStepMessage(paused);
+      });
+      mockGetMessages.mockReturnValue([resolveAskUserQuestionPart(paused, 'a-sparse', 'prod')]);
+
+      const askCompletion = createToolCallRunStep({
+        id: 'step-ask-sparse',
+        index: 2,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'ask-call-sparse',
+              name: 'ask_user_question',
+              args: '{"question":"Which env?"}',
+              output: 'prod',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      } as Partial<Agents.RunStep>);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: askCompletion },
+          createSubmission(),
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1];
+      const updated = (lastCall[0] as TMessage[]).find((m) => m.messageId === 'response-msg-1');
+      expect(updated?.content?.[1]).toBeUndefined();
+      expect(updated?.content?.[2]).toMatchObject({
+        type: ContentTypes.TOOL_CALL,
+        tool_call: { id: 'ask-call-sparse' },
+      });
+    });
+
     it('keeps a still-live ask card when an event streams around its slot', () => {
       /** Only ANSWERED cards are droppable — a late event racing a live pause
        *  must not take the question away before the user can respond. */

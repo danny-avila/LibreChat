@@ -18,7 +18,11 @@ import {
   createContentIndexOffsetHandlers,
   hydrateResumeRunSteps,
   attachAskUserQuestionAnswer,
+  attachAskUserQuestionAnswers,
   attachAskUserQuestionArgs,
+  buildResolvedAskUserQuestion,
+  appendResolvedAskUserQuestion,
+  findAskUserQuestionContentIndex,
 } from './resume';
 
 describe('mapToolApprovalResolutions', () => {
@@ -580,6 +584,182 @@ describe('attachAskUserQuestionAnswer', () => {
     expect(JSON.parse(toolCall.output)).toEqual({
       answers: { environment: 'staging', window: '7d' },
     });
+  });
+});
+
+describe('durable ask-user answers', () => {
+  it('builds a typed stamp from the validated pending action', () => {
+    const pendingAction = {
+      actionId: 'action-2',
+      streamId: 'stream-1',
+      createdAt: 1,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Which env?' },
+        tool_call_id: 'ask-2',
+      },
+    } satisfies Agents.PendingAction;
+
+    expect(buildResolvedAskUserQuestion(pendingAction, { answer: 'production' })).toEqual({
+      request: { question: 'Which env?' },
+      output: 'production',
+      toolCallId: 'ask-2',
+    });
+  });
+
+  it('associates an ID-less answer with its pause-time content slot', () => {
+    const pendingAction = {
+      actionId: 'action-legacy',
+      streamId: 'stream-1',
+      createdAt: 1,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Newest?' },
+      },
+    } satisfies Agents.PendingAction;
+
+    expect(buildResolvedAskUserQuestion(pendingAction, { answer: 'yes' }, 2)).toEqual({
+      request: { question: 'Newest?' },
+      output: 'yes',
+      contentIndex: 2,
+    });
+  });
+
+  it('marks an ID-less answer whose paused content part was missing', () => {
+    const pendingAction = {
+      actionId: 'action-missing',
+      streamId: 'stream-1',
+      createdAt: 1,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Missing?' },
+      },
+    } satisfies Agents.PendingAction;
+
+    expect(buildResolvedAskUserQuestion(pendingAction, { answer: 'yes' }, undefined, true)).toEqual(
+      {
+        request: { question: 'Missing?' },
+        output: 'yes',
+        contentMissing: true,
+      },
+    );
+  });
+
+  it('accumulates exact-ID answers and replaces a repeated tool call', () => {
+    const first = { request: 'First?', output: 'one', toolCallId: 'ask-1' };
+    const second = { request: 'Second?', output: 'two', toolCallId: 'ask-2' };
+    const corrected = { request: 'First?', output: 'corrected', toolCallId: 'ask-1' };
+
+    expect(appendResolvedAskUserQuestion([first, second], corrected)).toEqual([second, corrected]);
+  });
+
+  it('reconstructs multiple retained answers in one content pass', () => {
+    const content: Array<{
+      type: string;
+      tool_call: { id: string; name: string; args: string; output?: string };
+    }> = [
+      { type: 'tool_call', tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' } },
+      { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
+    ];
+    const next = attachAskUserQuestionAnswers(content, [
+      { request: 'First?', output: 'one', toolCallId: 'ask-1' },
+      { request: 'Second?', output: 'two', toolCallId: 'ask-2' },
+    ]);
+
+    expect(next.map((part) => part.tool_call.output)).toEqual(['one', 'two']);
+    expect(next.map((part) => JSON.parse(part.tool_call.args))).toEqual(['First?', 'Second?']);
+  });
+
+  it('keeps a legacy answer on the earlier ask when a later ask is unanswered', () => {
+    const content: Array<{
+      type: string;
+      tool_call: { id: string; name: string; args: string; output?: string };
+    }> = [
+      { type: 'tool_call', tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' } },
+      { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
+    ];
+
+    const next = attachAskUserQuestionAnswers(content, [{ request: 'First?', output: 'one' }]);
+
+    expect(next[0].tool_call.output).toBe('one');
+    expect(next[1].tool_call.output).toBeUndefined();
+  });
+
+  it('targets the pause-time slot when an ID-less action has multiple empty asks', () => {
+    const request = { question: 'Newest?' };
+    const content: Array<{
+      type: string;
+      tool_call: { id: string; name: string; args: string; output?: string };
+    }> = [
+      { type: 'tool_call', tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' } },
+      { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
+    ];
+    const contentIndex = findAskUserQuestionContentIndex(content, undefined, request);
+
+    const next = attachAskUserQuestionAnswers(content, [{ request, output: 'yes', contentIndex }]);
+
+    expect(contentIndex).toBe(1);
+    expect(next[0].tool_call.output).toBeUndefined();
+    expect(next[1].tool_call.output).toBe('yes');
+  });
+
+  it('consumes a legacy stamp already present on content before a later ask', () => {
+    const firstRequest = { question: 'First?' };
+    const content = [
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'ask-1',
+          name: 'ask_user_question',
+          args: JSON.stringify(firstRequest),
+          output: 'one',
+        },
+      },
+      { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
+    ];
+
+    const next = attachAskUserQuestionAnswers(content, [{ request: firstRequest, output: 'one' }]);
+
+    expect(next).toBe(content);
+    expect(next[1].tool_call.output).toBeUndefined();
+  });
+
+  it('does not slide ambiguous legacy metadata past different answered content', () => {
+    const content = [
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'ask-1',
+          name: 'ask_user_question',
+          args: JSON.stringify({ question: 'Different?' }),
+          output: 'different',
+        },
+      },
+      { type: 'tool_call', tool_call: { id: 'ask-2', name: 'ask_user_question', args: '' } },
+    ];
+
+    const next = attachAskUserQuestionAnswers(content, [
+      { request: { question: 'First?' }, output: 'one' },
+    ]);
+
+    expect(next).toBe(content);
+    expect(next[1].tool_call.output).toBeUndefined();
+  });
+
+  it('does not bind a missing-content answer to a later ask', () => {
+    const content: Array<{
+      type: string;
+      tool_call: { id: string; name: string; args: string; output?: string };
+    }> = [
+      { type: 'tool_call', tool_call: { id: 'later-ask', name: 'ask_user_question', args: '' } },
+    ];
+
+    const next = attachAskUserQuestionAnswers(content, [
+      { request: { question: 'Missing?' }, output: 'old answer', contentMissing: true },
+    ]);
+
+    expect(next).toBe(content);
+    expect(next[0].tool_call.output).toBeUndefined();
   });
 });
 

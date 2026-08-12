@@ -114,6 +114,18 @@ interface AskUserResumeBody {
   answers?: unknown;
 }
 
+/** Ask-user answer retained with the job until the generation terminalizes. */
+export interface ResolvedAskUserQuestion {
+  /** String supports pending records written before the structured question shape. */
+  request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest | string;
+  output: string;
+  toolCallId?: string;
+  /** Stable association for legacy SDK payloads that omitted tool_call_id. */
+  contentIndex?: number;
+  /** The paused ask part was absent, so this answer must not bind to a later ask. */
+  contentMissing?: true;
+}
+
 type AskUserResumeResult =
   | { resumeValue: AskUserQuestionResolution | AskUserQuestionsResolution }
   | { status: 400; error: string };
@@ -162,6 +174,69 @@ export function resolveAskUserQuestionResume(
     return { status: 400, error: 'Answers contain an unknown question id' };
   }
   return { resumeValue: mapAskUserAnswers({ answers }) };
+}
+
+/** Build the durable answer stamp committed with the resume ownership CAS. */
+export function buildResolvedAskUserQuestion(
+  pendingAction: Agents.PendingAction,
+  body: AskUserResumeBody,
+  contentIndex?: number,
+  contentMissing = false,
+): ResolvedAskUserQuestion | undefined {
+  const payload = pendingAction.payload;
+  if (payload?.type !== 'ask_user_question') {
+    return undefined;
+  }
+  if (Array.isArray(payload.questions)) {
+    if (body.answers == null || typeof body.answers !== 'object' || Array.isArray(body.answers)) {
+      return undefined;
+    }
+    return {
+      request: { questions: payload.questions },
+      output: JSON.stringify({ answers: body.answers }),
+      ...(payload.tool_call_id && { toolCallId: payload.tool_call_id }),
+      ...(!payload.tool_call_id && contentIndex != null && { contentIndex }),
+      ...(!payload.tool_call_id && contentMissing && { contentMissing: true as const }),
+    };
+  }
+  if (typeof body.answer !== 'string') {
+    return undefined;
+  }
+  return {
+    request: payload.question,
+    output: body.answer,
+    ...(payload.tool_call_id && { toolCallId: payload.tool_call_id }),
+    ...(!payload.tool_call_id && contentIndex != null && { contentIndex }),
+    ...(!payload.tool_call_id && contentMissing && { contentMissing: true as const }),
+  };
+}
+
+/** Add the current answer without losing exact-ID stamps from earlier pauses. */
+export function appendResolvedAskUserQuestion(
+  retained: readonly ResolvedAskUserQuestion[] | undefined,
+  current: ResolvedAskUserQuestion | undefined,
+): ResolvedAskUserQuestion[] | undefined {
+  if (current == null) {
+    return retained != null && retained.length > 0 ? [...retained] : undefined;
+  }
+  if (current.toolCallId == null) {
+    if (current.contentMissing === true) {
+      return [...(retained ?? []), current];
+    }
+    return [
+      ...(retained ?? []).filter(
+        (answer) =>
+          current.contentIndex == null ||
+          answer.toolCallId != null ||
+          answer.contentIndex !== current.contentIndex,
+      ),
+      current,
+    ];
+  }
+  return [
+    ...(retained ?? []).filter((answer) => answer.toolCallId !== current.toolCallId),
+    current,
+  ];
 }
 
 /**
@@ -437,6 +512,41 @@ function findAskPartIndex<
   return -1;
 }
 
+/** Locate the exact content slot used by pause-time question stamping. */
+export function findAskUserQuestionContentIndex<
+  TPart extends {
+    type?: string;
+    tool_call?: { id?: string; name?: string; args?: unknown; output?: unknown };
+  },
+>(
+  content: TPart[],
+  toolCallId?: string,
+  request?: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest | string,
+): number {
+  return findAskPartIndex(content, toolCallId, (part) => {
+    const toolCall = part.tool_call;
+    const hasArgs =
+      (typeof toolCall?.args === 'string' && toolCall.args.trim().length > 0) ||
+      (toolCall?.args != null &&
+        typeof toolCall.args === 'object' &&
+        Object.keys(toolCall.args as object).length > 0);
+    if (typeof toolCall?.output === 'string' && toolCall.output.length > 0) {
+      return false;
+    }
+    if (!hasArgs) {
+      return true;
+    }
+    if (request == null || typeof toolCall?.args !== 'string') {
+      return false;
+    }
+    try {
+      return JSON.stringify(JSON.parse(toolCall.args)) === JSON.stringify(request);
+    } catch {
+      return false;
+    }
+  });
+}
+
 /**
  * Stamp the answered question onto the paused `ask_user_question` tool-call part
  * before the resume run seeds it back into the content pipeline.
@@ -461,26 +571,126 @@ export function attachAskUserQuestionAnswer<
   output: string,
   toolCallId?: string,
 ): TPart[] {
-  const index = findAskPartIndex(
-    content,
-    toolCallId,
-    (part) => !(typeof part.tool_call?.output === 'string' && part.tool_call.output.length > 0),
-  );
-  if (index < 0) {
+  if (toolCallId == null) {
+    for (let index = content.length - 1; index >= 0; index--) {
+      const part = content[index];
+      const toolCall = part?.tool_call;
+      if (
+        part?.type !== 'tool_call' ||
+        toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME ||
+        (typeof toolCall.output === 'string' && toolCall.output.length > 0)
+      ) {
+        continue;
+      }
+      const next = [...content];
+      next[index] = {
+        ...part,
+        tool_call: {
+          ...toolCall,
+          args: JSON.stringify(request),
+          output,
+          progress: 1,
+        },
+      };
+      return next;
+    }
     return content;
   }
-  const part = content[index];
-  const next = [...content];
-  next[index] = {
-    ...part,
-    tool_call: {
-      ...part.tool_call,
-      args: JSON.stringify(request),
-      output,
-      progress: 1,
-    },
-  };
-  return next;
+  return attachAskUserQuestionAnswers(content, [{ request, output, toolCallId }]);
+}
+
+/** Apply retained ask answers in one content pass for Redis reconstruction. */
+export function attachAskUserQuestionAnswers<
+  TPart extends { type?: string; tool_call?: { id?: string; name?: string; output?: unknown } },
+>(content: TPart[], answers: readonly ResolvedAskUserQuestion[]): TPart[] {
+  if (answers.length === 0) {
+    return content;
+  }
+  const exactAnswers = new Map<string, ResolvedAskUserQuestion>();
+  const indexedAnswers = new Map<number, ResolvedAskUserQuestion>();
+  const legacyAnswers: ResolvedAskUserQuestion[] = [];
+  for (const answer of answers) {
+    if (answer.contentMissing === true) {
+      continue;
+    } else if (answer.toolCallId != null && answer.toolCallId.length > 0) {
+      exactAnswers.set(answer.toolCallId, answer);
+    } else if (
+      answer.contentIndex != null &&
+      Number.isSafeInteger(answer.contentIndex) &&
+      answer.contentIndex >= 0
+    ) {
+      indexedAnswers.set(answer.contentIndex, answer);
+    } else {
+      legacyAnswers.push(answer);
+    }
+  }
+
+  /** Legacy stamps have no tool-call id, but their array order is the durable
+   * association: answers are appended as asks resolve, and tool-call parts are
+   * reconstructed in that same chronological order. Walk forward so an
+   * earlier accepted answer cannot slide onto a later unanswered ask. */
+  let legacyIndex = 0;
+  let next: TPart[] | undefined;
+  for (let index = 0; index < content.length; index++) {
+    const part = content[index];
+    const toolCall = part?.tool_call;
+    if (part?.type !== 'tool_call' || toolCall?.name !== ASK_USER_QUESTION_TOOL_NAME) {
+      continue;
+    }
+    const exactAnswer = toolCall.id != null ? exactAnswers.get(toolCall.id) : undefined;
+    const indexedAnswer = indexedAnswers.get(index);
+    const legacyCandidate = legacyAnswers[legacyIndex];
+    if (
+      exactAnswer == null &&
+      indexedAnswer == null &&
+      legacyCandidate != null &&
+      typeof toolCall.output === 'string' &&
+      toolCall.output.length > 0
+    ) {
+      try {
+        if (
+          toolCall.output === legacyCandidate.output &&
+          JSON.stringify(JSON.parse((toolCall as { args?: string }).args ?? '')) ===
+            JSON.stringify(legacyCandidate.request)
+        ) {
+          legacyIndex++;
+        } else {
+          legacyIndex = legacyAnswers.length;
+        }
+      } catch {
+        // Ambiguous legacy metadata must never slide onto a later ask.
+        legacyIndex = legacyAnswers.length;
+      }
+      continue;
+    }
+    const legacyAnswer =
+      exactAnswer == null &&
+      legacyIndex < legacyAnswers.length &&
+      !(typeof toolCall.output === 'string' && toolCall.output.length > 0)
+        ? legacyAnswers[legacyIndex++]
+        : undefined;
+    const answer = exactAnswer ?? indexedAnswer ?? legacyAnswer;
+    if (answer == null) {
+      continue;
+    }
+    if (exactAnswer != null && toolCall.id != null) {
+      exactAnswers.delete(toolCall.id);
+    }
+    if (indexedAnswer != null) {
+      indexedAnswers.delete(index);
+    }
+    next ??= [...content];
+    next[index] = {
+      ...part,
+      tool_call: {
+        ...toolCall,
+        args: JSON.stringify(answer.request),
+        output: answer.output,
+        progress: 1,
+      },
+    };
+  }
+  return next ?? content;
 }
 
 /**
@@ -503,15 +713,7 @@ export function attachAskUserQuestionArgs<
   request: Agents.AskUserQuestionRequest | Agents.AskUserQuestionsRequest,
   toolCallId?: string,
 ): TPart[] {
-  const index = findAskPartIndex(content, toolCallId, (part) => {
-    const toolCall = part.tool_call;
-    const hasArgs =
-      (typeof toolCall?.args === 'string' && toolCall.args.trim().length > 0) ||
-      (toolCall?.args != null &&
-        typeof toolCall.args === 'object' &&
-        Object.keys(toolCall.args as object).length > 0);
-    return !hasArgs && !(typeof toolCall?.output === 'string' && toolCall.output.length > 0);
-  });
+  const index = findAskUserQuestionContentIndex(content, toolCallId, request);
   if (index < 0) {
     return content;
   }

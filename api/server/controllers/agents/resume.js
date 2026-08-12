@@ -5,7 +5,10 @@ const {
   isPendingActionStale,
   mapToolApprovalResolutions,
   resolveAskUserQuestionResume,
-  attachAskUserQuestionAnswer,
+  buildResolvedAskUserQuestion,
+  appendResolvedAskUserQuestion,
+  attachAskUserQuestionAnswers,
+  findAskUserQuestionContentIndex,
   findUndecidedToolCalls,
   findDisallowedDecisions,
   findIncompleteDecisions,
@@ -646,6 +649,41 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       generationProtocolVersion,
     );
   }
+  let resolvedAskContentIndex;
+  let resolvedAskContentMissing = false;
+  if (pendingAction.payload.type === 'ask_user_question' && !pendingAction.payload.tool_call_id) {
+    const answerSnapshot = await GenerationJobManager.getResumeState(streamId, job.createdAt);
+    if (answerSnapshot == null) {
+      return sendGenerationJson(res, 409, { code: 'RUN_REPLACED' }, generationProtocolVersion);
+    }
+    const askRequest = Array.isArray(pendingAction.payload.questions)
+      ? { questions: pendingAction.payload.questions }
+      : pendingAction.payload.question;
+    const answerContent = answerSnapshot.aggregatedContent ?? [];
+    if (answerContent.length > 0) {
+      resolvedAskContentIndex = findAskUserQuestionContentIndex(
+        answerContent,
+        undefined,
+        askRequest,
+      );
+      if (resolvedAskContentIndex < 0) {
+        resolvedAskContentIndex = undefined;
+        resolvedAskContentMissing = true;
+      }
+    } else {
+      resolvedAskContentMissing = true;
+    }
+  }
+  const resolvedAskUserQuestion = buildResolvedAskUserQuestion(
+    pendingAction,
+    req.body,
+    resolvedAskContentIndex,
+    resolvedAskContentMissing,
+  );
+  const resolvedAskUserQuestions = appendResolvedAskUserQuestion(
+    job.metadata?.resolvedAskUserQuestions,
+    resolvedAskUserQuestion,
+  );
 
   // A legacy job has no saver-level generation namespace, so snapshot its exact
   // durable ids before the atomic resume claim. New jobs can skip this indexed
@@ -701,6 +739,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       pendingAction.actionId,
       {
         preemptCapable: isSteerPreemptSupported(),
+        ...(resolvedAskUserQuestion && { resolvedAskUserQuestions }),
       },
       job.createdAt,
     );
@@ -887,23 +926,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // resume state afterward would see the new (empty) client array and lose the seed.
     const resumeState = await GenerationJobManager.getResumeState(streamId, job.createdAt);
     let seedContent = resumeState?.aggregatedContent ?? [];
-    // Stamp the answered question onto the paused ask_user_question tool-call part
+    // Stamp retained answers onto their paused ask_user_question tool-call parts
     // (args = the pendingAction's authoritative question, output = the user's answer):
     // the streamed arg chunks carry no tool name so the aggregator dropped them, and
     // no completion event ever fires for this tool — without this the saved part is
-    // an empty "cancelled-looking" tool call. See attachAskUserQuestionAnswer.
-    if (pendingAction.payload?.type === 'ask_user_question') {
-      const batched = Array.isArray(pendingAction.payload.questions);
-      const request = batched
-        ? { questions: pendingAction.payload.questions }
-        : pendingAction.payload.question;
-      const output = batched ? JSON.stringify({ answers: req.body.answers }) : req.body.answer;
-      seedContent = attachAskUserQuestionAnswer(
-        seedContent,
-        request,
-        output,
-        pendingAction.payload.tool_call_id,
-      );
+    // an empty "cancelled-looking" tool call. See attachAskUserQuestionAnswers.
+    if (resolvedAskUserQuestions) {
+      seedContent = attachAskUserQuestionAnswers(seedContent, resolvedAskUserQuestions);
     }
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);

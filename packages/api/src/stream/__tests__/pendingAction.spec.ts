@@ -60,6 +60,112 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       }
     });
 
+    test('a later ask retains a legacy answer for ordered cross-replica reconstruction', async () => {
+      const streamId = 'stream-repause-retains-legacy-answer';
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
+      expect(
+        await manager.approvals.resolve(streamId, firstAction.actionId, {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
+        }),
+      ).toBe(true);
+
+      expect(
+        await manager.approvals.pause(
+          streamId,
+          buildAction(streamId, {
+            payload: {
+              type: 'ask_user_question',
+              question: { question: 'Approve deployment?' },
+              tool_call_id: 'ask-2',
+            },
+          }),
+        ),
+      ).toBe(true);
+
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        metadata: {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
+        },
+      });
+    });
+
+    test('a later tool approval retains a legacy answer for cross-replica reconstruction', async () => {
+      const streamId = 'stream-repause-retains-legacy-answer';
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
+      expect(
+        await manager.approvals.resolve(streamId, firstAction.actionId, {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
+        }),
+      ).toBe(true);
+
+      expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
+
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        metadata: {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+            },
+          ],
+        },
+      });
+    });
+
+    test('a later pause retains an exact-ID answer for cross-replica reconstruction', async () => {
+      const streamId = 'stream-repause-retains-exact-answer';
+      await manager.createJob(streamId, 'user-1');
+      const firstAction = buildAction(streamId);
+      expect(await manager.approvals.pause(streamId, firstAction)).toBe(true);
+      expect(
+        await manager.approvals.resolve(streamId, firstAction.actionId, {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+              toolCallId: 'ask-1',
+            },
+          ],
+        }),
+      ).toBe(true);
+
+      expect(await manager.approvals.pause(streamId, buildAction(streamId))).toBe(true);
+
+      await expect(manager.getJob(streamId)).resolves.toMatchObject({
+        status: 'requires_action',
+        metadata: {
+          resolvedAskUserQuestions: [
+            {
+              request: 'Which environment?',
+              output: 'staging',
+              toolCallId: 'ask-1',
+            },
+          ],
+        },
+      });
+    });
+
     test('persists discovered tools in the same transition that makes the pause visible', async () => {
       const streamId = 'stream-pause-discoveries';
       await manager.createJob(streamId, 'user-1');

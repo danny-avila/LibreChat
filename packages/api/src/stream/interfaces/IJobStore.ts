@@ -1,6 +1,7 @@
 import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
+import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
 
 /**
@@ -163,6 +164,12 @@ export interface SerializableJobData {
    */
   pendingAction?: Agents.PendingAction;
 
+  /** Durable bridge between the resume claim and content reconstruction. An
+   * abort can win while the resume controller is still rebuilding the client;
+   * retaining the accepted answer here lets that terminal owner stamp it onto
+   * the persisted partial response instead of losing it with the request. */
+  resolvedAskUserQuestions?: ResolvedAskUserQuestion[];
+
   /**
    * Flat mirror of `pendingAction.actionId`, kept as a top-level field so an
    * atomic status transition can guard on it (a nested JSON field can't be
@@ -263,6 +270,7 @@ export type JobMetadataPatch = Partial<
     | 'activityPhaseSnapshot'
     | 'preemptCapable'
     | 'generationProtocolVersion'
+    | 'resolvedAskUserQuestions'
   >
 >;
 

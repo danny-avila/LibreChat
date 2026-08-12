@@ -878,6 +878,57 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(client.resumeCompletion).toHaveBeenCalledWith(expect.objectContaining({ runSteps }));
     });
 
+    it('reapplies retained ask answers before resuming a later tool approval', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(
+        makeToolApprovalJob({
+          metadata: {
+            resolvedAskUserQuestions: [
+              {
+                request: 'Which environment?',
+                output: 'staging',
+                toolCallId: 'ask-1',
+              },
+            ],
+          },
+        }),
+      );
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [
+          {
+            type: 'tool_call',
+            tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' },
+          },
+        ],
+        runSteps: [],
+      });
+
+      await post(approveBody());
+      await settled;
+      await flush();
+
+      const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
+      expect(client.resumeCompletion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          seedContent: [
+            expect.objectContaining({
+              tool_call: expect.objectContaining({
+                id: 'ask-1',
+                args: JSON.stringify('Which environment?'),
+                output: 'staging',
+                progress: 1,
+              }),
+            }),
+          ],
+        }),
+      );
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        { preemptCapable: true },
+        1000,
+      );
+    });
+
     it('restores the paused user message files before reconstruction (execute-code files)', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
       // The resume body carries no files; the controller must source them from the
@@ -1327,6 +1378,18 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
 
     it('resumes an ask_user_question with the free-form answer', async () => {
       mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserJob());
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [
+          {
+            type: 'tool_call',
+            tool_call: { id: 'older-ask', name: 'ask_user_question', args: '' },
+          },
+          {
+            type: 'tool_call',
+            tool_call: { id: 'current-ask', name: 'ask_user_question', args: '' },
+          },
+        ],
+      });
       const res = await post({
         conversationId: CONVO_ID,
         actionId: ACTION_ID,
@@ -1342,12 +1405,61 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(client.resumeCompletion).toHaveBeenCalledWith(
         expect.objectContaining({ resumeValue: { answer: 'call it report.pdf' } }),
       );
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        {
+          preemptCapable: true,
+          resolvedAskUserQuestions: [
+            {
+              request: 'What should I name the file?',
+              output: 'call it report.pdf',
+              contentIndex: 1,
+            },
+          ],
+        },
+        1000,
+      );
       expect(mockGenerationJobManager.claimTerminalJob).toHaveBeenCalledWith(
         CONVO_ID,
         'complete',
         undefined,
         1000,
         { persistencePending: true },
+      );
+    });
+
+    it('retains an ID-less answer when earlier text exists but the ask part is missing', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeAskUserJob());
+      mockGenerationJobManager.getResumeState.mockResolvedValue({
+        aggregatedContent: [{ type: 'text', text: 'Let me check.' }],
+      });
+
+      const res = await post({
+        conversationId: CONVO_ID,
+        actionId: ACTION_ID,
+        agent_id: AGENT_ID,
+        endpoint: 'agents',
+        answer: 'call it report.pdf',
+      });
+
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        {
+          preemptCapable: true,
+          resolvedAskUserQuestions: [
+            {
+              request: 'What should I name the file?',
+              output: 'call it report.pdf',
+              contentMissing: true,
+            },
+          ],
+        },
+        1000,
       );
     });
 
@@ -1368,6 +1480,21 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       const client = await mockInitializeClient.mock.results[0].value.then((r) => r.client);
       expect(client.resumeCompletion).toHaveBeenCalledWith(
         expect.objectContaining({ resumeValue: { answers } }),
+      );
+      expect(mockGenerationJobManager.approvals.resolve).toHaveBeenCalledWith(
+        CONVO_ID,
+        ACTION_ID,
+        {
+          preemptCapable: true,
+          resolvedAskUserQuestions: [
+            {
+              request: { questions: expect.any(Array) },
+              output: JSON.stringify({ answers }),
+              toolCallId: 'tc1',
+            },
+          ],
+        },
+        1000,
       );
     });
 

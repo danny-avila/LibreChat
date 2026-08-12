@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import { SteerEvents } from 'librechat-data-provider';
-import type { TPendingSteer, Agents } from 'librechat-data-provider';
+import type { TMessageContentParts, TPendingSteer, Agents } from 'librechat-data-provider';
 import type {
   SteerQueueItem,
   IEventTransport,
@@ -546,6 +546,116 @@ describe('SteeringLifecycle via GenerationJobManager.steering (in-memory)', () =
         ),
       ).toEqual(['unsent one', 'unsent two']);
       expect(await manager.steering.peek(streamId)).toEqual([]);
+    });
+
+    test('abortJob transforms content with metadata from the winning resume-race snapshot', async () => {
+      const streamId = 'abort-resume-metadata-race';
+      const job = await manager.createJob(streamId, 'user-1');
+      const action = buildPendingAction(
+        buildToolApprovalPayload([
+          { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call-1' },
+        ]),
+        { streamId, conversationId: streamId, runId: 'run-1', responseMessageId: 'msg-1' },
+      );
+      expect(await manager.approvals.pause(streamId, action)).toBe(true);
+      jobStore.setContentParts(streamId, [{ type: 'text', text: 'partial' }], job.createdAt);
+
+      const originalGetContentParts = jobStore.getContentParts.bind(jobStore);
+      let signalSnapshotStarted: (() => void) | undefined;
+      const snapshotStarted = new Promise<void>((resolve) => {
+        signalSnapshotStarted = resolve;
+      });
+      let releaseSnapshot: (() => void) | undefined;
+      const snapshotGate = new Promise<void>((resolve) => {
+        releaseSnapshot = resolve;
+      });
+      jest.spyOn(jobStore, 'getContentParts').mockImplementationOnce(async (...args) => {
+        signalSnapshotStarted?.();
+        await snapshotGate;
+        return originalGetContentParts(...args);
+      });
+      let transformedWith: unknown;
+
+      try {
+        const aborting = manager.abortJob(streamId, {
+          expectedCreatedAt: job.createdAt,
+          transformAbortContent: (content, claimedJob) => {
+            transformedWith = claimedJob.resolvedAskUserQuestions;
+            return content;
+          },
+        });
+        await snapshotStarted;
+        await expect(
+          manager.approvals.resolve(
+            streamId,
+            action.actionId,
+            {
+              resolvedAskUserQuestions: [
+                {
+                  request: 'Which environment?',
+                  output: 'staging',
+                },
+              ],
+            },
+            job.createdAt,
+          ),
+        ).resolves.toBe(true);
+        releaseSnapshot?.();
+
+        await expect(aborting).resolves.toMatchObject({ success: true });
+        expect(transformedWith).toEqual([
+          {
+            request: 'Which environment?',
+            output: 'staging',
+          },
+        ]);
+      } finally {
+        releaseSnapshot?.();
+      }
+    });
+
+    test('abortJob transforms content before filtering shifts reconstructed indices', async () => {
+      const streamId = 'abort-transform-before-filter';
+      const job = await manager.createJob(streamId, 'user-1');
+      jobStore.setContentParts(
+        streamId,
+        [
+          { type: 'text', text: '' },
+          {
+            type: 'tool_call',
+            tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' },
+          },
+        ],
+        job.createdAt,
+      );
+
+      const result = await manager.abortJob(streamId, {
+        expectedCreatedAt: job.createdAt,
+        transformAbortContent: (content) => {
+          expect(content).toHaveLength(2);
+          const askPart = content[1];
+          if (askPart?.type !== 'tool_call' || !('tool_call' in askPart)) {
+            throw new Error('Expected reconstructed ask tool call at index 1');
+          }
+          const next = [...content];
+          next[1] = {
+            ...askPart,
+            tool_call: {
+              ...askPart.tool_call,
+              output: 'staging',
+              progress: 1,
+            },
+          } as unknown as TMessageContentParts;
+          return next;
+        },
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.content).toEqual([
+        expect.objectContaining({
+          tool_call: expect.objectContaining({ output: 'staging', progress: 1 }),
+        }),
+      ]);
     });
 
     test('abortJob publishes nothing when natural completion wins its terminal CAS', async () => {

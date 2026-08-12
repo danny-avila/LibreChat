@@ -413,7 +413,7 @@ export default function useStepHandler({
      * — the store-level strip on answer submit can't reach those.
      */
     if (isAskUserQuestionPart(updatedContent[index])) {
-      updatedContent = updatedContent.filter((part) => !isAskUserQuestionPart(part));
+      updatedContent[index] = undefined;
     } else if (updatedContent.some(isAnsweredAskUserQuestionPart)) {
       /**
        * An ALREADY-ANSWERED card the resumed segment streams around rather than
@@ -422,9 +422,13 @@ export default function useStepHandler({
        * cached copy — which still holds the card the answer-submit stripped from
        * the store — gets written back, reopening the popover with its options
        * locked. Only cards the user actually answered are dropped, so an event
-       * racing a still-live pause can't take its card down.
+       * racing a still-live pause can't take its card down. Preserve sparse
+       * absolute indices: compacting holes can move an older tool call into a
+       * text slot until the terminal snapshot repairs the rendered order.
        */
-      updatedContent = updatedContent.filter((part) => !isAnsweredAskUserQuestionPart(part));
+      updatedContent = updatedContent.map((part) =>
+        isAnsweredAskUserQuestionPart(part) ? undefined : part,
+      );
     }
 
     if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {

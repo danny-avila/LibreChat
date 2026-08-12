@@ -66,7 +66,7 @@ import {
 import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
-import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
+import { attachAskUserQuestionAnswers, normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
 import { emitChunkWithReceipt } from './internal/chunkPublication';
 import { resolveCoalesceWindowMs } from './internal/coalescing';
 import { filterPersistableAbortContent } from './abortContent';
@@ -2391,6 +2391,7 @@ class GenerationJobManagerClass {
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
         pendingAction: jobData.pendingAction,
+        resolvedAskUserQuestions: jobData.resolvedAskUserQuestions,
       },
       readyPromise: runtime.readyPromise,
       resolveReady: runtime.resolveReady,
@@ -3490,8 +3491,8 @@ class GenerationJobManagerClass {
    * - Emits abort signal via Redis pub/sub
    * - The replica running generation receives signal and aborts its AbortController
    *
-   * `options.transformAbortContent` rewrites the persistable content BEFORE the
-   * final SSE is emitted (and before it is returned for the DB save), so a
+   * `options.transformAbortContent` rewrites the reconstructed content BEFORE
+   * persistence filtering and the final SSE (and before it is returned for the DB save), so a
    * host-side stamp — e.g. re-attaching a paused `ask_user_question`'s args
    * that the Redis chunk-log reconstruction dropped — reaches the LIVE client
    * too, not just the saved message. Pure/optional; identity when omitted.
@@ -3499,7 +3500,10 @@ class GenerationJobManagerClass {
   async abortJob(
     streamId: string,
     options?: {
-      transformAbortContent?: (content: TMessageContentParts[]) => TMessageContentParts[];
+      transformAbortContent?: (
+        content: TMessageContentParts[],
+        jobData: SerializableJobData,
+      ) => TMessageContentParts[];
       /** Required durable work (for example saving the partial response and
        * pruning the paused checkpoint) that must finish before the normal
        * FINAL lets the client submit against that history. Throwing emits a
@@ -3604,11 +3608,6 @@ class GenerationJobManagerClass {
     const result = await this.jobStore.getContentParts(streamId, jobData.createdAt);
     let content = result?.content ?? [];
     let abortContent = filterPersistableAbortContent(content);
-    if (options?.transformAbortContent) {
-      abortContent = options.transformAbortContent(
-        abortContent as TMessageContentParts[],
-      ) as typeof abortContent;
-    }
     let shouldPersistAbortContent = abortContent.length > 0;
 
     /** Collected usage for all models */
@@ -3698,6 +3697,10 @@ class GenerationJobManagerClass {
         collectedUsage,
       };
     }
+    // The successful CAS may follow a same-generation approval transition.
+    // Use the snapshot that selected the winning source status so host-side
+    // content transforms see metadata committed by that transition.
+    jobData = currentAfterConflict ?? jobData;
     const terminalClaim: TerminalJobClaim = Object.freeze({
       streamId,
       createdAt: jobData.createdAt,
@@ -3737,18 +3740,6 @@ class GenerationJobManagerClass {
         const committed = await this.jobStore.getContentParts(streamId, jobData.createdAt);
         if (committed) {
           content = committed.content;
-          abortContent = filterPersistableAbortContent(content);
-          if (options?.transformAbortContent) {
-            abortContent = options.transformAbortContent(
-              abortContent as TMessageContentParts[],
-            ) as typeof abortContent;
-          }
-          shouldPersistAbortContent = abortContent.length > 0;
-          text = shouldPersistAbortContent
-            ? parseTextParts(abortContent as TMessageContentParts[], false, {
-                includeSteer: true,
-              })
-            : '';
         }
       } catch (contentError) {
         logger.warn(
@@ -3756,6 +3747,20 @@ class GenerationJobManagerClass {
           contentError,
         );
       }
+      if (options?.transformAbortContent) {
+        content = options.transformAbortContent(
+          content as TMessageContentParts[],
+          jobData,
+        ) as typeof content;
+      }
+      // Answer stamps use ordinals from the unfiltered chunk reconstruction.
+      // Filter only after the transform so sparse/empty/OAuth parts cannot
+      // shift a retained ID-less ask answer onto a different tool call.
+      abortContent = filterPersistableAbortContent(content);
+      shouldPersistAbortContent = abortContent.length > 0;
+      text = shouldPersistAbortContent
+        ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })
+        : '';
 
       /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
       In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
@@ -6226,7 +6231,7 @@ class GenerationJobManagerClass {
       this.jobStore.peekSteers(streamId, jobData.createdAt),
       this.jobStore.peekClaimedSteers(streamId, jobData.createdAt),
     ]);
-    const aggregatedContent = result?.content ?? [];
+    const reconstructedContent = result?.content ?? [];
     const bufferState = this.runStepBuffers?.get(streamId);
     const bufferedRunSteps = bufferState?.createdAt === jobData.createdAt ? bufferState.steps : [];
     const runStepsById = new Map(runSteps.map((runStep) => [runStep.id, runStep]));
@@ -6235,7 +6240,7 @@ class GenerationJobManagerClass {
     }
     const effectiveRunSteps = normalizeResumeRunStepIndices(
       [...runStepsById.values()],
-      aggregatedContent,
+      reconstructedContent,
     );
     let titleEvent: t.ResumeState['titleEvent'];
     if (jobData.titleEvent) {
@@ -6279,7 +6284,7 @@ class GenerationJobManagerClass {
     /** Steers still queued (not yet injected); injected ones are already in aggregatedContent. */
     const pendingSteers = omitAlreadyAppliedSteers(
       mergeUnresolvedSteers(claimedSteers, queuedSteers),
-      aggregatedContent as unknown[],
+      reconstructedContent as unknown[],
     ).map(toPendingSteer);
 
     /** The four component reads are generation-fenced, but replacement can
@@ -6290,6 +6295,13 @@ class GenerationJobManagerClass {
     if (!verifiedJob || verifiedJob.createdAt !== jobData.createdAt) {
       return null;
     }
+    /** Redis reconstruction has no completion event for ask_user_question.
+     * Apply the answer stamps from the generation-fenced job read so reload,
+     * status, resume, and abort all expose the same authoritative content. */
+    const aggregatedContent = attachAskUserQuestionAnswers(
+      reconstructedContent,
+      verifiedJob.resolvedAskUserQuestions ?? [],
+    );
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
@@ -6315,8 +6327,8 @@ class GenerationJobManagerClass {
       // cross-replica client can rebuild the prompt from resumeState. Client-safe
       // projection: the stored record's resumeContext/requestFingerprint stay server-only.
       pendingAction:
-        jobData.status === 'requires_action' && !isPendingActionStale(jobData)
-          ? toClientPendingAction(jobData.pendingAction)
+        verifiedJob.status === 'requires_action' && !isPendingActionStale(verifiedJob)
+          ? toClientPendingAction(verifiedJob.pendingAction)
           : undefined,
       pendingSteers: pendingSteers.length > 0 ? pendingSteers : undefined,
     } satisfies t.ResumeState;
