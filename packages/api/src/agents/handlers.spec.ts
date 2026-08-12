@@ -1195,7 +1195,7 @@ describe('createToolExecuteHandler', () => {
           args: {
             path: 'skills/new-skill/SKILL.md',
             content:
-              '---\nname: new-skill\ndescription: Use for tests\ndisable-model-invocation: true\nallowed-tools:\n  - execute_code\n---\n# New skill\n',
+              '---\nname: new-skill\ndescription: Use for tests\ndisable-model-invocation: true\nAllowed-Tools:\n  - execute_code\n---\n# New skill\n',
           },
         },
       ]);
@@ -1219,6 +1219,79 @@ describe('createToolExecuteHandler', () => {
         }),
       );
       expect(grantSkillOwner).toHaveBeenCalledWith({ req, skillId: SKILL_ID });
+    });
+
+    it('rejects case-colliding recognized frontmatter keys in create_file', async () => {
+      const createSkill = jest.fn();
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => null),
+        createSkill: createSkill as unknown as ToolExecuteOptions['createSkill'],
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_collision_skill',
+          name: 'create_file',
+          args: {
+            path: 'skills/collision-skill/SKILL.md',
+            content:
+              '---\nname: collision-skill\ndescription: Use for collision tests\nallowed-tools:\n  - read_file\nAllowed-Tools:\n  - execute_code\n---\n# Collision skill\n',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(result.errorMessage).toContain('both resolve to "allowed-tools"');
+      expect(createSkill).not.toHaveBeenCalled();
+    });
+
+    it('surfaces skill validation warnings from create_file', async () => {
+      const createSkill = jest.fn(async () => ({
+        skill: {
+          _id: SKILL_ID,
+          name: 'warning-skill',
+          body: '# Warning skill',
+          version: 1,
+        },
+        warnings: [
+          {
+            field: 'frontmatter.triger',
+            code: 'UNKNOWN_KEY',
+            severity: 'warning' as const,
+            message: '"triger" is not a recognized frontmatter key and is stored as-is',
+          },
+        ],
+      }));
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => null),
+        createSkill,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_warning_skill',
+          name: 'create_file',
+          args: {
+            path: 'skills/warning-skill/SKILL.md',
+            content:
+              '---\nname: warning-skill\ndescription: Use for warning tests\ntriger: manual\n---\n# Warning skill\n',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('Warnings:');
+      expect(result.content).toContain('frontmatter.triger [UNKNOWN_KEY]');
+      expect(result.artifact).toMatchObject({
+        warning_count: 1,
+        warnings: [
+          expect.objectContaining({
+            field: 'frontmatter.triger',
+            code: 'UNKNOWN_KEY',
+            severity: 'warning',
+          }),
+        ],
+      });
     });
 
     it('adds required SKILL.md frontmatter when create_file only provides markdown', async () => {
@@ -1869,6 +1942,65 @@ describe('createToolExecuteHandler', () => {
           }),
         }),
       );
+    });
+
+    it('surfaces skill validation warnings from edit_file', async () => {
+      const oldBody = '---\nname: runtime-skill\ndescription: Use before\n---\n# Runtime skill\n';
+      const updatedBody =
+        '---\nname: runtime-skill\ndescription: Use after\ntriger: manual\n---\n# Runtime skill\n';
+      const updateSkill = jest.fn(async () => ({
+        status: 'updated' as const,
+        skill: {
+          _id: SKILL_ID,
+          name: 'runtime-skill',
+          body: updatedBody,
+          version: 2,
+        },
+        warnings: [
+          {
+            field: 'frontmatter.triger',
+            code: 'UNKNOWN_KEY',
+            severity: 'warning' as const,
+            message: '"triger" is not a recognized frontmatter key and is stored as-is',
+          },
+        ],
+      }));
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => ({
+          _id: SKILL_ID,
+          name: 'runtime-skill',
+          body: oldBody,
+          fileCount: 0,
+          version: 1,
+        })),
+        updateSkill,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_edit_warning_skill',
+          name: 'edit_file',
+          args: {
+            path: 'skills/runtime-skill/SKILL.md',
+            old_text: 'description: Use before',
+            new_text: 'description: Use after\ntriger: manual',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('Warnings:');
+      expect(result.content).toContain('frontmatter.triger [UNKNOWN_KEY]');
+      expect(result.artifact).toMatchObject({
+        warning_count: 1,
+        warnings: [
+          expect.objectContaining({
+            field: 'frontmatter.triger',
+            code: 'UNKNOWN_KEY',
+            severity: 'warning',
+          }),
+        ],
+      });
     });
 
     it('preserves block-scalar SKILL.md descriptions when editing skills', async () => {

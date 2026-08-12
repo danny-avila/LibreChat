@@ -9,9 +9,12 @@ import {
   PermissionBits,
 } from 'librechat-data-provider';
 import {
+  partitionIssues,
   validateSkillName,
   validateSkillDescription,
   validateSkillFrontmatter,
+  getCanonicalSkillFrontmatterKey,
+  normalizeSkillFrontmatterKeys,
   validateAlwaysApply,
   validateRelativePath,
   inferSkillFileCategory,
@@ -257,6 +260,38 @@ describe('skill validation helpers', () => {
   });
 
   describe('validateSkillFrontmatter', () => {
+    it('canonicalizes recognized keys without rewriting unknown keys', () => {
+      expect(getCanonicalSkillFrontmatterKey('Allowed-Tools')).toBe('allowed-tools');
+      expect(getCanonicalSkillFrontmatterKey('ALWAYSAPPLY')).toBe('alwaysApply');
+      expect(getCanonicalSkillFrontmatterKey('customConfig')).toBeUndefined();
+      expect(
+        normalizeSkillFrontmatterKeys({
+          'Allowed-Tools': ['execute_code'],
+          customConfig: { mode: 'strict' },
+        }),
+      ).toEqual({
+        frontmatter: {
+          'allowed-tools': ['execute_code'],
+          customConfig: { mode: 'strict' },
+        },
+      });
+    });
+
+    it('rejects case-colliding recognized keys', () => {
+      const frontmatter = {
+        'allowed-tools': ['read_file'],
+        'Allowed-Tools': ['execute_code'],
+      };
+
+      expect(normalizeSkillFrontmatterKeys(frontmatter)).toEqual({
+        error:
+          'Recognized frontmatter keys "allowed-tools" and "Allowed-Tools" both resolve to "allowed-tools"',
+      });
+      expect(validateSkillFrontmatter(frontmatter)).toEqual([
+        expect.objectContaining({ field: 'frontmatter', code: 'DUPLICATE_KEY' }),
+      ]);
+    });
+
     it('accepts an undefined or empty frontmatter', () => {
       expect(validateSkillFrontmatter(undefined)).toEqual([]);
       expect(validateSkillFrontmatter(null)).toEqual([]);
@@ -270,9 +305,91 @@ describe('skill validation helpers', () => {
       expect(validateSkillFrontmatter([]).some((i) => i.code === 'INVALID_TYPE')).toBe(true);
     });
 
-    it('rejects unknown keys in strict mode', () => {
+    it('warns about unknown keys instead of rejecting them', () => {
       const issues = validateSkillFrontmatter({ 'not-a-real-key': 'value' });
-      expect(issues.some((i) => i.code === 'UNKNOWN_KEY')).toBe(true);
+      expect(issues).toEqual([
+        expect.objectContaining({
+          field: 'frontmatter.not-a-real-key',
+          code: 'UNKNOWN_KEY',
+          severity: 'warning',
+        }),
+      ]);
+      expect(partitionIssues(issues).errors).toEqual([]);
+    });
+
+    it('still bounds the value of an unknown key', () => {
+      /* The key is tolerated, the payload is not: an unrecognized key is
+         persisted, so it stays inside the same limits as every other key. */
+      const deep = { a: { b: { c: { d: { e: { f: 'too deep' } } } } } };
+      const issues = validateSkillFrontmatter({ 'not-a-real-key': deep });
+
+      expect(issues.some((i) => i.code === 'UNKNOWN_KEY' && i.severity === 'warning')).toBe(true);
+      expect(
+        partitionIssues(issues).errors.some(
+          (i) => i.code === 'INVALID_SHAPE' && i.field === 'frontmatter.not-a-real-key',
+        ),
+      ).toBe(true);
+    });
+
+    it('rejects non-plain object values under unknown keys', () => {
+      const issues = validateSkillFrontmatter({ created: new Date('2026-08-11T00:00:00.000Z') });
+
+      expect(issues.some((i) => i.code === 'UNKNOWN_KEY' && i.severity === 'warning')).toBe(true);
+      expect(
+        partitionIssues(issues).errors.some(
+          (i) => i.code === 'INVALID_SHAPE' && i.field === 'frontmatter.created',
+        ),
+      ).toBe(true);
+    });
+
+    it('rejects NUL characters in unknown key names before persistence', () => {
+      const issues = validateSkillFrontmatter({ ['custom\u0000key']: 'value' });
+
+      expect(partitionIssues(issues).errors).toEqual([
+        expect.objectContaining({
+          field: 'frontmatter',
+          code: 'INVALID_KEY',
+        }),
+      ]);
+      expect(issues.some((i) => i.code === 'UNKNOWN_KEY')).toBe(false);
+    });
+
+    it('rejects object property names that Mongoose cannot persist at any depth', () => {
+      for (const key of ['__proto__', 'constructor', 'prototype']) {
+        const topLevel = validateSkillFrontmatter(Object.fromEntries([[key, 'value']]));
+        const nested = validateSkillFrontmatter({
+          metadata: Object.fromEntries([[key, 'value']]),
+        });
+
+        expect(partitionIssues(topLevel).errors).toEqual([
+          expect.objectContaining({ field: 'frontmatter', code: 'INVALID_KEY' }),
+        ]);
+        expect(partitionIssues(nested).errors).toEqual([
+          expect.objectContaining({ field: 'frontmatter.metadata', code: 'INVALID_KEY' }),
+        ]);
+      }
+    });
+
+    it('accepts the references key in every shape real SKILL.md files use', () => {
+      expect(validateSkillFrontmatter({ references: ['workers', 'pages', 'd1'] })).toEqual([]);
+      expect(validateSkillFrontmatter({ references: 'references/api.md' })).toEqual([]);
+      expect(
+        validateSkillFrontmatter({
+          references: [{ path: 'references/api.md', description: 'API surface' }],
+        }),
+      ).toEqual([]);
+      expect(
+        validateSkillFrontmatter({ references: { workers: 'references/workers.md' } }),
+      ).toEqual([]);
+    });
+
+    it('rejects a references value with excessive nesting', () => {
+      const deep = { a: { b: { c: { d: { e: { f: 'too deep' } } } } } };
+      expect(
+        validateSkillFrontmatter({ references: deep }).some(
+          (i) => i.code === 'INVALID_SHAPE' && i.field === 'frontmatter.references',
+        ),
+      ).toBe(true);
     });
 
     it('accepts known keys with correct types', () => {
@@ -415,6 +532,9 @@ describe('skill validation helpers', () => {
       /* Empty string → not extracted; an explicit empty array is the
          author's way to say "no extras". */
       expect(deriveStructuredFrontmatterFields({ 'allowed-tools': '' })).toEqual({});
+      expect(deriveStructuredFrontmatterFields({ 'Allowed-Tools': 'execute_code' })).toEqual({
+        allowedTools: ['execute_code'],
+      });
     });
 
     it('passes through array allowed-tools, dropping non-string entries', () => {
@@ -469,12 +589,100 @@ describe('Skill CRUD methods', () => {
     ]);
   });
 
-  it('rejects frontmatter with unknown keys (strict mode)', async () => {
+  it('creates the skill and warns when frontmatter carries an unknown key', async () => {
+    /* One unrecognized key in one SKILL.md must not fail the skill: the GitHub
+       sync runner marks the whole source failed on a validation error, so a
+       stray key used to block every other skill in the repository. */
+    const { skill, warnings } = await methods.createSkill(
+      makeSkillInput({
+        name: 'unknown-key-frontmatter',
+        frontmatter: { name: 'unknown-key-frontmatter', 'bogus-key': 'nope' },
+      }),
+    );
+    expect(skill._id).toBeDefined();
+    expect(skill.frontmatter).toMatchObject({ 'bogus-key': 'nope' });
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        field: 'frontmatter.bogus-key',
+        code: 'UNKNOWN_KEY',
+        severity: 'warning',
+      }),
+    ]);
+  });
+
+  it('canonicalizes recognized frontmatter variants before persistence and derivation', async () => {
+    const { skill, warnings } = await methods.createSkill(
+      makeSkillInput({
+        name: 'case-variant-frontmatter',
+        frontmatter: {
+          name: 'case-variant-frontmatter',
+          'Allowed-Tools': ['execute_code'],
+          'User-Invocable': false,
+        },
+      }),
+    );
+
+    expect(skill.frontmatter).toMatchObject({
+      'allowed-tools': ['execute_code'],
+      'user-invocable': false,
+    });
+    expect(skill.frontmatter).not.toHaveProperty('Allowed-Tools');
+    expect(skill.allowedTools).toEqual(['execute_code']);
+    expect(skill.userInvocable).toBe(false);
+    expect(warnings).toEqual([]);
+  });
+
+  it('rejects case-colliding recognized frontmatter keys', async () => {
     await expect(
       methods.createSkill(
         makeSkillInput({
-          name: 'strict-frontmatter',
-          frontmatter: { 'bogus-key': 'nope' },
+          name: 'case-collision-frontmatter',
+          frontmatter: {
+            'allowed-tools': ['read_file'],
+            'Allowed-Tools': ['execute_code'],
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+  });
+
+  it('creates a skill whose frontmatter carries a references list', async () => {
+    const { skill, warnings } = await methods.createSkill(
+      makeSkillInput({
+        name: 'references-frontmatter',
+        frontmatter: {
+          name: 'references-frontmatter',
+          description: 'A small demo skill used in tests.',
+          references: ['workers', 'pages', 'd1'],
+        },
+      }),
+    );
+    expect(skill.frontmatter).toMatchObject({ references: ['workers', 'pages', 'd1'] });
+    expect(warnings).toEqual([]);
+  });
+
+  it('still rejects malformed frontmatter', async () => {
+    await expect(
+      methods.createSkill(
+        makeSkillInput({
+          name: 'malformed-frontmatter',
+          frontmatter: { 'user-invocable': 'yes' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+    await expect(
+      methods.createSkill(
+        makeSkillInput({
+          name: 'non-object-frontmatter',
+          frontmatter: 'not an object',
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });
+    await expect(
+      methods.createSkill(
+        makeSkillInput({
+          name: 'deep-hooks-frontmatter',
+          frontmatter: { hooks: { a: { b: { c: { d: { e: { f: 'too deep' } } } } } } },
         }),
       ),
     ).rejects.toMatchObject({ code: 'SKILL_VALIDATION_FAILED' });

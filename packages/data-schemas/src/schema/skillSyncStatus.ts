@@ -1,5 +1,34 @@
 import { Schema } from 'mongoose';
-import type { ISkillSyncStatusDocument } from '~/types/skillSync';
+import type { ISkillSyncSkippedSkill, ISkillSyncStatusDocument } from '~/types/skillSync';
+
+const skippedSkillSchema = new Schema<ISkillSyncSkippedSkill>(
+  {
+    path: {
+      type: String,
+      default: null,
+      maxlength: 500,
+      validate: {
+        validator: (value: unknown) => typeof value === 'string',
+        message: 'Path is required',
+      },
+    },
+    name: {
+      type: String,
+      maxlength: 128,
+    },
+    errorCode: {
+      type: String,
+      required: true,
+      maxlength: 64,
+    },
+    errorMessage: {
+      type: String,
+      required: true,
+      maxlength: 500,
+    },
+  },
+  { _id: false },
+);
 
 const skillSyncStatusSchema: Schema<ISkillSyncStatusDocument> = new Schema(
   {
@@ -21,7 +50,7 @@ const skillSyncStatusSchema: Schema<ISkillSyncStatusDocument> = new Schema(
     },
     status: {
       type: String,
-      enum: ['idle', 'running', 'succeeded', 'failed', 'skipped'],
+      enum: ['idle', 'running', 'succeeded', 'partial', 'failed', 'skipped'],
       default: 'idle',
       required: true,
     },
@@ -78,6 +107,15 @@ const skillSyncStatusSchema: Schema<ISkillSyncStatusDocument> = new Schema(
       type: Number,
       default: 0,
       min: 0,
+    },
+    skippedSkillCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    skippedSkills: {
+      type: [skippedSkillSchema],
+      default: undefined,
     },
     lockOwner: {
       type: String,

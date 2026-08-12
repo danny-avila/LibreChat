@@ -11,6 +11,8 @@ import {
 import type {
   ISkill,
   ISkillFile,
+  ValidationIssue,
+  ISkillSyncSkippedSkill,
   CreateSkillInput,
   UpdateSkillInput,
   CreateSkillResult,
@@ -37,6 +39,17 @@ function getSystemAuthorId(): Types.ObjectId {
 }
 const PROVIDER: SkillSyncProvider = 'github';
 const LOCK_LEASE_MS = 30 * 60 * 1000;
+/** Keeps a pathological source from writing an unbounded status document. */
+const MAX_RECORDED_SKIPPED_SKILLS = 20;
+/** Shared cap for skipped-skill and successful-skill validation warning logs. */
+const MAX_LOGGED_PER_SKILL_WARNINGS = 20;
+const SKIP_PATH_MAX = 500;
+const SKIP_NAME_MAX = 128;
+const SKIP_MESSAGE_MAX = 500;
+const VALIDATION_ISSUE_LIMIT = 5;
+const VALIDATION_ISSUE_FIELD_MAX = 100;
+const VALIDATION_ISSUE_CODE_MAX = 64;
+const VALIDATION_ISSUE_MESSAGE_MAX = 250;
 
 export const GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION =
   'Use a GitHub fine-grained personal access token scoped to the selected repository with read-only Contents and Metadata permissions.';
@@ -79,6 +92,7 @@ type SyncCounters = {
   syncedFileCount: number;
   deletedSkillCount: number;
   deletedFileCount: number;
+  skippedSkillCount: number;
 };
 
 type AssertNotCancelled = () => void;
@@ -92,6 +106,7 @@ type DiscoveredSkill = {
 type UpsertRemoteSkillResult = {
   skill: ISkill & { _id: Types.ObjectId };
   created: boolean;
+  warnings?: ValidationIssue[];
 };
 
 type PreparedRemoteSkill = {
@@ -457,17 +472,162 @@ function serializeDate(date: Date): string {
   return date.toISOString();
 }
 
+function redactErrorText(value: string): string {
+  return value.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]');
+}
+
+function escapeDiagnosticControlCharacters(value: string): string {
+  let escaped = '';
+  for (const character of value) {
+    const codePoint = character.charCodeAt(0);
+    if (
+      !(
+        (codePoint >= 0 && codePoint <= 0x1f) ||
+        (codePoint >= 0x7f && codePoint <= 0x9f) ||
+        codePoint === 0x2028 ||
+        codePoint === 0x2029
+      )
+    ) {
+      escaped += character;
+      continue;
+    }
+    switch (character) {
+      case '\n':
+        escaped += '\\n';
+        break;
+      case '\r':
+        escaped += '\\r';
+        break;
+      case '\t':
+        escaped += '\\t';
+        break;
+      default:
+        escaped += `\\u${codePoint.toString(16).padStart(4, '0')}`;
+    }
+  }
+  return escaped;
+}
+
+function sanitizeDiagnosticText(value: string): string {
+  return escapeDiagnosticControlCharacters(redactErrorText(value));
+}
+
+function truncateText(value: string, maxLength: number): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+}
+
+function summarizeValidationIssues(issues: unknown): string | undefined {
+  if (!Array.isArray(issues)) {
+    return undefined;
+  }
+  const summaries: string[] = [];
+  for (const rawIssue of issues.slice(0, VALIDATION_ISSUE_LIMIT)) {
+    if (!rawIssue || typeof rawIssue !== 'object') {
+      continue;
+    }
+    const issue = rawIssue as Partial<ValidationIssue>;
+    if (
+      typeof issue.field !== 'string' ||
+      typeof issue.code !== 'string' ||
+      typeof issue.message !== 'string'
+    ) {
+      continue;
+    }
+    const field = truncateText(sanitizeDiagnosticText(issue.field), VALIDATION_ISSUE_FIELD_MAX);
+    const code = truncateText(sanitizeDiagnosticText(issue.code), VALIDATION_ISSUE_CODE_MAX);
+    const message = truncateText(
+      sanitizeDiagnosticText(issue.message),
+      VALIDATION_ISSUE_MESSAGE_MAX,
+    );
+    summaries.push(`${field} [${code}]: ${message}`);
+  }
+  if (summaries.length === 0) {
+    return undefined;
+  }
+  if (issues.length > VALIDATION_ISSUE_LIMIT) {
+    summaries.push(`+${issues.length - VALIDATION_ISSUE_LIMIT} more issue(s)`);
+  }
+  return summaries.join('; ');
+}
+
 function sanitizeError(error: unknown): { code: string; message: string } {
   if (error instanceof SkillSyncError) {
-    return { code: error.code, message: error.message };
+    return { code: error.code, message: sanitizeDiagnosticText(error.message) };
   }
   if (error instanceof Error) {
+    const message = sanitizeDiagnosticText(error.message);
+    const validationError = error as Error & { code?: unknown; issues?: unknown };
+    if (validationError.code === 'SKILL_VALIDATION_FAILED') {
+      const issueSummary = summarizeValidationIssues(validationError.issues);
+      return {
+        code: 'SKILL_VALIDATION_FAILED',
+        message: truncateSkipMessage(issueSummary ? `${message}: ${issueSummary}` : message),
+      };
+    }
     return {
       code: 'SYNC_FAILED',
-      message: error.message.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]'),
+      message,
     };
   }
   return { code: 'SYNC_FAILED', message: 'Unknown skill sync failure' };
+}
+
+/**
+ * Failures that say nothing more in this run can succeed: the lock is gone, or
+ * GitHub is refusing every request. They abort the source instead of being
+ * charged to the skill that happened to hit them first. Everything else is
+ * scoped to one skill and only skips that skill.
+ */
+const SOURCE_FATAL_ERROR_CODES = new Set([
+  'SYNC_LOCK_LOST',
+  'GITHUB_AUTH_FAILED',
+  'GITHUB_RATE_LIMITED',
+  'GITHUB_REQUEST_FAILED',
+  'SYNC_ROLLBACK_FAILED',
+]);
+
+/**
+ * A skill that fails and rolls back cleanly is just a skipped skill. One whose
+ * rollback also fails leaves a half-written mirror behind, and reporting that
+ * as `partial` alongside the skills that did publish would bury it, so it ends
+ * the source instead.
+ */
+function makeRollbackFailure(error: unknown): SkillSyncError {
+  return new SkillSyncError(
+    'SYNC_ROLLBACK_FAILED',
+    `Rollback failed after: ${sanitizeError(error).message}`,
+  );
+}
+
+function makeStaleDeletionFailure(error: unknown): SkillSyncError {
+  return new SkillSyncError(
+    'SYNC_ROLLBACK_FAILED',
+    `Stale mirror deletion failed: ${sanitizeError(error).message}`,
+  );
+}
+
+function isSourceFatalError(error: unknown): boolean {
+  return error instanceof SkillSyncError && SOURCE_FATAL_ERROR_CODES.has(error.code);
+}
+
+function truncateSkipMessage(message: string): string {
+  const sanitized = escapeDiagnosticControlCharacters(message);
+  return sanitized.length > SKIP_MESSAGE_MAX
+    ? `${sanitized.slice(0, SKIP_MESSAGE_MAX - 1)}…`
+    : sanitized;
+}
+
+function truncateSkipPath(path: string): string {
+  const sanitized = escapeDiagnosticControlCharacters(path);
+  return sanitized.length > SKIP_PATH_MAX ? `${sanitized.slice(0, SKIP_PATH_MAX - 1)}…` : sanitized;
+}
+
+function truncateSkipName(name: string | undefined): string | undefined {
+  if (!name) {
+    return name;
+  }
+  const sanitized = escapeDiagnosticControlCharacters(name);
+  return sanitized.length > SKIP_NAME_MAX ? `${sanitized.slice(0, SKIP_NAME_MAX - 1)}…` : sanitized;
 }
 
 function buildGitHubHeaders(token: string): HeadersInit {
@@ -514,9 +674,17 @@ async function githubJson<T>(params: {
   token: string;
   pathname: string;
 }): Promise<T> {
-  const response = await params.fetchFn(buildGitHubUrl(params.pathname), {
-    headers: buildGitHubHeaders(params.token),
-  });
+  let response: Response;
+  try {
+    response = await params.fetchFn(buildGitHubUrl(params.pathname), {
+      headers: buildGitHubHeaders(params.token),
+    });
+  } catch {
+    throw new SkillSyncError(
+      'GITHUB_REQUEST_FAILED',
+      'GitHub request failed before receiving a response',
+    );
+  }
   if (response.ok) {
     return (await response.json()) as T;
   }
@@ -771,6 +939,7 @@ function makeStatusInput(params: {
   errorCode?: string;
   errorMessage?: string;
   counts?: Partial<SyncCounters>;
+  skippedSkills?: ISkillSyncSkippedSkill[];
 }): SkillSyncStatusInput {
   return {
     provider: PROVIDER,
@@ -790,6 +959,8 @@ function makeStatusInput(params: {
     syncedFileCount: params.counts?.syncedFileCount ?? 0,
     deletedSkillCount: params.counts?.deletedSkillCount ?? 0,
     deletedFileCount: params.counts?.deletedFileCount ?? 0,
+    skippedSkillCount: params.counts?.skippedSkillCount ?? 0,
+    skippedSkills: params.skippedSkills,
   };
 }
 
@@ -890,7 +1061,7 @@ async function commitRemoteSkill(
       update: prepared.update,
     });
     if (result.status === 'updated') {
-      return { skill: result.skill, created: false };
+      return { skill: result.skill, created: false, warnings: result.warnings };
     }
     if (result.status === 'conflict') {
       throw new SkillSyncError(
@@ -904,7 +1075,7 @@ async function commitRemoteSkill(
     );
   }
   const created = await deps.createSkill(prepared.createInput);
-  return { skill: created.skill, created: true };
+  return { skill: created.skill, created: true, warnings: created.warnings };
 }
 
 /**
@@ -927,7 +1098,10 @@ function hasExternalSkillEdit(before: ISkill, after: ISkill): boolean {
 async function commitExistingRemoteSkillAfterFileSync(
   deps: GitHubSkillSyncDeps,
   prepared: PreparedExistingRemoteSkill,
-  options: { forceCommit?: boolean } = {},
+  options: {
+    forceCommit?: boolean;
+    logSkillWarnings: (name: string, warnings: ValidationIssue[] | undefined) => void;
+  },
 ): Promise<UpsertRemoteSkillResult> {
   const refreshed = await deps.getSkillById(prepared.existing._id);
   if (!refreshed) {
@@ -945,7 +1119,9 @@ async function commitExistingRemoteSkillAfterFileSync(
   if (!options.forceCommit && !hasRemoteSkillDefinitionChanged(prepared.update, refreshed)) {
     return { skill: refreshed, created: false };
   }
-  return commitRemoteSkill(deps, { ...prepared, existing: refreshed });
+  const result = await commitRemoteSkill(deps, { ...prepared, existing: refreshed });
+  options.logSkillWarnings(result.skill.name, result.warnings);
+  return result;
 }
 
 async function cleanupFile(deps: GitHubSkillSyncDeps, file: StoredSkillFileRef): Promise<void> {
@@ -1034,17 +1210,23 @@ async function cleanupStoredFiles(params: {
   deps: GitHubSkillSyncDeps;
   files: StoredSkillFileRef[];
   logMessage: string;
+  throwOnError?: boolean;
 }): Promise<void> {
   const seen = new Set<string>();
+  const cleanupErrors: unknown[] = [];
   for (const file of params.files) {
     const key = getStoredFileKey(file);
     if (seen.has(key)) {
       continue;
     }
     seen.add(key);
-    await cleanupFile(params.deps, file).catch((cleanupError) =>
-      logger.error(params.logMessage, cleanupError),
-    );
+    await cleanupFile(params.deps, file).catch((cleanupError) => {
+      cleanupErrors.push(cleanupError);
+      logger.error(params.logMessage, cleanupError);
+    });
+  }
+  if (params.throwOnError && cleanupErrors.length > 0) {
+    throw cleanupErrors[0];
   }
 }
 
@@ -1071,6 +1253,7 @@ async function restoreExistingSkillFiles(params: {
     deps,
     files: savedFiles,
     logMessage: '[GitHubSkillSync] Failed to clean up rolled-back synced file:',
+    throwOnError: true,
   });
 }
 
@@ -1205,26 +1388,51 @@ function getMirrorNameKey(params: {
   return `${params.tenantId ?? ''}:${params.author}:${params.name ?? ''}`;
 }
 
-function assertNoDuplicatePreparedSkillNames(
+/**
+ * Two upstream skills claiming one mirror name have no non-arbitrary winner, so
+ * every member of the colliding group is dropped rather than letting tree order
+ * decide which one the mirror ends up holding. Skills with unique names are
+ * unaffected: one bad pair no longer costs the rest of the repository.
+ */
+function partitionDuplicatePreparedSkillNames(
   source: SkillSyncGitHubSourceConfig,
   preparedSkills: PreparedDiscoveredSkill[],
-): void {
+): { unique: PreparedDiscoveredSkill[]; duplicates: PreparedDiscoveredSkill[] } {
   const sourceTenantId = source.tenantId ?? undefined;
-  const seen = new Map<string, string>();
-  for (const { discovered, prepared } of preparedSkills) {
+  const groups = new Map<string, PreparedDiscoveredSkill[]>();
+  for (const entry of preparedSkills) {
     const key = getMirrorNameKey({
       tenantId: sourceTenantId,
-      author: prepared.createInput.author.toString(),
-      name: prepared.createInput.name,
+      author: entry.prepared.createInput.author.toString(),
+      name: entry.prepared.createInput.name,
     });
-    if (seen.has(key)) {
-      throw new SkillSyncError(
-        'DUPLICATE_SKILL_NAME',
-        `GitHub source "${source.id}" contains multiple skills named "${prepared.createInput.name}"`,
-      );
+    const group = groups.get(key);
+    if (group) {
+      group.push(entry);
+      continue;
     }
-    seen.set(key, discovered.rootPath);
+    groups.set(key, [entry]);
   }
+  const unique: PreparedDiscoveredSkill[] = [];
+  const duplicates: PreparedDiscoveredSkill[] = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      unique.push(group[0]);
+      continue;
+    }
+    duplicates.push(...group);
+  }
+  return { unique, duplicates };
+}
+
+function makeDuplicateNameError(
+  source: SkillSyncGitHubSourceConfig,
+  name: string | undefined,
+): SkillSyncError {
+  return new SkillSyncError(
+    'DUPLICATE_SKILL_NAME',
+    `GitHub source "${source.id}" contains multiple skills named "${name}"`,
+  );
 }
 
 async function deleteNameConflictingStaleSkill(params: {
@@ -1258,7 +1466,11 @@ async function deleteNameConflictingStaleSkill(params: {
   const { deletedFileCount, deletedSkill } = await deleteSyncedSkillForRestore(
     params.deps,
     staleSkill,
-  );
+  ).catch((error) => {
+    /* deleteSkill can remove the skill row before a later file deletion fails.
+       The caller has no complete journal to restore from in that case. */
+    throw makeStaleDeletionFailure(error);
+  });
   const staleSkillId = staleSkill._id.toString();
 
   return {
@@ -1342,9 +1554,10 @@ async function syncSkillFiles(params: {
         tenantId: skill.tenantId,
       });
     } catch (error) {
-      await cleanupFile(deps, savedFile).catch((cleanupError) =>
-        logger.error('[GitHubSkillSync] Failed to clean up orphaned synced file:', cleanupError),
-      );
+      await cleanupFile(deps, savedFile).catch((cleanupError) => {
+        logger.error('[GitHubSkillSync] Failed to clean up orphaned synced file:', cleanupError);
+        throw makeRollbackFailure(error);
+      });
       throw error;
     }
     syncedFileCount++;
@@ -1375,13 +1588,18 @@ async function deleteSyncedSkill(
 ): Promise<number> {
   const files = await deps.listSkillFiles(skill._id);
   let deletedFiles = 0;
+  const cleanupErrors: unknown[] = [];
   for (const file of files) {
-    await cleanupFile(deps, file).catch((cleanupError) =>
-      logger.error('[GitHubSkillSync] Failed to clean up mirrored skill file:', cleanupError),
-    );
+    await cleanupFile(deps, file).catch((cleanupError) => {
+      cleanupErrors.push(cleanupError);
+      logger.error('[GitHubSkillSync] Failed to clean up mirrored skill file:', cleanupError);
+    });
     deletedFiles++;
   }
   await deps.deleteSkill(skill._id.toString());
+  if (cleanupErrors.length > 0) {
+    throw cleanupErrors[0];
+  }
   return deletedFiles;
 }
 
@@ -1429,6 +1647,14 @@ async function syncSource(params: {
 }): Promise<ISkillSyncStatus> {
   const { deps, source, fetchFn, assertNotCancelled } = params;
   const startedAt = new Date();
+  const counts: SyncCounters = {
+    syncedSkillCount: 0,
+    syncedFileCount: 0,
+    deletedSkillCount: 0,
+    deletedFileCount: 0,
+    skippedSkillCount: 0,
+  };
+  const skippedSkills: ISkillSyncSkippedSkill[] = [];
   await deps.upsertStatus(makeStatusInput({ source, status: 'running', startedAt }));
   try {
     assertNotCancelled();
@@ -1463,63 +1689,196 @@ async function syncSource(params: {
       }
       return existingSyncedSkills;
     };
-    const counts: SyncCounters = {
-      syncedSkillCount: 0,
-      syncedFileCount: 0,
-      deletedSkillCount: 0,
-      deletedFileCount: 0,
+    let loggedPerSkillWarningCount = 0;
+    let suppressedSkippedWarningCount = 0;
+    let suppressedValidationWarningCount = 0;
+    /**
+     * Non-blocking validation issues have no user-facing surface on a background
+     * sync. Keep them visible without allowing a large source to amplify logs.
+     */
+    const logSkillWarnings = (name: string, warnings: ValidationIssue[] | undefined): void => {
+      if (!warnings?.length) {
+        return;
+      }
+      if (loggedPerSkillWarningCount >= MAX_LOGGED_PER_SKILL_WARNINGS) {
+        suppressedValidationWarningCount++;
+        return;
+      }
+      const summary = summarizeValidationIssues(warnings);
+      if (!summary) {
+        return;
+      }
+      logger.warn(
+        `[GitHubSkillSync] Skill "${truncateSkipName(name)}" synced with warnings: ${truncateSkipMessage(summary)}`,
+      );
+      loggedPerSkillWarningCount++;
+    };
+    const logSuppressedPerSkillWarningSummaries = (): void => {
+      if (suppressedSkippedWarningCount > 0) {
+        logger.warn(
+          `[GitHubSkillSync] Source "${source.id}" suppressed ${suppressedSkippedWarningCount} additional skipped skill warning(s)`,
+        );
+      }
+      if (suppressedValidationWarningCount > 0) {
+        logger.warn(
+          `[GitHubSkillSync] Source "${source.id}" suppressed ${suppressedValidationWarningCount} additional synced skill validation warning(s)`,
+        );
+      }
+    };
+    /**
+     * Charges one skill's failure to that skill and lets the run continue.
+     * Source-level failures are rethrown so the whole source still fails fast
+     * instead of being reported as a long list of skipped skills.
+     */
+    const recordSkippedSkill = ({
+      path,
+      name,
+      error,
+    }: {
+      path: string;
+      name?: string;
+      error: unknown;
+    }): void => {
+      if (isSourceFatalError(error)) {
+        throw error;
+      }
+      const sanitized = sanitizeError(error);
+      counts.skippedSkillCount++;
+      if (loggedPerSkillWarningCount < MAX_LOGGED_PER_SKILL_WARNINGS) {
+        logger.warn(
+          `[GitHubSkillSync] Source "${source.id}" skipped "${truncateSkipPath(path)}": ${truncateSkipMessage(sanitized.message)}`,
+        );
+        loggedPerSkillWarningCount++;
+      } else {
+        suppressedSkippedWarningCount++;
+      }
+      if (skippedSkills.length >= MAX_RECORDED_SKIPPED_SKILLS) {
+        return;
+      }
+      skippedSkills.push({
+        path: truncateSkipPath(path),
+        name: truncateSkipName(name),
+        errorCode: sanitized.code,
+        errorMessage: truncateSkipMessage(sanitized.message),
+      });
     };
     const syncedAt = new Date();
     const preparedSkills: PreparedDiscoveredSkill[] = [];
+    let canReconcileStaleSkills = true;
+    /* Built from everything discovered upstream, not just what prepared
+       cleanly: a skill that failed to prepare is still present in the
+       repository, so it must not look stale or like a rename target. */
+    const discoveredUpstreamIds = new Set(
+      discoveredSkills.map((discovered) => makeUpstreamId(source, discovered.rootPath)),
+    );
 
     for (const discovered of discoveredSkills) {
       assertNotCancelled();
-      assertGitHubSkillPackageManifest(discovered);
-      const skillMdPath = getSkillMdPath(discovered);
-      const skillMdBuffer = await fetchBlob({
-        fetchFn,
-        token,
-        source,
-        sha: discovered.skillMd.sha,
-      });
-      assertNotCancelled();
-      assertGitHubBufferSize(skillMdBuffer, skillMdPath);
-      const prepared = await prepareRemoteSkill({
-        deps,
-        source,
-        discovered,
-        skillMdContent: skillMdBuffer.toString('utf-8'),
-        commitSha: commit.sha,
-        syncedAt,
-      });
-      preparedSkills.push({ discovered, prepared });
+      try {
+        assertGitHubSkillPackageManifest(discovered);
+        const skillMdPath = getSkillMdPath(discovered);
+        const skillMdBuffer = await fetchBlob({
+          fetchFn,
+          token,
+          source,
+          sha: discovered.skillMd.sha,
+        });
+        assertNotCancelled();
+        assertGitHubBufferSize(skillMdBuffer, skillMdPath);
+        const prepared = await prepareRemoteSkill({
+          deps,
+          source,
+          discovered,
+          skillMdContent: skillMdBuffer.toString('utf-8'),
+          commitSha: commit.sha,
+          syncedAt,
+        });
+        preparedSkills.push({ discovered, prepared });
+      } catch (error) {
+        /* Until preparation succeeds, a moved skill cannot be matched to the
+           mirror that still carries its old upstream id. Keep stale mirrors
+           for this run rather than deleting a last-known-good moved skill. */
+        canReconcileStaleSkills = false;
+        seenUpstreamIds.add(makeUpstreamId(source, discovered.rootPath));
+        recordSkippedSkill({ path: discovered.rootPath, error });
+      }
     }
 
-    const discoveredUpstreamIds = new Set(
-      preparedSkills.map(({ discovered }) => makeUpstreamId(source, discovered.rootPath)),
-    );
-    assertNoDuplicatePreparedSkillNames(source, preparedSkills);
+    /**
+     * A moved skill's mirror still carries its old upstream id until the update
+     * lands, and only the new path is marked as seen. Marking the old id keeps
+     * the published copy in place whenever the new one does not replace it, so
+     * the reconcile pass cannot read it as stale.
+     */
+    const markMovedMirrorAsSeen = async (
+      prepared: PreparedRemoteSkill,
+    ): Promise<(ISkill & { _id: Types.ObjectId }) | null> => {
+      if (prepared.existing || !canReconcileStaleSkills) {
+        return null;
+      }
+      const movedExisting = findMovedSourceSkill({
+        source,
+        prepared,
+        existingSyncedSkills: await getExistingSyncedSkills(),
+        excludedUpstreamIds: discoveredUpstreamIds,
+      });
+      const movedUpstreamId = movedExisting
+        ? getSourceMetadataString(movedExisting, 'upstreamId')
+        : undefined;
+      if (movedUpstreamId) {
+        seenUpstreamIds.add(movedUpstreamId);
+      }
+      return movedExisting;
+    };
+
+    const { unique, duplicates } = partitionDuplicatePreparedSkillNames(source, preparedSkills);
+    for (const { discovered, prepared } of duplicates) {
+      seenUpstreamIds.add(makeUpstreamId(source, discovered.rootPath));
+      /* A duplicate never reaches `syncPreparedSkill`, so without this its
+         moved mirror goes unmarked and is reconciled away even though nothing
+         was published to replace it. */
+      const movedMirror = await markMovedMirrorAsSeen(prepared);
+      if (!prepared.existing && !movedMirror) {
+        /* A duplicate with a new identity can be a moved and renamed skill.
+           Without an identity or name match, preserve unmatched stale mirrors
+           because one may be its last-known-good copy. */
+        canReconcileStaleSkills = false;
+      }
+      recordSkippedSkill({
+        path: discovered.rootPath,
+        name: prepared.createInput.name,
+        error: makeDuplicateNameError(source, prepared.createInput.name),
+      });
+    }
     const orderedPreparedSkills = orderPreparedSkillsForSafeStaleDeletes({
       source,
-      preparedSkills,
+      preparedSkills: unique,
       existingSyncedSkills: await getExistingSyncedSkills(),
       discoveredUpstreamIds,
     });
 
-    for (const { discovered, prepared } of orderedPreparedSkills) {
-      assertNotCancelled();
-      const movedExisting = prepared.existing
-        ? null
-        : findMovedSourceSkill({
-            source,
-            prepared,
-            existingSyncedSkills: await getExistingSyncedSkills(),
-            excludedUpstreamIds: discoveredUpstreamIds,
-          });
+    const syncPreparedSkill = async ({
+      discovered,
+      prepared,
+    }: PreparedDiscoveredSkill): Promise<void> => {
+      if (!prepared.existing && !canReconcileStaleSkills) {
+        const ambiguousMovedMirror = findMovedSourceSkill({
+          source,
+          prepared,
+          existingSyncedSkills: await getExistingSyncedSkills(),
+          excludedUpstreamIds: discoveredUpstreamIds,
+        });
+        if (ambiguousMovedMirror) {
+          throw new SkillSyncError(
+            'SKILL_MOVE_AMBIGUOUS',
+            `Skill "${prepared.createInput.name}" may have moved, but another skill could not be prepared`,
+          );
+        }
+      }
+      const movedExisting = await markMovedMirrorAsSeen(prepared);
       const effectivePrepared: PreparedRemoteSkill = movedExisting
         ? { ...prepared, existing: movedExisting }
         : prepared;
-      seenUpstreamIds.add(makeUpstreamId(source, discovered.rootPath));
       if (effectivePrepared.existing) {
         // Check for an external edit before mutating files, so a concurrently
         // edited skill fails fast without leaving its bundled files partially
@@ -1557,7 +1916,7 @@ async function syncSource(params: {
             assertNotCancelled,
             journal,
           });
-          if (prepared.existing) {
+          if (prepared.existing && canReconcileStaleSkills) {
             staleConflictCleanup = await deleteNameConflictingStaleSkill({
               deps,
               source,
@@ -1576,30 +1935,41 @@ async function syncSource(params: {
               ...effectivePrepared,
               existing: effectivePrepared.existing,
             },
-            { forceCommit: fileCounts.syncedFileCount > 0 || fileCounts.deletedFileCount > 0 },
+            {
+              forceCommit: fileCounts.syncedFileCount > 0 || fileCounts.deletedFileCount > 0,
+              logSkillWarnings,
+            },
           );
         } catch (error) {
+          let rollbackFailed = false;
           await restoreExistingSkillFiles({
             deps,
             skill: effectivePrepared.existing,
             previousFiles,
             savedFiles: journal.savedFiles,
-          }).catch((cleanupError) =>
+          }).catch((cleanupError) => {
+            rollbackFailed = true;
             logger.error(
               '[GitHubSkillSync] Failed to restore existing skill files after sync failure:',
               cleanupError,
-            ),
-          );
+            );
+          });
           if (staleConflictCleanup?.deletedSkill) {
             await restoreDeletedSyncedSkill(deps, staleConflictCleanup.deletedSkill).catch(
-              (cleanupError) =>
+              (cleanupError) => {
                 logger.error(
-                  '[GitHubSkillSync] Failed to restore stale mirrored skill after sync failure:',
+                  '[GitHubSkillSync] Failed to recreate stale mirrored skill after sync failure:',
                   cleanupError,
-                ),
+                );
+              },
             );
+            /* deleteSkill removes the original id from agent allowlists and
+               deletes every ACL entry. Recreating the row recovers its data,
+               but cannot restore that dependent state, so this is never a
+               complete rollback and the source must fail visibly. */
+            rollbackFailed = true;
           }
-          throw error;
+          throw rollbackFailed ? makeRollbackFailure(error) : error;
         }
         await cleanupStoredFiles({
           deps,
@@ -1612,7 +1982,7 @@ async function syncSource(params: {
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;
-        continue;
+        return;
       }
 
       const upserted = await commitRemoteSkill(deps, effectivePrepared);
@@ -1629,17 +1999,53 @@ async function syncSource(params: {
           assertNotCancelled,
         });
         await ensurePublicViewer(deps, skill._id);
+        logSkillWarnings(skill.name, upserted.warnings);
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;
       } catch (error) {
-        await deleteSyncedSkill(deps, skill).catch((cleanupError) =>
-          logger.error(
-            '[GitHubSkillSync] Failed to roll back partially synced skill:',
-            cleanupError,
-          ),
-        );
-        throw error;
+        const rolledBack = await deleteSyncedSkill(deps, skill)
+          .then(() => true)
+          .catch((cleanupError) => {
+            logger.error(
+              '[GitHubSkillSync] Failed to roll back partially synced skill:',
+              cleanupError,
+            );
+            return false;
+          });
+        throw rolledBack ? error : makeRollbackFailure(error);
+      }
+    };
+
+    for (const entry of orderedPreparedSkills) {
+      assertNotCancelled();
+      /* Marked as seen before the attempt: a skill that fails here is still
+         present upstream, so the reconcile pass below must not mirror-delete
+         a copy that a later run can repair. */
+      seenUpstreamIds.add(makeUpstreamId(source, entry.discovered.rootPath));
+      try {
+        await syncPreparedSkill(entry);
+      } catch (error) {
+        if (
+          !entry.prepared.existing &&
+          !findMovedSourceSkill({
+            source,
+            prepared: entry.prepared,
+            existingSyncedSkills: await getExistingSyncedSkills(),
+            excludedUpstreamIds: discoveredUpstreamIds,
+          })
+        ) {
+          /* A new identity can be a moved and renamed skill that name-based
+             matching cannot associate with its old mirror. If it fails after
+             preparation, preserve stale mirrors because the old upstream id
+             is unknown and may be the last-known-good copy. */
+          canReconcileStaleSkills = false;
+        }
+        recordSkippedSkill({
+          path: entry.discovered.rootPath,
+          name: entry.prepared.createInput.name,
+          error,
+        });
       }
     }
 
@@ -1662,20 +2068,44 @@ async function syncSource(params: {
         skill.sourceMetadata && typeof skill.sourceMetadata.upstreamId === 'string'
           ? skill.sourceMetadata.upstreamId
           : '';
-      if (seenUpstreamIds.has(upstreamId)) {
+      if (!canReconcileStaleSkills || seenUpstreamIds.has(upstreamId)) {
         continue;
       }
       counts.deletedFileCount += await deleteSyncedSkill(deps, skill);
       counts.deletedSkillCount++;
     }
 
+    if (counts.skippedSkillCount === 0) {
+      logSuppressedPerSkillWarningSummaries();
+      return deps.upsertStatus(
+        makeStatusInput({
+          source,
+          status: 'succeeded',
+          startedAt,
+          finishedAt: new Date(),
+          counts,
+        }),
+      );
+    }
+    /* Nothing published and something skipped means the source produced no
+       usable mirror at all, which is a failure however it is spelled. The
+       first skip carries the reason so the status is actionable. */
+    const publishedNothing = counts.syncedSkillCount === 0;
+    const firstSkip = skippedSkills[0];
+    logSuppressedPerSkillWarningSummaries();
+    logger.warn(
+      `[GitHubSkillSync] Source "${source.id}" synced ${counts.syncedSkillCount} skill(s) and skipped ${counts.skippedSkillCount}`,
+    );
     return deps.upsertStatus(
       makeStatusInput({
         source,
-        status: 'succeeded',
+        status: publishedNothing ? 'failed' : 'partial',
         startedAt,
         finishedAt: new Date(),
         counts,
+        skippedSkills,
+        errorCode: publishedNothing ? firstSkip?.errorCode : undefined,
+        errorMessage: publishedNothing ? firstSkip?.errorMessage : undefined,
       }),
     );
   } catch (error) {
@@ -1687,6 +2117,14 @@ async function syncSource(params: {
         status: 'failed',
         startedAt,
         finishedAt: new Date(),
+        counts: {
+          syncedSkillCount: 0,
+          syncedFileCount: 0,
+          deletedSkillCount: 0,
+          deletedFileCount: 0,
+          skippedSkillCount: counts.skippedSkillCount,
+        },
+        skippedSkills: skippedSkills.length > 0 ? skippedSkills : undefined,
         errorCode: sanitized.code,
         errorMessage: sanitized.message,
       }),
@@ -1781,6 +2219,8 @@ export function createGitHubSkillSyncRunner(deps: GitHubSkillSyncDeps): GitHubSk
         syncedFileCount: stored?.syncedFileCount ?? 0,
         deletedSkillCount: stored?.deletedSkillCount ?? 0,
         deletedFileCount: stored?.deletedFileCount ?? 0,
+        skippedSkillCount: stored?.skippedSkillCount ?? 0,
+        skippedSkills: stored?.skippedSkills,
         createdAt: stored?.createdAt,
         updatedAt: stored?.updatedAt,
       } satisfies ISkillSyncStatus & { credentialPresent: boolean };
