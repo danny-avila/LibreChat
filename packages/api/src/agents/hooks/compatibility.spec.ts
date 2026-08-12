@@ -174,6 +174,31 @@ describe('planPluginHooks', () => {
     );
   });
 
+  test('fails closed for SessionStart clear matchers, which no run path emits', () => {
+    const plan = planPluginHooks(
+      document({
+        SessionStart: [
+          { matcher: 'resume|clear', hooks: [{ type: 'command', command: 'reload-context' }] },
+        ],
+      }),
+      { handlerTypes: new Set(['command']), sessionLifecycle: true },
+    );
+
+    expect(plan.summary).toEqual({ declared: 1, ready: 0, unsupported: 1 });
+    expect(plan.entries[0]).toEqual(
+      expect.objectContaining({
+        status: 'unsupported',
+        issues: expect.arrayContaining([
+          expect.objectContaining({
+            code: 'unsupported_session_source',
+            severity: 'error',
+            message: expect.stringContaining('"clear"'),
+          }),
+        ]),
+      }),
+    );
+  });
+
   test('keeps wildcard SessionStart ready while reporting compact as filtered', () => {
     const plan = planPluginHooks(
       document({

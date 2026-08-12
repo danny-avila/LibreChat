@@ -157,6 +157,19 @@ export interface PluginHookPlan {
   summary: PluginHookPlanSummary;
 }
 
+/**
+ * SessionStart lifecycle sources no LibreChat run-construction path emits.
+ * A matcher naming one is rejected at plan time — registering it would plan
+ * ready and never fire, the silent-no-op failure mode planning exists to
+ * surface.
+ */
+const UNAVAILABLE_SESSION_SOURCES: Readonly<Record<string, string>> = Object.freeze({
+  compact:
+    'SessionStart source "compact" is unavailable because LibreChat PostCompact hook output cannot inject session context',
+  clear:
+    'SessionStart source "clear" is unavailable because LibreChat has no clear-conversation lifecycle path',
+});
+
 function normalizeMatcher(matcher: string | undefined): string | undefined {
   const trimmed = matcher?.trim();
   if (!trimmed || trimmed === '*' || trimmed === '.*') {
@@ -371,7 +384,7 @@ function planMatcher(
             code: 'unsupported_session_source',
             severity: 'warning',
             message:
-              'Wildcard SessionStart compatibility covers startup, resume, and clear; compact is runtime-filtered',
+              'Wildcard SessionStart compatibility covers startup and resume; compact and clear never occur in LibreChat',
           },
         ],
       };
@@ -394,11 +407,12 @@ function planMatcher(
         : sourceMatcher;
     const runtimeValidationIssue =
       validationIssue ?? getMatcherValidationIssue(sourceEvent, matcher, targetEvent);
-    const includesCompact =
+    const unavailableSource = Object.keys(UNAVAILABLE_SESSION_SOURCES).find((source) =>
       matcherSemantics.kind === 'exact'
-        ? matcherSemantics.values.includes('compact')
-        : matcherIncludesValue(matcher, 'compact');
-    if (!runtimeValidationIssue && includesCompact) {
+        ? matcherSemantics.values.includes(source)
+        : matcherIncludesValue(matcher, source),
+    );
+    if (!runtimeValidationIssue && unavailableSource !== undefined) {
       return {
         sourceMatcher,
         matcher,
@@ -406,8 +420,7 @@ function planMatcher(
           {
             code: 'unsupported_session_source',
             severity: 'error',
-            message:
-              'SessionStart source "compact" is unavailable because LibreChat PostCompact hook output cannot inject session context',
+            message: UNAVAILABLE_SESSION_SOURCES[unavailableSource],
           },
         ],
       };

@@ -26,15 +26,14 @@ function handlerIdentity(handler: PluginHookHandler): string {
   );
 }
 
-function onceKey(
-  pluginId: string,
-  userId: string | undefined,
-  request: PluginHookExecutionRequest,
-): string {
+/** Conversation scope: caller-supplied session ids cannot collide across principals. */
+function onceScope(userId: string | undefined, sessionId: string): string {
+  return [userId ?? '', sessionId].join(KEY_SEPARATOR);
+}
+
+function onceKey(pluginId: string, request: PluginHookExecutionRequest): string {
   return [
-    userId ?? '',
     pluginId,
-    request.payload.session_id,
     request.sourceEvent,
     String(request.groupIndex),
     String(request.handlerIndex),
@@ -46,10 +45,8 @@ function onceKey(
  * Hook registration is per-run, so the runtime's own SessionStart and `once`
  * dedup only spans one run. The once store extends both across runs of the
  * same conversation (see `once.ts` for the store's ownership and eviction
- * contract). Keys are scoped to the authenticated user so caller-supplied
- * conversation ids cannot collide across principals, and to the declaration
- * position and handler identity so one handler firing never suppresses a
- * sibling declared on the same event.
+ * contract). Keys carry the declaration position and handler identity so one
+ * handler firing never suppresses a sibling declared on the same event.
  */
 function withOnceDedup(
   pluginId: string,
@@ -64,7 +61,8 @@ function withOnceDedup(
       if (!oncePerSession) {
         return executor.execute(request, signal);
       }
-      const first = getPluginHookOnceStore().markOnce(onceKey(pluginId, userId, request));
+      const scope = onceScope(userId, request.payload.session_id);
+      const first = getPluginHookOnceStore().markOnce(scope, onceKey(pluginId, request));
       if (first instanceof Promise) {
         return first.then((isFirst) => (isFirst ? executor.execute(request, signal) : {}));
       }
@@ -114,6 +112,15 @@ export interface RegisterDeploymentPluginHooksOptions {
 export function registerDeploymentPluginHooks(
   options: RegisterDeploymentPluginHooksOptions,
 ): number {
+  const sessionId = options.context?.sessionId;
+  if (sessionId !== undefined) {
+    /**
+     * Refreshes the conversation's once-state retention on every run, so even
+     * rarely-matching `once` handlers keep their keys while the conversation
+     * stays active.
+     */
+    void getPluginHookOnceStore().touch(onceScope(options.context?.userId, sessionId));
+  }
   let registered = 0;
   for (const plugin of getExecutableHookPlugins()) {
     const document = plugin.hooks?.document;

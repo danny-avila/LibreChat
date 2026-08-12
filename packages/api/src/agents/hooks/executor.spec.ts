@@ -356,12 +356,18 @@ describe('createCommandExecutor', () => {
       pluginRoot,
       pluginData,
       env: { PATH: process.env.PATH },
-      killGraceMs: 250,
+      killGraceMs: 500,
     });
+    /**
+     * The descendant redirects its stdio away from the captured pipes so the
+     * wrapper's exit emits `close` while the descendant is still alive —
+     * exercising the window where a close-time cancellation would skip the
+     * group SIGKILL and leak the survivor.
+     */
     const pending = executor.execute(
       request({
         type: 'command',
-        command: `bash -c 'trap "" TERM; echo $$ > "$PLUGIN_DATA/survivor.pid"; while true; do sleep 0.1; done' & wait`,
+        command: `bash -c 'trap "" TERM; echo $$ > "$PLUGIN_DATA/survivor.pid"; exec >/dev/null 2>&1; while true; do sleep 0.1; done' & wait`,
       }),
       controller.signal,
     );
@@ -371,6 +377,7 @@ describe('createCommandExecutor', () => {
     controller.abort();
     /** The wrapper exits on SIGTERM while the trap-protected descendant survives. */
     await expect(pending).resolves.toEqual({});
+    expect(isGone(survivorPid)).toBe(false);
     await waitFor(() => isGone(survivorPid));
     expect(isGone(survivorPid)).toBe(true);
   });
