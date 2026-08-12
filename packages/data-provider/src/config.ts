@@ -1253,12 +1253,39 @@ const ttsLocalaiSchema = z.object({
   backend: z.string(),
 });
 
+const ttsMiniMaxSchema = z.object({
+  url: z.string().optional(),
+  apiKey: z.string(),
+  apiKeyPreview: apiKeyPreviewSchema,
+  region: z.enum(['global_en', 'cn_zh']).default('global_en'),
+  model: z.string().default('speech-2.8-hd'),
+  voices: z.array(z.string()),
+  language_boost: z.string().optional(),
+  voice_settings: z
+    .object({
+      speed: z.number().optional(),
+      vol: z.number().optional(),
+      pitch: z.number().optional(),
+      emotion: z.string().optional(),
+    })
+    .optional(),
+  audio_settings: z
+    .object({
+      sample_rate: z.number().optional(),
+      bitrate: z.number().optional(),
+      format: z.enum(['mp3', 'wav', 'flac', 'pcm']).default('mp3'),
+      channel: z.number().optional(),
+    })
+    .optional(),
+});
+
 const ttsSchema = z.object({
   allowedAddresses: allowedAddressesSchema,
   openai: ttsOpenaiSchema.optional(),
   azureOpenAI: ttsAzureOpenAISchema.optional(),
   elevenlabs: ttsElevenLabsSchema.optional(),
   localai: ttsLocalaiSchema.optional(),
+  minimax: ttsMiniMaxSchema.optional(),
 });
 
 const sttOpenaiSchema = z.object({
@@ -1306,7 +1333,9 @@ const speechTab = z
       .or(
         z.object({
           /** Keep in sync with TTSProviders enum (defined below — cannot reference due to eval order) */
-          engineTTS: z.enum(['openai', 'azureOpenAI', 'elevenlabs', 'localai']).optional(),
+          engineTTS: z
+            .enum(['openai', 'azureOpenAI', 'elevenlabs', 'localai', 'minimax'])
+            .optional(),
           voice: z.string().optional(),
           languageTTS: z.string().optional(),
           automaticPlayback: z.boolean().optional(),
@@ -2843,6 +2872,10 @@ export enum TTSProviders {
    * Provider for LocalAI TTS
    */
   LOCALAI = 'localai',
+  /**
+   * Provider for MiniMax TTS
+   */
+  MINIMAX = 'minimax',
 }
 
 /** Enum for app-wide constants */

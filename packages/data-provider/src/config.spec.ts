@@ -515,6 +515,26 @@ describe('allowedAddressesSchema', () => {
       expect(result.success).toBe(true);
     });
 
+    it('accepts MiniMax TTS configuration with regional and audio settings', () => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        speech: {
+          tts: {
+            minimax: {
+              apiKey: '${TTS_API_KEY}',
+              region: 'cn_zh',
+              voices: ['Chinese_Mandarin_Gentleman'],
+              audio_settings: { format: 'wav', sample_rate: 32000 },
+            },
+          },
+        },
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.speech?.tts?.minimax?.model).toBe('speech-2.8-hd');
+      }
+    });
+
     it('accepts the field on ocr', () => {
       const result = configSchema.safeParse({
         version: '1.0',
