@@ -1291,8 +1291,8 @@ const speechTab = z
       .optional()
       .or(
         z.object({
-          /** Keep in sync with STTProviders enum (defined below — cannot reference due to eval order) */
-          engineSTT: z.enum(['openai', 'azureOpenAI']).optional(),
+          /** Provider names remain valid for backward compatibility and are normalized for clients. */
+          engineSTT: z.enum(['browser', 'external', 'openai', 'azureOpenAI']).optional(),
           languageSTT: z.string().optional(),
           autoTranscribeAudio: z.boolean().optional(),
           decibelValue: z.number().optional(),
@@ -1305,8 +1305,10 @@ const speechTab = z
       .optional()
       .or(
         z.object({
-          /** Keep in sync with TTSProviders enum (defined below — cannot reference due to eval order) */
-          engineTTS: z.enum(['openai', 'azureOpenAI', 'elevenlabs', 'localai']).optional(),
+          /** Provider names remain valid for backward compatibility and are normalized for clients. */
+          engineTTS: z
+            .enum(['browser', 'external', 'openai', 'azureOpenAI', 'elevenlabs', 'localai'])
+            .optional(),
           voice: z.string().optional(),
           languageTTS: z.string().optional(),
           automaticPlayback: z.boolean().optional(),

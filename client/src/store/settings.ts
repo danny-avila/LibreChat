@@ -2,6 +2,24 @@ import { atom } from 'recoil';
 import { SettingsViews, LocalStorageKeys } from 'librechat-data-provider';
 import type { TOptionSettings } from '~/common';
 import { atomWithLocalStorage } from '~/store/utils';
+import { STTEndpoints } from '~/common';
+
+const VALID_SPEECH_ENGINES = new Set<string>(Object.values(STTEndpoints));
+const LEGACY_EXTERNAL_STT_ENGINES = new Set<string>(['openai', 'azureOpenAI']);
+const LEGACY_EXTERNAL_TTS_ENGINES = new Set<string>([
+  'openai',
+  'azureOpenAI',
+  'elevenlabs',
+  'localai',
+]);
+
+const normalizeSavedSpeechEngine = (
+  engine: string,
+  legacyExternalEngines: ReadonlySet<string>,
+): string => {
+  if (VALID_SPEECH_ENGINES.has(engine)) return engine;
+  return legacyExternalEngines.has(engine) ? STTEndpoints.external : STTEndpoints.browser;
+};
 
 // Static atoms without localStorage
 const staticAtoms = {
@@ -12,6 +30,7 @@ const staticAtoms = {
     default: SettingsViews.default,
   }),
   showPopover: atom<boolean>({ key: 'showPopover', default: false }),
+  speechSettingsInitialized: atom<boolean>({ key: 'speechSettingsInitialized', default: false }),
 };
 
 const localStorageAtoms = {
@@ -70,14 +89,18 @@ const localStorageAtoms = {
   advancedMode: atomWithLocalStorage('advancedMode', false),
 
   speechToText: atomWithLocalStorage('speechToText', true),
-  engineSTT: atomWithLocalStorage('engineSTT', 'browser'),
+  engineSTT: atomWithLocalStorage('engineSTT', 'browser', (engine) =>
+    normalizeSavedSpeechEngine(engine, LEGACY_EXTERNAL_STT_ENGINES),
+  ),
   languageSTT: atomWithLocalStorage('languageSTT', ''),
   autoTranscribeAudio: atomWithLocalStorage('autoTranscribeAudio', false),
   decibelValue: atomWithLocalStorage('decibelValue', -45),
   autoSendText: atomWithLocalStorage('autoSendText', -1),
 
   textToSpeech: atomWithLocalStorage('textToSpeech', true),
-  engineTTS: atomWithLocalStorage('engineTTS', 'browser'),
+  engineTTS: atomWithLocalStorage('engineTTS', 'browser', (engine) =>
+    normalizeSavedSpeechEngine(engine, LEGACY_EXTERNAL_TTS_ENGINES),
+  ),
   voice: atomWithLocalStorage<string | undefined>('voice', undefined),
   cloudBrowserVoices: atomWithLocalStorage('cloudBrowserVoices', false),
   languageTTS: atomWithLocalStorage('languageTTS', ''),
