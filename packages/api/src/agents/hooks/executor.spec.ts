@@ -103,6 +103,26 @@ describe('createCommandExecutor', () => {
     ).toBe('my_mcp_tool');
   });
 
+  test('translates Claude aliases inside regex-form matchers or rejects unsafe ones', () => {
+    const translate = (matcher: string) =>
+      createCommandExecutor({ pluginRoot, pluginData }).capabilities.translateMatcher?.({
+        sourceEvent: 'PreToolUse',
+        targetEvent: 'PreToolUse',
+        matcher,
+      });
+    expect(translate('^Bash$')).toEqual({
+      matcher: '^bash_tool$',
+      requiresToolNameTranslation: true,
+    });
+    expect(translate('^(Write|Edit)$')).toEqual({
+      matcher: '^(create_file|edit_file)$',
+      requiresToolNameTranslation: true,
+    });
+    expect(translate('Bashful|write_file')).toBe('Bashful|write_file');
+    expect(translate('[Bash]')).toBeUndefined();
+    expect(translate('Bash\\d')).toBeUndefined();
+  });
+
   test('returns sanitized JSON stdout and drops host-only or invalid fields', async () => {
     const output = await execute({
       type: 'command',

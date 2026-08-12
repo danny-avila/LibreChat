@@ -28,7 +28,7 @@ const HOOKS_DOCUMENT = {
         ],
       },
       {
-        matcher: 'Write',
+        matcher: '^(Write|Edit)$',
         hooks: [
           {
             type: 'command',

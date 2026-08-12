@@ -36,31 +36,44 @@ const RUNTIME_TOOL_BY_PLUGIN: ReadonlyMap<string, string> = new Map([
 const PLUGIN_TOOL_BY_RUNTIME: ReadonlyMap<string, string> = new Map(
   Array.from(RUNTIME_TOOL_BY_PLUGIN, ([plugin, runtime]) => [runtime, plugin]),
 );
+const ALIAS_TOKEN_PATTERN = new RegExp(
+  `\\b(${Array.from(RUNTIME_TOOL_BY_PLUGIN.keys()).join('|')})\\b`,
+  'g',
+);
+/** Character classes and escapes where token substitution could corrupt regex semantics. */
+const UNSAFE_ALIAS_CONTEXT = /[\\[\]]/;
+
+function containsAliasToken(matcher: string): boolean {
+  ALIAS_TOKEN_PATTERN.lastIndex = 0;
+  return ALIAS_TOKEN_PATTERN.test(matcher);
+}
 
 /**
  * Capabilities of the command executor, shared by plan time (plugin loading)
  * and run time (hook registration) so a handler the loader marked `ready` is
- * always executable. Exact matcher values translate through the Claude alias
- * table above; payload `tool_name`s are presented in the plugin's namespace
- * (the Claude alias where one exists) for both translated and native
- * matchers, so one hook script works unchanged across both.
+ * always executable. Alias tokens translate in exact matchers ("Bash|Write")
+ * and in regex matchers ("^(Write|Edit)$") via word-bounded substitution; a
+ * regex whose alias sits in a character class or escape is rejected as
+ * unmapped — a loud plan-time diagnostic beats a guard that never fires.
+ * Payload `tool_name`s are presented in the plugin's namespace (the Claude
+ * alias where one exists) for both translated and native matchers, so one
+ * hook script works unchanged across both.
  */
 export const commandExecutorCapabilities: PluginHookCapabilities = {
   handlerTypes: new Set(['command']),
   translateMatcher: ({ matcher }) => {
-    let translated = false;
-    const mapped = matcher
-      .split('|')
-      .map((value) => {
-        const runtime = RUNTIME_TOOL_BY_PLUGIN.get(value);
-        if (runtime === undefined) {
-          return value;
-        }
-        translated = true;
-        return runtime;
-      })
-      .join('|');
-    return translated ? { matcher: mapped, requiresToolNameTranslation: true } : matcher;
+    if (!containsAliasToken(matcher)) {
+      return matcher;
+    }
+    if (UNSAFE_ALIAS_CONTEXT.test(matcher)) {
+      return undefined;
+    }
+    ALIAS_TOKEN_PATTERN.lastIndex = 0;
+    const mapped = matcher.replace(
+      ALIAS_TOKEN_PATTERN,
+      (alias) => RUNTIME_TOOL_BY_PLUGIN.get(alias) ?? alias,
+    );
+    return { matcher: mapped, requiresToolNameTranslation: true };
   },
   toPluginToolName: ({ toolName }) => PLUGIN_TOOL_BY_RUNTIME.get(toolName) ?? toolName,
   sessionLifecycle: true,
