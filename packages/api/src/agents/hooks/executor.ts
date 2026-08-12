@@ -476,6 +476,49 @@ function sanitizeOutput(
   return output as HookOutput;
 }
 
+/**
+ * Normalizes Claude Code's structured hook-output dialect into the engine's
+ * native field names before sanitizing, so a stock Claude guard works
+ * unchanged: `hookSpecificOutput.permissionDecision`/`…Reason` become
+ * `decision`/`reason`, `hookSpecificOutput.additionalContext` surfaces,
+ * `continue: false` becomes `preventContinuation`, and the legacy decisions
+ * map (`approve` → `allow`; `block` → `deny` on events that block by
+ * denying). Native fields always win when both dialects appear.
+ */
+function normalizeOutput(
+  raw: Record<string, unknown>,
+  request: PluginHookExecutionRequest,
+): Record<string, unknown> {
+  const output: Record<string, unknown> = { ...raw };
+  if (raw.continue === false && output.preventContinuation === undefined) {
+    output.preventContinuation = true;
+  }
+  const hookSpecific = isPlainObject(raw.hookSpecificOutput) ? raw.hookSpecificOutput : undefined;
+  if (hookSpecific !== undefined) {
+    if (output.decision === undefined && typeof hookSpecific.permissionDecision === 'string') {
+      output.decision = hookSpecific.permissionDecision;
+      if (
+        output.reason === undefined &&
+        typeof hookSpecific.permissionDecisionReason === 'string'
+      ) {
+        output.reason = hookSpecific.permissionDecisionReason;
+      }
+    }
+    if (
+      output.additionalContext === undefined &&
+      typeof hookSpecific.additionalContext === 'string'
+    ) {
+      output.additionalContext = hookSpecific.additionalContext;
+    }
+  }
+  if (output.decision === 'approve') {
+    output.decision = 'allow';
+  } else if (output.decision === 'block' && EVENT_TRAITS[request.targetEvent].exitTwo === 'deny') {
+    output.decision = 'deny';
+  }
+  return output;
+}
+
 function parseCompletion(
   completion: CommandCompletion,
   request: PluginHookExecutionRequest,
@@ -511,7 +554,7 @@ function parseCompletion(
     try {
       const parsed: unknown = JSON.parse(stdout);
       if (isPlainObject(parsed)) {
-        return sanitizeOutput(parsed, request, options);
+        return sanitizeOutput(normalizeOutput(parsed, request), request, options);
       }
     } catch (error) {
       logger.warn(`${label}: stdout is not valid JSON and was ignored`, error);

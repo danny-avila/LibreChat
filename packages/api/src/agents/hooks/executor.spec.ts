@@ -312,15 +312,61 @@ describe('createCommandExecutor', () => {
     expect(output).toEqual({});
   });
 
-  test('accepts stop decisions only for Stop and tool decisions only elsewhere', async () => {
+  test('maps Claude legacy decisions per event channel', async () => {
     const handler: PluginHookHandler = {
       type: 'command',
       command: `printf '%s' '{"decision":"block"}'`,
     };
-    await expect(execute(handler)).resolves.toEqual({});
+    /** Claude's legacy PreToolUse "block" denies; on Stop it is the stop decision. */
+    await expect(execute(handler)).resolves.toEqual({ decision: 'deny' });
     await expect(execute(handler, { sourceEvent: 'Stop', targetEvent: 'Stop' })).resolves.toEqual({
       decision: 'block',
     });
+    await expect(
+      execute({ type: 'command', command: `printf '%s' '{"decision":"approve"}'` }),
+    ).resolves.toEqual({ decision: 'allow' });
+    /** "block" on events without a deny channel stays invalid and is dropped. */
+    await expect(
+      execute(handler, { sourceEvent: 'PostToolUse', targetEvent: 'PostToolUse' }),
+    ).resolves.toEqual({});
+  });
+
+  test('translates Claude hookSpecificOutput into engine fields', async () => {
+    await expect(
+      execute({
+        type: 'command',
+        command: `printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"protected path"}}'`,
+      }),
+    ).resolves.toEqual({ decision: 'deny', reason: 'protected path' });
+    /** The ask gate applies to the Claude dialect too. */
+    await expect(
+      execute({
+        type: 'command',
+        command: `printf '%s' '{"hookSpecificOutput":{"permissionDecision":"ask","permissionDecisionReason":"confirm"}}'`,
+      }),
+    ).resolves.toEqual({ decision: 'deny', reason: 'confirm' });
+    await expect(
+      execute(
+        {
+          type: 'command',
+          command: `printf '%s' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"project notes"}}'`,
+        },
+        { sourceEvent: 'UserPromptSubmit', targetEvent: 'UserPromptSubmit' },
+      ),
+    ).resolves.toEqual({ additionalContext: 'project notes' });
+    await expect(
+      execute({
+        type: 'command',
+        command: `printf '%s' '{"continue":false,"stopReason":"manual halt"}'`,
+      }),
+    ).resolves.toEqual({ preventContinuation: true, stopReason: 'manual halt' });
+    /** Native fields win when both dialects appear. */
+    await expect(
+      execute({
+        type: 'command',
+        command: `printf '%s' '{"decision":"allow","hookSpecificOutput":{"permissionDecision":"deny"}}'`,
+      }),
+    ).resolves.toEqual({ decision: 'allow' });
   });
 
   test('ignores non-blocking failures', async () => {
