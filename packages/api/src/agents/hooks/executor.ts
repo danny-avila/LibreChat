@@ -231,6 +231,8 @@ export interface CommandExecutorOptions {
    * plugin's confirmation intent still blocks rather than stranding the run.
    */
   allowAskDecision?: boolean;
+  /** SIGTERM-to-SIGKILL escalation delay after an abort (defaults to 5s). */
+  killGraceMs?: number;
 }
 
 interface CommandCompletion {
@@ -363,6 +365,7 @@ function runCommand(
   env: NodeJS.ProcessEnv,
   cwd: string,
   signal: AbortSignal,
+  killGraceMs: number,
 ): Promise<CommandCompletion> {
   return new Promise((resolve, reject) => {
     const child = spawn(invocation.executable, invocation.argv, {
@@ -373,10 +376,16 @@ function runCommand(
     });
     const stdout: CapturedStream = { chunks: [], bytes: 0 };
     const stderr: CapturedStream = { chunks: [], bytes: 0 };
-    let killTimer: NodeJS.Timeout | undefined;
     const onAbort = () => {
       killTree(child, 'SIGTERM');
-      killTimer = setTimeout(() => killTree(child, 'SIGKILL'), KILL_GRACE_MS);
+      /**
+       * Deliberately never cancelled: a SIGTERM-ignoring descendant can
+       * outlive the wrapper shell, whose exit fires `close` before the grace
+       * period ends — cancelling there would skip the group SIGKILL and leak
+       * the descendant. The timer is unref'd and a vanished group is handled
+       * inside `killTree`, so a late redundant sweep is harmless.
+       */
+      const killTimer = setTimeout(() => killTree(child, 'SIGKILL'), killGraceMs);
       killTimer.unref?.();
     };
     signal.addEventListener('abort', onAbort, { once: true });
@@ -389,12 +398,10 @@ function runCommand(
     });
     child.on('error', (error) => {
       signal.removeEventListener('abort', onAbort);
-      clearTimeout(killTimer);
       reject(error);
     });
     child.on('close', (code) => {
       signal.removeEventListener('abort', onAbort);
-      clearTimeout(killTimer);
       resolve({ code, stdout: capturedText(stdout), stderr: capturedText(stderr) });
     });
     child.stdin.on('error', () => {
@@ -529,7 +536,14 @@ export function createCommandExecutor(options: CommandExecutorOptions): PluginHo
         return {};
       }
       try {
-        const completion = await runCommand(invocation, payload, env, options.pluginRoot, signal);
+        const completion = await runCommand(
+          invocation,
+          payload,
+          env,
+          options.pluginRoot,
+          signal,
+          options.killGraceMs ?? KILL_GRACE_MS,
+        );
         if (signal.aborted) {
           logger.warn(`[pluginHooks] ${request.pluginId} ${request.sourceEvent}: command aborted`);
           return {};

@@ -330,6 +330,51 @@ describe('createCommandExecutor', () => {
     await expect(execute(handler)).resolves.toEqual({});
   });
 
+  test('escalates to a group SIGKILL when a descendant survives SIGTERM past the wrapper', async () => {
+    const isGone = (pid: number): boolean => {
+      try {
+        process.kill(pid, 0);
+      } catch {
+        return true;
+      }
+      try {
+        const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+        return stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3) === 'Z';
+      } catch {
+        return true;
+      }
+    };
+    const waitFor = async (condition: () => boolean): Promise<void> => {
+      const deadline = Date.now() + 5_000;
+      while (!condition() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    };
+    const pidFile = path.join(pluginData, 'survivor.pid');
+    const controller = new AbortController();
+    const executor = createCommandExecutor({
+      pluginRoot,
+      pluginData,
+      env: { PATH: process.env.PATH },
+      killGraceMs: 250,
+    });
+    const pending = executor.execute(
+      request({
+        type: 'command',
+        command: `bash -c 'trap "" TERM; echo $$ > "$PLUGIN_DATA/survivor.pid"; while true; do sleep 0.1; done' & wait`,
+      }),
+      controller.signal,
+    );
+    await waitFor(() => fs.existsSync(pidFile));
+    const survivorPid = Number((await fs.promises.readFile(pidFile, 'utf8')).trim());
+    expect(survivorPid).toBeGreaterThan(0);
+    controller.abort();
+    /** The wrapper exits on SIGTERM while the trap-protected descendant survives. */
+    await expect(pending).resolves.toEqual({});
+    await waitFor(() => isGone(survivorPid));
+    expect(isGone(survivorPid)).toBe(true);
+  });
+
   test('returns an empty output when the signal aborts a running command', async () => {
     const controller = new AbortController();
     const executor = createCommandExecutor({
