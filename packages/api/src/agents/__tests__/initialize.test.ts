@@ -11,7 +11,7 @@ jest.mock('@librechat/agents', () => ({
     parameters: {
       type: 'object',
       properties: {
-        file_path: {
+        path: {
           type: 'string',
           description: 'For skill files: "{skillName}/{path}".',
         },
@@ -33,7 +33,13 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 import { Providers } from '@librechat/agents';
-import { EModelEndpoint, EToolResources, Tools } from 'librechat-data-provider';
+import {
+  Constants,
+  ErrorTypes,
+  EModelEndpoint,
+  EToolResources,
+  Tools,
+} from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Agent } from 'librechat-data-provider';
 import type { ServerRequest, InitializeResultBase, EndpointTokenConfig } from '~/types';
@@ -241,6 +247,13 @@ function countWebSearchDefinitions(toolDefinitions: Array<{ name: string }> | un
   return (
     toolDefinitions?.filter((toolDefinition) => toolDefinition.name === Tools.web_search).length ??
     0
+  );
+}
+
+function countUrlContextTools(tools: unknown[] | undefined): number {
+  return (
+    tools?.filter((tool) => tool != null && typeof tool === 'object' && 'urlContext' in tool)
+      .length ?? 0
   );
 }
 
@@ -635,6 +648,62 @@ describe('initializeAgent — provider web_search precedence', () => {
     expect(countNamedWebSearchTools(result.tools)).toBe(1);
     expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
   });
+
+  it('treats the Google urlContext tool as a native provider tool', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-1.5-flash',
+      providerTools: [{ urlContext: {} }],
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([{ urlContext: {} }]);
+    expect(countUrlContextTools(result.tools)).toBe(1);
+  });
+
+  it('preserves the Google urlContext tool when LibreChat web_search is also enabled', async () => {
+    /**
+     * url_context is unrelated to web search, so the LibreChat web_search conflict
+     * resolver must not strip the native urlContext tool. The combination of a
+     * provider tool with an agent tool requires a combination-capable Gemini model.
+     */
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: Providers.GOOGLE,
+      model: 'gemini-3.5-flash',
+      providerTools: [{ urlContext: {} }],
+      loadedToolDefinitions: [libreChatWebSearchDefinition],
+    });
+    agent.tools = [Tools.web_search];
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.GOOGLE]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(result.tools).toEqual([{ urlContext: {} }]);
+    expect(countUrlContextTools(result.tools)).toBe(1);
+    expect(countWebSearchDefinitions(result.toolDefinitions)).toBe(1);
+  });
 });
 
 describe('initializeAgent — stable and dynamic instruction fields', () => {
@@ -809,10 +878,19 @@ describe('initializeAgent — attachment scoping', () => {
       db,
     );
 
+    expect(db.getToolFilesByIds).toHaveBeenCalledWith(
+      [toolFile.file_id],
+      new Set([EToolResources.file_search]),
+      { userId: 'user-1', tenantId: undefined },
+    );
     expect(db.updateFilesUsage).toHaveBeenNthCalledWith(1, [requestFile], undefined, {
       user: 'user-1',
+      tenantId: undefined,
     });
-    expect(db.updateFilesUsage).toHaveBeenNthCalledWith(2, [toolFile]);
+    expect(db.updateFilesUsage).toHaveBeenNthCalledWith(2, [toolFile], undefined, {
+      user: 'user-1',
+      tenantId: undefined,
+    });
   });
 });
 
@@ -1433,6 +1511,93 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
     expect(definedNames).not.toContain('mcp__broken__tool');
   });
 
+  it('does not retry a resource recovery failure when execute_code is skill-added', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const resourceRecoveryError = Object.assign(new Error('resource recovery required'), {
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      status: 409,
+      statusCode: 409,
+    });
+    loadTools.mockRejectedValue(resourceRecoveryError);
+
+    const getSkillByName = buildGetSkillByName(
+      'code-skill',
+      [Tools.execute_code],
+      skillId,
+      req.user!.id,
+    );
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          accessibleSkillIds: [skillId],
+          manualSkills: ['code-skill'],
+        },
+        { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+      ),
+    ).rejects.toBe(resourceRecoveryError);
+
+    expect(loadTools).toHaveBeenCalledTimes(1);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', Tools.execute_code]);
+  });
+
+  it('still retries when only skill-added tools expect unavailable MCP tools', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['web_search'];
+    const { Types } = await import('mongoose');
+    const skillId = new Types.ObjectId();
+    const expectedMCPError = Object.assign(new Error('expected MCP tools are unavailable'), {
+      code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      statusCode: 503,
+    });
+    loadTools.mockRejectedValueOnce(expectedMCPError).mockResolvedValueOnce({
+      tools: [],
+      toolContextMap: {},
+      userMCPAuthMap: undefined,
+      toolRegistry: undefined,
+      toolDefinitions: [{ name: 'web_search', description: '', parameters: {} }],
+      hasDeferredTools: false,
+      actionsEnabled: undefined,
+    });
+
+    const getSkillByName = buildGetSkillByName(
+      'mcp-skill',
+      ['mcp__warehouse__query'],
+      skillId,
+      req.user!.id,
+    );
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        accessibleSkillIds: [skillId],
+        manualSkills: ['mcp-skill'],
+      },
+      { ...db, listSkillsByAccess: emptyListSkillsByAccess, getSkillByName },
+    );
+
+    expect(loadTools).toHaveBeenCalledTimes(2);
+    expect(loadTools.mock.calls[0][0].tools).toEqual(['web_search', 'mcp__warehouse__query']);
+    expect(loadTools.mock.calls[1][0].tools).toEqual(['web_search']);
+    expect(result.toolDefinitions?.map((definition) => definition.name)).toContain('web_search');
+  });
+
   it('falls back to host-provided skill authoring tools when BOTH loadTools calls return undefined', async () => {
     /* Worst-case silent-failure path: production loaders catch errors
        and return undefined. If the agent's own tools fail to load AND
@@ -1992,13 +2157,17 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     );
 
     expect(getCodeGeneratedFiles).toHaveBeenCalledTimes(1);
-    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', [
-      'file-pptx-skill',
-      'file-output-csv',
-    ]);
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith(
+      'conv-1',
+      ['file-pptx-skill', 'file-output-csv'],
+      { userId: 'user-1', tenantId: undefined },
+    );
     /* Both functions now share the same primary anchor — symmetric
      * design that closes the sibling-branch hole. */
-    expect(getUserCodeFiles).toHaveBeenCalledWith(['file-pptx-skill', 'file-output-csv']);
+    expect(getUserCodeFiles).toHaveBeenCalledWith(['file-pptx-skill', 'file-output-csv'], {
+      userId: 'user-1',
+      tenantId: undefined,
+    });
   });
 
   it('selects messages.attachments alongside messages.files (regression)', async () => {
@@ -2086,11 +2255,94 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
       { ...db, getMessages, getCodeGeneratedFiles, getUserCodeFiles },
     );
 
-    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', []);
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', [], {
+      userId: 'user-1',
+      tenantId: undefined,
+    });
     /* `getUserCodeFiles` is gated on a non-empty array at the call site,
      * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
      * empty-guard is exercised by data-schemas tests. */
     expect(getUserCodeFiles).not.toHaveBeenCalled();
+  });
+
+  it('skips the thread walk when parentMessageId is an empty string', async () => {
+    /* An empty anchor can never match a parent chain, so walking the
+     * conversation only buys an unbounded read whose result is discarded.
+     * `req.body.parentMessageId` reaches this layer unnormalized. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([]);
+    const getConvoFiles = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: '',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles },
+    );
+
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(mockGetThreadData).not.toHaveBeenCalled();
+    /* The conversation read is unconditional and must survive the guard. */
+    expect(getConvoFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches the convo-file read and the thread walk concurrently', async () => {
+    /* Both reads gate the model call, so serializing them costs
+     * time-to-first-token on every turn. Holding BOTH unresolved is what
+     * makes this fail under either ordering: whichever runs first blocks,
+     * and the second is never dispatched.
+     *
+     * DELETE this test, do not repair it, if the thread walk ever gains a
+     * data dependency on the convo file ids — serializing becomes correct. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    let releaseConvoFiles!: (fileIds: string[]) => void;
+    let releaseMessages!: (messages: Array<{ messageId: string }>) => void;
+    const getConvoFiles = jest
+      .fn()
+      .mockReturnValue(new Promise<string[]>((resolve) => (releaseConvoFiles = resolve)));
+    const getMessages = jest
+      .fn()
+      .mockReturnValue(
+        new Promise<Array<{ messageId: string }>>((resolve) => (releaseMessages = resolve)),
+      );
+
+    const initialized = initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: 'msgN',
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getConvoFiles, getMessages },
+    );
+
+    /* Drain pending microtasks so the mocked chain runs up to the first
+     * genuinely-pending await. */
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(getConvoFiles).toHaveBeenCalledTimes(1);
+    expect(getMessages).toHaveBeenCalledTimes(1);
+
+    releaseConvoFiles([]);
+    releaseMessages([]);
+    await initialized;
   });
 });
 
@@ -2142,5 +2394,66 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
     );
 
     expect(result.mcpAvailableTools).toEqual(mcpAvailableTools);
+  });
+
+  it('retains the resolved collision audit on the initialized agent', async () => {
+    /** Deferred/event-driven execution reuses this snapshot instead of
+     *  repeating the merged-registry read — a transient failure there
+     *  would fail-closed a tool the turn already advertised. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    const rawServerName = 'Connector: Company';
+    const accessibleNames = [rawServerName, 'plain_server'];
+    (req as { config: { mcpConfig?: Record<string, unknown> } }).config = {
+      mcpConfig: { [rawServerName]: {} },
+    };
+    agent.tools = [`search${Constants.mcp_delimiter}${rawServerName}`];
+    const getAccessibleMcpServerNames = jest.fn(async () => accessibleNames);
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      { ...db, getAccessibleMcpServerNames },
+    );
+
+    expect(result.accessibleMcpServerNames).toEqual(accessibleNames);
+    expect(loadTools).toHaveBeenCalledWith(
+      expect.objectContaining({ accessibleMcpServerNames: accessibleNames }),
+    );
+  });
+
+  it('unions snapshot config names into the audit when the merged read omits them', async () => {
+    /** The registry's merged read tolerates config-server init failures and
+     *  can silently drop config-only servers — the heal audit must restore
+     *  them from the request's config snapshot or a collision goes unseen
+     *  while the audit still claims completeness. */
+    const { agent, req, res, loadTools, db } = createMocks();
+    const rawServerName = 'Connector: Company';
+    (req as { config: { mcpConfig?: Record<string, unknown> } }).config = {
+      mcpConfig: { [rawServerName]: {} },
+    };
+    agent.tools = [`search${Constants.mcp_delimiter}${rawServerName}`];
+    const getAccessibleMcpServerNames = jest.fn(async () => ['db_only_server']);
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      { ...db, getAccessibleMcpServerNames },
+    );
+
+    expect(result.accessibleMcpServerNames).toEqual(['db_only_server', rawServerName]);
   });
 });

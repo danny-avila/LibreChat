@@ -530,9 +530,16 @@ export function updateConvoInAllQueries(
       }
 
       const found = oldData.pages[pageIdx].conversations[convoIdx];
-      const updated = moveToTop
-        ? { ...updater(found), updatedAt: new Date().toISOString() }
-        : updater(found);
+      /** `isShared` is derived per list request from the shared-links collection and is
+       * absent from single-conversation payloads, so callers that swap in a server
+       * response wholesale (rename, pin, SSE updates) would otherwise drop the sidebar
+       * badge until an unrelated list refetch. Carry it forward when the updater omits it. */
+      const next = updater(found);
+      const merged =
+        next.isShared === undefined && found.isShared !== undefined
+          ? { ...next, isShared: found.isShared }
+          : next;
+      const updated = moveToTop ? { ...merged, updatedAt: new Date().toISOString() } : merged;
 
       if (!conversationMatchesProjectQuery(query.queryKey, updated)) {
         return removeConvoFromInfinitePages(oldData, conversationId);

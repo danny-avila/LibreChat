@@ -222,13 +222,12 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(fileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should allow deleting files accessible through shared agent', async () => {
-      // Create an agent with the file attached
+    it('should prevent physically deleting non-owned files accessible through shared agent', async () => {
       const agent = await createAgent({
         id: uuidv4(),
         name: 'Test Agent',
@@ -242,7 +241,6 @@ describe('File Routes - Delete with Agent Access', () => {
         },
       });
 
-      // Grant EDIT permission to user on the agent
       const { grantPermission } = require('~/server/services/PermissionService');
       await grantPermission({
         principalType: PrincipalType.USER,
@@ -265,12 +263,143 @@ describe('File Routes - Delete with Agent Access', () => {
           ],
         });
 
-      expect(response.status).toBe(200);
-      expect(response.body.message).toBe('Files deleted successfully');
-      expect(processDeleteRequest).toHaveBeenCalled();
+      expect(response.status).toBe(403);
+      expect(response.body.message).toBe('You can only delete files you own');
+      expect(response.body.unauthorizedFiles).toContain(fileId);
+      expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should prevent deleting files not owned by the agent author', async () => {
+    it('unlinks attached agent files without invoking storage deletion', async () => {
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      const { grantPermission } = require('~/server/services/PermissionService');
+      await grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: otherUserId,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        accessRoleId: AccessRoleIds.AGENT_EDITOR,
+        grantedBy: authorId,
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [
+            {
+              file_id: fileId,
+              filepath: '/uploads/test.txt',
+            },
+          ],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+    });
+
+    it('rejects invalid agent tool_resource values before unlinking', async () => {
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: otherUserId,
+        tool_resources: {
+          file_search: {
+            file_ids: [fileId],
+          },
+        },
+      });
+
+      const response = await request(app)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search.$pullAll',
+          files: [{ file_id: fileId, filepath: '/uploads/test.txt' }],
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toBe('Invalid agent tool resource');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([fileId]);
+    });
+
+    it('allows an agent author to unlink an editor-owned attached file', async () => {
+      const editorFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: editorFileId,
+        filename: 'editor-file.txt',
+        filepath: '/uploads/editor-file.txt',
+        bytes: 300,
+        type: 'text/plain',
+      });
+
+      const agent = await createAgent({
+        id: uuidv4(),
+        name: 'Test Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          file_search: {
+            file_ids: [editorFileId],
+          },
+        },
+      });
+
+      const authorApp = express();
+      authorApp.use(express.json());
+      authorApp.use((req, res, next) => {
+        req.user = {
+          id: authorId.toString(),
+          role: SystemRoles.USER,
+        };
+        req.app.locals = {};
+        next();
+      });
+      authorApp.use('/files', router);
+
+      const response = await request(authorApp)
+        .delete('/files')
+        .send({
+          agent_id: agent.id,
+          tool_resource: 'file_search',
+          files: [{ file_id: editorFileId, filepath: '/uploads/editor-file.txt' }],
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('File associations removed successfully from agent');
+      expect(processDeleteRequest).not.toHaveBeenCalled();
+
+      const updatedAgent = await Agent.findOne({ id: agent.id }).lean();
+      expect(updatedAgent.tool_resources.file_search.file_ids).toEqual([]);
+
+      const retainedFile = await File.findOne({ file_id: editorFileId }).lean();
+      expect(retainedFile).toBeTruthy();
+    });
+
+    it('should prevent physically deleting attached files owned by another user', async () => {
       const thirdUserId = new mongoose.Types.ObjectId();
       const thirdUserFileId = uuidv4();
       await createFile({
@@ -318,12 +447,12 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(thirdUserFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should prevent deleting files not attached to the specified agent', async () => {
+    it('should prevent physically deleting non-owned files not attached to the specified agent', async () => {
       // Create another file not attached to the agent
       const unattachedFileId = uuidv4();
       await createFile({
@@ -373,7 +502,7 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(unattachedFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
@@ -438,12 +567,12 @@ describe('File Routes - Delete with Agent Access', () => {
         });
 
       expect(response.status).toBe(403);
-      expect(response.body.message).toBe('You can only delete files you have access to');
+      expect(response.body.message).toBe('You can only delete files you own');
       expect(response.body.unauthorizedFiles).toContain(unauthorizedFileId);
       expect(processDeleteRequest).not.toHaveBeenCalled();
     });
 
-    it('should prevent deleting files when user lacks EDIT permission on agent', async () => {
+    it('should prevent unlinking attached files when user lacks EDIT permission on agent', async () => {
       // Create an agent with the file attached
       const agent = await createAgent({
         id: uuidv4(),
@@ -473,6 +602,7 @@ describe('File Routes - Delete with Agent Access', () => {
         .delete('/files')
         .send({
           agent_id: agent.id,
+          tool_resource: 'file_search',
           files: [
             {
               file_id: fileId,
@@ -804,6 +934,158 @@ describe('File Routes - Delete with Agent Access', () => {
           contentType: 'text/plain',
         }),
       );
+    });
+  });
+
+  describe('POST /files/usage', () => {
+    const createQueuedFile = async (expiresAt) => {
+      const ownFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: ownFileId,
+        filename: 'queued.png',
+        filepath: '/uploads/queued.png',
+        bytes: 10,
+        type: 'image/png',
+      });
+      await File.updateOne({ file_id: ownFileId }, { $set: { expiresAt } });
+      return ownFileId;
+    };
+
+    it('extends the upload TTL of owned files without clearing it', async () => {
+      const soon = new Date(Date.now() + 60 * 1000);
+      const ownFileId = await createQueuedFile(soon);
+
+      const response = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [ownFileId] });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ held: 1 });
+      const held = await File.findOne({ file_id: ownFileId }).lean();
+      /* The hold must remain a hold: still reapable, just later. */
+      expect(held.expiresAt).toBeDefined();
+      expect(held.expiresAt.getTime()).toBeGreaterThan(soon.getTime());
+      /* The 24h baseline plus the default 24h approval window, so a queue
+       * waiting on a paused run outlives that pause. Renewed from now, but
+       * never past the ceiling measured from upload time. */
+      const HOUR = 60 * 60 * 1000;
+      expect(held.expiresAt.getTime()).toBeGreaterThan(Date.now() + 47 * HOUR);
+      expect(held.expiresAt.getTime()).toBeLessThanOrEqual(
+        held.createdAt.getTime() + 24 * HOUR + 8 * 24 * HOUR,
+      );
+      /* A queue touch is not a send, so it must not inflate usage. */
+      expect(held.usage).toBe(0);
+    });
+
+    it('cannot be replayed to preserve a file indefinitely', async () => {
+      const ownFileId = await createQueuedFile(new Date(Date.now() + 60 * 1000));
+
+      const first = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [ownFileId] });
+      expect(first.body).toEqual({ held: 1 });
+
+      for (let i = 0; i < 5; i++) {
+        const repeat = await request(app)
+          .post('/files/usage')
+          .send({ file_ids: [ownFileId] });
+        expect(repeat.status).toBe(200);
+      }
+
+      /* Every renewal is clamped to the ceiling measured from upload time, so
+       * replay converges there instead of advancing a window per call. */
+      const HOUR = 60 * 60 * 1000;
+      const held = await File.findOne({ file_id: ownFileId }).lean();
+      expect(held.expiresAt).toBeDefined();
+      expect(held.expiresAt.getTime()).toBeLessThanOrEqual(
+        held.createdAt.getTime() + 24 * HOUR + 8 * 24 * HOUR,
+      );
+    });
+
+    it('never re-adds a TTL to a file that was already sent', async () => {
+      const sentFileId = uuidv4();
+      await createFile({
+        user: otherUserId,
+        file_id: sentFileId,
+        filename: 'sent.png',
+        filepath: '/uploads/sent.png',
+        bytes: 10,
+        type: 'image/png',
+      });
+      await File.updateOne({ file_id: sentFileId }, { $unset: { expiresAt: '' } });
+
+      const response = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [sentFileId] });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ held: 0 });
+      const permanent = await File.findOne({ file_id: sentFileId }).lean();
+      expect(permanent.expiresAt).toBeUndefined();
+    });
+
+    it('never shortens an existing hold', async () => {
+      const farOut = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+      const ownFileId = await createQueuedFile(farOut);
+
+      const response = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [ownFileId] });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ held: 0 });
+      const untouched = await File.findOne({ file_id: ownFileId }).lean();
+      expect(untouched.expiresAt.getTime()).toBe(farOut.getTime());
+    });
+
+    it("is owner-scoped: another user's file stays untouched (best-effort 200)", async () => {
+      const soon = new Date(Date.now() + 60 * 1000);
+      await File.updateOne({ file_id: fileId }, { $set: { expiresAt: soon } });
+
+      const response = await request(app)
+        .post('/files/usage')
+        .send({ file_ids: [fileId] });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ held: 0 });
+      const untouched = await File.findOne({ file_id: fileId }).lean();
+      expect(untouched.usage).toBe(0);
+      expect(untouched.expiresAt.getTime()).toBe(soon.getTime());
+    });
+
+    it('rejects a list over the cap', async () => {
+      const file_ids = Array.from({ length: 11 }, () => uuidv4());
+      const response = await request(app).post('/files/usage').send({ file_ids });
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('TOO_MANY_FILES');
+    });
+
+    it('rejects invalid bodies', async () => {
+      expect((await request(app).post('/files/usage').send({})).status).toBe(400);
+      expect((await request(app).post('/files/usage').send({ file_ids: 'f1' })).status).toBe(400);
+      expect(
+        (
+          await request(app)
+            .post('/files/usage')
+            .send({ file_ids: [1] })
+        ).status,
+      ).toBe(400);
+    });
+
+    it('rejects unauthenticated requests', async () => {
+      const bareApp = express();
+      bareApp.use(express.json());
+      bareApp.use((req, res, next) => {
+        req.app.locals = {};
+        next();
+      });
+      bareApp.use('/files', router);
+
+      const response = await request(bareApp)
+        .post('/files/usage')
+        .send({ file_ids: [fileId] });
+      expect(response.status).toBe(401);
     });
   });
 });

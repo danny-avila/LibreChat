@@ -34,6 +34,22 @@ type SpendStructuredTokensFn = (
 ) => Promise<unknown>;
 
 /**
+ * Cache-creation (write) tokens across provider shapes: langchain's
+ * `input_token_details.cache_creation`, Anthropic's `cache_creation_input_tokens`,
+ * and OpenAI GPT-5.6+'s `cache_write_tokens` (nested or top-level). Kept in one
+ * place so the completion-token and billing splits never diverge.
+ */
+function getCacheCreationTokens(usage: UsageMetadata): number {
+  return (
+    Number(usage.input_token_details?.cache_creation) ||
+    Number(usage.input_token_details?.cache_write_tokens) ||
+    Number(usage.cache_creation_input_tokens) ||
+    Number(usage.cache_write_tokens) ||
+    0
+  );
+}
+
+/**
  * Resolves `completionTokens` for billing, repairing providers whose
  * `usage_metadata.output_tokens` undercounts.
  *
@@ -70,10 +86,7 @@ function resolveCompletionTokens(usage: UsageMetadata): number {
   // Subset providers fold cache into input_tokens, so their adjustment is 0.
   const cacheRead =
     Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
-  const cacheCreation =
-    Number(usage.input_token_details?.cache_creation) ||
-    Number(usage.cache_creation_input_tokens) ||
-    0;
+  const cacheCreation = getCacheCreationTokens(usage);
   const cacheAdjustment = inputTokensIncludesCache(usage.provider) ? 0 : cacheRead + cacheCreation;
 
   if (total > input + output + cacheAdjustment) {
@@ -94,10 +107,7 @@ interface SplitUsage {
 }
 
 function splitUsage(usage: UsageMetadata): SplitUsage {
-  const cacheCreation =
-    Number(usage.input_token_details?.cache_creation) ||
-    Number(usage.cache_creation_input_tokens) ||
-    0;
+  const cacheCreation = getCacheCreationTokens(usage);
   const cacheRead =
     Number(usage.input_token_details?.cache_read) || Number(usage.cache_read_input_tokens) || 0;
   const rawInput = Number(usage.input_tokens) || 0;

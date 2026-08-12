@@ -306,6 +306,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     } catch (error) {
       console.error('file validation error', error);
       setError('com_error_files_validation');
+      setFilesLoading(false);
       return;
     }
     if (!filesAreValid) {

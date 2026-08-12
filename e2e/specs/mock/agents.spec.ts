@@ -8,7 +8,7 @@ import {
   uniqueAgentName,
   waitForPersistedAgent,
 } from './agents.helpers';
-import { MOCK_ENDPOINTS, mockReply, sendMessage } from './helpers';
+import { MOCK_ENDPOINTS, mockReply, sendMessageAndWaitForCompletion } from './helpers';
 
 const DESCRIPTION = 'Use this agent to verify LibreChat agent creation in mock end-to-end tests.';
 const INSTRUCTIONS =
@@ -132,7 +132,7 @@ test.describe('agent builder', () => {
 
       await form.getByLabel('Agent name').fill(agentName);
       await form.getByLabel('Agent description').fill(DESCRIPTION);
-      await form.getByLabel('Agent instructions').fill(INSTRUCTIONS);
+      await form.getByLabel('Instructions').fill(INSTRUCTIONS);
 
       await selectMockModel(page);
       await fillAnthropicStyleModelParameters(page);
@@ -179,7 +179,7 @@ test.describe('agent builder', () => {
 
       await expect(form.getByLabel('Agent name')).toHaveValue(agentName);
       await expect(form.getByLabel('Agent description')).toHaveValue(DESCRIPTION);
-      await expect(form.getByLabel('Agent instructions')).toHaveValue(INSTRUCTIONS);
+      await expect(form.getByLabel('Instructions')).toHaveValue(INSTRUCTIONS);
 
       await form.locator('label[for="provider"] + button').click();
       await expectAnthropicStyleModelParameters(page);
@@ -187,7 +187,7 @@ test.describe('agent builder', () => {
 
       await form.getByRole('button', { name: 'Select Agent' }).click();
 
-      const response = await sendMessage(page, `hello from ${agentName}`);
+      const response = await sendMessageAndWaitForCompletion(page, `hello from ${agentName}`);
       expect(response.ok()).toBeTruthy();
       await expect(mockReply(page)).toBeVisible({ timeout: 30000 });
     } finally {

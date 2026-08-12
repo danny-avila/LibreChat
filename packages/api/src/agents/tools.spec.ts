@@ -12,7 +12,7 @@ jest.mock('@librechat/agents', () => ({
     parameters: {
       type: 'object',
       properties: {
-        file_path: {
+        path: {
           type: 'string',
           description: 'For skill files: "{skillName}/{path}".',
         },
@@ -55,9 +55,9 @@ const TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH = 1024;
 
 function filePathDescription(tool?: LCTool): string {
   const parameters = tool?.parameters as
-    | { properties?: { file_path?: { description?: string } } }
+    | { properties?: { path?: { description?: string } } }
     | undefined;
-  return parameters?.properties?.file_path?.description ?? '';
+  return parameters?.properties?.path?.description ?? '';
 }
 
 function maxToolDescriptionLength(definitions: LCTool[]): number {
@@ -239,7 +239,8 @@ describe('registerCodeExecutionTools', () => {
       expect(readFile?.description).toContain('/mnt/data/');
       expect(readFile?.description).toContain('Do not run ls/find');
       expect(readFile?.description).toContain('/tmp is per-call scratch');
-      expect(readFile?.description).toContain('truncated around 256KB');
+      expect(readFile?.description).toContain('truncate around 256KB');
+      expect(readFile?.description).toContain('images (png, jpeg, gif, webp)');
       expect(readFile?.description).toContain('true filesystem discovery');
       expect(readFile?.description).not.toContain('{skillName}');
       expect(readFile?.description).not.toContain('SKILL.md');

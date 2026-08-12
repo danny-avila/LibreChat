@@ -1,10 +1,11 @@
 name: GitNexus Index
 
 on:
+  # PR branches are NOT auto-indexed — an embeddings run is too slow to
+  # spend on every PR push. Only main/dev are indexed automatically;
+  # individual PRs are indexed on demand via the /gitnexus command or a
+  # manual workflow_dispatch.
   push:
-    branches: [main, dev]
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.github/**']
-  pull_request:
     branches: [main, dev]
     paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.github/**']
   workflow_dispatch:
@@ -50,15 +51,13 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # read changed files to decide whether embeddings are needed
-    # Push + dispatch run unconditionally. Native pull_request events
-    # are restricted to PRs authored by danny-avila only — this keeps
-    # automatic CI spend low on a repo with 200+ open PRs.
-    #
-    # Other contributors' PRs can still be indexed on demand:
+    # Push + dispatch run unconditionally. The pull_request trigger is
+    # disabled (see `on:` above), so this never runs automatically on a
+    # PR. PRs are indexed on demand instead:
     #   - /gitnexus index    (PR comment command, contributor-gated)
     #   - workflow_dispatch   (manual dispatch from Actions UI)
-    # Both bypass this filter because they arrive as workflow_dispatch,
-    # not pull_request.
+    # Both arrive as workflow_dispatch. The pull_request guard is kept as
+    # a safety net should the trigger ever be re-added.
     if: |
       github.event_name != 'pull_request' ||
       github.event.pull_request.user.login == 'danny-avila'
@@ -139,7 +138,7 @@ jobs:
           fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24.16.0'
 
@@ -171,7 +170,7 @@ jobs:
           test -x "$RUNNER_TEMP/gitnexus-cli/node_modules/.bin/gitnexus"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # When the /gitnexus command dispatches us with a pr_ref, it's
           # a refs/pull/<N>/head ref that GitHub mirrors into the base
@@ -187,7 +186,7 @@ jobs:
       # across runs so warm runs never touch HF at all.
       - name: Cache HuggingFace embedding model
         if: steps.flags.outputs.enable_embeddings == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ runner.temp }}/hf-cache
           key: hf-model-snowflake-arctic-embed-xs-v1
@@ -235,7 +234,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Upload GitNexus index
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           # Artifact naming order of precedence:
           #   1. /gitnexus command dispatch: inputs.pr_number -> pr-<N>
@@ -271,7 +270,7 @@ jobs:
       # a PR number can still opt into a deploy by setting deploy_after=true.
       - name: Trigger deploy workflow after non-PR dispatches
         if: inputs.deploy_after && inputs.pr_number == '' && needs.index.result == 'success'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             core.info('deploy_after=true; dispatching gitnexus-deploy.yml manually.');
@@ -290,7 +289,7 @@ jobs:
       # inputs.pr_number is set and reports the index job result.
       - name: Comment on PR — index complete
         if: inputs.pr_number != ''
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           EMBEDDINGS_INPUT: ${{ inputs.embeddings }}
           INDEX_RESULT: ${{ needs.index.result }}

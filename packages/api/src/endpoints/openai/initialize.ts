@@ -64,13 +64,11 @@ export async function initializeOpenAI({
     ? userValues?.baseURL
     : baseURLOptions[endpoint as keyof typeof baseURLOptions];
 
-  if (userProvidesURL && baseURL) {
-    await validateEndpointURL(baseURL, endpoint, appConfig?.endpoints?.allowedAddresses);
-  }
-
   const clientOptions: OpenAIConfigOptions = {
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL || undefined,
+    baseURLIsUserProvided: userProvidesURL,
+    allowedAddresses: appConfig?.endpoints?.allowedAddresses,
     streaming: true,
   };
 
@@ -105,6 +103,9 @@ export async function initializeOpenAI({
     isServerless = serverless === true;
 
     clientOptions.reverseProxyUrl = configBaseURL ?? clientOptions.reverseProxyUrl;
+    if (configBaseURL) {
+      clientOptions.baseURLIsUserProvided = false;
+    }
     clientOptions.headers = resolveHeaders({
       headers: { ...headers, ...(clientOptions.headers ?? {}) },
       user: req.user,
@@ -155,6 +156,14 @@ export async function initializeOpenAI({
     }
   }
 
+  if (clientOptions.baseURLIsUserProvided && clientOptions.reverseProxyUrl) {
+    await validateEndpointURL(
+      clientOptions.reverseProxyUrl,
+      endpoint,
+      appConfig?.endpoints?.allowedAddresses,
+    );
+  }
+
   if (userProvidesKey && !apiKey) {
     throw new Error(
       JSON.stringify({
@@ -185,21 +194,19 @@ export async function initializeOpenAI({
     (options as InitializeResultBase).useLegacyContent = true;
   }
 
-  const azureRate = modelName?.includes('gpt-4') ? 30 : 17;
-
   let streamRate: number | undefined;
 
   if (isAzureOpenAI && azureConfig) {
-    streamRate = azureConfig.streamRate ?? azureRate;
+    streamRate = azureConfig.streamRate;
   } else if (!isAzureOpenAI && openAIConfig) {
     streamRate = openAIConfig.streamRate;
   }
 
-  if (allConfig?.streamRate) {
+  if (allConfig?.streamRate != null) {
     streamRate = allConfig.streamRate;
   }
 
-  if (streamRate) {
+  if (streamRate != null) {
     options.llmConfig._lc_stream_delay = streamRate;
   }
 

@@ -12,9 +12,17 @@ import { isEphemeralAgent } from '~/common';
  * AGENTS
  */
 export const defaultAgentParams: t.AgentListParams = {
-  limit: 10,
   requiredPermission: PermissionBits.EDIT,
 };
+
+/**
+ * Page size for the internal pagination walk. Callers consume the flattened result, so
+ * every page costs a serial round trip with no benefit: request the server's maximum
+ * (`getListAgentsByAccess` caps at 1000) so realistic agent sets resolve in one request.
+ * Kept out of the query key, and applied last so a caller-supplied `limit` cannot shrink
+ * it: this is a transport detail, and a caller limit never bounds what the walk returns.
+ */
+const WALK_PAGE_SIZE = 1000;
 
 /** Walk the cursor pagination and return all pages flattened into one `AgentListResponse`. */
 async function fetchAllAgentPages(params: t.AgentListParams): Promise<t.AgentListResponse> {
@@ -24,6 +32,7 @@ async function fetchAllAgentPages(params: t.AgentListParams): Promise<t.AgentLis
     const page = await dataService.listAgents({
       ...params,
       ...(cursor ? { cursor } : {}),
+      limit: WALK_PAGE_SIZE,
     });
     pages.push(page);
     cursor = page.after;
@@ -104,8 +113,8 @@ export const useGetAgentByIdQuery = (
       refetchOnReconnect: false,
       refetchOnMount: false,
       retry: false,
-      enabled: isValidAgentId && (config?.enabled ?? true),
       ...config,
+      enabled: isValidAgentId && (config?.enabled ?? true),
     },
   );
 };
@@ -129,6 +138,33 @@ export const useGetExpandedAgentByIdQuery = (
       refetchOnMount: false,
       retry: false,
       ...config,
+    },
+  );
+};
+
+/**
+ * Hook for lazily retrieving an agent's version history (EDIT permission).
+ * Only fetched when the user opens version history, so editors with large
+ * histories don't pay the cost on every open.
+ */
+export const useGetAgentVersionsQuery = (
+  agent_id: string | null | undefined,
+  config?: UseQueryOptions<t.Agent[]>,
+): QueryObserverResult<t.Agent[]> => {
+  const isValidAgentId = !!agent_id && !isEphemeralAgent(agent_id);
+
+  return useQuery<t.Agent[]>(
+    [QueryKeys.agent, agent_id, 'versions'],
+    () =>
+      dataService.getAgentVersions({
+        agent_id: agent_id as string,
+      }),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: false,
+      ...config,
+      enabled: isValidAgentId && (config?.enabled ?? true),
     },
   );
 };

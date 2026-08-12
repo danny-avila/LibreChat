@@ -7,7 +7,7 @@ In this Chart, LibreChat will only work with environment Variables. You can Spec
 ## Setup
 
 1. Generate Variables
-Generate `CREDS_KEY`, `JWT_SECRET`, `JWT_REFRESH_SECRET`  and `MEILI_MASTER_KEY`  using `openssl rand -hex 32` and `CREDS_IV` using openssl rand -hex 16.
+Generate unique values for `CREDS_KEY`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `MEILI_MASTER_KEY` using `openssl rand -hex 32`, and `CREDS_IV` using `openssl rand -hex 16`. Store them in the existing Kubernetes Secret so every replica uses the same values.
 place them in a secret like this (If you want to change the secret name, remember to change it in your helm values):
 ```yaml
 apiVersion: v1
@@ -18,6 +18,7 @@ metadata:
 type: Opaque
 stringData:
   CREDS_KEY: <generated value>
+  CREDS_IV: <generated value>
   JWT_SECRET: <generated value>
   JWT_REFRESH_SECRET: <generated value>
   MEILI_MASTER_KEY: <generated value>
@@ -38,8 +39,11 @@ kind: Secret
 
 ## Admin Panel SSO
 
-When deploying the admin panel at a separate URL, set `librechat.adminPanelUrl`
-to the external admin panel base URL. It may include a path, but it should not
+Set `librechat.adminPanelUrl` to the admin panel base URL used for OAuth/SSO
+redirect, whether the admin panel is deployed on a separate origin
+or on the same origin under an admin subpath.
+
+It may include a path, but it should not
 end with a trailing `/` because LibreChat appends `/auth/...` callback paths.
 
 ```yaml
@@ -53,3 +57,59 @@ also register this LibreChat callback URL with your identity provider:
 ```text
 https://<librechat-domain>/api/admin/oauth/openid/callback
 ```
+
+## Generation protocol rollout
+
+Redis-backed generation streams use protocol v1 by default during the first
+rollout of a v2-capable image. This keeps a rolling deployment compatible with
+replicas that still run the previous Redis queue, checkpoint, and recovery
+scripts.
+
+After every LibreChat replica is on the v2-capable image and all active
+generations owned by the old image have drained, set
+`librechat.configEnv.GENERATION_PROTOCOL_VERSION="2"` in a second rollout.
+Keep the new image in place until v2 generations have drained; an older image
+cannot safely operate on their Redis state. In-memory generation streams do not
+share state across replicas and negotiate v2 without this cutover.
+
+## Langfuse Fanout
+
+The chart can optionally deploy a Langfuse fanout gateway with an internal
+OpenTelemetry Collector sidecar. The gateway handles Langfuse media fanout and
+proxies traces to the collector; the collector forwards tenant-scoped Langfuse
+traces to both a central Langfuse project and the tenant Langfuse project. It is
+disabled by default.
+
+When enabled, the chart also sets `LANGFUSE_FANOUT_ENABLED` and
+`LANGFUSE_FANOUT_COLLECTOR_URL` for the LibreChat app unless those values are
+already provided in `librechat.configEnv`.
+
+Set `librechat.configEnv.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED=true` to keep
+central trace export flowing through the fanout gateway while disabling tenant trace
+and score export. When omitted, false, or blank, tenant export remains available
+if tenant keys and a known destination are configured.
+
+Langfuse tenant base URLs are selected from the startup-configured destination
+map rendered into LibreChat and the fanout gateway. Tenant API keys can still be added
+through tenant app configuration at runtime without restarting either component.
+The internal collector provides trace memory limiting, batching, tenant routing,
+and removal of LibreChat-only routing attributes before export.
+
+The fanout gateway stores one-time media upload plans in Redis so media create
+and byte-upload requests can land on different gateway replicas. Set
+`langfuseFanout.redis.uri` for an external Redis service, or enable the bundled
+Redis chart with `redis.enabled=true` and let the chart derive the internal URI.
+Scale the gateway manually with `langfuseFanout.replicaCount`; the chart does
+not create a fanout HPA.
+The internal collector receiver is bound to `127.0.0.1:4319` by default because
+only the gateway sidecar should send traces to it.
+
+The gateway exposes Prometheus metrics at `/metrics`. Configure
+`langfuseFanout.metrics.secret.name` and `.key` to pass a bearer token secret to
+the gateway; if omitted, `/metrics` returns 401. Use
+`langfuseFanout.service.annotations` for scrape annotations when your cluster
+uses annotation-based discovery. The gateway container also has configurable
+`/healthz` liveness and readiness probes under `langfuseFanout`.
+
+See [`otel/langfuse-fanout/README.md`](../../otel/langfuse-fanout/README.md)
+for the central Langfuse secret and values example.

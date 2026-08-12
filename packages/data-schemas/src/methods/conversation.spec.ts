@@ -1110,7 +1110,7 @@ describe('Conversation Operations', () => {
       expect(tag?.count).toBe(2);
     });
 
-    it('should still decrement tag counts when message deletion fails after the delete', async () => {
+    it('still decrements tag counts AND returns the deleted ids when message deletion fails', async () => {
       await ConversationTag.create({ user: 'user123', tag: 'work', count: 2, position: 1 });
       const convoId = uuidv4();
       await Conversation.create({
@@ -1122,9 +1122,13 @@ describe('Conversation Operations', () => {
 
       deleteMessages.mockRejectedValueOnce(new Error('message cleanup failed'));
 
-      await expect(deleteConvos('user123', { conversationId: convoId })).rejects.toThrow(
-        'message cleanup failed',
-      );
+      // Post-delete cleanup is best-effort: the conversations are already gone, so the
+      // caller must still receive the deleted ids (downstream cleanup — e.g. agent
+      // checkpoint pruning — depends on them, and a retry would find nothing).
+      const result = await deleteConvos('user123', { conversationId: convoId });
+      expect(result.deletedCount).toBe(1);
+      expect(result.conversationIds).toEqual([convoId]);
+      expect(result.messages.deletedCount).toBe(0);
 
       const tag = await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean();
       expect(tag?.count).toBe(1);
@@ -1193,6 +1197,156 @@ describe('Conversation Operations', () => {
       });
       return Conversation.findOne({ conversationId }).lean<IConversation>();
     };
+
+    it('should flag conversations that have an active shared link', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<{
+        conversationId: string;
+        user: string;
+        shareId: string;
+        expiredAt?: Date | null;
+      }>;
+      const baseTime = new Date('2026-03-01T00:00:00.000Z');
+      const shared = await createConvoWithTimestamps(1, baseTime, baseTime);
+      const unshared = await createConvoWithTimestamps(2, baseTime, baseTime);
+      const expiredShare = await createConvoWithTimestamps(3, baseTime, baseTime);
+
+      await SharedLink.create([
+        {
+          conversationId: shared!.conversationId,
+          user: 'user123',
+          shareId: `share-${uuidv4()}`,
+        },
+        {
+          conversationId: expiredShare!.conversationId,
+          user: 'user123',
+          shareId: `share-${uuidv4()}`,
+          expiredAt: new Date('2020-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      const result = await methods.getConvosByCursor('user123', { limit: 25 });
+      const byId = new Map(result.conversations.map((convo) => [convo.conversationId, convo]));
+
+      expect(byId.get(shared!.conversationId)?.isShared).toBe(true);
+      expect(byId.get(unshared!.conversationId)?.isShared).toBe(false);
+      expect(byId.get(expiredShare!.conversationId)?.isShared).toBe(false);
+
+      await SharedLink.deleteMany({ user: 'user123' });
+      await Conversation.deleteMany({ user: 'user123' });
+    });
+
+    it('should skip the shared lookup when shared links are disabled', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<{
+        conversationId: string;
+        user: string;
+        shareId: string;
+      }>;
+      const baseTime = new Date('2026-03-02T00:00:00.000Z');
+      const shared = await createConvoWithTimestamps(1, baseTime, baseTime);
+      await SharedLink.create({
+        conversationId: shared!.conversationId,
+        user: 'user123',
+        shareId: `share-${uuidv4()}`,
+      });
+
+      process.env.ALLOW_SHARED_LINKS = 'false';
+      try {
+        const result = await methods.getConvosByCursor('user123', { limit: 25 });
+        expect(result.conversations[0].isShared).toBeUndefined();
+      } finally {
+        delete process.env.ALLOW_SHARED_LINKS;
+      }
+
+      await SharedLink.deleteMany({ user: 'user123' });
+      await Conversation.deleteMany({ user: 'user123' });
+    });
+
+    it('should page through titles that share a timestamp', async () => {
+      // Imports land with identical titles and timestamps, so (title, updatedAt)
+      // alone cannot mark where the previous page stopped.
+      const sameTime = new Date('2026-04-01T00:00:00.000Z');
+      for (let index = 0; index < 6; index++) {
+        await Conversation.collection.insertOne({
+          conversationId: uuidv4(),
+          user: 'user123',
+          title: 'Imported chat',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: sameTime,
+          updatedAt: sameTime,
+        });
+      }
+
+      const seen = new Set<string>();
+      let cursor: string | null = null;
+      for (let page = 0; page < 6; page++) {
+        const result = await methods.getConvosByCursor('user123', {
+          limit: 2,
+          sortBy: 'title',
+          sortDirection: 'asc',
+          cursor,
+        });
+        result.conversations.forEach((convo) => seen.add(convo.conversationId));
+        cursor = result.nextCursor;
+        if (!cursor) {
+          break;
+        }
+      }
+
+      expect(seen.size).toBe(6);
+
+      await Conversation.deleteMany({ user: 'user123' });
+    });
+
+    it('should page past conversations that have no title', async () => {
+      const sameTime = new Date('2026-04-15T00:00:00.000Z');
+      for (let index = 0; index < 3; index++) {
+        await Conversation.collection.insertOne({
+          conversationId: uuidv4(),
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: sameTime,
+          updatedAt: sameTime,
+        });
+        await Conversation.collection.insertOne({
+          conversationId: uuidv4(),
+          user: 'user123',
+          title: `Named ${index}`,
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: sameTime,
+          updatedAt: sameTime,
+        });
+      }
+
+      // Missing titles sort before every string, and comparison operators never cross
+      // that type boundary, so the group needs cursor clauses of its own.
+      for (const sortDirection of ['asc', 'desc']) {
+        const seen = new Set<string>();
+        let cursor: string | null = null;
+        for (let page = 0; page < 6; page++) {
+          const result = await methods.getConvosByCursor('user123', {
+            limit: 2,
+            sortBy: 'title',
+            sortDirection,
+            cursor,
+          });
+          result.conversations.forEach((convo) => seen.add(convo.conversationId));
+          cursor = result.nextCursor;
+          if (!cursor) {
+            break;
+          }
+        }
+
+        expect(seen.size).toBe(6);
+      }
+
+      await Conversation.deleteMany({ user: 'user123' });
+    });
 
     it('should not skip conversations at page boundaries', async () => {
       // Create 30 conversations to ensure pagination (limit is 25)

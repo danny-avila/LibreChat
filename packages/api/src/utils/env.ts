@@ -2,7 +2,27 @@ import { extractEnvVariable } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody } from '~/types';
-import { extractOpenIDTokenInfo, processOpenIDPlaceholders, isOpenIDTokenValid } from './oidc';
+import {
+  OPENID_TOKEN_FIELDS,
+  isOpenIDTokenValid,
+  extractOpenIDTokenInfo,
+  processOpenIDPlaceholders,
+} from './oidc';
+
+/**
+ * Provenance marker for MCP servers contributed by an Agent Plugins package.
+ * Applied by the plugin loader, never by a plugin-authored `mcp.json` — that
+ * schema is closed, so a package declaring this field is rejected outright.
+ */
+export const MCP_PLUGIN_SOURCE = 'plugin';
+
+/**
+ * True when a server configuration came from an Agent Plugins package, and so
+ * must reach the transport with every placeholder it declared left literal.
+ */
+export function isPluginSourced(config?: { source?: string } | null): boolean {
+  return config?.source === MCP_PLUGIN_SOURCE;
+}
 
 /**
  * List of allowed user fields that can be used in MCP environment variables.
@@ -26,6 +46,7 @@ const ALLOWED_USER_FIELDS = [
   'emailVerified',
   'twoFactorEnabled',
   'termsAccepted',
+  'termsAcceptedAt',
 ] as const;
 
 type AllowedUserField = (typeof ALLOWED_USER_FIELDS)[number];
@@ -103,6 +124,13 @@ export function createSafeUser(
     }
   }
 
+  // Fall back to `_id` when the mongoose virtual `id` is absent (e.g. lean/plain
+  // user objects), so `{{LIBRECHAT_USER_ID}}` placeholders still resolve.
+  if (!safeUser.id && '_id' in user) {
+    const _id = (user as unknown as { _id: { toString?: () => string } | string })._id;
+    safeUser.id = typeof _id === 'string' ? _id : _id?.toString?.();
+  }
+
   if ('federatedTokens' in user) {
     safeUser.federatedTokens = user.federatedTokens;
   }
@@ -115,6 +143,36 @@ export function createSafeUser(
  * These are common fields from the request body that are safe to expose in headers.
  */
 const ALLOWED_BODY_FIELDS = ['conversationId', 'parentMessageId', 'messageId'] as const;
+
+/**
+ * Matches every placeholder this module knows how to resolve: the enumerated
+ * `{{LIBRECHAT_USER_*}}`, `{{LIBRECHAT_BODY_*}}`, and `{{LIBRECHAT_OPENID_*}}`
+ * names. Deliberately excludes unknown names (a typo'd placeholder staying
+ * literal is diagnosable) and `{{LIBRECHAT_GRAPH_ACCESS_TOKEN}}`, which is
+ * resolved asynchronously via the OBO flow outside this pipeline.
+ */
+const RESOLVABLE_PLACEHOLDER_PATTERN = new RegExp(
+  [
+    `LIBRECHAT_USER_(?:${ALLOWED_USER_FIELDS.map((field) => field.toUpperCase()).join('|')})`,
+    `LIBRECHAT_BODY_(?:${ALLOWED_BODY_FIELDS.map((field) => field.toUpperCase()).join('|')})`,
+    `LIBRECHAT_OPENID_(?:${OPENID_TOKEN_FIELDS.join('|')}|TOKEN)`,
+  ]
+    .map((names) => `\\{\\{(?:${names})\\}\\}`)
+    .join('|'),
+  'g',
+);
+
+/**
+ * Replaces resolvable-but-unresolved placeholders with an empty string so
+ * LibreChat's internal template syntax is never sent upstream as if it were
+ * real user data (e.g. a gateway trusting a literal
+ * `{{LIBRECHAT_USER_OPENIDID}}` as an account identity would pool unrelated
+ * users under that one string). Only for final resolution passes — staged
+ * flows that resolve again later with more context must not strip.
+ */
+function stripUnresolvedPlaceholders(value: string): string {
+  return value.replace(RESOLVABLE_PLACEHOLDER_PATTERN, '');
+}
 
 /**
  * Processes a string value to replace user field placeholders.
@@ -288,7 +346,7 @@ function processAdminValue(originalValue: string, dbSourced: boolean): string {
  * @returns - The processed object with environment variables replaced
  */
 export function processMCPEnv(params: {
-  options: Readonly<MCPOptions> & { dbId?: string };
+  options: Readonly<MCPOptions> & { dbId?: string; source?: string };
   user?: Partial<IUser>;
   customUserVars?: Record<string, string>;
   body?: RequestBody;
@@ -299,6 +357,19 @@ export function processMCPEnv(params: {
 
   if (options === null || options === undefined) {
     return options;
+  }
+
+  /**
+   * SECURITY INVARIANT — Agent Plugins configurations are returned verbatim.
+   * Plugin packages are portable third-party data, and the Agent Plugins
+   * specification (§7.2.1, §9.2) forbids resolving any placeholder a plugin
+   * declares. Without this gate a plugin could declare a header such as
+   * `Authorization: Bearer ${OPENAI_API_KEY}` and receive host credentials at
+   * its own origin. The check reads the config rather than a caller-supplied
+   * flag so no future call site can reintroduce the leak by omitting it.
+   */
+  if (isPluginSourced(options)) {
+    return structuredClone(options) as MCPOptions;
   }
 
   /** Derive dbSourced from explicit param OR from dbId on the options (failsafe for callers that forget the flag) */
@@ -512,6 +583,10 @@ export function resolveNestedObject<T = unknown>(options?: {
  * @param options.user - Optional user object for replacing user field placeholders (can be partial with just id)
  * @param options.body - Optional request body object for replacing body field placeholders
  * @param options.customUserVars - Optional custom user variables to replace placeholders
+ * @param options.stripUnresolved - When true (final resolution passes only), replaces any
+ *   remaining resolvable placeholders with an empty string so internal template syntax is
+ *   never forwarded upstream. Leave unset for staged flows whose values are resolved again
+ *   later with more context.
  * @returns The processed headers with all placeholders replaced
  */
 export function resolveHeaders(options?: {
@@ -519,21 +594,23 @@ export function resolveHeaders(options?: {
   user?: Partial<IUser> | { id: string };
   body?: RequestBody;
   customUserVars?: Record<string, string>;
+  stripUnresolved?: boolean;
 }): Record<string, string> {
-  const { headers, user, body, customUserVars } = options ?? {};
+  const { headers, user, body, customUserVars, stripUnresolved = false } = options ?? {};
   const inputHeaders = headers ?? {};
 
   const resolvedHeaders: Record<string, string> = { ...inputHeaders };
 
   if (inputHeaders && typeof inputHeaders === 'object' && !Array.isArray(inputHeaders)) {
     Object.keys(inputHeaders).forEach((key) => {
-      resolvedHeaders[key] = processSingleValue({
+      const processed = processSingleValue({
         originalValue: inputHeaders[key],
         customUserVars,
         user: user as IUser,
         body,
         isHeader: true, // Important: Enable header encoding
       });
+      resolvedHeaders[key] = stripUnresolved ? stripUnresolvedPlaceholders(processed) : processed;
     });
   }
 

@@ -6,10 +6,13 @@ import {
   PrincipalType,
   PermissionBits,
   PrincipalModel,
+  MCPOptionsSchema,
+  TokenExchangeMethodEnum,
 } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 
 type ServerConfigsDBType = import('../db/ServerConfigsDB').ServerConfigsDB;
+type MCPOAuthHandlerType = typeof import('~/mcp/oauth').MCPOAuthHandler;
 type CreateMethodsType = typeof import('@librechat/data-schemas').createMethods;
 type CreateModelsType = typeof import('@librechat/data-schemas').createModels;
 type RoleBitsType = typeof import('@librechat/data-schemas').RoleBits;
@@ -17,6 +20,7 @@ type RoleBitsType = typeof import('@librechat/data-schemas').RoleBits;
 let mongoServer: MongoMemoryServer;
 let serverConfigsDB: ServerConfigsDBType;
 let ServerConfigsDB: new (mongoose: typeof import('mongoose')) => ServerConfigsDBType;
+let MCPOAuthHandler: MCPOAuthHandlerType;
 let createModels: CreateModelsType;
 let createMethods: CreateMethodsType;
 let RoleBits: RoleBitsType;
@@ -58,6 +62,8 @@ beforeAll(async () => {
 
   const serverConfigsModule = await import('../db/ServerConfigsDB');
   ServerConfigsDB = serverConfigsModule.ServerConfigsDB;
+  const oauthModule = await import('~/mcp/oauth');
+  MCPOAuthHandler = oauthModule.MCPOAuthHandler;
 
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
@@ -178,10 +184,22 @@ describe('ServerConfigsDB', () => {
     });
 
     it('should preserve oauth.client_secret when not provided in update', async () => {
-      const config = createSSEConfig('OAuth Server', 'Test', {
-        client_id: 'my-client-id',
-        client_secret: 'super-secret-key',
-      });
+      const config: ParsedServerConfig = {
+        type: 'sse',
+        url: 'https://mcp.example.com/sse',
+        title: 'OAuth Server',
+        description: 'Test',
+        oauth: {
+          authorization_url: 'https://auth.example.com/authorize',
+          token_url: 'https://auth.example.com/token',
+          client_id: 'my-client-id',
+          client_secret: 'super-secret-key',
+          token_exchange_method: TokenExchangeMethodEnum.BasicAuthHeader,
+          token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+          revocation_endpoint: 'https://auth.example.com/revoke',
+          revocation_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        },
+      };
       const created = await serverConfigsDB.add('temp-name', config, userId);
 
       // Verify the secret is encrypted in DB after add (not plaintext)
@@ -190,10 +208,14 @@ describe('ServerConfigsDB', () => {
       expect(server?.config?.oauth?.client_secret).not.toBe('super-secret-key');
 
       // Update without client_secret
-      const updatedConfig = createSSEConfig('OAuth Server', 'Updated description', {
-        client_id: 'my-client-id',
-        // client_secret not provided
-      });
+      const updatedConfig: ParsedServerConfig = {
+        ...config,
+        description: 'Updated description',
+        oauth: {
+          ...config.oauth,
+          client_secret: undefined,
+        },
+      };
       await serverConfigsDB.update(created.serverName, updatedConfig, userId);
 
       // Verify the secret is still encrypted in DB (preserved, not plaintext)
@@ -203,20 +225,274 @@ describe('ServerConfigsDB', () => {
       // Verify the secret is decrypted when accessed via get()
       const retrieved = await serverConfigsDB.get(created.serverName, userId);
       expect(retrieved?.oauth?.client_secret).toBe('super-secret-key');
+      expect(retrieved?.description).toBe('Updated description');
+    });
+
+    const baseBoundOAuthConfig: ParsedServerConfig = {
+      type: 'sse',
+      url: 'https://mcp.example.com/sse',
+      title: 'Bound OAuth Server',
+      oauth: {
+        authorization_url: 'https://auth.example.com/authorize',
+        token_url: 'https://auth.example.com/token',
+        client_id: 'my-client-id',
+        client_secret: 'super-secret-key',
+        token_exchange_method: TokenExchangeMethodEnum.BasicAuthHeader,
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        revocation_endpoint: 'https://auth.example.com/revoke',
+        revocation_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+      },
+    };
+
+    const updateOAuth = (
+      config: ParsedServerConfig,
+      oauth: Partial<NonNullable<ParsedServerConfig['oauth']>>,
+    ): ParsedServerConfig => ({
+      ...config,
+      oauth: {
+        ...config.oauth,
+        ...oauth,
+        client_secret: undefined,
+      },
+    });
+
+    const bindingChanges: Array<[string, (config: ParsedServerConfig) => ParsedServerConfig]> = [
+      [
+        'url',
+        (config) => ({ ...updateOAuth(config, {}), url: 'https://attacker.example.com/sse' }),
+      ],
+      [
+        'oauth.authorization_url',
+        (config) =>
+          updateOAuth(config, { authorization_url: 'https://attacker.example.com/authorize' }),
+      ],
+      [
+        'oauth.token_url',
+        (config) => updateOAuth(config, { token_url: 'https://attacker.example.com/token' }),
+      ],
+      ['oauth.client_id', (config) => updateOAuth(config, { client_id: 'attacker-client-id' })],
+      [
+        'oauth.token_exchange_method',
+        (config) =>
+          updateOAuth(config, { token_exchange_method: TokenExchangeMethodEnum.DefaultPost }),
+      ],
+      [
+        'oauth.token_endpoint_auth_methods_supported',
+        (config) =>
+          updateOAuth(config, { token_endpoint_auth_methods_supported: ['client_secret_post'] }),
+      ],
+      [
+        'oauth.revocation_endpoint',
+        (config) =>
+          updateOAuth(config, { revocation_endpoint: 'https://attacker.example.com/revoke' }),
+      ],
+      [
+        'oauth.revocation_endpoint_auth_methods_supported',
+        (config) =>
+          updateOAuth(config, {
+            revocation_endpoint_auth_methods_supported: ['client_secret_post'],
+          }),
+      ],
+    ];
+
+    it.each(bindingChanges)(
+      'should require the OAuth client secret when changing %s',
+      async (field, createUpdate) => {
+        const created = await serverConfigsDB.add('temp-name', baseBoundOAuthConfig, userId);
+
+        await expect(
+          serverConfigsDB.update(created.serverName, createUpdate(baseBoundOAuthConfig), userId),
+        ).rejects.toThrow(
+          `Re-enter oauth.client_secret when changing OAuth credential binding fields: ${field}`,
+        );
+      },
+    );
+
+    it('should treat OAuth auth-method arrays as unordered sets when preserving a secret', async () => {
+      const created = await serverConfigsDB.add('temp-name', baseBoundOAuthConfig, userId);
+      const updatedConfig = updateOAuth(baseBoundOAuthConfig, {
+        token_endpoint_auth_methods_supported: [
+          'client_secret_post',
+          'client_secret_basic',
+          'client_secret_basic',
+        ],
+        revocation_endpoint_auth_methods_supported: [
+          'client_secret_post',
+          'client_secret_basic',
+          'client_secret_post',
+        ],
+      });
+
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.oauth?.client_secret).toBe('super-secret-key');
+    });
+
+    it('should treat empty and omitted OAuth auth-method arrays as equivalent', async () => {
+      const config: ParsedServerConfig = {
+        ...baseBoundOAuthConfig,
+        oauth: {
+          ...baseBoundOAuthConfig.oauth,
+          token_endpoint_auth_methods_supported: undefined,
+          revocation_endpoint_auth_methods_supported: undefined,
+        },
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+      const updatedConfig = updateOAuth(config, {
+        token_endpoint_auth_methods_supported: [],
+        revocation_endpoint_auth_methods_supported: [],
+      });
+
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.oauth?.client_secret).toBe('super-secret-key');
+    });
+
+    it('should preserve OAuth binding fields omitted by the editor', async () => {
+      const created = await serverConfigsDB.add('temp-name', baseBoundOAuthConfig, userId);
+      const updatedConfig: ParsedServerConfig = {
+        ...baseBoundOAuthConfig,
+        description: 'Updated description',
+        oauth: {
+          authorization_url: baseBoundOAuthConfig.oauth?.authorization_url,
+          token_url: baseBoundOAuthConfig.oauth?.token_url,
+          client_id: baseBoundOAuthConfig.oauth?.client_id,
+          token_exchange_method: baseBoundOAuthConfig.oauth?.token_exchange_method,
+        },
+      };
+
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.description).toBe('Updated description');
+      expect(retrieved?.oauth?.client_secret).toBe('super-secret-key');
+      expect(retrieved?.oauth?.token_endpoint_auth_methods_supported).toEqual([
+        'client_secret_basic',
+        'client_secret_post',
+      ]);
+      expect(retrieved?.oauth?.revocation_endpoint).toBe('https://auth.example.com/revoke');
+      expect(retrieved?.oauth?.revocation_endpoint_auth_methods_supported).toEqual([
+        'client_secret_basic',
+        'client_secret_post',
+      ]);
+    });
+
+    it('should preserve a secret across equivalent WHATWG URL serialization', async () => {
+      const created = await serverConfigsDB.add('temp-name', baseBoundOAuthConfig, userId);
+      const updatedConfig: ParsedServerConfig = {
+        ...updateOAuth(baseBoundOAuthConfig, {
+          authorization_url: 'https://AUTH.EXAMPLE.COM:443/authorize',
+          token_url: 'https://AUTH.EXAMPLE.COM:443/token',
+          revocation_endpoint: 'https://AUTH.EXAMPLE.COM:443/revoke',
+        }),
+        url: 'https://MCP.EXAMPLE.COM:443/sse',
+      };
+
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.oauth?.client_secret).toBe('super-secret-key');
+    });
+
+    it('should treat reordered endpoint query parameters as a binding change', async () => {
+      const configWithoutSecret = updateOAuth(baseBoundOAuthConfig, {
+        token_url: 'https://auth.example.com/token?first=one&second=two',
+      });
+      const config: ParsedServerConfig = {
+        ...configWithoutSecret,
+        oauth: {
+          ...configWithoutSecret.oauth,
+          client_secret: 'super-secret-key',
+        },
+      };
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+      const updatedConfig = updateOAuth(config, {
+        token_url: 'https://auth.example.com/token?second=two&first=one',
+      });
+
+      await expect(
+        serverConfigsDB.update(created.serverName, updatedConfig, userId),
+      ).rejects.toThrow('oauth.token_url');
+    });
+
+    it('should keep a retained secret away from an editor-controlled token endpoint at runtime', async () => {
+      const created = await serverConfigsDB.add('temp-name', baseBoundOAuthConfig, userId);
+      const maliciousUpdate = updateOAuth(baseBoundOAuthConfig, {
+        token_url: 'https://attacker.example.com/token',
+      });
+      let updateBlocked = false;
+
+      try {
+        await serverConfigsDB.update(created.serverName, maliciousUpdate, userId2);
+      } catch (error) {
+        updateBlocked = true;
+        expect(error).toMatchObject({ code: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED' });
+      }
+
+      const storedConfig = await serverConfigsDB.get(created.serverName, userId);
+      if (!storedConfig?.oauth) {
+        throw new Error('Expected the stored OAuth configuration');
+      }
+
+      const originalFetch = global.fetch;
+      const mockFetch = Object.assign(
+        jest.fn().mockResolvedValue(
+          new Response(JSON.stringify({ access_token: 'new-access-token', token_type: 'Bearer' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        ),
+        { preconnect: jest.fn() },
+      );
+      global.fetch = mockFetch;
+
+      try {
+        await MCPOAuthHandler.refreshOAuthTokens(
+          'refresh-token',
+          { serverName: created.serverName },
+          {},
+          storedConfig.oauth,
+          ['auth.example.com', 'attacker.example.com'],
+        );
+
+        expect(updateBlocked).toBe(true);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+        expect(String(mockFetch.mock.calls[0][0])).toBe('https://auth.example.com/token');
+        expect(String(mockFetch.mock.calls[0][0])).not.toContain('attacker.example.com');
+        const request = mockFetch.mock.calls[0][1] as RequestInit;
+        const expectedCredentials = Buffer.from('my-client-id:super-secret-key').toString('base64');
+        expect(new Headers(request.headers).get('Authorization')).toBe(
+          `Basic ${expectedCredentials}`,
+        );
+      } finally {
+        global.fetch = originalFetch;
+      }
     });
 
     it('should allow updating oauth.client_secret when explicitly provided', async () => {
-      const config = createSSEConfig('OAuth Server 2', 'Test', {
-        client_id: 'my-client-id',
-        client_secret: 'old-secret',
-      });
+      const config: ParsedServerConfig = {
+        ...baseBoundOAuthConfig,
+        title: 'OAuth Server 2',
+        oauth: {
+          ...baseBoundOAuthConfig.oauth,
+          client_secret: 'old-secret',
+        },
+      };
       const created = await serverConfigsDB.add('temp-name', config, userId);
 
-      // Update with new client_secret
-      const updatedConfig = createSSEConfig('OAuth Server 2', 'Updated', {
-        client_id: 'my-client-id',
-        client_secret: 'new-secret',
-      });
+      const updatedConfig: ParsedServerConfig = {
+        ...config,
+        url: 'https://new-mcp.example.com/sse',
+        oauth: {
+          ...config.oauth,
+          authorization_url: 'https://new-auth.example.com/authorize',
+          token_url: 'https://new-auth.example.com/token',
+          client_id: 'new-client-id',
+          client_secret: 'new-secret',
+        },
+      };
       await serverConfigsDB.update(created.serverName, updatedConfig, userId);
 
       // Verify the secret is encrypted in DB (not plaintext)
@@ -227,6 +503,23 @@ describe('ServerConfigsDB', () => {
       // Verify the secret is decrypted to the new value when accessed via get()
       const retrieved = await serverConfigsDB.get(created.serverName, userId);
       expect(retrieved?.oauth?.client_secret).toBe('new-secret');
+      expect(retrieved?.oauth?.token_url).toBe('https://new-auth.example.com/token');
+      expect(retrieved?.oauth?.client_id).toBe('new-client-id');
+    });
+
+    it('should clear the OAuth client secret when OAuth is removed', async () => {
+      const created = await serverConfigsDB.add('temp-name', baseBoundOAuthConfig, userId);
+      const updatedConfig: ParsedServerConfig = {
+        ...baseBoundOAuthConfig,
+        oauth: undefined,
+      };
+
+      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+
+      const retrieved = await serverConfigsDB.get(created.serverName, userId);
+      expect(retrieved?.oauth?.client_secret).toBeUndefined();
+      const server = await mongoose.models.MCPServer.findOne({ serverName: created.serverName });
+      expect(server?.config?.oauth?.client_secret).toBeUndefined();
     });
 
     it('should encrypt oauth.client_secret when saving to database', async () => {
@@ -741,6 +1034,35 @@ describe('ServerConfigsDB', () => {
   });
 
   describe('get()', () => {
+    it('normalizes null headers from historical stored configs before runtime use', async () => {
+      const server = await mongoose.models.MCPServer.create({
+        serverName: 'legacy-null-headers',
+        normalizedServerName: 'legacy-null-headers',
+        author: new mongoose.Types.ObjectId(userId),
+        config: {
+          type: 'streamable-http',
+          url: 'https://example.com/mcp',
+          title: 'Legacy Null Headers',
+          headers: null,
+        },
+      });
+      await mongoose.models.AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalModel: PrincipalModel.USER,
+        principalId: new mongoose.Types.ObjectId(userId),
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: server._id,
+        permBits: PermissionBits.VIEW,
+        grantedBy: new mongoose.Types.ObjectId(userId),
+      });
+
+      const result = await serverConfigsDB.get('legacy-null-headers', userId);
+
+      expect(result).toBeDefined();
+      expect(result).not.toHaveProperty('headers');
+      expect(MCPOptionsSchema.safeParse(result).success).toBe(true);
+    });
+
     describe('public access (no userId)', () => {
       it('should return undefined for non-public server without userId', async () => {
         const config = createSSEConfig('Private Server');

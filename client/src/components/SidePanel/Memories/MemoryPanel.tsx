@@ -5,7 +5,7 @@ import { SystemRoles, PermissionTypes, Permissions } from 'librechat-data-provid
 import {
   Button,
   Checkbox,
-  Spinner,
+  Dropdown,
   FilterInput,
   TooltipAnchor,
   OGDialogTrigger,
@@ -18,12 +18,17 @@ import {
   useGetUserQuery,
 } from '~/data-provider';
 import { useLocalize, useAuthContext, useHasAccess } from '~/hooks';
+import { PanelFooter, PanelContent } from '~/components/ui';
+import MemoryCardSkeleton from './MemoryCardSkeleton';
 import MemoryCreateDialog from './MemoryCreateDialog';
 import MemoryUsageBadge from './MemoryUsageBadge';
 import AdminSettings from './AdminSettings';
 import MemoryList from './MemoryList';
+import { cn } from '~/utils';
 
-const pageSize = 10;
+/** Partition filter sentinels; any other value is an agent id */
+const PARTITION_ALL = 'all';
+const PARTITION_PERSONAL = 'personal';
 
 export default function MemoryPanel() {
   const localize = useLocalize();
@@ -31,8 +36,8 @@ export default function MemoryPanel() {
   const { data: userData } = useGetUserQuery();
   const { data: memData, isLoading } = useMemoriesQuery();
   const { showToast } = useToastContext();
-  const [pageIndex, setPageIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [partitionFilter, setPartitionFilter] = useState(PARTITION_ALL);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [referenceSavedMemories, setReferenceSavedMemories] = useState(true);
 
@@ -85,28 +90,48 @@ export default function MemoryPanel() {
 
   const memories: TUserMemory[] = useMemo(() => memData?.memories ?? [], [memData]);
 
+  const partitionOptions = useMemo(() => {
+    const agentsById = new Map<string, string>();
+    for (const memory of memories) {
+      if (memory.agentId != null && !agentsById.has(memory.agentId)) {
+        agentsById.set(memory.agentId, memory.agentName ?? memory.agentId);
+      }
+    }
+    if (agentsById.size === 0) {
+      return null;
+    }
+    return [
+      { value: PARTITION_ALL, label: localize('com_ui_memories_all') },
+      { value: PARTITION_PERSONAL, label: localize('com_ui_memories_personal') },
+      ...[...agentsById.entries()].map(([value, label]) => ({ value, label })),
+    ];
+  }, [memories, localize]);
+
+  /** Falls back to "all" when the selected partition no longer exists
+   *  (e.g. the last memory of that agent was deleted), so the panel never
+   *  gets stuck filtering on a removed partition. */
+  const activePartition = useMemo(() => {
+    if (partitionFilter === PARTITION_ALL || partitionFilter === PARTITION_PERSONAL) {
+      return partitionFilter;
+    }
+    return partitionOptions?.some((option) => option.value === partitionFilter)
+      ? partitionFilter
+      : PARTITION_ALL;
+  }, [partitionOptions, partitionFilter]);
+
   const filteredMemories = useMemo(() => {
-    return matchSorter(memories, searchQuery, {
+    const partitionMemories =
+      activePartition === PARTITION_ALL
+        ? memories
+        : memories.filter((memory) =>
+            activePartition === PARTITION_PERSONAL
+              ? memory.agentId == null
+              : memory.agentId === activePartition,
+          );
+    return matchSorter(partitionMemories, searchQuery, {
       keys: ['key', 'value'],
     });
-  }, [memories, searchQuery]);
-
-  const currentRows = useMemo(() => {
-    return filteredMemories.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-  }, [filteredMemories, pageIndex]);
-
-  // Reset page when search changes
-  useEffect(() => {
-    setPageIndex(0);
-  }, [searchQuery]);
-
-  if (isLoading) {
-    return (
-      <div className="flex h-full w-full items-center justify-center p-4">
-        <Spinner />
-      </div>
-    );
-  }
+  }, [memories, searchQuery, activePartition]);
 
   if (!hasReadAccess) {
     return (
@@ -118,11 +143,17 @@ export default function MemoryPanel() {
     );
   }
 
-  const totalPages = Math.ceil(filteredMemories.length / pageSize);
+  const tokenLimit = memData?.tokenLimit ?? null;
+  const showUsageBadge = tokenLimit != null;
 
   return (
-    <div className="flex h-auto w-full flex-col px-3 pb-3 pt-2">
-      <div role="region" aria-label={localize('com_ui_memories')} className="space-y-2">
+    <div
+      role="region"
+      aria-label={localize('com_ui_memories')}
+      className="flex h-full w-full flex-col overflow-hidden pt-2"
+    >
+      {/* Sticky header: filter, partition, usage + toggle */}
+      <div className="shrink-0 space-y-2 px-3 pb-2">
         {/* Header: Filter + Create Button */}
         <div className="flex items-center gap-2">
           <FilterInput
@@ -155,15 +186,27 @@ export default function MemoryPanel() {
           )}
         </div>
 
+        {/* Partition filter (only when agent-scoped memories exist) */}
+        {partitionOptions && (
+          <Dropdown
+            value={activePartition}
+            onChange={setPartitionFilter}
+            options={partitionOptions}
+            className="w-full"
+            ariaLabel={localize('com_ui_memories_partition_filter')}
+            testId="memory-partition-filter"
+          />
+        )}
+
         {/* Controls: Usage Badge + Memory Toggle */}
-        {(memData?.tokenLimit != null || hasOptOutAccess) && (
+        {(showUsageBadge || hasOptOutAccess) && (
           <div className="flex items-center justify-between">
             {/* Usage Badge */}
-            {memData?.tokenLimit != null && (
+            {showUsageBadge && (
               <MemoryUsageBadge
-                percentage={memData.usagePercentage ?? 0}
-                tokenLimit={memData.tokenLimit}
-                totalTokens={memData.totalTokens}
+                percentage={memData?.usagePercentage ?? 0}
+                tokenLimit={tokenLimit}
+                totalTokens={memData?.totalTokens ?? 0}
               />
             )}
 
@@ -172,7 +215,10 @@ export default function MemoryPanel() {
               <Button
                 size="sm"
                 variant="outline"
-                className={`ml-auto ${referenceSavedMemories ? 'bg-surface-hover hover:bg-surface-hover' : ''}`}
+                className={cn(
+                  showUsageBadge ? 'ml-auto' : 'w-full',
+                  referenceSavedMemories && 'bg-surface-hover hover:bg-surface-hover',
+                )}
                 onClick={() => handleMemoryToggle(!referenceSavedMemories)}
                 aria-label={localize('com_ui_use_memory')}
                 aria-pressed={referenceSavedMemories}
@@ -183,56 +229,29 @@ export default function MemoryPanel() {
                   tabIndex={-1}
                   aria-hidden="true"
                   aria-label={localize('com_ui_use_memory')}
-                  className="pointer-events-none mr-2"
+                  className="pointer-events-none"
                 />
                 {localize('com_ui_use_memory')}
               </Button>
             )}
           </div>
         )}
+      </div>
 
-        {/* Memory List */}
+      {/* Only the list scrolls */}
+      <PanelContent isLoading={isLoading} skeleton={<MemoryCardSkeleton />} className="px-3 pb-3">
         <MemoryList
-          memories={currentRows}
+          memories={filteredMemories}
           hasUpdateAccess={hasUpdateAccess}
           isFiltered={searchQuery.length > 0}
         />
+      </PanelContent>
 
-        {/* Footer: Admin Settings + Pagination */}
-        {(user?.role === SystemRoles.ADMIN || filteredMemories.length > pageSize) && (
-          <div className="flex items-center justify-between gap-2">
-            {/* Admin Settings - Left */}
-            {user?.role === SystemRoles.ADMIN ? <AdminSettings /> : <div />}
-
-            {/* Pagination - Right */}
-            {filteredMemories.length > pageSize && (
-              <div className="flex items-center gap-2" role="navigation" aria-label="Pagination">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPageIndex((prev) => Math.max(prev - 1, 0))}
-                  disabled={pageIndex === 0}
-                  aria-label={localize('com_ui_prev')}
-                >
-                  {localize('com_ui_prev')}
-                </Button>
-                <div className="whitespace-nowrap text-sm" aria-live="polite">
-                  {pageIndex + 1} / {totalPages}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPageIndex((prev) => (prev + 1 < totalPages ? prev + 1 : prev))}
-                  disabled={pageIndex + 1 >= totalPages}
-                  aria-label={localize('com_ui_next')}
-                >
-                  {localize('com_ui_next')}
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      {user?.role === SystemRoles.ADMIN && (
+        <PanelFooter>
+          <AdminSettings />
+        </PanelFooter>
+      )}
     </div>
   );
 }

@@ -1,13 +1,17 @@
 import { RetentionMode } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
-import type { AppConfig, IChatProjectDocument, IConversation } from '~/types';
+import type { AppConfig, IChatProjectDocument, IConversation, ISharedLink } from '~/types';
 import type { MessageMethods } from './message';
+import {
+  activeExpirationFilter,
+  buildRetentionVisibilityFilter,
+  createFallbackRetentionDate,
+} from '~/utils/retention';
 import {
   refreshChatProjectStatsForUser,
   updateChatProjectLastConversationForUser,
 } from './chatProject';
-import { buildRetentionVisibilityFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
@@ -64,7 +68,7 @@ export interface ConversationMethods {
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
-  ): Promise<DeleteResult & { messages: DeleteResult }>;
+  ): Promise<DeleteResult & { messages: DeleteResult; conversationIds: string[] }>;
 }
 
 export function createConversationMethods(
@@ -520,6 +524,42 @@ export function createConversationMethods(
   }
 
   /**
+   * Flags which conversations on a page currently have an active shared link, in one
+   * batched lookup instead of a query per row. The flag lives in another collection, so
+   * it is derived per request rather than projected; a failure here degrades the badge
+   * but must never fail the conversation list itself.
+   */
+  async function attachSharedFlags(user: string, conversations: IConversation[]): Promise<void> {
+    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink> | undefined;
+    if (!SharedLink || conversations.length === 0) {
+      return;
+    }
+    /* A deployment with shared links off serves no links and renders no badge, so the
+       extra round trip on the sidebar's first page would buy nothing. */
+    const allowSharedLinks = process.env.ALLOW_SHARED_LINKS;
+    if (allowSharedLinks !== undefined && allowSharedLinks.toLowerCase().trim() !== 'true') {
+      return;
+    }
+
+    try {
+      const shares = await SharedLink.find({
+        user,
+        conversationId: { $in: conversations.map((convo) => convo.conversationId) },
+        ...activeExpirationFilter<ISharedLink>(),
+      })
+        .select('conversationId')
+        .lean();
+
+      const shared = new Set(shares.map((share) => share.conversationId));
+      for (const convo of conversations) {
+        convo.isShared = shared.has(convo.conversationId);
+      }
+    } catch (error) {
+      logger.error('[attachSharedFlags] Error resolving shared conversations', error);
+    }
+  }
+
+  /**
    * Retrieves conversations using cursor-based pagination.
    */
   async function getConvosByCursor(
@@ -606,20 +646,54 @@ export function createConversationMethods(
     if (cursor) {
       try {
         const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString());
-        const { primary, secondary } = decoded;
-        const primaryValue = finalSortBy === 'title' ? primary : new Date(primary);
+        const { primary, secondary, id } = decoded;
         const secondaryValue = new Date(secondary);
-        const op = finalSortDirection === 'asc' ? '$gt' : '$lt';
+        const descending = finalSortDirection !== 'asc';
+        const op = descending ? '$lt' : '$gt';
+        const sortsByUpdatedAt = finalSortBy === 'updatedAt';
+        const boundaryId =
+          typeof id === 'string' && isValidObjectIdString(id)
+            ? { [op]: new mongoose.Types.ObjectId(id) }
+            : null;
 
-        cursorFilter = {
-          $or: [
-            { [finalSortBy]: { [op]: primaryValue } },
-            {
+        /* One clause per sort level, so the page boundary is exact. Titles and
+           timestamps both repeat; `_id` is the only field guaranteed to break the
+           tie, and without that last clause every row sharing the boundary's
+           (sort field, updatedAt) pair is skipped instead of returned. */
+        const clauses: FilterQuery<IConversation>[] = [];
+
+        /* A title can be absent, and BSON orders a missing field before every
+           string while `$lt`/`$gt` never cross that type boundary. Titleless rows
+           therefore need clauses of their own: their own tail when the boundary is
+           one of them, and the whole group when a descending page runs past the
+           last title. */
+        if (primary == null) {
+          clauses.push({ [finalSortBy]: null, updatedAt: { [op]: secondaryValue } });
+          if (boundaryId) {
+            clauses.push({ [finalSortBy]: null, updatedAt: secondaryValue, _id: boundaryId });
+          }
+          if (!descending) {
+            clauses.push({ [finalSortBy]: { $ne: null } });
+          }
+        } else {
+          const primaryValue = finalSortBy === 'title' ? primary : new Date(primary);
+          clauses.push({ [finalSortBy]: { [op]: primaryValue } });
+          if (!sortsByUpdatedAt) {
+            clauses.push({ [finalSortBy]: primaryValue, updatedAt: { [op]: secondaryValue } });
+          }
+          if (boundaryId) {
+            clauses.push({
               [finalSortBy]: primaryValue,
-              updatedAt: { [op]: secondaryValue },
-            },
-          ],
-        } as FilterQuery<IConversation>;
+              ...(sortsByUpdatedAt ? {} : { updatedAt: secondaryValue }),
+              _id: boundaryId,
+            });
+          }
+          if (descending && finalSortBy === 'title') {
+            clauses.push({ [finalSortBy]: null });
+          }
+        }
+
+        cursorFilter = { $or: clauses } as FilterQuery<IConversation>;
       } catch {
         logger.warn('[getConvosByCursor] Invalid cursor format, starting from beginning');
       }
@@ -638,6 +712,7 @@ export function createConversationMethods(
       if (finalSortBy !== 'updatedAt') {
         sortObj.updatedAt = sortOrder;
       }
+      sortObj._id = sortOrder;
 
       const convos = await Conversation.find(query)
         .select(
@@ -658,11 +733,19 @@ export function createConversationMethods(
           primaryValue = lastReturned.createdAt;
         }
         const primaryStr =
-          finalSortBy === 'title' ? primaryValue : new Date(primaryValue ?? 0).toISOString();
+          finalSortBy === 'title'
+            ? (primaryValue ?? null)
+            : new Date(primaryValue ?? 0).toISOString();
         const secondaryStr = new Date(lastReturned.updatedAt ?? 0).toISOString();
-        const composite = { primary: primaryStr, secondary: secondaryStr };
+        const composite = {
+          primary: primaryStr,
+          secondary: secondaryStr,
+          id: String(lastReturned._id),
+        };
         nextCursor = Buffer.from(JSON.stringify(composite)).toString('base64');
       }
+
+      await attachSharedFlags(user, convos);
 
       return { conversations: convos, nextCursor };
     } catch (error) {
@@ -710,6 +793,8 @@ export function createConversationMethods(
         limited.pop();
         nextCursor = (limited[limited.length - 1].updatedAt as Date).toISOString();
       }
+
+      await attachSharedFlags(user, limited);
 
       const convoMap: Record<string, unknown> = {};
       limited.forEach((convo) => {
@@ -793,10 +878,21 @@ export function createConversationMethods(
         await decrementTagCounts(mongoose, user, tagDecrements);
       }
 
-      const deleteMessagesResult = await deleteMessages({
-        conversationId: { $in: conversationIds },
-        user,
-      });
+      /**
+       * Post-delete cleanup is best-effort: the conversations are already gone, so a
+       * thrown error here would hide the deletion from the caller — dropping the
+       * `conversationIds` that downstream cleanup (e.g. agent-checkpoint pruning)
+       * needs, with no way to recover them on retry (the query finds nothing).
+       */
+      let deleteMessagesResult: DeleteResult = { acknowledged: false, deletedCount: 0 };
+      try {
+        deleteMessagesResult = await deleteMessages({
+          conversationId: { $in: conversationIds },
+          user,
+        });
+      } catch (error) {
+        logger.error('[deleteConvos] Conversations deleted but message cleanup failed', error);
+      }
 
       /**
        * Refresh project stats after message cleanup so a stats-refresh error cannot
@@ -804,14 +900,21 @@ export function createConversationMethods(
        * conversations' messages.
        */
       if (deleted && projectIds.size > 0) {
-        await Promise.all(
-          [...projectIds].map((projectId) =>
-            refreshChatProjectStatsForUser(mongoose, user, projectId),
-          ),
-        );
+        try {
+          await Promise.all(
+            [...projectIds].map((projectId) =>
+              refreshChatProjectStatsForUser(mongoose, user, projectId),
+            ),
+          );
+        } catch (error) {
+          logger.error('[deleteConvos] Conversations deleted but stats refresh failed', error);
+        }
       }
 
-      return { ...deleteConvoResult, messages: deleteMessagesResult };
+      // conversationIds lets callers run sibling cleanup that lives in higher layers
+      // (e.g. pruning the conversations' durable agent checkpoints) without re-querying
+      // documents that no longer exist.
+      return { ...deleteConvoResult, messages: deleteMessagesResult, conversationIds };
     } catch (error) {
       logger.error('[deleteConvos] Error deleting conversations and messages', error);
       throw error;

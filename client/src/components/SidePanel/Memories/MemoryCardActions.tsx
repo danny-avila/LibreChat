@@ -3,6 +3,7 @@ import { Pencil } from 'lucide-react';
 import { Trans } from 'react-i18next';
 import {
   Label,
+  Button,
   Spinner,
   OGDialog,
   TrashIcon,
@@ -39,15 +40,18 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
   );
 
   const confirmDelete = () => {
-    deleteMemory(memory.key, {
-      onSuccess: () => {
-        showToast({ message: localize('com_ui_deleted'), status: 'success' });
-        setDeleteOpen(false);
+    deleteMemory(
+      { key: memory.key, agentId: memory.agentId },
+      {
+        onSuccess: () => {
+          showToast({ message: localize('com_ui_deleted'), status: 'success' });
+          setDeleteOpen(false);
+        },
+        onError: () => {
+          showToast({ message: localize('com_ui_error'), status: 'error' });
+        },
       },
-      onError: () => {
-        showToast({ message: localize('com_ui_error'), status: 'error' });
-      },
-    });
+    );
   };
 
   return (
@@ -64,14 +68,16 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
             description={localize('com_ui_edit_memory')}
             side="top"
             render={
-              <button
+              <Button
                 ref={triggerRef}
+                variant="ghost"
+                size="icon"
                 className={buttonBaseClass}
                 aria-label={localize('com_ui_edit')}
                 onClick={() => setEditOpen(true)}
               >
                 <Pencil className="size-3.5" aria-hidden="true" />
-              </button>
+              </Button>
             }
           />
         </OGDialogTrigger>
@@ -84,7 +90,9 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
             description={localize('com_ui_delete_memory')}
             side="top"
             render={
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
                 className={buttonBaseClass}
                 aria-label={localize('com_ui_delete')}
                 onClick={() => setDeleteOpen(true)}
@@ -94,7 +102,7 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
                 ) : (
                   <TrashIcon className="size-3.5" aria-hidden="true" />
                 )}
-              </button>
+              </Button>
             }
           />
         </OGDialogTrigger>
@@ -113,8 +121,7 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
           }
           selection={{
             selectHandler: confirmDelete,
-            selectClasses:
-              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
+            selectClasses: 'bg-surface-destructive text-white hover:bg-surface-destructive-hover',
             selectText: localize('com_ui_delete'),
           }}
         />

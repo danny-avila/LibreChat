@@ -3,6 +3,7 @@ const express = require('express');
 const { sleep } = require('@librechat/agents');
 const {
   isEnabled,
+  deleteAgentCheckpoints,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
   deleteAllSharedLinksWithCleanup,
@@ -38,7 +39,8 @@ router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 25;
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
-  const search = req.query.search ? decodeURIComponent(req.query.search) : undefined;
+  const search =
+    typeof req.query.search === 'string' ? req.query.search.trim() || undefined : undefined;
   const sortBy = req.query.sortBy || 'updatedAt';
   const sortDirection = req.query.sortDirection || 'desc';
   const projectId = Array.isArray(req.query.projectId)
@@ -111,7 +113,7 @@ router.get('/gen_title/:conversationId', async (req, res) => {
   }
 });
 
-router.delete('/', async (req, res) => {
+router.delete('/', configMiddleware, async (req, res) => {
   let filter = {};
   const { conversationId, source, thread_id, endpoint } = req.body?.arg ?? {};
 
@@ -144,6 +146,12 @@ router.delete('/', async (req, res) => {
 
   try {
     const dbResponse = await db.deleteConvos(req.user.id, filter);
+    // HITL: prune the deleted conversations' durable checkpoints — a paused run's
+    // checkpoint would otherwise persist until the Mongo TTL. Never throws.
+    await deleteAgentCheckpoints(
+      dbResponse.conversationIds,
+      req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+    );
     if (filter.conversationId) {
       await db.deleteToolCalls(req.user.id, filter.conversationId);
       await deleteConvoSharedLinksWithCleanup(req.user.id, filter.conversationId);
@@ -155,9 +163,14 @@ router.delete('/', async (req, res) => {
   }
 });
 
-router.delete('/all', async (req, res) => {
+router.delete('/all', configMiddleware, async (req, res) => {
   try {
     const dbResponse = await db.deleteConvos(req.user.id, {});
+    // HITL: prune ALL the deleted conversations' durable checkpoints in one bulk pass.
+    await deleteAgentCheckpoints(
+      dbResponse.conversationIds,
+      req.config?.endpoints?.[EModelEndpoint.agents]?.checkpointer,
+    );
     await db.deleteToolCalls(req.user.id);
     await deleteAllSharedLinksWithCleanup(req.user.id);
     res.status(201).json(dbResponse);

@@ -85,12 +85,12 @@ export async function initializeAnthropic({
 
   const result = getLLMConfig(credentials, clientOptions);
 
-  if (anthropicConfig?.streamRate) {
-    (result.llmConfig as Record<string, unknown>)._lc_stream_delay = anthropicConfig.streamRate;
+  if (anthropicConfig?.streamRate != null) {
+    result.llmConfig._lc_stream_delay = anthropicConfig.streamRate;
   }
 
-  if (allConfig?.streamRate) {
-    (result.llmConfig as Record<string, unknown>)._lc_stream_delay = allConfig.streamRate;
+  if (allConfig?.streamRate != null) {
+    result.llmConfig._lc_stream_delay = allConfig.streamRate;
   }
 
   return result;

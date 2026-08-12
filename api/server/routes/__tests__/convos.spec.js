@@ -23,6 +23,7 @@ describe('Convos Routes', () => {
   let convosRouter;
   const { deleteToolCalls, deleteConvos, saveConvo } = require('~/models');
   const {
+    deleteAgentCheckpoints,
     deleteAllSharedLinksWithCleanup,
     deleteConvoSharedLinksWithCleanup,
   } = require('@librechat/api');
@@ -47,6 +48,20 @@ describe('Convos Routes', () => {
   });
 
   describe('DELETE /all', () => {
+    it('prunes the deleted conversations’ agent checkpoints (bulk, ids from deleteConvos)', async () => {
+      // HITL: a paused conversation's durable checkpoint must not outlive the conversation.
+      const conversationIds = ['conv-a', 'conv-b'];
+      deleteConvos.mockResolvedValue({ deletedCount: 2, conversationIds });
+      deleteToolCalls.mockResolvedValue({ deletedCount: 0 });
+      deleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 0 });
+
+      const response = await request(app).delete('/api/convos/all');
+
+      expect(response.status).toBe(201);
+      expect(deleteAgentCheckpoints).toHaveBeenCalledTimes(1);
+      expect(deleteAgentCheckpoints.mock.calls[0][0]).toEqual(conversationIds);
+    });
+
     it('should delete all conversations, tool calls, and shared links for a user', async () => {
       const mockDbResponse = {
         deletedCount: 5,
@@ -427,6 +442,48 @@ describe('Convos Routes', () => {
 
       /** Verify it was called after the conversation was deleted */
       expect(deleteConvoSharedLinksWithCleanup).toHaveBeenCalledAfter(deleteConvos);
+    });
+  });
+
+  describe('GET / search handling', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    /** Express already percent-decodes `req.query`, so decoding a second time in the route
+     * threw URIError on any term containing a bare `%` and mangled `%xx`-looking text. */
+    it('accepts a search term containing a literal percent sign', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query({ isArchived: 'true', search: '100% ready' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ search: '100% ready' }),
+      );
+    });
+
+    it('passes percent-escape-looking text through without decoding it', async () => {
+      const response = await request(app).get('/api/convos').query({ search: 'a%41b' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ search: 'a%41b' }),
+      );
+    });
+
+    it('treats a whitespace-only search as no search', async () => {
+      const response = await request(app).get('/api/convos').query({ search: '   ' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ search: undefined }),
+      );
     });
   });
 

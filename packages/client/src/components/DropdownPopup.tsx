@@ -1,6 +1,7 @@
 import React from 'react';
 import * as Ariakit from '@ariakit/react';
 import type * as t from '~/common';
+import { usePopoverZIndex } from './OriginalDialog';
 import { cn } from '~/utils';
 import './Dropdown.css';
 
@@ -18,6 +19,7 @@ interface DropdownProps {
   gutter?: number;
   modal?: boolean;
   portal?: boolean;
+  portalElement?: HTMLElement | null;
   preserveTabOrder?: boolean;
   focusLoop?: boolean;
   menuId: string;
@@ -71,10 +73,12 @@ const Menu: React.FC<MenuProps> = ({
   finalFocus,
   unmountOnHide,
   preserveTabOrder,
+  style,
   ...props
 }) => {
   const menuStore = Ariakit.useMenuStore();
   const menu = Ariakit.useMenuContext();
+  const zIndex = usePopoverZIndex();
   return (
     <Ariakit.Menu
       id={menuId}
@@ -85,7 +89,8 @@ const Menu: React.FC<MenuProps> = ({
       finalFocus={finalFocus}
       unmountOnHide={unmountOnHide}
       preserveTabOrder={preserveTabOrder}
-      className={cn('popover-ui z-40', className)}
+      style={{ zIndex, ...style }}
+      className={cn('popover-ui', className)}
       {...props}
     >
       {items
@@ -169,7 +174,7 @@ const Menu: React.FC<MenuProps> = ({
               )}
               {item.label}
               {item.kbd != null && (
-                <kbd className="ml-auto hidden font-sans text-xs text-black/50 group-hover:inline group-focus:inline dark:text-white/50">
+                <kbd className="ml-auto hidden font-sans text-xs text-text-tertiary group-hover:inline group-focus:inline">
                   ⌘{item.kbd}
                 </kbd>
               )}

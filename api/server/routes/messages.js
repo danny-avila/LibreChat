@@ -1,15 +1,22 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { ContentTypes, isAssistantsEndpoint } = require('librechat-data-provider');
+const { ContentTypes, feedbackSchema, isAssistantsEndpoint } = require('librechat-data-provider');
 const {
   unescapeLaTeX,
   countTokens,
   sendFeedbackScore,
   traceIdForMessage,
+  mergeQuotedTextForCount,
 } = require('@librechat/api');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
-const { requireJwtAuth, validateMessageReq } = require('~/server/middleware');
+const {
+  requireJwtAuth,
+  validateMessageReq,
+  configMiddleware,
+  sendValidationResponse,
+  prepareMessageRequestValidation,
+} = require('~/server/middleware');
 const db = require('~/models');
 
 const router = express.Router();
@@ -270,11 +277,30 @@ router.post('/artifact/:messageId', async (req, res) => {
   }
 });
 
-/* Note: It's necessary to add `validateMessageReq` within route definition for correct params */
-router.get('/:conversationId', validateMessageReq, async (req, res) => {
+router.get('/:conversationId', prepareMessageRequestValidation, async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const messages = await db.getMessages({ conversationId, user: req.user.id }, '-_id -__v -user');
+    const validation = req.messageRequestValidation;
+    // This intentionally starts a user-scoped read before validation resolves;
+    // the response remains gated on validation success below.
+    const messagesPromise = validation.shouldFetchMessages
+      ? db.getMessages({ conversationId, user: req.user.id }, '-_id -__v -user').then(
+          (messages) => ({ messages }),
+          (error) => ({ error }),
+        )
+      : null;
+
+    const validationResult = await validation.promise;
+    if (!validationResult.ok) {
+      return sendValidationResponse(res, validationResult);
+    }
+
+    const messagesResult = await messagesPromise;
+    if (messagesResult?.error) {
+      throw messagesResult.error;
+    }
+
+    const messages = messagesResult?.messages ?? [];
     res.status(200).json(messages);
   } catch (error) {
     logger.error('Error fetching messages:', error);
@@ -298,7 +324,15 @@ router.post('/:conversationId', validateMessageReq, async (req, res) => {
     if (!savedMessage) {
       return res.status(400).json({ error: 'Message not saved' });
     }
-    await db.saveConvo(reqCtx, savedMessage, { context: 'POST /api/messages/:conversationId' });
+    const conversationUpdate = {
+      conversationId: savedMessage.conversationId,
+      ...(message.endpoint !== undefined && { endpoint: savedMessage.endpoint }),
+      ...(message.model !== undefined && { model: savedMessage.model }),
+      ...(message.iconURL !== undefined && { iconURL: savedMessage.iconURL }),
+    };
+    await db.saveConvo(reqCtx, conversationUpdate, {
+      context: 'POST /api/messages/:conversationId',
+    });
     res.status(201).json(savedMessage);
   } catch (error) {
     logger.error('Error saving message:', error);
@@ -329,7 +363,22 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     const { text, index, model } = req.body;
 
     if (index === undefined) {
-      const tokenCount = await countTokens(text, model);
+      /** A user turn's persisted `quotes` are re-prepended into the prompt on
+       *  every send, but this edit only changes `text`. Count the merged
+       *  text+quotes so the stored `tokenCount` stays authoritative (matching the
+       *  send path); a plain text-only count under-reports by the quote block. */
+      const existing = (
+        await db.getMessages(
+          { conversationId, messageId, user: req.user.id },
+          'quotes isCreatedByUser',
+        )
+      )?.[0];
+      const textToCount = mergeQuotedTextForCount(
+        text,
+        existing?.quotes,
+        existing?.isCreatedByUser === true,
+      );
+      const tokenCount = await countTokens(textToCount, model);
       const result = await db.updateMessage(req?.user?.id, { messageId, text, tokenCount });
       return res.status(200).json(result);
     }
@@ -382,49 +431,63 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
   }
 });
 
-router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (req, res) => {
-  try {
-    const { conversationId, messageId } = req.params;
-    const { feedback } = req.body;
+router.put(
+  '/:conversationId/:messageId/feedback',
+  validateMessageReq,
+  configMiddleware,
+  async (req, res) => {
+    try {
+      const { conversationId, messageId } = req.params;
+      const { feedback } = req.body;
+      const feedbackResult = feedback == null ? null : feedbackSchema.safeParse(feedback);
 
-    const updatedMessage = await db.updateMessage(
-      req?.user?.id,
-      {
-        messageId,
-        feedback: feedback || null,
-      },
-      { context: 'updateFeedback' },
-    );
+      if (feedbackResult && !feedbackResult.success) {
+        return res.status(400).json({ error: 'Invalid feedback' });
+      }
 
-    // Best-effort: Assistants messages do not have deterministic AgentRun traces.
-    if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
-      sendFeedbackScore({
-        traceId: traceIdForMessage(messageId),
-        feedback: updatedMessage.feedback,
-        metadata: {
-          messageId: updatedMessage.messageId ?? messageId,
-          parentMessageId: updatedMessage.parentMessageId,
-          conversationId: updatedMessage.conversationId ?? conversationId,
-          sessionId: updatedMessage.conversationId ?? conversationId,
-          userId: req?.user?.id,
-          endpoint: updatedMessage.endpoint,
-          sender: updatedMessage.sender,
-          isCreatedByUser: updatedMessage.isCreatedByUser,
-          tokenCount: updatedMessage.tokenCount,
+      const updatedMessage = await db.updateMessage(
+        req?.user?.id,
+        {
+          messageId,
+          feedback: feedbackResult?.data ?? null,
         },
-      }).catch((err) => logger.error('[langfuse] feedback score failed:', err));
-    }
+        { context: 'updateFeedback' },
+      );
 
-    res.json({
-      messageId,
-      conversationId,
-      feedback: updatedMessage.feedback,
-    });
-  } catch (error) {
-    logger.error('Error updating message feedback:', error);
-    res.status(500).json({ error: 'Failed to update feedback' });
-  }
-});
+      // Best-effort: Assistants messages do not have deterministic AgentRun traces.
+      if (!isAssistantsEndpoint(updatedMessage.endpoint)) {
+        sendFeedbackScore({
+          traceId: traceIdForMessage(messageId),
+          sampled: updatedMessage.langfuseSampled,
+          destinationIds: updatedMessage.langfuseDestinationIds,
+          feedback: updatedMessage.feedback,
+          appConfig: req.config,
+          metadata: {
+            messageId: updatedMessage.messageId ?? messageId,
+            parentMessageId: updatedMessage.parentMessageId,
+            conversationId: updatedMessage.conversationId ?? conversationId,
+            sessionId: updatedMessage.conversationId ?? conversationId,
+            userId: req?.user?.id,
+            tenantId: req?.user?.tenantId,
+            endpoint: updatedMessage.endpoint,
+            sender: updatedMessage.sender,
+            isCreatedByUser: updatedMessage.isCreatedByUser,
+            tokenCount: updatedMessage.tokenCount,
+          },
+        }).catch((err) => logger.error('[langfuse] feedback score failed:', err));
+      }
+
+      res.json({
+        messageId,
+        conversationId,
+        feedback: updatedMessage.feedback,
+      });
+    } catch (error) {
+      logger.error('Error updating message feedback:', error);
+      res.status(500).json({ error: 'Failed to update feedback' });
+    }
+  },
+);
 
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {

@@ -139,8 +139,8 @@ interface InitiatedTemplateResult {
 
 type StoredModelSelection = Pick<
   t.TConversation,
-  'endpoint' | 'model' | 'spec' | 'agent_id' | 'assistant_id' | 'conversationId'
->;
+  'model' | 'spec' | 'agent_id' | 'assistant_id'
+> & { endpoint?: EModelEndpoint | string | null };
 
 function hasSelectionValue(value?: string | null): boolean {
   return typeof value === 'string' && value.trim() !== '';
@@ -160,38 +160,14 @@ function parseStoredModelSelection(
   }
 }
 
-function hasStoredPrefixValue(prefix: string, ignoreValue?: string | null): boolean {
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key?.startsWith(prefix)) {
-      continue;
-    }
-
-    const value = localStorage.getItem(key);
-    if (hasSelectionValue(value) && value !== ignoreValue) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function hasStoredModelValue(softPreset?: t.TModelSpecPreset): boolean {
-  const storedModelValue = localStorage.getItem(LocalStorageKeys.LAST_MODEL);
-  if (!storedModelValue) {
-    return false;
-  }
-
-  try {
-    const storedModels = JSON.parse(storedModelValue) as Record<string, string | null | undefined>;
-    return Object.entries(storedModels).some(
-      ([endpoint, model]) =>
-        hasSelectionValue(model) &&
-        !(endpoint === softPreset?.endpoint && model === softPreset?.model),
-    );
-  } catch {
-    return false;
-  }
+function isStoredAgentPick(
+  selection?: Partial<StoredModelSelection> | null,
+): selection is Partial<StoredModelSelection> & { agent_id: string } {
+  return (
+    isAgentsEndpoint(selection?.endpoint ?? '') &&
+    hasSelectionValue(selection?.agent_id) &&
+    !isEphemeralAgentId(selection?.agent_id ?? '')
+  );
 }
 
 export function hasModelSelection(selection?: Partial<StoredModelSelection> | null): boolean {
@@ -206,39 +182,6 @@ export function hasModelSelection(selection?: Partial<StoredModelSelection> | nu
     hasSelectionValue(selection.model) ||
     hasSelectionValue(selection.endpoint)
   );
-}
-
-/**
- * Whether localStorage holds a model selection the user actually made.
- * State matching what applying `softDefaultSpec` writes is residue of the
- * soft default itself, not evidence of a user choice, and is ignored.
- */
-function hasStoredModelSelection(softDefaultSpec?: t.TModelSpec): boolean {
-  const softPreset = softDefaultSpec?.preset;
-  const lastSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
-  if (hasSelectionValue(lastSpecName) && lastSpecName !== softDefaultSpec?.name) {
-    return true;
-  }
-
-  if (hasStoredModelValue(softPreset)) {
-    return true;
-  }
-
-  if (
-    hasStoredPrefixValue(LocalStorageKeys.AGENT_ID_PREFIX, softPreset?.agent_id) ||
-    hasStoredPrefixValue(LocalStorageKeys.ASST_ID_PREFIX, softPreset?.assistant_id)
-  ) {
-    return true;
-  }
-
-  const lastConversationSetup = parseStoredModelSelection(
-    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
-  );
-  if (softDefaultSpec && lastConversationSetup?.spec === softDefaultSpec.name) {
-    return false;
-  }
-
-  return hasModelSelection(lastConversationSetup);
 }
 
 /**
@@ -277,6 +220,44 @@ function hasEphemeralModelOptions({
       !isAssistantsEndpoint(endpoint) &&
       (included.size === 0 || included.has(endpoint)),
   );
+}
+
+/**
+ * Whether the stored setup names a concrete agent/assistant pick the selector
+ * still offers. Picker-only deployments (e.g. `addedEndpoints: [agents]`) have
+ * no ephemeral endpoint → model options, yet an agent selected there is a real
+ * choice the soft default must carry forward; ephemeral agent ids and picks
+ * whose endpoint left the allow-list or endpoints config remain residue.
+ */
+function hasSelectableEntitySelection({
+  selection,
+  endpointsConfig,
+  addedEndpoints,
+  modelSelect,
+}: {
+  selection?: Partial<StoredModelSelection>;
+  endpointsConfig?: t.TEndpointsConfig;
+  addedEndpoints?: Array<EModelEndpoint | string>;
+  modelSelect?: boolean;
+}): boolean {
+  const endpoint = selection?.endpoint;
+  if (!modelSelect || !endpoint) {
+    return false;
+  }
+  const isAgentPick = isStoredAgentPick(selection);
+  const isAssistantPick =
+    isAssistantsEndpoint(endpoint) && hasSelectionValue(selection.assistant_id);
+  if (!isAgentPick && !isAssistantPick) {
+    return false;
+  }
+  const included = new Set(addedEndpoints ?? []);
+  if (included.size > 0 && !included.has(endpoint)) {
+    return false;
+  }
+  if (endpointsConfig == null || Object.keys(endpointsConfig).length === 0) {
+    return true;
+  }
+  return endpointsConfig[endpoint] != null;
 }
 
 /** Get the conditional logic for switching conversations */
@@ -368,6 +349,7 @@ export function applyModelSpecEphemeralAgent({
     web_search: modelSpec.webSearch ?? false,
     file_search: modelSpec.fileSearch ?? false,
     execute_code: modelSpec.executeCode ?? false,
+    memory: modelSpec.memory ?? false,
     artifacts: modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || '',
   };
 
@@ -380,6 +362,7 @@ export function applyModelSpecEphemeralAgent({
       ['web_search', LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_],
       ['file_search', LocalStorageKeys.LAST_FILE_SEARCH_TOGGLE_],
       ['artifacts', LocalStorageKeys.LAST_ARTIFACTS_TOGGLE_],
+      ['memory', LocalStorageKeys.LAST_MEMORY_TOGGLE_],
     ];
 
     for (const [toolKey, storagePrefix] of toolStorageMap) {
@@ -410,17 +393,30 @@ export function applyModelSpecEphemeralAgent({
 }
 
 /**
- * Gets default model spec from config and user preferences.
- * Priority: hard admin default → prior user selection → soft default.
- * The soft default yields only to selections the user actually made — its
- * stored state counts as the live selection only when set on a new chat, so
- * merely viewing an old soft-spec conversation never re-arms it — and it acts
- * as the fallback default when no ephemeral endpoint → model options exist.
- * Legacy first-spec prioritization remains only when no soft default is configured.
+ * Resolves the default model spec for a new chat. Priority: hard admin default →
+ * the most recent conversation's own selection → soft default → legacy first spec.
+ *
+ * `LAST_CONVO_SETUP_0` is the single source of truth for prior intent: a setup naming
+ * the soft spec is the soft default re-arming, any other spec/agent/endpoint is a
+ * selection to carry forward, and an empty setup is a fresh start (clearing chats
+ * wipes the selection, so a new chat then falls to the soft default). The soft default
+ * also wins whenever the selector offers no ephemeral endpoint → model options — unless
+ * the setup names a concrete agent/assistant the selector still offers, the one real
+ * selection picker-only deployments provide — so lingering endpoint/model residue never
+ * strands a new chat on an unselectable endpoint. The legacy first-spec fallback applies
+ * only when specs are prioritized (or the model menu is hidden) and no soft default is
+ * configured.
+ *
+ * A stored agent pick is trusted only until the agent list can weigh in: pass `agentsMap`
+ * once loaded, and a pick naming an agent missing from it (deleted, or selected in another
+ * org sharing this browser storage) is residue the soft default overrides. An undefined
+ * map means the list is unknown and leaves the pick trusted; gate on
+ * `defaultSpecAwaitsAgents` to defer the decision until the map settles.
  */
 export function getDefaultModelSpec(
   startupConfig?: t.TStartupConfig,
   endpointsConfig?: t.TEndpointsConfig,
+  agentsMap?: t.TAgentsMap,
 ):
   | {
       default?: t.TModelSpec;
@@ -433,59 +429,82 @@ export function getDefaultModelSpec(
   if (!list) {
     return;
   }
-  const defaultSpec = list?.find((spec) => spec.default);
-  const softDefaultSpec = list?.find((spec) => spec.softDefault);
-  const lastConversationSetup = parseStoredModelSelection(
-    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
-  );
-  const resolveSoftDefault = (): { softDefault: t.TModelSpec } | undefined => {
-    if (!softDefaultSpec) {
-      return;
-    }
-    if (
-      lastConversationSetup?.spec === softDefaultSpec.name &&
-      lastConversationSetup?.conversationId === Constants.NEW_CONVO
-    ) {
-      return { softDefault: softDefaultSpec };
-    }
-    const ephemeralOptions = hasEphemeralModelOptions({
-      endpointsConfig,
-      addedEndpoints,
-      modelSelect: interfaceConfig?.modelSelect,
-    });
-    if (!ephemeralOptions) {
-      return { softDefault: softDefaultSpec };
-    }
-    return hasStoredModelSelection(softDefaultSpec) ? undefined : { softDefault: softDefaultSpec };
-  };
-  if (prioritize === true || !interfaceConfig?.modelSelect) {
-    const lastSelectedSpecName = localStorage.getItem(LocalStorageKeys.LAST_SPEC);
-    const lastSelectedSpec = list?.find((spec) => spec.name === lastSelectedSpecName);
-    if (defaultSpec) {
-      return { default: defaultSpec };
-    }
-    if (lastSelectedSpec && lastSelectedSpec.name === softDefaultSpec?.name) {
-      return resolveSoftDefault();
-    }
-    if (lastSelectedSpec) {
-      return { last: lastSelectedSpec };
-    }
-    if (softDefaultSpec) {
-      return resolveSoftDefault();
-    }
-    return { default: list?.[0] };
-  } else if (defaultSpec) {
+
+  const defaultSpec = list.find((spec) => spec.default);
+  if (defaultSpec) {
     return { default: defaultSpec };
   }
-  const lastConversationSpecName = lastConversationSetup?.spec;
-  if (!hasSelectionValue(lastConversationSpecName)) {
-    return resolveSoftDefault();
+
+  const softDefaultSpec = list.find((spec) => spec.softDefault);
+  const lastSetup = parseStoredModelSelection(
+    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
+  );
+  const lastSpec = hasSelectionValue(lastSetup?.spec)
+    ? list.find((spec) => spec.name === lastSetup?.spec)
+    : undefined;
+
+  if (lastSpec && lastSpec.name !== softDefaultSpec?.name) {
+    return { last: lastSpec };
   }
-  const lastSpec = list?.find((spec) => spec.name === lastConversationSpecName);
-  if (lastSpec && lastSpec.name === softDefaultSpec?.name) {
-    return resolveSoftDefault();
+
+  if (softDefaultSpec) {
+    if (lastSpec?.name === softDefaultSpec.name) {
+      return { softDefault: softDefaultSpec };
+    }
+    const staleAgentPick =
+      agentsMap != null && isStoredAgentPick(lastSetup) && agentsMap[lastSetup.agent_id] == null;
+    if (staleAgentPick) {
+      return { softDefault: softDefaultSpec };
+    }
+    const modelSelect = interfaceConfig?.modelSelect;
+    const yieldsToSelection =
+      (hasModelSelection(lastSetup) &&
+        hasEphemeralModelOptions({ endpointsConfig, addedEndpoints, modelSelect })) ||
+      hasSelectableEntitySelection({
+        selection: lastSetup,
+        endpointsConfig,
+        addedEndpoints,
+        modelSelect,
+      });
+    return yieldsToSelection ? undefined : { softDefault: softDefaultSpec };
   }
-  return { last: lastSpec };
+
+  if (prioritize === true || interfaceConfig?.modelSelect !== true) {
+    return { default: list[0] };
+  }
+  return;
+}
+
+/**
+ * Whether resolving the default spec for a new chat hinges on the agent list:
+ * a soft default is configured, no hard default or stored spec decides first,
+ * and the stored last setup names a concrete agent whose existence only the
+ * loaded agent map can confirm. Callers should defer `getDefaultModelSpec`
+ * until the agent list query settles (data or error) while this returns true.
+ */
+export function defaultSpecAwaitsAgents(
+  startupConfig?: t.TStartupConfig,
+  endpointsConfig?: t.TEndpointsConfig,
+): boolean {
+  const list = startupConfig?.modelSpecs?.list;
+  if (!list || list.some((spec) => spec.default) || !list.some((spec) => spec.softDefault)) {
+    return false;
+  }
+
+  /** With the selector disabled the soft default can never yield to a stored
+   * pick, so the decision is deterministic without the agent list. */
+  if (!startupConfig?.interface?.modelSelect) {
+    return false;
+  }
+
+  const lastSetup = parseStoredModelSelection(
+    localStorage.getItem(LocalStorageKeys.LAST_CONVO_SETUP + '_0'),
+  );
+  if (hasSelectionValue(lastSetup?.spec) && list.some((spec) => spec.name === lastSetup?.spec)) {
+    return false;
+  }
+
+  return isStoredAgentPick(lastSetup) && endpointsConfig?.[EModelEndpoint.agents] != null;
 }
 
 export function getModelSpecPreset(modelSpec?: t.TModelSpec) {

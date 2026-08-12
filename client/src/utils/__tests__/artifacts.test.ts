@@ -1,3 +1,5 @@
+import { FileSources } from 'librechat-data-provider';
+import type { ToolArtifactType } from '../artifacts';
 import {
   buildSandpackOptions,
   detectArtifactTypeFromFile,
@@ -7,7 +9,6 @@ import {
   languageForFilename,
   TOOL_ARTIFACT_TYPES,
 } from '../artifacts';
-import type { ToolArtifactType } from '../artifacts';
 
 const TAILWIND_CDN = 'https://cdn.tailwindcss.com/3.4.17#tailwind.js';
 
@@ -689,6 +690,31 @@ describe('fileToArtifact', () => {
     expect(fileToArtifact({ ...baseFile, text: '' })).toBeNull();
     expect(fileToArtifact({ ...baseFile, filename: 'App.tsx', type: '', text: '' })).toBeNull();
     expect(fileToArtifact({ ...baseFile, filename: 'flow.mmd', type: '', text: '' })).toBeNull();
+  });
+
+  it('threads original-file download metadata onto the artifact', () => {
+    /* The panel download button needs the original-file coordinates to
+     * fetch the real binary (e.g. a pptx) instead of serializing the
+     * server-rendered HTML preview. `fileToArtifact` must carry them
+     * through from the attachment. */
+    const artifact = fileToArtifact({
+      ...baseFile,
+      filename: 'deck.pptx',
+      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      text: '<html><body>slides</body></html>',
+      textFormat: 'html',
+      filepath: '/api/files/code/output/deck.pptx',
+      source: FileSources.execute_code,
+      user: 'user-1',
+    });
+    expect(artifact).not.toBeNull();
+    expect(artifact!.type).toBe(TOOL_ARTIFACT_TYPES.PRESENTATION);
+    expect(artifact!.download).toEqual({
+      filepath: '/api/files/code/output/deck.pptx',
+      file_id: 'fid-1',
+      source: FileSources.execute_code,
+      user: 'user-1',
+    });
   });
 
   it('uses the caller-provided placeholder when a deferred-extraction file has no text', () => {

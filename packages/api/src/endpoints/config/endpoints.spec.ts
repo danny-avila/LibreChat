@@ -258,6 +258,7 @@ describe('createEndpointsConfigService', () => {
       expect(mockGetAppConfig).toHaveBeenCalledWith({
         role: 'USER',
         userId: 'u1',
+        idOnTheSource: undefined,
         tenantId: 'tenant-a',
       });
     });
@@ -314,7 +315,10 @@ describe('createEndpointsConfigService', () => {
 
       const result = await getEndpointsConfig(fakeReq({ user: { id: 'u1', role: 'USER' } }));
 
-      expect(getUserPrincipals).toHaveBeenCalledWith({ userId: 'u1', role: 'USER' });
+      expect(getUserPrincipals).toHaveBeenCalledWith({
+        userId: 'u1',
+        role: 'USER',
+      });
       expect(getApplicableConfigs).toHaveBeenCalledWith(
         expect.arrayContaining([
           expect.objectContaining({ principalType: PrincipalType.GROUP, principalId: groupId }),

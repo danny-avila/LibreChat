@@ -7,9 +7,14 @@ import {
   appendAgentIdSuffix,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
-import type { Agent, TConversation, TModelSpec } from 'librechat-data-provider';
+import type { Agent, AgentToolOptions, TConversation, TModelSpec } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { requiresEphemeralUserConnection } from '~/mcp/utils';
+import type { ParsedServerConfig } from '~/mcp/types';
+import { requiresEphemeralUserConnection, validateMCPServerConfig } from '~/mcp/utils';
+import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
+import { synthesizeBackgroundToolOptions } from '~/agents/background';
+import { mergeSynthesizedToolOptions } from '~/agents/selection';
+import { synthesizeIntentToolOptions } from '~/agents/intent';
 import { getCustomEndpointConfig } from '~/app/config';
 
 const { mcp_all, mcp_delimiter } = Constants;
@@ -49,6 +54,7 @@ export interface LoadAddedAgentDeps {
   getMCPServerTools: (
     userId: string,
     serverName: string,
+    serverConfig?: ParsedServerConfig,
   ) => Promise<Record<string, unknown> | null>;
 }
 
@@ -98,6 +104,7 @@ export async function loadAddedAgent(
       file_search?: boolean;
       web_search?: boolean;
       artifacts?: unknown;
+      memory?: boolean;
     };
     [key: string]: unknown;
   };
@@ -115,6 +122,10 @@ export async function loadAddedAgent(
         file_search?: boolean;
         web_search?: boolean;
         artifacts?: unknown;
+        memory?: boolean;
+        ask_user_question?: boolean;
+        run_in_background?: boolean;
+        describe_intent?: boolean;
       }
     | undefined;
 
@@ -152,6 +163,21 @@ export async function loadAddedAgent(
     };
     applyModelSpecSkills(result, modelSpec);
     applyModelSpecSubagents(result, modelSpec);
+    const primaryBackgroundToolOptions: AgentToolOptions | undefined =
+      synthesizeBackgroundToolOptions({ ephemeralAgent, modelSpec });
+    if (primaryBackgroundToolOptions) {
+      result.tool_options = primaryBackgroundToolOptions;
+    }
+    const primaryIntentToolOptions: AgentToolOptions | undefined = synthesizeIntentToolOptions({
+      ephemeralAgent,
+      modelSpec,
+    });
+    if (primaryIntentToolOptions) {
+      result.tool_options = mergeSynthesizedToolOptions(
+        result.tool_options as AgentToolOptions | undefined,
+        primaryIntentToolOptions,
+      );
+    }
     return result as unknown as Agent;
   }
 
@@ -179,19 +205,29 @@ export async function loadAddedAgent(
   if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
   }
+  if (ephemeralAgent?.memory === true || modelSpec?.memory === true) {
+    tools.push(Tools.memory);
+  }
+  /** Mirror the primary ephemeral loader (`loadEphemeralAgent`) so a model
+   *  spec's Ask User flag equips the added top-level agent too; downstream
+   *  `createRun` gating (hitlCapable, non-subagent, admin filter) is uniform. */
+  if (ephemeralAgent?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
+    tools.push(ASK_USER_QUESTION_TOOL_NAME);
+  }
 
   const addedServers = new Set<string>();
   for (const mcpServer of mcpServers) {
     if (addedServers.has(mcpServer)) {
       continue;
     }
-    /** Request-tier overlays are invisible to the cache service's registry
-     *  resolver — overlay-scoped servers expand fresh via `mcp_all` instead */
-    const overlayConfig = appConfig?.mcpConfig?.[mcpServer];
+    /** Address durable catalogs by the effective request overlay; request-scoped
+     *  overlays still expand fresh through `mcp_all`. */
+    const rawOverlayConfig = appConfig?.mcpConfig?.[mcpServer];
+    const overlayConfig = rawOverlayConfig ? validateMCPServerConfig(rawOverlayConfig) : undefined;
     const serverTools =
       overlayConfig && requiresEphemeralUserConnection(overlayConfig)
         ? null
-        : await deps.getMCPServerTools(userId, mcpServer);
+        : await deps.getMCPServerTools(userId, mcpServer, overlayConfig);
     if (!serverTools) {
       tools.push(`${mcp_all}${mcp_delimiter}${mcpServer}`);
       addedServers.add(mcpServer);
@@ -253,6 +289,24 @@ export async function loadAddedAgent(
   }
   applyModelSpecSubagents(result, modelSpec);
   applyModelSpecSkills(result, modelSpec);
+
+  const backgroundToolOptions: AgentToolOptions | undefined = synthesizeBackgroundToolOptions({
+    ephemeralAgent,
+    modelSpec,
+  });
+  if (backgroundToolOptions) {
+    result.tool_options = backgroundToolOptions;
+  }
+  const intentToolOptions: AgentToolOptions | undefined = synthesizeIntentToolOptions({
+    ephemeralAgent,
+    modelSpec,
+  });
+  if (intentToolOptions) {
+    result.tool_options = mergeSynthesizedToolOptions(
+      result.tool_options as AgentToolOptions | undefined,
+      intentToolOptions,
+    );
+  }
 
   return result as unknown as Agent;
 }

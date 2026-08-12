@@ -152,4 +152,36 @@ describe('resolveConfigHeaders', () => {
     expect(() => resolveConfigHeaders({ llmConfig, user, body })).not.toThrow();
     expect(llmConfig.configuration).toEqual({});
   });
+
+  it('never forwards unresolved user placeholders when user context is missing (issue #14580)', () => {
+    const llmConfig = {
+      configuration: {
+        defaultHeaders: {
+          'X-LibreChat-User': '{{LIBRECHAT_USER_OPENIDID}}',
+          'X-Conversation-Id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+        },
+      },
+    } as unknown as RunLLMConfig;
+
+    // The empty safe user produced by createSafeUser(undefined) — e.g. a disposed
+    // req racing async title generation — must not leak literal template text.
+    resolveConfigHeaders({ llmConfig, user: {} as { id: string }, body });
+
+    expect(llmConfig.configuration?.defaultHeaders).toEqual({
+      'X-LibreChat-User': '',
+      'X-Conversation-Id': 'convo-abc',
+    });
+  });
+
+  it('strips placeholders for fields the resolved user lacks', () => {
+    const llmConfig = {
+      configuration: {
+        defaultHeaders: { 'X-LibreChat-User': '{{LIBRECHAT_USER_OPENIDID}}' },
+      },
+    } as unknown as RunLLMConfig;
+
+    resolveConfigHeaders({ llmConfig, user, body });
+
+    expect(llmConfig.configuration?.defaultHeaders).toEqual({ 'X-LibreChat-User': '' });
+  });
 });

@@ -3,6 +3,8 @@ name: Sync Locize Translations & Create Translation PR
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**.md'
   repository_dispatch:
     types: [locize/versionPublished]
 
@@ -15,12 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
 
       - name: Set Up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24.16.0'
 
@@ -51,7 +53,7 @@ jobs:
     steps:
       # 1. Check out the repository.
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           persist-credentials: false
 
@@ -66,7 +68,7 @@ jobs:
       # workflow does not depend on the global GITHUB_TOKEN PR-creation setting.
       - name: Create Pull Request
         id: create-pull-request
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.LOCIZE_PR_TOKEN }}
           add-paths: |

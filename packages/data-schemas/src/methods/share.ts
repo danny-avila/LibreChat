@@ -1,9 +1,11 @@
 import { nanoid } from 'nanoid';
-import { Constants } from 'librechat-data-provider';
+import { Types } from 'mongoose';
+import { Constants, ContentTypes, FileSources } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import { activeExpirationFilter } from '~/utils/retention';
+import { isValidObjectIdString } from '~/utils/objectId';
 import logger from '~/config/winston';
 
 class ShareServiceError extends Error {
@@ -15,6 +17,41 @@ class ShareServiceError extends Error {
   }
 }
 
+type ShareOrder = Pick<t.ISharedLink, '_id' | 'createdAt'>;
+
+const isEarlierShare = (candidate: ShareOrder, subject: ShareOrder): boolean => {
+  const candidateTime = candidate.createdAt?.getTime() ?? 0;
+  const subjectTime = subject.createdAt?.getTime() ?? 0;
+  if (candidateTime !== subjectTime) {
+    return candidateTime < subjectTime;
+  }
+  return String(candidate._id) < String(subject._id);
+};
+
+/**
+ * `createSharedLink` checks for an existing share and inserts in two round trips, so two
+ * concurrent creates can both clear the check. Re-reading after the insert closes that:
+ * every racer that sees an earlier rival retracts its own document, and since they all
+ * evaluate the same total order (createdAt, then `_id`), exactly one survives.
+ */
+async function findOlderActiveShare(
+  SharedLink: Model<t.ISharedLink>,
+  created: ShareOrder,
+  key: { conversationId: string; user: string; targetMessageId?: string },
+): Promise<boolean> {
+  const rivals = (await SharedLink.find({
+    conversationId: key.conversationId,
+    user: key.user,
+    _id: { $ne: created._id },
+    ...activeExpirationFilter<t.ISharedLink>(),
+    ...(key.targetMessageId && { targetMessageId: key.targetMessageId }),
+  })
+    .select('_id createdAt')
+    .lean()) as ShareOrder[];
+
+  return rivals.some((rival) => isEarlierShare(rival, created));
+}
+
 function memoizedAnonymizeId(prefix: string) {
   const memo = new Map<string, string>();
   return (id: string) => {
@@ -23,23 +60,6 @@ function memoizedAnonymizeId(prefix: string) {
     }
     return memo.get(id) as string;
   };
-}
-
-const anonymizeConvoId = memoizedAnonymizeId('convo');
-const anonymizeAssistantId = memoizedAnonymizeId('a');
-const anonymizeMessageId = (id: string) =>
-  id === Constants.NO_PARENT ? id : memoizedAnonymizeId('msg')(id);
-
-function anonymizeConvo(conversation: Partial<t.IConversation> & Partial<t.ISharedLink>) {
-  if (!conversation) {
-    return null;
-  }
-
-  const newConvo = { ...conversation };
-  if (newConvo.assistant_id) {
-    newConvo.assistant_id = anonymizeAssistantId(newConvo.assistant_id);
-  }
-  return newConvo;
 }
 
 /**
@@ -99,10 +119,308 @@ function sanitizeSharedFiles(files: unknown): t.SharedFile[] | undefined {
 }
 
 /**
+ * Sources backed by a durable stored object that the share-scoped routes can
+ * stream with only `storageKey`/`filepath` + the request. Sources requiring
+ * owner-specific credentials (openai/azure assistants, execute_code, vectordb,
+ * OCR/parser pipelines) are skipped — those files degrade to a 404 in the share
+ * view. `FileSources.text` is intentionally excluded: its `filepath` is a Multer
+ * temp path that the upload route deletes, so there is nothing durable to stream.
+ */
+const SNAPSHOT_STREAMABLE_SOURCES = new Set<string>([
+  FileSources.local,
+  FileSources.s3,
+  FileSources.cloudfront,
+  FileSources.azure_blob,
+  FileSources.firebase,
+]);
+
+/** Collect `file_id`s from a message's `files`/`attachments` array into `target`. */
+function collectFileIds(items: unknown, target: Set<string>): void {
+  if (!Array.isArray(items)) {
+    return;
+  }
+  for (const item of items) {
+    if (item && typeof item === 'object') {
+      const fileId = (item as { file_id?: unknown }).file_id;
+      if (typeof fileId === 'string' && fileId) {
+        target.add(fileId);
+      }
+    }
+  }
+}
+
+type SteerLikePart = { type?: unknown; files?: unknown };
+
+function isSteerPartWithFiles(part: unknown): part is SteerLikePart {
+  return (
+    part != null &&
+    typeof part === 'object' &&
+    (part as SteerLikePart).type === ContentTypes.STEER &&
+    (part as SteerLikePart).files !== undefined
+  );
+}
+
+/** Collect `file_id`s carried by steer parts inside a message's content array. */
+function collectSteerFileIds(content: unknown, target: Set<string>): void {
+  if (!Array.isArray(content)) {
+    return;
+  }
+  for (const part of content) {
+    if (isSteerPartWithFiles(part)) {
+      collectFileIds(part.files, target);
+    }
+  }
+}
+
+/**
+ * Build the per-share file snapshot from the messages being shared. Captures only
+ * the metadata the share-scoped routes need to stream each file; references the
+ * original stored object (no byte copy). The lookup is scoped to the sharing
+ * user's own files so a message referencing another user's `file_id` can never
+ * widen access to it. Preview text/status is intentionally NOT embedded — it is
+ * read live from the file record so snapshots stay small and never go stale.
+ */
+async function buildFileSnapshots(
+  mongoose: typeof import('mongoose'),
+  messages: t.IMessage[],
+  ownerId?: string,
+): Promise<t.SharedFileSnapshot[]> {
+  if (!ownerId) {
+    return [];
+  }
+
+  const fileIds = new Set<string>();
+  for (const message of messages) {
+    collectFileIds(message.files, fileIds);
+    collectFileIds(message.attachments, fileIds);
+    collectSteerFileIds(message.content, fileIds);
+  }
+
+  if (fileIds.size === 0) {
+    return [];
+  }
+
+  const File = mongoose.models.File as Model<t.IMongoFile>;
+  const files = await File.find({ file_id: { $in: Array.from(fileIds) }, user: ownerId }).lean();
+
+  const snapshots: t.SharedFileSnapshot[] = [];
+  for (const file of files) {
+    const source = file.source ?? FileSources.local;
+    if (!SNAPSHOT_STREAMABLE_SOURCES.has(source)) {
+      continue;
+    }
+    snapshots.push({
+      file_id: file.file_id,
+      source,
+      storageKey: file.storageKey,
+      filepath: file.filepath,
+      type: file.type,
+      filename: file.filename,
+      bytes: file.bytes,
+      width: file.width,
+      height: file.height,
+      model: file.model,
+      previewRevision: file.previewRevision,
+      tenantId: file.tenantId,
+    });
+  }
+  return snapshots;
+}
+
+type SharedLinksCursor = { primary: string | null; id: string };
+
+/**
+ * The list cursor carries the sort value *and* the `_id` that broke its tie, base64
+ * encoded so callers treat it as opaque. Older plain-value cursors decode to null and
+ * fall back to the single-field boundary they were issued under.
+ */
+function decodeSharedLinksCursor(pageParam: Date | string): SharedLinksCursor | null {
+  if (typeof pageParam !== 'string') {
+    return null;
+  }
+  try {
+    const decoded = JSON.parse(Buffer.from(pageParam, 'base64').toString());
+    const hasPrimary = typeof decoded?.primary === 'string' || decoded?.primary === null;
+    if (hasPrimary && isValidObjectIdString(decoded?.id)) {
+      return decoded as SharedLinksCursor;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Clauses that resume exactly after the boundary row. `title` is optional on a share,
+ * and BSON orders null/missing before every string, so a titleless boundary cannot be
+ * expressed as a comparison against `''`: ascending would skip the remaining titleless
+ * rows and descending would re-admit all of them.
+ */
+function buildSharedLinksCursorClauses(
+  cursor: SharedLinksCursor,
+  sortBy: string,
+  descending: boolean,
+): FilterQuery<t.ISharedLink>[] {
+  const op = descending ? '$lt' : '$gt';
+  const boundaryId = { [op]: new Types.ObjectId(cursor.id) };
+
+  if (cursor.primary === null) {
+    /* Descending puts the titleless rows last, so only their own tail remains;
+       ascending puts them first, so every titled row still follows. */
+    return descending
+      ? [{ [sortBy]: null, _id: boundaryId } as FilterQuery<t.ISharedLink>]
+      : [
+          { [sortBy]: null, _id: boundaryId } as FilterQuery<t.ISharedLink>,
+          { [sortBy]: { $ne: null } } as FilterQuery<t.ISharedLink>,
+        ];
+  }
+
+  const primaryValue = sortBy === 'createdAt' ? new Date(cursor.primary) : cursor.primary;
+  const clauses: FilterQuery<t.ISharedLink>[] = [
+    { [sortBy]: { [op]: primaryValue } } as FilterQuery<t.ISharedLink>,
+    { [sortBy]: primaryValue, _id: boundaryId } as FilterQuery<t.ISharedLink>,
+  ];
+
+  /* `$lt`/`$gt` are type-bracketed: compared against a string they never match a
+     missing field. Descending sorts those rows after every title, so they need a
+     clause of their own or the page after the last title comes back empty. */
+  if (descending && typeof primaryValue === 'string') {
+    clauses.push({ [sortBy]: null } as FilterQuery<t.ISharedLink>);
+  }
+
+  return clauses;
+}
+
+function encodeSharedLinksCursor(link: t.ISharedLink, sortBy: string): string {
+  const value = link[sortBy as keyof t.ISharedLink];
+  let primary: string | null = null;
+  if (value instanceof Date) {
+    primary = value.toISOString();
+  } else if (value != null) {
+    primary = String(value);
+  }
+  const composite: SharedLinksCursor = { primary, id: String(link._id) };
+  return Buffer.from(JSON.stringify(composite)).toString('base64');
+}
+
+/**
+ * Commit a lazy snapshot backfill only while the link still has none. An owner can
+ * republish the same shareId while a viewer's first read is in flight, and an
+ * unconditional write would restore the snapshot that republish just replaced,
+ * re-authorizing the stable URL of a file they removed. The stored snapshot wins any
+ * race; `timestamps: false` keeps a migration from looking like a publication, since
+ * `updatedAt` is the revision a viewer's fork request is validated against.
+ */
+async function persistBackfilledSnapshots(
+  SharedLink: Model<t.ISharedLink>,
+  filter: FilterQuery<t.ISharedLink>,
+  fileSnapshots: t.SharedFileSnapshot[],
+): Promise<t.SharedFileSnapshot[]> {
+  const result = await SharedLink.updateOne(
+    { ...filter, fileSnapshots: { $exists: false }, snapshotFiles: { $ne: false } },
+    { $set: { fileSnapshots } },
+    { timestamps: false },
+  );
+
+  if (result.modifiedCount > 0) {
+    return fileSnapshots;
+  }
+
+  const current = await SharedLink.findOne(filter).select('fileSnapshots snapshotFiles').lean();
+  if (!current || current.snapshotFiles === false) {
+    return [];
+  }
+  return current.fileSnapshots ?? [];
+}
+
+/** Share-scoped file route that serves a snapshotted file independent of owner ACL. */
+function shareFileRoute(shareId: string, fileId: string): string {
+  return `/api/share/${shareId}/files/${encodeURIComponent(fileId)}`;
+}
+
+/**
+ * Point a snapshotted file's render URLs at the share-scoped route so viewers load
+ * it through the authorized share path (and the owner's storage path is not leaked).
+ */
+function applyShareFileRoute(
+  file: t.SharedFile,
+  shareId: string,
+  snapshotIds: Set<string>,
+): t.SharedFile {
+  const fileId = file.file_id;
+  if (typeof fileId === 'string' && snapshotIds.has(fileId)) {
+    const route = shareFileRoute(shareId, fileId);
+    const next: t.SharedFile = { ...file, filepath: route };
+    if (file.preview !== undefined) {
+      next.preview = route;
+    }
+    return next;
+  }
+  // Not snapshotted (e.g. a non-streamable source on an included link): neutralize
+  // the render URLs so the owner's original path can't be loaded through the share.
+  const next: t.SharedFile = { ...file };
+  delete next.filepath;
+  delete next.preview;
+  return next;
+}
+
+/**
+ * Steer parts persisted inline in `message.content` carry the same user file
+ * refs as a message's top-level `files`, so they follow the identical share
+ * policy: dropped entirely when files are excluded from the link, sanitized and
+ * rewritten to the share-scoped route (with anonymized ids) when included.
+ * Returns the original array untouched when no steer part carries files.
+ */
+export function anonymizeSharedContent(
+  content: unknown[] | undefined,
+  params: {
+    newConvoId: string;
+    newMessageId: string;
+    shareId: string;
+    snapshotIds: Set<string>;
+    includeFiles: boolean;
+  },
+): unknown[] | undefined {
+  if (!Array.isArray(content)) {
+    return content;
+  }
+
+  let result: unknown[] | null = null;
+  for (let i = 0; i < content.length; i++) {
+    const part = content[i];
+    if (!isSteerPartWithFiles(part)) {
+      continue;
+    }
+    const { files: rawFiles, ...rest } = part as Record<string, unknown>;
+    const files = params.includeFiles
+      ? sanitizeSharedFiles(rawFiles)?.map((file) =>
+          applyShareFileRoute(
+            {
+              ...file,
+              ...(file.conversationId !== undefined && { conversationId: params.newConvoId }),
+              ...(file.messageId !== undefined && { messageId: params.newMessageId }),
+            },
+            params.shareId,
+            params.snapshotIds,
+          ),
+        )
+      : undefined;
+    if (result == null) {
+      result = [...content];
+    }
+    result[i] = files ? { ...rest, files } : rest;
+  }
+  return result ?? content;
+}
+
+/**
  * Only surface a model name when it is an (already-anonymized) assistant id;
  * otherwise omit it so the underlying provider/model is not disclosed.
  */
-function anonymizeSharedModel(model?: string): string | undefined {
+function anonymizeSharedModel(
+  model: string | undefined,
+  anonymizeAssistantId: (id: string) => string,
+): string | undefined {
   if (!model?.startsWith('asst_')) {
     return undefined;
   }
@@ -117,7 +435,15 @@ function anonymizeSharedModel(model?: string): string | undefined {
  * field so render data (uploaded files, `toolCallId`, search results, generated
  * outputs) is preserved without leaking storage internals.
  */
-function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.SharedMessage[] {
+function anonymizeMessages(
+  messages: t.IMessage[],
+  newConvoId: string,
+  shareId: string,
+  snapshotIds: Set<string>,
+  includeFiles: boolean,
+  anonymizeMessageId: (id: string) => string,
+  anonymizeAssistantId: (id: string) => string,
+): t.SharedMessage[] {
   if (!Array.isArray(messages)) {
     return [];
   }
@@ -127,19 +453,37 @@ function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.Shared
     const newMessageId = anonymizeMessageId(message.messageId);
     idMap.set(message.messageId, newMessageId);
 
-    const attachments = sanitizeSharedFiles(message.attachments)?.map((attachment) => ({
-      ...attachment,
-      messageId: newMessageId,
-      conversationId: newConvoId,
-    }));
+    // When files are not shared for this link, omit files/attachments entirely so
+    // viewers can't load them through the owner's original (e.g. static) paths.
+    const attachments = includeFiles
+      ? sanitizeSharedFiles(message.attachments)?.map((attachment) =>
+          applyShareFileRoute(
+            {
+              ...attachment,
+              messageId: newMessageId,
+              conversationId: newConvoId,
+            },
+            shareId,
+            snapshotIds,
+          ),
+        )
+      : undefined;
     // Persisted file records can carry the original conversation/message ids;
     // rewrite them to the anonymized ids so shared files don't expose them.
-    const files = sanitizeSharedFiles(message.files)?.map((file) => ({
-      ...file,
-      ...(file.conversationId !== undefined && { conversationId: newConvoId }),
-      ...(file.messageId !== undefined && { messageId: newMessageId }),
-    }));
-    const model = anonymizeSharedModel(message.model);
+    const files = includeFiles
+      ? sanitizeSharedFiles(message.files)?.map((file) =>
+          applyShareFileRoute(
+            {
+              ...file,
+              ...(file.conversationId !== undefined && { conversationId: newConvoId }),
+              ...(file.messageId !== undefined && { messageId: newMessageId }),
+            },
+            shareId,
+            snapshotIds,
+          ),
+        )
+      : undefined;
+    const model = anonymizeSharedModel(message.model, anonymizeAssistantId);
 
     return {
       messageId: newMessageId,
@@ -149,7 +493,13 @@ function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.Shared
       conversationId: newConvoId,
       sender: message.sender,
       text: message.text,
-      content: message.content,
+      content: anonymizeSharedContent(message.content, {
+        newConvoId,
+        newMessageId,
+        shareId,
+        snapshotIds,
+        includeFiles,
+      }),
       ...(message.iconURL && { iconURL: message.iconURL }),
       ...(model && { model }),
       isCreatedByUser: message.isCreatedByUser,
@@ -161,10 +511,113 @@ function anonymizeMessages(messages: t.IMessage[], newConvoId: string): t.Shared
       finish_reason: message.finish_reason,
       ...(message.manualSkills && { manualSkills: message.manualSkills }),
       ...(message.alwaysAppliedSkills && { alwaysAppliedSkills: message.alwaysAppliedSkills }),
+      ...(message.quotes && { quotes: message.quotes }),
       ...(files && { files }),
       ...(attachments && { attachments }),
     };
   });
+}
+
+/**
+ * An update omits the target when the share dialog cannot resolve the conversation's own
+ * branch tail, which is every update started from the conversation list rather than the
+ * open pane. The stored target is the tail as of the last publish, so reusing it verbatim
+ * would republish the identical snapshot and silently drop the turns added since.
+ *
+ * Walking forward to the newest descendant is the same move an update from the open pane
+ * already makes by sending the live tail, so both entry points now publish the newer turns.
+ * Note `getMessagesUpToTarget` bounds the snapshot by the target's *level*, not by a single
+ * path, so this widens the shared depth; it stays bounded by the branch's own tail rather
+ * than clearing the target, which would drop the bound entirely.
+ *
+ * A regeneration or edit replaces the target with a *sibling* rather than a child, so the
+ * turns that follow hang off the replacement. Descendants alone would leave the walk parked
+ * on the obsolete branch and publish none of them, so a childless target hops once to the
+ * newest sibling that the conversation actually continued under.
+ */
+function advanceTargetToBranchTail(messages: t.IMessage[], targetMessageId: string): string {
+  const messagesById = new Map<string, t.IMessage>();
+  const childrenByParent = new Map<string, t.IMessage[]>();
+  for (const message of messages) {
+    messagesById.set(message.messageId, message);
+    const parentMessageId = message.parentMessageId;
+    if (!parentMessageId) {
+      continue;
+    }
+    const siblings = childrenByParent.get(parentMessageId);
+    if (siblings) {
+      siblings.push(message);
+      continue;
+    }
+    childrenByParent.set(parentMessageId, [message]);
+  }
+
+  const newestOf = (candidates: t.IMessage[]): t.IMessage | undefined => {
+    let newest: t.IMessage | undefined;
+    for (const candidate of candidates) {
+      const candidateTime = candidate.createdAt?.getTime() ?? 0;
+      const newestTime = newest?.createdAt?.getTime() ?? 0;
+      if (!newest || candidateTime > newestTime) {
+        newest = candidate;
+      }
+    }
+    return newest;
+  };
+
+  const replacementFor = (messageId: string): t.IMessage | undefined => {
+    const node = messagesById.get(messageId);
+    const parentMessageId = node?.parentMessageId;
+    if (!parentMessageId) {
+      return undefined;
+    }
+    /* Only a sibling created after this one can be its replacement. An older sibling
+       that happens to have follow-ups is the branch this one was regenerated away
+       from, and resuming there would publish turns the target deliberately excluded. */
+    const nodeTime = node?.createdAt?.getTime() ?? 0;
+    const continued = (childrenByParent.get(parentMessageId) ?? []).filter(
+      (sibling) =>
+        sibling.messageId !== messageId &&
+        childrenByParent.has(sibling.messageId) &&
+        (sibling.createdAt?.getTime() ?? 0) > nodeTime,
+    );
+    return newestOf(continued);
+  };
+
+  /** The regenerated message is not always the stored target: regenerating an answer
+   * further up leaves the whole stored branch childless while the conversation carries
+   * on under the replacement. Climb until a level offers one, so the walk resumes at
+   * the closest point where the branch actually diverged. */
+  const findBranchReplacement = (): t.IMessage | undefined => {
+    const climbed = new Set<string>();
+    let node: string | undefined = targetMessageId;
+    while (node && !climbed.has(node)) {
+      climbed.add(node);
+      const replacement = replacementFor(node);
+      if (replacement) {
+        return replacement;
+      }
+      node = messagesById.get(node)?.parentMessageId ?? undefined;
+    }
+    return undefined;
+  };
+
+  let current = targetMessageId;
+  const visited = new Set([current]);
+  for (;;) {
+    const children = childrenByParent.get(current);
+    let next: t.IMessage | undefined;
+    if (children?.length) {
+      next = newestOf(children);
+    } else if (current === targetMessageId) {
+      next = findBranchReplacement();
+    }
+
+    if (!next?.messageId || visited.has(next.messageId)) {
+      return current;
+    }
+    visited.add(next.messageId);
+    current = next.messageId;
+  }
 }
 
 /**
@@ -194,14 +647,16 @@ function getMessagesUpToTarget(messages: t.IMessage[], targetMessageId: string):
   // Find the target message
   const targetMessage = messages.find((msg) => msg.messageId === targetMessageId);
   if (!targetMessage) {
-    // If target not found, return all messages for backwards compatibility
-    return messages;
+    // Fail closed: a stale or malformed target must never widen the share from a
+    // selected branch/level to the entire conversation.
+    return [];
   }
 
   const visited = new Set<string>();
   const rootMessages = parentToChildrenMap.get(Constants.NO_PARENT) || [];
   let currentLevel = rootMessages.length > 0 ? [...rootMessages] : [targetMessage];
   const results = new Set<t.IMessage>(currentLevel);
+  let targetFound = currentLevel.some((msg) => msg.messageId === targetMessageId);
 
   // Check if the target message is at the root level
   if (
@@ -212,7 +667,6 @@ function getMessagesUpToTarget(messages: t.IMessage[], targetMessageId: string):
   }
 
   // Iterate level by level until the target is found
-  let targetFound = false;
   while (!targetFound && currentLevel.length > 0) {
     const nextLevel: t.IMessage[] = [];
     for (const node of currentLevel) {
@@ -235,6 +689,13 @@ function getMessagesUpToTarget(messages: t.IMessage[], targetMessageId: string):
     currentLevel = nextLevel;
   }
 
+  // Fail closed: an orphaned target (an import or a partial delete broke its parent
+  // chain) is never reached from the roots, and returning the levels accumulated on
+  // the way would publish the whole conversation instead of the selected branch.
+  if (!targetFound) {
+    return [];
+  }
+
   return Array.from(results);
 }
 
@@ -243,7 +704,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   getSharedLink: (user: string, conversationId: string) => Promise<t.GetShareLinkResult>;
   getSharedLinks: (
     user: string,
-    pageParam?: Date,
+    pageParam?: Date | string,
     pageSize?: number,
     sortBy?: string,
     sortDirection?: string,
@@ -254,18 +715,29 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     conversationId: string,
     targetMessageId?: string,
     expiredAt?: Date,
+    snapshotFiles?: boolean,
   ) => Promise<t.CreateShareResult>;
   updateSharedLink: (
     user: string,
     shareId: string,
     targetMessageId?: string,
     expiredAt?: Date | null,
+    snapshotFiles?: boolean,
   ) => Promise<t.UpdateShareResult>;
   deleteSharedLink: (user: string, shareId: string) => Promise<t.DeleteShareResult | null>;
   getSharedMessages: (
     shareId: string,
     shareObjectId?: string,
+    options?: { snapshotFiles?: boolean },
   ) => Promise<t.SharedMessagesResult | null>;
+  getSharedLinkFile: (
+    shareId: string,
+    fileId: string,
+  ) => Promise<{ file: t.SharedFileSnapshot | null; hasSnapshots: boolean; optedOut: boolean }>;
+  backfillSharedLinkFiles: (
+    shareId: string,
+    fileId?: string,
+  ) => Promise<t.SharedFileSnapshot | t.SharedFileSnapshot[] | null>;
   deleteAllSharedLinks: (
     user: string,
   ) => Promise<t.DeleteAllSharesResult & { deletedIds: string[] }>;
@@ -280,6 +752,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
   async function getSharedMessages(
     shareId: string,
     shareObjectId?: string,
+    options?: { snapshotFiles?: boolean },
   ): Promise<t.SharedMessagesResult | null> {
     try {
       const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
@@ -292,7 +765,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
           path: 'messages',
           select: '-_id -__v -user',
         })
-        .select('-_id -__v -user')
+        .select('-__v')
         .lean()) as (t.ISharedLink & { messages: t.IMessage[] }) | null;
 
       if (!share?.conversationId) {
@@ -305,14 +778,53 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         messagesToShare = getMessagesUpToTarget(share.messages, share.targetMessageId);
       }
 
+      // Keep anonymous ids consistent within a response without retaining a
+      // process-global map. Global maps let viewers correlate the same private
+      // conversation/assistant across distinct links and grow without bounds.
+      const anonymizeConvoId = memoizedAnonymizeId('convo');
+      const anonymizeAssistantId = memoizedAnonymizeId('a');
+      const memoizedMessageId = memoizedAnonymizeId('msg');
+      const anonymizeMessageId = (id: string) =>
+        !id || id === Constants.NO_PARENT ? Constants.NO_PARENT : memoizedMessageId(id);
       const newConvoId = anonymizeConvoId(share.conversationId);
+      const resolvedShareId = share.shareId || shareId;
+
+      /**
+       * Files are included only when the admin feature is enabled (options) AND the
+       * link's own choice wasn't opted out (`snapshotFiles === false`). When
+       * excluded, files/attachments are stripped from the payload so nothing leaks
+       * through the owner's original paths. Legacy links (no per-link choice and no
+       * snapshot yet) are backfilled here so their first view rewrites correctly.
+       */
+      const adminEnabled = options?.snapshotFiles !== false;
+      const perLinkEnabled = share.snapshotFiles !== false;
+      const includeFiles = adminEnabled && perLinkEnabled;
+      let fileSnapshots = share.fileSnapshots;
+      if (includeFiles && fileSnapshots === undefined && share._id) {
+        fileSnapshots = await persistBackfilledSnapshots(
+          SharedLink,
+          { _id: share._id },
+          await buildFileSnapshots(mongoose, messagesToShare, share.user),
+        );
+      }
+      const snapshotIds = includeFiles
+        ? new Set<string>((fileSnapshots ?? []).map((snapshot) => snapshot.file_id))
+        : new Set<string>();
       const result: t.SharedMessagesResult = {
-        shareId: share.shareId || shareId,
+        shareId: resolvedShareId,
         title: share.title,
         createdAt: share.createdAt,
         updatedAt: share.updatedAt,
         conversationId: newConvoId,
-        messages: anonymizeMessages(messagesToShare, newConvoId),
+        messages: anonymizeMessages(
+          messagesToShare,
+          newConvoId,
+          resolvedShareId,
+          snapshotIds,
+          includeFiles,
+          anonymizeMessageId,
+          anonymizeAssistantId,
+        ),
       };
 
       return result;
@@ -330,7 +842,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
    */
   async function getSharedLinks(
     user: string,
-    pageParam?: Date,
+    pageParam?: Date | string,
     pageSize: number = 10,
     sortBy: string = 'createdAt',
     sortDirection: string = 'desc',
@@ -345,10 +857,19 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       };
 
       if (pageParam) {
-        if (sortDirection === 'desc') {
-          query[sortBy] = { $lt: pageParam };
+        const op = sortDirection === 'desc' ? '$lt' : '$gt';
+        const cursor = decodeSharedLinksCursor(pageParam);
+        if (cursor) {
+          /* Titles repeat and createdAt can collide, so a single-field boundary drops
+             every row that ties with the last one on the previous page. `_id` breaks
+             the tie. Nested under `$and` because the expiration filter owns `$or`. */
+          query.$and = [
+            {
+              $or: buildSharedLinksCursorClauses(cursor, sortBy, sortDirection === 'desc'),
+            } as FilterQuery<t.ISharedLink>,
+          ];
         } else {
-          query[sortBy] = { $gt: pageParam };
+          query[sortBy] = { [op]: pageParam };
         }
       }
 
@@ -383,6 +904,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
 
       const sort: Record<string, 1 | -1> = {};
       sort[sortBy] = sortDirection === 'desc' ? -1 : 1;
+      sort._id = sort[sortBy];
 
       const sharedLinks = await SharedLink.find(query)
         .sort(sort)
@@ -394,7 +916,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const links = sharedLinks.slice(0, pageSize);
 
       const nextCursor = hasNextPage
-        ? (links[links.length - 1][sortBy as keyof t.ISharedLink] as Date)
+        ? encodeSharedLinksCursor(links[links.length - 1], sortBy)
         : undefined;
 
       return {
@@ -480,6 +1002,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     conversationId: string,
     targetMessageId?: string,
     expiredAt?: Date,
+    snapshotFiles: boolean = true,
   ): Promise<t.CreateShareResult> {
     if (!user || !conversationId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
@@ -527,7 +1050,25 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         throw new ShareServiceError('No messages to share', 'NO_MESSAGES');
       }
 
+      if (
+        targetMessageId &&
+        !conversationMessages.some((message) => message.messageId === targetMessageId)
+      ) {
+        throw new ShareServiceError('Target message not found', 'TARGET_MESSAGE_NOT_FOUND');
+      }
+
       const title = conversation.title || 'Untitled';
+
+      const messagesForSnapshot = conversationMessages as unknown as t.IMessage[];
+      const fileSnapshots = snapshotFiles
+        ? await buildFileSnapshots(
+            mongoose,
+            targetMessageId
+              ? getMessagesUpToTarget(messagesForSnapshot, targetMessageId)
+              : messagesForSnapshot,
+            user,
+          )
+        : [];
 
       const shareId = nanoid();
       const created = await SharedLink.create({
@@ -536,9 +1077,26 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         messages: conversationMessages,
         title,
         user,
+        snapshotFiles,
         ...(targetMessageId && { targetMessageId }),
         ...(expiredAt && { expiredAt }),
+        ...(snapshotFiles && { fileSnapshots }),
       });
+
+      const supersededBy = await findOlderActiveShare(SharedLink, created, {
+        conversationId,
+        user,
+        targetMessageId,
+      });
+      if (supersededBy) {
+        await SharedLink.deleteOne({ _id: created._id });
+        logger.warn('[createSharedLink] Concurrent create lost to an earlier share', {
+          user,
+          conversationId,
+          targetMessageId,
+        });
+        throw new ShareServiceError('Share already exists', 'SHARE_EXISTS');
+      }
 
       return { _id: created._id.toString(), shareId, conversationId, targetMessageId };
     } catch (error) {
@@ -573,11 +1131,12 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         user,
         ...activeExpirationFilter<t.ISharedLink>(),
       })
-        .select('shareId targetMessageId _id')
+        .select('shareId targetMessageId snapshotFiles _id')
         .sort({ updatedAt: -1 })
         .lean()) as {
         shareId?: string;
         targetMessageId?: string;
+        snapshotFiles?: boolean;
         _id?: import('mongoose').Types.ObjectId;
       } | null;
 
@@ -589,6 +1148,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         _id: share._id?.toString(),
         shareId: share.shareId || null,
         targetMessageId: share.targetMessageId,
+        snapshotFiles: share.snapshotFiles,
         success: true,
       };
     } catch (error) {
@@ -609,6 +1169,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     shareId: string,
     targetMessageId?: string,
     expiredAt?: Date | null,
+    snapshotFiles: boolean = true,
   ): Promise<t.UpdateShareResult> {
     if (!user || !shareId) {
       throw new ShareServiceError('Missing required parameters', 'INVALID_PARAMS');
@@ -629,18 +1190,52 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         .sort({ createdAt: 1 })
         .lean();
 
-      const newShareId = nanoid();
+      if (updatedMessages.length === 0) {
+        throw new ShareServiceError('No messages to share', 'NO_MESSAGES');
+      }
+
       const hasNewExpiration = expiredAt instanceof Date;
-      const resolvedTargetMessageId = targetMessageId ?? share.targetMessageId;
+      const storedTargetMessageId = targetMessageId ?? share.targetMessageId;
+      if (
+        storedTargetMessageId &&
+        !updatedMessages.some((message) => message.messageId === storedTargetMessageId)
+      ) {
+        throw new ShareServiceError('Target message not found', 'TARGET_MESSAGE_NOT_FOUND');
+      }
+      const resolvedTargetMessageId =
+        targetMessageId ??
+        (storedTargetMessageId
+          ? advanceTargetToBranchTail(
+              updatedMessages as unknown as t.IMessage[],
+              storedTargetMessageId,
+            )
+          : undefined);
+      const messagesForSnapshot = updatedMessages as unknown as t.IMessage[];
+      const fileSnapshots = snapshotFiles
+        ? await buildFileSnapshots(
+            mongoose,
+            resolvedTargetMessageId
+              ? getMessagesUpToTarget(messagesForSnapshot, resolvedTargetMessageId)
+              : messagesForSnapshot,
+            user,
+          )
+        : [];
+      // Clear any prior snapshot when snapshotting is off so a disabled-feature
+      // update can't keep serving stale file ids that the update dropped.
+      const unset = {
+        ...(expiredAt === null ? { expiredAt: 1 } : {}),
+        ...(snapshotFiles ? {} : { fileSnapshots: 1 }),
+      };
       const update = {
         $set: {
           messages: updatedMessages,
           user,
-          shareId: newShareId,
+          snapshotFiles,
           ...(resolvedTargetMessageId && { targetMessageId: resolvedTargetMessageId }),
           ...(hasNewExpiration && { expiredAt }),
+          ...(snapshotFiles && { fileSnapshots }),
         },
-        ...(expiredAt === null ? { $unset: { expiredAt: 1 } } : {}),
+        ...(Object.keys(unset).length > 0 ? { $unset: unset } : {}),
       };
 
       const updatedShare = (await SharedLink.findOneAndUpdate({ shareId, user }, update, {
@@ -653,11 +1248,9 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
         throw new ShareServiceError('Share update failed', 'SHARE_UPDATE_ERROR');
       }
 
-      anonymizeConvo(updatedShare);
-
       return {
         _id: updatedShare._id?.toString(),
-        shareId: newShareId,
+        shareId,
         conversationId: updatedShare.conversationId,
         targetMessageId: updatedShare.targetMessageId,
       };
@@ -709,6 +1302,82 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     }
   }
 
+  /**
+   * Resolve a single file snapshot entry for a shared link, used by the
+   * share-scoped file routes to authorize a file without the owner's ACL.
+   * `hasSnapshots` distinguishes a legacy share (field absent → caller may
+   * backfill) from an ordinary miss (field present but file not in it → 404,
+   * no rebuild). `optedOut` is the per-link "share files" choice — when true the
+   * route must 404 and never backfill, so an opted-out link can't expose files.
+   */
+  async function getSharedLinkFile(
+    shareId: string,
+    fileId: string,
+  ): Promise<{ file: t.SharedFileSnapshot | null; hasSnapshots: boolean; optedOut: boolean }> {
+    const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
+    const share = (await SharedLink.findOne({
+      shareId,
+      ...activeExpirationFilter<t.ISharedLink>(),
+    })
+      .select('fileSnapshots snapshotFiles')
+      .lean()) as Pick<t.ISharedLink, 'fileSnapshots' | 'snapshotFiles'> | null;
+
+    if (!share) {
+      return { file: null, hasSnapshots: false, optedOut: false };
+    }
+
+    const hasSnapshots = share.fileSnapshots !== undefined;
+    const optedOut = share.snapshotFiles === false;
+    const file = share.fileSnapshots?.find((snapshot) => snapshot.file_id === fileId) ?? null;
+    return { file, hasSnapshots, optedOut };
+  }
+
+  /**
+   * Lazily build and persist the file snapshot for a legacy shared link that
+   * predates the feature. Mirrors the lazy migration done for legacy ACL grants.
+   * Returns the requested entry (or the full snapshot when no fileId is given).
+   */
+  async function backfillSharedLinkFiles(
+    shareId: string,
+    fileId?: string,
+  ): Promise<t.SharedFileSnapshot | t.SharedFileSnapshot[] | null> {
+    try {
+      const SharedLink = mongoose.models.SharedLink as Model<t.ISharedLink>;
+      const share = (await SharedLink.findOne({
+        shareId,
+        ...activeExpirationFilter<t.ISharedLink>(),
+      })
+        .populate({ path: 'messages', select: '-_id -__v -user' })
+        .lean()) as (t.ISharedLink & { messages: t.IMessage[] }) | null;
+
+      if (!share) {
+        return null;
+      }
+
+      let messages: t.IMessage[] = share.messages ?? [];
+      if (share.targetMessageId) {
+        messages = getMessagesUpToTarget(messages, share.targetMessageId);
+      }
+
+      const fileSnapshots = await persistBackfilledSnapshots(
+        SharedLink,
+        { shareId },
+        await buildFileSnapshots(mongoose, messages, share.user),
+      );
+
+      if (fileId) {
+        return fileSnapshots.find((snapshot) => snapshot.file_id === fileId) ?? null;
+      }
+      return fileSnapshots;
+    } catch (error) {
+      logger.error('[backfillSharedLinkFiles] Error backfilling file snapshots', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        shareId,
+      });
+      return null;
+    }
+  }
+
   // Return all methods
   return {
     getSharedLink,
@@ -717,6 +1386,8 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
     updateSharedLink,
     deleteSharedLink,
     getSharedMessages,
+    getSharedLinkFile,
+    backfillSharedLinkFiles,
     deleteAllSharedLinks,
     deleteConvoSharedLink,
   };

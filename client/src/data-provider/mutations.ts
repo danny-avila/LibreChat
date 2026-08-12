@@ -5,7 +5,7 @@ import {
   defaultAssistantsVersion,
   ConversationListResponse,
 } from 'librechat-data-provider';
-import type { InfiniteData, UseMutationResult } from '@tanstack/react-query';
+import type { InfiniteData, QueryClient, UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
   logger,
@@ -14,6 +14,7 @@ import {
   findConversationInInfinite,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
+  clearDeletedConversationMessagesCache,
 } from '~/utils';
 import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
 import { updateConversationTag } from '~/utils/conversationTags';
@@ -169,31 +170,85 @@ export const usePinConversationMutation = (
   );
 };
 
+/**
+ * The sidebar badge reads `isShared` off the conversation list, which the server derives
+ * from a different collection. Share mutations therefore have to flip it locally, or the
+ * badge lags until the next conversation-list refetch.
+ */
+const setConversationSharedFlag = (
+  queryClient: QueryClient,
+  conversationId: string | null | undefined,
+  isShared: boolean,
+): void => {
+  if (conversationId == null || conversationId === '') {
+    return;
+  }
+
+  updateConvoInAllQueries(queryClient, conversationId, (convo) => ({ ...convo, isShared }));
+};
+
+/**
+ * Create and update return a bare `TSharedLinkResponse`, so the per-conversation
+ * cache entry has to be lifted into the `TSharedLinkGetResponse` shape the UI reads
+ * (`success` gates the dialog's copy and the header badge). `snapshotFiles` is never
+ * echoed back and the settings list lives under a sibling key, so both are refetched
+ * from the server rather than guessed at.
+ */
+const syncSharedLinkQueries = (
+  queryClient: QueryClient,
+  data: t.TSharedLinkResponse,
+  requestedSnapshotFiles?: boolean,
+): void => {
+  queryClient.setQueryData<t.TSharedLinkGetResponse>(
+    [QueryKeys.sharedLinks, data.conversationId],
+    (previous) => ({
+      ...previous,
+      ...data,
+      // The response never echoes the file choice, and the dialog reads a resolved
+      // entry with no choice as the enabled default, so an opt-out would flip back on
+      // between here and the refetch.
+      ...(requestedSnapshotFiles !== undefined && { snapshotFiles: requestedSnapshotFiles }),
+      success: true,
+    }),
+  );
+
+  setConversationSharedFlag(queryClient, data.conversationId, true);
+  queryClient.invalidateQueries({ queryKey: [QueryKeys.sharedLinks], exact: false });
+};
+
 export const useCreateSharedLinkMutation = (
   options?: t.MutationOptions<
     t.TCreateShareLinkRequest,
-    { conversationId: string; targetMessageId?: string }
+    { conversationId: string; targetMessageId?: string; snapshotFiles?: boolean }
   >,
 ): UseMutationResult<
   t.TSharedLinkResponse,
   unknown,
-  { conversationId: string; targetMessageId?: string },
+  { conversationId: string; targetMessageId?: string; snapshotFiles?: boolean },
   unknown
 > => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ conversationId, targetMessageId }: { conversationId: string; targetMessageId?: string }) => {
+    ({
+      conversationId,
+      targetMessageId,
+      snapshotFiles,
+    }: {
+      conversationId: string;
+      targetMessageId?: string;
+      snapshotFiles?: boolean;
+    }) => {
       if (!conversationId) {
         throw new Error('Conversation ID is required');
       }
 
-      return dataService.createSharedLink(conversationId, targetMessageId);
+      return dataService.createSharedLink(conversationId, targetMessageId, snapshotFiles);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
-        queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
+        syncSharedLinkQueries(queryClient, _data, vars.snapshotFiles);
 
         onSuccess?.(_data, vars, context);
       },
@@ -203,21 +258,29 @@ export const useCreateSharedLinkMutation = (
 };
 
 export const useUpdateSharedLinkMutation = (
-  options?: t.MutationOptions<t.TUpdateShareLinkRequest, t.TUpdateShareLinkRequest>,
-): UseMutationResult<t.TSharedLinkResponse, unknown, t.TUpdateShareLinkRequest, unknown> => {
+  options?: t.MutationOptions<
+    t.TUpdateShareLinkRequest,
+    t.TUpdateShareLinkRequest & { snapshotFiles?: boolean }
+  >,
+): UseMutationResult<
+  t.TSharedLinkResponse,
+  unknown,
+  t.TUpdateShareLinkRequest & { snapshotFiles?: boolean },
+  unknown
+> => {
   const queryClient = useQueryClient();
 
   const { onSuccess, ..._options } = options || {};
   return useMutation(
-    ({ shareId, targetMessageId }) => {
+    ({ shareId, targetMessageId, snapshotFiles }) => {
       if (!shareId) {
         throw new Error('Share ID is required');
       }
-      return dataService.updateSharedLink(shareId, targetMessageId);
+      return dataService.updateSharedLink(shareId, targetMessageId, snapshotFiles);
     },
     {
       onSuccess: (_data: t.TSharedLinkResponse, vars, context) => {
-        queryClient.setQueryData([QueryKeys.sharedLinks, _data.conversationId], _data);
+        syncSharedLinkQueries(queryClient, _data, vars.snapshotFiles);
 
         onSuccess?.(_data, vars, context);
       },
@@ -245,11 +308,23 @@ export const useDeleteSharedLinkMutation = (
       });
 
       const previousQueries = new Map();
+      const unsharedConversationIds = new Set<string | null>();
       const queryKeys = queryClient.getQueryCache().findAll([QueryKeys.sharedLinks]);
 
       queryKeys.forEach((query) => {
         const previousData = queryClient.getQueryData(query.queryKey);
         previousQueries.set(query.queryKey, previousData);
+
+        const sharedLink = previousData as t.TSharedLinkGetResponse | undefined;
+        if (sharedLink?.shareId === vars.shareId) {
+          unsharedConversationIds.add(sharedLink.conversationId);
+          queryClient.setQueryData<t.TSharedLinkGetResponse>(query.queryKey, {
+            ...sharedLink,
+            success: false,
+            shareId: null,
+          });
+          return;
+        }
 
         queryClient.setQueryData<t.SharedLinkQueryData>(query.queryKey, (old) => {
           if (!old?.pages) {
@@ -258,7 +333,13 @@ export const useDeleteSharedLinkMutation = (
 
           const updatedPages = old.pages.map((page) => ({
             ...page,
-            links: page.links.filter((link) => link.shareId !== vars.shareId),
+            links: page.links.filter((link) => {
+              if (link.shareId !== vars.shareId) {
+                return true;
+              }
+              unsharedConversationIds.add(link.conversationId);
+              return false;
+            }),
           }));
 
           const nonEmptyPages = updatedPages.filter((page) => page.links.length > 0);
@@ -270,7 +351,11 @@ export const useDeleteSharedLinkMutation = (
         });
       });
 
-      return { previousQueries };
+      for (const conversationId of unsharedConversationIds) {
+        setConversationSharedFlag(queryClient, conversationId, false);
+      }
+
+      return { previousQueries, unsharedConversationIds };
     },
 
     onError: (_err, _vars, context) => {
@@ -279,6 +364,11 @@ export const useDeleteSharedLinkMutation = (
           queryClient.setQueryData(prevQueryKey as string[], prevData);
         });
       }
+      // The badge lives on the conversation caches, which the snapshot above does not
+      // cover, so a failed delete would leave the conversation looking unshared.
+      context?.unsharedConversationIds?.forEach((conversationId) => {
+        setConversationSharedFlag(queryClient, conversationId, true);
+      });
     },
 
     onSettled: () => {
@@ -286,6 +376,11 @@ export const useDeleteSharedLinkMutation = (
         queryKey: [QueryKeys.sharedLinks],
         exact: false,
       });
+      /* A conversation can hold several links (one per target message), so clearing the
+         badge optimistically is only a guess. Let the server, which derives `isShared`
+         from the links that are actually left, settle it. Every cached page refetches:
+         the affected conversation is as likely to sit on page three as on page one. */
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
     },
 
     onSuccess: (data, variables) => {
@@ -528,6 +623,7 @@ export const useDeleteConversationMutation = (
 
         if (vars.conversationId) {
           removeConvoFromAllQueries(queryClient, vars.conversationId);
+          clearDeletedConversationMessagesCache(queryClient, vars.conversationId);
         }
 
         // Also remove from all archivedConversations caches
@@ -677,6 +773,45 @@ export const useForkConvoMutation = (
     },
     ..._options,
   });
+};
+
+export const useForkSharedConvoMutation = (
+  options?: t.ForkSharedConvoOptions,
+): UseMutationResult<t.TForkConvoResponse, unknown, t.TForkSharedConvoRequest, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ..._options } = options ?? {};
+
+  return useMutation(
+    (payload: t.TForkSharedConvoRequest) =>
+      dataService.forkSharedConversation(
+        payload.shareId,
+        payload.targetMessageIndex,
+        payload.shareRevision,
+      ),
+    {
+      onSuccess: (data, vars, context) => {
+        const forkedConversation = data.conversation;
+        const forkedConversationId = forkedConversation?.conversationId;
+        if (!forkedConversationId) {
+          return;
+        }
+
+        queryClient.setQueryData(
+          [QueryKeys.conversation, forkedConversationId],
+          forkedConversation,
+        );
+        addConvoToAllQueries(queryClient, forkedConversation);
+        queryClient.setQueryData([QueryKeys.messages, forkedConversationId], data.messages);
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.allConversations],
+          refetchPage: (_, index) => index === 0,
+        });
+
+        onSuccess?.(data, vars, context);
+      },
+      ..._options,
+    },
+  );
 };
 
 export const useUploadConversationsMutation = (
@@ -1110,6 +1245,7 @@ export const useAcceptTermsMutation = (
     onSuccess: (data, variables, context) => {
       queryClient.setQueryData<t.TUserTermsResponse>([QueryKeys.userTerms], {
         termsAccepted: true,
+        termsAcceptedAt: data.termsAcceptedAt,
       });
       options?.onSuccess?.(data, variables, context);
     },

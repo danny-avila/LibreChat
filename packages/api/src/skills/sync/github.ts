@@ -26,8 +26,15 @@ import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { parseSkillMarkdown } from '../parse';
 
 const GITHUB_API_BASE = 'https://api.github.com';
-const SYSTEM_AUTHOR_ID = new Types.ObjectId('000000000000000000000000');
 const SYSTEM_AUTHOR_NAME = 'GitHub Sync';
+
+let systemAuthorId: Types.ObjectId | undefined;
+
+/** Constructed on demand so importing this module never depends on a live mongoose binding. */
+function getSystemAuthorId(): Types.ObjectId {
+  systemAuthorId ??= new Types.ObjectId('000000000000000000000000');
+  return systemAuthorId;
+}
 const PROVIDER: SkillSyncProvider = 'github';
 const LOCK_LEASE_MS = 30 * 60 * 1000;
 
@@ -800,7 +807,7 @@ async function ensurePublicViewer(
     resourceType: ResourceType.SKILL,
     resourceId: skillId,
     accessRoleId: AccessRoleIds.SKILL_VIEWER,
-    grantedBy: SYSTEM_AUTHOR_ID,
+    grantedBy: getSystemAuthorId(),
   });
 }
 

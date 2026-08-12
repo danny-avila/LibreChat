@@ -1,10 +1,15 @@
 import { memo, useCallback, useRef } from 'react';
 import { MicOff } from 'lucide-react';
-import { useToastContext, TooltipAnchor, ListeningIcon, Spinner } from '@librechat/client';
+import {
+  IconButton,
+  useToastContext,
+  TooltipAnchor,
+  ListeningIcon,
+  Spinner,
+} from '@librechat/client';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
 import { globalAudioId, type TAskFunction } from '~/common';
 import { useChatFormContext } from '~/Providers';
-import { cn } from '~/utils';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
 export default memo(function AudioRecorder({
@@ -95,7 +100,7 @@ export default memo(function AudioRecorder({
 
   const renderIcon = () => {
     if (isListening === true) {
-      return <MicOff className="stroke-red-500" />;
+      return <MicOff className="stroke-status-error" />;
     }
     if (isLoading === true) {
       return <Spinner className="stroke-text-secondary" />;
@@ -107,20 +112,20 @@ export default memo(function AudioRecorder({
     <TooltipAnchor
       description={localize('com_ui_use_micrphone')}
       render={
-        <button
+        <IconButton
           id="audio-recorder"
           type="button"
-          aria-label={localize('com_ui_use_micrphone')}
+          variant="ghost"
+          size="theme"
+          shape="theme"
+          label={localize('com_ui_use_micrphone')}
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
           disabled={disabled}
-          className={cn(
-            'flex size-9 items-center justify-center rounded-full p-1 transition-colors hover:bg-surface-hover',
-          )}
-          title={localize('com_ui_use_micrphone')}
+          className="p-1 hover:bg-surface-composer-hover"
           aria-pressed={isListening}
         >
           {renderIcon()}
-        </button>
+        </IconButton>
       }
     />
   );
