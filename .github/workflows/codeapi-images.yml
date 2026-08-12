@@ -4,6 +4,13 @@
 name: CodeAPI Images
 
 on:
+  # `workflow_dispatch` only registers from the default branch, which this fork
+  # keeps stale, so edits to this file on `billechat` are what trigger a rebuild.
+  push:
+    branches:
+      - billechat
+    paths:
+      - .github/workflows/codeapi-images.yml
   workflow_dispatch:
     inputs:
       ref:
@@ -54,7 +61,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: ${{ env.SOURCE_REPO }}
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || 'main' }}
 
       - name: Reclaim runner disk
         if: matrix.image == 'codeapi-sandbox-runner'
