@@ -11,8 +11,10 @@ const { getUserById, updateUser } = require('~/models');
  */
 const jwtExtractor = () => {
   const extractors = [];
-  if (process.env.JWT_AUTH_HEADER) {
-    extractors.push(ExtractJwt.fromHeader(process.env.JWT_AUTH_HEADER));
+  // node lowercases incoming header names; fromHeader looks the key up as-is
+  const header = process.env.JWT_AUTH_HEADER?.trim().toLowerCase();
+  if (header) {
+    extractors.push(ExtractJwt.fromHeader(header));
   }
   extractors.push(ExtractJwt.fromAuthHeaderAsBearerToken());
   return extractors.length > 1 ? ExtractJwt.fromExtractors(extractors) : extractors[0];

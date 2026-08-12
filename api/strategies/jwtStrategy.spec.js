@@ -101,6 +101,21 @@ describe('jwtStrategy token extraction', () => {
     expect(capturedStrategyOptions.jwtFromRequest).toBe('mock-extractor');
   });
 
+  it('lowercases the configured name, since node lowercases incoming headers', () => {
+    process.env.JWT_AUTH_HEADER = 'X-Original-Authorization';
+    jwtLogin();
+    expect(capturedStrategyOptions.jwtFromRequest).toEqual([
+      'mock-header-extractor:x-original-authorization',
+      'mock-extractor',
+    ]);
+  });
+
+  it('ignores a whitespace-only JWT_AUTH_HEADER', () => {
+    process.env.JWT_AUTH_HEADER = '   ';
+    jwtLogin();
+    expect(capturedStrategyOptions.jwtFromRequest).toBe('mock-extractor');
+  });
+
   it('prefers JWT_AUTH_HEADER and keeps Authorization as the fallback', () => {
     process.env.JWT_AUTH_HEADER = 'x-original-authorization';
     jwtLogin();
