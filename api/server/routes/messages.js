@@ -410,7 +410,7 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     }
 
     const oldText = updatedContent[index][currentPartType];
-    updatedContent[index] = { type: currentPartType, [currentPartType]: text };
+    updatedContent[index] = { ...updatedContent[index], [currentPartType]: text };
 
     let tokenCount = message.tokenCount;
     if (tokenCount !== undefined) {

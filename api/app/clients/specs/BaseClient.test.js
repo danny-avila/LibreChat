@@ -691,6 +691,43 @@ describe('BaseClient', () => {
       );
     });
 
+    it('applies edited reasoning content from its typed payload before regeneration', async () => {
+      const responseMessageId = 'response-with-reasoning';
+      const newHistory = [
+        ...messageHistory,
+        {
+          role: 'assistant',
+          isCreatedByUser: false,
+          messageId: responseMessageId,
+          parentMessageId: '3',
+          content: [
+            { type: ContentTypes.THINK, think: 'Original reasoning', phase: 'analysis' },
+            { type: ContentTypes.TEXT, text: 'Original response' },
+          ],
+        },
+      ];
+
+      TestClient = initializeFakeClient(apiKey, options, newHistory);
+      await TestClient.sendMessage('test message', {
+        isEdited: true,
+        overrideParentMessageId: 'user-message-id',
+        parentMessageId: '3',
+        responseMessageId,
+        editedContent: {
+          index: 0,
+          type: ContentTypes.THINK,
+          [ContentTypes.THINK]: 'Updated reasoning',
+        },
+      });
+
+      const editedResponse = TestClient.currentMessages[TestClient.currentMessages.length - 1];
+      expect(editedResponse.content[0]).toEqual({
+        type: ContentTypes.THINK,
+        think: 'Updated reasoning',
+        phase: 'analysis',
+      });
+    });
+
     test('setOptions is called with the correct arguments only when replaceOptions is set to true', async () => {
       TestClient.setOptions = jest.fn();
       const opts = { conversationId: '123', parentMessageId: '456', replaceOptions: true };

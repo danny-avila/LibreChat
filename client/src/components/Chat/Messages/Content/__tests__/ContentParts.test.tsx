@@ -30,7 +30,6 @@ jest.mock('~/Providers', () => {
 });
 
 jest.mock('../Parts', () => ({
-  EditTextPart: () => <div data-testid="edit-text-part" />,
   EmptyText: () => <div data-testid="empty-text" />,
   AgentUpdate: ({ currentAgentId }: { currentAgentId: string }) => (
     <div data-testid="post-steer-agent-update" data-agent-id={currentAgentId} />

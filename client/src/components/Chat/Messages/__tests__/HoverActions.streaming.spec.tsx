@@ -8,6 +8,7 @@ import { QueryKeys, type TConversation, type TMessage } from 'librechat-data-pro
 import { ChatContext, MessagesViewProvider, useChatContext } from '~/Providers';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import Message from '~/components/Chat/Messages/Message';
+import StructuredMessage from '~/components/Messages/MessageContent';
 import store from '~/store';
 
 let mockHoverButtonsRenderCount = 0;
@@ -25,14 +26,21 @@ jest.mock('~/components/Chat/Messages/Content/MessageContent', () => ({
   default: ({ text }: { text: string }) => <div data-testid="message-content">{text}</div>,
 }));
 
+jest.mock('~/components/Chat/Messages/Content/ContentParts', () => ({
+  __esModule: true,
+  default: ({ content }: { content?: TMessage['content'] }) => (
+    <div data-testid="structured-message-content">{JSON.stringify(content ?? [])}</div>
+  ),
+}));
+
+jest.mock('~/components/Chat/Messages/Content/Parts/AuthorHeader', () => ({
+  __esModule: true,
+  default: () => <div data-testid="author-header" />,
+}));
+
 jest.mock('~/components/Chat/Messages/MessageIcon', () => ({
   __esModule: true,
   default: () => <div data-testid="message-icon" />,
-}));
-
-jest.mock('~/components/Chat/Messages/ui/PlaceholderRow', () => ({
-  __esModule: true,
-  default: () => <div data-testid="placeholder-row" />,
 }));
 
 jest.mock('~/hooks', () => {
@@ -44,6 +52,7 @@ jest.mock('~/hooks', () => {
     useMessageProcess,
     useMemoizedChatContext,
     useContentMetadata: () => ({ hasParallelContent: false }),
+    useAttachments: () => ({ attachments: [], searchResults: undefined }),
     useLocalize: () => (key: string) => key,
     useMessageActions: ({
       chatContext,
@@ -106,6 +115,16 @@ const canonicalAssistantMessage = {
   text: 'Streaming canonical response',
 } as TMessage;
 
+const optimisticStructuredAssistantMessage = {
+  ...optimisticAssistantMessage,
+  content: [{ type: 'text', text: '' }],
+} as TMessage;
+
+const canonicalStructuredAssistantMessage = {
+  ...canonicalAssistantMessage,
+  content: [{ type: 'text', text: 'Streaming structured response' }],
+} as TMessage;
+
 function createQueryClient() {
   return new QueryClient({
     defaultOptions: {
@@ -116,7 +135,7 @@ function createQueryClient() {
   });
 }
 
-function DerivedStreamingRow() {
+function DerivedStreamingRow({ structured = false }: { structured?: boolean }) {
   const queryClient = useQueryClient();
   const latestMessage = useLatestMessage(0);
   const latestMessageId = useLatestMessageId(0);
@@ -151,20 +170,25 @@ function DerivedStreamingRow() {
     return null;
   }
 
+  const MessageComponent = structured ? StructuredMessage : Message;
   return (
     <ChatContext.Provider value={chatContext}>
       <MessagesViewProvider>
-        <Message message={latestMessage} currentEditId={null} setCurrentEditId={jest.fn()} />
+        <MessageComponent
+          message={latestMessage}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
       </MessagesViewProvider>
     </ChatContext.Provider>
   );
 }
 
-function renderStreamingRow() {
+function renderStreamingRow(structured = false) {
   const queryClient = createQueryClient();
   queryClient.setQueryData<TMessage[]>(
     [QueryKeys.messages, conversation.conversationId],
-    [userMessage, optimisticAssistantMessage],
+    [userMessage, structured ? optimisticStructuredAssistantMessage : optimisticAssistantMessage],
   );
 
   const initializeState = ({ set }: MutableSnapshot) => {
@@ -176,7 +200,7 @@ function renderStreamingRow() {
     <QueryClientProvider client={queryClient}>
       <RecoilRoot initializeState={initializeState}>
         <MemoryRouter initialEntries={[`/c/${conversation.conversationId}`]}>
-          <DerivedStreamingRow />
+          <DerivedStreamingRow structured={structured} />
         </MemoryRouter>
       </RecoilRoot>
     </QueryClientProvider>,
@@ -190,14 +214,14 @@ describe('streaming hover actions', () => {
     mockHoverButtonsRenderCount = 0;
   });
 
-  it('does not mount hover actions while an optimistic assistant row is replaced', async () => {
+  it('keeps actions mounted while an optimistic assistant row is replaced', async () => {
     const user = userEvent.setup();
     const queryClient = renderStreamingRow();
 
     await user.hover(screen.getByTestId('message-content'));
 
-    expect(screen.queryByTestId('hover-buttons')).toBeNull();
-    expect(mockHoverButtonsRenderCount).toBe(0);
+    expect(screen.getByTestId('hover-buttons')).toBeInTheDocument();
+    expect(mockHoverButtonsRenderCount).toBeGreaterThan(0);
 
     act(() => {
       queryClient.setQueryData<TMessage[]>(
@@ -206,8 +230,25 @@ describe('streaming hover actions', () => {
       );
     });
 
-    expect(screen.queryByTestId('hover-buttons')).toBeNull();
-    expect(mockHoverButtonsRenderCount).toBe(0);
-    expect(screen.getByTestId('placeholder-row')).toBeInTheDocument();
+    expect(screen.getByTestId('hover-buttons')).toBeInTheDocument();
+    expect(mockHoverButtonsRenderCount).toBeGreaterThan(0);
+  });
+
+  it('keeps actions mounted for structured tool-capable responses', async () => {
+    const user = userEvent.setup();
+    const queryClient = renderStreamingRow(true);
+
+    await user.hover(screen.getByTestId('structured-message-content'));
+
+    expect(screen.getByTestId('hover-buttons')).toBeInTheDocument();
+
+    act(() => {
+      queryClient.setQueryData<TMessage[]>(
+        [QueryKeys.messages, conversation.conversationId],
+        [userMessage, canonicalStructuredAssistantMessage],
+      );
+    });
+
+    expect(screen.getByTestId('hover-buttons')).toBeInTheDocument();
   });
 });

@@ -1,0 +1,193 @@
+import React from 'react';
+import { ContentTypes } from 'librechat-data-provider';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import EditContentParts from '../EditContentParts';
+
+const mockMutateAsync = jest.fn();
+const mockSetMessages = jest.fn();
+const mockAsk = jest.fn();
+
+const message = {
+  messageId: 'assistant-1',
+  parentMessageId: 'user-1',
+  conversationId: 'conversation-1',
+  isCreatedByUser: false,
+} as TMessage;
+
+const parentMessage = {
+  messageId: 'user-1',
+  conversationId: 'conversation-1',
+  isCreatedByUser: true,
+  text: 'Check the service',
+} as TMessage;
+
+jest.mock('librechat-data-provider/react-query', () => ({
+  useUpdateMessageContentMutation: () => ({
+    mutateAsync: mockMutateAsync,
+    isLoading: false,
+  }),
+}));
+
+jest.mock('~/Providers', () => ({
+  useMessagesConversation: () => ({
+    conversation: { conversationId: 'conversation-1' },
+  }),
+  useMessagesOperations: () => ({
+    ask: mockAsk,
+    getMessages: () => [parentMessage, message],
+    setMessages: mockSetMessages,
+  }),
+}));
+
+jest.mock('~/hooks', () => ({
+  useLocalize: () => (key: string) => key,
+}));
+
+jest.mock('~/hooks/Chat', () => ({
+  useGetAddedConvo: () => () => null,
+}));
+
+const content = [
+  { type: ContentTypes.TEXT, text: 'Current response' },
+  {
+    type: ContentTypes.TOOL_CALL,
+    tool_call: { type: 'tool_call', name: 'status', args: '{}', output: 'ok' },
+  },
+  { type: ContentTypes.ERROR, error: 'A visible tool error' },
+] as TMessageContentParts[];
+
+describe('EditContentParts', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockMutateAsync.mockResolvedValue({});
+  });
+
+  it('uses one editor footer and keeps non-editable parts visible', () => {
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={(part) => <div data-testid={`read-only-${part.type}`}>{part.type}</div>}
+      />,
+    );
+
+    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+    expect(screen.getByTestId(`read-only-${ContentTypes.TOOL_CALL}`)).toBeInTheDocument();
+    expect(screen.getByTestId(`read-only-${ContentTypes.ERROR}`)).toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(3);
+  });
+
+  it('saves changed text parts before closing the editor', async () => {
+    const enterEdit = jest.fn();
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={enterEdit}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Updated response' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    await waitFor(() =>
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        index: 0,
+        conversationId: 'conversation-1',
+        text: 'Updated response',
+        messageId: message.messageId,
+      }),
+    );
+    expect(mockSetMessages).toHaveBeenCalledTimes(1);
+    expect(enterEdit).toHaveBeenCalledWith(true);
+  });
+
+  it('reruns an assistant response with the edited content value', () => {
+    const enterEdit = jest.fn();
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={enterEdit}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Rerun response' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_update_rerun' }));
+
+    expect(mockAsk).toHaveBeenCalledWith(
+      parentMessage,
+      expect.objectContaining({
+        editedContent: {
+          index: 0,
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: 'Rerun response',
+        },
+      }),
+    );
+    expect(enterEdit).toHaveBeenCalledWith(true);
+  });
+
+  it('requires multi-part assistant edits to be saved before rerunning', () => {
+    const multiPartContent = [
+      { type: ContentTypes.TEXT, text: 'First response' },
+      { type: ContentTypes.TEXT, text: 'Second response' },
+    ] as TMessageContentParts[];
+
+    render(
+      <EditContentParts
+        content={multiPartContent}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    const editors = screen.getAllByRole('textbox');
+    fireEvent.change(editors[0], { target: { value: 'Updated first response' } });
+    fireEvent.change(editors[1], { target: { value: 'Updated second response' } });
+
+    expect(screen.getByRole('button', { name: 'com_ui_update_rerun' })).toBeDisabled();
+    expect(screen.getByText('com_ui_save_before_rerun')).toBeInTheDocument();
+  });
+
+  it('keeps artifact-bearing text in the specialized read-only renderer', () => {
+    const artifactContent = [
+      {
+        type: ContentTypes.TEXT,
+        text: ':::artifact{identifier="demo" type="text/html" title="Demo"}\n<div />\n:::',
+      },
+    ] as TMessageContentParts[];
+
+    render(
+      <EditContentParts
+        content={artifactContent}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={(part) => <div data-testid="artifact-part">{part.type}</div>}
+      />,
+    );
+
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByTestId('artifact-part')).toBeInTheDocument();
+  });
+});
