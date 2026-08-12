@@ -1,4 +1,4 @@
-import { memo, useRef, Fragment } from 'react';
+import { memo, useRef, Fragment, useLayoutEffect } from 'react';
 import type { Root, Element, ElementContent } from 'hast';
 import type { CSSProperties } from 'react';
 import type { Plugin } from 'unified';
@@ -7,14 +7,30 @@ import type { Plugin } from 'unified';
 export const FADE_DURATION_MS = 250;
 export const FADE_STAGGER_MS = 25;
 export const FADE_STAGGER_MAX_MS = 250;
+/**
+ * A renderer whose very first run already holds more text than this is showing
+ * hydrated/resumed content (reconnected stream, conversation switch), not a
+ * fresh delta — that content becomes the baseline instead of re-fading.
+ */
+export const FADE_HYDRATION_THRESHOLD = 120;
 
 type FadeEntry = { at: number; delay: number };
 
+type PendingRun = {
+  prevCount: number;
+  additions: Map<number, FadeEntry>;
+  now: number;
+};
+
 export type FadeState = {
-  /** Total characters classified during the previous run; parts below this offset are not new */
+  /** Total characters classified during the last committed run; parts below this offset are not new */
   prevCount: number;
   /** Parts still mid-animation, keyed by start offset, so re-renders replay identical props */
   active: Map<number, FadeEntry>;
+  /** True until the first run commits; used for the hydration baseline decision */
+  firstRun: boolean;
+  /** Staged result of the latest render, published to the fields above on commit */
+  pending: PendingRun | null;
 };
 
 type FadeRun = {
@@ -22,6 +38,9 @@ type FadeRun = {
   now: number;
   count: number;
   newIndex: number;
+  /** Baseline mode: classify everything as already seen (hydrated first run) */
+  suppress: boolean;
+  additions: Map<number, FadeEntry>;
 };
 
 export type FadeSegment = {
@@ -93,29 +112,63 @@ export function splitWords(value: string): string[] {
 }
 
 export function createFadeState(): FadeState {
-  return { prevCount: 0, active: new Map() };
+  return { prevCount: 0, active: new Map(), firstRun: true, pending: null };
 }
 
-export function beginRun(state: FadeState): FadeRun {
-  return { state, now: performance.now(), count: 0, newIndex: 0 };
+export function beginRun(state: FadeState, suppress = false): FadeRun {
+  return {
+    state,
+    now: performance.now(),
+    count: 0,
+    newIndex: 0,
+    suppress,
+    additions: new Map(),
+  };
 }
 
-export function endRun(run: FadeRun): void {
-  const { state, now } = run;
-  state.prevCount = run.count;
+/**
+ * Stages the run's result on the state without publishing it. Classification
+ * never mutates committed state during render, so a render that React
+ * abandons (concurrent interruption, StrictMode double-render) leaves no
+ * trace; only {@link commitRun} — called after the render commits — publishes.
+ */
+export function stageRun(run: FadeRun): void {
+  run.state.pending = { prevCount: run.count, additions: run.additions, now: run.now };
+}
+
+/** Publishes the staged run: baseline offset, new animations, pruned entries. */
+export function commitRun(state: FadeState): void {
+  const pending = state.pending;
+  if (pending == null) {
+    return;
+  }
+  state.pending = null;
+  state.firstRun = false;
+  state.prevCount = pending.prevCount;
+  for (const [start, entry] of pending.additions) {
+    state.active.set(start, entry);
+  }
   for (const [start, entry] of state.active) {
-    if (now - entry.at >= entry.delay + FADE_DURATION_MS) {
+    if (pending.now - entry.at >= entry.delay + FADE_DURATION_MS) {
       state.active.delete(start);
     }
   }
 }
 
+/** Stages and immediately commits — for callers without a commit phase. */
+export function endRun(run: FadeRun): void {
+  stageRun(run);
+  commitRun(run.state);
+}
+
 /**
  * Classifies one text value into fade segments, advancing the run's
  * document-order character offset. A part is animated when it starts past the
- * previous run's total offset (newly streamed) or when it is still within its
- * animation window from an earlier run — in which case it replays identical
- * animation props so React leaves the in-flight CSS animation untouched.
+ * last committed run's total offset (newly streamed) or when it is still
+ * within its animation window from an earlier run — in which case it replays
+ * identical animation props so React leaves the in-flight CSS animation
+ * untouched. Committed state is only read here; new animations are recorded
+ * on the run and published by {@link commitRun}.
  */
 export function classifyValue(run: FadeRun, value: string): FadeSegment[] {
   const { state, now } = run;
@@ -123,14 +176,15 @@ export function classifyValue(run: FadeRun, value: string): FadeSegment[] {
   for (const part of splitWords(value)) {
     const start = run.count;
     run.count += part.length;
-    if (!NON_WHITESPACE_REGEX.test(part)) {
+    if (run.suppress || !NON_WHITESPACE_REGEX.test(part)) {
       segments.push({ start, value: part, animated: false, delay: 0 });
       continue;
     }
     if (start >= state.prevCount) {
-      const delay = Math.min(run.newIndex * FADE_STAGGER_MS, FADE_STAGGER_MAX_MS);
+      const staged = run.additions.get(start);
+      const delay = staged?.delay ?? Math.min(run.newIndex * FADE_STAGGER_MS, FADE_STAGGER_MAX_MS);
       run.newIndex += 1;
-      state.active.set(start, { at: now, delay });
+      run.additions.set(start, staged ?? { at: now, delay });
       segments.push({ start, value: part, animated: true, delay });
       continue;
     }
@@ -171,6 +225,20 @@ function isSkippedElement(node: Element): boolean {
   return typeof className === 'string' && className.startsWith('katex');
 }
 
+function countText(node: Root | Element): number {
+  let count = 0;
+  for (const child of node.children) {
+    if (child.type === 'text') {
+      count += child.value.length;
+      continue;
+    }
+    if (child.type === 'element' && !isSkippedElement(child)) {
+      count += countText(child);
+    }
+  }
+  return count;
+}
+
 function toContent(segment: FadeSegment): ElementContent {
   if (!NON_WHITESPACE_REGEX.test(segment.value)) {
     return { type: 'text', value: segment.value };
@@ -207,28 +275,40 @@ function transformElement(run: FadeRun, element: Element): void {
   element.children = next;
 }
 
+export type FadePlugin = {
+  plugin: Plugin<[], Root>;
+  /** Publish the latest render's staged classification; call after React commits. */
+  commit: () => void;
+};
+
 /**
  * Creates a per-renderer rehype plugin that wraps newly streamed words in
  * one-shot CSS fade spans (`[data-lc-fade]`). New-text detection uses
  * document-order character offsets held in the factory closure, so text that
  * was already visible in a previous render mounts as a bare span and never
- * re-animates, even when markdown re-parsing restructures the tree. Create one
+ * re-animates, even when markdown re-parsing restructures the tree. A first
+ * run that already exceeds {@link FADE_HYDRATION_THRESHOLD} is hydrated or
+ * resumed content and becomes the baseline without animating. Classification
+ * is staged during render and must be published via `commit()` after React
+ * commits (a layout effect), so abandoned renders leave no trace. Create one
  * instance per streaming renderer and drop it (plain plugin array) once the
  * stream ends so the settled message renders without wrapper spans.
  */
-export function createFadePlugin(): Plugin<[], Root> {
+export function createFadePlugin(): FadePlugin {
   const state = createFadeState();
-  return function rehypeFade() {
+  const plugin: Plugin<[], Root> = function rehypeFade() {
     return (tree: Root) => {
-      const run = beginRun(state);
+      const suppress = state.firstRun && countText(tree) > FADE_HYDRATION_THRESHOLD;
+      const run = beginRun(state, suppress);
       for (const child of tree.children) {
         if (child.type === 'element' && !isSkippedElement(child)) {
           transformElement(run, child);
         }
       }
-      endRun(run);
+      stageRun(run);
     };
   };
+  return { plugin, commit: () => commitRun(state) };
 }
 
 const DELAY_VAR = '--lc-delay';
@@ -244,9 +324,15 @@ export const AnimatedText = memo(function AnimatedText({ text }: { text: string 
   if (stateRef.current == null) {
     stateRef.current = createFadeState();
   }
-  const run = beginRun(stateRef.current);
+  const state = stateRef.current;
+  const suppress = state.firstRun && text.length > FADE_HYDRATION_THRESHOLD;
+  const run = beginRun(state, suppress);
   const segments = classifyValue(run, text);
-  endRun(run);
+  stageRun(run);
+
+  useLayoutEffect(() => {
+    commitRun(state);
+  });
 
   return (
     <>

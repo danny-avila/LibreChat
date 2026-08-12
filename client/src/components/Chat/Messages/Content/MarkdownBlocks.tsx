@@ -1,4 +1,4 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useLayoutEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { PluggableList } from 'unified';
 import type { ElementType } from 'react';
@@ -41,12 +41,16 @@ const MarkdownBlock = memo(
     // One fade-plugin instance per block: its closure tracks this block's
     // character offsets so only newly streamed words animate. When `animate`
     // flips off at stream end, the plain plugin array renders the settled
-    // block without wrapper spans.
-    const fadePlugin = useMemo(() => (animate ? createFadePlugin() : null), [animate]);
+    // block without wrapper spans. Classification is staged during render and
+    // published after React commits, so abandoned renders leave no trace.
+    const fade = useMemo(() => (animate ? createFadePlugin() : null), [animate]);
     const blockRehypePlugins = useMemo(
-      () => (fadePlugin == null ? rehypePlugins : [...rehypePlugins, fadePlugin]),
-      [fadePlugin, rehypePlugins],
+      () => (fade == null ? rehypePlugins : [...rehypePlugins, fade.plugin]),
+      [fade, rehypePlugins],
     );
+    useLayoutEffect(() => {
+      fade?.commit();
+    });
     return (
       <ArtifactProvider baseIndex={artifactBaseIndex}>
         <CodeBlockProvider baseIndex={codeBaseIndex} mermaidBaseIndex={mermaidBaseIndex}>

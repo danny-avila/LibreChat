@@ -1,6 +1,7 @@
 import React, { memo, useMemo } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { useMediaQuery } from '@librechat/client';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from './markdownConfig';
 import { smoothStreamingAtom } from '~/store/smoothStreaming';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
@@ -17,6 +18,7 @@ type TContentProps = {
 const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TContentProps) {
   const { isSubmitting = false } = useMessageContext();
   const smoothStreaming = useAtomValue(smoothStreamingAtom);
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const LaTeXParsing = useRecoilValue<boolean>(store.LaTeXParsing);
   const isInitializing = content === '';
 
@@ -44,7 +46,7 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
         remarkPlugins={getRemarkPlugins()}
         rehypePlugins={getRehypePlugins()}
         components={getMarkdownComponents()}
-        animate={smoothStreaming && isLatestMessage && isSubmitting}
+        animate={smoothStreaming && !reducedMotion && isLatestMessage && isSubmitting}
       />
     </MarkdownErrorBoundary>
   );

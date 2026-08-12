@@ -1,5 +1,6 @@
 import { memo, useMemo, useState, useCallback, useRef, useId } from 'react';
 import { useAtomValue } from 'jotai';
+import { useMediaQuery } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent } from 'react';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar } from './Thinking';
@@ -41,6 +42,7 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
   const localize = useLocalize();
   const showThinking = useAtomValue(showThinkingAtom);
   const smoothStreaming = useAtomValue(smoothStreamingAtom);
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [isExpanded, setIsExpanded] = useState(showThinking);
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -120,7 +122,9 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
           style={expandStyle}
         >
           <div className="relative overflow-hidden" ref={expandRef}>
-            <ThinkingContent animate={smoothStreaming && effectiveIsSubmitting && isLast}>
+            <ThinkingContent
+              animate={smoothStreaming && !reducedMotion && effectiveIsSubmitting && isLast}
+            >
               {reasoningText}
             </ThinkingContent>
             <FloatingThinkingBar

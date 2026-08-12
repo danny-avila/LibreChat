@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { render } from '@testing-library/react';
+import type { FadePlugin } from '../animate';
 import {
   splitWords,
   beginRun,
@@ -12,6 +13,7 @@ import {
   FADE_DURATION_MS,
   FADE_STAGGER_MS,
   FADE_STAGGER_MAX_MS,
+  FADE_HYDRATION_THRESHOLD,
 } from '../animate';
 
 let nowSpy: jest.SpyInstance<number, []>;
@@ -133,23 +135,23 @@ describe('classifyValue', () => {
 });
 
 describe('createFadePlugin', () => {
-  const renderMarkdown = (plugin: ReturnType<typeof createFadePlugin>, content: string) => (
+  const renderMarkdown = (fade: FadePlugin, content: string) => (
     /** @ts-ignore */
-    <ReactMarkdown rehypePlugins={[plugin]}>{content}</ReactMarkdown>
+    <ReactMarkdown rehypePlugins={[fade.plugin]}>{content}</ReactMarkdown>
   );
 
   it('wraps words in fade spans on first render, including inline formatting', () => {
-    const plugin = createFadePlugin();
-    const { container } = render(renderMarkdown(plugin, 'Hello **bold** world'));
+    const fade = createFadePlugin();
+    const { container } = render(renderMarkdown(fade, 'Hello **bold** world'));
     const spans = container.querySelectorAll('span[data-lc-fade]');
     expect(spans.length).toBe(3);
     expect(container.textContent).toBe('Hello bold world');
   });
 
   it('does not wrap text inside code blocks or inline code', () => {
-    const plugin = createFadePlugin();
+    const fade = createFadePlugin();
     const { container } = render(
-      renderMarkdown(plugin, 'text `inline code` more\n\n```\nconst x = 1;\n```'),
+      renderMarkdown(fade, 'text `inline code` more\n\n```\nconst x = 1;\n```'),
     );
     expect(container.querySelector('code span[data-lc-fade]')).toBeNull();
     expect(container.querySelector('pre span[data-lc-fade]')).toBeNull();
@@ -157,11 +159,12 @@ describe('createFadePlugin', () => {
   });
 
   it('only animates appended words across streamed re-renders', () => {
-    const plugin = createFadePlugin();
-    const { container, rerender } = render(renderMarkdown(plugin, 'Hello world'));
+    const fade = createFadePlugin();
+    const { container, rerender } = render(renderMarkdown(fade, 'Hello world'));
+    fade.commit();
 
     setTime(FADE_DURATION_MS + FADE_STAGGER_MAX_MS + 1);
-    rerender(renderMarkdown(plugin, 'Hello world and more text'));
+    rerender(renderMarkdown(fade, 'Hello world and more text'));
 
     const animated = Array.from(container.querySelectorAll('span[data-lc-fade]')).map((span) =>
       span.textContent?.trim(),
@@ -174,16 +177,44 @@ describe('createFadePlugin', () => {
   });
 
   it('does not re-animate words when markdown restructures around them', () => {
-    const plugin = createFadePlugin();
-    const { container, rerender } = render(renderMarkdown(plugin, 'Result is done and'));
+    const fade = createFadePlugin();
+    const { container, rerender } = render(renderMarkdown(fade, 'Result is done and'));
+    fade.commit();
 
     setTime(FADE_DURATION_MS + FADE_STAGGER_MAX_MS + 1);
-    rerender(renderMarkdown(plugin, 'Result is done and **final**'));
+    rerender(renderMarkdown(fade, 'Result is done and **final**'));
 
     const animated = Array.from(container.querySelectorAll('span[data-lc-fade]')).map((span) =>
       span.textContent?.trim(),
     );
     expect(animated).toEqual(['final']);
+  });
+
+  it('treats a large hydrated first render as baseline without animating', () => {
+    const fade = createFadePlugin();
+    const hydrated = `word${' word'.repeat(Math.ceil(FADE_HYDRATION_THRESHOLD / 5) + 4)}`;
+    const { container, rerender } = render(renderMarkdown(fade, hydrated));
+    expect(container.querySelectorAll('span[data-lc-fade]').length).toBe(0);
+    fade.commit();
+
+    rerender(renderMarkdown(fade, `${hydrated} appended tail`));
+    const animated = Array.from(container.querySelectorAll('span[data-lc-fade]')).map((span) =>
+      span.textContent?.trim(),
+    );
+    expect(animated).toEqual(['appended', 'tail']);
+  });
+
+  it('re-classifies identically when a render is never committed', () => {
+    const fade = createFadePlugin();
+    const { container, rerender } = render(renderMarkdown(fade, 'Hello world'));
+
+    setTime(FADE_DURATION_MS + FADE_STAGGER_MAX_MS + 1);
+    rerender(renderMarkdown(fade, 'Hello world'));
+
+    const animated = Array.from(container.querySelectorAll('span[data-lc-fade]')).map((span) =>
+      span.textContent?.trim(),
+    );
+    expect(animated).toEqual(['Hello', 'world']);
   });
 });
 
@@ -200,5 +231,17 @@ describe('AnimatedText', () => {
     );
     expect(animated).toEqual(['the', 'answer']);
     expect(container.textContent).toBe('thinking about the answer');
+  });
+
+  it('treats large hydrated text as baseline without animating', () => {
+    const hydrated = `word${' word'.repeat(Math.ceil(FADE_HYDRATION_THRESHOLD / 5) + 4)}`;
+    const { container, rerender } = render(<AnimatedText text={hydrated} />);
+    expect(container.querySelectorAll('span[data-lc-fade]').length).toBe(0);
+
+    rerender(<AnimatedText text={`${hydrated} appended tail`} />);
+    const animated = Array.from(container.querySelectorAll('span[data-lc-fade]')).map((span) =>
+      span.textContent?.trim(),
+    );
+    expect(animated).toEqual(['appended', 'tail']);
   });
 });
