@@ -386,6 +386,15 @@ function killTree(child: ReturnType<typeof spawn>, killSignal: NodeJS.Signals): 
   }
 }
 
+function groupExists(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function runCommand(
   invocation: ShellInvocation,
   payload: string,
@@ -403,16 +412,28 @@ function runCommand(
     });
     const stdout: CapturedStream = { chunks: [], bytes: 0 };
     const stderr: CapturedStream = { chunks: [], bytes: 0 };
+    let killTimer: NodeJS.Timeout | undefined;
     const onAbort = () => {
       killTree(child, 'SIGTERM');
       /**
-       * Deliberately never cancelled: a SIGTERM-ignoring descendant can
-       * outlive the wrapper shell, whose exit fires `close` before the grace
-       * period ends — cancelling there would skip the group SIGKILL and leak
-       * the descendant. The timer is unref'd and a vanished group is handled
-       * inside `killTree`, so a late redundant sweep is harmless.
+       * Escalation must survive the wrapper's `close` — a SIGTERM-ignoring
+       * descendant can outlive the shell — yet must never signal blindly: a
+       * fully-dead group's numeric id could be recycled during the grace
+       * window. Both hazards resolve by probing group liveness (signal 0):
+       * `close` cancels escalation only when the group is verifiably empty,
+       * and the deadline re-probes before delivering SIGKILL. The residual
+       * probe-to-signal race is unavoidable without pidfd support and needs
+       * survivors at close AND full group death AND a recycled group id
+       * inside the same window.
        */
-      const killTimer = setTimeout(() => killTree(child, 'SIGKILL'), killGraceMs);
+      killTimer = setTimeout(() => {
+        if (process.platform !== 'win32' && typeof child.pid === 'number') {
+          if (!groupExists(child.pid)) {
+            return;
+          }
+        }
+        killTree(child, 'SIGKILL');
+      }, killGraceMs);
       killTimer.unref?.();
     };
     signal.addEventListener('abort', onAbort, { once: true });
@@ -429,6 +450,14 @@ function runCommand(
     });
     child.on('close', (code) => {
       signal.removeEventListener('abort', onAbort);
+      if (
+        killTimer !== undefined &&
+        process.platform !== 'win32' &&
+        typeof child.pid === 'number' &&
+        !groupExists(child.pid)
+      ) {
+        clearTimeout(killTimer);
+      }
       resolve({ code, stdout: capturedText(stdout), stderr: capturedText(stderr) });
     });
     child.stdin.on('error', () => {
