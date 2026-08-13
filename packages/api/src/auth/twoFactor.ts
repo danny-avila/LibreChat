@@ -151,6 +151,7 @@ export function isCredentialLoginBlockedByTwoFactorPolicy(
 function isTokenIssuedBefore(
   issuedAtSeconds: number | undefined,
   cutoff: Date | string | number | null | undefined,
+  retireTies = false,
 ): boolean {
   if (cutoff == null) {
     return false;
@@ -165,7 +166,8 @@ function isTokenIssuedBefore(
     return true;
   }
 
-  return issuedAtSeconds < Math.floor(cutoffMs / 1000);
+  const cutoffSeconds = Math.floor(cutoffMs / 1000);
+  return retireTies ? issuedAtSeconds <= cutoffSeconds : issuedAtSeconds < cutoffSeconds;
 }
 
 /**
@@ -178,9 +180,12 @@ function isTokenIssuedBefore(
  * has been revoked; `deleteAllUserSessions` already drops the refresh sessions on that path with
  * the same intent, and a stateless token must not outlive the password that bought it.
  *
- * `iat` is whole seconds, so each cutoff is compared at the same resolution. A token minted within
- * the retiring second is kept, which is what makes the session finalization itself returns survive.
- * A token carrying no `iat` cannot be dated and is refused once any cutoff is set.
+ * `iat` is whole seconds, and the two cutoffs resolve that rounding differently. Enrollment keeps a
+ * token minted within the retiring second, which is what makes the session finalization itself
+ * returns survive. Recovery cannot afford the same tolerance, because it mints nothing that has to
+ * live through it: a token dated to the resetting second was bought with the credential the reset
+ * revoked, so it is retired too. A token carrying no `iat` cannot be dated and is refused once any
+ * cutoff is set.
  */
 export function isTokenRetired(
   issuedAtSeconds: number | undefined,
@@ -188,7 +193,7 @@ export function isTokenRetired(
 ): boolean {
   return (
     isTokenIssuedBefore(issuedAtSeconds, user?.twoFactorEnrolledAt) ||
-    isTokenIssuedBefore(issuedAtSeconds, user?.passwordResetAt)
+    isTokenIssuedBefore(issuedAtSeconds, user?.passwordResetAt, true)
   );
 }
 
@@ -202,8 +207,9 @@ export function isTokenRetired(
  * stage a second factor of their own and take a session without ever knowing the new password.
  *
  * `issuedAtMs` orders the two exactly, and a tie retires the token, matching how
- * `isEnrollmentSupersededByRecovery` resolves the same race. Tokens minted before that claim
- * existed carry only `iat`, so they fall back to the whole-second comparison until they expire.
+ * `isEnrollmentSupersededByRecovery` resolves the same race. It also spares the setup token minted
+ * later in that second, which the whole-second fallback cannot tell apart: tokens predating the
+ * claim carry only `iat`, so they surrender the entire resetting second until they expire.
  */
 export function isSetupTokenRetired(
   credential: Pick<TwoFactorSetupCredential, 'issuedAt' | 'issuedAtMs'>,
@@ -215,7 +221,7 @@ export function isSetupTokenRetired(
 
   const { issuedAtMs } = credential;
   if (typeof issuedAtMs !== 'number' || !Number.isFinite(issuedAtMs)) {
-    return isTokenIssuedBefore(credential.issuedAt, user?.passwordResetAt);
+    return isTokenIssuedBefore(credential.issuedAt, user?.passwordResetAt, true);
   }
 
   if (user?.passwordResetAt == null) {

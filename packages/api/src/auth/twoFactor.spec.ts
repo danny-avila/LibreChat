@@ -171,6 +171,19 @@ describe('isTokenRetired', () => {
       expect(isTokenRetired(resetSecond + 1, { passwordResetAt: resetAt })).toBe(false);
     });
 
+    /**
+     * `iat` cannot order a token against a reset inside the same second, and recovery mints nothing
+     * that has to survive it, so the whole second is surrendered rather than honoured.
+     */
+    it('refuses a token dated to the resetting second', () => {
+      expect(isTokenRetired(resetSecond, { passwordResetAt: resetAt })).toBe(true);
+    });
+
+    it('keeps the enrolling second while refusing the resetting one', () => {
+      expect(isTokenRetired(enrolledSecond, { twoFactorEnrolledAt: enrolledAt })).toBe(false);
+      expect(isTokenRetired(resetSecond, { passwordResetAt: resetAt })).toBe(true);
+    });
+
     it('leaves accounts that never reset untouched', () => {
       expect(isTokenRetired(0, { passwordResetAt: null })).toBe(false);
       expect(isTokenRetired(0, {})).toBe(false);
@@ -253,11 +266,13 @@ describe('isSetupTokenRetired', () => {
     ).toBe(true);
   });
 
-  it('falls back to whole seconds for a token minted before the claim existed', () => {
+  /** Without the claim there is nothing to order within the second, so the whole second goes. */
+  it('surrenders the resetting second for a token minted before the claim existed', () => {
     expect(isSetupTokenRetired({ issuedAt: resetSecond - 1 }, { passwordResetAt: resetAt })).toBe(
       true,
     );
-    expect(isSetupTokenRetired({ issuedAt: resetSecond }, { passwordResetAt: resetAt })).toBe(
+    expect(isSetupTokenRetired({ issuedAt: resetSecond }, { passwordResetAt: resetAt })).toBe(true);
+    expect(isSetupTokenRetired({ issuedAt: resetSecond + 1 }, { passwordResetAt: resetAt })).toBe(
       false,
     );
     expect(isSetupTokenRetired({ issuedAt: undefined }, { passwordResetAt: resetAt })).toBe(true);
@@ -609,14 +624,25 @@ describe('requireTwoFactorSetupToken', () => {
 
     requireTwoFactorSetupToken(req, res, next);
 
-    const issuedAt = (req as TwoFactorEnrollmentRequest).twoFactorSetupIssuedAt;
+    const setupRequest = req as TwoFactorEnrollmentRequest;
+    const issuedAt = setupRequest.twoFactorSetupIssuedAt;
+    const issuedAtMs = setupRequest.twoFactorSetupIssuedAtMs;
     expect(typeof issuedAt).toBe('number');
+    expect(typeof issuedAtMs).toBe('number');
     expect(
       isTokenRetired(issuedAt, { passwordResetAt: new Date((issuedAt as number) * 1000) }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isTokenRetired(issuedAt, { passwordResetAt: new Date(((issuedAt as number) + 1) * 1000) }),
     ).toBe(true);
+
+    /** The millisecond claim is what still spares a setup token minted after the reset landed. */
+    expect(
+      isSetupTokenRetired(
+        { issuedAt, issuedAtMs },
+        { passwordResetAt: new Date((issuedAtMs as number) - 1) },
+      ),
+    ).toBe(false);
   });
 
   it('rejects setup when the deployment policy is disabled', () => {
