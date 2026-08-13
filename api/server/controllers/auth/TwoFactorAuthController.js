@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { logger } = require('@librechat/data-schemas');
+const { getTenantId, logger } = require('@librechat/data-schemas');
 const {
   verifyTOTP,
   getTOTPSecret,
@@ -11,51 +11,77 @@ const { getUserById } = require('~/models');
 /**
  * Verifies the 2FA code during login using a temporary token.
  */
-const verify2FAWithTempToken = async (req, res) => {
-  try {
-    const { tempToken, token, backupCode } = req.body;
-    if (!tempToken) {
-      return res.status(400).json({ message: 'Missing temporary token' });
-    }
-
-    let payload;
+const createVerify2FAWithTempToken = ({ finalizeClerkTwoFactorSession } = {}) => {
+  return async function verify2FAWithTempToken(req, res) {
     try {
-      payload = jwt.verify(tempToken, process.env.JWT_SECRET);
+      const { tempToken, token, backupCode } = req.body;
+      if (!tempToken) {
+        return res.status(400).json({ message: 'Missing temporary token' });
+      }
+
+      let payload;
+      try {
+        payload = jwt.verify(tempToken, process.env.JWT_SECRET);
+      } catch (err) {
+        logger.error('Failed to verify temporary token:', err);
+        return res.status(401).json({ message: 'Invalid or expired temporary token' });
+      }
+
+      const user = await getUserById(payload.userId, '+totpSecret +backupCodes');
+      if (!user || !user.twoFactorEnabled) {
+        return res.status(400).json({ message: '2FA is not enabled for this user' });
+      }
+
+      const secret = await getTOTPSecret(user.totpSecret);
+      let isVerified = false;
+      if (token) {
+        isVerified = await verifyTOTP(secret, token);
+      } else if (backupCode) {
+        isVerified = await verifyBackupCode({ user, backupCode });
+      }
+
+      if (!isVerified) {
+        return res.status(401).json({ message: 'Invalid 2FA code or backup code' });
+      }
+
+      if (payload.authProvider === 'clerk') {
+        if (typeof finalizeClerkTwoFactorSession !== 'function') {
+          return res.status(500).json({ code: 'CLERK_LOGIN_FAILED' });
+        }
+
+        try {
+          const result = await finalizeClerkTwoFactorSession({
+            req,
+            res,
+            user,
+            capability: payload,
+            tenantId: getTenantId(),
+          });
+          return res.status(200).json(result);
+        } catch (err) {
+          logger.error('[verify2FAWithTempToken][clerk]', err);
+          const status = Number.isInteger(err?.status) ? err.status : 500;
+          const code = typeof err?.code === 'string' ? err.code : 'CLERK_LOGIN_FAILED';
+          return res.status(status).json({ code });
+        }
+      }
+
+      const userData = user.toObject ? user.toObject() : { ...user };
+      delete userData.__v;
+      delete userData.password;
+      delete userData.totpSecret;
+      delete userData.backupCodes;
+      userData.id = user._id.toString();
+
+      const authToken = await setAuthTokens(user._id, res, null, req);
+      return res.status(200).json({ token: authToken, user: userData });
     } catch (err) {
-      logger.error('Failed to verify temporary token:', err);
-      return res.status(401).json({ message: 'Invalid or expired temporary token' });
+      logger.error('[verify2FAWithTempToken]', err);
+      return res.status(500).json({ message: 'Something went wrong' });
     }
-
-    const user = await getUserById(payload.userId, '+totpSecret +backupCodes');
-    if (!user || !user.twoFactorEnabled) {
-      return res.status(400).json({ message: '2FA is not enabled for this user' });
-    }
-
-    const secret = await getTOTPSecret(user.totpSecret);
-    let isVerified = false;
-    if (token) {
-      isVerified = await verifyTOTP(secret, token);
-    } else if (backupCode) {
-      isVerified = await verifyBackupCode({ user, backupCode });
-    }
-
-    if (!isVerified) {
-      return res.status(401).json({ message: 'Invalid 2FA code or backup code' });
-    }
-
-    const userData = user.toObject ? user.toObject() : { ...user };
-    delete userData.__v;
-    delete userData.password;
-    delete userData.totpSecret;
-    delete userData.backupCodes;
-    userData.id = user._id.toString();
-
-    const authToken = await setAuthTokens(user._id, res, null, req);
-    return res.status(200).json({ token: authToken, user: userData });
-  } catch (err) {
-    logger.error('[verify2FAWithTempToken]', err);
-    return res.status(500).json({ message: 'Something went wrong' });
-  }
+  };
 };
 
-module.exports = { verify2FAWithTempToken };
+const verify2FAWithTempToken = createVerify2FAWithTempToken();
+
+module.exports = { createVerify2FAWithTempToken, verify2FAWithTempToken };
