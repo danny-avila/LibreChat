@@ -1177,7 +1177,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
      *  subagent internals. */
     const reasoningKey = input.executingAgentId ?? 'root';
     const reasoning = pendingReasoning.get(reasoningKey)?.text.trim();
-    const ids = new Set(input.entries.map((entry) => entry.toolUseId));
+    let trackedEntries = input.entries;
+    let ids = new Set(trackedEntries.map((entry) => entry.toolUseId));
     const parts = deps.getContentParts();
     let childLabelIndex: number | undefined;
     let batchStartIndex: number | undefined;
@@ -1203,23 +1204,27 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         }
       }
     }
-    const batchToolIndices = definedPartIndices(parts).filter((index) => {
+    const coveredToolIds = new Set<string>();
+    for (const index of definedPartIndices(parts)) {
       const part = parts[index];
-      return (
+      if (
         part?.type === ContentTypes.TOOL_CALL &&
         typeof part.tool_call?.id === 'string' &&
-        ids.has(part.tool_call.id)
-      );
-    });
-    if (
-      batchToolIndices.some((toolIndex) =>
-        emittedContentRanges.some(({ start, end }) => toolIndex >= start && toolIndex < end),
-      )
-    ) {
+        ids.has(part.tool_call.id) &&
+        emittedContentRanges.some(({ start, end }) => index >= start && index < end)
+      ) {
+        coveredToolIds.add(part.tool_call.id);
+      }
+    }
+    if (coveredToolIds.size > 0) {
+      trackedEntries = trackedEntries.filter((entry) => !coveredToolIds.has(entry.toolUseId));
+      ids = new Set(trackedEntries.map((entry) => entry.toolUseId));
+    }
+    if (trackedEntries.length === 0) {
       pendingReasoning.delete(reasoningKey);
       return {};
     }
-    const entries = input.entries.map((entry: BatchEntry) => ({
+    const entries = trackedEntries.map((entry: BatchEntry) => ({
       toolName: entry.toolName,
       toolInput: entry.toolInput,
       toolOutput: entry.toolOutput,
@@ -1311,6 +1316,17 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
                   textContextByStepId.delete(removed.stepId);
                 }
               }
+              const result = runStepHandler.handle(event, data, metadata, graph);
+              if (phase === 'final_answer' && isRoot) {
+                const boundaryIndex = deps.getStepIndex?.(step.id);
+                if (
+                  boundaryIndex != null &&
+                  deps.getContentParts()[boundaryIndex]?.type === ContentTypes.TEXT
+                ) {
+                  close(phase, boundaryIndex);
+                }
+              }
+              return result;
             }
           }
           return runStepHandler.handle(event, data, metadata, graph);

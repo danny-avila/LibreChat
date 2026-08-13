@@ -284,6 +284,64 @@ describe('groupActivityPhases', () => {
     ]);
   });
 
+  it('moves a late child label from an earlier phase into its declared later span', () => {
+    const firstTool = {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id: 'first', name: 'web_search', args: '{}', output: 'ok' },
+    } as unknown as TMessageContentParts;
+    const laterTool = {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id: 'later', name: 'web_search', args: '{}', output: 'ok' },
+    } as unknown as TMessageContentParts;
+    const lateChild = labelPart({
+      activity_label: 'Recorded the later result',
+      pending: false,
+      tool_call_ids: ['later'],
+    });
+    const first = labelPart({ activity_label: 'Completed the first phase', pending: false });
+    Object.assign(first, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 1,
+      activity_count: 2,
+    });
+    const second = labelPart({ activity_label: 'Completed the second phase', pending: false });
+    Object.assign(second, {
+      activity_label_type: 'phase',
+      activity_start_index: 2,
+      activity_end_index: 4,
+      activity_count: 2,
+    });
+    const boundary = { type: ContentTypes.TEXT, text: 'Boundary' } as TMessageContentParts;
+    const content = [
+      firstTool,
+      boundary,
+      laterTool,
+      lateChild as never,
+      first as never,
+      second as never,
+    ];
+
+    const segments = groupActivityPhases(content);
+
+    expect(segments).toEqual([
+      expect.objectContaining({
+        type: 'phase',
+        labelIndex: 4,
+        contentIndices: [0],
+      }),
+      expect.objectContaining({
+        type: 'content',
+        contentIndices: [1],
+      }),
+      expect.objectContaining({
+        type: 'phase',
+        labelIndex: 5,
+        contentIndices: [2, 3],
+      }),
+    ]);
+  });
+
   it('keeps a late child label in the phase while leaving final text outside', () => {
     const child = labelPart({
       activity_label: 'Recorded the delayed child result',

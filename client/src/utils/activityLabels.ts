@@ -195,7 +195,7 @@ export function groupActivityPhases(
       const deferredTrailingIndices: number[] = [];
       for (let segmentIndex = segments.length - 1; segmentIndex >= 0; segmentIndex -= 1) {
         const segment = segments[segmentIndex];
-        if (segment.type !== 'content') {
+        if (segment.type !== 'content' && segment.type !== 'phase') {
           continue;
         }
         const retainedContent: Array<TMessageContentParts | undefined> = [];
@@ -206,12 +206,14 @@ export function groupActivityPhases(
           childPosition += 1
         ) {
           const childIndex = segment.contentIndices[childPosition];
-          if (childIndex >= start && childIndex < end) {
+          const child = segment.content[childPosition];
+          const canRecover = segment.type === 'content' || getBatchActivityLabelPart(child) != null;
+          if (canRecover && childIndex >= start && childIndex < end) {
             recoveredIndices.push(childIndex);
-          } else if (childIndex >= end) {
+          } else if (canRecover && childIndex >= end) {
             deferredTrailingIndices.push(childIndex);
           } else {
-            retainedContent.push(segment.content[childPosition]);
+            retainedContent.push(child);
             retainedIndices.push(childIndex);
           }
         }

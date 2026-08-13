@@ -2675,6 +2675,111 @@ describe('createActivityPhaseWiring', () => {
     expect(wiring.snapshot().activityCount).toBe(0);
   });
 
+  it('retains uncovered calls from a delayed straddling tool batch', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'covered-call' } },
+      { type: ContentTypes.TEXT, text: substantialText('Boundary result.') },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'uncovered-call' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-3' } },
+    ];
+    const payloads: GenerateActivityPhasePayload[] = [];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async (payload: GenerateActivityPhasePayload) => {
+        payloads.push(payload);
+        return { label: 'Completed one phase' };
+      }),
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    wiring.complete();
+
+    const delayedBatch = batch('covered-call');
+    delayedBatch.entries.push({
+      ...delayedBatch.entries[0],
+      toolUseId: 'uncovered-call',
+      toolInput: { query: 'uncovered-call' },
+    });
+    await wiring.hook(delayedBatch, new AbortController().signal);
+    await wiring.hook(batch('tool-3'), new AbortController().signal);
+    wiring.complete();
+    await flushDetached();
+
+    expect(payloads.map(({ totalActivityCount }) => totalActivityCount)).toEqual([2, 2]);
+    expect(payloads[1].activities[0]).toMatchObject({
+      entries: [expect.objectContaining({ toolInput: { query: 'uncovered-call' } })],
+    });
+  });
+
+  it('keeps a short semantic final answer outside the collapsed phase', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+    ];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'final-step' ? 2 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed the requested work' })),
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: {
+        handle: () => {
+          parts[2] = { type: ContentTypes.TEXT, text: '', phase: 'final_answer' };
+        },
+      },
+      [GraphEvents.ON_MESSAGE_DELTA]: {
+        handle: (_event, data) => {
+          const delta = data as { delta?: { content?: { text?: string } } };
+          parts[2] = {
+            type: ContentTypes.TEXT,
+            text: `${parts[2]?.text ?? ''}${delta.delta?.content?.text ?? ''}`,
+            phase: 'final_answer',
+          };
+        },
+      },
+    });
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'final-step',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    handlers?.[GraphEvents.ON_MESSAGE_DELTA]?.handle(
+      GraphEvents.ON_MESSAGE_DELTA,
+      {
+        id: 'final-step',
+        delta: { content: { type: ContentTypes.TEXT, text: 'Done.' } },
+      },
+      undefined,
+      undefined,
+    );
+    await flushDetached();
+
+    expect(parts[2]).toMatchObject({ type: ContentTypes.TEXT, text: 'Done.' });
+    expect(parts[3]).toMatchObject({
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+  });
+
   it('retains equal-position context rendered after a substantial boundary', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
