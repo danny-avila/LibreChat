@@ -156,7 +156,7 @@ type ClerkBrowserState = {
   getTokenCalls: Array<{ skipCache?: boolean } | null>;
 };
 
-test('Clerk modal exchange retries safely, signs up, signs in, and performs dual logout', async ({
+test('Clerk modal exchange retries safely, recovers one replay, and performs dual logout', async ({
   browser,
   baseURL,
 }) => {
@@ -174,6 +174,7 @@ test('Clerk modal exchange retries safely, signs up, signs in, and performs dual
   let clerkLoginCalls = 0;
   let localLogoutCalls = 0;
   let localSessionActive = false;
+  let replayRejected = false;
   let startupConfig: Record<string, unknown> | null = null;
 
   try {
@@ -212,13 +213,29 @@ test('Clerk modal exchange retries safely, signs up, signs in, and performs dual
       await route.fulfill({ status: 200, contentType: 'application/json', json: clerkUser });
     });
     await page.route('**/api/auth/clerk', async (route) => {
+      const requestBody: unknown = route.request().postDataJSON();
       clerkLoginCalls += 1;
-      clerkRequests.push(route.request().postDataJSON());
+      clerkRequests.push(requestBody);
       if (clerkLoginCalls === 1) {
         await route.fulfill({
           status: 503,
           contentType: 'application/json',
           json: { code: 'CLERK_UNAVAILABLE' },
+        });
+        return;
+      }
+      if (
+        !replayRejected &&
+        requestBody != null &&
+        typeof requestBody === 'object' &&
+        'clerkToken' in requestBody &&
+        requestBody.clerkToken === 'clerk-token-2'
+      ) {
+        replayRejected = true;
+        await route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          json: { code: 'CLERK_TOKEN_REPLAYED' },
         });
         return;
       }
@@ -297,7 +314,19 @@ test('Clerk modal exchange retries safely, signs up, signs in, and performs dual
     await page.getByRole('button', { name: 'Complete existing-user sign in' }).click();
     await page.waitForURL(/\/c\/new$/);
     await expect(page.getByTestId('nav-user')).toBeVisible();
-    expect(clerkRequests.at(-1)).toEqual({ clerkToken: 'clerk-token-2' });
+    expect(clerkRequests.slice(-2)).toEqual([
+      { clerkToken: 'clerk-token-2' },
+      { clerkToken: 'clerk-token-2' },
+    ]);
+    const getTokenCalls = await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __clerkE2E: ClerkBrowserState;
+          }
+        ).__clerkE2E.getTokenCalls,
+    );
+    expect(getTokenCalls.slice(-2)).toEqual([null, { skipCache: true }]);
   } finally {
     await context.close();
   }
