@@ -303,7 +303,7 @@ const refreshController = async (req, res) => {
      */
     if (isTokenIssuedBeforeTwoFactorEnrollment(payload?.iat, user.twoFactorEnrolledAt)) {
       logger.warn(
-        '[refreshController] refresh token predates two-factor enrollment: ' + payload?.id,
+        `[refreshController] Refresh token predates two-factor enrollment: userId=${userId}`,
       );
       res.clearCookie('refreshToken');
       return res.status(401).send('Refresh token expired or not found for this user');
