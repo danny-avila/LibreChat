@@ -956,6 +956,38 @@ describe('createActivityPhaseWiring', () => {
     expect(parts[2]).toMatchObject({ activity_end_index: 2, activity_count: 15 });
   });
 
+  it('extends a sparse phase start using only defined boundary slots', async () => {
+    const parts: LooseContentPart[] = [];
+    parts[999_998] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-a' } };
+    parts[1_000_000] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-b' } };
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 2,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [
+          { startIndex: 999_998, status: 'success', toolCallIds: ['tool-a'] },
+          { startIndex: 1_000_000, status: 'success', toolCallIds: ['tool-b'] },
+        ],
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed the sparse workflow' })),
+    });
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[1_000_001]).toMatchObject({ activity_start_index: 0, activity_count: 2 });
+  });
+
   it('keeps post-cap activities grouped after the last root text', async () => {
     const parts: LooseContentPart[] = [];
     const generatePhase = jest.fn(async () => ({ label: 'Completed the extended investigation' }));

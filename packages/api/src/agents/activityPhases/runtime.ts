@@ -596,8 +596,14 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     /** Pull leading commentary/reasoning into the parent card. A prior phase
      *  marker or steer is the only hard UI boundary; plain text can be
      *  intermediate context on providers that do not expose phase metadata. */
-    for (let i = startIndex - 1; i >= 0; i--) {
-      const prior = currentParts[i];
+    const definedIndices = definedPartIndices(currentParts);
+    let extendedStartIndex = 0;
+    for (let position = definedIndices.length - 1; position >= 0; position -= 1) {
+      const priorIndex = definedIndices[position];
+      if (priorIndex >= startIndex) {
+        continue;
+      }
+      const prior = currentParts[priorIndex];
       if (
         prior?.type === ContentTypes.STEER ||
         (prior?.type === ContentTypes.ACTIVITY_LABEL && prior.activity_label_type === 'phase') ||
@@ -605,10 +611,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           prior.phase === 'final_answer' &&
           textValue(prior.text).trim().length > 0)
       ) {
+        extendedStartIndex = priorIndex + 1;
         break;
       }
-      startIndex = i;
     }
+    startIndex = extendedStartIndex;
     const agentIds = [...contributingAgentIds];
     let phaseStatus: 'ok' | 'partial' | 'failed' = 'ok';
     if (failedCount === totalActivityCount) {
