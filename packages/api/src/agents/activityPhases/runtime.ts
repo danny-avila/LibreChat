@@ -1016,7 +1016,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           overflowActivityStartIndex >= candidateFinalTextIndex);
       const hasLaterPendingReasoning = [...pendingReasoning.values()].some(
         (reasoning) =>
-          reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex,
+          (reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex) ||
+          hasReasoningExcerptAtOrAfter(parts, reasoning.text, candidateFinalTextIndex),
       );
       if (hasLaterTrackedActivity || hasLaterOverflowActivity || hasLaterPendingReasoning) {
         finalTextIndex = undefined;

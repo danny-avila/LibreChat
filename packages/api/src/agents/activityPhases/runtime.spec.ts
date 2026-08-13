@@ -809,6 +809,56 @@ describe('createActivityPhaseWiring', () => {
     expect(parts[3]).toMatchObject({ activity_end_index: 2, activity_count: 3 });
   });
 
+  it('resolves index-less pending reasoning before preserving the final-text boundary', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TEXT, text: 'This answer preceded more reasoning.' },
+    ];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed the extended investigation' })),
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_REASONING_DELTA]: { handle: jest.fn() },
+    });
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'late-reasoning',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'think' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    parts[3] = { type: ContentTypes.THINK, think: 'Verified one more edge case.' };
+    handlers?.[GraphEvents.ON_REASONING_DELTA]?.handle(
+      GraphEvents.ON_REASONING_DELTA,
+      {
+        id: 'late-reasoning',
+        delta: {
+          content: { type: ContentTypes.THINK, think: 'Verified one more edge case.' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[4]).toMatchObject({ activity_end_index: 4, activity_count: 3 });
+  });
+
   it('keeps a partially materialized retained batch after the candidate final text', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'batch-a' } },
