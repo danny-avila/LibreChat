@@ -177,6 +177,10 @@ test('Clerk modal exchange retries safely, recovers one replay, and performs dua
   let localSessionActive = false;
   let replayRejected = false;
   let startupConfig: Record<string, unknown> | null = null;
+  let releaseFirstClerkLogin: (() => void) | undefined;
+  const firstClerkLoginGate = new Promise<void>((resolve) => {
+    releaseFirstClerkLogin = resolve;
+  });
 
   try {
     await page.addInitScript(() => {
@@ -218,6 +222,7 @@ test('Clerk modal exchange retries safely, recovers one replay, and performs dua
       clerkLoginCalls += 1;
       clerkRequests.push(requestBody);
       if (clerkLoginCalls === 1) {
+        await firstClerkLoginGate;
         await route.fulfill({
           status: 503,
           contentType: 'application/json',
@@ -294,6 +299,13 @@ test('Clerk modal exchange retries safely, recovers one replay, and performs dua
     await signIn.click();
     await page.getByRole('button', { name: 'Create account' }).click();
     await page.getByRole('button', { name: 'Complete new-user sign up' }).click();
+    await expect(page.getByRole('status')).toHaveAttribute('aria-busy', 'true');
+    releaseFirstClerkLogin();
+    const exchangeError = page
+      .getByRole('alert')
+      .filter({ hasText: 'Clerk sign in could not be completed.' });
+    await expect(exchangeError).toBeVisible();
+    await expect(exchangeError).toBeFocused();
     await expect(page.getByRole('button', { name: 'Retry' })).toBeVisible();
     expect(clerkRequests).toEqual([{ clerkToken: 'clerk-token-1' }]);
 
@@ -359,6 +371,7 @@ test('Clerk modal exchange retries safely, recovers one replay, and performs dua
     expect(directSuccessTokenCalls.slice(tokenCallCountBeforeDirectSuccess)).toEqual([null]);
     expect(localLogoutCalls).toBe(2);
   } finally {
+    releaseFirstClerkLogin?.();
     await context.close();
   }
 });
