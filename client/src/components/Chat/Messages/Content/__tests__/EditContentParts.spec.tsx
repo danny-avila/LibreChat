@@ -141,6 +141,31 @@ describe('EditContentParts', () => {
     expect(enterEdit).toHaveBeenCalledWith(true);
   });
 
+  it('keeps the editor open with the drafts when a rerun is refused mid-stream', () => {
+    const enterEdit = jest.fn();
+    const setSiblingIdx = jest.fn();
+    mockAsk.mockReturnValue(false);
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={enterEdit}
+        siblingIdx={0}
+        setSiblingIdx={setSiblingIdx}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Refused rerun' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_update_rerun' }));
+
+    expect(mockAsk).toHaveBeenCalled();
+    expect(screen.getByRole('textbox')).toHaveValue('Refused rerun');
+    expect(setSiblingIdx).not.toHaveBeenCalled();
+    expect(enterEdit).not.toHaveBeenCalled();
+  });
+
   it('requires multi-part assistant edits to be saved before rerunning', () => {
     const multiPartContent = [
       { type: ContentTypes.TEXT, text: 'First response' },

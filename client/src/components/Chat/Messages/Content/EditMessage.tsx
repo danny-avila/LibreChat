@@ -58,9 +58,12 @@ const EditMessage = ({
     }
   }, []);
 
+  /** `ask` refuses to send while another response is streaming and reports it by
+   *  returning false. Closing the editor regardless would throw the draft away for
+   *  a rerun that never started, so a refused send leaves the editor as it was. */
   const resubmitMessage = (data: { text: string }) => {
     if (message.isCreatedByUser) {
-      ask(
+      const submitted = ask(
         {
           text: data.text,
           parentMessageId,
@@ -79,6 +82,10 @@ const EditMessage = ({
         },
       );
 
+      if (submitted === false) {
+        return;
+      }
+
       setSiblingIdx((siblingIdx ?? 0) - 1);
     } else {
       const messages = getMessages();
@@ -87,7 +94,7 @@ const EditMessage = ({
       if (!parentMessage) {
         return;
       }
-      ask(
+      const submitted = ask(
         { ...parentMessage },
         {
           editedText: data.text,
@@ -104,6 +111,10 @@ const EditMessage = ({
           addedConvo: getAddedConvo() || undefined,
         },
       );
+
+      if (submitted === false) {
+        return;
+      }
 
       setSiblingIdx((siblingIdx ?? 0) - 1);
     }

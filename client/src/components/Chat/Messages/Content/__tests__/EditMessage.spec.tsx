@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { render, screen, waitFor } from '@testing-library/react';
 import type { TMessage } from 'librechat-data-provider';
 import EditMessage from '../EditMessage';
 
@@ -55,19 +55,32 @@ const message = {
   text: 'Original message',
 } as TMessage;
 
-function renderEditor({ enterEdit = jest.fn(), ask = jest.fn() } = {}) {
+const assistantMessage = {
+  messageId: 'assistant-1',
+  parentMessageId: 'user-1',
+  conversationId: 'conversation-1',
+  isCreatedByUser: false,
+  text: 'Original answer',
+} as TMessage;
+
+function renderEditor({
+  enterEdit = jest.fn(),
+  ask = jest.fn(),
+  setSiblingIdx = jest.fn(),
+  editedMessage = message,
+} = {}) {
   render(
     <EditMessage
-      text={message.text}
-      message={message}
+      text={editedMessage.text}
+      message={editedMessage}
       isSubmitting={false}
       ask={ask}
       enterEdit={enterEdit}
       siblingIdx={0}
-      setSiblingIdx={jest.fn()}
+      setSiblingIdx={setSiblingIdx}
     />,
   );
-  return { ask, enterEdit };
+  return { ask, enterEdit, setSiblingIdx };
 }
 
 describe('EditMessage', () => {
@@ -137,5 +150,36 @@ describe('EditMessage', () => {
       ),
     );
     expect(enterEdit).toHaveBeenCalledWith(true);
+  });
+
+  it('keeps the editor open with the draft when a rerun is refused mid-stream', async () => {
+    const user = userEvent.setup();
+    const ask = jest.fn().mockReturnValue(false);
+    const { enterEdit, setSiblingIdx } = renderEditor({ ask });
+
+    await user.clear(screen.getByTestId('message-text-editor'));
+    await user.type(screen.getByTestId('message-text-editor'), 'Refused rerun');
+    await user.click(screen.getByRole('button', { name: 'com_ui_update_rerun' }));
+
+    await waitFor(() => expect(ask).toHaveBeenCalled());
+    expect(screen.getByTestId('message-text-editor')).toHaveValue('Refused rerun');
+    expect(setSiblingIdx).not.toHaveBeenCalled();
+    expect(enterEdit).not.toHaveBeenCalled();
+  });
+
+  it('keeps an assistant edit open when a refused rerun would discard it', async () => {
+    const user = userEvent.setup();
+    mockGetMessages.mockReturnValue([message, assistantMessage]);
+    const ask = jest.fn().mockReturnValue(false);
+    const { enterEdit, setSiblingIdx } = renderEditor({ ask, editedMessage: assistantMessage });
+
+    await user.clear(screen.getByTestId('message-text-editor'));
+    await user.type(screen.getByTestId('message-text-editor'), 'Refused answer edit');
+    await user.click(screen.getByRole('button', { name: 'com_ui_update_rerun' }));
+
+    await waitFor(() => expect(ask).toHaveBeenCalled());
+    expect(screen.getByTestId('message-text-editor')).toHaveValue('Refused answer edit');
+    expect(setSiblingIdx).not.toHaveBeenCalled();
+    expect(enterEdit).not.toHaveBeenCalled();
   });
 });

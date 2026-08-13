@@ -188,24 +188,30 @@ export default function EditContentParts({
     }
     const messages = getMessages();
 
+    /** `ask` refuses to send while another response is streaming and reports it by
+     *  returning false. Closing the editor regardless would throw the drafts away for
+     *  a rerun that never started, so a refused send leaves the editor as it was. */
+    let refused = false;
+
     if (editedMessage.isCreatedByUser === true) {
       const userText = editableParts
         .filter((part) => part.type === ContentTypes.TEXT)
         .map((part) => drafts[part.index])
         .join('\n');
-      ask(
-        {
-          text: userText,
-          parentMessageId: editedMessage.parentMessageId,
-          conversationId: editedMessage.conversationId,
-        },
-        {
-          overrideFiles: editedMessage.files,
-          overrideManualSkills: editedMessage.manualSkills,
-          overrideQuotes: editedMessage.quotes,
-          addedConvo: getAddedConvo() || undefined,
-        },
-      );
+      refused =
+        ask(
+          {
+            text: userText,
+            parentMessageId: editedMessage.parentMessageId,
+            conversationId: editedMessage.conversationId,
+          },
+          {
+            overrideFiles: editedMessage.files,
+            overrideManualSkills: editedMessage.manualSkills,
+            overrideQuotes: editedMessage.quotes,
+            addedConvo: getAddedConvo() || undefined,
+          },
+        ) === false;
     } else {
       const parentMessage = messages?.find(
         (item) => item.messageId === editedMessage.parentMessageId,
@@ -225,18 +231,23 @@ export default function EditContentParts({
               type: ContentTypes.TEXT as const,
               [ContentTypes.TEXT]: drafts[firstChange.index],
             };
-      ask(
-        { ...parentMessage },
-        {
-          editedContent,
-          editedMessageId: messageId,
-          isRegenerate: true,
-          isEdited: true,
-          overrideManualSkills: parentMessage.manualSkills,
-          overrideQuotes: parentMessage.quotes,
-          addedConvo: getAddedConvo() || undefined,
-        },
-      );
+      refused =
+        ask(
+          { ...parentMessage },
+          {
+            editedContent,
+            editedMessageId: messageId,
+            isRegenerate: true,
+            isEdited: true,
+            overrideManualSkills: parentMessage.manualSkills,
+            overrideQuotes: parentMessage.quotes,
+            addedConvo: getAddedConvo() || undefined,
+          },
+        ) === false;
+    }
+
+    if (refused) {
+      return;
     }
 
     setSiblingIdx((siblingIdx ?? 0) - 1);
