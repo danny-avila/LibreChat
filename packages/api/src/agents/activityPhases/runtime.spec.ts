@@ -1217,20 +1217,22 @@ describe('createActivityPhaseWiring', () => {
     });
     await wiring.hook(batch('tool-1'), new AbortController().signal);
     await wiring.hook(batch('tool-2'), new AbortController().signal);
-    wiring.handlers({
-      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
-    })?.[GraphEvents.ON_RUN_STEP]?.handle(
-      GraphEvents.ON_RUN_STEP,
-      {
-        id: 'root-text',
-        stepDetails: {
-          type: StepTypes.MESSAGE_CREATION,
-          message_creation: { message_id: 'm', content_type: 'text' },
+    wiring
+      .handlers({
+        [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'root-text',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text' },
+          },
         },
-      },
-      undefined,
-      undefined,
-    );
+        undefined,
+        undefined,
+      );
     parts[2] = { type: ContentTypes.TEXT, text: 'The indexed answer is complete.' };
 
     wiring.complete();

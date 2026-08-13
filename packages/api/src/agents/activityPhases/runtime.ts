@@ -938,11 +938,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         }
         const reasoningExcerpt = activity.thinkingExcerpts?.[0];
         if (toolCallIds.length === 0 && reasoningExcerpt) {
-          return hasReasoningExcerptAtOrAfter(
-            parts,
-            reasoningExcerpt,
-            candidateFinalTextIndex,
-          );
+          return hasReasoningExcerptAtOrAfter(parts, reasoningExcerpt, candidateFinalTextIndex);
         }
         return (
           !toolCallIds.some((id) => materializedToolIds.has(id)) &&
@@ -954,11 +950,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const hasLaterOverflowActivity =
         overflowIds.some((id) => trailingToolIds.has(id)) ||
         (overflowReasoningExcerpt != null &&
-          hasReasoningExcerptAtOrAfter(
-            parts,
-            overflowReasoningExcerpt,
-            candidateFinalTextIndex,
-          )) ||
+          hasReasoningExcerptAtOrAfter(parts, overflowReasoningExcerpt, candidateFinalTextIndex)) ||
         (!overflowBoundaryIds.every((id) => materializedToolIds.has(id)) &&
           overflowActivityStartIndex != null &&
           overflowActivityStartIndex >= candidateFinalTextIndex);
