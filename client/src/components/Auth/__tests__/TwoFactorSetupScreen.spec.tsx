@@ -387,6 +387,91 @@ describe('TwoFactorSetupScreen', () => {
     expect(screen.getByTestId('verify')).toBeInTheDocument();
   });
 
+  /**
+   * Every setup route gates on the enforcement policy and on the ban list before it reaches a
+   * controller, and both answer 403. Neither can be satisfied from this screen, so all four
+   * mutations have to leave rather than keep a credential the server will never accept again.
+   */
+  const retiredFlowError = { response: { status: 403 } };
+
+  it('restarts sign-in when enforcement is withdrawn during enrollment', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('generate'));
+
+    act(() => mockEnableMutate.mock.calls[0][1].onError(retiredFlowError));
+
+    expect(readTwoFactorSetupToken()).toBe('');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('restarts sign-in when enforcement is withdrawn at verification', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('generate'));
+    act(() => {
+      mockEnableMutate.mock.calls[0][1].onSuccess({
+        otpauthUrl: 'otpauth://totp/LibreChat:user?secret=ABC123',
+        backupCodes: ['backup01'],
+      });
+    });
+    fireEvent.click(screen.getByTestId('qr-next'));
+    fireEvent.click(screen.getByTestId('enter-code'));
+    fireEvent.click(screen.getByTestId('verify'));
+
+    act(() => mockConfirmMutate.mock.calls[0][1].onError(retiredFlowError));
+
+    /** A wrong code and a retired flow both reach this handler, so only the 403 may reset it. */
+    expect(readTwoFactorSetupToken()).toBe('');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('restarts sign-in when enforcement is withdrawn at acknowledgement', () => {
+    renderScreen();
+    reachBackupPhase();
+    fireEvent.click(screen.getByTestId('download'));
+    fireEvent.click(screen.getByTestId('complete'));
+
+    act(() => mockAcknowledgeMutate.mock.calls[0][1].onError(retiredFlowError));
+
+    expect(readTwoFactorSetupToken()).toBe('');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('restarts sign-in when enforcement is withdrawn at finalization', () => {
+    renderScreen();
+    reachBackupPhase();
+    fireEvent.click(screen.getByTestId('download'));
+    fireEvent.click(screen.getByTestId('complete'));
+    act(() => {
+      mockAcknowledgeMutate.mock.calls[0][1].onSuccess({ finalizationToken: 'finalization-token' });
+    });
+
+    act(() => mockFinalizeMutate.mock.calls[0][1].onError(retiredFlowError));
+
+    expect(readTwoFactorSetupToken()).toBe('');
+    expect(mockCompleteAuthentication).not.toHaveBeenCalled();
+  });
+
+  it('keeps a rate-limited verification on the verify phase', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('generate'));
+    act(() => {
+      mockEnableMutate.mock.calls[0][1].onSuccess({
+        otpauthUrl: 'otpauth://totp/LibreChat:user?secret=ABC123',
+        backupCodes: ['backup01'],
+      });
+    });
+    fireEvent.click(screen.getByTestId('qr-next'));
+    fireEvent.click(screen.getByTestId('enter-code'));
+    fireEvent.click(screen.getByTestId('verify'));
+
+    act(() => mockConfirmMutate.mock.calls[0][1].onError({ response: { status: 429 } }));
+
+    /** Throttling clears on its own, so it must not be swept up with the retired-flow 403. */
+    expect(screen.getByRole('alert')).toHaveTextContent('com_ui_2fa_invalid');
+    expect(readTwoFactorSetupToken()).toBe('setup-token');
+    expect(screen.getByTestId('verify')).toBeInTheDocument();
+  });
+
   it('discards the stale finalization credential when confirmation is repeated', () => {
     renderScreen();
     reachBackupPhase();

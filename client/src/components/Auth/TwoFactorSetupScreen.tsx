@@ -27,7 +27,16 @@ const getSecret = (otpauthUrl: string): string => {
 const getResponseStatus = (error: unknown): number | undefined =>
   (error as { response?: { status?: number } } | undefined)?.response?.status;
 
-const isExpiredSetupCredential = (error: unknown): boolean => getResponseStatus(error) === 401;
+/**
+ * Every setup route gates on the enforcement policy and on the ban list before it reaches a
+ * controller, and both answer 403. Either way the flow is retired rather than merely rejected, so
+ * no phase can make progress and a reload would only replay it. Rate limiting answers 429 and a
+ * wrong or spent code answers 400, so neither retryable state is caught here.
+ */
+const isRetiredSetupFlow = (error: unknown): boolean => getResponseStatus(error) === 403;
+
+const isExpiredSetupCredential = (error: unknown): boolean =>
+  getResponseStatus(error) === 401 || isRetiredSetupFlow(error);
 
 /**
  * Acknowledgement and finalization nonces are single-use and answer 400 once consumed, so a lost
@@ -36,7 +45,7 @@ const isExpiredSetupCredential = (error: unknown): boolean => getResponseStatus(
  */
 const isSpentTransitionCredential = (error: unknown): boolean => {
   const status = getResponseStatus(error);
-  return status === 400 || status === 401;
+  return status === 400 || status === 401 || isRetiredSetupFlow(error);
 };
 
 const TwoFactorSetupScreen: React.FC = React.memo(() => {
