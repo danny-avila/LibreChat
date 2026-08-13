@@ -1547,6 +1547,35 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  it('carries an unresolved position through a folded anchor', async () => {
+    const parts: LooseContentPart[] = [];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({})),
+    });
+    for (let index = 0; index < 90; index += 1) {
+      const id = `tool-${index}`;
+      parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
+      await wiring.hook(batch(id), new AbortController().signal);
+    }
+    /** This batch's call never reaches the content array, so it is tracked
+     *  with only a fallback position and must keep it through folding. */
+    await wiring.hook(batch('never-materialized'), new AbortController().signal);
+    for (let index = 0; index < 20; index += 1) {
+      const id = `late-${index}`;
+      parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
+      await wiring.hook(batch(id), new AbortController().signal);
+    }
+
+    const tracked = wiring.snapshot().activities;
+    const holding = tracked.filter((activity) => activity.unresolvedToolStartIndex != null);
+    expect(holding.length).toBeGreaterThan(0);
+    expect(totalTrackedCount(tracked)).toBe(111);
+  });
+
   it('keeps every contributing agent when folding anchors past the cap', async () => {
     const parts: LooseContentPart[] = [];
     const wiring = createActivityPhaseWiring({

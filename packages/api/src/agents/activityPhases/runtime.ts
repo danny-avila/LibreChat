@@ -828,8 +828,17 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           ].filter((id) => id !== earlier.agentId),
         ),
       ];
+      /** The later side may be waiting on a tool call that has not appeared.
+       *  Dropping its fallback would let a boundary close the whole merged
+       *  count on the earlier side and strand that call outside its parent;
+       *  resolution clears the anchor once every retained id materializes. */
+      const mergedUnresolved = Math.max(
+        earlier.unresolvedToolStartIndex ?? -1,
+        later.unresolvedToolStartIndex ?? -1,
+      );
       activities[earlierPosition] = {
         ...earlier,
+        ...(mergedUnresolved >= 0 && { unresolvedToolStartIndex: mergedUnresolved }),
         ...(foldedAgentIds.length > 0 && { mergedAgentIds: foldedAgentIds }),
         toolCallIds: [...(earlier.toolCallIds ?? []), ...(later.toolCallIds ?? [])].slice(
           -MAX_RETAINED_TOOL_ENTRIES,
