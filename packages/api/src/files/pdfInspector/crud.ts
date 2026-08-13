@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
+import { DocumentParser } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
 import {
   extractDocumentTextWithPages,
@@ -13,7 +13,7 @@ import { ConcurrencyLimitError } from '~/utils/promise';
 
 type ParsedDocument = Pick<
   ParsedDocumentUploadResult,
-  'text' | 'pagesNeedingOcr' | 'mayEmbedMedia'
+  'text' | 'pagesNeedingOcr' | 'mayOmitContent'
 >;
 
 /** Above this share of dropped pages, whole-document plain text replaces interleaving. */
@@ -84,16 +84,16 @@ export async function parseWithPdfInspector(
      * with no native binding at all. */
     parsed = await extractDocumentTextWithPages(data, MAX_PDF_PAGES, undefined, signal);
   }
-  const { text, pagesNeedingOcr, mayEmbedMedia } = parsed;
+  const { text, pagesNeedingOcr, mayOmitContent } = parsed;
 
   return {
     filename: file.originalname,
     bytes: Buffer.byteLength(text, 'utf8'),
-    filepath: FileSources.pdf_inspector,
+    filepath: DocumentParser.pdf_inspector,
     text,
     images: [],
     pagesNeedingOcr,
-    ...(mayEmbedMedia && { mayEmbedMedia }),
+    ...(mayOmitContent && { mayOmitContent }),
   };
 }
 
@@ -161,7 +161,7 @@ export async function extractPdf(
     parsed: ParsedDocument,
     recoveredText: Map<number, string>,
   ): ParsedDocument =>
-    hasScanUnderText(recoveredText) ? { ...parsed, mayEmbedMedia: true } : parsed;
+    hasScanUnderText(recoveredText) ? { ...parsed, mayOmitContent: true } : parsed;
 
   const droppedPages = pages.filter((page) => !page.markdown?.trim());
   if (!droppedPages.length) {

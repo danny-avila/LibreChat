@@ -976,7 +976,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       bytes,
       filepath,
       pagesNeedingOcr,
-      mayEmbedMedia,
+      mayOmitContent,
     }) => {
       if (pagesNeedingOcr?.length) {
         const pageSummary = summarizeMissingPages(pagesNeedingOcr);
@@ -988,7 +988,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
        * artwork is not evidence that anything was lost. Most documents that carry it
        * carry a logo, so a notice in the model's copy would assert an omission that
        * usually did not happen, on the majority of office uploads. */
-      if (mayEmbedMedia === true) {
+      if (mayOmitContent === true) {
         logger.warn(
           `[processAgentFileUpload] "${file.originalname}" embeds images the local parser reads no text from; configure an OCR service to recover any text they hold.`,
         );
@@ -1041,7 +1041,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           const localNeedsOCR =
             !hasLocalText ||
             !!localResult?.pagesNeedingOcr?.length ||
-            localResult?.mayEmbedMedia === true;
+            localResult?.mayOmitContent === true;
 
           if (hasLocalText && !localNeedsOCR) {
             return localResult;

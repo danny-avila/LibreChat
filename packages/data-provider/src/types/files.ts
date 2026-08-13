@@ -16,6 +16,18 @@ export enum FileSources {
   vertexai_mistral_ocr = 'vertexai_mistral_ocr',
   text = 'text',
   document_parser = 'document_parser',
+}
+
+/**
+ * Which local engine produced a parsed record's text, recorded as provenance.
+ *
+ * Deliberately not `FileSources` members: no strategy resolves them, nothing streams
+ * from them, and a caller that asked for one would receive a storage adapter that
+ * cannot answer. Keeping them here means an engine can be swapped without touching the
+ * enum every stored record is validated against.
+ */
+export enum DocumentParser {
+  document_parser = 'document_parser',
   pdf_inspector = 'pdf_inspector',
   anydoc = 'anydoc',
 }
@@ -26,11 +38,9 @@ export enum FileSources {
  * OCR'd image stored as `image/png` with a provider marker for a filepath renders
  * as a broken thumbnail.
  */
-export const documentParserSources: ReadonlySet<string> = new Set<string>([
-  FileSources.document_parser,
-  FileSources.pdf_inspector,
-  FileSources.anydoc,
-]);
+export const documentParserSources: ReadonlySet<string> = new Set<string>(
+  Object.values(DocumentParser),
+);
 
 export const checkOpenAIStorage = (source: string) =>
   source === FileSources.openai || source === FileSources.azure;

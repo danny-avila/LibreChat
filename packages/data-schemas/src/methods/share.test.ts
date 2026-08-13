@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-provider';
+import { Constants, ContentTypes, DocumentParser, FileSources, Tools } from 'librechat-data-provider';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import {
@@ -2806,7 +2806,7 @@ describe('Share Methods', () => {
       await seedConversation(userId, conversationId);
       const docId = await createFile(userId, {
         source: FileSources.text,
-        filepath: FileSources.anydoc,
+        filepath: DocumentParser.anydoc,
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         filename: 'report.docx',
         text: '# Parsed report',
@@ -2822,7 +2822,7 @@ describe('Share Methods', () => {
             file_id: docId,
             type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             filename: 'report.docx',
-            filepath: FileSources.anydoc,
+            filepath: DocumentParser.anydoc,
           },
         ],
       });
@@ -3030,7 +3030,7 @@ describe('Share Methods', () => {
       await seedConversation(userId, conversationId);
       const docId = await createFile(userId, {
         source: FileSources.text,
-        filepath: FileSources.anydoc,
+        filepath: DocumentParser.anydoc,
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         filename: 'report.docx',
         text: '# Parsed report',
@@ -3041,7 +3041,7 @@ describe('Share Methods', () => {
         user: userId,
         text: 'parsed document',
         isCreatedByUser: true,
-        files: [{ file_id: docId, filepath: FileSources.anydoc }],
+        files: [{ file_id: docId, filepath: DocumentParser.anydoc }],
       });
 
       const shareId = `share_${nanoid()}`;
@@ -3088,7 +3088,7 @@ describe('Share Methods', () => {
       });
       const docId = await createFile(userId, {
         source: FileSources.text,
-        filepath: FileSources.anydoc,
+        filepath: DocumentParser.anydoc,
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         filename: 'report.docx',
         text: '# Parsed report',
@@ -3099,7 +3099,7 @@ describe('Share Methods', () => {
         user: userId,
         text: 'image and parsed document',
         isCreatedByUser: true,
-        files: [{ file_id: imageId }, { file_id: docId, filepath: FileSources.anydoc }],
+        files: [{ file_id: imageId }, { file_id: docId, filepath: DocumentParser.anydoc }],
       });
 
       const shareId = `share_${nanoid()}`;

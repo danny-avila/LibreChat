@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import { logger } from '@librechat/data-schemas';
-import { excelFileTypes, FileSources } from 'librechat-data-provider';
+import { excelFileTypes, DocumentParser } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
 import { assertSafeZipSizeIfArchive } from '../documents/zipSafety';
 import { isParserOutputLimit } from '../documents/nativeProcess';
@@ -232,9 +232,9 @@ export async function parseWithAnydoc(
   return {
     filename: file.originalname,
     bytes: Buffer.byteLength(markdown, 'utf8'),
-    filepath: FileSources.anydoc,
+    filepath: DocumentParser.anydoc,
     text: markdown,
     images: [],
-    ...(embedsMedia && { mayEmbedMedia: true }),
+    ...(embedsMedia && { mayOmitContent: true }),
   };
 }
