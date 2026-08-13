@@ -321,6 +321,44 @@ describe('ClerkAuthClaim methods', () => {
 
       expect((await methods.findSessionState('sess_y'))?.state).toBe('revoked');
     });
+
+    test('a later active upsert with a shorter expiration never shrinks the fence', async () => {
+      const longExpiration = new Date(Date.now() + HOUR);
+      const shortExpiration = new Date(Date.now() + 60_000);
+
+      await methods.upsertSessionState({
+        clerkSessionId: 'sess_z',
+        state: 'active',
+        expiration: longExpiration,
+      });
+      await methods.upsertSessionState({
+        clerkSessionId: 'sess_z',
+        state: 'active',
+        expiration: shortExpiration,
+      });
+
+      const claim = await methods.findSessionState('sess_z');
+      expect(claim?.expiration.getTime()).toBe(longExpiration.getTime());
+    });
+
+    test('a later active upsert with a longer expiration extends the fence', async () => {
+      const shortExpiration = new Date(Date.now() + 60_000);
+      const longExpiration = new Date(Date.now() + HOUR);
+
+      await methods.upsertSessionState({
+        clerkSessionId: 'sess_w',
+        state: 'active',
+        expiration: shortExpiration,
+      });
+      await methods.upsertSessionState({
+        clerkSessionId: 'sess_w',
+        state: 'active',
+        expiration: longExpiration,
+      });
+
+      const claim = await methods.findSessionState('sess_w');
+      expect(claim?.expiration.getTime()).toBe(longExpiration.getTime());
+    });
   });
 
   describe('upsertUserState / findUserState', () => {
@@ -360,6 +398,25 @@ describe('ClerkAuthClaim methods', () => {
       ).rejects.toMatchObject({ code: 'CLERK_USER_DELETED' });
 
       expect((await methods.findUserState('user_y'))?.state).toBe('deleted');
+    });
+
+    test('a later active upsert with a shorter expiration never shrinks the fence', async () => {
+      const longExpiration = new Date(Date.now() + HOUR);
+      const shortExpiration = new Date(Date.now() + 60_000);
+
+      await methods.upsertUserState({
+        clerkUserId: 'user_z',
+        state: 'active',
+        expiration: longExpiration,
+      });
+      await methods.upsertUserState({
+        clerkUserId: 'user_z',
+        state: 'active',
+        expiration: shortExpiration,
+      });
+
+      const claim = await methods.findUserState('user_z');
+      expect(claim?.expiration.getTime()).toBe(longExpiration.getTime());
     });
   });
 });

@@ -108,8 +108,14 @@ export function createClerkAuthClaimMethods(mongoose: typeof import('mongoose'))
               kind: 'session_state',
               clerkSessionId: input.clerkSessionId,
               state: 'active',
-              expiration: input.expiration,
             },
+            /**
+             * The fence must never shrink: a later cross-tab exchange with a
+             * shorter remaining lifetime must not pull the shared fence's
+             * expiration earlier than an already-accepted longer-lived one.
+             * `$max` extends monotonically instead of overwriting.
+             */
+            $max: { expiration: input.expiration },
             $unset: { revokedAt: '' },
           }
         : {
@@ -174,8 +180,9 @@ export function createClerkAuthClaimMethods(mongoose: typeof import('mongoose'))
               kind: 'user_state',
               clerkUserId: input.clerkUserId,
               state: 'active',
-              expiration: input.expiration,
             },
+            /** See `upsertSessionState` — the fence must never shrink. */
+            $max: { expiration: input.expiration },
             $unset: { deletedAt: '' },
           }
         : {
