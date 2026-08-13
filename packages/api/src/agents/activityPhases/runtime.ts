@@ -28,6 +28,8 @@ type TrackedActivity = ActivityPhaseEntry & {
   childLabelIndex?: number;
   /** Stable anchors survive content filtering and prepends across HITL resume. */
   toolCallIds?: string[];
+  /** Original boundary retained while only part of a saved tool batch is materialized. */
+  unresolvedToolStartIndex?: number;
 };
 
 export interface ActivityPhaseSnapshot {
@@ -373,11 +375,30 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       return part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type === 'phase';
     }).length,
   );
+  const initiallyMaterializedToolIds = new Set(
+    definedPartIndices(content).flatMap((index) => {
+      const part = content[index];
+      const id = part?.type === ContentTypes.TOOL_CALL ? part.tool_call?.id : undefined;
+      return typeof id === 'string' ? [id] : [];
+    }),
+  );
   let activities: TrackedActivity[] =
-    initialSnapshot?.activities.map((activity) => ({
-      ...activity,
-      startIndex: findTrackedStart(content, activity),
-    })) ?? [];
+    initialSnapshot?.activities.map((activity) => {
+      const { unresolvedToolStartIndex, ...retainedActivity } = activity;
+      const startIndex = findTrackedStart(content, activity);
+      const toolCallIds = activity.toolCallIds ?? [];
+      const hasUnresolvedTool = toolCallIds.some((id) => !initiallyMaterializedToolIds.has(id));
+      return {
+        ...retainedActivity,
+        startIndex,
+        ...(hasUnresolvedTool && {
+          unresolvedToolStartIndex: Math.max(
+            unresolvedToolStartIndex ?? activity.startIndex,
+            startIndex,
+          ),
+        }),
+      };
+    }) ?? [];
   let activityCount = initialSnapshot?.activityCount ?? activities.length;
   let failedActivityCount =
     initialSnapshot?.failedActivityCount ??
@@ -432,14 +453,23 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const contributingAgentIds = new Set(initialSnapshot?.agentIds ?? []);
   let assistantContext = (initialSnapshot?.assistantContext ?? []).slice(-MAX_CONTEXT_ITEMS);
   const pendingReasoning = new Map<string, { text: string; agentId?: string; startIndex?: number }>(
-    (initialSnapshot?.pendingReasoning ?? []).map(({ key, text, agentId, startIndex }) => [
-      key,
-      {
-        text: text.slice(-MAX_EXCERPT_CHARS),
-        ...(agentId != null && { agentId }),
-        ...(startIndex != null && { startIndex }),
-      },
-    ]),
+    (initialSnapshot?.pendingReasoning ?? []).map(({ key, text, agentId, startIndex }) => {
+      const boundedText = text.slice(-MAX_EXCERPT_CHARS);
+      const needle = boundedText.trim().slice(0, 80);
+      const rebasedStartIndex = needle ? findReasoningStart(content, boundedText, startIndex) : -1;
+      const hasMaterializedReasoning =
+        needle.length > 0 &&
+        content[rebasedStartIndex]?.type === ContentTypes.THINK &&
+        textValue(content[rebasedStartIndex]?.think).includes(needle);
+      return [
+        key,
+        {
+          text: boundedText,
+          ...(agentId != null && { agentId }),
+          ...(hasMaterializedReasoning && { startIndex: rebasedStartIndex }),
+        },
+      ] as const;
+    }),
   );
   const reasoningStepKeys = new Map<string, string>();
   const stepKinds = new Map<
@@ -560,7 +590,13 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const resolveActivities = (snapshot: TrackedActivity[]): ActivityPhaseEntry[] => {
     const parts = deps.getContentParts();
     return snapshot.map(
-      ({ childLabelIndex, toolCallIds, startIndex: _startIndex, ...activity }) => {
+      ({
+        childLabelIndex,
+        toolCallIds,
+        startIndex: _startIndex,
+        unresolvedToolStartIndex: _unresolvedToolStartIndex,
+        ...activity
+      }) => {
         const matchesToolIds = (part: LooseContentPart | null | undefined): boolean => {
           if (part?.type !== ContentTypes.ACTIVITY_LABEL || part.activity_label_type === 'phase') {
             return false;
@@ -948,8 +984,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           return hasReasoningExcerptAtOrAfter(parts, reasoningExcerpt, candidateFinalTextIndex);
         }
         return (
-          !toolCallIds.some((id) => materializedToolIds.has(id)) &&
-          activity.startIndex >= candidateFinalTextIndex
+          toolCallIds.some((id) => !materializedToolIds.has(id)) &&
+          (activity.unresolvedToolStartIndex ?? activity.startIndex) >= candidateFinalTextIndex
         );
       });
       const overflowIds = [...overflowToolCallIds];

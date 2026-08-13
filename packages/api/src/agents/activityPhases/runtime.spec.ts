@@ -703,6 +703,84 @@ describe('createActivityPhaseWiring', () => {
     expect(parts[parts.length - 1]).toMatchObject({ activity_start_index: 0 });
   });
 
+  it('drops a stale pending-reasoning index after HITL content compaction', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TEXT, text: 'The resumed answer is complete.' },
+    ];
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 2,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [
+          { startIndex: 0, status: 'success', toolCallIds: ['tool-1'] },
+          { startIndex: 1, status: 'success', toolCallIds: ['tool-2'] },
+        ],
+        assistantContext: [],
+        pendingReasoning: [
+          {
+            key: 'root',
+            text: 'Reasoning removed by hide_sequential_outputs.',
+            startIndex: 20,
+          },
+        ],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed the resumed workflow' })),
+    });
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[3]).toMatchObject({ activity_end_index: 2, activity_count: 2 });
+  });
+
+  it('keeps a partially materialized retained batch after the candidate final text', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'batch-a' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TEXT, text: 'This answer preceded the delayed batch tool.' },
+    ];
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 2,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [
+          {
+            startIndex: 20,
+            status: 'success',
+            toolCallIds: ['batch-a', 'batch-b'],
+          },
+          { startIndex: 1, status: 'success', toolCallIds: ['tool-2'] },
+        ],
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed the delayed batch workflow' })),
+    });
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[3]).toMatchObject({ activity_end_index: 3, activity_count: 2 });
+  });
+
   it('bounds persisted evidence while preserving the full activity count', async () => {
     const parts: LooseContentPart[] = [];
     const wiring = createActivityPhaseWiring({
