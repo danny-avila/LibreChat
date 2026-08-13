@@ -459,6 +459,32 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
     jest.useRealTimers();
   });
 
+  /**
+   * A federated sign-in lands here rather than through the login mutation, so the previous user's
+   * abandoned enrollment credential has to be dropped on this path too.
+   */
+  it('drops an abandoned setup token when a refresh sign-in is accepted', () => {
+    jest.useFakeTimers();
+    persistTwoFactorSetupToken('abandoned-token');
+
+    renderProviderLive();
+
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ user: { id: '1', role: 'USER' }, token: 'new-token' });
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(readTwoFactorSetupToken()).toBe('');
+    jest.useRealTimers();
+  });
+
   it('routes an unenrolled refresh session to setup and preserves the requested destination', () => {
     window.history.replaceState({}, '', '/c/requested?model=test#latest');
     renderProviderLive();

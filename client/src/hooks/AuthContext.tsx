@@ -93,6 +93,12 @@ const AuthContextProvider = ({
         setIsAuthenticated(isAuthenticated);
         if (isAuthenticated) {
           setQueriesEnabled(true);
+          /**
+           * Any accepted full-auth response supersedes a staged enrollment, whichever path minted
+           * it. The setup endpoints trust the stored bearer independently of the session, so a
+           * token left behind here would let this user finish the previous one's enrollment.
+           */
+          clearTwoFactorSetupToken();
         }
 
         const logoutRedirect = logoutRedirectRef.current;
