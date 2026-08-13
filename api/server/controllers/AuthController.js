@@ -12,6 +12,7 @@ const {
   buildOpenIDRefreshParams,
   generateTwoFactorSetupToken,
   isTwoFactorEnrollmentRequired,
+  TOKEN_RETIREMENT_FIELDS,
   isTokenRetired,
 } = require('@librechat/api');
 const {
@@ -76,19 +77,56 @@ const sanitizeUserForAuthResponse = (user) => {
   return safeUser;
 };
 
-const sendTwoFactorSetupRequired = async (res, user, session) => {
-  await deleteSession({ sessionId: session._id });
+/**
+ * Rechecks the credential that authorized this refresh against a read taken after the response
+ * credential was minted.
+ *
+ * `findSession` resolves before the mint, so recovery landing in between is caught by neither the
+ * cutoff nor the sweep: the credential handed back is stamped past `passwordResetAt`, so no
+ * downstream gate would retire it, and `setAuthTokens` re-saves the very session document recovery
+ * had already deleted. Reading the cutoff after the mint is what orders the two, because a reset
+ * later than this read is later than the mint as well and the ordinary gates take it from there.
+ */
+const isRefreshCredentialRetired = async (userId, credential) => {
+  const retirement = await getUserById(userId, TOKEN_RETIREMENT_FIELDS);
+  return isTokenRetired(credential, retirement);
+};
+
+/** Drops whatever the lost race had already minted or resurrected, cookies included. */
+const withdrawRefreshedSession = async (res, user, userId) => {
+  logger.warn(
+    `[refreshController] Password was reset while the refresh was in flight: userId=${userId}`,
+  );
+  await deleteAllUserSessions({ userId });
   res.clearCookie('refreshToken');
+  res.clearCookie('token_provider');
   clearCloudFrontCookies(res, {
-    userId: user._id.toString(),
+    userId,
     tenantId: user.tenantId ?? user.orgId,
     storageRegion: user.storageRegion,
   });
+  return res.status(401).send('Refresh token expired or not found for this user');
+};
+
+const sendTwoFactorSetupRequired = async (res, user, session, credential) => {
+  const userId = user._id.toString();
+  await deleteSession({ sessionId: session._id });
+  res.clearCookie('refreshToken');
+  clearCloudFrontCookies(res, {
+    userId,
+    tenantId: user.tenantId ?? user.orgId,
+    storageRegion: user.storageRegion,
+  });
+  const tempToken = generateTwoFactorSetupToken(userId, process.env.JWT_SECRET);
+  /** The setup token outranks the refresh credential that bought it, so it is dated the same way. */
+  if (await isRefreshCredentialRetired(userId, credential)) {
+    return withdrawRefreshedSession(res, user, userId);
+  }
   return res.status(200).send({
     code: TWO_FACTOR_ENROLLMENT_REQUIRED_CODE,
     twoFAPending: true,
     twoFASetupRequired: true,
-    tempToken: generateTwoFactorSetupToken(user._id.toString(), process.env.JWT_SECRET),
+    tempToken,
   });
 };
 
@@ -318,7 +356,8 @@ const refreshController = async (req, res) => {
      * Dating the credential keeps that closed whether or not the revocation ever succeeded, and
      * covers password recovery on the same terms.
      */
-    if (isTokenRetired({ issuedAt: payload?.iat, issuedAtMs: payload?.issuedAtMs }, user)) {
+    const credential = { issuedAt: payload?.iat, issuedAtMs: payload?.issuedAtMs };
+    if (isTokenRetired(credential, user)) {
       logger.warn(
         `[refreshController] Refresh token predates enrollment or password reset: userId=${userId}`,
       );
@@ -342,9 +381,12 @@ const refreshController = async (req, res) => {
 
     if (session && session.expiration > new Date()) {
       if (isTwoFactorEnrollmentRequired(user)) {
-        return sendTwoFactorSetupRequired(res, user, session);
+        return sendTwoFactorSetupRequired(res, user, session, credential);
       }
       const token = await setAuthTokens(userId, res, session, req);
+      if (await isRefreshCredentialRetired(userId, credential)) {
+        return withdrawRefreshedSession(res, user, userId);
+      }
 
       res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
     } else if (req?.query?.retry) {

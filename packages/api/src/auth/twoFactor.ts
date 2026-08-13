@@ -243,6 +243,40 @@ export function isEnrollmentSupersededByRecovery(
 }
 
 /**
+ * Whether password recovery landed after the read that authorized a password login.
+ *
+ * A password is not a bearer token: it carries no mint stamp, so `isTokenRetired` cannot order it
+ * against `passwordResetAt`. The strategy compares the hash against a document it read beforehand,
+ * and every credential the login hands back is stamped after that comparison, so a reset landing in
+ * between produces a credential that postdates the cutoff and no downstream gate would retire it.
+ * Comparing the stamp the authenticating read saw against the stamp the record carries once the
+ * credential exists is what orders the two, and it is only meaningful against a read taken after
+ * the mint. A record that reports no reset at all is treated as unchanged rather than as evidence,
+ * so a lookup that comes back empty cannot lock out a login that nothing has revoked.
+ */
+export function hasPasswordResetSince(
+  seenAt: Date | string | number | null | undefined,
+  currentAt: Date | string | number | null | undefined,
+): boolean {
+  const currentMs = toTimestamp(currentAt);
+  if (currentMs == null) {
+    return false;
+  }
+
+  const seenMs = toTimestamp(seenAt);
+  return seenMs == null || currentMs > seenMs;
+}
+
+function toTimestamp(value: Date | string | number | null | undefined): number | null {
+  if (value == null) {
+    return null;
+  }
+
+  const ms = new Date(value).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/**
  * Mints a credential that names a user and dates itself to the millisecond.
  *
  * Both credentials minted this way are redeemable without the account password, so both have to be

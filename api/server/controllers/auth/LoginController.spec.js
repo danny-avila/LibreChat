@@ -2,7 +2,12 @@ const mockGenerateTwoFactorSetupToken = jest.fn(() => 'setup-token');
 const mockGenerate2FATempToken = jest.fn(() => 'challenge-token');
 const mockSetAuthTokens = jest.fn(() => Promise.resolve('auth-token'));
 const mockClearCloudFrontCookies = jest.fn();
+const mockDeleteAllUserSessions = jest.fn(() => Promise.resolve({ deletedCount: 1 }));
 const isPolicyProvider = (provider) => provider == null || ['local', 'ldap'].includes(provider);
+
+/** What the record carries right now, so a reset can land mid-request the way recovery does. */
+const record = { passwordResetAt: null };
+const mockGetUserById = jest.fn(async () => ({ passwordResetAt: record.passwordResetAt }));
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn() },
@@ -11,6 +16,10 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
   generateTwoFactorSetupToken: (...args) => mockGenerateTwoFactorSetupToken(...args),
+  TOKEN_RETIREMENT_FIELDS: 'twoFactorEnrolledAt passwordResetAt',
+  hasPasswordResetSince: (seenAt, currentAt) =>
+    currentAt != null &&
+    (seenAt == null || new Date(currentAt).getTime() > new Date(seenAt).getTime()),
   isTwoFactorEnrollmentRequired: (user) =>
     process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION === 'true' &&
     !user.twoFactorEnabled &&
@@ -27,6 +36,11 @@ jest.mock('~/server/services/AuthService', () => ({
   setAuthTokens: (...args) => mockSetAuthTokens(...args),
 }));
 
+jest.mock('~/models', () => ({
+  getUserById: (...args) => mockGetUserById(...args),
+  deleteAllUserSessions: (...args) => mockDeleteAllUserSessions(...args),
+}));
+
 const { loginController } = require('./LoginController');
 
 function createResponse() {
@@ -34,6 +48,7 @@ function createResponse() {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
     send: jest.fn().mockReturnThis(),
+    clearCookie: jest.fn().mockReturnThis(),
   };
 }
 
@@ -43,6 +58,7 @@ describe('loginController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    record.passwordResetAt = null;
     process.env.JWT_SECRET = 'jwt-secret';
     delete process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
   });
@@ -181,5 +197,111 @@ describe('loginController', () => {
     await loginController(req, res);
 
     expect(mockSetAuthTokens).toHaveBeenCalledWith('user-6', res, null, req);
+  });
+
+  /**
+   * The strategy compared the password against a document read before hashing it, so recovery
+   * landing before the response revokes the credential this request is still holding. Everything
+   * minted here is stamped after that reset, which is precisely what `isTokenRetired` cannot catch,
+   * so the reset lands during the mint in each of these and the login has to lose the race.
+   */
+  describe('a password reset landing mid-login', () => {
+    const resetDuring = (mock, value) =>
+      mock.mockImplementationOnce(() => {
+        record.passwordResetAt = new Date('2026-01-01T00:00:00.000Z');
+        return value;
+      });
+
+    it('refuses the session it had already minted', async () => {
+      process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
+      resetDuring(mockSetAuthTokens, Promise.resolve('auth-token'));
+      const req = { user: { _id: 'user-7', email: 'user@example.com' } };
+      const res = createResponse();
+
+      await loginController(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ message: 'Invalid credentials' });
+      expect(res.send).not.toHaveBeenCalled();
+      expect(mockDeleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user-7' });
+      expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+      expect(res.clearCookie).toHaveBeenCalledWith('token_provider');
+    });
+
+    /** Otherwise the holder of the revoked password picks the second factor the account keeps. */
+    it('withholds the enrollment token it had already minted', async () => {
+      process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+      resetDuring(mockGenerateTwoFactorSetupToken, 'setup-token');
+      const req = { user: { _id: 'user-8', twoFactorEnabled: false } };
+      const res = createResponse();
+
+      await loginController(req, res);
+
+      expect(mockGenerateTwoFactorSetupToken).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ message: 'Invalid credentials' });
+      expect(res.json).not.toHaveBeenCalledWith(
+        expect.objectContaining({ tempToken: 'setup-token' }),
+      );
+    });
+
+    it('withholds the second-factor challenge it had already minted', async () => {
+      resetDuring(mockGenerate2FATempToken, 'challenge-token');
+      const req = { user: { _id: 'user-9', twoFactorEnabled: true } };
+      const res = createResponse();
+
+      await loginController(req, res);
+
+      expect(mockGenerate2FATempToken).toHaveBeenCalledWith('user-9');
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.json).toHaveBeenCalledWith({ message: 'Invalid credentials' });
+      expect(res.json).not.toHaveBeenCalledWith(
+        expect.objectContaining({ tempToken: 'challenge-token' }),
+      );
+    });
+
+    it('reads the stamp again only after the credential exists', async () => {
+      process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
+      const order = [];
+      mockSetAuthTokens.mockImplementationOnce(async () => {
+        order.push('mint');
+        return 'auth-token';
+      });
+      mockGetUserById.mockImplementationOnce(async () => {
+        order.push('recheck');
+        return { passwordResetAt: record.passwordResetAt };
+      });
+      const res = createResponse();
+
+      await loginController({ user: { _id: 'user-10', email: 'user@example.com' } }, res);
+
+      expect(order).toEqual(['mint', 'recheck']);
+      expect(mockGetUserById).toHaveBeenCalledWith(
+        'user-10',
+        'twoFactorEnrolledAt passwordResetAt',
+      );
+    });
+  });
+
+  /** A stamp the authenticating read already saw is not a reset, and must not refuse the login. */
+  it('signs in an account whose password reset predates the login', async () => {
+    process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'false';
+    record.passwordResetAt = new Date('2026-01-01T00:00:00.000Z');
+    const req = {
+      user: {
+        _id: 'user-11',
+        email: 'user@example.com',
+        passwordResetAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    };
+    const res = createResponse();
+
+    await loginController(req, res);
+
+    expect(res.send).toHaveBeenCalledWith({
+      token: 'auth-token',
+      user: expect.objectContaining({ id: 'user-11' }),
+    });
+    expect(mockDeleteAllUserSessions).not.toHaveBeenCalled();
   });
 });

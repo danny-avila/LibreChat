@@ -283,6 +283,57 @@ describe('verify2FAWithTempToken', () => {
     expect(res.status).toHaveBeenCalledWith(401);
     expect(mockSetAuthTokens).not.toHaveBeenCalled();
   });
+
+  /**
+   * Verifying the factor is a decrypt and a comparison, so recovery can land inside it. The session
+   * minted afterwards postdates `passwordResetAt`, which is the one thing the cutoff cannot retire,
+   * and it is created after recovery has already swept the sessions away.
+   */
+  describe('a password reset landing mid-verification', () => {
+    const resetDuring = (mock) =>
+      mock.mockImplementationOnce(async () => {
+        store.doc.passwordResetAt = new Date(Date.now() + 1000);
+        return true;
+      });
+
+    it('withdraws the session it had already minted for a TOTP code', async () => {
+      const tempToken = generateTwoFactorLoginChallengeToken('user-1', process.env.JWT_SECRET);
+      resetDuring(mockVerifyTOTP);
+      const res = createResponse();
+
+      await verify2FAWithTempToken({ body: { tempToken, token: '123456' } }, res);
+
+      expect(mockSetAuthTokens).toHaveBeenCalledTimes(1);
+      expect(mockDeleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user-1' });
+      expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+      expect(res.clearCookie).toHaveBeenCalledWith('token_provider');
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(jsonPayload(res)).toEqual({ message: 'Invalid or expired temporary token' });
+    });
+
+    /** Backup codes are the slower comparison of the two, so the window is wider here. */
+    it('withdraws the session it had already minted for a backup code', async () => {
+      const tempToken = generateTwoFactorLoginChallengeToken('user-1', process.env.JWT_SECRET);
+      resetDuring(mockVerifyBackupCode);
+      const res = createResponse();
+
+      await verify2FAWithTempToken({ body: { tempToken, backupCode: 'backup-1' } }, res);
+
+      expect(mockSetAuthTokens).toHaveBeenCalledTimes(1);
+      expect(mockDeleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user-1' });
+      expect(res.status).toHaveBeenCalledWith(401);
+    });
+
+    it('leaves a verification no reset raced through alone', async () => {
+      const tempToken = generateTwoFactorLoginChallengeToken('user-1', process.env.JWT_SECRET);
+      const res = createResponse();
+
+      await verify2FAWithTempToken({ body: { tempToken, token: '123456' } }, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockDeleteAllUserSessions).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('confirm2FASetupWithTempToken', () => {

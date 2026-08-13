@@ -27,11 +27,11 @@ const sanitizeUser = (user) => ({
 });
 
 /**
- * Undoes the session hand-off `finalize2FASetup` had already started, leaving the promoted
- * enrollment in place. The refresh session is dropped server side, so the cookie this response
- * still carries buys nothing, and the access token is simply never handed back.
+ * Undoes a session hand-off this request had already started, leaving any promoted enrollment in
+ * place. The refresh session is dropped server side, so the cookie this response still carries buys
+ * nothing, and the access token is simply never handed back.
  */
-const revokeFinalizedSession = async (res, user, userId) => {
+const revokeMintedSession = async (res, user, userId) => {
   await deleteAllUserSessions({ userId });
   res.clearCookie('refreshToken');
   res.clearCookie('token_provider');
@@ -98,6 +98,23 @@ const verify2FAWithTempToken = async (req, res) => {
     const userData = sanitizeUser(user);
 
     const authToken = await setAuthTokens(user._id, res, null, req);
+
+    /**
+     * Verifying the second factor takes a decrypt and a comparison, and recovery landing in that
+     * window is not caught by the check above: the session just minted postdates `passwordResetAt`,
+     * so no downstream gate would retire it, and it was created after recovery swept the sessions
+     * away. Re-reading the cutoff orders the two, exactly as the finalization flow does, and the
+     * challenge that bought this session is what gets dated against it.
+     */
+    const retirement = await getUserById(credential.userId, TOKEN_RETIREMENT_FIELDS);
+    if (isTokenRetired(credential, retirement)) {
+      logger.warn(
+        `[verify2FAWithTempToken] Password was reset while the challenge was being verified: userId=${credential.userId}`,
+      );
+      await revokeMintedSession(res, user, credential.userId);
+      return res.status(401).json({ message: 'Invalid or expired temporary token' });
+    }
+
     return res.status(200).json({ token: authToken, user: userData });
   } catch (err) {
     logger.error('[verify2FAWithTempToken]', err);
@@ -204,7 +221,7 @@ const finalize2FASetup = async (req, res) => {
     if (
       isEnrollmentSupersededByRecovery(result.user.twoFactorEnrolledAt, retirement?.passwordResetAt)
     ) {
-      await revokeFinalizedSession(res, result.user, userId);
+      await revokeMintedSession(res, result.user, userId);
       return res
         .status(401)
         .json({ message: 'Password was reset during setup, please sign in again' });

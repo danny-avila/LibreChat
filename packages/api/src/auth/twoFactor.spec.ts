@@ -25,6 +25,7 @@ import {
   isCredentialLoginBlockedByTwoFactorPolicy,
   isTokenRetired,
   isEnrollmentSupersededByRecovery,
+  hasPasswordResetSince,
   requireTwoFactorSetupToken,
   requireTwoFactorSetupFinalizationToken,
   requireTwoFactorSetupAcknowledgementToken,
@@ -357,6 +358,44 @@ describe('isEnrollmentSupersededByRecovery', () => {
   it('ignores an unparseable stamp rather than withdrawing every enrollment', () => {
     expect(isEnrollmentSupersededByRecovery('not-a-date', new Date())).toBe(false);
     expect(isEnrollmentSupersededByRecovery(enrolledAt, 'not-a-date')).toBe(false);
+  });
+});
+
+describe('hasPasswordResetSince', () => {
+  const seenAt = new Date('2026-01-01T00:00:10.500Z');
+
+  it('reports a reset that landed after the authenticating read', () => {
+    expect(hasPasswordResetSince(seenAt, new Date(seenAt.getTime() + 1))).toBe(true);
+  });
+
+  it('reports the first reset an account has ever had', () => {
+    expect(hasPasswordResetSince(null, seenAt)).toBe(true);
+    expect(hasPasswordResetSince(undefined, seenAt)).toBe(true);
+  });
+
+  it('leaves the stamp the authenticating read already saw alone', () => {
+    expect(hasPasswordResetSince(seenAt, new Date(seenAt.getTime()))).toBe(false);
+    expect(hasPasswordResetSince(seenAt, seenAt.toISOString())).toBe(false);
+  });
+
+  /** Nothing revoked the password, so an account that never reset one cannot be refused. */
+  it('reports nothing when the record carries no reset at all', () => {
+    expect(hasPasswordResetSince(null, null)).toBe(false);
+    expect(hasPasswordResetSince(seenAt, undefined)).toBe(false);
+  });
+
+  it('accepts stamps that arrive as strings or epoch values', () => {
+    expect(hasPasswordResetSince(seenAt.toISOString(), seenAt.getTime() + 1)).toBe(true);
+    expect(hasPasswordResetSince(seenAt.getTime(), seenAt.toISOString())).toBe(false);
+  });
+
+  it('ignores an unparseable stamp rather than refusing every login', () => {
+    expect(hasPasswordResetSince(seenAt, 'not-a-date')).toBe(false);
+  });
+
+  /** An unreadable prior stamp is no evidence of what the authenticating read saw. */
+  it('treats an unparseable prior stamp as a reset it cannot rule out', () => {
+    expect(hasPasswordResetSince('not-a-date', seenAt)).toBe(true);
   });
 });
 
