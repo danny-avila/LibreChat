@@ -6,7 +6,11 @@ import { RecoilRoot } from 'recoil';
 import { MemoryRouter } from 'react-router-dom';
 import { render, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { persistTwoFactorSetupToken, readTwoFactorSetupToken } from 'librechat-data-provider';
+import {
+  readTwoFactorSetupToken,
+  clearTwoFactorSetupToken,
+  persistTwoFactorSetupToken,
+} from 'librechat-data-provider';
 import type { TAuthConfig } from '~/common';
 import { AuthContextProvider, useAuthContext } from '../AuthContext';
 import { SESSION_KEY } from '~/utils';
@@ -728,5 +732,86 @@ describe('AuthContextProvider — custom role detection and fetching', () => {
 
     mockUseGetRole.mockReturnValue({ data: null });
     jest.useRealTimers();
+  });
+});
+
+describe('AuthContextProvider: enrollment hand-off that keeps the document', () => {
+  const mockUseGetUserQuery = jest.requireMock('~/data-provider').useGetUserQuery;
+
+  const dispatchHandoff = (inDocument: boolean) =>
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('authRedirectStarted', {
+          detail: { href: '/login/2fa/setup', inDocument },
+        }),
+      );
+    });
+
+  const lastUserQueryConfig = () => {
+    const calls = mockUseGetUserQuery.mock.calls;
+    return calls[calls.length - 1][0];
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    sessionStorage.clear();
+    clearTwoFactorSetupToken();
+    capturedAuthContext = undefined;
+    window.history.replaceState({}, '', '/c/some-chat');
+  });
+
+  afterEach(() => {
+    sessionStorage.clear();
+    clearTwoFactorSetupToken();
+    window.history.replaceState({}, '', '/');
+  });
+
+  /**
+   * Where session storage is blocked the hand-off routes in place instead of replacing the
+   * document, so this provider stays mounted and the session it redirects away from would live on.
+   * An enabled user query leaves for the login page as soon as it fails, which would pull the user
+   * off the enrollment the server is demanding.
+   */
+  it('releases the replaced session so its user query cannot navigate away', () => {
+    const { getByTestId } = renderProvider();
+
+    act(() => {
+      capturedAuthContext?.completeAuthentication('auth-token', { id: 'user-1' } as never);
+    });
+    expect(getByTestId('consumer').getAttribute('data-authenticated')).toBe('true');
+    expect(lastUserQueryConfig()).toEqual(expect.objectContaining({ enabled: true }));
+
+    dispatchHandoff(true);
+
+    expect(getByTestId('consumer').getAttribute('data-authenticated')).toBe('false');
+    expect(lastUserQueryConfig()).toEqual(expect.objectContaining({ enabled: false }));
+  });
+
+  /** A replaced document discards the session on its own, so nothing is released early here. */
+  it('leaves the session alone when the hand-off replaces the document', () => {
+    const { getByTestId } = renderProvider();
+
+    act(() => {
+      capturedAuthContext?.completeAuthentication('auth-token', { id: 'user-1' } as never);
+    });
+
+    dispatchHandoff(false);
+
+    expect(getByTestId('consumer').getAttribute('data-authenticated')).toBe('true');
+    expect(lastUserQueryConfig()).toEqual(expect.objectContaining({ enabled: true }));
+  });
+
+  /** With storage blocked the in-memory mirror is the only copy the setup screen can read. */
+  it('keeps the setup credential the surviving document is holding', () => {
+    renderProvider();
+
+    act(() => {
+      capturedAuthContext?.completeAuthentication('auth-token', { id: 'user-1' } as never);
+    });
+    persistTwoFactorSetupToken('setup-token');
+
+    dispatchHandoff(true);
+
+    expect(readTwoFactorSetupToken()).toBe('setup-token');
   });
 });

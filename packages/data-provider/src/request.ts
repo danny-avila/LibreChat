@@ -239,7 +239,9 @@ const redirectToTwoFactorSetupOnce = (tempToken: string) => {
   const isDurable = persistTwoFactorSetupToken(tempToken);
   setTokenHeader(undefined);
   setAuthRedirectStartedAt();
-  window.dispatchEvent(new CustomEvent(AUTH_REDIRECT_EVENT, { detail: { href } }));
+  window.dispatchEvent(
+    new CustomEvent(AUTH_REDIRECT_EVENT, { detail: { href, inDocument: !isDurable } }),
+  );
   if (isDurable) {
     window.location.href = href;
     return;
@@ -250,6 +252,10 @@ const redirectToTwoFactorSetupOnce = (tempToken: string) => {
    * document would throw it away, stranding the setup screen on its expired state. Move the router
    * instead: the history entry is the same one the hard navigation would have produced, and the
    * router picks it up either from this event or, if it has yet to mount, from the location.
+   *
+   * The document surviving is also why the event above reports the hand-off as in-document: the
+   * session this redirect replaces would otherwise live on in whatever state the app already
+   * holds, which a replaced document would have discarded.
    */
   window.history.pushState(null, '', href);
   window.dispatchEvent(new PopStateEvent('popstate'));
@@ -306,7 +312,9 @@ const redirectToLoginOnce = () => {
 
   const href = endpoints.apiBaseUrl() + endpoints.buildLoginRedirectUrl();
   setAuthRedirectStartedAt();
-  window.dispatchEvent(new CustomEvent(AUTH_REDIRECT_EVENT, { detail: { href } }));
+  window.dispatchEvent(
+    new CustomEvent(AUTH_REDIRECT_EVENT, { detail: { href, inDocument: false } }),
+  );
   window.location.href = href;
 };
 

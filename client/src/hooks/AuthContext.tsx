@@ -209,6 +209,20 @@ const AuthContextProvider = ({
     [navigate, setQueriesEnabled, setUser],
   );
 
+  /**
+   * The enrollment hand-off normally replaces the document, which discards the session it is
+   * redirecting away from. Where session storage is blocked it has to keep the document instead,
+   * so this provider stays mounted and that session survives: the user query stays enabled and
+   * navigates to the login page the moment it fails, taking the user off the very screen the
+   * server is demanding they complete. Land on the state a replaced document would have left, and
+   * leave the setup token alone, since the in-memory mirror is then its only copy.
+   */
+  const clearAuthenticationForRedirect = useCallback(() => {
+    setUser(undefined);
+    setToken(undefined);
+    setIsAuthenticated(false);
+  }, [setUser]);
+
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
 
   const login = useCallback(
@@ -339,6 +353,21 @@ const AuthContextProvider = ({
       window.removeEventListener('tokenUpdated', handleTokenUpdate as EventListener);
     };
   }, [setUserContext, user]);
+
+  useEffect(() => {
+    const handleAuthRedirect = (event: CustomEvent<{ inDocument?: boolean }>) => {
+      if (event.detail?.inDocument !== true) {
+        return;
+      }
+      clearAuthenticationForRedirect();
+    };
+
+    window.addEventListener('authRedirectStarted', handleAuthRedirect as EventListener);
+
+    return () => {
+      window.removeEventListener('authRedirectStarted', handleAuthRedirect as EventListener);
+    };
+  }, [clearAuthenticationForRedirect]);
 
   const memoedValue = useMemo(
     () => ({

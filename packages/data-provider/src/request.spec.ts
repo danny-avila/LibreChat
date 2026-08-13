@@ -23,6 +23,11 @@ const blockStorage = () =>
 
 describe('two-factor enrollment responses outside the interceptors', () => {
   let pushState: jest.SpyInstance;
+  let redirectEvents: CustomEvent<{ href: string; inDocument: boolean }>[];
+
+  const captureRedirectEvent = (event: Event) => {
+    redirectEvents.push(event as CustomEvent<{ href: string; inDocument: boolean }>);
+  };
 
   beforeEach(() => {
     window.localStorage.clear();
@@ -31,9 +36,12 @@ describe('two-factor enrollment responses outside the interceptors', () => {
     delete (window as AuthRecoveryWindow).__librechatAuthRecovery;
     window.history.pushState(null, '', '/c/new');
     pushState = jest.spyOn(window.history, 'pushState');
+    redirectEvents = [];
+    window.addEventListener('authRedirectStarted', captureRedirectEvent);
   });
 
   afterEach(() => {
+    window.removeEventListener('authRedirectStarted', captureRedirectEvent);
     jest.restoreAllMocks();
   });
 
@@ -76,6 +84,8 @@ describe('two-factor enrollment responses outside the interceptors', () => {
 
     expect(window.sessionStorage.getItem('two_factor_setup_token')).toBe('setup-token');
     expect(pushState).not.toHaveBeenCalled();
+    expect(redirectEvents).toHaveLength(1);
+    expect(redirectEvents[0].detail.inDocument).toBe(false);
   });
 
   /**
@@ -91,6 +101,21 @@ describe('two-factor enrollment responses outside the interceptors', () => {
     expect(pushState).toHaveBeenCalledTimes(1);
     expect(window.location.pathname).toBe('/login/2fa/setup');
     expect(readTwoFactorSetupToken()).toBe('setup-token');
+  });
+
+  /**
+   * The surviving document keeps the app mounted, so the hand-off has to say so: the session it
+   * redirects away from is still live and nothing else would tell the app to let it go.
+   */
+  it('reports the surviving document to the app before routing in place', () => {
+    const setItem = blockStorage();
+
+    request.redirectIfTwoFactorSetupPayload(enrollmentBody);
+
+    setItem.mockRestore();
+    expect(redirectEvents).toHaveLength(1);
+    expect(redirectEvents[0].detail.inDocument).toBe(true);
+    expect(redirectEvents[0].detail.href).toContain('/login/2fa/setup');
   });
 
   it('redirects once while a redirect is already under way', () => {
