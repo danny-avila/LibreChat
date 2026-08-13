@@ -21,11 +21,41 @@ jest.mock('~/models', () => ({
   updateUser: jest.fn(),
   findUser: jest.fn(),
 }));
+jest.mock('~/server/services/RefreshTokenBridge', () => ({
+  OPENID_REFRESH_BRIDGE_GRACE_MS: 60 * 1000,
+  getRefreshTokenBridge: jest.fn(),
+  storeRefreshTokenBridge: jest.fn(),
+}));
 jest.mock('@librechat/api', () => ({
   math: jest.fn((value, fallback) => fallback),
   isEnabled: jest.fn(),
   findOpenIDUser: jest.fn(),
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
+  createAuthIdentityContext: jest.fn(({ user }) => ({
+    appUserId: user?._id?.toString?.() ?? user?.id,
+    openidSubject: user?.openidId,
+    tenantId: user?.tenantId,
+    openidIssuer: user?.openidIssuer,
+  })),
+  isOpenIDSessionIdentityMatch: jest.fn((sessionIdentity, expectedIdentity) => {
+    const normalize = (value) => {
+      if (value == null) {
+        return undefined;
+      }
+      const normalized = typeof value === 'string' ? value.trim() : value.toString().trim();
+      return normalized || undefined;
+    };
+    const normalizeIssuer = (value) => normalize(value)?.replace(/\/+$/, '');
+    return (
+      Boolean(normalize(sessionIdentity?.appUserId)) &&
+      Boolean(normalize(sessionIdentity?.openidSubject)) &&
+      normalize(sessionIdentity?.appUserId) === normalize(expectedIdentity?.appUserId) &&
+      normalize(sessionIdentity?.openidSubject) === normalize(expectedIdentity?.openidSubject) &&
+      normalize(sessionIdentity?.tenantId) === normalize(expectedIdentity?.tenantId) &&
+      normalizeIssuer(sessionIdentity?.openidIssuer) ===
+        normalizeIssuer(expectedIdentity?.openidIssuer)
+    );
+  }),
   buildOpenIDRefreshParams: jest.fn(() => {
     const params = {};
     if (process.env.OPENID_SCOPE) {
@@ -51,6 +81,10 @@ const {
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 const { getUserById, findSession, updateUser } = require('~/models');
+const {
+  getRefreshTokenBridge,
+  storeRefreshTokenBridge,
+} = require('~/server/services/RefreshTokenBridge');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
@@ -193,6 +227,8 @@ describe('refreshController – OpenID path', () => {
     _id: 'user-db-id',
     email: baseClaims.email,
     openidId: baseClaims.sub,
+    tenantId: 'tenant-1',
+    openidIssuer: baseClaims.iss,
     password: '$2b$10$hashedpassword',
     __v: 0,
     totpSecret: 'encrypted-totp-secret',
@@ -237,10 +273,14 @@ describe('refreshController – OpenID path', () => {
     setOpenIDAuthTokens.mockReturnValue('new-app-token');
     setCloudFrontAuthCookies.mockReturnValue(true);
     findOpenIDUser.mockResolvedValue({ user: { ...defaultUser }, error: null, migration: false });
+    getRefreshTokenBridge.mockResolvedValue(null);
+    storeRefreshTokenBridge.mockResolvedValue(undefined);
     getUserById.mockResolvedValue({
       _id: 'user-db-id',
       email: baseClaims.email,
       openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: baseClaims.iss,
     });
     updateUser.mockResolvedValue({});
 
@@ -286,9 +326,124 @@ describe('refreshController – OpenID path', () => {
     expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
       userId: 'user-db-id',
       existingRefreshToken: 'stored-refresh',
-      tenantId: undefined,
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
     });
   };
+
+  it('prefers the browser refresh-token cookie when it differs from the session marker', async () => {
+    req.headers.cookie = 'token_provider=openid; refreshToken=rt-cookie-current';
+    req.session = {
+      openidTokens: {
+        refreshToken: 'rt-session-stale',
+        browserRefreshToken: 'rt-browser-stale',
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'rt-cookie-current',
+      {},
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'rt-cookie-current',
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
+    });
+  });
+
+  it('refreshes with the browser cookie instead of reusing stale session tokens on drift', async () => {
+    const reusableIdToken = makeSessionToken();
+    req.headers.cookie = [
+      'token_provider=openid',
+      'refreshToken=rt-cookie-current',
+      `openid_user_id=${makeSignedUserId()}`,
+    ].join('; ');
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: reusableIdToken,
+        refreshToken: 'rt-session-stale',
+        browserRefreshToken: 'rt-browser-stale',
+        lastRefreshedAt: Date.now(),
+        appUserId: 'user-db-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'rt-cookie-current',
+      {},
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'rt-cookie-current',
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
+    });
+  });
+
+  it('prefers the browser refresh-token cookie when pre-marker session state differs', async () => {
+    req.headers.cookie = 'token_provider=openid; refreshToken=rt-cookie-current';
+    req.session = {
+      openidTokens: {
+        refreshToken: 'rt-session-stale',
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'rt-cookie-current',
+      {},
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'rt-cookie-current',
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
+    });
+  });
+
+  it('keeps the session refresh token when the browser cookie matches the session marker', async () => {
+    req.headers.cookie = 'token_provider=openid; refreshToken=rt-browser-stale';
+    req.session = {
+      openidTokens: {
+        refreshToken: 'rt-session-current',
+        browserRefreshToken: 'rt-browser-stale',
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledWith(
+      { some: 'config' },
+      'rt-session-current',
+      {},
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'rt-session-current',
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
+    });
+  });
 
   it('should call getOpenIdEmail with token claims and use result for findOpenIDUser', async () => {
     await refreshController(req, res);
@@ -314,6 +469,10 @@ describe('refreshController – OpenID path', () => {
         idToken: reusableIdToken,
         refreshToken: 'stored-refresh',
         lastRefreshedAt: Date.now(),
+        appUserId: 'user-db-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
       },
     };
     const user = {
@@ -326,6 +485,7 @@ describe('refreshController – OpenID path', () => {
 
     expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
     expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
     expect(getUserById).toHaveBeenCalledWith(
       'user-db-id',
       '-password -__v -totpSecret -backupCodes -federatedTokens',
@@ -359,6 +519,37 @@ describe('refreshController – OpenID path', () => {
     expect(debugOutput).not.toContain('session-access-token');
   });
 
+  it('falls through to full OpenID refresh when reusable session token identity mismatches', async () => {
+    setOpenIDReuseCookies();
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+        appUserId: 'other-user-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
+      },
+    };
+
+    await refreshController(req, res);
+
+    expect(getUserById).toHaveBeenCalledWith(
+      'user-db-id',
+      '-password -__v -totpSecret -backupCodes -federatedTokens',
+    );
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[refreshController] OpenID session token identity mismatch; forcing refresh',
+      expect.objectContaining({
+        userId: 'user-db-id',
+      }),
+    );
+  });
+
   it('falls through to full OpenID refresh when session tokens are expired', async () => {
     const expiredToken = makeSessionToken({ exp: Math.floor(Date.now() / 1000) - 60 });
     setOpenIDReuseCookies();
@@ -368,6 +559,10 @@ describe('refreshController – OpenID path', () => {
         idToken: expiredToken,
         refreshToken: 'stored-refresh',
         lastRefreshedAt: Date.now(),
+        appUserId: 'user-db-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
       },
     };
 
@@ -512,6 +707,10 @@ describe('refreshController – OpenID path', () => {
         idToken: reusableIdToken,
         refreshToken: 'stored-refresh',
         lastRefreshedAt: Date.now(),
+        appUserId: 'user-db-id',
+        openidSubject: baseClaims.sub,
+        tenantId: 'tenant-1',
+        openidIssuer: baseClaims.iss,
       },
     };
     const userDocument = {
@@ -710,8 +909,201 @@ describe('refreshController – OpenID path', () => {
 
     await refreshController(req, res);
 
+    expect(getRefreshTokenBridge).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.send).toHaveBeenCalledWith('Invalid OpenID refresh token');
+  });
+
+  it('does not use the bridge when signed user-id cookie payload is invalid', async () => {
+    setOpenIDReuseCookies(jwt.sign({ id: 123 }, process.env.JWT_REFRESH_SECRET));
+    openIdClient.refreshTokenGrant.mockRejectedValue(new Error('invalid_grant'));
+
+    await refreshController(req, res);
+
+    expect(getUserById).not.toHaveBeenCalled();
+    expect(getRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('recovers stale refresh-token cookies and keeps a short grace bridge', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    const bridgeUser = {
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    };
+    getUserById.mockResolvedValue(bridgeUser);
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
+
+    await refreshController(req, res);
+
+    expect(getUserById).toHaveBeenCalledWith(
+      'user-db-id',
+      '-password -__v -totpSecret -backupCodes -federatedTokens',
+    );
+    expect(getRefreshTokenBridge).toHaveBeenCalledWith({
+      oldRefreshToken: 'stored-refresh',
+      userId: 'user-db-id',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    expect(openIdClient.refreshTokenGrant).toHaveBeenNthCalledWith(
+      1,
+      { some: 'config' },
+      'stored-refresh',
+      {},
+    );
+    expect(openIdClient.refreshTokenGrant).toHaveBeenNthCalledWith(
+      2,
+      { some: 'config' },
+      'bridged-refresh',
+      {},
+    );
+    expect(findOpenIDUser).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyName: 'refreshController (bridge recovery)',
+      }),
+    );
+    expect(setOpenIDAuthTokens).toHaveBeenCalledTimes(1);
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'bridged-refresh',
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
+    });
+    expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+      oldRefreshToken: 'stored-refresh',
+      newRefreshToken: 'new-refresh',
+      userId: 'user-db-id',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+      ttl: 60000,
+    });
+    const lookupIdentity = getRefreshTokenBridge.mock.calls[0][0];
+    const graceIdentity = storeRefreshTokenBridge.mock.calls[0][0];
+    expect(graceIdentity).toEqual(
+      expect.objectContaining({
+        oldRefreshToken: lookupIdentity.oldRefreshToken,
+        userId: lookupIdentity.userId,
+        tenantId: lookupIdentity.tenantId,
+        openidIssuer: lookupIdentity.openidIssuer,
+      }),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('rejects bridge recovery when retry resolves a different user than the signed cookie', async () => {
+    setOpenIDReuseCookies(makeSignedUserId('cookie-user-id'));
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'cookie-user-id',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    findOpenIDUser.mockResolvedValueOnce({
+      user: { ...defaultUser, _id: 'different-user-id' },
+      error: null,
+      migration: false,
+    });
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).toHaveBeenCalledTimes(2);
+    expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+    expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[refreshController] Bridge recovery resolved a different user; refusing token issuance',
+      {
+        cookieUserId: 'cookie-user-id',
+        resolvedUserId: 'different-user-id',
+      },
+    );
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.send).toHaveBeenCalledWith('Invalid OpenID refresh token');
+  });
+
+  it('does not re-store the bridge when bridged refresh retry fails', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'user-db-id',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockRejectedValueOnce(new Error('temporarily unavailable'));
+
+    await refreshController(req, res);
+
+    expect(getRefreshTokenBridge).toHaveBeenCalled();
+    expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('returns success when bridge grace-period storage fails after bridged refresh succeeds', async () => {
+    setOpenIDReuseCookies();
+    req.session = {};
+    getUserById.mockResolvedValue({
+      _id: 'user-db-id',
+      email: baseClaims.email,
+      openidId: baseClaims.sub,
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+    });
+    getRefreshTokenBridge.mockResolvedValue('bridged-refresh');
+    storeRefreshTokenBridge.mockRejectedValueOnce(new Error('grace failed'));
+    openIdClient.refreshTokenGrant
+      .mockRejectedValueOnce(new Error('invalid_grant'))
+      .mockResolvedValueOnce(mockTokenset);
+
+    await refreshController(req, res);
+
+    expect(setOpenIDAuthTokens).toHaveBeenCalledWith(mockTokenset, req, res, {
+      userId: 'user-db-id',
+      existingRefreshToken: 'bridged-refresh',
+      tenantId: 'tenant-1',
+      openidSubject: baseClaims.sub,
+      openidIssuer: baseClaims.iss,
+    });
+    expect(storeRefreshTokenBridge).toHaveBeenCalledWith({
+      oldRefreshToken: 'stored-refresh',
+      newRefreshToken: 'new-refresh',
+      userId: 'user-db-id',
+      tenantId: 'tenant-1',
+      openidIssuer: 'https://issuer.example.com',
+      ttl: 60000,
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[refreshController] Bridge grace-period storage failed after successful recovery',
+      expect.any(Error),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('does not use the bridge for generic HTTP 400 errors without invalid_grant', async () => {
+    setOpenIDReuseCookies();
+    openIdClient.refreshTokenGrant.mockRejectedValue(
+      Object.assign(new Error('bad request'), { status: 400 }),
+    );
+
+    await refreshController(req, res);
+
+    expect(getRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(storeRefreshTokenBridge).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 
   it('should skip OpenID path when token_provider is not openid', async () => {

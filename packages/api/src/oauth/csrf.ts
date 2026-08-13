@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import type { Request, Response, NextFunction } from 'express';
 import { isEnabled } from '~/utils/common';
 
@@ -45,6 +46,73 @@ export function shouldUseSecureCookie(): boolean {
     hostname.endsWith('.localhost');
 
   return isProduction && !isLocalhost;
+}
+
+export const REFRESH_TOKEN_COOKIE = 'refreshToken';
+export const TOKEN_PROVIDER_COOKIE = 'token_provider';
+export const OPENID_USER_ID_COOKIE = 'openid_user_id';
+
+/**
+ * Writes the IdP refresh token to the `refreshToken` cookie. Single source of
+ * truth for the cookie's options so the login/refresh path
+ * (`setOpenIDAuthTokens`) and the inline OBO refresh path (`performIdpRefresh`)
+ * stay byte-for-byte in sync. The cookie outlives the (shorter) express-session
+ * cookie and is the fallback `refreshController` reads when the session copy is
+ * gone, so a rotated refresh token must land here too — otherwise a later
+ * session loss replays an invalidated token and signs the user out.
+ */
+export function setRefreshTokenCookie(res: Response, refreshToken: string, expires: Date): void {
+  res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, {
+    expires,
+    httpOnly: true,
+    secure: shouldUseSecureCookie(),
+    sameSite: 'strict',
+  });
+}
+
+export interface OpenIDMarkerCookieOptions {
+  userId?: string | null;
+  expires: Date;
+  refreshExpiryMs: number;
+  reuseTokens?: boolean;
+}
+
+export function setOpenIDMarkerCookies(
+  res: Response,
+  {
+    userId,
+    expires,
+    refreshExpiryMs,
+    reuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS),
+  }: OpenIDMarkerCookieOptions,
+): void {
+  const cookieOptions = {
+    expires,
+    httpOnly: true,
+    secure: shouldUseSecureCookie(),
+    sameSite: 'strict' as const,
+  };
+
+  res.cookie(TOKEN_PROVIDER_COOKIE, 'openid', cookieOptions);
+
+  if (!userId || !reuseTokens) {
+    return;
+  }
+
+  const secret = process.env.JWT_REFRESH_SECRET;
+  if (!secret) {
+    throw new Error('JWT_REFRESH_SECRET is required for OpenID marker cookies');
+  }
+
+  const refreshExpirySeconds = Math.floor(refreshExpiryMs / 1000);
+  if (!Number.isFinite(refreshExpirySeconds) || refreshExpirySeconds <= 0) {
+    throw new Error('refreshExpiryMs must be a positive duration for OpenID marker cookies');
+  }
+
+  const signedUserId = jwt.sign({ id: userId }, secret, {
+    expiresIn: refreshExpirySeconds,
+  });
+  res.cookie(OPENID_USER_ID_COOKIE, signedUserId, cookieOptions);
 }
 
 /** Generates an HMAC-based token for OAuth CSRF protection */

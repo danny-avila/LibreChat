@@ -1,4 +1,12 @@
 import type { RoleMethods, RoleDeps } from './role';
+import {
+  createOpenIDRefreshFlightMethods,
+  type OpenIDRefreshFlightMethods,
+} from './openidRefreshFlight';
+import {
+  createRefreshTokenBridgeMethods,
+  type RefreshTokenBridgeMethods,
+} from './refreshTokenBridge';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
@@ -150,6 +158,8 @@ export { MAX_TOOL_FAVORITES };
 export type AllMethods = UserMethods &
   SessionMethods &
   TokenMethods &
+  RefreshTokenBridgeMethods &
+  OpenIDRefreshFlightMethods &
   RoleMethods &
   KeyMethods &
   FileMethods &
@@ -283,6 +293,8 @@ export function createMethods(
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),
+    ...createRefreshTokenBridgeMethods(mongoose),
+    ...createOpenIDRefreshFlightMethods(mongoose),
     ...roleMethods,
     ...createKeyMethods(mongoose),
     ...createFileMethods(mongoose),
@@ -330,6 +342,8 @@ export type {
   UserMethods,
   SessionMethods,
   TokenMethods,
+  RefreshTokenBridgeMethods,
+  OpenIDRefreshFlightMethods,
   RoleMethods,
   KeyMethods,
   FileMethods,

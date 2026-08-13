@@ -1,4 +1,6 @@
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
+import { createOpenIDRefreshFlightModel } from './openidRefreshFlight';
+import { createRefreshTokenBridgeModel } from './refreshTokenBridge';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createAgentCategoryModel } from './agentCategory';
@@ -78,6 +80,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
   AuditLog: ReturnType<typeof createAuditLogModel>;
   Group: ReturnType<typeof createGroupModel>;
   Config: ReturnType<typeof createConfigModel>;
+  RefreshTokenBridge: ReturnType<typeof createRefreshTokenBridgeModel>;
+  OpenIDRefreshFlight: ReturnType<typeof createOpenIDRefreshFlightModel>;
 } {
   const models = {
     User: createUserModel(mongoose),
@@ -117,6 +121,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
     AuditLog: createAuditLogModel(mongoose),
     Group: createGroupModel(mongoose),
     Config: createConfigModel(mongoose),
+    RefreshTokenBridge: createRefreshTokenBridgeModel(mongoose),
+    OpenIDRefreshFlight: createOpenIDRefreshFlightModel(mongoose),
   };
   /**
    * Background index builds fail silently unless an 'index' listener is

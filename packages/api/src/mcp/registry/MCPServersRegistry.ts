@@ -79,6 +79,7 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'apiKey',
   'oauth',
   'oauth_headers',
+  'obo',
   'title',
   'description',
   'iconPath',
