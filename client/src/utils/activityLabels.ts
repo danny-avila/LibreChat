@@ -237,6 +237,12 @@ export function groupActivityPhases(
           segment.content = retainedContent;
           segment.contentIndices = retainedIndices;
           segment.startIndex = retainedIndices[0];
+          if (segment.type === 'phase') {
+            /** Recovery can take the only filled label and leave blank
+             *  reservations behind. A stale flag renders an expandable card
+             *  with nothing in it instead of the compact header. */
+            segment.hasContent = retainedContent.some(isVisibleContentPart);
+          }
         }
       }
       recoveredIndices.sort((a, b) => a - b);

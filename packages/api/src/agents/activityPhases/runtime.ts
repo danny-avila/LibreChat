@@ -692,8 +692,19 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const boundedText = text.slice(-MAX_EXCERPT_CHARS);
       const needle = boundedText.trim().slice(0, REASONING_ANCHOR_CHARS);
       const rebasedStartIndex = needle ? findReasoningStart(content, boundedText, startIndex) : -1;
+      /** The anchor is a prefix, so two lanes can share it. Binding to the
+       *  first match would replay a still-pending lane on the earlier side of
+       *  a boundary and delete it; an ambiguous anchor is no anchor. */
+      const matchingReasoningParts =
+        needle.length > 0
+          ? definedPartIndices(content).filter(
+              (index) =>
+                content[index]?.type === ContentTypes.THINK &&
+                textValue(content[index]?.think).includes(needle),
+            ).length
+          : 0;
       const hasMaterializedReasoning =
-        needle.length > 0 &&
+        matchingReasoningParts === 1 &&
         content[rebasedStartIndex]?.type === ContentTypes.THINK &&
         textValue(content[rebasedStartIndex]?.think).includes(needle);
       return [
@@ -1072,14 +1083,18 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const entryIndex = entry.text.trim()
         ? findTextBoundary(currentParts, entry.text, stepIndex)
         : stepIndex;
+      /** A rendered position is proof; an activity position is only the order
+       *  the step was registered in, and a parallel lane can register before
+       *  the tool hooks that close the phase. Whenever the materialized index
+       *  shows the text is after the boundary, it belongs to the later phase. */
+      const renderedAfterBoundary =
+        requestedEndIndex != null && entryIndex != null && entryIndex > requestedEndIndex;
       const isRetained =
         requestedEndIndex != null &&
-        (entry.activityPosition != null
-          ? entry.activityPosition > closingCount ||
-            (entry.activityPosition === closingCount &&
-              entryIndex != null &&
-              entryIndex > requestedEndIndex)
-          : entryIndex != null && entryIndex >= requestedEndIndex);
+        (renderedAfterBoundary ||
+          (entry.activityPosition != null
+            ? entry.activityPosition > closingCount
+            : entryIndex != null && entryIndex >= requestedEndIndex));
       if (isRetained) {
         retainedContext.push({
           ...entry,
