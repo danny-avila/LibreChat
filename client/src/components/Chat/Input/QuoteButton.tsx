@@ -42,6 +42,8 @@ type Reading = {
   anchor: Anchor;
   /** Retained so scrolling can re-measure without re-walking the selection. */
   range: Range;
+  /** The bounds that actually clip the selection while the list scrolls. */
+  container: HTMLElement | null;
 };
 
 const resolveMessageElement = (node: Node | null): HTMLElement | null => {
@@ -60,6 +62,33 @@ const sameAnchor = (a: Anchor, b: Anchor): boolean =>
   a.top === b.top && a.bottom === b.bottom && a.centerX === b.centerX;
 
 const stripWhitespace = (value: string): string => value.replace(/\s+/g, '');
+
+/** Nearest scrollable ancestor, whose bounds clip the message visually — the
+ *  message list scrolls inside a bounded container, so a selection can leave
+ *  view long before it leaves the window. */
+const findScrollContainer = (element: HTMLElement): HTMLElement | null => {
+  let current = element.parentElement;
+  while (current && current !== document.body) {
+    const { overflowY } = getComputedStyle(current);
+    if (overflowY === 'auto' || overflowY === 'scroll') {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return null;
+};
+
+const sameRange = (a: Range, b: Range): boolean => {
+  try {
+    return (
+      a.compareBoundaryPoints(Range.START_TO_START, b) === 0 &&
+      a.compareBoundaryPoints(Range.END_TO_END, b) === 0
+    );
+  } catch {
+    /** Detached or cross-document ranges cannot be compared; treat as changed. */
+    return false;
+  }
+};
 
 /**
  * Block-granularity gestures (triple-click, double-click then drag) park the
@@ -125,7 +154,29 @@ const readSelection = (): Reading | null => {
     return null;
   }
 
-  return { text: text.slice(0, MAX_QUOTE_LENGTH), anchor, range: measured };
+  return {
+    text: text.slice(0, MAX_QUOTE_LENGTH),
+    anchor,
+    range: measured,
+    container: findScrollContainer(message),
+  };
+};
+
+/**
+ * Whether the selection is still on screen. The message list scrolls inside a
+ * bounded container, so text can slip under the chat header or the composer —
+ * clipped and invisible — while its un-clipped rect is still within the window.
+ * Checking the window alone would leave the popup floating over unrelated UI.
+ */
+const isAnchorVisible = (anchor: Anchor, container: HTMLElement | null): boolean => {
+  let top = 0;
+  let bottom = window.innerHeight;
+  if (container) {
+    const bounds = container.getBoundingClientRect();
+    top = Math.max(top, bounds.top);
+    bottom = Math.min(bottom, bounds.bottom);
+  }
+  return anchor.bottom >= top && anchor.top <= bottom;
 };
 
 /** Place the popup on the preferred side, falling back to the other side and
@@ -170,6 +221,10 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const rangeRef = useRef<Range | null>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
+  /** Excerpt captured when a touch press begins, committed only if that press
+   *  completes on the button. */
+  const pressedTextRef = useRef<string | null>(null);
   const setQuotes = useSetRecoilState(store.pendingQuotesByConvoId(conversationId));
 
   useEffect(() => {
@@ -187,11 +242,22 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       }
     };
 
-    const hide = () => {
-      clearSettleTimer();
+    /** Drop what is on screen, keeping any pending settle intact. */
+    const dropVisible = () => {
+      /** Never yank the button out from under an in-flight touch press — its
+       *  release still has to land on a live target to count. */
+      if (pressedTextRef.current !== null) {
+        return;
+      }
       rangeRef.current = null;
+      containerRef.current = null;
       setSelection(null);
       setPos(null);
+    };
+
+    const hide = () => {
+      clearSettleTimer();
+      dropVisible();
     };
 
     const show = (touch = viaTouch) => {
@@ -202,6 +268,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
         return;
       }
       rangeRef.current = reading.range;
+      containerRef.current = reading.container;
       /** Reuse the previous state object when nothing moved so a redundant
        *  settle pass costs no render. */
       setSelection((prev) =>
@@ -233,7 +300,13 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     /** Chromium commits a double-click word selection on `dblclick`, after
      *  `mouseup` has already read a still-collapsed range, so listen here too. */
     const handleDoubleClick = () => show();
-    /** Keyboard selections carry no OS callout, so they never prefer below. */
+    /** Keyboard selections carry no OS callout, so they never prefer below.
+     *  Clearing the flag on the way down also stops a settle pass scheduled by
+     *  the resulting `selectionchange` from reviving the touch layout on a
+     *  hybrid device whose last press happened to be a finger. */
+    const handleKeyDown = () => {
+      viaTouch = false;
+    };
     const handleKeyUp = () => show(false);
 
     /**
@@ -252,6 +325,12 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       if (mouseDragging) {
         return;
       }
+      /** The visible popup still describes the previous selection. Drop it now,
+       *  or a tap landing during the settle window — easy to do while dragging a
+       *  native selection handle — would queue the stale excerpt. */
+      if (rangeRef.current && !sameRange(rangeRef.current, current.getRangeAt(0))) {
+        dropVisible();
+      }
       clearSettleTimer();
       const touch = viaTouch;
       settleTimer = setTimeout(() => show(touch), SELECTION_SETTLE_MS);
@@ -267,7 +346,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
         return;
       }
       const anchor = anchorFromRect(range.getBoundingClientRect());
-      if (!anchor || anchor.bottom < 0 || anchor.top > window.innerHeight) {
+      if (!anchor || !isAnchorVisible(anchor, containerRef.current)) {
         hide();
         return;
       }
@@ -288,6 +367,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     document.addEventListener('pointercancel', endPointer, true);
     document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('dblclick', handleDoubleClick);
+    document.addEventListener('keydown', handleKeyDown, true);
     document.addEventListener('keyup', handleKeyUp);
     document.addEventListener('selectionchange', handleSelectionChange);
     document.addEventListener('scroll', scheduleReanchor, true);
@@ -304,6 +384,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       document.removeEventListener('pointercancel', endPointer, true);
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('dblclick', handleDoubleClick);
+      document.removeEventListener('keydown', handleKeyDown, true);
       document.removeEventListener('keyup', handleKeyUp);
       document.removeEventListener('selectionchange', handleSelectionChange);
       document.removeEventListener('scroll', scheduleReanchor, true);
@@ -325,21 +406,27 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     setPos((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }));
   }, [selection]);
 
+  const commitQuote = useCallback(
+    (text: string) => {
+      setQuotes((prev) =>
+        prev.includes(text) || prev.length >= MAX_QUOTE_COUNT ? prev : [...prev, text],
+      );
+      rangeRef.current = null;
+      containerRef.current = null;
+      pressedTextRef.current = null;
+      setSelection(null);
+      setPos(null);
+      window.getSelection()?.removeAllRanges();
+      document.getElementById(mainTextareaId)?.focus();
+    },
+    [setQuotes],
+  );
+
   const addQuote = useCallback(() => {
-    if (!selection) {
-      return;
+    if (selection) {
+      commitQuote(selection.text);
     }
-    setQuotes((prev) =>
-      prev.includes(selection.text) || prev.length >= MAX_QUOTE_COUNT
-        ? prev
-        : [...prev, selection.text],
-    );
-    rangeRef.current = null;
-    setSelection(null);
-    setPos(null);
-    window.getSelection()?.removeAllRanges();
-    document.getElementById(mainTextareaId)?.focus();
-  }, [selection, setQuotes]);
+  }, [selection, commitQuote]);
 
   if (!selection) {
     return null;
@@ -349,15 +436,46 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     <button
       ref={buttonRef}
       type="button"
-      /** A tap is also the gesture that dismisses a selection, which unmounts
-       *  this button before `click` can land — so touch commits on the press
-       *  itself, from state captured when the selection was read. */
+      /** A tap is also the gesture that dismisses a selection, so `click` can
+       *  never be relied on here: the button is already unmounted by the time it
+       *  would fire. The excerpt is captured on the press and committed on the
+       *  release instead, which keeps a button's normal escape hatches — drag
+       *  off the button, or have the gesture stolen by a scroll, and nothing is
+       *  added. Pointer capture guarantees the release lands here to be judged. */
       onPointerDown={(event) => {
         if (event.pointerType === 'mouse') {
           return;
         }
         event.preventDefault();
-        addQuote();
+        pressedTextRef.current = selection.text;
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          /** Capture is an optimisation — without it the release is simply
+           *  judged wherever it lands. */
+        }
+      }}
+      onPointerUp={(event) => {
+        if (event.pointerType === 'mouse') {
+          return;
+        }
+        const text = pressedTextRef.current;
+        pressedTextRef.current = null;
+        if (text === null) {
+          return;
+        }
+        const bounds = event.currentTarget.getBoundingClientRect();
+        const releasedOnButton =
+          event.clientX >= bounds.left &&
+          event.clientX <= bounds.right &&
+          event.clientY >= bounds.top &&
+          event.clientY <= bounds.bottom;
+        if (releasedOnButton) {
+          commitQuote(text);
+        }
+      }}
+      onPointerCancel={() => {
+        pressedTextRef.current = null;
       }}
       /** Keep the selection alive while a mouse click lands. */
       onMouseDown={(event) => event.preventDefault()}

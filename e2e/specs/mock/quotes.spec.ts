@@ -164,17 +164,65 @@ function selectionBottom(page: Page) {
   });
 }
 
-/** Scroll the message list by `delta` px, returning the distance actually moved. */
-function scrollMessages(page: Page, delta: number) {
-  return page.evaluate((by) => {
-    const scroller = document.querySelector('.scrollbar-gutter-stable');
+/**
+ * Centre the message containing `needle` in its scroller, so a later nudge in
+ * either direction leaves it comfortably on screen.
+ *
+ * The scroller is reached from the message itself rather than by querying
+ * `.scrollbar-gutter-stable` directly: the nav and side panels carry that class
+ * too, so a document-wide query can return a sidebar list that never scrolls —
+ * which is exactly how these specs passed locally and moved 0px in CI. This
+ * mirrors how the app resolves the same container (`MessageNav.tsx`).
+ */
+async function centerMessageOn(page: Page, needle: string) {
+  await page.evaluate((text) => {
+    const renders = Array.from(document.querySelectorAll('.message-render'));
+    const host = [...renders].reverse().find((el) => (el.textContent ?? '').includes(text));
+    if (!host) {
+      throw new Error(`No message contains: ${text}`);
+    }
+    const scroller = host.closest('.scrollbar-gutter-stable');
+    if (!scroller) {
+      throw new Error('Message is not inside a scroll container');
+    }
+    const blocks = Array.from(host.querySelectorAll('p'));
+    const target = blocks.find((el) => (el.textContent ?? '').includes(text)) ?? host;
+    const targetBox = target.getBoundingClientRect();
+    const scrollerBox = scroller.getBoundingClientRect();
+    scroller.scrollTop +=
+      targetBox.top + targetBox.height / 2 - (scrollerBox.top + scrollerBox.height / 2);
+  }, needle);
+}
+
+/**
+ * Nudge the message list in whichever direction has room, returning the signed
+ * distance actually moved.
+ *
+ * The distance is a quarter of the visible height rather than a fixed pixel
+ * count: paired with `centerMessageOn` that always leaves the selection on
+ * screen, whichever viewport the spec runs at. Scrolling a centred selection
+ * clean out of the container is correct behaviour (the popup hides with it),
+ * just not what these specs are here to measure. Direction is chosen at runtime
+ * because a list parked at the top cannot scroll up.
+ */
+function nudgeMessages(page: Page) {
+  return page.evaluate(() => {
+    const message = document.querySelector('.message-render');
+    const scroller = message?.closest('.scrollbar-gutter-stable');
     if (!scroller) {
       throw new Error('No message scroll container');
     }
+    const room = scroller.scrollHeight - scroller.clientHeight;
+    if (room <= 0) {
+      throw new Error(
+        `Message list does not overflow (scrollHeight ${scroller.scrollHeight}, clientHeight ${scroller.clientHeight})`,
+      );
+    }
+    const by = Math.max(40, Math.round(scroller.clientHeight / 4));
     const start = scroller.scrollTop;
-    scroller.scrollTop = start + by;
+    scroller.scrollTop = start > 0 ? Math.max(0, start - by) : Math.min(room, start + by);
     return scroller.scrollTop - start;
-  }, delta);
+  });
 }
 
 const addToChat = (page: Page) => page.getByTestId('add-to-chat-button');
@@ -331,6 +379,7 @@ test.describe('quote references', () => {
     await seedParagraphReply(page);
 
     await expect(async () => {
+      await centerMessageOn(page, CLOSING_PARAGRAPH);
       await selectMessageText(page, CLOSING_PARAGRAPH);
       await expect(addToChat(page)).toBeVisible({ timeout: 3000 });
     }).toPass({ timeout: 30000 });
@@ -340,7 +389,7 @@ test.describe('quote references', () => {
 
     // Scrolling used to dismiss the popup on the first event, which the chat's
     // own auto-scroll fires constantly while streaming. It now follows instead.
-    const moved = await scrollMessages(page, -120);
+    const moved = await nudgeMessages(page);
     expect(Math.abs(moved)).toBeGreaterThan(0);
 
     await expect(addToChat(page)).toBeVisible();
@@ -571,7 +620,7 @@ test.describe('quote references on touch devices', () => {
     await expect(messageQuotes(page)).toContainText(MOCK_REPLY_TEXT);
   });
 
-  test('survives the scroll a phone fires while selecting', async ({ page }) => {
+  test('adds nothing when a press on the popup is dragged away and released', async ({ page }) => {
     test.setTimeout(120000);
     await seedParagraphReply(page);
 
@@ -580,9 +629,46 @@ test.describe('quote references on touch devices', () => {
       await expect(addToChat(page)).toBeVisible({ timeout: 5000 });
     }).toPass({ timeout: 30000 });
 
+    // Committing on the press would make this gesture — starting a scroll on
+    // the button, or touching it and thinking better of it — add the quote
+    // anyway. A button has to stay cancellable.
+    const popup = await addToChat(page).boundingBox();
+    expect(popup).not.toBeNull();
+    const centre = { x: popup!.x + popup!.width / 2, y: popup!.y + popup!.height / 2 };
+    await page.evaluate(
+      ({ x, y }) => {
+        const button = document.querySelector('[data-testid="add-to-chat-button"]');
+        if (!button) {
+          throw new Error('Popup is not mounted');
+        }
+        const options = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch' };
+        button.dispatchEvent(
+          new PointerEvent('pointerdown', { ...options, clientX: x, clientY: y }),
+        );
+        /** Released far from the button, the way a drag-away cancel ends. */
+        button.dispatchEvent(
+          new PointerEvent('pointerup', { ...options, clientX: x, clientY: y + 400 }),
+        );
+      },
+      { x: centre.x, y: centre.y },
+    );
+
+    await expect(pendingChips(page)).toHaveCount(0);
+  });
+
+  test('survives the scroll a phone fires while selecting', async ({ page }) => {
+    test.setTimeout(120000);
+    await seedParagraphReply(page);
+
+    await expect(async () => {
+      await centerMessageOn(page, CLOSING_PARAGRAPH);
+      await touchSelect(page, CLOSING_PARAGRAPH);
+      await expect(addToChat(page)).toBeVisible({ timeout: 5000 });
+    }).toPass({ timeout: 30000 });
+
     // Nudging the list (the URL bar collapsing does the same via `resize`) used
     // to throw the selection away before the user could reach the button.
-    const moved = await scrollMessages(page, -100);
+    const moved = await nudgeMessages(page);
     expect(Math.abs(moved)).toBeGreaterThan(0);
 
     await expect(addToChat(page)).toBeVisible();
