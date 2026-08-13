@@ -1345,6 +1345,14 @@ describe('createActivityPhaseWiring', () => {
     expect(withEvidence).toHaveLength(RETAINED_EVIDENCE_ACTIVITIES);
     expect(totalTrackedCount(snapshot.activities)).toBe(100);
     expect(snapshot.activities.every((activity) => activity.startIndex >= 0)).toBe(true);
+    /** Folding past the cap must not reorder positions or carry a count
+     *  forward past a position it started before, or a later boundary would
+     *  claim work that happened before it. */
+    const positions = snapshot.activities.map((activity) => activity.startIndex);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+    expect(
+      snapshot.activities.filter((activity) => (activity.mergedCount ?? 1) > 1).length,
+    ).toBeGreaterThan(0);
   });
 
   /** The partition is the one place a phase decides what it owns, so its
@@ -1834,7 +1842,10 @@ describe('createActivityPhaseWiring', () => {
     wiring.complete();
     await flushDetached();
 
-    expect(parts[3]).toMatchObject({ activity_end_index: 1, activity_count: 13 });
+    /** One saved overflow tool materialized on each side of the boundary, so
+     *  the earlier phase owns the earlier one instead of the later phase
+     *  claiming the whole remainder. */
+    expect(parts[3]).toMatchObject({ activity_end_index: 1, activity_count: 14 });
   });
 
   it('keeps the overflow fallback while a boundary tool remains unresolved', async () => {
@@ -2276,9 +2287,11 @@ describe('createActivityPhaseWiring', () => {
     wiring.complete();
     await flushDetached();
     expect(generatePhase).toHaveBeenCalledTimes(1);
+    /** The lane text stays inside, but the root's short answer is still the
+     *  run's visible reply and must not collapse into the parent card. */
     expect(parts[3]).toMatchObject({
       activity_start_index: 0,
-      activity_end_index: 3,
+      activity_end_index: 2,
       activity_count: 2,
     });
   });
@@ -2430,6 +2443,36 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  /** The mock provider in e2e emits no phase metadata, so an unphased short
+   *  reply is the common real case, not an edge case. Length decides whether
+   *  intermediate text earns a boundary; the run's answer is always outside. */
+  it('keeps a short unphased final answer outside the collapsed phase', async () => {
+    const parts: LooseContentPart[] = [];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the run' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } });
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    parts.push({ type: ContentTypes.TEXT, text: 'Done' });
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[3]).toMatchObject({
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+  });
+
   it('summarizes all activities and short text once at root-run completion', async () => {
     const parts: LooseContentPart[] = [];
     const stepIndexes = new Map([
@@ -2500,7 +2543,7 @@ describe('createActivityPhaseWiring', () => {
     expect(parts[7]).toMatchObject({
       activity_label_type: 'phase',
       activity_start_index: 0,
-      activity_end_index: 7,
+      activity_end_index: 5,
       activity_count: 4,
     });
   });
