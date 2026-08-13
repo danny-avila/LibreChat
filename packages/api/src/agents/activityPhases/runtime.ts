@@ -110,7 +110,7 @@ const MIN_ACTIVITIES = 2;
 const MAX_CONTEXT_ITEMS = 6;
 const MAX_EXCERPT_CHARS = 600;
 const REASONING_ANCHOR_CHARS = 80;
-const SUBSTANTIAL_TEXT_CHARS = 240;
+const SUBSTANTIAL_TEXT_CHARS = 200;
 const OUTPUT_CHAR_LIMIT = 160;
 const PHASE_TIMEOUT_MS = 12_000;
 /** Twelve enter the SDK prompt; one extra preserves its omitted-activity row. */
