@@ -1014,21 +1014,19 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         (!overflowBoundaryIds.every((id) => materializedToolIds.has(id)) &&
           overflowActivityStartIndex != null &&
           overflowActivityStartIndex >= candidateFinalTextIndex);
-      const hasLaterPendingReasoning = [...pendingReasoning.values()].some(
-        (reasoning) => {
-          /** Empty reasoning reservations are not activities: addPendingReasoning
-           *  deliberately drops them. They can still receive a later sparse
-           *  index from the SDK, so do not let that placeholder pull a fully
-           *  materialized final answer into the completed parent phase. */
-          if (!reasoning.text.trim()) {
-            return false;
-          }
-          return (
-            (reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex) ||
-            hasReasoningExcerptAtOrAfter(parts, reasoning.text, candidateFinalTextIndex)
-          );
-        },
-      );
+      const hasLaterPendingReasoning = [...pendingReasoning.values()].some((reasoning) => {
+        /** Empty reasoning reservations are not activities: addPendingReasoning
+         *  deliberately drops them. They can still receive a later sparse
+         *  index from the SDK, so do not let that placeholder pull a fully
+         *  materialized final answer into the completed parent phase. */
+        if (!reasoning.text.trim()) {
+          return false;
+        }
+        return (
+          (reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex) ||
+          hasReasoningExcerptAtOrAfter(parts, reasoning.text, candidateFinalTextIndex)
+        );
+      });
       if (hasLaterTrackedActivity || hasLaterOverflowActivity || hasLaterPendingReasoning) {
         finalTextIndex = undefined;
       }
