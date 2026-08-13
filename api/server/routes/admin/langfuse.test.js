@@ -19,6 +19,7 @@ const mockRequireCapability = jest.fn((capability) => (req, res, next) => {
 });
 const mockHandlers = {
   getConnection: jest.fn((_req, res) => res.status(200).json({ handler: 'get' })),
+  getSessionLink: jest.fn((_req, res) => res.status(200).json({ handler: 'session' })),
   updateConnection: jest.fn((_req, res) => res.status(200).json({ handler: 'update' })),
   testConnection: jest.fn((_req, res) => res.status(200).json({ handler: 'test' })),
 };
@@ -48,6 +49,7 @@ jest.mock('~/models', () => ({
   findConfigByPrincipal: jest.fn(),
   patchConfigFields: jest.fn(),
   toggleConfigActive: jest.fn(),
+  getMessages: jest.fn(),
 }));
 
 describe('admin Langfuse routes', () => {
@@ -85,24 +87,32 @@ describe('admin Langfuse routes', () => {
   });
 
   it.each([
+    ['GET', '/api/admin/langfuse/connection/session/conversation-1', 'getSessionLink'],
     ['PUT', '/api/admin/langfuse/connection', 'updateConnection'],
     ['POST', '/api/admin/langfuse/connection/test', 'testConnection'],
   ])('requires Langfuse manage access for %s %s', async (method, path, handlerName) => {
     const app = createApp();
     const response = await request(app)[method.toLowerCase()](path).send({}).expect(200);
+    const expectedHandlers = {
+      getSessionLink: 'session',
+      updateConnection: 'update',
+      testConnection: 'test',
+    };
 
-    expect(response.body).toEqual({
-      handler: handlerName === 'updateConnection' ? 'update' : 'test',
-    });
+    expect(response.body).toEqual({ handler: expectedHandlers[handlerName] });
     expect(middlewareCalls).toEqual(['jwt', 'access:admin']);
     expect(mockHandlers[handlerName]).toHaveBeenCalledTimes(1);
   });
 
-  it('blocks updates when the user lacks Langfuse manage access', async () => {
+  it.each([
+    ['GET', '/api/admin/langfuse/connection/session/conversation-1', 'getSessionLink'],
+    ['PUT', '/api/admin/langfuse/connection', 'updateConnection'],
+    ['POST', '/api/admin/langfuse/connection/test', 'testConnection'],
+  ])('blocks %s %s without Langfuse manage access', async (method, path, handlerName) => {
     canManageLangfuse = false;
 
-    await request(createApp()).put('/api/admin/langfuse/connection').send({}).expect(403);
+    await request(createApp())[method.toLowerCase()](path).send({}).expect(403);
 
-    expect(mockHandlers.updateConnection).not.toHaveBeenCalled();
+    expect(mockHandlers[handlerName]).not.toHaveBeenCalled();
   });
 });

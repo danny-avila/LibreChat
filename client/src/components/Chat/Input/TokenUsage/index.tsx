@@ -1,11 +1,12 @@
 import { memo, useRef } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { TooltipAnchor } from '@librechat/client';
+import { Constants } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { CurrencyConfig } from '~/utils';
+import { useGetLangfuseSessionLinkQuery, useGetStartupConfig } from '~/data-provider';
 import { formatTokens, formatCost, cn } from '~/utils';
 import useTokenUsage from '~/hooks/Chat/useTokenUsage';
-import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import Breakdown from './Breakdown';
 import Gauge from './Gauge';
@@ -22,14 +23,29 @@ function TokenUsageIndicator({
   isSubmitting,
   showCost,
   currency,
+  langfuseConnectionAccess,
 }: TokenUsageProps & {
   showCost: boolean;
   currency?: CurrencyConfig;
+  langfuseConnectionAccess: boolean;
 }) {
   const localize = useLocalize();
   const view = useTokenUsage({ index, conversation, isSubmitting });
   const popover = Ariakit.usePopoverStore({ placement: 'top' });
+  const popoverOpen = Ariakit.useStoreState(popover, 'open');
   const disclosureRef = useRef<HTMLButtonElement>(null);
+  const conversationId = conversation?.conversationId ?? '';
+  const canResolveLangfuseSession =
+    langfuseConnectionAccess &&
+    popoverOpen &&
+    !isSubmitting &&
+    conversationId !== '' &&
+    conversationId !== Constants.NEW_CONVO &&
+    conversationId !== Constants.PENDING_CONVO;
+  const { data: langfuseSession } = useGetLangfuseSessionLinkQuery(
+    conversationId,
+    canResolveLangfuseSession,
+  );
 
   /** Hide until the branch has data — keeps a fresh, message-less chat clean and
    *  lets the indicator animate into view once the first tokens land. */
@@ -104,7 +120,12 @@ function TokenUsageIndicator({
         aria-label={localize('com_ui_context_usage')}
         className="z-[200] rounded-xl border border-border-medium bg-surface-secondary p-3 shadow-lg focus:outline-none"
       >
-        <Breakdown view={view} showCost={showCost} currency={currency} />
+        <Breakdown
+          view={view}
+          showCost={showCost}
+          currency={currency}
+          langfuseSessionUrl={langfuseSession?.url ?? undefined}
+        />
       </Ariakit.Popover>
     </>
   );
@@ -124,6 +145,7 @@ const TokenUsage = memo(function TokenUsage(props: TokenUsageProps) {
       {...props}
       showCost={startupConfig.interface?.contextCost === true}
       currency={startupConfig.interface?.currency}
+      langfuseConnectionAccess={startupConfig.langfuseConnectionAccess === true}
     />
   );
 });
