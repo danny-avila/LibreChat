@@ -11,6 +11,7 @@ const {
   getReferencedQuotes,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
+  getTransactionsConfig,
   encodeAndFormatDocuments,
   getLangfuseTraceDestinationIds,
   isLangfuseTraceSampled,
@@ -262,11 +263,19 @@ class BaseClient {
    * @param {string} [messageId]
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, balance, promptTokens, completionTokens, messageId }) {
+  async recordTokenUsage({
+    model,
+    balance,
+    messageId,
+    transactions,
+    promptTokens,
+    completionTokens,
+  }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
       balance,
       messageId,
+      transactions,
       promptTokens,
       completionTokens,
     });
@@ -682,6 +691,7 @@ class BaseClient {
     }
 
     const balanceConfig = getBalanceConfig(appConfig);
+    const transactionsConfig = getTransactionsConfig(appConfig);
     if (
       balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
@@ -794,6 +804,7 @@ class BaseClient {
           promptTokens,
           completionTokens,
           balance: balanceConfig,
+          transactions: transactionsConfig,
           /** Note: When using agents, responseMessage.model is the agent ID, not the model */
           model: this.model,
           messageId: this.responseMessageId,
