@@ -1,10 +1,10 @@
 import mongoose from 'mongoose';
-import type { TMessage } from 'librechat-data-provider';
 import { buildTree } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createModels } from '~/models';
-import { createMessageMethods } from './message';
+import type { TMessage } from 'librechat-data-provider';
 import type { IMessage } from '..';
+import { createMessageMethods } from './message';
+import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
