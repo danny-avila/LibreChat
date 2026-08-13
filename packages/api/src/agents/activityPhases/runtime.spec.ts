@@ -1,8 +1,8 @@
 import { GraphEvents } from '@librechat/agents';
 import { ContentTypes, StepTypes } from 'librechat-data-provider';
 import type { PostToolBatchHookInput } from '@librechat/agents';
+import type { ActivityPhaseSnapshot, GenerateActivityPhasePayload } from './runtime';
 import type { LooseContentPart } from '~/agents/activityLabels/wiring';
-import type { GenerateActivityPhasePayload } from './runtime';
 import {
   ACTIVITY_PHASE_INSTRUCTION,
   createActivityPhaseWiring,
@@ -27,6 +27,17 @@ const batch = (id: string): PostToolBatchHookInput =>
 const SUBSTANTIAL_TEXT_CHARS = 200;
 const substantialText = (prefix: string): string =>
   `${prefix} ${'x'.repeat(SUBSTANTIAL_TEXT_CHARS + 1)}`;
+
+const RETAINED_EVIDENCE_ACTIVITIES = 13;
+const OVERFLOW_ACTIVITY_ANCHORS = 64;
+
+const totalTrackedCount = (activities: ActivityPhaseSnapshot['activities']): number =>
+  activities.reduce((total, activity) => total + (activity.mergedCount ?? 1), 0);
+
+const numericField = (part: LooseContentPart | null | undefined, field: string): number => {
+  const value = part?.[field];
+  return typeof value === 'number' ? value : Number.NaN;
+};
 
 async function flushDetached(): Promise<void> {
   for (let i = 0; i < 4; i += 1) {
@@ -1323,13 +1334,69 @@ describe('createActivityPhaseWiring', () => {
     }
 
     const snapshot = wiring.snapshot();
-    expect(snapshot.version).toBe(2);
-    expect(snapshot.activityCount).toBe(77);
-    expect(snapshot.activities).toHaveLength(13);
-    expect(snapshot.overflowActivityStartIndex).toBe(99);
-    expect(snapshot.overflowToolCallIds).toHaveLength(64);
-    expect(snapshot.overflowActivities).toHaveLength(64);
-    expect(snapshot.overflowActivities?.[0]).toMatchObject({ toolCallIds: ['tool-36'] });
+    expect(snapshot.version).toBe(3);
+    /** Bounding drops evidence and folds anchors, never the count: a run that
+     *  outgrows the anchor budget still reports every activity it performed. */
+    expect(snapshot.activityCount).toBe(100);
+    expect(snapshot.activities.length).toBeLessThanOrEqual(
+      RETAINED_EVIDENCE_ACTIVITIES + OVERFLOW_ACTIVITY_ANCHORS,
+    );
+    const withEvidence = snapshot.activities.filter((activity) => activity.entries != null);
+    expect(withEvidence).toHaveLength(RETAINED_EVIDENCE_ACTIVITIES);
+    expect(totalTrackedCount(snapshot.activities)).toBe(100);
+    expect(snapshot.activities.every((activity) => activity.startIndex >= 0)).toBe(true);
+  });
+
+  /** The partition is the one place a phase decides what it owns, so its
+   *  contract is checkable directly: wherever the boundary falls, every
+   *  activity lands on exactly one side and the counts still sum to the run. */
+  it('conserves and orders every activity across any substantial-text boundary', async () => {
+    const TOTAL_ACTIVITIES = 8;
+    for (let boundary = 2; boundary <= TOTAL_ACTIVITIES - 2; boundary += 1) {
+      const parts: LooseContentPart[] = [];
+      const wiring = createActivityPhaseWiring({
+        getContentParts: () => parts,
+        bumpIndexOffset: jest.fn(),
+        emitLabelEvent: jest.fn(async () => undefined),
+        trackPendingFill: jest.fn(),
+        generatePhase: jest.fn(async () => ({ label: 'Phase' })),
+      });
+      for (let index = 0; index < TOTAL_ACTIVITIES; index += 1) {
+        if (index === boundary) {
+          parts.push({ type: ContentTypes.TEXT, text: substantialText('Interim result') });
+        }
+        const id = `tool-${boundary}-${index}`;
+        parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
+        await wiring.hook(batch(id), new AbortController().signal);
+      }
+
+      wiring.complete();
+      await flushDetached();
+
+      const markers = parts.filter(
+        (part) =>
+          part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type === 'phase',
+      );
+      expect(markers.length).toBeGreaterThan(1);
+      const counted = markers.reduce(
+        (total, marker) => total + numericField(marker, 'activity_count'),
+        0,
+      );
+      expect({ boundary, counted }).toEqual({ boundary, counted: TOTAL_ACTIVITIES });
+      const ranges = markers
+        .map((marker) => ({
+          start: numericField(marker, 'activity_start_index'),
+          end: numericField(marker, 'activity_end_index'),
+        }))
+        .sort((left, right) => left.start - right.start);
+      for (const range of ranges) {
+        expect(Number.isFinite(range.start) && Number.isFinite(range.end)).toBe(true);
+        expect(range.end).toBeGreaterThan(range.start);
+      }
+      for (let position = 1; position < ranges.length; position += 1) {
+        expect(ranges[position].start).toBeGreaterThanOrEqual(ranges[position - 1].end);
+      }
+    }
   });
 
   it('retains every overflow tool ID tied at the latest boundary', async () => {
@@ -1347,10 +1414,11 @@ describe('createActivityPhaseWiring', () => {
     await wiring.hook(batch('overflow-a'), new AbortController().signal);
     await wiring.hook(batch('overflow-b'), new AbortController().signal);
 
-    expect(wiring.snapshot()).toMatchObject({
-      overflowActivityStartIndex: 0,
-      overflowToolCallIds: ['overflow-a', 'overflow-b'],
-    });
+    const anchors = wiring.snapshot().activities.filter((activity) => activity.bounded === true);
+    expect(anchors.flatMap((activity) => activity.toolCallIds ?? [])).toEqual([
+      'overflow-a',
+      'overflow-b',
+    ]);
   });
 
   it('anchors a phase represented entirely by retained overflow bookkeeping', async () => {

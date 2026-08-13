@@ -28,6 +28,14 @@ export type TrackedActivity = ActivityPhaseEntry & {
   startIndex: number;
   /** A prior boundary can retain only the materialized tail of a straddling batch. */
   partitionStartIndex?: number;
+  /** Anchor-only activities keep position and status but carry no prompt evidence. */
+  bounded?: boolean;
+  /** Activities folded into this anchor once the anchor budget was reached.
+   *  Every counted activity therefore keeps a position, so a boundary can
+   *  partition counts instead of reconstructing them by subtraction. */
+  mergedCount?: number;
+  mergedFailedCount?: number;
+  mergedPartialCount?: number;
   childLabelIndex?: number;
   /** Stable anchors survive content filtering and prepends across HITL resume. */
   toolCallIds?: string[];
@@ -36,11 +44,16 @@ export type TrackedActivity = ActivityPhaseEntry & {
 };
 
 export interface ActivityPhaseSnapshot {
-  /** Version 2 introduces object-valued assistant context and overflow anchors. */
-  version: 1 | 2;
+  /** Version 2 introduces object-valued assistant context and overflow anchors.
+   *  Version 3 folds those anchors into `activities` so every counted activity
+   *  carries a position; readers still accept 1 and 2. */
+  version: 1 | 2 | 3;
   generated: number;
+  /** @deprecated Version 3 derives the total from positioned activities. */
   activityCount: number;
+  /** @deprecated Version 3 derives failures from positioned activities. */
   failedActivityCount: number;
+  /** @deprecated Version 3 derives partials from positioned activities. */
   partialActivityCount: number;
   agentIds: string[];
   activities: TrackedActivity[];
@@ -122,19 +135,6 @@ const PHASE_TIMEOUT_MS = 12_000;
 const MAX_RETAINED_ACTIVITIES = 13;
 const MAX_RETAINED_TOOL_ENTRIES = 6;
 const MAX_OVERFLOW_ACTIVITY_ANCHORS = 64;
-const MAX_OVERFLOW_TOOL_ANCHORS = 64;
-
-function addBoundedValue<T>(values: Set<T>, value: T, limit: number): void {
-  values.delete(value);
-  values.add(value);
-  while (values.size > limit) {
-    const oldest = values.values().next().value as T | undefined;
-    if (oldest == null) {
-      break;
-    }
-    values.delete(oldest);
-  }
-}
 
 export const ACTIVITY_PHASE_INSTRUCTION = `Summarize what this phase of an agent run accomplished. The result appears as the header of one collapsed parent group containing several activities.
 
@@ -414,6 +414,141 @@ export function createAssistantPhaseStampingHandlers(
   return wrapped;
 }
 
+type PendingReasoning = { text: string; agentId?: string; startIndex?: number };
+
+/** One side of a boundary split. Every piece of run state that a phase can
+ *  own appears here, so adding tracked state without partitioning it is a
+ *  type error rather than a silently mis-grouped activity. */
+interface PhasePartitionSide {
+  activities: TrackedActivity[];
+  context: AssistantContextEntry[];
+  pendingReasoning: Array<readonly [string, PendingReasoning]>;
+  reasoningStepKeys: Array<readonly [string, string]>;
+}
+
+interface PhasePartition {
+  closing: PhasePartitionSide;
+  retained: PhasePartitionSide;
+}
+
+/** Every activity is represented by exactly one positioned item, so run totals
+ *  are a sum over that list rather than a separately maintained scalar. */
+function countActivities(activities: ReadonlyArray<TrackedActivity>): number {
+  return activities.reduce((total, activity) => total + (activity.mergedCount ?? 1), 0);
+}
+
+function countFailedActivities(activities: ReadonlyArray<TrackedActivity>): number {
+  return activities.reduce((total, activity) => {
+    if (activity.mergedCount == null) {
+      return total + (activity.status === 'error' ? 1 : 0);
+    }
+    return total + (activity.mergedFailedCount ?? 0);
+  }, 0);
+}
+
+function countPartialActivities(activities: ReadonlyArray<TrackedActivity>): number {
+  return activities.reduce((total, activity) => {
+    if (activity.mergedCount == null) {
+      return total + (activity.status === 'partial' ? 1 : 0);
+    }
+    return total + (activity.mergedPartialCount ?? 0);
+  }, 0);
+}
+
+/**
+ * Rebuilds the unpositioned remainder of a version 1 or 2 snapshot as one
+ * bounded anchor at the saved overflow position, so aggregate counts survive
+ * without a scalar the boundary partition cannot place.
+ */
+function restoreLegacyOverflowAnchor(
+  content: ReadonlyArray<LooseContentPart | null | undefined>,
+  snapshot: ActivityPhaseSnapshot | undefined,
+): TrackedActivity | undefined {
+  if (snapshot == null || snapshot.version === 3) {
+    return undefined;
+  }
+  const positioned = snapshot.activities.length + (snapshot.overflowActivities?.length ?? 0);
+  const remainder = Math.max(0, snapshot.activityCount - positioned);
+  if (remainder === 0) {
+    return undefined;
+  }
+  const toolCallIds = snapshot.overflowToolCallIds ?? [];
+  const boundaryToolCallIds = snapshot.overflowBoundaryToolCallIds ?? toolCallIds;
+  const reasoningAnchors =
+    snapshot.overflowReasoningAnchors ??
+    (snapshot.overflowReasoningExcerpt != null ? [snapshot.overflowReasoningExcerpt] : []);
+  const anchorIndex: ReasoningAnchorIndex = new Map();
+  const anchors = new Set<string>();
+  for (const anchor of reasoningAnchors) {
+    addReasoningAnchor(anchors, anchorIndex, anchor);
+  }
+  const materializedToolIds = new Set<string>();
+  const matchedToolIndexes: number[] = [];
+  let matchedReasoningIndex: number | undefined;
+  for (const index of definedPartIndices(content)) {
+    const part = content[index];
+    const toolCallId = part?.type === ContentTypes.TOOL_CALL ? part.tool_call?.id : undefined;
+    if (typeof toolCallId === 'string' && toolCallIds.includes(toolCallId)) {
+      materializedToolIds.add(toolCallId);
+      matchedToolIndexes.push(index);
+    }
+    if (
+      anchors.size > 0 &&
+      part?.type === ContentTypes.THINK &&
+      includesReasoningAnchor(textValue(part.think), anchorIndex)
+    ) {
+      matchedReasoningIndex = index;
+    }
+  }
+  const rebased =
+    matchedToolIndexes.length > 0
+      ? Math.max(...matchedToolIndexes, matchedReasoningIndex ?? -1)
+      : matchedReasoningIndex;
+  const hasUnresolvedBoundaryTool = boundaryToolCallIds.some((id) => !materializedToolIds.has(id));
+  /** A saved position only survives when something still locates it. An anchor
+   *  whose evidence was filtered out of the compacted content is stale, and
+   *  counting it would inflate a resumed phase with work it cannot show. */
+  const resolvedStartIndex = hasUnresolvedBoundaryTool
+    ? Math.max(rebased ?? -1, snapshot.overflowActivityStartIndex ?? -1)
+    : (rebased ?? (anchors.size === 0 ? snapshot.overflowActivityStartIndex : undefined));
+  if (resolvedStartIndex == null || resolvedStartIndex < 0) {
+    return undefined;
+  }
+  const positionedFailed =
+    snapshot.activities.filter((activity) => activity.status === 'error').length +
+    (snapshot.overflowActivities ?? []).filter((activity) => activity.status === 'error').length;
+  const positionedPartial =
+    snapshot.activities.filter((activity) => activity.status === 'partial').length +
+    (snapshot.overflowActivities ?? []).filter((activity) => activity.status === 'partial').length;
+  const mergedFailedCount = Math.min(
+    remainder,
+    Math.max(0, snapshot.failedActivityCount - positionedFailed),
+  );
+  const mergedPartialCount = Math.min(
+    remainder - mergedFailedCount,
+    Math.max(0, snapshot.partialActivityCount - positionedPartial),
+  );
+  const uniformStatus = (): TrackedActivity['status'] => {
+    if (mergedFailedCount === remainder) {
+      return 'error';
+    }
+    return mergedPartialCount === remainder ? 'partial' : 'success';
+  };
+  return {
+    startIndex: resolvedStartIndex,
+    bounded: true,
+    mergedCount: remainder,
+    status: uniformStatus(),
+    ...(toolCallIds.length > 0 && { toolCallIds: toolCallIds.slice(-MAX_RETAINED_TOOL_ENTRIES) }),
+    ...(reasoningAnchors.length > 0 && {
+      thinkingExcerpts: reasoningAnchors.slice(-MAX_RETAINED_TOOL_ENTRIES),
+    }),
+    ...(mergedFailedCount > 0 && { mergedFailedCount }),
+    ...(mergedPartialCount > 0 && { mergedPartialCount }),
+    ...(hasUnresolvedBoundaryTool && { unresolvedToolStartIndex: resolvedStartIndex }),
+  };
+}
+
 /**
  * Collects run-wide logical activities and emits one parent summary at an
  * explicit final-answer boundary or root-run completion. The summary call is
@@ -424,7 +559,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const charLimit = deps.charLimit ?? DEFAULT_CHAR_LIMIT;
   const content = deps.getContentParts();
   const initialSnapshot =
-    deps.initialSnapshot?.version === 1 || deps.initialSnapshot?.version === 2
+    deps.initialSnapshot?.version === 1 ||
+    deps.initialSnapshot?.version === 2 ||
+    deps.initialSnapshot?.version === 3
       ? deps.initialSnapshot
       : undefined;
   let generated = Math.max(
@@ -450,110 +587,43 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       return typeof id === 'string' ? [id] : [];
     }),
   );
-  let activities: TrackedActivity[] =
-    initialSnapshot?.activities.map((activity) => {
-      const { unresolvedToolStartIndex, ...retainedActivity } = activity;
-      const startIndex = findTrackedStart(content, activity);
-      const toolCallIds = activity.toolCallIds ?? [];
-      const hasUnresolvedTool = toolCallIds.some((id) => !initiallyMaterializedToolIds.has(id));
-      return {
-        ...retainedActivity,
-        startIndex,
-        ...(hasUnresolvedTool && {
-          unresolvedToolStartIndex: Math.max(
-            unresolvedToolStartIndex ?? activity.startIndex,
-            startIndex,
-          ),
-        }),
-      };
-    }) ?? [];
-  let overflowActivities: TrackedActivity[] =
-    initialSnapshot?.overflowActivities?.slice(-MAX_OVERFLOW_ACTIVITY_ANCHORS).map((activity) => {
-      const startIndex = findTrackedStart(content, activity);
-      const toolCallIds = activity.toolCallIds?.slice(-MAX_RETAINED_TOOL_ENTRIES) ?? [];
-      const hasUnresolvedTool = toolCallIds.some((id) => !initiallyMaterializedToolIds.has(id));
-      return {
-        ...activity,
-        startIndex,
-        ...(toolCallIds.length > 0 && { toolCallIds }),
-        ...(activity.thinkingExcerpts != null && {
+  const restoreTrackedActivity = (activity: TrackedActivity): TrackedActivity => {
+    const { unresolvedToolStartIndex, ...retainedActivity } = activity;
+    const startIndex = findTrackedStart(content, activity);
+    const bounded = activity.bounded === true;
+    const toolCallIds = bounded
+      ? (activity.toolCallIds?.slice(-MAX_RETAINED_TOOL_ENTRIES) ?? [])
+      : (activity.toolCallIds ?? []);
+    const hasUnresolvedTool = toolCallIds.some((id) => !initiallyMaterializedToolIds.has(id));
+    return {
+      ...retainedActivity,
+      startIndex,
+      ...(toolCallIds.length > 0 && { toolCallIds }),
+      ...(bounded &&
+        activity.thinkingExcerpts != null && {
           thinkingExcerpts: activity.thinkingExcerpts
             .slice(-MAX_RETAINED_TOOL_ENTRIES)
             .map((text) => text.slice(-REASONING_ANCHOR_CHARS)),
         }),
-        ...(hasUnresolvedTool && {
-          unresolvedToolStartIndex: Math.max(
-            activity.unresolvedToolStartIndex ?? activity.startIndex,
-            startIndex,
-          ),
-        }),
-      };
-    }) ?? [];
-  let activityCount = initialSnapshot?.activityCount ?? activities.length;
-  let failedActivityCount =
-    initialSnapshot?.failedActivityCount ??
-    activities.filter((activity) => activity.status === 'error').length;
-  let partialActivityCount =
-    initialSnapshot?.partialActivityCount ??
-    activities.filter((activity) => activity.status === 'partial').length;
-  const overflowToolCallIds = new Set(
-    initialSnapshot?.overflowToolCallIds?.slice(-MAX_OVERFLOW_TOOL_ANCHORS) ?? [],
-  );
-  const overflowBoundaryToolCallIds = new Set(
-    (
-      initialSnapshot?.overflowBoundaryToolCallIds ??
-      initialSnapshot?.overflowToolCallIds ??
-      []
-    ).slice(-MAX_OVERFLOW_TOOL_ANCHORS),
-  );
-  const materializedOverflowToolIds = new Set<string>();
-  const rebasedOverflowToolIndexes = definedPartIndices(content).filter((index) => {
-    const part = content[index];
-    const toolCallId = part?.type === ContentTypes.TOOL_CALL ? part.tool_call?.id : undefined;
-    const matches = typeof toolCallId === 'string' && overflowToolCallIds.has(toolCallId);
-    if (matches) {
-      materializedOverflowToolIds.add(toolCallId);
-    }
-    return matches;
-  });
-  const overflowReasoningAnchors = new Set<string>();
-  const overflowReasoningAnchorIndex: ReasoningAnchorIndex = new Map();
-  const initialOverflowReasoningAnchors =
-    initialSnapshot?.overflowReasoningAnchors?.slice(-MAX_OVERFLOW_ACTIVITY_ANCHORS) ??
-    (initialSnapshot?.overflowReasoningExcerpt != null
-      ? [initialSnapshot.overflowReasoningExcerpt]
-      : []);
-  for (const anchor of initialOverflowReasoningAnchors) {
-    addReasoningAnchor(overflowReasoningAnchors, overflowReasoningAnchorIndex, anchor);
-  }
-  let rebasedOverflowReasoningIndex: number | undefined;
-  if (overflowReasoningAnchors.size > 0) {
-    for (const index of definedPartIndices(content)) {
-      const part = content[index];
-      if (
-        part?.type === ContentTypes.THINK &&
-        includesReasoningAnchor(textValue(part.think), overflowReasoningAnchorIndex)
-      ) {
-        rebasedOverflowReasoningIndex = index;
-      }
-    }
-  }
-  const rebasedOverflowStartIndex =
-    rebasedOverflowToolIndexes.length > 0
-      ? Math.max(...rebasedOverflowToolIndexes, rebasedOverflowReasoningIndex ?? -1)
-      : rebasedOverflowReasoningIndex;
-  const hasUnresolvedBoundaryTool = [...overflowBoundaryToolCallIds].some(
-    (id) => !materializedOverflowToolIds.has(id),
-  );
-  let overflowActivityStartIndex = hasUnresolvedBoundaryTool
-    ? Math.max(rebasedOverflowStartIndex ?? -1, initialSnapshot?.overflowActivityStartIndex ?? -1)
-    : (rebasedOverflowStartIndex ??
-      (overflowReasoningAnchors.size === 0
-        ? initialSnapshot?.overflowActivityStartIndex
-        : undefined));
-  if (overflowActivityStartIndex != null && overflowActivityStartIndex < 0) {
-    overflowActivityStartIndex = undefined;
-  }
+      ...(hasUnresolvedTool && {
+        unresolvedToolStartIndex: Math.max(
+          unresolvedToolStartIndex ?? activity.startIndex,
+          startIndex,
+        ),
+      }),
+    };
+  };
+  /** Versions 1 and 2 stored part of the total as bare scalars plus loose
+   *  anchors. Rebuild that remainder as one positioned anchor so the boundary
+   *  partition never has to reason about counts it cannot place. */
+  const legacyAnchor = restoreLegacyOverflowAnchor(content, initialSnapshot);
+  let activities: TrackedActivity[] = [
+    ...(initialSnapshot?.activities ?? []).map(restoreTrackedActivity),
+    ...(legacyAnchor != null ? [legacyAnchor] : []),
+    ...(initialSnapshot?.overflowActivities ?? [])
+      .slice(-MAX_OVERFLOW_ACTIVITY_ANCHORS)
+      .map((activity) => restoreTrackedActivity({ ...activity, bounded: true })),
+  ];
   const contributingAgentIds = new Set(initialSnapshot?.agentIds ?? []);
   let assistantContext: AssistantContextEntry[] = (initialSnapshot?.assistantContext ?? [])
     .slice(-MAX_CONTEXT_ITEMS)
@@ -588,93 +658,102 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   >();
   const textContextByStepId = new Map<string, AssistantContextEntry>();
 
-  const clear = () => {
-    activities = [];
-    assistantContext = [];
-    pendingReasoning.clear();
-    reasoningStepKeys.clear();
-    stepKinds.clear();
-    textContextByStepId.clear();
-    activityCount = 0;
-    failedActivityCount = 0;
-    partialActivityCount = 0;
-    overflowActivityStartIndex = undefined;
-    overflowToolCallIds.clear();
-    overflowBoundaryToolCallIds.clear();
-    overflowReasoningAnchors.clear();
-    overflowReasoningAnchorIndex.clear();
-    overflowActivities = [];
-    contributingAgentIds.clear();
+  const toBoundedAnchor = (activity: TrackedActivity): TrackedActivity => ({
+    startIndex: activity.startIndex,
+    bounded: true,
+    ...(activity.partitionStartIndex != null && {
+      partitionStartIndex: activity.partitionStartIndex,
+    }),
+    ...(activity.unresolvedToolStartIndex != null && {
+      unresolvedToolStartIndex: activity.unresolvedToolStartIndex,
+    }),
+    ...(activity.toolCallIds != null && {
+      toolCallIds: activity.toolCallIds.slice(-MAX_RETAINED_TOOL_ENTRIES),
+    }),
+    ...(activity.thinkingExcerpts != null && {
+      thinkingExcerpts: activity.thinkingExcerpts
+        .slice(-MAX_RETAINED_TOOL_ENTRIES)
+        .map((text) => text.slice(-REASONING_ANCHOR_CHARS)),
+    }),
+    ...(activity.agentId != null && { agentId: activity.agentId }),
+    ...(activity.mergedCount != null && { mergedCount: activity.mergedCount }),
+    ...(activity.mergedFailedCount != null && { mergedFailedCount: activity.mergedFailedCount }),
+    ...(activity.mergedPartialCount != null && { mergedPartialCount: activity.mergedPartialCount }),
+    status: activity.status,
+  });
+
+  /** Keeps memory bounded without letting an activity lose its position:
+   *  evidence is dropped first, then the oldest anchors fold forward into their
+   *  successor, which is never earlier in the content and so cannot move a
+   *  counted activity across a boundary it already preceded. */
+  const boundActivities = () => {
+    let evidenceBudget = MAX_RETAINED_ACTIVITIES;
+    activities = activities.map((activity) => {
+      if (activity.bounded === true) {
+        return activity;
+      }
+      if (evidenceBudget > 0) {
+        evidenceBudget -= 1;
+        return activity;
+      }
+      return toBoundedAnchor(activity);
+    });
+    const anchorCount = activities.filter((activity) => activity.bounded === true).length;
+    let excess = anchorCount - MAX_OVERFLOW_ACTIVITY_ANCHORS;
+    if (excess <= 0) {
+      return;
+    }
+    const folded: TrackedActivity[] = [];
+    let carriedCount = 0;
+    let carriedFailed = 0;
+    let carriedPartial = 0;
+    for (const activity of activities) {
+      if (excess > 0 && activity.bounded === true) {
+        excess -= 1;
+        carriedCount += activity.mergedCount ?? 1;
+        carriedFailed += countFailedActivities([activity]);
+        carriedPartial += countPartialActivities([activity]);
+        continue;
+      }
+      if (carriedCount > 0) {
+        const mergedCount = (activity.mergedCount ?? 1) + carriedCount;
+        const mergedFailedCount = countFailedActivities([activity]) + carriedFailed;
+        const mergedPartialCount = countPartialActivities([activity]) + carriedPartial;
+        folded.push({
+          ...activity,
+          mergedCount,
+          ...(mergedFailedCount > 0 && { mergedFailedCount }),
+          ...(mergedPartialCount > 0 && { mergedPartialCount }),
+        });
+        carriedCount = 0;
+        carriedFailed = 0;
+        carriedPartial = 0;
+        continue;
+      }
+      folded.push(activity);
+    }
+    activities = folded;
   };
 
-  const restoreActivities = (
-    retainedActivities: TrackedActivity[],
-    retainedContext: AssistantContextEntry[],
-    retainedActivityCount: number,
-    retainedFailedCount: number,
-    retainedPartialCount: number,
-    retainOverflow: boolean,
-    retainedOverflowActivities: TrackedActivity[],
-    retainedPendingReasoning: Array<
-      readonly [string, { text: string; agentId?: string; startIndex?: number }]
-    >,
-    retainedReasoningStepKeys: Array<readonly [string, string]>,
-  ) => {
+  const applyRetained = (retained: PhasePartitionSide) => {
     const retainedStepKinds = new Map<
       string,
       { kind: 'text' | 'think'; phase?: AssistantTextPhase; captureContext?: boolean }
     >();
-    for (const entry of retainedContext) {
-      if (entry.stepId == null) {
-        continue;
-      }
-      const kind = stepKinds.get(entry.stepId);
-      if (kind != null) {
+    for (const entry of retained.context) {
+      const kind = entry.stepId == null ? undefined : stepKinds.get(entry.stepId);
+      if (kind != null && entry.stepId != null) {
         retainedStepKinds.set(entry.stepId, kind);
       }
     }
-    const exactOverflowStartIndex =
-      retainedOverflowActivities.length > 0
-        ? Math.max(...retainedOverflowActivities.map((activity) => activity.startIndex))
-        : undefined;
-    const retainedOverflowActivityStartIndex =
-      exactOverflowStartIndex ?? (retainOverflow ? overflowActivityStartIndex : undefined);
-    let retainedOverflowToolCallIds: string[] = [];
-    let retainedOverflowBoundaryToolCallIds: string[] = [];
-    let retainedOverflowReasoningAnchors: string[] = [];
-    if (retainedOverflowActivities.length > 0) {
-      retainedOverflowToolCallIds = retainedOverflowActivities.flatMap(
-        (activity) => activity.toolCallIds ?? [],
-      );
-      retainedOverflowBoundaryToolCallIds = retainedOverflowActivities.flatMap((activity) =>
-        activity.startIndex === exactOverflowStartIndex ? (activity.toolCallIds ?? []) : [],
-      );
-      retainedOverflowReasoningAnchors = retainedOverflowActivities.flatMap(
-        (activity) => activity.thinkingExcerpts ?? [],
-      );
-    } else if (retainOverflow) {
-      retainedOverflowToolCallIds = [...overflowToolCallIds];
-      retainedOverflowBoundaryToolCallIds = [...overflowBoundaryToolCallIds];
-      retainedOverflowReasoningAnchors = [...overflowReasoningAnchors];
-    }
-    clear();
-    activities = retainedActivities;
-    assistantContext = retainedContext;
-    activityCount = retainedActivityCount;
-    failedActivityCount = retainedFailedCount;
-    partialActivityCount = retainedPartialCount;
-    overflowActivityStartIndex = retainedOverflowActivityStartIndex;
-    for (const id of retainedOverflowToolCallIds) {
-      addBoundedValue(overflowToolCallIds, id, MAX_OVERFLOW_TOOL_ANCHORS);
-    }
-    for (const id of retainedOverflowBoundaryToolCallIds) {
-      addBoundedValue(overflowBoundaryToolCallIds, id, MAX_OVERFLOW_TOOL_ANCHORS);
-    }
-    for (const anchor of retainedOverflowReasoningAnchors) {
-      addReasoningAnchor(overflowReasoningAnchors, overflowReasoningAnchorIndex, anchor);
-    }
-    overflowActivities = retainedOverflowActivities;
-    for (const activity of [...retainedActivities, ...retainedOverflowActivities]) {
+    activities = retained.activities;
+    assistantContext = retained.context;
+    contributingAgentIds.clear();
+    stepKinds.clear();
+    textContextByStepId.clear();
+    pendingReasoning.clear();
+    reasoningStepKeys.clear();
+    for (const activity of retained.activities) {
       if (activity.agentId != null) {
         contributingAgentIds.add(activity.agentId);
       }
@@ -682,97 +761,34 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     for (const [stepId, kind] of retainedStepKinds) {
       stepKinds.set(stepId, kind);
     }
-    for (const entry of retainedContext) {
+    for (const entry of retained.context) {
       if (entry.stepId != null) {
         textContextByStepId.set(entry.stepId, entry);
       }
     }
-    for (const [key, reasoning] of retainedPendingReasoning) {
+    for (const [key, reasoning] of retained.pendingReasoning) {
       pendingReasoning.set(key, reasoning);
     }
-    for (const [stepId, key] of retainedReasoningStepKeys) {
+    for (const [stepId, key] of retained.reasoningStepKeys) {
       reasoningStepKeys.set(stepId, key);
     }
   };
 
   const trackActivity = (activity: TrackedActivity) => {
-    activityCount += 1;
-    if (activity.status === 'error') {
-      failedActivityCount += 1;
-    } else if (activity.status === 'partial') {
-      partialActivityCount += 1;
-    }
     if (activity.agentId != null) {
       contributingAgentIds.add(activity.agentId);
     }
-    if (activities.length < MAX_RETAINED_ACTIVITIES) {
-      activities.push(activity);
-    } else {
-      overflowActivities.push({
-        startIndex: activity.startIndex,
-        ...(activity.partitionStartIndex != null && {
-          partitionStartIndex: activity.partitionStartIndex,
-        }),
-        ...(activity.toolCallIds != null && {
-          toolCallIds: activity.toolCallIds.slice(-MAX_RETAINED_TOOL_ENTRIES),
-        }),
-        ...(activity.thinkingExcerpts != null && {
-          thinkingExcerpts: activity.thinkingExcerpts
-            .slice(-MAX_RETAINED_TOOL_ENTRIES)
-            .map((text) => text.slice(-REASONING_ANCHOR_CHARS)),
-        }),
-        ...(activity.agentId != null && { agentId: activity.agentId }),
-        status: activity.status,
-      });
-      if (overflowActivities.length > MAX_OVERFLOW_ACTIVITY_ANCHORS) {
-        const removed = overflowActivities.shift();
-        activityCount -= 1;
-        if (removed?.status === 'error') {
-          failedActivityCount -= 1;
-        } else if (removed?.status === 'partial') {
-          partialActivityCount -= 1;
-        }
-      }
-      if (overflowActivityStartIndex == null || activity.startIndex > overflowActivityStartIndex) {
-        overflowActivityStartIndex = activity.startIndex;
-        overflowBoundaryToolCallIds.clear();
-      }
-      const reasoningExcerpts = activity.thinkingExcerpts;
-      const reasoningExcerpt = reasoningExcerpts?.[reasoningExcerpts.length - 1]?.trim();
-      if (reasoningExcerpt) {
-        addReasoningAnchor(
-          overflowReasoningAnchors,
-          overflowReasoningAnchorIndex,
-          reasoningExcerpt,
-        );
-      }
-      for (const id of activity.toolCallIds ?? []) {
-        addBoundedValue(overflowToolCallIds, id, MAX_OVERFLOW_TOOL_ANCHORS);
-        if (activity.startIndex === overflowActivityStartIndex) {
-          addBoundedValue(overflowBoundaryToolCallIds, id, MAX_OVERFLOW_TOOL_ANCHORS);
-        }
-      }
-    }
+    activities.push(activity);
+    boundActivities();
   };
 
   const snapshot = (): ActivityPhaseSnapshot => ({
-    version: 2,
+    version: 3,
     generated,
-    activityCount,
-    failedActivityCount,
-    partialActivityCount,
+    activityCount: countActivities(activities),
+    failedActivityCount: countFailedActivities(activities),
+    partialActivityCount: countPartialActivities(activities),
     agentIds: [...contributingAgentIds],
-    ...(overflowActivityStartIndex != null && { overflowActivityStartIndex }),
-    ...(overflowToolCallIds.size > 0 && { overflowToolCallIds: [...overflowToolCallIds] }),
-    ...(overflowActivityStartIndex != null && {
-      overflowBoundaryToolCallIds: [...overflowBoundaryToolCallIds],
-    }),
-    ...(overflowReasoningAnchors.size > 0 && {
-      overflowReasoningAnchors: [...overflowReasoningAnchors],
-    }),
-    ...(overflowActivities.length > 0 && {
-      overflowActivities: overflowActivities.map((activity) => ({ ...activity })),
-    }),
     activities: activities.map((activity) => ({
       ...activity,
       ...(activity.entries != null && {
@@ -827,43 +843,64 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
 
   const resolveActivities = (snapshot: TrackedActivity[]): ActivityPhaseEntry[] => {
     const parts = deps.getContentParts();
-    return snapshot.map(
-      ({
-        childLabelIndex,
-        toolCallIds,
-        startIndex: _startIndex,
-        partitionStartIndex: _partitionStartIndex,
-        unresolvedToolStartIndex: _unresolvedToolStartIndex,
-        ...activity
-      }) => {
-        const matchesToolIds = (part: LooseContentPart | null | undefined): boolean => {
-          if (part?.type !== ContentTypes.ACTIVITY_LABEL || part.activity_label_type === 'phase') {
-            return false;
+    return snapshot
+      .filter((activity) => activity.bounded !== true)
+      .map(
+        ({
+          childLabelIndex,
+          toolCallIds,
+          startIndex: _startIndex,
+          partitionStartIndex: _partitionStartIndex,
+          unresolvedToolStartIndex: _unresolvedToolStartIndex,
+          bounded: _bounded,
+          mergedCount: _mergedCount,
+          mergedFailedCount: _mergedFailedCount,
+          mergedPartialCount: _mergedPartialCount,
+          ...activity
+        }) => {
+          const matchesToolIds = (part: LooseContentPart | null | undefined): boolean => {
+            if (
+              part?.type !== ContentTypes.ACTIVITY_LABEL ||
+              part.activity_label_type === 'phase'
+            ) {
+              return false;
+            }
+            if (toolCallIds == null || toolCallIds.length === 0) {
+              return true;
+            }
+            const childIds = Array.isArray(part.tool_call_ids) ? part.tool_call_ids : [];
+            return childIds.some((id) => typeof id === 'string' && toolCallIds.includes(id));
+          };
+          let child = childLabelIndex == null ? undefined : parts[childLabelIndex];
+          if (!matchesToolIds(child) && toolCallIds != null && toolCallIds.length > 0) {
+            child = definedPartIndices(parts)
+              .map((index) => parts[index])
+              .find(matchesToolIds);
           }
-          if (toolCallIds == null || toolCallIds.length === 0) {
-            return true;
+          if (!matchesToolIds(child)) {
+            return activity;
           }
-          const childIds = Array.isArray(part.tool_call_ids) ? part.tool_call_ids : [];
-          return childIds.some((id) => typeof id === 'string' && toolCallIds.includes(id));
-        };
-        let child = childLabelIndex == null ? undefined : parts[childLabelIndex];
-        if (!matchesToolIds(child) && toolCallIds != null && toolCallIds.length > 0) {
-          child = definedPartIndices(parts)
-            .map((index) => parts[index])
-            .find(matchesToolIds);
-        }
-        if (!matchesToolIds(child)) {
-          return activity;
-        }
-        const label =
-          child?.pending !== true ? textValue(child?.[ContentTypes.ACTIVITY_LABEL]).trim() : '';
-        return label ? { ...activity, label, entries: undefined } : activity;
-      },
-    );
+          const label =
+            child?.pending !== true ? textValue(child?.[ContentTypes.ACTIVITY_LABEL]).trim() : '';
+          return label ? { ...activity, label, entries: undefined } : activity;
+        },
+      );
   };
 
-  const close = (closingTextPhase?: AssistantTextPhase, requestedEndIndex?: number) => {
+  /**
+   * Splits every piece of tracked run state at one boundary. This is the only
+   * place a phase decides what it owns: activities, their counts, assistant
+   * context, and still-streaming reasoning all cross here together, so a new
+   * field cannot be added on one side and forgotten on the other.
+   *
+   * `undefined` closes the whole run, which is the same split with a boundary
+   * past every position.
+   */
+  const partitionAt = (requestedEndIndex: number | undefined): PhasePartition => {
     const currentParts = deps.getContentParts();
+    /** Reasoning anchored before the boundary becomes an activity now; lanes
+     *  still streaming past it stay live so their eventual tool batch remains
+     *  one logical activity. */
     for (const [key, reasoning] of [...pendingReasoning]) {
       if (requestedEndIndex == null) {
         addPendingReasoning(key);
@@ -882,16 +919,23 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     /** Child-label and phase hooks run independently. A child label can claim
      *  its slot before the corresponding tool part reaches the shared content
      *  array, leaving the phase hook with a fallback start index. Re-anchor
-     *  from stable tool ids when they are available at close; the backward
-     *  scan below claims unresolved leading slots without crossing visible
-     *  answer content. */
-    const resolvedActivities = activities.map((activity) => {
+     *  from stable tool ids when they are available at close. */
+    const resolved = activities.map((activity) => {
       const toolStart = findTrackedToolStart(currentParts, activity);
-      return toolStart != null
-        ? { ...activity, startIndex: Math.max(toolStart, activity.partitionStartIndex ?? 0) }
+      if (toolStart != null) {
+        return {
+          ...activity,
+          startIndex: Math.max(toolStart, activity.partitionStartIndex ?? 0),
+        };
+      }
+      /** Anchors carry only stable evidence and must be re-located against the
+       *  current content; a full activity keeps the index maintained live,
+       *  which repeated reasoning must not drag back across a prior phase. */
+      return activity.bounded === true
+        ? { ...activity, startIndex: findTrackedStart(currentParts, activity) }
         : activity;
     });
-    const closesBeforeBoundary = (activity: TrackedActivity): boolean => {
+    const closesBefore = (activity: TrackedActivity): boolean => {
       if (requestedEndIndex == null) {
         return true;
       }
@@ -903,12 +947,13 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       }
       const materializedStart = findMaterializedActivityStart(currentParts, activity);
       const materializedToolIndices = findTrackedToolIndices(currentParts, activity);
+      /** A completed batch straddling the boundary stays whole on the later
+       *  side; splitting it would leave one tool call outside its own parent. */
       return materializedToolIndices.length > 0
         ? materializedToolIndices.every((index) => index < requestedEndIndex)
         : materializedStart == null || materializedStart < requestedEndIndex;
     };
-    const snapshot = resolvedActivities.filter(closesBeforeBoundary);
-    const reanchorRetainedActivity = (activity: TrackedActivity): TrackedActivity => {
+    const reanchor = (activity: TrackedActivity): TrackedActivity => {
       if (requestedEndIndex == null) {
         return activity;
       }
@@ -923,69 +968,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           }
         : activity;
     };
-    const retainedActivities = resolvedActivities
-      .filter((activity) => !closesBeforeBoundary(activity))
-      .map(reanchorRetainedActivity);
-    const overflowCount = Math.max(0, activityCount - resolvedActivities.length);
-    const overflowFailedCount = Math.max(
-      0,
-      failedActivityCount -
-        resolvedActivities.filter((activity) => activity.status === 'error').length,
-    );
-    const overflowPartialCount = Math.max(
-      0,
-      partialActivityCount -
-        resolvedActivities.filter((activity) => activity.status === 'partial').length,
-    );
-    const resolvedOverflowActivities = overflowActivities.map((activity) => ({
-      ...activity,
-      startIndex: findTrackedStart(currentParts, activity),
-    }));
-    const hasExactOverflowActivities =
-      overflowCount === 0 || resolvedOverflowActivities.length === overflowCount;
-    const closingOverflowActivities = hasExactOverflowActivities
-      ? resolvedOverflowActivities.filter(closesBeforeBoundary)
-      : [];
-    const retainedOverflowActivities = hasExactOverflowActivities
-      ? resolvedOverflowActivities
-          .filter((activity) => !closesBeforeBoundary(activity))
-          .map(reanchorRetainedActivity)
-      : [];
-    const overflowCloses = hasExactOverflowActivities
-      ? closingOverflowActivities.length > 0
-      : overflowCount > 0 &&
-        (requestedEndIndex == null ||
-          (overflowActivityStartIndex != null && overflowActivityStartIndex < requestedEndIndex));
-    let closingOverflowCount = 0;
-    let closingOverflowStartIndex: number | undefined;
-    let closingOverflowFailedCount = 0;
-    let closingOverflowPartialCount = 0;
-    if (hasExactOverflowActivities) {
-      closingOverflowCount = closingOverflowActivities.length;
-      if (closingOverflowActivities.length > 0) {
-        closingOverflowStartIndex = Math.min(
-          ...closingOverflowActivities.map((activity) => activity.startIndex),
-        );
-      }
-      closingOverflowFailedCount = closingOverflowActivities.filter(
-        (activity) => activity.status === 'error',
-      ).length;
-      closingOverflowPartialCount = closingOverflowActivities.filter(
-        (activity) => activity.status === 'partial',
-      ).length;
-    } else if (overflowCloses) {
-      closingOverflowCount = overflowCount;
-      closingOverflowStartIndex = overflowActivityStartIndex;
-      closingOverflowFailedCount = overflowFailedCount;
-      closingOverflowPartialCount = overflowPartialCount;
-    }
-    const failedCount =
-      snapshot.filter((activity) => activity.status === 'error').length +
-      closingOverflowFailedCount;
-    const partialCount =
-      snapshot.filter((activity) => activity.status === 'partial').length +
-      closingOverflowPartialCount;
-    const totalActivityCount = snapshot.length + closingOverflowCount;
+    const closingActivities = resolved.filter(closesBefore);
+    const retainedActivities = resolved.filter((activity) => !closesBefore(activity)).map(reanchor);
+    const closingCount = countActivities(closingActivities);
     const closingContext: AssistantContextEntry[] = [];
     const retainedContext: AssistantContextEntry[] = [];
     for (const entry of assistantContext) {
@@ -996,8 +981,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const isRetained =
         requestedEndIndex != null &&
         (entry.activityPosition != null
-          ? entry.activityPosition > totalActivityCount ||
-            (entry.activityPosition === totalActivityCount &&
+          ? entry.activityPosition > closingCount ||
+            (entry.activityPosition === closingCount &&
               entryIndex != null &&
               entryIndex > requestedEndIndex)
           : entryIndex != null && entryIndex >= requestedEndIndex);
@@ -1005,13 +990,43 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         retainedContext.push({
           ...entry,
           ...(entry.activityPosition != null && {
-            activityPosition: Math.max(0, entry.activityPosition - totalActivityCount),
+            activityPosition: Math.max(0, entry.activityPosition - closingCount),
           }),
         });
-      } else {
-        closingContext.push(entry);
+        continue;
       }
+      closingContext.push(entry);
     }
+    return {
+      closing: {
+        activities: closingActivities,
+        context: closingContext,
+        pendingReasoning: [],
+        reasoningStepKeys: [],
+      },
+      retained: {
+        activities: retainedActivities,
+        context: retainedContext,
+        pendingReasoning: retainedPendingReasoning,
+        reasoningStepKeys: retainedReasoningStepKeys,
+      },
+    };
+  };
+
+  const close = (closingTextPhase?: AssistantTextPhase, requestedEndIndex?: number) => {
+    const currentParts = deps.getContentParts();
+    const { closing, retained } = partitionAt(requestedEndIndex);
+    const snapshot = closing.activities;
+    const totalActivityCount = countActivities(snapshot);
+    const failedCount = countFailedActivities(snapshot);
+    const partialCount = countPartialActivities(snapshot);
+    const agentIds = [
+      ...new Set(
+        snapshot.flatMap((activity) => (activity.agentId != null ? [activity.agentId] : [])),
+      ),
+    ];
+    const closingContext = closing.context;
+    applyRetained(retained);
     const contextSnapshot = closingContext
       .map(({ text }) => text)
       .filter((text) => text.trim().length > 0);
@@ -1033,46 +1048,15 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         }
       }
     }
-    let contributingActivities = snapshot;
-    if (hasExactOverflowActivities) {
-      contributingActivities = [...snapshot, ...closingOverflowActivities];
-    }
-    let agentIds = [
-      ...new Set(
-        contributingActivities.flatMap((activity) =>
-          activity.agentId != null ? [activity.agentId] : [],
-        ),
-      ),
-    ];
-    if (overflowCloses && !hasExactOverflowActivities) {
-      agentIds = [...contributingAgentIds];
-    }
-    const retainedActivityCount = activityCount - totalActivityCount;
-    const retainedFailedCount = failedActivityCount - failedCount;
-    const retainedPartialCount = partialActivityCount - partialCount;
-    restoreActivities(
-      retainedActivities,
-      retainedContext,
-      retainedActivityCount,
-      retainedFailedCount,
-      retainedPartialCount,
-      hasExactOverflowActivities
-        ? retainedOverflowActivities.length > 0
-        : overflowCount > 0 && !overflowCloses,
-      retainedOverflowActivities,
-      retainedPendingReasoning,
-      retainedReasoningStepKeys,
-    );
     if (generated >= maxPerRun || totalActivityCount < MIN_ACTIVITIES) {
       return;
     }
 
     generated += 1;
     const phaseIndex = generated - 1;
-    let startIndex =
-      snapshot.length > 0
-        ? Math.min(...snapshot.map((activity) => activity.startIndex))
-        : (closingOverflowStartIndex ?? 0);
+    /** The minimum-count guard above cannot pass on an empty partition, so
+     *  every emitted phase has a positioned activity to anchor on. */
+    let startIndex = Math.min(...snapshot.map((activity) => activity.startIndex));
     /** Pull leading commentary/reasoning into the parent card. A prior phase
      *  marker or steer is the only hard UI boundary; plain text can be
      *  intermediate context on providers that do not expose phase metadata. */
@@ -1306,7 +1290,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
               const contextEntry: AssistantContextEntry = {
                 stepId: step.id,
                 text: '',
-                activityPosition: activityCount,
+                activityPosition: countActivities(activities),
               };
               assistantContext.push(contextEntry);
               textContextByStepId.set(step.id, contextEntry);
@@ -1406,5 +1390,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     close();
   };
 
-  return { hook, handlers: wrapHandlers, drop: clear, complete, snapshot };
+  const drop = () => {
+    applyRetained({ activities: [], context: [], pendingReasoning: [], reasoningStepKeys: [] });
+  };
+
+  return { hook, handlers: wrapHandlers, drop, complete, snapshot };
 }
