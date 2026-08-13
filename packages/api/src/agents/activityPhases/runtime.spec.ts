@@ -24,6 +24,8 @@ const batch = (id: string): PostToolBatchHookInput =>
     ],
   }) as PostToolBatchHookInput;
 
+const substantialText = (prefix: string): string => `${prefix} ${'x'.repeat(241)}`;
+
 async function flushDetached(): Promise<void> {
   for (let i = 0; i < 4; i += 1) {
     await new Promise((resolve) => setImmediate(resolve));
@@ -31,13 +33,14 @@ async function flushDetached(): Promise<void> {
 }
 
 describe('createActivityPhaseWiring', () => {
-  it('claims one parent phase before forwarding the final text step', async () => {
+  it('claims one parent phase when text becomes substantial', async () => {
     const parts: LooseContentPart[] = [];
     const forwarded: unknown[] = [];
     const emitLabelEvent = jest.fn(async () => undefined);
     const generatePhase = jest.fn(async () => ({ label: 'Resolved the release compatibility' }));
     const wiring = createActivityPhaseWiring({
       getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'final-step' ? 2 : undefined),
       bumpIndexOffset: jest.fn(),
       emitLabelEvent,
       trackPendingFill: jest.fn(),
@@ -61,6 +64,15 @@ describe('createActivityPhaseWiring', () => {
           forwarded.push(data);
         },
       },
+      [GraphEvents.ON_MESSAGE_DELTA]: {
+        handle: (_event, data) => {
+          const delta = data as { delta?: { content?: { text?: string } } };
+          parts[2] = {
+            type: ContentTypes.TEXT,
+            text: `${parts[2]?.text ?? ''}${delta.delta?.content?.text ?? ''}`,
+          };
+        },
+      },
     });
     handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
       GraphEvents.ON_RUN_STEP,
@@ -79,9 +91,19 @@ describe('createActivityPhaseWiring', () => {
       undefined,
       undefined,
     );
+    expect(parts).toHaveLength(2);
+    handlers?.[GraphEvents.ON_MESSAGE_DELTA]?.handle(
+      GraphEvents.ON_MESSAGE_DELTA,
+      {
+        id: 'final-step',
+        delta: { content: { type: ContentTypes.TEXT, text: 'A'.repeat(241) } },
+      },
+      undefined,
+      undefined,
+    );
 
     expect(forwarded).toHaveLength(1);
-    expect(parts[2]).toMatchObject({
+    expect(parts[3]).toMatchObject({
       type: ContentTypes.ACTIVITY_LABEL,
       activity_label_type: 'phase',
       activity_start_index: 0,
@@ -99,11 +121,99 @@ describe('createActivityPhaseWiring', () => {
         prompt: ACTIVITY_PHASE_INSTRUCTION,
       }),
     );
-    expect(parts[2]).toMatchObject({
+    expect(parts[3]).toMatchObject({
       activity_label: 'Resolved the release compatibility',
       pending: false,
     });
     expect(emitLabelEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('creates multiple phases around substantial root text in one run', async () => {
+    const parts: LooseContentPart[] = [];
+    const stepIndexes = new Map<string, number>();
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the activity phase' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => stepIndexes.get(stepId),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_MESSAGE_DELTA]: {
+        handle: (_event, data) => {
+          const delta = data as { id?: string; delta?: { content?: { text?: string } } };
+          const index = delta.id ? stepIndexes.get(delta.id) : undefined;
+          if (index != null) {
+            parts[index] = {
+              type: ContentTypes.TEXT,
+              text: `${parts[index]?.text ?? ''}${delta.delta?.content?.text ?? ''}`,
+            };
+          }
+        },
+      },
+    });
+    const emitText = (id: string, text: string, phase?: 'final_answer') => {
+      const index = parts.length;
+      stepIndexes.set(id, index);
+      handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id,
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: id, content_type: 'text', ...(phase && { phase }) },
+          },
+        },
+        undefined,
+        undefined,
+      );
+      handlers?.[GraphEvents.ON_MESSAGE_DELTA]?.handle(
+        GraphEvents.ON_MESSAGE_DELTA,
+        { id, delta: { content: { type: ContentTypes.TEXT, text } } },
+        undefined,
+        undefined,
+      );
+    };
+
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    emitText('short-1', 'I pulled the repository history and will analyze it now.');
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } });
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    emitText('long-1', `Here is the first substantial result. ${'A'.repeat(241)}`);
+
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-3' } });
+    await wiring.hook(batch('tool-3'), new AbortController().signal);
+    emitText('short-2', 'I found another angle worth checking.');
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-4' } });
+    await wiring.hook(batch('tool-4'), new AbortController().signal);
+    emitText('long-2', `Here is the second substantial result. ${'B'.repeat(241)}`, 'final_answer');
+
+    await flushDetached();
+
+    expect(generatePhase).toHaveBeenCalledTimes(2);
+    expect(generatePhase.mock.calls[0][0]).toMatchObject({
+      assistantContext: ['I pulled the repository history and will analyze it now.'],
+      totalActivityCount: 2,
+    });
+    expect(generatePhase.mock.calls[1][0]).toMatchObject({
+      assistantContext: ['I found another angle worth checking.'],
+      closingTextPhase: 'final_answer',
+      totalActivityCount: 2,
+    });
+    expect(parts[4]).toMatchObject({
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 3,
+    });
+    expect(parts[9]).toMatchObject({
+      activity_label_type: 'phase',
+      activity_start_index: 5,
+      activity_end_index: 8,
+    });
   });
 
   it('keeps interleaved parallel text context keyed to its run step', async () => {
@@ -166,6 +276,7 @@ describe('createActivityPhaseWiring', () => {
       undefined,
     );
 
+    wiring.complete();
     await flushDetached();
     expect(generatePhase).toHaveBeenCalledWith(
       expect.objectContaining({ assistantContext: ['First lane completed', 'Second lane'] }),
@@ -219,6 +330,7 @@ describe('createActivityPhaseWiring', () => {
         undefined,
       );
 
+    wiring.complete();
     expect(parts[5]).toMatchObject({
       activity_label_type: 'phase',
       activity_start_index: 0,
@@ -270,6 +382,7 @@ describe('createActivityPhaseWiring', () => {
         undefined,
       );
 
+    wiring.complete();
     expect(parts[4]).toMatchObject({
       activity_label_type: 'phase',
       activity_start_index: 1,
@@ -380,6 +493,7 @@ describe('createActivityPhaseWiring', () => {
       undefined,
     );
 
+    wiring.complete();
     expect(parts[5]).toMatchObject({
       activity_label_type: 'phase',
       activity_start_index: 2,
@@ -538,6 +652,7 @@ describe('createActivityPhaseWiring', () => {
         undefined,
       );
 
+    wiring.complete();
     await flushDetached();
     expect(generatePhase).toHaveBeenCalledTimes(1);
     expect(generatedActivities).toHaveLength(2);
@@ -704,6 +819,7 @@ describe('createActivityPhaseWiring', () => {
       undefined,
     );
 
+    wiring.complete();
     await flushDetached();
     expect(generatePhase).toHaveBeenCalledWith(
       expect.objectContaining({ activities: expect.arrayContaining([expect.any(Object)]) }),
@@ -761,6 +877,7 @@ describe('createActivityPhaseWiring', () => {
         undefined,
       );
 
+    resumed.complete();
     await flushDetached();
     expect(generatePhase).toHaveBeenCalledWith(
       expect.objectContaining({ activities: expect.arrayContaining([expect.any(Object)]) }),
@@ -773,7 +890,7 @@ describe('createActivityPhaseWiring', () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
-      { type: ContentTypes.TEXT, text: 'The resumed answer is complete.' },
+      { type: ContentTypes.TEXT, text: substantialText('The resumed answer is complete.') },
     ];
     const wiring = createActivityPhaseWiring({
       initialSnapshot: {
@@ -813,7 +930,7 @@ describe('createActivityPhaseWiring', () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
-      { type: ContentTypes.TEXT, text: 'This answer preceded more reasoning.' },
+      { type: ContentTypes.TEXT, text: substantialText('This answer preceded more reasoning.') },
     ];
     const wiring = createActivityPhaseWiring({
       getContentParts: () => parts,
@@ -863,7 +980,10 @@ describe('createActivityPhaseWiring', () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'batch-a' } },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
-      { type: ContentTypes.TEXT, text: 'This answer preceded the delayed batch tool.' },
+      {
+        type: ContentTypes.TEXT,
+        text: substantialText('This answer preceded the delayed batch tool.'),
+      },
     ];
     const wiring = createActivityPhaseWiring({
       initialSnapshot: {
@@ -947,7 +1067,7 @@ describe('createActivityPhaseWiring', () => {
     }));
     parts.push(
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-tool' } },
-      { type: ContentTypes.TEXT, text: 'The compacted answer is complete.' },
+      { type: ContentTypes.TEXT, text: substantialText('The compacted answer is complete.') },
     );
     const generatePhase = jest.fn(async () => ({ label: 'Completed the resumed workflow' }));
     const wiring = createActivityPhaseWiring({
@@ -998,7 +1118,7 @@ describe('createActivityPhaseWiring', () => {
 
   it('drops a stale reasoning-only overflow anchor after HITL compaction', async () => {
     const parts: LooseContentPart[] = [
-      { type: ContentTypes.TEXT, text: 'The compacted answer is complete.' },
+      { type: ContentTypes.TEXT, text: substantialText('The compacted answer is complete.') },
     ];
     const generatePhase = jest.fn(async () => ({ label: 'Completed the resumed workflow' }));
     const wiring = createActivityPhaseWiring({
@@ -1051,7 +1171,7 @@ describe('createActivityPhaseWiring', () => {
     const duplicate = 'The same reasoning prefix identifies both retained activities.';
     const parts: LooseContentPart[] = [
       { type: ContentTypes.THINK, think: duplicate },
-      { type: ContentTypes.TEXT, text: 'This looked like the final answer.' },
+      { type: ContentTypes.TEXT, text: substantialText('This looked like the final answer.') },
       { type: ContentTypes.THINK, think: `${duplicate} Later activity details.` },
     ];
     const wiring = createActivityPhaseWiring({
@@ -1101,7 +1221,10 @@ describe('createActivityPhaseWiring', () => {
     const duplicate = 'The overflow reasoning prefix is shared by both positions.';
     const parts: LooseContentPart[] = [
       { type: ContentTypes.THINK, think: duplicate },
-      { type: ContentTypes.TEXT, text: 'This looked like the final overflow answer.' },
+      {
+        type: ContentTypes.TEXT,
+        text: substantialText('This looked like the final overflow answer.'),
+      },
       { type: ContentTypes.THINK, think: `${duplicate} Later overflow details.` },
     ];
     const wiring = createActivityPhaseWiring({
@@ -1154,7 +1277,10 @@ describe('createActivityPhaseWiring', () => {
     const later = 'The later overflow activity materialized before the apparent answer.';
     const parts: LooseContentPart[] = [
       { type: ContentTypes.THINK, think: later },
-      { type: ContentTypes.TEXT, text: 'This looked like the final overflow answer.' },
+      {
+        type: ContentTypes.TEXT,
+        text: substantialText('This looked like the final overflow answer.'),
+      },
       { type: ContentTypes.THINK, think: earlier },
     ];
     const wiring = createActivityPhaseWiring({
@@ -1205,7 +1331,10 @@ describe('createActivityPhaseWiring', () => {
   it('retains an earlier overflow ID when delayed tools materialize in reverse order', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-b' } },
-      { type: ContentTypes.TEXT, text: 'This answer arrived between delayed tools.' },
+      {
+        type: ContentTypes.TEXT,
+        text: substantialText('This answer arrived between delayed tools.'),
+      },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-a' } },
     ];
     const generatePhase = jest.fn(async () => ({ label: 'Completed the delayed workflow' }));
@@ -1257,7 +1386,10 @@ describe('createActivityPhaseWiring', () => {
   it('keeps the overflow fallback while a boundary tool remains unresolved', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-a' } },
-      { type: ContentTypes.TEXT, text: 'This answer preceded a delayed overflow tool.' },
+      {
+        type: ContentTypes.TEXT,
+        text: substantialText('This answer preceded a delayed overflow tool.'),
+      },
     ];
     const wiring = createActivityPhaseWiring({
       initialSnapshot: {
@@ -1367,7 +1499,10 @@ describe('createActivityPhaseWiring', () => {
         undefined,
         undefined,
       );
-    parts[13] = { type: ContentTypes.TEXT, text: 'This may be the final answer.' };
+    parts[13] = {
+      type: ContentTypes.TEXT,
+      text: substantialText('This may be the final answer.'),
+    };
     parts[14] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-overflow' } };
     await wiring.hook(batch('tool-overflow'), new AbortController().signal);
 
@@ -1386,7 +1521,7 @@ describe('createActivityPhaseWiring', () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
-      { type: ContentTypes.TEXT, text: 'The persisted answer is complete.' },
+      { type: ContentTypes.TEXT, text: substantialText('The persisted answer is complete.') },
     ];
     const generatePhase = jest.fn(async () => ({ label: 'Completed the persisted workflow' }));
     const wiring = createActivityPhaseWiring({
@@ -1410,7 +1545,7 @@ describe('createActivityPhaseWiring', () => {
   });
 
   it('excludes the persisted final text from the phase summary context', async () => {
-    const finalText = 'The persisted answer is complete.';
+    const finalText = substantialText('The persisted answer is complete.');
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
@@ -1480,7 +1615,10 @@ describe('createActivityPhaseWiring', () => {
         undefined,
         undefined,
       );
-    parts[2] = { type: ContentTypes.TEXT, text: 'The indexed answer is complete.' };
+    parts[2] = {
+      type: ContentTypes.TEXT,
+      text: substantialText('The indexed answer is complete.'),
+    };
 
     wiring.complete();
     await flushDetached();
@@ -1498,7 +1636,7 @@ describe('createActivityPhaseWiring', () => {
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
       {
         type: ContentTypes.TEXT,
-        text: 'The lane answer is complete.',
+        text: substantialText('The lane answer is complete.'),
         phase: 'final_answer',
         groupId: 'lane-a',
       },
@@ -1523,7 +1661,10 @@ describe('createActivityPhaseWiring', () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
-      { type: ContentTypes.TEXT, text: 'The materialized answer is complete.' },
+      {
+        type: ContentTypes.TEXT,
+        text: substantialText('The materialized answer is complete.'),
+      },
       { type: ContentTypes.TEXT, text: '', phase: 'final_answer' },
     ];
     const wiring = createActivityPhaseWiring({
@@ -1561,7 +1702,7 @@ describe('createActivityPhaseWiring', () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
-      { type: ContentTypes.TEXT, text: 'The answer is complete.' },
+      { type: ContentTypes.TEXT, text: substantialText('The answer is complete.') },
       { type: ContentTypes.THINK, think: '' },
     ];
     const wiring = createActivityPhaseWiring({
@@ -1633,6 +1774,7 @@ describe('createActivityPhaseWiring', () => {
       undefined,
       undefined,
     );
+    wiring.complete();
     await flushDetached();
     expect(generatePhase).toHaveBeenCalledTimes(1);
   });
@@ -1682,12 +1824,12 @@ describe('createActivityPhaseWiring', () => {
     expect(generatePhase).toHaveBeenCalledTimes(1);
     expect(parts[3]).toMatchObject({
       activity_start_index: 0,
-      activity_end_index: 2,
+      activity_end_index: 3,
       activity_count: 2,
     });
   });
 
-  it('leaves final semantic commentary outside a completion-finalized phase', async () => {
+  it('keeps short final semantic commentary inside a completion-finalized phase', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
     ];
@@ -1725,12 +1867,12 @@ describe('createActivityPhaseWiring', () => {
 
     expect(parts[3]).toMatchObject({
       activity_start_index: 0,
-      activity_end_index: 2,
+      activity_end_index: 3,
       activity_count: 2,
     });
   });
 
-  it('leaves the last semantic commentary outside after earlier unphased text', async () => {
+  it('keeps short semantic commentary inside after earlier unphased text', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
     ];
@@ -1789,12 +1931,12 @@ describe('createActivityPhaseWiring', () => {
 
     expect(parts[4]).toMatchObject({
       activity_start_index: 0,
-      activity_end_index: 3,
+      activity_end_index: 4,
       activity_count: 2,
     });
   });
 
-  it('leaves persisted final commentary outside the phase after HITL resume', async () => {
+  it('keeps persisted short commentary inside the phase after HITL resume', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
       { type: ContentTypes.TEXT, text: 'I will keep investigating.' },
@@ -1829,12 +1971,12 @@ describe('createActivityPhaseWiring', () => {
 
     expect(parts[4]).toMatchObject({
       activity_start_index: 0,
-      activity_end_index: 3,
+      activity_end_index: 4,
       activity_count: 2,
     });
   });
 
-  it('summarizes all unphased activities once at root-run completion', async () => {
+  it('summarizes all activities and short text once at root-run completion', async () => {
     const parts: LooseContentPart[] = [];
     const stepIndexes = new Map([
       ['intermediate-text', 2],
@@ -1904,7 +2046,7 @@ describe('createActivityPhaseWiring', () => {
     expect(parts[7]).toMatchObject({
       activity_label_type: 'phase',
       activity_start_index: 0,
-      activity_end_index: 5,
+      activity_end_index: 7,
       activity_count: 4,
     });
   });
@@ -2044,6 +2186,7 @@ describe('createActivityPhaseWiring', () => {
         undefined,
       );
 
+    wiring.complete();
     await flushDetached();
     expect(generatePhase).toHaveBeenCalledWith(expect.objectContaining({ status: 'partial' }));
     expect(parts[parts.length - 1]).toMatchObject({ status: 'partial' });
@@ -2081,6 +2224,7 @@ describe('createActivityPhaseWiring', () => {
         undefined,
       );
 
+    wiring.complete();
     await flushDetached();
     expect(collectUsage).toHaveBeenCalledWith(undefined);
     expect(parts[parts.length - 1]).toMatchObject({ activity_label: '', pending: false });
