@@ -1,8 +1,8 @@
-import type { RequestHandler } from 'express';
 import { verifyWebhook } from '@clerk/backend/webhooks';
+import type { RequestHandler } from 'express';
 import { recordClerkWebhook, type ClerkWebhookEvent, type ClerkWebhookResult } from '~/app/metrics';
-import { resolveClerkAuthConfig } from './config';
 import { CLERK_CLOCK_SKEW_MS, MAX_CLERK_TOKEN_LIFETIME_MS } from './verify';
+import { resolveClerkAuthConfig } from './config';
 
 export interface ClerkWebhookRequestInput {
   body: Uint8Array;

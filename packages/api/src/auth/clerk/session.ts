@@ -1,10 +1,10 @@
 import type { ClerkSessionContext, IUser } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
-import type { UserResponse } from '../user';
 import type { ClerkLoginCompletion } from './handler';
 import type { VerifiedClerkIdentity } from './verify';
-import { ClerkRouteError } from './handler';
+import type { UserResponse } from '../user';
 import { CLERK_CLOCK_SKEW_MS, MAX_CLERK_TOKEN_LIFETIME_MS } from './verify';
+import { ClerkRouteError } from './handler';
 
 export const MAX_CLERK_SESSION_AGE_MS: number = MAX_CLERK_TOKEN_LIFETIME_MS;
 export const MAX_CLERK_2FA_CAPABILITY_LIFETIME_MS: number = 5 * 60_000;

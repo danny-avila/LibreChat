@@ -1,5 +1,5 @@
-import { recordClerkProfileRequest } from '../../app/metrics';
 import { CLERK_PROFILE_TIMEOUT_MS, fetchClerkProfile } from './profile';
+import { recordClerkProfileRequest } from '../../app/metrics';
 
 jest.mock('../../app/metrics', () => ({
   recordClerkProfileRequest: jest.fn(),

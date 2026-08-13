@@ -1,11 +1,11 @@
 import { createSign, generateKeyPairSync } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
-import { recordClerkTokenVerification } from '../../app/metrics';
 import {
   CLERK_CLOCK_SKEW_MS,
   MAX_CLERK_TOKEN_LIFETIME_MS,
   verifyClerkSessionToken,
 } from './verify';
+import { recordClerkTokenVerification } from '../../app/metrics';
 
 jest.mock('../../app/metrics', () => ({
   recordClerkTokenVerification: jest.fn(),

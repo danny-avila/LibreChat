@@ -1,10 +1,10 @@
-import { ClerkRouteError } from './handler';
+import type { ClerkSessionMongoSession, ClerkSessionPersistenceMethods } from './persistence';
+import type { PersistClerkSessionInput, PersistedClerkSession } from './session';
 import {
   CLERK_SESSION_TRANSACTION_TIMEOUT_MS,
   createMongooseClerkSessionPersistence,
 } from './persistence';
-import type { ClerkSessionMongoSession, ClerkSessionPersistenceMethods } from './persistence';
-import type { PersistClerkSessionInput, PersistedClerkSession } from './session';
+import { ClerkRouteError } from './handler';
 
 const now = new Date('2026-08-13T12:00:00.000Z');
 const claimExpiresAt = new Date('2026-08-13T12:10:05.000Z');

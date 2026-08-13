@@ -1,6 +1,6 @@
 import { verifyToken } from '@clerk/backend';
-import { recordClerkTokenVerification } from '../../app/metrics';
 import type { ClerkAuthConfigEnabled } from './types';
+import { recordClerkTokenVerification } from '../../app/metrics';
 
 export const CLERK_CLOCK_SKEW_MS: number = 5_000;
 export const MAX_CLERK_TOKEN_LIFETIME_MS: number = 15 * 60 * 1_000;

@@ -1,6 +1,6 @@
 import type { AppConfig, IUser } from '@librechat/data-schemas';
-import { recordClerkIdentityResolution } from '../../app/metrics';
 import type { VerifiedClerkIdentity } from './verify';
+import { recordClerkIdentityResolution } from '../../app/metrics';
 import { resolveClerkIdentity } from './service';
 
 jest.mock('../../app/metrics', () => ({

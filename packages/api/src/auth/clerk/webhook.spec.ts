@@ -1,6 +1,7 @@
 import express from 'express';
 import request from 'supertest';
 import { Webhook } from 'standardwebhooks';
+import type { ClerkWebhookConfig } from './webhook';
 import {
   createClerkWebhookLifecycle,
   createClerkWebhookHandler,
@@ -10,7 +11,6 @@ import {
   narrowClerkWebhookEvent,
   verifyClerkWebhookRequest,
 } from './webhook';
-import type { ClerkWebhookConfig } from './webhook';
 import { CLERK_CLOCK_SKEW_MS, MAX_CLERK_TOKEN_LIFETIME_MS } from './verify';
 
 describe('createClerkWebhookRequest', () => {

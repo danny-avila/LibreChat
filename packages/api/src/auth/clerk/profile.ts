@@ -1,6 +1,6 @@
-import { recordClerkProfileRequest } from '../../app/metrics';
 import type { ClerkProfileOutcome } from '../../app/metrics';
 import type { ClerkAuthConfigEnabled } from './types';
+import { recordClerkProfileRequest } from '../../app/metrics';
 import { ClerkAuthError } from './verify';
 
 export const CLERK_PROFILE_TIMEOUT_MS: number = 5_000;

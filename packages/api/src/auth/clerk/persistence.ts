@@ -1,11 +1,11 @@
 import type { ClerkSessionContext, IUser } from '@librechat/data-schemas';
-import { ClerkRouteError } from './handler';
 import type {
   ClerkSessionCompletionDependencies,
   ConfirmClerkSessionInput,
   PersistClerkSessionInput,
   PersistedClerkSession,
 } from './session';
+import { ClerkRouteError } from './handler';
 
 export const CLERK_SESSION_TRANSACTION_TIMEOUT_MS: number = 10_000;
 

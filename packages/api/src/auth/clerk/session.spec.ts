@@ -1,14 +1,14 @@
 import type { IUser } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
-import { ClerkRouteError } from './handler';
+import type { ClerkSessionCompletionDependencies, PersistedClerkSession } from './session';
+import type { VerifiedClerkIdentity } from './verify';
 import {
   MAX_CLERK_SESSION_AGE_MS,
   createExchangeClerkSession,
   createFinalizeClerkTwoFactorSession,
   getClerkAbsoluteExpiresAt,
 } from './session';
-import type { ClerkSessionCompletionDependencies, PersistedClerkSession } from './session';
-import type { VerifiedClerkIdentity } from './verify';
+import { ClerkRouteError } from './handler';
 
 const now = new Date('2026-08-13T12:00:00.000Z');
 const tokenExpiresAt = new Date(now.getTime() + 10 * 60_000);
