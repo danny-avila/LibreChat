@@ -1385,3 +1385,34 @@ describe('User Clerk identity fields', () => {
     });
   });
 });
+
+describe('generateToken', () => {
+  test('signs the access token payload with the user tenantId', async () => {
+    const { signPayload } = jest.requireMock<{ signPayload: jest.Mock }>('~/crypto');
+    signPayload.mockClear();
+    const user = await User.create({
+      email: 'tenant-claim@example.com',
+      provider: 'local',
+      tenantId: 'tenant-jwt',
+    });
+
+    await methods.generateToken(user);
+
+    expect(signPayload).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({ tenantId: 'tenant-jwt' }),
+      }),
+    );
+  });
+
+  test('omits tenantId from the payload for a tenantless user', async () => {
+    const { signPayload } = jest.requireMock<{ signPayload: jest.Mock }>('~/crypto');
+    signPayload.mockClear();
+    const user = await User.create({ email: 'tenantless@example.com', provider: 'local' });
+
+    await methods.generateToken(user);
+
+    const [{ payload }] = signPayload.mock.calls[0] as [{ payload: Record<string, unknown> }];
+    expect('tenantId' in payload).toBe(false);
+  });
+});

@@ -575,6 +575,7 @@ export function createUserMethods(
         username: user.username,
         provider: user.provider,
         email: user.email,
+        ...(user.tenantId ? { tenantId: user.tenantId } : {}),
       },
       secret: process.env.JWT_SECRET,
       expirationTime: expires / 1000,
