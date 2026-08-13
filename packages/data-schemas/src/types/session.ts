@@ -1,4 +1,4 @@
-import type { Document, Types } from 'mongoose';
+import type { ClientSession, Document, Types } from 'mongoose';
 
 export interface ISession extends Document {
   refreshTokenHash: string;
@@ -56,6 +56,10 @@ export interface SessionSearchParams {
 
 export interface SessionQueryOptions {
   lean?: boolean;
+}
+
+export interface ClerkSessionLifecycleOptions {
+  session?: ClientSession;
 }
 
 export interface DeleteSessionParams {

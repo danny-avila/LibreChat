@@ -1,3 +1,4 @@
+import type { Model } from 'mongoose';
 import type * as t from '~/types/session';
 import { signPayload, hashToken } from '~/crypto';
 import logger from '~/config/winston';
@@ -35,7 +36,30 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     userId: string | { userId: string },
     options?: t.DeleteAllSessionsOptions,
   ) => Promise<{ deletedCount?: number }>;
+  findClerkSessionIdsByClerkUserId: (
+    clerkUserId: string,
+    options?: t.ClerkSessionLifecycleOptions,
+  ) => Promise<readonly string[]>;
+  deleteSessionsByClerkSessionId: (
+    clerkSessionId: string,
+    options?: t.ClerkSessionLifecycleOptions,
+  ) => Promise<{ deletedCount?: number }>;
+  deleteSessionsByClerkUserId: (
+    clerkUserId: string,
+    options?: t.ClerkSessionLifecycleOptions,
+  ) => Promise<{ deletedCount?: number }>;
 } {
+  function sessionModel(): Model<t.ISession> {
+    return mongoose.models.Session as Model<t.ISession>;
+  }
+
+  function requireClerkIdentifier(value: string): string {
+    if (value.trim().length === 0) {
+      throw new SessionError('Clerk provider identifier is required', 'INVALID_CLERK_ID');
+    }
+    return value;
+  }
+
   /**
    * Creates a new session for a user
    */
@@ -223,6 +247,47 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     }
   }
 
+  async function findClerkSessionIdsByClerkUserId(
+    clerkUserId: string,
+    options: t.ClerkSessionLifecycleOptions = {},
+  ): Promise<readonly string[]> {
+    const providerId = requireClerkIdentifier(clerkUserId);
+    const query = sessionModel()
+      .find({ clerkUserId: providerId, authProvider: 'clerk' })
+      .select({ _id: 0, clerkSessionId: 1 });
+    if (options.session) {
+      query.session(options.session);
+    }
+
+    const sessions = await query.lean<Array<Pick<t.ISession, 'clerkSessionId'>>>();
+    const sessionIds = sessions.flatMap((session) =>
+      typeof session.clerkSessionId === 'string' ? [session.clerkSessionId] : [],
+    );
+    return [...new Set(sessionIds)].sort();
+  }
+
+  async function deleteSessionsByClerkSessionId(
+    clerkSessionId: string,
+    options: t.ClerkSessionLifecycleOptions = {},
+  ): Promise<{ deletedCount?: number }> {
+    const providerId = requireClerkIdentifier(clerkSessionId);
+    return sessionModel().deleteMany(
+      { clerkSessionId: providerId, authProvider: 'clerk' },
+      { session: options.session },
+    );
+  }
+
+  async function deleteSessionsByClerkUserId(
+    clerkUserId: string,
+    options: t.ClerkSessionLifecycleOptions = {},
+  ): Promise<{ deletedCount?: number }> {
+    const providerId = requireClerkIdentifier(clerkUserId);
+    return sessionModel().deleteMany(
+      { clerkUserId: providerId, authProvider: 'clerk' },
+      { session: options.session },
+    );
+  }
+
   /**
    * Generates a refresh token for a session
    */
@@ -288,6 +353,9 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     countActiveSessions,
     generateRefreshToken,
     deleteAllUserSessions,
+    findClerkSessionIdsByClerkUserId,
+    deleteSessionsByClerkSessionId,
+    deleteSessionsByClerkUserId,
   };
 }
 

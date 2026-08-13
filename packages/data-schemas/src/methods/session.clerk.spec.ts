@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type * as t from '~/types';
-import { tenantStorage } from '~/config/tenantContext';
+import { runAsSystem, tenantStorage } from '~/config/tenantContext';
+import { createSessionMethods } from './session';
 import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
@@ -14,6 +15,7 @@ jest.mock('~/config/winston', () => ({
 let mongoServer: MongoMemoryReplSet;
 let Session: mongoose.Model<t.ISession>;
 let User: mongoose.Model<t.IUser>;
+let methods: ReturnType<typeof createSessionMethods>;
 
 function runAs<T>(tenantId: string | undefined, fn: () => Promise<T>): Promise<T> {
   return tenantStorage.run({ tenantId }, fn);
@@ -51,6 +53,7 @@ beforeAll(async () => {
   const models = createModels(mongoose);
   Session = models.Session;
   User = models.User;
+  methods = createSessionMethods(mongoose);
 });
 
 afterAll(async () => {
@@ -159,5 +162,146 @@ describe('Session Clerk indexes', () => {
         new Session(clerkSessionDoc(userId, { clerkTokenId: 'tok_2' })).save(),
       ),
     ).resolves.toBeTruthy();
+  });
+});
+
+describe('Session Clerk system lifecycle methods', () => {
+  async function saveClerkSession(
+    tenantId: string,
+    overrides: Partial<t.ISession>,
+  ): Promise<t.ISession> {
+    const userId = await createTestUser();
+    return runAs(tenantId, () => new Session(clerkSessionDoc(userId, overrides)).save());
+  }
+
+  test('finds unique session IDs for a Clerk user across every tenant', async () => {
+    await saveClerkSession('tenant-a', {
+      clerkSessionId: 'sess_shared',
+      clerkTokenId: 'tok_a',
+      clerkUserId: 'user_target',
+    });
+    await saveClerkSession('tenant-b', {
+      clerkSessionId: 'sess_shared',
+      clerkTokenId: 'tok_b',
+      clerkUserId: 'user_target',
+    });
+    await saveClerkSession('tenant-c', {
+      clerkSessionId: 'sess_other',
+      clerkTokenId: 'tok_c',
+      clerkUserId: 'user_target',
+    });
+    await saveClerkSession('tenant-a', {
+      clerkSessionId: 'sess_unrelated',
+      clerkTokenId: 'tok_d',
+      clerkUserId: 'user_other',
+    });
+
+    const sessionIds = await runAs('forged-tenant', () =>
+      runAsSystem(() => methods.findClerkSessionIdsByClerkUserId('user_target')),
+    );
+
+    expect(sessionIds).toEqual(['sess_other', 'sess_shared']);
+  });
+
+  test('deletes every Session correlated to a sid across tenants in one transaction', async () => {
+    await saveClerkSession('tenant-a', {
+      clerkSessionId: 'sess_target',
+      clerkTokenId: 'tok_a',
+      clerkUserId: 'user_a',
+    });
+    await saveClerkSession('tenant-b', {
+      clerkSessionId: 'sess_target',
+      clerkTokenId: 'tok_b',
+      clerkUserId: 'user_b',
+    });
+    await saveClerkSession('tenant-b', {
+      clerkSessionId: 'sess_keep',
+      clerkTokenId: 'tok_c',
+      clerkUserId: 'user_b',
+    });
+    const transaction = await mongoose.startSession();
+
+    try {
+      await runAs('forged-tenant', () =>
+        runAsSystem(() =>
+          transaction.withTransaction(() =>
+            methods.deleteSessionsByClerkSessionId('sess_target', { session: transaction }),
+          ),
+        ),
+      );
+    } finally {
+      await transaction.endSession();
+    }
+
+    const remaining = await runAsSystem(() => Session.find().select({ clerkSessionId: 1 }).lean());
+    expect(remaining.map((session) => session.clerkSessionId)).toEqual(['sess_keep']);
+  });
+
+  test('deletes every Session correlated to a Clerk user while preserving other users', async () => {
+    await saveClerkSession('tenant-a', {
+      clerkSessionId: 'sess_a',
+      clerkTokenId: 'tok_a',
+      clerkUserId: 'user_target',
+    });
+    await saveClerkSession('tenant-b', {
+      clerkSessionId: 'sess_b',
+      clerkTokenId: 'tok_b',
+      clerkUserId: 'user_target',
+    });
+    await saveClerkSession('tenant-b', {
+      clerkSessionId: 'sess_keep',
+      clerkTokenId: 'tok_c',
+      clerkUserId: 'user_other',
+    });
+    const transaction = await mongoose.startSession();
+
+    try {
+      await runAsSystem(() =>
+        transaction.withTransaction(() =>
+          methods.deleteSessionsByClerkUserId('user_target', { session: transaction }),
+        ),
+      );
+    } finally {
+      await transaction.endSession();
+    }
+
+    const remaining = await runAsSystem(() => Session.find().select({ clerkUserId: 1 }).lean());
+    expect(remaining.map((session) => session.clerkUserId)).toEqual(['user_other']);
+  });
+
+  test('participates in caller-owned rollback without deleting correlated Sessions', async () => {
+    await saveClerkSession('tenant-a', {
+      clerkSessionId: 'sess_target',
+      clerkTokenId: 'tok_a',
+      clerkUserId: 'user_target',
+    });
+    const transaction = await mongoose.startSession();
+
+    try {
+      await expect(
+        runAsSystem(() =>
+          transaction.withTransaction(async () => {
+            await methods.deleteSessionsByClerkSessionId('sess_target', {
+              session: transaction,
+            });
+            throw new Error('abort transaction');
+          }),
+        ),
+      ).rejects.toThrow('abort transaction');
+    } finally {
+      await transaction.endSession();
+    }
+
+    await expect(
+      runAsSystem(() => Session.countDocuments({ clerkSessionId: 'sess_target' })),
+    ).resolves.toBe(1);
+  });
+
+  test.each([
+    ['findClerkSessionIdsByClerkUserId', () => methods.findClerkSessionIdsByClerkUserId('   ')],
+    ['deleteSessionsByClerkSessionId', () => methods.deleteSessionsByClerkSessionId('')],
+    ['deleteSessionsByClerkUserId', () => methods.deleteSessionsByClerkUserId('   ')],
+  ])('rejects a blank provider identifier in %s', async (_name, operation) => {
+    await expect(runAsSystem(operation)).rejects.toMatchObject({ code: 'INVALID_CLERK_ID' });
   });
 });
