@@ -814,30 +814,6 @@ export const useForkSharedConvoMutation = (
   );
 };
 
-export const useUploadConversationsMutation = (
-  _options?: t.MutationOptions<t.TImportResponse, FormData>,
-) => {
-  const queryClient = useQueryClient();
-  const { onSuccess, onError, onMutate } = _options || {};
-
-  return useMutation<t.TImportResponse, unknown, FormData>({
-    mutationFn: (formData: FormData) => dataService.importConversationsFile(formData),
-    onSuccess: (data, variables, context) => {
-      /* TODO: optimize to return imported conversations and add manually */
-      queryClient.invalidateQueries([QueryKeys.allConversations]);
-      if (onSuccess) {
-        onSuccess(data, variables, context);
-      }
-    },
-    onError: (err, variables, context) => {
-      if (onError) {
-        onError(err, variables, context);
-      }
-    },
-    onMutate,
-  });
-};
-
 export const useUpdatePresetMutation = (
   options?: t.UpdatePresetOptions,
 ): UseMutationResult<

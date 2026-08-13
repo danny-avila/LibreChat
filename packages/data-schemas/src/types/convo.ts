@@ -39,6 +39,7 @@ export interface IConversation extends Document {
   instructions?: string;
   stop?: string[];
   isArchived?: boolean;
+  importedFrom?: { source: string; externalId: string };
   pinned?: boolean;
   /** Derived per request from the shared-links collection; never persisted on the conversation. */
   isShared?: boolean;

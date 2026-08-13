@@ -10,17 +10,24 @@ const {
   RetentionMode,
   openAISettings,
 } = require('librechat-data-provider');
-const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
+const {
+  deleteMessages,
+  bulkSaveConvos,
+  bulkSaveMessages,
+  bulkIncrementTagCounts,
+} = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
 /**
  * Factory function for creating an instance of ImportBatchBuilder.
  * @param {string} requestUserId - The ID of the user making the request.
  * @param {object} [interfaceConfig] - Runtime interface config for import retention.
+ * @param {object} [options] - Builder options.
+ * @param {number} [options.flushThreshold=250] - Number of buffered conversations that triggers an automatic flush.
  * @returns {ImportBatchBuilder} - The newly created ImportBatchBuilder instance.
  */
-function createImportBatchBuilder(requestUserId, interfaceConfig) {
-  return new ImportBatchBuilder(requestUserId, interfaceConfig);
+function createImportBatchBuilder(requestUserId, interfaceConfig, options) {
+  return new ImportBatchBuilder(requestUserId, interfaceConfig, options);
 }
 
 /**
@@ -31,13 +38,16 @@ class ImportBatchBuilder {
    * Creates an instance of ImportBatchBuilder.
    * @param {string} requestUserId - The ID of the user making the import request.
    * @param {object} [interfaceConfig] - Runtime interface config for import retention.
+   * @param {object} [options] - Builder options.
+   * @param {number} [options.flushThreshold=250] - Number of buffered conversations that triggers an automatic flush.
    */
-  constructor(requestUserId, interfaceConfig) {
+  constructor(requestUserId, interfaceConfig, options = {}) {
     this.requestUserId = requestUserId;
     this.interfaceConfig = interfaceConfig;
     this.conversations = [];
     this.messages = [];
     this.retentionFields = undefined;
+    this.flushThreshold = options.flushThreshold ?? 250;
   }
 
   getRetentionFields() {
@@ -127,36 +137,134 @@ class ImportBatchBuilder {
       ...this.getRetentionFields(),
     };
     convo._id && delete convo._id;
+    /** `convoSchema` declares `importedFrom.externalId` required, but every
+     * import writes through `bulkSaveConvos`, whose `updateOne` upserts run no
+     * validators. An export whose own conversation id is missing or wrongly
+     * typed would otherwise store a marker that violates its own schema. The
+     * marker is dropped rather than half-filled: an id-less conversation is
+     * not dedupable either way, because `loadExistingExternalIds` skips falsy
+     * ids when it reads the markers back. */
+    const externalId = convo.importedFrom?.externalId;
+    if (convo.importedFrom && (typeof externalId !== 'string' || externalId.length === 0)) {
+      delete convo.importedFrom;
+    }
     this.conversations.push(convo);
 
     return { conversation: convo, messages: this.messages };
   }
 
   /**
-   * Saves the batch of conversations and messages to the DB.
+   * Flushes whatever conversations and messages are currently buffered to the DB.
    * Also increments tag counts for any existing tags.
+   * Clears the buffers before awaiting the writes so a concurrent saveMessage
+   * call cannot be silently dropped or double-written.
+   * Messages are written before conversations, deliberately: the conversation
+   * record is the idempotency marker a retry uses to skip already-imported
+   * data, so it must not exist until its messages are durably saved. Writing
+   * conversations first (or concurrently) risks an empty, unrecoverable
+   * conversation if the message write fails after the conversation write
+   * succeeds.
+   * @returns {Promise<void>} A promise that resolves when the flush completes.
+   * @throws {Error} If there is an error saving the batch.
+   */
+  async flush() {
+    if (this.conversations.length === 0 && this.messages.length === 0) {
+      return;
+    }
+
+    const conversations = this.conversations;
+    const messages = this.messages;
+    this.conversations = [];
+    this.messages = [];
+
+    /** The only window in which cleanup is provably safe. No conversation
+     * write has been issued yet, so nothing can point at these messages now or
+     * later, whatever partial state the rejected message write left behind. */
+    try {
+      await bulkSaveMessages(messages, true);
+    } catch (error) {
+      logger.error('Error saving batch messages', error);
+      await this.discardOrphanedMessages(messages);
+      throw error;
+    }
+
+    /** Past this point the outcome of the conversation write is unknowable
+     * from a rejection alone: a bulk write can commit and still reject (write
+     * concern timeout, a dropped response, a partially applied batch). Deleting
+     * the messages on that rejection turns a committed conversation into a
+     * permanently empty one, which is worse than the orphaned rows it was
+     * meant to avoid, so nothing is removed here. Tag maintenance runs after
+     * for the same reason: it can only fail once the commit markers exist.
+     */
+    await bulkSaveConvos(conversations);
+    await bulkIncrementTagCounts(
+      this.requestUserId,
+      conversations.flatMap((convo) => convo.tags),
+    );
+    logger.debug(
+      `user: ${this.requestUserId} | Added ${conversations.length} conversations and ${messages.length} messages to the DB.`,
+    );
+  }
+
+  /**
+   * Removes messages whose conversations were never written. Messages are
+   * written first on purpose, so a message write that fails before any
+   * conversation write leaves rows no conversation points at: invisible to the
+   * user, not skipped by a retry (every run mints fresh message ids), and so
+   * duplicated on every re-import.
+   *
+   * Only ever called from that one window. Once `bulkSaveConvos` has been
+   * issued the messages may belong to a committed conversation and are kept,
+   * because no existence probe can settle it: reading the conversations back
+   * answers a different question than "did this write commit", and the
+   * retention-aware readers hide exactly the temporary and expired
+   * conversations an import creates.
+   *
+   * Scoped to this user and to the freshly minted ids this flush wrote. Best
+   * effort, and never allowed to mask the original failure.
+   * @param {Array<{ messageId: string }>} messages - the messages this flush wrote
+   */
+  async discardOrphanedMessages(messages) {
+    if (messages.length === 0) {
+      return;
+    }
+    try {
+      await deleteMessages({
+        user: this.requestUserId,
+        messageId: { $in: messages.map(({ messageId }) => messageId) },
+      });
+    } catch (cleanupError) {
+      logger.error(
+        `user: ${this.requestUserId} | Could not remove the messages of a failed import batch`,
+        cleanupError,
+      );
+    }
+  }
+
+  /**
+   * Flushes the buffered batch once the number of buffered conversations
+   * reaches flushThreshold. Intended to be called periodically while importing
+   * to bound peak memory and Mongo op size.
+   * @returns {Promise<boolean>} Whether a flush actually ran. Callers that
+   *   promote bookkeeping on commit (the importer's asset claims) need to know
+   *   the difference between "buffered" and "written".
+   */
+  async maybeFlush() {
+    if (this.conversations.length < this.flushThreshold) {
+      return false;
+    }
+    await this.flush();
+    return true;
+  }
+
+  /**
+   * Saves whatever remains in the batch to the DB. Safe to call on an empty
+   * builder, in which case it is a no-op.
    * @returns {Promise<void>} A promise that resolves when the batch is saved.
    * @throws {Error} If there is an error saving the batch.
    */
   async saveBatch() {
-    try {
-      const promises = [];
-      promises.push(bulkSaveConvos(this.conversations));
-      promises.push(bulkSaveMessages(this.messages, true));
-      promises.push(
-        bulkIncrementTagCounts(
-          this.requestUserId,
-          this.conversations.flatMap((convo) => convo.tags),
-        ),
-      );
-      await Promise.all(promises);
-      logger.debug(
-        `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,
-      );
-    } catch (error) {
-      logger.error('Error saving batch', error);
-      throw error;
-    }
+    await this.flush();
   }
 
   /**

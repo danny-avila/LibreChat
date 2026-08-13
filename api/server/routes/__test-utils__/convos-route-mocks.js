@@ -4,6 +4,7 @@ module.exports = {
   api: (overrides = {}) => ({
     isEnabled: jest.fn(),
     resolveImportMaxFileSize: jest.fn(() => 262144000),
+    resolveImportMaxConcurrency: jest.fn(() => 3),
     createAxiosInstance: jest.fn(() => ({
       get: jest.fn(),
       post: jest.fn(),
@@ -15,6 +16,15 @@ module.exports = {
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
     deleteAgentCheckpoints: jest.fn(),
+    runImport: jest.fn(),
+    inspectExport: jest.fn(),
+    ImportJobStore: jest.fn().mockImplementation(() => ({
+      create: jest.fn(),
+      get: jest.fn(),
+      patch: jest.fn(),
+      cancel: jest.fn(),
+      isCancelled: jest.fn(),
+    })),
     ...overrides,
   }),
 
@@ -34,10 +44,11 @@ module.exports = {
   }),
 
   dataProvider: (overrides = {}) => ({
-    CacheKeys: { GEN_TITLE: 'GEN_TITLE' },
+    CacheKeys: { GEN_TITLE: 'GEN_TITLE', IMPORT_JOBS: 'IMPORT_JOBS' },
     EModelEndpoint: {
       azureAssistants: 'azureAssistants',
       assistants: 'assistants',
+      openAI: 'openAI',
     },
     ...overrides,
   }),
@@ -82,6 +93,14 @@ module.exports = {
   }),
 
   importUtils: () => ({ importConversations: jest.fn() }),
+
+  filesStrategies: () => ({ getStrategyFunctions: jest.fn(() => ({ saveBuffer: jest.fn() })) }),
+
+  getFileStrategyUtil: () => ({ getFileStrategy: jest.fn() }),
+
+  importDefaults: () => ({ resolveImportDefaultModel: jest.fn() }),
+
+  importBatchBuilderUtil: () => ({ createImportBatchBuilder: jest.fn() }),
 
   logStores: () => jest.fn(),
 

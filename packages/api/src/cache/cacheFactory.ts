@@ -14,6 +14,7 @@ import session, { MemoryStore } from 'express-session';
 import { Time, CacheKeys } from 'librechat-data-provider';
 import { RedisStore as ConnectRedis } from 'connect-redis';
 import type { SendCommandFn } from 'rate-limit-redis';
+import type { LockableCache } from './lock';
 import { keyvRedisClient, ioredisClient } from './redisClients';
 import { batchDeleteKeys, scanKeys } from './redisUtils';
 import {
@@ -24,6 +25,7 @@ import {
 } from './redisTelemetry';
 import { cacheConfig } from './cacheConfig';
 import { violationFile } from './keyvFiles';
+import { attachRedisLock } from './lock';
 
 /**
  * Memoized in-memory Keyv instances keyed by namespace.
@@ -106,6 +108,21 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
 /** Convenience accessor for the TOKEN_CONFIG cache namespace. */
 export const tokenConfigCache = (): Keyv =>
   standardCache(CacheKeys.TOKEN_CONFIG, Time.THIRTY_MINUTES);
+
+/** Import mutations renew this lease while they are running. One minute keeps
+ * renewal traffic low while retaining bounded recovery after replica death. */
+const IMPORT_JOB_LOCK_TTL = 60000;
+
+/**
+ * Accessor for the IMPORT_JOBS cache namespace, carrying the claim helpers
+ * `ImportJobStore` needs to serialize every job mutation across replicas.
+ */
+export const importJobsCache = (): LockableCache =>
+  attachRedisLock(
+    standardCache(CacheKeys.IMPORT_JOBS, Time.ONE_DAY),
+    CacheKeys.IMPORT_JOBS,
+    IMPORT_JOB_LOCK_TTL,
+  );
 
 /**
  * Creates a cache instance for storing violation data.

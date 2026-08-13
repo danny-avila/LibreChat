@@ -7,9 +7,9 @@ const {
   openAISettings,
   anthropicSettings,
 } = require('librechat-data-provider');
-const { getImporter, processAssistantMessage } = require('./importers');
+const { getImporter } = require('./importers');
 const { ImportBatchBuilder } = require('./importBatchBuilder');
-const { bulkSaveMessages, bulkSaveConvos: _bulkSaveConvos } = require('~/models');
+const { bulkSaveMessages, bulkSaveConvos } = require('~/models');
 
 const mockGetEndpointsConfig = jest.fn().mockResolvedValue({
   [EModelEndpoint.openAI]: { userProvide: false },
@@ -325,7 +325,7 @@ describe('importChatGptConvo', () => {
     expect(assistantMsg1.isCreatedByUser).toBe(false);
     expect(assistantMsg1.model).toBe('gpt-4');
 
-    expect(assistantMsg2.sender).toBe('GPT-3.5-turbo');
+    expect(assistantMsg2.sender).toBe('GPT-3.5 turbo');
     expect(assistantMsg2.isCreatedByUser).toBe(false);
     expect(assistantMsg2.model).toBe('gpt-3.5-turbo');
   });
@@ -477,19 +477,19 @@ describe('importChatGptConvo', () => {
     expect(gpt4o.model).toBe('gpt-4o');
 
     const gpt4oMini = savedMessages.find((msg) => msg.text === 'GPT-4o-mini response');
-    expect(gpt4oMini.sender).toBe('GPT-4o-mini');
+    expect(gpt4oMini.sender).toBe('GPT-4o mini');
     expect(gpt4oMini.model).toBe('gpt-4o-mini');
 
     const gpt35Turbo = savedMessages.find((msg) => msg.text === 'GPT-3.5-turbo response');
-    expect(gpt35Turbo.sender).toBe('GPT-3.5-turbo');
+    expect(gpt35Turbo.sender).toBe('GPT-3.5 turbo');
     expect(gpt35Turbo.model).toBe('gpt-3.5-turbo');
 
     const gpt4Turbo = savedMessages.find((msg) => msg.text === 'GPT-4-turbo response');
-    expect(gpt4Turbo.sender).toBe('GPT-4-turbo');
+    expect(gpt4Turbo.sender).toBe('GPT-4 turbo');
     expect(gpt4Turbo.model).toBe('gpt-4-turbo');
 
     const gpt4Preview = savedMessages.find((msg) => msg.text === 'GPT-4-1106-preview response');
-    expect(gpt4Preview.sender).toBe('GPT-4-1106-preview');
+    expect(gpt4Preview.sender).toBe('GPT-4.1106 preview');
     expect(gpt4Preview.model).toBe('gpt-4-1106-preview');
 
     // Test non-GPT model (should use the model slug as sender)
@@ -499,8 +499,8 @@ describe('importChatGptConvo', () => {
 
     // Test missing model slug (should default to openAISettings.model.default)
     const noModel = savedMessages.find((msg) => msg.text === 'No model slug response');
-    // When no model slug is provided, it defaults to gpt-4o-mini which gets formatted to GPT-4o-mini
-    expect(noModel.sender).toBe('GPT-4o-mini');
+    // When no model slug is provided, it defaults to gpt-4o-mini which gets formatted to GPT-4o mini
+    expect(noModel.sender).toBe('GPT-4o mini');
     expect(noModel.model).toBe(openAISettings.model.default);
 
     // Verify user message is unaffected
@@ -923,8 +923,8 @@ describe('importLibreChatConvo', () => {
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    // Get the imported messages
-    const messages = importBatchBuilder.messages;
+    // Get the imported messages as persisted (buffers are cleared once flushed)
+    const messages = bulkSaveMessages.mock.calls[0][0];
     expect(messages.length).toBeGreaterThan(0);
 
     // Build maps for verification
@@ -1031,7 +1031,7 @@ describe('importLibreChatConvo', () => {
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(1);
 
     const [_title, createdAt, originalConvo] = importBatchBuilder.finishConversation.mock.calls[0];
-    const convo = importBatchBuilder.conversations[0];
+    const convo = bulkSaveConvos.mock.calls[0][0][0];
 
     expect(convo).toEqual({
       ...jsonDataNonRecursiveBranches.options,
@@ -1228,234 +1228,6 @@ describe('getImporter', () => {
   });
 });
 
-describe('processAssistantMessage', () => {
-  const testMessage = 'This is a test citation 【3:0†source】【3:1†source】';
-
-  const messageData = {
-    metadata: {
-      citations: [
-        {
-          start_ix: 23, // Position of first "【3:0†source】"
-          end_ix: 36, // End of first citation (including closing bracket)
-          citation_format_type: 'tether_og',
-          metadata: {
-            type: 'webpage',
-            title: 'Signal Sciences - Crunchbase Company Profile & Funding',
-            url: 'https://www.crunchbase.com/organization/signal-sciences',
-            text: '',
-            pub_date: null,
-            extra: {
-              evidence_text: 'source',
-              cited_message_idx: 3,
-              search_result_idx: 0,
-            },
-          },
-        },
-        {
-          start_ix: 36, // Position of second "【3:1†source】"
-          end_ix: 49, // End of second citation (including closing bracket)
-          citation_format_type: 'tether_og',
-          metadata: {
-            type: 'webpage',
-            title: 'Demand More from Your WAF - Signal Sciences now part of Fastly',
-            url: 'https://www.signalsciences.com/',
-            text: '',
-            pub_date: null,
-            extra: {
-              evidence_text: 'source',
-              cited_message_idx: 3,
-              search_result_idx: 1,
-            },
-          },
-        },
-      ],
-    },
-  };
-
-  const messageText = testMessage;
-  const expectedOutput =
-    'This is a test citation ([Signal Sciences - Crunchbase Company Profile & Funding](https://www.crunchbase.com/organization/signal-sciences)) ([Demand More from Your WAF - Signal Sciences now part of Fastly](https://www.signalsciences.com/))';
-
-  test('should correctly process citations and replace them with markdown links', () => {
-    const result = processAssistantMessage(messageData, messageText);
-    expect(result).toBe(expectedOutput);
-  });
-
-  test('should handle message with no citations', () => {
-    const messageWithNoCitations = {
-      metadata: {},
-    };
-    const result = processAssistantMessage(messageWithNoCitations, messageText);
-    expect(result).toBe(messageText);
-  });
-
-  test('should handle citations with missing metadata', () => {
-    const messageWithBadCitation = {
-      metadata: {
-        citations: [
-          {
-            start_ix: 85,
-            end_ix: 97,
-          },
-        ],
-      },
-    };
-    const result = processAssistantMessage(messageWithBadCitation, messageText);
-    expect(result).toBe(messageText);
-  });
-
-  test('should handle citations with non-webpage type', () => {
-    const messageWithNonWebpage = {
-      metadata: {
-        citations: [
-          {
-            start_ix: 85,
-            end_ix: 97,
-            metadata: {
-              type: 'other',
-              title: 'Test',
-              url: 'http://test.com',
-            },
-          },
-        ],
-      },
-    };
-    const result = processAssistantMessage(messageWithNonWebpage, messageText);
-    expect(result).toBe(messageText);
-  });
-
-  test('should handle empty message text', () => {
-    const result = processAssistantMessage(messageData, '');
-    expect(result).toBe('');
-  });
-
-  test('should handle undefined message text', () => {
-    const result = processAssistantMessage(messageData, undefined);
-    expect(result).toBe(undefined);
-  });
-
-  test('should handle invalid citation indices', () => {
-    const messageWithBadIndices = {
-      metadata: {
-        citations: [
-          {
-            start_ix: 100,
-            end_ix: 90, // end before start
-            metadata: {
-              type: 'webpage',
-              title: 'Test',
-              url: 'http://test.com',
-            },
-          },
-        ],
-      },
-    };
-    const result = processAssistantMessage(messageWithBadIndices, messageText);
-    expect(result).toBe(messageText);
-  });
-
-  test('should correctly process citations from real ChatGPT data', () => {
-    const jsonData = JSON.parse(
-      fs.readFileSync(path.join(__dirname, '__data__', 'chatgpt-citations.json'), 'utf8'),
-    );
-
-    // Get the message containing citations from the JSON data
-    const assistantMessage = jsonData[0].mapping['4b3aec6b-5146-4bad-ae8e-204fdb6accda'].message;
-
-    const messageText = assistantMessage.content.parts[0];
-    const citations = assistantMessage.metadata.citations;
-
-    // Expected output should have all citations replaced with markdown links
-    const expectedOutput =
-      "Signal Sciences is a web application security company that was founded on March 10, 2014, by Andrew Peterson, Nick Galbreath, and Zane Lackey. It operates as a for-profit company with its legal name being Signal Sciences Corp. The company has achieved significant growth and is recognized as the fastest-growing web application security company in the world. Signal Sciences developed a next-gen web application firewall (NGWAF) and runtime application self-protection (RASP) technologies designed to increase security and maintain reliability without compromising the performance of modern web applications distributed across cloud, on-premise, edge, or hybrid environments ([Signal Sciences - Crunchbase Company Profile & Funding](https://www.crunchbase.com/organization/signal-sciences)) ([Demand More from Your WAF - Signal Sciences now part of Fastly](https://www.signalsciences.com/)).\n\nIn a major development, Fastly, Inc., a provider of an edge cloud platform, announced the completion of its acquisition of Signal Sciences on October 1, 2020. This acquisition was valued at approximately $775 million in cash and stock. By integrating Signal Sciences' powerful web application and API security solutions with Fastly's edge cloud platform and existing security offerings, they aimed to form a unified suite of security solutions. The merger was aimed at expanding Fastly's security portfolio, particularly at a time when digital security has become paramount for businesses operating online ([Fastly Completes Acquisition of Signal Sciences | Fastly](https://www.fastly.com/press/press-releases/fastly-completes-acquisition-signal-sciences)) ([Fastly Agrees to Acquire Signal Sciences for $775 Million - Cooley](https://www.cooley.com/news/coverage/2020/2020-08-27-fastly-agrees-to-acquire-signal-sciences-for-775-million)).";
-
-    const result = processAssistantMessage(assistantMessage, messageText);
-    expect(result).toBe(expectedOutput);
-
-    // Additional checks to verify citation processing
-    citations.forEach((citation) => {
-      // Verify each citation was replaced
-      const markdownLink = `([${citation.metadata.title}](${citation.metadata.url}))`;
-      expect(result).toContain(markdownLink);
-
-      // Verify original citation format is not present
-      const originalCitation = messageText.slice(citation.start_ix, citation.end_ix);
-      expect(result).not.toContain(originalCitation);
-    });
-  });
-
-  test('should handle potential ReDoS attack payloads', () => {
-    // Test with increasing input sizes to check for exponential behavior
-    const sizes = [32, 33, 34]; // Adding more sizes would increase test time
-    const regExp = '(a+)+';
-    const results = [];
-
-    sizes.forEach((size) => {
-      const startTime = process.hrtime();
-
-      const maliciousMessageData = {
-        metadata: {
-          citations: [
-            {
-              start_ix: 0,
-              end_ix: size,
-              citation_format_type: 'tether_og',
-              metadata: {
-                type: 'webpage',
-                title: 'Test',
-                url: 'http://test.com',
-                extra: {
-                  cited_message_idx: regExp,
-                },
-              },
-            },
-          ],
-        },
-      };
-
-      const maliciousText = '【' + 'a'.repeat(size) + '】';
-
-      processAssistantMessage(maliciousMessageData, maliciousText);
-
-      const endTime = process.hrtime(startTime);
-      const duration = endTime[0] * 1000 + endTime[1] / 1000000; // Convert to milliseconds
-      results.push(duration);
-    });
-
-    // Each size should complete well under 100ms; a ReDoS would cause exponential blowup
-    for (let i = 0; i < results.length; i++) {
-      expect(results[i]).toBeLessThan(100);
-    }
-
-    // Also test with the exact payload from the security report
-    const maliciousPayload = {
-      metadata: {
-        citations: [
-          {
-            metadata: {
-              extra: {
-                cited_message_idx: '(a+)+',
-              },
-              type: 'webpage',
-              title: '1',
-              url: '2',
-            },
-          },
-        ],
-      },
-    };
-
-    const text = '【' + 'a'.repeat(32);
-    const startTime = process.hrtime();
-    processAssistantMessage(maliciousPayload, text);
-    const endTime = process.hrtime(startTime);
-    const duration = endTime[0] * 1000 + endTime[1] / 1000000;
-
-    // The processing should complete quickly (under 100ms)
-    expect(duration).toBeLessThan(100);
-  });
-});
-
 describe('importClaudeConvo', () => {
   it('should import basic Claude conversation correctly', async () => {
     const jsonData = [
@@ -1494,7 +1266,12 @@ describe('importClaudeConvo', () => {
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
       'Test Conversation',
       expect.any(Date),
-      {},
+      {
+        isArchived: false,
+        pinned: false,
+        model: expect.any(String),
+        importedFrom: { source: 'claude', externalId: 'conv-123' },
+      },
       expect.any(String),
     );
 
@@ -1557,7 +1334,7 @@ describe('importClaudeConvo', () => {
     expect(assistantMsg.content[1].text).toBe('The answer is 4.');
   });
 
-  it('should not include model field (Claude exports do not contain model info)', async () => {
+  it('should save messages with the resolved anthropic model (Claude exports carry none)', async () => {
     const jsonData = [
       {
         uuid: 'conv-123',
@@ -1582,8 +1359,7 @@ describe('importClaudeConvo', () => {
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
     const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
-    // Model should not be explicitly set (will use ImportBatchBuilder default)
-    expect(savedMessages[0]).not.toHaveProperty('model');
+    expect(savedMessages[0].model).toBe(anthropicSettings.model.default);
   });
 
   it('should set the conversation endpoint and a Claude model so the chat UI loads correctly without a refresh', async () => {
@@ -1615,8 +1391,8 @@ describe('importClaudeConvo', () => {
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    expect(importBatchBuilder.conversations).toHaveLength(1);
-    const convo = importBatchBuilder.conversations[0];
+    expect(bulkSaveConvos.mock.calls[0][0]).toHaveLength(1);
+    const convo = bulkSaveConvos.mock.calls[0][0][0];
     expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
     expect(convo.model).toBe(anthropicSettings.model.default);
     expect(convo.model).not.toBe(openAISettings.model.default);
@@ -1649,7 +1425,7 @@ describe('importClaudeConvo', () => {
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    const convo = importBatchBuilder.conversations[0];
+    const convo = bulkSaveConvos.mock.calls[0][0][0];
     expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
     expect(convo.model).toBe('claude-opus-4-7');
   });
@@ -1681,7 +1457,7 @@ describe('importClaudeConvo', () => {
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    const convo = importBatchBuilder.conversations[0];
+    const convo = bulkSaveConvos.mock.calls[0][0][0];
     expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
     expect(convo.model).toBe(anthropicSettings.model.default);
   });
@@ -1711,7 +1487,7 @@ describe('importClaudeConvo', () => {
     const importer = getImporter(jsonData);
     await importer(jsonData, requestUserId, () => importBatchBuilder);
 
-    const convo = importBatchBuilder.conversations[0];
+    const convo = bulkSaveConvos.mock.calls[0][0][0];
     expect(convo.endpoint).toBe(EModelEndpoint.anthropic);
     expect(convo.model).toBe(anthropicSettings.model.default);
   });
@@ -1882,7 +1658,71 @@ describe('importClaudeConvo', () => {
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
       'Imported Claude Chat',
       expect.any(Date),
-      {},
+      expect.objectContaining({
+        importedFrom: { source: 'claude', externalId: 'conv-123' },
+      }),
+      expect.any(String),
+    );
+  });
+});
+
+describe('importGrokConvo', () => {
+  const { EXPORT: grokExport } = require('~/test/grokExport');
+
+  it('routes a Grok export object to the Grok importer', () => {
+    expect(getImporter(grokExport)).toBe(getImporter(grokExport));
+    expect(() => getImporter({ conversations: [] })).toThrow('Unsupported import type');
+  });
+
+  it('imports every conversation on the OpenAI endpoint with per-message models', async () => {
+    const requestUserId = 'user-123';
+    const importBatchBuilder = new ImportBatchBuilder(requestUserId);
+    jest.spyOn(importBatchBuilder, 'saveMessage');
+    jest.spyOn(importBatchBuilder, 'startConversation');
+    jest.spyOn(importBatchBuilder, 'finishConversation');
+
+    const importer = getImporter(grokExport);
+    await importer(grokExport, requestUserId, () => importBatchBuilder);
+
+    expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.openAI);
+    /** Six responses, one of them an aborted generation with no text. */
+    expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(5);
+
+    const savedMessages = importBatchBuilder.saveMessage.mock.calls.map((call) => call[0]);
+    const userMsg = savedMessages.find((msg) => msg.text === 'Where should I stay?');
+    expect(userMsg.isCreatedByUser).toBe(true);
+    expect(userMsg.sender).toBe('user');
+    expect(userMsg.endpoint).toBe(EModelEndpoint.openAI);
+    /** A blank model on a human turn falls back rather than persisting empty. */
+    expect(userMsg.model).toBe(openAISettings.model.default);
+
+    const upperCaseSender = savedMessages.find((msg) => msg.text === 'Positano.');
+    expect(upperCaseSender.isCreatedByUser).toBe(false);
+    expect(upperCaseSender.sender).toBe('Grok 4.1 Thinking');
+    expect(upperCaseSender.model).toBe('grok-4-1-thinking-1129');
+    expect(upperCaseSender.parentMessageId).toBe(userMsg.messageId);
+
+    const sibling = savedMessages.find((msg) => msg.text === 'Ravello.');
+    expect(sibling.parentMessageId).toBe(userMsg.messageId);
+
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
+      'Amalfi trip planning',
+      expect.any(Date),
+      {
+        isArchived: false,
+        pinned: false,
+        model: expect.any(String),
+        importedFrom: { source: 'grok', externalId: 'grok-branched' },
+      },
+      expect.any(String),
+    );
+    expect(importBatchBuilder.finishConversation).toHaveBeenCalledWith(
+      'Recovering a cut-off script',
+      expect.any(Date),
+      expect.objectContaining({
+        pinned: true,
+        importedFrom: { source: 'grok', externalId: 'grok-retried' },
+      }),
       expect.any(String),
     );
   });

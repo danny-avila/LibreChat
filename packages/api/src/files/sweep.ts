@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import {
   FileSources,
   EModelEndpoint,
@@ -7,6 +9,11 @@ import {
 import type { AppConfig } from '@librechat/data-schemas';
 
 const DEFAULT_FILE_RETENTION_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+
+/** Matches `ImportJobStore`'s default TTL: an uploaded-but-unconfirmed import
+ * (or one whose job record already expired from the cache) is no more useful
+ * than the job it belongs to, so its temp upload is swept on the same clock. */
+const DEFAULT_STALE_UPLOAD_AGE_MS = 24 * 60 * 60 * 1000;
 
 type ExpiredFile = {
   file_id: string;
@@ -203,6 +210,70 @@ export async function resolveExpiredFileSweepConfig({
   return (await loadAppConfig()) ?? appConfig;
 }
 
+/**
+ * Deletes upload-temp files (e.g. conversation import archives left behind by
+ * an inspected-but-never-started or never-cancelled import job) older than
+ * `maxAgeMs`. Unlike the rest of this module, these files never become a
+ * `File` document, so they are invisible to `getExpiredFiles`/
+ * `processDeleteRequest` and need their own filesystem-level sweep.
+ * @param uploadsPath - `appConfig.paths.uploads`; a no-op when unset.
+ */
+export async function sweepStaleTempUploads(
+  uploadsPath: string | undefined,
+  { maxAgeMs = DEFAULT_STALE_UPLOAD_AGE_MS, logger }: { maxAgeMs?: number; logger: SweepLogger },
+): Promise<ExpiredFileSweepResult> {
+  const result: ExpiredFileSweepResult = { scanned: 0, deleted: 0, failed: 0 };
+  if (!uploadsPath) {
+    return result;
+  }
+
+  const tempDir = path.join(uploadsPath, 'temp');
+  let userDirs: string[];
+  try {
+    userDirs = await fs.promises.readdir(tempDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.error('[sweepStaleTempUploads] Failed to read the temp uploads directory:', error);
+    }
+    return result;
+  }
+
+  const cutoff = Date.now() - maxAgeMs;
+  for (const userDir of userDirs) {
+    const userDirPath = path.join(tempDir, userDir);
+    let entries: string[];
+    try {
+      entries = await fs.promises.readdir(userDirPath);
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      const entryPath = path.join(userDirPath, entry);
+      result.scanned += 1;
+      try {
+        const stats = await fs.promises.stat(entryPath);
+        if (!stats.isFile() || stats.mtimeMs > cutoff) {
+          continue;
+        }
+        await fs.promises.unlink(entryPath);
+        result.deleted += 1;
+      } catch (error) {
+        result.failed += 1;
+        logger.error(`[sweepStaleTempUploads] Failed to remove stale upload ${entryPath}:`, error);
+      }
+    }
+  }
+
+  if (result.deleted > 0 || result.failed > 0) {
+    logger.info(
+      `[sweepStaleTempUploads] Processed ${result.scanned} temp uploads: ${result.deleted} deleted, ${result.failed} failed`,
+    );
+  }
+
+  return result;
+}
+
 export async function sweepExpiredFiles(
   { appConfig, limit = 100, loadAppConfig }: ExpiredFileSweepOptions | undefined = {},
   { getExpiredFiles, processDeleteRequest, logger }: SweepDependencies,
@@ -253,7 +324,13 @@ export async function sweepExpiredFiles(
     );
   }
 
-  return { scanned: files.length, deleted, failed };
+  const staleUploads = await sweepStaleTempUploads(resolvedAppConfig?.paths?.uploads, { logger });
+
+  return {
+    scanned: files.length + staleUploads.scanned,
+    deleted: deleted + staleUploads.deleted,
+    failed: failed + staleUploads.failed,
+  };
 }
 
 export function startExpiredFileSweep(

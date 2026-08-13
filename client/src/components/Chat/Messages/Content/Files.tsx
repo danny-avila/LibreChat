@@ -4,14 +4,17 @@ import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import FilePreviewDialog from './FilePreviewDialog';
 import Image from './Image';
 
-const Files = ({ message }: { message?: TMessage }) => {
+/** Takes the file list rather than the message: the content-part renderer has
+ * to show the non-image half of it without handing the whole message object to
+ * a memoized subtree. */
+const Files = ({ files }: { files?: TMessage['files'] }) => {
   const imageFiles = useMemo(() => {
-    return message?.files?.filter((file) => file.type?.startsWith('image/')) || [];
-  }, [message?.files]);
+    return files?.filter((file) => file.type?.startsWith('image/')) || [];
+  }, [files]);
 
   const otherFiles = useMemo(() => {
-    return message?.files?.filter((file) => !file.type?.startsWith('image/')) || [];
-  }, [message?.files]);
+    return files?.filter((file) => !file.type?.startsWith('image/')) || [];
+  }, [files]);
 
   const [selectedFile, setSelectedFile] = useState<Partial<TFile> | null>(null);
 

@@ -4,6 +4,7 @@ import type {
   TMessageContentParts,
   SearchResultData,
   TAttachment,
+  TMessage,
   Agents,
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
@@ -20,6 +21,7 @@ import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
+import Files from './Files';
 import Part from './Part';
 
 const getToolCallId = (part: TMessageContentParts): string =>
@@ -142,6 +144,15 @@ type ContentPartsProps = {
   isLast: boolean;
   isSubmitting: boolean;
   isLatestMessage?: boolean;
+  /**
+   * The message's own attachments. Images among them already render as
+   * `image_file` parts, so only the rest are shown here, but the rest have
+   * no content part at all, and `Container` (the only other consumer of this
+   * field) is never reached by a message that has content. Without this, an
+   * assistant turn that carries both reasoning and a generated file renders
+   * the reasoning and silently drops the file.
+   */
+  files?: TMessage['files'];
   edit?: boolean;
   enterEdit?: (cancel?: boolean) => void | null | undefined;
   siblingIdx?: number;
@@ -169,6 +180,7 @@ type ContentPartsProps = {
  */
 const ContentParts = memo(function ContentParts({
   edit,
+  files,
   isLast,
   content,
   manualSkills,
@@ -191,6 +203,21 @@ const ContentParts = memo(function ContentParts({
   toolGroupExpansionState,
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
+  const nonImageFiles = useMemo(
+    () => files?.filter((file) => file.type?.startsWith('image/') !== true),
+    [files],
+  );
+  /** Rendered by every branch below, and by none of the parts: images already
+   * have an `image_file` part, and `Container` is only reached by messages that
+   * carry no content at all. Hoisted rather than inlined once so the edit and
+   * parallel paths cannot silently drop it the way the sequential path was the
+   * only one to handle. */
+  const filesSlot =
+    nonImageFiles != null && nonImageFiles.length > 0 ? (
+      <Container>
+        <Files files={nonImageFiles} />
+      </Container>
+    ) : null;
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
   const localToolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const expansionState = toolGroupExpansionState ?? localToolGroupExpansionRef.current;
@@ -435,6 +462,7 @@ const ContentParts = memo(function ContentParts({
   if (edit === true && enterEdit && setSiblingIdx) {
     return (
       <>
+        {filesSlot}
         {(content ?? []).map((part, localIdx) => {
           if (!part) {
             return null;
@@ -513,6 +541,7 @@ const ContentParts = memo(function ContentParts({
           {hasParallelContent && (
             <Sources messageId={messageId} conversationId={conversationId || undefined} />
           )}
+          {filesSlot}
           {renderPendingSkills()}
           {phaseSegments.map((segment, index) =>
             segment.type === 'phase' ? (
@@ -560,6 +589,7 @@ const ContentParts = memo(function ContentParts({
   if (hasParallelContent) {
     const parallelContent = (
       <>
+        {!nestedActivityPhase && filesSlot}
         {renderPendingSkills()}
         <ParallelContentRenderer
           content={content}
@@ -588,6 +618,7 @@ const ContentParts = memo(function ContentParts({
   const sequentialContent = (
     <SearchContext.Provider value={{ searchResults }}>
       {!nestedActivityPhase && <MemoryArtifacts attachments={attachments} />}
+      {!nestedActivityPhase && filesSlot}
       {!nestedActivityPhase && renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
@@ -613,7 +644,7 @@ const ContentParts = memo(function ContentParts({
             parts={group.parts}
             isSubmitting={effectiveIsSubmitting}
             /** The label part is CONSUMED into the header, not listed in
-             *  `parts` — a filled label at the content tail must still
+             *  `parts`: a filled label at the content tail must still
              *  mark its group as last or nothing holds the streaming
              *  cursor until the next delta. */
             isLast={

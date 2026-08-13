@@ -214,7 +214,7 @@ describe('Multer Configuration', () => {
 
       const cb = jest.fn((err, result) => {
         expect(err).toBeInstanceOf(Error);
-        expect(err.message).toBe('Only JSON files are allowed');
+        expect(err.message).toBe('Unsupported import type');
         expect(result).toBe(false);
         done();
       });

@@ -149,7 +149,7 @@ const EditTextPart = ({
   });
 
   return (
-    <Container message={message}>
+    <Container message={message} showFiles={false}>
       {part.type === ContentTypes.THINK && (
         <div className="mt-2 flex items-center gap-1.5 text-xs text-text-secondary">
           <span className="flex gap-2 rounded-lg bg-surface-tertiary px-1.5 py-1 font-medium">

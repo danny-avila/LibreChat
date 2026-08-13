@@ -66,6 +66,7 @@ export * from './endpoints';
 export * from './files';
 /* Storage */
 export * from './storage';
+export type { SaveBufferFn } from './storage';
 /* Tools */
 export * from './tools';
 /* web search */
@@ -81,6 +82,8 @@ export * from './shared-links/config';
 export * from './shared-links/http';
 /* Stream */
 export * from './stream';
+/* Import */
+export * from './import';
 /* Diagnostics */
 export { memoryDiagnostics } from './utils/memory';
 /* RUM */
@@ -88,4 +91,5 @@ export * from './rum/proxy';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';
+export type * from './import/types';
 export type * from './types';
