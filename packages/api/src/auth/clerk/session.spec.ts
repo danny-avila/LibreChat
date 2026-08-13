@@ -4,6 +4,7 @@ import { ClerkRouteError } from './handler';
 import {
   MAX_CLERK_SESSION_AGE_MS,
   createExchangeClerkSession,
+  createFinalizeClerkTwoFactorSession,
   getClerkAbsoluteExpiresAt,
 } from './session';
 import type { ClerkSessionCompletionDependencies, PersistedClerkSession } from './session';
@@ -48,7 +49,7 @@ function dependencies(
     now: () => now,
     getSessionExpiryMs: () => 60 * 60_000,
     toTenantScope: (tenantId) => tenantId ?? '__tenantless__',
-    generateTwoFactorTempToken: jest.fn().mockReturnValue('temporary-token'),
+    signTwoFactorTempToken: jest.fn().mockReturnValue('temporary-token'),
     persistClerkSession: jest.fn().mockResolvedValue(persistedSession),
     confirmClerkSession: jest.fn().mockResolvedValue(true),
     setAuthTokens: jest.fn().mockResolvedValue('access-token'),
@@ -71,6 +72,23 @@ function completionInput(overrides: Partial<{ user: IUser; tenantId: string }> =
   };
 }
 
+function signedTwoFactorCapability(overrides: Record<string, unknown> = {}) {
+  return {
+    userId: 'user-id',
+    twoFAPending: true,
+    authProvider: 'clerk',
+    tenantScope: 'tenant-a',
+    clerkSessionId: 'sess_clerk',
+    clerkTokenId: 'token_clerk',
+    clerkUserId: 'user_clerk',
+    tokenExpiresAt: tokenExpiresAt.toISOString(),
+    absoluteExpiresAt: new Date(now.getTime() + MAX_CLERK_SESSION_AGE_MS).toISOString(),
+    exp: Math.floor((now.getTime() + 5 * 60_000) / 1_000),
+    iat: Math.floor(now.getTime() / 1_000),
+    ...overrides,
+  };
+}
+
 describe('getClerkAbsoluteExpiresAt', () => {
   it('caps a long configured Session at fifteen minutes', () => {
     expect(getClerkAbsoluteExpiresAt(now, 24 * 60 * 60_000)).toEqual(
@@ -87,8 +105,8 @@ describe('getClerkAbsoluteExpiresAt', () => {
 
 describe('createExchangeClerkSession', () => {
   it('returns a tenant-bound 2FA capability without Session, claim, or cookie writes', async () => {
-    const generateTwoFactorTempToken = jest.fn().mockReturnValue('temporary-token');
-    const deps = dependencies({ generateTwoFactorTempToken });
+    const signTwoFactorTempToken = jest.fn().mockReturnValue('temporary-token');
+    const deps = dependencies({ signTwoFactorTempToken });
     const exchange = createExchangeClerkSession(deps);
     const twoFactorUser = { ...user, twoFactorEnabled: true } as unknown as IUser;
 
@@ -99,18 +117,19 @@ describe('createExchangeClerkSession', () => {
       tempToken: 'temporary-token',
     });
 
-    expect(generateTwoFactorTempToken).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(signTwoFactorTempToken).toHaveBeenCalledWith(
+      {
         userId: 'user-id',
+        twoFAPending: true,
         authProvider: 'clerk',
         tenantScope: 'tenant-a',
         clerkSessionId: 'sess_clerk',
         clerkTokenId: 'token_clerk',
         clerkUserId: 'user_clerk',
-        tokenExpiresAt,
-        absoluteExpiresAt: new Date(now.getTime() + MAX_CLERK_SESSION_AGE_MS),
-        capabilityExpiresAt: new Date(now.getTime() + 5 * 60_000),
-      }),
+        tokenExpiresAt: tokenExpiresAt.toISOString(),
+        absoluteExpiresAt: new Date(now.getTime() + MAX_CLERK_SESSION_AGE_MS).toISOString(),
+      },
+      5 * 60,
     );
     expect(deps.persistClerkSession).not.toHaveBeenCalled();
     expect(deps.setAuthTokens).not.toHaveBeenCalled();
@@ -235,4 +254,130 @@ describe('createExchangeClerkSession', () => {
     expect(deps.setAuthTokens).not.toHaveBeenCalled();
     expect(deps.deleteSession).toHaveBeenCalledWith('session-id');
   });
+});
+
+describe('createFinalizeClerkTwoFactorSession', () => {
+  const twoFactorUser = {
+    ...user,
+    twoFactorEnabled: true,
+  } as unknown as IUser;
+
+  function finalizationInput(
+    overrides: Partial<{ capability: unknown; tenantId: string | undefined; user: IUser }> = {},
+  ) {
+    const tenantId = Object.prototype.hasOwnProperty.call(overrides, 'tenantId')
+      ? overrides.tenantId
+      : 'tenant-a';
+    return {
+      req: {} as Request,
+      res: response(),
+      user: overrides.user ?? twoFactorUser,
+      capability: overrides.capability ?? signedTwoFactorCapability(),
+      tenantId,
+    };
+  }
+
+  it('parses the signed capability and reuses persistence, confirmation, tokens, and serialization', async () => {
+    const deps = dependencies();
+    const finalize = createFinalizeClerkTwoFactorSession(deps);
+
+    await expect(finalize(finalizationInput())).resolves.toEqual({
+      token: 'access-token',
+      user: { id: 'user-id', email: 'user@example.com' },
+    });
+
+    expect(deps.persistClerkSession).toHaveBeenCalledWith({
+      userId: 'user-id',
+      tenantId: 'tenant-a',
+      claimExpiresAt: new Date(tokenExpiresAt.getTime() + 5_000),
+      clerk: {
+        authProvider: 'clerk',
+        tenantScope: 'tenant-a',
+        clerkSessionId: 'sess_clerk',
+        clerkTokenId: 'token_clerk',
+        clerkUserId: 'user_clerk',
+        tokenExpiresAt,
+        absoluteExpiresAt: new Date(now.getTime() + MAX_CLERK_SESSION_AGE_MS),
+      },
+    });
+    expect(deps.confirmClerkSession).toHaveBeenCalledWith({
+      sessionId: 'session-id',
+      tenantId: 'tenant-a',
+    });
+    expect(deps.setAuthTokens).toHaveBeenCalledTimes(1);
+    expect(deps.signTwoFactorTempToken).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['wrong tenant', { tenantId: 'tenant-b' }],
+    ['missing tenant', { tenantId: undefined }],
+    [
+      'expired capability',
+      {
+        capability: signedTwoFactorCapability({ exp: Math.floor(now.getTime() / 1_000) }),
+      },
+    ],
+    [
+      'different User',
+      {
+        user: { ...twoFactorUser, _id: 'other-user' } as unknown as IUser,
+      },
+    ],
+  ])('rejects %s before any persistence', async (_label, overrides) => {
+    const deps = dependencies();
+    const finalize = createFinalizeClerkTwoFactorSession(deps);
+
+    await expect(finalize(finalizationInput(overrides))).rejects.toMatchObject({
+      code: 'CLERK_LOGIN_FORBIDDEN',
+      status: 403,
+    });
+
+    expect(deps.persistClerkSession).not.toHaveBeenCalled();
+    expect(deps.setAuthTokens).not.toHaveBeenCalled();
+  });
+
+  it('accepts only the explicit tenantless scope for a tenantless final request', async () => {
+    const deps = dependencies({
+      toTenantScope: (tenantId) => tenantId ?? '__tenantless__',
+    });
+    const finalize = createFinalizeClerkTwoFactorSession(deps);
+
+    await expect(
+      finalize({
+        ...finalizationInput(),
+        tenantId: undefined,
+        capability: signedTwoFactorCapability({ tenantScope: '__tenantless__' }),
+      }),
+    ).resolves.toMatchObject({ token: 'access-token' });
+
+    expect(deps.persistClerkSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: undefined,
+        clerk: expect.objectContaining({ tenantScope: '__tenantless__' }),
+      }),
+    );
+  });
+
+  it.each([
+    ['CLERK_TOKEN_REPLAYED', 409, 'CLERK_TOKEN_REPLAYED'],
+    ['CLERK_SESSION_REVOKED', 403, 'CLERK_LOGIN_FORBIDDEN'],
+    ['CLERK_USER_DELETED', 403, 'CLERK_LOGIN_FORBIDDEN'],
+  ] as const)(
+    'maps final exchange error %s without issuing cookies',
+    async (code, status, routeCode) => {
+      const deps = dependencies({
+        persistClerkSession: jest
+          .fn()
+          .mockRejectedValue(Object.assign(new Error('data failure'), { code })),
+      });
+      const finalize = createFinalizeClerkTwoFactorSession(deps);
+
+      await expect(finalize(finalizationInput())).rejects.toMatchObject({
+        code: routeCode,
+        status,
+      });
+
+      expect(deps.setAuthTokens).not.toHaveBeenCalled();
+    },
+  );
 });
