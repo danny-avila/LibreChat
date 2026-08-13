@@ -234,6 +234,34 @@ describe('groupActivityPhases', () => {
     expect(lastVisibleContentIdx([tool, tool, final, phase as never])).toBe(2);
   });
 
+  it('keeps an emptied earlier phase header when a later marker recovers nothing', () => {
+    const laterTool = {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id: 'later', name: 'web_search', args: '{}', output: 'ok' },
+    } as unknown as TMessageContentParts;
+    /** Compaction left this completed phase with no children, so its summary
+     *  header is the entire segment. A later marker recovers nothing from it. */
+    const emptied = labelPart({ activity_label: 'Completed the compacted phase', pending: false });
+    Object.assign(emptied, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 0,
+      activity_count: 2,
+    });
+    const later = labelPart({ activity_label: 'Completed the later phase', pending: false });
+    Object.assign(later, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+    const content = [emptied as never, laterTool, later as never];
+
+    const segments = groupActivityPhases(content);
+
+    expect(segments?.filter((segment) => segment.type === 'phase')).toHaveLength(2);
+  });
+
   it('groups multiple logical spans when an earlier phase marker arrives late', () => {
     const first = labelPart({ activity_label: 'Completed the first phase', pending: false });
     Object.assign(first, {

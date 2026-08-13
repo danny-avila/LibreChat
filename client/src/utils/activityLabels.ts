@@ -232,7 +232,12 @@ export function groupActivityPhases(
           }
         }
         if (retainedIndices.length === 0) {
-          segments.splice(segmentIndex, 1);
+          /** A completed phase can legitimately carry no children after
+           *  compaction — its summary header is the whole segment. Only drop
+           *  what recovery actually emptied, not what arrived empty. */
+          if (segment.contentIndices.length > 0) {
+            segments.splice(segmentIndex, 1);
+          }
         } else {
           segment.content = retainedContent;
           segment.contentIndices = retainedIndices;
