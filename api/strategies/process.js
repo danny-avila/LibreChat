@@ -1,4 +1,5 @@
 const { getBalanceConfig } = require('@librechat/api');
+const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
@@ -62,7 +63,7 @@ const handleExistingUser = async (oldUser, avatarUrl, appConfig, email) => {
  *
  * @param {Object} params - The parameters object for user creation.
  * @param {string} params.email - The email of the new user.
- * @param {string} params.avatarUrl - The avatar URL of the new user.
+ * @param {string} [params.avatarUrl] - The optional avatar URL of the new user.
  * @param {string} params.provider - The provider of the user's account.
  * @param {string} params.providerKey - The key to identify the provider in the user model.
  * @param {string} params.providerId - The provider-specific ID of the user.
@@ -76,6 +77,22 @@ const handleExistingUser = async (oldUser, avatarUrl, appConfig, email) => {
  *
  * @throws {Error} Throws an error if there's an issue creating or saving the new user object.
  */
+const normalizeSafeAvatarUrl = (avatarUrl) => {
+  if (typeof avatarUrl !== 'string' || !avatarUrl.trim()) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(avatarUrl.trim());
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+};
+
 const createSocialUser = async ({
   email,
   avatarUrl,
@@ -87,33 +104,38 @@ const createSocialUser = async ({
   appConfig,
   emailVerified,
 }) => {
+  const safeAvatarUrl = normalizeSafeAvatarUrl(avatarUrl);
+  const fileStrategy = appConfig?.fileStrategy ?? process.env.CDN_PROVIDER;
+  const isLocal = fileStrategy === FileSources.local;
   const update = {
     email,
-    avatar: avatarUrl,
     provider,
     [providerKey]: providerId,
     username,
     name,
     emailVerified,
+    ...(isLocal && safeAvatarUrl ? { avatar: safeAvatarUrl } : {}),
   };
 
   const balanceConfig = getBalanceConfig(appConfig);
   const newUserId = await createUser(update, balanceConfig);
-  const fileStrategy = appConfig?.fileStrategy ?? process.env.CDN_PROVIDER;
-  const isLocal = fileStrategy === FileSources.local;
 
-  if (!isLocal) {
-    const resizedBuffer = await resizeAvatar({
-      userId: newUserId,
-      input: avatarUrl,
-    });
-    const { processAvatar } = getStrategyFunctions(fileStrategy);
-    const avatar = await processAvatar({
-      buffer: resizedBuffer,
-      userId: newUserId,
-      manual: 'false',
-    });
-    await updateUser(newUserId, { avatar });
+  if (!isLocal && safeAvatarUrl) {
+    try {
+      const resizedBuffer = await resizeAvatar({
+        userId: newUserId,
+        input: safeAvatarUrl,
+      });
+      const { processAvatar } = getStrategyFunctions(fileStrategy);
+      const avatar = await processAvatar({
+        buffer: resizedBuffer,
+        userId: newUserId,
+        manual: 'false',
+      });
+      await updateUser(newUserId, { avatar });
+    } catch {
+      logger.error('[createSocialUser] Avatar processing failed after user creation');
+    }
   }
 
   return await getUserById(newUserId);

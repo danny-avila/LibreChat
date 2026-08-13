@@ -1,5 +1,11 @@
 const { FileSources } = require('librechat-data-provider');
-const { handleExistingUser } = require('./process');
+const { createSocialUser, handleExistingUser } = require('./process');
+
+jest.mock('@librechat/data-schemas', () => ({
+  logger: {
+    error: jest.fn(),
+  },
+}));
 
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn(),
@@ -27,7 +33,8 @@ jest.mock('@librechat/api', () => ({
 
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { resizeAvatar } = require('~/server/services/Files/images/avatar');
-const { updateUser } = require('~/models');
+const { logger } = require('@librechat/data-schemas');
+const { createUser, getUserById, updateUser } = require('~/models');
 
 describe('handleExistingUser', () => {
   beforeEach(() => {
@@ -238,5 +245,88 @@ describe('handleExistingUser', () => {
     await handleExistingUser(oldUser, avatarUrl, {});
 
     expect(updateUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('createSocialUser optional avatar handling', () => {
+  const baseInput = {
+    email: 'clerk@example.com',
+    provider: 'clerk',
+    providerKey: 'clerkId',
+    providerId: 'user_clerk',
+    username: 'clerk-user',
+    name: 'Clerk User',
+    appConfig: {},
+    emailVerified: true,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.CDN_PROVIDER = FileSources.local;
+    createUser.mockResolvedValue('new-user-id');
+    getUserById.mockResolvedValue({
+      _id: 'new-user-id',
+      email: baseInput.email,
+      provider: 'clerk',
+      clerkId: 'user_clerk',
+    });
+  });
+
+  it.each([undefined, '', 'file:///etc/passwd', 'https://user:pass@example.com/avatar.png'])(
+    'creates without fetching a missing or unsafe avatar value (%s)',
+    async (avatarUrl) => {
+      await expect(createSocialUser({ ...baseInput, avatarUrl })).resolves.toMatchObject({
+        _id: 'new-user-id',
+      });
+
+      expect(createUser.mock.calls[0][0]).not.toHaveProperty('avatar');
+      expect(resizeAvatar).not.toHaveBeenCalled();
+      expect(getStrategyFunctions).not.toHaveBeenCalled();
+    },
+  );
+
+  it('stores a safe avatar directly for local file storage', async () => {
+    const avatarUrl = 'https://images.example.com/avatar.png';
+
+    await createSocialUser({ ...baseInput, avatarUrl });
+
+    expect(createUser).toHaveBeenCalledWith(
+      expect.objectContaining({ avatar: avatarUrl }),
+      expect.any(Object),
+    );
+    expect(resizeAvatar).not.toHaveBeenCalled();
+  });
+
+  it('treats a valid remote avatar processing failure as best effort without logging the URL', async () => {
+    process.env.CDN_PROVIDER = 's3';
+    const avatarUrl = 'https://images.example.com/private-avatar.png';
+    resizeAvatar.mockRejectedValue(new Error('download failed'));
+
+    await expect(createSocialUser({ ...baseInput, avatarUrl })).resolves.toMatchObject({
+      _id: 'new-user-id',
+    });
+
+    expect(createUser.mock.calls[0][0]).not.toHaveProperty('avatar');
+    expect(updateUser).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith(
+      '[createSocialUser] Avatar processing failed after user creation',
+    );
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(avatarUrl);
+  });
+
+  it('stores a processed non-local avatar after user creation succeeds', async () => {
+    process.env.CDN_PROVIDER = 's3';
+    const avatarUrl = 'https://images.example.com/avatar.png';
+    const processAvatar = jest.fn().mockResolvedValue('stored-avatar');
+    resizeAvatar.mockResolvedValue(Buffer.from('resized-avatar'));
+    getStrategyFunctions.mockReturnValue({ processAvatar });
+
+    await createSocialUser({ ...baseInput, avatarUrl });
+
+    expect(resizeAvatar).toHaveBeenCalledWith({
+      userId: 'new-user-id',
+      input: avatarUrl,
+    });
+    expect(updateUser).toHaveBeenCalledWith('new-user-id', { avatar: 'stored-avatar' });
   });
 });
