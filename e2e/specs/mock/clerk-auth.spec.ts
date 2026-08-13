@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 const CLERK_PUBLISHABLE_KEY = 'pk_test_Y2xlcmsuZXhhbXBsZS5jb20k';
+const SAFE_REDIRECT = '/c/new?clerk=closure';
 
 const clerkMockScript = [
   '(function () {',
@@ -252,9 +253,10 @@ test('Clerk modal exchange retries safely, recovers one replay, and performs dua
       await route.fulfill({ status: 200, contentType: 'application/json', json: {} });
     });
 
-    await page.goto('/login');
+    await page.goto(`/login?redirect_to=${encodeURIComponent(SAFE_REDIRECT)}`);
     const signIn = page.getByRole('button', { name: 'Continue with Clerk' });
     await expect(signIn).toBeVisible();
+    expect(new URL(page.url()).searchParams.get('redirect_to')).toBe(SAFE_REDIRECT);
 
     const accessibility = await new AxeBuilder({ page })
       .include('[data-testid="clerk-sign-in-button"]')
@@ -263,6 +265,7 @@ test('Clerk modal exchange retries safely, recovers one replay, and performs dua
 
     await signIn.click();
     await expect(page.getByRole('dialog', { name: 'Clerk sign in' })).toBeVisible();
+    expect(new URL(page.url()).searchParams.get('redirect_to')).toBe(SAFE_REDIRECT);
     const providerOptions = await page.evaluate(
       () =>
         (
@@ -281,7 +284,10 @@ test('Clerk modal exchange retries safely, recovers one replay, and performs dua
     );
 
     await page.getByRole('button', { name: 'Create account' }).click();
-    await expect(page).toHaveURL(/\/login#\/create$/);
+    const signUpTransferUrl = new URL(page.url());
+    expect(signUpTransferUrl.pathname).toBe('/login');
+    expect(signUpTransferUrl.searchParams.get('redirect_to')).toBe(SAFE_REDIRECT);
+    expect(signUpTransferUrl.hash).toBe('#/create');
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
@@ -292,7 +298,9 @@ test('Clerk modal exchange retries safely, recovers one replay, and performs dua
     expect(clerkRequests).toEqual([{ clerkToken: 'clerk-token-1' }]);
 
     await page.getByRole('button', { name: 'Retry' }).click();
-    await page.waitForURL(/\/c\/new$/);
+    await page.waitForURL(
+      (url) => url.pathname === '/c/new' && url.searchParams.get('clerk') === 'closure',
+    );
     await expect(page.getByTestId('nav-user')).toBeVisible();
     expect(clerkRequests).toEqual([
       { clerkToken: 'clerk-token-1' },

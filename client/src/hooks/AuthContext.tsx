@@ -46,6 +46,14 @@ export type ClerkSessionContextValue = {
 
 const ClerkSessionContext = createContext<ClerkSessionContextValue | undefined>(undefined);
 
+function getLoginRedirectPath(): string {
+  const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
+  if (redirectTo && isSafeRedirect(redirectTo)) {
+    return `/login?redirect_to=${encodeURIComponent(redirectTo)}`;
+  }
+  return buildLoginRedirectUrl();
+}
+
 const ClerkSessionProvider = ({
   value,
   children,
@@ -136,15 +144,7 @@ const AuthContextProvider = ({
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
       doSetError(resError.message);
-      // Preserve a valid redirect_to across login failures so the deep link survives retries.
-      // Cannot use buildLoginRedirectUrl() here — it reads the current pathname (already /login)
-      // and would return plain /login, dropping the redirect_to destination.
-      const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
-      const loginPath =
-        redirectTo && isSafeRedirect(redirectTo)
-          ? `/login?redirect_to=${encodeURIComponent(redirectTo)}`
-          : '/login';
-      navigate(loginPath, { replace: true });
+      navigate(getLoginRedirectPath(), { replace: true });
     },
   });
   const { mutateAsync: mutateClerkLogin } = useClerkLoginMutation();
@@ -237,7 +237,7 @@ const AuthContextProvider = ({
         if (authConfig?.test === true) {
           return;
         }
-        navigate(buildLoginRedirectUrl());
+        navigate(getLoginRedirectPath());
       },
       onError: (error) => {
         if (isExternalRedirectRef.current) {
@@ -247,7 +247,7 @@ const AuthContextProvider = ({
         if (authConfig?.test === true) {
           return;
         }
-        navigate(buildLoginRedirectUrl());
+        navigate(getLoginRedirectPath());
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are stable at mount; adding refreshToken causes infinite re-fire

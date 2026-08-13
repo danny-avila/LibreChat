@@ -392,6 +392,24 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
     window.history.replaceState({}, '', '/');
   });
 
+  it('preserves a safe redirect_to when anonymous refresh returns no token', () => {
+    window.history.replaceState({}, '', '/login?redirect_to=%2Fc%2Fnew%3Fclerk%3Dclosure');
+
+    renderProviderLive();
+
+    expect(mockRefreshMutate).toHaveBeenCalledTimes(1);
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({});
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/login?redirect_to=%2Fc%2Fnew%3Fclerk%3Dclosure');
+  });
+
   it('navigates to stored sessionStorage redirect after successful token refresh', () => {
     jest.useFakeTimers();
     sessionStorage.setItem(SESSION_KEY, '/c/new?endpoint=bedrock&model=claude-sonnet-4-6');
