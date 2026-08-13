@@ -1,14 +1,23 @@
 const express = require('express');
+const fs = require('fs');
+const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const path = require('path');
 const request = require('supertest');
 const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const { Webhook } = require('standardwebhooks');
 const { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } = require('librechat-data-provider');
-const { createModels, ensureClerkIndexes, runAsSystem } = require('@librechat/data-schemas');
+const {
+  createModels,
+  ensureClerkIndexes,
+  hashToken,
+  runAsSystem,
+} = require('@librechat/data-schemas');
 const getLogStores = require('~/cache/getLogStores');
 
 createModels(mongoose);
 const methods = require('~/models');
+const authRoute = require('./auth');
 const clerkWebhookRoute = require('./clerk');
 
 const SIGNING_SECRET = `whsec_${Buffer.from('clerk-webhook-closure-fixture-key').toString(
@@ -20,12 +29,35 @@ const clerkEnvironment = {
   CLERK_JWT_KEY: 'closure-public-key',
   CLERK_AUTHORIZED_PARTIES: 'https://chat.example.com',
   CLERK_WEBHOOK_SIGNING_SECRET: SIGNING_SECRET,
+  JWT_REFRESH_SECRET: 'clerk-webhook-refresh-secret',
 };
+
+describe.each(['index.js', 'experimental.js'])('%s Clerk webhook mount', (entrypoint) => {
+  const source = fs.readFileSync(path.join(__dirname, '..', entrypoint), 'utf8');
+
+  it('mounts the exact raw webhook route before either global body parser', () => {
+    const mountPattern =
+      /app\.post\(\s*'\/api\/auth\/clerk\/webhook'\s*,\s*express\.raw\(\{\s*type:\s*'application\/json'\s*\}\)\s*,\s*routes\.clerk\s*,?\s*\);/g;
+    const mountIndex = source.search(mountPattern);
+    const jsonParserIndex = source.indexOf("app.use(express.json({ limit: '3mb' }));");
+    const urlencodedParserIndex = source.indexOf(
+      "app.use(express.urlencoded({ extended: true, limit: '3mb' }));",
+    );
+
+    expect(mountIndex).toBeGreaterThan(-1);
+    expect(jsonParserIndex).toBeGreaterThan(-1);
+    expect(urlencodedParserIndex).toBeGreaterThan(-1);
+    expect(mountIndex).toBeLessThan(jsonParserIndex);
+    expect(mountIndex).toBeLessThan(urlencodedParserIndex);
+    expect(source.match(mountPattern)).toHaveLength(1);
+  });
+});
 
 function createApp() {
   const app = express();
   app.post('/api/auth/clerk/webhook', express.raw({ type: 'application/json' }), clerkWebhookRoute);
   app.use(express.json());
+  app.use('/api/auth', authRoute);
   app.use((_request, response) => response.status(404).json({ message: 'Endpoint not found' }));
   return app;
 }
@@ -58,7 +90,14 @@ async function seedUser({ email, clerkId, tenantId, provider = 'local' }) {
   });
 }
 
-async function seedClerkSession({ user, tenantId, clerkSessionId, clerkTokenId, clerkUserId }) {
+async function seedClerkSession({
+  user,
+  tenantId,
+  clerkSessionId,
+  clerkTokenId,
+  clerkUserId,
+  refreshToken,
+}) {
   const expiration = futureDate();
   return mongoose.models.Session.create({
     user: user._id,
@@ -69,7 +108,7 @@ async function seedClerkSession({ user, tenantId, clerkSessionId, clerkTokenId, 
     clerkUserId,
     absoluteExpiresAt: expiration,
     expiration,
-    refreshTokenHash: `hash-${clerkTokenId}`,
+    refreshTokenHash: refreshToken ? await hashToken(refreshToken) : `hash-${clerkTokenId}`,
   });
 }
 
@@ -132,6 +171,7 @@ describe('Clerk webhook-to-session closure', () => {
   it.each(['session.ended', 'session.revoked'])(
     'atomically fences %s and deletes every correlated Session across tenants',
     async (type) => {
+      let refreshToken;
       await runAsSystem(async () => {
         const firstUser = await seedUser({
           email: 'first@example.com',
@@ -143,12 +183,16 @@ describe('Clerk webhook-to-session closure', () => {
           clerkId: 'user_1',
           tenantId: 'tenant-b',
         });
+        refreshToken = jwt.sign({ id: firstUser._id.toString() }, process.env.JWT_REFRESH_SECRET, {
+          expiresIn: '1h',
+        });
         await seedClerkSession({
           user: firstUser,
           tenantId: 'tenant-a',
           clerkSessionId: 'sess_shared',
           clerkTokenId: 'jti_a',
           clerkUserId: 'user_1',
+          refreshToken,
         });
         await seedClerkSession({
           user: secondUser,
@@ -197,6 +241,12 @@ describe('Clerk webhook-to-session closure', () => {
         data: { id: 'sess_shared' },
       });
       expect(duplicate.status).toBe(204);
+
+      const refresh = await request(app)
+        .post('/api/auth/refresh?retry=true')
+        .set('Cookie', [`refreshToken=${refreshToken}`, 'token_provider=librechat']);
+      expect(refresh.status).toBe(403);
+      expect(refresh.text).toBe('No session found');
     },
   );
 
@@ -267,6 +317,11 @@ describe('Clerk webhook-to-session closure', () => {
     });
 
     expect(response.status).toBe(204);
+    const duplicate = await signedWebhookRequest(app, {
+      type: 'user.deleted',
+      data: { id: 'user_deleted' },
+    });
+    expect(duplicate.status).toBe(204);
     await runAsSystem(async () => {
       const tombstoned = await mongoose.models.User.find({ clerkId: 'user_deleted' })
         .select('+clerkDeletedAt')
