@@ -594,9 +594,7 @@ const mergeResumeMessages = (
   }
 
   if (userIndex >= 0) {
-    const insertAt = userIndex + 1;
-    nextMessages.splice(insertAt, 0, responseMessage);
-    return nextMessages;
+    return [...nextMessages, responseMessage];
   }
 
   if (responseIndex >= 0) {
@@ -1787,14 +1785,11 @@ export default function useResumableSSE(
                  *  to indices that were already absolute. */
                 editPrefixClearedRef.current = true;
                 const newMessage = {
+                  ...resumeSubmission.initialResponse,
                   messageId: responseId,
                   parentMessageId: userMsgId,
-                  conversationId: currentSubmission.conversation?.conversationId ?? '',
-                  text: '',
                   content: data.resumeState.aggregatedContent,
                   isCreatedByUser: false,
-                  iconURL: data.resumeState.iconURL,
-                  model: data.resumeState.model,
                 } as TMessage;
                 setMessages(mergeResumeMessages(messages, userMessage, newMessage));
                 resetContentHandler();

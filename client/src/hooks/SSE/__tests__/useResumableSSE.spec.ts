@@ -2921,7 +2921,18 @@ describe('useResumableSSE', () => {
     });
 
     it('does not reuse an older response that only shares the user parent', async () => {
-      const submission = buildSubmission();
+      const submission = buildSubmission({
+        initialResponse: {
+          messageId: 'resp-1',
+          conversationId: CONV_ID,
+          text: '',
+          isCreatedByUser: false,
+          sender: 'Custom Assistant',
+          endpoint: 'azureOpenAI',
+          iconURL: 'https://example.com/assistant.png',
+          model: 'gpt-4.1',
+        },
+      });
       const chatHelpers = buildChatHelpers();
       chatHelpers.getMessages.mockReturnValue([
         {
@@ -2966,7 +2977,20 @@ describe('useResumableSSE', () => {
       expect(syncedMessages?.find((m) => m.messageId === 'resp-previous')?.content).toEqual([
         { type: 'text', text: 'the answer being regenerated' },
       ]);
-      expect(syncedMessages?.find((m) => m.messageId === 'resp-regenerated')?.content).toEqual([]);
+      expect(syncedMessages?.map((message) => message.messageId)).toEqual([
+        'msg-1',
+        'resp-previous',
+        'resp-regenerated',
+      ]);
+      expect(syncedMessages?.find((m) => m.messageId === 'resp-regenerated')).toEqual(
+        expect.objectContaining({
+          content: [],
+          sender: 'Custom Assistant',
+          endpoint: 'azureOpenAI',
+          iconURL: 'https://example.com/assistant.png',
+          model: 'gpt-4.1',
+        }),
+      );
       unmount();
     });
 
