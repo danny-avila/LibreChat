@@ -556,9 +556,7 @@ export default function McpSection({ item }: Props) {
           </Collapse>
           <Collapse open={!hasTools && !toolsLoading}>
             <p className="rounded-xl border border-dashed border-border-light p-3 text-center text-xs text-text-tertiary">
-              {localize(
-                runtimeToolsAvailable ? runtimeToolsMessage : 'com_ui_tools_mcp_no_tools',
-              )}
+              {localize(runtimeToolsAvailable ? runtimeToolsMessage : 'com_ui_tools_mcp_no_tools')}
             </p>
           </Collapse>
         </div>
