@@ -123,6 +123,26 @@ describe('TwoFactorSetupScreen', () => {
     expect(screen.queryByTestId('generate')).not.toBeInTheDocument();
   });
 
+  it('offers a way back to sign-in when the setup credential is missing', () => {
+    const router = createMemoryRouter(
+      [
+        { path: '/login/2fa/setup', element: <TwoFactorSetupScreen /> },
+        { path: '/login', element: <div data-testid="login-page" /> },
+      ],
+      { initialEntries: ['/login/2fa/setup'] },
+    );
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('com_auth_two_factor_setup_expired');
+
+    /** The layout withholds the sign-in controls on this path, so the screen has to carry its own
+     * way out or a reload only replays the same empty state. */
+    fireEvent.click(screen.getByRole('button', { name: 'com_auth_back_to_login' }));
+
+    expect(router.state.location.pathname).toBe('/login');
+    expect(screen.getByTestId('login-page')).toBeInTheDocument();
+  });
+
   it('enrolls, confirms, and requires backup-code download before completion', () => {
     renderScreen();
 

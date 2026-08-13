@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '@librechat/client';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { clearTwoFactorSetupToken, readTwoFactorSetupToken } from 'librechat-data-provider';
 import {
@@ -226,8 +227,20 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
     runFinalize,
   ]);
 
+  /**
+   * The layout hides the sign-in controls on every setup path, so without this action a screen that
+   * lost its credential has nowhere to go: the message tells the user to return to sign in and the
+   * page offers no way to do it. Reloading only replays the same empty state.
+   */
   if (!tempToken) {
-    return <ErrorMessage>{localize('com_auth_two_factor_setup_expired')}</ErrorMessage>;
+    return (
+      <div>
+        <ErrorMessage>{localize('com_auth_two_factor_setup_expired')}</ErrorMessage>
+        <Button variant="link" onClick={restartLogin} className="mt-4 w-full">
+          {localize('com_auth_back_to_login')}
+        </Button>
+      </div>
+    );
   }
 
   return (
