@@ -97,6 +97,10 @@ export const messagesView = (page: Page) => page.getByTestId('messages-view');
 export const replyPrompt = (label: string) => `E2E_REPLY:${label}`;
 export const replyText = (label: string) => `E2E reply ${label}`;
 
+/** Same, for a reply that streams a reasoning part ahead of its text part. */
+export const thinkPrompt = (label: string) => `E2E_THINK_REPLY:${label}`;
+export const thinkText = (label: string) => `E2E reasoning ${label}`;
+
 /** The mock reply as rendered in the conversation, scoped to the messages view. */
 export function mockReply(page: Page) {
   return messagesView(page).getByText(new RegExp(MOCK_REPLY_TEXT, 'i'));

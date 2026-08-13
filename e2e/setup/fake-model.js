@@ -25,6 +25,7 @@ const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
 const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
 const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
+const THINK_REPLY_MARKER = 'E2E_THINK_REPLY:';
 const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const ORDERED_REPLY_MARKER = 'E2E_ORDERED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
@@ -485,6 +486,15 @@ function replyResponses(text) {
   if (replyName) {
     return {
       responses: [`E2E reply ${replyName}`],
+    };
+  }
+
+  const thinkName = getMarkerValue(text, THINK_REPLY_MARKER);
+  if (thinkName) {
+    /** The `<think>` tags are parsed downstream by the agents stream pipeline, so this
+     *  yields a reasoning part followed by a text part: two separately editable parts. */
+    return {
+      responses: [`<think>E2E reasoning ${thinkName}</think>\n\nE2E reply ${thinkName}`],
     };
   }
 

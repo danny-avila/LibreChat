@@ -11,10 +11,11 @@ import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
-import { EditTextPart, EmptyText, AgentUpdate } from './Parts';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
+import EditContentParts from './EditContentParts';
+import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
@@ -430,45 +431,24 @@ const ContentParts = memo(function ContentParts({
     return null;
   }
 
-  // Edit mode: render editable text parts. Interim skill cards are a
-  // mid-stream concern, not relevant in edit mode.
+  // Interim skill cards are a mid-stream concern, not relevant in edit mode.
   if (edit === true && enterEdit && setSiblingIdx) {
     return (
-      <>
-        {(content ?? []).map((part, localIdx) => {
-          if (!part) {
-            return null;
-          }
-          const idx = absoluteIndexAt(localIdx);
-          const isTextPart =
-            part?.type === ContentTypes.TEXT ||
-            typeof (part as unknown as Agents.MessageContentText)?.text === 'string';
-          const isThinkPart =
-            part?.type === ContentTypes.THINK ||
-            typeof (part as unknown as Agents.ReasoningDeltaUpdate)?.think === 'string';
-          if (!isTextPart && !isThinkPart) {
-            return null;
-          }
-
-          const isToolCall = part.type === ContentTypes.TOOL_CALL || part['tool_call_ids'] != null;
-          if (isToolCall) {
-            return null;
-          }
-
-          return (
-            <EditTextPart
-              index={idx}
-              part={part as Agents.MessageContentText | Agents.ReasoningDeltaUpdate}
-              messageId={messageId}
-              isSubmitting={isSubmitting}
-              enterEdit={enterEdit}
-              siblingIdx={siblingIdx ?? null}
-              setSiblingIdx={setSiblingIdx}
-              key={`edit-${messageId}-${idx}`}
-            />
-          );
-        })}
-      </>
+      <ApprovalProvider>
+        <SearchContext.Provider value={{ searchResults }}>
+          <MemoryArtifacts attachments={attachments} />
+          <EditContentParts
+            content={content ?? []}
+            contentIndexOffset={contentIndexOffset}
+            messageId={messageId}
+            isSubmitting={isSubmitting}
+            enterEdit={enterEdit}
+            siblingIdx={siblingIdx ?? null}
+            setSiblingIdx={setSiblingIdx}
+            renderReadOnlyPart={(part, idx, isLastPart) => renderPart(part, idx, isLastPart)}
+          />
+        </SearchContext.Provider>
+      </ApprovalProvider>
     );
   }
 

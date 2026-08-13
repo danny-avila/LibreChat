@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
 import copy from 'copy-to-clipboard';
-import { ContentTypes, SearchResultData } from 'librechat-data-provider';
+import { SearchResultData } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
+import type { LocalizeFunction } from '~/common';
 import {
   SPAN_REGEX,
   CLEANUP_REGEX,
@@ -9,6 +10,8 @@ import {
   STANDALONE_PATTERN,
   INVALID_CITATION_REGEX,
 } from '~/utils/citations';
+import { formatMessageContent } from '~/hooks/Conversations/format';
+import useLocalize from '~/hooks/useLocalize';
 
 type Source = {
   link: string;
@@ -27,6 +30,35 @@ const refTypeMap: Record<string, string> = {
   video: 'videos',
 };
 
+export function serializeMessageForClipboard({
+  text,
+  content,
+  localize,
+}: Partial<Pick<TMessage, 'text' | 'content'>> & { localize: LocalizeFunction }): string {
+  if (!Array.isArray(content) || content.length === 0) {
+    return text ?? '';
+  }
+
+  return content
+    .filter((part) => part != null)
+    .map((part) => {
+      const formatted = formatMessageContent({
+        sender: '',
+        content: part,
+        format: 'text',
+        localize,
+      });
+      if (formatted.length === 0) {
+        return '';
+      }
+
+      const [label, value] = formatted;
+      return label ? `${label}:\n${value}` : value;
+    })
+    .filter((value) => value.trim().length > 0)
+    .join('\n');
+}
+
 export default function useCopyToClipboard({
   text,
   content,
@@ -34,6 +66,7 @@ export default function useCopyToClipboard({
 }: Partial<Pick<TMessage, 'text' | 'content'>> & {
   searchResults?: { [key: string]: SearchResultData };
 }) {
+  const localize = useLocalize();
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -51,17 +84,7 @@ export default function useCopyToClipboard({
       }
       setIsCopied(true);
 
-      // Get the message text from content or text
-      let messageText = text ?? '';
-      if (content) {
-        messageText = content.reduce((acc, curr, i) => {
-          if (curr.type === ContentTypes.TEXT) {
-            const text = typeof curr.text === 'string' ? curr.text : (curr.text?.value ?? '');
-            return acc + text + (i === content.length - 1 ? '' : '\n');
-          }
-          return acc;
-        }, '');
-      }
+      const messageText = serializeMessageForClipboard({ text, content, localize });
 
       // Early return if no search data
       if (!searchResults || Object.keys(searchResults).length === 0) {
@@ -100,7 +123,7 @@ export default function useCopyToClipboard({
         setIsCopied(false);
       }, 3000);
     },
-    [text, content, searchResults],
+    [text, content, searchResults, localize],
   );
 
   return copyToClipboard;

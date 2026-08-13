@@ -78,7 +78,6 @@ jest.mock('../Parts', () => ({
   Reasoning: () => <div data-testid="reasoning" />,
   Summary: () => <div data-testid="summary" />,
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
-  EditTextPart: () => <div data-testid="edit-text" />,
 }));
 
 jest.mock('../MemoryArtifacts', () => ({

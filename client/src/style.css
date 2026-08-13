@@ -2098,9 +2098,10 @@ html {
   transform-origin: 50% 50%;
 }
 
-.message-content {
+.message-content,
+.message-editor-text {
   font-size: var(--markdown-font-size, var(--font-size-base));
-  line-height: 1.4;
+  line-height: 1.6;
 }
 
 .message-content pre code {
