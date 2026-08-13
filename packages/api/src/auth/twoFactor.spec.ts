@@ -151,23 +151,40 @@ describe('isTokenRetired', () => {
   });
 
   /**
-   * The finalization hand-off stamps the enrollment and mints its session within the same
-   * millisecond as often as not, so the enrolling instant is compared on whole seconds even when
-   * the exact one is available. Tightening it would sign the user out the moment they enroll.
+   * `finalizeTwoFactorSetup` stamps the enrollment inside the promoting compare-and-swap, and the
+   * session it hands back is minted after that write and a session sweep, so the survivor always
+   * postdates the cutoff. A token dated to the millisecond therefore does not need the whole second
+   * spared: keeping it would let a bearer minted just before the promotion outlive it, which is the
+   * one thing enrollment retirement exists to stop.
    */
-  it('keeps the enrolling second even for a token dated to the millisecond', () => {
+  it('retires a pre-enrollment bearer minted earlier in the enrolling second', () => {
     expect(
       isTokenRetired(
         { issuedAt: enrolledSecond, issuedAtMs: enrolledAt.getTime() - 1 },
         { twoFactorEnrolledAt: enrolledAt },
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       isTokenRetired(
         { issuedAt: enrolledSecond - 1, issuedAtMs: enrolledAt.getTime() - 1000 },
         { twoFactorEnrolledAt: enrolledAt },
       ),
     ).toBe(true);
+  });
+
+  it('keeps the session finalization mints, which postdates the enrollment stamp', () => {
+    expect(
+      isTokenRetired(
+        { issuedAt: enrolledSecond, issuedAtMs: enrolledAt.getTime() },
+        { twoFactorEnrolledAt: enrolledAt },
+      ),
+    ).toBe(false);
+    expect(
+      isTokenRetired(
+        { issuedAt: enrolledSecond, issuedAtMs: enrolledAt.getTime() + 1 },
+        { twoFactorEnrolledAt: enrolledAt },
+      ),
+    ).toBe(false);
   });
 
   it('accepts a stamp that arrives as a string or epoch value', () => {

@@ -154,9 +154,9 @@ export function isCredentialLoginBlockedByTwoFactorPolicy(
 }
 
 function isTokenIssuedBefore(
-  issuedAtSeconds: number | undefined,
+  issuance: TokenIssuance,
   cutoff: Date | string | number | null | undefined,
-  retireTies = false,
+  retireTies: boolean,
 ): boolean {
   if (cutoff == null) {
     return false;
@@ -167,12 +167,18 @@ function isTokenIssuedBefore(
     return false;
   }
 
-  if (typeof issuedAtSeconds !== 'number' || !Number.isFinite(issuedAtSeconds)) {
+  const { issuedAtMs } = issuance;
+  if (typeof issuedAtMs === 'number' && Number.isFinite(issuedAtMs)) {
+    return retireTies ? issuedAtMs <= cutoffMs : issuedAtMs < cutoffMs;
+  }
+
+  const { issuedAt } = issuance;
+  if (typeof issuedAt !== 'number' || !Number.isFinite(issuedAt)) {
     return true;
   }
 
   const cutoffSeconds = Math.floor(cutoffMs / 1000);
-  return retireTies ? issuedAtSeconds <= cutoffSeconds : issuedAtSeconds < cutoffSeconds;
+  return retireTies ? issuedAt <= cutoffSeconds : issuedAt < cutoffSeconds;
 }
 
 /**
@@ -185,34 +191,25 @@ function isTokenIssuedBefore(
  * has been revoked; `deleteAllUserSessions` already drops the refresh sessions on that path with
  * the same intent, and a stateless token must not outlive the password that bought it.
  *
- * The two cutoffs resolve a same-instant tie differently. Enrollment keeps the token, which is what
- * makes the session finalization itself returns survive, and it is compared on whole seconds
- * because the promotion stamps `twoFactorEnrolledAt` in the same second as that session. Recovery
- * retires it, because it mints nothing that has to live through it: a token dated to the resetting
- * instant was bought with the credential the reset revoked. `issuedAtMs` is what makes recovery's
- * tie exact, sparing a token minted later in the resetting second that the whole-second fallback
- * cannot tell apart. Tokens carrying no `issuedAtMs` surrender that whole second until they expire,
- * and a token that cannot be dated at all is refused once any cutoff is set.
+ * Both cutoffs are compared at whatever resolution the token can prove, and they differ only in how
+ * they resolve a tie. Enrollment keeps the token, because `finalizeTwoFactorSetup` stamps
+ * `twoFactorEnrolledAt` inside the promoting compare-and-swap and the session it hands back is
+ * minted after that write and a session sweep, so the survivor postdates the cutoff outright.
+ * Recovery retires it, because it mints nothing that has to live through it: a token dated to the
+ * resetting instant was bought with the credential the reset revoked. `issuedAtMs` is what makes
+ * either tie exact, sparing a token minted later in the same second that the whole-second fallback
+ * cannot tell apart, and retiring one minted earlier in it that the fallback would have spared.
+ * Tokens carrying no `issuedAtMs` surrender that whole second until they expire, and a token that
+ * cannot be dated at all is refused once any cutoff is set.
  */
 export function isTokenRetired(
   issuance: TokenIssuance,
   user: TokenRetirementSignals | null | undefined,
 ): boolean {
-  if (isTokenIssuedBefore(issuance.issuedAt, user?.twoFactorEnrolledAt)) {
-    return true;
-  }
-
-  const { issuedAtMs } = issuance;
-  if (typeof issuedAtMs !== 'number' || !Number.isFinite(issuedAtMs)) {
-    return isTokenIssuedBefore(issuance.issuedAt, user?.passwordResetAt, true);
-  }
-
-  if (user?.passwordResetAt == null) {
-    return false;
-  }
-
-  const resetMs = new Date(user.passwordResetAt).getTime();
-  return Number.isNaN(resetMs) ? false : issuedAtMs <= resetMs;
+  return (
+    isTokenIssuedBefore(issuance, user?.twoFactorEnrolledAt, false) ||
+    isTokenIssuedBefore(issuance, user?.passwordResetAt, true)
+  );
 }
 
 /**
