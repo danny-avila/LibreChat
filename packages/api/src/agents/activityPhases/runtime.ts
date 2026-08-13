@@ -109,6 +109,7 @@ const DEFAULT_CHAR_LIMIT = 600;
 const MIN_ACTIVITIES = 2;
 const MAX_CONTEXT_ITEMS = 6;
 const MAX_EXCERPT_CHARS = 600;
+const REASONING_ANCHOR_CHARS = 80;
 const OUTPUT_CHAR_LIMIT = 160;
 const PHASE_TIMEOUT_MS = 12_000;
 /** Twelve enter the SDK prompt; one extra preserves its omitted-activity row. */
@@ -231,7 +232,7 @@ function findReasoningExcerptStart(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   excerpt: string,
 ): number | undefined {
-  const needle = excerpt.trim().slice(0, 80);
+  const needle = excerpt.trim().slice(0, REASONING_ANCHOR_CHARS);
   if (!needle) {
     return undefined;
   }
@@ -251,7 +252,7 @@ function hasReasoningExcerptAtOrAfter(
   excerpt: string,
   minimumIndex: number,
 ): boolean {
-  const needle = excerpt.trim().slice(0, 80);
+  const needle = excerpt.trim().slice(0, REASONING_ANCHOR_CHARS);
   if (!needle) {
     return false;
   }
@@ -264,6 +265,59 @@ function hasReasoningExcerptAtOrAfter(
     if (
       parts[index]?.type === ContentTypes.THINK &&
       textValue(parts[index]?.think).includes(needle)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+type ReasoningAnchorIndex = Map<number, Set<string>>;
+
+function addReasoningAnchor(
+  anchors: Set<string>,
+  index: ReasoningAnchorIndex,
+  excerpt: string,
+): void {
+  const anchor = excerpt.trim().slice(0, REASONING_ANCHOR_CHARS);
+  if (!anchor || anchors.has(anchor)) {
+    return;
+  }
+  anchors.add(anchor);
+  const matchingLength = index.get(anchor.length);
+  if (matchingLength != null) {
+    matchingLength.add(anchor);
+  } else {
+    index.set(anchor.length, new Set([anchor]));
+  }
+}
+
+function includesReasoningAnchor(text: string, index: ReasoningAnchorIndex): boolean {
+  for (const [length, anchors] of index) {
+    for (let offset = 0; offset <= text.length - length; offset += 1) {
+      if (anchors.has(text.slice(offset, offset + length))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hasIndexedReasoningAtOrAfter(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  index: ReasoningAnchorIndex,
+  minimumIndex: number,
+): boolean {
+  const indices = definedPartIndices(parts);
+  for (let position = indices.length - 1; position >= 0; position -= 1) {
+    const partIndex = indices[position];
+    if (partIndex < minimumIndex) {
+      break;
+    }
+    const part = parts[partIndex];
+    if (
+      part?.type === ContentTypes.THINK &&
+      includesReasoningAnchor(textValue(part.think), index)
     ) {
       return true;
     }
@@ -423,19 +477,23 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     }
     return matches;
   });
-  const overflowReasoningAnchors = new Set(
+  const overflowReasoningAnchors = new Set<string>();
+  const overflowReasoningAnchorIndex: ReasoningAnchorIndex = new Map();
+  const initialOverflowReasoningAnchors =
     initialSnapshot?.overflowReasoningAnchors ??
-      (initialSnapshot?.overflowReasoningExcerpt != null
-        ? [initialSnapshot.overflowReasoningExcerpt.slice(0, 80)]
-        : []),
-  );
+    (initialSnapshot?.overflowReasoningExcerpt != null
+      ? [initialSnapshot.overflowReasoningExcerpt]
+      : []);
+  for (const anchor of initialOverflowReasoningAnchors) {
+    addReasoningAnchor(overflowReasoningAnchors, overflowReasoningAnchorIndex, anchor);
+  }
   let rebasedOverflowReasoningIndex: number | undefined;
   if (overflowReasoningAnchors.size > 0) {
     for (const index of definedPartIndices(content)) {
       const part = content[index];
       if (
         part?.type === ContentTypes.THINK &&
-        [...overflowReasoningAnchors].some((anchor) => textValue(part.think).includes(anchor))
+        includesReasoningAnchor(textValue(part.think), overflowReasoningAnchorIndex)
       ) {
         rebasedOverflowReasoningIndex = index;
       }
@@ -464,7 +522,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const pendingReasoning = new Map<string, { text: string; agentId?: string; startIndex?: number }>(
     (initialSnapshot?.pendingReasoning ?? []).map(({ key, text, agentId, startIndex }) => {
       const boundedText = text.slice(-MAX_EXCERPT_CHARS);
-      const needle = boundedText.trim().slice(0, 80);
+      const needle = boundedText.trim().slice(0, REASONING_ANCHOR_CHARS);
       const rebasedStartIndex = needle ? findReasoningStart(content, boundedText, startIndex) : -1;
       const hasMaterializedReasoning =
         needle.length > 0 &&
@@ -502,6 +560,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     overflowToolCallIds.clear();
     overflowBoundaryToolCallIds.clear();
     overflowReasoningAnchors.clear();
+    overflowReasoningAnchorIndex.clear();
     contributingAgentIds.clear();
     lastRootTextStepId = undefined;
   };
@@ -526,7 +585,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const reasoningExcerpts = activity.thinkingExcerpts;
       const reasoningExcerpt = reasoningExcerpts?.[reasoningExcerpts.length - 1]?.trim();
       if (reasoningExcerpt) {
-        overflowReasoningAnchors.add(reasoningExcerpt.slice(0, 80));
+        addReasoningAnchor(
+          overflowReasoningAnchors,
+          overflowReasoningAnchorIndex,
+          reasoningExcerpt,
+        );
       }
       for (const id of activity.toolCallIds ?? []) {
         overflowToolCallIds.add(id);
@@ -1017,8 +1080,10 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const overflowBoundaryIds = [...overflowBoundaryToolCallIds];
       const hasLaterOverflowActivity =
         overflowIds.some((id) => trailingToolIds.has(id)) ||
-        [...overflowReasoningAnchors].some((anchor) =>
-          hasReasoningExcerptAtOrAfter(parts, anchor, candidateFinalTextIndex),
+        hasIndexedReasoningAtOrAfter(
+          parts,
+          overflowReasoningAnchorIndex,
+          candidateFinalTextIndex,
         ) ||
         (!overflowBoundaryIds.every((id) => materializedToolIds.has(id)) &&
           overflowActivityStartIndex != null &&
