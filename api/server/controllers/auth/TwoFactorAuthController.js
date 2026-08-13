@@ -29,6 +29,9 @@ const createVerify2FAWithTempToken = ({ finalizeClerkTwoFactorSession } = {}) =>
 
       const user = await getUserById(payload.userId, '+totpSecret +backupCodes');
       if (!user || !user.twoFactorEnabled) {
+        if (payload.authProvider === 'clerk') {
+          return res.status(403).json({ code: 'CLERK_LOGIN_FORBIDDEN' });
+        }
         return res.status(400).json({ message: '2FA is not enabled for this user' });
       }
 

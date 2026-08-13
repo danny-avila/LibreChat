@@ -117,6 +117,39 @@ describe('createVerify2FAWithTempToken', () => {
     expect(res.json).toHaveBeenCalledWith({ code: 'CLERK_TOKEN_REPLAYED' });
   });
 
+  it('fails closed when a Clerk capability cannot resolve its tenant-scoped user', async () => {
+    mockVerifyJwt.mockReturnValue({
+      userId: 'user-id',
+      twoFAPending: true,
+      authProvider: 'clerk',
+      tenantScope: 'tenant-a',
+    });
+    mockGetUserById.mockResolvedValue(null);
+    const finalizeClerkTwoFactorSession = jest.fn();
+    const verify = createVerify2FAWithTempToken({ finalizeClerkTwoFactorSession });
+    const res = response();
+
+    await verify({ body: { tempToken: 'signed-capability', token: '123456' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ code: 'CLERK_LOGIN_FORBIDDEN' });
+    expect(mockGetTOTPSecret).not.toHaveBeenCalled();
+    expect(finalizeClerkTwoFactorSession).not.toHaveBeenCalled();
+    expect(mockSetAuthTokens).not.toHaveBeenCalled();
+  });
+
+  it('preserves the local response when its user cannot be resolved', async () => {
+    mockVerifyJwt.mockReturnValue({ userId: 'user-id', twoFAPending: true });
+    mockGetUserById.mockResolvedValue(null);
+    const verify = createVerify2FAWithTempToken({ finalizeClerkTwoFactorSession: jest.fn() });
+    const res = response();
+
+    await verify({ body: { tempToken: 'local-temp-token', token: '123456' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ message: '2FA is not enabled for this user' });
+  });
+
   it('preserves the local temporary-token issuance path', async () => {
     mockVerifyJwt.mockReturnValue({ userId: 'user-id', twoFAPending: true });
     const finalizeClerkTwoFactorSession = jest.fn();
