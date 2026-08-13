@@ -68,8 +68,15 @@ const getRumProxyEndpoint = (req) => {
 const isOpenIdReuseUser = (strategy, user, openIdReuseUserId) =>
   strategy !== 'openidJwt' || getAuthenticatedUserId(user) === openIdReuseUserId;
 
+/** Express routes non-strictly and case-insensitively by default, so `/api/auth/logout/` and
+ * `/API/AUTH/LOGOUT` both reach the logout handler. Normalize the same way before allowlisting. */
+const normalizeRouteSegment = (value) =>
+  typeof value === 'string' ? value.toLowerCase().replace(/\/+$/, '') : '';
+
 const isTwoFactorPolicyAllowlisted = (req) =>
-  req.method === 'POST' && req.baseUrl === '/api/auth' && req.path === '/logout';
+  req.method === 'POST' &&
+  normalizeRouteSegment(req.baseUrl) === '/api/auth' &&
+  normalizeRouteSegment(req.path) === '/logout';
 
 const enforceTwoFactorPolicy = (req, res) => {
   if (!isTwoFactorEnrollmentRequired(req.user) || isTwoFactorPolicyAllowlisted(req)) {

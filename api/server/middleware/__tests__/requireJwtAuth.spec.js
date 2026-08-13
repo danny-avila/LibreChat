@@ -250,6 +250,41 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['a trailing slash', { method: 'POST', baseUrl: '/api/auth', path: '/logout/' }],
+    ['an uppercase path', { method: 'POST', baseUrl: '/API/AUTH', path: '/LOGOUT' }],
+    ['mixed case and a trailing slash', { method: 'POST', baseUrl: '/Api/Auth', path: '/Logout/' }],
+  ])('allows the logout route through the enrollment policy with %s', (_label, requestShape) => {
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+    const req = mockReq(
+      { id: 'user-123', provider: 'local', twoFactorEnabled: false },
+      requestShape,
+    );
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(generateTwoFactorSetupToken).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('still blocks a non-logout route that merely ends in a slash', () => {
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+    const req = mockReq(
+      { id: 'user-123', provider: 'local', twoFactorEnabled: false },
+      { method: 'POST', baseUrl: '/api/auth', path: '/logout/extra' },
+    );
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('refreshes CloudFront auth cookies inside the request context', () => {
     let observedContext;
     maybeRefreshCloudFrontAuthCookiesMiddleware.mockImplementationOnce(
