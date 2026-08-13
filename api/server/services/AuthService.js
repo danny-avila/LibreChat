@@ -676,9 +676,16 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
      * never outlive the session it was issued alongside, so its lifetime is
      * clamped to whatever remains until that deadline; a freshly created
      * session already uses the full configured duration, so it needs no cap.
+     * generateToken divides this by 1000 for jsonwebtoken's numeric
+     * `expiresIn`, which rejects a non-integer number of seconds — align to
+     * whole seconds before converting back to milliseconds.
      */
+    const remainingSessionMs = Math.max(
+      0,
+      (Math.floor(refreshTokenExpires / 1000) - Math.floor(Date.now() / 1000)) * 1000,
+    );
     const sessionExpiry = hasExplicitSession
-      ? Math.max(0, Math.min(configuredSessionExpiry, refreshTokenExpires - Date.now()))
+      ? Math.min(configuredSessionExpiry, remainingSessionMs)
       : configuredSessionExpiry;
     const token = await generateToken(user, sessionExpiry);
 

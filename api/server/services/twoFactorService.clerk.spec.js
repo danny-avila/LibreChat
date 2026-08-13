@@ -1,3 +1,17 @@
+// twoFactorService.js requires @librechat/data-schemas for
+// hashBackupCode/decryptV2/decryptV3 (unused by signTwoFactorTempToken).
+// Mocking it here — rather than letting this file load the real package —
+// keeps this suite's module registry isolated from sibling spec files (e.g.
+// AuthService.spec.js) that mock @librechat/data-schemas with
+// `{ virtual: true }`; loading the real module in one file and the virtual
+// mock in another inside the same --runInBand worker otherwise collides.
+jest.mock('@librechat/data-schemas', () => ({
+  hashBackupCode: jest.fn(),
+  decryptV3: jest.fn(),
+  decryptV2: jest.fn(),
+}));
+jest.mock('~/models', () => ({ updateUser: jest.fn() }));
+
 const jwt = require('jsonwebtoken');
 const { signTwoFactorTempToken } = require('./twoFactorService');
 
