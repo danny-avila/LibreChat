@@ -1,10 +1,9 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-
 import '@testing-library/jest-dom';
-import AgentGrid from '../AgentGrid';
-import type t from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
+import AgentGrid from '../AgentGrid';
 
 // Mock the marketplace agent query hook
 jest.mock('~/data-provider/Agents', () => ({
@@ -359,7 +358,7 @@ describe('AgentGrid Integration with useGetMarketplaceAgentsQuery', () => {
       );
 
       // Should show loading spinner
-      const spinner = document.querySelector('.text-primary');
+      const spinner = document.querySelector('.text-text-primary');
       expect(spinner).toBeInTheDocument();
     });
 

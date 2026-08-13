@@ -1109,6 +1109,44 @@ describe('RedisEventTransport', () => {
     }
   });
 
+  it('recovers a confirmed abort from durable owner proof after the initial read', async () => {
+    jest.useFakeTimers();
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'delayed-owner-abort-proof';
+    let resolveAbortPublished!: () => void;
+    const abortPublished = new Promise<void>((resolve) => {
+      resolveAbortPublished = resolve;
+    });
+    mockPublisher.publish.mockImplementationOnce(async () => {
+      resolveAbortPublished();
+      return 0;
+    });
+
+    try {
+      const confirmation = transport.emitAbortConfirmed(streamId, 1234);
+      await abortPublished;
+
+      await expect(transport.recordAbortAcknowledgement(streamId, 1234)).resolves.toBe(true);
+      expect(mockPublisher.set).toHaveBeenCalledWith(
+        `stream:{${streamId}}:abort-ack:1234`,
+        '1',
+        'EX',
+        86400,
+      );
+
+      await jest.advanceTimersByTimeAsync(3000);
+      await expect(confirmation).resolves.toBe(true);
+    } finally {
+      transport.destroy();
+      jest.useRealTimers();
+    }
+  });
+
   it('waits for a delayed owner acknowledgement when cluster publish reports zero local receivers', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
@@ -1557,10 +1595,14 @@ describe('RedisEventTransport', () => {
 
     subscription?.unsubscribe();
 
+    /** After the first attachment the local buffer stays closed; a detached
+     * emission is durable-log-only, and the reconnect frontier must advance
+     * past its sequence so the next live chunk is not held for reordering. */
     await manager.emitChunk(streamId, {
       event: 'on_message_delta',
-      data: { delta: { content: { type: 'text', text: 'buffered after disconnect' } } },
+      data: { delta: { content: { type: 'text', text: 'detached after disconnect' } } },
     });
+    expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
 
     const resumed: unknown[] = [];
     const resumedSubscription = await manager.subscribe(streamId, (event) => resumed.push(event));
@@ -1570,10 +1612,6 @@ describe('RedisEventTransport', () => {
     });
 
     expect(resumed).toEqual([
-      {
-        event: 'on_message_delta',
-        data: { delta: { content: { type: 'text', text: 'buffered after disconnect' } } },
-      },
       {
         event: 'on_message_delta',
         data: { delta: { content: { type: 'text', text: 'live after reconnect' } } },

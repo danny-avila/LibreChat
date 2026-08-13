@@ -1,5 +1,7 @@
 import type { Agents, TFile, TPendingSteer } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
+import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
+import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '../SteerRecovery';
 
 /**
@@ -89,6 +91,8 @@ export interface SerializableJobData {
    * the discovered tool schemas.
    */
   discoveredTools?: string[];
+  /** Bounded collector state for continuing a phase across HITL resume. */
+  activityPhaseSnapshot?: ActivityPhaseSnapshot;
   /**
    * Whether the replica that OWNS this generation can seal mid-stream
    * (`PreemptBoundary` wiring). Recorded at createJob because the steer route
@@ -159,6 +163,12 @@ export interface SerializableJobData {
    * run is waiting on. Cleared by the resume path before the job returns to `running`.
    */
   pendingAction?: Agents.PendingAction;
+
+  /** Durable bridge between the resume claim and content reconstruction. An
+   * abort can win while the resume controller is still rebuilding the client;
+   * retaining the accepted answer here lets that terminal owner stamp it onto
+   * the persisted partial response instead of losing it with the request. */
+  resolvedAskUserQuestions?: ResolvedAskUserQuestion[];
 
   /**
    * Flat mirror of `pendingAction.actionId`, kept as a top-level field so an
@@ -257,8 +267,10 @@ export type JobMetadataPatch = Partial<
     | 'isTemporary'
     | 'promptTokens'
     | 'discoveredTools'
+    | 'activityPhaseSnapshot'
     | 'preemptCapable'
     | 'generationProtocolVersion'
+    | 'resolvedAskUserQuestions'
   >
 >;
 
@@ -661,6 +673,10 @@ export interface IJobStore {
     expectedCreatedAt?: number,
   ): Promise<void | boolean>;
 
+  /** Optional batching capability: persist any coalesced appends buffered for
+   * this stream now. Stores without append coalescing simply omit it. */
+  flushPendingAppends?(streamId: string): Promise<void>;
+
   clearContentState(streamId: string, expectedCreatedAt?: number): void;
   saveRunSteps?(
     streamId: string,
@@ -870,6 +886,16 @@ export interface IJobStoreV2 extends IJobStore {
    */
   recordActivity?(streamId: string, expectedCreatedAt?: number): void;
 
+  /**
+   * Persist any coalesced chunk appends still buffered for this stream.
+   * Terminal transitions must flush first so the batch lands under the
+   * generation's live status instead of fencing against its own completion.
+   *
+   * Presence of this method is how a store advertises append-coalescing
+   * support; see the transport's flushPendingChunks for the pairing rule.
+   */
+  flushPendingAppends?(streamId: string): Promise<void>;
+
   /** Get total job count */
   getJobCount(): Promise<number>;
 
@@ -966,6 +992,10 @@ export interface IJobStoreV2 extends IJobStore {
     /** When present, the same durable write records this drained steer as
      * delivered. Redis performs both mutations in one same-slot Lua step. */
     deliveredSteer?: SteerQueueItem,
+    /** Hot-path hint: `coalesce` marks a plain streaming delta whose durable
+     * append may batch with its window peers. Stores without batching (and any
+     * append carrying a steer receipt) ignore it and stay per-event. */
+    options?: { coalesce?: boolean },
   ): Promise<boolean>;
 
   /**
@@ -1243,6 +1273,10 @@ export interface IEventTransport {
    * the replica owning that generation processes the abort. */
   emitAbortConfirmed?(streamId: string, generationId: number): Promise<boolean>;
 
+  /** Persist proof that this process synchronously stopped the exact generation.
+   * A delayed replacement can use the proof after the owner's listeners retire. */
+  recordAbortAcknowledgement?(streamId: string, generationId: number): Promise<boolean>;
+
   /** Publish a predecessor DONE only while the current job's opaque creation
    * attempt still carries that predecessor in its durable receipt chain. */
   emitReplacedDoneConfirmed?(
@@ -1309,6 +1343,18 @@ export interface IEventTransport {
    * Must trigger all-subscribers-left cleanup so graceful shutdown can drain partial persistence.
    */
   closeLocalSubscribers?(streamId: string, error: string): void;
+
+  /**
+   * Publish any coalesced chunk publications still buffered for this stream.
+   * Callers about to transition a generation's status must flush first, or the
+   * batch would land behind the transition and fence itself.
+   *
+   * Presence of this method is how a transport advertises delta-coalescing
+   * support: the generation manager only sends `coalesce` hints (and only
+   * stops awaiting per-delta receipts) when both the transport and the job
+   * store expose their flush capability.
+   */
+  flushPendingChunks?(streamId: string): Promise<void>;
 
   /** Cleanup transport resources for a specific stream */
   cleanup(streamId: string): void;

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { TStartupConfig } from 'librechat-data-provider';
 import type { Page } from '@playwright/test';
 import { getPrimaryE2EUser } from '../../setup/users.mock';
+import { cleanupAgent } from './agents.helpers';
 import {
   NEW_CHAT_PATH,
   getAccessToken,
@@ -271,5 +272,42 @@ test.describe('soft default model spec', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
     await expect(main).not.toContainText(agentName);
+  });
+
+  // Regression: a stored agent selection can outlive the agent itself (deletion here;
+  // switching orgs that share browser storage behaves the same, since the other org's
+  // agent id never resolves). The dead pick used to keep suppressing the soft default
+  // and strand a cold New Chat on the agents endpoint with nothing selected. Once the
+  // agent list loads without the stored id, the pick is residue and the soft default
+  // must re-arm.
+  test('a stored agent that no longer exists yields to the soft default on a cold load', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await startFresh(page);
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+
+    const agentName = uniqueName('E2E Stale Agent');
+    const agent = await createAgent(page, agentName);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectAgent(page, agentName);
+
+    await page.reload({ timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(agentName, { timeout: 15000 });
+
+    await cleanupAgent(page, agent.id);
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(SOFT_DEFAULT_LABEL, { timeout: 15000 });
+    await expect(modelTrigger(page)).not.toHaveText('Select a model');
+
+    // A live selection must still outrank the soft default after the fix: recreate,
+    // select, and confirm the carry-forward behavior is intact on a cold load.
+    const survivorName = uniqueName('E2E Live Agent');
+    await createAgent(page, survivorName);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectAgent(page, survivorName);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await expect(modelTrigger(page)).toContainText(survivorName, { timeout: 15000 });
   });
 });

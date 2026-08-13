@@ -68,7 +68,7 @@ const App = () => {
                   <WakeLockManager />
                   <QueryDevtoolsGate />
                   <Toast />
-                  <RadixToast.Viewport className="pointer-events-none fixed inset-0 z-[1000] mx-auto my-2 flex max-w-[560px] flex-col items-stretch justify-start md:pb-5" />
+                  <RadixToast.Viewport className="pointer-events-none fixed inset-x-0 top-0 z-[1000] mx-auto my-2 flex max-w-[560px] flex-col items-stretch justify-start" />
                 </DndProvider>
               </ToastProvider>
             </RadixToast.Provider>

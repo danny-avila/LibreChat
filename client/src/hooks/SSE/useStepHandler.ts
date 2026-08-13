@@ -59,7 +59,12 @@ type TStepEvent =
   | { event: StepEvents.ON_SUBAGENT_UPDATE; data: SubagentUpdateEvent }
   | { event: StepEvents.ON_SANDBOX_STARTING; data: SandboxStartingEvent };
 
-type MessageDeltaUpdate = { type: ContentTypes.TEXT; text: string; tool_call_ids?: string[] };
+type MessageDeltaUpdate = {
+  type: ContentTypes.TEXT;
+  text: string;
+  tool_call_ids?: string[];
+  phase?: 'commentary' | 'final_answer';
+};
 
 type ReasoningDeltaUpdate = { type: ContentTypes.THINK; think: string };
 
@@ -343,6 +348,7 @@ export default function useStepHandler({
       editPrefixOffset: number,
       incomingContentType: string,
       existingContent?: TMessageContentParts[],
+      incomingPhase?: 'commentary' | 'final_answer',
     ): number => {
       /** Only apply -1 adjustment for TEXT or THINK types when they match existing content */
       if (
@@ -350,8 +356,16 @@ export default function useStepHandler({
         (incomingContentType === ContentTypes.TEXT || incomingContentType === ContentTypes.THINK)
       ) {
         const targetIndex = serverIndex + editPrefixOffset - 1;
-        const existingType = existingContent?.[targetIndex]?.type;
-        if (existingType === incomingContentType) {
+        const existingPart = existingContent?.[targetIndex];
+        const existingType = existingPart?.type;
+        const existingPhase =
+          existingPart?.type === ContentTypes.TEXT ? existingPart.phase : undefined;
+        /** Match final assembly: phased and legacy/unphased text cannot share
+         *  a content part because the phase controls client grouping. */
+        const phaseCompatible =
+          incomingContentType !== ContentTypes.TEXT ||
+          (incomingPhase ?? null) === (existingPhase ?? null);
+        if (existingType === incomingContentType && phaseCompatible) {
           return targetIndex;
         }
       }
@@ -399,7 +413,7 @@ export default function useStepHandler({
      * — the store-level strip on answer submit can't reach those.
      */
     if (isAskUserQuestionPart(updatedContent[index])) {
-      updatedContent = updatedContent.filter((part) => !isAskUserQuestionPart(part));
+      updatedContent[index] = undefined;
     } else if (updatedContent.some(isAnsweredAskUserQuestionPart)) {
       /**
        * An ALREADY-ANSWERED card the resumed segment streams around rather than
@@ -408,9 +422,13 @@ export default function useStepHandler({
        * cached copy — which still holds the card the answer-submit stripped from
        * the store — gets written back, reopening the popover with its options
        * locked. Only cards the user actually answered are dropped, so an event
-       * racing a still-live pause can't take its card down.
+       * racing a still-live pause can't take its card down. Preserve sparse
+       * absolute indices: compacting holes can move an older tool call into a
+       * text slot until the terminal snapshot repairs the rendered order.
        */
-      updatedContent = updatedContent.filter((part) => !isAnsweredAskUserQuestionPart(part));
+      updatedContent = updatedContent.map((part) =>
+        isAnsweredAskUserQuestionPart(part) ? undefined : part,
+      );
     }
 
     if (!updatedContent[index] && contentType !== ContentTypes.TOOL_CALL) {
@@ -435,9 +453,12 @@ export default function useStepHandler({
       typeof contentPart.text === 'string'
     ) {
       const currentContent = updatedContent[index] as MessageDeltaUpdate;
+      const incomingContent = contentPart as MessageDeltaUpdate;
+      const phase = incomingContent.phase ?? currentContent.phase;
       const update: MessageDeltaUpdate = {
         type: ContentTypes.TEXT,
-        text: (currentContent.text || '') + contentPart.text,
+        text: (currentContent.text || '') + incomingContent.text,
+        ...(phase != null && { phase }),
       };
 
       if ('tool_call_ids' in contentPart && contentPart.tool_call_ids != null) {
@@ -944,16 +965,29 @@ export default function useStepHandler({
             if (contentPart == null) {
               continue;
             }
+            const messageCreation =
+              runStep.stepDetails.type === StepTypes.MESSAGE_CREATION
+                ? (runStep.stepDetails.message_creation as {
+                    phase?: 'commentary' | 'final_answer';
+                  })
+                : undefined;
+            const phase = messageCreation?.phase;
+            const phasedContentPart =
+              contentPart.type === ContentTypes.TEXT &&
+              (phase === 'commentary' || phase === 'final_answer')
+                ? { ...contentPart, phase }
+                : contentPart;
             const currentIndex = calculateContentIndex(
               runStep.index,
               editPrefixOffset,
-              contentPart.type || '',
+              phasedContentPart.type || '',
               updatedResponse.content,
+              phase,
             );
             updatedResponse = updateContent(
               updatedResponse,
               currentIndex,
-              contentPart,
+              phasedContentPart,
               false,
               getStepMetadata(runStep),
             );

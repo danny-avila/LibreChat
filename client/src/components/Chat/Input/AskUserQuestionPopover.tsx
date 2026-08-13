@@ -2,6 +2,7 @@ import { memo, useEffect, useRef } from 'react';
 import { useWatch } from 'react-hook-form';
 import { Button } from '@librechat/client';
 import { Check, ChevronDown, CornerDownLeft, TriangleAlert, X } from 'lucide-react';
+import AskUserQuestions from '~/components/Chat/Messages/Content/AskUserQuestions';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import { useChatFormContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -33,7 +34,54 @@ function AskUserQuestionPopoverContent({
     return null;
   }
 
+  if (ask.liveAsk.questions != null && ask.liveAsk.questions.length > 0) {
+    return <AskUserQuestionsPopoverPanel ask={ask} />;
+  }
+
   return <AskUserQuestionPopoverPanel ask={ask} textAreaRef={textAreaRef} />;
+}
+
+function AskUserQuestionsPopoverPanel({ ask }: { ask: ReturnType<typeof useAskAnswerMode> }) {
+  const localize = useLocalize();
+  const { liveAsk, collapse, dismiss } = ask;
+  const questions = liveAsk?.questions;
+  if (liveAsk == null || questions == null || questions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="absolute bottom-28 z-10 w-full">
+      <div className="popover border-token-border-light flex max-h-[70vh] flex-col rounded-2xl border bg-surface-secondary shadow-lg">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border-light px-3 py-2">
+          <p className="text-sm font-medium text-text-primary">
+            {localize(
+              questions.length === 1 ? 'com_ui_asking_questions_one' : 'com_ui_asking_questions',
+              { 0: questions.length },
+            )}
+          </p>
+          <div className="flex items-center">
+            <button
+              type="button"
+              aria-label={localize('com_ui_collapse')}
+              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
+              onClick={collapse}
+            >
+              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              aria-label={localize('com_ui_close')}
+              className="rounded p-1 text-text-secondary hover:bg-surface-hover"
+              onClick={dismiss}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+        <AskUserQuestions actionId={liveAsk.actionId} questions={questions} />
+      </div>
+    </div>
+  );
 }
 
 /**

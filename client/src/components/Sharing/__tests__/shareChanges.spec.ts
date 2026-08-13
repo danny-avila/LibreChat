@@ -1,6 +1,6 @@
 import { AccessRoleIds, PrincipalType } from 'librechat-data-provider';
 import type { TPrincipal } from 'librechat-data-provider';
-import { computeShareChanges, principalKey } from '../shareChanges';
+import { computeShareChanges, dedupeNewShares, principalKey } from '../shareChanges';
 
 const principal = (over: Partial<TPrincipal>): TPrincipal => ({
   type: PrincipalType.USER,
@@ -63,5 +63,52 @@ describe('computeShareChanges', () => {
     const { removed } = computeShareChanges(currentShares, allShares);
     expect(removed.some((p) => p.idOnTheSource === 'group-oid')).toBe(true);
     expect(principalKey(currentShares[0])).toBe(`${PrincipalType.GROUP}-group-oid`);
+  });
+});
+
+describe('dedupeNewShares', () => {
+  it('filters out an already-listed principal even when idOnTheSource differs (oid vs local id)', () => {
+    // Loaded ACL row carries the external oid; the picker returns the local `_id`.
+    const existing = [principal({ id: 'u1', idOnTheSource: 'entra-oid-abc' })];
+    const incoming = [principal({ id: 'u1', idOnTheSource: 'u1' })];
+
+    expect(dedupeNewShares(existing, incoming)).toEqual([]);
+  });
+
+  it('keeps genuinely new principals', () => {
+    const existing = [principal({ id: 'u1', idOnTheSource: 'entra-oid-abc' })];
+    const incoming = [principal({ id: 'u2', idOnTheSource: 'u2' })];
+
+    expect(dedupeNewShares(existing, incoming)).toHaveLength(1);
+    expect(dedupeNewShares(existing, incoming)[0].id).toBe('u2');
+  });
+
+  it('prevents a re-added picker row from clobbering a pending role edit', () => {
+    // Persisted: Entra-linked user shared as viewer, ACL row keyed by external oid.
+    const currentShares = [
+      principal({
+        id: 'u1',
+        idOnTheSource: 'entra-oid-abc',
+        accessRoleId: AccessRoleIds.AGENT_VIEWER,
+      }),
+    ];
+    // Working list: the admin promoted the row to editor...
+    const workingRow = principal({
+      id: 'u1',
+      idOnTheSource: 'entra-oid-abc',
+      accessRoleId: AccessRoleIds.AGENT_EDITOR,
+    });
+    // ...then re-added the same user from the picker (local `_id`, default role).
+    const pickerResult = principal({
+      id: 'u1',
+      idOnTheSource: 'u1',
+      accessRoleId: AccessRoleIds.AGENT_VIEWER,
+    });
+
+    const allShares = [workingRow, ...dedupeNewShares([workingRow], [pickerResult])];
+    const { updated, removed } = computeShareChanges(currentShares, allShares);
+
+    expect(removed).toHaveLength(0);
+    expect(updated.map((p) => p.accessRoleId)).toEqual([AccessRoleIds.AGENT_EDITOR]);
   });
 });

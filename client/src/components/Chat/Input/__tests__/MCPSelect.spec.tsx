@@ -67,7 +67,12 @@ describe('MCPSelect', () => {
 
   it('renders the menu button', () => {
     render(<MCPSelect />);
-    expect(screen.getByRole('button', { name: /MCP Servers/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /MCP Servers/i })).toHaveClass(
+      'h-theme-control',
+      'min-w-theme-control',
+      'rounded-theme-control-round',
+      'gap-theme-compact',
+    );
   });
 
   it('opens menu on button click and shows server items', async () => {

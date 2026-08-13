@@ -449,12 +449,15 @@ const MermaidDiagram: React.FC<MermaidDiagramProps> = ({ content }) => {
 export default MermaidDiagram;`);
 
 const wrapMermaidDiagram = (content: string) => {
+  const serializedContent = JSON.stringify(content);
   return dedent(`import React from 'react';
 import MermaidDiagram from '/components/ui/MermaidDiagram';
 
-export default App = () => (
-  <MermaidDiagram content={\`${content}\`} />
+const App = () => (
+  <MermaidDiagram content={${serializedContent}} />
 );
+
+export default App;
 `);
 };
 

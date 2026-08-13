@@ -33,6 +33,10 @@ module.exports = {
       '<rootDir>/../node_modules/librechat-data-provider/src/react-query',
   },
   maxWorkers: '50%',
+  /** Coverage maps accumulate for the life of a worker, so a long run can push
+   * a worker past a gigabyte and get it killed by the OS, which fails whatever
+   * suite it was holding. Recycling bloated workers also avoids swap thrash. */
+  workerIdleMemoryLimit: '800MB',
   restoreMocks: true,
   testResultsProcessor: 'jest-junit',
   coverageReporters: ['text', 'cobertura', 'lcov'],

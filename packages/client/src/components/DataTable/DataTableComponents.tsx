@@ -29,20 +29,9 @@ export const SelectionCheckbox: React.MemoExoticComponent<
     ariaLabel: string;
   }): JSX.Element => (
     <div
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onChange(!checked);
-        }
-        e.stopPropagation();
-      }}
       className="flex h-full w-8 items-center justify-center"
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange(!checked);
-      }}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
     >
       <Checkbox checked={checked} onCheckedChange={onChange} aria-label={ariaLabel} />
     </div>
@@ -63,9 +52,6 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
   { row, virtualIndex, style, selected }: TableRowComponentProps<TData>,
   ref: React.Ref<HTMLTableRowElement>,
 ) => {
-  // Check if we're on mobile - use window.innerWidth for component-level check
-  const isSmallScreen = typeof window !== 'undefined' && window.innerWidth < 768;
-
   return (
     <TableRow
       ref={ref}
@@ -94,13 +80,6 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
 
         const CellComponent = isRowHeader ? TableRowHeader : TableCell;
 
-        // For desktop-only columns on mobile, keep them in DOM but visually hidden
-        // This ensures screen readers can still access the content
-        const cellProps =
-          isDesktopOnly && isSmallScreen
-            ? { 'aria-hidden': false as const } // Keep accessible to screen readers
-            : {};
-
         return (
           <CellComponent
             key={cell.id}
@@ -111,7 +90,6 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
               isDesktopOnly && 'hidden md:table-cell',
             )}
             style={widthStyle}
-            {...cellProps}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </CellComponent>
@@ -133,13 +111,19 @@ interface GenericRowProps {
   virtualIndex?: number;
   style?: React.CSSProperties;
   selected: boolean;
+  /** Bumped when the column definitions change. Row data alone can't express a cell
+   *  that renders external state (a pending row action, say), so without this the
+   *  memo would keep showing the stale cell until the underlying row object moves. */
+  cellsVersion?: number;
 }
 
 export const MemoizedTableRow: React.MemoExoticComponent<(props: GenericRowProps) => JSX.Element> =
   memo(
     ForwardTableRowComponent as (props: GenericRowProps) => JSX.Element,
     (prev: GenericRowProps, next: GenericRowProps) =>
-      prev.row.original === next.row.original && prev.selected === next.selected,
+      prev.row.original === next.row.original &&
+      prev.selected === next.selected &&
+      prev.cellsVersion === next.cellsVersion,
   );
 
 export const SkeletonRows: React.MemoExoticComponent<

@@ -81,6 +81,47 @@ export async function deleteConversations(conversationIds: string[]): Promise<vo
   });
 }
 
+export interface SeedMessage {
+  messageId: string;
+  parentMessageId: string;
+  text: string;
+  isCreatedByUser: boolean;
+  sender: string;
+}
+
+/**
+ * Inserts message documents directly so specs can build conversations far larger
+ * than the mock model could produce through the UI in reasonable time.
+ */
+export async function seedMessages(
+  userEmail: string,
+  conversationId: string,
+  messages: SeedMessage[],
+): Promise<void> {
+  await withMongo(async (db) => {
+    const userId = await resolveUserId(db, userEmail);
+    const start = Date.now();
+    const docs = messages.map((message, index) => ({
+      ...message,
+      conversationId,
+      user: userId,
+      endpoint: 'openAI',
+      error: false,
+      unfinished: false,
+      createdAt: new Date(start + index * 1000),
+      updatedAt: new Date(start + index * 1000),
+      __v: 0,
+    }));
+    await db.collection('messages').insertMany(docs);
+  });
+}
+
+export async function deleteMessagesByConversation(conversationIds: string[]): Promise<void> {
+  await withMongo(async (db) => {
+    await db.collection('messages').deleteMany({ conversationId: { $in: conversationIds } });
+  });
+}
+
 /** Clears every conversation for the user so the seeded date groups are not pushed
  *  below the virtualized viewport by rows left behind by other specs. */
 export async function clearUserConversations(userEmail: string): Promise<void> {

@@ -36,6 +36,13 @@ import type { SteerContentView } from './SteeringLifecycle';
 import type { GenerationJobStore } from '~/app/metrics';
 import type * as t from '~/types';
 import {
+  recordGenerationStreamEarlyBufferOverflow,
+  recordGenerationStreamResumePendingEvents,
+  recordGenerationStreamSubscription,
+  setGenerationJobsInFlight,
+  recordGenerationJob,
+} from '~/app/metrics';
+import {
   JobCreationSupersededError,
   JobPredecessorMismatchError,
   isPendingActionStale,
@@ -43,12 +50,6 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   STEER_QUEUE_MAX_DEPTH,
 } from './interfaces/IJobStore';
-import {
-  recordGenerationStreamResumePendingEvents,
-  recordGenerationStreamSubscription,
-  setGenerationJobsInFlight,
-  recordGenerationJob,
-} from '~/app/metrics';
 import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
 import { assertJobStoreV2 } from './jobStoreCapabilities';
 
@@ -65,8 +66,14 @@ import {
 import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
-import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
+import { attachAskUserQuestionAnswers, normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
 import { emitChunkWithReceipt } from './internal/chunkPublication';
+import { resolveCoalesceWindowMs } from './internal/coalescing';
+import {
+  REDIS_ABORT_TERMINAL_GRACE_MS,
+  REDIS_EVENT_REORDER_TIMEOUT_MS,
+  REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS,
+} from './internal/timing';
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
@@ -77,6 +84,12 @@ const APPROVAL_EXPIRED_ERROR = 'Approval expired before a decision was made';
 
 /** Error surfaced to any client still attached when a stale/hung job is reaped. */
 const REAPED_JOB_ERROR = 'Generation timed out';
+
+/** Un-awaited coalesced publications allowed per stream before the emitter
+ * awaits a receipt. Healthy settlement keeps outstanding counts in the single
+ * digits; this trips only when Redis stalls, bounding buffered batches and
+ * queued commands by pacing the producer instead of growing without limit. */
+const MAX_OUTSTANDING_COALESCED_RECEIPTS = 256;
 
 /** Bounded completed-request replay horizon. It exceeds the default 24-hour
  * approval window; if a custom/live job outlasts it, `resumeClaimedGeneration`
@@ -99,6 +112,13 @@ export const TERMINAL_PUBLICATION_RECONNECT_ERROR =
  * owner leaves the durable pending bit behind; the next read or subscriber
  * promotes it to conservative reconciliation after this window. */
 const TERMINAL_PERSISTENCE_TIMEOUT_MS = 30_000;
+/** Hard bounds for a runtime's local early-event replay buffer. The buffer
+ * bridges emission to first attachment, but a generation streaming with no
+ * attached subscriber would otherwise grow it for its entire duration. On
+ * overflow the buffer is discarded and closed: Redis mode recovers from the
+ * durable chunk log, in-memory reconnects recover from the resume snapshot. */
+const EARLY_EVENT_BUFFER_MAX_EVENTS = 5_000;
+const EARLY_EVENT_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 type TokenIdempotencyClaim = IdempotencyClaimValue & {
   claimedAt: number;
@@ -315,6 +335,19 @@ function omitAlreadyAppliedSteers(items: SteerQueueItem[], content: unknown[]): 
   return items.filter((item) => !appliedIds.has(item.steerId));
 }
 
+/**
+ * Streaming deltas eligible for windowed publish/append coalescing. High-volume,
+ * order-preserved by per-event sequences, and consumed for the generation fence
+ * only — unlike control events, nothing awaits their publication for correctness.
+ */
+function isCoalescableDeltaEvent(eventType: string | undefined): boolean {
+  return (
+    eventType === 'on_message_delta' ||
+    eventType === 'on_reasoning_delta' ||
+    eventType === 'on_run_step_delta'
+  );
+}
+
 function getReplayStepId(event: t.ServerSentEvent): unknown {
   if (!('event' in event) || !event.data || typeof event.data !== 'object') {
     return undefined;
@@ -523,6 +556,16 @@ interface RuntimeJobState {
   pausePersistenceTimeoutRetired?: boolean;
   syncSent: boolean;
   earlyEventBuffer: t.ServerSentEvent[];
+  /** Estimated serialized size of earlyEventBuffer, for the overflow guard. */
+  earlyEventBufferBytes: number;
+  /** Closed after the first attachment drains the buffer in Redis mode (the
+   * durable chunk log owns later recovery) or after an overflow discard. A
+   * closed buffer never re-accumulates events for this runtime. */
+  earlyEventBufferClosed: boolean;
+  /** The buffer was discarded by the overflow guard before a subscriber
+   * consumed it. Non-resume attachments are redirected to the resume path,
+   * which reconstructs the discarded output from durable/snapshot state. */
+  earlyEventBufferOverflowed?: true;
   earlyEventSequencePromises: Array<Promise<void | number>>;
   /** Initial subscribers eligible to receive the local pre-attachment replay. */
   earlyReplayHandlers: Set<t.ChunkHandler>;
@@ -538,12 +581,20 @@ interface RuntimeJobState {
   >;
   /** Prevents later events from overtaking the initial `created` metadata write and publish. */
   createdEventPublication?: Promise<void>;
+  /** Coalesced delta publications emitted but not yet settled by a window flush. */
+  outstandingCoalescedReceipts?: number;
   hasSubscriber: boolean;
   /** Advances whenever every local SSE subscriber for one attachment generation leaves. */
   attachmentGeneration: number;
   /** Attachment generation whose partial-response disconnect cleanup was most recently started. */
   lastSubscriberCleanupGeneration?: number;
   allSubscribersLeftHandlers?: Array<(...args: unknown[]) => void | Promise<void>>;
+}
+
+interface FencedRuntimeRetirementContext {
+  controller: AbortController;
+  timer?: NodeJS.Timeout;
+  cleanupStarted?: boolean;
 }
 
 interface PreparedSubscription {
@@ -616,11 +667,24 @@ class GenerationJobManagerClass {
 
   private cleanupInterval: NodeJS.Timeout | null = null;
 
+  /** Generation-scoped retirement callbacks must not outlive the configured
+   * store/transport pair that created them. */
+  private fencedRuntimeRetirements = new Map<RuntimeJobState, FencedRuntimeRetirementContext>();
+
+  /** Suppresses the stream-global disconnect callback while an exact fenced
+   * predecessor detaches. The callback may otherwise target a same-stream
+   * successor that never owned the departing SSE response. */
+  private fencedSubscriberDetachments = new Set<string>();
+
   /** Rejects new jobs once graceful shutdown has started. */
   private shuttingDown = false;
 
   /** Whether we're using Redis stores */
   private _isRedis = false;
+
+  /** Whether streaming-delta publish/append coalescing is enabled (Redis only).
+   * Off (the default) preserves the awaited per-event emitChunk contract exactly. */
+  private _deltaCoalescingEnabled = false;
 
   /** Whether to cleanup event transport immediately on job completion */
   private _cleanupOnComplete = true;
@@ -679,6 +743,7 @@ class GenerationJobManagerClass {
     cleanupOnComplete?: boolean;
   }): void {
     assertJobStoreV2(services.jobStore);
+    this.cancelFencedRuntimeRetirements();
     const previousStore = this.storeLabel;
     if (this.cleanupInterval) {
       logger.warn(
@@ -725,6 +790,17 @@ class GenerationJobManagerClass {
     this._steering = new SteeringLifecycle(this.jobStore);
     this.eventTransport = services.eventTransport;
     this._isRedis = services.isRedis ?? false;
+    /** Coalescing needs BOTH configured services to actually batch: the flush
+     * capabilities are how implementations advertise it. A custom transport
+     * without them would silently lose the awaited per-event ordering contract
+     * (its receipts are un-awaited on the coalescable path), and a batching
+     * transport over a per-event store would let the durable log trail the
+     * sequence counter by a full window, breaking the resume frontier. */
+    this._deltaCoalescingEnabled =
+      this._isRedis &&
+      resolveCoalesceWindowMs() > 0 &&
+      typeof services.eventTransport.flushPendingChunks === 'function' &&
+      typeof services.jobStore.flushPendingAppends === 'function';
     this._cleanupOnComplete = services.cleanupOnComplete ?? true;
     this.shuttingDown = false;
     this.syncRunningJobMetrics();
@@ -1226,6 +1302,9 @@ class GenerationJobManagerClass {
 
   private registerAllSubscribersLeft(streamId: string): void {
     this.eventTransport.onAllSubscribersLeft(streamId, () => {
+      if (this.fencedSubscriberDetachments.has(streamId)) {
+        return;
+      }
       const runtime = this.runtimeState.get(streamId);
       if (!runtime) {
         return;
@@ -2148,6 +2227,8 @@ class GenerationJobManagerClass {
       startupTelemetry: options.startupTelemetry,
       syncSent: false,
       earlyEventBuffer: [],
+      earlyEventBufferBytes: 0,
+      earlyEventBufferClosed: false,
       earlyEventSequencePromises: [],
       earlyReplayHandlers: new Set(),
       resumeCaptureHandlers: new Set(),
@@ -2323,6 +2404,7 @@ class GenerationJobManagerClass {
         // Surface deferred tools discovered before the pause so the resume route can
         // replay them into createRun (the rebuilt graph passes `messages: []`).
         discoveredTools: jobData.discoveredTools,
+        activityPhaseSnapshot: jobData.activityPhaseSnapshot,
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
@@ -2333,6 +2415,7 @@ class GenerationJobManagerClass {
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
         pendingAction: jobData.pendingAction,
+        resolvedAskUserQuestions: jobData.resolvedAskUserQuestions,
       },
       readyPromise: runtime.readyPromise,
       resolveReady: runtime.resolveReady,
@@ -2406,6 +2489,8 @@ class GenerationJobManagerClass {
       resolveReady,
       syncSent: jobData.syncSent ?? false,
       earlyEventBuffer: [],
+      earlyEventBufferBytes: 0,
+      earlyEventBufferClosed: false,
       earlyEventSequencePromises: [],
       earlyReplayHandlers: new Set(),
       resumeCaptureHandlers: new Set(),
@@ -2987,6 +3072,22 @@ class GenerationJobManagerClass {
    * a terminal client event before this succeeds: abort, pause, and completion
    * can all race on the same generation epoch.
    */
+  /**
+   * Drain both delta coalescers ahead of a terminal status CAS. Coalesced
+   * deltas still buffered for a stream must land under its live status:
+   * flushed after the CAS they fence against the generation's own completion,
+   * and the false receipts retire a healthy runtime and error-close its
+   * subscribers ahead of the terminal frame. Every terminal transition that
+   * can interrupt a live emitter (claim, abort, shutdown) must call this
+   * before its CAS; no-op (two Map lookups) when coalescing is off or idle.
+   */
+  private async flushCoalescedStreamBuffers(streamId: string): Promise<void> {
+    await Promise.all([
+      this.jobStore.flushPendingAppends?.(streamId),
+      this.eventTransport.flushPendingChunks?.(streamId),
+    ]);
+  }
+
   async claimTerminalJob(
     streamId: string,
     status: TerminalJobClaim['status'],
@@ -3051,6 +3152,7 @@ class GenerationJobManagerClass {
     const createdAt = jobData.createdAt;
     const runtime = observedRuntime?.createdAt === createdAt ? observedRuntime : undefined;
     const terminalError = status === 'error' ? (error ?? 'Generation failed') : undefined;
+    await this.flushCoalescedStreamBuffers(streamId);
     const completedAt = Date.now();
     const drainedSteers = await this.jobStore.transitionStatusAndDrainSteers(streamId, {
       from: sourceStatus,
@@ -3413,8 +3515,8 @@ class GenerationJobManagerClass {
    * - Emits abort signal via Redis pub/sub
    * - The replica running generation receives signal and aborts its AbortController
    *
-   * `options.transformAbortContent` rewrites the persistable content BEFORE the
-   * final SSE is emitted (and before it is returned for the DB save), so a
+   * `options.transformAbortContent` rewrites the reconstructed content BEFORE
+   * persistence filtering and the final SSE (and before it is returned for the DB save), so a
    * host-side stamp — e.g. re-attaching a paused `ask_user_question`'s args
    * that the Redis chunk-log reconstruction dropped — reaches the LIVE client
    * too, not just the saved message. Pure/optional; identity when omitted.
@@ -3422,7 +3524,10 @@ class GenerationJobManagerClass {
   async abortJob(
     streamId: string,
     options?: {
-      transformAbortContent?: (content: TMessageContentParts[]) => TMessageContentParts[];
+      transformAbortContent?: (
+        content: TMessageContentParts[],
+        jobData: SerializableJobData,
+      ) => TMessageContentParts[];
       /** Required durable work (for example saving the partial response and
        * pruning the paused checkpoint) that must finish before the normal
        * FINAL lets the client submit against that history. Throwing emits a
@@ -3517,17 +3622,16 @@ class GenerationJobManagerClass {
     }
 
     const runtime = observedRuntime?.createdAt === jobData.createdAt ? observedRuntime : undefined;
+    /** Abort claims terminal state through its own CAS loop below (not
+     * claimTerminalJob), so it must drain the coalescers itself — and ahead of
+     * the content snapshot, so a chunk-log reconstruction sees the window tail. */
+    await this.flushCoalescedStreamBuffers(streamId);
     /** Snapshot before claiming terminal state. This is non-destructive: if a
      * same-epoch approval resume wins the later CAS, its content and steer
      * queue remain fully owned by that resumed run. */
     const result = await this.jobStore.getContentParts(streamId, jobData.createdAt);
     let content = result?.content ?? [];
     let abortContent = filterPersistableAbortContent(content);
-    if (options?.transformAbortContent) {
-      abortContent = options.transformAbortContent(
-        abortContent as TMessageContentParts[],
-      ) as typeof abortContent;
-    }
     let shouldPersistAbortContent = abortContent.length > 0;
 
     /** Collected usage for all models */
@@ -3617,6 +3721,10 @@ class GenerationJobManagerClass {
         collectedUsage,
       };
     }
+    // The successful CAS may follow a same-generation approval transition.
+    // Use the snapshot that selected the winning source status so host-side
+    // content transforms see metadata committed by that transition.
+    jobData = currentAfterConflict ?? jobData;
     const terminalClaim: TerminalJobClaim = Object.freeze({
       streamId,
       createdAt: jobData.createdAt,
@@ -3656,18 +3764,6 @@ class GenerationJobManagerClass {
         const committed = await this.jobStore.getContentParts(streamId, jobData.createdAt);
         if (committed) {
           content = committed.content;
-          abortContent = filterPersistableAbortContent(content);
-          if (options?.transformAbortContent) {
-            abortContent = options.transformAbortContent(
-              abortContent as TMessageContentParts[],
-            ) as typeof abortContent;
-          }
-          shouldPersistAbortContent = abortContent.length > 0;
-          text = shouldPersistAbortContent
-            ? parseTextParts(abortContent as TMessageContentParts[], false, {
-                includeSteer: true,
-              })
-            : '';
         }
       } catch (contentError) {
         logger.warn(
@@ -3675,6 +3771,20 @@ class GenerationJobManagerClass {
           contentError,
         );
       }
+      if (options?.transformAbortContent) {
+        content = options.transformAbortContent(
+          content as TMessageContentParts[],
+          jobData,
+        ) as typeof content;
+      }
+      // Answer stamps use ordinals from the unfiltered chunk reconstruction.
+      // Filter only after the transform so sparse/empty/OAuth parts cannot
+      // shift a retained ID-less ask answer onto a different tool call.
+      abortContent = filterPersistableAbortContent(content);
+      shouldPersistAbortContent = abortContent.length > 0;
+      text = shouldPersistAbortContent
+        ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })
+        : '';
 
       /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
       In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
@@ -3993,8 +4103,11 @@ class GenerationJobManagerClass {
       streamId,
       {
         onChunk: (event, generationId) => {
+          const currentRuntime = this.runtimeState.get(streamId);
+          const isMatchingTerminalDrain =
+            currentRuntime == null && generationId === runtime.createdAt;
           if (
-            this.runtimeState.get(streamId) !== runtime ||
+            (currentRuntime !== runtime && !isMatchingTerminalDrain) ||
             (generationId != null && generationId !== runtime.createdAt)
           ) {
             return;
@@ -4048,7 +4161,29 @@ class GenerationJobManagerClass {
         runtime.earlyReplayHandlers.delete(queueChunk);
         runtime.localErrorHandlers.delete(queueError);
         detachSignal?.removeEventListener('abort', detachOnAbort);
-        transportSubscription.unsubscribe();
+        const fencedLastSubscriber =
+          runtime.localErrorHandlers.size === 0 &&
+          (this.fencedRuntimeRetirements.has(runtime) ||
+            this.runtimeState.get(streamId) !== runtime);
+        const addFencedDetachmentSuppression =
+          fencedLastSubscriber && !this.fencedSubscriberDetachments.has(streamId);
+        if (fencedLastSubscriber) {
+          runtime.syncSent = false;
+          runtime.hasSubscriber = false;
+          runtime.attachmentGeneration++;
+          runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
+        }
+        if (addFencedDetachmentSuppression) {
+          this.fencedSubscriberDetachments.add(streamId);
+        }
+        try {
+          this.cleanupUnobservedFencedRuntime(streamId, runtime);
+          transportSubscription.unsubscribe();
+        } finally {
+          if (addFencedDetachmentSuppression) {
+            this.fencedSubscriberDetachments.delete(streamId);
+          }
+        }
         resolveDetached();
       },
     };
@@ -4185,8 +4320,14 @@ class GenerationJobManagerClass {
           }
         }
       } finally {
-        runtime.earlyEventBuffer = [];
-        runtime.earlyEventSequencePromises = [];
+        this.resetEarlyEventBuffer(runtime);
+        if (this._isRedis) {
+          /** After the first attachment, the durable chunk log and pub/sub own
+           * recovery; re-buffering on a later detach would grow for the rest
+           * of a detached run. Cross-replica subscribers already attach with
+           * no local buffer, so a closed buffer follows the same path. */
+          runtime.earlyEventBufferClosed = true;
+        }
         try {
           const reorderSync = this.eventTransport.syncReorderBuffer?.(streamId, replayedNextSeq);
           if (reorderSync) {
@@ -4210,6 +4351,20 @@ class GenerationJobManagerClass {
 
     if (this.detachSubscriptionDuringShutdown(subscription)) {
       return null;
+    }
+
+    if (
+      runtime.earlyEventBufferOverflowed === true &&
+      !options?.skipBufferReplay &&
+      !runtime.finalEvent &&
+      !runtime.errorEvent
+    ) {
+      /** The overflow guard discarded the pre-attachment buffer, so a
+       * non-resume attachment cannot be made whole from local replay. Close
+       * the transport with the reconnect signal instead of streaming a
+       * silently truncated response: the client re-attaches with resume=true
+       * and its sync frame carries full durable/snapshot state. */
+      queueError(TERMINAL_PUBLICATION_RECONNECT_ERROR);
     }
 
     recordGenerationStreamSubscription(this.storeLabel, subscriptionType, 'success');
@@ -4361,6 +4516,58 @@ class GenerationJobManagerClass {
     await Promise.all(pending);
   }
 
+  private resetEarlyEventBuffer(runtime: RuntimeJobState): void {
+    runtime.earlyEventBuffer = [];
+    runtime.earlyEventSequencePromises = [];
+    runtime.earlyEventBufferBytes = 0;
+  }
+
+  /**
+   * Buffers a pre-attachment event for local replay, enforcing hard bounds.
+   *
+   * A generation streaming with no attached subscriber can run for its entire
+   * duration; unbounded buffering here retained every emitted event in memory,
+   * with GC cost climbing alongside the heap. On overflow the whole buffer is
+   * discarded and closed — the durable chunk log (Redis) or the resume
+   * snapshot (in-memory) already owns recovery for late subscribers.
+   *
+   * @returns whether the event was accepted into the buffer.
+   */
+  private bufferEarlyEvent(
+    streamId: string,
+    runtime: RuntimeJobState,
+    event: t.ServerSentEvent,
+  ): boolean {
+    if (runtime.earlyEventBufferClosed) {
+      return false;
+    }
+    const estimatedBytes = JSON.stringify(event).length;
+    if (
+      runtime.earlyEventBuffer.length >= EARLY_EVENT_BUFFER_MAX_EVENTS ||
+      runtime.earlyEventBufferBytes + estimatedBytes > EARLY_EVENT_BUFFER_MAX_BYTES
+    ) {
+      this.overflowEarlyEventBuffer(streamId, runtime);
+      return false;
+    }
+    runtime.earlyEventBuffer.push(event);
+    runtime.earlyEventBufferBytes += estimatedBytes;
+    return true;
+  }
+
+  private overflowEarlyEventBuffer(streamId: string, runtime: RuntimeJobState): void {
+    const droppedEvents = runtime.earlyEventBuffer.length;
+    const droppedBytes = runtime.earlyEventBufferBytes;
+    this.resetEarlyEventBuffer(runtime);
+    runtime.earlyEventBufferClosed = true;
+    runtime.earlyEventBufferOverflowed = true;
+    recordGenerationStreamEarlyBufferOverflow(this.storeLabel);
+    logger.warn(
+      `[GenerationJobManager] Early event buffer overflow for ${streamId}; ` +
+        `discarded ${droppedEvents} buffered events (~${droppedBytes} bytes); ` +
+        'late subscribers will recover from durable/resume state',
+    );
+  }
+
   /**
    * If the subscriber that owns Redis attachment bootstrap disconnects, finish the
    * replay/sync for any concurrent subscriber. Otherwise the transport-wide reorder
@@ -4430,8 +4637,11 @@ class GenerationJobManagerClass {
             }
           }
         } finally {
-          runtime.earlyEventBuffer = [];
-          runtime.earlyEventSequencePromises = [];
+          this.resetEarlyEventBuffer(runtime);
+          if (this._isRedis) {
+            /** Same closure as the owning-subscriber bootstrap above. */
+            runtime.earlyEventBufferClosed = true;
+          }
           await this.eventTransport.syncReorderBuffer?.(streamId, replayedNextSeq);
         }
       })
@@ -4522,11 +4732,31 @@ class GenerationJobManagerClass {
         return;
       }
       const currentRuntime = this.runtimeState.get(streamId);
-      if (currentRuntime && !currentRuntime.hasSubscriber) {
+      if (
+        currentRuntime &&
+        !currentRuntime.hasSubscriber &&
+        !currentRuntime.earlyEventBufferClosed
+      ) {
         const bufferedEvents = new Set(currentRuntime.earlyEventBuffer);
         const missingEvents = capturedPendingEvents.filter((event) => !bufferedEvents.has(event));
         if (missingEvents.length > 0) {
-          currentRuntime.earlyEventBuffer = [...missingEvents, ...currentRuntime.earlyEventBuffer];
+          let restoredBytes = 0;
+          for (const event of missingEvents) {
+            restoredBytes += JSON.stringify(event).length;
+          }
+          const overflows =
+            currentRuntime.earlyEventBuffer.length + missingEvents.length >
+              EARLY_EVENT_BUFFER_MAX_EVENTS ||
+            currentRuntime.earlyEventBufferBytes + restoredBytes > EARLY_EVENT_BUFFER_MAX_BYTES;
+          if (overflows) {
+            this.overflowEarlyEventBuffer(streamId, currentRuntime);
+          } else {
+            currentRuntime.earlyEventBuffer = [
+              ...missingEvents,
+              ...currentRuntime.earlyEventBuffer,
+            ];
+            currentRuntime.earlyEventBufferBytes += restoredBytes;
+          }
         }
       }
       capturedPendingEvents.length = 0;
@@ -5042,6 +5272,19 @@ class GenerationJobManagerClass {
       this.saveRunStepFromEvent(streamId, eventData as Record<string, unknown>, runtime.createdAt);
     }
 
+    /**
+     * One decision drives both durable-log and publish batching: the append and
+     * the sequence allocation for an event must stay tightly coupled in time, or
+     * the resume frontier (chunk-log snapshot → sequence-counter sync) misreads
+     * a window's tail as already-delivered or as duplicates.
+     */
+    const coalescableDelta =
+      this._deltaCoalescingEnabled &&
+      !runtime.startupTelemetry &&
+      options?.durable !== true &&
+      options?.deliveredSteer == null &&
+      isCoalescableDeltaEvent(eventType);
+
     // For Redis mode, persist chunk for later reconstruction (fire-and-forget for resumability)
     if (this._isRedis) {
       // The SSE event structure is { event: string, data: unknown, ... }
@@ -5053,6 +5296,7 @@ class GenerationJobManagerClass {
           { event: eventType, data: eventData },
           runtime.createdAt,
           options?.deliveredSteer,
+          coalescableDelta ? { coalesce: true } : undefined,
         );
 
         if (options?.durable === true) {
@@ -5111,15 +5355,67 @@ class GenerationJobManagerClass {
       }
     }
 
-    const buffered = !runtime.hasSubscriber;
-    if (buffered) {
-      runtime.earlyEventBuffer.push(event);
-      if (!this._isRedis) {
-        if (runtime.startupTelemetry) {
-          this.recordStartupEvent(runtime, event);
-        }
-        return;
+    const detached = !runtime.hasSubscriber;
+    const buffered = detached && this.bufferEarlyEvent(streamId, runtime, event);
+    if (detached && !this._isRedis) {
+      if (runtime.startupTelemetry) {
+        this.recordStartupEvent(runtime, event);
       }
+      return;
+    }
+
+    /**
+     * Streaming deltas dominate publication volume, and their receipt is consumed
+     * only for the generation fence (`false` retires the runtime) — never awaited
+     * for content correctness. Marking them coalescable lets the Redis transport
+     * batch a window of them into one sequenced frame, and NOT awaiting here takes
+     * the per-delta publish round trip off the provider-stream consumption path.
+     * The fence continuation mirrors the fire-and-forget appendChunk fence above.
+     * Fenced emissions (durable, steer receipts, created) and telemetry-observed
+     * runs stay on the awaited per-event path below.
+     */
+    if (coalescableDelta) {
+      const publication = emitChunkWithReceipt(
+        this.eventTransport,
+        streamId,
+        event,
+        runtime.createdAt,
+        { coalesce: true },
+      );
+      if (buffered) {
+        runtime.earlyEventSequencePromises.push(
+          publication.then(
+            (published) => (typeof published === 'number' ? published : undefined),
+            () => undefined,
+          ),
+        );
+      }
+      runtime.outstandingCoalescedReceipts = (runtime.outstandingCoalescedReceipts ?? 0) + 1;
+      void publication.then(
+        (published) => {
+          runtime.outstandingCoalescedReceipts = (runtime.outstandingCoalescedReceipts ?? 1) - 1;
+          if (published === false) {
+            this.retireRuntimeAfterDurableFence(streamId, runtime);
+          }
+        },
+        (err) => {
+          runtime.outstandingCoalescedReceipts = (runtime.outstandingCoalescedReceipts ?? 1) - 1;
+          logger.error(`[GenerationJobManager] Failed to publish coalesced chunk:`, err);
+        },
+      );
+      /**
+       * Backpressure only under distress. Healthy settlement is one window plus
+       * a round trip (~30ms), so outstanding receipts sit in the single digits
+       * even at hundreds of deltas per second and this await never runs. If
+       * Redis stalls, the un-awaited path would otherwise accumulate batches,
+       * resolver closures, and queued commands without bound — awaiting one
+       * receipt paces the producer to Redis exactly like the flag-off path,
+       * with memory capped near the threshold instead of one delta.
+       */
+      if (runtime.outstandingCoalescedReceipts >= MAX_OUTSTANDING_COALESCED_RECEIPTS) {
+        await publication.catch(() => undefined);
+      }
+      return;
     }
 
     if (!buffered && !runtime.startupTelemetry) {
@@ -5197,40 +5493,318 @@ class GenerationJobManagerClass {
     }
   }
 
-  /** A generation-fenced append returning false is same-slot proof that this
-   * epoch is no longer the durable owner. This is the provider's backstop when
-   * a replacement abort publication is lost. Retire only the exact captured
-   * runtime; a newer local successor may already occupy the same stream id. */
-  private retireRuntimeAfterDurableFence(streamId: string, runtime: RuntimeJobState): void {
-    if (this.runtimeState.get(streamId) !== runtime) {
+  private async getReplacementHandoffState(
+    streamId: string,
+    predecessorCreatedAt: number,
+  ): Promise<'none' | 'pending' | 'settled'> {
+    try {
+      const current = (await this.jobStore.getJob(streamId)) as CreatedJobData | null;
+      if (current == null) {
+        /** A fenced append proves that a newer durable owner existed. Its job
+         * may disappear after publishing predecessor DONE but before this poll,
+         * so absence is a settled handoff that still needs delivery grace. */
+        return 'settled';
+      }
+      if (current.createdAt <= predecessorCreatedAt) {
+        return 'none';
+      }
+      const receipts =
+        current.replacedJobs ?? (current.replacedJob != null ? [current.replacedJob] : []);
+      return receipts.some((receipt) => receipt.createdAt === predecessorCreatedAt)
+        ? 'pending'
+        : 'settled';
+    } catch (error) {
+      logger.warn(
+        `[GenerationJobManager] Failed to inspect replacement handoff for fenced generation ${streamId}:`,
+        error,
+      );
+      // A transient read failure cannot prove that DONE publication finished.
+      return 'pending';
+    }
+  }
+
+  private async getReplacementHandoffStateBeforeDeadline(
+    streamId: string,
+    predecessorCreatedAt: number,
+    deadlineAt: number,
+    lifecycleSignal: AbortSignal,
+  ): Promise<'none' | 'pending' | 'settled' | 'deadline' | 'cancelled'> {
+    if (lifecycleSignal.aborted) {
+      return 'cancelled';
+    }
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) {
+      return 'deadline';
+    }
+
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    let removeCancellationListener: (() => void) | undefined;
+    try {
+      const cancellation = new Promise<'cancelled'>((resolve) => {
+        const onCancelled = (): void => resolve('cancelled');
+        removeCancellationListener = (): void =>
+          lifecycleSignal.removeEventListener('abort', onCancelled);
+        lifecycleSignal.addEventListener('abort', onCancelled, { once: true });
+        if (lifecycleSignal.aborted) {
+          onCancelled();
+        }
+      });
+      const deadline = new Promise<'deadline'>((resolve) => {
+        deadlineTimer = setTimeout(() => resolve('deadline'), remainingMs);
+        deadlineTimer.unref?.();
+      });
+      return await Promise.race([
+        this.getReplacementHandoffState(streamId, predecessorCreatedAt),
+        deadline,
+        cancellation,
+      ]);
+    } finally {
+      if (deadlineTimer != null) {
+        clearTimeout(deadlineTimer);
+      }
+      removeCancellationListener?.();
+    }
+  }
+
+  private cancelFencedRuntimeRetirements(): void {
+    for (const retirement of this.fencedRuntimeRetirements.values()) {
+      if (retirement.timer != null) {
+        clearTimeout(retirement.timer);
+        retirement.timer = undefined;
+      }
+      retirement.controller.abort();
+    }
+    this.fencedRuntimeRetirements.clear();
+  }
+
+  private scheduleFencedRuntimeRetirement(
+    streamId: string,
+    runtime: RuntimeJobState,
+    startedAt: number,
+    retirement: FencedRuntimeRetirementContext,
+    handoffPendingObserved = false,
+    postHandoffGraceApplied = false,
+    requestedDelayMs = REDIS_ABORT_TERMINAL_GRACE_MS,
+  ): void {
+    const lifecycleSignal = retirement.controller.signal;
+    if (lifecycleSignal.aborted || this.fencedRuntimeRetirements.get(runtime) !== retirement) {
       return;
     }
-    runtime.startupTelemetry?.end('replaced');
-    runtime.startupTelemetry = undefined;
-    runtime.abortController.abort();
-    if (runtime.replacementTransportHold === true) {
+    const remainingMs = REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS - (Date.now() - startedAt);
+    /** Handoff inspection is capped at 30 seconds. Once inspection ends, the
+     * final delivery grace is intentionally un-clamped and may extend the
+     * generation-scoped hold by one reorder window. */
+    const delayMs = postHandoffGraceApplied
+      ? Math.max(1, requestedDelayMs)
+      : Math.max(1, Math.min(requestedDelayMs, remainingMs));
+    const retirementTimer = setTimeout(() => {
+      if (retirement.timer === retirementTimer) {
+        retirement.timer = undefined;
+      }
+      if (lifecycleSignal.aborted) {
+        return;
+      }
+      void this.finishFencedRuntimeRetirement(
+        streamId,
+        runtime,
+        startedAt,
+        retirement,
+        handoffPendingObserved,
+        postHandoffGraceApplied,
+        lifecycleSignal,
+      );
+    }, delayMs);
+    retirement.timer = retirementTimer;
+    retirementTimer.unref?.();
+  }
+
+  private async finishFencedRuntimeRetirement(
+    streamId: string,
+    runtime: RuntimeJobState,
+    startedAt: number,
+    retirement: FencedRuntimeRetirementContext,
+    handoffPendingObserved: boolean,
+    postHandoffGraceApplied: boolean,
+    lifecycleSignal: AbortSignal,
+  ): Promise<void> {
+    if (
+      this.shuttingDown ||
+      lifecycleSignal.aborted ||
+      this.fencedRuntimeRetirements.get(runtime) !== retirement
+    ) {
       return;
     }
-    this.releaseAbortSubscription(runtime);
-    if (this.runtimeState.get(streamId) === runtime) {
-      this.runtimeState.delete(streamId);
+    if (
+      runtime.localErrorHandlers.size === 0 &&
+      this.cleanupUnobservedFencedRuntime(streamId, runtime)
+    ) {
+      return;
+    }
+    if (!postHandoffGraceApplied) {
+      const deadlineAt = startedAt + REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS;
+      const handoffState = await this.getReplacementHandoffStateBeforeDeadline(
+        streamId,
+        runtime.createdAt,
+        deadlineAt,
+        lifecycleSignal,
+      );
+      if (this.shuttingDown || lifecycleSignal.aborted || handoffState === 'cancelled') {
+        return;
+      }
+      if (handoffState === 'pending' && Date.now() < deadlineAt) {
+        this.scheduleFencedRuntimeRetirement(streamId, runtime, startedAt, retirement, true);
+        return;
+      }
+      if (
+        handoffPendingObserved ||
+        handoffState === 'pending' ||
+        handoffState === 'settled' ||
+        handoffState === 'deadline'
+      ) {
+        this.scheduleFencedRuntimeRetirement(
+          streamId,
+          runtime,
+          startedAt,
+          retirement,
+          handoffPendingObserved || handoffState === 'pending',
+          true,
+          REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+        );
+        return;
+      }
+    }
+
+    if (this.fencedRuntimeRetirements.get(runtime) !== retirement) {
+      return;
+    }
+    retirement.cleanupStarted = true;
+    this.cleanupFencedRuntime(streamId, runtime);
+    if (this.fencedRuntimeRetirements.get(runtime) === retirement) {
+      this.fencedRuntimeRetirements.delete(runtime);
+    }
+  }
+
+  private cleanupUnobservedFencedRuntime(streamId: string, runtime: RuntimeJobState): boolean {
+    if (runtime.localErrorHandlers.size !== 0) {
+      return false;
+    }
+    const retirement = this.fencedRuntimeRetirements.get(runtime);
+    if (retirement == null || retirement.cleanupStarted === true) {
+      return false;
+    }
+    retirement.cleanupStarted = true;
+    if (retirement.timer != null) {
+      clearTimeout(retirement.timer);
+      retirement.timer = undefined;
+    }
+    retirement.controller.abort();
+    this.fencedRuntimeRetirements.delete(runtime);
+    this.cleanupFencedRuntime(streamId, runtime);
+    return true;
+  }
+
+  private recordFencedRuntimeAbortProof(
+    streamId: string,
+    runtime: RuntimeJobState,
+    ownsExactProvider: boolean,
+  ): void {
+    const recordAbortAcknowledgement = this.eventTransport.recordAbortAcknowledgement;
+    if (!this._isRedis || recordAbortAcknowledgement == null || !ownsExactProvider) {
+      return;
+    }
+
+    try {
+      void recordAbortAcknowledgement
+        .call(this.eventTransport, streamId, runtime.createdAt)
+        .then((confirmed) => {
+          if (!confirmed) {
+            logger.warn(
+              `[GenerationJobManager] Abort proof was not persisted for fenced generation ${streamId}`,
+            );
+          }
+        })
+        .catch((error) => {
+          logger.error(
+            `[GenerationJobManager] Failed to persist abort proof for fenced generation ${streamId}:`,
+            error,
+          );
+        });
+    } catch (error) {
+      logger.error(
+        `[GenerationJobManager] Failed to start abort proof for fenced generation ${streamId}:`,
+        error,
+      );
+    }
+  }
+
+  private cleanupFencedRuntime(streamId: string, runtime: RuntimeJobState): void {
+    if (runtime.replacementTransportHold !== true) {
+      this.releaseAbortSubscription(runtime);
       this.releaseJobOwnership(streamId, runtime.createdAt);
-      this.runStepBuffers?.delete(streamId);
-      this.replayEventWriteQueues.delete(streamId);
-      this.tokenUsageWriteQueues.delete(streamId);
       this.jobStore.clearContentState(streamId, runtime.createdAt);
+
+      if (this.runtimeState.get(streamId) === runtime) {
+        this.runtimeState.delete(streamId);
+        this.runStepBuffers?.delete(streamId);
+        this.replayEventWriteQueues.delete(streamId);
+        this.tokenUsageWriteQueues.delete(streamId);
+      }
+    }
+
+    // finalEvent/errorEvent are cached before transport dispatch, so they do
+    // not prove that an attached SSE response closed. Each captured handler
+    // ignores this reconnect signal when its terminal is already queued.
+    for (const notify of [...runtime.localErrorHandlers]) {
       try {
-        // Delete runtime ownership before closing. The transport's
-        // all-subscribers-left callback may run synchronously; it must not
-        // persist a partial response for this already-replaced epoch.
-        this.eventTransport.closeLocalSubscribers?.(streamId, TERMINAL_PUBLICATION_RECONNECT_ERROR);
+        notify(TERMINAL_PUBLICATION_RECONNECT_ERROR);
       } catch (error) {
         logger.error(
-          `[GenerationJobManager] Failed to recycle subscribers for fenced generation ${streamId}:`,
+          `[GenerationJobManager] Failed to recycle a subscriber for fenced generation ${streamId}:`,
           error,
         );
       }
     }
+  }
+
+  /** A generation-fenced append returning false is same-slot proof that this
+   * epoch is no longer the durable owner. Stop its provider immediately, then
+   * preserve captured subscribers while a durable successor still owns their
+   * handoff receipt. A newer runtime is never touched. */
+  private retireRuntimeAfterDurableFence(streamId: string, runtime: RuntimeJobState): void {
+    if (this.runtimeState.get(streamId) !== runtime) {
+      return;
+    }
+    if (this.fencedRuntimeRetirements.has(runtime)) {
+      return;
+    }
+    /** A runtime whose stop signal already landed (cross-replica abort,
+     * replacement handshake) observes this fence as a consequence of its own
+     * termination — most often a coalesced window draining after the abort
+     * CAS. Those flows own terminal delivery and cleanup; the forced teardown
+     * below would error-close local subscribers in a race with the FINAL
+     * frame they are about to receive. It remains the backstop for the
+     * lost-signal case, which is exactly a fence on a NOT-yet-aborted owner. */
+    if (runtime.abortController.signal.aborted) {
+      return;
+    }
+    runtime.startupTelemetry?.end('replaced');
+    runtime.startupTelemetry = undefined;
+    const ownsExactProvider = this.ownedJobs.get(streamId) === runtime.createdAt;
+    runtime.abortController.abort();
+    this.recordFencedRuntimeAbortProof(streamId, runtime, ownsExactProvider);
+    if (this.shuttingDown) {
+      return;
+    }
+    if (runtime.replacementTransportHold === true) {
+      return;
+    }
+    if (runtime.localErrorHandlers.size === 0) {
+      this.cleanupFencedRuntime(streamId, runtime);
+      return;
+    }
+    const retirement: FencedRuntimeRetirementContext = { controller: new AbortController() };
+    this.fencedRuntimeRetirements.set(runtime, retirement);
+    this.scheduleFencedRuntimeRetirement(streamId, runtime, Date.now(), retirement);
   }
 
   private isCurrentRuntime(streamId: string, runtime: RuntimeJobState): boolean {
@@ -5974,7 +6548,7 @@ class GenerationJobManagerClass {
       this.jobStore.peekSteers(streamId, jobData.createdAt),
       this.jobStore.peekClaimedSteers(streamId, jobData.createdAt),
     ]);
-    const aggregatedContent = result?.content ?? [];
+    const reconstructedContent = result?.content ?? [];
     const bufferState = this.runStepBuffers?.get(streamId);
     const bufferedRunSteps = bufferState?.createdAt === jobData.createdAt ? bufferState.steps : [];
     const runStepsById = new Map(runSteps.map((runStep) => [runStep.id, runStep]));
@@ -5983,7 +6557,7 @@ class GenerationJobManagerClass {
     }
     const effectiveRunSteps = normalizeResumeRunStepIndices(
       [...runStepsById.values()],
-      aggregatedContent,
+      reconstructedContent,
     );
     let titleEvent: t.ResumeState['titleEvent'];
     if (jobData.titleEvent) {
@@ -6027,7 +6601,7 @@ class GenerationJobManagerClass {
     /** Steers still queued (not yet injected); injected ones are already in aggregatedContent. */
     const pendingSteers = omitAlreadyAppliedSteers(
       mergeUnresolvedSteers(claimedSteers, queuedSteers),
-      aggregatedContent as unknown[],
+      reconstructedContent as unknown[],
     ).map(toPendingSteer);
 
     /** The four component reads are generation-fenced, but replacement can
@@ -6038,6 +6612,13 @@ class GenerationJobManagerClass {
     if (!verifiedJob || verifiedJob.createdAt !== jobData.createdAt) {
       return null;
     }
+    /** Redis reconstruction has no completion event for ask_user_question.
+     * Apply the answer stamps from the generation-fenced job read so reload,
+     * status, resume, and abort all expose the same authoritative content. */
+    const aggregatedContent = attachAskUserQuestionAnswers(
+      reconstructedContent,
+      verifiedJob.resolvedAskUserQuestions ?? [],
+    );
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
@@ -6063,8 +6644,8 @@ class GenerationJobManagerClass {
       // cross-replica client can rebuild the prompt from resumeState. Client-safe
       // projection: the stored record's resumeContext/requestFingerprint stay server-only.
       pendingAction:
-        jobData.status === 'requires_action' && !isPendingActionStale(jobData)
-          ? toClientPendingAction(jobData.pendingAction)
+        verifiedJob.status === 'requires_action' && !isPendingActionStale(verifiedJob)
+          ? toClientPendingAction(verifiedJob.pendingAction)
           : undefined,
       pendingSteers: pendingSteers.length > 0 ? pendingSteers : undefined,
     } satisfies t.ResumeState;
@@ -6472,13 +7053,25 @@ class GenerationJobManagerClass {
   /** Returns sizes of internal runtime maps for diagnostics */
   getRuntimeStats(): {
     runtimeStateSize: number;
+    fencedRuntimeRetirements: number;
     runStepBufferSize: number;
     eventTransportStreams: number;
+    earlyBufferedEvents: number;
+    earlyBufferedBytes: number;
   } {
+    let earlyBufferedEvents = 0;
+    let earlyBufferedBytes = 0;
+    for (const runtime of this.runtimeState.values()) {
+      earlyBufferedEvents += runtime.earlyEventBuffer.length;
+      earlyBufferedBytes += runtime.earlyEventBufferBytes;
+    }
     return {
       runtimeStateSize: this.runtimeState.size,
+      fencedRuntimeRetirements: this.fencedRuntimeRetirements.size,
       runStepBufferSize: this.runStepBuffers?.size ?? 0,
       eventTransportStreams: this.eventTransport.getTrackedStreamIds().length,
+      earlyBufferedEvents,
+      earlyBufferedBytes,
     };
   }
 
@@ -6530,6 +7123,9 @@ class GenerationJobManagerClass {
           runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
           await this.persistSubscriberCleanup(streamId, runtime);
         }
+        /** Shutdown interrupts live emitters, so their coalesced window must
+         * drain before the terminal CAS — same rule as claim/abort. */
+        await this.flushCoalescedStreamBuffers(streamId);
         const finalized = await this.jobStore.transitionStatus(streamId, {
           from: 'running',
           to: 'error',
@@ -6582,6 +7178,7 @@ class GenerationJobManagerClass {
       return;
     }
     this.shuttingDown = true;
+    this.cancelFencedRuntimeRetirements();
 
     for (const runtime of this.runtimeState.values()) {
       runtime.startupTelemetry?.end('aborted');
@@ -6603,6 +7200,7 @@ class GenerationJobManagerClass {
    */
   async destroy(): Promise<void> {
     this.shuttingDown = true;
+    this.cancelFencedRuntimeRetirements();
 
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);

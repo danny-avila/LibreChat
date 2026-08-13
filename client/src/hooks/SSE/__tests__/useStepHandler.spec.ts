@@ -2213,6 +2213,64 @@ describe('useStepHandler', () => {
       expect(content[1]).toMatchObject({ type: ContentTypes.TOOL_CALL });
     });
 
+    it('does not compact absolute content indices when dropping an answered ask card', () => {
+      const askPart = {
+        type: 'ask_user_question',
+        ask_user_question: { actionId: 'a-sparse', question: { question: 'Which env?' } },
+      } as unknown as TMessageContentParts;
+      const askToolCall = {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'ask-call-sparse',
+          name: 'ask_user_question',
+          args: '{"question":"Which env?"}',
+          type: ToolCallTypes.TOOL_CALL,
+        },
+      } as unknown as TMessageContentParts;
+      const sparseContent = [{ type: ContentTypes.TEXT, text: 'Before' }] as TMessageContentParts[];
+      sparseContent[2] = askToolCall;
+      sparseContent[3] = askPart;
+      const paused = createResponseMessage({ content: sparseContent });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.syncStepMessage(paused);
+      });
+      mockGetMessages.mockReturnValue([resolveAskUserQuestionPart(paused, 'a-sparse', 'prod')]);
+
+      const askCompletion = createToolCallRunStep({
+        id: 'step-ask-sparse',
+        index: 2,
+        stepDetails: {
+          type: StepTypes.TOOL_CALLS,
+          tool_calls: [
+            {
+              id: 'ask-call-sparse',
+              name: 'ask_user_question',
+              args: '{"question":"Which env?"}',
+              output: 'prod',
+              type: ToolCallTypes.TOOL_CALL,
+            },
+          ],
+        },
+      } as Partial<Agents.RunStep>);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: askCompletion },
+          createSubmission(),
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1];
+      const updated = (lastCall[0] as TMessage[]).find((m) => m.messageId === 'response-msg-1');
+      expect(updated?.content?.[1]).toBeUndefined();
+      expect(updated?.content?.[2]).toMatchObject({
+        type: ContentTypes.TOOL_CALL,
+        tool_call: { id: 'ask-call-sparse' },
+      });
+    });
+
     it('keeps a still-live ask card when an event streams around its slot', () => {
       /** Only ANSWERED cards are droppable — a late event racing a live pause
        *  must not take the question away before the user can respond. */
@@ -3356,6 +3414,110 @@ describe('useStepHandler', () => {
       expect(response?.content?.[2]).toMatchObject({ [ContentTypes.TEXT]: 'streamed' });
       expect(response?.content?.[0]).toMatchObject({ [ContentTypes.TEXT]: 'kept a' });
     });
+
+    it('does not merge final-answer text into a retained commentary phase', () => {
+      const commentary = {
+        type: ContentTypes.TEXT,
+        [ContentTypes.TEXT]: 'Checked the current deployment. ',
+        phase: 'commentary',
+      } as TMessageContentParts;
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({ content: [textPart('kept'), commentary] }),
+      } as never);
+      (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+      const responseMessage = submission.initialResponse as TMessage;
+      let currentMessages: TMessage[] = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages: TMessage[]) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({
+              stepDetails: {
+                type: StepTypes.MESSAGE_CREATION,
+                message_creation: { message_id: 'msg-1', phase: 'final_answer' },
+              },
+            }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'Done') },
+          submission,
+        );
+      });
+
+      const response = currentMessages.find((message) => !message.isCreatedByUser);
+      expect(response?.content?.[1]).toMatchObject({
+        [ContentTypes.TEXT]: 'Checked the current deployment. ',
+        phase: 'commentary',
+      });
+      expect(response?.content?.[2]).toMatchObject({
+        [ContentTypes.TEXT]: 'Done',
+        phase: 'final_answer',
+      });
+    });
+
+    it.each([
+      [undefined, 'commentary'],
+      ['commentary', undefined],
+    ] as const)(
+      'does not merge phased and unphased text (%s → %s)',
+      (retainedPhase, incomingPhase) => {
+        const retained = {
+          type: ContentTypes.TEXT,
+          [ContentTypes.TEXT]: 'Retained text. ',
+          ...(retainedPhase != null && { phase: retainedPhase }),
+        } as TMessageContentParts;
+        const submission = createSubmission({
+          editedContent: { index: 0, type: ContentTypes.TEXT },
+          initialResponse: createResponseMessage({ content: [textPart('kept'), retained] }),
+        } as never);
+        (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+        const responseMessage = submission.initialResponse as TMessage;
+        let currentMessages: TMessage[] = [responseMessage];
+        mockGetMessages.mockImplementation(() => currentMessages);
+        mockSetMessages.mockImplementation((messages: TMessage[]) => {
+          currentMessages = messages;
+        });
+
+        const { result } = renderHook(() => useStepHandler(createHookParams()));
+        act(() => {
+          result.current.stepHandler(
+            {
+              event: StepEvents.ON_RUN_STEP,
+              data: createRunStep({
+                stepDetails: {
+                  type: StepTypes.MESSAGE_CREATION,
+                  message_creation: {
+                    message_id: 'msg-1',
+                    ...(incomingPhase != null && { phase: incomingPhase }),
+                  },
+                },
+              }),
+            },
+            submission,
+          );
+          result.current.stepHandler(
+            { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', 'New text') },
+            submission,
+          );
+        });
+
+        const response = currentMessages.find((message) => !message.isCreatedByUser);
+        expect(response?.content?.[1]).toMatchObject(retained);
+        expect(response?.content?.[2]).toMatchObject({
+          [ContentTypes.TEXT]: 'New text',
+          ...(incomingPhase != null && { phase: incomingPhase }),
+        });
+      },
+    );
 
     /**
      * Post-sync a delta continues at the snapshot's NEXT absolute slot. With

@@ -304,6 +304,19 @@ export type Agent = {
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
+  /**
+   * Whether the requesting user holds EDIT on this agent, so a single VIEW-scoped fetch can
+   * serve consumers that only need the editable subset instead of issuing a second full
+   * paginated walk under an EDIT-scoped cache key.
+   *
+   * Set by the list endpoint only; single-agent responses omit it. Treat absence as unknown
+   * and fail open (`isEditable !== false`), never as `false`, since a client on an older
+   * server would otherwise see an empty list rather than too many rows.
+   *
+   * Reflects the caller's ACL grant. The `MANAGE_AGENTS` capability bypasses ACL on write,
+   * so a capability holder can edit agents this flag reports as not editable.
+   */
+  isEditable?: boolean;
   version?: number;
   category?: string;
   support_contact?: SupportContact;
@@ -623,6 +636,8 @@ export type TMessageContentParts =
       type: ContentTypes.TEXT;
       text?: string | TextData;
       tool_call_ids?: string[];
+      /** Open Responses semantic channel for assistant text. */
+      phase?: 'commentary' | 'final_answer';
     } & ContentMetadata)
   | ({
       type: ContentTypes.TOOL_CALL;
@@ -642,7 +657,13 @@ export type TMessageContentParts =
        *  never sent to the model (stripped before payload formatting). */
       type: ContentTypes.ACTIVITY_LABEL;
       activity_label?: string;
+      /** Missing means the legacy/per-batch activity label. */
+      activity_label_type?: 'phase';
       tool_call_ids?: string[];
+      /** Parent phase bounds and telemetry. */
+      activity_start_index?: number;
+      activity_count?: number;
+      agent_ids?: string[];
       /** ok = all tools succeeded, failed = all failed, partial = mixed. */
       status?: 'ok' | 'partial' | 'failed';
       pending?: boolean;

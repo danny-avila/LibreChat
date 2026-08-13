@@ -10,6 +10,7 @@ const {
   isHITLEnabled,
   captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
+  attachAskUserQuestionAnswers,
   attachAskUserQuestionArgs,
   createMessageFilterPii,
 } = require('@librechat/api');
@@ -636,10 +637,12 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
       // chunk log, which never saw the pause-time stamp applied to the in-process
       // contentParts — stamping inside abortJob (not after) means the LIVE client
       // gets the question too, not just the saved message on reload.
-      const abortedAskPayload = job.metadata?.pendingAction?.payload;
+      const initialResolvedAskUserQuestions = job.metadata?.resolvedAskUserQuestions;
       const agentsCfg = req.config?.endpoints?.agents;
       const shouldPruneCheckpoint =
-        isHITLEnabled(agentsCfg?.toolApproval) || job.metadata?.pendingAction != null;
+        isHITLEnabled(agentsCfg?.toolApproval) ||
+        job.metadata?.pendingAction != null ||
+        initialResolvedAskUserQuestions?.length > 0;
       const checkpointNamespace =
         typeof job.metadata?.checkpointNamespace === 'string'
           ? job.metadata.checkpointNamespace
@@ -656,10 +659,23 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
           : undefined;
       const abortResult = await GenerationJobManager.abortJob(jobStreamId, {
         expectedCreatedAt: job.createdAt,
-        transformAbortContent: (content) =>
-          abortedAskPayload?.type === 'ask_user_question' && Array.isArray(content)
-            ? attachAskUserQuestionArgs(content, abortedAskPayload.question)
-            : content,
+        transformAbortContent: (content, abortJobData) => {
+          if (!Array.isArray(content)) {
+            return content;
+          }
+          const abortedAskPayload = abortJobData.pendingAction?.payload;
+          const resolvedAskUserQuestions = abortJobData.resolvedAskUserQuestions ?? [];
+          const answeredContent = attachAskUserQuestionAnswers(content, resolvedAskUserQuestions);
+          return abortedAskPayload?.type === 'ask_user_question'
+            ? attachAskUserQuestionArgs(
+                answeredContent,
+                Array.isArray(abortedAskPayload.questions)
+                  ? { questions: abortedAskPayload.questions }
+                  : abortedAskPayload.question,
+                abortedAskPayload.tool_call_id,
+              )
+            : answeredContent;
+        },
         /** Persist every parent-row prerequisite before publishing the ordinary
          * abort FINAL. That frame can immediately drain a queued follow-up, whose
          * parent must already exist and whose graph must not see a stale HITL

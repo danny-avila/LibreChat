@@ -2,10 +2,11 @@ import { useContext, useMemo, useState } from 'react';
 import { ChevronUp, TriangleAlert } from 'lucide-react';
 import { Button, TextareaAutosize } from '@librechat/client';
 import type { Agents } from 'librechat-data-provider';
-import { useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
+import { useApprovalContext, useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import { ChatContext } from '~/Providers/ChatContext';
 import { splitOtherOption } from '~/utils/approval';
+import AskUserQuestions from './AskUserQuestions';
 import { useLocalize } from '~/hooks';
 
 /**
@@ -20,14 +21,45 @@ import { useLocalize } from '~/hooks';
 export default function AskUserQuestion({
   actionId,
   question,
+  questions,
 }: {
   actionId: string;
   question: Agents.AskUserQuestionRequest;
+  questions?: Agents.AskUserQuestionBatchItem[];
+}) {
+  const conversationId = useContext(ChatContext)?.conversation?.conversationId;
+  const answerMode = useAskAnswerMode(conversationId);
+  const isLivePause = answerMode.liveAsk?.actionId === actionId;
+  if (questions != null && questions.length > 0) {
+    if (answerMode.popoverVisible && isLivePause) {
+      return null;
+    }
+    return (
+      <AskUserQuestions
+        actionId={actionId}
+        questions={questions}
+        className="my-2 max-h-[70vh] w-full rounded-lg border border-border-light bg-surface-secondary"
+        onExpand={answerMode.collapsed && isLivePause ? answerMode.expand : undefined}
+      />
+    );
+  }
+  return <AskUserQuestionSingle actionId={actionId} question={question} answerMode={answerMode} />;
+}
+
+function AskUserQuestionSingle({
+  actionId,
+  question,
+  answerMode,
+}: {
+  actionId: string;
+  question: Agents.AskUserQuestionRequest;
+  answerMode: ReturnType<typeof useAskAnswerMode>;
 }) {
   const localize = useLocalize();
+  const { getAskAnswerDraft, setAskAnswerDraft } = useApprovalContext();
   const { getAskStatus } = useAskSubmitStatus();
   const { submitAskAnswer } = useResumeSubmit();
-  const [answer, setAnswer] = useState('');
+  const [answer, setAnswer] = useState(() => getAskAnswerDraft(actionId));
   const [localChecked, setLocalChecked] = useState<number[]>([]);
   /**
    * The composer popover is the primary answer surface — while it's VISIBLE
@@ -36,8 +68,6 @@ export default function AskUserQuestion({
    * chevron re-expands it) or dismissed (and in contexts without a
    * ChatContext, where the popover can't exist).
    */
-  const conversationId = useContext(ChatContext)?.conversation?.conversationId;
-  const answerMode = useAskAnswerMode(conversationId);
   const { popoverVisible, collapsed, expand, liveAsk } = answerMode;
   const isLivePause = liveAsk?.actionId === actionId;
 
@@ -152,7 +182,10 @@ export default function AskUserQuestion({
       <TextareaAutosize
         value={answer}
         disabled={locked}
-        onChange={(e) => setAnswer(e.target.value)}
+        onChange={(e) => {
+          setAnswer(e.target.value);
+          setAskAnswerDraft(actionId, e.target.value);
+        }}
         minRows={2}
         maxRows={12}
         placeholder={otherLabel ?? localize('com_ui_your_answer')}

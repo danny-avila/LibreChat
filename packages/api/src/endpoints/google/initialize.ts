@@ -84,7 +84,7 @@ export async function initializeGoogle({
     clientOptions.titleModel = googleConfig.titleModel;
   }
 
-  if (allConfig) {
+  if (allConfig?.streamRate != null) {
     clientOptions.streamRate = allConfig.streamRate;
   }
 
@@ -124,5 +124,11 @@ export async function initializeGoogle({
     ...clientOptions,
   };
 
-  return getGoogleConfig(credentials, clientOptions);
+  const result = getGoogleConfig(credentials, clientOptions);
+
+  if (clientOptions.streamRate != null) {
+    result.llmConfig._lc_stream_delay = clientOptions.streamRate;
+  }
+
+  return result;
 }

@@ -8,7 +8,7 @@ import {
   uniqueAgentName,
   waitForPersistedAgent,
 } from './agents.helpers';
-import { MOCK_ENDPOINTS, mockReply, sendMessage } from './helpers';
+import { MOCK_ENDPOINTS, mockReply, sendMessageAndWaitForCompletion } from './helpers';
 
 const DESCRIPTION = 'Use this agent to verify LibreChat agent creation in mock end-to-end tests.';
 const INSTRUCTIONS =
@@ -187,7 +187,7 @@ test.describe('agent builder', () => {
 
       await form.getByRole('button', { name: 'Select Agent' }).click();
 
-      const response = await sendMessage(page, `hello from ${agentName}`);
+      const response = await sendMessageAndWaitForCompletion(page, `hello from ${agentName}`);
       expect(response.ok()).toBeTruthy();
       await expect(mockReply(page)).toBeVisible({ timeout: 30000 });
     } finally {

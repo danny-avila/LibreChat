@@ -39,12 +39,15 @@ export enum FileContext {
   bytes = 'bytes',
 }
 
+/** Structural type for a compiled matcher: a native `RegExp` or a linear-time engine both satisfy it. Only `test` is ever called on `supportedMimeTypes`. */
+export type RegexLike = { test(input: string): boolean };
+
 export type EndpointFileConfig = {
   disabled?: boolean;
   fileLimit?: number;
   fileSizeLimit?: number;
   totalSizeLimit?: number;
-  supportedMimeTypes?: RegExp[];
+  supportedMimeTypes?: RegexLike[];
 };
 
 export type FileConfig = {
@@ -64,15 +67,15 @@ export type FileConfig = {
     quality?: number;
   };
   ocr?: {
-    supportedMimeTypes?: RegExp[];
+    supportedMimeTypes?: RegexLike[];
   };
   text?: {
-    supportedMimeTypes?: RegExp[];
+    supportedMimeTypes?: RegexLike[];
   };
   stt?: {
-    supportedMimeTypes?: RegExp[];
+    supportedMimeTypes?: RegexLike[];
   };
-  checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+  checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
 };
 
 export type FileConfigInput = {
@@ -99,7 +102,7 @@ export type FileConfigInput = {
   stt?: {
     supportedMimeTypes?: string[];
   };
-  checkType?: (fileType: string, supportedTypes: RegExp[]) => boolean;
+  checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
 };
 
 export type TFile = {

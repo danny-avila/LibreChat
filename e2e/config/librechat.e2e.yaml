@@ -23,6 +23,7 @@ mcpSettings:
   # admin override is honored by inspection/connection. stdio servers skip this check.
   allowedDomains:
     - https://allowed.example.com
+    # __E2E_DYNAMIC_MCP_ALLOWED_DOMAIN__
 
 mcpServers:
   e2e-memory:
@@ -30,6 +31,7 @@ mcpServers:
     command: node
     args:
       - e2e/setup/fake-mcp-server.js
+    # __E2E_DYNAMIC_MCP_STDIO_ENV__
     title: E2E Memory
     description: Local MCP fixture used by mock end-to-end tests.
     timeout: 30000
@@ -39,6 +41,7 @@ mcpServers:
     title: E2E HTTP
     description: Local HTTP MCP fixture for allowlist-override e2e tests.
     timeout: 30000
+  # __E2E_DYNAMIC_MCP_NETWORK_SERVERS__
 
 endpoints:
   # Default capabilities plus run_in_background (off by default upstream) so the
@@ -119,7 +122,7 @@ endpoints:
       titleConvo: false
       modelDisplayLabel: 'Mock Provider D'
 
-    # Activity labels are enabled ONLY here. They get a dedicated endpoint
+    # Child-only activity labels are enabled here. They get a dedicated endpoint
     # because a label collapses its tool group (a labeled block auto-collapses
     # even at one call), which hides the tool cards other specs assert on —
     # enabling this on a shared endpoint broke steering.spec.ts. Provider D is
@@ -139,6 +142,24 @@ endpoints:
       activityLabel: true
       activityModel: 'mock-label-model'
 
+    # Parent activity phases need at least two sequential logical activities
+    # and have their own generated summary. Keep that behavior isolated from
+    # Provider E's child-label coverage so each endpoint exercises one config
+    # gate without changing the rendering assumptions of unrelated specs.
+    - name: 'Mock Provider F'
+      apiKey: 'e2e-mock-key-f'
+      baseURL: 'http://127.0.0.1:8889/v1'
+      models:
+        default:
+          - 'mock-model-f'
+        fetch: false
+      titleConvo: false
+      modelDisplayLabel: 'Mock Provider F'
+      activityLabel: true
+      activityModel: 'mock-label-model'
+      activityPhaseLabel: true
+      activityPhaseModel: 'mock-phase-label-model'
+
 modelSpecs:
   prioritize: true
   # Enforcement would reject sends from the non-spec paths addedEndpoints
@@ -150,6 +171,7 @@ modelSpecs:
     - 'Mock Provider C'
     - 'Mock Provider D'
     - 'Mock Provider E'
+    - 'Mock Provider F'
     - 'agents'
   list:
     - name: 'e2e-mock-provider-a'
@@ -205,6 +227,16 @@ modelSpecs:
         - 'Third starter prompt'
         - 'Fourth starter prompt'
         - 'Fifth starter beyond the cap'
+      preset:
+        endpoint: 'Mock Provider A'
+        model: 'mock-model-a'
+
+    # Focused Bombadil HITL fixture. The fake model calls ask_user_question
+    # only for the explicit E2E marker, so enabling the tool here cannot make
+    # unrelated mock conversations pause.
+    - name: 'e2e-hitl'
+      label: 'E2E HITL'
+      askUserQuestion: true
       preset:
         endpoint: 'Mock Provider A'
         model: 'mock-model-a'

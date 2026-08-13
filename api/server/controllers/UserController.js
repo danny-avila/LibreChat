@@ -177,14 +177,24 @@ const deleteUserMcpServers = async (userId) => {
     const allServersToDelete = [...aclOwnedServers, ...legacyServers];
 
     const mcpManager = getMCPManager();
-    if (mcpManager) {
-      await Promise.all(
-        allServersToDelete.map(async (s) => {
-          await mcpManager.disconnectUserConnection(userId, s.serverName);
+    await Promise.allSettled(
+      allServersToDelete.map(async (s) => {
+        try {
           await invalidateCachedTools({ userId, serverName: s.serverName });
-        }),
-      );
-    }
+        } catch (error) {
+          logger.warn(
+            `[deleteUserMcpServers] Failed to invalidate tools for ${s.serverName}:`,
+            error,
+          );
+        } finally {
+          try {
+            await mcpManager?.disconnectUserConnection(userId, s.serverName);
+          } catch (error) {
+            logger.warn(`[deleteUserMcpServers] Failed to disconnect ${s.serverName}:`, error);
+          }
+        }
+      }),
+    );
 
     await AclEntry.deleteMany({
       resourceType: ResourceType.MCPSERVER,
@@ -295,21 +305,37 @@ const updateUserPluginsController = async (req, res) => {
       if (pluginKey.startsWith(Constants.mcp_prefix)) {
         try {
           const mcpManager = getMCPManager();
+          // Extract server name from pluginKey (format: "mcp_<serverName>")
+          const serverName = pluginKey.replace(Constants.mcp_prefix, '');
           if (mcpManager) {
-            // Extract server name from pluginKey (format: "mcp_<serverName>")
-            const serverName = pluginKey.replace(Constants.mcp_prefix, '');
             logger.info(
               `[updateUserPluginsController] Attempting disconnect of MCP server "${serverName}" for user ${user.id} after plugin auth update.`,
             );
-            await mcpManager.disconnectUserConnection(user.id, serverName);
+          }
+          let invalidationError;
+          try {
             await invalidateCachedTools({ userId: user.id, serverName });
+          } catch (error) {
+            invalidationError = error;
+          }
+          try {
+            await mcpManager?.disconnectUserConnection(user.id, serverName);
+          } catch (error) {
+            logger.error(
+              `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
+              error,
+            );
+          }
+          if (invalidationError) {
+            throw invalidationError;
           }
         } catch (disconnectError) {
           logger.error(
-            `[updateUserPluginsController] Error disconnecting MCP connection for user ${user.id} after plugin auth update:`,
+            `[updateUserPluginsController] Error fencing MCP connection for user ${user.id} after plugin auth update:`,
             disconnectError,
           );
-          // Do not fail the request for this, but log it.
+          // A credential mutation is not safely published until the shared generation fence moves.
+          throw disconnectError;
         }
       }
       return res.status(status).send();

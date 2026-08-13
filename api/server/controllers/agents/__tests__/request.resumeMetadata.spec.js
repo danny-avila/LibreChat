@@ -211,6 +211,7 @@ jest.mock('~/models', () => ({
 }));
 
 const AgentController = require('../request');
+const { ErrorTypes } = require('librechat-data-provider');
 const { disposeClient: mockDisposeClient } = require('~/server/cleanup');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 
@@ -1747,6 +1748,73 @@ describe('ResumableAgentController resume metadata', () => {
       DEFAULT_OWNED_CLAIM,
     );
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
+  });
+
+  it('returns a typed recovery conflict before acknowledging generation startup', async () => {
+    const recoveryError = new Error('Attached resources could not be restored');
+    recoveryError.code = ErrorTypes.RESOURCE_RECOVERY_REQUIRED;
+    mockGenerationJobManager.createJob.mockRejectedValue(recoveryError);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Describe the attached image.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), jest.fn(), null);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 409,
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      error: 'Attached resources could not be restored',
+      generationProtocolVersion: 1,
+    });
+    expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+  });
+
+  it('preserves the recovery code in the durable error after acknowledging startup', async () => {
+    const recoveryError = new Error('Attached resources could not be restored');
+    recoveryError.code = ErrorTypes.RESOURCE_RECOVERY_REQUIRED;
+    const initializeClient = jest.fn().mockRejectedValue(recoveryError);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Describe the attached image.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      streamId: 'conversation-123',
+      conversationId: 'conversation-123',
+      generationCreatedAt: 1000,
+      status: 'started',
+      generationProtocolVersion: 1,
+    });
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      JSON.stringify({
+        status: 409,
+        code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+        error: 'Attached resources could not be restored',
+      }),
+      1000,
+    );
   });
 
   it('returns a recovery conflict when the atomic store rejects changed source content', async () => {

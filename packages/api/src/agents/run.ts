@@ -18,6 +18,7 @@ import type {
   StreamPreemption,
   LCToolRegistry,
   SubagentConfig,
+  SubagentResolveContext,
   HookCallback,
   AgentInputs,
   GenericTool,
@@ -52,14 +53,15 @@ import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPrompt
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
 import { resolveHeaders, createSafeUser } from '~/utils/env';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
+import { getPluginHookSource } from '~/agents/hooks/source';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { buildHITLRunWiring } from '~/agents/hitl/runtime';
-import { resolveSubagentMaxTurns } from '~/agents/config';
 import { buildLangfuseConfig } from '~/langfuse/config';
 import { resolveConfigHeaders } from '~/utils/headers';
 import { applyTestRunHook } from '~/agents/testHook';
@@ -397,8 +399,48 @@ type RunAgent = Omit<Agent, 'tools'> & {
   maxToolResultChars?: number;
   /** Initialized subagent configs (loaded by initialize.js from agent.subagents.agent_ids). */
   subagentAgentConfigs?: RunAgent[];
+  /**
+   * Inert, VIEW-checked descriptors for explicit children that are initialized
+   * only after the SDK selects them. These resolvers are request-scoped: they
+   * may use the active request's authorization and tool-loading context.
+   */
+  lazySubagentConfigs?: LazySubagentAgent[];
   /** Source subagent spawning configuration (enabled / allowSelf / agent_ids). */
   subagents?: AgentSubagentsConfig;
+};
+
+type LazySubagentAgent = Pick<
+  RunAgent,
+  | 'id'
+  | 'name'
+  | 'description'
+  | 'provider'
+  | 'model'
+  | 'model_parameters'
+  | 'recursion_limit'
+  | 'subagents'
+  | 'codeEnvAvailable'
+  | 'statefulCodeSessions'
+  | 'includeReasoningHistory'
+> & {
+  configId: string;
+  subagentAgentConfigs?: RunAgent[];
+  lazySubagentConfigs?: LazySubagentAgent[];
+  resolve: (context: SubagentResolveContext) => Promise<RunAgent>;
+};
+
+type SubagentTreeNode = Pick<
+  RunAgent,
+  | 'id'
+  | 'provider'
+  | 'model'
+  | 'model_parameters'
+  | 'codeEnvAvailable'
+  | 'statefulCodeSessions'
+  | 'includeReasoningHistory'
+> & {
+  subagentAgentConfigs?: SubagentTreeNode[];
+  lazySubagentConfigs?: SubagentTreeNode[];
 };
 
 function isNonEmptyString(value: unknown): value is string {
@@ -743,6 +785,80 @@ function assertSubagentDepth(depth: number, agentId: string): void {
   }
 }
 
+function buildIsolatedSubagentInputs(
+  child: RunAgent,
+  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+): AgentInputs {
+  const childInputs = toInput(child, { isSubagent: true });
+  if ((child.backgroundToolNames?.length ?? 0) > 0) {
+    childInputs.toolDefinitions = stripBackgroundFromToolDefinitions(
+      childInputs.toolDefinitions,
+      child.backgroundToolNames,
+    );
+    childInputs.toolRegistry = stripBackgroundFromToolRegistry(
+      childInputs.toolRegistry,
+      child.backgroundToolNames,
+    );
+  }
+  if ((child.intentToolNames?.length ?? 0) > 0) {
+    childInputs.toolDefinitions = stripIntentFromToolDefinitions(
+      childInputs.toolDefinitions,
+      child.intentToolNames,
+    );
+    childInputs.toolRegistry = stripIntentFromToolRegistry(
+      childInputs.toolRegistry,
+      child.intentToolNames,
+    );
+  }
+  return childInputs;
+}
+
+function createLazySubagentConfig(
+  child: LazySubagentAgent,
+  toInput: (child: RunAgent, opts?: { isSubagent?: boolean }) => AgentInputs,
+  agentsEConfig: Partial<TAgentsEndpoint> | undefined,
+  ancestors: Set<string>,
+  depth: number,
+): SubagentConfig {
+  return {
+    type: child.id,
+    name: child.name ?? child.id,
+    description:
+      child.description ??
+      `Delegate a subtask to the ${child.name ?? child.id} agent in an isolated context.`,
+    configId: child.configId,
+    allowNested: true,
+    maxTurns: resolveSubagentMaxTurns(agentsEConfig, child),
+    resolveAgentInputs: async (context) => {
+      if (context.signal.aborted) {
+        throw context.signal.reason ?? new Error('Subagent resolution was aborted.');
+      }
+      const resolvedChild = await child.resolve(context);
+      if (context.signal.aborted) {
+        throw context.signal.reason ?? new Error('Subagent resolution was aborted.');
+      }
+      const childInputs = buildIsolatedSubagentInputs(resolvedChild, toInput);
+      const resolutionState: SubagentBuildState = {
+        configCount: 1,
+        rootAgentIds: [resolvedChild.id],
+      };
+      const grandchildConfigs = buildSubagentConfigs(
+        resolvedChild,
+        childInputs,
+        toInput,
+        resolutionState,
+        agentsEConfig,
+        ancestors,
+        depth,
+      );
+      if (grandchildConfigs.length > 0) {
+        childInputs.subagentConfigs = grandchildConfigs;
+      }
+      return childInputs;
+    },
+  };
+}
+
 /**
  * Recursive any-true check across the agent tree: returns `true` if this
  * agent or any subagent (transitively) has the per-agent codeenv gate
@@ -762,7 +878,7 @@ function assertSubagentDepth(depth: number, agentId: string): void {
  */
 function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
   const visited = new Set<string>();
-  const pending = [...agents];
+  const pending: SubagentTreeNode[] = [...agents];
 
   for (let index = 0; index < pending.length; index++) {
     const agent = pending[index];
@@ -774,6 +890,11 @@ function anyAgentHasCodeEnv(agents: RunAgent[]): boolean {
       return true;
     }
     for (const child of agent.subagentAgentConfigs ?? []) {
+      if (!visited.has(child.id)) {
+        pending.push(child);
+      }
+    }
+    for (const child of agent.lazySubagentConfigs ?? []) {
       if (!visited.has(child.id)) {
         pending.push(child);
       }
@@ -837,7 +958,7 @@ function isAskUserQuestionAdminDisabled(appConfig?: AppConfig): boolean {
  */
 export function anyAgentHasStatefulSessions(agents: Array<RunAgent | null | undefined>): boolean {
   const visited = new Set<string>();
-  const pending = [...agents];
+  const pending: Array<SubagentTreeNode | null | undefined> = [...agents];
 
   for (let index = 0; index < pending.length; index++) {
     const agent = pending[index];
@@ -850,6 +971,11 @@ export function anyAgentHasStatefulSessions(agents: Array<RunAgent | null | unde
     }
     for (const child of agent.subagentAgentConfigs ?? []) {
       if (child != null && !visited.has(child.id)) {
+        pending.push(child);
+      }
+    }
+    for (const child of agent.lazySubagentConfigs ?? []) {
+      if (!visited.has(child.id)) {
         pending.push(child);
       }
     }
@@ -867,7 +993,7 @@ export function anyAgentReplaysReasoningContent(
   agents: Array<RunAgent | null | undefined>,
 ): boolean {
   const visited = new Set<string>();
-  const pending = [...agents];
+  const pending: Array<SubagentTreeNode | null | undefined> = [...agents];
 
   for (let index = 0; index < pending.length; index++) {
     const agent = pending[index];
@@ -883,14 +1009,19 @@ export function anyAgentReplaysReasoningContent(
         pending.push(child);
       }
     }
+    for (const child of agent.lazySubagentConfigs ?? []) {
+      if (!visited.has(child.id)) {
+        pending.push(child);
+      }
+    }
   }
   return false;
 }
 
 /**
  * Builds SubagentConfig entries for an agent: optional self-spawn plus any
- * explicit child agents loaded in `agent.subagentAgentConfigs`. Returns an empty
- * array when subagents are disabled or no spawn targets are available.
+ * explicit eager children and inert lazy descriptors. Returns an empty array
+ * when subagents are disabled or no spawn targets are available.
  */
 function buildSubagentConfigs(
   agent: RunAgent,
@@ -968,50 +1099,7 @@ function buildSubagentConfigs(
     const childDepth = depth + 1;
     assertSubagentDepth(childDepth, child.id);
     countSubagentConfig(state);
-    /**
-     * `buildAgentInput` applies parent-run context (initialSummary +
-     * discoveredTools) to the returned AgentInputs *and* to the
-     * passed-in agent's `toolRegistry` / `toolDefinitions` — flipping
-     * `defer_loading: true → false` on tools the parent had previously
-     * searched for, and injecting those tools' definitions into the
-     * child's `toolDefinitions`. Clearing fields on the returned
-     * object post-hoc would leave those side-effects in place, leaking
-     * the parent's tool-search state into an "isolated" subagent and
-     * inflating the child's prompt/token budget. The `isSubagent` flag
-     * skips both the field stamping and the registry mutation at the
-     * source so children truly start fresh.
-     */
-    const childInputs = toInput(child, { isSubagent: true });
-    /**
-     * A child reachable as a top-level/handoff agent is initialized WITH the
-     * background capability, then reused here as a subagent. Isolated child
-     * graphs run subagent tools without the host background dispatch/poll
-     * behavior, so strip the injected `run_in_background` param + the
-     * `check_background_task` def (defs AND registry) so the child doesn't
-     * advertise a background contract it can't honor. Mirrors the self-spawn path.
-     */
-    if ((child.backgroundToolNames?.length ?? 0) > 0) {
-      childInputs.toolDefinitions = stripBackgroundFromToolDefinitions(
-        childInputs.toolDefinitions,
-        child.backgroundToolNames,
-      );
-      childInputs.toolRegistry = stripBackgroundFromToolRegistry(
-        childInputs.toolRegistry,
-        child.backgroundToolNames,
-      );
-    }
-    /** Same sanitization for the host-injected `intent` param (see the
-     *  self-spawn path above). */
-    if ((child.intentToolNames?.length ?? 0) > 0) {
-      childInputs.toolDefinitions = stripIntentFromToolDefinitions(
-        childInputs.toolDefinitions,
-        child.intentToolNames,
-      );
-      childInputs.toolRegistry = stripIntentFromToolRegistry(
-        childInputs.toolRegistry,
-        child.intentToolNames,
-      );
-    }
+    const childInputs = buildIsolatedSubagentInputs(child, toInput);
     /**
      * Recursively resolve the child's own spawn targets so multi-level
      * delegation (A → B → C) works. Without this, a child whose own
@@ -1044,6 +1132,18 @@ function buildSubagentConfigs(
       /** Honor each child agent's own resolved recursion limit. */
       maxTurns: resolveSubagentMaxTurns(agentsEConfig, child),
     });
+  }
+
+  for (const child of agent.lazySubagentConfigs ?? []) {
+    if (!child.id || child.id === agent.id || ancestors.has(child.id)) {
+      continue;
+    }
+    const childDepth = depth + 1;
+    assertSubagentDepth(childDepth, child.id);
+    countSubagentConfig(state);
+    configs.push(
+      createLazySubagentConfig(child, toInput, agentsEConfig, nextAncestors, childDepth),
+    );
   }
 
   return configs;
@@ -1085,8 +1185,10 @@ export async function createRun({
   subagentUsageSink,
   steering,
   activityLabel,
+  activityPhase,
   hitlCapable = false,
   toolInputValidationErrors,
+  sessionStartSource,
   streaming = true,
   streamUsage = true,
 }: {
@@ -1163,6 +1265,8 @@ export async function createRun({
    * the hook returns immediately and generates off the critical path.
    */
   activityLabel?: { hook: HookCallback<'PostToolBatch'> };
+  /** Run-wide parent phase collector; registered after child batch labels. */
+  activityPhase?: { hook: HookCallback<'PostToolBatch'> };
   /**
    * Whether the caller implements the HITL pause/resume lifecycle (inspects
    * `run.getInterrupt()`, persists a pending action, exposes a resume route). Gates the
@@ -1172,6 +1276,8 @@ export async function createRun({
    * final response / `[DONE]` with the tool call left unresolved).
    */
   hitlCapable?: boolean;
+  /** Plugin-hook SessionStart lifecycle source: 'startup' (default) or 'resume' on HITL-rebuild paths. */
+  sessionStartSource?: string;
   /** Request-scoped tool input failures consumed by the completion handler. */
   toolInputValidationErrors?: Map<string, ToolInputValidationError>;
 } & Pick<
@@ -1532,6 +1638,10 @@ export async function createRun({
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolBatch', { hooks: [activityLabel.hook] });
   }
+  if (activityPhase != null) {
+    hooks = hooks ?? new HookRegistry();
+    hooks.register('PostToolBatch', { hooks: [activityPhase.hook] });
+  }
   if (steering != null && isSteeringSupported()) {
     hooks = hooks ?? new HookRegistry();
     hooks.register('PostToolBatch', { hooks: [steering.hook] });
@@ -1539,6 +1649,36 @@ export async function createRun({
       hooks.register('PreemptBoundary', { hooks: [steering.preemptHook] });
     }
   }
+  /**
+   * Deployment-plugin hooks (Agent Plugins `ai.librechat/hooks/hooks.json`)
+   * register last so internal policy hooks (HITL, labels, steering) keep
+   * their ordering. The source is wired at startup by the plugins package
+   * (see `setPluginHookSource` in api/server/index.js) and stays empty
+   * unless the operator installed plugins with hook documents AND opted in
+   * via DEPLOYMENT_PLUGIN_HOOKS. The conversation id doubles as the plugin
+   * "session", giving SessionStart its once-per-conversation scope.
+   */
+  const pluginHookSource = getPluginHookSource();
+  if (pluginHookSource?.hasHooks() === true) {
+    hooks = hooks ?? new HookRegistry();
+    const primaryAgent = agents[0];
+    pluginHookSource.register({
+      registry: hooks,
+      context: {
+        sessionId: requestBody?.conversationId,
+        userId: user?.id,
+        sessionStartSource,
+        model: primaryAgent?.model_parameters?.model ?? primaryAgent?.model ?? undefined,
+        agentType: primaryAgent?.id,
+      },
+      // `ask` needs the checkpointer + resume surface; without HITL wiring the
+      // source tightens plugin `ask` decisions to `deny` rather than stranding
+      // the run on an un-resumable interrupt.
+      askDecisionSupported: hitl != null,
+    });
+  }
+
+  const streamLimits = resolveStreamLimits(agentsEndpointConfig);
 
   /**
    * Built as a variable (not an inline literal) so the extra
@@ -1643,6 +1783,12 @@ export async function createRun({
     // live, so gating both on the same capability keeps them in lockstep.
     ...(steering?.preemption != null &&
       isSteerPreemptSupported() && { preemption: steering.preemption }),
+    // Stream circuit breakers (librechat.yaml endpoints.agents.maxToolCallArgBytes /
+    // maxDeltaEventsPerTurn). Omitted when unset so the SDK defaults apply: a runaway
+    // streamed tool-call argument aborts the run at 64 KiB, the per-turn delta event
+    // cap stays off. Requires @librechat/agents with streamLimits support (agents#381);
+    // older versions ignore the field.
+    ...(streamLimits && { streamLimits }),
   };
   const run = await Run.create(runConfig);
 

@@ -27,7 +27,7 @@ env:
 
 jobs:
   e2e_shards:
-    name: e2e (${{ matrix.stream_store }}, shard ${{ matrix.shard }}/4)
+    name: e2e (${{ matrix.stream_store }}, shard ${{ matrix.shard }}/2)
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
@@ -39,7 +39,7 @@ jobs:
       fail-fast: false
       matrix:
         stream_store: [memory, redis]
-        shard: [1, 2, 3, 4]
+        shard: [1, 2]
     services:
       redis:
         image: redis:7-alpine
@@ -54,6 +54,134 @@ jobs:
       E2E_CHROMIUM_CHANNEL: chrome
       E2E_STREAM_STORE: ${{ matrix.stream_store }}
       REDIS_URI: redis://127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use Node.js 24.16.0
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24.16.0'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v5
+        with:
+          path: |
+            node_modules
+            client/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+            packages/api/node_modules
+            api/node_modules
+          key: node-modules-e2e-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Restore data-provider build cache
+        id: cache-data-provider
+        uses: actions/cache@v5
+        with:
+          path: packages/data-provider/dist
+          key: build-data-provider-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+
+      - name: Build data-provider
+        if: steps.cache-data-provider.outputs.cache-hit != 'true'
+        run: npm run build:data-provider
+
+      - name: Restore data-schemas build cache
+        id: cache-data-schemas
+        uses: actions/cache@v5
+        with:
+          path: packages/data-schemas/dist
+          key: build-data-schemas-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/tsdown.config.mjs', 'packages/data-schemas/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+
+      - name: Build data-schemas
+        if: steps.cache-data-schemas.outputs.cache-hit != 'true'
+        run: npm run build:data-schemas
+
+      - name: Restore api build cache
+        id: cache-api
+        uses: actions/cache@v5
+        with:
+          path: packages/api/dist
+          key: build-api-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/api/src/**', 'packages/api/tsconfig*.json', 'packages/api/tsdown.config.mjs', 'packages/api/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/tsdown.config.mjs', 'packages/data-schemas/package.json') }}
+
+      - name: Build api
+        if: steps.cache-api.outputs.cache-hit != 'true'
+        run: npm run build:api
+
+      - name: Restore client-package build cache
+        id: cache-client-package
+        uses: actions/cache@v5
+        with:
+          path: packages/client/dist
+          key: build-client-package-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'packages/client/src/**', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+
+      - name: Build client-package
+        if: steps.cache-client-package.outputs.cache-hit != 'true'
+        run: npm run build:client-package
+
+      - name: Restore client app build cache
+        id: cache-client-app
+        uses: actions/cache@v5
+        with:
+          path: client/dist
+          key: build-client-app-e2e-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'client/src/**', 'client/public/**', 'client/scripts/post-build.cjs', 'client/index.html', 'client/package.json', 'client/vite.config.*', 'client/tsconfig*.json', 'client/tailwind.config.*', 'client/postcss.config.*', 'packages/client/src/**', 'packages/client/tailwind.preset.cjs', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+
+      - name: Build client app
+        if: steps.cache-client-app.outputs.cache-hit != 'true'
+        run: npm run build:client
+
+      - name: Install Playwright runtime dependencies
+        timeout-minutes: 5
+        run: |
+          google-chrome --version
+          npx playwright install-deps chrome
+
+      - name: Run mock-LLM Tier-1 e2e
+        run: npx playwright test --config=e2e/playwright.config.mock.ts --shard=${{ matrix.shard }}/2
+        env:
+          CI: 'true'
+
+      - name: Upload Playwright HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report-${{ matrix.stream_store }}-${{ matrix.shard }}
+          path: e2e/playwright-report/**
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload traces & screenshots
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-test-results-${{ matrix.stream_store }}-${{ matrix.shard }}
+          path: e2e/specs/.test-results/**
+          retention-days: 7
+          if-no-files-found: ignore
+
+  mcp_tool_list_changed:
+    name: MCP list_changed (replica count ${{ matrix.replicas }})
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request != null &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        replicas: [1, 2]
+    env:
+      CI: 'true'
+      E2E_CHROMIUM_CHANNEL: chrome
+      E2E_MCP_LIST_CHANGED: 'true'
+      E2E_REPLICAS: ${{ matrix.replicas }}
     steps:
       - uses: actions/checkout@v4
 
@@ -80,77 +208,53 @@ jobs:
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Restore data-provider build cache
-        id: cache-data-provider
-        uses: actions/cache@v4
-        with:
-          path: packages/data-provider/dist
-          key: build-data-provider-${{ runner.os }}-${{ hashFiles('package-lock.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+      - name: Build e2e dependencies
+        run: npm run e2e:prepare
 
-      - name: Build data-provider
-        if: steps.cache-data-provider.outputs.cache-hit != 'true'
-        run: npm run build:data-provider
-
-      - name: Restore data-schemas build cache
-        id: cache-data-schemas
-        uses: actions/cache@v4
-        with:
-          path: packages/data-schemas/dist
-          key: build-data-schemas-${{ runner.os }}-${{ hashFiles('package-lock.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/tsdown.config.mjs', 'packages/data-schemas/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
-
-      - name: Build data-schemas
-        if: steps.cache-data-schemas.outputs.cache-hit != 'true'
-        run: npm run build:data-schemas
-
-      - name: Restore api build cache
-        id: cache-api
-        uses: actions/cache@v4
-        with:
-          path: packages/api/dist
-          key: build-api-${{ runner.os }}-${{ hashFiles('package-lock.json', 'packages/api/src/**', 'packages/api/tsconfig*.json', 'packages/api/tsdown.config.mjs', 'packages/api/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json', 'packages/data-schemas/src/**', 'packages/data-schemas/tsconfig*.json', 'packages/data-schemas/tsdown.config.mjs', 'packages/data-schemas/package.json') }}
-
-      - name: Build api
-        if: steps.cache-api.outputs.cache-hit != 'true'
-        run: npm run build:api
-
-      - name: Restore client-package build cache
-        id: cache-client-package
-        uses: actions/cache@v4
-        with:
-          path: packages/client/dist
-          key: build-client-package-${{ runner.os }}-${{ hashFiles('package-lock.json', 'packages/client/src/**', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
-
-      - name: Build client-package
-        if: steps.cache-client-package.outputs.cache-hit != 'true'
-        run: npm run build:client-package
-
-      - name: Restore client app build cache
-        id: cache-client-app
-        uses: actions/cache@v4
-        with:
-          path: client/dist
-          key: build-client-app-e2e-${{ runner.os }}-${{ hashFiles('package-lock.json', 'client/src/**', 'client/public/**', 'client/scripts/post-build.cjs', 'client/index.html', 'client/package.json', 'client/vite.config.*', 'client/tsconfig*.json', 'client/tailwind.config.*', 'client/postcss.config.*', 'packages/client/src/**', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
-
-      - name: Build client app
-        if: steps.cache-client-app.outputs.cache-hit != 'true'
-        run: npm run build:client
-
-      - name: Install Playwright runtime dependencies
+      - name: Install Playwright and Redis runtime dependencies
         timeout-minutes: 5
         run: |
           google-chrome --version
           npx playwright install-deps chrome
+          sudo apt-get update
+          sudo apt-get install -y redis-server redis-tools
 
-      - name: Run mock-LLM Tier-1 e2e
-        run: npx playwright test --config=e2e/playwright.config.mock.ts --shard=${{ matrix.shard }}/4
+      - name: Start standalone Redis and Redis Cluster
+        run: |
+          redis-server --daemonize yes --port 6379
+          redis-cli -p 6379 ping
+          chmod +x redis-config/start-cluster.sh redis-config/stop-cluster.sh
+          ./redis-config/start-cluster.sh
+          redis-cli -p 7001 cluster info
+
+      - name: Test MCP notifications with in-memory cache
         env:
-          CI: 'true'
+          E2E_STREAM_STORE: memory
+        run: >-
+          npx playwright test --config=e2e/playwright.config.mock.ts
+          mcp-tool-list-changed.spec.ts --retries=0
+
+      - name: Test MCP notifications with standalone Redis cache
+        env:
+          E2E_STREAM_STORE: redis
+          REDIS_URI: redis://127.0.0.1:6379
+        run: >-
+          npx playwright test --config=e2e/playwright.config.mock.ts
+          mcp-tool-list-changed.spec.ts --retries=0
+
+      - name: Test MCP notifications with Redis Cluster cache
+        env:
+          E2E_STREAM_STORE: redis-cluster
+          REDIS_URI: redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003
+        run: >-
+          npx playwright test --config=e2e/playwright.config.mock.ts
+          mcp-tool-list-changed.spec.ts --retries=0
 
       - name: Upload Playwright HTML report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-${{ matrix.stream_store }}-${{ matrix.shard }}
+          name: playwright-mcp-list-changed-${{ matrix.replicas }}-replicas
           path: e2e/playwright-report/**
           retention-days: 7
           if-no-files-found: ignore
@@ -159,10 +263,16 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results-${{ matrix.stream_store }}-${{ matrix.shard }}
+          name: playwright-mcp-list-changed-results-${{ matrix.replicas }}-replicas
           path: e2e/specs/.test-results/**
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Stop Redis processes
+        if: always()
+        run: |
+          ./redis-config/stop-cluster.sh || true
+          redis-cli -p 6379 shutdown || true
 
   e2e:
     name: e2e
@@ -172,9 +282,11 @@ jobs:
       (github.event_name == 'pull_request' &&
       github.event.pull_request != null &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)))
-    needs: e2e_shards
+    needs: [e2e_shards, mcp_tool_list_changed]
     runs-on: ubuntu-latest
     steps:
-      - name: Verify every Playwright shard passed
-        if: needs.e2e_shards.result != 'success'
+      - name: Verify every Playwright job passed
+        if: >-
+          needs.e2e_shards.result != 'success' ||
+          needs.mcp_tool_list_changed.result != 'success'
         run: exit 1

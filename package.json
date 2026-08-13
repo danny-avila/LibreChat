@@ -40,6 +40,13 @@
     "backend": "cross-env NODE_ENV=production node api/server/index.js",
     "backend:inspect": "cross-env NODE_ENV=production node --inspect --expose-gc api/server/index.js",
     "backend:dev": "cross-env NODE_ENV=development npx nodemon api/server/index.js",
+    "redis:single": "bash scripts/redis-mode.sh single",
+    "redis:cluster": "bash scripts/redis-mode.sh cluster",
+    "redis:stop": "bash scripts/redis-mode.sh stop",
+    "backend:redis:single": "cross-env USE_REDIS=true USE_REDIS_CLUSTER=false REDIS_URI=redis://127.0.0.1:6379 npm run backend",
+    "backend:redis:cluster": "cross-env USE_REDIS=true USE_REDIS_CLUSTER=true REDIS_URI=redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003 npm run backend",
+    "backend:dev:redis:single": "cross-env USE_REDIS=true USE_REDIS_CLUSTER=false REDIS_URI=redis://127.0.0.1:6379 npm run backend:dev",
+    "backend:dev:redis:cluster": "cross-env USE_REDIS=true USE_REDIS_CLUSTER=true REDIS_URI=redis://127.0.0.1:7001,redis://127.0.0.1:7002,redis://127.0.0.1:7003 npm run backend:dev",
     "backend:experimental": "cross-env NODE_ENV=production node api/server/experimental.js",
     "backend:stop": "node config/stop-backend.js",
     "build:data-provider": "cd packages/data-provider && npm run build",
@@ -61,6 +68,18 @@
     "e2e:mock": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:mock:redis": "npm run e2e:prepare && cross-env E2E_STREAM_STORE=redis playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:benchmark:agents": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.benchmark.ts agent-startup.latency.spec.ts",
+    "e2e:bombadil": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:run": "playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:branch-reload": "npm run e2e:prepare && cross-env BOMBADIL_SPECIFICATION=branch-reload.specification.ts BOMBADIL_TIME_LIMIT=30s playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:branch-reload:run": "cross-env BOMBADIL_SPECIFICATION=branch-reload.specification.ts BOMBADIL_TIME_LIMIT=30s playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:fork-lifecycle": "npm run e2e:prepare && cross-env BOMBADIL_SPECIFICATION=fork-lifecycle.specification.ts BOMBADIL_TIME_LIMIT=30s playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:fork-lifecycle:run": "cross-env BOMBADIL_SPECIFICATION=fork-lifecycle.specification.ts BOMBADIL_TIME_LIMIT=30s playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:model-lifecycle": "npm run e2e:prepare && cross-env BOMBADIL_SPECIFICATION=model-lifecycle.specification.ts BOMBADIL_TIME_LIMIT=30s playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:model-lifecycle:run": "cross-env BOMBADIL_SPECIFICATION=model-lifecycle.specification.ts BOMBADIL_TIME_LIMIT=30s playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:hitl": "npm run e2e:prepare && cross-env BOMBADIL_SPECIFICATION=hitl-lifecycle.specification.ts BOMBADIL_TIME_LIMIT=45s playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:hitl:run": "cross-env BOMBADIL_SPECIFICATION=hitl-lifecycle.specification.ts BOMBADIL_TIME_LIMIT=45s playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:steering": "npm run e2e:prepare && cross-env BOMBADIL_SPECIFICATION=steering-lifecycle.specification.ts BOMBADIL_TIME_LIMIT=75s playwright test --config=e2e/playwright.config.bombadil.ts",
+    "e2e:bombadil:steering:run": "cross-env BOMBADIL_SPECIFICATION=steering-lifecycle.specification.ts BOMBADIL_TIME_LIMIT=75s playwright test --config=e2e/playwright.config.bombadil.ts",
     "e2e:mock:enforce": "npm run e2e:prepare && cross-env E2E_MODEL_SPECS_ENFORCE=true playwright test --config=e2e/playwright.config.mock.ts enforced-model-specs.spec.ts",
     "e2e:mock:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:debug": "npm run e2e:prepare && cross-env PWDEBUG=1 playwright test --config=e2e/playwright.config.local.ts",
@@ -78,8 +97,8 @@
     "test:all": "npm run test:client && npm run test:api && npm run test:packages:api && npm run test:packages:data-provider && npm run test:packages:data-schemas",
     "e2e:update": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
-    "lint:fix": "eslint --fix \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
-    "lint": "eslint \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
+    "lint:fix": "eslint . --fix",
+    "lint": "eslint .",
     "sort-imports": "node scripts/sort-imports.mts",
     "sort-imports:check": "node scripts/sort-imports.mts --check",
     "format": "npx prettier --write \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
@@ -127,12 +146,14 @@
   },
   "homepage": "https://librechat.ai/",
   "devDependencies": {
+    "@antithesishq/bombadil": "0.6.1",
     "@axe-core/playwright": "^4.10.1",
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.3.4",
     "@eslint/js": "^9.20.0",
     "@playwright/test": "^1.56.1",
     "@types/react-virtualized": "^9.22.0",
+    "brace-expansion": "^2.1.2",
     "caniuse-lite": "^1.0.30001741",
     "cross-env": "^7.0.3",
     "elliptic": "^6.6.1",
@@ -157,7 +178,18 @@
     "typescript-eslint": "^8.60.1"
   },
   "overrides": {
-    "brace-expansion": "^5.0.8",
+    "minimatch@3": {
+      "brace-expansion": "^1.1.16"
+    },
+    "minimatch@5": {
+      "brace-expansion": "^2.1.2"
+    },
+    "minimatch@9": {
+      "brace-expansion": "^2.1.2"
+    },
+    "minimatch@10": {
+      "brace-expansion": "^5.0.8"
+    },
     "@xmldom/xmldom": "^0.8.13",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.6",

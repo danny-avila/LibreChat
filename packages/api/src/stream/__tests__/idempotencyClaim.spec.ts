@@ -1,4 +1,9 @@
 import {
+  REDIS_ABORT_TERMINAL_GRACE_MS,
+  REDIS_EVENT_REORDER_TIMEOUT_MS,
+  REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS,
+} from '~/stream/internal/timing';
+import {
   JobCreationSupersededError,
   type CreatedJobData,
   type IEventTransport,
@@ -760,19 +765,33 @@ describe('GenerationJobManager start-generation claim', () => {
       'remote-replacement-attempt',
     );
 
-    await manager.emitChunk(streamId, {
-      event: 'on_message_delta',
-      data: { delta: 'stale provider output' },
-    });
-    await Promise.resolve();
+    jest.useFakeTimers();
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: 'stale provider output' },
+      });
+      await Promise.resolve();
 
-    expect(predecessor.abortController.signal.aborted).toBe(true);
-    expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
-    expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
-    expect(await store.getJob(streamId)).toMatchObject({
-      createdAt: replacement.createdAt,
-      status: 'running',
-    });
+      expect(predecessor.abortController.signal.aborted).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS);
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
+
+      await jest.advanceTimersByTimeAsync(REDIS_EVENT_REORDER_TIMEOUT_MS * 2);
+
+      expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+      expect(await store.getJob(streamId)).toMatchObject({
+        createdAt: replacement.createdAt,
+        status: 'running',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('self-fences an ordinary provider when its Redis append rejects', async () => {
@@ -794,16 +813,25 @@ describe('GenerationJobManager start-generation claim', () => {
     expect(await manager.subscribe(streamId, jest.fn(), jest.fn(), onError)).not.toBeNull();
     jest.spyOn(store, 'appendChunk').mockRejectedValueOnce(new Error('simulated Redis outage'));
 
-    await manager.emitChunk(streamId, {
-      event: 'on_message_delta',
-      data: { delta: 'uncoordinated provider output' },
-    });
-    await Promise.resolve();
-    await Promise.resolve();
+    jest.useFakeTimers();
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: 'uncoordinated provider output' },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
 
-    expect(job.abortController.signal.aborted).toBe(true);
-    expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
-    expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
+
+      expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('self-fences when a chunk append wins but its active-only publication is fenced', async () => {
@@ -822,14 +850,23 @@ describe('GenerationJobManager start-generation claim', () => {
     expect(await manager.subscribe(streamId, jest.fn(), jest.fn(), onError)).not.toBeNull();
     registerChunkPublicationCapability(transport, async () => false);
 
-    await manager.emitChunk(streamId, {
-      event: 'on_message_delta',
-      data: { delta: 'publication lost its active-generation CAS' },
-    });
+    jest.useFakeTimers();
+    try {
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { delta: 'publication lost its active-generation CAS' },
+      });
 
-    expect(job.abortController.signal.aborted).toBe(true);
-    expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
-    expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+      expect(job.abortController.signal.aborted).toBe(true);
+      expect(onError).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
+
+      expect(onError).toHaveBeenCalledWith(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      expect(manager.getRuntimeStats().runtimeStateSize).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('does not let a late stale-append result retire a newer local runtime', async () => {

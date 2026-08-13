@@ -1,7 +1,7 @@
 import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { TMessageContentParts, Agents } from 'librechat-data-provider';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
-import { getActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
+import { getBatchActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
 
 export type GroupedPart =
   | { type: 'single'; part: PartWithIndex }
@@ -95,12 +95,21 @@ export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] 
   };
 
   for (const item of parts) {
-    if (isGroupableToolCall(item.part) || item.part.type === ContentTypes.THINK) {
+    const isCommentary =
+      item.part.type === ContentTypes.TEXT &&
+      (item.part as { phase?: string }).phase === 'commentary';
+    if (isGroupableToolCall(item.part) || item.part.type === ContentTypes.THINK || isCommentary) {
       currentBlock.push(item);
       continue;
     }
     if (item.part.type === ContentTypes.ACTIVITY_LABEL) {
-      const hasText = getActivityLabelText(getActivityLabelPart(item.part)).length > 0;
+      const batchLabel = getBatchActivityLabelPart(item.part);
+      if (batchLabel == null) {
+        flushWithoutLabel();
+        result.push({ type: 'single', part: item });
+        continue;
+      }
+      const hasText = getActivityLabelText(batchLabel).length > 0;
       if (!hasText) {
         /** A reserved-but-unfilled slot (and a failed/blank fill) must be
          *  INVISIBLE. Every batch now publishes its reservation immediately,

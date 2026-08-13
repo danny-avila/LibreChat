@@ -1,4 +1,4 @@
-import { Input } from '@librechat/client';
+import { Input, Label } from '@librechat/client';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
 import { EModelEndpoint, getEndpointField } from 'librechat-data-provider';
 import type { AgentForm, IconComponentTypes } from '~/common';
@@ -106,12 +106,12 @@ export default function AgentConfig() {
       {/* MODEL + CATEGORY — balanced 2-column grid */}
       <div className="mb-3 grid grid-cols-2 gap-2">
         <div className="flex min-w-0 flex-col">
-          <label
+          <Label
             className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
             htmlFor="provider"
           >
             {localize('com_ui_model')} <span className="text-red-500">*</span>
-          </label>
+          </Label>
           <button
             type="button"
             onClick={() => setActivePanel(Panel.model)}
@@ -139,12 +139,12 @@ export default function AgentConfig() {
           </button>
         </div>
         <div className="flex flex-col">
-          <label
+          <Label
             className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
             htmlFor="category-selector"
           >
             {localize('com_ui_category')} <span className="text-red-500">*</span>
-          </label>
+          </Label>
           <AgentCategorySelector className="w-full rounded-lg" />
         </div>
       </div>
@@ -164,9 +164,9 @@ export default function AgentConfig() {
 
       {/* SUPPORT CONTACT */}
       <div className="mb-3 flex flex-col">
-        <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+        <Label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary">
           {localize('com_ui_support_contact')}
-        </label>
+        </Label>
         <div className="space-y-2">
           <Controller
             name="support_contact.name"

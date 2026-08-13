@@ -6,11 +6,14 @@ import {
   keyvRedisClient as staticKeyvClient,
   keyvRedisClientReady,
 } from '~/cache/redisClients';
+import {
+  GenerationJobManagerClass,
+  TERMINAL_PUBLICATION_RECONNECT_ERROR,
+} from '~/stream/GenerationJobManager';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '~/stream/implementations/RedisEventTransport';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { STEER_ENQUEUE_NOT_RUNNING } from '~/stream/interfaces/IJobStore';
-import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { RedisJobStore } from '~/stream/implementations/RedisJobStore';
 import { createStreamServices } from '~/stream/createStreamServices';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
@@ -1588,11 +1591,77 @@ describe('GenerationJobManager Integration Tests', () => {
       await manager.destroy();
     });
 
+    testRedis('should not re-buffer detached events after first attachment (Redis)', async () => {
+      /**
+       * After the first attachment, the durable chunk log owns recovery for
+       * detached events; re-buffering them locally grew without bound for
+       * long detached generations. A late subscriber gets live events only,
+       * and resume reconstructs the detached content from the chunk log.
+       */
+      const manager = createRedisManager();
+      const streamId = `no-rebuffer-redis-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const sub1 = await manager.subscribe(streamId, () => {});
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await manager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      sub1?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: 'detached-redis' } } },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+
+      const sub2Events: ServerSentEvent[] = [];
+      const sub2 = await manager.subscribe(streamId, (event) => sub2Events.push(event));
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(sub2Events.length).toBe(0);
+
+      const resumeState = await manager.getResumeState(streamId);
+      expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain('detached-redis');
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: ' live' } } },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(sub2Events.length).toBe(1);
+      expect((sub2Events[0] as StreamEvent).event).toBe('on_message_delta');
+
+      sub2?.unsubscribe();
+      await manager.destroy();
+    });
+  });
+
+  describe('Early event buffer bounds', () => {
+    /**
+     * Regression tests for a production incident: a model streamed a malformed
+     * 150k-character tool argument for ~26 minutes after the browser
+     * disconnected (~40 events/sec, ~58,800 publications). Every event was
+     * retained in earlyEventBuffer, so heap and GC cost climbed for the whole
+     * detached run.
+     */
+
     testRedis(
-      'should replay buffer without skipBufferReplay after disconnect (Redis)',
+      'detached generation keeps the local buffer empty after first attachment (Redis)',
       async () => {
         const manager = createRedisManager();
-        const streamId = `replay-buf-redis-${Date.now()}`;
+        const streamId = `detached-flat-${Date.now()}`;
         await manager.createJob(streamId, 'user-1');
 
         const sub1 = await manager.subscribe(streamId, () => {});
@@ -1600,25 +1669,204 @@ describe('GenerationJobManager Integration Tests', () => {
         sub1?.unsubscribe();
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        await manager.emitChunk(streamId, {
-          event: 'on_message_delta',
-          data: { delta: { content: { type: 'text', text: 'buffered-redis' } } },
-        });
+        for (let i = 0; i < 200; i++) {
+          await manager.emitChunk(streamId, {
+            event: 'on_run_step_delta',
+            data: {
+              id: 'step-1',
+              delta: { type: 'tool_call_delta', args: `"table_${i}", ` },
+            },
+          });
+        }
 
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        const stats = manager.getRuntimeStats();
+        expect(stats.earlyBufferedEvents).toBe(0);
+        expect(stats.earlyBufferedBytes).toBe(0);
 
-        const sub2Events: ServerSentEvent[] = [];
-        const sub2 = await manager.subscribe(streamId, (event) => sub2Events.push(event));
-
-        await new Promise((resolve) => setTimeout(resolve, 200));
-
-        expect(sub2Events.length).toBe(1);
-        expect((sub2Events[0] as StreamEvent).event).toBe('on_message_delta');
-
-        sub2?.unsubscribe();
         await manager.destroy();
       },
     );
+
+    test('discards and closes the buffer when the byte budget is exceeded (never attached)', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `buf-byte-cap-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      const bigText = 'x'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+        });
+      }
+
+      const stats = manager.getRuntimeStats();
+      expect(stats.earlyBufferedEvents).toBe(0);
+      expect(stats.earlyBufferedBytes).toBe(0);
+
+      await manager.emitChunk(streamId, {
+        event: 'on_message_delta',
+        data: { id: 'step-1', delta: { content: { type: 'text', text: 'after-overflow' } } },
+      });
+      expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+
+      const errors: string[] = [];
+      const events: ServerSentEvent[] = [];
+      const sub = await manager.subscribe(
+        streamId,
+        (event) => events.push(event),
+        undefined,
+        (error) => errors.push(error),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      /** A non-resume attachment cannot be made whole once the buffer was
+       * discarded, so it is closed with the reconnect signal; the client then
+       * re-attaches with resume=true and syncs from snapshot state. */
+      expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+      expect(events).toEqual([]);
+
+      sub?.unsubscribe();
+      await manager.destroy();
+    });
+
+    testRedis('redirects a post-overflow first attachment to resume recovery (Redis)', async () => {
+      const manager = createRedisManager();
+      const streamId = `overflow-redirect-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await manager.emitChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'step-1',
+          runId: 'run-1',
+          index: 0,
+          stepDetails: { type: 'message_creation' },
+        },
+      });
+      const bigText = 'y'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+        });
+      }
+      expect(manager.getRuntimeStats().earlyBufferedEvents).toBe(0);
+
+      const errors: string[] = [];
+      const sub = await manager.subscribe(
+        streamId,
+        () => {},
+        undefined,
+        (error) => errors.push(error),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+      sub?.unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      /** The resume path the client falls back to reconstructs the
+       * discarded output from the durable chunk log. */
+      const resumeState = await manager.getResumeState(streamId);
+      expect(JSON.stringify(resumeState?.aggregatedContent ?? [])).toContain('yyyy');
+
+      await manager.destroy();
+    });
+
+    test('buffers detached events until the cap in in-memory mode', async () => {
+      const manager = createInMemoryManager();
+      const streamId = `buf-below-cap-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await setupDisconnectedStream(manager, streamId, 10);
+
+      const stats = manager.getRuntimeStats();
+      expect(stats.earlyBufferedEvents).toBe(2);
+      expect(stats.earlyBufferedBytes).toBeGreaterThan(0);
+
+      await manager.destroy();
+    });
+
+    test('caps captured events restored by a resume canceled before activation', async () => {
+      const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+      const manager = new GenerationJobManagerClass();
+      manager.configure({
+        jobStore,
+        eventTransport: new InMemoryEventTransport(),
+        isRedis: false,
+      });
+      manager.initialize();
+      const streamId = `restore-cap-${Date.now()}`;
+      await manager.createJob(streamId, 'user-1');
+
+      await setupDisconnectedStream(manager, streamId, 10);
+
+      /** Arm only after the snapshot completes so the gate parks the resume
+       * in its post-attachment steer reconciliation, the window where
+       * emissions are captured per-resume instead of buffered. */
+      let armed = false;
+      const originalGetResumeState = manager.getResumeState.bind(manager);
+      jest
+        .spyOn(manager, 'getResumeState')
+        .mockImplementation(
+          async (...args: Parameters<GenerationJobManagerClass['getResumeState']>) => {
+            const result = await originalGetResumeState(...args);
+            armed = true;
+            return result;
+          },
+        );
+      let releaseGate!: () => void;
+      const gate = new Promise<void>((resolve) => (releaseGate = resolve));
+      let gateReached!: () => void;
+      const reached = new Promise<void>((resolve) => (gateReached = resolve));
+      const originalPeek = jobStore.peekSteers.bind(jobStore);
+      let gated = true;
+      jest
+        .spyOn(jobStore, 'peekSteers')
+        .mockImplementation(async (...args: Parameters<InMemoryJobStore['peekSteers']>) => {
+          if (armed && gated) {
+            gated = false;
+            gateReached();
+            await gate;
+          }
+          return originalPeek(...args);
+        });
+
+      const resumePromise = manager.subscribeWithResume(streamId, () => {});
+
+      await reached;
+      const bigText = 'z'.repeat(2 * 1024 * 1024);
+      for (let i = 0; i < 5; i++) {
+        await manager.emitChunk(streamId, {
+          event: 'on_message_delta',
+          data: { id: 'step-1', delta: { content: { type: 'text', text: bigText } } },
+        });
+      }
+      releaseGate();
+
+      const { subscription } = await resumePromise;
+      expect(subscription).not.toBeNull();
+      subscription!.unsubscribe();
+
+      /** The ~10MB of captured events must not survive restoration. */
+      const stats = manager.getRuntimeStats();
+      expect(stats.earlyBufferedEvents).toBe(0);
+      expect(stats.earlyBufferedBytes).toBe(0);
+
+      /** Restoration overflowed, so a non-resume attach takes the redirect. */
+      const errors: string[] = [];
+      const probe = await manager.subscribe(
+        streamId,
+        () => {},
+        undefined,
+        (error) => errors.push(error),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(errors).toEqual([TERMINAL_PUBLICATION_RECONNECT_ERROR]);
+      probe?.unsubscribe();
+
+      await manager.destroy();
+    });
   });
 
   describe('Atomic subscribeWithResume', () => {
