@@ -3684,6 +3684,42 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  /**
+   * An access token that expired first turns enforcement into a 401, so the refresh is where the
+   * setup credential arrives. It answers successfully and without a token, which reads as a failed
+   * refresh unless the payload is inspected.
+   */
+  it('leaves for setup when the 401 refresh answers with enrollment', async () => {
+    jest.useFakeTimers();
+    const enrollmentPayload = {
+      code: 'two_factor_enrollment_required',
+      twoFASetupRequired: true,
+      tempToken: 'setup-token',
+    };
+    (request.refreshToken as jest.Mock).mockResolvedValueOnce(enrollmentPayload);
+    mockRedirectIfTwoFactorSetupPayload.mockReturnValue(true);
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const sse = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+
+    await act(async () => {
+      sse._emit('error', { responseCode: 401 });
+      await Promise.resolve();
+    });
+    await advanceRetryTimer(60000);
+
+    expect(mockRedirectIfTwoFactorSetupPayload).toHaveBeenCalledWith(enrollmentPayload);
+    expect(sse.stream).toHaveBeenCalledTimes(1);
+    expect(mockSSEInstances.length).toBe(sseCount);
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    unmount();
+  });
+
   it.each([undefined, 500, 503])(
     'does not call errorHandler for responseCode %s (reconnect path)',
     async (responseCode) => {

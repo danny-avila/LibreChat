@@ -2693,6 +2693,15 @@ export default function useResumableSSE(
         if (responseCode === 401) {
           try {
             const refreshResponse = await request.refreshToken();
+            /**
+             * An access token that expired first turns enforcement into a 401 the stream cannot
+             * read, so enrollment surfaces on the refresh instead: it succeeds carrying a setup
+             * credential and no token. Leave before the staleness bail, because a subscription that
+             * has since been replaced would otherwise swallow the only notice the client gets.
+             */
+            if (request.redirectIfTwoFactorSetupPayload(refreshResponse)) {
+              return;
+            }
             if (!isCurrentSubscription()) {
               return;
             }

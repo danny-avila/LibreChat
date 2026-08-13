@@ -260,6 +260,13 @@ export default function useSSE(
         /* token expired, refresh and retry */
         try {
           const refreshResponse = await request.refreshToken();
+          /* An access token that expired first turns enforcement into a 401 the stream cannot read,
+             so enrollment surfaces on the refresh instead: it succeeds carrying a setup credential
+             and no token. Leave for setup here, or the only notice the client gets is reported as a
+             refresh failure and retried against a condition that cannot clear. */
+          if (request.redirectIfTwoFactorSetupPayload(refreshResponse)) {
+            return;
+          }
           const token = refreshResponse?.token ?? '';
           if (!token) {
             throw new Error('Token refresh failed.');
