@@ -37,10 +37,13 @@ jest.mock('~/mcp/oauth', () => ({
   resolveOboToken: jest.fn(),
 }));
 
+/** Only `processMCPEnv` is a deliberate seam — the cases below drive it to hand
+ *  the manager a specific processed config. Everything else stays real:
+ *  `~/mcp/utils` reads `ALLOWED_BODY_FIELDS` from here at module scope, so a
+ *  replacing factory breaks the suite at import time. */
 jest.mock('~/utils/env', () => ({
+  ...jest.requireActual('~/utils/env'),
   processMCPEnv: jest.fn((params) => params.options),
-  MCP_PLUGIN_SOURCE: 'plugin',
-  isPluginSourced: jest.fn((config) => config?.source === 'plugin'),
 }));
 
 jest.mock('~/auth/domain', () => ({
