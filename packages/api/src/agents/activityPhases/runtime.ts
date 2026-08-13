@@ -1028,6 +1028,13 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     let finalTextIndex =
       lastRootTextStepId == null ? undefined : deps.getStepIndex?.(lastRootTextStepId);
     const parts = deps.getContentParts();
+    if (
+      finalTextIndex != null &&
+      (parts[finalTextIndex]?.type !== ContentTypes.TEXT ||
+        !textValue(parts[finalTextIndex]?.text).trim())
+    ) {
+      finalTextIndex = undefined;
+    }
     /** The host step map is an event-coordinate hint, not the authoritative
      *  rendered position. Activity-label reservations advance the shared
      *  content offset after earlier steps were indexed, and a provider can
@@ -1045,7 +1052,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
        *  An already-closed phase has no remaining activities and completion
        *  is a no-op. The later-activity checks below still reject an
        *  intermediate lane text when tools or reasoning follow it. */
-      if (part?.type === ContentTypes.TEXT) {
+      if (part?.type === ContentTypes.TEXT && textValue(part.text).trim()) {
         finalTextIndex = index;
         break;
       }
@@ -1091,19 +1098,32 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         (!overflowBoundaryIds.every((id) => materializedToolIds.has(id)) &&
           overflowActivityStartIndex != null &&
           overflowActivityStartIndex >= candidateFinalTextIndex);
-      const hasLaterPendingReasoning = [...pendingReasoning.values()].some((reasoning) => {
+      const pendingReasoningAnchors = new Set<string>();
+      const pendingReasoningAnchorIndex: ReasoningAnchorIndex = new Map();
+      let hasLaterPendingReasoningIndex = false;
+      for (const reasoning of pendingReasoning.values()) {
         /** Empty reasoning reservations are not activities: addPendingReasoning
          *  deliberately drops them. They can still receive a later sparse
          *  index from the SDK, so do not let that placeholder pull a fully
          *  materialized final answer into the completed parent phase. */
         if (!reasoning.text.trim()) {
-          return false;
+          continue;
         }
-        return (
-          (reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex) ||
-          hasReasoningExcerptAtOrAfter(parts, reasoning.text, candidateFinalTextIndex)
+        hasLaterPendingReasoningIndex ||=
+          reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex;
+        addReasoningAnchor(
+          pendingReasoningAnchors,
+          pendingReasoningAnchorIndex,
+          reasoning.text,
         );
-      });
+      }
+      const hasLaterPendingReasoning =
+        hasLaterPendingReasoningIndex ||
+        hasIndexedReasoningAtOrAfter(
+          parts,
+          pendingReasoningAnchorIndex,
+          candidateFinalTextIndex,
+        );
       if (hasLaterTrackedActivity || hasLaterOverflowActivity || hasLaterPendingReasoning) {
         finalTextIndex = undefined;
       }

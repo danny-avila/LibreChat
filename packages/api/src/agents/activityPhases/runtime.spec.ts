@@ -1519,6 +1519,44 @@ describe('createActivityPhaseWiring', () => {
     expect(parts[3]).toMatchObject({ activity_end_index: 2, activity_count: 2 });
   });
 
+  it('skips a trailing empty text reservation when choosing the final boundary', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TEXT, text: 'The materialized answer is complete.' },
+      { type: ContentTypes.TEXT, text: '', phase: 'final_answer' },
+    ];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'empty-final' ? 3 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed the workflow' })),
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'empty-final',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[4]).toMatchObject({ activity_end_index: 2, activity_count: 2 });
+  });
+
   it('ignores an empty reasoning reservation after the materialized final text', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
