@@ -177,6 +177,20 @@ export function groupActivityPhases(
     segment.contentIndices.push(partIndex);
     segment.hasContent ||= isVisibleContentPart(child);
   };
+  /** Recovery can empty a span it already claimed. An index-less segment
+   *  renders nothing but still mounts a nested `ContentParts`, so drop it the
+   *  same way a fully recovered segment is spliced out below. */
+  const pushContent = (segment: ReturnType<typeof collect>, startIndex: number) => {
+    if (segment.contentIndices.length === 0) {
+      return;
+    }
+    segments.push({
+      type: 'content',
+      content: segment.content,
+      contentIndices: segment.contentIndices,
+      startIndex,
+    });
+  };
   /** Phase markers and defined content indexes are both sorted. Walk them in
    *  lockstep so every ordinary part is classified once, even when a custom
    *  max permits many parent phases in one long response. */
@@ -252,12 +266,7 @@ export function groupActivityPhases(
       definedPosition += 1;
     }
     if (start > cursor) {
-      segments.push({
-        type: 'content',
-        content: adjacent.content,
-        contentIndices: adjacent.contentIndices,
-        startIndex: cursor,
-      });
+      pushContent(adjacent, cursor);
     }
     const labelText = getActivityLabelText(part);
     if (labelText) {
@@ -274,20 +283,10 @@ export function groupActivityPhases(
       /** A failed/empty parent stays visually feature-off, but its bounds are
        *  still authoritative: delayed child labels must move back beside the
        *  tools they describe instead of rendering after the final answer. */
-      segments.push({
-        type: 'content',
-        content: phase.content,
-        contentIndices: phase.contentIndices,
-        startIndex: start,
-      });
+      pushContent(phase, start);
     }
     if (end < index) {
-      segments.push({
-        type: 'content',
-        content: trailing.content,
-        contentIndices: trailing.contentIndices,
-        startIndex: end,
-      });
+      pushContent(trailing, end);
     }
     cursor = index + 1;
   }
@@ -300,12 +299,7 @@ export function groupActivityPhases(
         append(adjacent, childIndex);
       }
     }
-    segments.push({
-      type: 'content',
-      content: adjacent.content,
-      contentIndices: adjacent.contentIndices,
-      startIndex: cursor,
-    });
+    pushContent(adjacent, cursor);
   }
   return segments;
 }
