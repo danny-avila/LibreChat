@@ -308,6 +308,9 @@ function hasIndexedReasoningAtOrAfter(
   index: ReasoningAnchorIndex,
   minimumIndex: number,
 ): boolean {
+  if (index.size === 0) {
+    return false;
+  }
   const indices = definedPartIndices(parts);
   for (let position = indices.length - 1; position >= 0; position -= 1) {
     const partIndex = indices[position];
