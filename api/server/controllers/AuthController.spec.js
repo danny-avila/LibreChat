@@ -228,6 +228,10 @@ describe('refreshController – OpenID path', () => {
   const makeSignedUserId = (id = 'user-db-id', options = { expiresIn: '1h' }) =>
     jwt.sign({ id }, process.env.JWT_REFRESH_SECRET, options);
 
+  /** `setOpenIDAuthTokens` stamps this cookie to the millisecond, so the cutoffs can date it */
+  const makeSignedReuseCookie = (issuedAtMs, id = 'user-db-id') =>
+    jwt.sign({ id, issuedAtMs }, process.env.JWT_REFRESH_SECRET, { expiresIn: '1h' });
+
   const setOpenIDReuseCookies = (signedUserId = makeSignedUserId()) => {
     req.headers.cookie = [
       'token_provider=openid',
@@ -464,6 +468,60 @@ describe('refreshController – OpenID path', () => {
     );
     expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
     expectOpenIDRefreshGrant();
+  });
+
+  /** Arms the reuse shortcut so only the cookie's mint time decides whether it is taken. */
+  const armOpenIDReuse = (issuedAtMs) => {
+    setOpenIDReuseCookies(makeSignedReuseCookie(issuedAtMs));
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+      },
+    };
+  };
+
+  it('declines the reuse shortcut for a cookie minted before enrollment', async () => {
+    const twoFactorEnrolledAt = new Date();
+    armOpenIDReuse(twoFactorEnrolledAt.getTime() - 1);
+    getUserById.mockResolvedValue({ ...defaultUser, twoFactorEnrolledAt });
+
+    await refreshController(req, res);
+
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[refreshController] OpenID reuse cookie predates enrollment or password reset: userId=user-db-id',
+    );
+    expectOpenIDRefreshGrant();
+  });
+
+  it('declines the reuse shortcut for a cookie minted in the resetting millisecond', async () => {
+    const passwordResetAt = new Date();
+    armOpenIDReuse(passwordResetAt.getTime());
+    getUserById.mockResolvedValue({ ...defaultUser, passwordResetAt });
+
+    await refreshController(req, res);
+
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('keeps the reuse shortcut for a cookie minted after both cutoffs', async () => {
+    const twoFactorEnrolledAt = new Date();
+    armOpenIDReuse(twoFactorEnrolledAt.getTime() + 1);
+    getUserById.mockResolvedValue({
+      ...defaultUser,
+      twoFactorEnrolledAt,
+      passwordResetAt: new Date(twoFactorEnrolledAt.getTime() - 60_000),
+    });
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+    expect(setCloudFrontAuthCookies).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 
   it('falls through to full OpenID refresh when session tokens are stale', async () => {

@@ -92,7 +92,8 @@ const sendTwoFactorSetupRequired = async (res, user, session) => {
   });
 };
 
-const getValidOpenIDReuseUserId = (parsedCookies) => {
+/** Keeps the mint stamps alongside the id, so the retirement cutoffs can date the credential */
+const getValidOpenIDReuseCredential = (parsedCookies) => {
   const openidUserId = parsedCookies.openid_user_id;
   if (!openidUserId || !process.env.JWT_REFRESH_SECRET) {
     return null;
@@ -100,9 +101,10 @@ const getValidOpenIDReuseUserId = (parsedCookies) => {
 
   try {
     const payload = jwt.verify(openidUserId, process.env.JWT_REFRESH_SECRET);
-    return typeof payload === 'object' && payload != null && typeof payload.id === 'string'
-      ? payload.id
-      : null;
+    if (typeof payload !== 'object' || payload == null || typeof payload.id !== 'string') {
+      return null;
+    }
+    return { userId: payload.id, issuedAt: payload.iat, issuedAtMs: payload.issuedAtMs };
   } catch {
     return null;
   }
@@ -197,22 +199,36 @@ const refreshController = async (req, res) => {
        * upstream revocations and cookie/session extension are checked regularly.
        */
       const reusableSessionToken = getReusableOpenIDSessionToken(req.session?.openidTokens);
-      const reuseUserId = reusableSessionToken ? getValidOpenIDReuseUserId(parsedCookies) : null;
-      if (reuseUserId) {
-        const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
-        if (user) {
-          const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, user);
-          logger.debug('[refreshController] OpenID session token reused', {
-            token_type: reusableSessionToken.type,
-            has_id_token: Boolean(req.session?.openidTokens?.idToken),
-            has_access_token: Boolean(req.session?.openidTokens?.accessToken),
-            cloudfront_cookies_set: cloudFrontCookiesSet,
-          });
-          return res.status(200).send({
-            token: reusableSessionToken.token,
-            user: sanitizeUserForAuthResponse(user),
-          });
-        }
+      const reuseCredential = reusableSessionToken
+        ? getValidOpenIDReuseCredential(parsedCookies)
+        : null;
+      const reuseUser = reuseCredential
+        ? await getUserById(reuseCredential.userId, AUTH_REFRESH_USER_PROJECTION)
+        : null;
+      /**
+       * Reuse is the one OpenID path that answers without consulting the identity provider, so it
+       * is the one a credential can outlive an account event on: every other entry point already
+       * dates this same signed cookie against the same cutoffs. A retired cookie declines the
+       * shortcut rather than failing the request, because the provider still holds the authority to
+       * say whether the session lives, and the token `refreshTokenGrant` mints below is stamped
+       * after the cutoff.
+       */
+      if (reuseUser && isTokenRetired(reuseCredential, reuseUser)) {
+        logger.warn(
+          `[refreshController] OpenID reuse cookie predates enrollment or password reset: userId=${reuseCredential.userId}`,
+        );
+      } else if (reuseUser) {
+        const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, reuseUser);
+        logger.debug('[refreshController] OpenID session token reused', {
+          token_type: reusableSessionToken.type,
+          has_id_token: Boolean(req.session?.openidTokens?.idToken),
+          has_access_token: Boolean(req.session?.openidTokens?.accessToken),
+          cloudfront_cookies_set: cloudFrontCookiesSet,
+        });
+        return res.status(200).send({
+          token: reusableSessionToken.token,
+          user: sanitizeUserForAuthResponse(reuseUser),
+        });
       }
 
       const openIdConfig = getOpenIdConfig();
