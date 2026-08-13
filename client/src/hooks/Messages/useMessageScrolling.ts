@@ -253,6 +253,14 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       if (suppressNextResizeFollowRef.current) {
         suppressNextResizeFollowRef.current = false;
         isNearBottomRef.current = getIsNearBottom();
+        /** An interaction rarely settles in one frame: a tool result expands, then its
+         *  contents arrive and grow it again. Only the first resize is credited to the
+         *  gesture, so letting go of the ride has to happen here. Leaving it to the
+         *  resize that follows means reading a reader who has just been pushed far up
+         *  their own thread as still riding the stream, and handing them back to the
+         *  bottom they deliberately left. Where the interaction actually left them
+         *  decides it, so one that kept them on the end keeps streaming. */
+        isStuckRef.current = isNearBottomRef.current;
         return;
       }
 

@@ -333,6 +333,38 @@ describe('useMessageScrolling resize reconciliation', () => {
     expect(mockScrollToBottom).not.toHaveBeenCalled();
   });
 
+  /**
+   * One interaction rarely settles in a single frame: expanding a tool result renders
+   * the container, then its contents arrive and grow it again. Only the first resize
+   * was credited to the interaction, so the second read the reader as still riding the
+   * stream and put them back on the bottom they had just deliberately left.
+   */
+  it('keeps an interaction that settles over several resizes from re-pinning the reader', () => {
+    renderScrolling();
+
+    const scrollable = screen.getByTestId('scrollable');
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+    scrollable.scrollTop = 800;
+
+    fireEvent.pointerDown(screen.getByTestId('content'));
+
+    /** The expansion renders, which is the resize the interaction is credited with. */
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 2000, configurable: true });
+    act(() => {
+      MockResizeObserver.last()?.trigger();
+    });
+    expect(scrollable.scrollTop).toBe(800);
+
+    /** Its contents then load. This belongs to the same interaction, not to the stream. */
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 2600, configurable: true });
+    act(() => {
+      MockResizeObserver.last()?.trigger();
+    });
+
+    expect(scrollable.scrollTop).toBe(800);
+  });
+
   it('clamps the scroll position back to content after a resize shrink', () => {
     renderScrolling({ contextOverrides: { abortScroll: true } });
 
