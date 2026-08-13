@@ -635,6 +635,49 @@ describe('ToolService - Action Capability Gating', () => {
       ]);
     });
 
+    it('does not count an empty post-OAuth catalog as tools available or reload definitions', async () => {
+      const req = createMockReq([AgentCapabilities.tools]);
+      const res = { writableEnded: false };
+      const serverName = 'Empty-Catalog';
+      const mcpTool = `search${Constants.mcp_delimiter}${serverName}`;
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig([AgentCapabilities.tools]));
+      mockResolveConfigServers.mockResolvedValue({
+        [serverName]: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/empty',
+          requiresOAuth: true,
+        },
+      });
+      mockGetMCPServerTools.mockResolvedValue(null);
+      mockFlowManager.getFlowState.mockResolvedValue(null);
+      mockLoadToolDefinitions.mockImplementationOnce(async (params, deps) => {
+        await deps.getOrFetchMCPServerTools(params.userId, serverName);
+        return {
+          toolDefinitions: [],
+          toolRegistry: new Map(),
+          hasDeferredTools: false,
+          mcpResolution: { resolvedToolCount: 1 },
+        };
+      });
+      reinitMCPServer
+        .mockImplementationOnce(async ({ oauthStart }) => {
+          await oauthStart(`https://auth.example.com/${serverName}`);
+          return { availableTools: null };
+        })
+        .mockResolvedValueOnce({ availableTools: {} });
+
+      const result = await loadAgentTools({
+        req,
+        res,
+        agent: { id: 'agent_123', tools: [mcpTool] },
+        definitionsOnly: true,
+      });
+
+      expect(result.toolDefinitions).toEqual([]);
+      expect(result.mcpAvailableTools).toEqual({});
+      expect(mockLoadToolDefinitions).toHaveBeenCalledTimes(1);
+    });
+
     it('fences resumable MCP OAuth definition events to the owning job epoch', async () => {
       const req = createMockReq([AgentCapabilities.tools]);
       const res = { writableEnded: false };

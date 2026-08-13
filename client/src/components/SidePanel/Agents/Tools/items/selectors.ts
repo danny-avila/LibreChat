@@ -102,6 +102,22 @@ export function matchesMcpServer(
 ): boolean {
   const prefixed = `${MCP_PREFIX}${serverName}`;
   const normalized = normalizeServerName(serverName);
+  const aliases = allServerNames?.length ? buildServerNameAliases(allServerNames) : undefined;
+  if (aliases && allServerNames) {
+    /** Exact `mcp_<server>` entries need the same single-owner resolution as
+     *  tool-key suffixes. A literal configured name wins over another name
+     *  that merely normalizes to it; otherwise the alias registry maps the
+     *  normalized spelling back to its raw owner. Without this early global
+     *  check, each colliding target could independently satisfy its own exact
+     *  comparison and one token would select/remove both servers. */
+    if (token.startsWith(MCP_PREFIX)) {
+      const exactName = token.slice(MCP_PREFIX.length);
+      const exactOwner = allServerNames.includes(exactName) ? exactName : aliases.get(exactName);
+      if (exactOwner != null) {
+        return exactOwner === serverName;
+      }
+    }
+  }
   if (
     token === mcpServerToken(serverName) ||
     token === serverName ||
@@ -110,13 +126,12 @@ export function matchesMcpServer(
   ) {
     return true;
   }
-  if (allServerNames?.length) {
+  if (aliases && allServerNames) {
     /** Boundary-exact: resolve the token ONCE against every configured
      *  server (longest match, both spellings) — a normalized name that
      *  itself contains the delimiter (`foo mcp bar` → `foo_mcp_bar`) must
      *  not ALSO suffix-match a server named `bar`, or both cards select
      *  together and removing one strips the other's tool. */
-    const aliases = buildServerNameAliases(allServerNames);
     const [, parsed] = splitMCPToolKey(token, [...allServerNames, ...aliases.keys()]);
     if (parsed == null) {
       return false;
