@@ -190,17 +190,25 @@ describe('useMessageScrolling resize reconciliation', () => {
     ).IntersectionObserver = originalIntersectionObserver;
   });
 
-  it('scrolls to the bottom when streaming content resizes and auto-scroll is active', () => {
+  it('rides the bottom when streaming content resizes and auto-scroll is active', () => {
     renderScrolling();
 
     const observer = MockResizeObserver.last();
     expect(observer?.observe).toHaveBeenCalledWith(screen.getByTestId('content'));
 
+    const scrollable = screen.getByTestId('scrollable');
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+    scrollable.scrollTop = 700;
+
     act(() => {
       observer?.trigger();
     });
 
-    expect(mockScrollToBottom).toHaveBeenCalledTimes(1);
+    /** Written straight to the element rather than routed through the throttled
+     *  scrollIntoView helper, so an answer arriving a few pixels at a time flows
+     *  instead of lurching once every throttle window. */
+    expect(scrollable.scrollTop).toBe(800);
   });
 
   it('reconciles message layout after an explicit scroll to bottom', () => {
@@ -214,14 +222,26 @@ describe('useMessageScrolling resize reconciliation', () => {
     expect(mockReconcileMessageContentLayout).toHaveBeenCalledWith(scrollable);
   });
 
-  it('does not follow resizes after the user aborts streaming auto-scroll', () => {
+  /**
+   * `useMessageProcess` raises the abort flag on any wheel at all, downward ones
+   * included, through a throttle whose trailing call lands after the gesture has
+   * ended. Gating on it meant scrolling down to the newest word could never resume
+   * the ride, while the scroll-to-bottom button, which touches no wheel, always
+   * could. Position and direction answer that question instead.
+   */
+  it('rides the bottom for a reader who is on it, even with the abort flag raised', () => {
     renderScrolling({ contextOverrides: { abortScroll: true } });
+
+    const scrollable = screen.getByTestId('scrollable');
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+    scrollable.scrollTop = 700;
 
     act(() => {
       MockResizeObserver.last()?.trigger();
     });
 
-    expect(mockScrollToBottom).not.toHaveBeenCalled();
+    expect(scrollable.scrollTop).toBe(800);
   });
 
   it('does not follow resizes after the user scrolls away from the bottom', () => {
@@ -270,13 +290,20 @@ describe('useMessageScrolling resize reconciliation', () => {
   });
 
   it('does not clamp to rendered content bottom during general resize reconciliation', () => {
-    renderScrolling({ contextOverrides: { abortScroll: true } });
+    renderScrolling();
 
     const scrollable = screen.getByTestId('scrollable');
     const content = screen.getByTestId('content');
     Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
     Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+
+    /** Move away from the end so the reader is left alone, which is the state this
+     *  is about: reconciliation must not drag them to the rendered content bottom. */
+    scrollable.scrollTop = 900;
+    fireEvent.scroll(scrollable);
     scrollable.scrollTop = 700;
+    fireEvent.scroll(scrollable);
+
     setRect(scrollable, { top: 0, bottom: 200, height: 200 });
     setRect(content, { top: -700, bottom: -200, height: 500 });
 

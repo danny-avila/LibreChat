@@ -9,6 +9,22 @@ import store from '~/store';
 
 const resizeFollowThreshold = 120;
 
+/** How long a glide is given to land before per-frame following resumes. */
+const glideTimeout = 700;
+
+/** Arriving counts from further out than leaving does, because while an answer
+ *  streams the end is a moving target: it recedes between the reader's last
+ *  wheel tick and the frame that measures it, so someone scrolling all the way
+ *  down still lands tens of pixels short. Judging arrival as tightly as
+ *  departure means they can never quite catch it. */
+const attachThreshold = 150;
+const detachThreshold = 24;
+
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const autoScroll = useRecoilValue(store.autoScroll);
 
@@ -16,6 +32,13 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isNearBottomRef = useRef(true);
+  /** The single authority for whether the thread is riding the stream. Driven only
+   *  by what the reader does, never by the observer, whose zero-height sentinel
+   *  flickers as content grows and was the source of the attach/detach churn. */
+  const isStuckRef = useRef(true);
+  const isGlidingRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
+  const wasSubmittingRef = useRef(false);
   const suppressNextResizeFollowRef = useRef(false);
   const { conversation, conversationId } = useMessagesConversation();
   const { setAbortScroll, isSubmitting, abortScroll } = useMessagesSubmission();
@@ -29,20 +52,68 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     return distance <= resizeFollowThreshold;
   }, []);
 
-  /** The scroll-to-bottom button owns the IntersectionObserver (so its
-   * visibility state never re-renders the message tree host) and reports
-   * intersection back through this callback. */
+  /** The scroll-to-bottom button owns the IntersectionObserver (so its visibility
+   * state never re-renders the message tree host) and reports intersection back
+   * through this callback.
+   *
+   * It reports only. The sentinel it watches has no height and is observed at a
+   * 0.85 threshold, a ratio a zero-area box cannot reach, so it flickers while an
+   * answer streams. Letting it decide whether to ride the stream is what made the
+   * thread attach and detach on its own.
+   */
   const handleNearBottomChange = useCallback((isNearBottom: boolean) => {
     isNearBottomRef.current = isNearBottom;
   }, []);
 
+  const distanceFromEnd = useCallback(() => {
+    const scrollEl = scrollableRef.current;
+    if (!scrollEl) {
+      return 0;
+    }
+    return scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+  }, []);
+
   const debouncedHandleScroll = useCallback(() => {
+    const scrollEl = scrollableRef.current;
     isNearBottomRef.current = getIsNearBottom();
-  }, [getIsNearBottom]);
+    if (!scrollEl) {
+      return;
+    }
+
+    /** Direction comes from where the thread actually moved, which covers the
+     *  wheel, a trackpad and a dragged scrollbar alike. */
+    const top = scrollEl.scrollTop;
+    const movingDown = top >= lastScrollTopRef.current;
+    lastScrollTopRef.current = top;
+    const distance = distanceFromEnd();
+
+    /** Arriving is judged here rather than on the wheel tick that started it: the
+     *  browser animates wheel scrolling, so at tick time the thread is still far
+     *  short of where that tick is taking it, and reading the distance then calls
+     *  a gesture that lands on the end a miss. */
+    if (movingDown) {
+      if (distance <= attachThreshold) {
+        isStuckRef.current = true;
+        /** Cleared unconditionally rather than on a read of the current value.
+         *  `Message` raises this on every wheel tick, downward ones included, so
+         *  it is set again on the way here; and the value this closure can see is
+         *  a render behind, so a conditional clear loses the race and leaves the
+         *  ride vetoed for the rest of the answer. Recoil no-ops an unchanged
+         *  write, so repeating it costs nothing. */
+        setAbortScroll(false);
+      }
+      return;
+    }
+
+    if (distance > detachThreshold) {
+      isStuckRef.current = false;
+    }
+  }, [distanceFromEnd, getIsNearBottom, setAbortScroll]);
 
   const scrollCallback = () => {
     reconcileMessageContentLayout(scrollableRef.current);
     isNearBottomRef.current = true;
+    isStuckRef.current = true;
   };
 
   const { scrollToRef: scrollToBottom, handleSmoothToRef } = useScrollToRef({
@@ -53,6 +124,50 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       setAbortScroll(false);
     },
   });
+
+  /**
+   * Ride the bottom of the thread.
+   *
+   * Written straight to `scrollTop` rather than routed through the throttled
+   * `scrollIntoView` helper: an answer arrives a few pixels at a time, so
+   * correcting on every frame reads as the text simply flowing upward, while
+   * correcting every 145ms reads as a thread that lurches.
+   *
+   * The glide is for distance only, when a send has to travel from wherever the
+   * reader was down to the newest word. Following while one is in flight would
+   * cancel it on the first frame.
+   */
+  const followBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const scrollEl = scrollableRef.current;
+    if (!scrollEl) {
+      return;
+    }
+    const target = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+    if (Math.abs(scrollEl.scrollTop - target) < 1) {
+      return;
+    }
+
+    if (behavior !== 'smooth' || prefersReducedMotion()) {
+      scrollEl.scrollTop = target;
+      /** Riding the bottom re-affirms that we are on it. The throttled helper this
+       *  replaced did the same through its callback, and without it a single
+       *  under-reported intersection ends the ride for the rest of the turn. */
+      isNearBottomRef.current = true;
+      isStuckRef.current = true;
+      return;
+    }
+
+    isGlidingRef.current = true;
+    const land = () => {
+      isGlidingRef.current = false;
+      isNearBottomRef.current = true;
+      isStuckRef.current = true;
+      scrollEl.removeEventListener('scrollend', land);
+    };
+    scrollEl.addEventListener('scrollend', land, { once: true });
+    setTimeout(land, glideTimeout);
+    scrollEl.scrollTo({ top: target, behavior: 'smooth' });
+  }, []);
 
   const clampScrollToContent = useCallback(() => {
     const scrollEl = scrollableRef.current;
@@ -82,11 +197,24 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
         return;
       }
 
-      if (shouldFollowResize && isSubmitting && abortScroll !== true && isNearBottomRef.current) {
-        scrollToBottom?.();
+      /** A glide already on its way to the bottom is heading exactly where this
+       *  would put us, and touching the position would cancel it. */
+      if (isGlidingRef.current) {
+        return;
+      }
+
+      /** Deliberately not gated on `abortScroll`. `useMessageProcess` raises that on
+       *  any wheel at all, downward ones included, through a 500ms throttle whose
+       *  trailing call lands after the gesture has ended: no clear timed to the
+       *  gesture can outlive it, which is why scrolling down to the newest word
+       *  could never resume the ride while the button, which touches no wheel,
+       *  always could. Whether the reader is riding the stream is answered here by
+       *  where they actually are and which way they were going. */
+      if (shouldFollowResize && isSubmitting && isStuckRef.current) {
+        followBottom();
       }
     },
-    [abortScroll, clampScrollToContent, getIsNearBottom, isSubmitting, scrollToBottom],
+    [clampScrollToContent, followBottom, getIsNearBottom, isSubmitting],
   );
 
   useEffect(() => {
@@ -119,6 +247,49 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   }, []);
 
   useEffect(() => {
+    const scrollEl = scrollableRef.current;
+    if (!scrollEl || typeof window === 'undefined') {
+      return;
+    }
+
+    /** Direction decides, not position. Heading up lets go at once and stays let
+     *  go, however close to the end the reader still is; anything position-based
+     *  drags them back before they have cleared the band, which reads as the
+     *  thread refusing to be scrolled.
+     *
+     *  Heading down only re-attaches on arrival at the end.
+     *
+     *  `Message` aborts auto-scroll on `wheel` alone, and a tick against the end
+     *  moves nothing and so fires no `scroll`, leaving that flag set with nothing
+     *  to clear it. Clearing it on arrival is what lets the ride resume; the
+     *  button escaped the problem only by never touching the wheel. */
+    /** An upward tick releases immediately, without waiting to see where it lands.
+     *  Re-attaching is left entirely to arrival, handled on scroll.
+     *
+     *  A downward tick clears the abort flag outright. `Message` raises it on any
+     *  wheel at all, and a tick against the end moves nothing, so it fires no
+     *  `scroll` for the arrival handler to answer: the last tick of scrolling down
+     *  to the newest word leaves the ride vetoed with nothing left to lift it.
+     *  Scrolling down is never an intent to abandon the stream. */
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        isStuckRef.current = false;
+        return;
+      }
+      /** Next frame, not now: React binds `Message`'s handler at the root, above
+       *  this container, so it runs after this one and would put the flag straight
+       *  back. Clearing once the event has finished dispatching is what makes it
+       *  stick. */
+      window.requestAnimationFrame(() => setAbortScroll(false));
+    };
+
+    scrollEl.addEventListener('wheel', onWheel, { passive: true });
+    return () => {
+      scrollEl.removeEventListener('wheel', onWheel);
+    };
+  }, [setAbortScroll]);
+
+  useEffect(() => {
     if (!messagesTree || messagesTree.length === 0) {
       return;
     }
@@ -127,8 +298,19 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       return;
     }
 
-    if (isSubmitting && scrollToBottom && abortScroll !== true) {
-      scrollToBottom();
+    const startedSubmitting = isSubmitting && !wasSubmittingRef.current;
+    wasSubmittingRef.current = isSubmitting;
+
+    if (isSubmitting && abortScroll !== true) {
+      /** Sending re-attaches: the reader asked for this answer, so take them to it.
+       *  The one long trip of a turn, and the only one worth animating. */
+      if (startedSubmitting) {
+        isNearBottomRef.current = true;
+        isStuckRef.current = true;
+        followBottom('smooth');
+      } else if (isStuckRef.current) {
+        followBottom();
+      }
     }
 
     return () => {
@@ -136,7 +318,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
         scrollToBottom && scrollToBottom.cancel();
       }
     };
-  }, [isSubmitting, messagesTree, scrollToBottom, abortScroll]);
+  }, [isSubmitting, messagesTree, scrollToBottom, abortScroll, followBottom]);
 
   useEffect(() => {
     if (!messagesEndRef.current || !scrollableRef.current) {
