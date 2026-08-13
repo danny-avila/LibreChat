@@ -11,6 +11,11 @@ jest.mock('~/crypto', () => ({
   signPayload: jest.fn().mockResolvedValue('mocked-token'),
 }));
 
+const bcrypt = jest.requireActual<{
+  hash: (candidate: string, saltRounds: number) => Promise<string>;
+  compare: (candidate: string, hash: string) => Promise<boolean>;
+}>('bcryptjs');
+
 let mongoServer: MongoMemoryServer;
 let User: mongoose.Model<t.IUser>;
 let Balance: mongoose.Model<t.IBalance>;
@@ -1082,12 +1087,14 @@ describe('User Clerk identity fields', () => {
   });
 
   describe('dedicated Clerk identity mutations', () => {
-    test('atomically links only the exact tenant user and preserves local authentication state', async () => {
+    test('atomically links only the exact tenant user and preserves working local authentication', async () => {
       await User.syncIndexes();
+      const localPassword = 'still-authenticates-after-link';
+      const localPasswordHash = await bcrypt.hash(localPassword, 4);
       const tenantUser = await User.create({
         email: 'link@example.com',
         provider: 'local',
-        password: 'local-password-hash',
+        password: localPasswordHash,
         role: 'ADMIN',
         twoFactorEnabled: true,
         tenantId: 'tenant-a',
@@ -1110,11 +1117,12 @@ describe('User Clerk identity fields', () => {
         _id: tenantUser._id,
         clerkId: 'user_clerk',
         provider: 'local',
-        password: 'local-password-hash',
+        password: localPasswordHash,
         role: 'ADMIN',
         twoFactorEnabled: true,
         tenantId: 'tenant-a',
       });
+      await expect(bcrypt.compare(localPassword, linked!.password!)).resolves.toBe(true);
       expect(await User.findById(otherTenantUser._id).lean()).not.toHaveProperty('clerkId');
     });
 
