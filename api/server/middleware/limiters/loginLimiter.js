@@ -31,4 +31,30 @@ const limiterOptions = {
 
 const loginLimiter = rateLimit(limiterOptions);
 
+/**
+ * Creates a login-limiter instance sharing the same window/max/store/key-generator
+ * configuration as the default login limiter, but with a caller-supplied handler.
+ * Used for a Clerk-specific instance whose handler records the normal violation
+ * and returns a stable `{code: 'CLERK_LOGIN_RATE_LIMITED'}` body instead of the
+ * default plain-message response.
+ *
+ * @param {(req: Object, res: Object) => Promise<Object>} clerkHandler
+ * @returns {import('express').RequestHandler}
+ */
+const createLoginLimiter = (clerkHandler) =>
+  rateLimit({ ...limiterOptions, handler: clerkHandler, store: limiterCache('login_limiter') });
+
+/**
+ * The default Clerk login-limiter handler: records the same violation as the
+ * local-login limiter, then returns the stable Clerk error code body.
+ */
+const clerkLoginLimiterHandler = async (req, res) => {
+  const type = ViolationTypes.LOGINS;
+  const errorMessage = { type, max, windowInMinutes };
+  await logViolation(req, res, type, errorMessage, score);
+  return res.status(429).json({ code: 'CLERK_LOGIN_RATE_LIMITED' });
+};
+
 module.exports = loginLimiter;
+module.exports.createLoginLimiter = createLoginLimiter;
+module.exports.clerkLoginLimiterHandler = clerkLoginLimiterHandler;
