@@ -101,6 +101,7 @@ function createResponse() {
   return {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
+    clearCookie: jest.fn().mockReturnThis(),
   };
 }
 
@@ -426,6 +427,42 @@ describe('finalize2FASetup', () => {
     expect(res.status).toHaveBeenCalledWith(400);
     expect(store.doc.twoFactorEnabled).toBe(false);
     expect(mockSetAuthTokens).not.toHaveBeenCalled();
+  });
+
+  it('withdraws the session when password recovery lands after the promotion', async () => {
+    const finalizationToken = await reachFinalization();
+    /**
+     * Recovery cannot be staged up front: clearing the pending enrollment first would fail the
+     * compare-and-swap, which is the half already covered. Landing it while the hand-off runs is
+     * the ordering that leaves a token postdating the cutoff.
+     */
+    mockSetAuthTokens.mockImplementationOnce(async () => {
+      store.doc.passwordResetAt = new Date(Date.now() + 1000);
+      return 'auth-token';
+    });
+
+    const res = await runFinalize(finalizationToken);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(jsonPayload(res)).not.toHaveProperty('token');
+    expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+    expect(res.clearCookie).toHaveBeenCalledWith('token_provider');
+    /** The session minted in that gap has to go, not just the token this response withholds. */
+    expect(mockDeleteAllUserSessions).toHaveBeenCalledTimes(2);
+    expect(mockDeleteAllUserSessions.mock.invocationCallOrder[1]).toBeGreaterThan(
+      mockSetAuthTokens.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('hands off normally when the account was recovered before the enrollment', async () => {
+    store.reset({ passwordResetAt: new Date(Date.now() - 60_000) });
+    const finalizationToken = await reachFinalization();
+
+    const res = await runFinalize(finalizationToken);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(jsonPayload(res)).toHaveProperty('token', 'auth-token');
+    expect(mockDeleteAllUserSessions).toHaveBeenCalledTimes(1);
   });
 
   it('rejects finalization once the pending setup has been cleared', async () => {

@@ -1,10 +1,13 @@
 const { logger } = require('@librechat/data-schemas');
 const {
+  clearCloudFrontCookies,
   confirmTwoFactorSetup,
   finalizeTwoFactorSetup,
+  TOKEN_RETIREMENT_FIELDS,
   acknowledgeTwoFactorSetup,
   sanitizeUserForResponse,
   verifyTwoFactorLoginChallengeToken,
+  isEnrollmentSupersededByRecovery,
   generateTwoFactorSetupAcknowledgementToken,
   generateTwoFactorSetupFinalizationToken,
 } = require('@librechat/api');
@@ -21,6 +24,22 @@ const sanitizeUser = (user) => ({
   ...sanitizeUserForResponse(user),
   id: user._id.toString(),
 });
+
+/**
+ * Undoes the session hand-off `finalize2FASetup` had already started, leaving the promoted
+ * enrollment in place. The refresh session is dropped server side, so the cookie this response
+ * still carries buys nothing, and the access token is simply never handed back.
+ */
+const revokeFinalizedSession = async (res, user, userId) => {
+  await deleteAllUserSessions({ userId });
+  res.clearCookie('refreshToken');
+  res.clearCookie('token_provider');
+  clearCloudFrontCookies(res, {
+    userId,
+    tenantId: user.tenantId ?? user.orgId,
+    storageRegion: user.storageRegion,
+  });
+};
 
 const enrollmentDependencies = {
   getUserById,
@@ -160,6 +179,23 @@ const finalize2FASetup = async (req, res) => {
      */
     await deleteAllUserSessions({ userId: result.user._id.toString() });
     const authToken = await setAuthTokens(result.user._id, res, null, req);
+
+    /**
+     * Recovery clears the staged enrollment, so a reset that lands before the promotion above loses
+     * its compare-and-swap. One that lands in the gap between the promotion and this line does not,
+     * and the session just minted postdates `passwordResetAt`, so no downstream gate would retire
+     * it. Re-read the cutoff and withdraw the hand-off when recovery won that gap.
+     */
+    const retirement = await getUserById(userId, TOKEN_RETIREMENT_FIELDS);
+    if (
+      isEnrollmentSupersededByRecovery(result.user.twoFactorEnrolledAt, retirement?.passwordResetAt)
+    ) {
+      await revokeFinalizedSession(res, result.user, userId);
+      return res
+        .status(401)
+        .json({ message: 'Password was reset during setup, please sign in again' });
+    }
+
     return res.status(200).json({ token: authToken, user: userData });
   } catch (err) {
     logger.error('[finalize2FASetup]', err);

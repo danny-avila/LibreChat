@@ -190,6 +190,36 @@ export function isTokenRetired(
   );
 }
 
+/**
+ * Whether password recovery landed after an enrollment was promoted.
+ *
+ * Recovery clears the staged enrollment in the same write that stamps `passwordResetAt`, so a reset
+ * that lands first loses `finalizeTwoFactorSetup`'s compare-and-swap. One that lands in the gap
+ * between that swap and the session hand-off does not, and the credential minted in that gap
+ * postdates the cutoff, so `isTokenRetired` has nothing to catch it by. Comparing the two stamps is
+ * what closes that ordering, and it is only meaningful against an enrollment just written.
+ *
+ * Compared at full resolution rather than the whole seconds `iat` forces, and ties resolve against
+ * the enrollment: a reset stamped in the very millisecond of promotion is the race, not a race-free
+ * coincidence.
+ */
+export function isEnrollmentSupersededByRecovery(
+  enrolledAt: Date | string | number | null | undefined,
+  passwordResetAt: Date | string | number | null | undefined,
+): boolean {
+  if (enrolledAt == null || passwordResetAt == null) {
+    return false;
+  }
+
+  const enrolledMs = new Date(enrolledAt).getTime();
+  const resetMs = new Date(passwordResetAt).getTime();
+  if (Number.isNaN(enrolledMs) || Number.isNaN(resetMs)) {
+    return false;
+  }
+
+  return resetMs >= enrolledMs;
+}
+
 export function generateTwoFactorSetupToken(userId: string, jwtSecret: string): string {
   return jwt.sign({ userId, purpose: TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP }, jwtSecret, {
     expiresIn: TWO_FACTOR_SETUP_TOKEN_EXPIRY,

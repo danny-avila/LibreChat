@@ -20,6 +20,7 @@ import {
   isTwoFactorSetupEligible,
   isCredentialLoginBlockedByTwoFactorPolicy,
   isTokenRetired,
+  isEnrollmentSupersededByRecovery,
   requireTwoFactorSetupToken,
   requireTwoFactorSetupFinalizationToken,
   requireTwoFactorSetupAcknowledgementToken,
@@ -199,6 +200,44 @@ describe('isTokenRetired', () => {
     it('refuses an undatable token once the account has reset', () => {
       expect(isTokenRetired(undefined, { passwordResetAt: resetAt })).toBe(true);
     });
+  });
+});
+
+describe('isEnrollmentSupersededByRecovery', () => {
+  const enrolledAt = new Date('2026-01-01T00:00:10.500Z');
+
+  it('reports nothing when either stamp is missing', () => {
+    expect(isEnrollmentSupersededByRecovery(null, new Date())).toBe(false);
+    expect(isEnrollmentSupersededByRecovery(enrolledAt, null)).toBe(false);
+    expect(isEnrollmentSupersededByRecovery(undefined, undefined)).toBe(false);
+  });
+
+  it('reports a reset that landed after the enrollment was promoted', () => {
+    expect(isEnrollmentSupersededByRecovery(enrolledAt, new Date(enrolledAt.getTime() + 1))).toBe(
+      true,
+    );
+  });
+
+  it('leaves an enrollment that followed an older reset alone', () => {
+    expect(isEnrollmentSupersededByRecovery(enrolledAt, new Date(enrolledAt.getTime() - 1))).toBe(
+      false,
+    );
+  });
+
+  /** `iat` rounds to whole seconds, so a same-millisecond reset is the race, not a coincidence. */
+  it('resolves a tie against the enrollment', () => {
+    expect(isEnrollmentSupersededByRecovery(enrolledAt, new Date(enrolledAt.getTime()))).toBe(true);
+  });
+
+  it('accepts stamps that arrive as strings or epoch values', () => {
+    expect(
+      isEnrollmentSupersededByRecovery(enrolledAt.toISOString(), enrolledAt.getTime() + 1),
+    ).toBe(true);
+  });
+
+  it('ignores an unparseable stamp rather than withdrawing every enrollment', () => {
+    expect(isEnrollmentSupersededByRecovery('not-a-date', new Date())).toBe(false);
+    expect(isEnrollmentSupersededByRecovery(enrolledAt, 'not-a-date')).toBe(false);
   });
 });
 
