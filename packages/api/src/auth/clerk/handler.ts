@@ -1,4 +1,4 @@
-import { getTenantId } from '@librechat/data-schemas';
+import { getTenantId, ClerkAuthClaimError } from '@librechat/data-schemas';
 import type { AppConfig, IUser } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
 import type { ClerkIdentityServiceDependencies, ClerkTenantScope } from './service';
@@ -19,6 +19,7 @@ export type ClerkRouteErrorCode =
   | 'CLERK_TOKEN_INVALID'
   | 'CLERK_LOGIN_FORBIDDEN'
   | 'CLERK_IDENTITY_CONFLICT'
+  | 'CLERK_TOKEN_REPLAYED'
   | 'CLERK_UPSTREAM_RATE_LIMITED'
   | 'CLERK_UNAVAILABLE'
   | 'CLERK_LOGIN_FAILED';
@@ -63,6 +64,24 @@ function requireEnabledConfig(config: ClerkAuthConfig): ClerkAuthConfigEnabled {
 
 function mapClerkAuthError(error: ClerkAuthError): ClerkRouteError {
   return new ClerkRouteError(error.code, error.status);
+}
+
+/**
+ * Maps the data-schema replay/revocation/tombstone errors (Fixed Contract 7,
+ * thrown by the B6-owned exchange transaction) to stable route errors: a
+ * replay is `409 CLERK_TOKEN_REPLAYED`; a session already revoked or a user
+ * already tombstoned/deleted racing the exchange is `403
+ * CLERK_LOGIN_FORBIDDEN`; any other/unexpected claim code fails closed at
+ * `500 CLERK_LOGIN_FAILED` rather than leaking an internal code.
+ */
+function mapClerkAuthClaimError(error: ClerkAuthClaimError): ClerkRouteError {
+  if (error.code === 'CLERK_TOKEN_REPLAYED') {
+    return new ClerkRouteError('CLERK_TOKEN_REPLAYED', 409);
+  }
+  if (error.code === 'CLERK_SESSION_REVOKED' || error.code === 'CLERK_USER_DELETED') {
+    return new ClerkRouteError('CLERK_LOGIN_FORBIDDEN', 403);
+  }
+  return new ClerkRouteError('CLERK_LOGIN_FAILED', 500);
 }
 
 export interface PrepareClerkLoginDeps {
@@ -321,6 +340,11 @@ export function clerkLoginErrorAdapter(
   }
   if (error instanceof ClerkAuthError) {
     res.status(error.status).json({ code: error.code });
+    return;
+  }
+  if (error instanceof ClerkAuthClaimError) {
+    const mapped = mapClerkAuthClaimError(error);
+    res.status(mapped.status).json({ code: mapped.code });
     return;
   }
   res.status(500).json({ code: 'CLERK_LOGIN_FAILED' });

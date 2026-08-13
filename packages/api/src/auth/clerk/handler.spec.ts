@@ -1,4 +1,4 @@
-import { tenantStorage } from '@librechat/data-schemas';
+import { tenantStorage, ClerkAuthClaimError } from '@librechat/data-schemas';
 import type { ClerkAuthConfigEnabled } from './types';
 import type { VerifiedClerkIdentity } from './verify';
 import {
@@ -413,6 +413,58 @@ describe('clerkLoginErrorAdapter', () => {
   function createRes() {
     return { headersSent: false, status: jest.fn().mockReturnThis(), json: jest.fn() } as never;
   }
+
+  it('maps a replay ClerkAuthClaimError to 409 CLERK_TOKEN_REPLAYED', () => {
+    const res = createRes();
+    const next = createNext();
+
+    clerkLoginErrorAdapter(
+      new ClerkAuthClaimError('replayed', 'CLERK_TOKEN_REPLAYED'),
+      {} as never,
+      res,
+      next,
+    );
+
+    expect((res as { status: jest.Mock }).status).toHaveBeenCalledWith(409);
+    expect((res as { json: jest.Mock }).json).toHaveBeenCalledWith({
+      code: 'CLERK_TOKEN_REPLAYED',
+    });
+  });
+
+  it.each(['CLERK_SESSION_REVOKED', 'CLERK_USER_DELETED'] as const)(
+    'maps a %s ClerkAuthClaimError to 403 CLERK_LOGIN_FORBIDDEN',
+    (code) => {
+      const res = createRes();
+      const next = createNext();
+
+      clerkLoginErrorAdapter(
+        new ClerkAuthClaimError('revoked/deleted', code),
+        {} as never,
+        res,
+        next,
+      );
+
+      expect((res as { status: jest.Mock }).status).toHaveBeenCalledWith(403);
+      expect((res as { json: jest.Mock }).json).toHaveBeenCalledWith({
+        code: 'CLERK_LOGIN_FORBIDDEN',
+      });
+    },
+  );
+
+  it('fails closed to 500 CLERK_LOGIN_FAILED for an unrecognized ClerkAuthClaimError code', () => {
+    const res = createRes();
+    const next = createNext();
+
+    clerkLoginErrorAdapter(
+      new ClerkAuthClaimError('unknown', 'SOME_OTHER_CODE' as never),
+      {} as never,
+      res,
+      next,
+    );
+
+    expect((res as { status: jest.Mock }).status).toHaveBeenCalledWith(500);
+    expect((res as { json: jest.Mock }).json).toHaveBeenCalledWith({ code: 'CLERK_LOGIN_FAILED' });
+  });
 
   it('responds with the stable {code} body for a ClerkRouteError', () => {
     const res = createRes();
