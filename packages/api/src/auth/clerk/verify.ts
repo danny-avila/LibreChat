@@ -1,8 +1,9 @@
 import { verifyToken } from '@clerk/backend';
+import { recordClerkTokenVerification } from '../../app/metrics';
 import type { ClerkAuthConfigEnabled } from './types';
 
-export const CLERK_CLOCK_SKEW_MS = 5_000;
-export const MAX_CLERK_TOKEN_LIFETIME_MS = 15 * 60 * 1_000;
+export const CLERK_CLOCK_SKEW_MS: number = 5_000;
+export const MAX_CLERK_TOKEN_LIFETIME_MS: number = 15 * 60 * 1_000;
 
 export type ClerkAuthFailureCode =
   | 'CLERK_TOKEN_INVALID'
@@ -102,10 +103,17 @@ function normalizeVerifiedClaims(
   };
 }
 
+function getElapsedSeconds(startedAt: bigint): number {
+  return Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
+}
+
 export async function verifyClerkSessionToken(
   token: string,
   config: ClerkAuthConfigEnabled,
 ): Promise<VerifiedClerkIdentity> {
+  const startedAt = process.hrtime.bigint();
+  let outcome: 'success' | 'invalid' = 'invalid';
+
   try {
     const claims = await verifyToken(token, {
       jwtKey: config.jwtKey,
@@ -113,8 +121,12 @@ export async function verifyClerkSessionToken(
       clockSkewInMs: CLERK_CLOCK_SKEW_MS,
     });
 
-    return normalizeVerifiedClaims(claims, config.authorizedParties);
+    const identity = normalizeVerifiedClaims(claims, config.authorizedParties);
+    outcome = 'success';
+    return identity;
   } catch {
     throw invalidToken();
+  } finally {
+    recordClerkTokenVerification(outcome, getElapsedSeconds(startedAt));
   }
 }

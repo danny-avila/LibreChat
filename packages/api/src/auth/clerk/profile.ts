@@ -1,7 +1,9 @@
+import { recordClerkProfileRequest } from '../../app/metrics';
+import type { ClerkProfileOutcome } from '../../app/metrics';
 import type { ClerkAuthConfigEnabled } from './types';
 import { ClerkAuthError } from './verify';
 
-export const CLERK_PROFILE_TIMEOUT_MS = 5_000;
+export const CLERK_PROFILE_TIMEOUT_MS: number = 5_000;
 
 const CLERK_API_URL = 'https://api.clerk.com/v1/users';
 const CLERK_API_VERSION = '2026-05-12';
@@ -170,6 +172,27 @@ function parseRetryAfter(value: string | null): number | undefined {
   return Math.min(60, Math.max(1, Number(value)));
 }
 
+function getProfileOutcome(error: unknown): ClerkProfileOutcome {
+  if (!(error instanceof ClerkAuthError)) {
+    return 'unavailable';
+  }
+
+  switch (error.code) {
+    case 'CLERK_LOGIN_FORBIDDEN':
+      return 'forbidden';
+    case 'CLERK_TOKEN_INVALID':
+      return 'not_found';
+    case 'CLERK_UPSTREAM_RATE_LIMITED':
+      return 'rate_limited';
+    case 'CLERK_UNAVAILABLE':
+      return 'unavailable';
+  }
+}
+
+function getElapsedSeconds(startedAt: bigint): number {
+  return Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
+}
+
 function throwForResponse(response: Response): void {
   if (response.ok) {
     return;
@@ -204,27 +227,37 @@ export async function fetchClerkProfile(
     throw invalidToken();
   }
 
+  const startedAt = process.hrtime.bigint();
+  let outcome: ClerkProfileOutcome = 'unavailable';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), CLERK_PROFILE_TIMEOUT_MS);
-  let response: Response;
   try {
-    response = await transport(`${CLERK_API_URL}/${encodeURIComponent(normalizedClerkId)}`, {
-      method: 'GET',
-      redirect: 'error',
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${config.secretKey}`,
-        'Clerk-API-Version': CLERK_API_VERSION,
-      },
-      signal: controller.signal,
-    });
-  } catch {
-    throw unavailable();
+    let response: Response;
+    try {
+      response = await transport(`${CLERK_API_URL}/${encodeURIComponent(normalizedClerkId)}`, {
+        method: 'GET',
+        redirect: 'error',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${config.secretKey}`,
+          'Clerk-API-Version': CLERK_API_VERSION,
+        },
+        signal: controller.signal,
+      });
+    } catch {
+      throw unavailable();
+    }
+
+    throwForResponse(response);
+    const payload = await parseResponse(response);
+    const profile = normalizeProfile(normalizedClerkId, payload);
+    outcome = 'success';
+    return profile;
+  } catch (error) {
+    outcome = getProfileOutcome(error);
+    throw error;
   } finally {
     clearTimeout(timeout);
+    recordClerkProfileRequest(outcome, getElapsedSeconds(startedAt));
   }
-
-  throwForResponse(response);
-  const payload = await parseResponse(response);
-  return normalizeProfile(normalizedClerkId, payload);
 }

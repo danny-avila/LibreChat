@@ -1,4 +1,11 @@
+import { recordClerkProfileRequest } from '../../app/metrics';
 import { CLERK_PROFILE_TIMEOUT_MS, fetchClerkProfile } from './profile';
+
+jest.mock('../../app/metrics', () => ({
+  recordClerkProfileRequest: jest.fn(),
+}));
+
+const recordClerkProfileRequestMock = jest.mocked(recordClerkProfileRequest);
 
 const config = {
   enabled: true as const,
@@ -66,6 +73,7 @@ describe('fetchClerkProfile', () => {
       username: 'ada',
       avatarUrl: 'https://images.example.com/avatar.png',
     });
+    expect(recordClerkProfileRequestMock).toHaveBeenCalledWith('success', expect.any(Number));
   });
 
   it('applies the five-second abort deadline to the outbound transport', async () => {
@@ -145,6 +153,7 @@ describe('fetchClerkProfile', () => {
       code: 'CLERK_LOGIN_FORBIDDEN',
       status: 403,
     });
+    expect(recordClerkProfileRequestMock).toHaveBeenCalledWith('forbidden', expect.any(Number));
   });
 
   it.each([
@@ -192,6 +201,7 @@ describe('fetchClerkProfile', () => {
         code: 'CLERK_TOKEN_INVALID',
         status: 401,
       });
+      expect(recordClerkProfileRequestMock).toHaveBeenCalledWith('not_found', expect.any(Number));
     },
   );
 
@@ -206,6 +216,7 @@ describe('fetchClerkProfile', () => {
       status: 429,
       retryAfterSeconds: 60,
     });
+    expect(recordClerkProfileRequestMock).toHaveBeenCalledWith('rate_limited', expect.any(Number));
   });
 
   it('discards a non-integer upstream Retry-After header', async () => {
@@ -229,6 +240,7 @@ describe('fetchClerkProfile', () => {
       code: 'CLERK_UNAVAILABLE',
       status: 503,
     });
+    expect(recordClerkProfileRequestMock).toHaveBeenCalledWith('unavailable', expect.any(Number));
   });
 
   it.each([new TypeError('network failed'), new DOMException('request timed out', 'AbortError')])(

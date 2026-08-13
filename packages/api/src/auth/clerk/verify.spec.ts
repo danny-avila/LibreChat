@@ -1,10 +1,17 @@
 import { createSign, generateKeyPairSync } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
+import { recordClerkTokenVerification } from '../../app/metrics';
 import {
   CLERK_CLOCK_SKEW_MS,
   MAX_CLERK_TOKEN_LIFETIME_MS,
   verifyClerkSessionToken,
 } from './verify';
+
+jest.mock('../../app/metrics', () => ({
+  recordClerkTokenVerification: jest.fn(),
+}));
+
+const recordClerkTokenVerificationMock = jest.mocked(recordClerkTokenVerification);
 
 const NOW = new Date('2026-08-13T12:00:00.000Z');
 const NOW_SECONDS = Math.floor(NOW.getTime() / 1_000);
@@ -50,6 +57,7 @@ function signToken(
 
 describe('verifyClerkSessionToken', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     jest.useFakeTimers();
     jest.setSystemTime(NOW);
   });
@@ -69,6 +77,7 @@ describe('verifyClerkSessionToken', () => {
       tokenIssuedAt: new Date((NOW_SECONDS - 30) * 1_000),
       tokenExpiresAt: new Date((NOW_SECONDS + 300) * 1_000),
     });
+    expect(recordClerkTokenVerificationMock).toHaveBeenCalledWith('success', expect.any(Number));
   });
 
   it('accepts default Clerk session tokens without an audience claim', async () => {
@@ -156,6 +165,7 @@ describe('verifyClerkSessionToken', () => {
     await expect(
       verifyClerkSessionToken(signToken({}, otherSigningKeys.privateKey), config),
     ).rejects.toMatchObject({ code: 'CLERK_TOKEN_INVALID', status: 401 });
+    expect(recordClerkTokenVerificationMock).toHaveBeenCalledWith('invalid', expect.any(Number));
   });
 });
 
