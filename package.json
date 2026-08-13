@@ -87,8 +87,8 @@
     "test:all": "npm run test:client && npm run test:api && npm run test:packages:api && npm run test:packages:data-provider && npm run test:packages:data-schemas",
     "e2e:update": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --update-snapshots",
     "e2e:report": "npx playwright show-report e2e/playwright-report",
-    "lint:fix": "eslint --fix \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
-    "lint": "eslint \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
+    "lint:fix": "eslint --no-error-on-unmatched-pattern --fix \"*.{js,jsx,ts,tsx}\" \"!(node_modules|venv)/**/*.{js,jsx,ts,tsx}\"",
+    "lint": "eslint --no-error-on-unmatched-pattern \"*.{js,jsx,ts,tsx}\" \"!(node_modules|venv)/**/*.{js,jsx,ts,tsx}\"",
     "sort-imports": "node scripts/sort-imports.mts",
     "sort-imports:check": "node scripts/sort-imports.mts --check",
     "format": "npx prettier --write \"{,!(node_modules|venv)/**/}*.{js,jsx,ts,tsx}\"",
@@ -167,6 +167,9 @@
   },
   "overrides": {
     "brace-expansion": "^5.0.8",
+    "minimatch@3.1.4": {
+      "brace-expansion": "^1.1.12"
+    },
     "@xmldom/xmldom": "^0.8.13",
     "elliptic": "^6.6.1",
     "form-data": "^4.0.6",
