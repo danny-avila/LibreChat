@@ -135,7 +135,11 @@ describe('createActivityPhaseWiring', () => {
   it('creates multiple phases around substantial root text in one run', async () => {
     const parts: LooseContentPart[] = [];
     const stepIndexes = new Map<string, number>();
-    const generatePhase = jest.fn(async () => ({ label: 'Completed the activity phase' }));
+    const generatedPayloads: GenerateActivityPhasePayload[] = [];
+    const generatePhase = jest.fn(async (payload: GenerateActivityPhasePayload) => {
+      generatedPayloads.push(payload);
+      return { label: 'Completed the activity phase' };
+    });
     const wiring = createActivityPhaseWiring({
       getContentParts: () => parts,
       getStepIndex: (stepId) => stepIndexes.get(stepId),
@@ -199,11 +203,11 @@ describe('createActivityPhaseWiring', () => {
     await flushDetached();
 
     expect(generatePhase).toHaveBeenCalledTimes(2);
-    expect(generatePhase.mock.calls[0][0]).toMatchObject({
+    expect(generatedPayloads[0]).toMatchObject({
       assistantContext: ['I pulled the repository history and will analyze it now.'],
       totalActivityCount: 2,
     });
-    expect(generatePhase.mock.calls[1][0]).toMatchObject({
+    expect(generatedPayloads[1]).toMatchObject({
       assistantContext: ['I found another angle worth checking.'],
       closingTextPhase: 'final_answer',
       totalActivityCount: 2,
