@@ -48,6 +48,11 @@ const VIEWPORT_PADDING = 12;
 /** Length of the landing screen's lift transition; see `ChatView`'s
  *  `duration-200` on the same element. */
 const LIFT_MS = 200;
+/** Hidden on hover-capable pointers until the row is hovered or focused.
+ *  Touch keeps them visible. `transition-none` overrides IconButton's color
+ *  fade so the reveal is an appear, not a tint. */
+const ROW_ACTION_REVEAL =
+  'transition-none opacity-100 group-focus-within/row:opacity-100 group-hover/row:opacity-100 [@media(hover:hover)]:opacity-0';
 /** How long the folded destinations take to fade before they give up their
  *  space; matches `.animate-composer-palette-row-out` in `style.css`. */
 const ROW_FADE_MS = 110;
@@ -903,7 +908,7 @@ function Palette({
               }
               className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg px-2 text-left"
             >
-              <span className="shrink-0 text-accent-primary" aria-hidden="true">
+              <span className="shrink-0" aria-hidden="true">
                 {icon}
               </span>
               <span className="flex min-w-0 flex-1 flex-col justify-center">
@@ -929,7 +934,7 @@ function Palette({
                       event.stopPropagation();
                       mode.onSelect();
                     }}
-                    className="text-text-secondary hover:text-text-primary"
+                    className={cn(ROW_ACTION_REVEAL, 'text-text-secondary hover:text-text-primary')}
                   >
                     <span aria-hidden="true">{mode.icon}</span>
                   </IconButton>
@@ -967,7 +972,7 @@ function Palette({
                   favorites.toggleFavorite(row.entry.itemType, row.entry.itemId);
                 }}
                 className={cn(
-                  'opacity-100 transition-opacity group-focus-within/row:opacity-100 group-hover/row:opacity-100 [@media(hover:hover)]:opacity-0',
+                  ROW_ACTION_REVEAL,
                   favorited
                     ? 'text-accent-primary hover:text-accent-primary-hover'
                     : 'text-text-secondary hover:text-text-primary',

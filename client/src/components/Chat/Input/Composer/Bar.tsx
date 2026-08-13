@@ -64,6 +64,12 @@ export function formatElapsed(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
+/** Named sub-modes stay on the chip (Artifacts, MCP). Icon-only actions such
+ *  as web-search Configure belong on the palette row, not behind a chevron. */
+export function chipMenuModes(modes?: PaletteMode[]) {
+  return modes?.filter((mode) => mode.icon == null) ?? [];
+}
+
 /** Projects palette state into the persistent quick controls in one pass. */
 export function projectBarEntries(
   entries: PaletteEntry[],
@@ -347,9 +353,10 @@ function Bar({
   const renderChip = (entry: PaletteEntry) => {
     const pinnedInactive = entry.pinned && !entry.active;
     const isPinnedMcp = entry.key === PINNED_MCP_KEY;
+    const menuModes = chipMenuModes(entry.modes);
     const modeMenu =
-      entry.modes != null ? (
-        <ChipModes modes={entry.modes} menuLabel={isPinnedMcp ? entry.label : undefined} />
+      menuModes.length > 0 ? (
+        <ChipModes modes={menuModes} menuLabel={isPinnedMcp ? entry.label : undefined} />
       ) : null;
     const activate = pinnedInactive ? (
       <IconButton
