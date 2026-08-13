@@ -6,6 +6,7 @@ const {
   getTenantId,
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
+  CLERK_TENANTLESS_SCOPE,
 } = require('@librechat/data-schemas');
 const { ErrorTypes, SystemRoles, errorsToString } = require('librechat-data-provider');
 const {
@@ -693,6 +694,62 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
   }
 };
 
+/**
+ * Sets auth tokens/cookies for an already-committed Clerk session exchange.
+ * Thin adapter only: the transaction that created `session` (Fixed Contract 7)
+ * has already run; this re-reads the committed Session by its exact tenant
+ * scope (the post-commit confirmation read), regenerates its refresh token,
+ * and caps the access token to the session's absolute deadline. No Clerk
+ * business logic (linking, replay, policy) lives here.
+ *
+ * @param {Object} input
+ * @param {String} input.userId
+ * @param {ServerRequest} input.req
+ * @param {ServerResponse} input.res
+ * @param {{_id: unknown, expiration: Date}} input.session
+ * @param {import('@librechat/data-schemas').ClerkSessionContext} input.clerk
+ * @returns {Promise<string>}
+ */
+const setClerkAuthTokens = async ({ userId, req, res, session, clerk }) => {
+  try {
+    const tenantId = clerk.tenantScope === CLERK_TENANTLESS_SCOPE ? undefined : clerk.tenantScope;
+    const sessionDoc = await findSession(
+      { sessionId: session._id.toString(), tenantId },
+      { lean: false, includeExpired: true },
+    );
+    if (!sessionDoc) {
+      throw new Error('[setClerkAuthTokens] Committed Session not found on confirmation read');
+    }
+
+    const refreshToken = await generateRefreshToken(sessionDoc);
+    const refreshTokenExpires = sessionDoc.expiration.getTime();
+
+    const user = await getUserById(userId);
+    const expiresIn = Math.max(0, clerk.absoluteExpiresAt.getTime() - Date.now());
+    const token = await generateToken(user, expiresIn);
+
+    res.cookie('refreshToken', refreshToken, {
+      expires: new Date(refreshTokenExpires),
+      httpOnly: true,
+      secure: shouldUseSecureCookie(),
+      sameSite: 'strict',
+    });
+    res.cookie('token_provider', 'librechat', {
+      expires: new Date(refreshTokenExpires),
+      httpOnly: true,
+      secure: shouldUseSecureCookie(),
+      sameSite: 'strict',
+    });
+
+    setCloudFrontAuthCookies(req, res, user, { userId: user?._id ?? userId, tenantId });
+
+    return token;
+  } catch (error) {
+    logger.error('[setClerkAuthTokens] Error in setting Clerk authentication tokens:', error);
+    throw error;
+  }
+};
+
 const resolveOpenIDAuthTokenOptions = (optionsOrUserId, existingRefreshToken, tenantId) => {
   if (optionsOrUserId != null && typeof optionsOrUserId === 'object') {
     if (
@@ -912,6 +969,7 @@ module.exports = {
   verifyEmail,
   registerUser,
   setAuthTokens,
+  setClerkAuthTokens,
   resetPassword,
   setOpenIDAuthTokens,
   setCloudFrontAuthCookies,
