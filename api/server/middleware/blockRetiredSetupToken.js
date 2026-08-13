@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { isTokenRetired, TOKEN_RETIREMENT_FIELDS } = require('@librechat/api');
+const { isSetupTokenRetired, TOKEN_RETIREMENT_FIELDS } = require('@librechat/api');
 const { getUserById } = require('~/models');
 
 /**
@@ -25,7 +25,12 @@ const blockRetiredSetupToken = async (req, res, next) => {
       return res.status(401).json({ message: 'Invalid or expired two-factor setup token' });
     }
 
-    if (isTokenRetired(req.twoFactorSetupIssuedAt, user)) {
+    if (
+      isSetupTokenRetired(
+        { issuedAt: req.twoFactorSetupIssuedAt, issuedAtMs: req.twoFactorSetupIssuedAtMs },
+        user,
+      )
+    ) {
       logger.warn(
         `[blockRetiredSetupToken] Setup token predates enrollment or password reset: userId=${userId}`,
       );

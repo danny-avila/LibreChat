@@ -63,6 +63,32 @@ describe('blockRetiredSetupToken', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it('refuses a setup token minted earlier in the second the password reset landed', async () => {
+    mockGetUserById.mockResolvedValue({ _id: 'user-1', passwordResetAt: resetAt });
+
+    const { res, next } = await run({
+      user: { id: 'user-1' },
+      twoFactorSetupIssuedAt: resetSecond,
+      twoFactorSetupIssuedAtMs: resetAt.getTime() - 1,
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('admits a setup token minted later in the second the password reset landed', async () => {
+    mockGetUserById.mockResolvedValue({ _id: 'user-1', passwordResetAt: resetAt });
+
+    const { res, next } = await run({
+      user: { id: 'user-1' },
+      twoFactorSetupIssuedAt: resetSecond,
+      twoFactorSetupIssuedAtMs: resetAt.getTime() + 1,
+    });
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
   it('refuses a setup token minted before enrollment promoted the account', async () => {
     mockGetUserById.mockResolvedValue({ _id: 'user-1', twoFactorEnrolledAt: resetAt });
 

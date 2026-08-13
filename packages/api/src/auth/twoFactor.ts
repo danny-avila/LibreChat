@@ -62,6 +62,7 @@ export interface TwoFactorEnrollmentCredential {
 export interface TwoFactorSetupCredential {
   userId: string;
   issuedAt?: number;
+  issuedAtMs?: number;
 }
 
 /** An Express request that a required-enrollment credential has been validated for. */
@@ -69,6 +70,7 @@ export type TwoFactorEnrollmentRequest = Request & {
   user?: { id: string };
   twoFactorEnrollmentNonce?: string;
   twoFactorSetupIssuedAt?: number;
+  twoFactorSetupIssuedAtMs?: number;
 };
 
 export type TwoFactorSetupUser = Pick<
@@ -191,6 +193,40 @@ export function isTokenRetired(
 }
 
 /**
+ * Whether a required-enrollment setup token has been retired by a later account event.
+ *
+ * Enrollment keeps the whole-second tolerance `isTokenRetired` documents, because the promotion
+ * stamps `twoFactorEnrolledAt` in the same second as the session it hands back. Password recovery
+ * cannot afford it: nothing is minted in that write, so a setup token dated to the retiring second
+ * is one bought with the credential the reset just revoked, and honouring it would let its holder
+ * stage a second factor of their own and take a session without ever knowing the new password.
+ *
+ * `issuedAtMs` orders the two exactly, and a tie retires the token, matching how
+ * `isEnrollmentSupersededByRecovery` resolves the same race. Tokens minted before that claim
+ * existed carry only `iat`, so they fall back to the whole-second comparison until they expire.
+ */
+export function isSetupTokenRetired(
+  credential: Pick<TwoFactorSetupCredential, 'issuedAt' | 'issuedAtMs'>,
+  user: TokenRetirementSignals | null | undefined,
+): boolean {
+  if (isTokenIssuedBefore(credential.issuedAt, user?.twoFactorEnrolledAt)) {
+    return true;
+  }
+
+  const { issuedAtMs } = credential;
+  if (typeof issuedAtMs !== 'number' || !Number.isFinite(issuedAtMs)) {
+    return isTokenIssuedBefore(credential.issuedAt, user?.passwordResetAt);
+  }
+
+  if (user?.passwordResetAt == null) {
+    return false;
+  }
+
+  const resetMs = new Date(user.passwordResetAt).getTime();
+  return Number.isNaN(resetMs) ? false : issuedAtMs <= resetMs;
+}
+
+/**
  * Whether password recovery landed after an enrollment was promoted.
  *
  * Recovery clears the staged enrollment in the same write that stamps `passwordResetAt`, so a reset
@@ -220,10 +256,23 @@ export function isEnrollmentSupersededByRecovery(
   return resetMs >= enrolledMs;
 }
 
+/**
+ * `iat` is whole seconds, and the setup token is the one credential whose retirement cannot afford
+ * that rounding: a token minted in the same second as a password reset would otherwise outlive the
+ * credential it was bought with. `issuedAtMs` dates it precisely enough to order the two.
+ */
 export function generateTwoFactorSetupToken(userId: string, jwtSecret: string): string {
-  return jwt.sign({ userId, purpose: TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP }, jwtSecret, {
-    expiresIn: TWO_FACTOR_SETUP_TOKEN_EXPIRY,
-  });
+  return jwt.sign(
+    {
+      userId,
+      purpose: TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP,
+      issuedAtMs: Date.now(),
+    },
+    jwtSecret,
+    {
+      expiresIn: TWO_FACTOR_SETUP_TOKEN_EXPIRY,
+    },
+  );
 }
 
 export function generateTwoFactorLoginChallengeToken(userId: string, jwtSecret: string): string {
@@ -347,7 +396,11 @@ export function verifyTwoFactorSetupToken(
     ) {
       return undefined;
     }
-    return { userId: payload.userId, issuedAt: payload.iat };
+    return {
+      userId: payload.userId,
+      issuedAt: payload.iat,
+      issuedAtMs: typeof payload.issuedAtMs === 'number' ? payload.issuedAtMs : undefined,
+    };
   } catch {
     return undefined;
   }
@@ -371,6 +424,7 @@ export function requireTwoFactorSetupToken(
   const setupRequest = req as TwoFactorEnrollmentRequest;
   setupRequest.user = { id: credential.userId };
   setupRequest.twoFactorSetupIssuedAt = credential.issuedAt;
+  setupRequest.twoFactorSetupIssuedAtMs = credential.issuedAtMs;
   next();
 }
 

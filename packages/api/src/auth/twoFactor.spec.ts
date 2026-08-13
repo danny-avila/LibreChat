@@ -20,6 +20,7 @@ import {
   isTwoFactorSetupEligible,
   isCredentialLoginBlockedByTwoFactorPolicy,
   isTokenRetired,
+  isSetupTokenRetired,
   isEnrollmentSupersededByRecovery,
   requireTwoFactorSetupToken,
   requireTwoFactorSetupFinalizationToken,
@@ -203,6 +204,80 @@ describe('isTokenRetired', () => {
   });
 });
 
+describe('isSetupTokenRetired', () => {
+  const resetAt = new Date('2026-02-02T00:00:10.500Z');
+  const resetMs = resetAt.getTime();
+  const resetSecond = Math.floor(resetMs / 1000);
+  const enrolledAt = new Date('2026-01-01T00:00:10.500Z');
+  const enrolledSecond = Math.floor(enrolledAt.getTime() / 1000);
+
+  it('retires a setup token minted earlier in the resetting second', () => {
+    expect(
+      isSetupTokenRetired(
+        { issuedAt: resetSecond, issuedAtMs: resetMs - 1 },
+        { passwordResetAt: resetAt },
+      ),
+    ).toBe(true);
+  });
+
+  it('retires a setup token minted in the very millisecond of the reset', () => {
+    expect(
+      isSetupTokenRetired(
+        { issuedAt: resetSecond, issuedAtMs: resetMs },
+        { passwordResetAt: resetAt },
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a setup token minted after the reset, even inside the same second', () => {
+    expect(
+      isSetupTokenRetired(
+        { issuedAt: resetSecond, issuedAtMs: resetMs + 1 },
+        { passwordResetAt: resetAt },
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps the whole-second tolerance the enrollment hand-off depends on', () => {
+    expect(
+      isSetupTokenRetired(
+        { issuedAt: enrolledSecond, issuedAtMs: enrolledAt.getTime() },
+        { twoFactorEnrolledAt: enrolledAt },
+      ),
+    ).toBe(false);
+    expect(
+      isSetupTokenRetired(
+        { issuedAt: enrolledSecond - 1, issuedAtMs: enrolledAt.getTime() - 1000 },
+        { twoFactorEnrolledAt: enrolledAt },
+      ),
+    ).toBe(true);
+  });
+
+  it('falls back to whole seconds for a token minted before the claim existed', () => {
+    expect(isSetupTokenRetired({ issuedAt: resetSecond - 1 }, { passwordResetAt: resetAt })).toBe(
+      true,
+    );
+    expect(isSetupTokenRetired({ issuedAt: resetSecond }, { passwordResetAt: resetAt })).toBe(
+      false,
+    );
+    expect(isSetupTokenRetired({ issuedAt: undefined }, { passwordResetAt: resetAt })).toBe(true);
+  });
+
+  it('leaves accounts with no cutoff untouched', () => {
+    expect(isSetupTokenRetired({ issuedAt: resetSecond, issuedAtMs: resetMs }, {})).toBe(false);
+    expect(isSetupTokenRetired({ issuedAt: resetSecond, issuedAtMs: resetMs }, null)).toBe(false);
+  });
+
+  it('ignores an unparseable reset stamp rather than stranding enrollment', () => {
+    expect(
+      isSetupTokenRetired(
+        { issuedAt: resetSecond, issuedAtMs: resetMs },
+        { passwordResetAt: 'not-a-date' },
+      ),
+    ).toBe(false);
+  });
+});
+
 describe('isEnrollmentSupersededByRecovery', () => {
   const enrolledAt = new Date('2026-01-01T00:00:10.500Z');
 
@@ -271,6 +346,33 @@ describe('two-factor setup tokens', () => {
     expect(verifyTwoFactorSetupToken(token, jwtSecret)).toEqual({
       userId: 'user-2',
       issuedAt: expect.any(Number),
+      issuedAtMs: expect.any(Number),
+    });
+  });
+
+  it('dates a setup token to the millisecond so a same-second reset can retire it', () => {
+    const before = Date.now();
+    const credential = verifyTwoFactorSetupToken(
+      generateTwoFactorSetupToken('user-2', jwtSecret),
+      jwtSecret,
+    );
+    const after = Date.now();
+
+    expect(credential?.issuedAtMs).toBeGreaterThanOrEqual(before);
+    expect(credential?.issuedAtMs).toBeLessThanOrEqual(after);
+  });
+
+  it('reads a legacy setup token that predates the millisecond claim', () => {
+    const legacyToken = jwt.sign(
+      { userId: 'user-2', purpose: TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP },
+      jwtSecret,
+      { expiresIn: '10m' },
+    );
+
+    expect(verifyTwoFactorSetupToken(legacyToken, jwtSecret)).toEqual({
+      userId: 'user-2',
+      issuedAt: expect.any(Number),
+      issuedAtMs: undefined,
     });
   });
 
