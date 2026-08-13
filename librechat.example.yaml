@@ -713,6 +713,31 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # SayGM Example
+    # OpenAI-compatible inference gateway. `baseURL` must be the API root that
+    # the OpenAI client appends `/v1/chat/completions` to. SayGM's `/v1/models`
+    # lists every upstream model, including Claude/Gemini models served only on
+    # other wire protocols and models that are currently unavailable — so list
+    # the OpenAI-chat-servable models explicitly and keep `fetch: false`.
+    - name: 'saygm'
+      apiKey: '${SAYGM_API_KEY}'
+      baseURL: 'https://api.saygm.com/v1'
+      models:
+        default:
+          - 'gpt-5.4'
+          - 'gpt-5.6-sol'
+          - 'gpt-5.4-mini'
+          - 'gpt-5.4-nano'
+          - 'gpt-5.5'
+          - 'gpt-5.6-luna'
+          - 'gpt-5.6-terra'
+          - 'o3'
+          - 'o4-mini'
+        fetch: false
+      titleConvo: true
+      titleModel: 'gpt-5.4'
+      modelDisplayLabel: 'SayGM'
+
     # Helicone Example
     - name: 'Helicone'
       # For `apiKey` and `baseURL`, you can use environment variables that you define.
