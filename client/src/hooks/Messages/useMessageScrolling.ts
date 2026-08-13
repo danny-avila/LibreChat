@@ -183,6 +183,13 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       }
       isNearBottomRef.current = true;
       isStuckRef.current = true;
+      /** Following stands down for the whole trip, so anything that streamed in
+       *  meanwhile moved the bottom past the target this glide aimed at. Close that
+       *  gap on arrival, or a short answer settles a few lines short of its end. */
+      const settled = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
+      if (Math.abs(scrollEl.scrollTop - settled) >= 1) {
+        scrollEl.scrollTop = settled;
+      }
     };
     scrollEl.addEventListener('scrollend', land, { once: true });
     glideTimerRef.current = setTimeout(land, glideTimeout);

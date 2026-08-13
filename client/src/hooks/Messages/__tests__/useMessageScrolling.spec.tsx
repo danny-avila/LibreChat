@@ -385,6 +385,43 @@ describe('useMessageScrolling resize reconciliation', () => {
     expect(scrollable.scrollTop).toBe(0);
   });
 
+  /**
+   * Following stands down for the length of the glide, so an answer that arrives
+   * while it travels moves the bottom past the target the glide aimed at. Landing
+   * has to close that gap, or a short response settles short of its own end.
+   */
+  it('catches up to the new bottom when the glide lands', () => {
+    const view = render(
+      <RecoilRoot>
+        <MessagesViewContext.Provider value={createContextValue({ isSubmitting: false })}>
+          <ScrollingHarness messagesTree={[message]} />
+        </MessagesViewContext.Provider>
+      </RecoilRoot>,
+    );
+
+    const scrollable = screen.getByTestId('scrollable');
+    (scrollable as unknown as { scrollTo: jest.Mock }).scrollTo = jest.fn();
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+    scrollable.scrollTop = 0;
+
+    view.rerender(
+      <RecoilRoot>
+        <MessagesViewContext.Provider value={createContextValue({ isSubmitting: true })}>
+          <ScrollingHarness messagesTree={[message]} />
+        </MessagesViewContext.Provider>
+      </RecoilRoot>,
+    );
+
+    /** The whole answer arrives before the glide reports that it landed. */
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1400, configurable: true });
+    act(() => {
+      fireEvent(scrollable, new Event('scrollend'));
+    });
+
+    expect(scrollable.scrollTop).toBe(1200);
+  });
+
   it('does not clamp to rendered content bottom during general resize reconciliation', () => {
     renderScrolling();
 
