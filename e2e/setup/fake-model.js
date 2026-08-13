@@ -39,6 +39,8 @@ const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+/** Two prose paragraphs, so a spec can select the message's *closing* block. */
+const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
 const MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_MERMAID_ARTIFACT_REPLY';
 const LARGE_MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_LARGE_MERMAID_ARTIFACT_REPLY';
 const HTML_ARTIFACT_REPLY_MARKER = 'E2E_HTML_ARTIFACT_REPLY';
@@ -427,6 +429,45 @@ function replyResponses(text) {
           '```javascript',
           'const e2eSyntaxHighlight = "ok";',
           '```',
+        ].join('\n'),
+      ],
+    };
+  }
+
+  if (text.includes(PARAGRAPHS_REPLY_MARKER)) {
+    /** The quoted cell sits in the first column, so scrolling the table to its
+     *  right edge carries it out of view. */
+    const wideColumns = [{ header: 'E2E first column header', cell: 'E2E table cell text' }];
+    for (let index = 1; index < 8; index++) {
+      wideColumns.push({
+        header: `E2E column ${index} with a deliberately wide header`,
+        cell: `E2E filler cell ${index} padding the row out`,
+      });
+    }
+    const filler = [];
+    for (let index = 0; index < 4; index++) {
+      filler.push(
+        `E2E filler paragraph ${index} keeps this reply tall enough to overflow a phone viewport so scrolling is exercised for real.`,
+        '',
+      );
+    }
+    return {
+      responses: [
+        [
+          'E2E opening paragraph of the reply, ahead of the closing one.',
+          '',
+          /** Renders inside `.markdown-table-wrapper`, a nested scroll container:
+           *  its `overflow-x: auto` also makes the computed `overflow-y` auto, so
+           *  a selection here is clipped by the table AND by the message list.
+           *  Wide enough to actually overflow sideways, which is what lets a
+           *  spec scroll the selected cell out of view without moving the
+           *  message at all. */
+          `| ${wideColumns.map((column) => column.header).join(' | ')} |`,
+          `| ${wideColumns.map(() => '---').join(' | ')} |`,
+          `| ${wideColumns.map((column) => column.cell).join(' | ')} |`,
+          '',
+          ...filler,
+          'E2E closing paragraph, the last block this message renders.',
         ].join('\n'),
       ],
     };
