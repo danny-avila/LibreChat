@@ -236,6 +236,15 @@ const AuthContextProvider = ({
         }
         const { user, token = '', twoFASetupRequired, tempToken } = data ?? {};
         if (twoFASetupRequired && tempToken) {
+          persistTwoFactorSetupToken(tempToken);
+          /**
+           * Already on the setup route, reached by an enforcement redirect that parked the
+           * destination in the query. Replacing the route again would drop that query, and the
+           * route itself is not a safe redirect to bank, so enrollment would end at `/c/new`.
+           */
+          if (isRequiredTwoFactorSetupRoute()) {
+            return;
+          }
           const baseUrl = apiBaseUrl();
           const rawPath = window.location.pathname;
           const strippedPath =
@@ -244,7 +253,6 @@ const AuthContextProvider = ({
               : rawPath;
           const currentUrl = `${strippedPath}${window.location.search}${window.location.hash}`;
           persistRedirectToSession(currentUrl);
-          persistTwoFactorSetupToken(tempToken);
           navigate('/login/2fa/setup', { replace: true });
           return;
         }

@@ -409,6 +409,27 @@ describe('AuthContextProvider — silentRefresh post-login redirect', () => {
     jest.useRealTimers();
   });
 
+  it('keeps the enforcement destination when refresh lands on the setup route', () => {
+    window.history.replaceState({}, '', '/login/2fa/setup?redirect_to=%2Fc%2Frequested');
+    persistTwoFactorSetupToken('setup-token');
+    renderProviderLive();
+    const [, refreshOptions] = mockRefreshMutate.mock.calls[0] as [
+      unknown,
+      { onSuccess: (data: unknown) => void },
+    ];
+
+    act(() => {
+      refreshOptions.onSuccess({ twoFASetupRequired: true, tempToken: 'refreshed token' });
+    });
+
+    /** Replacing the route again would drop the query holding the only copy of the destination. */
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(window.location.search).toBe('?redirect_to=%2Fc%2Frequested');
+    /** The setup route is not a safe redirect, so it must never be banked as one either. */
+    expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+    expect(readTwoFactorSetupToken()).toBe('refreshed token');
+  });
+
   it('keeps a required setup route mounted when refresh fails after reload', () => {
     window.history.replaceState({}, '', '/login/2fa/setup');
     persistTwoFactorSetupToken('setup-token');
