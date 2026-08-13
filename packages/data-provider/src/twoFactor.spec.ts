@@ -62,4 +62,22 @@ describe('two-factor setup token hand-off', () => {
     setItem.mockRestore();
     expect(readTwoFactorSetupToken()).toBe('setup-token');
   });
+
+  it('reports that a stored token outlives the current document', () => {
+    expect(persistTwoFactorSetupToken('setup-token')).toBe(true);
+  });
+
+  /**
+   * The mirror lives on `window`, so a caller that is about to replace the document has to know it
+   * is the only copy left. Reporting the refusal is what keeps that navigation in the same page.
+   */
+  it('reports a refused persist so the caller can keep the document', () => {
+    const setItem = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+
+    expect(persistTwoFactorSetupToken('setup-token')).toBe(false);
+
+    setItem.mockRestore();
+  });
 });

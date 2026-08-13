@@ -8,8 +8,9 @@
  * setup screen out of band instead.
  *
  * Session storage survives the hard navigation the response interceptor performs and is scoped to
- * the one tab. The in-memory mirror keeps the flow working where storage is blocked and the
- * navigation stays inside the SPA.
+ * the one tab. The in-memory mirror keeps the flow working where storage is blocked, which is why
+ * persisting reports whether it reached durable storage: a navigation that replaces the document
+ * would drop the mirror, so the interceptor stays inside the document when only the mirror holds.
  */
 
 const SETUP_TOKEN_STORAGE_KEY = 'two_factor_setup_token';
@@ -18,13 +19,19 @@ interface TwoFactorSetupWindow extends Window {
   __librechatTwoFactorSetupToken?: string;
 }
 
-export function persistTwoFactorSetupToken(tempToken: string): void {
+/**
+ * Returns whether the token reached storage that outlives the current document. Callers that were
+ * about to replace the document need to know, because the in-memory mirror does not survive that.
+ */
+export function persistTwoFactorSetupToken(tempToken: string): boolean {
   const trimmed = tempToken.trim();
   (window as TwoFactorSetupWindow).__librechatTwoFactorSetupToken = trimmed;
   try {
     window.sessionStorage.setItem(SETUP_TOKEN_STORAGE_KEY, trimmed);
+    return true;
   } catch {
     // Session storage can be blocked in embedded or private contexts.
+    return false;
   }
 }
 

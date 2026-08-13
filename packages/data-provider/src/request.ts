@@ -187,6 +187,19 @@ const isAuthRedirectInProgress = () => {
   );
 };
 
+/** Stream transports surface the body as text, while axios and fetch have already parsed it. */
+const parseSetupPayload = (payload: unknown): unknown => {
+  if (typeof payload !== 'string') {
+    return payload;
+  }
+
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+};
+
 const getTwoFactorSetupToken = (payload: unknown): string | null => {
   if (typeof payload !== 'object' || payload == null) {
     return null;
@@ -223,11 +236,23 @@ const redirectToTwoFactorSetupOnce = (tempToken: string) => {
   const query = searchParams.toString();
 
   const href = `${endpoints.apiBaseUrl()}/login/2fa/setup${query ? `?${query}` : ''}`;
-  persistTwoFactorSetupToken(tempToken);
+  const isDurable = persistTwoFactorSetupToken(tempToken);
   setTokenHeader(undefined);
   setAuthRedirectStartedAt();
   window.dispatchEvent(new CustomEvent(AUTH_REDIRECT_EVENT, { detail: { href } }));
-  window.location.href = href;
+  if (isDurable) {
+    window.location.href = href;
+    return;
+  }
+
+  /**
+   * Session storage refused the token, so only the in-memory mirror holds it and replacing the
+   * document would throw it away, stranding the setup screen on its expired state. Move the router
+   * instead: the history entry is the same one the hard navigation would have produced, and the
+   * router picks it up either from this event or, if it has yet to mount, from the location.
+   */
+  window.history.pushState(null, '', href);
+  window.dispatchEvent(new PopStateEvent('popstate'));
 };
 
 const dispatchAuthRecoveryEvent = (state: 'started' | 'finished') => {
@@ -352,23 +377,33 @@ const withAuthorization = (options: RequestInit | undefined, token: string | nul
   return { ...options, headers };
 };
 
-const redirectIfTwoFactorSetupRequired = async (response: Response): Promise<boolean> => {
-  if (response.status !== 403) {
-    return false;
-  }
-
-  const setupToken = getTwoFactorSetupToken(
-    await response
-      .clone()
-      .json()
-      .catch(() => null),
-  );
+/**
+ * Enforcement reaches the SSE hooks as an error event rather than a `Response`, because the stream
+ * transport is a raw `XMLHttpRequest` with neither the axios interceptor nor `_authenticatedFetch`
+ * in front of it. They hand the event body here so an enrollment 403 opens setup instead of being
+ * reported as a generic transport failure and retried against a condition that cannot clear.
+ */
+const redirectIfTwoFactorSetupPayload = (payload: unknown): boolean => {
+  const setupToken = getTwoFactorSetupToken(parseSetupPayload(payload));
   if (!setupToken) {
     return false;
   }
 
   redirectToTwoFactorSetupOnce(setupToken);
   return true;
+};
+
+const redirectIfTwoFactorSetupRequired = async (response: Response): Promise<boolean> => {
+  if (response.status !== 403) {
+    return false;
+  }
+
+  return redirectIfTwoFactorSetupPayload(
+    await response
+      .clone()
+      .json()
+      .catch(() => null),
+  );
 };
 
 async function _authenticatedFetch(url: string, options?: RequestInit): Promise<Response> {
@@ -511,4 +546,5 @@ export default {
   authenticatedFetch: _authenticatedFetch,
   refreshToken,
   dispatchTokenUpdatedEvent,
+  redirectIfTwoFactorSetupPayload,
 };
