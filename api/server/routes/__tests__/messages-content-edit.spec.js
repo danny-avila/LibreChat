@@ -97,4 +97,48 @@ describe('PUT /:conversationId/:messageId content edit', () => {
       ],
     });
   });
+
+  /**
+   * A text part is `string | { value, annotations }`. The Assistants thread sync
+   * persists the structured form with its file citations intact and the editor reads
+   * it through the same union, so writing the edit straight over the object dropped
+   * every citation. Counting the object rather than its value is the same mistake
+   * read back: the tokenizer measures `text.length`, which an object does not have,
+   * so the stored count became NaN.
+   */
+  it('edits inside a structured text part instead of flattening it', async () => {
+    const { countTokens } = require('@librechat/api');
+    const annotations = [
+      { type: 'file_citation', text: 'source', file_citation: { file_id: 'file-1' } },
+    ];
+
+    getMessages.mockResolvedValue([
+      {
+        tokenCount: 10,
+        content: [
+          {
+            type: ContentTypes.TEXT,
+            text: { value: 'Original response', annotations },
+          },
+        ],
+      },
+    ]);
+
+    const response = await request(app)
+      .put('/api/messages/conversation-1/message-1')
+      .send({ index: 0, text: 'Edited response', model: 'gpt-5' });
+
+    expect(response.status).toBe(200);
+    expect(updateMessage).toHaveBeenCalledWith('user-1', {
+      messageId: 'message-1',
+      tokenCount: 10,
+      content: [
+        {
+          type: ContentTypes.TEXT,
+          text: { value: 'Edited response', annotations },
+        },
+      ],
+    });
+    expect(countTokens).toHaveBeenCalledWith('Original response', 'gpt-5');
+  });
 });
