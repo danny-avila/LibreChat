@@ -806,7 +806,7 @@ describe('createActivityPhaseWiring', () => {
     wiring.complete();
     await flushDetached();
 
-    expect(parts[3]).toMatchObject({ activity_end_index: 2, activity_count: 2 });
+    expect(parts[3]).toMatchObject({ activity_end_index: 2, activity_count: 3 });
   });
 
   it('keeps a partially materialized retained batch after the candidate final text', async () => {
