@@ -292,6 +292,35 @@ describe('useMessageScrolling resize reconciliation', () => {
     expect(scrollable.scrollTop).toBe(500);
   });
 
+  it('obeys the first scroll away from a thread that was placed at its end', () => {
+    renderScrolling();
+
+    const scrollable = screen.getByTestId('scrollable');
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+
+    /** The thread opens at its end without the reader touching it, so the position
+     *  it was placed at is what their first gesture has to be judged against. */
+    scrollable.scrollTop = 800;
+    act(() => {
+      mockScrollCallback?.();
+    });
+
+    /** One PageUp, and it is the first event the handler sees. A key press buys a
+     *  single resize of grace and clears no flag of its own, so if the gesture is
+     *  spent taking a baseline the reader is ridden straight back to the end. */
+    fireEvent.keyDown(screen.getByTestId('content'), { key: 'PageUp' });
+    scrollable.scrollTop = 300;
+    fireEvent.scroll(scrollable);
+
+    act(() => {
+      MockResizeObserver.last()?.trigger();
+      MockResizeObserver.last()?.trigger();
+    });
+
+    expect(scrollable.scrollTop).toBe(300);
+  });
+
   it('does not follow the next resize after user interaction inside message content', () => {
     renderScrolling();
 

@@ -42,7 +42,9 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
   const glideInterruptedRef = useRef(false);
   const glideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Seeded below zero rather than at 0 so the first event after mount is read as
-   *  "no previous sample" instead of as a jump down from the top. */
+   *  "no previous sample" instead of as a jump down from the top. Every
+   *  programmatic move writes the position it left the thread at, so this stands
+   *  only until something has actually placed the thread. */
   const lastScrollTopRef = useRef(-1);
   const wasSubmittingRef = useRef(false);
   const suppressNextResizeFollowRef = useRef(false);
@@ -77,6 +79,19 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       return 0;
     }
     return scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+  }, []);
+
+  /** Direction is judged against the last sample, so anything that moves the thread
+   *  on the reader's behalf has to leave one behind. A thread opening at its end, or
+   *  ridden down by the stream, is placed without the reader touching it; with no
+   *  record of where it was put, their first gesture is spent taking the baseline
+   *  instead of being obeyed, and a keyboard scroll away from the end is lost. */
+  const rememberScrollPosition = useCallback(() => {
+    const scrollEl = scrollableRef.current;
+    if (!scrollEl) {
+      return;
+    }
+    lastScrollTopRef.current = scrollEl.scrollTop;
   }, []);
 
   const debouncedHandleScroll = useCallback(() => {
@@ -133,6 +148,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     reconcileMessageContentLayout(scrollableRef.current);
     isNearBottomRef.current = true;
     isStuckRef.current = true;
+    rememberScrollPosition();
   };
 
   const { scrollToRef: scrollToBottom, handleSmoothToRef } = useScrollToRef({
@@ -173,6 +189,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
        *  under-reported intersection ends the ride for the rest of the turn. */
       isNearBottomRef.current = true;
       isStuckRef.current = true;
+      lastScrollTopRef.current = target;
       return;
     }
 
@@ -204,6 +221,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       if (Math.abs(scrollEl.scrollTop - settled) >= 1) {
         scrollEl.scrollTop = settled;
       }
+      lastScrollTopRef.current = scrollEl.scrollTop;
     };
     scrollEl.addEventListener('scrollend', land, { once: true });
     glideTimerRef.current = setTimeout(land, glideTimeout);
