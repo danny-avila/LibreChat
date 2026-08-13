@@ -1547,6 +1547,63 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  /** Folding is a memory bound, not a data loss: whatever an anchor pair
+   *  represented before the merge it must still represent after. Runs are
+   *  sized to force many merges past the 77-activity tracked window. */
+  it.each([
+    { total: 100, failEvery: 0, agents: 1 },
+    { total: 150, failEvery: 3, agents: 4 },
+    { total: 220, failEvery: 7, agents: 220 },
+  ])('conserves counts and agents while folding %o', async ({ total, failEvery, agents }) => {
+    const parts: LooseContentPart[] = [];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({})),
+    });
+    let expectedFailed = 0;
+    for (let index = 0; index < total; index += 1) {
+      const id = `tool-${index}`;
+      const failed = failEvery > 0 && index % failEvery === 0;
+      expectedFailed += failed ? 1 : 0;
+      parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
+      const entry = {
+        toolName: 'web_search',
+        toolInput: { query: id },
+        toolUseId: id,
+        status: failed ? ('error' as const) : ('success' as const),
+        ...(failed ? { error: 'boom' } : { toolOutput: `${id}-result` }),
+      };
+      await wiring.hook(
+        {
+          hook_event_name: 'PostToolBatch',
+          runId: 'run-1',
+          executingAgentId: `agent-${index % agents}`,
+          entries: [entry],
+        } as PostToolBatchHookInput,
+        new AbortController().signal,
+      );
+    }
+
+    const snapshot = wiring.snapshot();
+    expect(snapshot.activityCount).toBe(total);
+    expect(snapshot.failedActivityCount).toBe(expectedFailed);
+    expect(totalTrackedCount(snapshot.activities)).toBe(total);
+    const attributed = new Set(
+      snapshot.activities.flatMap((activity) => [
+        ...(activity.agentId != null ? [activity.agentId] : []),
+        ...(activity.mergedAgentIds ?? []),
+      ]),
+    );
+    expect(attributed.size).toBe(agents);
+    /** Folding must not reorder: a later boundary would otherwise claim work
+     *  that happened before it. */
+    const positions = snapshot.activities.map((activity) => activity.startIndex);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+  });
+
   it('carries an unresolved position through a folded anchor', async () => {
     const parts: LooseContentPart[] = [];
     const wiring = createActivityPhaseWiring({
