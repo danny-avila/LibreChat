@@ -39,6 +39,8 @@ const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+/** Two prose paragraphs, so a spec can select the message's *closing* block. */
+const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
 const MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_MERMAID_ARTIFACT_REPLY';
 const LARGE_MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_LARGE_MERMAID_ARTIFACT_REPLY';
 const HTML_ARTIFACT_REPLY_MARKER = 'E2E_HTML_ARTIFACT_REPLY';
@@ -427,6 +429,26 @@ function replyResponses(text) {
           '```javascript',
           'const e2eSyntaxHighlight = "ok";',
           '```',
+        ].join('\n'),
+      ],
+    };
+  }
+
+  if (text.includes(PARAGRAPHS_REPLY_MARKER)) {
+    const filler = [];
+    for (let index = 0; index < 4; index++) {
+      filler.push(
+        `E2E filler paragraph ${index} keeps this reply tall enough to overflow a phone viewport so scrolling is exercised for real.`,
+        '',
+      );
+    }
+    return {
+      responses: [
+        [
+          'E2E opening paragraph of the reply, ahead of the closing one.',
+          '',
+          ...filler,
+          'E2E closing paragraph, the last block this message renders.',
         ].join('\n'),
       ],
     };

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, devices } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import {
   MOCK_ENDPOINTS,
@@ -15,49 +15,57 @@ import {
  * `.message-render` that contains it, then dispatch `mouseup` so the
  * `QuoteButton` listener fires — the deterministic equivalent of a user
  * drag-selecting that text to summon the "Add to chat" popup.
+ *
+ * Pass `emitMouseUp: false` to model a touch selection instead: phones deliver
+ * a long-press (and every native handle drag) as a bare `selectionchange` with
+ * no mouse event anywhere in the sequence, which is the whole reason the popup
+ * needs a mouse-less path.
  */
-async function selectMessageText(page: Page, needle: string) {
-  await page.evaluate((text) => {
-    const renders = Array.from(document.querySelectorAll('.message-render'));
-    const host = [...renders].reverse().find((el) => (el.textContent ?? '').includes(text));
-    if (!host) {
-      throw new Error(`No message contains: ${text}`);
-    }
-    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
-    let node = walker.nextNode();
-    while (node) {
-      const value = node.nodeValue ?? '';
-      const index = value.indexOf(text);
-      if (index !== -1) {
-        const range = document.createRange();
-        range.setStart(node, index);
-        range.setEnd(node, index + text.length);
-        const selection = window.getSelection();
-        if (!selection) {
-          throw new Error('Selection API unavailable');
-        }
-        selection.removeAllRanges();
-        selection.addRange(range);
-        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-        return;
+async function selectMessageText(page: Page, needle: string, emitMouseUp = true) {
+  await page.evaluate(
+    ({ text, emitMouseUp: withMouse }) => {
+      const renders = Array.from(document.querySelectorAll('.message-render'));
+      const host = [...renders].reverse().find((el) => (el.textContent ?? '').includes(text));
+      if (!host) {
+        throw new Error(`No message contains: ${text}`);
       }
-      node = walker.nextNode();
-    }
-    throw new Error(`No text node contains: ${text}`);
-  }, needle);
+      const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+      let node = walker.nextNode();
+      while (node) {
+        const value = node.nodeValue ?? '';
+        const index = value.indexOf(text);
+        if (index !== -1) {
+          const range = document.createRange();
+          range.setStart(node, index);
+          range.setEnd(node, index + text.length);
+          const selection = window.getSelection();
+          if (!selection) {
+            throw new Error('Selection API unavailable');
+          }
+          selection.removeAllRanges();
+          selection.addRange(range);
+          if (withMouse) {
+            document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          }
+          return;
+        }
+        node = walker.nextNode();
+      }
+      throw new Error(`No text node contains: ${text}`);
+    },
+    { text: needle, emitMouseUp },
+  );
 }
 
 /**
- * Double-click the first word of `needle` inside the most recent message
- * containing it, using native mouse events at that word's measured coordinates.
- * Unlike `selectMessageText` (a programmatic Range), this exercises the
- * browser's own double-click word selection — the path the `dblclick` listener
- * guards. Measuring the `needle` text node itself (not the first text node in
- * `.message-render`, which may be a `select-none` screen-reader/model-label
- * header) keeps the click on the actual reply word, not metadata or whitespace.
+ * Viewport coordinates of the first character of `needle` inside the most
+ * recent message containing it. Measuring the `needle` text node itself (not
+ * the first text node in `.message-render`, which may be a `select-none`
+ * screen-reader/model-label header) keeps the gesture on the actual reply word,
+ * not metadata or whitespace.
  */
-async function doubleClickWord(page: Page, needle: string) {
-  const point = await page.evaluate((text) => {
+function measureNeedle(page: Page, needle: string) {
+  return page.evaluate((text) => {
     const renders = Array.from(document.querySelectorAll('.message-render'));
     const host = [...renders].reverse().find((el) => (el.textContent ?? '').includes(text));
     if (!host) {
@@ -78,12 +86,126 @@ async function doubleClickWord(page: Page, needle: string) {
     const r = range.getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   }, needle);
+}
+
+/**
+ * Double-click the first word of `needle` using native mouse events. Unlike
+ * `selectMessageText` (a programmatic Range), this exercises the browser's own
+ * double-click word selection — the path the `dblclick` listener guards.
+ */
+async function doubleClickWord(page: Page, needle: string) {
+  const point = await measureNeedle(page, needle);
   await page.mouse.dblclick(point.x, point.y);
+}
+
+/**
+ * Triple-click the block containing `needle` with native mouse events, which
+ * makes Chromium select that whole block and park the selection's far boundary
+ * at the start of the *next* one. For a message's closing block that boundary
+ * lands outside `.message-render`, on the composer wrapper — the case that used
+ * to suppress the popup even though no text outside the message was selected.
+ */
+async function tripleClickText(page: Page, needle: string) {
+  const point = await measureNeedle(page, needle);
+  await page.mouse.click(point.x, point.y, { clickCount: 3 });
+}
+
+/**
+ * Select from inside one message through into the next, then `mouseup`. This is
+ * a genuine cross-message drag — text outside the message really is selected —
+ * and must never produce a quote, however the boundary clamping treats the
+ * block-overhang cases around it.
+ */
+async function selectAcrossMessages(page: Page, fromNeedle: string, toNeedle: string) {
+  await page.evaluate(
+    ({ from, to }) => {
+      const findText = (text: string) => {
+        const renders = Array.from(document.querySelectorAll('.message-render'));
+        const host = [...renders].reverse().find((el) => (el.textContent ?? '').includes(text));
+        if (!host) {
+          throw new Error(`No message contains: ${text}`);
+        }
+        const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+        let node = walker.nextNode();
+        while (node && !(node.nodeValue ?? '').includes(text)) {
+          node = walker.nextNode();
+        }
+        if (!node) {
+          throw new Error(`No text node contains: ${text}`);
+        }
+        return { node, index: (node.nodeValue ?? '').indexOf(text) };
+      };
+
+      const start = findText(from);
+      const end = findText(to);
+      const range = document.createRange();
+      range.setStart(start.node, start.index);
+      range.setEnd(end.node, end.index + to.length);
+      const selection = window.getSelection();
+      if (!selection) {
+        throw new Error('Selection API unavailable');
+      }
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    },
+    { from: fromNeedle, to: toNeedle },
+  );
+}
+
+/** Viewport-relative bottom edge of the live selection. */
+function selectionBottom(page: Page) {
+  return page.evaluate(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return null;
+    }
+    return selection.getRangeAt(0).getBoundingClientRect().bottom;
+  });
+}
+
+/** Scroll the message list by `delta` px, returning the distance actually moved. */
+function scrollMessages(page: Page, delta: number) {
+  return page.evaluate((by) => {
+    const scroller = document.querySelector('.scrollbar-gutter-stable');
+    if (!scroller) {
+      throw new Error('No message scroll container');
+    }
+    const start = scroller.scrollTop;
+    scroller.scrollTop = start + by;
+    return scroller.scrollTop - start;
+  }, delta);
 }
 
 const addToChat = (page: Page) => page.getByTestId('add-to-chat-button');
 const pendingChips = (page: Page) => page.getByTestId('pending-quote-chips');
 const messageQuotes = (page: Page) => messagesView(page).getByTestId('message-quotes');
+
+/** A phone's context options, minus `defaultBrowserType` — Playwright refuses
+ *  that one inside a describe group because it would force a separate worker,
+ *  and this suite already runs on the Chromium it asks for. */
+const PIXEL_5 = {
+  userAgent: devices['Pixel 5'].userAgent,
+  viewport: devices['Pixel 5'].viewport,
+  deviceScaleFactor: devices['Pixel 5'].deviceScaleFactor,
+  isMobile: devices['Pixel 5'].isMobile,
+  hasTouch: devices['Pixel 5'].hasTouch,
+};
+
+/** Prompt whose mock reply renders as several paragraphs, so a spec can act on
+ *  the message's *closing* block and can scroll a reply taller than a phone. */
+const PARAGRAPHS_PROMPT = 'E2E_PARAGRAPHS_REPLY';
+const OPENING_PARAGRAPH = 'E2E opening paragraph';
+const CLOSING_PARAGRAPH = 'E2E closing paragraph';
+
+/** Seed a conversation whose latest reply has several paragraphs. */
+async function seedParagraphReply(page: Page) {
+  await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+  await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+  const response = await sendMessage(page, PARAGRAPHS_PROMPT);
+  expect(response.ok()).toBeTruthy();
+  await expect(messagesView(page).getByText(CLOSING_PARAGRAPH)).toBeVisible({ timeout: 20000 });
+}
 
 /** The mock model echoes this when a blockquote containing the token reached the prompt. */
 const QUOTE_ASSERTION_PASSED = 'E2E quote assertion passed: reply';
@@ -166,6 +288,71 @@ test.describe('quote references', () => {
 
     // The quoted excerpt is a word from the reply, not empty.
     await expect(pendingChips(page)).toContainText(/E2E|mock|reply/i);
+  });
+
+  test("summons the popup from a triple-click on the reply's closing paragraph", async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await seedParagraphReply(page);
+
+    // Triple-clicking any *earlier* paragraph always worked, because the
+    // selection's far boundary landed on the next paragraph — still inside the
+    // message. On the closing paragraph that boundary escapes `.message-render`
+    // and used to suppress the popup entirely, even though the user selected
+    // nothing outside the message.
+    await messagesView(page).getByText(CLOSING_PARAGRAPH).scrollIntoViewIfNeeded();
+    await expect(async () => {
+      await tripleClickText(page, CLOSING_PARAGRAPH);
+      const button = addToChat(page);
+      await expect(button).toBeVisible({ timeout: 3000 });
+      await button.click();
+      await expect(pendingChips(page)).toHaveAttribute('data-quote-count', '1');
+    }).toPass({ timeout: 30000 });
+
+    // The excerpt is the closing paragraph itself, not the overhang.
+    await expect(pendingChips(page)).toContainText(CLOSING_PARAGRAPH);
+  });
+
+  test('still refuses a selection that really spans two messages', async ({ page }) => {
+    test.setTimeout(120000);
+    await seedParagraphReply(page);
+
+    // Clamping the block-boundary overhang must not soften this: here visible
+    // text from both the user's message and the reply is selected.
+    await selectAcrossMessages(page, PARAGRAPHS_PROMPT, OPENING_PARAGRAPH);
+    await expect(addToChat(page)).toBeHidden({ timeout: 5000 });
+  });
+
+  test('keeps the popup pinned to the selection while the chat scrolls', async ({ page }) => {
+    test.setTimeout(120000);
+    // A short viewport guarantees the reply overflows and can actually scroll.
+    await page.setViewportSize({ width: 900, height: 500 });
+    await seedParagraphReply(page);
+
+    await expect(async () => {
+      await selectMessageText(page, CLOSING_PARAGRAPH);
+      await expect(addToChat(page)).toBeVisible({ timeout: 3000 });
+    }).toPass({ timeout: 30000 });
+
+    const before = await addToChat(page).boundingBox();
+    expect(before).not.toBeNull();
+
+    // Scrolling used to dismiss the popup on the first event, which the chat's
+    // own auto-scroll fires constantly while streaming. It now follows instead.
+    const moved = await scrollMessages(page, -120);
+    expect(Math.abs(moved)).toBeGreaterThan(0);
+
+    await expect(addToChat(page)).toBeVisible();
+    await expect(async () => {
+      const after = await addToChat(page).boundingBox();
+      expect(after).not.toBeNull();
+      expect(Math.abs(after!.y - before!.y)).toBeGreaterThan(Math.abs(moved) / 2);
+    }).toPass({ timeout: 5000 });
+
+    // Still the right excerpt after travelling with the text.
+    await addToChat(page).click();
+    await expect(pendingChips(page)).toContainText(CLOSING_PARAGRAPH);
   });
 
   test('hides the popup when the selection collapses without a mouse event', async ({ page }) => {
@@ -295,5 +482,111 @@ test.describe('quote references', () => {
     await expect(messagesView(page).getByText(QUOTE_ASSERTION_PASSED)).toBeVisible({
       timeout: 20000,
     });
+  });
+});
+
+/**
+ * A phone reaches this feature through a completely different event path than a
+ * desktop: there is no `mouseup` to hang the popup off, and the tap that would
+ * accept it is also the gesture that dismisses the selection. Both halves are
+ * covered here on an emulated Pixel 5 with a real touchscreen.
+ *
+ * Headless Chromium has no Android/iOS long-press-to-select gesture, so each
+ * test presses with the touchscreen (which is what marks the selection as
+ * touch-driven, and is the only pointer event a long-press delivers) and then
+ * places the selection directly. What reaches the component is exactly what a
+ * real phone leaves behind: a selection announced by `selectionchange` alone,
+ * with no mouse event anywhere in the sequence.
+ */
+test.describe('quote references on touch devices', () => {
+  test.use(PIXEL_5);
+
+  /** Long-press equivalent: touch the text, then select it without any mouse event. */
+  async function touchSelect(page: Page, needle: string) {
+    await messagesView(page).getByText(needle).scrollIntoViewIfNeeded();
+    const point = await measureNeedle(page, needle);
+    /** Drop any earlier selection *before* the press. Chromium answers a
+     *  synthetic tap with compatibility mouse events, and a leftover selection
+     *  would let that `mouseup` summon the popup down the desktop path —
+     *  passing this spec for a reason no phone ever reproduces. Cleared first,
+     *  the press carries only its touch pointer, and the selection that follows
+     *  is announced by `selectionchange` alone. */
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await page.touchscreen.tap(point.x, point.y);
+    await selectMessageText(page, needle, false);
+  }
+
+  test('summons the popup from a mouse-less touch selection and adds it by tap', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await seedParagraphReply(page);
+
+    await expect(async () => {
+      await touchSelect(page, CLOSING_PARAGRAPH);
+      await expect(addToChat(page)).toBeVisible({ timeout: 5000 });
+    }).toPass({ timeout: 30000 });
+
+    // The OS callout (Copy/Share/Look Up) claims the space directly above a
+    // touch selection, so the popup takes the space below it.
+    const popup = await addToChat(page).boundingBox();
+    const bottom = await selectionBottom(page);
+    expect(popup).not.toBeNull();
+    expect(bottom).not.toBeNull();
+    expect(popup!.y).toBeGreaterThanOrEqual(bottom!);
+
+    // Comfortable tap target, not the compact desktop pill.
+    expect(popup!.height).toBeGreaterThanOrEqual(44);
+
+    // Tapping has to commit before the tap dismisses the selection out from
+    // under the click — the second reason this was unusable on a phone.
+    await addToChat(page).tap();
+    await expect(pendingChips(page)).toHaveAttribute('data-quote-count', '1');
+    await expect(pendingChips(page)).toContainText(CLOSING_PARAGRAPH);
+  });
+
+  test('carries a touch-selected excerpt through to the model', async ({ page }) => {
+    test.setTimeout(120000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+
+    const seeded = await sendMessage(page, 'seed for touch quote');
+    expect(seeded.ok()).toBeTruthy();
+    await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+
+    await expect(async () => {
+      await touchSelect(page, MOCK_REPLY_TEXT);
+      const button = addToChat(page);
+      await expect(button).toBeVisible({ timeout: 5000 });
+      await button.tap();
+      await expect(pendingChips(page)).toHaveAttribute('data-quote-count', '1');
+    }).toPass({ timeout: 30000 });
+
+    // End to end from a finger: the mock model confirms the blockquote arrived.
+    const response = await sendMessage(page, 'E2E_ASSERT_QUOTE:reply');
+    expect(response.ok()).toBeTruthy();
+    await expect(messagesView(page).getByText(QUOTE_ASSERTION_PASSED)).toBeVisible({
+      timeout: 20000,
+    });
+    await expect(messageQuotes(page)).toContainText(MOCK_REPLY_TEXT);
+  });
+
+  test('survives the scroll a phone fires while selecting', async ({ page }) => {
+    test.setTimeout(120000);
+    await seedParagraphReply(page);
+
+    await expect(async () => {
+      await touchSelect(page, CLOSING_PARAGRAPH);
+      await expect(addToChat(page)).toBeVisible({ timeout: 5000 });
+    }).toPass({ timeout: 30000 });
+
+    // Nudging the list (the URL bar collapsing does the same via `resize`) used
+    // to throw the selection away before the user could reach the button.
+    const moved = await scrollMessages(page, -100);
+    expect(Math.abs(moved)).toBeGreaterThan(0);
+
+    await expect(addToChat(page)).toBeVisible();
+    await addToChat(page).tap();
+    await expect(pendingChips(page)).toContainText(CLOSING_PARAGRAPH);
   });
 });
