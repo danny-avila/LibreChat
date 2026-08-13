@@ -2,14 +2,14 @@ import type { TMessageProps } from '~/common';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
-import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
+import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import SearchContent from '~/components/Chat/Messages/Content/SearchContent';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
+import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import SubRow from '~/components/Chat/Messages/SubRow';
-import { MessageContext } from '~/Providers';
-import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
-import MultiMessage from './MultiMessage';
 import { useAttachments, useLocalize } from '~/hooks';
+import { MessageContext } from '~/Providers';
+import MultiMessage from './MultiMessage';
 import Icon from './MessageIcon';
 
 export default function Message(props: TMessageProps) {

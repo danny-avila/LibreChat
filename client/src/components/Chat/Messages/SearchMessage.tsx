@@ -4,13 +4,13 @@ import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
+import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import { useAuthContext, useLocalize } from '~/hooks';
 import SearchContent from './Content/SearchContent';
 import SearchButtons from './SearchButtons';
 import SubRow from './SubRow';
-import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import store from '~/store';
 
 function searchFilesEqual(prev?: TMessage['files'], next?: TMessage['files']) {

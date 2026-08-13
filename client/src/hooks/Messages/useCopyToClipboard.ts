@@ -3,8 +3,6 @@ import copy from 'copy-to-clipboard';
 import { SearchResultData } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
-import { formatMessageContent } from '~/hooks/Conversations/format';
-import useLocalize from '~/hooks/useLocalize';
 import {
   SPAN_REGEX,
   CLEANUP_REGEX,
@@ -12,6 +10,8 @@ import {
   STANDALONE_PATTERN,
   INVALID_CITATION_REGEX,
 } from '~/utils/citations';
+import { formatMessageContent } from '~/hooks/Conversations/format';
+import useLocalize from '~/hooks/useLocalize';
 
 type Source = {
   link: string;
