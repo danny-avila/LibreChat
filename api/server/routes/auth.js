@@ -1,5 +1,19 @@
 const express = require('express');
-const { createSetBalanceConfig, forceRefreshCloudFrontAuthCookies } = require('@librechat/api');
+const mongoose = require('mongoose');
+const {
+  math,
+  isEnabled,
+  createSetBalanceConfig,
+  serializeUserForResponse,
+  resolveClerkAuthConfig,
+  createClerkAuthHandlers,
+  recordClerkSessionOutcome,
+  createExchangeClerkSession,
+  forceRefreshCloudFrontAuthCookies,
+  createFinalizeClerkTwoFactorSession,
+  createMongooseClerkSessionPersistence,
+} = require('@librechat/api');
+const { logger, toClerkTenantScope, DEFAULT_SESSION_EXPIRY } = require('@librechat/data-schemas');
 const {
   resetPasswordRequestController,
   resetPasswordController,
@@ -14,17 +28,88 @@ const {
   enable2FA,
   verify2FA,
 } = require('~/server/controllers/TwoFactorController');
-const { verify2FAWithTempToken } = require('~/server/controllers/auth/TwoFactorAuthController');
+const {
+  createVerify2FAWithTempToken,
+} = require('~/server/controllers/auth/TwoFactorAuthController');
+const {
+  createLoginLimiter,
+  clerkLoginLimiterHandler,
+} = require('~/server/middleware/limiters/loginLimiter');
 const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const { loginController } = require('~/server/controllers/auth/LoginController');
-const { findBalanceByUser, upsertBalanceFields } = require('~/models');
+const { signTwoFactorTempToken } = require('~/server/services/twoFactorService');
+const { createCheckBan } = require('~/server/middleware/checkBan');
+const { setAuthTokens } = require('~/server/services/AuthService');
+const { createSocialUser } = require('~/strategies/process');
 const { getAppConfig } = require('~/server/services/Config');
 const middleware = require('~/server/middleware');
+const {
+  findUser,
+  createSession,
+  findSession,
+  deleteSession,
+  upsertUserState,
+  linkClerkIdentity,
+  findBalanceByUser,
+  upsertBalanceFields,
+  upsertSessionState,
+  insertConsumedTokenClaim,
+} = require('~/models');
 
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
   findBalanceByUser,
   upsertBalanceFields,
+});
+
+/**
+ * Fixed Contract 7 completion dependencies: the single Mongo transaction
+ * boundary (persistence), the real local-login `setAuthTokens`/2FA temp-token
+ * signer (unchanged shape, adapted only), and the shared public serializer.
+ * No Clerk decision logic lives in this file — every dependency here is an
+ * already-tested typed/legacy function; this object only wires them together.
+ */
+const clerkSessionPersistence = createMongooseClerkSessionPersistence({
+  startSession: () => mongoose.startSession(),
+  methods: {
+    findUser,
+    createSession,
+    findSession,
+    deleteSession,
+    upsertUserState,
+    upsertSessionState,
+    insertConsumedTokenClaim,
+  },
+  now: () => new Date(),
+});
+
+const clerkSessionCompletionDeps = {
+  now: () => new Date(),
+  getSessionExpiryMs: () => math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY),
+  toTenantScope: toClerkTenantScope,
+  signTwoFactorTempToken,
+  persistClerkSession: clerkSessionPersistence.persistClerkSession,
+  confirmClerkSession: clerkSessionPersistence.confirmClerkSession,
+  setAuthTokens: ({ userId, req, res, session }) => setAuthTokens(userId, res, session, req),
+  deleteSession: clerkSessionPersistence.deleteSession,
+  serializeUser: serializeUserForResponse,
+  beforeResponse: async () => {},
+  recordOutcome: recordClerkSessionOutcome,
+  logPostCommitFailure: (message) => logger.error(message),
+};
+
+const clerkAuthHandlers = createClerkAuthHandlers({
+  getClerkAuthConfig: () => resolveClerkAuthConfig(process.env),
+  findUser,
+  getAppConfig,
+  isSocialRegistrationAllowed: () => isEnabled(process.env.ALLOW_SOCIAL_REGISTRATION),
+  linkClerkIdentity,
+  createSocialUser,
+  exchangeClerkSession: createExchangeClerkSession(clerkSessionCompletionDeps),
+});
+
+const verify2FAWithTempToken = createVerify2FAWithTempToken({
+  finalizeClerkTwoFactorSession: createFinalizeClerkTwoFactorSession(clerkSessionCompletionDeps),
 });
 
 const router = express.Router();
@@ -49,6 +134,20 @@ router.post(
   ldapAuth ? middleware.requireLdapAuth : middleware.requireLocalAuth,
   setBalanceConfig,
   loginController,
+);
+router.post(
+  '/clerk',
+  middleware.logHeaders,
+  createLoginLimiter(clerkLoginLimiterHandler),
+  createCheckBan({ mode: 'ipOnly' }),
+  clerkAuthHandlers.validateClerkLoginBody,
+  clerkAuthHandlers.prepareClerkLogin,
+  createCheckBan({ mode: 'resolvedIdentity' }),
+  clerkAuthHandlers.enforceClerkLoginPolicy,
+  clerkAuthHandlers.commitClerkLogin,
+  setBalanceConfig,
+  clerkAuthHandlers.completeClerkLogin,
+  clerkAuthHandlers.clerkLoginErrorAdapter,
 );
 router.post('/refresh', refreshController);
 router.post('/cloudfront/refresh', middleware.requireJwtAuth, (req, res) => {
