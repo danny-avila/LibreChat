@@ -249,6 +249,12 @@ export default function useSSE(
     });
 
     sse.addEventListener('error', async (e: MessageEvent) => {
+      /* Enforcement answers the stream with a 403 that no retry can clear, so it has to leave for
+         setup here: this transport has no interceptor to catch it on the way out. */
+      /* @ts-ignore */
+      if (e.responseCode === 403 && request.redirectIfTwoFactorSetupPayload(e.data)) {
+        return;
+      }
       /* @ts-ignore */
       if (e.responseCode === 401) {
         /* token expired, refresh and retry */

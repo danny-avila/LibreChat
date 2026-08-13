@@ -2428,6 +2428,15 @@ export default function useResumableSSE(
 
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
 
+        /**
+         * Enrollment enforcement cannot clear itself, so the reconnect ladder below would spend
+         * every attempt re-issuing a request the server is bound to refuse. Leave for setup on the
+         * first 403 instead; this transport bypasses the interceptor that handles it elsewhere.
+         */
+        if (responseCode === 403 && request.redirectIfTwoFactorSetupPayload(e.data)) {
+          return;
+        }
+
         if (responseCode === 409) {
           const replacementConvoId =
             currentSubmission.conversation?.conversationId ?? currentStreamId;
