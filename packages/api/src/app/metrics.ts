@@ -152,6 +152,15 @@ export type RumProxyResult =
   | 'collector_timeout';
 export type RedisClient = 'ioredis' | 'keyv';
 export type RedisOperationStatus = 'success' | 'error';
+export type ClerkTokenVerificationOutcome = 'success' | 'invalid';
+export type ClerkProfileOutcome =
+  | 'success'
+  | 'forbidden'
+  | 'not_found'
+  | 'rate_limited'
+  | 'unavailable';
+export type ClerkWebhookEvent = 'session_revoked' | 'unknown' | 'unsupported' | 'user_deleted';
+export type ClerkWebhookResult = 'success' | 'invalid' | 'mutation_failed' | 'unavailable';
 
 type OpenIDUserLookupMetrics = {
   recordLookup: (result: OpenIDUserLookupResult, durationSeconds: number) => void;
@@ -231,6 +240,21 @@ let redisOperationMetrics: RedisOperationMetrics = {
   recordOperation: () => undefined,
 };
 
+type ClerkAuthMetrics = {
+  recordTokenVerification: (
+    outcome: ClerkTokenVerificationOutcome,
+    durationSeconds: number,
+  ) => void;
+  recordProfileRequest: (outcome: ClerkProfileOutcome, durationSeconds: number) => void;
+  recordWebhook: (event: ClerkWebhookEvent, result: ClerkWebhookResult) => void;
+};
+
+let clerkAuthMetrics: ClerkAuthMetrics = {
+  recordTokenVerification: () => undefined,
+  recordProfileRequest: () => undefined,
+  recordWebhook: () => undefined,
+};
+
 const resetMetricRecorders = (): void => {
   openIDUserLookupMetrics = {
     recordLookup: () => undefined,
@@ -254,6 +278,11 @@ const resetMetricRecorders = (): void => {
   };
   redisOperationMetrics = {
     recordOperation: () => undefined,
+  };
+  clerkAuthMetrics = {
+    recordTokenVerification: () => undefined,
+    recordProfileRequest: () => undefined,
+    recordWebhook: () => undefined,
   };
 };
 
@@ -317,6 +346,30 @@ export function recordRedisOperation(
   durationSeconds: number,
 ): void {
   redisOperationMetrics.recordOperation(client, useCase, operation, status, durationSeconds);
+}
+
+export function recordClerkTokenVerification(
+  outcome: ClerkTokenVerificationOutcome,
+  durationSeconds: number,
+): void {
+  if (!Number.isFinite(durationSeconds) || durationSeconds < 0) {
+    return;
+  }
+  clerkAuthMetrics.recordTokenVerification(outcome, durationSeconds);
+}
+
+export function recordClerkProfileRequest(
+  outcome: ClerkProfileOutcome,
+  durationSeconds: number,
+): void {
+  if (!Number.isFinite(durationSeconds) || durationSeconds < 0) {
+    return;
+  }
+  clerkAuthMetrics.recordProfileRequest(outcome, durationSeconds);
+}
+
+export function recordClerkWebhook(event: ClerkWebhookEvent, result: ClerkWebhookResult): void {
+  clerkAuthMetrics.recordWebhook(event, result);
 }
 
 const getElapsedSeconds = (startedAt: bigint): number =>
@@ -542,6 +595,55 @@ export function createMetrics(): PrometheusMetrics {
       openIDUserLookupTotal.inc({ result });
       openIDUserLookupDuration.observe({ result }, durationSeconds);
     },
+  };
+
+  const clerkTokenVerifications = new Counter({
+    name: 'clerk_token_verifications_total',
+    help: 'Clerk token verification attempts by outcome',
+    labelNames: ['outcome'] as const,
+    registers: [registry],
+  });
+
+  const clerkTokenVerificationDuration = new Histogram({
+    name: 'clerk_token_verification_duration_seconds',
+    help: 'Clerk token verification latency in seconds',
+    labelNames: ['outcome'] as const,
+    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+    registers: [registry],
+  });
+
+  const clerkProfileRequests = new Counter({
+    name: 'clerk_profile_requests_total',
+    help: 'Clerk Backend User profile requests by outcome',
+    labelNames: ['outcome'] as const,
+    registers: [registry],
+  });
+
+  const clerkProfileRequestDuration = new Histogram({
+    name: 'clerk_profile_request_duration_seconds',
+    help: 'Clerk Backend User profile request latency in seconds',
+    labelNames: ['outcome'] as const,
+    buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
+    registers: [registry],
+  });
+
+  const clerkWebhooks = new Counter({
+    name: 'clerk_webhooks_total',
+    help: 'Clerk webhooks by verified event class and processing result',
+    labelNames: ['event', 'result'] as const,
+    registers: [registry],
+  });
+
+  clerkAuthMetrics = {
+    recordTokenVerification: (outcome, durationSeconds) => {
+      clerkTokenVerifications.inc({ outcome });
+      clerkTokenVerificationDuration.observe({ outcome }, durationSeconds);
+    },
+    recordProfileRequest: (outcome, durationSeconds) => {
+      clerkProfileRequests.inc({ outcome });
+      clerkProfileRequestDuration.observe({ outcome }, durationSeconds);
+    },
+    recordWebhook: (event, result) => clerkWebhooks.inc({ event, result }),
   };
 
   const mongooseQueries = new Counter({
