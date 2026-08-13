@@ -264,6 +264,34 @@ describe('useMessageScrolling resize reconciliation', () => {
     expect(mockScrollToBottom).not.toHaveBeenCalled();
   });
 
+  it('judges the first scroll against a real previous position, not against the top', () => {
+    const setAbortScroll = jest.fn();
+    renderScrolling({ contextOverrides: { setAbortScroll } });
+
+    const scrollable = screen.getByTestId('scrollable');
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+
+    /** A thread opens at its end, so the reader's first gesture carries a large
+     *  positive scrollTop. Measured from 0 it read as a jump down onto the end, and
+     *  the reader was re-pinned to the stream they were trying to leave. */
+    setAbortScroll.mockClear();
+    scrollable.scrollTop = 700;
+    fireEvent.scroll(scrollable);
+
+    expect(setAbortScroll).not.toHaveBeenCalled();
+
+    /** With a baseline taken, the same gesture is judged on its real delta. */
+    scrollable.scrollTop = 500;
+    fireEvent.scroll(scrollable);
+
+    act(() => {
+      MockResizeObserver.last()?.trigger();
+    });
+
+    expect(scrollable.scrollTop).toBe(500);
+  });
+
   it('does not follow the next resize after user interaction inside message content', () => {
     renderScrolling();
 

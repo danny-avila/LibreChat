@@ -41,7 +41,9 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
    *  flight knows not to re-pin them when it lands. */
   const glideInterruptedRef = useRef(false);
   const glideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastScrollTopRef = useRef(0);
+  /** Seeded below zero rather than at 0 so the first event after mount is read as
+   *  "no previous sample" instead of as a jump down from the top. */
+  const lastScrollTopRef = useRef(-1);
   const wasSubmittingRef = useRef(false);
   const suppressNextResizeFollowRef = useRef(false);
   const { conversation, conversationId } = useMessagesConversation();
@@ -87,8 +89,20 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     /** Direction comes from where the thread actually moved, which covers the
      *  wheel, a trackpad and a dragged scrollbar alike. */
     const top = scrollEl.scrollTop;
-    const movingDown = top >= lastScrollTopRef.current;
+    const previousTop = lastScrollTopRef.current;
     lastScrollTopRef.current = top;
+
+    /** A thread opens already scrolled to its end, so the first event carries a
+     *  large positive `scrollTop` with nothing to compare it against. Measuring it
+     *  from 0 calls it downward, and the gesture that produced it, a reader pushing
+     *  up and away from the stream, is swallowed: a single PageUp reads as an
+     *  arrival and leaves the thread riding the answer. Take this one as the
+     *  baseline and judge direction from the next. */
+    if (previousTop < 0) {
+      return;
+    }
+
+    const movingDown = top >= previousTop;
     const distance = distanceFromEnd();
 
     /** Arriving is judged here rather than on the wheel tick that started it: the
