@@ -368,9 +368,20 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     }
 
     const startedSubmitting = isSubmitting && !wasSubmittingRef.current;
-    wasSubmittingRef.current = isSubmitting;
 
+    if (!isSubmitting) {
+      wasSubmittingRef.current = false;
+    }
+
+    /** The start of a turn is spent only once it can be acted on. A reader who
+     *  scrolled away during the last answer leaves the abort flag raised, and
+     *  nothing lowers it until the next connection opens, which is after this effect
+     *  has already seen the send. Marking the turn as started on that first pass
+     *  spent it against a closed gate: by the time the flag cleared there was no
+     *  start left to honour and the reader was still detached, so the answer they
+     *  had just asked for streamed on offscreen. */
     if (isSubmitting && abortScroll !== true) {
+      wasSubmittingRef.current = true;
       /** Sending re-attaches: the reader asked for this answer, so take them to it.
        *  The one long trip of a turn, and the only one worth animating. */
       if (startedSubmitting) {

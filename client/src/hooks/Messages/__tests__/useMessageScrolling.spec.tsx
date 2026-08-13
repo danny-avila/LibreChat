@@ -402,6 +402,57 @@ describe('useMessageScrolling resize reconciliation', () => {
     }
   });
 
+  /**
+   * A reader who scrolls away during one answer leaves the abort flag raised, and
+   * nothing lowers it until the next connection opens, which is after the send has
+   * already been seen. Spending the start of the turn on that first pass left the
+   * answer the reader had just asked for streaming offscreen.
+   */
+  it('starts the turn once a stale abort flag clears', () => {
+    const view = render(
+      <RecoilRoot>
+        <MessagesViewContext.Provider value={createContextValue({ isSubmitting: false })}>
+          <ScrollingHarness messagesTree={[message]} />
+        </MessagesViewContext.Provider>
+      </RecoilRoot>,
+    );
+
+    const scrollable = screen.getByTestId('scrollable');
+    const scrollTo = jest.fn();
+    (scrollable as unknown as { scrollTo: jest.Mock }).scrollTo = scrollTo;
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+    scrollable.scrollTop = 0;
+
+    /** They left the bottom during the previous answer, which is what raised it. */
+    fireEvent.wheel(scrollable, { deltaY: -120 });
+
+    view.rerender(
+      <RecoilRoot>
+        <MessagesViewContext.Provider
+          value={createContextValue({ isSubmitting: true, abortScroll: true })}
+        >
+          <ScrollingHarness messagesTree={[message]} />
+        </MessagesViewContext.Provider>
+      </RecoilRoot>,
+    );
+
+    expect(scrollTo).not.toHaveBeenCalled();
+
+    /** The connection opens and lowers the flag. */
+    view.rerender(
+      <RecoilRoot>
+        <MessagesViewContext.Provider
+          value={createContextValue({ isSubmitting: true, abortScroll: false })}
+        >
+          <ScrollingHarness messagesTree={[message]} />
+        </MessagesViewContext.Provider>
+      </RecoilRoot>,
+    );
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 800, behavior: 'smooth' });
+  });
+
   it('leaves the send glide alone while the answer streams in', () => {
     const view = render(
       <RecoilRoot>
