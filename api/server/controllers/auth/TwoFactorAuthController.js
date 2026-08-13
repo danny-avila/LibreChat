@@ -3,6 +3,7 @@ const {
   confirmTwoFactorSetup,
   finalizeTwoFactorSetup,
   acknowledgeTwoFactorSetup,
+  sanitizeUserForResponse,
   verifyTwoFactorLoginChallengeToken,
   generateTwoFactorSetupAcknowledgementToken,
   generateTwoFactorSetupFinalizationToken,
@@ -16,19 +17,10 @@ const {
 const { setAuthTokens } = require('~/server/services/AuthService');
 const { getUserById, updateTwoFactorEnrollment, deleteAllUserSessions } = require('~/models');
 
-const sanitizeUser = (user) => {
-  const userData = user.toObject ? user.toObject() : { ...user };
-  delete userData.__v;
-  delete userData.password;
-  delete userData.totpSecret;
-  delete userData.backupCodes;
-  delete userData.pendingTotpSecret;
-  delete userData.pendingBackupCodes;
-  delete userData.twoFactorAcknowledgementNonceHash;
-  delete userData.twoFactorFinalizationNonceHash;
-  userData.id = user._id.toString();
-  return userData;
-};
+const sanitizeUser = (user) => ({
+  ...sanitizeUserForResponse(user),
+  id: user._id.toString(),
+});
 
 const enrollmentDependencies = {
   getUserById,

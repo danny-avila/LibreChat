@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import type { TStartupConfig } from 'librechat-data-provider';
+import { getPostLoginRedirect, isRequiredTwoFactorSetupRoute } from '~/utils';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import AuthLayout from '~/components/Auth/AuthLayout';
-import { getPostLoginRedirect } from '~/utils';
 
 const headerMap: Record<string, TranslationKeys> = {
   '/login': 'com_auth_welcome_back',
@@ -37,10 +37,12 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
    * Only an already-authenticated arrival is this layout's to redirect. When authentication
    * completes while an auth route is mounted, the auth context has already consumed the pending
    * destination and navigated there; re-resolving it here would find nothing left and replace that
-   * destination with `/c/new`.
+   * destination with `/c/new`. Mandatory enrollment is the one arrival that stays put: the user
+   * holding a setup token is authenticated precisely until they enroll, so sending them on would
+   * bounce them straight back out of the screen the server is demanding they complete.
    */
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || isRequiredTwoFactorSetupRoute()) {
       return;
     }
     const destination =

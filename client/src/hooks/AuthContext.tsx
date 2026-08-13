@@ -16,12 +16,18 @@ import {
   setTokenHeader,
   isSystemRoleName,
   buildLoginRedirectUrl,
-  readTwoFactorSetupToken,
   clearTwoFactorSetupToken,
   persistTwoFactorSetupToken,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { ReactNode } from 'react';
+import {
+  isSafeRedirect,
+  getPostLoginRedirect,
+  clearPostLoginRedirect,
+  persistRedirectToSession,
+  isRequiredTwoFactorSetupRoute,
+} from '~/utils';
 import {
   useGetRole,
   useGetUserQuery,
@@ -29,12 +35,6 @@ import {
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
-import {
-  isSafeRedirect,
-  getPostLoginRedirect,
-  clearPostLoginRedirect,
-  persistRedirectToSession,
-} from '~/utils';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import useTimeout from './useTimeout';
 import store from '~/store';
@@ -52,9 +52,6 @@ if (import.meta.hot) {
 const getLoginErrorText = (error: TResError | unknown): string | undefined =>
   (error as { response?: { data?: { code?: string } } })?.response?.data?.code ??
   (error as TResError)?.message;
-
-const isRequiredTwoFactorSetupRoute = (): boolean =>
-  window.location.pathname.endsWith('/login/2fa/setup') && !!readTwoFactorSetupToken();
 
 const AuthContextProvider = ({
   authConfig,

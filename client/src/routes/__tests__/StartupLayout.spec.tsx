@@ -2,6 +2,7 @@
 import React from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { clearTwoFactorSetupToken, persistTwoFactorSetupToken } from 'librechat-data-provider';
 import StartupLayout from '~/routes/Layouts/Startup';
 import { SESSION_KEY } from '~/utils';
 
@@ -142,5 +143,72 @@ describe('StartupLayout — redirect race condition', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     expect(router.state.location.pathname).toBe('/login');
+  });
+});
+
+describe('StartupLayout: mandatory enrollment', () => {
+  const createSetupRouter = (initialEntry: string) =>
+    createMemoryRouter(
+      [
+        {
+          path: '/login/2fa/setup',
+          element: <StartupLayout isAuthenticated={true} />,
+          children: [{ index: true, element: <ChildRoute /> }],
+        },
+        { path: '/c/new', element: <NewConversation /> },
+        { path: '/c/:conversationId', element: <div data-testid="requested-conversation" /> },
+      ],
+      { initialEntries: [initialEntry] },
+    );
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    clearTwoFactorSetupToken();
+  });
+
+  afterEach(() => {
+    clearTwoFactorSetupToken();
+    window.history.replaceState({}, '', '/');
+    jest.restoreAllMocks();
+  });
+
+  /**
+   * The in-document hand-off leaves the auth context authenticated, so without the exemption this
+   * layout redirects the user straight back out of the setup the server is demanding.
+   */
+  it('stays on the setup route when an authenticated user holds a setup token', async () => {
+    window.history.replaceState({}, '', '/login/2fa/setup');
+    persistTwoFactorSetupToken('setup-token');
+
+    const router = createSetupRouter('/login/2fa/setup');
+    render(<RouterProvider router={router} />);
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(router.state.location.pathname).toBe('/login/2fa/setup');
+  });
+
+  it('keeps the pending destination banked while enrollment is outstanding', async () => {
+    window.history.replaceState({}, '', '/login/2fa/setup');
+    sessionStorage.setItem(SESSION_KEY, '/c/abc123');
+    persistTwoFactorSetupToken('setup-token');
+
+    const router = createSetupRouter('/login/2fa/setup');
+    render(<RouterProvider router={router} />);
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(router.state.location.pathname).toBe('/login/2fa/setup');
+    expect(sessionStorage.getItem(SESSION_KEY)).toBe('/c/abc123');
+  });
+
+  /** The exemption is the live credential, not the path, so a stale visit still moves on. */
+  it('redirects an authenticated arrival that carries no setup token', async () => {
+    window.history.replaceState({}, '', '/login/2fa/setup');
+
+    const router = createSetupRouter('/login/2fa/setup');
+    render(<RouterProvider router={router} />);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/c/new'));
   });
 });

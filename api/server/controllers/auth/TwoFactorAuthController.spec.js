@@ -43,6 +43,11 @@ const store = {
       email: 'user@example.com',
       password: 'password-hash',
       provider: 'local',
+      /**
+       * These queries select with `+field` tokens only, which leaves Mongoose no projection to
+       * send, so the stored document arrives whole. The session records ride along with it.
+       */
+      refreshToken: [{ refreshToken: 'live-session-token' }],
       twoFactorEnabled: false,
       totpSecret: null,
       backupCodes: [],
@@ -339,6 +344,8 @@ describe('finalize2FASetup', () => {
         pendingBackupCodes: [],
         twoFactorAcknowledgementNonceHash: null,
         twoFactorFinalizationNonceHash: null,
+        /** Dates the tokens issued before enrollment, so it is stamped but never published. */
+        twoFactorEnrolledAt: expect.any(Date),
       });
       expect(jsonPayload(res)).toEqual({
         token: 'auth-token',
@@ -348,7 +355,6 @@ describe('finalize2FASetup', () => {
           email: 'user@example.com',
           provider,
           twoFactorEnabled: true,
-          twoFactorEnrolledAt: expect.any(Date),
         },
       });
     },
@@ -452,6 +458,7 @@ describe('finalize2FASetup', () => {
       'password',
       'totpSecret',
       'backupCodes',
+      'refreshToken',
       'pendingTotpSecret',
       'pendingBackupCodes',
       'twoFactorAcknowledgementNonceHash',
@@ -459,5 +466,24 @@ describe('finalize2FASetup', () => {
     ]) {
       expect(user).not.toHaveProperty(field);
     }
+  });
+
+  /**
+   * Naming the secrets one by one only ever catches the secrets already thought of, and this
+   * response is built from an unprojected document. Pinning the whole shape is what keeps a field
+   * added to the schema later from arriving here unannounced.
+   */
+  it('sends only allowlisted fields in the session response', async () => {
+    const finalizationToken = await reachFinalization();
+
+    const res = await runFinalize(finalizationToken);
+
+    expect(jsonPayload(res).user).toEqual({
+      _id: 'user-1',
+      id: 'user-1',
+      email: 'user@example.com',
+      provider: 'local',
+      twoFactorEnabled: true,
+    });
   });
 });

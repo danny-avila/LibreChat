@@ -1,5 +1,6 @@
 import {
   persistRedirectToSession,
+  clearPostLoginRedirect,
   getPostLoginRedirect,
   peekPostLoginRedirect,
   isSafeRedirect,
@@ -216,5 +217,104 @@ describe('persistRedirectToSession', () => {
   it('rejects /login paths', () => {
     persistRedirectToSession('/login?redirect_to=/c/new');
     expect(sessionStorage.getItem(SESSION_KEY)).toBeNull();
+  });
+});
+
+/**
+ * Embedded and private contexts deny session storage by throwing on access. The destination is a
+ * convenience, so a denial must degrade rather than take down the sign-in that carries it.
+ */
+describe('blocked session storage', () => {
+  const denyStorage = () => {
+    const denied = () => {
+      throw new DOMException('denied', 'SecurityError');
+    };
+    jest.spyOn(Storage.prototype, 'setItem').mockImplementation(denied);
+    jest.spyOn(Storage.prototype, 'getItem').mockImplementation(denied);
+    jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(denied);
+  };
+
+  beforeEach(() => {
+    clearPostLoginRedirect();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    clearPostLoginRedirect();
+  });
+
+  it('does not throw when persisting a destination', () => {
+    denyStorage();
+    expect(() => persistRedirectToSession('/c/abc123')).not.toThrow();
+  });
+
+  it('does not throw when consuming a destination', () => {
+    denyStorage();
+    expect(() => getPostLoginRedirect(new URLSearchParams())).not.toThrow();
+  });
+
+  it('does not throw when clearing a destination', () => {
+    denyStorage();
+    expect(() => clearPostLoginRedirect()).not.toThrow();
+  });
+
+  it('still resolves the URL destination while storage is denied', () => {
+    denyStorage();
+    expect(getPostLoginRedirect(new URLSearchParams('redirect_to=%2Fc%2Fabc123'))).toBe(
+      '/c/abc123',
+    );
+  });
+
+  /** The in-document hand-off never replaces the document, so the mirror still reaches it. */
+  it('carries the destination in memory across a persist and consume pair', () => {
+    denyStorage();
+    persistRedirectToSession('/c/abc123');
+
+    expect(getPostLoginRedirect(new URLSearchParams())).toBe('/c/abc123');
+  });
+
+  it('consumes the in-memory destination exactly once', () => {
+    denyStorage();
+    persistRedirectToSession('/c/abc123');
+
+    expect(getPostLoginRedirect(new URLSearchParams())).toBe('/c/abc123');
+    expect(getPostLoginRedirect(new URLSearchParams())).toBeNull();
+  });
+
+  it('drops the in-memory destination on clear', () => {
+    denyStorage();
+    persistRedirectToSession('/c/abc123');
+    clearPostLoginRedirect();
+
+    expect(getPostLoginRedirect(new URLSearchParams())).toBeNull();
+  });
+
+  it('still refuses an unsafe destination while storage is denied', () => {
+    denyStorage();
+    persistRedirectToSession('https://evil.com');
+
+    expect(getPostLoginRedirect(new URLSearchParams())).toBeNull();
+  });
+
+  /**
+   * Storage answers here, so it is the authority. A mirror written on every persist would outlive
+   * a destination cleared straight out of storage and resurrect it on the next sign-in.
+   */
+  it('does not resurrect a destination dropped straight from storage', () => {
+    persistRedirectToSession('/c/abc123');
+    sessionStorage.clear();
+
+    expect(getPostLoginRedirect(new URLSearchParams())).toBeNull();
+  });
+
+  it('does not let a denied write outlive a later working one', () => {
+    denyStorage();
+    persistRedirectToSession('/c/denied');
+    jest.restoreAllMocks();
+
+    persistRedirectToSession('/c/stored');
+    sessionStorage.clear();
+
+    expect(getPostLoginRedirect(new URLSearchParams())).toBeNull();
   });
 });
