@@ -589,6 +589,29 @@ export type TLoginResponse = {
   tempToken?: string;
 };
 
+export type TClerkLoginRequest = {
+  clerkToken: string;
+};
+
+export type TClerkLoginResponse =
+  | { twoFAPending: true; tempToken: string }
+  | { twoFAPending?: false; token: string; user: TUser };
+
+export type ClerkAuthErrorCode =
+  | 'CLERK_REQUEST_INVALID'
+  | 'CLERK_TOKEN_INVALID'
+  | 'CLERK_LOGIN_FORBIDDEN'
+  | 'CLERK_IDENTITY_CONFLICT'
+  | 'CLERK_TOKEN_REPLAYED'
+  | 'CLERK_LOGIN_RATE_LIMITED'
+  | 'CLERK_UPSTREAM_RATE_LIMITED'
+  | 'CLERK_UNAVAILABLE'
+  | 'CLERK_LOGIN_FAILED';
+
+export type TClerkAuthErrorResponse = {
+  code: ClerkAuthErrorCode;
+};
+
 /** Shared payload for any operation that requires OTP or backup-code verification. */
 export type TOTPVerificationPayload = {
   token?: string;

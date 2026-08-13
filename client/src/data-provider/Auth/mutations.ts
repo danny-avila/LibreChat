@@ -7,46 +7,34 @@ import useClearStates from '~/hooks/Config/useClearStates';
 import { clearAllConversationStorage } from '~/utils';
 import store from '~/store';
 
-/* login/logout */
-export const useLogoutUserMutation = (
-  options?: t.LogoutOptions,
-): UseMutationResult<t.TLogoutResponse, unknown, undefined, unknown> => {
+type LoginMutationOptions<Response, Request> = t.MutationOptions<
+  Response,
+  Request,
+  unknown,
+  unknown
+>;
+
+const useLoginMutation = <Response, Request>(
+  key: MutationKeys,
+  mutationFn: (payload: Request) => Promise<Response>,
+  options?: LoginMutationOptions<Response, Request>,
+): UseMutationResult<Response, unknown, Request, unknown> => {
   const queryClient = useQueryClient();
   const clearStates = useClearStates();
   const resetDefaultPreset = useResetRecoilState(store.defaultPreset);
   const setQueriesEnabled = useSetRecoilState<boolean>(store.queriesEnabled);
 
-  return useMutation([MutationKeys.logoutUser], {
-    mutationFn: () => dataService.logout(),
+  return useMutation([key], {
+    mutationFn,
     ...(options || {}),
-    onSuccess: (...args) => {
+    onMutate: async (vars) => {
       setQueriesEnabled(false);
       resetDefaultPreset();
       clearStates();
       queryClient.removeQueries();
-      options?.onSuccess?.(...args);
+      await options?.onMutate?.(vars);
     },
-  });
-};
-
-export const useLoginUserMutation = (
-  options?: t.MutationOptions<t.TLoginResponse, t.TLoginUser, unknown, unknown>,
-): UseMutationResult<t.TLoginResponse, unknown, t.TLoginUser, unknown> => {
-  const queryClient = useQueryClient();
-  const clearStates = useClearStates();
-  const resetDefaultPreset = useResetRecoilState(store.defaultPreset);
-  const setQueriesEnabled = useSetRecoilState<boolean>(store.queriesEnabled);
-  return useMutation([MutationKeys.loginUser], {
-    mutationFn: (payload: t.TLoginUser) => dataService.login(payload),
-    ...(options || {}),
-    onMutate: (vars) => {
-      setQueriesEnabled(false);
-      resetDefaultPreset();
-      clearStates();
-      queryClient.removeQueries();
-      options?.onMutate?.(vars);
-    },
-    // Queries re-enabled in setUserContext (AuthContext) after setTokenHeader runs
+    // Queries re-enable in AuthContext only after its Authorization header is ready.
     onSuccess: (...args) => {
       options?.onSuccess?.(...args);
     },
@@ -55,6 +43,78 @@ export const useLoginUserMutation = (
       options?.onError?.(...args);
     },
   });
+};
+
+/* login/logout */
+export const useLogoutUserMutation = (
+  options?: t.LogoutOptions,
+): UseMutationResult<t.TLogoutResponse, unknown, undefined, unknown> => {
+  const queryClient = useQueryClient();
+  const clearStates = useClearStates();
+  const resetDefaultPreset = useResetRecoilState(store.defaultPreset);
+  const setQueriesEnabled = useSetRecoilState<boolean>(store.queriesEnabled);
+  const clearLogoutState = () => {
+    setQueriesEnabled(false);
+    resetDefaultPreset();
+    clearStates();
+    queryClient.removeQueries();
+  };
+
+  return useMutation([MutationKeys.logoutUser], {
+    mutationFn: () => dataService.logout(),
+    ...(options || {}),
+    onSuccess: (...args) => {
+      clearLogoutState();
+      options?.onSuccess?.(...args);
+    },
+    onError: (...args) => {
+      clearLogoutState();
+      options?.onError?.(...args);
+    },
+  });
+};
+
+export const useLoginUserMutation = (
+  options?: t.MutationOptions<t.TLoginResponse, t.TLoginUser, unknown, unknown>,
+): UseMutationResult<t.TLoginResponse, unknown, t.TLoginUser, unknown> => {
+  return useLoginMutation(MutationKeys.loginUser, dataService.login, options);
+};
+
+export const useClerkLoginMutation = (
+  options?: t.MutationOptions<t.TClerkLoginResponse, t.TClerkLoginRequest, unknown, unknown>,
+): UseMutationResult<t.TClerkLoginResponse, unknown, t.TClerkLoginRequest, unknown> => {
+  return useLoginMutation(MutationKeys.loginClerk, dataService.loginClerk, options);
+};
+
+export const getClerkAuthErrorCode = (error: unknown): t.ClerkAuthErrorCode | undefined => {
+  if (typeof error !== 'object' || error === null || !('response' in error)) {
+    return undefined;
+  }
+
+  const response = error.response;
+  if (typeof response !== 'object' || response === null || !('data' in response)) {
+    return undefined;
+  }
+
+  const data = response.data;
+  if (typeof data !== 'object' || data === null || !('code' in data)) {
+    return undefined;
+  }
+
+  switch (data.code) {
+    case 'CLERK_REQUEST_INVALID':
+    case 'CLERK_TOKEN_INVALID':
+    case 'CLERK_LOGIN_FORBIDDEN':
+    case 'CLERK_IDENTITY_CONFLICT':
+    case 'CLERK_TOKEN_REPLAYED':
+    case 'CLERK_LOGIN_RATE_LIMITED':
+    case 'CLERK_UPSTREAM_RATE_LIMITED':
+    case 'CLERK_UNAVAILABLE':
+    case 'CLERK_LOGIN_FAILED':
+      return data.code;
+    default:
+      return undefined;
+  }
 };
 
 export const useRefreshTokenMutation = (

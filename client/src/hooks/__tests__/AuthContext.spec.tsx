@@ -2,14 +2,12 @@
  * @jest-environment @happy-dom/jest-environment
  */
 import React from 'react';
-import { render, act } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-
+import { render, act, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TAuthConfig } from '~/common';
-
-import { AuthContextProvider, useAuthContext } from '../AuthContext';
+import { AuthContextProvider, ClerkSessionProvider, useAuthContext } from '../AuthContext';
 import { SESSION_KEY } from '~/utils';
 
 const mockNavigate = jest.fn();
@@ -31,12 +29,9 @@ let mockCapturedLoginOptions: {
   onError: (...args: unknown[]) => void;
 };
 
-let mockCapturedLogoutOptions: {
-  onSuccess: (...args: unknown[]) => void;
-  onError: (...args: unknown[]) => void;
-};
-
 const mockRefreshMutate = jest.fn();
+const mockLogoutMutateAsync = jest.fn();
+const mockClerkMutateAsync = jest.fn();
 
 jest.mock('~/data-provider', () => ({
   useLoginUserMutation: jest.fn(
@@ -48,15 +43,8 @@ jest.mock('~/data-provider', () => ({
       return { mutate: jest.fn() };
     },
   ),
-  useLogoutUserMutation: jest.fn(
-    (options: {
-      onSuccess: (...args: unknown[]) => void;
-      onError: (...args: unknown[]) => void;
-    }) => {
-      mockCapturedLogoutOptions = options;
-      return { mutate: jest.fn() };
-    },
-  ),
+  useClerkLoginMutation: jest.fn(() => ({ mutateAsync: mockClerkMutateAsync })),
+  useLogoutUserMutation: jest.fn(() => ({ mutateAsync: mockLogoutMutateAsync })),
   useRefreshTokenMutation: jest.fn(() => ({ mutate: mockRefreshMutate })),
   useGetUserQuery: jest.fn(() => ({
     data: undefined,
@@ -69,18 +57,31 @@ jest.mock('~/data-provider', () => ({
 
 const authConfig: TAuthConfig = { loginRedirect: '/login', test: true };
 
+let latestAuthContext: ReturnType<typeof useAuthContext>;
+
 function TestConsumer() {
   const ctx = useAuthContext();
+  const [, forceRender] = React.useState(0);
+  latestAuthContext = ctx;
   return (
-    <div
-      data-testid="consumer"
-      data-authenticated={ctx.isAuthenticated}
-      data-roles={JSON.stringify(ctx.roles ?? {})}
-    />
+    <>
+      <div
+        data-testid="consumer"
+        data-authenticated={ctx.isAuthenticated}
+        data-error={ctx.error}
+        data-roles={JSON.stringify(ctx.roles ?? {})}
+      />
+      <button data-testid="rerender" onClick={() => forceRender((value) => value + 1)} />
+    </>
   );
 }
 
-function renderProvider() {
+type ClerkSessionValue = {
+  sessionId: string | null;
+  signOut: (options: { sessionId: string }) => Promise<void>;
+};
+
+function renderProviderWithConfig(config: TAuthConfig, clerkSession?: ClerkSessionValue) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -89,32 +90,34 @@ function renderProvider() {
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <MemoryRouter>
-          <AuthContextProvider authConfig={authConfig}>
-            <TestConsumer />
-          </AuthContextProvider>
+          <ClerkSessionProvider value={clerkSession}>
+            <AuthContextProvider authConfig={config}>
+              <TestConsumer />
+            </AuthContextProvider>
+          </ClerkSessionProvider>
         </MemoryRouter>
       </RecoilRoot>
     </QueryClientProvider>,
   );
+}
+
+function renderProvider(clerkSession?: ClerkSessionValue) {
+  return renderProviderWithConfig(authConfig, clerkSession);
 }
 
 /** Renders without test:true so silentRefresh actually runs */
-function renderProviderLive() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+function renderProviderLive(clerkSession?: ClerkSessionValue) {
+  return renderProviderWithConfig({ loginRedirect: '/login' }, clerkSession);
+}
 
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <RecoilRoot>
-        <MemoryRouter>
-          <AuthContextProvider authConfig={{ loginRedirect: '/login' }}>
-            <TestConsumer />
-          </AuthContextProvider>
-        </MemoryRouter>
-      </RecoilRoot>
-    </QueryClientProvider>,
-  );
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 describe('AuthContextProvider — login onError redirect handling', () => {
@@ -191,7 +194,64 @@ describe('AuthContextProvider — login onError redirect handling', () => {
   });
 });
 
-describe('AuthContextProvider — logout onSuccess/onError handling', () => {
+describe('AuthContextProvider — Clerk login handoff', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockLogoutMutateAsync.mockResolvedValue({ message: 'Logout successful' });
+  });
+
+  it('exposes a callback-stable Promise login and applies the shared success path', async () => {
+    jest.useFakeTimers();
+    mockClerkMutateAsync.mockResolvedValue({
+      token: 'librechat-token',
+      user: { id: 'user-1', role: 'USER' },
+    });
+    const { getByTestId } = renderProvider();
+    const firstLoginWithClerk = latestAuthContext.loginWithClerk;
+
+    fireEvent.click(getByTestId('rerender'));
+    expect(latestAuthContext.loginWithClerk).toBe(firstLoginWithClerk);
+
+    await act(async () => {
+      await latestAuthContext.loginWithClerk('clerk-session-token');
+    });
+    act(() => {
+      jest.advanceTimersByTime(100);
+    });
+
+    expect(mockClerkMutateAsync).toHaveBeenCalledWith({ clerkToken: 'clerk-session-token' });
+    expect(getByTestId('consumer')).toHaveAttribute('data-authenticated', 'true');
+    expect(mockNavigate).toHaveBeenCalledWith('/c/new', { replace: true });
+    jest.useRealTimers();
+  });
+
+  it('reuses the existing local two-factor navigation contract', async () => {
+    mockClerkMutateAsync.mockResolvedValue({
+      twoFAPending: true,
+      tempToken: 'tenant-bound-temp-token',
+    });
+    const { getByTestId } = renderProvider();
+
+    await act(async () => {
+      await latestAuthContext.loginWithClerk('clerk-session-token');
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/login/2fa?tempToken=tenant-bound-temp-token', {
+      replace: true,
+    });
+    expect(getByTestId('consumer')).toHaveAttribute('data-authenticated', 'false');
+  });
+
+  it('preserves the rejected mutation for the Clerk bridge to classify', async () => {
+    const replayError = { response: { data: { code: 'CLERK_TOKEN_REPLAYED' } } };
+    mockClerkMutateAsync.mockRejectedValue(replayError);
+    renderProvider();
+
+    await expect(latestAuthContext.loginWithClerk('replayed-token')).rejects.toBe(replayError);
+  });
+});
+
+describe('AuthContextProvider — settled local and Clerk logout', () => {
   const mockSetTokenHeader = jest.requireMock('librechat-data-provider').setTokenHeader;
 
   beforeEach(() => {
@@ -203,49 +263,76 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('calls window.location.replace and setTokenHeader(undefined) when redirect is present', () => {
+  it('calls window.location.replace only after local and active Clerk sign-out settle', async () => {
     const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
-
-    renderProvider();
-
-    act(() => {
-      mockCapturedLogoutOptions.onSuccess({
-        message: 'Logout successful',
-        redirect: 'https://idp.example.com/logout?id_token_hint=abc',
-      });
+    const clerkSignOut = jest.fn().mockResolvedValue(undefined);
+    mockLogoutMutateAsync.mockResolvedValue({
+      message: 'Logout successful',
+      redirect: 'https://idp.example.com/logout?id_token_hint=abc',
     });
 
+    renderProvider({ sessionId: 'clerk-session-1', signOut: clerkSignOut });
+    await act(async () => {
+      await latestAuthContext.logout();
+    });
+
+    expect(clerkSignOut).toHaveBeenCalledWith({ sessionId: 'clerk-session-1' });
     expect(replaceSpy).toHaveBeenCalledWith('https://idp.example.com/logout?id_token_hint=abc');
     expect(mockSetTokenHeader).toHaveBeenCalledWith(undefined);
   });
 
-  it('does not call window.location.replace when redirect is absent', async () => {
-    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+  it('does not navigate until both logout operations have settled', async () => {
+    const local = deferred<{ message: string }>();
+    const clerk = deferred<void>();
+    const clerkSignOut = jest.fn(() => clerk.promise);
+    mockLogoutMutateAsync.mockReturnValue(local.promise);
 
-    renderProvider();
-
+    renderProvider({ sessionId: 'clerk-session-1', signOut: clerkSignOut });
+    let logoutPromise!: Promise<void>;
     act(() => {
-      mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
+      logoutPromise = latestAuthContext.logout();
     });
 
-    expect(replaceSpy).not.toHaveBeenCalled();
+    local.resolve({ message: 'Logout successful' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    clerk.resolve(undefined);
+    await act(async () => {
+      await logoutPromise;
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/login', { replace: true });
   });
 
-  it('does not trigger silentRefresh after OIDC redirect', () => {
-    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
-
-    renderProviderLive();
+  it('clears local auth, reports a safe error, and suppresses refresh after either logout fails', async () => {
+    jest.useFakeTimers();
+    const clerkSignOut = jest.fn().mockRejectedValue(new Error('secret Clerk failure detail'));
+    mockLogoutMutateAsync.mockResolvedValue({ message: 'Logout successful' });
+    const { getByTestId } = renderProviderLive({
+      sessionId: 'clerk-session-1',
+      signOut: clerkSignOut,
+    });
     mockRefreshMutate.mockClear();
 
+    await act(async () => {
+      await latestAuthContext.logout();
+    });
     act(() => {
-      mockCapturedLogoutOptions.onSuccess({
-        message: 'Logout successful',
-        redirect: 'https://idp.example.com/logout?id_token_hint=abc',
-      });
+      jest.advanceTimersByTime(500);
     });
 
-    expect(replaceSpy).toHaveBeenCalled();
+    expect(mockSetTokenHeader).toHaveBeenCalledWith(undefined);
+    expect(getByTestId('consumer')).toHaveAttribute('data-authenticated', 'false');
+    expect(getByTestId('consumer')).toHaveAttribute(
+      'data-error',
+      'Authentication failed. Please check your login method and try again.',
+    );
+    expect(mockNavigate).toHaveBeenCalledWith('/login', { replace: true });
     expect(mockRefreshMutate).not.toHaveBeenCalled();
+    jest.useRealTimers();
   });
 });
 
@@ -421,34 +508,6 @@ describe('AuthContextProvider — silentRefresh subdirectory deployment', () => 
     });
 
     expect(mockNavigate).toHaveBeenCalledWith('/', { replace: true });
-    jest.useRealTimers();
-  });
-});
-
-describe('AuthContextProvider — logout error handling', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    window.history.replaceState({}, '', '/c/some-chat');
-  });
-
-  afterEach(() => {
-    window.history.replaceState({}, '', '/');
-  });
-
-  it('clears auth state on logout error without external redirect', () => {
-    jest.useFakeTimers();
-    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
-    const { getByTestId } = renderProvider();
-
-    act(() => {
-      mockCapturedLogoutOptions.onError(new Error('Logout failed'));
-    });
-    act(() => {
-      jest.advanceTimersByTime(100);
-    });
-
-    expect(replaceSpy).not.toHaveBeenCalled();
-    expect(getByTestId('consumer').getAttribute('data-authenticated')).toBe('false');
     jest.useRealTimers();
   });
 });

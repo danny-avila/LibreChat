@@ -178,6 +178,10 @@ export const login = (payload: t.TLoginUser): Promise<t.TLoginResponse> => {
   return request.post(endpoints.login(), payload);
 };
 
+export const loginClerk = (payload: t.TClerkLoginRequest): Promise<t.TClerkLoginResponse> => {
+  return request.post(endpoints.clerkLogin(), payload);
+};
+
 export const logout = (): Promise<m.TLogoutResponse> => {
   return request.post(endpoints.logout());
 };

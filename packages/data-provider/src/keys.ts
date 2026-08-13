@@ -104,6 +104,7 @@ export enum MutationKeys {
   updatePreset = 'updatePreset',
   deletePreset = 'deletePreset',
   loginUser = 'loginUser',
+  loginClerk = 'loginClerk',
   logoutUser = 'logoutUser',
   refreshToken = 'refreshToken',
   avatarUpload = 'avatarUpload',

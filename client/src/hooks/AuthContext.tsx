@@ -8,8 +8,8 @@ import {
   createContext,
 } from 'react';
 import { debounce } from 'lodash';
-import { useRecoilState, useSetRecoilState } from 'recoil';
 import { useNavigate } from 'react-router-dom';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import {
   apiBaseUrl,
   SystemRoles,
@@ -22,12 +22,14 @@ import type { ReactNode } from 'react';
 import {
   useGetRole,
   useGetUserQuery,
+  useClerkLoginMutation,
   useLoginUserMutation,
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
+import useLocalize from './useLocalize';
 import useTimeout from './useTimeout';
 import store from '~/store';
 
@@ -37,6 +39,21 @@ if (import.meta.hot) {
   import.meta.hot.data.__AuthContext = AuthContext;
 }
 
+export type ClerkSessionContextValue = {
+  sessionId: string | null;
+  signOut: (options: { sessionId: string }) => Promise<void>;
+};
+
+const ClerkSessionContext = createContext<ClerkSessionContextValue | undefined>(undefined);
+
+const ClerkSessionProvider = ({
+  value,
+  children,
+}: {
+  value?: ClerkSessionContextValue;
+  children: ReactNode;
+}) => <ClerkSessionContext.Provider value={value}>{children}</ClerkSessionContext.Provider>;
+
 const AuthContextProvider = ({
   authConfig,
   children,
@@ -45,12 +62,13 @@ const AuthContextProvider = ({
   children: ReactNode;
 }) => {
   const isExternalRedirectRef = useRef(false);
+  const clerkSession = useContext(ClerkSessionContext);
   const [user, setUser] = useRecoilState(store.user);
-  const logoutRedirectRef = useRef<string | undefined>(undefined);
   const [token, setToken] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const setQueriesEnabled = useSetRecoilState<boolean>(store.queriesEnabled);
+  const localize = useLocalize();
 
   const userRoleName = user?.role ?? '';
   const isCustomRole = isAuthenticated && !!user?.role && !isSystemRoleName(user.role);
@@ -76,19 +94,15 @@ const AuthContextProvider = ({
         setTokenHeader(token);
         setIsAuthenticated(isAuthenticated);
         if (isAuthenticated) {
+          isExternalRedirectRef.current = false;
           setQueriesEnabled(true);
         }
 
         const searchParams = new URLSearchParams(window.location.search);
         const postLoginRedirect = getPostLoginRedirect(searchParams);
 
-        const logoutRedirect = logoutRedirectRef.current;
-        logoutRedirectRef.current = undefined;
-
         const finalRedirect =
-          logoutRedirect ??
-          postLoginRedirect ??
-          (redirect && isSafeRedirect(redirect) ? redirect : null);
+          postLoginRedirect ?? (redirect && isSafeRedirect(redirect) ? redirect : null);
 
         if (finalRedirect == null) {
           return;
@@ -100,16 +114,25 @@ const AuthContextProvider = ({
   );
   const doSetError = useTimeout({ callback: (error) => setError(error as string | undefined) });
 
-  const loginUser = useLoginUserMutation({
-    onSuccess: (data: t.TLoginResponse) => {
-      const { user, token, twoFAPending, tempToken } = data;
-      if (twoFAPending) {
-        navigate(`/login/2fa?tempToken=${tempToken}`, { replace: true });
+  const handleLoginSuccess = useCallback(
+    (data: t.TLoginResponse | t.TClerkLoginResponse) => {
+      if (data.twoFAPending === true) {
+        navigate(`/login/2fa?tempToken=${data.tempToken}`, { replace: true });
         return;
       }
       setError(undefined);
-      setUserContext({ token, isAuthenticated: true, user, redirect: '/c/new' });
+      setUserContext({
+        token: data.token,
+        isAuthenticated: true,
+        user: data.user,
+        redirect: '/c/new',
+      });
     },
+    [navigate, setUserContext],
+  );
+
+  const { mutate: mutateLogin } = useLoginUserMutation({
+    onSuccess: handleLoginSuccess,
     onError: (error: TResError | unknown) => {
       const resError = error as TResError;
       doSetError(resError.message);
@@ -124,52 +147,61 @@ const AuthContextProvider = ({
       navigate(loginPath, { replace: true });
     },
   });
-  const logoutUser = useLogoutUserMutation({
-    onSuccess: (data) => {
-      if (data.redirect) {
-        /** data.redirect is the IdP's end_session_endpoint URL — an absolute URL generated
-         * server-side from trusted IdP metadata (not user input), so isSafeRedirect is bypassed.
-         * setUserContext is debounced (50ms) and won't fire before page unload, so clear the
-         * axios Authorization header synchronously to prevent in-flight requests. */
-        isExternalRedirectRef.current = true;
-        setTokenHeader(undefined);
-        window.location.replace(data.redirect);
-        return;
-      }
-      setUserContext({
-        token: undefined,
-        isAuthenticated: false,
-        user: undefined,
-        redirect: '/login',
-      });
-    },
-    onError: (error) => {
-      doSetError((error as Error).message);
-      setUserContext({
-        token: undefined,
-        isAuthenticated: false,
-        user: undefined,
-        redirect: '/login',
-      });
-    },
-  });
+  const { mutateAsync: mutateClerkLogin } = useClerkLoginMutation();
+  const { mutateAsync: mutateLogout } = useLogoutUserMutation();
   const refreshToken = useRefreshTokenMutation();
 
-  const logout = useCallback(
-    (redirect?: string) => {
-      if (redirect) {
-        logoutRedirectRef.current = redirect;
-      }
-      logoutUser.mutate(undefined);
+  const loginWithClerk = useCallback(
+    async (clerkToken: string): Promise<t.TClerkLoginResponse> => {
+      const response = await mutateClerkLogin({ clerkToken });
+      handleLoginSuccess(response);
+      return response;
     },
-    [logoutUser],
+    [handleLoginSuccess, mutateClerkLogin],
+  );
+
+  const clearLocalAuth = useCallback(() => {
+    setUser(undefined);
+    setToken(undefined);
+    setTokenHeader(undefined);
+    setIsAuthenticated(false);
+    setQueriesEnabled(false);
+  }, [setQueriesEnabled, setUser]);
+
+  const clerkSessionId = clerkSession?.sessionId;
+  const clerkSignOut = clerkSession?.signOut;
+  const logout = useCallback(
+    async (redirect?: string): Promise<void> => {
+      isExternalRedirectRef.current = true;
+      const localLogout = Promise.resolve().then(() => mutateLogout(undefined));
+      const clerkLogout =
+        clerkSessionId && clerkSignOut
+          ? Promise.resolve().then(() => clerkSignOut({ sessionId: clerkSessionId }))
+          : Promise.resolve();
+      const [localResult, clerkResult] = await Promise.allSettled([localLogout, clerkLogout]);
+
+      clearLocalAuth();
+
+      if (localResult.status === 'rejected' || clerkResult.status === 'rejected') {
+        doSetError(localize('com_auth_error_oauth_failed'));
+        navigate('/login', { replace: true });
+        return;
+      }
+
+      if (localResult.value.redirect) {
+        window.location.replace(localResult.value.redirect);
+        return;
+      }
+
+      const destination = redirect && isSafeRedirect(redirect) ? redirect : '/login';
+      navigate(destination, { replace: true });
+    },
+    [clearLocalAuth, clerkSessionId, clerkSignOut, doSetError, localize, mutateLogout, navigate],
   );
 
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
 
-  const login = (data: t.TLoginUser) => {
-    loginUser.mutate(data);
-  };
+  const login = useCallback((data: t.TLoginUser) => mutateLogin(data), [mutateLogin]);
 
   const silentRefresh = useCallback(() => {
     if (authConfig?.test === true) {
@@ -237,6 +269,7 @@ const AuthContextProvider = ({
     if (token == null || !token || !isAuthenticated) {
       silentRefresh();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- legacy useTimeout returns an unstable callback that would retrigger this effect
   }, [
     token,
     isAuthenticated,
@@ -273,6 +306,7 @@ const AuthContextProvider = ({
       token,
       error,
       login,
+      loginWithClerk,
       logout,
       setError,
       roles: {
@@ -293,6 +327,9 @@ const AuthContextProvider = ({
       isCustomRole,
       userRoleName,
       customRole,
+      login,
+      loginWithClerk,
+      logout,
     ],
   );
 
@@ -309,4 +346,4 @@ const useAuthContext = () => {
   return context;
 };
 
-export { AuthContextProvider, useAuthContext, AuthContext };
+export { AuthContextProvider, ClerkSessionProvider, useAuthContext, AuthContext };
