@@ -36,6 +36,9 @@ export type TrackedActivity = ActivityPhaseEntry & {
   mergedCount?: number;
   mergedFailedCount?: number;
   mergedPartialCount?: number;
+  /** Agents whose activities were folded into this anchor, so attribution and
+   *  the summarizer payload keep every contributor the count represents. */
+  mergedAgentIds?: string[];
   childLabelIndex?: number;
   /** Stable anchors survive content filtering and prepends across HITL resume. */
   toolCallIds?: string[];
@@ -792,8 +795,19 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const mergedFailedCount = countFailedActivities([earlier, later]);
       const mergedPartialCount = countPartialActivities([earlier, later]);
       activities.splice(laterPosition, 1);
+      const foldedAgentIds = [
+        ...new Set(
+          [
+            ...(earlier.mergedAgentIds ?? []),
+            ...(earlier.agentId != null ? [earlier.agentId] : []),
+            ...(later.mergedAgentIds ?? []),
+            ...(later.agentId != null ? [later.agentId] : []),
+          ].filter((id) => id !== earlier.agentId),
+        ),
+      ];
       activities[earlierPosition] = {
         ...earlier,
+        ...(foldedAgentIds.length > 0 && { mergedAgentIds: foldedAgentIds }),
         toolCallIds: [...(earlier.toolCallIds ?? []), ...(later.toolCallIds ?? [])].slice(
           -MAX_RETAINED_TOOL_ENTRIES,
         ),
@@ -1002,8 +1016,18 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     const resolved = activities.map((activity) => {
       const toolStart = findTrackedToolStart(currentParts, activity);
       if (toolStart != null) {
+        /** The saved fallback outlives its purpose once every tracked call has
+         *  materialized. Keeping it would reject the activity at any boundary
+         *  below that stale index even though its real position is earlier. */
+        const materializedTools = findTrackedToolIndices(currentParts, activity);
+        const fullyMaterialized =
+          (activity.toolCallIds?.length ?? 0) > 0 &&
+          materializedTools.length >= (activity.toolCallIds?.length ?? 0);
+        const { unresolvedToolStartIndex, ...rest } = activity;
         return {
-          ...activity,
+          ...rest,
+          ...(!fullyMaterialized &&
+            unresolvedToolStartIndex != null && { unresolvedToolStartIndex }),
           startIndex: Math.max(toolStart, activity.partitionStartIndex ?? 0),
         };
       }
@@ -1085,7 +1109,10 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     const partialCount = countPartialActivities(snapshot);
     const agentIds = [
       ...new Set(
-        snapshot.flatMap((activity) => (activity.agentId != null ? [activity.agentId] : [])),
+        snapshot.flatMap((activity) => [
+          ...(activity.agentId != null ? [activity.agentId] : []),
+          ...(activity.mergedAgentIds ?? []),
+        ]),
       ),
     ];
     const closingContext = closing.context;

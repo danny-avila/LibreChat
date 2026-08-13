@@ -1407,6 +1407,75 @@ describe('createActivityPhaseWiring', () => {
     }
   });
 
+  it('clears a resolved missing-tool anchor before partitioning', async () => {
+    const parts: LooseContentPart[] = [];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the resumed work' }));
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 3,
+        generated: 0,
+        activityCount: 1,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [{ startIndex: 9, status: 'success' as const, toolCallIds: ['delayed'] }],
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    /** The saved tool was absent at construction, so the activity kept a high
+     *  fallback anchor. It then materializes at index 0, well before the
+     *  boundary, and must close with the earlier phase. */
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'delayed' } });
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'second' } });
+    await wiring.hook(batch('second'), new AbortController().signal);
+    parts.push({ type: ContentTypes.TEXT, text: substantialText('The resumed answer.') });
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[3]).toMatchObject({
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+  });
+
+  it('keeps every contributing agent when folding anchors past the cap', async () => {
+    const parts: LooseContentPart[] = [];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({})),
+    });
+    for (let index = 0; index < 100; index += 1) {
+      const id = `tool-${index}`;
+      parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
+      await wiring.hook(
+        { ...batch(id), executingAgentId: `agent-${index}` },
+        new AbortController().signal,
+      );
+    }
+
+    const tracked = wiring.snapshot().activities;
+    const attributed = new Set(
+      tracked.flatMap((activity) => [
+        ...(activity.agentId != null ? [activity.agentId] : []),
+        ...(activity.mergedAgentIds ?? []),
+      ]),
+    );
+    /** Folding bounds memory, not attribution: an agent whose activity is
+     *  still counted must still be creditable for it. */
+    expect(attributed.size).toBe(totalTrackedCount(tracked));
+  });
+
   it('retains every overflow tool ID tied at the latest boundary', async () => {
     const parts: LooseContentPart[] = [];
     const wiring = createActivityPhaseWiring({
