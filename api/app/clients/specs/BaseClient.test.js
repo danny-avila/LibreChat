@@ -1883,6 +1883,7 @@ describe('BaseClient', () => {
           type: ContentTypes.ACTIVITY_LABEL,
           activity_label_type: 'phase',
           activity_start_index: 0,
+          activity_end_index: 1,
           activity_label: 'Verified deployment health',
         },
       ];
@@ -1890,7 +1891,7 @@ describe('BaseClient', () => {
       expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.TEXT)).toEqual([
         existing[0],
         completion[0],
-        { ...completion[1], activity_start_index: 1 },
+        { ...completion[1], activity_start_index: 1, activity_end_index: 2 },
       ]);
     });
 

@@ -1306,6 +1306,9 @@ class BaseClient {
       return {
         ...part,
         activity_start_index: part.activity_start_index + phaseIndexOffset,
+        ...(typeof part.activity_end_index === 'number' && {
+          activity_end_index: part.activity_end_index + phaseIndexOffset,
+        }),
       };
     });
 

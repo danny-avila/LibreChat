@@ -36,6 +36,7 @@ export type ParallelSection = {
 export function groupParallelContent(
   content: Array<TMessageContentParts | undefined> | undefined,
   contentIndexOffset = 0,
+  contentIndices?: ReadonlyArray<number>,
 ): { parallelSections: ParallelSection[]; sequentialParts: PartWithIndex[] } {
   if (!content) {
     return { parallelSections: [], sequentialParts: [] };
@@ -50,7 +51,7 @@ export function groupParallelContent(
     if (!part) {
       return;
     }
-    const idx = localIdx + contentIndexOffset;
+    const idx = contentIndices?.[localIdx] ?? localIdx + contentIndexOffset;
 
     // Read metadata directly from content part (TMessageContentParts includes ContentMetadata)
     const { groupId } = part;
@@ -230,6 +231,8 @@ type ParallelContentRendererProps = {
   showDecorations?: boolean;
   /** Absolute transcript index represented by `content[0]` in a phase slice. */
   contentIndexOffset?: number;
+  /** Absolute transcript index for each compacted sparse segment entry. */
+  contentIndices?: ReadonlyArray<number>;
 };
 
 /**
@@ -248,10 +251,11 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
   renderResumeAttribution,
   showDecorations = true,
   contentIndexOffset = 0,
+  contentIndices,
 }: ParallelContentRendererProps) {
   const { parallelSections, sequentialParts } = useMemo(
-    () => groupParallelContent(content, contentIndexOffset),
-    [content, contentIndexOffset],
+    () => groupParallelContent(content, contentIndexOffset, contentIndices),
+    [content, contentIndexOffset, contentIndices],
   );
 
   /** Same walk-back as `ContentParts`: a trailing BLANK label reservation is
@@ -259,7 +263,9 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
    *  rendered part with the last-part cursor until the label fills. */
   const relativeLastContentIdx = lastVisibleContentIdx(content);
   const lastContentIdx =
-    relativeLastContentIdx < 0 ? -1 : relativeLastContentIdx + contentIndexOffset;
+    relativeLastContentIdx < 0
+      ? -1
+      : (contentIndices?.[relativeLastContentIdx] ?? relativeLastContentIdx + contentIndexOffset);
 
   // Split sequential parts into before/after parallel sections
   const { before, after } = useMemo(() => {

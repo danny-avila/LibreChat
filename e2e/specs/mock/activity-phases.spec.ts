@@ -27,6 +27,7 @@ type PersistedContentPart = {
   activity_label?: string;
   activity_label_type?: string;
   activity_start_index?: number;
+  activity_end_index?: number;
   activity_count?: number;
   pending?: boolean;
   tool_call?: { id?: string };
@@ -148,6 +149,38 @@ test.describe('parent activity phases', () => {
 
     const parent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);
     await expect(parent).toBeVisible({ timeout: 60000 });
+    /** Inspect the durable projection before the live DOM assertion so a
+     *  failure identifies whether the server bound or client grouping is
+     *  wrong. This remains a useful contract assertion after the bug is fixed. */
+    const liveConversationId = await getConversationId(page);
+    const liveToken = await getAccessToken(page);
+    let liveAssistant: PersistedMessage | undefined;
+    await expect
+      .poll(
+        async () => {
+          const messages = await fetchJson<PersistedMessage[]>(
+            page,
+            `/api/messages/${encodeURIComponent(liveConversationId)}`,
+            liveToken,
+          );
+          liveAssistant = messages.find(
+            (message) =>
+              message.isCreatedByUser === false && messageText(message).includes(finalText),
+          );
+          return liveAssistant?.unfinished;
+        },
+        { timeout: 30000 },
+      )
+      .toBe(false);
+    const liveContent = liveAssistant?.content ?? [];
+    const livePhase = liveContent.find(
+      (part) => part?.type === 'activity_label' && part.activity_label_type === 'phase',
+    );
+    const liveFinalTextIndex = liveContent.findIndex((part) =>
+      contentPartText(part).includes(finalText),
+    );
+    expect(liveFinalTextIndex).toBe(livePhase?.activity_end_index);
+
     await expect(messagesView(page).getByText(finalText)).toBeVisible({ timeout: 60000 });
     await parent.click();
     await expect(messagesView(page).getByRole('button', { name: childLabels.first })).toBeVisible();
@@ -210,8 +243,12 @@ test.describe('parent activity phases', () => {
       pending: false,
     });
     expect(phasePart?.activity_start_index).toBeGreaterThanOrEqual(0);
-    expect(phasePart?.activity_start_index).toBeLessThan(phaseIndex);
-    const phaseChildren = content.slice(phasePart?.activity_start_index ?? phaseIndex, phaseIndex);
+    expect(phasePart?.activity_end_index).toBeGreaterThan(phasePart?.activity_start_index ?? -1);
+    expect(phasePart?.activity_end_index).toBeLessThanOrEqual(phaseIndex);
+    const phaseChildren = content.slice(
+      phasePart?.activity_start_index ?? phaseIndex,
+      phasePart?.activity_end_index ?? phaseIndex,
+    );
     expect(phaseChildren.map((part) => part?.tool_call?.id).filter(Boolean)).toEqual(
       expect.arrayContaining([firstToolCallId, secondToolCallId]),
     );
@@ -219,7 +256,7 @@ test.describe('parent activity phases', () => {
       expect.arrayContaining([childLabels.first, childLabels.second]),
     );
     const finalTextIndex = content.findIndex((part) => contentPartText(part).includes(finalText));
-    expect(finalTextIndex).toBeGreaterThan(phaseIndex);
+    expect(finalTextIndex).toBe(phasePart?.activity_end_index);
 
     await page.reload();
     const reloadedParent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);

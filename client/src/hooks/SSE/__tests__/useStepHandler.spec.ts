@@ -3413,6 +3413,42 @@ describe('useStepHandler', () => {
       const response = currentMessages.find((m) => !m.isCreatedByUser);
       expect(response?.content?.[2]).toMatchObject({ [ContentTypes.TEXT]: 'streamed' });
       expect(response?.content?.[0]).toMatchObject({ [ContentTypes.TEXT]: 'kept a' });
+      expect(
+        (submission as { editPrefixFirstPartFolded?: boolean }).editPrefixFirstPartFolded,
+      ).toBeUndefined();
+    });
+
+    it('records when the first completion part actually folds into the retained tail', () => {
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({ content: [textPart('kept'), textPart('tail')] }),
+      } as never);
+      (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+      const responseMessage = submission.initialResponse as TMessage;
+      let currentMessages: TMessage[] = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages: TMessage[]) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({ index: 0, runId: responseMessage.messageId }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', ' continued') },
+          submission,
+        );
+      });
+
+      expect(
+        (submission as { editPrefixFirstPartFolded?: boolean }).editPrefixFirstPartFolded,
+      ).toBe(true);
     });
 
     it('does not merge final-answer text into a retained commentary phase', () => {
