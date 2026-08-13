@@ -95,12 +95,18 @@ function compactContentParts(contentParts: TMessageContentParts[]): TMessageCont
 }
 
 /**
- * Filters out malformed tool call content parts that don't have the required tool_call property.
- * This handles edge cases where tool_call content parts may be created with only a type property
- * but missing the actual tool_call data.
+ * Produces the durable content array: drops malformed tool call parts that lack the
+ * required tool_call property, compacts away empty slots, and rebases parent
+ * activity-phase bounds onto the resulting coordinates.
  *
- * @param contentParts - Array of content parts to filter
- * @returns Filtered array with malformed tool calls removed
+ * Compaction is not incidental — the source array is frequently sparse, because the
+ * aggregator writes parts at provider-source indexes. Since that shifts positions, any
+ * index-referencing metadata is rebased to match; see {@link compactContentParts}.
+ *
+ * Non-array input is returned unchanged.
+ *
+ * @param contentParts - Array of content parts to compact
+ * @returns Compacted array with malformed tool calls removed and phase bounds rebased
  *
  * @example
  * // Removes malformed tool_call without the tool_call property
@@ -111,6 +117,16 @@ function compactContentParts(contentParts: TMessageContentParts[]): TMessageCont
  * ];
  * const filtered = filterMalformedContentParts(parts);
  * // Returns all parts except the malformed tool_call
+ *
+ * @example
+ * // A hole shifts later parts, so a phase marker's bounds move with them
+ * const parts = []; // parts[0] never materialized
+ * parts[1] = { type: 'tool_call', tool_call: { id: 'a' } };
+ * parts[2] = { type: 'text', text: 'Final answer' };
+ * parts[3] = { type: 'activity_label', activity_label_type: 'phase',
+ *              activity_start_index: 0, activity_end_index: 2 };
+ * const filtered = filterMalformedContentParts(parts);
+ * // Final answer is now at index 1, and activity_end_index is rebased to 1
  */
 export function filterMalformedContentParts(
   contentParts: TMessageContentParts[],
