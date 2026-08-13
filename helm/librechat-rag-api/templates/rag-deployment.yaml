@@ -26,11 +26,21 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "rag.serviceAccountName" . }}
       {{- if kindIs "bool" .Values.enableServiceLinks }}
       enableServiceLinks: {{ .Values.enableServiceLinks }}
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.initContainers }}
+      initContainers:
+        {{- range $key, $value := .Values.initContainers }}
+        {{- if . }}
+        - name: {{ $key }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- end }}
+      {{- end }}
       containers:
         - name: {{ include "rag.fullname" $ }}-rag
           securityContext:
