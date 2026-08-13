@@ -7,3 +7,4 @@ export * from './webhook';
 export * from './service';
 export * from './handler';
 export * from './session';
+export * from './persistence';
