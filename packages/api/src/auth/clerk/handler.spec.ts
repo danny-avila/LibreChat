@@ -7,6 +7,7 @@ import {
   createPrepareClerkLogin,
   createEnforceClerkLoginPolicy,
   createCommitClerkLogin,
+  createCompleteClerkLogin,
   ClerkRouteError,
   MAX_CLERK_TOKEN_BYTES,
 } from './handler';
@@ -316,6 +317,95 @@ describe('createCommitClerkLogin', () => {
     const err = next.mock.calls[0][0];
     expect(err.code).toBe('CLERK_LOGIN_FAILED');
     expect(err.status).toBe(500);
+  });
+});
+
+describe('createCompleteClerkLogin', () => {
+  const user = { _id: 'u1', email: 'user@example.com' };
+
+  function reqWithFinalUser() {
+    return createReq({
+      user,
+      clerkAuth: {
+        clerkIdentity: claims,
+        clerkLookups: { userByClerkId: user, userByEmail: undefined, tenantId: 'tenant-a' },
+      },
+    });
+  }
+
+  function createRes() {
+    return { status: jest.fn().mockReturnThis(), json: jest.fn() } as never;
+  }
+
+  it('delegates to exchangeClerkSession and writes its result as the response', async () => {
+    const exchangeClerkSession = jest
+      .fn()
+      .mockResolvedValue({ token: 'access-token', user: { _id: 'u1' } });
+    const complete = createCompleteClerkLogin({ exchangeClerkSession });
+    const req = reqWithFinalUser();
+    const res = createRes();
+    const next = createNext();
+
+    await complete(req, res, next);
+
+    expect(exchangeClerkSession).toHaveBeenCalledWith({
+      req,
+      res,
+      user,
+      identity: claims,
+      tenantId: 'tenant-a',
+    });
+    expect((res as { status: jest.Mock }).status).toHaveBeenCalledWith(200);
+    expect((res as { json: jest.Mock }).json).toHaveBeenCalledWith({
+      token: 'access-token',
+      user: { _id: 'u1' },
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('writes a 2FA-pending body without treating it as an error', async () => {
+    const exchangeClerkSession = jest
+      .fn()
+      .mockResolvedValue({ twoFAPending: true, tempToken: 'temp-token' });
+    const complete = createCompleteClerkLogin({ exchangeClerkSession });
+    const res = createRes();
+
+    await complete(reqWithFinalUser(), res, createNext());
+
+    expect((res as { json: jest.Mock }).json).toHaveBeenCalledWith({
+      twoFAPending: true,
+      tempToken: 'temp-token',
+    });
+  });
+
+  it('fails closed with CLERK_LOGIN_FAILED when req.user is missing', async () => {
+    const exchangeClerkSession = jest.fn();
+    const complete = createCompleteClerkLogin({ exchangeClerkSession });
+    const req = createReq({
+      clerkAuth: {
+        clerkIdentity: claims,
+        clerkLookups: { userByClerkId: null, userByEmail: null },
+      },
+    });
+    const next = createNext();
+
+    await complete(req, createRes(), next);
+
+    expect(exchangeClerkSession).not.toHaveBeenCalled();
+    const err = next.mock.calls[0][0];
+    expect(err.code).toBe('CLERK_LOGIN_FAILED');
+    expect(err.status).toBe(500);
+  });
+
+  it('propagates an exchangeClerkSession failure via next(error)', async () => {
+    const failure = new Error('exchange failed');
+    const exchangeClerkSession = jest.fn().mockRejectedValue(failure);
+    const complete = createCompleteClerkLogin({ exchangeClerkSession });
+    const next = createNext();
+
+    await complete(reqWithFinalUser(), createRes(), next);
+
+    expect(next).toHaveBeenCalledWith(failure);
   });
 });
 

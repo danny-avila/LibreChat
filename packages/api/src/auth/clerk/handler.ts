@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { ClerkIdentityServiceDependencies, ClerkTenantScope } from './service';
 import type { ClerkAuthConfig, ClerkAuthConfigEnabled } from './types';
 import type { VerifiedClerkIdentity } from './verify';
+import type { UserResponse } from '../user';
 import { verifyClerkSessionToken, ClerkAuthError } from './verify';
 import { resolveAppConfigForUser } from '../../app/resolve';
 import { isEmailDomainAllowed } from '../domain';
@@ -222,6 +223,60 @@ export function createCommitClerkLogin(deps: CommitClerkLoginDeps) {
       }
     } catch (error) {
       return next(error);
+    }
+  };
+}
+
+/** The exact JSON body `completeClerkLogin` writes (matches `TClerkLoginResponse`). */
+export type ClerkLoginCompletion =
+  | { twoFAPending: true; tempToken: string }
+  | { twoFAPending?: false; token: string; user: UserResponse };
+
+export interface CompleteClerkLoginDeps {
+  /**
+   * Behavior 6's session exchange: the local-2FA-pending branch, or the
+   * correlated Session/claim transaction plus `setAuthTokens` cookies, for
+   * the final `req.user` `commitClerkLogin` produced. Must set any auth
+   * cookies on `res` itself (mirrors `setAuthTokens`'s existing contract —
+   * this factory never touches cookies) and return the exact body this
+   * step writes. This is a pure injection boundary: no session/2FA/replay
+   * logic lives in this file.
+   */
+  exchangeClerkSession: (input: {
+    req: Request;
+    res: Response;
+    user: IUser;
+    identity: VerifiedClerkIdentity;
+    tenantId?: string;
+  }) => Promise<ClerkLoginCompletion>;
+}
+
+/**
+ * Route step 10. Delegates entirely to `deps.exchangeClerkSession` and
+ * writes its result as the final response body.
+ */
+export function createCompleteClerkLogin(deps: CompleteClerkLoginDeps) {
+  return async function completeClerkLogin(
+    req: ClerkRequest,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const state = req.clerkAuth;
+      if (!state || !req.user) {
+        next(new ClerkRouteError('CLERK_LOGIN_FAILED', 500));
+        return;
+      }
+      const result = await deps.exchangeClerkSession({
+        req,
+        res,
+        user: req.user,
+        identity: state.clerkIdentity,
+        tenantId: state.clerkLookups.tenantId,
+      });
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
     }
   };
 }
