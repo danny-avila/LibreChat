@@ -1,5 +1,5 @@
 import type { PaletteEntry } from '~/hooks/Input/usePaletteEntries';
-import { chipsFitInline, formatElapsed, projectBarEntries } from '../Bar';
+import { chipMenuModes, chipsFitInline, formatElapsed, projectBarEntries } from '../Bar';
 
 /** Pure decisions behind the bar's tool projection, layout and elapsed time. */
 
@@ -60,6 +60,25 @@ describe('projectBarEntries', () => {
         modes: [expect.objectContaining({ id: 'github', active: true })],
       }),
     );
+  });
+});
+
+describe('chipMenuModes', () => {
+  it('keeps named sub-modes and drops icon-only actions', () => {
+    expect(
+      chipMenuModes([
+        { id: 'configure', label: 'Configure', active: false, icon: 'gear', onSelect: jest.fn() },
+        { id: 'default', label: 'Default', active: true, onSelect: jest.fn() },
+      ]),
+    ).toEqual([expect.objectContaining({ id: 'default' })]);
+  });
+
+  it('returns nothing when every mode is an icon action', () => {
+    expect(
+      chipMenuModes([
+        { id: 'configure', label: 'Configure', active: false, icon: 'gear', onSelect: jest.fn() },
+      ]),
+    ).toEqual([]);
   });
 });
 
