@@ -1443,6 +1443,71 @@ describe('createActivityPhaseWiring', () => {
     expect(marker).toMatchObject({ activity_end_index: 2, activity_count: 2 });
   });
 
+  it('reanchors a delayed batch after dropping its already-covered call', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'covered' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'early-2' } },
+      {
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: 'Completed the first phase',
+        activity_label_type: 'phase',
+        activity_start_index: 0,
+        activity_end_index: 2,
+        activity_count: 2,
+        pending: false,
+      },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the later phase' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    parts.push({ type: ContentTypes.TEXT, text: substantialText('The interim answer.') });
+    /** The delayed batch keeps one call already inside the emitted phase and
+     *  one that has not materialized. The surviving activity is the uncovered
+     *  call, so the covered call's index must not stand in for its position. */
+    await wiring.hook(
+      {
+        hook_event_name: 'PostToolBatch',
+        runId: 'run-1',
+        entries: [
+          {
+            toolName: 'web_search',
+            toolInput: { query: 'covered' },
+            toolUseId: 'covered',
+            status: 'success',
+            toolOutput: 'covered-result',
+          },
+          {
+            toolName: 'web_search',
+            toolInput: { query: 'uncovered' },
+            toolUseId: 'uncovered',
+            status: 'success',
+            toolOutput: 'uncovered-result',
+          },
+        ],
+      } as PostToolBatchHookInput,
+      new AbortController().signal,
+    );
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'later-2' } });
+    await wiring.hook(batch('later-2'), new AbortController().signal);
+
+    wiring.complete();
+    await flushDetached();
+
+    /** The uncovered call never materialized, so the delayed activity must be
+     *  held past the boundary rather than inheriting the covered call's index
+     *  and being counted in the phase that already closed. */
+    const markers = parts.filter(
+      (part) => part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type === 'phase',
+    );
+    expect(markers).toHaveLength(2);
+    expect(markers[1]).toMatchObject({ activity_start_index: 3, activity_count: 2 });
+  });
+
   it('clears a resolved missing-tool anchor before partitioning', async () => {
     const parts: LooseContentPart[] = [];
     const generatePhase = jest.fn(async () => ({ label: 'Completed the resumed work' }));

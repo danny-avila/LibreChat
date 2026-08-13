@@ -443,6 +443,7 @@ function closesBeforeBoundary(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   activity: TrackedActivity,
   boundary: number | undefined,
+  toolIndices?: number[],
 ): boolean {
   if (boundary == null) {
     return true;
@@ -450,13 +451,12 @@ function closesBeforeBoundary(
   if (activity.unresolvedToolStartIndex != null && activity.unresolvedToolStartIndex >= boundary) {
     return false;
   }
+  const materializedToolIndices = toolIndices ?? findTrackedToolIndices(parts, activity);
+  if (materializedToolIndices.length > 0) {
+    return materializedToolIndices.every((index) => index < boundary);
+  }
   const materializedStart = findMaterializedActivityStart(parts, activity);
-  const materializedToolIndices = findTrackedToolIndices(parts, activity);
-  /** A completed batch straddling the boundary stays whole on the later side;
-   *  splitting it would leave one tool call outside its own parent. */
-  return materializedToolIndices.length > 0
-    ? materializedToolIndices.every((index) => index < boundary)
-    : materializedStart == null || materializedStart < boundary;
+  return materializedStart == null || materializedStart < boundary;
 }
 
 /** Every activity is represented by exactly one positioned item, so run totals
@@ -1038,25 +1038,32 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         ? { ...activity, startIndex: findTrackedStart(currentParts, activity) }
         : activity;
     });
-    const closesBefore = (activity: TrackedActivity): boolean =>
-      closesBeforeBoundary(currentParts, activity, requestedEndIndex);
-    const reanchor = (activity: TrackedActivity): TrackedActivity => {
-      if (requestedEndIndex == null) {
-        return activity;
+    /** One walk of the shared content array per activity: the materialized
+     *  tool indices decide the side and, for a retained straddling batch, its
+     *  new anchor. Re-deriving them per filter would scan the message array
+     *  several times per activity at every boundary. */
+    const closingActivities: TrackedActivity[] = [];
+    const retainedActivities: TrackedActivity[] = [];
+    for (const activity of resolved) {
+      const toolIndices = findTrackedToolIndices(currentParts, activity);
+      if (closesBeforeBoundary(currentParts, activity, requestedEndIndex, toolIndices)) {
+        closingActivities.push(activity);
+        continue;
       }
-      const firstRetainedToolIndex = findTrackedToolIndices(currentParts, activity).find(
-        (index) => index >= requestedEndIndex,
+      const firstRetainedToolIndex =
+        requestedEndIndex == null
+          ? undefined
+          : toolIndices.find((index) => index >= requestedEndIndex);
+      retainedActivities.push(
+        firstRetainedToolIndex != null
+          ? {
+              ...activity,
+              startIndex: firstRetainedToolIndex,
+              partitionStartIndex: firstRetainedToolIndex,
+            }
+          : activity,
       );
-      return firstRetainedToolIndex != null
-        ? {
-            ...activity,
-            startIndex: firstRetainedToolIndex,
-            partitionStartIndex: firstRetainedToolIndex,
-          }
-        : activity;
-    };
-    const closingActivities = resolved.filter(closesBefore);
-    const retainedActivities = resolved.filter((activity) => !closesBefore(activity)).map(reanchor);
+    }
     const closingCount = countActivities(closingActivities);
     const closingContext: AssistantContextEntry[] = [];
     const retainedContext: AssistantContextEntry[] = [];
@@ -1293,6 +1300,21 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     if (coveredToolIds.size > 0) {
       trackedEntries = trackedEntries.filter((entry) => !coveredToolIds.has(entry.toolUseId));
       ids = new Set(trackedEntries.map((entry) => entry.toolUseId));
+      /** The batch position was found before the covered calls were dropped.
+       *  What remains is a different activity, and it may not have
+       *  materialized at all, so re-derive its start from the retained ids. */
+      batchStartIndex = undefined;
+      for (const index of indices) {
+        const part = parts[index];
+        if (
+          part?.type === ContentTypes.TOOL_CALL &&
+          typeof part.tool_call?.id === 'string' &&
+          ids.has(part.tool_call.id)
+        ) {
+          batchStartIndex = index;
+          break;
+        }
+      }
     }
     if (trackedEntries.length === 0) {
       pendingReasoning.delete(reasoningKey);
