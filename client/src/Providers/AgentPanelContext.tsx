@@ -100,7 +100,10 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
           isConfigured: configuredServers.has(serverName),
           isConnected: connectionStatus?.[serverName]?.connectionState === 'connected',
           metadata,
+          dbId: serverConfig?.dbId,
           consumeOnly: serverConfig?.consumeOnly,
+          support_contact: serverConfig?.support_contact,
+          owner_contact: serverConfig?.owner_contact,
         });
       }
     }
@@ -130,7 +133,10 @@ export function AgentPanelProvider({ children }: { children: React.ReactNode }) 
         isConfigured: true,
         serverName: mcpServerName,
         isConnected: connectionStatus?.[mcpServerName]?.connectionState === 'connected',
+        dbId: serverConfig?.dbId,
         consumeOnly: serverConfig?.consumeOnly,
+        support_contact: serverConfig?.support_contact,
+        owner_contact: serverConfig?.owner_contact,
       });
     }
 

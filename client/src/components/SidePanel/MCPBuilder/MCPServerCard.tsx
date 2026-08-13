@@ -3,10 +3,11 @@ import { MCPIcon } from '@librechat/client';
 import { PermissionBits, hasPermissions } from 'librechat-data-provider';
 import type { MCPServerStatusIconProps } from '~/components/MCP/MCPServerStatusIcon';
 import type { MCPServerDefinition } from '~/hooks';
-import MCPServerDialog from './MCPServerDialog';
-import { getStatusDotColor } from './MCPStatusBadge';
-import MCPCardActions from './MCPCardActions';
+import MCPServerContact from '~/components/MCP/MCPServerContact';
 import { useMCPServerManager, useLocalize } from '~/hooks';
+import { getStatusDotColor } from './MCPStatusBadge';
+import MCPServerDialog from './MCPServerDialog';
+import MCPCardActions from './MCPCardActions';
 import { cn } from '~/utils';
 
 interface MCPServerCardProps {
@@ -125,6 +126,7 @@ export default function MCPServerCard({
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-text-primary">{displayName}</div>
           {description && <p className="truncate text-xs text-text-secondary">{description}</p>}
+          <MCPServerContact server={server} className="text-xs" />
         </div>
 
         {/* Actions */}
