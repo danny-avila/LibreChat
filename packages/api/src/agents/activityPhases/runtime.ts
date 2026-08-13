@@ -241,6 +241,31 @@ function findReasoningExcerptStart(
   return undefined;
 }
 
+function hasReasoningExcerptAtOrAfter(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  excerpt: string,
+  minimumIndex: number,
+): boolean {
+  const needle = excerpt.trim().slice(0, 80);
+  if (!needle) {
+    return false;
+  }
+  const indices = definedPartIndices(parts);
+  for (let position = indices.length - 1; position >= 0; position -= 1) {
+    const index = indices[position];
+    if (index < minimumIndex) {
+      break;
+    }
+    if (
+      parts[index]?.type === ContentTypes.THINK &&
+      textValue(parts[index]?.think).includes(needle)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function findTrackedToolStart(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   activity: TrackedActivity,
@@ -589,6 +614,24 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       return toolStart != null ? { ...activity, startIndex: toolStart } : activity;
     });
     const contextSnapshot = [...assistantContext];
+    /** Completion-finalized phases leave the final root text outside their
+     *  UI bounds. Remove its matching retained excerpt from the label prompt
+     *  as well, or the parent can paraphrase the answer it does not contain.
+     *  Search from the tail because identical intermediate/final text should
+     *  discard only the most recent capture. */
+    if (requestedEndIndex != null) {
+      const excludedText = textValue(currentParts[requestedEndIndex]?.text)
+        .trim()
+        .slice(-MAX_EXCERPT_CHARS);
+      if (excludedText) {
+        for (let position = contextSnapshot.length - 1; position >= 0; position -= 1) {
+          if (contextSnapshot[position].trim() === excludedText) {
+            contextSnapshot.splice(position, 1);
+            break;
+          }
+        }
+      }
+    }
     const totalActivityCount = activityCount;
     const failedCount = failedActivityCount;
     const partialCount = partialActivityCount;
@@ -895,8 +938,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         }
         const reasoningExcerpt = activity.thinkingExcerpts?.[0];
         if (toolCallIds.length === 0 && reasoningExcerpt) {
-          const reasoningStart = findReasoningExcerptStart(parts, reasoningExcerpt);
-          return reasoningStart != null && reasoningStart >= candidateFinalTextIndex;
+          return hasReasoningExcerptAtOrAfter(
+            parts,
+            reasoningExcerpt,
+            candidateFinalTextIndex,
+          );
         }
         return (
           !toolCallIds.some((id) => materializedToolIds.has(id)) &&
@@ -905,12 +951,14 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       });
       const overflowIds = [...overflowToolCallIds];
       const overflowBoundaryIds = [...overflowBoundaryToolCallIds];
-      const overflowReasoningStart = overflowReasoningExcerpt
-        ? findReasoningExcerptStart(parts, overflowReasoningExcerpt)
-        : undefined;
       const hasLaterOverflowActivity =
         overflowIds.some((id) => trailingToolIds.has(id)) ||
-        (overflowReasoningStart != null && overflowReasoningStart >= candidateFinalTextIndex) ||
+        (overflowReasoningExcerpt != null &&
+          hasReasoningExcerptAtOrAfter(
+            parts,
+            overflowReasoningExcerpt,
+            candidateFinalTextIndex,
+          )) ||
         (!overflowBoundaryIds.every((id) => materializedToolIds.has(id)) &&
           overflowActivityStartIndex != null &&
           overflowActivityStartIndex >= candidateFinalTextIndex);

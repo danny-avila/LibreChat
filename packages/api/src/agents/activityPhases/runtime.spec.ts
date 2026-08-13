@@ -853,6 +853,108 @@ describe('createActivityPhaseWiring', () => {
     expect(parts[1]).toMatchObject({ activity_end_index: 0, activity_count: 14 });
   });
 
+  it('rejects a text boundary when a duplicate reasoning anchor follows it', async () => {
+    const duplicate = 'The same reasoning prefix identifies both retained activities.';
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.THINK, think: duplicate },
+      { type: ContentTypes.TEXT, text: 'This looked like the final answer.' },
+      { type: ContentTypes.THINK, think: `${duplicate} Later activity details.` },
+    ];
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 2,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [
+          { startIndex: 0, status: 'success', thinkingExcerpts: [duplicate] },
+          { startIndex: 2, status: 'success', thinkingExcerpts: [duplicate] },
+        ],
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'root-text' ? 1 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed both reasoning passes' })),
+    });
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'root-text',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[3]).toMatchObject({ activity_end_index: 3, activity_count: 2 });
+  });
+
+  it('rejects a text boundary when a duplicate overflow reasoning anchor follows it', async () => {
+    const duplicate = 'The overflow reasoning prefix is shared by both positions.';
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.THINK, think: duplicate },
+      { type: ContentTypes.TEXT, text: 'This looked like the final overflow answer.' },
+      { type: ContentTypes.THINK, think: `${duplicate} Later overflow details.` },
+    ];
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 14,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: Array.from({ length: 13 }, () => ({
+          startIndex: 0,
+          status: 'success' as const,
+        })),
+        overflowActivityStartIndex: 2,
+        overflowReasoningExcerpt: duplicate,
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'root-text' ? 1 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed overflow reasoning' })),
+    });
+    wiring
+      .handlers({ [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() } })
+      ?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id: 'root-text',
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[3]).toMatchObject({ activity_end_index: 3, activity_count: 14 });
+  });
+
   it('retains an earlier overflow ID when delayed tools materialize in reverse order', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-b' } },
@@ -1058,6 +1160,45 @@ describe('createActivityPhaseWiring', () => {
       activity_end_index: 2,
       activity_count: 2,
     });
+  });
+
+  it('excludes the persisted final text from the phase summary context', async () => {
+    const finalText = 'The persisted answer is complete.';
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TEXT, text: finalText },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the persisted workflow' }));
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 2,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [
+          { startIndex: 0, status: 'success', toolCallIds: ['tool-1'] },
+          { startIndex: 1, status: 'success', toolCallIds: ['tool-2'] },
+        ],
+        assistantContext: ['I will inspect both sources.', finalText],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(generatePhase).toHaveBeenCalledWith(
+      expect.objectContaining({ assistantContext: ['I will inspect both sources.'] }),
+    );
+    expect(parts[3]).toMatchObject({ activity_end_index: 2, activity_count: 2 });
   });
 
   it('prefers the materialized final text over a stale retained step index', async () => {
