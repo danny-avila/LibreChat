@@ -335,25 +335,43 @@ function findReasoningStart(
   return startIndex ?? findLastPartIndex(parts, ContentTypes.THINK);
 }
 
+/**
+ * Locates a captured text entry in the live content, reporting whether the
+ * result is authoritative. A step index anchors it exactly; a bare text match
+ * only does when it is unique, because a repeated excerpt would otherwise
+ * resolve to the wrong occurrence and outrank the position it was saved with.
+ */
+function locateTextEntry(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  text: string,
+  stepIndex?: number,
+): { index?: number; authoritative: boolean } {
+  const needle = text.trim().slice(-REASONING_ANCHOR_CHARS);
+  if (!needle) {
+    return { index: stepIndex, authoritative: false };
+  }
+  const matches = (part: LooseContentPart | null | undefined) =>
+    part?.type === ContentTypes.TEXT && textValue(part.text).includes(needle);
+  if (stepIndex != null && matches(parts[stepIndex])) {
+    return { index: stepIndex, authoritative: true };
+  }
+  let lastMatch: number | undefined;
+  let matchCount = 0;
+  for (const index of definedPartIndices(parts)) {
+    if (matches(parts[index])) {
+      lastMatch = index;
+      matchCount += 1;
+    }
+  }
+  return { index: lastMatch, authoritative: matchCount === 1 };
+}
+
 function findTextBoundary(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   text: string,
   stepIndex?: number,
 ): number | undefined {
-  const needle = text.trim().slice(-REASONING_ANCHOR_CHARS);
-  const matches = (part: LooseContentPart | null | undefined) =>
-    part?.type === ContentTypes.TEXT && textValue(part.text).includes(needle);
-  if (stepIndex != null && matches(parts[stepIndex])) {
-    return stepIndex;
-  }
-  const indices = definedPartIndices(parts);
-  for (let position = indices.length - 1; position >= 0; position -= 1) {
-    const index = indices[position];
-    if (matches(parts[index])) {
-      return index;
-    }
-  }
-  return undefined;
+  return locateTextEntry(parts, text, stepIndex).index;
 }
 
 /** Persists Open Responses text-phase metadata onto LibreChat text parts.
@@ -1080,21 +1098,24 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     const retainedContext: AssistantContextEntry[] = [];
     for (const entry of assistantContext) {
       const stepIndex = entry.stepId != null ? deps.getStepIndex?.(entry.stepId) : undefined;
-      const entryIndex = entry.text.trim()
-        ? findTextBoundary(currentParts, entry.text, stepIndex)
-        : stepIndex;
-      /** A rendered position is proof; an activity position is only the order
-       *  the step was registered in, and a parallel lane can register before
-       *  the tool hooks that close the phase. Whenever the materialized index
-       *  shows the text is after the boundary, it belongs to the later phase. */
-      const renderedAfterBoundary =
-        requestedEndIndex != null && entryIndex != null && entryIndex > requestedEndIndex;
-      const isRetained =
-        requestedEndIndex != null &&
-        (renderedAfterBoundary ||
-          (entry.activityPosition != null
-            ? entry.activityPosition > closingCount
-            : entryIndex != null && entryIndex >= requestedEndIndex));
+      const located = entry.text.trim()
+        ? locateTextEntry(currentParts, entry.text, stepIndex)
+        : { index: stepIndex, authoritative: false };
+      const entryIndex = located.index;
+      /** Where the text actually rendered decides both directions, but only
+       *  when that position is known to be this entry's. Registration order is
+       *  the fallback: a parallel lane can register before the tool hooks that
+       *  close the phase, or after work that already rendered ahead of it. */
+      const retainsEntry = (boundary: number): boolean => {
+        if (located.authoritative && entryIndex != null) {
+          return entryIndex > boundary;
+        }
+        if (entry.activityPosition != null) {
+          return entry.activityPosition > closingCount;
+        }
+        return entryIndex != null && entryIndex >= boundary;
+      };
+      const isRetained = requestedEndIndex != null && retainsEntry(requestedEndIndex);
       if (isRetained) {
         retainedContext.push({
           ...entry,

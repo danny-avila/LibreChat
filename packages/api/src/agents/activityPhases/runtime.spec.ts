@@ -3061,6 +3061,116 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  it('closes context rendered before the boundary despite a later activity position', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+    ];
+    const payloads: GenerateActivityPhasePayload[] = [];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'early-text' ? 2 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async (payload: GenerateActivityPhasePayload) => {
+        payloads.push(payload);
+        return { label: 'Completed one phase' };
+      }),
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    parts[4] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-3' } };
+    /** This activity renders after the boundary, so it is retained and the
+     *  closing count stays at two while the registration counter reaches
+     *  three — the text registered next is nonetheless rendered earlier. */
+    await wiring.hook(batch('tool-3'), new AbortController().signal);
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_MESSAGE_DELTA]: {
+        handle: (_event, data) => {
+          const delta = data as { id?: string; delta?: { content?: { text?: string } } };
+          if (delta.id === 'early-text') {
+            parts[2] = {
+              type: ContentTypes.TEXT,
+              text: `${parts[2]?.text ?? ''}${delta.delta?.content?.text ?? ''}`,
+            };
+          }
+        },
+      },
+    });
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'early-text',
+        groupId: 'parallel',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    handlers?.[GraphEvents.ON_MESSAGE_DELTA]?.handle(
+      GraphEvents.ON_MESSAGE_DELTA,
+      {
+        id: 'early-text',
+        delta: { content: { type: ContentTypes.TEXT, text: 'Context for the earlier work.' } },
+      },
+      undefined,
+      undefined,
+    );
+    parts[3] = { type: ContentTypes.TEXT, text: substantialText('Boundary result.') };
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(payloads[0]?.assistantContext).toEqual(['Context for the earlier work.']);
+  });
+
+  it('keeps ambiguously matched restored context on its saved side', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TEXT, text: 'Shared excerpt.' },
+      { type: ContentTypes.TEXT, text: substantialText('Boundary result.') },
+      { type: ContentTypes.TEXT, text: 'Later text repeating Shared excerpt.' },
+    ];
+    const payloads: GenerateActivityPhasePayload[] = [];
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 3,
+        generated: 0,
+        activityCount: 2,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [
+          { startIndex: 0, status: 'success' as const, toolCallIds: ['tool-1'] },
+          { startIndex: 1, status: 'success' as const, toolCallIds: ['tool-2'] },
+        ],
+        /** Restored entries carry no step id, so the excerpt is located by
+         *  text alone and its repetition after the boundary is not proof. */
+        assistantContext: [{ text: 'Shared excerpt.', activityPosition: 0 }],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async (payload: GenerateActivityPhasePayload) => {
+        payloads.push(payload);
+        return { label: 'Completed the resumed phase' };
+      }),
+    });
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(payloads[0]?.assistantContext).toEqual(['Shared excerpt.']);
+  });
+
   it('retains earlier-position context rendered after a substantial boundary', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
