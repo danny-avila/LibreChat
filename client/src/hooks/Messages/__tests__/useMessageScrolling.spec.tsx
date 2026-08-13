@@ -345,6 +345,46 @@ describe('useMessageScrolling resize reconciliation', () => {
     }
   });
 
+  it('leaves the send glide alone while the answer streams in', () => {
+    const view = render(
+      <RecoilRoot>
+        <MessagesViewContext.Provider value={createContextValue({ isSubmitting: false })}>
+          <ScrollingHarness messagesTree={[message]} />
+        </MessagesViewContext.Provider>
+      </RecoilRoot>,
+    );
+
+    const scrollable = screen.getByTestId('scrollable');
+    const scrollTo = jest.fn();
+    (scrollable as unknown as { scrollTo: jest.Mock }).scrollTo = scrollTo;
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+    scrollable.scrollTop = 0;
+
+    view.rerender(
+      <RecoilRoot>
+        <MessagesViewContext.Provider value={createContextValue({ isSubmitting: true })}>
+          <ScrollingHarness messagesTree={[message]} />
+        </MessagesViewContext.Provider>
+      </RecoilRoot>,
+    );
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 800, behavior: 'smooth' });
+
+    /** The next delta of the answer arrives while the glide is still travelling. */
+    Object.defineProperty(scrollable, 'scrollHeight', { value: 1100, configurable: true });
+    view.rerender(
+      <RecoilRoot>
+        <MessagesViewContext.Provider value={createContextValue({ isSubmitting: true })}>
+          <ScrollingHarness messagesTree={[message, message]} />
+        </MessagesViewContext.Provider>
+      </RecoilRoot>,
+    );
+
+    /** A plain follow would have written scrollTop outright and killed the animation. */
+    expect(scrollable.scrollTop).toBe(0);
+  });
+
   it('does not clamp to rendered content bottom during general resize reconciliation', () => {
     renderScrolling();
 

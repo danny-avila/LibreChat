@@ -338,7 +338,10 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
         isNearBottomRef.current = true;
         isStuckRef.current = true;
         followBottom('smooth');
-      } else if (isStuckRef.current) {
+      } else if (isStuckRef.current && !isGlidingRef.current) {
+        /** Every delta of the answer reruns this effect, and a plain follow writes
+         *  scrollTop outright, which cancels an animation on its first frame. The
+         *  glide is left to finish the trip it started. */
         followBottom();
       }
     }
