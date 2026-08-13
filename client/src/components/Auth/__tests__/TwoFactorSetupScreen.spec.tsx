@@ -2,8 +2,8 @@
  * @jest-environment @happy-dom/jest-environment
  */
 import React, { useCallback, useState } from 'react';
-import { persistTwoFactorSetupToken } from 'librechat-data-provider';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { readTwoFactorSetupToken, persistTwoFactorSetupToken } from 'librechat-data-provider';
 import { createMemoryRouter, MemoryRouter, RouterProvider, useNavigate } from 'react-router-dom';
 import type { TUser } from 'librechat-data-provider';
 import TwoFactorSetupScreen from '../TwoFactorSetupScreen';
@@ -333,6 +333,58 @@ describe('TwoFactorSetupScreen', () => {
       });
     });
     expect(mockCompleteAuthentication).toHaveBeenCalledWith('auth-token', { id: 'user-1' });
+  });
+
+  /** A consumed one-time nonce answers 400, unlike the 401 an unusable setup token returns. */
+  const spentCredentialError = { response: { status: 400 } };
+
+  it('restarts sign-in when a spent acknowledgement credential is replayed', () => {
+    renderScreen();
+    reachBackupPhase();
+    fireEvent.click(screen.getByTestId('download'));
+    fireEvent.click(screen.getByTestId('complete'));
+
+    act(() => mockAcknowledgeMutate.mock.calls[0][1].onError(spentCredentialError));
+
+    /** Retrying a nonce the server already burned can never succeed, so the flow has to reset. */
+    expect(readTwoFactorSetupToken()).toBe('');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('restarts sign-in when a spent finalization credential is replayed', () => {
+    renderScreen();
+    reachBackupPhase();
+    fireEvent.click(screen.getByTestId('download'));
+    fireEvent.click(screen.getByTestId('complete'));
+    act(() => {
+      mockAcknowledgeMutate.mock.calls[0][1].onSuccess({ finalizationToken: 'finalization-token' });
+    });
+
+    act(() => mockFinalizeMutate.mock.calls[0][1].onError(spentCredentialError));
+
+    expect(readTwoFactorSetupToken()).toBe('');
+    expect(mockCompleteAuthentication).not.toHaveBeenCalled();
+  });
+
+  it('keeps a rejected verification code on the verify phase', () => {
+    renderScreen();
+    fireEvent.click(screen.getByTestId('generate'));
+    act(() => {
+      mockEnableMutate.mock.calls[0][1].onSuccess({
+        otpauthUrl: 'otpauth://totp/LibreChat:user?secret=ABC123',
+        backupCodes: ['backup01'],
+      });
+    });
+    fireEvent.click(screen.getByTestId('qr-next'));
+    fireEvent.click(screen.getByTestId('enter-code'));
+    fireEvent.click(screen.getByTestId('verify'));
+
+    act(() => mockConfirmMutate.mock.calls[0][1].onError(spentCredentialError));
+
+    /** A wrong code shares the 400, so only the one-time transitions may treat it as spent. */
+    expect(screen.getByRole('alert')).toHaveTextContent('com_ui_2fa_invalid');
+    expect(readTwoFactorSetupToken()).toBe('setup-token');
+    expect(screen.getByTestId('verify')).toBeInTheDocument();
   });
 
   it('discards the stale finalization credential when confirmation is repeated', () => {

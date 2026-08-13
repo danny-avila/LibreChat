@@ -24,8 +24,20 @@ const getSecret = (otpauthUrl: string): string => {
   return value ? decodeURIComponent(value) : '';
 };
 
-const isExpiredSetupCredential = (error: unknown): boolean =>
-  (error as { response?: { status?: number } } | undefined)?.response?.status === 401;
+const getResponseStatus = (error: unknown): number | undefined =>
+  (error as { response?: { status?: number } } | undefined)?.response?.status;
+
+const isExpiredSetupCredential = (error: unknown): boolean => getResponseStatus(error) === 401;
+
+/**
+ * Acknowledgement and finalization nonces are single-use and answer 400 once consumed, so a lost
+ * response leaves the screen replaying a credential the server can never accept again. Spent and
+ * expired both have to land somewhere the user can act from rather than on an endless retry.
+ */
+const isSpentTransitionCredential = (error: unknown): boolean => {
+  const status = getResponseStatus(error);
+  return status === 400 || status === 401;
+};
 
 const TwoFactorSetupScreen: React.FC = React.memo(() => {
   const [searchParams] = useSearchParams();
@@ -62,16 +74,31 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
     phaseRef.current?.focus();
   }, [phase]);
 
+  const restartLogin = useCallback(() => {
+    clearTwoFactorSetupToken();
+    navigate(restartLoginPath, { replace: true });
+  }, [navigate, restartLoginPath]);
+
   const restartLoginWhenExpired = useCallback(
     (mutationError: unknown): boolean => {
       if (!isExpiredSetupCredential(mutationError)) {
         return false;
       }
-      clearTwoFactorSetupToken();
-      navigate(restartLoginPath, { replace: true });
+      restartLogin();
       return true;
     },
-    [navigate, restartLoginPath],
+    [restartLogin],
+  );
+
+  const restartLoginWhenSpent = useCallback(
+    (mutationError: unknown): boolean => {
+      if (!isSpentTransitionCredential(mutationError)) {
+        return false;
+      }
+      restartLogin();
+      return true;
+    },
+    [restartLogin],
   );
 
   const handleGenerate = useCallback(() => {
@@ -146,14 +173,14 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
         {
           onSuccess: ({ token: authToken, user }) => completeAuthentication(authToken, user),
           onError: (mutationError) => {
-            if (!restartLoginWhenExpired(mutationError)) {
+            if (!restartLoginWhenSpent(mutationError)) {
               setError(localize('com_auth_two_factor_setup_finalize_error'));
             }
           },
         },
       );
     },
-    [completeAuthentication, finalizeSetup, localize, restartLoginWhenExpired],
+    [completeAuthentication, finalizeSetup, localize, restartLoginWhenSpent],
   );
 
   const handleComplete = useCallback(() => {
@@ -175,7 +202,7 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
           runFinalize(issuedToken);
         },
         onError: (mutationError) => {
-          if (!restartLoginWhenExpired(mutationError)) {
+          if (!restartLoginWhenSpent(mutationError)) {
             setError(localize('com_auth_two_factor_setup_finalize_error'));
           }
         },
@@ -186,7 +213,7 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
     acknowledgeSetup,
     finalizationToken,
     localize,
-    restartLoginWhenExpired,
+    restartLoginWhenSpent,
     runFinalize,
   ]);
 
