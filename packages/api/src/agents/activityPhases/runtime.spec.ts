@@ -1245,6 +1245,28 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  it('leaves the last materialized text outside even when it retains a lane id', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TEXT, text: 'The lane answer is complete.', groupId: 'lane-a' },
+    ];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed the lane workflow' })),
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[3]).toMatchObject({ activity_end_index: 2, activity_count: 2 });
+  });
+
   it('keeps a parallel lane final inside the run-wide phase', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },

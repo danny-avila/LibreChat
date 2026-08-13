@@ -911,7 +911,12 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     for (let position = definedIndices.length - 1; position >= 0; position -= 1) {
       const index = Number(definedIndices[position]);
       const part = parts[index];
-      if (part?.type === ContentTypes.TEXT && part.groupId == null) {
+      /** The UI contract is the last materialized TEXT part, not the last
+       *  part whose provider lane metadata happens to look root-scoped.
+       *  Some MCP runs retain a groupId on their final response. The later-
+       *  activity checks below still reject an intermediate lane text when
+       *  tools or reasoning follow it. */
+      if (part?.type === ContentTypes.TEXT) {
         if (part.phase !== 'final_answer') {
           finalTextIndex = index;
         }
