@@ -234,6 +234,50 @@ describe('groupActivityPhases', () => {
     expect(lastVisibleContentIdx([tool, tool, final, phase as never])).toBe(2);
   });
 
+  it('groups multiple logical spans when an earlier phase marker arrives late', () => {
+    const first = labelPart({ activity_label: 'Completed the first phase', pending: false });
+    Object.assign(first, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+    const second = labelPart({ activity_label: 'Completed the second phase', pending: false });
+    Object.assign(second, {
+      activity_label_type: 'phase',
+      activity_start_index: 3,
+      activity_end_index: 6,
+      activity_count: 2,
+    });
+    const boundary = {
+      type: ContentTypes.TEXT,
+      text: 'Substantial result',
+    } as TMessageContentParts;
+    const content = [tool, tool, boundary, tool, first as never, tool, second as never];
+
+    const segments = groupActivityPhases(content);
+
+    expect(segments).toEqual([
+      expect.objectContaining({
+        type: 'phase',
+        startIndex: 0,
+        labelIndex: 4,
+        contentIndices: [0, 1],
+      }),
+      expect.objectContaining({
+        type: 'content',
+        startIndex: 2,
+        contentIndices: [2],
+      }),
+      expect.objectContaining({
+        type: 'phase',
+        startIndex: 3,
+        labelIndex: 6,
+        contentIndices: [3, 5],
+      }),
+    ]);
+  });
+
   it('keeps a late child label in the phase while leaving final text outside', () => {
     const child = labelPart({
       activity_label: 'Recorded the delayed child result',

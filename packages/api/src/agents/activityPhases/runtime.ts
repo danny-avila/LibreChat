@@ -149,6 +149,12 @@ function textValue(value: unknown): string {
   return typeof nested === 'string' ? nested : '';
 }
 
+function isSubstantialText(part: LooseContentPart | null | undefined): boolean {
+  return (
+    part?.type === ContentTypes.TEXT && textValue(part.text).trim().length > SUBSTANTIAL_TEXT_CHARS
+  );
+}
+
 function normalizeLabel(value: string | undefined): string {
   const firstLine = value?.split(/\r?\n/).find((line) => line.trim().length > 0) ?? '';
   const normalized = firstLine.replace(/\s+/g, ' ').trim();
@@ -215,62 +221,31 @@ function findTrackedStart(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   activity: TrackedActivity,
 ): number {
+  const materializedStart = findMaterializedActivityStart(parts, activity);
+  return materializedStart ?? Math.min(activity.startIndex, Math.max(0, parts.length - 1));
+}
+
+function findMaterializedActivityStart(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  activity: TrackedActivity,
+): number | undefined {
   const toolStart = findTrackedToolStart(parts, activity);
   if (toolStart != null) {
     return toolStart;
   }
   const excerpt = activity.thinkingExcerpts?.[0]?.trim();
   if (excerpt) {
-    const reasoningStart = findReasoningExcerptStart(parts, excerpt);
-    if (reasoningStart != null) {
+    const reasoningStart = findReasoningStart(parts, excerpt, activity.startIndex);
+    if (
+      parts[reasoningStart]?.type === ContentTypes.THINK &&
+      textValue(parts[reasoningStart]?.think).includes(
+        excerpt.trim().slice(0, REASONING_ANCHOR_CHARS),
+      )
+    ) {
       return reasoningStart;
     }
   }
-  return Math.min(activity.startIndex, Math.max(0, parts.length - 1));
-}
-
-function findReasoningExcerptStart(
-  parts: ReadonlyArray<LooseContentPart | null | undefined>,
-  excerpt: string,
-): number | undefined {
-  const needle = excerpt.trim().slice(0, REASONING_ANCHOR_CHARS);
-  if (!needle) {
-    return undefined;
-  }
-  for (const index of definedPartIndices(parts)) {
-    if (
-      parts[index]?.type === ContentTypes.THINK &&
-      textValue(parts[index]?.think).includes(needle)
-    ) {
-      return index;
-    }
-  }
   return undefined;
-}
-
-function hasReasoningExcerptAtOrAfter(
-  parts: ReadonlyArray<LooseContentPart | null | undefined>,
-  excerpt: string,
-  minimumIndex: number,
-): boolean {
-  const needle = excerpt.trim().slice(0, REASONING_ANCHOR_CHARS);
-  if (!needle) {
-    return false;
-  }
-  const indices = definedPartIndices(parts);
-  for (let position = indices.length - 1; position >= 0; position -= 1) {
-    const index = indices[position];
-    if (index < minimumIndex) {
-      break;
-    }
-    if (
-      parts[index]?.type === ContentTypes.THINK &&
-      textValue(parts[index]?.think).includes(needle)
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 type ReasoningAnchorIndex = Map<number, Set<string>>;
@@ -299,31 +274,6 @@ function includesReasoningAnchor(text: string, index: ReasoningAnchorIndex): boo
       if (anchors.has(text.slice(offset, offset + length))) {
         return true;
       }
-    }
-  }
-  return false;
-}
-
-function hasIndexedReasoningAtOrAfter(
-  parts: ReadonlyArray<LooseContentPart | null | undefined>,
-  index: ReasoningAnchorIndex,
-  minimumIndex: number,
-): boolean {
-  if (index.size === 0) {
-    return false;
-  }
-  const indices = definedPartIndices(parts);
-  for (let position = indices.length - 1; position >= 0; position -= 1) {
-    const partIndex = indices[position];
-    if (partIndex < minimumIndex) {
-      break;
-    }
-    const part = parts[partIndex];
-    if (
-      part?.type === ContentTypes.THINK &&
-      includesReasoningAnchor(textValue(part.think), index)
-    ) {
-      return true;
     }
   }
   return false;
@@ -592,6 +542,66 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     contributingAgentIds.clear();
   };
 
+  const restoreActivities = (
+    retainedActivities: TrackedActivity[],
+    retainedContext: AssistantContextEntry[],
+    retainedActivityCount: number,
+    retainedFailedCount: number,
+    retainedPartialCount: number,
+    retainOverflow: boolean,
+  ) => {
+    const retainedStepKinds = new Map<
+      string,
+      { kind: 'text' | 'think'; phase?: AssistantTextPhase; captureContext?: boolean }
+    >();
+    for (const entry of retainedContext) {
+      if (entry.stepId == null) {
+        continue;
+      }
+      const kind = stepKinds.get(entry.stepId);
+      if (kind != null) {
+        retainedStepKinds.set(entry.stepId, kind);
+      }
+    }
+    const retainedOverflowActivityStartIndex = retainOverflow
+      ? overflowActivityStartIndex
+      : undefined;
+    const retainedOverflowToolCallIds = retainOverflow ? [...overflowToolCallIds] : [];
+    const retainedOverflowBoundaryToolCallIds = retainOverflow
+      ? [...overflowBoundaryToolCallIds]
+      : [];
+    const retainedOverflowReasoningAnchors = retainOverflow ? [...overflowReasoningAnchors] : [];
+    clear();
+    activities = retainedActivities;
+    assistantContext = retainedContext;
+    activityCount = retainedActivityCount;
+    failedActivityCount = retainedFailedCount;
+    partialActivityCount = retainedPartialCount;
+    overflowActivityStartIndex = retainedOverflowActivityStartIndex;
+    for (const id of retainedOverflowToolCallIds) {
+      overflowToolCallIds.add(id);
+    }
+    for (const id of retainedOverflowBoundaryToolCallIds) {
+      overflowBoundaryToolCallIds.add(id);
+    }
+    for (const anchor of retainedOverflowReasoningAnchors) {
+      addReasoningAnchor(overflowReasoningAnchors, overflowReasoningAnchorIndex, anchor);
+    }
+    for (const activity of retainedActivities) {
+      if (activity.agentId != null) {
+        contributingAgentIds.add(activity.agentId);
+      }
+    }
+    for (const [stepId, kind] of retainedStepKinds) {
+      stepKinds.set(stepId, kind);
+    }
+    for (const entry of retainedContext) {
+      if (entry.stepId != null) {
+        textContextByStepId.set(entry.stepId, entry);
+      }
+    }
+  };
+
   const trackActivity = (activity: TrackedActivity) => {
     activityCount += 1;
     if (activity.status === 'error') {
@@ -728,17 +738,6 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
 
   const close = (closingTextPhase?: AssistantTextPhase, requestedEndIndex?: number) => {
     addPendingReasoning();
-    if (generated >= maxPerRun) {
-      clear();
-      return;
-    }
-    if (activityCount < MIN_ACTIVITIES) {
-      clear();
-      return;
-    }
-
-    generated += 1;
-    const phaseIndex = generated - 1;
     const currentParts = deps.getContentParts();
     /** Child-label and phase hooks run independently. A child label can claim
      *  its slot before the corresponding tool part reaches the shared content
@@ -746,11 +745,41 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
      *  from stable tool ids when they are available at close; the backward
      *  scan below claims unresolved leading slots without crossing visible
      *  answer content. */
-    const snapshot = activities.map((activity) => {
+    const resolvedActivities = activities.map((activity) => {
       const toolStart = findTrackedToolStart(currentParts, activity);
       return toolStart != null ? { ...activity, startIndex: toolStart } : activity;
     });
-    const contextSnapshot = assistantContext
+    const closesBeforeBoundary = (activity: TrackedActivity): boolean => {
+      if (requestedEndIndex == null) {
+        return true;
+      }
+      if (
+        activity.unresolvedToolStartIndex != null &&
+        activity.unresolvedToolStartIndex >= requestedEndIndex
+      ) {
+        return false;
+      }
+      const materializedStart = findMaterializedActivityStart(currentParts, activity);
+      return materializedStart == null || materializedStart < requestedEndIndex;
+    };
+    const snapshot = resolvedActivities.filter(closesBeforeBoundary);
+    const retainedActivities = resolvedActivities.filter(
+      (activity) => !closesBeforeBoundary(activity),
+    );
+    const closingContext: AssistantContextEntry[] = [];
+    const retainedContext: AssistantContextEntry[] = [];
+    for (const entry of assistantContext) {
+      const stepIndex = entry.stepId != null ? deps.getStepIndex?.(entry.stepId) : undefined;
+      const entryIndex = entry.text.trim()
+        ? findTextBoundary(currentParts, entry.text, stepIndex)
+        : stepIndex;
+      if (requestedEndIndex != null && entryIndex != null && entryIndex >= requestedEndIndex) {
+        retainedContext.push(entry);
+      } else {
+        closingContext.push(entry);
+      }
+    }
+    const contextSnapshot = closingContext
       .map(({ text }) => text)
       .filter((text) => text.trim().length > 0);
     /** Completion-finalized phases leave the final root text outside their
@@ -771,9 +800,52 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         }
       }
     }
-    const totalActivityCount = activityCount;
-    const failedCount = failedActivityCount;
-    const partialCount = partialActivityCount;
+    const overflowCount = Math.max(0, activityCount - resolvedActivities.length);
+    const overflowFailedCount = Math.max(
+      0,
+      failedActivityCount -
+        resolvedActivities.filter((activity) => activity.status === 'error').length,
+    );
+    const overflowPartialCount = Math.max(
+      0,
+      partialActivityCount -
+        resolvedActivities.filter((activity) => activity.status === 'partial').length,
+    );
+    const overflowCloses =
+      overflowCount > 0 &&
+      (requestedEndIndex == null ||
+        (overflowActivityStartIndex != null && overflowActivityStartIndex < requestedEndIndex));
+    const failedCount =
+      snapshot.filter((activity) => activity.status === 'error').length +
+      (overflowCloses ? overflowFailedCount : 0);
+    const partialCount =
+      snapshot.filter((activity) => activity.status === 'partial').length +
+      (overflowCloses ? overflowPartialCount : 0);
+    const totalActivityCount = snapshot.length + (overflowCloses ? overflowCount : 0);
+    const agentIds = overflowCloses
+      ? [...contributingAgentIds]
+      : [
+          ...new Set(
+            snapshot.flatMap((activity) => (activity.agentId != null ? [activity.agentId] : [])),
+          ),
+        ];
+    const retainedActivityCount = activityCount - totalActivityCount;
+    const retainedFailedCount = failedActivityCount - failedCount;
+    const retainedPartialCount = partialActivityCount - partialCount;
+    restoreActivities(
+      retainedActivities,
+      retainedContext,
+      retainedActivityCount,
+      retainedFailedCount,
+      retainedPartialCount,
+      overflowCount > 0 && !overflowCloses,
+    );
+    if (generated >= maxPerRun || totalActivityCount < MIN_ACTIVITIES) {
+      return;
+    }
+
+    generated += 1;
+    const phaseIndex = generated - 1;
     let startIndex = Math.min(...snapshot.map((activity) => activity.startIndex));
     /** Pull leading commentary/reasoning into the parent card. A prior phase
      *  marker or steer is the only hard UI boundary; plain text can be
@@ -789,6 +861,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       if (
         prior?.type === ContentTypes.STEER ||
         (prior?.type === ContentTypes.ACTIVITY_LABEL && prior.activity_label_type === 'phase') ||
+        isSubstantialText(prior) ||
         (prior?.type === ContentTypes.TEXT &&
           prior.phase === 'final_answer' &&
           textValue(prior.text).trim().length > 0)
@@ -798,7 +871,6 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       }
     }
     startIndex = extendedStartIndex;
-    const agentIds = [...contributingAgentIds];
     let phaseStatus: 'ok' | 'partial' | 'failed' = 'ok';
     if (failedCount === totalActivityCount) {
       phaseStatus = 'failed';
@@ -821,7 +893,6 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     deps.getContentParts().push(part);
     deps.bumpIndexOffset();
     void Promise.resolve(deps.emitLabelEvent(index, part)).catch(() => undefined);
-    clear();
 
     const task = (async () => {
       let generatedPhase: GeneratedActivityPhase = {};
@@ -1029,6 +1100,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
               assistantContext = assistantContext.filter((entry) => entry !== contextEntry);
               textContextByStepId.delete(id ?? '');
               close(tracked.phase, boundaryIndex);
+              stepKinds.delete(id ?? '');
             }
             return result;
           }
@@ -1057,91 +1129,17 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   };
 
   const complete = () => {
-    let finalTextIndex: number | undefined;
     const parts = deps.getContentParts();
     /** A live substantial-text boundary normally closes its phase while
      *  streaming. Reconcile persisted content as a fallback for resume paths
      *  where the original delta crossed the boundary before this wiring was
      *  attached. */
-    const definedIndices = Object.keys(parts);
-    for (let position = definedIndices.length - 1; position >= 0; position -= 1) {
-      const index = Number(definedIndices[position]);
-      const part = parts[index];
-      /** Provider phase metadata is only a hint. Size determines whether text
-       *  is a standalone result, including MCP responses that retain a lane
-       *  id. Later-activity checks reject stale intermediate boundaries. */
-      if (
-        part?.type === ContentTypes.TEXT &&
-        textValue(part.text).trim().length > SUBSTANTIAL_TEXT_CHARS
-      ) {
-        finalTextIndex = index;
-        break;
+    for (const index of definedPartIndices(parts)) {
+      if (isSubstantialText(parts[index])) {
+        close(undefined, index);
       }
     }
-    if (finalTextIndex != null) {
-      const candidateFinalTextIndex = finalTextIndex;
-      const materializedToolIds = new Set<string>();
-      const trailingToolIds = new Set<string>();
-      for (const key of Object.keys(parts)) {
-        const index = Number(key);
-        const part = parts[index];
-        if (part?.type !== ContentTypes.TOOL_CALL || typeof part.tool_call?.id !== 'string') {
-          continue;
-        }
-        materializedToolIds.add(part.tool_call.id);
-        if (index >= candidateFinalTextIndex) {
-          trailingToolIds.add(part.tool_call.id);
-        }
-      }
-      const hasLaterTrackedActivity = activities.some((activity) => {
-        const toolCallIds = activity.toolCallIds ?? [];
-        if (toolCallIds.some((id) => trailingToolIds.has(id))) {
-          return true;
-        }
-        const reasoningExcerpt = activity.thinkingExcerpts?.[0];
-        if (toolCallIds.length === 0 && reasoningExcerpt) {
-          return hasReasoningExcerptAtOrAfter(parts, reasoningExcerpt, candidateFinalTextIndex);
-        }
-        return (
-          toolCallIds.some((id) => !materializedToolIds.has(id)) &&
-          (activity.unresolvedToolStartIndex ?? activity.startIndex) >= candidateFinalTextIndex
-        );
-      });
-      const overflowIds = [...overflowToolCallIds];
-      const overflowBoundaryIds = [...overflowBoundaryToolCallIds];
-      const hasLaterOverflowActivity =
-        overflowIds.some((id) => trailingToolIds.has(id)) ||
-        hasIndexedReasoningAtOrAfter(
-          parts,
-          overflowReasoningAnchorIndex,
-          candidateFinalTextIndex,
-        ) ||
-        (!overflowBoundaryIds.every((id) => materializedToolIds.has(id)) &&
-          overflowActivityStartIndex != null &&
-          overflowActivityStartIndex >= candidateFinalTextIndex);
-      const pendingReasoningAnchors = new Set<string>();
-      const pendingReasoningAnchorIndex: ReasoningAnchorIndex = new Map();
-      let hasLaterPendingReasoningIndex = false;
-      for (const reasoning of pendingReasoning.values()) {
-        /** Empty reasoning reservations are not activities: addPendingReasoning
-         *  deliberately drops them. They can still receive a later sparse
-         *  index from the SDK, so do not let that placeholder pull a fully
-         *  materialized final answer into the completed parent phase. */
-        if (!reasoning.text.trim()) {
-          continue;
-        }
-        hasLaterPendingReasoningIndex ||=
-          reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex;
-        addReasoningAnchor(pendingReasoningAnchors, pendingReasoningAnchorIndex, reasoning.text);
-      }
-      const hasLaterPendingReasoning =
-        hasLaterPendingReasoningIndex ||
-        hasIndexedReasoningAtOrAfter(parts, pendingReasoningAnchorIndex, candidateFinalTextIndex);
-      if (hasLaterTrackedActivity || hasLaterOverflowActivity || hasLaterPendingReasoning) {
-        finalTextIndex = undefined;
-      }
-    }
-    close(undefined, finalTextIndex);
+    close();
   };
 
   return { hook, handlers: wrapHandlers, drop: clear, complete, snapshot };

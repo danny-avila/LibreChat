@@ -182,14 +182,49 @@ export function groupActivityPhases(
    *  max permits many parent phases in one long response. */
   for (const { part, index } of completed) {
     if (!part) continue;
-    const start = Math.max(
-      cursor,
-      Math.min(index, Math.max(0, part.activity_start_index ?? index)),
-    );
+    const start = Math.min(index, Math.max(0, part.activity_start_index ?? index));
     const end = Math.max(start, Math.min(index, Math.max(0, part.activity_end_index ?? index)));
     const adjacent = collect();
     const phase = collect();
     const trailing = collect();
+    /** A boundary may resolve after a higher-index parallel activity has
+     *  already rendered. Recover that activity from an earlier adjacent
+     *  segment so a later phase marker can still claim its declared span. */
+    if (start < cursor) {
+      const recoveredIndices: number[] = [];
+      for (let segmentIndex = segments.length - 1; segmentIndex >= 0; segmentIndex -= 1) {
+        const segment = segments[segmentIndex];
+        if (segment.type !== 'content') {
+          continue;
+        }
+        const retainedContent: Array<TMessageContentParts | undefined> = [];
+        const retainedIndices: number[] = [];
+        for (
+          let childPosition = 0;
+          childPosition < segment.contentIndices.length;
+          childPosition += 1
+        ) {
+          const childIndex = segment.contentIndices[childPosition];
+          if (childIndex >= start && childIndex < end) {
+            recoveredIndices.push(childIndex);
+          } else {
+            retainedContent.push(segment.content[childPosition]);
+            retainedIndices.push(childIndex);
+          }
+        }
+        if (retainedIndices.length === 0) {
+          segments.splice(segmentIndex, 1);
+        } else {
+          segment.content = retainedContent;
+          segment.contentIndices = retainedIndices;
+          segment.startIndex = retainedIndices[0];
+        }
+      }
+      recoveredIndices.sort((a, b) => a - b);
+      for (const recoveredIndex of recoveredIndices) {
+        append(phase, recoveredIndex);
+      }
+    }
     while (definedPosition < definedIndices.length && definedIndices[definedPosition] < index) {
       const childIndex = definedIndices[definedPosition];
       definedPosition += 1;
