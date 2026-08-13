@@ -12,7 +12,7 @@ export const MAX_CLERK_2FA_CAPABILITY_LIFETIME_MS: number = 5 * 60_000;
 const AUTH_COOKIE_NAMES = ['refreshToken', 'token_provider'] as const;
 const POST_COMMIT_FAILURE_MESSAGE = '[Clerk session] response failed after headers were committed';
 
-export type ClerkSessionOutcome =
+export type ClerkSessionCompletionOutcome =
   | 'success'
   | 'two_factor_pending'
   | 'replay'
@@ -70,7 +70,7 @@ export interface ClerkSessionCompletionDependencies {
   deleteSession: (sessionId: string) => Promise<void>;
   serializeUser: (user: IUser) => UserResponse;
   beforeResponse: () => Promise<void>;
-  recordOutcome: (outcome: ClerkSessionOutcome) => void;
+  recordOutcome: (outcome: ClerkSessionCompletionOutcome) => void;
   logPostCommitFailure: (message: string) => void;
 }
 
