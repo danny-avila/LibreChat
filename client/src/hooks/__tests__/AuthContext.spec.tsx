@@ -201,6 +201,93 @@ describe('AuthContextProvider two-factor login handoff', () => {
       replace: true,
     });
   });
+
+  /**
+   * An abandoned setup token outlives the screen that staged it, so a later sign-in in the same tab
+   * must not leave the previous user's enrollment credential available to finish.
+   */
+  it('drops an abandoned setup token when the next sign-in succeeds', () => {
+    renderProvider();
+
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({
+        twoFAPending: true,
+        twoFASetupRequired: true,
+        tempToken: 'abandoned-token',
+      });
+    });
+    expect(readTwoFactorSetupToken()).toBe('abandoned-token');
+
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({
+        token: 'other-user-token',
+        user: { id: 'user-2' },
+      });
+    });
+
+    expect(readTwoFactorSetupToken()).toBe('');
+  });
+
+  it('drops an abandoned setup token when the next sign-in is challenged', () => {
+    renderProvider();
+
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({
+        twoFAPending: true,
+        twoFASetupRequired: true,
+        tempToken: 'abandoned-token',
+      });
+    });
+
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({
+        twoFAPending: true,
+        tempToken: 'challenge-token',
+      });
+    });
+
+    expect(readTwoFactorSetupToken()).toBe('');
+  });
+
+  it('drops an abandoned setup token when the next sign-in fails', () => {
+    renderProvider();
+
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({
+        twoFAPending: true,
+        twoFASetupRequired: true,
+        tempToken: 'abandoned-token',
+      });
+    });
+
+    act(() => {
+      mockCapturedLoginOptions.onError({ response: { status: 401 } });
+    });
+
+    expect(readTwoFactorSetupToken()).toBe('');
+  });
+
+  it('still hands the fresh credential to a setup that follows another sign-in', () => {
+    renderProvider();
+
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({
+        twoFAPending: true,
+        twoFASetupRequired: true,
+        tempToken: 'first-token',
+      });
+    });
+
+    act(() => {
+      mockCapturedLoginOptions.onSuccess({
+        twoFAPending: true,
+        twoFASetupRequired: true,
+        tempToken: 'second-token',
+      });
+    });
+
+    expect(readTwoFactorSetupToken()).toBe('second-token');
+  });
 });
 
 describe('AuthContextProvider: login onError redirect handling', () => {

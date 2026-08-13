@@ -119,6 +119,12 @@ const AuthContextProvider = ({
   const loginUser = useLoginUserMutation({
     onSuccess: (data: t.TLoginResponse) => {
       const { user, token, twoFAPending, twoFASetupRequired, tempToken } = data;
+      /**
+       * A sign-in supersedes whatever enrollment the tab was holding. An abandoned setup token
+       * outlives the screen that staged it, so leaving it here would let the next visitor to the
+       * setup route finish the previous user's enrollment and take the tab as them.
+       */
+      clearTwoFactorSetupToken();
       if (twoFASetupRequired) {
         const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
         if (redirectTo) {
@@ -138,6 +144,7 @@ const AuthContextProvider = ({
       setUserContext({ token, isAuthenticated: true, user, redirect });
     },
     onError: (error: TResError | unknown) => {
+      clearTwoFactorSetupToken();
       doSetError(getLoginErrorText(error));
       // Preserve a valid redirect_to across login failures so the deep link survives retries.
       // Cannot use buildLoginRedirectUrl() here: it reads the current pathname (already /login)
