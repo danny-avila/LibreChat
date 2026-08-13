@@ -352,14 +352,17 @@ export default function EditContentParts({
         })}
       </div>
 
-      <footer className="flex items-center justify-between gap-2">
+      {/* The actions wrap rather than hold one unbreakable row: on a 320px assistant
+          turn the identity column and page padding leave less width than the three
+          English labels need, and a translated label needs more still. */}
+      <footer className="flex flex-wrap items-center justify-between gap-2">
         <span
           className="line-clamp-2 min-w-0 flex-1 text-xs text-text-secondary"
           aria-live="polite"
         >
           {getStatusMessage()}
         </span>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Button size="sm" variant="outline" onClick={() => enterEdit(true)} disabled={isSaving}>
             {localize('com_ui_cancel')}
           </Button>
