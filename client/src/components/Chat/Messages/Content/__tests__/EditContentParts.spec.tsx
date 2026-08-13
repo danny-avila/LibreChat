@@ -70,8 +70,10 @@ const content = [
 describe('EditContentParts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockMutateAsync.mockReset();
     mockMutateAsync.mockResolvedValue({});
     mockChatDirection = 'LTR';
+    message.content = undefined;
   });
 
   it('uses one editor footer and keeps non-editable parts visible', () => {
@@ -201,6 +203,53 @@ describe('EditContentParts', () => {
 
     expect(screen.getByRole('button', { name: 'com_ui_update_rerun' })).toBeDisabled();
     expect(screen.getByText('com_ui_save_before_rerun')).toBeInTheDocument();
+  });
+
+  it('reconciles the parts that were persisted when a later part is refused', async () => {
+    const enterEdit = jest.fn();
+    const multiPartContent = [
+      { type: ContentTypes.TEXT, text: 'First response' },
+      { type: ContentTypes.TEXT, text: 'Second response' },
+    ] as TMessageContentParts[];
+    message.content = multiPartContent;
+    mockMutateAsync
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('the second write was refused'));
+
+    render(
+      <EditContentParts
+        content={multiPartContent}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={enterEdit}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    const editors = screen.getAllByRole('textbox');
+    fireEvent.change(editors[0], { target: { value: 'Updated first response' } });
+    fireEvent.change(editors[1], { target: { value: 'Updated second response' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    expect(await screen.findByText('com_ui_save_message_error')).toBeInTheDocument();
+    expect(mockMutateAsync).toHaveBeenCalledTimes(2);
+
+    /** The first write is on the server whatever the second one did, so the transcript
+     *  has to show it rather than report that the whole save was lost. */
+    expect(mockSetMessages).toHaveBeenCalledTimes(1);
+    const reconciled = mockSetMessages.mock.calls[0][0] as TMessage[];
+    const edited = reconciled.find((item) => item.messageId === message.messageId);
+    expect(edited?.content).toEqual([
+      { type: ContentTypes.TEXT, text: 'Updated first response' },
+      { type: ContentTypes.TEXT, text: 'Second response' },
+    ]);
+
+    /** The refused part is the only one still holding an unsaved draft, so the editor
+     *  stays open on it and a retry does not rewrite what already landed. */
+    expect(enterEdit).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('textbox')[1]).toHaveValue('Updated second response');
   });
 
   it('keeps artifact-bearing text in the specialized read-only renderer', () => {

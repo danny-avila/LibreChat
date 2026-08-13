@@ -131,32 +131,35 @@ export default function EditContentParts({
     editor.setSelectionRange(editor.value.length, editor.value.length);
   }, []);
 
-  const updateLocalMessages = useCallback(() => {
-    const messages = getMessages();
-    if (!messages) {
-      return;
-    }
-    const changedByLocalIndex = new Map(
-      changedParts.map((part) => [part.localIndex, { type: part.type, text: drafts[part.index] }]),
-    );
-    setMessages(
-      messages.map((currentMessage) => {
-        if (currentMessage.messageId !== messageId || !Array.isArray(currentMessage.content)) {
-          return currentMessage;
-        }
-        return {
-          ...currentMessage,
-          content: currentMessage.content.map((part, localIndex) => {
-            const change = changedByLocalIndex.get(localIndex);
-            if (!part || !change || part.type !== change.type) {
-              return part;
-            }
-            return { ...part, [change.type]: change.text } as TMessageContentParts;
-          }),
-        };
-      }),
-    );
-  }, [changedParts, drafts, getMessages, messageId, setMessages]);
+  const applySavedParts = useCallback(
+    (savedParts: EditablePart[]) => {
+      const messages = getMessages();
+      if (!messages || savedParts.length === 0) {
+        return;
+      }
+      const changedByLocalIndex = new Map(
+        savedParts.map((part) => [part.localIndex, { type: part.type, text: drafts[part.index] }]),
+      );
+      setMessages(
+        messages.map((currentMessage) => {
+          if (currentMessage.messageId !== messageId || !Array.isArray(currentMessage.content)) {
+            return currentMessage;
+          }
+          return {
+            ...currentMessage,
+            content: currentMessage.content.map((part, localIndex) => {
+              const change = changedByLocalIndex.get(localIndex);
+              if (!part || !change || part.type !== change.type) {
+                return part;
+              }
+              return { ...part, [change.type]: change.text } as TMessageContentParts;
+            }),
+          };
+        }),
+      );
+    },
+    [drafts, getMessages, messageId, setMessages],
+  );
 
   const saveChanges = useCallback(async () => {
     if (changedParts.length === 0 || hasBlankEdit || isBusy) {
@@ -164,6 +167,11 @@ export default function EditContentParts({
     }
     setIsSaving(true);
     setSaveError(false);
+    /** The endpoint takes one part per call and nothing rolls a write back, so a
+     *  refused part leaves the earlier ones on the server. Recording what actually
+     *  landed lets the failure reconcile the transcript with the server instead of
+     *  claiming nothing was saved, and leaves only the refused parts still edited. */
+    const savedParts: EditablePart[] = [];
     try {
       /** Each endpoint call replaces the full content array. Keep writes ordered so a
        *  later edit reads the content produced by the previous one instead of racing it. */
@@ -174,15 +182,20 @@ export default function EditContentParts({
           text: drafts[part.index],
           messageId,
         });
+        savedParts.push(part);
       }
-      updateLocalMessages();
-      enterEdit(true);
     } catch {
       setSaveError(true);
     } finally {
+      applySavedParts(savedParts);
       setIsSaving(false);
     }
+
+    if (savedParts.length === changedParts.length) {
+      enterEdit(true);
+    }
   }, [
+    applySavedParts,
     changedParts,
     conversation?.conversationId,
     drafts,
@@ -190,7 +203,6 @@ export default function EditContentParts({
     hasBlankEdit,
     isBusy,
     messageId,
-    updateLocalMessages,
     updateMessageContentMutation,
   ]);
 
