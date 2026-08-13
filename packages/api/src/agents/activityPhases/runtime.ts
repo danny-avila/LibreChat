@@ -6,7 +6,7 @@ import { stringifyActivityEvidence } from '~/agents/activityLabels/runtime';
 
 type PostToolBatchInput = HookInputByEvent['PostToolBatch'];
 type BatchEntry = PostToolBatchInput['entries'][number];
-type AssistantContextEntry = { stepId?: string; text: string };
+type AssistantContextEntry = { stepId?: string; text: string; activityPosition?: number };
 
 export type AssistantTextPhase = 'commentary' | 'final_answer';
 
@@ -24,7 +24,7 @@ export interface ActivityPhaseEntry {
   status?: 'success' | 'partial' | 'error';
 }
 
-type TrackedActivity = ActivityPhaseEntry & {
+export type TrackedActivity = ActivityPhaseEntry & {
   startIndex: number;
   childLabelIndex?: number;
   /** Stable anchors survive content filtering and prepends across HITL resume. */
@@ -49,7 +49,9 @@ export interface ActivityPhaseSnapshot {
   overflowReasoningExcerpt?: string;
   /** Bounded stable anchors for reasoning-only overflow after HITL content compaction. */
   overflowReasoningAnchors?: string[];
-  assistantContext: string[];
+  /** Lightweight anchors retain per-activity partitioning beyond prompt evidence limits. */
+  overflowActivities?: TrackedActivity[];
+  assistantContext: Array<string | { text: string; activityPosition: number }>;
   pendingReasoning: Array<{
     key: string;
     text: string;
@@ -431,6 +433,22 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         }),
       };
     }) ?? [];
+  let overflowActivities: TrackedActivity[] =
+    initialSnapshot?.overflowActivities?.map((activity) => {
+      const startIndex = findTrackedStart(content, activity);
+      const toolCallIds = activity.toolCallIds ?? [];
+      const hasUnresolvedTool = toolCallIds.some((id) => !initiallyMaterializedToolIds.has(id));
+      return {
+        ...activity,
+        startIndex,
+        ...(hasUnresolvedTool && {
+          unresolvedToolStartIndex: Math.max(
+            activity.unresolvedToolStartIndex ?? activity.startIndex,
+            startIndex,
+          ),
+        }),
+      };
+    }) ?? [];
   let activityCount = initialSnapshot?.activityCount ?? activities.length;
   let failedActivityCount =
     initialSnapshot?.failedActivityCount ??
@@ -493,7 +511,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const contributingAgentIds = new Set(initialSnapshot?.agentIds ?? []);
   let assistantContext: AssistantContextEntry[] = (initialSnapshot?.assistantContext ?? [])
     .slice(-MAX_CONTEXT_ITEMS)
-    .map((text) => ({ text }));
+    .map((entry) => (typeof entry === 'string' ? { text: entry } : { ...entry }));
   const pendingReasoning = new Map<string, { text: string; agentId?: string; startIndex?: number }>(
     (initialSnapshot?.pendingReasoning ?? []).map(({ key, text, agentId, startIndex }) => {
       const boundedText = text.slice(-MAX_EXCERPT_CHARS);
@@ -539,6 +557,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     overflowBoundaryToolCallIds.clear();
     overflowReasoningAnchors.clear();
     overflowReasoningAnchorIndex.clear();
+    overflowActivities = [];
     contributingAgentIds.clear();
   };
 
@@ -549,6 +568,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     retainedFailedCount: number,
     retainedPartialCount: number,
     retainOverflow: boolean,
+    retainedOverflowActivities: TrackedActivity[],
+    retainedPendingReasoning: Array<
+      readonly [string, { text: string; agentId?: string; startIndex?: number }]
+    >,
+    retainedReasoningStepKeys: Array<readonly [string, string]>,
   ) => {
     const retainedStepKinds = new Map<
       string,
@@ -563,14 +587,30 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         retainedStepKinds.set(entry.stepId, kind);
       }
     }
-    const retainedOverflowActivityStartIndex = retainOverflow
-      ? overflowActivityStartIndex
-      : undefined;
-    const retainedOverflowToolCallIds = retainOverflow ? [...overflowToolCallIds] : [];
-    const retainedOverflowBoundaryToolCallIds = retainOverflow
-      ? [...overflowBoundaryToolCallIds]
-      : [];
-    const retainedOverflowReasoningAnchors = retainOverflow ? [...overflowReasoningAnchors] : [];
+    const exactOverflowStartIndex =
+      retainedOverflowActivities.length > 0
+        ? Math.max(...retainedOverflowActivities.map((activity) => activity.startIndex))
+        : undefined;
+    const retainedOverflowActivityStartIndex =
+      exactOverflowStartIndex ?? (retainOverflow ? overflowActivityStartIndex : undefined);
+    let retainedOverflowToolCallIds: string[] = [];
+    let retainedOverflowBoundaryToolCallIds: string[] = [];
+    let retainedOverflowReasoningAnchors: string[] = [];
+    if (retainedOverflowActivities.length > 0) {
+      retainedOverflowToolCallIds = retainedOverflowActivities.flatMap(
+        (activity) => activity.toolCallIds ?? [],
+      );
+      retainedOverflowBoundaryToolCallIds = retainedOverflowActivities.flatMap((activity) =>
+        activity.startIndex === exactOverflowStartIndex ? (activity.toolCallIds ?? []) : [],
+      );
+      retainedOverflowReasoningAnchors = retainedOverflowActivities.flatMap(
+        (activity) => activity.thinkingExcerpts ?? [],
+      );
+    } else if (retainOverflow) {
+      retainedOverflowToolCallIds = [...overflowToolCallIds];
+      retainedOverflowBoundaryToolCallIds = [...overflowBoundaryToolCallIds];
+      retainedOverflowReasoningAnchors = [...overflowReasoningAnchors];
+    }
     clear();
     activities = retainedActivities;
     assistantContext = retainedContext;
@@ -587,7 +627,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     for (const anchor of retainedOverflowReasoningAnchors) {
       addReasoningAnchor(overflowReasoningAnchors, overflowReasoningAnchorIndex, anchor);
     }
-    for (const activity of retainedActivities) {
+    overflowActivities = retainedOverflowActivities;
+    for (const activity of [...retainedActivities, ...retainedOverflowActivities]) {
       if (activity.agentId != null) {
         contributingAgentIds.add(activity.agentId);
       }
@@ -599,6 +640,12 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       if (entry.stepId != null) {
         textContextByStepId.set(entry.stepId, entry);
       }
+    }
+    for (const [key, reasoning] of retainedPendingReasoning) {
+      pendingReasoning.set(key, reasoning);
+    }
+    for (const [stepId, key] of retainedReasoningStepKeys) {
+      reasoningStepKeys.set(stepId, key);
     }
   };
 
@@ -615,6 +662,15 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     if (activities.length < MAX_RETAINED_ACTIVITIES) {
       activities.push(activity);
     } else {
+      overflowActivities.push({
+        startIndex: activity.startIndex,
+        ...(activity.toolCallIds != null && { toolCallIds: [...activity.toolCallIds] }),
+        ...(activity.thinkingExcerpts != null && {
+          thinkingExcerpts: activity.thinkingExcerpts.map((text) => text.slice(-MAX_EXCERPT_CHARS)),
+        }),
+        ...(activity.agentId != null && { agentId: activity.agentId }),
+        status: activity.status,
+      });
       if (overflowActivityStartIndex == null || activity.startIndex > overflowActivityStartIndex) {
         overflowActivityStartIndex = activity.startIndex;
         overflowBoundaryToolCallIds.clear();
@@ -652,6 +708,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     ...(overflowReasoningAnchors.size > 0 && {
       overflowReasoningAnchors: [...overflowReasoningAnchors],
     }),
+    ...(overflowActivities.length > 0 && {
+      overflowActivities: overflowActivities.map((activity) => ({ ...activity })),
+    }),
     activities: activities.map((activity) => ({
       ...activity,
       ...(activity.entries != null && {
@@ -668,7 +727,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         thinkingExcerpts: activity.thinkingExcerpts.map((text) => text.slice(-MAX_EXCERPT_CHARS)),
       }),
     })),
-    assistantContext: assistantContext.slice(-MAX_CONTEXT_ITEMS).map(({ text }) => text),
+    assistantContext: assistantContext
+      .slice(-MAX_CONTEXT_ITEMS)
+      .map(({ text, activityPosition }) =>
+        activityPosition == null ? text : { text, activityPosition },
+      ),
     pendingReasoning: [...pendingReasoning].map(([key, reasoning]) => ({
       key,
       text: reasoning.text.slice(-MAX_EXCERPT_CHARS),
@@ -737,8 +800,22 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   };
 
   const close = (closingTextPhase?: AssistantTextPhase, requestedEndIndex?: number) => {
-    addPendingReasoning();
     const currentParts = deps.getContentParts();
+    for (const [key, reasoning] of [...pendingReasoning]) {
+      if (requestedEndIndex == null) {
+        addPendingReasoning(key);
+        continue;
+      }
+      const reasoningStart = findReasoningStart(currentParts, reasoning.text, reasoning.startIndex);
+      if (reasoningStart < requestedEndIndex) {
+        addPendingReasoning(key);
+      }
+    }
+    const retainedPendingReasoning = [...pendingReasoning];
+    const retainedReasoningKeys = new Set(retainedPendingReasoning.map(([key]) => key));
+    const retainedReasoningStepKeys = [...reasoningStepKeys].filter(([, key]) =>
+      retainedReasoningKeys.has(key),
+    );
     /** Child-label and phase hooks run independently. A child label can claim
      *  its slot before the corresponding tool part reaches the shared content
      *  array, leaving the phase hook with a fallback start index. Re-anchor
@@ -766,6 +843,64 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     const retainedActivities = resolvedActivities.filter(
       (activity) => !closesBeforeBoundary(activity),
     );
+    const overflowCount = Math.max(0, activityCount - resolvedActivities.length);
+    const overflowFailedCount = Math.max(
+      0,
+      failedActivityCount -
+        resolvedActivities.filter((activity) => activity.status === 'error').length,
+    );
+    const overflowPartialCount = Math.max(
+      0,
+      partialActivityCount -
+        resolvedActivities.filter((activity) => activity.status === 'partial').length,
+    );
+    const resolvedOverflowActivities = overflowActivities.map((activity) => ({
+      ...activity,
+      startIndex: findTrackedStart(currentParts, activity),
+    }));
+    const hasExactOverflowActivities =
+      overflowCount === 0 || resolvedOverflowActivities.length === overflowCount;
+    const closingOverflowActivities = hasExactOverflowActivities
+      ? resolvedOverflowActivities.filter(closesBeforeBoundary)
+      : [];
+    const retainedOverflowActivities = hasExactOverflowActivities
+      ? resolvedOverflowActivities.filter((activity) => !closesBeforeBoundary(activity))
+      : [];
+    const overflowCloses = hasExactOverflowActivities
+      ? closingOverflowActivities.length > 0
+      : overflowCount > 0 &&
+        (requestedEndIndex == null ||
+          (overflowActivityStartIndex != null && overflowActivityStartIndex < requestedEndIndex));
+    let closingOverflowCount = 0;
+    let closingOverflowStartIndex: number | undefined;
+    let closingOverflowFailedCount = 0;
+    let closingOverflowPartialCount = 0;
+    if (hasExactOverflowActivities) {
+      closingOverflowCount = closingOverflowActivities.length;
+      if (closingOverflowActivities.length > 0) {
+        closingOverflowStartIndex = Math.min(
+          ...closingOverflowActivities.map((activity) => activity.startIndex),
+        );
+      }
+      closingOverflowFailedCount = closingOverflowActivities.filter(
+        (activity) => activity.status === 'error',
+      ).length;
+      closingOverflowPartialCount = closingOverflowActivities.filter(
+        (activity) => activity.status === 'partial',
+      ).length;
+    } else if (overflowCloses) {
+      closingOverflowCount = overflowCount;
+      closingOverflowStartIndex = overflowActivityStartIndex;
+      closingOverflowFailedCount = overflowFailedCount;
+      closingOverflowPartialCount = overflowPartialCount;
+    }
+    const failedCount =
+      snapshot.filter((activity) => activity.status === 'error').length +
+      closingOverflowFailedCount;
+    const partialCount =
+      snapshot.filter((activity) => activity.status === 'partial').length +
+      closingOverflowPartialCount;
+    const totalActivityCount = snapshot.length + closingOverflowCount;
     const closingContext: AssistantContextEntry[] = [];
     const retainedContext: AssistantContextEntry[] = [];
     for (const entry of assistantContext) {
@@ -773,8 +908,18 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const entryIndex = entry.text.trim()
         ? findTextBoundary(currentParts, entry.text, stepIndex)
         : stepIndex;
-      if (requestedEndIndex != null && entryIndex != null && entryIndex >= requestedEndIndex) {
-        retainedContext.push(entry);
+      const isRetained =
+        requestedEndIndex != null &&
+        (entry.activityPosition != null
+          ? entry.activityPosition > totalActivityCount
+          : entryIndex != null && entryIndex >= requestedEndIndex);
+      if (isRetained) {
+        retainedContext.push({
+          ...entry,
+          ...(entry.activityPosition != null && {
+            activityPosition: Math.max(0, entry.activityPosition - totalActivityCount),
+          }),
+        });
       } else {
         closingContext.push(entry);
       }
@@ -800,36 +945,20 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         }
       }
     }
-    const overflowCount = Math.max(0, activityCount - resolvedActivities.length);
-    const overflowFailedCount = Math.max(
-      0,
-      failedActivityCount -
-        resolvedActivities.filter((activity) => activity.status === 'error').length,
-    );
-    const overflowPartialCount = Math.max(
-      0,
-      partialActivityCount -
-        resolvedActivities.filter((activity) => activity.status === 'partial').length,
-    );
-    const overflowCloses =
-      overflowCount > 0 &&
-      (requestedEndIndex == null ||
-        (overflowActivityStartIndex != null && overflowActivityStartIndex < requestedEndIndex));
-    const closingOverflowStartIndex = overflowCloses ? overflowActivityStartIndex : undefined;
-    const failedCount =
-      snapshot.filter((activity) => activity.status === 'error').length +
-      (overflowCloses ? overflowFailedCount : 0);
-    const partialCount =
-      snapshot.filter((activity) => activity.status === 'partial').length +
-      (overflowCloses ? overflowPartialCount : 0);
-    const totalActivityCount = snapshot.length + (overflowCloses ? overflowCount : 0);
-    const agentIds = overflowCloses
-      ? [...contributingAgentIds]
-      : [
-          ...new Set(
-            snapshot.flatMap((activity) => (activity.agentId != null ? [activity.agentId] : [])),
-          ),
-        ];
+    let contributingActivities = snapshot;
+    if (hasExactOverflowActivities) {
+      contributingActivities = [...snapshot, ...closingOverflowActivities];
+    }
+    let agentIds = [
+      ...new Set(
+        contributingActivities.flatMap((activity) =>
+          activity.agentId != null ? [activity.agentId] : [],
+        ),
+      ),
+    ];
+    if (overflowCloses && !hasExactOverflowActivities) {
+      agentIds = [...contributingAgentIds];
+    }
     const retainedActivityCount = activityCount - totalActivityCount;
     const retainedFailedCount = failedActivityCount - failedCount;
     const retainedPartialCount = partialActivityCount - partialCount;
@@ -839,7 +968,12 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       retainedActivityCount,
       retainedFailedCount,
       retainedPartialCount,
-      overflowCount > 0 && !overflowCloses,
+      hasExactOverflowActivities
+        ? retainedOverflowActivities.length > 0
+        : overflowCount > 0 && !overflowCloses,
+      retainedOverflowActivities,
+      retainedPendingReasoning,
+      retainedReasoningStepKeys,
     );
     if (generated >= maxPerRun || totalActivityCount < MIN_ACTIVITIES) {
       return;
@@ -1059,7 +1193,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
                 ...(phase != null && { phase }),
                 captureContext: true,
               });
-              const contextEntry: AssistantContextEntry = { stepId: step.id, text: '' };
+              const contextEntry: AssistantContextEntry = {
+                stepId: step.id,
+                text: '',
+                activityPosition: activityCount,
+              };
               assistantContext.push(contextEntry);
               textContextByStepId.set(step.id, contextEntry);
               if (assistantContext.length > MAX_CONTEXT_ITEMS) {
@@ -1140,7 +1278,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
      *  attached. */
     for (const index of definedPartIndices(parts)) {
       if (isSubstantialText(parts[index])) {
-        close(undefined, index);
+        const phase = parts[index]?.phase;
+        close(phase === 'commentary' || phase === 'final_answer' ? phase : undefined, index);
       }
     }
     close();
