@@ -2,7 +2,6 @@
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys, ViolationTypes } = require('librechat-data-provider');
 const { sendResponse } = require('~/server/middleware/error');
-const { recordUsage } = require('~/server/services/Threads');
 const getLogStores = require('~/cache/getLogStores');
 const { getConvo } = require('~/models');
 
@@ -110,18 +109,6 @@ const createErrorHandler = ({ req, res, getContext, originPath = '/assistants/ch
     }
 
     await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    let run;
-    try {
-      await recordUsage({
-        ...run.usage,
-        model: run.model,
-        user: req.user.id,
-        conversationId,
-      });
-    } catch (error) {
-      logger.error(`[${originPath}] Error fetching or processing run`, error);
-    }
 
     let finalEvent;
     try {
