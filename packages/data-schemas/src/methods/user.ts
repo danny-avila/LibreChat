@@ -49,6 +49,7 @@ export function createUserMethods(
   findUser: (
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
+    options?: { session?: ClientSession },
   ) => Promise<IUser | null>;
   findUsers: (
     searchCriteria: FilterQuery<IUser>,
@@ -182,12 +183,16 @@ export function createUserMethods(
   async function findUser(
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
+    options?: { session?: ClientSession },
   ): Promise<IUser | null> {
     const User = mongoose.models.User as mongoose.Model<IUser>;
     const normalizedCriteria = normalizeEmailInCriteria(searchCriteria);
     const query = User.findOne(normalizedCriteria);
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
+    }
+    if (options?.session) {
+      query.session(options.session);
     }
     return await query.lean<IUser>();
   }

@@ -3,6 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type * as t from '~/types';
 import { runAsSystem, tenantStorage } from '~/config/tenantContext';
 import { createSessionMethods } from './session';
+import { createUserMethods } from './user';
 import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
@@ -16,6 +17,7 @@ let mongoServer: MongoMemoryReplSet;
 let Session: mongoose.Model<t.ISession>;
 let User: mongoose.Model<t.IUser>;
 let methods: ReturnType<typeof createSessionMethods>;
+let userMethods: ReturnType<typeof createUserMethods>;
 
 function runAs<T>(tenantId: string | undefined, fn: () => Promise<T>): Promise<T> {
   return tenantStorage.run({ tenantId }, fn);
@@ -47,18 +49,23 @@ function clerkSessionDoc(
   } as Partial<t.ISession>;
 }
 
+const originalJwtRefreshSecret = process.env.JWT_REFRESH_SECRET;
+
 beforeAll(async () => {
+  process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret';
   mongoServer = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   await mongoose.connect(mongoServer.getUri());
   const models = createModels(mongoose);
   Session = models.Session;
   User = models.User;
   methods = createSessionMethods(mongoose);
+  userMethods = createUserMethods(mongoose);
 });
 
 afterAll(async () => {
   await mongoose.disconnect();
   await mongoServer.stop();
+  process.env.JWT_REFRESH_SECRET = originalJwtRefreshSecret;
 });
 
 beforeEach(async () => {
@@ -297,11 +304,229 @@ describe('Session Clerk system lifecycle methods', () => {
     ).resolves.toBe(1);
   });
 
-  test.each([
+  test.each<[string, () => Promise<unknown>]>([
     ['findClerkSessionIdsByClerkUserId', () => methods.findClerkSessionIdsByClerkUserId('   ')],
     ['deleteSessionsByClerkSessionId', () => methods.deleteSessionsByClerkSessionId('')],
     ['deleteSessionsByClerkUserId', () => methods.deleteSessionsByClerkUserId('   ')],
   ])('rejects a blank provider identifier in %s', async (_name, operation) => {
     await expect(runAsSystem(operation)).rejects.toMatchObject({ code: 'INVALID_CLERK_ID' });
+  });
+});
+
+describe('createSession with a Clerk correlation context', () => {
+  function clerkContext(overrides: Partial<t.ClerkSessionContext> = {}): t.ClerkSessionContext {
+    const absoluteExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    return {
+      authProvider: 'clerk',
+      tenantScope: 'tenant-a',
+      clerkSessionId: 'sess_create',
+      clerkTokenId: 'tok_create',
+      clerkUserId: 'user_create',
+      tokenExpiresAt: new Date(Date.now() + 5 * 60 * 1000),
+      absoluteExpiresAt,
+      ...overrides,
+    };
+  }
+
+  test('populates correlation fields and sets expiration to absoluteExpiresAt', async () => {
+    const userId = await createTestUser();
+    const clerk = clerkContext();
+
+    const { session } = await runAs('tenant-a', () =>
+      methods.createSession(userId.toString(), { clerk }),
+    );
+
+    expect(session.authProvider).toBe('clerk');
+    expect(session.clerkSessionId).toBe(clerk.clerkSessionId);
+    expect(session.clerkTokenId).toBe(clerk.clerkTokenId);
+    expect(session.clerkUserId).toBe(clerk.clerkUserId);
+    expect(session.expiration?.getTime()).toBe(clerk.absoluteExpiresAt.getTime());
+    expect(session.absoluteExpiresAt?.getTime()).toBe(clerk.absoluteExpiresAt.getTime());
+  });
+
+  test('persists the tenantId onto the Clerk session document', async () => {
+    const userId = await createTestUser();
+    const clerk = clerkContext();
+
+    const { session } = await runAs('tenant-a', () =>
+      methods.createSession(userId.toString(), { clerk }),
+    );
+
+    const persisted = await runAsSystem(() =>
+      Session.findById(session._id).select('+tenantId').lean(),
+    );
+    expect(persisted?.tenantId).toBe('tenant-a');
+  });
+
+  test('participates in a caller-owned transaction via dbSession and rolls back with it', async () => {
+    const userId = await createTestUser();
+    const clerk = clerkContext({ clerkSessionId: 'sess_rollback' });
+    const transaction = await mongoose.startSession();
+
+    try {
+      await expect(
+        runAs('tenant-a', () =>
+          runAsSystem(() =>
+            transaction.withTransaction(async () => {
+              await methods.createSession(userId.toString(), { clerk, dbSession: transaction });
+              throw new Error('abort transaction');
+            }),
+          ),
+        ),
+      ).rejects.toThrow('abort transaction');
+    } finally {
+      await transaction.endSession();
+    }
+
+    await expect(
+      runAsSystem(() => Session.countDocuments({ clerkSessionId: 'sess_rollback' })),
+    ).resolves.toBe(0);
+  });
+
+  test('a Clerk session created via dbSession is visible after commit', async () => {
+    const userId = await createTestUser();
+    const clerk = clerkContext({ clerkSessionId: 'sess_committed' });
+    const transaction = await mongoose.startSession();
+
+    try {
+      await runAs('tenant-a', () =>
+        runAsSystem(() =>
+          transaction.withTransaction(() =>
+            methods.createSession(userId.toString(), { clerk, dbSession: transaction }),
+          ),
+        ),
+      );
+    } finally {
+      await transaction.endSession();
+    }
+
+    await expect(
+      runAsSystem(() => Session.countDocuments({ clerkSessionId: 'sess_committed' })),
+    ).resolves.toBe(1);
+  });
+});
+
+describe('findUser transaction participation', () => {
+  test('a User inserted inside an uncommitted transaction is invisible outside it', async () => {
+    const transaction = await mongoose.startSession();
+    let insertedId: mongoose.Types.ObjectId | undefined;
+
+    try {
+      await transaction.withTransaction(async () => {
+        const [user] = await User.create(
+          [{ email: `tx-${new mongoose.Types.ObjectId()}@test.com`, provider: 'local' }],
+          { session: transaction },
+        );
+        insertedId = user._id as mongoose.Types.ObjectId;
+
+        const foundInside = await runAsSystem(() =>
+          userMethods.findUser({ _id: insertedId }, null, { session: transaction }),
+        );
+        expect(foundInside).not.toBeNull();
+
+        const foundOutside = await runAsSystem(() => userMethods.findUser({ _id: insertedId }));
+        expect(foundOutside).toBeNull();
+
+        throw new Error('abort transaction');
+      });
+    } catch {
+      // expected — aborts the transaction
+    } finally {
+      await transaction.endSession();
+    }
+
+    const afterAbort = await runAsSystem(() => userMethods.findUser({ _id: insertedId }));
+    expect(afterAbort).toBeNull();
+  });
+
+  test('excludes a tombstoned User when criteria requires clerkDeletedAt to not exist', async () => {
+    const user = await User.create({
+      email: `tombstoned-${new mongoose.Types.ObjectId()}@test.com`,
+      provider: 'clerk',
+      clerkId: 'clerk_tombstoned',
+      clerkDeletedAt: new Date(),
+    });
+
+    const found = await runAsSystem(() =>
+      userMethods.findUser({ _id: user._id, clerkDeletedAt: { $exists: false } }),
+    );
+    expect(found).toBeNull();
+  });
+});
+
+describe('findSession includeExpired', () => {
+  test('omits an expired Clerk Session by default', async () => {
+    const userId = await createTestUser();
+    const expired = await runAs('tenant-a', () =>
+      new Session(
+        clerkSessionDoc(userId, {
+          clerkSessionId: 'sess_expired',
+          expiration: new Date(Date.now() - 1000),
+          absoluteExpiresAt: new Date(Date.now() - 1000),
+        }),
+      ).save(),
+    );
+
+    const found = await runAsSystem(() =>
+      methods.findSession({ sessionId: expired._id.toString() }),
+    );
+    expect(found).toBeNull();
+  });
+
+  test('returns an expired Clerk Session when includeExpired is true', async () => {
+    const userId = await createTestUser();
+    const expired = await runAs('tenant-a', () =>
+      new Session(
+        clerkSessionDoc(userId, {
+          clerkSessionId: 'sess_expired_included',
+          expiration: new Date(Date.now() - 1000),
+          absoluteExpiresAt: new Date(Date.now() - 1000),
+        }),
+      ).save(),
+    );
+
+    const found = await runAsSystem(() =>
+      methods.findSession(
+        { sessionId: expired._id.toString() },
+        { lean: false, includeExpired: true },
+      ),
+    );
+    expect(found?.clerkSessionId).toBe('sess_expired_included');
+  });
+
+  test('still returns a live (non-expired) session when includeExpired is true', async () => {
+    const userId = await createTestUser();
+    const live = await runAs('tenant-a', () => new Session(clerkSessionDoc(userId)).save());
+
+    const found = await runAsSystem(() =>
+      methods.findSession({ sessionId: live._id.toString() }, { includeExpired: true }),
+    );
+    expect(found?.clerkSessionId).toBe(live.clerkSessionId);
+  });
+});
+
+describe('findSession explicit tenant suffix', () => {
+  test('confirms a Clerk Session when the tenantId matches', async () => {
+    const userId = await createTestUser();
+    const created = await runAs('tenant-a', () =>
+      new Session(clerkSessionDoc(userId, { clerkSessionId: 'sess_confirm' })).save(),
+    );
+
+    const found = await runAsSystem(() =>
+      methods.findSession({ sessionId: created._id.toString(), tenantId: 'tenant-a' }),
+    );
+    expect(found?.clerkSessionId).toBe('sess_confirm');
+  });
+
+  test('returns null when the tenantId does not match the Session', async () => {
+    const userId = await createTestUser();
+    const created = await runAs('tenant-a', () =>
+      new Session(clerkSessionDoc(userId, { clerkSessionId: 'sess_wrong_tenant' })).save(),
+    );
+
+    const found = await runAsSystem(() =>
+      methods.findSession({ sessionId: created._id.toString(), tenantId: 'tenant-b' }),
+    );
+    expect(found).toBeNull();
   });
 });

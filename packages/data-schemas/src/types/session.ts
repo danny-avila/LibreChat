@@ -36,11 +36,13 @@ export type CreateSessionOptions =
       expiration?: Date;
       /** Duration in milliseconds for session expiry. Default: 7 days */
       expiresIn?: number;
+      dbSession?: ClientSession;
     }
   | {
       clerk: ClerkSessionContext;
       expiration?: never;
       expiresIn?: never;
+      dbSession?: ClientSession;
     };
 
 export interface UpdateExpirationOptions {
@@ -52,10 +54,14 @@ export interface SessionSearchParams {
   refreshToken?: string;
   userId?: string;
   sessionId?: string | { sessionId: string };
+  /** Explicit tenant suffix — required for a post-commit Clerk confirmation read, never inferred ambiently. */
+  tenantId?: string;
 }
 
 export interface SessionQueryOptions {
   lean?: boolean;
+  /** Include sessions past `expiration` — needed to identify/delete an already-expired Clerk Session at its absolute deadline. */
+  includeExpired?: boolean;
 }
 
 export interface ClerkSessionLifecycleOptions {
