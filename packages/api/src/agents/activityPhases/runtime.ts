@@ -1312,12 +1312,19 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     } else if (failures > 0) {
       activityStatus = 'partial';
     }
+    const trackedStartIndex = batchStartIndex ?? Math.max(0, parts.length - 1);
+    /** A batch can be tracked after its child-label slot is reserved but before
+     *  its tool call reaches the shared array. Record where it started so a
+     *  later boundary keeps it on its own side instead of reading "nothing
+     *  materialized" as "happened earlier". */
+    const awaitingMaterialization = batchStartIndex == null;
     trackActivity({
       entries,
       ...(reasoning ? { thinkingExcerpts: [reasoning.slice(0, MAX_EXCERPT_CHARS)] } : {}),
       ...(input.executingAgentId != null && { agentId: input.executingAgentId }),
       status: activityStatus,
-      startIndex: batchStartIndex ?? Math.max(0, parts.length - 1),
+      startIndex: trackedStartIndex,
+      ...(awaitingMaterialization && { unresolvedToolStartIndex: trackedStartIndex }),
       toolCallIds: [...ids],
       ...(childLabelIndex != null && { childLabelIndex }),
     });

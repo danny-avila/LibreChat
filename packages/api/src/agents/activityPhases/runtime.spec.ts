@@ -1407,6 +1407,42 @@ describe('createActivityPhaseWiring', () => {
     }
   });
 
+  it('keeps a live unmaterialized batch after a substantial boundary', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'early-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'early-2' } },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Completed the early work' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    await wiring.hook(batch('early-1'), new AbortController().signal);
+    await wiring.hook(batch('early-2'), new AbortController().signal);
+    parts.push({ type: ContentTypes.TEXT, text: substantialText('The interim answer.') });
+    /** The child-label slot is reserved before the tool call lands, so this
+     *  batch is tracked with nothing materialized while its real position is
+     *  already past the boundary. */
+    parts.push({
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Recorded the delayed result',
+      tool_call_ids: ['delayed'],
+      pending: false,
+    });
+    await wiring.hook(batch('delayed'), new AbortController().signal);
+
+    wiring.complete();
+    await flushDetached();
+
+    const marker = parts.find(
+      (part) => part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type === 'phase',
+    );
+    expect(marker).toMatchObject({ activity_end_index: 2, activity_count: 2 });
+  });
+
   it('clears a resolved missing-tool anchor before partitioning', async () => {
     const parts: LooseContentPart[] = [];
     const generatePhase = jest.fn(async () => ({ label: 'Completed the resumed work' }));
