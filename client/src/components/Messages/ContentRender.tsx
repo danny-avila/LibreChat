@@ -8,9 +8,9 @@ import {
   getHeaderPrefixForScreenReader,
   getMessageAriaLabel,
 } from '~/utils';
+import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
 import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
-import { revealOnRowHoverClasses } from '~/components/Chat/Messages/styles';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
@@ -158,7 +158,7 @@ const ContentRender = memo(function ContentRender({
       fullWidth={maximizeChatSpace}
       isEditing={edit}
       footer={
-        <SubRow classes={cn('text-xs', msg.isCreatedByUser && 'justify-end')}>
+        <SubRow classes={cn(messageFooterClasses, msg.isCreatedByUser && 'justify-end')}>
           {/* While the answer is generating every other action is withheld, which
               would otherwise leave this counter sitting alone under a half-written
               response. It reveals on hover there, like the actions it sits with. */}

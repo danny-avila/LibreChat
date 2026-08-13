@@ -8,9 +8,9 @@ import {
   getHeaderPrefixForScreenReader,
   getMessageAriaLabel,
 } from '~/utils';
+import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
-import { revealOnRowHoverClasses } from '~/components/Chat/Messages/styles';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
@@ -156,7 +156,7 @@ const MessageRender = memo(function MessageRender({
       fullWidth={maximizeChatSpace}
       isEditing={edit}
       footer={
-        <SubRow classes={cn('text-xs', msg.isCreatedByUser && 'justify-end')}>
+        <SubRow classes={cn(messageFooterClasses, msg.isCreatedByUser && 'justify-end')}>
           {/* A user turn is right-aligned, so its retry navigation belongs at the
               outer edge under the bubble rather than inboard of the actions.
 

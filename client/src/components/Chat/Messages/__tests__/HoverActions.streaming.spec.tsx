@@ -270,4 +270,18 @@ describe('streaming hover actions', () => {
       '[@media(hover:hover)]:opacity-0',
     );
   });
+
+  /**
+   * The row that is still generating withholds every action, and a lone sibling
+   * counter renders nothing, so its footer measures zero until the answer lands.
+   * Reserving the height keeps the transcript still at the moment it does.
+   */
+  it.each([
+    ['a plain text', false],
+    ['a structured', true],
+  ])('holds the footer height while %s response streams', (_label, structured) => {
+    renderStreamingRow(structured);
+
+    expect(screen.getByTestId('hover-buttons').parentElement).toHaveClass('min-h-[31px]');
+  });
 });
