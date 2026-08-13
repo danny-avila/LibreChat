@@ -1081,6 +1081,273 @@ describe('User Clerk identity fields', () => {
     });
   });
 
+  describe('dedicated Clerk identity mutations', () => {
+    test('atomically links only the exact tenant user and preserves local authentication state', async () => {
+      await User.syncIndexes();
+      const tenantUser = await User.create({
+        email: 'link@example.com',
+        provider: 'local',
+        password: 'local-password-hash',
+        role: 'ADMIN',
+        twoFactorEnabled: true,
+        tenantId: 'tenant-a',
+      });
+      const otherTenantUser = await User.create({
+        email: 'link@example.com',
+        provider: 'openid',
+        tenantId: 'tenant-b',
+      });
+
+      const result = await methods.linkClerkIdentity({
+        userId: tenantUser._id.toString(),
+        clerkId: 'user_clerk',
+        tenantId: 'tenant-a',
+      });
+
+      expect(result.status).toBe('linked');
+      const linked = await User.findById(tenantUser._id).select('+password').lean();
+      expect(linked).toMatchObject({
+        _id: tenantUser._id,
+        clerkId: 'user_clerk',
+        provider: 'local',
+        password: 'local-password-hash',
+        role: 'ADMIN',
+        twoFactorEnabled: true,
+        tenantId: 'tenant-a',
+      });
+      expect(await User.findById(otherTenantUser._id).lean()).not.toHaveProperty('clerkId');
+    });
+
+    test('uses an explicit tenantless scope and rejects a mismatched tenant target', async () => {
+      const tenantless = await User.create({
+        email: 'tenantless@example.com',
+        provider: 'local',
+      });
+      const tenantUser = await User.create({
+        email: 'tenant@example.com',
+        provider: 'local',
+        tenantId: 'tenant-a',
+      });
+
+      await expect(
+        methods.linkClerkIdentity({
+          userId: tenantless._id.toString(),
+          clerkId: 'user_tenantless',
+        }),
+      ).resolves.toMatchObject({ status: 'linked' });
+      await expect(
+        methods.linkClerkIdentity({
+          userId: tenantUser._id.toString(),
+          clerkId: 'user_wrong_tenant',
+          tenantId: 'tenant-b',
+        }),
+      ).resolves.toEqual({ status: 'not_found' });
+    });
+
+    test('converges repeated and conflicting link attempts without overwriting a binding', async () => {
+      const user = await User.create({
+        email: 'converged@example.com',
+        provider: 'openid',
+        clerkId: 'user_existing',
+      });
+
+      const repeated = await methods.linkClerkIdentity({
+        userId: user._id.toString(),
+        clerkId: 'user_existing',
+      });
+      const conflicting = await methods.linkClerkIdentity({
+        userId: user._id.toString(),
+        clerkId: 'user_different',
+      });
+
+      expect(repeated).toMatchObject({ status: 'already_linked' });
+      expect(conflicting).toEqual({ status: 'conflict' });
+      expect((await User.findById(user._id).lean())?.clerkId).toBe('user_existing');
+    });
+
+    test('never links a tombstoned target', async () => {
+      const user = await User.create({
+        email: 'deleted@example.com',
+        provider: 'local',
+        clerkDeletedAt: new Date('2026-08-13T11:00:00.000Z'),
+      });
+
+      await expect(
+        methods.linkClerkIdentity({
+          userId: user._id.toString(),
+          clerkId: 'user_deleted',
+        }),
+      ).resolves.toEqual({ status: 'conflict' });
+      expect((await User.findById(user._id).lean())?.clerkId).toBeUndefined();
+    });
+
+    test('maps a real unique-index race to one linked result and one conflict', async () => {
+      await User.syncIndexes();
+      const [first, second] = await User.create([
+        { email: 'race-a@example.com', provider: 'local', tenantId: 'tenant-a' },
+        { email: 'race-b@example.com', provider: 'local', tenantId: 'tenant-a' },
+      ]);
+
+      const results = await Promise.all([
+        methods.linkClerkIdentity({
+          userId: first._id.toString(),
+          clerkId: 'user_race',
+          tenantId: 'tenant-a',
+        }),
+        methods.linkClerkIdentity({
+          userId: second._id.toString(),
+          clerkId: 'user_race',
+          tenantId: 'tenant-a',
+        }),
+      ]);
+
+      expect(results.map((result) => result.status).sort()).toEqual(['conflict', 'linked']);
+      expect(await User.countDocuments({ clerkId: 'user_race', tenantId: 'tenant-a' })).toBe(1);
+    });
+
+    test('invalidates the exact auth cache entry after a link and repeated convergence', async () => {
+      enableAuthUserDocCache();
+      const user = await User.create({ email: 'cached-link@example.com', provider: 'local' });
+      const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${user._id.toString()}`;
+      const cache = {
+        get: jest.fn().mockResolvedValue(['auth-cache-link']),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      await methodsWithCache.linkClerkIdentity({
+        userId: user._id.toString(),
+        clerkId: 'user_cached',
+      });
+      await methodsWithCache.linkClerkIdentity({
+        userId: user._id.toString(),
+        clerkId: 'user_cached',
+      });
+
+      expect(cache.get).toHaveBeenCalledTimes(2);
+      expect(cache.get).toHaveBeenNthCalledWith(1, indexKey);
+      expect(cache.get).toHaveBeenNthCalledWith(2, indexKey);
+      expect(cache.delete).toHaveBeenCalledWith('auth-cache-link');
+      expect(cache.delete).toHaveBeenCalledWith(indexKey);
+    });
+
+    test('tombstones every matching cross-tenant binding while preserving provider and local data', async () => {
+      await User.syncIndexes();
+      const [localUser, openIdUser] = await User.create([
+        {
+          email: 'delete-a@example.com',
+          provider: 'local',
+          password: 'local-password-hash',
+          clerkId: 'user_delete_all',
+          tenantId: 'tenant-a',
+        },
+        {
+          email: 'delete-b@example.com',
+          provider: 'openid',
+          openidId: 'openid-subject',
+          clerkId: 'user_delete_all',
+          tenantId: 'tenant-b',
+        },
+      ]);
+      const deletedAt = new Date('2026-08-13T12:00:00.000Z');
+
+      const affectedUserIds = await methods.tombstoneClerkUsers({
+        clerkId: 'user_delete_all',
+        deletedAt,
+      });
+
+      expect(new Set(affectedUserIds)).toEqual(
+        new Set([localUser._id.toString(), openIdUser._id.toString()]),
+      );
+      const tombstoned = await User.find({ clerkId: 'user_delete_all' })
+        .select('+password +clerkDeletedAt')
+        .lean();
+      expect(tombstoned).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            _id: localUser._id,
+            clerkId: 'user_delete_all',
+            clerkDeletedAt: deletedAt,
+            provider: 'local',
+            password: 'local-password-hash',
+          }),
+          expect.objectContaining({
+            _id: openIdUser._id,
+            clerkId: 'user_delete_all',
+            clerkDeletedAt: deletedAt,
+            provider: 'openid',
+            openidId: 'openid-subject',
+          }),
+        ]),
+      );
+    });
+
+    test('keeps the original tombstone timestamp on an idempotent repeat', async () => {
+      const originalDeletedAt = new Date('2026-08-13T11:00:00.000Z');
+      const user = await User.create({
+        email: 'repeat-delete@example.com',
+        provider: 'clerk',
+        clerkId: 'user_repeat_delete',
+        clerkDeletedAt: originalDeletedAt,
+      });
+
+      await methods.tombstoneClerkUsers({
+        clerkId: 'user_repeat_delete',
+        deletedAt: new Date('2026-08-13T12:00:00.000Z'),
+      });
+
+      const persisted = await User.findById(user._id).select('+clerkDeletedAt').lean();
+      expect(persisted?.clerkDeletedAt).toEqual(originalDeletedAt);
+    });
+
+    test('invalidates every affected auth cache entry after a standalone tombstone', async () => {
+      enableAuthUserDocCache();
+      const users = await User.create([
+        { email: 'cached-a@example.com', provider: 'clerk', clerkId: 'user_cached_delete' },
+        {
+          email: 'cached-b@example.com',
+          provider: 'clerk',
+          clerkId: 'user_cached_delete',
+          tenantId: 'tenant-b',
+        },
+      ]);
+      const cache = {
+        get: jest.fn().mockImplementation((key: string) => Promise.resolve([`${key}:document`])),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const methodsWithCache = createUserMethods(mongoose, {
+        getCache: jest.fn().mockReturnValue(cache),
+      });
+
+      await methodsWithCache.tombstoneClerkUsers({
+        clerkId: 'user_cached_delete',
+        deletedAt: new Date(),
+      });
+
+      for (const user of users) {
+        const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${user._id.toString()}`;
+        expect(cache.get).toHaveBeenCalledWith(indexKey);
+        expect(cache.delete).toHaveBeenCalledWith(`${indexKey}:document`);
+        expect(cache.delete).toHaveBeenCalledWith(indexKey);
+      }
+    });
+
+    test('requires transaction callers to opt into deferred cache invalidation', async () => {
+      await expect(
+        methods.tombstoneClerkUsers({ clerkId: 'user_transaction', deletedAt: new Date() }, {
+          session: {} as mongoose.ClientSession,
+        } as never),
+      ).rejects.toThrow(/deferCacheInvalidation/);
+      await expect(
+        methods.tombstoneClerkUsers({ clerkId: 'user_transaction', deletedAt: new Date() }, {
+          deferCacheInvalidation: true,
+        } as never),
+      ).rejects.toThrow(/session/);
+    });
+  });
+
   describe('updateUser managed-field rejection', () => {
     test('throws when updateData contains clerkId', async () => {
       const user = await User.create({ email: 'guarded@example.com', provider: 'local' });

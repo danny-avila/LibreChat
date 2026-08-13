@@ -58,6 +58,12 @@ export type {
   ListChatProjectsResult,
   UpdateChatProjectInput,
 } from './chatProject';
+export type {
+  LinkClerkIdentityInput,
+  LinkClerkIdentityResult,
+  TombstoneClerkUsersInput,
+  TombstoneClerkUsersOptions,
+} from './user';
 /* Tier 3 — Complex (heavier injection) */
 import {
   createTxMethods,
