@@ -3867,7 +3867,7 @@ describe('useResumableSSE - sync response identity', () => {
     });
   };
 
-  it('updates the submission response after the user message ID is rehydrated', async () => {
+  it('updates the submission-owned response when sync omits the response ID', async () => {
     const userMessage = {
       messageId: 'server-user-id',
       conversationId: CONV_ID,
@@ -3876,7 +3876,7 @@ describe('useResumableSSE - sync response identity', () => {
     } as TMessage;
     const activeResponse = {
       messageId: 'server-response-id',
-      parentMessageId: 'msg-1',
+      parentMessageId: 'server-user-id',
       conversationId: CONV_ID,
       text: '',
       content: [],
@@ -3928,7 +3928,7 @@ describe('useResumableSSE - sync response identity', () => {
     } as TMessage;
     const activeResponse = {
       messageId: 'active-response-id',
-      parentMessageId: 'msg-1',
+      parentMessageId: 'server-user-id',
       conversationId: CONV_ID,
       text: '',
       content: [],
@@ -3936,6 +3936,7 @@ describe('useResumableSSE - sync response identity', () => {
     } as TMessage;
     const submission = {
       ...buildSubmission({ userMessage, initialResponse: activeResponse }),
+      isRegenerate: true,
       resumeStreamId: CONV_ID,
     } as TSubmission & { resumeStreamId: string };
     const chatHelpers = buildChatHelpers();
