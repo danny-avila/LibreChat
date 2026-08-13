@@ -1745,9 +1745,7 @@ export default function useResumableSSE(
                  *  and leave a bare cursor. Require an existing content array so it is never
                  *  swapped for `undefined`. */
                 const preserveLoadedContent =
-                  !hasResumedContent &&
-                  Array.isArray(oldContent) &&
-                  oldContent.length > 0;
+                  !hasResumedContent && Array.isArray(oldContent) && oldContent.length > 0;
                 /**
                  * Replacing the response with `aggregatedContent` drops the
                  * prefix an edited resubmission had retained: the snapshot is

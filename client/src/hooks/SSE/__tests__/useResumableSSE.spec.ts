@@ -2920,13 +2920,7 @@ describe('useResumableSSE', () => {
       unmount();
     });
 
-    /**
-     * Regenerate: the new run's response id is not in the loaded history yet, so the
-     * parent-based fallback lands on the answer being REPLACED. Preserving that row's
-     * content would make the regenerated run's deltas append to the stale answer, so an
-     * empty snapshot must still clear a row we only matched heuristically.
-     */
-    it('does not preserve content on a row matched only by the parent fallback', async () => {
+    it('does not reuse an older response that only shares the user parent', async () => {
       const submission = buildSubmission();
       const chatHelpers = buildChatHelpers();
       chatHelpers.getMessages.mockReturnValue([
@@ -2965,12 +2959,14 @@ describe('useResumableSSE', () => {
         });
       });
 
-      const synced = chatHelpers.setMessages.mock.calls
+      const syncedMessages = chatHelpers.setMessages.mock.calls
         .map(([messages]) => messages as TMessage[])
         .reverse()
-        .find((messages) => messages?.some((m) => m.messageId === 'resp-previous'))
-        ?.find((m) => m.messageId === 'resp-previous');
-      expect(synced?.content).toEqual([]);
+        .find((messages) => messages?.some((m) => m.messageId === 'resp-regenerated'));
+      expect(syncedMessages?.find((m) => m.messageId === 'resp-previous')?.content).toEqual([
+        { type: 'text', text: 'the answer being regenerated' },
+      ]);
+      expect(syncedMessages?.find((m) => m.messageId === 'resp-regenerated')?.content).toEqual([]);
       unmount();
     });
 
@@ -3860,16 +3856,7 @@ describe('useResumableSSE - sync response identity', () => {
     mockSetIsSubmitting.mockClear();
   });
 
-  const emitCreatedAndSync = async (
-    sse: MockSSEInstance,
-    userMessage: TMessage,
-    aggregatedContent: TMessage['content'],
-  ) => {
-    await act(async () => {
-      sse._emit('message', {
-        data: JSON.stringify({ created: true, message: userMessage }),
-      });
-    });
+  const emitSync = async (sse: MockSSEInstance, aggregatedContent: TMessage['content']) => {
     await act(async () => {
       sse._emit('message', {
         data: JSON.stringify({
@@ -3895,7 +3882,10 @@ describe('useResumableSSE - sync response identity', () => {
       content: [],
       isCreatedByUser: false,
     } as TMessage;
-    const submission = buildSubmission({ initialResponse: activeResponse });
+    const submission = {
+      ...buildSubmission({ userMessage, initialResponse: activeResponse }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
     const chatHelpers = buildChatHelpers();
     chatHelpers.getMessages.mockReturnValue([userMessage, activeResponse]);
 
@@ -3907,7 +3897,7 @@ describe('useResumableSSE - sync response identity', () => {
     const aggregatedContent: TMessage['content'] = [
       { type: ContentTypes.TEXT, text: { value: 'Recovered answer' } },
     ];
-    await emitCreatedAndSync(getLastSSE(), userMessage, aggregatedContent);
+    await emitSync(getLastSSE(), aggregatedContent);
 
     const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
     expect(updatedMessages).toHaveLength(2);
@@ -3944,7 +3934,10 @@ describe('useResumableSSE - sync response identity', () => {
       content: [],
       isCreatedByUser: false,
     } as TMessage;
-    const submission = buildSubmission({ initialResponse: activeResponse });
+    const submission = {
+      ...buildSubmission({ userMessage, initialResponse: activeResponse }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
     const chatHelpers = buildChatHelpers();
     chatHelpers.getMessages.mockReturnValue([userMessage, olderResponse, activeResponse]);
 
@@ -3956,7 +3949,7 @@ describe('useResumableSSE - sync response identity', () => {
     const aggregatedContent: TMessage['content'] = [
       { type: ContentTypes.TEXT, text: { value: 'Regenerated answer' } },
     ];
-    await emitCreatedAndSync(getLastSSE(), userMessage, aggregatedContent);
+    await emitSync(getLastSSE(), aggregatedContent);
 
     const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
     expect(updatedMessages.find((message) => message.messageId === 'older-response-id')).toEqual(
