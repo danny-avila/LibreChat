@@ -435,6 +435,15 @@ function replyResponses(text) {
   }
 
   if (text.includes(PARAGRAPHS_REPLY_MARKER)) {
+    /** The quoted cell sits in the first column, so scrolling the table to its
+     *  right edge carries it out of view. */
+    const wideColumns = [{ header: 'E2E first column header', cell: 'E2E table cell text' }];
+    for (let index = 1; index < 8; index++) {
+      wideColumns.push({
+        header: `E2E column ${index} with a deliberately wide header`,
+        cell: `E2E filler cell ${index} padding the row out`,
+      });
+    }
     const filler = [];
     for (let index = 0; index < 4; index++) {
       filler.push(
@@ -449,10 +458,13 @@ function replyResponses(text) {
           '',
           /** Renders inside `.markdown-table-wrapper`, a nested scroll container:
            *  its `overflow-x: auto` also makes the computed `overflow-y` auto, so
-           *  a selection here is clipped by the table AND by the message list. */
-          '| Column | E2E nested value |',
-          '| --- | --- |',
-          '| row | E2E table cell text |',
+           *  a selection here is clipped by the table AND by the message list.
+           *  Wide enough to actually overflow sideways, which is what lets a
+           *  spec scroll the selected cell out of view without moving the
+           *  message at all. */
+          `| ${wideColumns.map((column) => column.header).join(' | ')} |`,
+          `| ${wideColumns.map(() => '---').join(' | ')} |`,
+          `| ${wideColumns.map((column) => column.cell).join(' | ')} |`,
           '',
           ...filler,
           'E2E closing paragraph, the last block this message renders.',

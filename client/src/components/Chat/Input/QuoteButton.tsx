@@ -24,10 +24,13 @@ const EDGE_MARGIN = 16;
 const SELECTION_SETTLE_MS = 300;
 
 type Anchor = {
-  /** Viewport-relative bounds of the selection (used to place the button). */
+  /** Viewport-relative bounds of the selection (used to place the button, and
+   *  to tell whether it is still visible — hence both axes, since a selection
+   *  can also be scrolled sideways out of a wide table or code block). */
   top: number;
   bottom: number;
-  centerX: number;
+  left: number;
+  right: number;
 };
 
 type SelectionState = {
@@ -55,25 +58,27 @@ const anchorFromRect = (rect: DOMRect): Anchor | null => {
   if (rect.width === 0 && rect.height === 0) {
     return null;
   }
-  return { top: rect.top, bottom: rect.bottom, centerX: rect.left + rect.width / 2 };
+  return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
 };
 
+const anchorCenterX = (anchor: Anchor): number => (anchor.left + anchor.right) / 2;
+
 const sameAnchor = (a: Anchor, b: Anchor): boolean =>
-  a.top === b.top && a.bottom === b.bottom && a.centerX === b.centerX;
+  a.top === b.top && a.bottom === b.bottom && a.left === b.left && a.right === b.right;
 
 const stripWhitespace = (value: string): string => value.replace(/\s+/g, '');
 
 const CLIPPING_OVERFLOWS = new Set(['auto', 'scroll', 'hidden']);
 
 /**
- * Every ancestor of the message that clips it, innermost first, so visibility
- * can be judged against all of them: the list scrolls inside a bounded
- * container, and intersecting the whole chain stays correct if that container
- * is ever nested inside a further-clipped panel.
+ * Every ancestor that clips the element, innermost first, so visibility can be
+ * judged against all of them at once.
  *
- * This walks *up* from the message, so scroll containers inside it — a wide
- * table, a code block — are not part of the chain and their own clipping is not
- * accounted for here.
+ * Walking from the *selection* rather than from the message matters: a wide
+ * table or a long code line scrolls inside its own container (and `overflow-x:
+ * auto` makes the computed `overflow-y` auto too, so it is a clipper on both
+ * axes), and scrolling that container sideways carries the selected text out of
+ * view while the message itself has not moved at all.
  */
 const findClippingAncestors = (element: HTMLElement): HTMLElement[] => {
   const clippers: HTMLElement[] = [];
@@ -164,33 +169,44 @@ const readSelection = (): Reading | null => {
     return null;
   }
 
+  const selectionElement =
+    measured.startContainer instanceof Element
+      ? (measured.startContainer as HTMLElement)
+      : (measured.startContainer.parentElement ?? message);
+
   return {
     text: text.slice(0, MAX_QUOTE_LENGTH),
     anchor,
     range: measured,
-    clippers: findClippingAncestors(message),
+    clippers: findClippingAncestors(selectionElement),
   };
 };
 
 /**
  * Whether the selection is still on screen, judged against the window
- * intersected with every ancestor that clips it. Text slipping under the chat
- * header or the composer is invisible even though its un-clipped rect is still
- * inside the window, and checking the window alone would leave the popup
- * floating over unrelated UI.
+ * intersected with every ancestor that clips it, on both axes. Text slipping
+ * under the chat header or sideways out of a table is invisible even though its
+ * un-clipped rect is still inside the window, and checking the window alone
+ * would leave the popup floating over unrelated UI.
  */
 const isAnchorVisible = (anchor: Anchor, clippers: HTMLElement[]): boolean => {
   let top = 0;
   let bottom = window.innerHeight;
+  let left = 0;
+  let right = window.innerWidth;
   for (let index = 0; index < clippers.length; index++) {
     const bounds = clippers[index].getBoundingClientRect();
     top = Math.max(top, bounds.top);
     bottom = Math.min(bottom, bounds.bottom);
-    if (top > bottom) {
+    left = Math.max(left, bounds.left);
+    right = Math.min(right, bounds.right);
+    if (top > bottom || left > right) {
       return false;
     }
   }
-  return anchor.bottom >= top && anchor.top <= bottom;
+  return (
+    anchor.bottom >= top && anchor.top <= bottom && anchor.right >= left && anchor.left <= right
+  );
 };
 
 /** Place the popup on the preferred side, falling back to the other side and
@@ -280,7 +296,11 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     const show = (touch = viaTouch) => {
       clearSettleTimer();
       const reading = readSelection();
-      if (!reading) {
+      /** Also gate on visibility here, not just while re-anchoring: nothing is
+       *  tracked during the settle window, so a selection scrolled out of the
+       *  chat in those 300ms would otherwise be published off-screen and
+       *  clamped into view, stranding the popup over unrelated UI. */
+      if (!reading || !isAnchorVisible(reading.anchor, reading.clippers)) {
         hide();
         return;
       }
@@ -417,7 +437,10 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     }
     const { width, height } = buttonRef.current.getBoundingClientRect();
     const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - width - EDGE_MARGIN);
-    const left = Math.min(Math.max(selection.anchor.centerX - width / 2, EDGE_MARGIN), maxLeft);
+    const left = Math.min(
+      Math.max(anchorCenterX(selection.anchor) - width / 2, EDGE_MARGIN),
+      maxLeft,
+    );
     const top = resolveTop(selection.anchor, height, selection.viaTouch);
 
     setPos((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }));

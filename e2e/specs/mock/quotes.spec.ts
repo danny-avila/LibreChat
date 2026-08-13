@@ -234,6 +234,8 @@ const OPENING_PARAGRAPH = 'E2E opening paragraph';
 const CLOSING_PARAGRAPH = 'E2E closing paragraph';
 /** Sits inside `.markdown-table-wrapper`, a scroll container nested in the message. */
 const TABLE_CELL = 'E2E table cell text';
+/** Comfortably longer than the component's 300ms selection-settle interval. */
+const SETTLE_OBSERVATION_MS = 1500;
 
 /** Seed a conversation whose latest reply has several paragraphs. */
 async function seedParagraphReply(page: Page) {
@@ -421,6 +423,40 @@ test.describe('quote references', () => {
       return scroller.scrollTop - start;
     });
     expect(Math.abs(scrolledAway)).toBeGreaterThan(0);
+
+    await expect(addToChat(page)).toBeHidden({ timeout: 5000 });
+  });
+
+  test('hides the popup when a table is scrolled sideways past the selection', async ({ page }) => {
+    test.setTimeout(120000);
+    await page.setViewportSize({ width: 900, height: 500 });
+    await seedParagraphReply(page);
+
+    // A wide table scrolls inside the message, so the selected cell can leave
+    // view without the message moving at all. Judging visibility from the
+    // message's ancestors, or on the vertical axis alone, would miss this
+    // entirely and leave the popup pinned beside a cell that is no longer there.
+    await expect(async () => {
+      await scrollSelectionTo(page, TABLE_CELL, 0.5);
+      await selectMessageText(page, TABLE_CELL);
+      await expect(addToChat(page)).toBeVisible({ timeout: 3000 });
+    }).toPass({ timeout: 30000 });
+
+    const scrolledSideways = await page.evaluate(() => {
+      const wrapper = document.querySelector('.markdown-table-wrapper');
+      if (!wrapper) {
+        throw new Error('No table wrapper');
+      }
+      const room = wrapper.scrollWidth - wrapper.clientWidth;
+      if (room <= 0) {
+        throw new Error(
+          `Table does not overflow sideways (scrollWidth ${wrapper.scrollWidth}, clientWidth ${wrapper.clientWidth})`,
+        );
+      }
+      wrapper.scrollLeft = room;
+      return wrapper.scrollLeft;
+    });
+    expect(scrolledSideways).toBeGreaterThan(0);
 
     await expect(addToChat(page)).toBeHidden({ timeout: 5000 });
   });
@@ -695,23 +731,98 @@ test.describe('quote references on touch devices', () => {
     // release has something to land on. When that press is then cancelled, the
     // collapse it masked still has to be honoured — otherwise the popup lingers
     // over a selection that no longer exists and a later tap adds a dead quote.
-    await page.evaluate(
-      ({ x, y }) => {
-        const button = document.querySelector('[data-testid="add-to-chat-button"]');
-        if (!button) {
-          throw new Error('Popup is not mounted');
-        }
-        const options = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch' };
-        button.dispatchEvent(
-          new PointerEvent('pointerdown', { ...options, clientX: x, clientY: y }),
-        );
-        window.getSelection()?.removeAllRanges();
-        button.dispatchEvent(new PointerEvent('pointercancel', { ...options }));
-      },
-      { x: popup!.x + popup!.width / 2, y: popup!.y + popup!.height / 2 },
+    //
+    // The three steps are deliberately separate. `selectionchange` is delivered
+    // asynchronously, so collapsing and cancelling in one synchronous block lets
+    // the event arrive *after* the press has already ended — the ordinary path,
+    // which passes with or without the fix. Waiting for delivery in between is
+    // what reproduces a real press: long enough for the collapse to land while
+    // the press is still masking it.
+    const press = { x: popup!.x + popup!.width / 2, y: popup!.y + popup!.height / 2 };
+    await page.evaluate(({ x, y }) => {
+      const button = document.querySelector('[data-testid="add-to-chat-button"]');
+      if (!button) {
+        throw new Error('Popup is not mounted');
+      }
+      button.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: 'touch',
+          clientX: x,
+          clientY: y,
+        }),
+      );
+    }, press);
+
+    const collapseDelivered = await page.evaluate(
+      () =>
+        new Promise<boolean>((resolve) => {
+          const timer = setTimeout(() => resolve(false), 2000);
+          document.addEventListener(
+            'selectionchange',
+            () => {
+              clearTimeout(timer);
+              resolve(true);
+            },
+            { once: true },
+          );
+          window.getSelection()?.removeAllRanges();
+        }),
     );
+    expect(collapseDelivered, 'the masked collapse must reach the component').toBe(true);
+
+    await page.evaluate(() => {
+      const button = document.querySelector('[data-testid="add-to-chat-button"]');
+      if (!button) {
+        throw new Error('Popup was dismissed before the press ended');
+      }
+      button.dispatchEvent(
+        new PointerEvent('pointercancel', {
+          bubbles: true,
+          cancelable: true,
+          pointerId: 1,
+          pointerType: 'touch',
+        }),
+      );
+    });
 
     await expect(addToChat(page)).toBeHidden({ timeout: 5000 });
+    await expect(pendingChips(page)).toHaveCount(0);
+  });
+
+  test('never shows a popup for a selection scrolled away during the settle wait', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await seedParagraphReply(page);
+
+    // A mouse-less selection is only published once it has been quiet for the
+    // settle interval, and nothing is tracked until then — so a scroll inside
+    // that window is invisible to the re-anchoring path. Publishing without
+    // re-checking would clamp an off-screen reading into view and strand the
+    // popup over the composer.
+    await scrollSelectionTo(page, OPENING_PARAGRAPH, 0.5);
+    await selectMessageText(page, OPENING_PARAGRAPH, false);
+    // Just past the top edge, not all the way to the end of the conversation:
+    // a violent scroll re-renders the messages and drops the selection outright,
+    // which would hide the popup for a reason that has nothing to do with this.
+    const scrolledAway = await scrollSelectionTo(page, OPENING_PARAGRAPH, -0.4);
+    expect(Math.abs(scrolledAway)).toBeGreaterThan(0);
+
+    // The selection has to survive, or this proves nothing.
+    const stillSelected = await page.evaluate(() => {
+      const selection = window.getSelection();
+      return !!selection && selection.rangeCount > 0 && !selection.isCollapsed;
+    });
+    expect(stillSelected, 'the selection must outlive the scroll').toBe(true);
+
+    // Sit out the settle interval before asserting. `toBeHidden` is satisfied by
+    // an element that has not been created *yet*, so checking straight away
+    // would pass before the timer had a chance to publish anything.
+    await page.waitForTimeout(SETTLE_OBSERVATION_MS);
+    await expect(addToChat(page)).toBeHidden();
     await expect(pendingChips(page)).toHaveCount(0);
   });
 
