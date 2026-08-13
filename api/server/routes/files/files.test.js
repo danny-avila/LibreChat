@@ -799,6 +799,83 @@ describe('File Routes - Delete with Agent Access', () => {
   });
 
   describe('GET /files/download/:userId/:file_id', () => {
+    it('downloads persisted text without invoking a storage strategy', async () => {
+      const userFileId = uuidv4();
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'notes.txt',
+        filepath: '/uploads/temp/deleted-notes.txt',
+        bytes: Buffer.byteLength('saved notes'),
+        type: 'text/plain',
+        source: FileSources.text,
+        text: 'saved notes',
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.toString()).toBe('saved notes');
+      expect(response.headers['content-disposition']).toContain('filename="notes.txt"');
+      expect(response.headers['content-type']).toBe('application/octet-stream');
+      const metadata = JSON.parse(decodeURIComponent(response.headers['x-file-metadata']));
+      expect(metadata).toMatchObject({
+        file_id: userFileId,
+        filename: 'notes.txt',
+        filepath: '/uploads/temp/deleted-notes.txt',
+        source: FileSources.text,
+      });
+      expect(metadata).not.toHaveProperty('text');
+      expect(getStrategyFunctions).not.toHaveBeenCalled();
+    });
+
+    it('returns a safe error when persisted text is missing', async () => {
+      const userFileId = uuidv4();
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'missing.txt',
+        filepath: '/uploads/temp/deleted-missing.txt',
+        bytes: 0,
+        type: 'text/plain',
+        source: FileSources.text,
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error downloading file');
+      expect(response.headers['x-file-metadata']).toBeUndefined();
+      expect(getStrategyFunctions).not.toHaveBeenCalled();
+    });
+
+    it('returns a safe error when persisted text is not a string', async () => {
+      const userFileId = uuidv4();
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'invalid.txt',
+        filepath: '/uploads/temp/deleted-invalid.txt',
+        bytes: 0,
+        type: 'text/plain',
+        source: FileSources.text,
+      });
+      await File.collection.updateOne(
+        { file_id: userFileId },
+        { $set: { text: { unexpected: true } } },
+      );
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error downloading file');
+      expect(response.headers['x-file-metadata']).toBeUndefined();
+      expect(getStrategyFunctions).not.toHaveBeenCalled();
+    });
+
     it('streams proxied downloads by default when a direct URL is available', async () => {
       const userFileId = uuidv4();
       const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');

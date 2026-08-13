@@ -558,14 +558,6 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       return res.status(400).send('The model used when creating this file is not available');
     }
 
-    const { getDownloadStream, getDownloadURL } = getStrategyFunctions(file.source);
-    if (!getDownloadStream && !getDownloadURL) {
-      logger.warn(
-        `File download requested by user ${userId} has no download method implemented: ${file.source}`,
-      );
-      return res.status(501).send('Not Implemented');
-    }
-
     const setHeaders = () => {
       res.setHeader('Content-Disposition', getContentDisposition(file.filename));
       res.setHeader('Content-Type', 'application/octet-stream');
@@ -574,6 +566,27 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
         encodeURIComponent(JSON.stringify(getDownloadFileMetadata(file))),
       );
     };
+
+    if (file.source === FileSources.text) {
+      const textFile = await db.findFileById(file_id);
+      if (typeof textFile?.text !== 'string') {
+        logger.warn(
+          `File download requested by user ${userId} has invalid text content: ${file_id}`,
+        );
+        return res.status(500).send('Error downloading file');
+      }
+
+      setHeaders();
+      return res.status(200).end(textFile.text);
+    }
+
+    const { getDownloadStream, getDownloadURL } = getStrategyFunctions(file.source);
+    if (!getDownloadStream && !getDownloadURL) {
+      logger.warn(
+        `File download requested by user ${userId} has no download method implemented: ${file.source}`,
+      );
+      return res.status(501).send('Not Implemented');
+    }
 
     if (checkOpenAIStorage(file.source)) {
       req.body = { model: file.model };
