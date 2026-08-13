@@ -43,11 +43,39 @@ jest.mock('~/strategies/validators', () => ({
 }));
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
+// Mirrors AuthService.spec.js's mock exactly (including `{ virtual: true }`)
+// rather than requiring the real @librechat/api — this file's point is
+// proving the real jsonwebtoken arithmetic never crashes or drifts, not
+// exercising CloudFront/email-domain logic, and staying fully self-contained
+// avoids any real-vs-virtual-mock interaction with sibling spec files that
+// mock the same real package differently in the same --runInBand worker.
+jest.mock(
+  '@librechat/api',
+  () => ({
+    isEnabled: jest.fn((val) => val === 'true' || val === true),
+    checkEmailConfig: jest.fn(),
+    isEmailDomainAllowed: jest.fn(),
+    math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
+    shouldUseSecureCookie: jest.fn(() => false),
+    resolveAppConfigForUser: jest.fn(async () => ({})),
+    setCloudFrontCookies: jest.fn(() => false),
+    getCloudFrontConfig: jest.fn(() => null),
+    parseCloudFrontCookieScope: jest.fn(() => null),
+    CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
+  }),
+  { virtual: true },
+);
+jest.mock(
+  '@librechat/data-schemas',
+  () => ({
+    logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+    getTenantId: jest.fn(() => undefined),
+    DEFAULT_SESSION_EXPIRY: 900000,
+    DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
+  }),
+  { virtual: true },
+);
 
-// Real @librechat/api throughout this file (math/shouldUseSecureCookie/
-// CloudFront helpers) — the point of this suite is proving the exact real
-// jsonwebtoken arithmetic never crashes or drifts, not asserting against a
-// fake token generator.
 const { setAuthTokens } = require('./AuthService');
 
 const ORIGINAL_JWT_SECRET = process.env.JWT_SECRET;
