@@ -1,21 +1,18 @@
-import type { AppConfig, IUser } from '@librechat/data-schemas';
+import type {
+  AppConfig,
+  IUser,
+  LinkClerkIdentityInput,
+  LinkClerkIdentityResult,
+} from '@librechat/data-schemas';
+import { recordClerkIdentityResolution } from '../../app/metrics';
+import type { ClerkIdentityConvergence } from '../../app/metrics';
 import type { VerifiedClerkIdentity } from './verify';
+
+export type { LinkClerkIdentityInput, LinkClerkIdentityResult } from '@librechat/data-schemas';
 
 export type ClerkTenantScope = { tenantId: string } | { tenantId: { $exists: false } };
 
 export type ClerkUserSearchCriteria = ClerkTenantScope & ({ clerkId: string } | { email: string });
-
-export interface LinkClerkIdentityInput {
-  userId: string;
-  clerkId: string;
-  tenantId?: string;
-}
-
-export type LinkClerkIdentityResult =
-  | { status: 'linked'; user: IUser }
-  | { status: 'already_linked'; user: IUser }
-  | { status: 'conflict' }
-  | { status: 'not_found' };
 
 export interface CreateSocialUserInput {
   email: string;
@@ -54,6 +51,14 @@ export type ResolveClerkIdentityResult =
   | { status: 'conflict' }
   | { status: 'forbidden' }
   | { status: 'not_found' };
+
+function recordResolution(
+  result: ResolveClerkIdentityResult,
+  convergence: ClerkIdentityConvergence = 'none',
+): ResolveClerkIdentityResult {
+  recordClerkIdentityResolution(result.status, convergence);
+  return result;
+}
 
 function getTenantScope(tenantId: string | undefined): ClerkTenantScope {
   return tenantId ? { tenantId } : { tenantId: { $exists: false } };
@@ -140,17 +145,19 @@ export async function resolveClerkIdentity(
   deps: ClerkIdentityServiceDependencies,
 ): Promise<ResolveClerkIdentityResult> {
   if (input.userByClerkId) {
-    return isTombstoned(input.userByClerkId)
-      ? { status: 'forbidden' }
-      : { status: 'authenticated', user: input.userByClerkId };
+    return recordResolution(
+      isTombstoned(input.userByClerkId)
+        ? { status: 'forbidden' }
+        : { status: 'authenticated', user: input.userByClerkId },
+    );
   }
 
   if (input.userByEmail) {
-    return resolveEmailCandidate(input, input.userByEmail, deps);
+    return recordResolution(await resolveEmailCandidate(input, input.userByEmail, deps));
   }
 
   if (input.identity.emailVerified !== true || !input.identity.email) {
-    return { status: 'forbidden' };
+    return recordResolution({ status: 'forbidden' });
   }
 
   const verifiedInput = input as ResolveClerkIdentityInput & {
@@ -168,11 +175,14 @@ export async function resolveClerkIdentity(
       name: verifiedInput.identity.name,
       appConfig: verifiedInput.appConfig,
     });
-    return createdUser ? { status: 'created', user: createdUser } : { status: 'not_found' };
+    return recordResolution(
+      createdUser ? { status: 'created', user: createdUser } : { status: 'not_found' },
+    );
   } catch (error) {
     if (!isDuplicateKeyError(error)) {
+      recordClerkIdentityResolution('error', 'none');
       throw error;
     }
-    return convergeDuplicateCreate(verifiedInput, deps);
+    return recordResolution(await convergeDuplicateCreate(verifiedInput, deps), 'create_duplicate');
   }
 }

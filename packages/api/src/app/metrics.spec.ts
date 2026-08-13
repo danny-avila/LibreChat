@@ -10,6 +10,7 @@ import {
   recordAgentStartupMilestone,
   recordAgentStartupResult,
   recordClerkProfileRequest,
+  recordClerkIdentityResolution,
   recordClerkTokenVerification,
   recordGenerationJob,
   recordGenerationStreamResumePendingEvents,
@@ -290,6 +291,8 @@ describe('createMetrics', () => {
     recordClerkProfileRequest('not_found', 0.05);
     recordClerkProfileRequest('rate_limited', 0.06);
     recordClerkProfileRequest('unavailable', 0.07);
+    recordClerkIdentityResolution('linked', 'none');
+    recordClerkIdentityResolution('already_linked', 'create_duplicate');
 
     const response = await request(app)
       .get('/metrics')
@@ -307,6 +310,12 @@ describe('createMetrics', () => {
     expect(response.text).toMatch(/clerk_profile_requests_total\{outcome="unavailable"\} 1/);
     expect(response.text).toMatch(
       /clerk_profile_request_duration_seconds_sum\{outcome="success"\} 0.03/,
+    );
+    expect(response.text).toMatch(
+      /clerk_identity_resolutions_total\{outcome="linked",convergence="none"\} 1/,
+    );
+    expect(response.text).toMatch(
+      /clerk_identity_resolutions_total\{outcome="already_linked",convergence="create_duplicate"\} 1/,
     );
   });
 

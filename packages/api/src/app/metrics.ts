@@ -159,6 +159,16 @@ export type ClerkProfileOutcome =
   | 'not_found'
   | 'rate_limited'
   | 'unavailable';
+export type ClerkIdentityResolutionOutcome =
+  | 'authenticated'
+  | 'linked'
+  | 'already_linked'
+  | 'created'
+  | 'conflict'
+  | 'forbidden'
+  | 'not_found'
+  | 'error';
+export type ClerkIdentityConvergence = 'none' | 'create_duplicate';
 export type ClerkWebhookEvent =
   | 'session_ended'
   | 'session_revoked'
@@ -251,12 +261,17 @@ type ClerkAuthMetrics = {
     durationSeconds: number,
   ) => void;
   recordProfileRequest: (outcome: ClerkProfileOutcome, durationSeconds: number) => void;
+  recordIdentityResolution: (
+    outcome: ClerkIdentityResolutionOutcome,
+    convergence: ClerkIdentityConvergence,
+  ) => void;
   recordWebhook: (event: ClerkWebhookEvent, result: ClerkWebhookResult) => void;
 };
 
 let clerkAuthMetrics: ClerkAuthMetrics = {
   recordTokenVerification: () => undefined,
   recordProfileRequest: () => undefined,
+  recordIdentityResolution: () => undefined,
   recordWebhook: () => undefined,
 };
 
@@ -287,6 +302,7 @@ const resetMetricRecorders = (): void => {
   clerkAuthMetrics = {
     recordTokenVerification: () => undefined,
     recordProfileRequest: () => undefined,
+    recordIdentityResolution: () => undefined,
     recordWebhook: () => undefined,
   };
 };
@@ -371,6 +387,13 @@ export function recordClerkProfileRequest(
     return;
   }
   clerkAuthMetrics.recordProfileRequest(outcome, durationSeconds);
+}
+
+export function recordClerkIdentityResolution(
+  outcome: ClerkIdentityResolutionOutcome,
+  convergence: ClerkIdentityConvergence,
+): void {
+  clerkAuthMetrics.recordIdentityResolution(outcome, convergence);
 }
 
 export function recordClerkWebhook(event: ClerkWebhookEvent, result: ClerkWebhookResult): void {
@@ -632,6 +655,13 @@ export function createMetrics(): PrometheusMetrics {
     registers: [registry],
   });
 
+  const clerkIdentityResolutions = new Counter({
+    name: 'clerk_identity_resolutions_total',
+    help: 'Clerk identity decisions by bounded outcome and race convergence',
+    labelNames: ['outcome', 'convergence'] as const,
+    registers: [registry],
+  });
+
   const clerkWebhooks = new Counter({
     name: 'clerk_webhooks_total',
     help: 'Clerk webhooks by verified event class and processing result',
@@ -647,6 +677,9 @@ export function createMetrics(): PrometheusMetrics {
     recordProfileRequest: (outcome, durationSeconds) => {
       clerkProfileRequests.inc({ outcome });
       clerkProfileRequestDuration.observe({ outcome }, durationSeconds);
+    },
+    recordIdentityResolution: (outcome, convergence) => {
+      clerkIdentityResolutions.inc({ outcome, convergence });
     },
     recordWebhook: (event, result) => clerkWebhooks.inc({ event, result }),
   };

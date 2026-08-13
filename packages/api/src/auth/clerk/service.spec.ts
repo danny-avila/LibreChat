@@ -1,6 +1,13 @@
 import type { AppConfig, IUser } from '@librechat/data-schemas';
+import { recordClerkIdentityResolution } from '../../app/metrics';
 import type { VerifiedClerkIdentity } from './verify';
 import { resolveClerkIdentity } from './service';
+
+jest.mock('../../app/metrics', () => ({
+  recordClerkIdentityResolution: jest.fn(),
+}));
+
+const recordClerkIdentityResolutionMock = jest.mocked(recordClerkIdentityResolution);
 
 const identity: VerifiedClerkIdentity = {
   clerkId: 'user_clerk',
@@ -38,6 +45,10 @@ function createDependencies() {
 }
 
 describe('resolveClerkIdentity', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('authenticates an exact-subject candidate without loading a profile-dependent email user', async () => {
     const deps = createDependencies();
     const userByClerkId = user({ clerkId: identity.clerkId });
@@ -50,6 +61,7 @@ describe('resolveClerkIdentity', () => {
     ).resolves.toEqual({ status: 'authenticated', user: userByClerkId });
     expect(deps.linkClerkIdentity).not.toHaveBeenCalled();
     expect(deps.createSocialUser).not.toHaveBeenCalled();
+    expect(recordClerkIdentityResolutionMock).toHaveBeenCalledWith('authenticated', 'none');
   });
 
   it('forbids an exact-subject candidate whose Clerk binding is tombstoned', async () => {
@@ -230,6 +242,10 @@ describe('resolveClerkIdentity', () => {
       '+clerkDeletedAt',
     );
     expect(deps.createSocialUser).toHaveBeenCalledTimes(1);
+    expect(recordClerkIdentityResolutionMock).toHaveBeenCalledWith(
+      'already_linked',
+      'create_duplicate',
+    );
   });
 
   it('uses an explicit tenantless scope when converging a duplicate create by email', async () => {
