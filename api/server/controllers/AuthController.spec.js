@@ -18,6 +18,7 @@ jest.mock('~/models', () => ({
   deleteAllUserSessions: jest.fn(),
   getUserById: jest.fn(),
   findSession: jest.fn(),
+  deleteSession: jest.fn(),
   updateUser: jest.fn(),
   findUser: jest.fn(),
 }));
@@ -50,7 +51,7 @@ const {
   setAuthTokens,
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
-const { getUserById, findSession, updateUser } = require('~/models');
+const { getUserById, findSession, deleteSession, updateUser } = require('~/models');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
@@ -810,6 +811,58 @@ describe('refreshController – LibreChat path', () => {
         email: 'local@example.com',
       },
     });
+  });
+
+  it('loads the Session including an expired Clerk deadline so refresh can delete it', async () => {
+    const deadline = new Date(Date.now() + 60_000);
+    const clerkSession = {
+      _id: 'clerk-session-id',
+      authProvider: 'clerk',
+      absoluteExpiresAt: deadline,
+      expiration: deadline,
+    };
+    findSession.mockResolvedValue(clerkSession);
+    getUserById.mockResolvedValue({ _id: 'local-user-id', email: 'local@example.com' });
+
+    await refreshController(req, res);
+
+    expect(findSession).toHaveBeenCalledWith(expect.objectContaining({ userId: 'local-user-id' }), {
+      lean: false,
+      includeExpired: true,
+    });
+    expect(setAuthTokens).toHaveBeenCalledWith('local-user-id', res, clerkSession, req);
+  });
+
+  it('deletes and rejects a Clerk Session at its absolute deadline', async () => {
+    const deadline = new Date(Date.now());
+    findSession.mockResolvedValue({
+      _id: 'expired-clerk-session-id',
+      authProvider: 'clerk',
+      absoluteExpiresAt: deadline,
+      expiration: deadline,
+    });
+    getUserById.mockResolvedValue({ _id: 'local-user-id', email: 'local@example.com' });
+
+    await refreshController(req, res);
+
+    expect(deleteSession).toHaveBeenCalledWith({ sessionId: 'expired-clerk-session-id' });
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.send).toHaveBeenCalledWith('Refresh token expired or not found for this user');
+  });
+
+  it('does not add Clerk cleanup behavior to an expired local Session', async () => {
+    findSession.mockResolvedValue({
+      _id: 'expired-local-session-id',
+      expiration: new Date(Date.now() - 1),
+    });
+    getUserById.mockResolvedValue({ _id: 'local-user-id', email: 'local@example.com' });
+
+    await refreshController(req, res);
+
+    expect(deleteSession).not.toHaveBeenCalled();
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
   });
 
   it('sanitizes user documents before returning CI refresh responses', async () => {

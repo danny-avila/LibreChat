@@ -19,6 +19,7 @@ const {
 } = require('~/server/services/AuthService');
 const {
   deleteAllUserSessions,
+  deleteSession,
   getUserById,
   findSession,
   updateUser,
@@ -29,6 +30,15 @@ const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
 const OPENID_REUSE_EXPIRY_BUFFER_SECONDS = 30;
+
+const isExpiredClerkSession = (session, now) => {
+  if (session?.authProvider !== 'clerk') {
+    return false;
+  }
+
+  const absoluteExpiresAt = new Date(session.absoluteExpiresAt);
+  return Number.isNaN(absoluteExpiresAt.getTime()) || absoluteExpiresAt <= now;
+};
 /**
  * Max age (ms) LibreChat reuses a cached OpenID session token before forcing an IdP refresh.
  * Env-overridable (accepts an arithmetic expression, e.g. `60 * 60 * 24 * 1000`, like
@@ -281,10 +291,16 @@ const refreshController = async (req, res) => {
         userId: userId,
         refreshToken: refreshToken,
       },
-      { lean: false },
+      { lean: false, includeExpired: true },
     );
 
-    if (session && session.expiration > new Date()) {
+    const now = new Date();
+    if (isExpiredClerkSession(session, now)) {
+      await deleteSession({ sessionId: session._id.toString() });
+      return res.status(401).send('Refresh token expired or not found for this user');
+    }
+
+    if (session && session.expiration > now) {
       const token = await setAuthTokens(userId, res, session, req);
 
       res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
