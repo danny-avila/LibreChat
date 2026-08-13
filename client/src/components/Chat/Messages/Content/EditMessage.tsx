@@ -123,10 +123,6 @@ const EditMessage = ({
   };
 
   const updateMessage = async (data: { text: string }) => {
-    const messages = getMessages();
-    if (!messages) {
-      return;
-    }
     setSaveError(false);
     try {
       await updateMessageMutation.mutateAsync({
@@ -135,6 +131,16 @@ const EditMessage = ({
         text: data.text,
         messageId,
       });
+
+      /** Read the thread after the request, not before it. An earlier turn stays
+       *  editable while the newest answer streams, so a snapshot taken before the
+       *  round trip is already behind by the time it would be written back, and
+       *  writing it wholesale would drop every delta that landed in between. */
+      const messages = getMessages();
+      if (!messages) {
+        enterEdit(true);
+        return;
+      }
 
       const isInMessages = messages.some(
         (currentMessage) => currentMessage.messageId === messageId,
@@ -212,14 +218,17 @@ const EditMessage = ({
           disabled={isSubmitting || updateMessageMutation.isLoading}
           dir={isRTL ? 'rtl' : 'ltr'}
         />
-        <footer className="flex items-center justify-between gap-2">
+        {/* The actions wrap rather than hold one unbreakable row: on a 320px assistant
+            turn the identity column and page padding leave less width than the three
+            English labels need, and a translated label needs more still. */}
+        <footer className="flex flex-wrap items-center justify-between gap-2">
           <span
             className="line-clamp-2 min-w-0 flex-1 text-xs text-text-secondary"
             aria-live="polite"
           >
             {isDirty ? localize('com_ui_unsaved_changes') : ''}
           </span>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
               size="sm"
               variant="outline"

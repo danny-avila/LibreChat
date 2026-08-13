@@ -112,6 +112,35 @@ describe('EditMessage', () => {
     expect(enterEdit).toHaveBeenCalledWith(true);
   });
 
+  it('writes the save onto the thread as it stands when the request resolves', async () => {
+    const user = userEvent.setup();
+    const streamedAnswer = {
+      messageId: 'assistant-streaming',
+      parentMessageId: message.messageId,
+      conversationId: 'conversation-1',
+      isCreatedByUser: false,
+      text: 'Half an answer',
+    } as TMessage;
+
+    /** The answer keeps streaming into the cache while the request is in flight. */
+    mockMutateAsync.mockImplementation(async () => {
+      mockGetMessages.mockReturnValue([message, streamedAnswer]);
+      return {};
+    });
+
+    renderEditor();
+
+    await user.clear(screen.getByTestId('message-text-editor'));
+    await user.type(screen.getByTestId('message-text-editor'), 'Updated message');
+    await user.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    await waitFor(() => expect(mockSetMessages).toHaveBeenCalled());
+    expect(mockSetMessages).toHaveBeenCalledWith([
+      expect.objectContaining({ messageId: message.messageId, text: 'Updated message' }),
+      expect.objectContaining({ messageId: streamedAnswer.messageId, text: 'Half an answer' }),
+    ]);
+  });
+
   it('keeps the editor open with the draft when saving fails', async () => {
     const user = userEvent.setup();
     mockMutateAsync.mockRejectedValue(new Error('Save failed'));
