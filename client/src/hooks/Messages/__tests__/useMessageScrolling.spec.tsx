@@ -83,6 +83,9 @@ class MockIntersectionObserver {
   }
 }
 
+/** Matches the hook's glide fallback, the window in which a landing is still pending. */
+const glideWindow = 700;
+
 const originalResizeObserver = global.ResizeObserver;
 const originalIntersectionObserver = global.IntersectionObserver;
 
@@ -287,6 +290,59 @@ describe('useMessageScrolling resize reconciliation', () => {
 
     expect(scrollable.scrollTop).toBe(300);
     expect(mockScrollToBottom).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Sending arms a smooth glide down to the newest word, and the landing re-pins the
+   * thread to the bottom. The landing is scheduled for the whole glide window, so a
+   * reader who changes their mind and heads up mid-flight was pinned again anyway and
+   * dragged back on the next streaming resize.
+   */
+  it('lets an upward gesture during the send glide beat the pending landing', () => {
+    jest.useFakeTimers();
+    try {
+      const view = render(
+        <RecoilRoot>
+          <MessagesViewContext.Provider value={createContextValue({ isSubmitting: false })}>
+            <ScrollingHarness messagesTree={[message]} />
+          </MessagesViewContext.Provider>
+        </RecoilRoot>,
+      );
+
+      const scrollable = screen.getByTestId('scrollable');
+      const scrollTo = jest.fn();
+      (scrollable as unknown as { scrollTo: jest.Mock }).scrollTo = scrollTo;
+      Object.defineProperty(scrollable, 'scrollHeight', { value: 1000, configurable: true });
+      Object.defineProperty(scrollable, 'clientHeight', { value: 200, configurable: true });
+      scrollable.scrollTop = 0;
+
+      view.rerender(
+        <RecoilRoot>
+          <MessagesViewContext.Provider value={createContextValue({ isSubmitting: true })}>
+            <ScrollingHarness messagesTree={[message]} />
+          </MessagesViewContext.Provider>
+        </RecoilRoot>,
+      );
+
+      expect(scrollTo).toHaveBeenCalledWith({ top: 800, behavior: 'smooth' });
+
+      /** The reader heads up while the glide is still in flight. */
+      scrollable.scrollTop = 400;
+      fireEvent.wheel(scrollable, { deltaY: -120 });
+
+      act(() => {
+        jest.advanceTimersByTime(glideWindow);
+      });
+
+      Object.defineProperty(scrollable, 'scrollHeight', { value: 1200, configurable: true });
+      act(() => {
+        MockResizeObserver.last()?.trigger();
+      });
+
+      expect(scrollable.scrollTop).toBe(400);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('does not clamp to rendered content bottom during general resize reconciliation', () => {

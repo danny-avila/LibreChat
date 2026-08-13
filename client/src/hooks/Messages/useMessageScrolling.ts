@@ -37,6 +37,10 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
    *  flickers as content grows and was the source of the attach/detach churn. */
   const isStuckRef = useRef(true);
   const isGlidingRef = useRef(false);
+  /** Raised wherever a reader gesture lets go of the bottom, so a glide already in
+   *  flight knows not to re-pin them when it lands. */
+  const glideInterruptedRef = useRef(false);
+  const glideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastScrollTopRef = useRef(0);
   const wasSubmittingRef = useRef(false);
   const suppressNextResizeFollowRef = useRef(false);
@@ -107,6 +111,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
 
     if (distance > detachThreshold) {
       isStuckRef.current = false;
+      glideInterruptedRef.current = true;
     }
   }, [distanceFromEnd, getIsNearBottom, setAbortScroll]);
 
@@ -158,14 +163,29 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     }
 
     isGlidingRef.current = true;
+    glideInterruptedRef.current = false;
+    if (glideTimerRef.current != null) {
+      clearTimeout(glideTimerRef.current);
+    }
     const land = () => {
       isGlidingRef.current = false;
+      scrollEl.removeEventListener('scrollend', land);
+      if (glideTimerRef.current != null) {
+        clearTimeout(glideTimerRef.current);
+        glideTimerRef.current = null;
+      }
+      /** Scrolling up during the glide is the reader taking over. Re-pinning them
+       *  here would hand the thread straight back to the stream on the next resize,
+       *  and the timeout fires for the whole glide window even once the animation
+       *  has visibly settled, so the gesture has to win outright. */
+      if (glideInterruptedRef.current) {
+        return;
+      }
       isNearBottomRef.current = true;
       isStuckRef.current = true;
-      scrollEl.removeEventListener('scrollend', land);
     };
     scrollEl.addEventListener('scrollend', land, { once: true });
-    setTimeout(land, glideTimeout);
+    glideTimerRef.current = setTimeout(land, glideTimeout);
     scrollEl.scrollTo({ top: target, behavior: 'smooth' });
   }, []);
 
@@ -274,6 +294,7 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
     const onWheel = (event: WheelEvent) => {
       if (event.deltaY < 0) {
         isStuckRef.current = false;
+        glideInterruptedRef.current = true;
         return;
       }
       /** Next frame, not now: React binds `Message`'s handler at the root, above
@@ -288,6 +309,15 @@ export default function useMessageScrolling(messagesTree?: TMessage[] | null) {
       scrollEl.removeEventListener('wheel', onWheel);
     };
   }, [setAbortScroll]);
+
+  useEffect(
+    () => () => {
+      if (glideTimerRef.current != null) {
+        clearTimeout(glideTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!messagesTree || messagesTree.length === 0) {
