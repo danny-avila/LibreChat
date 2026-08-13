@@ -856,17 +856,21 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     let finalTextIndex =
       lastRootTextStepId == null ? undefined : deps.getStepIndex?.(lastRootTextStepId);
     const parts = deps.getContentParts();
-    if (finalTextIndex == null) {
-      const definedIndices = Object.keys(parts);
-      for (let position = definedIndices.length - 1; position >= 0; position -= 1) {
-        const index = Number(definedIndices[position]);
-        const part = parts[index];
-        if (part?.type === ContentTypes.TEXT && part.groupId == null) {
-          if (!lastRootTextWasSemantic && part.phase == null) {
-            finalTextIndex = index;
-          }
-          break;
+    /** The host step map is an event-coordinate hint, not the authoritative
+     *  rendered position. Activity-label reservations advance the shared
+     *  content offset after earlier steps were indexed, and a provider can
+     *  materialize the final text at a later slot. Always reconcile against
+     *  the live parts so a stale-but-defined step index cannot pull the final
+     *  answer into the parent phase. */
+    const definedIndices = Object.keys(parts);
+    for (let position = definedIndices.length - 1; position >= 0; position -= 1) {
+      const index = Number(definedIndices[position]);
+      const part = parts[index];
+      if (part?.type === ContentTypes.TEXT && part.groupId == null) {
+        if (!lastRootTextWasSemantic && part.phase == null) {
+          finalTextIndex = index;
         }
+        break;
       }
     }
     if (finalTextIndex != null) {
