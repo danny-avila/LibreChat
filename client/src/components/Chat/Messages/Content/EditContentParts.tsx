@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import { Alert, Button, TextareaAutosize } from '@librechat/client';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
-import type { TMessageContentParts } from 'librechat-data-provider';
+import type { TMessageContentParts, TextData } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { useMessagesConversation, useMessagesOperations } from '~/Providers';
 import { splitMarkdownIntoBlocks } from './splitMarkdown';
@@ -32,14 +32,28 @@ type EditContentPartsProps = {
   renderReadOnlyPart: (part: TMessageContentParts, index: number, isLastPart: boolean) => ReactNode;
 };
 
-const getPartText = (part: TMessageContentParts): string | undefined => {
+/** An editable part holds either a bare string or a `{ value, annotations }` object,
+ *  which is how the Assistants thread sync stores a response that carries file
+ *  citations. Both the read and the write below go through this, so an edit lands in
+ *  the same shape it was read from. */
+const getPartValue = (part: TMessageContentParts): string | TextData => {
   if (part.type === ContentTypes.TEXT) {
-    return typeof part.text === 'string' ? part.text : part.text?.value;
+    return part.text;
   }
   if (part.type === ContentTypes.THINK) {
-    return typeof part.think === 'string' ? part.think : part.think?.value;
+    return part.think;
   }
   return undefined;
+};
+
+const getPartText = (part: TMessageContentParts): string | undefined => {
+  const value = getPartValue(part);
+  return typeof value === 'string' ? value : value?.value;
+};
+
+const withPartText = (part: TMessageContentParts, text: string): string | TextData => {
+  const value = getPartValue(part);
+  return value != null && typeof value === 'object' ? { ...value, value: text } : text;
 };
 
 const containsArtifact = (text: string): boolean => {
@@ -152,7 +166,10 @@ export default function EditContentParts({
               if (!part || !change || part.type !== change.type) {
                 return part;
               }
-              return { ...part, [change.type]: change.text } as TMessageContentParts;
+              return {
+                ...part,
+                [change.type]: withPartText(part, change.text),
+              } as TMessageContentParts;
             }),
           };
         }),

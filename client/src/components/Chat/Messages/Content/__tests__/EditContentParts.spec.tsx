@@ -1,7 +1,7 @@
 import React from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { FileCitation, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import EditContentParts from '../EditContentParts';
 
 const mockMutateAsync = jest.fn();
@@ -250,6 +250,54 @@ describe('EditContentParts', () => {
      *  stays open on it and a retry does not rewrite what already landed. */
     expect(enterEdit).not.toHaveBeenCalled();
     expect(screen.getAllByRole('textbox')[1]).toHaveValue('Updated second response');
+  });
+
+  /**
+   * The Assistants thread sync stores a response carrying file citations as
+   * `{ value, annotations }`, and the editor reads that through the same union it
+   * reads a bare string with. Writing the draft over the whole value dropped the
+   * citations from the transcript, and they stayed dropped until a refetch.
+   */
+  it('edits inside a structured text part rather than flattening the cached one', async () => {
+    const annotations: FileCitation[] = [
+      {
+        type: 'file_citation',
+        text: 'source',
+        start_index: 0,
+        end_index: 6,
+        file_citation: { file_id: 'file-1', quote: 'the cited passage' },
+      },
+    ];
+    const structuredContent = [
+      { type: ContentTypes.TEXT, text: { value: 'Cited response', annotations } },
+    ] as TMessageContentParts[];
+    message.content = structuredContent;
+
+    render(
+      <EditContentParts
+        content={structuredContent}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    /** Read back through the union, so the editor opens on the text and not on the wrapper. */
+    const editor = screen.getByRole('textbox');
+    expect(editor).toHaveValue('Cited response');
+
+    fireEvent.change(editor, { target: { value: 'Edited cited response' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    await waitFor(() => expect(mockSetMessages).toHaveBeenCalledTimes(1));
+    const reconciled = mockSetMessages.mock.calls[0][0] as TMessage[];
+    const edited = reconciled.find((item) => item.messageId === message.messageId);
+    expect(edited?.content).toEqual([
+      { type: ContentTypes.TEXT, text: { value: 'Edited cited response', annotations } },
+    ]);
   });
 
   it('keeps artifact-bearing text in the specialized read-only renderer', () => {
