@@ -177,19 +177,88 @@ export function groupActivityPhases(
     segment.contentIndices.push(partIndex);
     segment.hasContent ||= isVisibleContentPart(child);
   };
+  /** Recovery can empty a span it already claimed. An index-less segment
+   *  renders nothing but still mounts a nested `ContentParts`, so drop it the
+   *  same way a fully recovered segment is spliced out below. */
+  const pushContent = (segment: ReturnType<typeof collect>, startIndex: number) => {
+    if (segment.contentIndices.length === 0) {
+      return;
+    }
+    segments.push({
+      type: 'content',
+      content: segment.content,
+      contentIndices: segment.contentIndices,
+      startIndex,
+    });
+  };
   /** Phase markers and defined content indexes are both sorted. Walk them in
    *  lockstep so every ordinary part is classified once, even when a custom
    *  max permits many parent phases in one long response. */
   for (const { part, index } of completed) {
     if (!part) continue;
-    const start = Math.max(
-      cursor,
-      Math.min(index, Math.max(0, part.activity_start_index ?? index)),
-    );
+    const start = Math.min(index, Math.max(0, part.activity_start_index ?? index));
     const end = Math.max(start, Math.min(index, Math.max(0, part.activity_end_index ?? index)));
     const adjacent = collect();
     const phase = collect();
     const trailing = collect();
+    /** A boundary may resolve after a higher-index parallel activity has
+     *  already rendered. Recover that activity from an earlier adjacent
+     *  segment so a later phase marker can still claim its declared span. */
+    if (start < cursor) {
+      const recoveredIndices: number[] = [];
+      const deferredTrailingIndices: number[] = [];
+      for (let segmentIndex = segments.length - 1; segmentIndex >= 0; segmentIndex -= 1) {
+        const segment = segments[segmentIndex];
+        if (segment.type !== 'content' && segment.type !== 'phase') {
+          continue;
+        }
+        const retainedContent: Array<TMessageContentParts | undefined> = [];
+        const retainedIndices: number[] = [];
+        for (
+          let childPosition = 0;
+          childPosition < segment.contentIndices.length;
+          childPosition += 1
+        ) {
+          const childIndex = segment.contentIndices[childPosition];
+          const child = segment.content[childPosition];
+          const canRecover = segment.type === 'content' || getBatchActivityLabelPart(child) != null;
+          if (canRecover && childIndex >= start && childIndex < end) {
+            recoveredIndices.push(childIndex);
+          } else if (canRecover && childIndex >= end) {
+            deferredTrailingIndices.push(childIndex);
+          } else {
+            retainedContent.push(child);
+            retainedIndices.push(childIndex);
+          }
+        }
+        if (retainedIndices.length === 0) {
+          /** A completed phase can legitimately carry no children after
+           *  compaction — its summary header is the whole segment. Only drop
+           *  what recovery actually emptied, not what arrived empty. */
+          if (segment.contentIndices.length > 0) {
+            segments.splice(segmentIndex, 1);
+          }
+        } else {
+          segment.content = retainedContent;
+          segment.contentIndices = retainedIndices;
+          segment.startIndex = retainedIndices[0];
+          if (segment.type === 'phase') {
+            /** Recovery can take the only filled label and leave blank
+             *  reservations behind. A stale flag renders an expandable card
+             *  with nothing in it instead of the compact header. */
+            segment.hasContent = retainedContent.some(isVisibleContentPart);
+          }
+        }
+      }
+      recoveredIndices.sort((a, b) => a - b);
+      for (const recoveredIndex of recoveredIndices) {
+        append(phase, recoveredIndex);
+      }
+      deferredTrailingIndices.sort((a, b) => a - b);
+      for (const trailingIndex of deferredTrailingIndices) {
+        append(trailing, trailingIndex);
+      }
+    }
     while (definedPosition < definedIndices.length && definedIndices[definedPosition] < index) {
       const childIndex = definedIndices[definedPosition];
       definedPosition += 1;
@@ -208,12 +277,7 @@ export function groupActivityPhases(
       definedPosition += 1;
     }
     if (start > cursor) {
-      segments.push({
-        type: 'content',
-        content: adjacent.content,
-        contentIndices: adjacent.contentIndices,
-        startIndex: cursor,
-      });
+      pushContent(adjacent, cursor);
     }
     const labelText = getActivityLabelText(part);
     if (labelText) {
@@ -230,20 +294,10 @@ export function groupActivityPhases(
       /** A failed/empty parent stays visually feature-off, but its bounds are
        *  still authoritative: delayed child labels must move back beside the
        *  tools they describe instead of rendering after the final answer. */
-      segments.push({
-        type: 'content',
-        content: phase.content,
-        contentIndices: phase.contentIndices,
-        startIndex: start,
-      });
+      pushContent(phase, start);
     }
     if (end < index) {
-      segments.push({
-        type: 'content',
-        content: trailing.content,
-        contentIndices: trailing.contentIndices,
-        startIndex: end,
-      });
+      pushContent(trailing, end);
     }
     cursor = index + 1;
   }
@@ -256,12 +310,7 @@ export function groupActivityPhases(
         append(adjacent, childIndex);
       }
     }
-    segments.push({
-      type: 'content',
-      content: adjacent.content,
-      contentIndices: adjacent.contentIndices,
-      startIndex: cursor,
-    });
+    pushContent(adjacent, cursor);
   }
   return segments;
 }

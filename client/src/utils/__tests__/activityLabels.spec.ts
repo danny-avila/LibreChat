@@ -234,6 +234,142 @@ describe('groupActivityPhases', () => {
     expect(lastVisibleContentIdx([tool, tool, final, phase as never])).toBe(2);
   });
 
+  it('keeps an emptied earlier phase header when a later marker recovers nothing', () => {
+    const laterTool = {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id: 'later', name: 'web_search', args: '{}', output: 'ok' },
+    } as unknown as TMessageContentParts;
+    /** Compaction left this completed phase with no children, so its summary
+     *  header is the entire segment. A later marker recovers nothing from it. */
+    const emptied = labelPart({ activity_label: 'Completed the compacted phase', pending: false });
+    Object.assign(emptied, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 0,
+      activity_count: 2,
+    });
+    const later = labelPart({ activity_label: 'Completed the later phase', pending: false });
+    Object.assign(later, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+    const content = [emptied as never, laterTool, later as never];
+
+    const segments = groupActivityPhases(content);
+
+    expect(segments?.filter((segment) => segment.type === 'phase')).toHaveLength(2);
+  });
+
+  it('groups multiple logical spans when an earlier phase marker arrives late', () => {
+    const first = labelPart({ activity_label: 'Completed the first phase', pending: false });
+    Object.assign(first, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+    const second = labelPart({ activity_label: 'Completed the second phase', pending: false });
+    Object.assign(second, {
+      activity_label_type: 'phase',
+      activity_start_index: 3,
+      activity_end_index: 6,
+      activity_count: 2,
+    });
+    const boundary = {
+      type: ContentTypes.TEXT,
+      text: 'Substantial result',
+    } as TMessageContentParts;
+    const final = { type: ContentTypes.TEXT, text: 'Final result' } as TMessageContentParts;
+    const content = [tool, tool, boundary, tool, first as never, tool, final, second as never];
+
+    const segments = groupActivityPhases(content);
+
+    expect(segments).toEqual([
+      expect.objectContaining({
+        type: 'phase',
+        startIndex: 0,
+        labelIndex: 4,
+        contentIndices: [0, 1],
+      }),
+      expect.objectContaining({
+        type: 'content',
+        startIndex: 2,
+        contentIndices: [2],
+      }),
+      expect.objectContaining({
+        type: 'phase',
+        startIndex: 3,
+        labelIndex: 7,
+        contentIndices: [3, 5],
+      }),
+      expect.objectContaining({
+        type: 'content',
+        startIndex: 6,
+        contentIndices: [6],
+      }),
+    ]);
+  });
+
+  it('moves a late child label from an earlier phase into its declared later span', () => {
+    const firstTool = {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id: 'first', name: 'web_search', args: '{}', output: 'ok' },
+    } as unknown as TMessageContentParts;
+    const laterTool = {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id: 'later', name: 'web_search', args: '{}', output: 'ok' },
+    } as unknown as TMessageContentParts;
+    const lateChild = labelPart({
+      activity_label: 'Recorded the later result',
+      pending: false,
+      tool_call_ids: ['later'],
+    });
+    const first = labelPart({ activity_label: 'Completed the first phase', pending: false });
+    Object.assign(first, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 1,
+      activity_count: 2,
+    });
+    const second = labelPart({ activity_label: 'Completed the second phase', pending: false });
+    Object.assign(second, {
+      activity_label_type: 'phase',
+      activity_start_index: 2,
+      activity_end_index: 4,
+      activity_count: 2,
+    });
+    const boundary = { type: ContentTypes.TEXT, text: 'Boundary' } as TMessageContentParts;
+    const content = [
+      firstTool,
+      boundary,
+      laterTool,
+      lateChild as never,
+      first as never,
+      second as never,
+    ];
+
+    const segments = groupActivityPhases(content);
+
+    expect(segments).toEqual([
+      expect.objectContaining({
+        type: 'phase',
+        labelIndex: 4,
+        contentIndices: [0],
+      }),
+      expect.objectContaining({
+        type: 'content',
+        contentIndices: [1],
+      }),
+      expect.objectContaining({
+        type: 'phase',
+        labelIndex: 5,
+        contentIndices: [2, 3],
+      }),
+    ]);
+  });
+
   it('keeps a late child label in the phase while leaving final text outside', () => {
     const child = labelPart({
       activity_label: 'Recorded the delayed child result',
