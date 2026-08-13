@@ -327,6 +327,29 @@ test('Clerk modal exchange retries safely, recovers one replay, and performs dua
         ).__clerkE2E.getTokenCalls,
     );
     expect(getTokenCalls.slice(-2)).toEqual([null, { skipCache: true }]);
+
+    await page.getByTestId('nav-user').click();
+    await page.getByRole('menuitem', { name: 'Log out' }).click();
+    await page.waitForURL(/\/login$/);
+    const requestCountBeforeDirectSuccess = clerkRequests.length;
+    const tokenCallCountBeforeDirectSuccess = getTokenCalls.length;
+    await page.getByRole('button', { name: 'Continue with Clerk' }).click();
+    await page.getByRole('button', { name: 'Complete existing-user sign in' }).click();
+    await page.waitForURL(/\/c\/new$/);
+    await expect(page.getByTestId('nav-user')).toBeVisible();
+    expect(clerkRequests.slice(requestCountBeforeDirectSuccess)).toEqual([
+      { clerkToken: 'clerk-token-3' },
+    ]);
+    const directSuccessTokenCalls = await page.evaluate(
+      () =>
+        (
+          window as Window & {
+            __clerkE2E: ClerkBrowserState;
+          }
+        ).__clerkE2E.getTokenCalls,
+    );
+    expect(directSuccessTokenCalls.slice(tokenCallCountBeforeDirectSuccess)).toEqual([null]);
+    expect(localLogoutCalls).toBe(2);
   } finally {
     await context.close();
   }
