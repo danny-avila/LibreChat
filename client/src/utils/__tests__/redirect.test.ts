@@ -1,9 +1,16 @@
+import { loginPage } from 'librechat-data-provider';
 import {
   persistRedirectToSession,
   getPostLoginRedirect,
   isSafeRedirect,
   SESSION_KEY,
 } from '../redirect';
+
+describe('Clerk login return URL', () => {
+  it('uses the shared deployment-aware login page without a separate sign-up URL', () => {
+    expect(loginPage()).toBe('/login');
+  });
+});
 
 describe('isSafeRedirect', () => {
   it('accepts a simple relative path', () => {
@@ -64,6 +71,10 @@ describe('isSafeRedirect', () => {
 
   it('rejects /login with hash', () => {
     expect(isSafeRedirect('/login#foo')).toBe(false);
+  });
+
+  it('rejects Clerk sign-up transfer hashes as final application redirects', () => {
+    expect(isSafeRedirect('/login#/create')).toBe(false);
   });
 
   it('accepts the root path', () => {

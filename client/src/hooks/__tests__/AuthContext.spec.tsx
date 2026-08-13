@@ -110,6 +110,38 @@ function renderProviderLive(clerkSession?: ClerkSessionValue) {
   return renderProviderWithConfig({ loginRedirect: '/login' }, clerkSession);
 }
 
+function DynamicClerkSessionHarness({ signOut }: { signOut: ClerkSessionValue['signOut'] }) {
+  const [sessionId, setSessionId] = React.useState<string | null>(null);
+  return (
+    <ClerkSessionProvider value={{ sessionId, signOut }}>
+      <AuthContextProvider authConfig={authConfig}>
+        <TestConsumer />
+        <button
+          type="button"
+          data-testid="activate-clerk"
+          onClick={() => setSessionId('session-1')}
+        />
+      </AuthContextProvider>
+    </ClerkSessionProvider>
+  );
+}
+
+function renderProviderWithDynamicClerkSession(signOut: ClerkSessionValue['signOut']) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RecoilRoot>
+        <MemoryRouter>
+          <DynamicClerkSessionHarness signOut={signOut} />
+        </MemoryRouter>
+      </RecoilRoot>
+    </QueryClientProvider>,
+  );
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason: Error) => void;
@@ -261,6 +293,19 @@ describe('AuthContextProvider — settled local and Clerk logout', () => {
 
   afterEach(() => {
     window.history.replaceState({}, '', '/');
+  });
+
+  it('uses the active Clerk session when it arrives after AuthContext mounts', async () => {
+    const clerkSignOut = jest.fn().mockResolvedValue(undefined);
+    mockLogoutMutateAsync.mockResolvedValue({ message: 'Logout successful' });
+    const { getByTestId } = renderProviderWithDynamicClerkSession(clerkSignOut);
+
+    fireEvent.click(getByTestId('activate-clerk'));
+    await act(async () => {
+      await latestAuthContext.logout();
+    });
+
+    expect(clerkSignOut).toHaveBeenCalledWith({ sessionId: 'session-1' });
   });
 
   it('calls window.location.replace only after local and active Clerk sign-out settle', async () => {

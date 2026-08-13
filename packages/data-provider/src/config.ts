@@ -1564,6 +1564,8 @@ export type StartupConfigContext = 'share';
 
 export type TStartupConfig = {
   appTitle: string;
+  clerkLoginEnabled: boolean;
+  clerkPublishableKey?: string;
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;

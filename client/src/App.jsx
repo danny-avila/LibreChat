@@ -9,6 +9,7 @@ import { Toast, ThemeProvider, ToastProvider, useInputModality } from '@librecha
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
 import WakeLockManager from '~/components/System/WakeLockManager';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
+import ClerkAuthBoundary from './Providers/ClerkAuthBoundary';
 import LanguageSync from '~/components/System/LanguageSync';
 import { getThemeFromEnv } from './utils/getThemeFromEnv';
 import { initializeFontSize } from '~/store/fontSize';
@@ -64,7 +65,9 @@ const App = () => {
             <RadixToast.Provider>
               <ToastProvider>
                 <DndProvider backend={HTML5Backend}>
-                  <RouterProvider router={router} />
+                  <ClerkAuthBoundary>
+                    <RouterProvider router={router} />
+                  </ClerkAuthBoundary>
                   <WakeLockManager />
                   <QueryDevtoolsGate />
                   <Toast />

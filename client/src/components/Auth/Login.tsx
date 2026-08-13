@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ErrorTypes, registerPage } from 'librechat-data-provider';
 import { OpenIDIcon, useToastContext } from '@librechat/client';
+import { ErrorTypes, registerPage } from 'librechat-data-provider';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
 import { getLoginError, persistRedirectToSession } from '~/utils';
@@ -8,6 +8,7 @@ import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
+import ClerkLogin from './ClerkLogin';
 import LoginForm from './LoginForm';
 
 interface LoginLocationState {
@@ -108,6 +109,9 @@ function Login() {
           error={error}
           setError={setError}
         />
+      )}
+      {startupConfig?.clerkLoginEnabled === true && startupConfig.clerkPublishableKey && (
+        <ClerkLogin />
       )}
       {startupConfig?.registrationEnabled === true && (
         <p className="my-4 text-center text-sm font-light text-gray-700 dark:text-white">

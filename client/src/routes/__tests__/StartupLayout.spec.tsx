@@ -1,16 +1,22 @@
 /* eslint-disable i18next/no-literal-string */
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import StartupLayout from '~/routes/Layouts/Startup';
 import { SESSION_KEY } from '~/utils';
 
+let mockStartupConfigQuery: {
+  data: null;
+  isFetching: boolean;
+  error: unknown;
+} = {
+  data: null,
+  isFetching: false,
+  error: null,
+};
+
 jest.mock('~/data-provider', () => ({
-  useGetStartupConfig: jest.fn(() => ({
-    data: null,
-    isFetching: false,
-    error: null,
-  })),
+  useGetStartupConfig: jest.fn(() => mockStartupConfigQuery),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -19,8 +25,21 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('~/components/Auth/AuthLayout', () => {
-  return function MockAuthLayout({ children }: { children: React.ReactNode }) {
-    return <div data-testid="auth-layout">{children}</div>;
+  return function MockAuthLayout({
+    children,
+    startupConfigError,
+  }: {
+    children: React.ReactNode;
+    startupConfigError?: unknown;
+  }) {
+    return (
+      <div
+        data-testid="auth-layout"
+        data-startup-error={startupConfigError == null ? 'false' : 'true'}
+      >
+        {children}
+      </div>
+    );
   };
 });
 
@@ -51,6 +70,7 @@ const createTestRouter = (initialEntry: string, isAuthenticated: boolean) =>
 describe('StartupLayout — redirect race condition', () => {
   beforeEach(() => {
     sessionStorage.clear();
+    mockStartupConfigQuery = { data: null, isFetching: false, error: null };
   });
 
   afterEach(() => {
@@ -101,5 +121,19 @@ describe('StartupLayout — redirect race condition', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     expect(router.state.location.pathname).toBe('/login');
+  });
+
+  it('passes a startup query error to AuthLayout while keeping the route mounted', () => {
+    mockStartupConfigQuery = {
+      data: null,
+      isFetching: false,
+      error: new Error('startup config unavailable'),
+    };
+
+    const router = createTestRouter('/login', false);
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByTestId('auth-layout')).toHaveAttribute('data-startup-error', 'true');
+    expect(screen.getByTestId('child-route')).toBeInTheDocument();
   });
 });

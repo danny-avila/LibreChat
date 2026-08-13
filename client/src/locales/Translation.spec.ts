@@ -7,6 +7,7 @@ import {
   initializeI18n,
   normalizeLocale,
 } from './i18n';
+import { getClerkLocalization } from '~/Providers/clerkLocalization';
 import English from './en/translation.json';
 import Spanish from './es/translation.json';
 import French from './fr/translation.json';
@@ -81,6 +82,29 @@ describe('i18next translation tests', () => {
     expect(normalizeLocale('zh-Hant')).toBe('zh-Hant');
     expect(normalizeLocale('pt-BR')).toBe('pt-BR');
     expect(normalizeLocale('pt-PT')).toBe('pt-PT');
+  });
+
+  it('maps normalized LibreChat locales to Clerk packs with English fallback', () => {
+    expect(getClerkLocalization('fr-FR').locale).toBe('fr-FR');
+    expect(getClerkLocalization('pt-BR').locale).toBe('pt-BR');
+    expect(getClerkLocalization('zh-Hans').locale).toBe('zh-CN');
+    expect(getClerkLocalization('bo').locale).toBe('en-US');
+    expect(getClerkLocalization('unknown')).toBe(getClerkLocalization('en'));
+  });
+
+  it('defines the English Clerk bridge labels and safe error summaries', () => {
+    expect(English).toEqual(
+      expect.objectContaining({
+        com_auth_clerk_sign_in: 'Continue with Clerk',
+        com_auth_clerk_loading: 'Loading sign in',
+        com_auth_clerk_exchanging: 'Completing sign in',
+        com_auth_clerk_error: 'Clerk sign in could not be completed.',
+        com_auth_clerk_token_error: 'Clerk did not provide a sign-in token.',
+        com_auth_clerk_sign_out_error: 'Could not switch Clerk accounts.',
+        com_auth_clerk_retry: 'Retry',
+        com_auth_clerk_use_another_account: 'Use another account',
+      }),
+    );
   });
 
   it('should reuse an in-flight locale load', async () => {

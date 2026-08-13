@@ -1,3 +1,4 @@
+/* eslint-disable i18next/no-literal-string */
 import * as reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import type { TStartupConfig } from 'librechat-data-provider';
@@ -10,8 +11,17 @@ import AuthLayout from '~/components/Auth/AuthLayout';
 import Login from '~/components/Auth/Login';
 
 jest.mock('librechat-data-provider/react-query');
+jest.mock('~/components/Auth/ClerkLogin', () => ({
+  __esModule: true,
+  default: () => <button data-testid="clerk-login">Continue with Clerk</button>,
+}));
 
-const mockStartupConfig = {
+const mockStartupConfig: {
+  isFetching: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  data: TStartupConfig;
+} = {
   isFetching: false,
   isLoading: false,
   isError: false,
@@ -22,8 +32,10 @@ const mockStartupConfig = {
     githubLoginEnabled: true,
     googleLoginEnabled: true,
     openidLoginEnabled: true,
+    appleLoginEnabled: false,
     openidLabel: 'Test OpenID',
     openidImageUrl: 'http://test-server.com',
+    openidAutoRedirect: false,
     samlLoginEnabled: true,
     samlLabel: 'Test SAML',
     samlImageUrl: 'http://test-server.com',
@@ -33,7 +45,17 @@ const mockStartupConfig = {
     registrationEnabled: true,
     emailLoginEnabled: true,
     socialLoginEnabled: true,
+    passwordResetEnabled: true,
+    clerkLoginEnabled: false,
+    clerkPublishableKey: undefined,
     serverDomain: 'mock-server',
+    appTitle: 'LibreChat',
+    emailEnabled: false,
+    showBirthdayIcon: false,
+    helpAndFaqURL: '',
+    sharedLinksEnabled: true,
+    publicSharedLinksEnabled: true,
+    allowAccountDeletion: true,
   },
 };
 
@@ -204,4 +226,41 @@ test('Navigates to / on successful login', async () => {
   await userEvent.click(submitButton);
 
   waitFor(() => expect(window.location.pathname).toBe('/'));
+});
+
+test('renders Clerk directly when email and generic social login are disabled', () => {
+  const { getByTestId, queryByLabelText } = setup({
+    useGetStartupConfigReturnValue: {
+      ...mockStartupConfig,
+      data: {
+        ...mockStartupConfig.data,
+        emailLoginEnabled: false,
+        socialLoginEnabled: false,
+        socialLogins: [],
+        clerkLoginEnabled: true,
+        clerkPublishableKey: 'pk_test_browser',
+      },
+    },
+  });
+
+  expect(getByTestId('clerk-login')).toBeInTheDocument();
+  expect(queryByLabelText(/email/i)).not.toBeInTheDocument();
+});
+
+test.each([
+  ['disabled', false, 'pk_test_browser'],
+  ['missing publishable key', true, undefined],
+])('does not render Clerk when the public config is %s', (_case, enabled, publishableKey) => {
+  const { queryByTestId } = setup({
+    useGetStartupConfigReturnValue: {
+      ...mockStartupConfig,
+      data: {
+        ...mockStartupConfig.data,
+        clerkLoginEnabled: enabled,
+        clerkPublishableKey: publishableKey,
+      },
+    },
+  });
+
+  expect(queryByTestId('clerk-login')).not.toBeInTheDocument();
 });
