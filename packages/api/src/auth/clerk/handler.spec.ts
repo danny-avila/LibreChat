@@ -8,6 +8,7 @@ import {
   createEnforceClerkLoginPolicy,
   createCommitClerkLogin,
   createCompleteClerkLogin,
+  createClerkAuthHandlers,
   ClerkRouteError,
   MAX_CLERK_TOKEN_BYTES,
 } from './handler';
@@ -517,5 +518,66 @@ describe('clerkLoginErrorAdapter', () => {
 describe('tenant scoping — sanity', () => {
   it('is exercised without an ambient tenant by default', () => {
     expect(tenantStorage.getStore()).toBeUndefined();
+  });
+});
+
+describe('createClerkAuthHandlers', () => {
+  function createHandlerDeps() {
+    return {
+      getClerkAuthConfig: () => enabledConfig,
+      findUser: jest.fn(),
+      getAppConfig: jest.fn().mockResolvedValue({ registration: {} }),
+      isSocialRegistrationAllowed: () => true,
+      linkClerkIdentity: jest.fn(),
+      createSocialUser: jest.fn(),
+      exchangeClerkSession: jest.fn(),
+    };
+  }
+
+  it('returns every named step as a callable function', () => {
+    const handlers = createClerkAuthHandlers(createHandlerDeps());
+
+    expect(handlers.validateClerkLoginBody).toBe(validateClerkLoginBody);
+    expect(handlers.clerkLoginErrorAdapter).toBe(clerkLoginErrorAdapter);
+    expect(typeof handlers.prepareClerkLogin).toBe('function');
+    expect(typeof handlers.enforceClerkLoginPolicy).toBe('function');
+    expect(typeof handlers.commitClerkLogin).toBe('function');
+    expect(typeof handlers.completeClerkLogin).toBe('function');
+  });
+
+  it('wires prepareClerkLogin to the supplied findUser/config deps end-to-end', async () => {
+    const deps = createHandlerDeps();
+    mockVerifyClerkSessionToken.mockResolvedValue(claims);
+    const existingUser = { _id: 'u1', email: 'user@example.com', clerkId: claims.clerkId };
+    deps.findUser.mockResolvedValue(existingUser);
+    const handlers = createClerkAuthHandlers(deps);
+    const req = createReq();
+    const next = createNext();
+
+    await handlers.prepareClerkLogin(req, {} as never, next);
+
+    expect(next).toHaveBeenCalledWith();
+    expect((req as { user: unknown }).user).toBe(existingUser);
+  });
+
+  it('wires completeClerkLogin to the supplied exchangeClerkSession dep end-to-end', async () => {
+    const deps = createHandlerDeps();
+    deps.exchangeClerkSession.mockResolvedValue({ token: 'access-token', user: { _id: 'u1' } });
+    const handlers = createClerkAuthHandlers(deps);
+    const req = createReq({
+      user: { _id: 'u1' },
+      clerkAuth: {
+        clerkIdentity: claims,
+        clerkLookups: { userByClerkId: null, userByEmail: null },
+      },
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const next = createNext();
+
+    await handlers.completeClerkLogin(req, res as never, next);
+
+    expect(deps.exchangeClerkSession).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ token: 'access-token', user: { _id: 'u1' } });
   });
 });

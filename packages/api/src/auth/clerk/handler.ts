@@ -349,3 +349,53 @@ export function clerkLoginErrorAdapter(
   }
   res.status(500).json({ code: 'CLERK_LOGIN_FAILED' });
 }
+
+export interface CreateClerkAuthHandlersDeps {
+  getClerkAuthConfig: PrepareClerkLoginDeps['getClerkAuthConfig'];
+  findUser: PrepareClerkLoginDeps['findUser'];
+  getAppConfig: EnforceClerkLoginPolicyDeps['getAppConfig'];
+  isSocialRegistrationAllowed: EnforceClerkLoginPolicyDeps['isSocialRegistrationAllowed'];
+  linkClerkIdentity: CommitClerkLoginDeps['linkClerkIdentity'];
+  createSocialUser: CommitClerkLoginDeps['createSocialUser'];
+  exchangeClerkSession: CompleteClerkLoginDeps['exchangeClerkSession'];
+}
+
+export interface ClerkAuthHandlers {
+  validateClerkLoginBody: typeof validateClerkLoginBody;
+  prepareClerkLogin: ReturnType<typeof createPrepareClerkLogin>;
+  enforceClerkLoginPolicy: ReturnType<typeof createEnforceClerkLoginPolicy>;
+  commitClerkLogin: ReturnType<typeof createCommitClerkLogin>;
+  completeClerkLogin: ReturnType<typeof createCompleteClerkLogin>;
+  clerkLoginErrorAdapter: typeof clerkLoginErrorAdapter;
+}
+
+/**
+ * Single composition point for the `/api/auth/clerk` route: bundles every
+ * typed step (5, 7, 8, 10) plus body validation (4) and the error adapter
+ * (11) behind one factory so `api/server/routes/auth.js` only has to supply
+ * real dependencies and interleave the legacy rate-limiter/ban middleware
+ * (steps 2, 3, 6) and `setBalanceConfig` (step 9) around the returned
+ * handlers — no route-ordering logic lives outside this file.
+ */
+export function createClerkAuthHandlers(deps: CreateClerkAuthHandlersDeps): ClerkAuthHandlers {
+  return {
+    validateClerkLoginBody,
+    prepareClerkLogin: createPrepareClerkLogin({
+      getClerkAuthConfig: deps.getClerkAuthConfig,
+      findUser: deps.findUser,
+    }),
+    enforceClerkLoginPolicy: createEnforceClerkLoginPolicy({
+      getAppConfig: deps.getAppConfig,
+      isSocialRegistrationAllowed: deps.isSocialRegistrationAllowed,
+    }),
+    commitClerkLogin: createCommitClerkLogin({
+      findUser: deps.findUser,
+      linkClerkIdentity: deps.linkClerkIdentity,
+      createSocialUser: deps.createSocialUser,
+    }),
+    completeClerkLogin: createCompleteClerkLogin({
+      exchangeClerkSession: deps.exchangeClerkSession,
+    }),
+    clerkLoginErrorAdapter,
+  };
+}

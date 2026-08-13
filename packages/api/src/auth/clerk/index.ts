@@ -5,4 +5,5 @@ export * from './verify';
 export * from './profile';
 export * from './webhook';
 export * from './service';
+export * from './handler';
 export * from './session';
