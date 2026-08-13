@@ -3,10 +3,14 @@ name: Sync Locize Translations & Create Translation PR
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - '**.md'
+    paths:
+      - 'client/src/locales/en/**'
   repository_dispatch:
     types: [locize/versionPublished]
+
+concurrency:
+  group: locize-i18n-sync
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -29,7 +33,8 @@ jobs:
       - name: Install locize CLI
         run: npm install -g locize-cli@12.2.0 --ignore-scripts --no-audit --no-fund
 
-      # Sync translations (Push missing keys & remove deleted ones)
+      # Git owns English source values. Push changed values to Locize without
+      # allowing a stale checkout to delete keys that still exist remotely.
       - name: Sync Locize with Repository
         if: ${{ github.event_name == 'push' }}
         env:
@@ -37,7 +42,7 @@ jobs:
           LOCIZE_PROJECT_ID: ${{ secrets.LOCIZE_PROJECT_ID }}
         run: |
           cd client/src/locales
-          locize sync --cdn-type pro --api-key "$LOCIZE_API_KEY" --project-id "$LOCIZE_PROJECT_ID" --language en
+          locize sync --cdn-type pro --api-key "$LOCIZE_API_KEY" --project-id "$LOCIZE_PROJECT_ID" --language en --skip-delete true --update-values true
 
       # When triggered by repository_dispatch, skip sync step.
       - name: Skip sync step on non-push events
@@ -46,6 +51,7 @@ jobs:
 
   create-pull-request:
     name: Create Translation PR on Version Published
+    if: ${{ github.event_name == 'repository_dispatch' }}
     runs-on: ubuntu-latest
     needs: sync-translations
     permissions:
@@ -57,12 +63,23 @@ jobs:
         with:
           persist-credentials: false
 
-      # 2. Download translation files from locize.
+      # Keep a baseline so generated changes can be checked before opening a PR.
+      - name: Snapshot Repository Locales
+        run: cp -R client/src/locales "$RUNNER_TEMP/locize-locale-baseline"
+
+      # Download the latest published translation version from Locize.
       - name: Download Translations from locize
         uses: locize/download@v2
         with:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
           path: "client/src/locales"
+          version: latest
+          cdn-type: pro
+
+      - name: Validate Downloaded Translations
+        run: node scripts/validate-locize-download.mjs \
+          --base-dir "$RUNNER_TEMP/locize-locale-baseline" \
+          --current-dir client/src/locales
 
       # 3. Create a Pull Request using a dedicated fine-grained PAT so this
       # workflow does not depend on the global GITHUB_TOKEN PR-creation setting.
