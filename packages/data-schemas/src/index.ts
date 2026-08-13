@@ -8,6 +8,8 @@ export { createModels } from './models';
 export {
   createMethods,
   RoleConflictError,
+  ClerkAuthClaimError,
+  toClerkTenantScope,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
   DEFAULT_SESSION_EXPIRY,
   tokenValues,
@@ -55,4 +57,10 @@ export {
   SYSTEM_TENANT_ID,
 } from './config/tenantContext';
 export type { TenantContext } from './config/tenantContext';
-export { dropSupersededTenantIndexes, dropSupersededPromptGroupIndexes } from './migrations';
+export {
+  dropSupersededTenantIndexes,
+  dropSupersededPromptGroupIndexes,
+  ensureClerkIndexes,
+  ClerkIndexAssuranceError,
+  CLERK_INDEX_SPECS,
+} from './migrations';

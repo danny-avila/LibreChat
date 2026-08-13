@@ -41,7 +41,10 @@ export function createUserMethods(
     disableTTL?: boolean,
     returnUser?: boolean,
   ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
-  updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  updateUser: (
+    userId: string,
+    updateData: Omit<Partial<IUser>, 'clerkId' | 'clerkDeletedAt'>,
+  ) => Promise<IUser | null>;
   acceptTerms: (userId: string) => Promise<IUser | null>;
   searchUsers: ({
     searchPattern,
@@ -71,6 +74,7 @@ export function createUserMethods(
       githubId?: string;
       discordId?: string;
       appleId?: string;
+      clerkId?: string;
       plugins?: string[];
       openidIssuer?: string;
       twoFactorEnabled?: boolean;
@@ -257,8 +261,19 @@ export function createUserMethods(
 
   /**
    * Update a user with new data without overwriting existing properties.
+   * `clerkId`/`clerkDeletedAt` are managed exclusively by the dedicated
+   * Clerk link/tombstone methods — rejected here even for untyped (legacy JS)
+   * callers, since the type-level `Omit` only protects typed call sites.
    */
-  async function updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {
+  async function updateUser(
+    userId: string,
+    updateData: Omit<Partial<IUser>, 'clerkId' | 'clerkDeletedAt'>,
+  ): Promise<IUser | null> {
+    if ('clerkId' in updateData || 'clerkDeletedAt' in updateData) {
+      throw new Error(
+        '[updateUser] clerkId/clerkDeletedAt are managed fields and cannot be set via updateUser',
+      );
+    }
     const User = mongoose.models.User;
     const updateOperation = {
       $set: updateData,
@@ -462,6 +477,7 @@ export function createUserMethods(
       githubId?: string;
       discordId?: string;
       appleId?: string;
+      clerkId?: string;
       plugins?: string[];
       openidIssuer?: string;
       twoFactorEnabled?: boolean;

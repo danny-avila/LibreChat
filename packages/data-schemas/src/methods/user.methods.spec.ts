@@ -989,3 +989,124 @@ describe('User Methods - Database Tests', () => {
     });
   });
 });
+
+describe('User Clerk identity fields', () => {
+  describe('clerkId index', () => {
+    test('rejects a duplicate clerkId in the same tenant', async () => {
+      await User.syncIndexes();
+      await User.create({
+        email: 'clerk-a@example.com',
+        provider: 'clerk',
+        clerkId: 'user_shared',
+        tenantId: 'tenant-a',
+      });
+
+      await expect(
+        User.create({
+          email: 'clerk-b@example.com',
+          provider: 'clerk',
+          clerkId: 'user_shared',
+          tenantId: 'tenant-a',
+        }),
+      ).rejects.toThrow(/duplicate key/);
+    });
+
+    test('allows the same clerkId in a different tenant', async () => {
+      await User.syncIndexes();
+      await User.create({
+        email: 'clerk-a@example.com',
+        provider: 'clerk',
+        clerkId: 'user_shared',
+        tenantId: 'tenant-a',
+      });
+
+      await expect(
+        User.create({
+          email: 'clerk-b@example.com',
+          provider: 'clerk',
+          clerkId: 'user_shared',
+          tenantId: 'tenant-b',
+        }),
+      ).resolves.toBeTruthy();
+    });
+
+    test('allows multiple users with no clerkId at all', async () => {
+      await User.syncIndexes();
+      await User.create({ email: 'local-a@example.com', provider: 'local' });
+
+      await expect(
+        User.create({ email: 'local-b@example.com', provider: 'local' }),
+      ).resolves.toBeTruthy();
+    });
+
+    test('rejects null, empty, and whitespace-only clerkId', async () => {
+      await expect(
+        User.create({ email: 'null-clerk@example.com', provider: 'local', clerkId: null }),
+      ).rejects.toThrow();
+      await expect(
+        User.create({ email: 'empty-clerk@example.com', provider: 'local', clerkId: '' }),
+      ).rejects.toThrow();
+      await expect(
+        User.create({ email: 'blank-clerk@example.com', provider: 'local', clerkId: '   ' }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('clerkDeletedAt tombstone projection', () => {
+    test('is omitted from a default find', async () => {
+      const user = await User.create({
+        email: 'tombstoned@example.com',
+        provider: 'clerk',
+        clerkId: 'user_tombstoned',
+        clerkDeletedAt: new Date(),
+      });
+
+      const found = await methods.findUser({ _id: user._id });
+      expect(found).toBeDefined();
+      expect((found as unknown as { clerkDeletedAt?: Date }).clerkDeletedAt).toBeUndefined();
+    });
+
+    test('is available through an explicit +clerkDeletedAt projection', async () => {
+      const tombstonedAt = new Date();
+      const user = await User.create({
+        email: 'tombstoned2@example.com',
+        provider: 'clerk',
+        clerkId: 'user_tombstoned2',
+        clerkDeletedAt: tombstonedAt,
+      });
+
+      const found = await methods.findUser({ _id: user._id }, '+clerkDeletedAt');
+      expect(found?.clerkDeletedAt).toBeInstanceOf(Date);
+      expect((found!.clerkDeletedAt as Date).getTime()).toBe(tombstonedAt.getTime());
+    });
+  });
+
+  describe('updateUser managed-field rejection', () => {
+    test('throws when updateData contains clerkId', async () => {
+      const user = await User.create({ email: 'guarded@example.com', provider: 'local' });
+
+      await expect(
+        methods.updateUser(user._id!.toString(), {
+          clerkId: 'user_should_not_set_this',
+        } as unknown as Parameters<typeof methods.updateUser>[1]),
+      ).rejects.toThrow(/clerkId.*clerkDeletedAt are managed fields/);
+    });
+
+    test('throws when updateData contains clerkDeletedAt', async () => {
+      const user = await User.create({ email: 'guarded2@example.com', provider: 'local' });
+
+      await expect(
+        methods.updateUser(user._id!.toString(), {
+          clerkDeletedAt: new Date(),
+        } as unknown as Parameters<typeof methods.updateUser>[1]),
+      ).rejects.toThrow(/clerkId.*clerkDeletedAt are managed fields/);
+    });
+
+    test('still allows updating ordinary fields', async () => {
+      const user = await User.create({ email: 'unguarded@example.com', provider: 'local' });
+
+      const updated = await methods.updateUser(user._id!.toString(), { name: 'Updated' });
+      expect(updated?.name).toBe('Updated');
+    });
+  });
+});

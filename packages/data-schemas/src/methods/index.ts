@@ -1,5 +1,6 @@
 import type { RoleMethods, RoleDeps } from './role';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
+import { createClerkAuthClaimMethods, type ClerkAuthClaimMethods } from './clerkAuthClaim';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
@@ -103,6 +104,7 @@ import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 import { createConfigMethods, type ConfigMethods } from './config';
 
 export { RoleConflictError, DEFAULT_REFRESH_TOKEN_EXPIRY, DEFAULT_SESSION_EXPIRY };
+export { ClerkAuthClaimError, toClerkTenantScope } from './clerkAuthClaim';
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
 export { permissionBitSupersets };
 export {
@@ -120,6 +122,7 @@ export { MAX_TOOL_FAVORITES };
 
 export type AllMethods = UserMethods &
   SessionMethods &
+  ClerkAuthClaimMethods &
   TokenMethods &
   RoleMethods &
   KeyMethods &
@@ -252,6 +255,7 @@ export function createMethods(
   return {
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
     ...createSessionMethods(mongoose),
+    ...createClerkAuthClaimMethods(mongoose),
     ...createTokenMethods(mongoose),
     ...roleMethods,
     ...createKeyMethods(mongoose),
@@ -297,6 +301,7 @@ export function createMethods(
 export type {
   UserMethods,
   SessionMethods,
+  ClerkAuthClaimMethods,
   TokenMethods,
   RoleMethods,
   KeyMethods,

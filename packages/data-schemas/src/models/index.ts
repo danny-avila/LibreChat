@@ -1,6 +1,7 @@
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
+import { createClerkAuthClaimModel } from './clerkAuthClaim';
 import { createAgentCategoryModel } from './agentCategory';
 import { createChatProjectModel } from './chatProject';
 import { createAgentApiKeyModel } from './agentApiKey';
@@ -78,6 +79,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   AuditLog: ReturnType<typeof createAuditLogModel>;
   Group: ReturnType<typeof createGroupModel>;
   Config: ReturnType<typeof createConfigModel>;
+  ClerkAuthClaim: ReturnType<typeof createClerkAuthClaimModel>;
 } {
   const models = {
     User: createUserModel(mongoose),
@@ -117,6 +119,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     AuditLog: createAuditLogModel(mongoose),
     Group: createGroupModel(mongoose),
     Config: createConfigModel(mongoose),
+    ClerkAuthClaim: createClerkAuthClaimModel(mongoose),
   };
   /**
    * Background index builds fail silently unless an 'index' listener is

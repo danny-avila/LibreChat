@@ -62,6 +62,14 @@ export interface IUser extends Document {
   tenantId?: string;
   federatedTokens?: OIDCTokens;
   openidTokens?: OIDCTokens;
+  /** Clerk subject (`sub`) bound to this User. Internal — never public/MCP-exposed. */
+  clerkId?: string;
+  /**
+   * Set when a Clerk `user.deleted` webhook tombstones this binding.
+   * `select: false` — only returned through an explicit identity/tombstone
+   * projection, never a default `find`/`findById`.
+   */
+  clerkDeletedAt?: Date;
 }
 
 export interface OIDCTokens {
@@ -123,6 +131,7 @@ export interface UserFilterOptions extends CursorPaginationParams {
   githubId?: string;
   discordId?: string;
   appleId?: string;
+  clerkId?: string;
   // Date filters
   createdAfter?: string;
   createdBefore?: string;

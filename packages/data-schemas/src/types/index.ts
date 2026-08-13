@@ -8,6 +8,7 @@ export * from './token';
 export * from './convo';
 export * from './chatProject';
 export * from './session';
+export * from './clerkAuthClaim';
 export * from './balance';
 export * from './banner';
 export * from './transaction';

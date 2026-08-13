@@ -92,6 +92,19 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
     appleId: {
       type: String,
     },
+    clerkId: {
+      type: String,
+      validate: {
+        validator: (v: unknown) =>
+          v === undefined || (typeof v === 'string' && v.trim().length > 0),
+        message:
+          'clerkId must be a non-empty string or omitted entirely — never null, empty, or whitespace-only',
+      },
+    },
+    clerkDeletedAt: {
+      type: Date,
+      select: false,
+    },
     plugins: {
       type: Array,
     },
@@ -199,5 +212,14 @@ for (const field of oAuthIdFields) {
     { unique: true, partialFilterExpression: { [field]: { $exists: true } } },
   );
 }
+
+userSchema.index(
+  { clerkId: 1, tenantId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { clerkId: { $exists: true } },
+    name: 'clerkId_1_tenantId_1',
+  },
+);
 
 export default userSchema;
