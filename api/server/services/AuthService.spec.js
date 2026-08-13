@@ -5,7 +5,6 @@ jest.mock(
     getTenantId: jest.fn(() => undefined),
     DEFAULT_SESSION_EXPIRY: 900000,
     DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
-    CLERK_TENANTLESS_SCOPE: 'CLERK_TENANTLESS_SCOPE',
   }),
   { virtual: true },
 );
@@ -91,7 +90,6 @@ const {
   updateUser,
   countUsers,
   getUserById,
-  findSession,
   generateToken,
   generateRefreshToken,
   createSession,
@@ -108,7 +106,6 @@ const {
   resetPassword,
   resendVerificationEmail,
   setAuthTokens,
-  setClerkAuthTokens,
   setCloudFrontAuthCookies,
   verifyEmail,
 } = require('./AuthService');
@@ -1335,166 +1332,58 @@ describe('CloudFront cookie integration', () => {
 
       expect(result).toBe('mock-access-token');
     });
-  });
-});
 
-describe('setClerkAuthTokens', () => {
-  const absoluteExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
-  const clerk = {
-    authProvider: 'clerk',
-    tenantScope: 'tenant-a',
-    clerkSessionId: 'sess_1',
-    clerkTokenId: 'tok_1',
-    clerkUserId: 'clerk_user_1',
-    tokenExpiresAt: new Date(Date.now() + 4 * 60 * 1000),
-    absoluteExpiresAt,
-  };
-  const sessionDoc = { _id: 'session-1', expiration: absoluteExpiresAt };
+    it('uses the full configured session duration for a freshly created (local) session', async () => {
+      const res = mockResponse();
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    findSession.mockResolvedValue(sessionDoc);
-    generateRefreshToken.mockResolvedValue('mock-clerk-refresh-token');
-    getUserById.mockResolvedValue({ _id: 'user-123', tenantId: 'tenant-a' });
-    generateToken.mockResolvedValue('mock-clerk-access-token');
-    setCloudFrontCookies.mockReturnValue(true);
-  });
+      await setAuthTokens('user-123', res);
 
-  it('confirms the committed Session by exact tenant scope', async () => {
-    const res = mockResponse();
-
-    await setClerkAuthTokens({
-      userId: 'user-123',
-      req: mockRequest(),
-      res,
-      session: { _id: 'session-1', expiration: absoluteExpiresAt },
-      clerk,
+      expect(generateToken).toHaveBeenCalledWith({ _id: 'user-123', tenantId: 'tenantA' }, 900000);
     });
 
-    expect(findSession).toHaveBeenCalledWith(
-      { sessionId: 'session-1', tenantId: 'tenant-a' },
-      { lean: false, includeExpired: true },
-    );
-  });
+    it("caps the access token duration to the explicit session's remaining deadline", async () => {
+      const explicitSession = { _id: 'session-1', expiration: new Date(Date.now() + 60000) };
+      const res = mockResponse();
 
-  it('resolves the tenantless sentinel to an undefined tenantId', async () => {
-    const res = mockResponse();
+      await setAuthTokens('user-123', res, explicitSession);
 
-    await setClerkAuthTokens({
-      userId: 'user-123',
-      req: mockRequest(),
-      res,
-      session: { _id: 'session-1', expiration: absoluteExpiresAt },
-      clerk: { ...clerk, tenantScope: 'CLERK_TENANTLESS_SCOPE' },
+      expect(generateToken).toHaveBeenCalledTimes(1);
+      const [user, sessionExpiry] = generateToken.mock.calls[0];
+      expect(user).toEqual({ _id: 'user-123', tenantId: 'tenantA' });
+      // Configured default is 900000ms; the explicit session expires in ~60000ms, so it must win.
+      expect(sessionExpiry).toBeGreaterThan(0);
+      expect(sessionExpiry).toBeLessThanOrEqual(60000);
     });
 
-    expect(findSession).toHaveBeenCalledWith(
-      { sessionId: 'session-1', tenantId: undefined },
-      { lean: false, includeExpired: true },
-    );
-  });
+    it('does not cap the access token when the explicit session outlives the configured duration', async () => {
+      const explicitSession = { _id: 'session-1', expiration: new Date(Date.now() + 999999999) };
+      const res = mockResponse();
 
-  it('throws when the committed Session cannot be confirmed', async () => {
-    findSession.mockResolvedValueOnce(null);
-    const res = mockResponse();
+      await setAuthTokens('user-123', res, explicitSession);
 
-    await expect(
-      setClerkAuthTokens({
-        userId: 'user-123',
-        req: mockRequest(),
-        res,
-        session: { _id: 'session-1', expiration: absoluteExpiresAt },
-        clerk,
-      }),
-    ).rejects.toThrow(/Committed Session not found/);
-
-    expect(generateRefreshToken).not.toHaveBeenCalled();
-    expect(res.cookie).not.toHaveBeenCalled();
-  });
-
-  it('sets refreshToken and token_provider cookies capped to the Session expiration', async () => {
-    const res = mockResponse();
-
-    await setClerkAuthTokens({
-      userId: 'user-123',
-      req: mockRequest(),
-      res,
-      session: { _id: 'session-1', expiration: absoluteExpiresAt },
-      clerk,
+      const [, sessionExpiry] = generateToken.mock.calls[0];
+      expect(sessionExpiry).toBe(900000);
     });
 
-    expect(res._cookies.refreshToken.value).toBe('mock-clerk-refresh-token');
-    expect(res._cookies.refreshToken.options.expires).toEqual(absoluteExpiresAt);
-    expect(res._cookies.refreshToken.options.httpOnly).toBe(true);
-    expect(res._cookies.refreshToken.options.sameSite).toBe('strict');
-    expect(res._cookies.token_provider.value).toBe('librechat');
-    expect(res._cookies.token_provider.options.expires).toEqual(absoluteExpiresAt);
-  });
+    it('never generates a negative session duration for an already-expired explicit session', async () => {
+      const explicitSession = { _id: 'session-1', expiration: new Date(Date.now() - 1000) };
+      const res = mockResponse();
 
-  it('caps the access token expiry to the remaining time until absoluteExpiresAt', async () => {
-    const res = mockResponse();
+      await setAuthTokens('user-123', res, explicitSession);
 
-    await setClerkAuthTokens({
-      userId: 'user-123',
-      req: mockRequest(),
-      res,
-      session: { _id: 'session-1', expiration: absoluteExpiresAt },
-      clerk,
+      const [, sessionExpiry] = generateToken.mock.calls[0];
+      expect(sessionExpiry).toBe(0);
     });
 
-    expect(generateToken).toHaveBeenCalledTimes(1);
-    const [user, expiresIn] = generateToken.mock.calls[0];
-    expect(user).toEqual({ _id: 'user-123', tenantId: 'tenant-a' });
-    expect(expiresIn).toBeGreaterThan(0);
-    expect(expiresIn).toBeLessThanOrEqual(absoluteExpiresAt.getTime() - Date.now() + 1000);
-  });
+    it('regenerates the refresh token on the explicit session object itself (real setAuthTokens, no bypass)', async () => {
+      const explicitSession = { _id: 'session-1', expiration: new Date(Date.now() + 60000) };
+      const res = mockResponse();
 
-  it('never generates a negative expiresIn for an already-past absoluteExpiresAt', async () => {
-    const pastClerk = { ...clerk, absoluteExpiresAt: new Date(Date.now() - 1000) };
-    const res = mockResponse();
+      await setAuthTokens('user-123', res, explicitSession);
 
-    await setClerkAuthTokens({
-      userId: 'user-123',
-      req: mockRequest(),
-      res,
-      session: { _id: 'session-1', expiration: absoluteExpiresAt },
-      clerk: pastClerk,
+      expect(generateRefreshToken).toHaveBeenCalledWith(explicitSession);
+      expect(createSession).not.toHaveBeenCalled();
     });
-
-    const [, expiresIn] = generateToken.mock.calls[0];
-    expect(expiresIn).toBe(0);
-  });
-
-  it('returns the generated access token', async () => {
-    const res = mockResponse();
-
-    const token = await setClerkAuthTokens({
-      userId: 'user-123',
-      req: mockRequest(),
-      res,
-      session: { _id: 'session-1', expiration: absoluteExpiresAt },
-      clerk,
-    });
-
-    expect(token).toBe('mock-clerk-access-token');
-  });
-
-  it('calls setCloudFrontCookies with the resolved tenant scope', async () => {
-    const res = mockResponse();
-
-    await setClerkAuthTokens({
-      userId: 'user-123',
-      req: mockRequest(),
-      res,
-      session: { _id: 'session-1', expiration: absoluteExpiresAt },
-      clerk,
-    });
-
-    expect(setCloudFrontCookies).toHaveBeenCalledWith(
-      res,
-      { userId: 'user-123', tenantId: 'tenant-a' },
-      null,
-    );
   });
 });
 
