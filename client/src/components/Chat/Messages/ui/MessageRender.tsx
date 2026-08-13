@@ -157,12 +157,21 @@ const MessageRender = memo(function MessageRender({
       footer={
         <SubRow classes={cn('text-xs', msg.isCreatedByUser && 'justify-end')}>
           {/* A user turn is right-aligned, so its retry navigation belongs at the
-              outer edge under the bubble rather than inboard of the actions. */}
+              outer edge under the bubble rather than inboard of the actions.
+
+              While the answer is generating every other action is withheld, which
+              would otherwise leave this counter sitting alone under a half-written
+              response. It reveals on hover there, like the actions it sits with. */}
           <SiblingSwitch
             siblingIdx={siblingIdx}
             siblingCount={siblingCount}
             setSiblingIdx={setSiblingIdx}
-            className={cn(msg.isCreatedByUser === true && 'order-last')}
+            className={cn(
+              msg.isCreatedByUser === true && 'order-last',
+              isSubmitting &&
+                isLatestMessage &&
+                'group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0',
+            )}
           />
           <HoverButtons
             index={index}
