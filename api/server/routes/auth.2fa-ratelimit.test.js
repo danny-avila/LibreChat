@@ -8,6 +8,7 @@ const mockTwoFactorTempLimiter = jest.fn((req, res, next) => next());
 const mockTwoFactorSetupLimiter = jest.fn((req, res, next) => next());
 const mockCheckBan = jest.fn((req, res, next) => next());
 const mockRequireTwoFactorSetupToken = jest.fn((req, res, next) => next());
+const mockBlockRetiredSetupToken = jest.fn((req, res, next) => next());
 const mockRequireTwoFactorSetupAcknowledgementToken = jest.fn((req, res, next) => next());
 const mockRequireTwoFactorSetupFinalizationToken = jest.fn((req, res, next) => next());
 const mockVerify2FAWithTempToken = jest.fn((req, res) => res.status(204).end());
@@ -79,6 +80,7 @@ jest.mock('~/server/middleware', () => {
     twoFactorTempLimiter: (...args) => mockTwoFactorTempLimiter(...args),
     twoFactorSetupLimiter: (...args) => mockTwoFactorSetupLimiter(...args),
     checkBan: (...args) => mockCheckBan(...args),
+    blockRetiredSetupToken: (...args) => mockBlockRetiredSetupToken(...args),
     validateEmailLogin: pass,
     requireLocalAuth: pass,
     requireLdapAuth: pass,
@@ -106,6 +108,7 @@ describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
     mockTwoFactorSetupLimiter.mockImplementation((req, res, next) => next());
     mockCheckBan.mockImplementation((req, res, next) => next());
     mockRequireTwoFactorSetupToken.mockImplementation((req, res, next) => next());
+    mockBlockRetiredSetupToken.mockImplementation((req, res, next) => next());
     mockRequireTwoFactorSetupAcknowledgementToken.mockImplementation((req, res, next) => next());
     mockRequireTwoFactorSetupFinalizationToken.mockImplementation((req, res, next) => next());
     mockVerify2FAWithTempToken.mockImplementation((req, res) => res.status(204).end());
@@ -209,6 +212,38 @@ describe('POST /api/auth/2fa/verify-temp rate limiting', () => {
       expect(mockRequireTwoFactorSetupToken.mock.invocationCallOrder[0]).toBeLessThan(
         controller.mock.invocationCallOrder[0],
       );
+    },
+  );
+
+  it.each([
+    ['/api/auth/2fa/setup', mockEnable2FA],
+    ['/api/auth/2fa/setup/confirm', mockConfirm2FASetupWithTempToken],
+  ])(
+    'dates the setup token on %s once its signature has been verified',
+    async (path, controller) => {
+      await request(app).post(path).send({ tempToken: 'temp-token' }).expect(204);
+
+      expect(mockBlockRetiredSetupToken).toHaveBeenCalledTimes(1);
+      expect(mockRequireTwoFactorSetupToken.mock.invocationCallOrder[0]).toBeLessThan(
+        mockBlockRetiredSetupToken.mock.invocationCallOrder[0],
+      );
+      expect(mockBlockRetiredSetupToken.mock.invocationCallOrder[0]).toBeLessThan(
+        controller.mock.invocationCallOrder[0],
+      );
+    },
+  );
+
+  it.each([['/api/auth/2fa/setup'], ['/api/auth/2fa/setup/confirm']])(
+    'does not stage enrollment on %s when the setup token has been retired',
+    async (path) => {
+      mockBlockRetiredSetupToken.mockImplementation((req, res) =>
+        res.status(401).json({ message: 'Invalid or expired two-factor setup token' }),
+      );
+
+      await request(app).post(path).send({ tempToken: 'temp-token' }).expect(401);
+
+      expect(mockEnable2FA).not.toHaveBeenCalled();
+      expect(mockConfirm2FASetupWithTempToken).not.toHaveBeenCalled();
     },
   );
 

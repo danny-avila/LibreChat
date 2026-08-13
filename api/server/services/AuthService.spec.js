@@ -757,6 +757,46 @@ describe('resetPassword', () => {
     });
   });
 
+  it('should retire every token minted for the revoked credential', async () => {
+    const resetHash = bcrypt.hashSync('reset-token', 10);
+    findToken.mockResolvedValue({
+      token: resetHash,
+      userId: 'user-reset',
+      type: 'password_reset',
+    });
+    updateUser.mockResolvedValue({ email: 'user@example.com' });
+    const before = Date.now();
+
+    await resetPassword('user-reset', 'reset-token', 'new-password');
+
+    const [, update] = updateUser.mock.calls[0];
+    expect(update.passwordResetAt).toBeInstanceOf(Date);
+    expect(update.passwordResetAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(update.passwordResetAt.getTime()).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('should strand an in-flight required enrollment', async () => {
+    const resetHash = bcrypt.hashSync('reset-token', 10);
+    findToken.mockResolvedValue({
+      token: resetHash,
+      userId: 'user-reset',
+      type: 'password_reset',
+    });
+    updateUser.mockResolvedValue({ email: 'user@example.com' });
+
+    await resetPassword('user-reset', 'reset-token', 'new-password');
+
+    expect(updateUser).toHaveBeenCalledWith(
+      'user-reset',
+      expect.objectContaining({
+        pendingTotpSecret: null,
+        pendingBackupCodes: [],
+        twoFactorAcknowledgementNonceHash: null,
+        twoFactorFinalizationNonceHash: null,
+      }),
+    );
+  });
+
   it('should accept legacy reset tokens without affecting verification-shaped tokens', async () => {
     const legacyResetHash = bcrypt.hashSync('legacy-reset-token', 10);
     findToken.mockImplementation(async (query) => {

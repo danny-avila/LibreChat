@@ -27,11 +27,6 @@ export const TWO_FACTOR_TOKEN_PURPOSE = {
   REQUIRED_FINALIZATION: 'required_2fa_finalization',
 } as const;
 
-interface TwoFactorSetupClaims {
-  userId: string;
-  purpose: typeof TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP;
-}
-
 interface TwoFactorLoginChallengeClaims {
   userId: string;
   purpose: typeof TWO_FACTOR_TOKEN_PURPOSE.LOGIN_CHALLENGE;
@@ -43,16 +38,37 @@ interface TwoFactorSetupBody {
   finalizationToken?: string;
 }
 
+/**
+ * The account events that retire every bearer token minted before them.
+ *
+ * Widened past `IUser`'s `Date`, because callers pass lean documents whose stamps can arrive
+ * already serialized, and a cutoff that fails to parse must not lock every session out.
+ */
+export interface TokenRetirementSignals {
+  twoFactorEnrolledAt?: Date | string | number | null;
+  passwordResetAt?: Date | string | number | null;
+}
+
+/** The user fields `isTokenRetired` needs, for callers that read with an explicit projection. */
+export const TOKEN_RETIREMENT_FIELDS = 'twoFactorEnrolledAt passwordResetAt';
+
 /** Identity plus the one-time nonce a required-enrollment credential carries. */
 export interface TwoFactorEnrollmentCredential {
   userId: string;
   nonce: string;
 }
 
+/** Identity plus the mint time that lets a later account event retire a setup token. */
+export interface TwoFactorSetupCredential {
+  userId: string;
+  issuedAt?: number;
+}
+
 /** An Express request that a required-enrollment credential has been validated for. */
 export type TwoFactorEnrollmentRequest = Request & {
   user?: { id: string };
   twoFactorEnrollmentNonce?: string;
+  twoFactorSetupIssuedAt?: number;
 };
 
 export type TwoFactorSetupUser = Pick<
@@ -130,27 +146,16 @@ export function isCredentialLoginBlockedByTwoFactorPolicy(
   );
 }
 
-/**
- * Whether a bearer token was minted before required enrollment promoted the account.
- *
- * Access tokens carry no server-side state, so the enrollment gate stops refusing them the moment
- * `twoFactorEnabled` flips true. A token issued before that flip was only ever accepted because the
- * account had no second factor yet, so enrollment has to retire it rather than reinstate it.
- *
- * `iat` is whole seconds, so the enrollment instant is compared at the same resolution. A token
- * minted within the enrolling second is kept, which is what makes the session finalization itself
- * returns survive. A token carrying no `iat` cannot be dated and is refused.
- */
-export function isTokenIssuedBeforeTwoFactorEnrollment(
+function isTokenIssuedBefore(
   issuedAtSeconds: number | undefined,
-  enrolledAt: Date | string | number | null | undefined,
+  cutoff: Date | string | number | null | undefined,
 ): boolean {
-  if (enrolledAt == null) {
+  if (cutoff == null) {
     return false;
   }
 
-  const enrolledAtMs = new Date(enrolledAt).getTime();
-  if (Number.isNaN(enrolledAtMs)) {
+  const cutoffMs = new Date(cutoff).getTime();
+  if (Number.isNaN(cutoffMs)) {
     return false;
   }
 
@@ -158,7 +163,31 @@ export function isTokenIssuedBeforeTwoFactorEnrollment(
     return true;
   }
 
-  return issuedAtSeconds < Math.floor(enrolledAtMs / 1000);
+  return issuedAtSeconds < Math.floor(cutoffMs / 1000);
+}
+
+/**
+ * Whether a bearer token was minted before an account event that retires it.
+ *
+ * Bearer tokens carry no server-side state, so nothing stops honouring one the moment the account
+ * changes underneath it. Two events have to. Enrollment, because a token issued while the account
+ * still had no second factor was only ever accepted for that reason, so promotion has to retire it
+ * rather than reinstate it. And password recovery, because the credential the token was minted for
+ * has been revoked; `deleteAllUserSessions` already drops the refresh sessions on that path with
+ * the same intent, and a stateless token must not outlive the password that bought it.
+ *
+ * `iat` is whole seconds, so each cutoff is compared at the same resolution. A token minted within
+ * the retiring second is kept, which is what makes the session finalization itself returns survive.
+ * A token carrying no `iat` cannot be dated and is refused once any cutoff is set.
+ */
+export function isTokenRetired(
+  issuedAtSeconds: number | undefined,
+  user: TokenRetirementSignals | null | undefined,
+): boolean {
+  return (
+    isTokenIssuedBefore(issuedAtSeconds, user?.twoFactorEnrolledAt) ||
+    isTokenIssuedBefore(issuedAtSeconds, user?.passwordResetAt)
+  );
 }
 
 export function generateTwoFactorSetupToken(userId: string, jwtSecret: string): string {
@@ -273,7 +302,7 @@ export function verifyTwoFactorSetupFinalizationToken(
 export function verifyTwoFactorSetupToken(
   tempToken: string | undefined,
   jwtSecret: string | undefined,
-): string | undefined {
+): TwoFactorSetupCredential | undefined {
   if (!tempToken || !jwtSecret) {
     return undefined;
   }
@@ -288,7 +317,7 @@ export function verifyTwoFactorSetupToken(
     ) {
       return undefined;
     }
-    return (payload as TwoFactorSetupClaims).userId;
+    return { userId: payload.userId, issuedAt: payload.iat };
   } catch {
     return undefined;
   }
@@ -304,13 +333,14 @@ export function requireTwoFactorSetupToken(
   }
 
   const tempToken = (req.body as TwoFactorSetupBody | undefined)?.tempToken;
-  const userId = verifyTwoFactorSetupToken(tempToken, process.env.JWT_SECRET);
-  if (!userId) {
+  const credential = verifyTwoFactorSetupToken(tempToken, process.env.JWT_SECRET);
+  if (!credential) {
     return res.status(401).json({ message: 'Invalid or expired two-factor setup token' });
   }
 
   const setupRequest = req as TwoFactorEnrollmentRequest;
-  setupRequest.user = { id: userId };
+  setupRequest.user = { id: credential.userId };
+  setupRequest.twoFactorSetupIssuedAt = credential.issuedAt;
   next();
 }
 

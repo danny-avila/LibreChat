@@ -40,9 +40,8 @@ jest.mock('@librechat/api', () => ({
   clearCloudFrontCookies: jest.fn(),
   generateTwoFactorSetupToken: jest.fn(() => 'setup-token'),
   isTwoFactorEnrollmentRequired: jest.fn(() => false),
-  /** The enrollment cutoff is the assertion under test, so it runs for real rather than stubbed. */
-  isTokenIssuedBeforeTwoFactorEnrollment:
-    jest.requireActual('@librechat/api').isTokenIssuedBeforeTwoFactorEnrollment,
+  /** The retirement cutoff is the assertion under test, so it runs for real rather than stubbed. */
+  isTokenRetired: jest.requireActual('@librechat/api').isTokenRetired,
 }));
 
 const openIdClient = require('openid-client');

@@ -19,7 +19,7 @@ import {
   isTwoFactorEnrollmentRequired,
   isTwoFactorSetupEligible,
   isCredentialLoginBlockedByTwoFactorPolicy,
-  isTokenIssuedBeforeTwoFactorEnrollment,
+  isTokenRetired,
   requireTwoFactorSetupToken,
   requireTwoFactorSetupFinalizationToken,
   requireTwoFactorSetupAcknowledgementToken,
@@ -121,40 +121,84 @@ describe('isCredentialLoginBlockedByTwoFactorPolicy', () => {
   });
 });
 
-describe('isTokenIssuedBeforeTwoFactorEnrollment', () => {
+describe('isTokenRetired', () => {
   const enrolledAt = new Date('2026-01-01T00:00:10.500Z');
   const enrolledSecond = Math.floor(enrolledAt.getTime() / 1000);
 
   it('leaves accounts that never enrolled untouched', () => {
-    expect(isTokenIssuedBeforeTwoFactorEnrollment(0, null)).toBe(false);
-    expect(isTokenIssuedBeforeTwoFactorEnrollment(0, undefined)).toBe(false);
+    expect(isTokenRetired(0, { twoFactorEnrolledAt: null })).toBe(false);
+    expect(isTokenRetired(0, { twoFactorEnrolledAt: undefined })).toBe(false);
   });
 
   it('refuses a token issued before the enrolling second', () => {
-    expect(isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond - 1, enrolledAt)).toBe(true);
+    expect(isTokenRetired(enrolledSecond - 1, { twoFactorEnrolledAt: enrolledAt })).toBe(true);
   });
 
   it('keeps the session minted within the enrolling second', () => {
-    expect(isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond, enrolledAt)).toBe(false);
-    expect(isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond + 1, enrolledAt)).toBe(false);
+    expect(isTokenRetired(enrolledSecond, { twoFactorEnrolledAt: enrolledAt })).toBe(false);
+    expect(isTokenRetired(enrolledSecond + 1, { twoFactorEnrolledAt: enrolledAt })).toBe(false);
   });
 
   it('accepts a stamp that arrives as a string or epoch value', () => {
     expect(
-      isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond - 1, enrolledAt.toISOString()),
+      isTokenRetired(enrolledSecond - 1, { twoFactorEnrolledAt: enrolledAt.toISOString() }),
     ).toBe(true);
-    expect(isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond - 1, enrolledAt.getTime())).toBe(
+    expect(isTokenRetired(enrolledSecond - 1, { twoFactorEnrolledAt: enrolledAt.getTime() })).toBe(
       true,
     );
   });
 
   it('refuses an undatable token once the account is enrolled', () => {
-    expect(isTokenIssuedBeforeTwoFactorEnrollment(undefined, enrolledAt)).toBe(true);
-    expect(isTokenIssuedBeforeTwoFactorEnrollment(Number.NaN, enrolledAt)).toBe(true);
+    expect(isTokenRetired(undefined, { twoFactorEnrolledAt: enrolledAt })).toBe(true);
+    expect(isTokenRetired(Number.NaN, { twoFactorEnrolledAt: enrolledAt })).toBe(true);
   });
 
   it('ignores an unparseable stamp rather than locking every session out', () => {
-    expect(isTokenIssuedBeforeTwoFactorEnrollment(enrolledSecond, 'not-a-date')).toBe(false);
+    expect(isTokenRetired(enrolledSecond, { twoFactorEnrolledAt: 'not-a-date' })).toBe(false);
+  });
+
+  describe('password recovery', () => {
+    const resetAt = new Date('2026-02-02T00:00:10.500Z');
+    const resetSecond = Math.floor(resetAt.getTime() / 1000);
+
+    it('refuses a token minted for the credential the reset revoked', () => {
+      expect(isTokenRetired(resetSecond - 1, { passwordResetAt: resetAt })).toBe(true);
+    });
+
+    it('keeps a token minted from the new credential', () => {
+      expect(isTokenRetired(resetSecond + 1, { passwordResetAt: resetAt })).toBe(false);
+    });
+
+    it('leaves accounts that never reset untouched', () => {
+      expect(isTokenRetired(0, { passwordResetAt: null })).toBe(false);
+      expect(isTokenRetired(0, {})).toBe(false);
+      expect(isTokenRetired(0, null)).toBe(false);
+    });
+
+    it('retires on whichever cutoff the token predates', () => {
+      expect(
+        isTokenRetired(resetSecond - 1, {
+          twoFactorEnrolledAt: enrolledAt,
+          passwordResetAt: resetAt,
+        }),
+      ).toBe(true);
+      expect(
+        isTokenRetired(enrolledSecond - 1, {
+          twoFactorEnrolledAt: enrolledAt,
+          passwordResetAt: resetAt,
+        }),
+      ).toBe(true);
+      expect(
+        isTokenRetired(resetSecond + 1, {
+          twoFactorEnrolledAt: enrolledAt,
+          passwordResetAt: resetAt,
+        }),
+      ).toBe(false);
+    });
+
+    it('refuses an undatable token once the account has reset', () => {
+      expect(isTokenRetired(undefined, { passwordResetAt: resetAt })).toBe(true);
+    });
   });
 });
 
@@ -185,7 +229,10 @@ describe('two-factor setup tokens', () => {
   it('round-trips a purpose-scoped setup token', () => {
     const token = generateTwoFactorSetupToken('user-2', jwtSecret);
 
-    expect(verifyTwoFactorSetupToken(token, jwtSecret)).toBe('user-2');
+    expect(verifyTwoFactorSetupToken(token, jwtSecret)).toEqual({
+      userId: 'user-2',
+      issuedAt: expect.any(Number),
+    });
   });
 
   it('rejects a normal 2FA challenge token for setup', () => {
@@ -410,6 +457,25 @@ describe('requireTwoFactorSetupToken', () => {
     expect(req.user).toEqual({ id: 'user-2' });
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('stamps the mint time, so a later account event can retire the token', () => {
+    const req = {
+      body: { tempToken: generateTwoFactorSetupToken('user-2', jwtSecret) },
+    } as Request;
+    const res = createResponse();
+    const next = jest.fn() as jest.MockedFunction<NextFunction>;
+
+    requireTwoFactorSetupToken(req, res, next);
+
+    const issuedAt = (req as TwoFactorEnrollmentRequest).twoFactorSetupIssuedAt;
+    expect(typeof issuedAt).toBe('number');
+    expect(
+      isTokenRetired(issuedAt, { passwordResetAt: new Date((issuedAt as number) * 1000) }),
+    ).toBe(false);
+    expect(
+      isTokenRetired(issuedAt, { passwordResetAt: new Date(((issuedAt as number) + 1) * 1000) }),
+    ).toBe(true);
   });
 
   it('rejects setup when the deployment policy is disabled', () => {
@@ -805,13 +871,12 @@ describe('required two-factor enrollment lifecycle', () => {
     expect((enrolledAt as Date).getTime()).toBeGreaterThanOrEqual(beforeFinalize);
     /** The token minted a moment earlier is now stale, the one finalization returns is not. */
     expect(
-      isTokenIssuedBeforeTwoFactorEnrollment(
-        Math.floor(beforeFinalize / 1000) - 1,
-        enrolledAt as Date,
-      ),
+      isTokenRetired(Math.floor(beforeFinalize / 1000) - 1, {
+        twoFactorEnrolledAt: enrolledAt as Date,
+      }),
     ).toBe(true);
     expect(
-      isTokenIssuedBeforeTwoFactorEnrollment(Math.ceil(Date.now() / 1000), enrolledAt as Date),
+      isTokenRetired(Math.ceil(Date.now() / 1000), { twoFactorEnrolledAt: enrolledAt as Date }),
     ).toBe(false);
   });
 

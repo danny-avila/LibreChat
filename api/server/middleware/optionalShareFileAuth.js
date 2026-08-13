@@ -3,8 +3,8 @@ const jwt = require('jsonwebtoken');
 const {
   isEnabled,
   clearCloudFrontCookies,
+  isTokenRetired,
   isTwoFactorEnrollmentRequired,
-  isTokenIssuedBeforeTwoFactorEnrollment,
 } = require('@librechat/api');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
@@ -108,10 +108,7 @@ const optionalShareFileAuth = async (req, res, next) => {
      * finalization still resolves, and every other authenticated path already refuses the
      * credential it was minted from.
      */
-    if (
-      isTwoFactorEnrollmentRequired(user) ||
-      isTokenIssuedBeforeTwoFactorEnrollment(verified.issuedAt, user.twoFactorEnrolledAt)
-    ) {
+    if (isTwoFactorEnrollmentRequired(user) || isTokenRetired(verified.issuedAt, user)) {
       clearCloudFrontCookiesForUser(res, user);
       return next();
     }

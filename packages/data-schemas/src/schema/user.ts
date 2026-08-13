@@ -52,6 +52,10 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       maxlength: 128,
       select: false,
     },
+    passwordResetAt: {
+      type: Date,
+      default: null,
+    },
     avatar: {
       type: String,
       required: false,

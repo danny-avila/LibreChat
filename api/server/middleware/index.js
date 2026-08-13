@@ -1,3 +1,4 @@
+const blockRetiredSetupToken = require('./blockRetiredSetupToken');
 const validatePasswordReset = require('./validatePasswordReset');
 const setTwoFactorTempUser = require('./setTwoFactorTempUser');
 const { setTwoFactorAcknowledgementTempUser, setTwoFactorFinalizationTempUser } =
@@ -46,6 +47,7 @@ module.exports = {
   setTwoFactorTempUser,
   setTwoFactorAcknowledgementTempUser,
   setTwoFactorFinalizationTempUser,
+  blockRetiredSetupToken,
   checkInviteUser,
   requireLdapAuth,
   requireLocalAuth,

@@ -12,7 +12,7 @@ const {
   buildOpenIDRefreshParams,
   generateTwoFactorSetupToken,
   isTwoFactorEnrollmentRequired,
-  isTokenIssuedBeforeTwoFactorEnrollment,
+  isTokenRetired,
 } = require('@librechat/api');
 const {
   requestPasswordReset,
@@ -299,11 +299,12 @@ const refreshController = async (req, res) => {
     /**
      * Enrollment promotes `twoFactorEnabled` before its session revocation runs, so a refresh
      * credential minted beforehand would otherwise buy an access token stamped after the cutoff.
-     * Dating the credential keeps that closed whether or not the revocation ever succeeded.
+     * Dating the credential keeps that closed whether or not the revocation ever succeeded, and
+     * covers password recovery on the same terms.
      */
-    if (isTokenIssuedBeforeTwoFactorEnrollment(payload?.iat, user.twoFactorEnrolledAt)) {
+    if (isTokenRetired(payload?.iat, user)) {
       logger.warn(
-        `[refreshController] Refresh token predates two-factor enrollment: userId=${userId}`,
+        `[refreshController] Refresh token predates enrollment or password reset: userId=${userId}`,
       );
       res.clearCookie('refreshToken');
       return res.status(401).send('Refresh token expired or not found for this user');

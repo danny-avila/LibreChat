@@ -107,6 +107,7 @@ router.post(
   middleware.twoFactorSetupLimiter,
   middleware.checkBan,
   requireTwoFactorSetupToken,
+  middleware.blockRetiredSetupToken,
   enable2FA,
 );
 router.post(
@@ -115,6 +116,7 @@ router.post(
   middleware.twoFactorTempLimiter,
   middleware.checkBan,
   requireTwoFactorSetupToken,
+  middleware.blockRetiredSetupToken,
   confirm2FASetupWithTempToken,
 );
 router.post(

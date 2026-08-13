@@ -93,6 +93,32 @@ describe('jwtStrategy', () => {
       expect(user).toBe(false);
     });
 
+    it('refuses an access token minted before a password reset', async () => {
+      getUserById.mockResolvedValue({
+        _id: { toString: () => 'user-3' },
+        role: SystemRoles.USER,
+        twoFactorEnrolledAt: null,
+        passwordResetAt: enrolledAt,
+      });
+
+      const { user } = await invokeVerify({ id: 'user-3', iat: enrolledSecond - 1 });
+
+      expect(user).toBe(false);
+    });
+
+    it('accepts an access token minted after a password reset', async () => {
+      getUserById.mockResolvedValue({
+        _id: { toString: () => 'user-3' },
+        role: SystemRoles.USER,
+        twoFactorEnrolledAt: null,
+        passwordResetAt: enrolledAt,
+      });
+
+      const { user } = await invokeVerify({ id: 'user-3', iat: enrolledSecond + 60 });
+
+      expect(user.id).toBe('user-3');
+    });
+
     it('accepts the session minted within the enrolling second', async () => {
       mockEnrolledUser();
 

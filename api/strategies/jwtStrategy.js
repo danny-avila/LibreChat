@@ -1,7 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
-const { isTokenIssuedBeforeTwoFactorEnrollment } = require('@librechat/api');
+const { isTokenRetired } = require('@librechat/api');
 const { getUserById, updateUser } = require('~/models');
 
 // JWT strategy
@@ -15,9 +15,10 @@ const jwtLogin = () =>
       try {
         const user = await getUserById(payload?.id, '-password -__v -totpSecret -backupCodes');
         if (user) {
-          if (isTokenIssuedBeforeTwoFactorEnrollment(payload?.iat, user.twoFactorEnrolledAt)) {
+          if (isTokenRetired(payload?.iat, user)) {
             logger.warn(
-              '[jwtLogin] JwtStrategy => token predates two-factor enrollment: ' + payload?.id,
+              '[jwtLogin] JwtStrategy => token predates enrollment or password reset: ' +
+                payload?.id,
             );
             return done(null, false);
           }

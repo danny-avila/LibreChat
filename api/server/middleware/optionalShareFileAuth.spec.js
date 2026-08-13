@@ -3,7 +3,7 @@ const mockGetUserById = jest.fn();
 const mockFindSession = jest.fn();
 const mockRunAsSystem = jest.fn((fn) => fn());
 const mockIsTwoFactorEnrollmentRequired = jest.fn(() => false);
-const mockIsTokenIssuedBeforeTwoFactorEnrollment = jest.fn(() => false);
+const mockIsTokenRetired = jest.fn(() => false);
 const mockClearCloudFrontCookies = jest.fn();
 
 jest.mock('jsonwebtoken', () => ({ verify: (...args) => mockVerify(...args) }));
@@ -11,8 +11,7 @@ jest.mock('@librechat/api', () => ({
   isEnabled: (v) => v === 'true' || v === true,
   clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
   isTwoFactorEnrollmentRequired: (...args) => mockIsTwoFactorEnrollmentRequired(...args),
-  isTokenIssuedBeforeTwoFactorEnrollment: (...args) =>
-    mockIsTokenIssuedBeforeTwoFactorEnrollment(...args),
+  isTokenRetired: (...args) => mockIsTokenRetired(...args),
 }));
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn() },
@@ -36,7 +35,7 @@ describe('optionalShareFileAuth', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTwoFactorEnrollmentRequired.mockReturnValue(false);
-    mockIsTokenIssuedBeforeTwoFactorEnrollment.mockReturnValue(false);
+    mockIsTokenRetired.mockReturnValue(false);
     process.env.JWT_REFRESH_SECRET = 'test-secret';
   });
 
@@ -118,7 +117,7 @@ describe('optionalShareFileAuth', () => {
       twoFactorEnabled: true,
       twoFactorEnrolledAt: new Date(2000 * 1000),
     });
-    mockIsTokenIssuedBeforeTwoFactorEnrollment.mockReturnValue(true);
+    mockIsTokenRetired.mockReturnValue(true);
     const req = { headers: { cookie: 'refreshToken=stale.jwt' } };
 
     const next = await run(req);
@@ -145,7 +144,10 @@ describe('optionalShareFileAuth', () => {
 
     await run(req);
 
-    expect(mockIsTokenIssuedBeforeTwoFactorEnrollment).toHaveBeenCalledWith(1234, enrolledAt);
+    expect(mockIsTokenRetired).toHaveBeenCalledWith(
+      1234,
+      expect.objectContaining({ twoFactorEnrolledAt: enrolledAt }),
+    );
   });
 
   it('dates an OpenID cookie viewer by its own iat too', async () => {
@@ -166,7 +168,10 @@ describe('optionalShareFileAuth', () => {
 
     await run(req);
 
-    expect(mockIsTokenIssuedBeforeTwoFactorEnrollment).toHaveBeenCalledWith(4321, enrolledAt);
+    expect(mockIsTokenRetired).toHaveBeenCalledWith(
+      4321,
+      expect.objectContaining({ twoFactorEnrolledAt: enrolledAt }),
+    );
     delete process.env.OPENID_REUSE_TOKENS;
   });
 

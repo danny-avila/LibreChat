@@ -559,6 +559,43 @@ describe('validateImageRequest middleware', () => {
       expect(res.status).not.toHaveBeenCalled();
     });
 
+    test('refuses a cookie minted before a password reset', async () => {
+      const resetAt = new Date();
+      getUserById.mockResolvedValue({
+        provider: 'local',
+        twoFactorEnabled: true,
+        twoFactorEnrolledAt: null,
+        passwordResetAt: resetAt,
+      });
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(
+        Math.floor(resetAt.getTime() / 1000) - 60,
+      )}`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.send).toHaveBeenCalledWith('Access Denied');
+    });
+
+    test('accepts a cookie minted after a password reset', async () => {
+      const resetAt = new Date();
+      getUserById.mockResolvedValue({
+        provider: 'local',
+        twoFactorEnabled: true,
+        twoFactorEnrolledAt: null,
+        passwordResetAt: resetAt,
+      });
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(
+        Math.floor(resetAt.getTime() / 1000) + 60,
+      )}`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
     test('refuses an account that still owes required enrollment', async () => {
       process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
       getUserById.mockResolvedValue({

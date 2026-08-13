@@ -4,8 +4,9 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
   getBasePath,
+  isTokenRetired,
+  TOKEN_RETIREMENT_FIELDS,
   isTwoFactorEnrollmentRequired,
-  isTokenIssuedBeforeTwoFactorEnrollment,
 } = require('@librechat/api');
 const { getUserById } = require('~/models');
 
@@ -53,16 +54,16 @@ function validateToken(refreshToken) {
 }
 
 /**
- * Applies the two-factor gates that `requireJwtAuth` and the refresh endpoint already enforce.
+ * Applies the credential gates that `requireJwtAuth` and the refresh endpoint already enforce.
  *
- * This route authenticates from the cookie alone, so without these checks a credential minted
- * before enrollment keeps reading images after enrollment has retired it everywhere else, and an
- * account still owing required enrollment keeps reading them throughout.
+ * This route authenticates from the cookie alone, so without these checks a credential retired by
+ * enrollment or by a password reset keeps reading images after it has been refused everywhere
+ * else, and an account still owing required enrollment keeps reading them throughout.
  * @param {string} userId - The user named by the presented token
  * @param {number} [issuedAtSeconds] - The token's `iat` claim
  * @returns {Promise<string|null>} - Reason to deny, or null when the request may proceed
  */
-async function getTwoFactorDenialReason(userId, issuedAtSeconds) {
+async function getCredentialDenialReason(userId, issuedAtSeconds) {
   /**
    * Resolve in system context: this route authenticates from the cookie alone, so it never runs
    * `requireJwtAuth` and never establishes a tenant. Under strict tenant isolation a tenant-scoped
@@ -70,14 +71,14 @@ async function getTwoFactorDenialReason(userId, issuedAtSeconds) {
    * from the verified token and is only ever used to deny, exactly as `optionalShareFileAuth` does.
    */
   const user = await runAsSystem(() =>
-    getUserById(userId, 'provider twoFactorEnabled twoFactorEnrolledAt'),
+    getUserById(userId, `provider twoFactorEnabled ${TOKEN_RETIREMENT_FIELDS}`),
   );
   if (!user) {
     return 'No user found';
   }
 
-  if (isTokenIssuedBeforeTwoFactorEnrollment(issuedAtSeconds, user.twoFactorEnrolledAt)) {
-    return 'Token predates two-factor enrollment';
+  if (isTokenRetired(issuedAtSeconds, user)) {
+    return 'Token predates enrollment or password reset';
   }
 
   if (isTwoFactorEnrollmentRequired(user)) {
@@ -190,7 +191,7 @@ function createValidateImageRequest(secureImageLinks) {
       }
 
       /** Read last, so a request rejected on its path never reaches the database */
-      const denialReason = await getTwoFactorDenialReason(userIdForPath, issuedAtSeconds);
+      const denialReason = await getCredentialDenialReason(userIdForPath, issuedAtSeconds);
       if (denialReason) {
         logger.warn(`[validateImageRequest] ${denialReason}`);
         return res.status(403).send('Access Denied');

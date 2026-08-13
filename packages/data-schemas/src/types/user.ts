@@ -17,6 +17,11 @@ export interface IUser extends Document {
   email: string;
   emailVerified: boolean;
   password?: string;
+  /**
+   * When password recovery last replaced this account's credential. Bearer tokens are stateless,
+   * so this is the cutoff that retires the ones minted for the password the reset revoked.
+   */
+  passwordResetAt?: Date | null;
   avatar?: string;
   provider: string;
   role?: string;
