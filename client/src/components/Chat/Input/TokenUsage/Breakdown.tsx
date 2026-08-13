@@ -1,3 +1,4 @@
+import { Button } from '@librechat/client';
 import { ExternalLink } from 'lucide-react';
 import type { TokenUsageView } from '~/hooks/Chat/useTokenUsage';
 import type { CurrencyConfig } from '~/utils';
@@ -226,15 +227,12 @@ export default function Breakdown({
       {langfuseSessionUrl && (
         <>
           <div className="border-t border-border-light" role="separator" />
-          <a
-            href={langfuseSessionUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between gap-2 text-sm text-text-primary hover:underline"
-          >
-            <span>{localize('com_ui_langfuse_view_session')}</span>
-            <ExternalLink className="size-4 shrink-0" aria-hidden="true" />
-          </a>
+          <Button asChild variant="link" className="h-auto w-full justify-between gap-2 p-0">
+            <a href={langfuseSessionUrl} target="_blank" rel="noopener noreferrer">
+              <span>{localize('com_ui_langfuse_view_session')}</span>
+              <ExternalLink className="size-4 shrink-0" aria-hidden="true" />
+            </a>
+          </Button>
         </>
       )}
     </div>

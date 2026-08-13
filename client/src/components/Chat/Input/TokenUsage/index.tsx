@@ -1,7 +1,8 @@
 import { memo, useRef } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { TooltipAnchor } from '@librechat/client';
-import { Constants, type TConversation } from 'librechat-data-provider';
+import { Constants } from 'librechat-data-provider';
+import type { TConversation } from 'librechat-data-provider';
 import type { CurrencyConfig } from '~/utils';
 import { useGetLangfuseSessionLinkQuery, useGetStartupConfig } from '~/data-provider';
 import { formatTokens, formatCost, cn } from '~/utils';
