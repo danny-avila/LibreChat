@@ -110,6 +110,7 @@ const MIN_ACTIVITIES = 2;
 const MAX_CONTEXT_ITEMS = 6;
 const MAX_EXCERPT_CHARS = 600;
 const REASONING_ANCHOR_CHARS = 80;
+const SUBSTANTIAL_TEXT_CHARS = 240;
 const OUTPUT_CHAR_LIMIT = 160;
 const PHASE_TIMEOUT_MS = 12_000;
 /** Twelve enter the SDK prompt; one extra preserves its omitted-activity row. */
@@ -544,10 +545,13 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const reasoningStepKeys = new Map<string, string>();
   const stepKinds = new Map<
     string,
-    { kind: 'text' | 'think'; phase?: AssistantTextPhase; captureContext?: boolean }
+    {
+      kind: 'text' | 'think';
+      phase?: AssistantTextPhase;
+      captureContext?: boolean;
+    }
   >();
   const textContextByStepId = new Map<string, AssistantContextEntry>();
-  let lastRootTextStepId: string | undefined;
 
   const clear = () => {
     activities = [];
@@ -565,7 +569,6 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     overflowReasoningAnchors.clear();
     overflowReasoningAnchorIndex.clear();
     contributingAgentIds.clear();
-    lastRootTextStepId = undefined;
   };
 
   const trackActivity = (activity: TrackedActivity) => {
@@ -726,7 +729,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const toolStart = findTrackedToolStart(currentParts, activity);
       return toolStart != null ? { ...activity, startIndex: toolStart } : activity;
     });
-    const contextSnapshot = assistantContext.map(({ text }) => text);
+    const contextSnapshot = assistantContext
+      .map(({ text }) => text)
+      .filter((text) => text.trim().length > 0);
     /** Completion-finalized phases leave the final root text outside their
      *  UI bounds. Remove its matching retained excerpt from the label prompt
      *  as well, or the parent can paraphrase the answer it does not contain.
@@ -949,35 +954,22 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
               }
               return result;
             } else {
-              if (step.groupId == null) {
-                /** `final_answer` closes immediately before its text streams.
-                 *  Commentary does not: if it is the root run's last text,
-                 *  completion must leave it outside the parent like any
-                 *  unphased answer. Later activities still invalidate this
-                 *  candidate in `complete`. */
-                lastRootTextStepId = phase === 'final_answer' ? undefined : step.id;
-              }
-              if (phase === 'final_answer' && step.groupId == null) {
+              const isRoot = step.groupId == null;
+              if (phase !== 'commentary' && isRoot) {
                 addPendingReasoning(step.agentId ?? 'root');
-                stepKinds.set(step.id, { kind, phase, captureContext: false });
-                close(phase);
-              } else {
-                if (phase == null && step.groupId == null) {
-                  addPendingReasoning(step.agentId ?? 'root');
-                }
-                stepKinds.set(step.id, {
-                  kind,
-                  ...(phase != null && { phase }),
-                  captureContext: true,
-                });
-                const contextEntry: AssistantContextEntry = { stepId: step.id, text: '' };
-                assistantContext.push(contextEntry);
-                textContextByStepId.set(step.id, contextEntry);
-                if (assistantContext.length > MAX_CONTEXT_ITEMS) {
-                  const removed = assistantContext.shift();
-                  if (removed?.stepId != null) {
-                    textContextByStepId.delete(removed.stepId);
-                  }
+              }
+              stepKinds.set(step.id, {
+                kind,
+                ...(phase != null && { phase }),
+                captureContext: true,
+              });
+              const contextEntry: AssistantContextEntry = { stepId: step.id, text: '' };
+              assistantContext.push(contextEntry);
+              textContextByStepId.set(step.id, contextEntry);
+              if (assistantContext.length > MAX_CONTEXT_ITEMS) {
+                const removed = assistantContext.shift();
+                if (removed?.stepId != null) {
+                  textContextByStepId.delete(removed.stepId);
                 }
               }
             }
@@ -999,6 +991,18 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
             if (text && contextEntry != null) {
               contextEntry.text = `${contextEntry.text}${text}`.slice(-MAX_EXCERPT_CHARS);
             }
+            const result = messageHandler.handle(event, data, metadata, graph);
+            const boundaryIndex = id ? deps.getStepIndex?.(id) : undefined;
+            if (
+              contextEntry != null &&
+              contextEntry.text.trim().length > SUBSTANTIAL_TEXT_CHARS &&
+              boundaryIndex != null
+            ) {
+              assistantContext = assistantContext.filter((entry) => entry !== contextEntry);
+              textContextByStepId.delete(id ?? '');
+              close(tracked.phase, boundaryIndex);
+            }
+            return result;
           }
           return messageHandler.handle(event, data, metadata, graph);
         },
@@ -1025,34 +1029,23 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   };
 
   const complete = () => {
-    let finalTextIndex =
-      lastRootTextStepId == null ? undefined : deps.getStepIndex?.(lastRootTextStepId);
+    let finalTextIndex: number | undefined;
     const parts = deps.getContentParts();
-    if (
-      finalTextIndex != null &&
-      (parts[finalTextIndex]?.type !== ContentTypes.TEXT ||
-        !textValue(parts[finalTextIndex]?.text).trim())
-    ) {
-      finalTextIndex = undefined;
-    }
-    /** The host step map is an event-coordinate hint, not the authoritative
-     *  rendered position. Activity-label reservations advance the shared
-     *  content offset after earlier steps were indexed, and a provider can
-     *  materialize the final text at a later slot. Always reconcile against
-     *  the live parts so a stale-but-defined step index cannot pull the final
-     *  answer into the parent phase. */
+    /** A live substantial-text boundary normally closes its phase while
+     *  streaming. Reconcile persisted content as a fallback for resume paths
+     *  where the original delta crossed the boundary before this wiring was
+     *  attached. */
     const definedIndices = Object.keys(parts);
     for (let position = definedIndices.length - 1; position >= 0; position -= 1) {
       const index = Number(definedIndices[position]);
       const part = parts[index];
-      /** The UI contract is the last materialized TEXT part, not the last
-       *  part whose provider lane metadata happens to look root-scoped.
-       *  Some MCP runs retain a groupId on their final response, so even a
-       *  `final_answer` part may not have taken the immediate-close branch.
-       *  An already-closed phase has no remaining activities and completion
-       *  is a no-op. The later-activity checks below still reject an
-       *  intermediate lane text when tools or reasoning follow it. */
-      if (part?.type === ContentTypes.TEXT && textValue(part.text).trim()) {
+      /** Provider phase metadata is only a hint. Size determines whether text
+       *  is a standalone result, including MCP responses that retain a lane
+       *  id. Later-activity checks reject stale intermediate boundaries. */
+      if (
+        part?.type === ContentTypes.TEXT &&
+        textValue(part.text).trim().length > SUBSTANTIAL_TEXT_CHARS
+      ) {
         finalTextIndex = index;
         break;
       }
@@ -1111,19 +1104,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         }
         hasLaterPendingReasoningIndex ||=
           reasoning.startIndex != null && reasoning.startIndex >= candidateFinalTextIndex;
-        addReasoningAnchor(
-          pendingReasoningAnchors,
-          pendingReasoningAnchorIndex,
-          reasoning.text,
-        );
+        addReasoningAnchor(pendingReasoningAnchors, pendingReasoningAnchorIndex, reasoning.text);
       }
       const hasLaterPendingReasoning =
         hasLaterPendingReasoningIndex ||
-        hasIndexedReasoningAtOrAfter(
-          parts,
-          pendingReasoningAnchorIndex,
-          candidateFinalTextIndex,
-        );
+        hasIndexedReasoningAtOrAfter(parts, pendingReasoningAnchorIndex, candidateFinalTextIndex);
       if (hasLaterTrackedActivity || hasLaterOverflowActivity || hasLaterPendingReasoning) {
         finalTextIndex = undefined;
       }
