@@ -251,8 +251,12 @@ export const defaultOCRMimeTypes = [
   /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
 ];
 
-/** MIME types routed to the local AnyDoc engine. */
-export const anydocDocumentMimeTypes = [
+/**
+ * Non-PDF document types local extraction handles. Named for the formats rather than
+ * the engine reading them: this list is part of the shared configuration contract the
+ * client validates against, and it should not have to change because the engine did.
+ */
+export const officeDocumentMimeTypes = [
   excelMimeTypes,
   /^application\/msword$/i,
   /^application\/vnd\.ms-word\.document\.macroenabled\.12$/i,
@@ -267,8 +271,8 @@ export const anydocDocumentMimeTypes = [
   /^application\/vnd\.oasis\.opendocument\.(?:text|spreadsheet|presentation)$/i,
 ];
 
-/** MIME types handled by local document extraction. PDFs use pdf-inspector; the rest use AnyDoc. */
-export const documentParserMimeTypes = [/^application\/pdf$/i, ...anydocDocumentMimeTypes];
+/** MIME types handled by local document extraction, PDF first. */
+export const documentParserMimeTypes = [/^application\/pdf$/i, ...officeDocumentMimeTypes];
 
 /** Extension fallback for uploads whose MIME type arrives generic or missing. */
 const parsedDocumentExtensions = new Set([

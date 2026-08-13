@@ -154,6 +154,7 @@ const {
 } = require('@librechat/api');
 const {
   EToolResources,
+  DocumentParser,
   FileSources,
   FileContext,
   RetentionMode,
@@ -270,8 +271,8 @@ describe('processAgentFileUpload', () => {
       const localUpload = jest.fn().mockResolvedValue({
         text: 'text layer only',
         bytes: 15,
-        filepath: FileSources.anydoc,
-        mayEmbedMedia: true,
+        filepath: DocumentParser.anydoc,
+        mayOmitContent: true,
       });
       const remoteOCR = jest.fn().mockResolvedValue({
         text: 'text layer plus the scanned page',
@@ -298,8 +299,8 @@ describe('processAgentFileUpload', () => {
         handleFileUpload: jest.fn().mockResolvedValue({
           text: 'text layer only',
           bytes: 15,
-          filepath: FileSources.anydoc,
-          mayEmbedMedia: true,
+          filepath: DocumentParser.anydoc,
+          mayOmitContent: true,
         }),
       });
       const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null });
@@ -308,7 +309,7 @@ describe('processAgentFileUpload', () => {
 
       expect(checkCapability).not.toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
       expect(db.createFile.mock.calls[0][0]).toEqual(
-        expect.objectContaining({ text: 'text layer only', filepath: FileSources.anydoc }),
+        expect.objectContaining({ text: 'text layer only', filepath: DocumentParser.anydoc }),
       );
     });
 
@@ -317,7 +318,7 @@ describe('processAgentFileUpload', () => {
       const localUpload = jest.fn().mockResolvedValue({
         text: 'the whole document',
         bytes: 18,
-        filepath: FileSources.anydoc,
+        filepath: DocumentParser.anydoc,
       });
       const remoteOCR = jest.fn();
       getStrategyFunctions.mockImplementation((source) => ({
@@ -560,7 +561,7 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile.mock.calls[0][0].type).toBe(PDF_MIME);
     });
 
-    test.each([FileSources.pdf_inspector, FileSources.anydoc])(
+    test.each([DocumentParser.pdf_inspector, DocumentParser.anydoc])(
       'keeps the real MIME type for documents parsed by %s',
       async (marker) => {
         /* `filepath` is a provider marker, not a path. Matching only
@@ -648,7 +649,7 @@ describe('processAgentFileUpload', () => {
       const localUpload = jest.fn().mockResolvedValue({
         text: 'local page one',
         bytes: 14,
-        filepath: FileSources.pdf_inspector,
+        filepath: DocumentParser.pdf_inspector,
         pagesNeedingOcr: [2],
       });
       const remoteUpload = jest.fn().mockResolvedValue({
@@ -694,7 +695,7 @@ describe('processAgentFileUpload', () => {
       const localUpload = jest.fn().mockResolvedValue({
         text: 'local PDF text',
         bytes: 14,
-        filepath: FileSources.pdf_inspector,
+        filepath: DocumentParser.pdf_inspector,
       });
       const remoteOCR = jest.fn().mockResolvedValue({
         text: 'remote OCR text',
@@ -717,7 +718,7 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile.mock.calls[0][0]).toEqual(
         expect.objectContaining({
           text: 'local PDF text',
-          filepath: FileSources.pdf_inspector,
+          filepath: DocumentParser.pdf_inspector,
           type: PDF_MIME,
         }),
       );
@@ -734,7 +735,7 @@ describe('processAgentFileUpload', () => {
         const localUpload = jest.fn().mockResolvedValue({
           text: 'local page one',
           bytes: 14,
-          filepath: FileSources.pdf_inspector,
+          filepath: DocumentParser.pdf_inspector,
           pagesNeedingOcr: [2],
         });
         const remoteUpload = jest.fn().mockResolvedValue({
@@ -805,7 +806,7 @@ describe('processAgentFileUpload', () => {
       const localUpload = jest.fn().mockResolvedValue({
         text: 'local page one',
         bytes: 14,
-        filepath: FileSources.pdf_inspector,
+        filepath: DocumentParser.pdf_inspector,
         pagesNeedingOcr: [2],
       });
       const remoteUpload = jest.fn().mockResolvedValue({
@@ -828,7 +829,7 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile.mock.calls[0][0]).toEqual(
         expect.objectContaining({
           text: 'local page one\n[omitted:2]',
-          filepath: FileSources.pdf_inspector,
+          filepath: DocumentParser.pdf_inspector,
           type: PDF_MIME,
         }),
       );

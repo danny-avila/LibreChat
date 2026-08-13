@@ -940,7 +940,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       bytes,
       filepath,
       pagesNeedingOcr,
-      mayEmbedMedia,
+      mayOmitContent,
     }) => {
       if (pagesNeedingOcr?.length) {
         const pageSummary = summarizeMissingPages(pagesNeedingOcr);
@@ -952,7 +952,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
        * artwork is not evidence that anything was lost. Most documents that carry it
        * carry a logo, so a notice in the model's copy would assert an omission that
        * usually did not happen, on the majority of office uploads. */
-      if (mayEmbedMedia === true) {
+      if (mayOmitContent === true) {
         logger.warn(
           `[processAgentFileUpload] "${file.originalname}" embeds images the local parser reads no text from; configure an OCR service to recover any text they hold.`,
         );
@@ -1003,15 +1003,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         throw err;
       }
       const hasLocalText = !!localResult?.text?.trim();
-      /* Two ways a local result can be incomplete. pdf-inspector names the pages it
-       * could not read; AnyDoc has no page numbers to name, so it reports whether the
-       * document embeds artwork it converted nothing from. Either way the answer is the
-       * same: consult OCR when one is configured, and keep the local text when it is
-       * not. A document with no images and text on every page is complete as it is. */
+      /* Two ways a local result can be incomplete, and an engine reports whichever it can
+       * observe: a page-oriented engine names the pages it could not read, one that returns
+       * undifferentiated text reports only that content may be missing. Either way the
+       * answer is the same: consult OCR when one is configured, and keep the local text
+       * when it is not. A document with nothing omitted is complete as it is. */
       const localNeedsOCR =
         !hasLocalText ||
         !!localResult?.pagesNeedingOcr?.length ||
-        localResult?.mayEmbedMedia === true;
+        localResult?.mayOmitContent === true;
 
       if (hasLocalText && !localNeedsOCR) {
         return await createDocumentTextFile(localResult);

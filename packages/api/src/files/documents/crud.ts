@@ -1,9 +1,73 @@
 import * as fs from 'fs';
-import { megabyte } from 'librechat-data-provider';
+import { megabyte, DocumentParser } from 'librechat-data-provider';
 import type { ParsedDocumentUploadResult } from '~/types';
+import { pdfInspectorSupportedMimeTypes, parseWithPdfInspector } from '~/files/pdfInspector';
 import { anydocFormatFromType, parseWithAnydoc } from '~/files/anydoc';
-import { parseWithPdfInspector } from '~/files/pdfInspector';
 import { withParserAdmission } from './nativeProcess';
+
+/**
+ * One local extraction engine, as the dispatcher sees it.
+ *
+ * The registry below is the only place an engine is named. Adding or replacing one is
+ * an entry here plus its adapter: the upload path, the shared MIME contract and the
+ * provenance of records another engine produced are all untouched by the swap.
+ */
+export interface DocumentExtractor {
+  /** Recorded on the stored record, so a parse can be traced to the engine that made it. */
+  readonly parser: DocumentParser;
+  /** Type handed to the engine when it claimed a file by filename rather than by type. */
+  readonly canonicalMimeType: string;
+  /** Whether this engine reads the declared type, already folded and stripped of parameters. */
+  claimsMimeType(mimeType: string): boolean;
+  /** Whether this engine reads the file on its name alone, for generic declared types. */
+  claimsFileName?(fileName: string): boolean;
+  extract(file: Express.Multer.File, signal?: AbortSignal): Promise<ParsedDocumentUploadResult>;
+}
+
+/**
+ * Registry order matters in one respect only: the last entry is the general-purpose
+ * engine, which answers for any type no other engine claims — including types nothing
+ * supports, whose named refusal is then its own rather than a message this dispatcher
+ * would have to keep in sync with it.
+ */
+const documentExtractors: readonly DocumentExtractor[] = [
+  {
+    parser: DocumentParser.pdf_inspector,
+    canonicalMimeType: 'application/pdf',
+    claimsMimeType: (mimeType) => pdfInspectorSupportedMimeTypes.some((re) => re.test(mimeType)),
+    /* A `.pdf` whose declared type names no other engine is a PDF, whatever that type
+     * says. That covers the browser's `application/octet-stream` and equally a PDF alias
+     * an operator added to the parser allowlist: admission accepts those, and the type
+     * pass above has already given every other engine the chance to claim it. */
+    claimsFileName: (fileName) => /\.pdf$/i.test(fileName),
+    extract: parseWithPdfInspector,
+  },
+  {
+    parser: DocumentParser.anydoc,
+    canonicalMimeType: '',
+    claimsMimeType: (mimeType) => anydocFormatFromType(mimeType) != null,
+    extract: parseWithAnydoc,
+  },
+];
+
+/** Picks the engine for a document: declared type first, filename second. */
+function routeDocument(
+  declaredMimeType: string,
+  fileName: string,
+): { extractor: DocumentExtractor; mimeType: string } {
+  const byType = documentExtractors.find((extractor) => extractor.claimsMimeType(declaredMimeType));
+  if (byType) {
+    return { extractor: byType, mimeType: declaredMimeType };
+  }
+  const byFileName = documentExtractors.find((extractor) => extractor.claimsFileName?.(fileName));
+  if (byFileName) {
+    return { extractor: byFileName, mimeType: byFileName.canonicalMimeType };
+  }
+  return {
+    extractor: documentExtractors[documentExtractors.length - 1],
+    mimeType: declaredMimeType,
+  };
+}
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
 /** Cap on pages named in the omission notice, so a mostly-scanned document cannot
@@ -37,9 +101,9 @@ export function annotateMissingPages(text: string, pagesNeedingOcr?: number[]): 
 }
 
 /**
- * Parses an uploaded document with the local engine specialized for its format.
- * PDFs use the direct pdf-inspector adapter so page-level OCR needs and pdfjs
- * recovery are preserved. Every other accepted document goes through AnyDoc.
+ * Parses an uploaded document with whichever registered engine claims its format,
+ * so that a PDF keeps page-level OCR accounting and pdfjs recovery while every other
+ * accepted document goes to the general-purpose engine.
  *
  * The administrator-facing `fileConfig.documentParser.supportedMimeTypes` gate is
  * evaluated by the upload router before this function. Each engine still validates
@@ -63,23 +127,12 @@ export async function parseDocument({
   }
 
   const declaredMimeType = (file.mimetype ?? '').split(';')[0].trim().toLowerCase();
-  /* A `.pdf` whose declared type names no anydoc format is a PDF, whatever that type
-   * says. That covers the browser's `application/octet-stream` and equally a PDF alias
-   * an operator added to the parser allowlist: admission accepts those now, and sending
-   * one to anydoc would only reach the refusal it raises for `.pdf`. */
-  const namesAnydocFormat = anydocFormatFromType(declaredMimeType) != null;
-  const isPdf =
-    declaredMimeType === 'application/pdf' ||
-    (!namesAnydocFormat && /\.pdf$/i.test(file.originalname));
-  const mimetype = isPdf ? 'application/pdf' : declaredMimeType;
-  const parserFile = mimetype === file.mimetype ? file : { ...file, mimetype };
+  const { extractor, mimeType } = routeDocument(declaredMimeType, file.originalname);
+  const parserFile = mimeType === file.mimetype ? file : { ...file, mimetype: mimeType };
   /* Admission covers the whole parse. A PDF is a child process, then in-process pdfjs
    * recovery, then possibly a second child, and bounding only the children would leave
    * the recovery to pile up behind a cap that never counted it. */
-  const result = await withParserAdmission(
-    () => (isPdf ? parseWithPdfInspector(parserFile, signal) : parseWithAnydoc(parserFile, signal)),
-    signal,
-  );
+  const result = await withParserAdmission(() => extractor.extract(parserFile, signal), signal);
 
   if (!result.text?.trim()) {
     throw new Error('No text found in document');

@@ -258,7 +258,7 @@ describe('pdf-inspector local parser', () => {
 
       expect(result.text).toContain('Invoice');
       expect(result.pagesNeedingOcr).toBeUndefined();
-      expect(result.mayEmbedMedia).toBe(true);
+      expect(result.mayOmitContent).toBe(true);
     } finally {
       fs.unlinkSync(mixed);
     }
@@ -267,7 +267,7 @@ describe('pdf-inspector local parser', () => {
   test('reports nothing for a text-only document', async () => {
     const result = await parseWithPdfInspector(context(pdfFile('sample.pdf')));
 
-    expect(result.mayEmbedMedia).toBeUndefined();
+    expect(result.mayOmitContent).toBeUndefined();
   });
 
   /**
@@ -292,7 +292,7 @@ describe('pdf-inspector local parser', () => {
         const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
         const result = await uploadIsolated(context(pdfFile('sample.pdf')));
 
-        expect(result.mayEmbedMedia).toBe(true);
+        expect(result.mayOmitContent).toBe(true);
         expect(result.pagesNeedingOcr).toBeUndefined();
         expect(result.text).toContain('# Invoice header');
       });
@@ -328,7 +328,7 @@ describe('pdf-inspector local parser', () => {
         expect(result.text).toContain('m u s h y r e c o v e r y');
         /** Recovered text means the page is no longer omitted, which is why the flag matters. */
         expect(result.pagesNeedingOcr).toBeUndefined();
-        expect(result.mayEmbedMedia).toBe(true);
+        expect(result.mayOmitContent).toBe(true);
       });
     } finally {
       jest.dontMock('./native');
@@ -354,7 +354,7 @@ describe('pdf-inspector local parser', () => {
         const { parseWithPdfInspector: uploadIsolated } = await import('./crud');
         const result = await uploadIsolated(context(pdfFile('sample.pdf')));
 
-        expect(result.mayEmbedMedia).toBeUndefined();
+        expect(result.mayOmitContent).toBeUndefined();
         expect(result.pagesNeedingOcr).toEqual([2]);
       });
     } finally {
