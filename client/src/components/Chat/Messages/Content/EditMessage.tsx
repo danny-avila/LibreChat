@@ -207,8 +207,9 @@ const EditMessage = ({
           onKeyDown={handleKeyDown}
           data-testid="message-text-editor"
           className={cn(
-            'max-h-[65vh] min-h-24 w-full resize-y whitespace-pre-wrap break-words rounded-lg',
-            'border border-border-medium bg-surface-tertiary-alt px-3 py-2 text-sm text-text-primary',
+            'message-editor-text max-h-[65vh] min-h-24 w-full resize-y whitespace-pre-wrap',
+            'break-words rounded-lg border border-border-medium bg-surface-tertiary-alt',
+            'px-3 py-2 text-text-primary',
             'focus-visible:outline-none',
             isRTL ? 'text-right' : 'text-left',
             'disabled:opacity-50 md:max-h-[75vh]',

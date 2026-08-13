@@ -90,6 +90,14 @@ describe('EditMessage', () => {
     mockMutateAsync.mockResolvedValue({});
   });
 
+  it('sizes the editor from the configured message font rather than pinning it', () => {
+    renderEditor();
+
+    const editor = screen.getByTestId('message-text-editor');
+    expect(editor).toHaveClass('message-editor-text');
+    expect(editor).not.toHaveClass('text-sm');
+  });
+
   it('waits for a successful save before updating local state and closing', async () => {
     const user = userEvent.setup();
     const { enterEdit } = renderEditor();

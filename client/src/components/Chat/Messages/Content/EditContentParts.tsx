@@ -394,8 +394,9 @@ export default function EditContentParts({
                 minRows={3}
                 dir={isRTL ? 'rtl' : 'ltr'}
                 className={cn(
-                  'max-h-[65vh] min-h-24 w-full resize-y rounded-lg border border-border-medium',
-                  'bg-surface-tertiary-alt px-3 py-2 text-sm font-normal text-text-primary',
+                  'message-editor-text max-h-[65vh] min-h-24 w-full resize-y rounded-lg',
+                  'border border-border-medium bg-surface-tertiary-alt px-3 py-2',
+                  'font-normal text-text-primary',
                   'focus-visible:outline-none',
                   isRTL ? 'text-right' : 'text-left',
                   'disabled:opacity-50 md:max-h-[75vh]',

@@ -418,4 +418,22 @@ describe('EditContentParts', () => {
     expect(editor).toHaveAttribute('dir', 'ltr');
     expect(editor).toHaveClass('text-left');
   });
+
+  it('sizes the editor from the configured message font rather than pinning it', () => {
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    const editor = screen.getByRole('textbox');
+    expect(editor).toHaveClass('message-editor-text');
+    expect(editor).not.toHaveClass('text-sm');
+  });
 });
