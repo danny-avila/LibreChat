@@ -6,6 +6,7 @@ import { stringifyActivityEvidence } from '~/agents/activityLabels/runtime';
 
 type PostToolBatchInput = HookInputByEvent['PostToolBatch'];
 type BatchEntry = PostToolBatchInput['entries'][number];
+type AssistantContextEntry = { stepId?: string; text: string };
 
 export type AssistantTextPhase = 'commentary' | 'final_answer';
 
@@ -451,7 +452,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   }
   let overflowReasoningExcerpt = initialSnapshot?.overflowReasoningExcerpt;
   const contributingAgentIds = new Set(initialSnapshot?.agentIds ?? []);
-  let assistantContext = (initialSnapshot?.assistantContext ?? []).slice(-MAX_CONTEXT_ITEMS);
+  let assistantContext: AssistantContextEntry[] = (initialSnapshot?.assistantContext ?? [])
+    .slice(-MAX_CONTEXT_ITEMS)
+    .map((text) => ({ text }));
   const pendingReasoning = new Map<string, { text: string; agentId?: string; startIndex?: number }>(
     (initialSnapshot?.pendingReasoning ?? []).map(({ key, text, agentId, startIndex }) => {
       const boundedText = text.slice(-MAX_EXCERPT_CHARS);
@@ -476,6 +479,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     string,
     { kind: 'text' | 'think'; phase?: AssistantTextPhase; captureContext?: boolean }
   >();
+  const textContextByStepId = new Map<string, AssistantContextEntry>();
   let lastRootTextStepId: string | undefined;
 
   const clear = () => {
@@ -484,6 +488,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     pendingReasoning.clear();
     reasoningStepKeys.clear();
     stepKinds.clear();
+    textContextByStepId.clear();
     activityCount = 0;
     failedActivityCount = 0;
     partialActivityCount = 0;
@@ -555,7 +560,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         thinkingExcerpts: activity.thinkingExcerpts.map((text) => text.slice(-MAX_EXCERPT_CHARS)),
       }),
     })),
-    assistantContext: assistantContext.slice(-MAX_CONTEXT_ITEMS),
+    assistantContext: assistantContext.slice(-MAX_CONTEXT_ITEMS).map(({ text }) => text),
     pendingReasoning: [...pendingReasoning].map(([key, reasoning]) => ({
       key,
       text: reasoning.text.slice(-MAX_EXCERPT_CHARS),
@@ -647,7 +652,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const toolStart = findTrackedToolStart(currentParts, activity);
       return toolStart != null ? { ...activity, startIndex: toolStart } : activity;
     });
-    const contextSnapshot = [...assistantContext];
+    const contextSnapshot = assistantContext.map(({ text }) => text);
     /** Completion-finalized phases leave the final root text outside their
      *  UI bounds. Remove its matching retained excerpt from the label prompt
      *  as well, or the parent can paraphrase the answer it does not contain.
@@ -777,17 +782,27 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     const ids = new Set(input.entries.map((entry) => entry.toolUseId));
     const parts = deps.getContentParts();
     let childLabelIndex: number | undefined;
+    let batchStartIndex: number | undefined;
     const indices = definedPartIndices(parts);
     for (let position = indices.length - 1; position >= 0; position -= 1) {
       const index = indices[position];
       const part = parts[index];
-      if (part?.type !== ContentTypes.ACTIVITY_LABEL || part.activity_label_type === 'phase') {
-        continue;
+      if (
+        part?.type === ContentTypes.TOOL_CALL &&
+        typeof part.tool_call?.id === 'string' &&
+        ids.has(part.tool_call.id)
+      ) {
+        batchStartIndex = index;
       }
-      const childIds = Array.isArray(part.tool_call_ids) ? part.tool_call_ids : [];
-      if (childIds.some((id) => typeof id === 'string' && ids.has(id))) {
-        childLabelIndex = index;
-        break;
+      if (
+        childLabelIndex == null &&
+        part?.type === ContentTypes.ACTIVITY_LABEL &&
+        part.activity_label_type !== 'phase'
+      ) {
+        const childIds = Array.isArray(part.tool_call_ids) ? part.tool_call_ids : [];
+        if (childIds.some((id) => typeof id === 'string' && ids.has(id))) {
+          childLabelIndex = index;
+        }
       }
     }
     const entries = input.entries.map((entry: BatchEntry) => ({
@@ -809,7 +824,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       ...(reasoning ? { thinkingExcerpts: [reasoning.slice(0, MAX_EXCERPT_CHARS)] } : {}),
       ...(input.executingAgentId != null && { agentId: input.executingAgentId }),
       status: activityStatus,
-      startIndex: findBatchStart(parts, ids),
+      startIndex: batchStartIndex ?? Math.max(0, parts.length - 1),
       toolCallIds: [...ids],
       ...(childLabelIndex != null && { childLabelIndex }),
     });
@@ -881,8 +896,15 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
                   ...(phase != null && { phase }),
                   captureContext: true,
                 });
-                assistantContext.push('');
-                if (assistantContext.length > MAX_CONTEXT_ITEMS) assistantContext.shift();
+                const contextEntry: AssistantContextEntry = { stepId: step.id, text: '' };
+                assistantContext.push(contextEntry);
+                textContextByStepId.set(step.id, contextEntry);
+                if (assistantContext.length > MAX_CONTEXT_ITEMS) {
+                  const removed = assistantContext.shift();
+                  if (removed?.stepId != null) {
+                    textContextByStepId.delete(removed.stepId);
+                  }
+                }
               }
             }
           }
@@ -899,14 +921,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           const tracked = id ? stepKinds.get(id) : undefined;
           if (tracked?.kind === 'text' && tracked.captureContext === true) {
             const text = deltaText(data, 'text');
-            if (text) {
-              const last = assistantContext.length - 1;
-              const next = `${last >= 0 ? assistantContext[last] : ''}${text}`.slice(
-                -MAX_EXCERPT_CHARS,
-              );
-              if (last >= 0) assistantContext[last] = next;
-              else assistantContext.push(next);
-              if (assistantContext.length > MAX_CONTEXT_ITEMS) assistantContext.shift();
+            const contextEntry = id ? textContextByStepId.get(id) : undefined;
+            if (text && contextEntry != null) {
+              contextEntry.text = `${contextEntry.text}${text}`.slice(-MAX_EXCERPT_CHARS);
             }
           }
           return messageHandler.handle(event, data, metadata, graph);

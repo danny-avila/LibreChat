@@ -106,6 +106,72 @@ describe('createActivityPhaseWiring', () => {
     expect(emitLabelEvent).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps interleaved parallel text context keyed to its run step', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+    ];
+    const generatePhase = jest.fn(async () => ({ label: 'Compared both parallel findings' }));
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase,
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_MESSAGE_DELTA]: { handle: jest.fn() },
+    });
+    const emitTextStep = (id: string, agentId: string) =>
+      handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+        GraphEvents.ON_RUN_STEP,
+        {
+          id,
+          agentId,
+          groupId: agentId,
+          stepDetails: {
+            type: StepTypes.MESSAGE_CREATION,
+            message_creation: { message_id: 'm', content_type: 'text' },
+          },
+        },
+        undefined,
+        undefined,
+      );
+    const emitTextDelta = (id: string, text: string) =>
+      handlers?.[GraphEvents.ON_MESSAGE_DELTA]?.handle(
+        GraphEvents.ON_MESSAGE_DELTA,
+        { id, delta: { content: { type: ContentTypes.TEXT, text } } },
+        undefined,
+        undefined,
+      );
+
+    emitTextStep('lane-a', 'agent-a');
+    emitTextStep('lane-b', 'agent-b');
+    emitTextDelta('lane-a', 'First lane ');
+    emitTextDelta('lane-b', 'Second lane');
+    emitTextDelta('lane-a', 'completed');
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'root-final',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text', phase: 'final_answer' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+
+    await flushDetached();
+    expect(generatePhase).toHaveBeenCalledWith(
+      expect.objectContaining({ assistantContext: ['First lane completed', 'Second lane'] }),
+    );
+  });
+
   it('reanchors a tool that lands after the phase hook observes its child label', async () => {
     const parts: LooseContentPart[] = [];
     const wiring = createActivityPhaseWiring({
