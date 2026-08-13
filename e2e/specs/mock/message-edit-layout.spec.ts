@@ -113,7 +113,7 @@ test.describe('message edit layout stability', () => {
     await editors.nth(1).fill(`${replyText(label)} revised`);
     await expect
       .poll(async () => (await measureEditor(page)).status)
-      .toBe('Save these edits first, then rerun the response.');
+      .toBe('Rerunning applies one edited section at a time. Save to keep all of these changes.');
     const both = await measureEditor(page);
 
     expect(single.footer).toBe(clean.footer);
