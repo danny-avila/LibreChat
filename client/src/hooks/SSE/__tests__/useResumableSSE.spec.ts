@@ -3935,7 +3935,7 @@ describe('useResumableSSE - sync response identity', () => {
     unmount();
   });
 
-  it('does not overwrite an older response sibling during regeneration', async () => {
+  it('appends a missing submission-owned response after older regeneration siblings', async () => {
     const userMessage = {
       messageId: 'server-user-id',
       conversationId: CONV_ID,
@@ -3964,7 +3964,7 @@ describe('useResumableSSE - sync response identity', () => {
       resumeStreamId: CONV_ID,
     } as TSubmission & { resumeStreamId: string };
     const chatHelpers = buildChatHelpers();
-    chatHelpers.getMessages.mockReturnValue([userMessage, olderResponse, activeResponse]);
+    chatHelpers.getMessages.mockReturnValue([userMessage, olderResponse]);
 
     const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
     await act(async () => {
@@ -3980,6 +3980,11 @@ describe('useResumableSSE - sync response identity', () => {
     expect(updatedMessages.find((message) => message.messageId === 'older-response-id')).toEqual(
       olderResponse,
     );
+    expect(updatedMessages.map((message) => message.messageId)).toEqual([
+      'server-user-id',
+      'older-response-id',
+      'active-response-id',
+    ]);
     expect(updatedMessages.find((message) => message.messageId === 'active-response-id')).toEqual({
       ...activeResponse,
       content: aggregatedContent,
