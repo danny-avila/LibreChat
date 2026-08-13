@@ -447,28 +447,168 @@ interface PhasePartition {
 }
 
 /**
- * Whether an activity belongs to the phase closing at `boundary`. Shared by
- * the boundary partition and the completion boundary so the two cannot drift
- * on what counts as work lying after a given index.
+ * Where an activity sits in the live content, resolved once. Positional fields
+ * on `TrackedActivity` are captured at different times against an array that
+ * keeps moving — parts materialize after their hooks fire, label reservations
+ * shift indices, persistence compacts, resume prepends — so each is an input
+ * here rather than something a boundary consults directly.
  */
-function closesBeforeBoundary(
+interface ResolvedPosition {
+  /** Materialized indices of this activity's tool calls, ascending. */
+  toolIndices: number[];
+  /** Where the activity begins once anchors and prior floors are applied. */
+  startsAt: number;
+  /** The highest index this activity is known to reach, including a saved
+   *  fallback for calls that have not materialized yet. `undefined` when
+   *  nothing in the live content locates it at all. */
+  endsAt?: number;
+  /** Whether the saved fallback is still doing work. Once every tracked call
+   *  has materialized it is stale, and persisting it would hold the activity
+   *  past a boundary its real position precedes after a resume. */
+  awaitingTools: boolean;
+}
+
+function resolvePosition(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   activity: TrackedActivity,
-  boundary: number | undefined,
-  toolIndices?: number[],
-): boolean {
+): ResolvedPosition {
+  const toolIndices = findTrackedToolIndices(parts, activity);
+  const toolStart = toolIndices[0];
+  /** A saved fallback outlives its purpose once every tracked call has
+   *  materialized; keeping it would hold the activity past a boundary its
+   *  real position precedes. */
+  const trackedToolCount = activity.toolCallIds?.length ?? 0;
+  const awaitingTools = trackedToolCount === 0 || toolIndices.length < trackedToolCount;
+  const fallback = awaitingTools ? activity.unresolvedToolStartIndex : undefined;
+  if (toolStart != null) {
+    return {
+      toolIndices,
+      awaitingTools,
+      startsAt: Math.max(toolStart, activity.partitionStartIndex ?? 0),
+      endsAt: Math.max(toolIndices[toolIndices.length - 1], fallback ?? Number.NEGATIVE_INFINITY),
+    };
+  }
+  /** Anchors carry only stable evidence and must be re-located against the
+   *  current content; a full activity keeps the index maintained live, which
+   *  repeated reasoning must not drag back across a prior phase. */
+  const startsAt =
+    activity.bounded === true ? findTrackedStart(parts, activity) : activity.startIndex;
+  const materializedStart = findMaterializedActivityStart(parts, activity, toolIndices);
+  const located =
+    fallback != null ? Math.max(fallback, materializedStart ?? fallback) : materializedStart;
+  return { toolIndices, awaitingTools, startsAt, ...(located != null && { endsAt: located }) };
+}
+
+/**
+ * Whether an activity belongs to the phase closing at `boundary`. Takes only a
+ * resolved position, so no caller can reach past it to a raw field: an
+ * activity closes early exactly when nothing locates it beyond the boundary.
+ * A completed batch straddling the boundary therefore stays whole on the later
+ * side rather than leaving one tool call outside its own parent.
+ */
+function closesBeforeBoundary(position: ResolvedPosition, boundary: number | undefined): boolean {
   if (boundary == null) {
     return true;
   }
-  if (activity.unresolvedToolStartIndex != null && activity.unresolvedToolStartIndex >= boundary) {
-    return false;
+  return position.endsAt == null || position.endsAt < boundary;
+}
+
+/**
+ * Every field of a bounded anchor, stated explicitly. Anchors are built by
+ * demoting an activity and by folding two together, and both used to spread
+ * one side and hand-pick the rest — so any field nobody named was dropped
+ * silently, and nothing failed until a boundary happened to land badly.
+ * Mapping over `keyof Required<TrackedActivity>` makes every field mandatory
+ * at the construction site: adding one to `TrackedActivity` is a type error
+ * until its anchor semantics are decided here.
+ */
+type AnchorFields = { [K in keyof Required<TrackedActivity>]: TrackedActivity[K] };
+
+function laterDefinedIndex(earlier?: number, later?: number): number | undefined {
+  if (earlier == null) {
+    return later;
   }
-  const materializedToolIndices = toolIndices ?? findTrackedToolIndices(parts, activity);
-  if (materializedToolIndices.length > 0) {
-    return materializedToolIndices.every((index) => index < boundary);
-  }
-  const materializedStart = findMaterializedActivityStart(parts, activity, materializedToolIndices);
-  return materializedStart == null || materializedStart < boundary;
+  return later == null ? earlier : Math.max(earlier, later);
+}
+
+function foldedAgentIds(earlier: TrackedActivity, later: TrackedActivity): string[] | undefined {
+  const folded = [
+    ...new Set(
+      [
+        ...(earlier.mergedAgentIds ?? []),
+        ...(earlier.agentId != null ? [earlier.agentId] : []),
+        ...(later.mergedAgentIds ?? []),
+        ...(later.agentId != null ? [later.agentId] : []),
+      ].filter((id) => id !== earlier.agentId),
+    ),
+  ];
+  return folded.length > 0 ? folded : undefined;
+}
+
+/** Strips prompt evidence while keeping everything a boundary reasons about. */
+function boundedAnchor(activity: TrackedActivity): TrackedActivity {
+  const fields: AnchorFields = {
+    startIndex: activity.startIndex,
+    bounded: true,
+    status: activity.status,
+    partitionStartIndex: activity.partitionStartIndex,
+    unresolvedToolStartIndex: activity.unresolvedToolStartIndex,
+    toolCallIds: activity.toolCallIds?.slice(-MAX_RETAINED_TOOL_ENTRIES),
+    thinkingExcerpts: activity.thinkingExcerpts
+      ?.slice(-MAX_RETAINED_TOOL_ENTRIES)
+      .map((text) => text.slice(-REASONING_ANCHOR_CHARS)),
+    agentId: activity.agentId,
+    mergedCount: activity.mergedCount,
+    mergedFailedCount: activity.mergedFailedCount,
+    mergedPartialCount: activity.mergedPartialCount,
+    mergedAgentIds: activity.mergedAgentIds,
+    /** An anchor is never summarized directly, so prompt evidence and the
+     *  child-label slot are deliberately not carried. */
+    label: undefined,
+    entries: undefined,
+    childLabelIndex: undefined,
+  };
+  return fields;
+}
+
+/** Folds `later` into `earlier`, which keeps its position. */
+function mergeAnchors(earlier: TrackedActivity, later: TrackedActivity): TrackedActivity {
+  const mergedFailedCount = countFailedActivities([earlier, later]);
+  const mergedPartialCount = countPartialActivities([earlier, later]);
+  const excerpts =
+    earlier.thinkingExcerpts != null || later.thinkingExcerpts != null
+      ? [...(earlier.thinkingExcerpts ?? []), ...(later.thinkingExcerpts ?? [])].slice(
+          -MAX_RETAINED_TOOL_ENTRIES,
+        )
+      : undefined;
+  const fields: AnchorFields = {
+    /** The pair starts where its first activity did; the later side's floor
+     *  describes a position being absorbed and must not move the survivor. */
+    startIndex: earlier.startIndex,
+    partitionStartIndex: earlier.partitionStartIndex,
+    bounded: true,
+    status: earlier.status,
+    /** The later side may still be waiting on a tool call. Dropping its
+     *  fallback lets a boundary close the whole merged count on the earlier
+     *  side; resolution clears it once every retained id materializes. */
+    unresolvedToolStartIndex: laterDefinedIndex(
+      earlier.unresolvedToolStartIndex,
+      later.unresolvedToolStartIndex,
+    ),
+    toolCallIds: [...(earlier.toolCallIds ?? []), ...(later.toolCallIds ?? [])].slice(
+      -MAX_RETAINED_TOOL_ENTRIES,
+    ),
+    thinkingExcerpts: excerpts,
+    agentId: earlier.agentId,
+    mergedCount: (earlier.mergedCount ?? 1) + (later.mergedCount ?? 1),
+    mergedFailedCount: mergedFailedCount > 0 ? mergedFailedCount : undefined,
+    mergedPartialCount: mergedPartialCount > 0 ? mergedPartialCount : undefined,
+    mergedAgentIds: foldedAgentIds(earlier, later),
+    label: undefined,
+    entries: undefined,
+    childLabelIndex: undefined,
+  };
+  return fields;
 }
 
 /**
@@ -1083,41 +1223,23 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
      *  where a retained straddling batch reanchors — so the shared content
      *  array is walked once per activity and the result carried through. */
     const resolved = activities.map((activity) => {
-      const toolIndices = findTrackedToolIndices(currentParts, activity);
-      const toolStart = toolIndices[0];
-      if (toolStart != null) {
-        /** The saved fallback outlives its purpose once every tracked call has
-         *  materialized. Keeping it would reject the activity at any boundary
-         *  below that stale index even though its real position is earlier. */
-        const fullyMaterialized =
-          (activity.toolCallIds?.length ?? 0) > 0 &&
-          toolIndices.length >= (activity.toolCallIds?.length ?? 0);
-        const { unresolvedToolStartIndex, ...rest } = activity;
-        return {
-          activity: {
-            ...rest,
-            ...(!fullyMaterialized &&
-              unresolvedToolStartIndex != null && { unresolvedToolStartIndex }),
-            startIndex: Math.max(toolStart, activity.partitionStartIndex ?? 0),
-          },
-          toolIndices,
-        };
-      }
-      /** Anchors carry only stable evidence and must be re-located against the
-       *  current content; a full activity keeps the index maintained live,
-       *  which repeated reasoning must not drag back across a prior phase. */
+      const position = resolvePosition(currentParts, activity);
+      const { unresolvedToolStartIndex, ...rest } = activity;
       return {
-        activity:
-          activity.bounded === true
-            ? { ...activity, startIndex: findTrackedStart(currentParts, activity) }
-            : activity,
-        toolIndices,
+        activity: {
+          ...rest,
+          ...(position.awaitingTools &&
+            unresolvedToolStartIndex != null && { unresolvedToolStartIndex }),
+          startIndex: position.startsAt,
+        },
+        toolIndices: position.toolIndices,
+        position,
       };
     });
     const closingActivities: TrackedActivity[] = [];
     const retainedActivities: TrackedActivity[] = [];
-    for (const { activity, toolIndices } of resolved) {
-      if (closesBeforeBoundary(currentParts, activity, requestedEndIndex, toolIndices)) {
+    for (const { activity, toolIndices, position } of resolved) {
+      if (closesBeforeBoundary(position, requestedEndIndex)) {
         closingActivities.push(activity);
         continue;
       }
@@ -1592,7 +1714,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       return undefined;
     }
     const boundary = candidate;
-    if (activities.some((activity) => !closesBeforeBoundary(parts, activity, boundary))) {
+    if (
+      activities.some(
+        (activity) => !closesBeforeBoundary(resolvePosition(parts, activity), boundary),
+      )
+    ) {
       return undefined;
     }
     for (const reasoning of pendingReasoning.values()) {
