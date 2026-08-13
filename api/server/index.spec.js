@@ -148,6 +148,21 @@ describe('Startup readiness wiring', () => {
     expect(agentsRouteIndex).toBeGreaterThan(-1);
     expect(readinessGateIndex).toBeLessThan(agentsRouteIndex);
   });
+
+  it('awaits the Clerk startup gate after connecting to MongoDB and before the server listens', () => {
+    const connectDbIndex = source.indexOf('await connectDb();');
+    const clerkGateIndex = source.indexOf('await ensureClerkStartupReady(clerkAuthConfig');
+    const listenIndex = source.indexOf('const server = app.listen');
+    const serverReadyIndex = source.indexOf('serverReady = true;');
+
+    expect(connectDbIndex).toBeGreaterThan(-1);
+    expect(clerkGateIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeGreaterThan(-1);
+    expect(serverReadyIndex).toBeGreaterThan(-1);
+    expect(connectDbIndex).toBeLessThan(clerkGateIndex);
+    expect(clerkGateIndex).toBeLessThan(listenIndex);
+    expect(clerkGateIndex).toBeLessThan(serverReadyIndex);
+  });
 });
 
 describe('Server Configuration', () => {

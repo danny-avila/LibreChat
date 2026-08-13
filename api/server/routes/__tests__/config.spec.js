@@ -114,6 +114,95 @@ afterEach(() => {
   delete process.env.LANGFUSE_TRACING_ENABLED;
   delete process.env.LANGFUSE_SAMPLE_RATE;
   delete process.env.TENANT_ISOLATION_STRICT;
+  delete process.env.CLERK_PUBLISHABLE_KEY;
+  delete process.env.CLERK_SECRET_KEY;
+  delete process.env.CLERK_JWT_KEY;
+  delete process.env.CLERK_AUTHORIZED_PARTIES;
+  delete process.env.CLERK_WEBHOOK_SIGNING_SECRET;
+});
+
+const ALL_VALID_CLERK_ENV = {
+  CLERK_PUBLISHABLE_KEY: 'pk_test_abc123',
+  CLERK_SECRET_KEY: 'sk_test_abc123',
+  CLERK_JWT_KEY: '-----BEGIN PUBLIC KEY-----\nABC\n-----END PUBLIC KEY-----',
+  CLERK_AUTHORIZED_PARTIES: 'https://app.example.com',
+  CLERK_WEBHOOK_SIGNING_SECRET: 'whsec_abc123',
+};
+
+function setAllValidClerkEnv() {
+  Object.assign(process.env, ALL_VALID_CLERK_ENV);
+}
+
+describe('Clerk startup-config projection', () => {
+  it.each([
+    ['unauthenticated', null],
+    ['authenticated', mockUser],
+  ])(
+    'exposes clerkLoginEnabled=false and no clerkPublishableKey when Clerk is unconfigured (%s)',
+    async (_label, user) => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(user);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.clerkLoginEnabled).toBe(false);
+      expect(response.body).not.toHaveProperty('clerkPublishableKey');
+    },
+  );
+
+  it.each([
+    ['unauthenticated', null],
+    ['authenticated', mockUser],
+  ])(
+    'exposes clerkLoginEnabled=true and clerkPublishableKey when all five Clerk vars are valid (%s)',
+    async (_label, user) => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      setAllValidClerkEnv();
+      const app = createApp(user);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.clerkLoginEnabled).toBe(true);
+      expect(response.body.clerkPublishableKey).toBe('pk_test_abc123');
+    },
+  );
+
+  it('never serializes Clerk secrets, JWT key, webhook secret, or authorized parties', async () => {
+    mockGetAppConfig.mockResolvedValue(baseAppConfig);
+    setAllValidClerkEnv();
+    const app = createApp(mockUser);
+
+    const response = await request(app).get('/api/config');
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).not.toHaveProperty('clerkSecretKey');
+    expect(response.body).not.toHaveProperty('secretKey');
+    expect(response.body).not.toHaveProperty('clerkJwtKey');
+    expect(response.body).not.toHaveProperty('jwtKey');
+    expect(response.body).not.toHaveProperty('clerkWebhookSigningSecret');
+    expect(response.body).not.toHaveProperty('webhookSigningSecret');
+    expect(response.body).not.toHaveProperty('authorizedParties');
+    expect(JSON.stringify(response.body)).not.toContain('sk_test_abc123');
+    expect(JSON.stringify(response.body)).not.toContain('whsec_abc123');
+  });
+
+  it.each(Object.keys(ALL_VALID_CLERK_ENV))(
+    'returns 500 without leaking config details when only %s is missing (proper subset)',
+    async (missingKey) => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      setAllValidClerkEnv();
+      delete process.env[missingKey];
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(500);
+      expect(JSON.stringify(response.body)).not.toContain('sk_test_abc123');
+      expect(JSON.stringify(response.body)).not.toContain('whsec_abc123');
+    },
+  );
 });
 
 describe('GET /api/config', () => {

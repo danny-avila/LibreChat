@@ -1,3 +1,5 @@
+export * from './clerk';
+export * from './user';
 export * from './domain';
 export * from './openid';
 export * from './proxy';

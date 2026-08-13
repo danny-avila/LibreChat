@@ -12,4 +12,16 @@ describe('Experimental server configuration', () => {
     expect(timeoutConfigIndex).toBeGreaterThan(-1);
     expect(listenIndex).toBeLessThan(timeoutConfigIndex);
   });
+
+  it('awaits the Clerk startup gate after connecting to MongoDB and before the worker listens', () => {
+    const connectDbIndex = source.indexOf('await connectDb();');
+    const clerkGateIndex = source.indexOf('await ensureClerkStartupReady(clerkAuthConfig');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(connectDbIndex).toBeGreaterThan(-1);
+    expect(clerkGateIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeGreaterThan(-1);
+    expect(connectDbIndex).toBeLessThan(clerkGateIndex);
+    expect(clerkGateIndex).toBeLessThan(listenIndex);
+  });
 });

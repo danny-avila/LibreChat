@@ -31,6 +31,8 @@
   "dependencies": {
     "@ariakit/react": "^0.4.29",
     "@ariakit/react-components": "^0.1.2",
+    "@clerk/localizations": "4.15.1",
+    "@clerk/react": "6.14.1",
     "@codesandbox/sandpack-react": "^2.19.10",
     "@dicebear/collection": "^9.4.1",
     "@dicebear/core": "^9.4.1",

@@ -11,6 +11,8 @@ const {
   sanitizeModelSpecs,
   excludeHiddenModelSpecs,
   isFileSnapshotEnabled,
+  resolveClerkAuthConfig,
+  toPublicClerkAuthConfig,
 } = require('@librechat/api');
 const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
@@ -67,6 +69,14 @@ function buildPreLoginPayload() {
 
   const ldap = getLdapConfig();
 
+  /**
+   * Startup already fails closed on an invalid Clerk configuration (the
+   * server never reaches a listening/ready state), so a thrown error here
+   * would only ever surface after that gate already passed; the route's
+   * existing top-level try/catch turns it into the standard 500 response.
+   */
+  const clerkPublicConfig = toPublicClerkAuthConfig(resolveClerkAuthConfig(process.env));
+
   /** @type {Partial<TStartupConfig>} */
   const payload = {
     appTitle: process.env.APP_TITLE || 'LibreChat',
@@ -96,6 +106,7 @@ function buildPreLoginPayload() {
       !!process.env.EMAIL_PASSWORD &&
       !!process.env.EMAIL_FROM,
     passwordResetEnabled,
+    ...clerkPublicConfig,
   };
 
   const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);

@@ -9,7 +9,8 @@ const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { logger, runAsSystem, ensureClerkIndexes } = require('@librechat/data-schemas');
 const {
   isEnabled,
   apiNotFound,
@@ -33,6 +34,8 @@ const {
   setupGracefulShutdown,
   updateInterfacePermissions,
   configureMessageFilterRegexValidator,
+  resolveClerkAuthConfig,
+  ensureClerkStartupReady,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -121,6 +124,18 @@ const startServer = async () => {
   logger.info('Connected to MongoDB');
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
+  });
+
+  /**
+   * Fail closed before the server accepts any traffic: an invalid Clerk
+   * configuration or a failed production index assurance rejects here and is
+   * caught by `startServer().catch(...)` below, which exits the process
+   * rather than serving requests against a partially-migrated deployment.
+   */
+  const clerkAuthConfig = resolveClerkAuthConfig(process.env);
+  await ensureClerkStartupReady(clerkAuthConfig, {
+    ensureClerkIndexes,
+    connection: mongoose.connection,
   });
 
   app.disable('x-powered-by');

@@ -10,7 +10,8 @@ const express = require('express');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { logger, runAsSystem, ensureClerkIndexes } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
@@ -25,6 +26,8 @@ const {
   preAuthTenantMiddleware,
   configureServerTimeouts,
   configureMessageFilterRegexValidator,
+  resolveClerkAuthConfig,
+  ensureClerkStartupReady,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -289,6 +292,18 @@ if (cluster.isMaster) {
     /** Background index sync (non-blocking) */
     indexSync().catch((err) => {
       logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
+    });
+
+    /**
+     * Fail closed before this worker accepts any traffic; mirrors
+     * `server/index.js`. Caught by `startServer().catch(...)` below, which
+     * exits the worker rather than serving requests against a partially
+     * migrated deployment.
+     */
+    const clerkAuthConfig = resolveClerkAuthConfig(process.env);
+    await ensureClerkStartupReady(clerkAuthConfig, {
+      ensureClerkIndexes,
+      connection: mongoose.connection,
     });
 
     app.disable('x-powered-by');
