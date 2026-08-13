@@ -40,11 +40,12 @@ jest.mock('winston', () => ({
   },
 }));
 
-// Mock env utilities so header resolution doesn't fail
-jest.mock('~/utils/env', () => ({
-  resolveHeaders: jest.fn((opts: { headers: unknown }) => opts?.headers ?? {}),
-  createSafeUser: jest.fn(() => ({})),
-}));
+/** Spy on the real `resolveHeaders` instead of replacing it — the templated-header
+ *  case below only proves anything if the actual substitution runs. */
+jest.mock('~/utils/env', () => {
+  const actual = jest.requireActual<typeof import('~/utils/env')>('~/utils/env');
+  return { ...actual, resolveHeaders: jest.fn(actual.resolveHeaders) };
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
