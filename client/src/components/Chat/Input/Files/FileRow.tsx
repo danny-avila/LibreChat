@@ -89,19 +89,23 @@ export default function FileRow({
   }
 
   const renderFiles = () => {
+    /* `alignItems: center` so a card and a thumbnail of different heights share
+       one baseline instead of hanging from the top of the tallest row. */
     const rowStyle = isRTL
       ? {
           display: 'flex',
           flexDirection: 'row-reverse',
           flexWrap: 'wrap',
-          gap: '4px',
+          alignItems: 'center',
+          gap: '6px',
           width: '100%',
           maxWidth: '100%',
         }
       : {
           display: 'flex',
           flexWrap: 'wrap',
-          gap: '4px',
+          alignItems: 'center',
+          gap: '6px',
           width: '100%',
           maxWidth: '100%',
         };
@@ -135,14 +139,14 @@ export default function FileRow({
             const isImage = file.type?.startsWith('image') ?? false;
 
             return (
-              <div
-                key={index}
-                style={{
-                  flexBasis: '70px',
-                  flexGrow: 0,
-                  flexShrink: 0,
-                }}
-              >
+              /* Sized by its content, not parked in a fixed 70px slot: a 56px
+                 thumbnail in a 70px slot left 14px of dead space beside it, so
+                 the gap between two images read as far wider than the gap
+                 beside a file card, which overflowed the same slot. */
+              /* `flex`, not the default block: `Image`'s root is inline-block,
+                 which sits on a text baseline and adds descender space under
+                 the thumbnail, floating it above the cards beside it. */
+              <div key={index} style={{ display: 'flex', flexShrink: 0 }}>
                 {isImage ? (
                   <Image
                     url={getCachedPreview(file.file_id) ?? file.preview ?? file.filepath}
@@ -151,7 +155,10 @@ export default function FileRow({
                     source={file.source}
                   />
                 ) : (
-                  <FileContainer file={file} onDelete={handleDelete} />
+                  /* `ImagePreview`'s `size-14` plus the 1px border its wrapper
+                     adds, so a card and a thumbnail are exactly the same height
+                     in a mixed row. */
+                  <FileContainer file={file} onDelete={handleDelete} buttonClassName="h-[58px]" />
                 )}
               </div>
             );

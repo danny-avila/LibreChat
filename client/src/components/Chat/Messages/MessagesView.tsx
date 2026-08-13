@@ -1,12 +1,10 @@
 import { memo, useState, useRef, useEffect } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
-import { steerOverlayHeightFamily } from '~/store/steer';
 import { MessagesViewProvider } from '~/Providers';
 import { fontSizeAtom } from '~/store/fontSize';
 import MultiMessage from './MultiMessage';
@@ -102,13 +100,6 @@ function MessagesViewContent({
 
   const { conversationId } = conversation ?? {};
 
-  /** The in-flight steer overlay floats above the composer over the bottom of
-   *  the thread (see `InFlightSteers`); reserve an equal band here so the
-   *  newest message rests above it and older ones scroll behind. */
-  const steerOverlayHeight = useAtomValue(
-    steerOverlayHeightFamily(conversationId ?? Constants.NEW_CONVO),
-  );
-
   return (
     <>
       <div className="relative flex-1 overflow-hidden overflow-y-auto">
@@ -123,15 +114,7 @@ function MessagesViewContent({
               width: '100%',
             }}
           >
-            <div
-              ref={contentRef}
-              className="flex flex-col pb-9 pt-14"
-              style={
-                steerOverlayHeight > 0
-                  ? { paddingBottom: `calc(2.25rem + ${steerOverlayHeight}px)` }
-                  : undefined
-              }
-            >
+            <div ref={contentRef} className="flex flex-col pb-9 pt-14">
               {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
                 <div
                   className={cn(

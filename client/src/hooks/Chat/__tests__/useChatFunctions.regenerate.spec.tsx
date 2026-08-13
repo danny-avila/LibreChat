@@ -160,6 +160,40 @@ describe('useChatFunctions ask', () => {
     expect(mockSetShowStopButton).not.toHaveBeenCalled();
   });
 
+  it('refuses a second submit fired in the same task, before isSubmitting commits', () => {
+    const { result, setSubmission } = renderAsk([]);
+
+    let first: ReturnType<typeof result.current.ask>;
+    let second: ReturnType<typeof result.current.ask>;
+    act(() => {
+      first = result.current.ask({ text: 'double enter', conversationId: 'conversation-1' });
+      second = result.current.ask({ text: 'double enter', conversationId: 'conversation-1' });
+    });
+
+    expect(first!).not.toBe(false);
+    expect(second!).toBe(false);
+    expect(setSubmission).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the in-flight guard on the next commit rather than latching it', () => {
+    const { result, rerender, setSubmission } = renderAsk([]);
+
+    act(() => {
+      result.current.ask({ text: 'first turn', conversationId: 'conversation-1' });
+    });
+    /* `isSubmitting` never turns true here, standing in for a start that fails
+       outright: the next commit has to release the guard on its own instead of
+       latching the composer shut. */
+    act(() => {
+      rerender();
+    });
+    act(() => {
+      result.current.ask({ text: 'second turn', conversationId: 'conversation-1' });
+    });
+
+    expect(setSubmission).toHaveBeenCalledTimes(2);
+  });
+
   it('reports a refusal when no endpoint is available', () => {
     const { result, setMessages, setSubmission } = renderAsk([], 'conversation-1', {
       endpoint: null,

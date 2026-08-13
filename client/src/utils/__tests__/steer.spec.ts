@@ -6,6 +6,7 @@ import {
   resolveRunEndTarget,
   findSteerMessageIndex,
   appendAppliedSteerIds,
+  isLegacyDeliveryUncertain,
   resolveAbortSteerTarget,
   insertQueuedOrigin,
 } from '../steer';
@@ -187,6 +188,19 @@ describe('appendAppliedSteerIds', () => {
     expect(next).toHaveLength(200);
     expect(next[0]).toBe('id-1');
     expect(next[next.length - 1]).toBe('id-new');
+  });
+});
+
+describe('isLegacyDeliveryUncertain', () => {
+  it('locks ambiguous v1 and unnegotiated deliveries, but not v2', () => {
+    expect(
+      isLegacyDeliveryUncertain({ deliveryUncertain: true, generationProtocolVersion: 1 }),
+    ).toBe(true);
+    expect(isLegacyDeliveryUncertain({ deliveryUncertain: true })).toBe(true);
+    expect(
+      isLegacyDeliveryUncertain({ deliveryUncertain: true, generationProtocolVersion: 2 }),
+    ).toBe(false);
+    expect(isLegacyDeliveryUncertain({ generationProtocolVersion: 1 })).toBe(false);
   });
 });
 

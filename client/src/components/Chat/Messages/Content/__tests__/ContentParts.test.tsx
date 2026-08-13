@@ -26,6 +26,7 @@ jest.mock('~/Providers', () => {
     SearchContext: {
       Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
     },
+    useSearchContext: () => ({ searchResults: undefined }),
   };
 });
 
@@ -109,6 +110,11 @@ jest.mock('../ParallelContent', () => ({
   ),
 }));
 
+jest.mock('../Parts/PendingSteers', () => ({
+  __esModule: true,
+  default: () => <div data-testid="pending-steers" />,
+}));
+
 import ContentParts from '../ContentParts';
 
 const baseProps = {
@@ -126,7 +132,7 @@ beforeEach(() => {
     .mockImplementation((parts) => parts.map((part) => ({ type: 'single', part })));
 });
 
-describe('ContentParts — interim skill cards', () => {
+describe('ContentParts: interim skill cards', () => {
   it('renders a PendingSkillCall per manual skill on assistant messages', () => {
     render(<ContentParts {...baseProps} manualSkills={['brand-guidelines', 'pptx']} />);
     const cards = screen.getAllByTestId('pending-skill-call');
@@ -196,7 +202,7 @@ describe('ContentParts — interim skill cards', () => {
   });
 });
 
-describe('ContentParts — post-steer author re-attribution', () => {
+describe('ContentParts: post-steer author re-attribution', () => {
   const steerPart = {
     type: ContentTypes.STEER,
     steer: 'go left',
@@ -450,5 +456,26 @@ describe('ContentParts — activity phase state', () => {
 
     expect(screen.getByTestId('activity-phase-group')).toBeInTheDocument();
     expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-initial-expanded', 'false');
+  });
+});
+
+/* The pending block belongs to the reply being written: shown under every
+   message, or after the run has ended, it reads as unsent words piling up. */
+describe('ContentParts: pending steers', () => {
+  const withGate = (over: Partial<typeof baseProps> & { conversationId?: string }) =>
+    render(<ContentParts {...baseProps} {...over} />);
+
+  it('shows them on the last message while a run is live', () => {
+    withGate({ isLast: true, isSubmitting: true, conversationId: 'convo-1' });
+    expect(screen.getByTestId('pending-steers')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['an earlier message', { isLast: false, isSubmitting: true, conversationId: 'convo-1' }],
+    ['a finished run', { isLast: true, isSubmitting: false, conversationId: 'convo-1' }],
+    ['no conversation yet', { isLast: true, isSubmitting: true, conversationId: undefined }],
+  ])('shows nothing for %s', (_label, over) => {
+    withGate(over);
+    expect(screen.queryByTestId('pending-steers')).not.toBeInTheDocument();
   });
 });

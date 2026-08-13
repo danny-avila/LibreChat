@@ -101,7 +101,49 @@ function appendResponseCopyButton(onClick: () => void) {
   document.body.appendChild(button);
 }
 
-function appendEscalationButton(surface: 'bubble' | 'queued', active = false) {
+/** A composer form carrying the stop control the way `ChatForm` renders it:
+ *  visible when it owns the action slot, hidden behind the during-run send
+ *  button while the user types a steer. */
+function appendComposerForm({ hidden = false }: { hidden?: boolean } = {}) {
+  const onClick = jest.fn();
+  const form = document.createElement('form');
+  const textarea = document.createElement('textarea');
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.testid = 'stop-generation-button';
+  if (hidden) {
+    button.style.display = 'none';
+  }
+  button.addEventListener('click', onClick);
+  form.append(textarea, button);
+  document.body.appendChild(form);
+  return { form, textarea, onClick };
+}
+
+/** A composer form carrying the palette disclosure the upload shortcut clicks.
+ *  Identified by test id rather than by `id`, which two mounted composers
+ *  cannot share. */
+function appendPaletteForm({ uploadShortcut = true }: { uploadShortcut?: boolean } = {}) {
+  const onClick = jest.fn();
+  const form = document.createElement('form');
+  const textarea = document.createElement('textarea');
+  const anchor = document.createElement('button');
+  anchor.type = 'button';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.testid = 'composer-palette-button';
+  button.dataset.uploadShortcut = String(uploadShortcut);
+  button.addEventListener('click', onClick);
+  form.append(textarea, anchor, button);
+  document.body.appendChild(form);
+  return { form, textarea, anchor, onClick };
+}
+
+function appendEscalationButton(
+  surface: 'bubble' | 'queued',
+  active = false,
+  parent: HTMLElement = document.body,
+) {
   const onClick = jest.fn();
   const button = document.createElement('button');
   button.dataset.escalateSteer = surface;
@@ -109,7 +151,7 @@ function appendEscalationButton(surface: 'bubble' | 'queued', active = false) {
     button.dataset.escalateSteerActive = 'true';
   }
   button.addEventListener('click', onClick);
-  document.body.appendChild(button);
+  parent.appendChild(button);
   return { button, onClick };
 }
 
@@ -332,6 +374,26 @@ describe('global shortcut dispatch', () => {
     expect(newest.onClick).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps escalation inside the pane containing keyboard focus', () => {
+    renderHarness();
+    const focusedPane = document.createElement('section');
+    const otherPane = document.createElement('section');
+    focusedPane.dataset.chatPane = '0';
+    otherPane.dataset.chatPane = '1';
+    const textarea = document.createElement('textarea');
+    const focused = appendEscalationButton('bubble', false, focusedPane);
+    const other = appendEscalationButton('bubble', true, otherPane);
+    focusedPane.appendChild(textarea);
+    document.body.append(focusedPane, otherPane);
+    textarea.focus();
+
+    const event = dispatchKey({ key: '.', ctrlKey: true, shiftKey: true }, textarea);
+
+    expect(focused.onClick).toHaveBeenCalledTimes(1);
+    expect(other.onClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('dispatches the escalation shortcut by physical key on a non-US layout', () => {
     renderHarness();
     const escalation = appendEscalationButton('bubble');
@@ -380,6 +442,95 @@ describe('clipboard shortcuts', () => {
     const event = dispatchKey({ key: 'k', ctrlKey: true, shiftKey: true });
 
     expect(copyMock).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe('stop generating shortcut', () => {
+  it('stops the run of the pane the user is focused in', () => {
+    renderHarness();
+    const first = appendComposerForm();
+    const second = appendComposerForm();
+    second.textarea.focus();
+
+    const event = dispatchKey({ key: 'x', ctrlKey: true, shiftKey: true }, second.textarea);
+
+    expect(second.onClick).toHaveBeenCalledTimes(1);
+    expect(first.onClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('stops through the hidden control while the during-run send button owns the slot', () => {
+    renderHarness();
+    const other = appendComposerForm();
+    const focused = appendComposerForm({ hidden: true });
+    focused.textarea.focus();
+
+    const event = dispatchKey({ key: 'x', ctrlKey: true, shiftKey: true }, focused.textarea);
+
+    expect(focused.onClick).toHaveBeenCalledTimes(1);
+    expect(other.onClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('does not prevent the event when nothing is generating', () => {
+    renderHarness();
+
+    const event = dispatchKey({ key: 'x', ctrlKey: true, shiftKey: true });
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe('upload file shortcut', () => {
+  /* Focus sits on a button rather than the textarea: `uploadFile` is not in
+     EDITING_ALLOWED_SHORTCUTS, so the chord is filtered out entirely while the
+     caret is in a composer. Pane resolution matters for the focus that is left,
+     anywhere in a pane that is not an editing context. */
+  it('opens the palette of the pane the user is focused in', () => {
+    renderHarness();
+    const first = appendPaletteForm();
+    const second = appendPaletteForm();
+    second.anchor.focus();
+
+    const event = dispatchKey({ key: 'u', ctrlKey: true, shiftKey: true }, second.anchor);
+
+    expect(second.onClick).toHaveBeenCalledTimes(1);
+    expect(first.onClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('is filtered out while the caret is in a composer', () => {
+    renderHarness();
+    const only = appendPaletteForm();
+    only.textarea.focus();
+
+    const event = dispatchKey({ key: 'u', ctrlKey: true, shiftKey: true }, only.textarea);
+
+    expect(only.onClick).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('falls back to the document when focus sits outside any composer', () => {
+    renderHarness();
+    const only = appendPaletteForm();
+
+    const event = dispatchKey({ key: 'u', ctrlKey: true, shiftKey: true });
+
+    expect(only.onClick).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('does not cancel dictation or fall through to another pane', () => {
+    renderHarness();
+    const other = appendPaletteForm();
+    const dictating = appendPaletteForm({ uploadShortcut: false });
+    dictating.anchor.focus();
+
+    const event = dispatchKey({ key: 'u', ctrlKey: true, shiftKey: true }, dictating.anchor);
+
+    expect(dictating.onClick).not.toHaveBeenCalled();
+    expect(other.onClick).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
   });
 });
