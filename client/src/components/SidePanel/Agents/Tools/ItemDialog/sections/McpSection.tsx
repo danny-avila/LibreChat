@@ -320,6 +320,9 @@ export default function McpSection({ item }: Props) {
   const requestScoped = liveServer.requestScoped === true;
   const runtimeToolsAvailable =
     !hasTools && !toolsLoading && (isWildcardAttached || (requestScoped && isConnected));
+  const runtimeToolsMessage = isWildcardAttached
+    ? 'com_ui_tools_mcp_runtime_tools'
+    : 'com_ui_tools_mcp_runtime_tools_available';
   useEffect(() => {
     if (!autoSelectPending) {
       return;
@@ -554,11 +557,7 @@ export default function McpSection({ item }: Props) {
           <Collapse open={!hasTools && !toolsLoading}>
             <p className="rounded-xl border border-dashed border-border-light p-3 text-center text-xs text-text-tertiary">
               {localize(
-                isWildcardAttached
-                  ? 'com_ui_tools_mcp_runtime_tools'
-                  : runtimeToolsAvailable
-                    ? 'com_ui_tools_mcp_runtime_tools_available'
-                    : 'com_ui_tools_mcp_no_tools',
+                runtimeToolsAvailable ? runtimeToolsMessage : 'com_ui_tools_mcp_no_tools',
               )}
             </p>
           </Collapse>
