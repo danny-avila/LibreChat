@@ -26,6 +26,8 @@ export interface ActivityPhaseEntry {
 
 export type TrackedActivity = ActivityPhaseEntry & {
   startIndex: number;
+  /** A prior boundary can retain only the materialized tail of a straddling batch. */
+  partitionStartIndex?: number;
   childLabelIndex?: number;
   /** Stable anchors survive content filtering and prepends across HITL resume. */
   toolCallIds?: string[];
@@ -216,30 +218,14 @@ function findLastPartIndex(
   return Math.max(0, parts.length - 1);
 }
 
-function findBatchStart(
-  parts: ReadonlyArray<LooseContentPart | null | undefined>,
-  toolCallIds: Set<string>,
-): number {
-  let first = -1;
-  for (const index of definedPartIndices(parts)) {
-    const part = parts[index];
-    if (
-      part?.type === ContentTypes.TOOL_CALL &&
-      typeof part.tool_call?.id === 'string' &&
-      toolCallIds.has(part.tool_call.id)
-    ) {
-      first = first < 0 ? index : Math.min(first, index);
-    }
-  }
-  return first >= 0 ? first : Math.max(0, parts.length - 1);
-}
-
 function findTrackedStart(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   activity: TrackedActivity,
 ): number {
   const materializedStart = findMaterializedActivityStart(parts, activity);
-  return materializedStart ?? Math.min(activity.startIndex, Math.max(0, parts.length - 1));
+  const startIndex =
+    materializedStart ?? Math.min(activity.startIndex, Math.max(0, parts.length - 1));
+  return Math.max(startIndex, activity.partitionStartIndex ?? 0);
 }
 
 function findMaterializedActivityStart(
@@ -312,16 +298,25 @@ function findTrackedToolStart(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   activity: TrackedActivity,
 ): number | undefined {
-  if (activity.toolCallIds != null && activity.toolCallIds.length > 0) {
-    const toolStart = findBatchStart(parts, new Set(activity.toolCallIds));
-    if (
-      parts[toolStart]?.type === ContentTypes.TOOL_CALL &&
-      activity.toolCallIds.includes(String(parts[toolStart]?.tool_call?.id ?? ''))
-    ) {
-      return toolStart;
-    }
+  return findTrackedToolIndices(parts, activity)[0];
+}
+
+function findTrackedToolIndices(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  activity: TrackedActivity,
+): number[] {
+  if (activity.toolCallIds == null || activity.toolCallIds.length === 0) {
+    return [];
   }
-  return undefined;
+  const ids = new Set(activity.toolCallIds);
+  return definedPartIndices(parts).filter((index) => {
+    const part = parts[index];
+    return (
+      part?.type === ContentTypes.TOOL_CALL &&
+      typeof part.tool_call?.id === 'string' &&
+      ids.has(part.tool_call.id)
+    );
+  });
 }
 
 function findReasoningStart(
@@ -715,6 +710,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     } else {
       overflowActivities.push({
         startIndex: activity.startIndex,
+        ...(activity.partitionStartIndex != null && {
+          partitionStartIndex: activity.partitionStartIndex,
+        }),
         ...(activity.toolCallIds != null && {
           toolCallIds: activity.toolCallIds.slice(-MAX_RETAINED_TOOL_ENTRIES),
         }),
@@ -727,7 +725,13 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         status: activity.status,
       });
       if (overflowActivities.length > MAX_OVERFLOW_ACTIVITY_ANCHORS) {
-        overflowActivities.shift();
+        const removed = overflowActivities.shift();
+        activityCount -= 1;
+        if (removed?.status === 'error') {
+          failedActivityCount -= 1;
+        } else if (removed?.status === 'partial') {
+          partialActivityCount -= 1;
+        }
       }
       if (overflowActivityStartIndex == null || activity.startIndex > overflowActivityStartIndex) {
         overflowActivityStartIndex = activity.startIndex;
@@ -828,6 +832,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         childLabelIndex,
         toolCallIds,
         startIndex: _startIndex,
+        partitionStartIndex: _partitionStartIndex,
         unresolvedToolStartIndex: _unresolvedToolStartIndex,
         ...activity
       }) => {
@@ -882,7 +887,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
      *  answer content. */
     const resolvedActivities = activities.map((activity) => {
       const toolStart = findTrackedToolStart(currentParts, activity);
-      return toolStart != null ? { ...activity, startIndex: toolStart } : activity;
+      return toolStart != null
+        ? { ...activity, startIndex: Math.max(toolStart, activity.partitionStartIndex ?? 0) }
+        : activity;
     });
     const closesBeforeBoundary = (activity: TrackedActivity): boolean => {
       if (requestedEndIndex == null) {
@@ -895,12 +902,30 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         return false;
       }
       const materializedStart = findMaterializedActivityStart(currentParts, activity);
-      return materializedStart == null || materializedStart < requestedEndIndex;
+      const materializedToolIndices = findTrackedToolIndices(currentParts, activity);
+      return materializedToolIndices.length > 0
+        ? materializedToolIndices.every((index) => index < requestedEndIndex)
+        : materializedStart == null || materializedStart < requestedEndIndex;
     };
     const snapshot = resolvedActivities.filter(closesBeforeBoundary);
-    const retainedActivities = resolvedActivities.filter(
-      (activity) => !closesBeforeBoundary(activity),
-    );
+    const reanchorRetainedActivity = (activity: TrackedActivity): TrackedActivity => {
+      if (requestedEndIndex == null) {
+        return activity;
+      }
+      const firstRetainedToolIndex = findTrackedToolIndices(currentParts, activity).find(
+        (index) => index >= requestedEndIndex,
+      );
+      return firstRetainedToolIndex != null
+        ? {
+            ...activity,
+            startIndex: firstRetainedToolIndex,
+            partitionStartIndex: firstRetainedToolIndex,
+          }
+        : activity;
+    };
+    const retainedActivities = resolvedActivities
+      .filter((activity) => !closesBeforeBoundary(activity))
+      .map(reanchorRetainedActivity);
     const overflowCount = Math.max(0, activityCount - resolvedActivities.length);
     const overflowFailedCount = Math.max(
       0,
@@ -922,7 +947,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       ? resolvedOverflowActivities.filter(closesBeforeBoundary)
       : [];
     const retainedOverflowActivities = hasExactOverflowActivities
-      ? resolvedOverflowActivities.filter((activity) => !closesBeforeBoundary(activity))
+      ? resolvedOverflowActivities
+          .filter((activity) => !closesBeforeBoundary(activity))
+          .map(reanchorRetainedActivity)
       : [];
     const overflowCloses = hasExactOverflowActivities
       ? closingOverflowActivities.length > 0
@@ -1176,10 +1203,17 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         }
       }
     }
+    const batchToolIndices = definedPartIndices(parts).filter((index) => {
+      const part = parts[index];
+      return (
+        part?.type === ContentTypes.TOOL_CALL &&
+        typeof part.tool_call?.id === 'string' &&
+        ids.has(part.tool_call.id)
+      );
+    });
     if (
-      batchStartIndex != null &&
-      emittedContentRanges.some(
-        ({ start, end }) => batchStartIndex >= start && batchStartIndex < end,
+      batchToolIndices.some((toolIndex) =>
+        emittedContentRanges.some(({ start, end }) => toolIndex >= start && toolIndex < end),
       )
     ) {
       pendingReasoning.delete(reasoningKey);

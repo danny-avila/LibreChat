@@ -1307,7 +1307,7 @@ describe('createActivityPhaseWiring', () => {
     expect(parts[3]).toBeUndefined();
   });
 
-  it('bounds persisted evidence while preserving the full activity count', async () => {
+  it('bounds persisted evidence and the tracked activity window', async () => {
     const parts: LooseContentPart[] = [];
     const wiring = createActivityPhaseWiring({
       getContentParts: () => parts,
@@ -1324,7 +1324,7 @@ describe('createActivityPhaseWiring', () => {
 
     const snapshot = wiring.snapshot();
     expect(snapshot.version).toBe(2);
-    expect(snapshot.activityCount).toBe(100);
+    expect(snapshot.activityCount).toBe(77);
     expect(snapshot.activities).toHaveLength(13);
     expect(snapshot.overflowActivityStartIndex).toBe(99);
     expect(snapshot.overflowToolCallIds).toHaveLength(64);
@@ -2757,6 +2757,76 @@ describe('createActivityPhaseWiring', () => {
     expect(payloads).toHaveLength(2);
     expect(payloads[0].assistantContext).toBeUndefined();
     expect(payloads[1].assistantContext).toEqual(['Context for the later work.']);
+  });
+
+  it('retains a completed tool batch when any call crosses a substantial boundary', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'parallel-1' } },
+      { type: ContentTypes.TEXT, text: '' },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'parallel-2' } },
+    ];
+    const payloads: GenerateActivityPhasePayload[] = [];
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => parts,
+      getStepIndex: (stepId) => (stepId === 'boundary' ? 3 : undefined),
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async (payload: GenerateActivityPhasePayload) => {
+        payloads.push(payload);
+        return { label: 'Completed one phase' };
+      }),
+    });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+    await wiring.hook(batch('tool-2'), new AbortController().signal);
+    const parallelBatch = batch('parallel-1');
+    parallelBatch.entries.push({
+      ...parallelBatch.entries[0],
+      toolUseId: 'parallel-2',
+      toolInput: { query: 'parallel-2' },
+    });
+    await wiring.hook(parallelBatch, new AbortController().signal);
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_MESSAGE_DELTA]: {
+        handle: (_event, data) => {
+          const delta = data as { delta?: { content?: { text?: string } } };
+          parts[3] = { type: ContentTypes.TEXT, text: delta.delta?.content?.text ?? '' };
+        },
+      },
+    });
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'boundary',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'text' },
+        },
+      },
+      undefined,
+      undefined,
+    );
+    handlers?.[GraphEvents.ON_MESSAGE_DELTA]?.handle(
+      GraphEvents.ON_MESSAGE_DELTA,
+      {
+        id: 'boundary',
+        delta: { content: { type: ContentTypes.TEXT, text: substantialText('Boundary result.') } },
+      },
+      undefined,
+      undefined,
+    );
+    parts[6] = { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-3' } };
+    await wiring.hook(batch('tool-3'), new AbortController().signal);
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(payloads.map(({ totalActivityCount }) => totalActivityCount)).toEqual([2, 2]);
+    expect(parts[5]).toMatchObject({ activity_end_index: 3, activity_count: 2 });
+    expect(parts[7]).toMatchObject({ activity_start_index: 4, activity_count: 2 });
   });
 });
 
