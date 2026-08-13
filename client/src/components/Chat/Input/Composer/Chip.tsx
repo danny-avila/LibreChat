@@ -35,7 +35,7 @@ function Chip({
       title={title ?? label}
       leading={
         icon != null ? (
-          <span className="flex shrink-0 items-center text-accent-primary" aria-hidden="true">
+          <span className="flex shrink-0 items-center" aria-hidden="true">
             {icon}
           </span>
         ) : undefined

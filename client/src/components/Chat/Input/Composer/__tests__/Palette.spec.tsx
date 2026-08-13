@@ -536,6 +536,11 @@ describe('Palette', () => {
 
       const configure = screen.getByRole('button', { name: 'Configure Tool' });
       expect(configure.closest('[role="gridcell"]')).not.toHaveAttribute('id');
+      expect(configure).toHaveClass(
+        'transition-none',
+        'opacity-100',
+        '[@media(hover:hover)]:opacity-0',
+      );
 
       await waitFor(() => expect(screen.getByTestId('composer-palette-search')).toHaveFocus());
       await user.tab();
@@ -556,7 +561,12 @@ describe('Palette', () => {
       expect(screen.getByRole('grid')).toBeVisible();
       const favorite = screen.getByRole('button', { name: 'com_ui_favorite' });
       expect(favorite).toHaveAttribute('aria-pressed', 'false');
-      expect(favorite).toHaveClass('opacity-100', '[@media(hover:hover)]:opacity-0');
+      expect(favorite).toHaveClass(
+        'transition-none',
+        'opacity-100',
+        '[@media(hover:hover)]:opacity-0',
+      );
+      expect(favorite).not.toHaveClass('transition-opacity');
       expect(favorite.closest('[role="gridcell"]')).not.toHaveAttribute('id');
 
       await waitFor(() => expect(screen.getByTestId('composer-palette-search')).toHaveFocus());

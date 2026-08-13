@@ -45,7 +45,8 @@ export interface PaletteMode {
   active: boolean;
   onSelect: () => void;
   /** When set, the palette row renders this instead of the text pill (e.g. a
-   *  gear for Configure). The bar chip menu still uses `label`. */
+   *  gear for Configure). Icon modes stay off the bar chip so they do not
+   *  open a Configure/chevron menu. */
   icon?: React.ReactNode;
 }
 
