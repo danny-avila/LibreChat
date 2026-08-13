@@ -63,7 +63,7 @@
 - **Sharing and files:** Shared conversations show a badge and update at a stable URL, while signed-in viewers can continue them as personal copies.
 - **Artifact workflows:** Open previews fullscreen, export Mermaid diagrams as SVG or PNG, and download original Office files from the artifact panel.
 - **Models and reasoning:** Added GPT-5.6 with Responses API reasoning controls, Claude Opus 5 and Sonnet 5, Gemini 3.6 Flash, and Gemini 3.5 Flash-Lite.
-- **Langfuse observability:** Configure encrypted Langfuse connections in-app, optionally fan out traces by tenant, and suppress central export per run.
+- **Langfuse observability:** Configure encrypted Langfuse connections in-app, let authorized admins open sampled sessions directly, optionally fan out traces by tenant, and suppress central export per run.
 - **Administration and security:** Delegate config sections, encrypt registered secrets, enforce SSRF checks for speech, OCR, and web tools, and generate unique temporary credentials when secrets are blank.
 - **Navigation and responsiveness:** A dock-style message rail, warmer conversation switches, virtualized search, smooth streamed text, and faster Agent startup keep large workspaces responsive.
 - **Streaming and tool reliability:** Adaptive provider smoothing, Redis delta batching, dynamic MCP tool refresh, runtime OAuth recovery, and Agent stream circuit breakers improve long-running workflows.
