@@ -52,6 +52,8 @@ const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
+const mountAuthRoute = require('./routes/mountAuth');
+const mountClerkWebhook = require('./routes/mountClerkWebhook');
 
 /** Reject messageFilter PII patterns the RE2 runtime engine cannot compile, at config load. */
 configureMessageFilterRegexValidator();
@@ -374,7 +376,7 @@ if (cluster.isMaster) {
 
     /** Middleware */
     app.use(noIndex);
-    app.post('/api/auth/clerk/webhook', express.raw({ type: 'application/json' }), routes.clerk);
+    mountClerkWebhook(app, routes);
     app.use(express.json({ limit: '3mb' }));
     app.use(express.urlencoded({ extended: true, limit: '3mb' }));
 
@@ -430,7 +432,7 @@ if (cluster.isMaster) {
 
     /** Routes */
     app.use('/oauth', routes.oauth);
-    app.use('/api/auth', routes.auth);
+    mountAuthRoute(app, routes, preAuthTenantMiddleware);
     app.use('/api/admin', routes.adminAuth);
     app.use('/api/admin/skills', routes.adminSkills);
     app.use('/api/actions', routes.actions);

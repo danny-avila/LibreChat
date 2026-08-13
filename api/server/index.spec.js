@@ -62,7 +62,7 @@ describe('Telemetry wiring', () => {
   it('mounts telemetry middleware after static assets and before routes', () => {
     const telemetryMiddlewareIndex = source.indexOf('app.use(telemetry.telemetryMiddleware);');
     const staticAssetsIndex = source.indexOf('app.use(staticCache(appConfig.paths.assets));');
-    const apiRoutesIndex = source.indexOf("app.use('/api/auth'");
+    const apiRoutesIndex = source.indexOf('mountAuthRoute(app, routes, preAuthTenantMiddleware);');
 
     expect(telemetryMiddlewareIndex).toBeGreaterThan(-1);
     expect(staticAssetsIndex).toBeGreaterThan(-1);
