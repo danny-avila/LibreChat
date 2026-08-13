@@ -159,7 +159,12 @@ export type ClerkProfileOutcome =
   | 'not_found'
   | 'rate_limited'
   | 'unavailable';
-export type ClerkWebhookEvent = 'session_revoked' | 'unknown' | 'unsupported' | 'user_deleted';
+export type ClerkWebhookEvent =
+  | 'session_ended'
+  | 'session_revoked'
+  | 'unknown'
+  | 'unsupported'
+  | 'user_deleted';
 export type ClerkWebhookResult = 'success' | 'invalid' | 'mutation_failed' | 'unavailable';
 
 type OpenIDUserLookupMetrics = {

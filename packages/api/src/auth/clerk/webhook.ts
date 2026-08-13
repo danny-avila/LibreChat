@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express';
 import { verifyWebhook } from '@clerk/backend/webhooks';
+import type { ClerkWebhookEvent, ClerkWebhookResult } from '~/app/metrics';
 import { CLERK_CLOCK_SKEW_MS, MAX_CLERK_TOKEN_LIFETIME_MS } from './verify';
 
 export interface ClerkWebhookRequestInput {
@@ -11,16 +12,17 @@ export interface ClerkWebhookRequestInput {
 
 export type NarrowedClerkWebhookEvent =
   | { kind: 'unsupported' }
-  | { kind: 'session_revoked'; clerkSessionId: string; occurredAt: Date }
+  | {
+      kind: 'session_revoked';
+      event: 'session_ended' | 'session_revoked';
+      clerkSessionId: string;
+      occurredAt: Date;
+    }
   | { kind: 'user_deleted'; clerkUserId: string; occurredAt: Date };
 
 export type ClerkWebhookConfig =
   | { enabled: false }
   | { enabled: true; webhookSigningSecret: string };
-
-export type ClerkWebhookEvent = 'session_revoked' | 'unknown' | 'unsupported' | 'user_deleted';
-
-export type ClerkWebhookResult = 'invalid' | 'mutation_failed' | 'success' | 'unavailable';
 
 export interface ClerkWebhookHandlerDependencies {
   resolveConfig: () => ClerkWebhookConfig;
@@ -103,6 +105,12 @@ function getStateExpiration(occurredAt: Date): Date {
 
 function uniqueSessionIds(sessionIds: readonly string[]): readonly string[] {
   return [...new Set(sessionIds.filter((sessionId) => sessionId.trim().length > 0))];
+}
+
+function getWebhookEventLabel(
+  event: Exclude<NarrowedClerkWebhookEvent, { kind: 'unsupported' }>,
+): ClerkWebhookEvent {
+  return event.kind === 'session_revoked' ? event.event : 'user_deleted';
 }
 
 function getSigningSecret(
@@ -269,7 +277,12 @@ export function narrowClerkWebhookEvent(
     return { kind: 'user_deleted', clerkUserId: id, occurredAt: verifiedAt };
   }
 
-  return { kind: 'session_revoked', clerkSessionId: id, occurredAt: verifiedAt };
+  return {
+    kind: 'session_revoked',
+    event: type === 'session.ended' ? 'session_ended' : 'session_revoked',
+    clerkSessionId: id,
+    occurredAt: verifiedAt,
+  };
 }
 
 export function createClerkWebhookHandler(
@@ -318,13 +331,13 @@ export function createClerkWebhookHandler(
     try {
       await dependencies.runAsSystem(() => applyWebhookEvent(event, dependencies));
     } catch {
-      dependencies.recordOutcome(event.kind, 'mutation_failed');
+      dependencies.recordOutcome(getWebhookEventLabel(event), 'mutation_failed');
       dependencies.logError('Clerk webhook mutation failed');
       response.status(500).json({ code: 'CLERK_LOGIN_FAILED' });
       return;
     }
 
-    dependencies.recordOutcome(event.kind, 'success');
+    dependencies.recordOutcome(getWebhookEventLabel(event), 'success');
     response.status(204).end();
   };
 }

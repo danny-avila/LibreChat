@@ -8,6 +8,7 @@ import {
   narrowClerkWebhookEvent,
   verifyClerkWebhookRequest,
 } from './webhook';
+import type { ClerkWebhookConfig } from './webhook';
 import { CLERK_CLOCK_SKEW_MS, MAX_CLERK_TOKEN_LIFETIME_MS } from './verify';
 
 describe('createClerkWebhookRequest', () => {
@@ -112,6 +113,7 @@ describe('narrowClerkWebhookEvent', () => {
 
       expect(event).toEqual({
         kind: 'session_revoked',
+        event: type === 'session.ended' ? 'session_ended' : 'session_revoked',
         clerkSessionId: 'sess_123',
         occurredAt,
       });
@@ -281,7 +283,7 @@ describe('createClerkWebhookLifecycle', () => {
 describe('createClerkWebhookHandler', () => {
   function createDependencies() {
     return {
-      resolveConfig: jest.fn(() => ({
+      resolveConfig: jest.fn<ClerkWebhookConfig, []>(() => ({
         enabled: true as const,
         webhookSigningSecret: 'whsec_test',
       })),
@@ -305,11 +307,16 @@ describe('createClerkWebhookHandler', () => {
     return app;
   }
 
+  function createParsedBodyApp(dependencies: ReturnType<typeof createDependencies>) {
+    const app = express();
+    app.post('/api/auth/clerk/webhook', express.json(), createClerkWebhookHandler(dependencies));
+    return app;
+  }
+
   it('returns a stable unavailable response when Clerk is not configured', async () => {
     const dependencies = createDependencies();
     dependencies.resolveConfig.mockReturnValue({
       enabled: false,
-      webhookSigningSecret: '',
     });
 
     const response = await request(createApp(dependencies))
@@ -338,6 +345,36 @@ describe('createClerkWebhookHandler', () => {
     expect(dependencies.runAsSystem).not.toHaveBeenCalled();
     expect(dependencies.revokeClerkSession).not.toHaveBeenCalled();
     expect(dependencies.tombstoneClerkUser).not.toHaveBeenCalled();
+    expect(dependencies.recordOutcome).toHaveBeenCalledWith('unknown', 'invalid');
+  });
+
+  it('rejects a body parsed before the handler without attempting verification', async () => {
+    const dependencies = createDependencies();
+
+    const response = await request(createParsedBodyApp(dependencies))
+      .post('/api/auth/clerk/webhook')
+      .set('Content-Type', 'application/json')
+      .send({ type: 'session.revoked', data: { id: 'sess_123' } });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ code: 'CLERK_REQUEST_INVALID' });
+    expect(dependencies.verifyWebhook).not.toHaveBeenCalled();
+    expect(dependencies.runAsSystem).not.toHaveBeenCalled();
+    expect(dependencies.recordOutcome).toHaveBeenCalledWith('unknown', 'invalid');
+  });
+
+  it('rejects a malformed supported verified event before any mutation', async () => {
+    const dependencies = createDependencies();
+    dependencies.verifyWebhook.mockResolvedValue({ type: 'session.revoked', data: {} });
+
+    const response = await request(createApp(dependencies))
+      .post('/api/auth/clerk/webhook')
+      .set('Content-Type', 'application/json')
+      .send('{}');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ code: 'CLERK_REQUEST_INVALID' });
+    expect(dependencies.runAsSystem).not.toHaveBeenCalled();
     expect(dependencies.recordOutcome).toHaveBeenCalledWith('unknown', 'invalid');
   });
 
@@ -385,7 +422,10 @@ describe('createClerkWebhookHandler', () => {
         revokedAt: new Date('2026-08-13T09:00:00.000Z'),
       });
       expect(dependencies.tombstoneClerkUser).not.toHaveBeenCalled();
-      expect(dependencies.recordOutcome).toHaveBeenCalledWith('session_revoked', 'success');
+      expect(dependencies.recordOutcome).toHaveBeenCalledWith(
+        type === 'session.ended' ? 'session_ended' : 'session_revoked',
+        'success',
+      );
     },
   );
 
@@ -428,6 +468,7 @@ describe('createClerkWebhookHandler', () => {
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ code: 'CLERK_LOGIN_FAILED' });
     expect(dependencies.logError).toHaveBeenCalledWith('Clerk webhook mutation failed');
+    expect(dependencies.logError).toHaveBeenCalledTimes(1);
     expect(dependencies.recordOutcome).toHaveBeenCalledWith('session_revoked', 'mutation_failed');
   });
 });
