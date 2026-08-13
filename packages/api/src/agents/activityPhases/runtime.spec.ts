@@ -1443,7 +1443,12 @@ describe('createActivityPhaseWiring', () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
-      { type: ContentTypes.TEXT, text: 'The lane answer is complete.', groupId: 'lane-a' },
+      {
+        type: ContentTypes.TEXT,
+        text: 'The lane answer is complete.',
+        phase: 'final_answer',
+        groupId: 'lane-a',
+      },
     ];
     const wiring = createActivityPhaseWiring({
       getContentParts: () => parts,
