@@ -447,6 +447,13 @@ function replyResponses(text) {
         [
           'E2E opening paragraph of the reply, ahead of the closing one.',
           '',
+          /** Renders inside `.markdown-table-wrapper`, a nested scroll container:
+           *  its `overflow-x: auto` also makes the computed `overflow-y` auto, so
+           *  a selection here is clipped by the table AND by the message list. */
+          '| Column | E2E nested value |',
+          '| --- | --- |',
+          '| row | E2E table cell text |',
+          '',
           ...filler,
           'E2E closing paragraph, the last block this message renders.',
         ].join('\n'),

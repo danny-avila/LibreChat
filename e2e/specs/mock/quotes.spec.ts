@@ -165,8 +165,14 @@ function selectionBottom(page: Page) {
 }
 
 /**
- * Centre the message containing `needle` in its scroller, so a later nudge in
- * either direction leaves it comfortably on screen.
+ * Scroll the message list so the block containing `needle` sits at `fraction` of
+ * the visible height, returning the signed distance moved.
+ *
+ * Specs move the selection between two *visible* positions rather than nudging
+ * blindly by a pixel count. Blind nudges kept scrolling the selection under the
+ * composer, where the popup correctly hides — real behaviour, but the opposite
+ * of what a "popup follows the scroll" spec means to assert, and the chat's own
+ * auto-scroll made where it landed unpredictable.
  *
  * The scroller is reached from the message itself rather than by querying
  * `.scrollbar-gutter-stable` directly: the nav and side panels carry that class
@@ -174,55 +180,36 @@ function selectionBottom(page: Page) {
  * which is exactly how these specs passed locally and moved 0px in CI. This
  * mirrors how the app resolves the same container (`MessageNav.tsx`).
  */
-async function centerMessageOn(page: Page, needle: string) {
-  await page.evaluate((text) => {
-    const renders = Array.from(document.querySelectorAll('.message-render'));
-    const host = [...renders].reverse().find((el) => (el.textContent ?? '').includes(text));
-    if (!host) {
-      throw new Error(`No message contains: ${text}`);
-    }
-    const scroller = host.closest('.scrollbar-gutter-stable');
-    if (!scroller) {
-      throw new Error('Message is not inside a scroll container');
-    }
-    const blocks = Array.from(host.querySelectorAll('p'));
-    const target = blocks.find((el) => (el.textContent ?? '').includes(text)) ?? host;
-    const targetBox = target.getBoundingClientRect();
-    const scrollerBox = scroller.getBoundingClientRect();
-    scroller.scrollTop +=
-      targetBox.top + targetBox.height / 2 - (scrollerBox.top + scrollerBox.height / 2);
-  }, needle);
-}
-
-/**
- * Nudge the message list in whichever direction has room, returning the signed
- * distance actually moved.
- *
- * The distance is a quarter of the visible height rather than a fixed pixel
- * count: paired with `centerMessageOn` that always leaves the selection on
- * screen, whichever viewport the spec runs at. Scrolling a centred selection
- * clean out of the container is correct behaviour (the popup hides with it),
- * just not what these specs are here to measure. Direction is chosen at runtime
- * because a list parked at the top cannot scroll up.
- */
-function nudgeMessages(page: Page) {
-  return page.evaluate(() => {
-    const message = document.querySelector('.message-render');
-    const scroller = message?.closest('.scrollbar-gutter-stable');
-    if (!scroller) {
-      throw new Error('No message scroll container');
-    }
-    const room = scroller.scrollHeight - scroller.clientHeight;
-    if (room <= 0) {
-      throw new Error(
-        `Message list does not overflow (scrollHeight ${scroller.scrollHeight}, clientHeight ${scroller.clientHeight})`,
-      );
-    }
-    const by = Math.max(40, Math.round(scroller.clientHeight / 4));
-    const start = scroller.scrollTop;
-    scroller.scrollTop = start > 0 ? Math.max(0, start - by) : Math.min(room, start + by);
-    return scroller.scrollTop - start;
-  });
+function scrollSelectionTo(page: Page, needle: string, fraction: number) {
+  return page.evaluate(
+    ({ text, at }) => {
+      const renders = Array.from(document.querySelectorAll('.message-render'));
+      const host = [...renders].reverse().find((el) => (el.textContent ?? '').includes(text));
+      if (!host) {
+        throw new Error(`No message contains: ${text}`);
+      }
+      const scroller = host.closest('.scrollbar-gutter-stable');
+      if (!scroller) {
+        throw new Error('Message is not inside a scroll container');
+      }
+      const room = scroller.scrollHeight - scroller.clientHeight;
+      if (room <= 0) {
+        throw new Error(
+          `Message list does not overflow (scrollHeight ${scroller.scrollHeight}, clientHeight ${scroller.clientHeight})`,
+        );
+      }
+      const blocks = Array.from(host.querySelectorAll('p, li, td, th, pre'));
+      const target = blocks.find((el) => (el.textContent ?? '').includes(text)) ?? host;
+      const targetBox = target.getBoundingClientRect();
+      const scrollerBox = scroller.getBoundingClientRect();
+      const wanted = scrollerBox.top + scrollerBox.height * at;
+      const delta = targetBox.top + targetBox.height / 2 - wanted;
+      const start = scroller.scrollTop;
+      scroller.scrollTop = Math.min(room, Math.max(0, start + delta));
+      return scroller.scrollTop - start;
+    },
+    { text: needle, at: fraction },
+  );
 }
 
 const addToChat = (page: Page) => page.getByTestId('add-to-chat-button');
@@ -245,6 +232,8 @@ const PIXEL_5 = {
 const PARAGRAPHS_PROMPT = 'E2E_PARAGRAPHS_REPLY';
 const OPENING_PARAGRAPH = 'E2E opening paragraph';
 const CLOSING_PARAGRAPH = 'E2E closing paragraph';
+/** Sits inside `.markdown-table-wrapper`, a scroll container nested in the message. */
+const TABLE_CELL = 'E2E table cell text';
 
 /** Seed a conversation whose latest reply has several paragraphs. */
 async function seedParagraphReply(page: Page) {
@@ -379,8 +368,8 @@ test.describe('quote references', () => {
     await seedParagraphReply(page);
 
     await expect(async () => {
-      await centerMessageOn(page, CLOSING_PARAGRAPH);
-      await selectMessageText(page, CLOSING_PARAGRAPH);
+      await scrollSelectionTo(page, OPENING_PARAGRAPH, 0.75);
+      await selectMessageText(page, OPENING_PARAGRAPH);
       await expect(addToChat(page)).toBeVisible({ timeout: 3000 });
     }).toPass({ timeout: 30000 });
 
@@ -389,7 +378,7 @@ test.describe('quote references', () => {
 
     // Scrolling used to dismiss the popup on the first event, which the chat's
     // own auto-scroll fires constantly while streaming. It now follows instead.
-    const moved = await nudgeMessages(page);
+    const moved = await scrollSelectionTo(page, OPENING_PARAGRAPH, 0.25);
     expect(Math.abs(moved)).toBeGreaterThan(0);
 
     await expect(addToChat(page)).toBeVisible();
@@ -401,7 +390,39 @@ test.describe('quote references', () => {
 
     // Still the right excerpt after travelling with the text.
     await addToChat(page).click();
-    await expect(pendingChips(page)).toContainText(CLOSING_PARAGRAPH);
+    await expect(pendingChips(page)).toContainText(OPENING_PARAGRAPH);
+  });
+
+  test('hides the popup when a selection inside a table scrolls out of the chat', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await page.setViewportSize({ width: 900, height: 500 });
+    await seedParagraphReply(page);
+
+    // Table cells live in `.markdown-table-wrapper`, a scroll container nested
+    // inside the message. Honouring only the nearest clipper would let the outer
+    // list carry the whole table under the header while the wrapper still
+    // reported the selection visible, stranding the popup over the composer.
+    await expect(async () => {
+      await scrollSelectionTo(page, TABLE_CELL, 0.5);
+      await selectMessageText(page, TABLE_CELL);
+      await expect(addToChat(page)).toBeVisible({ timeout: 3000 });
+    }).toPass({ timeout: 30000 });
+
+    const scrolledAway = await page.evaluate(() => {
+      const message = document.querySelector('.message-render');
+      const scroller = message?.closest('.scrollbar-gutter-stable');
+      if (!scroller) {
+        throw new Error('No message scroll container');
+      }
+      const start = scroller.scrollTop;
+      scroller.scrollTop = scroller.scrollHeight;
+      return scroller.scrollTop - start;
+    });
+    expect(Math.abs(scrolledAway)).toBeGreaterThan(0);
+
+    await expect(addToChat(page)).toBeHidden({ timeout: 5000 });
   });
 
   test('hides the popup when the selection collapses without a mouse event', async ({ page }) => {
@@ -656,23 +677,61 @@ test.describe('quote references on touch devices', () => {
     await expect(pendingChips(page)).toHaveCount(0);
   });
 
+  test('dismisses the popup when a cancelled press took the selection with it', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await seedParagraphReply(page);
+
+    await expect(async () => {
+      await touchSelect(page, CLOSING_PARAGRAPH);
+      await expect(addToChat(page)).toBeVisible({ timeout: 5000 });
+    }).toPass({ timeout: 30000 });
+
+    const popup = await addToChat(page).boundingBox();
+    expect(popup).not.toBeNull();
+
+    // A press keeps the button alive through a collapsing selection so the
+    // release has something to land on. When that press is then cancelled, the
+    // collapse it masked still has to be honoured — otherwise the popup lingers
+    // over a selection that no longer exists and a later tap adds a dead quote.
+    await page.evaluate(
+      ({ x, y }) => {
+        const button = document.querySelector('[data-testid="add-to-chat-button"]');
+        if (!button) {
+          throw new Error('Popup is not mounted');
+        }
+        const options = { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'touch' };
+        button.dispatchEvent(
+          new PointerEvent('pointerdown', { ...options, clientX: x, clientY: y }),
+        );
+        window.getSelection()?.removeAllRanges();
+        button.dispatchEvent(new PointerEvent('pointercancel', { ...options }));
+      },
+      { x: popup!.x + popup!.width / 2, y: popup!.y + popup!.height / 2 },
+    );
+
+    await expect(addToChat(page)).toBeHidden({ timeout: 5000 });
+    await expect(pendingChips(page)).toHaveCount(0);
+  });
+
   test('survives the scroll a phone fires while selecting', async ({ page }) => {
     test.setTimeout(120000);
     await seedParagraphReply(page);
 
     await expect(async () => {
-      await centerMessageOn(page, CLOSING_PARAGRAPH);
-      await touchSelect(page, CLOSING_PARAGRAPH);
+      await scrollSelectionTo(page, OPENING_PARAGRAPH, 0.75);
+      await touchSelect(page, OPENING_PARAGRAPH);
       await expect(addToChat(page)).toBeVisible({ timeout: 5000 });
     }).toPass({ timeout: 30000 });
 
     // Nudging the list (the URL bar collapsing does the same via `resize`) used
     // to throw the selection away before the user could reach the button.
-    const moved = await nudgeMessages(page);
+    const moved = await scrollSelectionTo(page, OPENING_PARAGRAPH, 0.25);
     expect(Math.abs(moved)).toBeGreaterThan(0);
 
     await expect(addToChat(page)).toBeVisible();
     await addToChat(page).tap();
-    await expect(pendingChips(page)).toContainText(CLOSING_PARAGRAPH);
+    await expect(pendingChips(page)).toContainText(OPENING_PARAGRAPH);
   });
 });

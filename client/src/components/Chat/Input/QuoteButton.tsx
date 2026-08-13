@@ -42,8 +42,8 @@ type Reading = {
   anchor: Anchor;
   /** Retained so scrolling can re-measure without re-walking the selection. */
   range: Range;
-  /** The bounds that actually clip the selection while the list scrolls. */
-  container: HTMLElement | null;
+  /** Everything that clips the selection while the page scrolls. */
+  clippers: HTMLElement[];
 };
 
 const resolveMessageElement = (node: Node | null): HTMLElement | null => {
@@ -63,19 +63,29 @@ const sameAnchor = (a: Anchor, b: Anchor): boolean =>
 
 const stripWhitespace = (value: string): string => value.replace(/\s+/g, '');
 
-/** Nearest scrollable ancestor, whose bounds clip the message visually — the
- *  message list scrolls inside a bounded container, so a selection can leave
- *  view long before it leaves the window. */
-const findScrollContainer = (element: HTMLElement): HTMLElement | null => {
+const CLIPPING_OVERFLOWS = new Set(['auto', 'scroll', 'hidden']);
+
+/**
+ * Every ancestor of the message that clips it, innermost first, so visibility
+ * can be judged against all of them: the list scrolls inside a bounded
+ * container, and intersecting the whole chain stays correct if that container
+ * is ever nested inside a further-clipped panel.
+ *
+ * This walks *up* from the message, so scroll containers inside it — a wide
+ * table, a code block — are not part of the chain and their own clipping is not
+ * accounted for here.
+ */
+const findClippingAncestors = (element: HTMLElement): HTMLElement[] => {
+  const clippers: HTMLElement[] = [];
   let current = element.parentElement;
   while (current && current !== document.body) {
-    const { overflowY } = getComputedStyle(current);
-    if (overflowY === 'auto' || overflowY === 'scroll') {
-      return current;
+    const { overflowX, overflowY } = getComputedStyle(current);
+    if (CLIPPING_OVERFLOWS.has(overflowX) || CLIPPING_OVERFLOWS.has(overflowY)) {
+      clippers.push(current);
     }
     current = current.parentElement;
   }
-  return null;
+  return clippers;
 };
 
 const sameRange = (a: Range, b: Range): boolean => {
@@ -158,23 +168,27 @@ const readSelection = (): Reading | null => {
     text: text.slice(0, MAX_QUOTE_LENGTH),
     anchor,
     range: measured,
-    container: findScrollContainer(message),
+    clippers: findClippingAncestors(message),
   };
 };
 
 /**
- * Whether the selection is still on screen. The message list scrolls inside a
- * bounded container, so text can slip under the chat header or the composer —
- * clipped and invisible — while its un-clipped rect is still within the window.
- * Checking the window alone would leave the popup floating over unrelated UI.
+ * Whether the selection is still on screen, judged against the window
+ * intersected with every ancestor that clips it. Text slipping under the chat
+ * header or the composer is invisible even though its un-clipped rect is still
+ * inside the window, and checking the window alone would leave the popup
+ * floating over unrelated UI.
  */
-const isAnchorVisible = (anchor: Anchor, container: HTMLElement | null): boolean => {
+const isAnchorVisible = (anchor: Anchor, clippers: HTMLElement[]): boolean => {
   let top = 0;
   let bottom = window.innerHeight;
-  if (container) {
-    const bounds = container.getBoundingClientRect();
+  for (let index = 0; index < clippers.length; index++) {
+    const bounds = clippers[index].getBoundingClientRect();
     top = Math.max(top, bounds.top);
     bottom = Math.min(bottom, bounds.bottom);
+    if (top > bottom) {
+      return false;
+    }
   }
   return anchor.bottom >= top && anchor.top <= bottom;
 };
@@ -221,10 +235,12 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const rangeRef = useRef<Range | null>(null);
-  const containerRef = useRef<HTMLElement | null>(null);
+  const clippersRef = useRef<HTMLElement[]>([]);
   /** Excerpt captured when a touch press begins, committed only if that press
    *  completes on the button. */
   const pressedTextRef = useRef<string | null>(null);
+  /** Set by the listener effect so the press handlers can dismiss the popup. */
+  const hideRef = useRef<() => void>(() => undefined);
   const setQuotes = useSetRecoilState(store.pendingQuotesByConvoId(conversationId));
 
   useEffect(() => {
@@ -250,7 +266,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
         return;
       }
       rangeRef.current = null;
-      containerRef.current = null;
+      clippersRef.current = [];
       setSelection(null);
       setPos(null);
     };
@@ -259,6 +275,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       clearSettleTimer();
       dropVisible();
     };
+    hideRef.current = hide;
 
     const show = (touch = viaTouch) => {
       clearSettleTimer();
@@ -268,7 +285,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
         return;
       }
       rangeRef.current = reading.range;
-      containerRef.current = reading.container;
+      clippersRef.current = reading.clippers;
       /** Reuse the previous state object when nothing moved so a redundant
        *  settle pass costs no render. */
       setSelection((prev) =>
@@ -346,7 +363,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
         return;
       }
       const anchor = anchorFromRect(range.getBoundingClientRect());
-      if (!anchor || !isAnchorVisible(anchor, containerRef.current)) {
+      if (!anchor || !isAnchorVisible(anchor, clippersRef.current)) {
         hide();
         return;
       }
@@ -412,7 +429,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
         prev.includes(text) || prev.length >= MAX_QUOTE_COUNT ? prev : [...prev, text],
       );
       rangeRef.current = null;
-      containerRef.current = null;
+      clippersRef.current = [];
       pressedTextRef.current = null;
       setSelection(null);
       setPos(null);
@@ -427,6 +444,21 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       commitQuote(selection.text);
     }
   }, [selection, commitQuote]);
+
+  /**
+   * End a touch press that did not commit. While a press is in flight the
+   * listener effect deliberately ignores a collapsing selection so the button
+   * survives to judge the release — which means a cancel leaves the popup
+   * backed by a range that may no longer be selected. Re-check once the press
+   * is over, and dismiss if the selection went away with it.
+   */
+  const abandonPress = useCallback(() => {
+    pressedTextRef.current = null;
+    const live = window.getSelection();
+    if (!live || live.rangeCount === 0 || live.isCollapsed) {
+      hideRef.current();
+    }
+  }, []);
 
   if (!selection) {
     return null;
@@ -460,7 +492,6 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
           return;
         }
         const text = pressedTextRef.current;
-        pressedTextRef.current = null;
         if (text === null) {
           return;
         }
@@ -470,13 +501,14 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
           event.clientX <= bounds.right &&
           event.clientY >= bounds.top &&
           event.clientY <= bounds.bottom;
-        if (releasedOnButton) {
-          commitQuote(text);
+        if (!releasedOnButton) {
+          abandonPress();
+          return;
         }
-      }}
-      onPointerCancel={() => {
         pressedTextRef.current = null;
+        commitQuote(text);
       }}
+      onPointerCancel={abandonPress}
       /** Keep the selection alive while a mouse click lands. */
       onMouseDown={(event) => event.preventDefault()}
       onClick={addQuote}
