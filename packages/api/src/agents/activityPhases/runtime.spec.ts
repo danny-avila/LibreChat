@@ -1210,6 +1210,50 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
+  it('anchors a phase represented entirely by retained overflow bookkeeping', async () => {
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.THINK, think: 'Earlier retained work' },
+      { type: ContentTypes.TEXT, text: substantialText('Persisted intermediate result.') },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-a' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'overflow-b' } },
+    ];
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 1,
+        generated: 0,
+        activityCount: 15,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: Array.from({ length: 13 }, () => ({
+          startIndex: 0,
+          status: 'success' as const,
+        })),
+        overflowActivityStartIndex: 30,
+        overflowToolCallIds: ['overflow-a', 'overflow-b'],
+        overflowBoundaryToolCallIds: ['overflow-a', 'overflow-b'],
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'Completed the overflow phase' })),
+    });
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(parts[5]).toMatchObject({
+      activity_start_index: 2,
+      activity_end_index: 5,
+      activity_count: 2,
+    });
+    expect(Number.isFinite(parts[5]?.activity_start_index)).toBe(true);
+    expect(Number.isFinite(parts[5]?.activity_end_index)).toBe(true);
+  });
+
   it('rebases a resumed overflow anchor after content compaction', async () => {
     const parts: LooseContentPart[] = Array.from({ length: 13 }, (_, index) => ({
       type: ContentTypes.TOOL_CALL,

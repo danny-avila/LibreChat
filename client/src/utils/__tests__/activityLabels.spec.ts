@@ -253,7 +253,8 @@ describe('groupActivityPhases', () => {
       type: ContentTypes.TEXT,
       text: 'Substantial result',
     } as TMessageContentParts;
-    const content = [tool, tool, boundary, tool, first as never, tool, second as never];
+    const final = { type: ContentTypes.TEXT, text: 'Final result' } as TMessageContentParts;
+    const content = [tool, tool, boundary, tool, first as never, tool, final, second as never];
 
     const segments = groupActivityPhases(content);
 
@@ -272,8 +273,13 @@ describe('groupActivityPhases', () => {
       expect.objectContaining({
         type: 'phase',
         startIndex: 3,
-        labelIndex: 6,
+        labelIndex: 7,
         contentIndices: [3, 5],
+      }),
+      expect.objectContaining({
+        type: 'content',
+        startIndex: 6,
+        contentIndices: [6],
       }),
     ]);
   });

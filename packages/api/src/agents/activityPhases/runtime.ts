@@ -815,6 +815,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       overflowCount > 0 &&
       (requestedEndIndex == null ||
         (overflowActivityStartIndex != null && overflowActivityStartIndex < requestedEndIndex));
+    const closingOverflowStartIndex = overflowCloses ? overflowActivityStartIndex : undefined;
     const failedCount =
       snapshot.filter((activity) => activity.status === 'error').length +
       (overflowCloses ? overflowFailedCount : 0);
@@ -846,7 +847,10 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
 
     generated += 1;
     const phaseIndex = generated - 1;
-    let startIndex = Math.min(...snapshot.map((activity) => activity.startIndex));
+    let startIndex =
+      snapshot.length > 0
+        ? Math.min(...snapshot.map((activity) => activity.startIndex))
+        : (closingOverflowStartIndex ?? 0);
     /** Pull leading commentary/reasoning into the parent card. A prior phase
      *  marker or steer is the only hard UI boundary; plain text can be
      *  intermediate context on providers that do not expose phase metadata. */

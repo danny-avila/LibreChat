@@ -192,6 +192,7 @@ export function groupActivityPhases(
      *  segment so a later phase marker can still claim its declared span. */
     if (start < cursor) {
       const recoveredIndices: number[] = [];
+      const deferredTrailingIndices: number[] = [];
       for (let segmentIndex = segments.length - 1; segmentIndex >= 0; segmentIndex -= 1) {
         const segment = segments[segmentIndex];
         if (segment.type !== 'content') {
@@ -207,6 +208,8 @@ export function groupActivityPhases(
           const childIndex = segment.contentIndices[childPosition];
           if (childIndex >= start && childIndex < end) {
             recoveredIndices.push(childIndex);
+          } else if (childIndex >= end) {
+            deferredTrailingIndices.push(childIndex);
           } else {
             retainedContent.push(segment.content[childPosition]);
             retainedIndices.push(childIndex);
@@ -223,6 +226,10 @@ export function groupActivityPhases(
       recoveredIndices.sort((a, b) => a - b);
       for (const recoveredIndex of recoveredIndices) {
         append(phase, recoveredIndex);
+      }
+      deferredTrailingIndices.sort((a, b) => a - b);
+      for (const trailingIndex of deferredTrailingIndices) {
+        append(trailing, trailingIndex);
       }
     }
     while (definedPosition < definedIndices.length && definedIndices[definedPosition] < index) {
