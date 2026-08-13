@@ -447,7 +447,6 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     { kind: 'text' | 'think'; phase?: AssistantTextPhase; captureContext?: boolean }
   >();
   let lastRootTextStepId: string | undefined;
-  let lastRootTextWasSemantic = false;
 
   const clear = () => {
     activities = [];
@@ -464,7 +463,6 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     overflowReasoningExcerpt = undefined;
     contributingAgentIds.clear();
     lastRootTextStepId = undefined;
-    lastRootTextWasSemantic = false;
   };
 
   const trackActivity = (activity: TrackedActivity) => {
@@ -827,8 +825,12 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
               return result;
             } else {
               if (step.groupId == null) {
-                lastRootTextStepId = phase == null ? step.id : undefined;
-                lastRootTextWasSemantic = phase != null;
+                /** `final_answer` closes immediately before its text streams.
+                 *  Commentary does not: if it is the root run's last text,
+                 *  completion must leave it outside the parent like any
+                 *  unphased answer. Later activities still invalidate this
+                 *  candidate in `complete`. */
+                lastRootTextStepId = phase === 'final_answer' ? undefined : step.id;
               }
               if (phase === 'final_answer' && step.groupId == null) {
                 addPendingReasoning(step.agentId ?? 'root');
@@ -910,7 +912,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const index = Number(definedIndices[position]);
       const part = parts[index];
       if (part?.type === ContentTypes.TEXT && part.groupId == null) {
-        if (!lastRootTextWasSemantic && part.phase == null) {
+        if (part.phase !== 'final_answer') {
           finalTextIndex = index;
         }
         break;

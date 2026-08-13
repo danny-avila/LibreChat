@@ -1335,7 +1335,7 @@ describe('createActivityPhaseWiring', () => {
     });
   });
 
-  it('keeps semantic commentary inside a completion-finalized phase', async () => {
+  it('leaves final semantic commentary outside a completion-finalized phase', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
     ];
@@ -1373,12 +1373,12 @@ describe('createActivityPhaseWiring', () => {
 
     expect(parts[3]).toMatchObject({
       activity_start_index: 0,
-      activity_end_index: 3,
+      activity_end_index: 2,
       activity_count: 2,
     });
   });
 
-  it('keeps later semantic commentary inside a phase after unphased root text', async () => {
+  it('leaves the last semantic commentary outside after earlier unphased text', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
     ];
@@ -1437,12 +1437,12 @@ describe('createActivityPhaseWiring', () => {
 
     expect(parts[4]).toMatchObject({
       activity_start_index: 0,
-      activity_end_index: 4,
+      activity_end_index: 3,
       activity_count: 2,
     });
   });
 
-  it('keeps persisted semantic commentary inside the phase after HITL resume', async () => {
+  it('leaves persisted final commentary outside the phase after HITL resume', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
       { type: ContentTypes.TEXT, text: 'I will keep investigating.' },
@@ -1477,7 +1477,7 @@ describe('createActivityPhaseWiring', () => {
 
     expect(parts[4]).toMatchObject({
       activity_start_index: 0,
-      activity_end_index: 4,
+      activity_end_index: 3,
       activity_count: 2,
     });
   });
