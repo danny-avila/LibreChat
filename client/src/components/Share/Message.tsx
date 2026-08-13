@@ -42,7 +42,11 @@ export default function Message(props: TMessageProps) {
     isCreatedByUser = true,
   } = message;
 
-  const messageLabel = isCreatedByUser ? localize('com_user_message') : (message.sender ?? '');
+  /** Whoever opens a share link is not the author of the prompts in it, so this row
+   *  keeps a neutral label. `com_user_message` reads "You", which is right in the chat
+   *  view and wrong here: it is the screen-reader heading for the user turn, and it
+   *  would credit every prompt the sharer wrote to the person reading the transcript. */
+  const messageLabel = isCreatedByUser ? localize('com_ui_user') : (message.sender ?? '');
 
   return (
     <>
