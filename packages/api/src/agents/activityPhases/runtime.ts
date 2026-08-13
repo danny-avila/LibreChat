@@ -364,6 +364,27 @@ function findReasoningStart(
   return startIndex ?? findLastPartIndex(parts, ContentTypes.THINK);
 }
 
+function findTextBoundary(
+  parts: ReadonlyArray<LooseContentPart | null | undefined>,
+  text: string,
+  stepIndex?: number,
+): number | undefined {
+  const needle = text.trim().slice(-REASONING_ANCHOR_CHARS);
+  const matches = (part: LooseContentPart | null | undefined) =>
+    part?.type === ContentTypes.TEXT && textValue(part.text).includes(needle);
+  if (stepIndex != null && matches(parts[stepIndex])) {
+    return stepIndex;
+  }
+  const indices = definedPartIndices(parts);
+  for (let position = indices.length - 1; position >= 0; position -= 1) {
+    const index = indices[position];
+    if (matches(parts[index])) {
+      return index;
+    }
+  }
+  return undefined;
+}
+
 /** Persists Open Responses text-phase metadata onto LibreChat text parts.
  *  Installed for existing batch labels too, so commentary can supply intent
  *  even when parent phase summaries are disabled. */
@@ -992,7 +1013,14 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
               contextEntry.text = `${contextEntry.text}${text}`.slice(-MAX_EXCERPT_CHARS);
             }
             const result = messageHandler.handle(event, data, metadata, graph);
-            const boundaryIndex = id ? deps.getStepIndex?.(id) : undefined;
+            const boundaryIndex =
+              id && contextEntry != null
+                ? findTextBoundary(
+                    deps.getContentParts(),
+                    contextEntry.text,
+                    deps.getStepIndex?.(id),
+                  )
+                : undefined;
             if (
               contextEntry != null &&
               contextEntry.text.trim().length > SUBSTANTIAL_TEXT_CHARS &&

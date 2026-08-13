@@ -24,7 +24,9 @@ const batch = (id: string): PostToolBatchHookInput =>
     ],
   }) as PostToolBatchHookInput;
 
-const substantialText = (prefix: string): string => `${prefix} ${'x'.repeat(201)}`;
+const SUBSTANTIAL_TEXT_CHARS = 200;
+const substantialText = (prefix: string): string =>
+  `${prefix} ${'x'.repeat(SUBSTANTIAL_TEXT_CHARS + 1)}`;
 
 async function flushDetached(): Promise<void> {
   for (let i = 0; i < 4; i += 1) {
@@ -40,7 +42,7 @@ describe('createActivityPhaseWiring', () => {
     const generatePhase = jest.fn(async () => ({ label: 'Resolved the release compatibility' }));
     const wiring = createActivityPhaseWiring({
       getContentParts: () => parts,
-      getStepIndex: (stepId) => (stepId === 'final-step' ? 2 : undefined),
+      getStepIndex: (stepId) => (stepId === 'final-step' ? 1 : undefined),
       bumpIndexOffset: jest.fn(),
       emitLabelEvent,
       trackPendingFill: jest.fn(),
@@ -96,7 +98,9 @@ describe('createActivityPhaseWiring', () => {
       GraphEvents.ON_MESSAGE_DELTA,
       {
         id: 'final-step',
-        delta: { content: { type: ContentTypes.TEXT, text: 'A'.repeat(201) } },
+        delta: {
+          content: { type: ContentTypes.TEXT, text: 'A'.repeat(SUBSTANTIAL_TEXT_CHARS + 1) },
+        },
       },
       undefined,
       undefined,
