@@ -34,7 +34,8 @@ export type TrackedActivity = ActivityPhaseEntry & {
 };
 
 export interface ActivityPhaseSnapshot {
-  version: 1;
+  /** Version 2 introduces object-valued assistant context and overflow anchors. */
+  version: 1 | 2;
   generated: number;
   activityCount: number;
   failedActivityCount: number;
@@ -118,6 +119,20 @@ const PHASE_TIMEOUT_MS = 12_000;
 /** Twelve enter the SDK prompt; one extra preserves its omitted-activity row. */
 const MAX_RETAINED_ACTIVITIES = 13;
 const MAX_RETAINED_TOOL_ENTRIES = 6;
+const MAX_OVERFLOW_ACTIVITY_ANCHORS = 64;
+const MAX_OVERFLOW_TOOL_ANCHORS = 64;
+
+function addBoundedValue<T>(values: Set<T>, value: T, limit: number): void {
+  values.delete(value);
+  values.add(value);
+  while (values.size > limit) {
+    const oldest = values.values().next().value as T | undefined;
+    if (oldest == null) {
+      break;
+    }
+    values.delete(oldest);
+  }
+}
 
 export const ACTIVITY_PHASE_INSTRUCTION = `Summarize what this phase of an agent run accomplished. The result appears as the header of one collapsed parent group containing several activities.
 
@@ -268,6 +283,18 @@ function addReasoningAnchor(
   } else {
     index.set(anchor.length, new Set([anchor]));
   }
+  while (anchors.size > MAX_OVERFLOW_ACTIVITY_ANCHORS) {
+    const oldest = anchors.values().next().value as string | undefined;
+    if (oldest == null) {
+      break;
+    }
+    anchors.delete(oldest);
+    const matchingLength = index.get(oldest.length);
+    matchingLength?.delete(oldest);
+    if (matchingLength?.size === 0) {
+      index.delete(oldest.length);
+    }
+  }
 }
 
 function includesReasoningAnchor(text: string, index: ReasoningAnchorIndex): boolean {
@@ -401,7 +428,10 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const maxPerRun = deps.maxPerRun ?? DEFAULT_MAX_PER_RUN;
   const charLimit = deps.charLimit ?? DEFAULT_CHAR_LIMIT;
   const content = deps.getContentParts();
-  const initialSnapshot = deps.initialSnapshot?.version === 1 ? deps.initialSnapshot : undefined;
+  const initialSnapshot =
+    deps.initialSnapshot?.version === 1 || deps.initialSnapshot?.version === 2
+      ? deps.initialSnapshot
+      : undefined;
   let generated = Math.max(
     initialSnapshot?.generated ?? 0,
     definedPartIndices(content).filter((index) => {
@@ -409,6 +439,15 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       return part?.type === ContentTypes.ACTIVITY_LABEL && part.activity_label_type === 'phase';
     }).length,
   );
+  const emittedContentRanges = definedPartIndices(content).flatMap((index) => {
+    const part = content[index];
+    return part?.type === ContentTypes.ACTIVITY_LABEL &&
+      part.activity_label_type === 'phase' &&
+      typeof part.activity_start_index === 'number' &&
+      typeof part.activity_end_index === 'number'
+      ? [{ start: part.activity_start_index, end: part.activity_end_index }]
+      : [];
+  });
   const initiallyMaterializedToolIds = new Set(
     definedPartIndices(content).flatMap((index) => {
       const part = content[index];
@@ -434,13 +473,19 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       };
     }) ?? [];
   let overflowActivities: TrackedActivity[] =
-    initialSnapshot?.overflowActivities?.map((activity) => {
+    initialSnapshot?.overflowActivities?.slice(-MAX_OVERFLOW_ACTIVITY_ANCHORS).map((activity) => {
       const startIndex = findTrackedStart(content, activity);
-      const toolCallIds = activity.toolCallIds ?? [];
+      const toolCallIds = activity.toolCallIds?.slice(-MAX_RETAINED_TOOL_ENTRIES) ?? [];
       const hasUnresolvedTool = toolCallIds.some((id) => !initiallyMaterializedToolIds.has(id));
       return {
         ...activity,
         startIndex,
+        ...(toolCallIds.length > 0 && { toolCallIds }),
+        ...(activity.thinkingExcerpts != null && {
+          thinkingExcerpts: activity.thinkingExcerpts
+            .slice(-MAX_RETAINED_TOOL_ENTRIES)
+            .map((text) => text.slice(-REASONING_ANCHOR_CHARS)),
+        }),
         ...(hasUnresolvedTool && {
           unresolvedToolStartIndex: Math.max(
             activity.unresolvedToolStartIndex ?? activity.startIndex,
@@ -456,9 +501,15 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   let partialActivityCount =
     initialSnapshot?.partialActivityCount ??
     activities.filter((activity) => activity.status === 'partial').length;
-  const overflowToolCallIds = new Set(initialSnapshot?.overflowToolCallIds ?? []);
+  const overflowToolCallIds = new Set(
+    initialSnapshot?.overflowToolCallIds?.slice(-MAX_OVERFLOW_TOOL_ANCHORS) ?? [],
+  );
   const overflowBoundaryToolCallIds = new Set(
-    initialSnapshot?.overflowBoundaryToolCallIds ?? initialSnapshot?.overflowToolCallIds ?? [],
+    (
+      initialSnapshot?.overflowBoundaryToolCallIds ??
+      initialSnapshot?.overflowToolCallIds ??
+      []
+    ).slice(-MAX_OVERFLOW_TOOL_ANCHORS),
   );
   const materializedOverflowToolIds = new Set<string>();
   const rebasedOverflowToolIndexes = definedPartIndices(content).filter((index) => {
@@ -473,7 +524,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   const overflowReasoningAnchors = new Set<string>();
   const overflowReasoningAnchorIndex: ReasoningAnchorIndex = new Map();
   const initialOverflowReasoningAnchors =
-    initialSnapshot?.overflowReasoningAnchors ??
+    initialSnapshot?.overflowReasoningAnchors?.slice(-MAX_OVERFLOW_ACTIVITY_ANCHORS) ??
     (initialSnapshot?.overflowReasoningExcerpt != null
       ? [initialSnapshot.overflowReasoningExcerpt]
       : []);
@@ -619,10 +670,10 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     partialActivityCount = retainedPartialCount;
     overflowActivityStartIndex = retainedOverflowActivityStartIndex;
     for (const id of retainedOverflowToolCallIds) {
-      overflowToolCallIds.add(id);
+      addBoundedValue(overflowToolCallIds, id, MAX_OVERFLOW_TOOL_ANCHORS);
     }
     for (const id of retainedOverflowBoundaryToolCallIds) {
-      overflowBoundaryToolCallIds.add(id);
+      addBoundedValue(overflowBoundaryToolCallIds, id, MAX_OVERFLOW_TOOL_ANCHORS);
     }
     for (const anchor of retainedOverflowReasoningAnchors) {
       addReasoningAnchor(overflowReasoningAnchors, overflowReasoningAnchorIndex, anchor);
@@ -664,13 +715,20 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     } else {
       overflowActivities.push({
         startIndex: activity.startIndex,
-        ...(activity.toolCallIds != null && { toolCallIds: [...activity.toolCallIds] }),
+        ...(activity.toolCallIds != null && {
+          toolCallIds: activity.toolCallIds.slice(-MAX_RETAINED_TOOL_ENTRIES),
+        }),
         ...(activity.thinkingExcerpts != null && {
-          thinkingExcerpts: activity.thinkingExcerpts.map((text) => text.slice(-MAX_EXCERPT_CHARS)),
+          thinkingExcerpts: activity.thinkingExcerpts
+            .slice(-MAX_RETAINED_TOOL_ENTRIES)
+            .map((text) => text.slice(-REASONING_ANCHOR_CHARS)),
         }),
         ...(activity.agentId != null && { agentId: activity.agentId }),
         status: activity.status,
       });
+      if (overflowActivities.length > MAX_OVERFLOW_ACTIVITY_ANCHORS) {
+        overflowActivities.shift();
+      }
       if (overflowActivityStartIndex == null || activity.startIndex > overflowActivityStartIndex) {
         overflowActivityStartIndex = activity.startIndex;
         overflowBoundaryToolCallIds.clear();
@@ -685,16 +743,16 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         );
       }
       for (const id of activity.toolCallIds ?? []) {
-        overflowToolCallIds.add(id);
+        addBoundedValue(overflowToolCallIds, id, MAX_OVERFLOW_TOOL_ANCHORS);
         if (activity.startIndex === overflowActivityStartIndex) {
-          overflowBoundaryToolCallIds.add(id);
+          addBoundedValue(overflowBoundaryToolCallIds, id, MAX_OVERFLOW_TOOL_ANCHORS);
         }
       }
     }
   };
 
   const snapshot = (): ActivityPhaseSnapshot => ({
-    version: 1,
+    version: 2,
     generated,
     activityCount,
     failedActivityCount,
@@ -911,7 +969,10 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const isRetained =
         requestedEndIndex != null &&
         (entry.activityPosition != null
-          ? entry.activityPosition > totalActivityCount
+          ? entry.activityPosition > totalActivityCount ||
+            (entry.activityPosition === totalActivityCount &&
+              entryIndex != null &&
+              entryIndex > requestedEndIndex)
           : entryIndex != null && entryIndex >= requestedEndIndex);
       if (isRetained) {
         retainedContext.push({
@@ -1029,6 +1090,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       pending: true,
     };
     deps.getContentParts().push(part);
+    emittedContentRanges.push({ start: startIndex, end: endIndex });
     deps.bumpIndexOffset();
     void Promise.resolve(deps.emitLabelEvent(index, part)).catch(() => undefined);
 
@@ -1113,6 +1175,15 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           childLabelIndex = index;
         }
       }
+    }
+    if (
+      batchStartIndex != null &&
+      emittedContentRanges.some(
+        ({ start, end }) => batchStartIndex >= start && batchStartIndex < end,
+      )
+    ) {
+      pendingReasoning.delete(reasoningKey);
+      return {};
     }
     const entries = input.entries.map((entry: BatchEntry) => ({
       toolName: entry.toolName,
