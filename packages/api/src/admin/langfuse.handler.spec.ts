@@ -338,6 +338,67 @@ describe('createAdminLangfuseHandlers', () => {
       );
     });
 
+    it("links to the tenant project resolved from that tenant's API keys in fanout mode", async () => {
+      let persistedConfig: ReturnType<typeof baseConfigDoc> | null = null;
+      const findConfigByPrincipal = jest
+        .fn()
+        .mockImplementation(() => Promise.resolve(persistedConfig));
+      const patchConfigFields = jest.fn().mockImplementation((_pt, _pid, _pm, fields) => {
+        persistedConfig = baseConfigDoc(rehydrate(fields));
+        return Promise.resolve(persistedConfig);
+      });
+      const getMessages = jest.fn().mockResolvedValue([{ _id: 'message-1' }]);
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(projectResponse('tenant-project-1')) as unknown as typeof fetch;
+      const { handlers } = createHandlers({
+        findConfigByPrincipal,
+        patchConfigFields,
+        getMessages,
+      });
+
+      const updateRes = mockRes();
+      await handlers.updateConnection(
+        mockReq({
+          body: {
+            enabled: true,
+            destination: 'eu',
+            publicKey: 'pk-lf-tenant',
+            secretKey: 'sk-lf-tenant',
+          },
+        }),
+        updateRes,
+      );
+
+      expect(updateRes.statusCode).toBe(200);
+      const [projectsUrl, projectsInit] = (global.fetch as unknown as jest.Mock).mock.calls[0];
+      expect(projectsUrl).toBe('https://cloud.langfuse.com/api/public/projects');
+      expect(
+        Buffer.from(projectsInit.headers.Authorization.replace('Basic ', ''), 'base64').toString(),
+      ).toBe('pk-lf-tenant:sk-lf-tenant');
+      expect(patchConfigFields.mock.calls[0][3]['langfuse.projectId']).toBe('tenant-project-1');
+
+      const linkRes = mockRes();
+      await handlers.getSessionLink(
+        mockReq({ params: { conversationId: 'conversation-1' } }),
+        linkRes,
+      );
+
+      expect(linkRes.body).toEqual({
+        url: 'https://cloud.langfuse.com/project/tenant-project-1/sessions/conversation-1',
+      });
+      expect(getMessages).toHaveBeenCalledWith(
+        expect.objectContaining({
+          langfuseDestinationIds: getLangfuseDestinationId(
+            'https://cloud.langfuse.com',
+            'tenant-project-1',
+          ),
+        }),
+        '_id',
+        { sort: false, limit: 1 },
+      );
+    });
+
     it('preserves a destination base path in the session URL', async () => {
       process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://langfuse.example/base/path';
       const { handlers } = createHandlers({
