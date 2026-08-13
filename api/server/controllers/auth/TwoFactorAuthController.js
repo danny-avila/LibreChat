@@ -1,5 +1,6 @@
 const { logger } = require('@librechat/data-schemas');
 const {
+  isTokenRetired,
   clearCloudFrontCookies,
   confirmTwoFactorSetup,
   finalizeTwoFactorSetup,
@@ -59,14 +60,27 @@ const verify2FAWithTempToken = async (req, res) => {
       return res.status(400).json({ message: 'Missing temporary token' });
     }
 
-    const userId = verifyTwoFactorLoginChallengeToken(tempToken, process.env.JWT_SECRET);
-    if (!userId) {
+    const credential = verifyTwoFactorLoginChallengeToken(tempToken, process.env.JWT_SECRET);
+    if (!credential) {
       return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
 
-    const user = await getUserById(userId, '+totpSecret +backupCodes');
+    const user = await getUserById(credential.userId, '+totpSecret +backupCodes');
     if (!user || !user.twoFactorEnabled) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
+    }
+
+    /**
+     * The challenge is redeemable for a full session without presenting the password again, so
+     * recovery has to reach it too. A holder who cleared the password step beforehand would
+     * otherwise redeem it afterwards and mint a session that outlives the credential that bought
+     * it, undoing the `deleteAllUserSessions` recovery performs.
+     */
+    if (isTokenRetired(credential, user)) {
+      logger.warn(
+        `[verify2FAWithTempToken] Challenge predates enrollment or password reset: userId=${credential.userId}`,
+      );
+      return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
 
     const secret = await getTOTPSecret(user.totpSecret);

@@ -302,7 +302,7 @@ const refreshController = async (req, res) => {
      * Dating the credential keeps that closed whether or not the revocation ever succeeded, and
      * covers password recovery on the same terms.
      */
-    if (isTokenRetired(payload?.iat, user)) {
+    if (isTokenRetired({ issuedAt: payload?.iat, issuedAtMs: payload?.issuedAtMs }, user)) {
       logger.warn(
         `[refreshController] Refresh token predates enrollment or password reset: userId=${userId}`,
       );

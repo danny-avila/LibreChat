@@ -15,7 +15,7 @@ const jwtLogin = () =>
       try {
         const user = await getUserById(payload?.id, '-password -__v -totpSecret -backupCodes');
         if (user) {
-          if (isTokenRetired(payload?.iat, user)) {
+          if (isTokenRetired({ issuedAt: payload?.iat, issuedAtMs: payload?.issuedAtMs }, user)) {
             logger.warn(
               '[jwtLogin] JwtStrategy => token predates enrollment or password reset: ' +
                 payload?.id,

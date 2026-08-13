@@ -840,9 +840,11 @@ const setOpenIDAuthTokens = (
     });
     if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
       /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
-      const signedUserId = jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET, {
-        expiresIn: expiryInMilliseconds / 1000,
-      });
+      const signedUserId = jwt.sign(
+        { id: userId, issuedAtMs: Date.now() },
+        process.env.JWT_REFRESH_SECRET,
+        { expiresIn: expiryInMilliseconds / 1000 },
+      );
       res.cookie('openid_user_id', signedUserId, {
         expires: expirationDate,
         httpOnly: true,

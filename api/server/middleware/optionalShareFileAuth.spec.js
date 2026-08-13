@@ -131,9 +131,9 @@ describe('optionalShareFileAuth', () => {
     });
   });
 
-  it('dates the cookie by its own iat rather than discarding it', async () => {
+  it('dates the cookie by its own mint stamps rather than discarding them', async () => {
     const enrolledAt = new Date(2000 * 1000);
-    mockVerify.mockReturnValue({ id: 'viewer-dated', iat: 1234 });
+    mockVerify.mockReturnValue({ id: 'viewer-dated', iat: 1234, issuedAtMs: 1234_500 });
     mockFindSession.mockResolvedValue({ _id: 'session-dated' });
     mockGetUserById.mockResolvedValue({
       _id: 'viewer-dated',
@@ -145,15 +145,15 @@ describe('optionalShareFileAuth', () => {
     await run(req);
 
     expect(mockIsTokenRetired).toHaveBeenCalledWith(
-      1234,
+      expect.objectContaining({ issuedAt: 1234, issuedAtMs: 1234_500 }),
       expect.objectContaining({ twoFactorEnrolledAt: enrolledAt }),
     );
   });
 
-  it('dates an OpenID cookie viewer by its own iat too', async () => {
+  it('dates an OpenID cookie viewer by its own mint stamps too', async () => {
     process.env.OPENID_REUSE_TOKENS = 'true';
     const enrolledAt = new Date(2000 * 1000);
-    mockVerify.mockReturnValue({ id: 'viewer-openid', iat: 4321 });
+    mockVerify.mockReturnValue({ id: 'viewer-openid', iat: 4321, issuedAtMs: 4321_500 });
     mockGetUserById.mockResolvedValue({
       _id: 'viewer-openid',
       role: 'USER',
@@ -169,7 +169,7 @@ describe('optionalShareFileAuth', () => {
     await run(req);
 
     expect(mockIsTokenRetired).toHaveBeenCalledWith(
-      4321,
+      expect.objectContaining({ issuedAt: 4321, issuedAtMs: 4321_500 }),
       expect.objectContaining({ twoFactorEnrolledAt: enrolledAt }),
     );
     delete process.env.OPENID_REUSE_TOKENS;

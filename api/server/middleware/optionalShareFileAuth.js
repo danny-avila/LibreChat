@@ -10,11 +10,14 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { getUserById, findSession } = require('~/models');
 
-/** Keeps the `iat` alongside the id, so the enrollment cutoff can date the credential */
+/** Keeps the mint stamps alongside the id, so the retirement cutoffs can date the credential */
 const verifySignedUser = (token) => {
   try {
     const payload = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-    return typeof payload?.id === 'string' ? { userId: payload.id, issuedAt: payload.iat } : null;
+    if (typeof payload?.id !== 'string') {
+      return null;
+    }
+    return { userId: payload.id, issuedAt: payload.iat, issuedAtMs: payload.issuedAtMs };
   } catch {
     return null;
   }
@@ -108,7 +111,7 @@ const optionalShareFileAuth = async (req, res, next) => {
      * finalization still resolves, and every other authenticated path already refuses the
      * credential it was minted from.
      */
-    if (isTwoFactorEnrollmentRequired(user) || isTokenRetired(verified.issuedAt, user)) {
+    if (isTwoFactorEnrollmentRequired(user) || isTokenRetired(verified, user)) {
       clearCloudFrontCookiesForUser(res, user);
       return next();
     }

@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { isSetupTokenRetired, TOKEN_RETIREMENT_FIELDS } = require('@librechat/api');
+const { isTokenRetired, TOKEN_RETIREMENT_FIELDS } = require('@librechat/api');
 const { getUserById } = require('~/models');
 
 /**
@@ -26,7 +26,7 @@ const blockRetiredSetupToken = async (req, res, next) => {
     }
 
     if (
-      isSetupTokenRetired(
+      isTokenRetired(
         { issuedAt: req.twoFactorSetupIssuedAt, issuedAtMs: req.twoFactorSetupIssuedAtMs },
         user,
       )

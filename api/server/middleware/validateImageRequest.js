@@ -31,7 +31,7 @@ function isValidObjectId(id) {
 /**
  * Validates a LibreChat refresh token
  * @param {string} refreshToken - The refresh token to validate
- * @returns {{valid: boolean, userId?: string, issuedAt?: number, error?: string}} - Validation result
+ * @returns {{valid: boolean, userId?: string, issuance?: TokenIssuance, error?: string}} - Validation result
  */
 function validateToken(refreshToken) {
   try {
@@ -46,7 +46,11 @@ function validateToken(refreshToken) {
       return { valid: false, error: 'Refresh token expired' };
     }
 
-    return { valid: true, userId: payload.id, issuedAt: payload.iat };
+    return {
+      valid: true,
+      userId: payload.id,
+      issuance: { issuedAt: payload.iat, issuedAtMs: payload.issuedAtMs },
+    };
   } catch (err) {
     logger.warn('[validateToken]', err);
     return { valid: false, error: 'Invalid token' };
@@ -60,10 +64,10 @@ function validateToken(refreshToken) {
  * enrollment or by a password reset keeps reading images after it has been refused everywhere
  * else, and an account still owing required enrollment keeps reading them throughout.
  * @param {string} userId - The user named by the presented token
- * @param {number} [issuedAtSeconds] - The token's `iat` claim
+ * @param {TokenIssuance} issuance - When the token was minted, from its `iat` and `issuedAtMs` claims
  * @returns {Promise<string|null>} - Reason to deny, or null when the request may proceed
  */
-async function getCredentialDenialReason(userId, issuedAtSeconds) {
+async function getCredentialDenialReason(userId, issuance) {
   /**
    * Resolve in system context: this route authenticates from the cookie alone, so it never runs
    * `requireJwtAuth` and never establishes a tenant. Under strict tenant isolation a tenant-scoped
@@ -77,7 +81,7 @@ async function getCredentialDenialReason(userId, issuedAtSeconds) {
     return 'No user found';
   }
 
-  if (isTokenRetired(issuedAtSeconds, user)) {
+  if (isTokenRetired(issuance, user)) {
     return 'Token predates enrollment or password reset';
   }
 
@@ -112,7 +116,7 @@ function createValidateImageRequest(secureImageLinks) {
       const parsedCookies = cookies.parse(cookieHeader);
       const tokenProvider = parsedCookies.token_provider;
       let userIdForPath;
-      let issuedAtSeconds;
+      let issuance;
 
       if (tokenProvider === 'openid' && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
         /** For OpenID users with OPENID_REUSE_TOKENS, use openid_user_id cookie */
@@ -128,7 +132,7 @@ function createValidateImageRequest(secureImageLinks) {
           return res.status(403).send('Access Denied');
         }
         userIdForPath = validationResult.userId;
-        issuedAtSeconds = validationResult.issuedAt;
+        issuance = validationResult.issuance;
       } else {
         /**
          * For non-OpenID users (or OpenID without REUSE_TOKENS), use refreshToken from cookies.
@@ -147,7 +151,7 @@ function createValidateImageRequest(secureImageLinks) {
           return res.status(403).send('Access Denied');
         }
         userIdForPath = validationResult.userId;
-        issuedAtSeconds = validationResult.issuedAt;
+        issuance = validationResult.issuance;
       }
 
       if (!userIdForPath) {
@@ -191,7 +195,7 @@ function createValidateImageRequest(secureImageLinks) {
       }
 
       /** Read last, so a request rejected on its path never reaches the database */
-      const denialReason = await getCredentialDenialReason(userIdForPath, issuedAtSeconds);
+      const denialReason = await getCredentialDenialReason(userIdForPath, issuance);
       if (denialReason) {
         logger.warn(`[validateImageRequest] ${denialReason}`);
         return res.status(403).send('Access Denied');

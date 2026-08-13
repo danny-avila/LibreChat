@@ -7,7 +7,7 @@ const mockVerifyTOTP = jest.fn();
 const mockVerifyBackupCode = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { error: jest.fn() },
+  logger: { error: jest.fn(), warn: jest.fn() },
 }));
 
 jest.mock('~/server/services/twoFactorService', () => ({
@@ -93,6 +93,7 @@ const {
   finalize2FASetup,
 } = require('./TwoFactorAuthController');
 const {
+  generateTwoFactorLoginChallengeToken,
   verifyTwoFactorSetupAcknowledgementToken,
   verifyTwoFactorSetupFinalizationToken,
 } = require('@librechat/api');
@@ -223,6 +224,64 @@ describe('verify2FAWithTempToken', () => {
       provider: 'local',
       twoFactorEnabled: true,
     });
+  });
+
+  /**
+   * The challenge buys a session without presenting the password again, so recovery has to reach
+   * it: redeeming one minted beforehand would hand back exactly the access `deleteAllUserSessions`
+   * had just revoked.
+   */
+  it('refuses a challenge minted before a password reset', async () => {
+    const tempToken = generateTwoFactorLoginChallengeToken('user-1', process.env.JWT_SECRET);
+    store.doc.passwordResetAt = new Date(Date.now() + 1000);
+    const res = createResponse();
+
+    await verify2FAWithTempToken({ body: { tempToken, token: '123456' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(mockSetAuthTokens).not.toHaveBeenCalled();
+  });
+
+  it('keeps a challenge minted after a password reset', async () => {
+    const tempToken = generateTwoFactorLoginChallengeToken('user-1', process.env.JWT_SECRET);
+    store.doc.passwordResetAt = new Date(Date.now() - 60_000);
+    const res = createResponse();
+
+    await verify2FAWithTempToken({ body: { tempToken, token: '123456' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockSetAuthTokens).toHaveBeenCalledTimes(1);
+  });
+
+  /** `iat` cannot separate these two, so the millisecond claim is what decides both cases. */
+  it('orders the challenge against a reset landing in the same second', async () => {
+    const tempToken = generateTwoFactorLoginChallengeToken('user-1', process.env.JWT_SECRET);
+    const { issuedAtMs } = jwt.decode(tempToken);
+
+    store.doc.passwordResetAt = new Date(issuedAtMs - 1);
+    const accepted = createResponse();
+    await verify2FAWithTempToken({ body: { tempToken, token: '123456' } }, accepted);
+    expect(accepted.status).toHaveBeenCalledWith(200);
+
+    store.doc.passwordResetAt = new Date(issuedAtMs);
+    const refused = createResponse();
+    await verify2FAWithTempToken({ body: { tempToken, token: '123456' } }, refused);
+    expect(refused.status).toHaveBeenCalledWith(401);
+  });
+
+  it('surrenders the resetting second for a challenge minted before the claim existed', async () => {
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const tempToken = jwt.sign(
+      { userId: 'user-1', purpose: 'login_2fa_challenge', iat: issuedAt },
+      process.env.JWT_SECRET,
+    );
+    store.doc.passwordResetAt = new Date(issuedAt * 1000 + 500);
+    const res = createResponse();
+
+    await verify2FAWithTempToken({ body: { tempToken, token: '123456' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(mockSetAuthTokens).not.toHaveBeenCalled();
   });
 });
 

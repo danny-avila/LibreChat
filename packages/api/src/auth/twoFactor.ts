@@ -27,11 +27,6 @@ export const TWO_FACTOR_TOKEN_PURPOSE = {
   REQUIRED_FINALIZATION: 'required_2fa_finalization',
 } as const;
 
-interface TwoFactorLoginChallengeClaims {
-  userId: string;
-  purpose: typeof TWO_FACTOR_TOKEN_PURPOSE.LOGIN_CHALLENGE;
-}
-
 interface TwoFactorSetupBody {
   tempToken?: string;
   acknowledgementToken?: string;
@@ -58,11 +53,21 @@ export interface TwoFactorEnrollmentCredential {
   nonce: string;
 }
 
-/** Identity plus the mint time that lets a later account event retire a setup token. */
-export interface TwoFactorSetupCredential {
-  userId: string;
+/**
+ * When a bearer token was minted, coarsely and exactly.
+ *
+ * `iat` is whole seconds, which cannot order a token against a cutoff that lands in the same
+ * second. `issuedAtMs` is stamped at mint time to settle exactly that, and is absent on tokens
+ * minted before the claim existed and on any this deployment did not sign.
+ */
+export interface TokenIssuance {
   issuedAt?: number;
   issuedAtMs?: number;
+}
+
+/** Identity plus the mint time that lets a later account event retire the credential. */
+export interface TwoFactorTokenCredential extends TokenIssuance {
+  userId: string;
 }
 
 /** An Express request that a required-enrollment credential has been validated for. */
@@ -180,48 +185,26 @@ function isTokenIssuedBefore(
  * has been revoked; `deleteAllUserSessions` already drops the refresh sessions on that path with
  * the same intent, and a stateless token must not outlive the password that bought it.
  *
- * `iat` is whole seconds, and the two cutoffs resolve that rounding differently. Enrollment keeps a
- * token minted within the retiring second, which is what makes the session finalization itself
- * returns survive. Recovery cannot afford the same tolerance, because it mints nothing that has to
- * live through it: a token dated to the resetting second was bought with the credential the reset
- * revoked, so it is retired too. A token carrying no `iat` cannot be dated and is refused once any
- * cutoff is set.
+ * The two cutoffs resolve a same-instant tie differently. Enrollment keeps the token, which is what
+ * makes the session finalization itself returns survive, and it is compared on whole seconds
+ * because the promotion stamps `twoFactorEnrolledAt` in the same second as that session. Recovery
+ * retires it, because it mints nothing that has to live through it: a token dated to the resetting
+ * instant was bought with the credential the reset revoked. `issuedAtMs` is what makes recovery's
+ * tie exact, sparing a token minted later in the resetting second that the whole-second fallback
+ * cannot tell apart. Tokens carrying no `issuedAtMs` surrender that whole second until they expire,
+ * and a token that cannot be dated at all is refused once any cutoff is set.
  */
 export function isTokenRetired(
-  issuedAtSeconds: number | undefined,
+  issuance: TokenIssuance,
   user: TokenRetirementSignals | null | undefined,
 ): boolean {
-  return (
-    isTokenIssuedBefore(issuedAtSeconds, user?.twoFactorEnrolledAt) ||
-    isTokenIssuedBefore(issuedAtSeconds, user?.passwordResetAt, true)
-  );
-}
-
-/**
- * Whether a required-enrollment setup token has been retired by a later account event.
- *
- * Enrollment keeps the whole-second tolerance `isTokenRetired` documents, because the promotion
- * stamps `twoFactorEnrolledAt` in the same second as the session it hands back. Password recovery
- * cannot afford it: nothing is minted in that write, so a setup token dated to the retiring second
- * is one bought with the credential the reset just revoked, and honouring it would let its holder
- * stage a second factor of their own and take a session without ever knowing the new password.
- *
- * `issuedAtMs` orders the two exactly, and a tie retires the token, matching how
- * `isEnrollmentSupersededByRecovery` resolves the same race. It also spares the setup token minted
- * later in that second, which the whole-second fallback cannot tell apart: tokens predating the
- * claim carry only `iat`, so they surrender the entire resetting second until they expire.
- */
-export function isSetupTokenRetired(
-  credential: Pick<TwoFactorSetupCredential, 'issuedAt' | 'issuedAtMs'>,
-  user: TokenRetirementSignals | null | undefined,
-): boolean {
-  if (isTokenIssuedBefore(credential.issuedAt, user?.twoFactorEnrolledAt)) {
+  if (isTokenIssuedBefore(issuance.issuedAt, user?.twoFactorEnrolledAt)) {
     return true;
   }
 
-  const { issuedAtMs } = credential;
+  const { issuedAtMs } = issuance;
   if (typeof issuedAtMs !== 'number' || !Number.isFinite(issuedAtMs)) {
-    return isTokenIssuedBefore(credential.issuedAt, user?.passwordResetAt, true);
+    return isTokenIssuedBefore(issuance.issuedAt, user?.passwordResetAt, true);
   }
 
   if (user?.passwordResetAt == null) {
@@ -263,52 +246,74 @@ export function isEnrollmentSupersededByRecovery(
 }
 
 /**
- * `iat` is whole seconds, and the setup token is the one credential whose retirement cannot afford
- * that rounding: a token minted in the same second as a password reset would otherwise outlive the
- * credential it was bought with. `issuedAtMs` dates it precisely enough to order the two.
+ * Mints a credential that names a user and dates itself to the millisecond.
+ *
+ * Both credentials minted this way are redeemable without the account password, so both have to be
+ * refusable the moment recovery revokes it. `iat` alone cannot do that: it is whole seconds, so a
+ * token minted in the same second as the reset is indistinguishable from one minted just before it
+ * and would otherwise outlive the credential it was bought with. `issuedAtMs` orders the two.
  */
+function generateDatedTwoFactorToken(
+  userId: string,
+  jwtSecret: string,
+  purpose: string,
+  expiresIn: jwt.SignOptions['expiresIn'],
+): string {
+  return jwt.sign({ userId, purpose, issuedAtMs: Date.now() }, jwtSecret, { expiresIn });
+}
+
 export function generateTwoFactorSetupToken(userId: string, jwtSecret: string): string {
-  return jwt.sign(
-    {
-      userId,
-      purpose: TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP,
-      issuedAtMs: Date.now(),
-    },
+  return generateDatedTwoFactorToken(
+    userId,
     jwtSecret,
-    {
-      expiresIn: TWO_FACTOR_SETUP_TOKEN_EXPIRY,
-    },
+    TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP,
+    TWO_FACTOR_SETUP_TOKEN_EXPIRY,
   );
 }
 
 export function generateTwoFactorLoginChallengeToken(userId: string, jwtSecret: string): string {
-  return jwt.sign({ userId, purpose: TWO_FACTOR_TOKEN_PURPOSE.LOGIN_CHALLENGE }, jwtSecret, {
-    expiresIn: TWO_FACTOR_LOGIN_CHALLENGE_TOKEN_EXPIRY,
-  });
+  return generateDatedTwoFactorToken(
+    userId,
+    jwtSecret,
+    TWO_FACTOR_TOKEN_PURPOSE.LOGIN_CHALLENGE,
+    TWO_FACTOR_LOGIN_CHALLENGE_TOKEN_EXPIRY,
+  );
 }
 
-export function verifyTwoFactorLoginChallengeToken(
-  tempToken: string | undefined,
+function verifyDatedTwoFactorToken(
+  token: string | undefined,
   jwtSecret: string | undefined,
-): string | undefined {
-  if (!tempToken || !jwtSecret) {
+  purpose: string,
+): TwoFactorTokenCredential | undefined {
+  if (!token || !jwtSecret) {
     return undefined;
   }
 
   try {
-    const payload = jwt.verify(tempToken, jwtSecret);
+    const payload = jwt.verify(token, jwtSecret);
     if (
       typeof payload !== 'object' ||
-      payload.purpose !== TWO_FACTOR_TOKEN_PURPOSE.LOGIN_CHALLENGE ||
+      payload.purpose !== purpose ||
       typeof payload.userId !== 'string' ||
       !payload.userId
     ) {
       return undefined;
     }
-    return (payload as TwoFactorLoginChallengeClaims).userId;
+    return {
+      userId: payload.userId,
+      issuedAt: payload.iat,
+      issuedAtMs: typeof payload.issuedAtMs === 'number' ? payload.issuedAtMs : undefined,
+    };
   } catch {
     return undefined;
   }
+}
+
+export function verifyTwoFactorLoginChallengeToken(
+  tempToken: string | undefined,
+  jwtSecret: string | undefined,
+): TwoFactorTokenCredential | undefined {
+  return verifyDatedTwoFactorToken(tempToken, jwtSecret, TWO_FACTOR_TOKEN_PURPOSE.LOGIN_CHALLENGE);
 }
 
 export function generateTwoFactorSetupFinalizationToken(
@@ -387,29 +392,8 @@ export function verifyTwoFactorSetupFinalizationToken(
 export function verifyTwoFactorSetupToken(
   tempToken: string | undefined,
   jwtSecret: string | undefined,
-): TwoFactorSetupCredential | undefined {
-  if (!tempToken || !jwtSecret) {
-    return undefined;
-  }
-
-  try {
-    const payload = jwt.verify(tempToken, jwtSecret);
-    if (
-      typeof payload !== 'object' ||
-      payload.purpose !== TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP ||
-      typeof payload.userId !== 'string' ||
-      !payload.userId
-    ) {
-      return undefined;
-    }
-    return {
-      userId: payload.userId,
-      issuedAt: payload.iat,
-      issuedAtMs: typeof payload.issuedAtMs === 'number' ? payload.issuedAtMs : undefined,
-    };
-  } catch {
-    return undefined;
-  }
+): TwoFactorTokenCredential | undefined {
+  return verifyDatedTwoFactorToken(tempToken, jwtSecret, TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP);
 }
 
 export function requireTwoFactorSetupToken(

@@ -431,6 +431,9 @@ export function createUserMethods(
         username: user.username,
         provider: user.provider,
         email: user.email,
+        /** `iat` is whole seconds, too coarse to order this token against a password reset that
+         * lands in the same second. `isTokenRetired` reads this claim to settle that exactly. */
+        issuedAtMs: Date.now(),
       },
       secret: process.env.JWT_SECRET,
       expirationTime: expires / 1000,
