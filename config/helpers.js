@@ -7,6 +7,12 @@ const path = require('path');
 const readline = require('readline');
 const { execSync } = require('child_process');
 
+/** @typedef {(message: string) => void} ConsoleColor */
+/** @typedef {{ orange: ConsoleColor, green: ConsoleColor, red: ConsoleColor, blue: ConsoleColor, purple: ConsoleColor, cyan: ConsoleColor, yellow: ConsoleColor, white: ConsoleColor, gray: ConsoleColor }} ColoredConsole */
+
+const coloredConsole = /** @type {Console & ColoredConsole} */ (console);
+
+/** @param {string} query @returns {Promise<string>} */
 const askQuestion = (query) => {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -21,16 +27,18 @@ const askQuestion = (query) => {
   );
 };
 
+/** @param {string} query @returns {Promise<string>} */
 const askMultiLineQuestion = (query) => {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
 
-  console.cyan(query);
+  coloredConsole.cyan(query);
 
   return new Promise((resolve) => {
-    let lines = [];
+    /** @type {string[]} */
+    const lines = [];
     rl.on('line', (line) => {
       if (line.trim() === '.') {
         rl.close();
@@ -46,16 +54,22 @@ function isDockerRunning() {
   try {
     execSync('docker info');
     return true;
-  } catch (e) {
+  } catch (_error) {
     return false;
   }
 }
 
+/**
+ * Recursively removes a directory's node_modules.
+ * Retries on transient ENOTEMPTY/EBUSY errors that fs.rmSync intermittently
+ * throws on macOS (APFS) and Windows when entries are removed concurrently.
+ */
+/** @param {string} dir */
 function deleteNodeModules(dir) {
   const nodeModulesPath = path.join(dir, 'node_modules');
   if (fs.existsSync(nodeModulesPath)) {
-    console.purple(`Deleting node_modules in ${dir}`);
-    fs.rmSync(nodeModulesPath, { recursive: true });
+    coloredConsole.purple(`Deleting node_modules in ${dir}`);
+    fs.rmSync(nodeModulesPath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
 }
 
@@ -65,15 +79,15 @@ const silentExit = (code = 0) => {
 };
 
 // Set the console colours
-console.orange = (msg) => console.log('\x1b[33m%s\x1b[0m', msg);
-console.green = (msg) => console.log('\x1b[32m%s\x1b[0m', msg);
-console.red = (msg) => console.log('\x1b[31m%s\x1b[0m', msg);
-console.blue = (msg) => console.log('\x1b[34m%s\x1b[0m', msg);
-console.purple = (msg) => console.log('\x1b[35m%s\x1b[0m', msg);
-console.cyan = (msg) => console.log('\x1b[36m%s\x1b[0m', msg);
-console.yellow = (msg) => console.log('\x1b[33m%s\x1b[0m', msg);
-console.white = (msg) => console.log('\x1b[37m%s\x1b[0m', msg);
-console.gray = (msg) => console.log('\x1b[90m%s\x1b[0m', msg);
+coloredConsole.orange = (/** @type {string} */ msg) => console.log('\x1b[33m%s\x1b[0m', msg);
+coloredConsole.green = (/** @type {string} */ msg) => console.log('\x1b[32m%s\x1b[0m', msg);
+coloredConsole.red = (/** @type {string} */ msg) => console.log('\x1b[31m%s\x1b[0m', msg);
+coloredConsole.blue = (/** @type {string} */ msg) => console.log('\x1b[34m%s\x1b[0m', msg);
+coloredConsole.purple = (/** @type {string} */ msg) => console.log('\x1b[35m%s\x1b[0m', msg);
+coloredConsole.cyan = (/** @type {string} */ msg) => console.log('\x1b[36m%s\x1b[0m', msg);
+coloredConsole.yellow = (/** @type {string} */ msg) => console.log('\x1b[33m%s\x1b[0m', msg);
+coloredConsole.white = (/** @type {string} */ msg) => console.log('\x1b[37m%s\x1b[0m', msg);
+coloredConsole.gray = (/** @type {string} */ msg) => console.log('\x1b[90m%s\x1b[0m', msg);
 
 module.exports = {
   askQuestion,
@@ -81,4 +95,5 @@ module.exports = {
   silentExit,
   isDockerRunning,
   deleteNodeModules,
+  coloredConsole,
 };
