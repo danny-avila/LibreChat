@@ -3,6 +3,7 @@ const mockGetUserById = jest.fn();
 const mockFindSession = jest.fn();
 const mockRunAsSystem = jest.fn((fn) => fn());
 const mockIsTwoFactorEnrollmentRequired = jest.fn(() => false);
+const mockIsTokenIssuedBeforeTwoFactorEnrollment = jest.fn(() => false);
 const mockClearCloudFrontCookies = jest.fn();
 
 jest.mock('jsonwebtoken', () => ({ verify: (...args) => mockVerify(...args) }));
@@ -10,6 +11,8 @@ jest.mock('@librechat/api', () => ({
   isEnabled: (v) => v === 'true' || v === true,
   clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
   isTwoFactorEnrollmentRequired: (...args) => mockIsTwoFactorEnrollmentRequired(...args),
+  isTokenIssuedBeforeTwoFactorEnrollment: (...args) =>
+    mockIsTokenIssuedBeforeTwoFactorEnrollment(...args),
 }));
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn() },
@@ -33,6 +36,7 @@ describe('optionalShareFileAuth', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockIsTwoFactorEnrollmentRequired.mockReturnValue(false);
+    mockIsTokenIssuedBeforeTwoFactorEnrollment.mockReturnValue(false);
     process.env.JWT_REFRESH_SECRET = 'test-secret';
   });
 
@@ -102,6 +106,68 @@ describe('optionalShareFileAuth', () => {
       storageRegion: undefined,
     });
     expect(mockGetUserById).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not restore a cookie viewer minted before two-factor enrollment', async () => {
+    mockVerify.mockReturnValue({ id: 'viewer-stale', iat: 1000 });
+    mockFindSession.mockResolvedValue({ _id: 'session-stale' });
+    mockGetUserById.mockResolvedValue({
+      _id: 'viewer-stale',
+      role: 'USER',
+      provider: 'local',
+      twoFactorEnabled: true,
+      twoFactorEnrolledAt: new Date(2000 * 1000),
+    });
+    mockIsTokenIssuedBeforeTwoFactorEnrollment.mockReturnValue(true);
+    const req = { headers: { cookie: 'refreshToken=stale.jwt' } };
+
+    const next = await run(req);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.user).toBeUndefined();
+    expect(mockClearCloudFrontCookies).toHaveBeenCalledWith(expect.any(Object), {
+      userId: 'viewer-stale',
+      tenantId: undefined,
+      storageRegion: undefined,
+    });
+  });
+
+  it('dates the cookie by its own iat rather than discarding it', async () => {
+    const enrolledAt = new Date(2000 * 1000);
+    mockVerify.mockReturnValue({ id: 'viewer-dated', iat: 1234 });
+    mockFindSession.mockResolvedValue({ _id: 'session-dated' });
+    mockGetUserById.mockResolvedValue({
+      _id: 'viewer-dated',
+      role: 'USER',
+      twoFactorEnrolledAt: enrolledAt,
+    });
+    const req = { headers: { cookie: 'refreshToken=dated.jwt' } };
+
+    await run(req);
+
+    expect(mockIsTokenIssuedBeforeTwoFactorEnrollment).toHaveBeenCalledWith(1234, enrolledAt);
+  });
+
+  it('dates an OpenID cookie viewer by its own iat too', async () => {
+    process.env.OPENID_REUSE_TOKENS = 'true';
+    const enrolledAt = new Date(2000 * 1000);
+    mockVerify.mockReturnValue({ id: 'viewer-openid', iat: 4321 });
+    mockGetUserById.mockResolvedValue({
+      _id: 'viewer-openid',
+      role: 'USER',
+      twoFactorEnrolledAt: enrolledAt,
+    });
+    const req = {
+      headers: {
+        cookie: 'refreshToken=live.jwt; token_provider=openid; openid_user_id=signed.jwt',
+      },
+      session: { openidTokens: { refreshToken: 'live.jwt' } },
+    };
+
+    await run(req);
+
+    expect(mockIsTokenIssuedBeforeTwoFactorEnrollment).toHaveBeenCalledWith(4321, enrolledAt);
+    delete process.env.OPENID_REUSE_TOKENS;
   });
 
   it('defaults the role to USER when the record has none', async () => {

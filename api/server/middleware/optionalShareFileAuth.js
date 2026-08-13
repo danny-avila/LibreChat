@@ -4,31 +4,35 @@ const {
   isEnabled,
   clearCloudFrontCookies,
   isTwoFactorEnrollmentRequired,
+  isTokenIssuedBeforeTwoFactorEnrollment,
 } = require('@librechat/api');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { getUserById, findSession } = require('~/models');
 
-const verifySignedUserId = (token) => {
+/** Keeps the `iat` alongside the id, so the enrollment cutoff can date the credential */
+const verifySignedUser = (token) => {
   try {
     const payload = jwt.verify(token, process.env.JWT_REFRESH_SECRET);
-    return typeof payload?.id === 'string' ? payload.id : null;
+    return typeof payload?.id === 'string' ? { userId: payload.id, issuedAt: payload.iat } : null;
   } catch {
     return null;
   }
 };
 
-const getRefreshTokenUserId = async (token) => {
-  const userId = verifySignedUserId(token);
-  if (!userId) {
+const getRefreshTokenUser = async (token) => {
+  const verified = verifySignedUser(token);
+  if (!verified) {
     return null;
   }
 
-  const session = await runAsSystem(() => findSession({ userId, refreshToken: token }));
-  return session ? userId : null;
+  const session = await runAsSystem(() =>
+    findSession({ userId: verified.userId, refreshToken: token }),
+  );
+  return session ? verified : null;
 };
 
-const getOpenIdUserId = (parsed, req) => {
+const getOpenIdUser = (parsed, req) => {
   if (parsed.token_provider !== 'openid' || !isEnabled(process.env.OPENID_REUSE_TOKENS)) {
     return null;
   }
@@ -38,7 +42,7 @@ const getOpenIdUserId = (parsed, req) => {
     return null;
   }
 
-  return verifySignedUserId(parsed.openid_user_id);
+  return verifySignedUser(parsed.openid_user_id);
 };
 
 const clearCloudFrontCookiesForUser = (res, user) => {
@@ -81,10 +85,10 @@ const optionalShareFileAuth = async (req, res, next) => {
     }
 
     const parsed = cookie.parse(cookieHeader);
-    const userId =
-      getOpenIdUserId(parsed, req) ||
-      (parsed.refreshToken ? await getRefreshTokenUserId(parsed.refreshToken) : null);
-    if (!userId) {
+    const verified =
+      getOpenIdUser(parsed, req) ||
+      (parsed.refreshToken ? await getRefreshTokenUser(parsed.refreshToken) : null);
+    if (!verified) {
       return next();
     }
 
@@ -93,17 +97,30 @@ const optionalShareFileAuth = async (req, res, next) => {
     // query would otherwise throw. The viewer's id comes from verified, active
     // cookie auth; the share's tenant-scoped ACL check still gates access.
     const user = await runAsSystem(() =>
-      getUserById(userId, '-password -__v -totpSecret -backupCodes'),
+      getUserById(verified.userId, '-password -__v -totpSecret -backupCodes'),
     );
-    if (user && isTwoFactorEnrollmentRequired(user)) {
-      clearCloudFrontCookiesForUser(res, user);
-    } else if (user) {
-      user.id = user._id.toString();
-      if (!user.role) {
-        user.role = SystemRoles.USER;
-      }
-      req.user = user;
+    if (!user) {
+      return next();
     }
+
+    /**
+     * The cutoff matters here as much as the enrollment check: a session that outlived
+     * finalization still resolves, and every other authenticated path already refuses the
+     * credential it was minted from.
+     */
+    if (
+      isTwoFactorEnrollmentRequired(user) ||
+      isTokenIssuedBeforeTwoFactorEnrollment(verified.issuedAt, user.twoFactorEnrolledAt)
+    ) {
+      clearCloudFrontCookiesForUser(res, user);
+      return next();
+    }
+
+    user.id = user._id.toString();
+    if (!user.role) {
+      user.role = SystemRoles.USER;
+    }
+    req.user = user;
   } catch (error) {
     logger.warn('[optionalShareFileAuth] cookie auth failed:', error?.message);
   }
