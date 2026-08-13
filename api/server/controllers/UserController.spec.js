@@ -188,6 +188,8 @@ describe('getUserController', () => {
         createdAt,
         updatedAt,
         tenantId: 'tenant-id',
+        clerkId: 'user_clerk',
+        clerkDeletedAt: new Date('2026-01-03T00:00:00.000Z'),
         password: 'hashed-password',
         __v: 1,
         totpSecret: 'totp-secret',
@@ -241,6 +243,8 @@ describe('getUserController', () => {
       tenantId: 'tenant-id',
     });
     expect(sentUser).not.toHaveProperty('password');
+    expect(sentUser).not.toHaveProperty('clerkId');
+    expect(sentUser).not.toHaveProperty('clerkDeletedAt');
     expect(sentUser).not.toHaveProperty('__v');
     expect(sentUser).not.toHaveProperty('totpSecret');
     expect(sentUser).not.toHaveProperty('backupCodes');

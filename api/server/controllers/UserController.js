@@ -3,6 +3,7 @@ const { logger, getTenantId, webSearchKeys } = require('@librechat/data-schemas'
 const {
   getNewS3URL,
   needsRefresh,
+  serializeUserForResponse,
   MCPOAuthHandler,
   MCPTokenStorage,
   getAppConfigOptionsFromUser,
@@ -28,41 +29,10 @@ const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
-const PUBLIC_USER_RESPONSE_FIELDS = [
-  '_id',
-  'id',
-  'name',
-  'username',
-  'email',
-  'emailVerified',
-  'avatar',
-  'provider',
-  'role',
-  'plugins',
-  'twoFactorEnabled',
-  'termsAccepted',
-  'personalization',
-  'favorites',
-  'skillStates',
-  'createdAt',
-  'updatedAt',
-  'tenantId',
-];
-
-const sanitizeUserForResponse = (user) => {
-  const source = user.toObject != null ? user.toObject() : user;
-  return PUBLIC_USER_RESPONSE_FIELDS.reduce((userData, field) => {
-    if (source[field] !== undefined) {
-      userData[field] = source[field];
-    }
-    return userData;
-  }, {});
-};
-
 const getUserController = async (req, res) => {
   const appConfig = req.config ?? (await getAppConfig(getAppConfigOptionsFromUser(req.user)));
   /** @type {IUser} */
-  const userData = sanitizeUserForResponse(req.user);
+  const userData = serializeUserForResponse(req.user);
   if (appConfig.fileStrategy === FileSources.s3 && userData.avatar) {
     const avatarNeedsRefresh = needsRefresh(userData.avatar, 3600);
     if (!avatarNeedsRefresh) {
