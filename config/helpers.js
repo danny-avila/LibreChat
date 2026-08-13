@@ -95,4 +95,5 @@ module.exports = {
   silentExit,
   isDockerRunning,
   deleteNodeModules,
+  coloredConsole,
 };
