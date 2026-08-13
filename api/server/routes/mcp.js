@@ -23,6 +23,7 @@ const {
   OAUTH_SESSION_COOKIE,
   mcpConfig: mcpSettings,
   getServerCustomUserVars,
+  requiresEphemeralUserConnection,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -476,9 +477,6 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
       logger.info('[MCP OAuth] OAuth flow completed, tokens received in callback route');
 
       try {
-        const mcpManager = getMCPManager(flowState.userId);
-        logger.debug(`[MCP OAuth] Attempting to reconnect ${serverName} with new OAuth tokens`);
-
         if (flowState.userId !== 'system') {
           const user = { id: flowState.userId };
 
@@ -496,76 +494,89 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
             );
           }
 
-          /**
-           * Without this, getUserConnection resolves `headers`/`oauth_headers`
-           * customUserVars templates (e.g. `{{MY_VAR}}`) with no substitution
-           * data, so the literal placeholder is sent on this first post-callback
-           * connection attempt even though the user's value is already saved -
-           * surfaces upstream as a generic auth rejection from the MCP server.
-           * The other reconnect path (oauth/reinitialize route below) already
-           * resolves this the same way; this one was missing it.
-           */
-          let userMCPAuthMap;
-          if (serverConfig?.customUserVars && typeof serverConfig.customUserVars === 'object') {
-            try {
-              userMCPAuthMap = await getUserMCPAuthMap({
+          const requestScoped = serverConfig
+            ? requiresEphemeralUserConnection(serverConfig)
+            : false;
+          if (requestScoped) {
+            logger.info(
+              `[MCP OAuth] Deferring post-OAuth connection for request-scoped server ${serverName} until its first chat use`,
+            );
+            getOAuthReconnectionManager().clearReconnection(flowState.userId, serverName);
+          } else {
+            const mcpManager = getMCPManager(flowState.userId);
+            logger.debug(`[MCP OAuth] Attempting to reconnect ${serverName} with new OAuth tokens`);
+
+            /**
+             * Without this, getUserConnection resolves `headers`/`oauth_headers`
+             * customUserVars templates (e.g. `{{MY_VAR}}`) with no substitution
+             * data, so the literal placeholder is sent on this first post-callback
+             * connection attempt even though the user's value is already saved -
+             * surfaces upstream as a generic auth rejection from the MCP server.
+             * The other reconnect path (oauth/reinitialize route below) already
+             * resolves this the same way; this one was missing it.
+             */
+            let userMCPAuthMap;
+            if (serverConfig?.customUserVars && typeof serverConfig.customUserVars === 'object') {
+              try {
+                userMCPAuthMap = await getUserMCPAuthMap({
+                  userId: flowState.userId,
+                  servers: [serverName],
+                  findPluginAuthsByKeys: db.findPluginAuthsByKeys,
+                });
+              } catch (error) {
+                logger.warn(
+                  `[MCP OAuth] Could not resolve customUserVars for ${serverName} before reconnecting:`,
+                  error,
+                );
+              }
+            }
+            const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
+
+            const { snapshot, publicationGeneration } = await mcpManager.withUserConnectionLease(
+              {
+                user,
+                serverName,
+                flowManager,
+                serverConfig,
+                customUserVars,
+                tokenMethods: {
+                  findToken: db.findToken,
+                  updateToken: db.updateToken,
+                  createToken: db.createToken,
+                  deleteTokens: db.deleteTokens,
+                },
+              },
+              async (userConnection) => {
+                logger.info(
+                  `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
+                );
+
+                const oauthReconnectionManager = getOAuthReconnectionManager();
+                oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
+
+                const snapshot =
+                  typeof userConnection.fetchOrderedToolsSnapshot === 'function'
+                    ? await userConnection.fetchOrderedToolsSnapshot()
+                    : await userConnection.fetchToolsSnapshot();
+                return {
+                  snapshot,
+                  publicationGeneration: mcpManager.getToolPublicationGeneration?.(userConnection),
+                };
+              },
+            );
+            if (snapshot.complete) {
+              await updateMCPServerTools({
                 userId: flowState.userId,
-                servers: [serverName],
-                findPluginAuthsByKeys: db.findPluginAuthsByKeys,
+                serverName,
+                tools: snapshot.tools,
+                serverConfig,
+                publicationGeneration,
               });
-            } catch (error) {
+            } else {
               logger.warn(
-                `[MCP OAuth] Could not resolve customUserVars for ${serverName} before reconnecting:`,
-                error,
+                `[MCP OAuth] Preserving cached tools for ${serverName} because tools/list returned an incomplete snapshot`,
               );
             }
-          }
-          const customUserVars = getServerCustomUserVars(userMCPAuthMap, serverName);
-
-          const { snapshot, publicationGeneration } = await mcpManager.withUserConnectionLease(
-            {
-              user,
-              serverName,
-              flowManager,
-              serverConfig,
-              customUserVars,
-              tokenMethods: {
-                findToken: db.findToken,
-                updateToken: db.updateToken,
-                createToken: db.createToken,
-                deleteTokens: db.deleteTokens,
-              },
-            },
-            async (userConnection) => {
-              logger.info(
-                `[MCP OAuth] Successfully reconnected ${serverName} for user ${flowState.userId}`,
-              );
-
-              const oauthReconnectionManager = getOAuthReconnectionManager();
-              oauthReconnectionManager.clearReconnection(flowState.userId, serverName);
-
-              const snapshot =
-                typeof userConnection.fetchOrderedToolsSnapshot === 'function'
-                  ? await userConnection.fetchOrderedToolsSnapshot()
-                  : await userConnection.fetchToolsSnapshot();
-              return {
-                snapshot,
-                publicationGeneration: mcpManager.getToolPublicationGeneration?.(userConnection),
-              };
-            },
-          );
-          if (snapshot.complete) {
-            await updateMCPServerTools({
-              userId: flowState.userId,
-              serverName,
-              tools: snapshot.tools,
-              serverConfig,
-              publicationGeneration,
-            });
-          } else {
-            logger.warn(
-              `[MCP OAuth] Preserving cached tools for ${serverName} because tools/list returned an incomplete snapshot`,
-            );
           }
         } else {
           logger.debug(`[MCP OAuth] System-level OAuth completed for ${serverName}`);

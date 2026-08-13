@@ -183,6 +183,24 @@ describe('getMCPServersList', () => {
     expect(res.json).toHaveBeenCalledWith({});
   });
 
+  it('exposes safe request-scoped metadata while redacting placeholder-bearing fields', async () => {
+    const reqUser = await createUser();
+    mockResolveAllMcpConfigs.mockResolvedValue({
+      runtimeServer: {
+        ...yamlConfig,
+        headers: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+      },
+    });
+
+    const res = createRes();
+    await getMCPServersList({ user: reqUser }, res);
+
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.runtimeServer.requestScoped).toBe(true);
+    expect(payload.runtimeServer.url).toBeUndefined();
+    expect(payload.runtimeServer.headers).toBeUndefined();
+  });
+
   it('applies the capability bypass to all servers when a DB-backed server is present', async () => {
     await seedManageMcpGrant();
     const reqUser = await createUser(SystemRoles.ADMIN);
