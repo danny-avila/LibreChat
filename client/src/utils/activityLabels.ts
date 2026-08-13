@@ -363,14 +363,7 @@ export function applyActivityLabelPart(message: TMessage, event: TActivityLabelE
   ) {
     return message;
   }
-  const existingText = existing?.[ContentTypes.ACTIVITY_LABEL];
-  if (
-    existing != null &&
-    existing.pending !== true &&
-    typeof existingText === 'string' &&
-    existingText.length > 0 &&
-    part.pending === true
-  ) {
+  if (existing != null && existing.pending !== true && part.pending === true) {
     return message;
   }
   const nextContent = [...content] as TMessageContentParts[];

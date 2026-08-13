@@ -72,6 +72,29 @@ describe('applyActivityLabelPart', () => {
       pending: false,
     });
   });
+
+  it('never lets a stale pending placeholder overwrite an empty finalized phase', () => {
+    const finalized = labelPart({ pending: false });
+    Object.assign(finalized, {
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+    });
+    const message = buildMessage([finalized as never]);
+
+    const updated = applyActivityLabelPart(message, {
+      index: 0,
+      part: labelPart({ pending: true }),
+    });
+
+    expect(updated).toBe(message);
+    expect((updated.content as unknown[])[0]).toMatchObject({
+      activity_label: '',
+      activity_label_type: 'phase',
+      pending: false,
+    });
+  });
 });
 
 describe('lastVisibleContentIdx', () => {
