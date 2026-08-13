@@ -333,13 +333,27 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
         session.expiration = new Date(expiresIn);
       }
 
+      /**
+       * jsonwebtoken's `iat` claim is `floor(Date.now() / 1000)` at sign time,
+       * so `exp = iat + expirationTime` only lands exactly on
+       * `floor(expiresIn / 1000)` when expirationTime is computed the same
+       * way: flooring each side to whole seconds before subtracting, not
+       * flooring the millisecond difference. The latter is off by one
+       * second whenever the deadline's millisecond remainder is smaller
+       * than "now"'s.
+       */
+      const expirationTime = Math.max(
+        0,
+        Math.floor(expiresIn / 1000) - Math.floor(Date.now() / 1000),
+      );
+
       const refreshToken = await signPayload({
         payload: {
           id: session.user,
           sessionId: session._id,
         },
         secret: process.env.JWT_REFRESH_SECRET!,
-        expirationTime: Math.floor((expiresIn - Date.now()) / 1000),
+        expirationTime,
       });
 
       session.refreshTokenHash = await hashToken(refreshToken);

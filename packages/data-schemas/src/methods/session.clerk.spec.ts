@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import type * as t from '~/types';
@@ -529,4 +530,28 @@ describe('findSession explicit tenant suffix', () => {
     );
     expect(found).toBeNull();
   });
+});
+
+describe('generateRefreshToken JWT deadline', () => {
+  test.each([1, 100, 250, 499, 500, 501, 750, 999, 1001, 60437, 123456])(
+    'signs a refresh token whose exp matches floor(session.expiration / 1000) for a %ims-offset deadline',
+    async (offsetMs) => {
+      const userId = await createTestUser();
+      const session = new Session(
+        clerkSessionDoc(userId, {
+          clerkSessionId: `sess_refresh_${offsetMs}`,
+          expiration: new Date(Date.now() + offsetMs),
+          absoluteExpiresAt: new Date(Date.now() + offsetMs),
+        }),
+      );
+
+      const refreshToken = await methods.generateRefreshToken(session);
+      const decoded = jwt.decode(refreshToken);
+      if (decoded === null || typeof decoded === 'string') {
+        throw new Error('Expected a decoded JWT payload object');
+      }
+
+      expect(decoded.exp).toBe(Math.floor(session.expiration.getTime() / 1000));
+    },
+  );
 });
