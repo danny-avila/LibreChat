@@ -248,50 +248,24 @@ const generate2FATempToken = (userId) => {
 };
 
 /**
- * Generates a tenant-bound temporary JWT for a pending Clerk 2FA completion
- * (Fixed Contract 7). Carries only trusted correlation claims — never the
- * original Clerk token — and expires at the caller-computed
- * `capabilityExpiresAt` (min of 5 minutes, token expiry, and the Clerk
- * session's absolute deadline), not a fixed 5-minute window.
- * @param {Object} capability
- * @param {string} capability.userId
- * @param {'clerk'} capability.authProvider
- * @param {string} capability.tenantScope
- * @param {string} capability.clerkSessionId
- * @param {string} capability.clerkTokenId
- * @param {string} capability.clerkUserId
- * @param {Date} capability.tokenExpiresAt
- * @param {Date} capability.absoluteExpiresAt
- * @param {Date} capability.capabilityExpiresAt
+ * Generic temporary-JWT signer with no knowledge of any specific provider's
+ * claim shape or deadline policy: the caller supplies the exact payload and
+ * lifetime. Used by the typed Clerk session module (Fixed Contract 7) to
+ * issue a tenant-bound pending-2FA token without any Clerk-specific decision
+ * living in legacy JavaScript.
+ * @param {Record<string, unknown>} payload
+ * @param {number} expiresInSeconds
  * @returns {string}
  */
-const generateClerkTwoFactorTempToken = (capability) => {
+const signTwoFactorTempToken = (payload, expiresInSeconds) => {
   const { sign } = require('jsonwebtoken');
-  const expiresInSeconds = Math.max(
-    0,
-    Math.floor((capability.capabilityExpiresAt.getTime() - Date.now()) / 1000),
-  );
-  return sign(
-    {
-      userId: capability.userId,
-      twoFAPending: true,
-      authProvider: capability.authProvider,
-      tenantScope: capability.tenantScope,
-      clerkSessionId: capability.clerkSessionId,
-      clerkTokenId: capability.clerkTokenId,
-      clerkUserId: capability.clerkUserId,
-      tokenExpiresAt: capability.tokenExpiresAt.toISOString(),
-      absoluteExpiresAt: capability.absoluteExpiresAt.toISOString(),
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: expiresInSeconds },
-  );
+  return sign(payload, process.env.JWT_SECRET, { expiresIn: expiresInSeconds });
 };
 
 module.exports = {
   verifyOTPOrBackupCode,
   generate2FATempToken,
-  generateClerkTwoFactorTempToken,
+  signTwoFactorTempToken,
   generateBackupCodes,
   generateTOTPSecret,
   verifyBackupCode,

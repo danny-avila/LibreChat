@@ -1,92 +1,65 @@
 const jwt = require('jsonwebtoken');
-const { generateClerkTwoFactorTempToken } = require('./twoFactorService');
+const { signTwoFactorTempToken } = require('./twoFactorService');
 
 const ORIGINAL_JWT_SECRET = process.env.JWT_SECRET;
 
 beforeAll(() => {
-  process.env.JWT_SECRET = 'test-jwt-secret-for-clerk-2fa';
+  process.env.JWT_SECRET = 'test-jwt-secret-for-2fa-signer';
 });
 
 afterAll(() => {
   process.env.JWT_SECRET = ORIGINAL_JWT_SECRET;
 });
 
-function buildCapability(overrides = {}) {
-  const now = Date.now();
-  return {
-    userId: 'user-123',
-    authProvider: 'clerk',
-    tenantScope: 'tenant-a',
-    clerkSessionId: 'sess_1',
-    clerkTokenId: 'tok_1',
-    clerkUserId: 'clerk_user_1',
-    tokenExpiresAt: new Date(now + 4 * 60 * 1000),
-    absoluteExpiresAt: new Date(now + 15 * 60 * 1000),
-    capabilityExpiresAt: new Date(now + 5 * 60 * 1000),
-    ...overrides,
-  };
-}
+describe('signTwoFactorTempToken', () => {
+  it('signs exactly the given payload, adding no fields of its own', () => {
+    const payload = {
+      userId: 'user-123',
+      twoFAPending: true,
+      authProvider: 'clerk',
+      tenantScope: 'tenant-a',
+      clerkSessionId: 'sess_1',
+      clerkTokenId: 'tok_1',
+      clerkUserId: 'clerk_user_1',
+      tokenExpiresAt: '2026-08-13T00:04:00.000Z',
+      absoluteExpiresAt: '2026-08-13T00:15:00.000Z',
+    };
 
-describe('generateClerkTwoFactorTempToken', () => {
-  it('signs a token carrying only the trusted correlation claims', () => {
-    const capability = buildCapability();
-
-    const token = generateClerkTwoFactorTempToken(capability);
+    const token = signTwoFactorTempToken(payload, 300);
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    expect(decoded.userId).toBe('user-123');
-    expect(decoded.twoFAPending).toBe(true);
-    expect(decoded.authProvider).toBe('clerk');
-    expect(decoded.tenantScope).toBe('tenant-a');
-    expect(decoded.clerkSessionId).toBe('sess_1');
-    expect(decoded.clerkTokenId).toBe('tok_1');
-    expect(decoded.clerkUserId).toBe('clerk_user_1');
-    expect(decoded.tokenExpiresAt).toBe(capability.tokenExpiresAt.toISOString());
-    expect(decoded.absoluteExpiresAt).toBe(capability.absoluteExpiresAt.toISOString());
+    for (const [key, value] of Object.entries(payload)) {
+      expect(decoded[key]).toBe(value);
+    }
   });
 
-  it('never includes the original Clerk session token in the payload', () => {
-    const capability = buildCapability({ clerkToken: 'should-never-appear' });
+  it('never injects a Clerk token field it was not given', () => {
+    const payload = { userId: 'user-123', twoFAPending: true };
 
-    const token = generateClerkTwoFactorTempToken(capability);
+    const token = signTwoFactorTempToken(payload, 300);
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     expect(decoded).not.toHaveProperty('clerkToken');
-    expect(JSON.stringify(decoded)).not.toContain('should-never-appear');
   });
 
-  it('expires at the capability deadline, not a fixed 5-minute window', () => {
-    const capability = buildCapability({
-      capabilityExpiresAt: new Date(Date.now() + 90 * 1000),
-    });
-
-    const token = generateClerkTwoFactorTempToken(capability);
+  it('expires after exactly the given number of seconds', () => {
+    const token = signTwoFactorTempToken({ userId: 'user-123' }, 90);
     const decoded = jwt.decode(token);
 
-    const expiresInSeconds = decoded.exp - decoded.iat;
-    expect(expiresInSeconds).toBeGreaterThan(0);
-    expect(expiresInSeconds).toBeLessThanOrEqual(90);
+    expect(decoded.exp - decoded.iat).toBe(90);
   });
 
-  it('signs a zero-lifetime token rather than throwing for an already-past capability deadline', () => {
-    const capability = buildCapability({
-      capabilityExpiresAt: new Date(Date.now() - 1000),
-    });
-
-    const token = generateClerkTwoFactorTempToken(capability);
+  it('signs an immediately-expired token when given zero seconds, rather than throwing', () => {
+    const token = signTwoFactorTempToken({ userId: 'user-123' }, 0);
 
     expect(() => jwt.verify(token, process.env.JWT_SECRET)).toThrow(/jwt expired/);
   });
 
-  it('rejects the token once its capability deadline has passed', async () => {
-    const capability = buildCapability({
-      capabilityExpiresAt: new Date(Date.now() + 1500),
-    });
-
-    const token = generateClerkTwoFactorTempToken(capability);
+  it('is rejected once its given lifetime elapses', async () => {
+    const token = signTwoFactorTempToken({ userId: 'user-123' }, 1);
     expect(() => jwt.verify(token, process.env.JWT_SECRET)).not.toThrow();
 
-    await new Promise((resolve) => setTimeout(resolve, 1700));
+    await new Promise((resolve) => setTimeout(resolve, 1200));
 
     expect(() => jwt.verify(token, process.env.JWT_SECRET)).toThrow(/jwt expired/);
   });
