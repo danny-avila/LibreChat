@@ -4,6 +4,8 @@ import { Webhook } from 'standardwebhooks';
 import {
   createClerkWebhookLifecycle,
   createClerkWebhookHandler,
+  createMongooseClerkWebhookLifecycle,
+  createClerkWebhookRouteHandler,
   createClerkWebhookRequest,
   narrowClerkWebhookEvent,
   verifyClerkWebhookRequest,
@@ -277,6 +279,155 @@ describe('createClerkWebhookLifecycle', () => {
     ).rejects.toThrow('write conflict');
 
     expect(dependencies.invalidateAuthUserDocuments).not.toHaveBeenCalled();
+  });
+});
+
+describe('createMongooseClerkWebhookLifecycle', () => {
+  function createDependencies() {
+    const transaction = {
+      withTransaction: jest.fn(async (operation: () => Promise<void>) => operation()),
+      endSession: jest.fn().mockResolvedValue(undefined),
+    };
+    const methods = {
+      upsertSessionState: jest.fn().mockResolvedValue(undefined),
+      upsertUserState: jest.fn().mockResolvedValue(undefined),
+      findClerkSessionIdsByClerkUserId: jest.fn().mockResolvedValue(['sess_1']),
+      tombstoneClerkUsers: jest.fn().mockResolvedValue(['user_1']),
+      deleteSessionsByClerkSessionId: jest.fn().mockResolvedValue(undefined),
+      deleteSessionsByClerkUserId: jest.fn().mockResolvedValue(undefined),
+      invalidateAuthUserDocCache: jest.fn().mockResolvedValue(undefined),
+    };
+    return {
+      transaction,
+      methods,
+      dependencies: {
+        startSession: jest.fn().mockResolvedValue(transaction),
+        methods,
+      },
+    };
+  }
+
+  it('owns one Mongo transaction and forwards its session to session revocation methods', async () => {
+    const { dependencies, methods, transaction } = createDependencies();
+    const lifecycle = createMongooseClerkWebhookLifecycle(dependencies);
+    const revokedAt = new Date('2026-08-13T09:00:00.000Z');
+
+    await lifecycle.revokeClerkSession({ clerkSessionId: 'sess_1', revokedAt });
+
+    expect(transaction.withTransaction).toHaveBeenCalledTimes(1);
+    expect(methods.upsertSessionState).toHaveBeenCalledWith(
+      expect.objectContaining({ clerkSessionId: 'sess_1', state: 'revoked', revokedAt }),
+      { session: transaction },
+    );
+    expect(methods.deleteSessionsByClerkSessionId).toHaveBeenCalledWith('sess_1', {
+      session: transaction,
+    });
+    expect(transaction.endSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('defers user cache invalidation until the transaction commits', async () => {
+    const actions: string[] = [];
+    const { dependencies, methods, transaction } = createDependencies();
+    transaction.withTransaction.mockImplementation(async (operation: () => Promise<void>) => {
+      actions.push('transaction:start');
+      await operation();
+      actions.push('transaction:commit');
+    });
+    methods.tombstoneClerkUsers.mockImplementation(async () => {
+      actions.push('users:tombstoned');
+      return ['user_1'];
+    });
+    methods.invalidateAuthUserDocCache.mockImplementation(async () => {
+      actions.push('cache:invalidated');
+    });
+    const lifecycle = createMongooseClerkWebhookLifecycle(dependencies);
+    const deletedAt = new Date('2026-08-13T09:00:00.000Z');
+
+    await lifecycle.tombstoneClerkUser({ clerkUserId: 'user_123', deletedAt });
+
+    expect(methods.findClerkSessionIdsByClerkUserId).toHaveBeenCalledWith('user_123', {
+      session: transaction,
+    });
+    expect(methods.tombstoneClerkUsers).toHaveBeenCalledWith(
+      { clerkId: 'user_123', deletedAt },
+      { session: transaction, deferCacheInvalidation: true },
+    );
+    expect(methods.deleteSessionsByClerkUserId).toHaveBeenCalledWith('user_123', {
+      session: transaction,
+    });
+    expect(methods.invalidateAuthUserDocCache).toHaveBeenCalledWith('user_1');
+    expect(actions).toEqual([
+      'transaction:start',
+      'users:tombstoned',
+      'transaction:commit',
+      'cache:invalidated',
+    ]);
+  });
+
+  it('ends the Mongo session and skips cache invalidation when a transaction aborts', async () => {
+    const { dependencies, methods, transaction } = createDependencies();
+    transaction.withTransaction.mockRejectedValue(new Error('commit failed'));
+    const lifecycle = createMongooseClerkWebhookLifecycle(dependencies);
+
+    await expect(
+      lifecycle.tombstoneClerkUser({
+        clerkUserId: 'user_123',
+        deletedAt: new Date('2026-08-13T09:00:00.000Z'),
+      }),
+    ).rejects.toThrow('commit failed');
+
+    expect(transaction.endSession).toHaveBeenCalledTimes(1);
+    expect(methods.invalidateAuthUserDocCache).not.toHaveBeenCalled();
+  });
+});
+
+describe('createClerkWebhookRouteHandler', () => {
+  it('composes verification, system scope, and the real persistence adapter', async () => {
+    const transaction = {
+      withTransaction: jest.fn(async (operation: () => Promise<void>) => operation()),
+      endSession: jest.fn().mockResolvedValue(undefined),
+    };
+    const methods = {
+      upsertSessionState: jest.fn().mockResolvedValue(undefined),
+      upsertUserState: jest.fn().mockResolvedValue(undefined),
+      findClerkSessionIdsByClerkUserId: jest.fn().mockResolvedValue([]),
+      tombstoneClerkUsers: jest.fn().mockResolvedValue([]),
+      deleteSessionsByClerkSessionId: jest.fn().mockResolvedValue(undefined),
+      deleteSessionsByClerkUserId: jest.fn().mockResolvedValue(undefined),
+      invalidateAuthUserDocCache: jest.fn().mockResolvedValue(undefined),
+    };
+    const runAsSystem = jest.fn(async (operation: () => Promise<void>) => operation());
+    const recordOutcome = jest.fn();
+    const handler = createClerkWebhookRouteHandler({
+      startSession: jest.fn().mockResolvedValue(transaction),
+      methods,
+      runAsSystem,
+      resolveConfig: () => ({ enabled: true, webhookSigningSecret: 'whsec_test' }),
+      verifyWebhook: jest
+        .fn()
+        .mockResolvedValue({ type: 'session.revoked', data: { id: 'sess_1' } }),
+      recordOutcome,
+      logError: jest.fn(),
+      now: () => new Date('2026-08-13T09:00:00.000Z'),
+    });
+    const app = express();
+    app.post('/api/auth/clerk/webhook', express.raw({ type: 'application/json' }), handler);
+
+    const response = await request(app)
+      .post('/api/auth/clerk/webhook')
+      .set('Content-Type', 'application/json')
+      .send('{}');
+
+    expect(response.status).toBe(204);
+    expect(runAsSystem).toHaveBeenCalledTimes(1);
+    expect(methods.upsertSessionState).toHaveBeenCalledWith(
+      expect.objectContaining({ clerkSessionId: 'sess_1', state: 'revoked' }),
+      { session: transaction },
+    );
+    expect(methods.deleteSessionsByClerkSessionId).toHaveBeenCalledWith('sess_1', {
+      session: transaction,
+    });
+    expect(recordOutcome).toHaveBeenCalledWith('session_revoked', 'success');
   });
 });
 

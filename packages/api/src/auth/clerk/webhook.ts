@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express';
 import { verifyWebhook } from '@clerk/backend/webhooks';
-import type { ClerkWebhookEvent, ClerkWebhookResult } from '~/app/metrics';
+import { recordClerkWebhook, type ClerkWebhookEvent, type ClerkWebhookResult } from '~/app/metrics';
+import { resolveClerkAuthConfig } from './config';
 import { CLERK_CLOCK_SKEW_MS, MAX_CLERK_TOKEN_LIFETIME_MS } from './verify';
 
 export interface ClerkWebhookRequestInput {
@@ -73,6 +74,56 @@ export interface ClerkWebhookLifecycleDependencies<Transaction> {
 export interface ClerkWebhookLifecycle {
   revokeClerkSession: (input: { clerkSessionId: string; revokedAt: Date }) => Promise<void>;
   tombstoneClerkUser: (input: { clerkUserId: string; deletedAt: Date }) => Promise<void>;
+}
+
+export interface ClerkWebhookMongoSession {
+  withTransaction: (operation: () => Promise<void>) => Promise<unknown>;
+  endSession: () => Promise<void>;
+}
+
+export interface ClerkWebhookPersistenceMethods<Transaction> {
+  upsertSessionState: (
+    input: RevokedClerkSessionState,
+    options: { session: Transaction },
+  ) => Promise<unknown>;
+  upsertUserState: (
+    input: DeletedClerkUserState,
+    options: { session: Transaction },
+  ) => Promise<unknown>;
+  findClerkSessionIdsByClerkUserId: (
+    clerkUserId: string,
+    options: { session: Transaction },
+  ) => Promise<readonly string[]>;
+  tombstoneClerkUsers: (
+    input: { clerkId: string; deletedAt: Date },
+    options: { session: Transaction; deferCacheInvalidation: true },
+  ) => Promise<readonly string[]>;
+  deleteSessionsByClerkSessionId: (
+    clerkSessionId: string,
+    options: { session: Transaction },
+  ) => Promise<unknown>;
+  deleteSessionsByClerkUserId: (
+    clerkUserId: string,
+    options: { session: Transaction },
+  ) => Promise<unknown>;
+  invalidateAuthUserDocCache: (userId: string) => Promise<void>;
+}
+
+export interface MongooseClerkWebhookLifecycleDependencies<
+  Transaction extends ClerkWebhookMongoSession,
+> {
+  startSession: () => Promise<Transaction>;
+  methods: ClerkWebhookPersistenceMethods<Transaction>;
+}
+
+export interface ClerkWebhookRouteHandlerDependencies<Transaction extends ClerkWebhookMongoSession>
+  extends MongooseClerkWebhookLifecycleDependencies<Transaction> {
+  runAsSystem: ClerkWebhookHandlerDependencies['runAsSystem'];
+  logError: ClerkWebhookHandlerDependencies['logError'];
+  resolveConfig?: ClerkWebhookHandlerDependencies['resolveConfig'];
+  verifyWebhook?: ClerkWebhookHandlerDependencies['verifyWebhook'];
+  recordOutcome?: ClerkWebhookHandlerDependencies['recordOutcome'];
+  now?: ClerkWebhookHandlerDependencies['now'];
 }
 
 const INVALID_CLERK_WEBHOOK_EVENT = 'Invalid Clerk webhook event';
@@ -226,6 +277,61 @@ export function createClerkWebhookLifecycle<Transaction>(
   }
 
   return { revokeClerkSession, tombstoneClerkUser };
+}
+
+export function createMongooseClerkWebhookLifecycle<Transaction extends ClerkWebhookMongoSession>(
+  dependencies: MongooseClerkWebhookLifecycleDependencies<Transaction>,
+): ClerkWebhookLifecycle {
+  const { methods } = dependencies;
+
+  return createClerkWebhookLifecycle<Transaction>({
+    withTransaction: async (operation) => {
+      const session = await dependencies.startSession();
+      try {
+        await session.withTransaction(() => operation(session));
+      } finally {
+        await session.endSession();
+      }
+    },
+    upsertSessionState: async (input, session) => {
+      await methods.upsertSessionState(input, { session });
+    },
+    upsertUserState: async (input, session) => {
+      await methods.upsertUserState(input, { session });
+    },
+    findClerkSessionIdsByUser: (clerkUserId, session) =>
+      methods.findClerkSessionIdsByClerkUserId(clerkUserId, { session }),
+    tombstoneUsersByClerkId: (clerkId, deletedAt, session) =>
+      methods.tombstoneClerkUsers(
+        { clerkId, deletedAt },
+        { session, deferCacheInvalidation: true },
+      ),
+    deleteSessionsByClerkSessionId: async (clerkSessionId, session) => {
+      await methods.deleteSessionsByClerkSessionId(clerkSessionId, { session });
+    },
+    deleteSessionsByClerkUserId: async (clerkUserId, session) => {
+      await methods.deleteSessionsByClerkUserId(clerkUserId, { session });
+    },
+    invalidateAuthUserDocuments: async (userIds) => {
+      await Promise.all(userIds.map((userId) => methods.invalidateAuthUserDocCache(userId)));
+    },
+  });
+}
+
+export function createClerkWebhookRouteHandler<Transaction extends ClerkWebhookMongoSession>(
+  dependencies: ClerkWebhookRouteHandlerDependencies<Transaction>,
+): RequestHandler<Record<string, never>, unknown, unknown> {
+  const lifecycle = createMongooseClerkWebhookLifecycle(dependencies);
+  return createClerkWebhookHandler({
+    resolveConfig: dependencies.resolveConfig ?? resolveClerkAuthConfig,
+    verifyWebhook: dependencies.verifyWebhook ?? verifyClerkWebhookRequest,
+    runAsSystem: dependencies.runAsSystem,
+    revokeClerkSession: lifecycle.revokeClerkSession,
+    tombstoneClerkUser: lifecycle.tombstoneClerkUser,
+    recordOutcome: dependencies.recordOutcome ?? recordClerkWebhook,
+    logError: dependencies.logError,
+    now: dependencies.now ?? (() => new Date()),
+  });
 }
 
 export function createClerkWebhookRequest(input: ClerkWebhookRequestInput): Request {
