@@ -45,8 +45,10 @@ export interface ActivityPhaseSnapshot {
   overflowToolCallIds?: string[];
   /** IDs tied to the saved numeric overflow boundary, including equal-index batches. */
   overflowBoundaryToolCallIds?: string[];
-  /** Stable anchor for reasoning-only overflow after HITL content compaction. */
+  /** @deprecated Stable anchor retained for snapshots created before multi-anchor support. */
   overflowReasoningExcerpt?: string;
+  /** Bounded stable anchors for reasoning-only overflow after HITL content compaction. */
+  overflowReasoningAnchors?: string[];
   assistantContext: string[];
   pendingReasoning: Array<{
     key: string;
@@ -421,14 +423,19 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     }
     return matches;
   });
-  const overflowReasoningNeedle = initialSnapshot?.overflowReasoningExcerpt?.slice(0, 80);
+  const overflowReasoningAnchors = new Set(
+    initialSnapshot?.overflowReasoningAnchors ??
+      (initialSnapshot?.overflowReasoningExcerpt != null
+        ? [initialSnapshot.overflowReasoningExcerpt.slice(0, 80)]
+        : []),
+  );
   let rebasedOverflowReasoningIndex: number | undefined;
-  if (overflowReasoningNeedle) {
+  if (overflowReasoningAnchors.size > 0) {
     for (const index of definedPartIndices(content)) {
       const part = content[index];
       if (
         part?.type === ContentTypes.THINK &&
-        textValue(part.think).includes(overflowReasoningNeedle)
+        [...overflowReasoningAnchors].some((anchor) => textValue(part.think).includes(anchor))
       ) {
         rebasedOverflowReasoningIndex = index;
       }
@@ -444,13 +451,12 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   let overflowActivityStartIndex = hasUnresolvedBoundaryTool
     ? Math.max(rebasedOverflowStartIndex ?? -1, initialSnapshot?.overflowActivityStartIndex ?? -1)
     : (rebasedOverflowStartIndex ??
-      (initialSnapshot?.overflowReasoningExcerpt == null
+      (overflowReasoningAnchors.size === 0
         ? initialSnapshot?.overflowActivityStartIndex
         : undefined));
   if (overflowActivityStartIndex != null && overflowActivityStartIndex < 0) {
     overflowActivityStartIndex = undefined;
   }
-  let overflowReasoningExcerpt = initialSnapshot?.overflowReasoningExcerpt;
   const contributingAgentIds = new Set(initialSnapshot?.agentIds ?? []);
   let assistantContext: AssistantContextEntry[] = (initialSnapshot?.assistantContext ?? [])
     .slice(-MAX_CONTEXT_ITEMS)
@@ -495,7 +501,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     overflowActivityStartIndex = undefined;
     overflowToolCallIds.clear();
     overflowBoundaryToolCallIds.clear();
-    overflowReasoningExcerpt = undefined;
+    overflowReasoningAnchors.clear();
     contributingAgentIds.clear();
     lastRootTextStepId = undefined;
   };
@@ -519,8 +525,8 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       }
       const reasoningExcerpts = activity.thinkingExcerpts;
       const reasoningExcerpt = reasoningExcerpts?.[reasoningExcerpts.length - 1]?.trim();
-      if (reasoningExcerpt && activity.startIndex >= overflowActivityStartIndex) {
-        overflowReasoningExcerpt = reasoningExcerpt.slice(0, MAX_EXCERPT_CHARS);
+      if (reasoningExcerpt) {
+        overflowReasoningAnchors.add(reasoningExcerpt.slice(0, 80));
       }
       for (const id of activity.toolCallIds ?? []) {
         overflowToolCallIds.add(id);
@@ -543,7 +549,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     ...(overflowActivityStartIndex != null && {
       overflowBoundaryToolCallIds: [...overflowBoundaryToolCallIds],
     }),
-    ...(overflowReasoningExcerpt != null && { overflowReasoningExcerpt }),
+    ...(overflowReasoningAnchors.size > 0 && {
+      overflowReasoningAnchors: [...overflowReasoningAnchors],
+    }),
     activities: activities.map((activity) => ({
       ...activity,
       ...(activity.entries != null && {
@@ -1009,8 +1017,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const overflowBoundaryIds = [...overflowBoundaryToolCallIds];
       const hasLaterOverflowActivity =
         overflowIds.some((id) => trailingToolIds.has(id)) ||
-        (overflowReasoningExcerpt != null &&
-          hasReasoningExcerptAtOrAfter(parts, overflowReasoningExcerpt, candidateFinalTextIndex)) ||
+        [...overflowReasoningAnchors].some((anchor) =>
+          hasReasoningExcerptAtOrAfter(parts, anchor, candidateFinalTextIndex),
+        ) ||
         (!overflowBoundaryIds.every((id) => materializedToolIds.has(id)) &&
           overflowActivityStartIndex != null &&
           overflowActivityStartIndex >= candidateFinalTextIndex);
