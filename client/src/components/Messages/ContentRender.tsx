@@ -10,11 +10,12 @@ import {
 } from '~/utils';
 import { useAttachments, useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
+import { revealOnRowHoverClasses } from '~/components/Chat/Messages/styles';
 import ContentParts from '~/components/Chat/Messages/Content/ContentParts';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
-import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
+import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import store from '~/store';
 
@@ -158,10 +159,14 @@ const ContentRender = memo(function ContentRender({
       isEditing={edit}
       footer={
         <SubRow classes={cn('text-xs', msg.isCreatedByUser && 'justify-end')}>
+          {/* While the answer is generating every other action is withheld, which
+              would otherwise leave this counter sitting alone under a half-written
+              response. It reveals on hover there, like the actions it sits with. */}
           <SiblingSwitch
             siblingIdx={siblingIdx}
             siblingCount={siblingCount}
             setSiblingIdx={setSiblingIdx}
+            className={cn(isSubmitting && isLatestMessage && revealOnRowHoverClasses)}
           />
           <HoverButtons
             index={index}

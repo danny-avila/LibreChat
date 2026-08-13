@@ -1,14 +1,14 @@
 import React, { useMemo } from 'react';
-import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { RecoilRoot, type MutableSnapshot } from 'recoil';
+import { render, screen, act } from '@testing-library/react';
 import { QueryKeys, type TConversation, type TMessage } from 'librechat-data-provider';
-import { ChatContext, MessagesViewProvider, useChatContext } from '~/Providers';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
-import Message from '~/components/Chat/Messages/Message';
+import { ChatContext, MessagesViewProvider, useChatContext } from '~/Providers';
 import StructuredMessage from '~/components/Messages/MessageContent';
+import Message from '~/components/Chat/Messages/Message';
 import store from '~/store';
 
 let mockHoverButtonsRenderCount = 0;
@@ -178,6 +178,9 @@ function DerivedStreamingRow({ structured = false }: { structured?: boolean }) {
           message={latestMessage}
           currentEditId={null}
           setCurrentEditId={jest.fn()}
+          siblingIdx={0}
+          siblingCount={2}
+          setSiblingIdx={jest.fn()}
         />
       </MessagesViewProvider>
     </ChatContext.Provider>
@@ -250,5 +253,21 @@ describe('streaming hover actions', () => {
     });
 
     expect(screen.getByTestId('hover-buttons')).toBeInTheDocument();
+  });
+
+  /**
+   * Every other action is withheld from the row that is still generating, so an
+   * always-visible retry counter would sit alone under a half-written answer. Both
+   * response formats have to fade it the same way.
+   */
+  it.each([
+    ['a plain text', false],
+    ['a structured', true],
+  ])('fades retry navigation to hover-only on %s streaming row', (_label, structured) => {
+    renderStreamingRow(structured);
+
+    expect(screen.getByRole('navigation', { name: 'com_ui_sibling_navigation' })).toHaveClass(
+      '[@media(hover:hover)]:opacity-0',
+    );
   });
 });

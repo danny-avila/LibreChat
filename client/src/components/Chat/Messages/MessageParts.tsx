@@ -10,8 +10,9 @@ import {
 } from '~/utils';
 import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
-import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
+import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import { revealOnRowHoverClasses } from './styles';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
 import HoverButtons from './HoverButtons';
@@ -114,10 +115,16 @@ function MessageParts(props: TMessageProps) {
           isEditing={edit}
           footer={
             <SubRow classes={cn('text-xs', isCreatedByUser && 'justify-end')}>
+              {/* While the answer is generating every other action is withheld, which
+                  would otherwise leave this counter sitting alone under a half-written
+                  response. It reveals on hover there, like the actions it sits with. */}
               <SiblingSwitch
                 siblingIdx={siblingIdx}
                 siblingCount={siblingCount}
                 setSiblingIdx={setSiblingIdx}
+                className={cn(
+                  isSubmitting && messageId === latestMessageId && revealOnRowHoverClasses,
+                )}
               />
               <HoverButtons
                 index={index}

@@ -1,5 +1,14 @@
 import { cn } from '~/utils';
 
+/**
+ * Reveal-on-hover for a control that shares the message footer with the hover actions.
+ *
+ * Pointer devices fade it out until the row is hovered or something inside it takes
+ * focus. Touch devices, which cannot hover, keep it visible.
+ */
+export const revealOnRowHoverClasses =
+  'group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0';
+
 type HoverButtonStyleOptions = {
   isActive?: boolean;
   isLast?: boolean;
@@ -28,8 +37,7 @@ export const hoverButtonClasses = ({
     'hover-button size-auto rounded-lg p-1.5 text-text-secondary-alt',
     'hover:text-text-primary hover:bg-surface-hover',
     'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
-    !isLast &&
-      'group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0',
+    !isLast && revealOnRowHoverClasses,
     'group-has-[.hover-button-active]:visible group-has-[.hover-button-active]:opacity-100',
     'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',
     isActive && 'hover-button-active active text-text-primary bg-surface-hover',

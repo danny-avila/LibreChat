@@ -10,6 +10,7 @@ import {
 } from '~/utils';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
+import { revealOnRowHoverClasses } from '~/components/Chat/Messages/styles';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
@@ -168,9 +169,7 @@ const MessageRender = memo(function MessageRender({
             setSiblingIdx={setSiblingIdx}
             className={cn(
               msg.isCreatedByUser === true && 'order-last',
-              isSubmitting &&
-                isLatestMessage &&
-                'group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0',
+              isSubmitting && isLatestMessage && revealOnRowHoverClasses,
             )}
           />
           <HoverButtons
