@@ -1,6 +1,6 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
   getBasePath,
@@ -63,7 +63,15 @@ function validateToken(refreshToken) {
  * @returns {Promise<string|null>} - Reason to deny, or null when the request may proceed
  */
 async function getTwoFactorDenialReason(userId, issuedAtSeconds) {
-  const user = await getUserById(userId, 'provider twoFactorEnabled twoFactorEnrolledAt');
+  /**
+   * Resolve in system context: this route authenticates from the cookie alone, so it never runs
+   * `requireJwtAuth` and never establishes a tenant. Under strict tenant isolation a tenant-scoped
+   * `User` query would throw, and the catch upstream would answer 500 for every image. The id comes
+   * from the verified token and is only ever used to deny, exactly as `optionalShareFileAuth` does.
+   */
+  const user = await runAsSystem(() =>
+    getUserById(userId, 'provider twoFactorEnabled twoFactorEnrolledAt'),
+  );
   if (!user) {
     return 'No user found';
   }

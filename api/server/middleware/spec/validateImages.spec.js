@@ -12,6 +12,7 @@ jest.mock('~/models', () => ({
 }));
 
 const { isEnabled } = require('@librechat/api');
+const { getTenantId, SYSTEM_TENANT_ID } = require('@librechat/data-schemas');
 const { getUserById } = require('~/models');
 
 describe('validateImageRequest middleware', () => {
@@ -502,6 +503,25 @@ describe('validateImageRequest middleware', () => {
 
     afterEach(() => {
       delete process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
+    });
+
+    /**
+     * This route authenticates from the cookie alone, so it never runs `requireJwtAuth` and never
+     * establishes a tenant. Without a system context the tenant-isolated `User` query throws under
+     * strict isolation, and the catch upstream turns that into a 500 for every image.
+     */
+    test('resolves the user in a system tenant context', async () => {
+      let tenantDuringLookup = 'never ran';
+      getUserById.mockImplementation(async () => {
+        tenantDuringLookup = getTenantId();
+        return { provider: 'local', twoFactorEnabled: true, twoFactorEnrolledAt: null };
+      });
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(Math.floor(Date.now() / 1000))}`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(tenantDuringLookup).toBe(SYSTEM_TENANT_ID);
+      expect(next).toHaveBeenCalled();
     });
 
     test('refuses a cookie minted before two-factor enrollment', async () => {
