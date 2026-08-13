@@ -471,6 +471,104 @@ function closesBeforeBoundary(
   return materializedStart == null || materializedStart < boundary;
 }
 
+/**
+ * Every field of a bounded anchor, stated explicitly. Anchors are built by
+ * demoting an activity and by folding two together, and both used to spread
+ * one side and hand-pick the rest — so any field nobody named was dropped
+ * silently, and nothing failed until a boundary happened to land badly.
+ * Mapping over `keyof Required<TrackedActivity>` makes every field mandatory
+ * at the construction site: adding one to `TrackedActivity` is a type error
+ * until its anchor semantics are decided here.
+ */
+type AnchorFields = { [K in keyof Required<TrackedActivity>]: TrackedActivity[K] };
+
+function laterDefinedIndex(earlier?: number, later?: number): number | undefined {
+  if (earlier == null) {
+    return later;
+  }
+  return later == null ? earlier : Math.max(earlier, later);
+}
+
+function foldedAgentIds(earlier: TrackedActivity, later: TrackedActivity): string[] | undefined {
+  const folded = [
+    ...new Set(
+      [
+        ...(earlier.mergedAgentIds ?? []),
+        ...(earlier.agentId != null ? [earlier.agentId] : []),
+        ...(later.mergedAgentIds ?? []),
+        ...(later.agentId != null ? [later.agentId] : []),
+      ].filter((id) => id !== earlier.agentId),
+    ),
+  ];
+  return folded.length > 0 ? folded : undefined;
+}
+
+/** Strips prompt evidence while keeping everything a boundary reasons about. */
+function boundedAnchor(activity: TrackedActivity): TrackedActivity {
+  const fields: AnchorFields = {
+    startIndex: activity.startIndex,
+    bounded: true,
+    status: activity.status,
+    partitionStartIndex: activity.partitionStartIndex,
+    unresolvedToolStartIndex: activity.unresolvedToolStartIndex,
+    toolCallIds: activity.toolCallIds?.slice(-MAX_RETAINED_TOOL_ENTRIES),
+    thinkingExcerpts: activity.thinkingExcerpts
+      ?.slice(-MAX_RETAINED_TOOL_ENTRIES)
+      .map((text) => text.slice(-REASONING_ANCHOR_CHARS)),
+    agentId: activity.agentId,
+    mergedCount: activity.mergedCount,
+    mergedFailedCount: activity.mergedFailedCount,
+    mergedPartialCount: activity.mergedPartialCount,
+    mergedAgentIds: activity.mergedAgentIds,
+    /** An anchor is never summarized directly, so prompt evidence and the
+     *  child-label slot are deliberately not carried. */
+    label: undefined,
+    entries: undefined,
+    childLabelIndex: undefined,
+  };
+  return fields;
+}
+
+/** Folds `later` into `earlier`, which keeps its position. */
+function mergeAnchors(earlier: TrackedActivity, later: TrackedActivity): TrackedActivity {
+  const mergedFailedCount = countFailedActivities([earlier, later]);
+  const mergedPartialCount = countPartialActivities([earlier, later]);
+  const excerpts =
+    earlier.thinkingExcerpts != null || later.thinkingExcerpts != null
+      ? [...(earlier.thinkingExcerpts ?? []), ...(later.thinkingExcerpts ?? [])].slice(
+          -MAX_RETAINED_TOOL_ENTRIES,
+        )
+      : undefined;
+  const fields: AnchorFields = {
+    /** The pair starts where its first activity did; the later side's floor
+     *  describes a position being absorbed and must not move the survivor. */
+    startIndex: earlier.startIndex,
+    partitionStartIndex: earlier.partitionStartIndex,
+    bounded: true,
+    status: earlier.status,
+    /** The later side may still be waiting on a tool call. Dropping its
+     *  fallback lets a boundary close the whole merged count on the earlier
+     *  side; resolution clears it once every retained id materializes. */
+    unresolvedToolStartIndex: laterDefinedIndex(
+      earlier.unresolvedToolStartIndex,
+      later.unresolvedToolStartIndex,
+    ),
+    toolCallIds: [...(earlier.toolCallIds ?? []), ...(later.toolCallIds ?? [])].slice(
+      -MAX_RETAINED_TOOL_ENTRIES,
+    ),
+    thinkingExcerpts: excerpts,
+    agentId: earlier.agentId,
+    mergedCount: (earlier.mergedCount ?? 1) + (later.mergedCount ?? 1),
+    mergedFailedCount: mergedFailedCount > 0 ? mergedFailedCount : undefined,
+    mergedPartialCount: mergedPartialCount > 0 ? mergedPartialCount : undefined,
+    mergedAgentIds: foldedAgentIds(earlier, later),
+    label: undefined,
+    entries: undefined,
+    childLabelIndex: undefined,
+  };
+  return fields;
+}
+
 /** Every activity is represented by exactly one positioned item, so run totals
  *  are a sum over that list rather than a separately maintained scalar. */
 function countActivities(activities: ReadonlyArray<TrackedActivity>): number {
@@ -746,30 +844,6 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
   >();
   const textContextByStepId = new Map<string, AssistantContextEntry>();
 
-  const toBoundedAnchor = (activity: TrackedActivity): TrackedActivity => ({
-    startIndex: activity.startIndex,
-    bounded: true,
-    ...(activity.partitionStartIndex != null && {
-      partitionStartIndex: activity.partitionStartIndex,
-    }),
-    ...(activity.unresolvedToolStartIndex != null && {
-      unresolvedToolStartIndex: activity.unresolvedToolStartIndex,
-    }),
-    ...(activity.toolCallIds != null && {
-      toolCallIds: activity.toolCallIds.slice(-MAX_RETAINED_TOOL_ENTRIES),
-    }),
-    ...(activity.thinkingExcerpts != null && {
-      thinkingExcerpts: activity.thinkingExcerpts
-        .slice(-MAX_RETAINED_TOOL_ENTRIES)
-        .map((text) => text.slice(-REASONING_ANCHOR_CHARS)),
-    }),
-    ...(activity.agentId != null && { agentId: activity.agentId }),
-    ...(activity.mergedCount != null && { mergedCount: activity.mergedCount }),
-    ...(activity.mergedFailedCount != null && { mergedFailedCount: activity.mergedFailedCount }),
-    ...(activity.mergedPartialCount != null && { mergedPartialCount: activity.mergedPartialCount }),
-    status: activity.status,
-  });
-
   /** Keeps memory bounded without letting an activity lose its position:
    *  evidence is dropped first, then the oldest anchors fold forward into their
    *  successor, which is never earlier in the content and so cannot move a
@@ -784,7 +858,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         evidenceBudget -= 1;
         return activity;
       }
-      return toBoundedAnchor(activity);
+      return boundedAnchor(activity);
     });
     /** Merging the closest pair keeps the folded count on the side it was
      *  already on: a boundary can only fall at a content index, so merging
@@ -814,50 +888,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       const laterPosition = anchorPositions[mergeAt];
       const earlier = activities[earlierPosition];
       const later = activities[laterPosition];
-      const mergedCount = (earlier.mergedCount ?? 1) + (later.mergedCount ?? 1);
-      const mergedFailedCount = countFailedActivities([earlier, later]);
-      const mergedPartialCount = countPartialActivities([earlier, later]);
       activities.splice(laterPosition, 1);
-      const foldedAgentIds = [
-        ...new Set(
-          [
-            ...(earlier.mergedAgentIds ?? []),
-            ...(earlier.agentId != null ? [earlier.agentId] : []),
-            ...(later.mergedAgentIds ?? []),
-            ...(later.agentId != null ? [later.agentId] : []),
-          ].filter((id) => id !== earlier.agentId),
-        ),
-      ];
-      /** The later side may be waiting on a tool call that has not appeared.
-       *  Dropping its fallback would let a boundary close the whole merged
-       *  count on the earlier side and strand that call outside its parent;
-       *  resolution clears the anchor once every retained id materializes. */
-      const mergedUnresolved = Math.max(
-        earlier.unresolvedToolStartIndex ?? -1,
-        later.unresolvedToolStartIndex ?? -1,
-      );
-      activities[earlierPosition] = {
-        ...earlier,
-        ...(mergedUnresolved >= 0 && { unresolvedToolStartIndex: mergedUnresolved }),
-        ...(foldedAgentIds.length > 0 && { mergedAgentIds: foldedAgentIds }),
-        toolCallIds: [...(earlier.toolCallIds ?? []), ...(later.toolCallIds ?? [])].slice(
-          -MAX_RETAINED_TOOL_ENTRIES,
-        ),
-        ...(earlier.thinkingExcerpts != null || later.thinkingExcerpts != null
-          ? {
-              thinkingExcerpts: [
-                ...(earlier.thinkingExcerpts ?? []),
-                ...(later.thinkingExcerpts ?? []),
-              ].slice(-MAX_RETAINED_TOOL_ENTRIES),
-            }
-          : {}),
-        mergedCount,
-        ...(mergedFailedCount > 0 && { mergedFailedCount }),
-        ...(mergedPartialCount > 0 && { mergedPartialCount }),
-      };
+      activities[earlierPosition] = mergeAnchors(earlier, later);
     }
-    const folded = activities;
-    activities = folded;
   };
 
   const applyRetained = (retained: PhasePartitionSide) => {
