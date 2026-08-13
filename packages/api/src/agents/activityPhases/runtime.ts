@@ -234,8 +234,9 @@ function findTrackedStart(
 function findMaterializedActivityStart(
   parts: ReadonlyArray<LooseContentPart | null | undefined>,
   activity: TrackedActivity,
+  toolIndices?: number[],
 ): number | undefined {
-  const toolStart = findTrackedToolStart(parts, activity);
+  const toolStart = (toolIndices ?? findTrackedToolIndices(parts, activity))[0];
   if (toolStart != null) {
     return toolStart;
   }
@@ -295,13 +296,6 @@ function includesReasoningAnchor(text: string, index: ReasoningAnchorIndex): boo
     }
   }
   return false;
-}
-
-function findTrackedToolStart(
-  parts: ReadonlyArray<LooseContentPart | null | undefined>,
-  activity: TrackedActivity,
-): number | undefined {
-  return findTrackedToolIndices(parts, activity)[0];
 }
 
 function findTrackedToolIndices(
@@ -455,7 +449,7 @@ function closesBeforeBoundary(
   if (materializedToolIndices.length > 0) {
     return materializedToolIndices.every((index) => index < boundary);
   }
-  const materializedStart = findMaterializedActivityStart(parts, activity);
+  const materializedStart = findMaterializedActivityStart(parts, activity, materializedToolIndices);
   return materializedStart == null || materializedStart < boundary;
 }
 
@@ -1013,39 +1007,45 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
      *  its slot before the corresponding tool part reaches the shared content
      *  array, leaving the phase hook with a fallback start index. Re-anchor
      *  from stable tool ids when they are available at close. */
+    /** The materialized tool indices answer every positional question a
+     *  boundary asks — where the activity starts, which side it falls on, and
+     *  where a retained straddling batch reanchors — so the shared content
+     *  array is walked once per activity and the result carried through. */
     const resolved = activities.map((activity) => {
-      const toolStart = findTrackedToolStart(currentParts, activity);
+      const toolIndices = findTrackedToolIndices(currentParts, activity);
+      const toolStart = toolIndices[0];
       if (toolStart != null) {
         /** The saved fallback outlives its purpose once every tracked call has
          *  materialized. Keeping it would reject the activity at any boundary
          *  below that stale index even though its real position is earlier. */
-        const materializedTools = findTrackedToolIndices(currentParts, activity);
         const fullyMaterialized =
           (activity.toolCallIds?.length ?? 0) > 0 &&
-          materializedTools.length >= (activity.toolCallIds?.length ?? 0);
+          toolIndices.length >= (activity.toolCallIds?.length ?? 0);
         const { unresolvedToolStartIndex, ...rest } = activity;
         return {
-          ...rest,
-          ...(!fullyMaterialized &&
-            unresolvedToolStartIndex != null && { unresolvedToolStartIndex }),
-          startIndex: Math.max(toolStart, activity.partitionStartIndex ?? 0),
+          activity: {
+            ...rest,
+            ...(!fullyMaterialized &&
+              unresolvedToolStartIndex != null && { unresolvedToolStartIndex }),
+            startIndex: Math.max(toolStart, activity.partitionStartIndex ?? 0),
+          },
+          toolIndices,
         };
       }
       /** Anchors carry only stable evidence and must be re-located against the
        *  current content; a full activity keeps the index maintained live,
        *  which repeated reasoning must not drag back across a prior phase. */
-      return activity.bounded === true
-        ? { ...activity, startIndex: findTrackedStart(currentParts, activity) }
-        : activity;
+      return {
+        activity:
+          activity.bounded === true
+            ? { ...activity, startIndex: findTrackedStart(currentParts, activity) }
+            : activity,
+        toolIndices,
+      };
     });
-    /** One walk of the shared content array per activity: the materialized
-     *  tool indices decide the side and, for a retained straddling batch, its
-     *  new anchor. Re-deriving them per filter would scan the message array
-     *  several times per activity at every boundary. */
     const closingActivities: TrackedActivity[] = [];
     const retainedActivities: TrackedActivity[] = [];
-    for (const activity of resolved) {
-      const toolIndices = findTrackedToolIndices(currentParts, activity);
+    for (const { activity, toolIndices } of resolved) {
       if (closesBeforeBoundary(currentParts, activity, requestedEndIndex, toolIndices)) {
         closingActivities.push(activity);
         continue;
