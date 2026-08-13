@@ -11,6 +11,7 @@ import {
   recordAgentStartupResult,
   recordClerkProfileRequest,
   recordClerkIdentityResolution,
+  recordClerkSessionOutcome,
   recordClerkTokenVerification,
   recordGenerationJob,
   recordGenerationStreamResumePendingEvents,
@@ -293,6 +294,11 @@ describe('createMetrics', () => {
     recordClerkProfileRequest('unavailable', 0.07);
     recordClerkIdentityResolution('linked', 'none');
     recordClerkIdentityResolution('already_linked', 'create_duplicate');
+    recordClerkSessionOutcome('success');
+    recordClerkSessionOutcome('two_factor_pending');
+    recordClerkSessionOutcome('replay');
+    recordClerkSessionOutcome('rollback');
+    recordClerkSessionOutcome('post_commit_failure');
 
     const response = await request(app)
       .get('/metrics')
@@ -316,6 +322,13 @@ describe('createMetrics', () => {
     );
     expect(response.text).toMatch(
       /clerk_identity_resolutions_total\{outcome="already_linked",convergence="create_duplicate"\} 1/,
+    );
+    expect(response.text).toMatch(/clerk_session_outcomes_total\{outcome="success"\} 1/);
+    expect(response.text).toMatch(/clerk_session_outcomes_total\{outcome="two_factor_pending"\} 1/);
+    expect(response.text).toMatch(/clerk_session_outcomes_total\{outcome="replay"\} 1/);
+    expect(response.text).toMatch(/clerk_session_outcomes_total\{outcome="rollback"\} 1/);
+    expect(response.text).toMatch(
+      /clerk_session_outcomes_total\{outcome="post_commit_failure"\} 1/,
     );
   });
 

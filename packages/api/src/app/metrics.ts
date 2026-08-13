@@ -176,6 +176,12 @@ export type ClerkWebhookEvent =
   | 'unsupported'
   | 'user_deleted';
 export type ClerkWebhookResult = 'success' | 'invalid' | 'mutation_failed' | 'unavailable';
+export type ClerkSessionOutcome =
+  | 'success'
+  | 'two_factor_pending'
+  | 'replay'
+  | 'rollback'
+  | 'post_commit_failure';
 
 type OpenIDUserLookupMetrics = {
   recordLookup: (result: OpenIDUserLookupResult, durationSeconds: number) => void;
@@ -265,6 +271,7 @@ type ClerkAuthMetrics = {
     outcome: ClerkIdentityResolutionOutcome,
     convergence: ClerkIdentityConvergence,
   ) => void;
+  recordSessionOutcome: (outcome: ClerkSessionOutcome) => void;
   recordWebhook: (event: ClerkWebhookEvent, result: ClerkWebhookResult) => void;
 };
 
@@ -272,6 +279,7 @@ let clerkAuthMetrics: ClerkAuthMetrics = {
   recordTokenVerification: () => undefined,
   recordProfileRequest: () => undefined,
   recordIdentityResolution: () => undefined,
+  recordSessionOutcome: () => undefined,
   recordWebhook: () => undefined,
 };
 
@@ -303,6 +311,7 @@ const resetMetricRecorders = (): void => {
     recordTokenVerification: () => undefined,
     recordProfileRequest: () => undefined,
     recordIdentityResolution: () => undefined,
+    recordSessionOutcome: () => undefined,
     recordWebhook: () => undefined,
   };
 };
@@ -394,6 +403,10 @@ export function recordClerkIdentityResolution(
   convergence: ClerkIdentityConvergence,
 ): void {
   clerkAuthMetrics.recordIdentityResolution(outcome, convergence);
+}
+
+export function recordClerkSessionOutcome(outcome: ClerkSessionOutcome): void {
+  clerkAuthMetrics.recordSessionOutcome(outcome);
 }
 
 export function recordClerkWebhook(event: ClerkWebhookEvent, result: ClerkWebhookResult): void {
@@ -662,6 +675,13 @@ export function createMetrics(): PrometheusMetrics {
     registers: [registry],
   });
 
+  const clerkSessionOutcomes = new Counter({
+    name: 'clerk_session_outcomes_total',
+    help: 'Clerk session exchange results by bounded outcome',
+    labelNames: ['outcome'] as const,
+    registers: [registry],
+  });
+
   const clerkWebhooks = new Counter({
     name: 'clerk_webhooks_total',
     help: 'Clerk webhooks by verified event class and processing result',
@@ -681,6 +701,7 @@ export function createMetrics(): PrometheusMetrics {
     recordIdentityResolution: (outcome, convergence) => {
       clerkIdentityResolutions.inc({ outcome, convergence });
     },
+    recordSessionOutcome: (outcome) => clerkSessionOutcomes.inc({ outcome }),
     recordWebhook: (event, result) => clerkWebhooks.inc({ event, result }),
   };
 
