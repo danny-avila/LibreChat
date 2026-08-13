@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import { Alert, Button, TextareaAutosize } from '@librechat/client';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
@@ -8,6 +9,8 @@ import { useMessagesConversation, useMessagesOperations } from '~/Providers';
 import { splitMarkdownIntoBlocks } from './splitMarkdown';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
+import store from '~/store';
 
 type EditableType = ContentTypes.TEXT | ContentTypes.THINK;
 
@@ -61,6 +64,7 @@ export default function EditContentParts({
   renderReadOnlyPart,
 }: EditContentPartsProps) {
   const localize = useLocalize();
+  const isRTL = useRecoilValue(store.chatDirection).toLowerCase() === 'rtl';
   const { conversation } = useMessagesConversation();
   const { ask, getMessages, setMessages } = useMessagesOperations();
   const getAddedConvo = useGetAddedConvo();
@@ -106,6 +110,14 @@ export default function EditContentParts({
     () => editableParts.filter((part) => drafts[part.index] !== part.original),
     [drafts, editableParts],
   );
+  /** Emptying a part would persist a blank one, and nothing in the editor offers a
+   *  way back: there is no delete-part affordance, so the only reading of a cleared
+   *  box is an accident. The sibling `EditMessage` refuses the same edit through its
+   *  form's `required` rule, so both editors hold the same line. */
+  const hasBlankEdit = useMemo(
+    () => changedParts.some((part) => (drafts[part.index] ?? '').trim() === ''),
+    [changedParts, drafts],
+  );
   const editedMessage = getMessages()?.find((item) => item.messageId === messageId);
   const rerunRequiresSave = editedMessage?.isCreatedByUser !== true && changedParts.length > 1;
   const isBusy = isSubmitting || isSaving;
@@ -147,7 +159,7 @@ export default function EditContentParts({
   }, [changedParts, drafts, getMessages, messageId, setMessages]);
 
   const saveChanges = useCallback(async () => {
-    if (changedParts.length === 0 || isBusy) {
+    if (changedParts.length === 0 || hasBlankEdit || isBusy) {
       return;
     }
     setIsSaving(true);
@@ -175,6 +187,7 @@ export default function EditContentParts({
     conversation?.conversationId,
     drafts,
     enterEdit,
+    hasBlankEdit,
     isBusy,
     messageId,
     updateLocalMessages,
@@ -183,7 +196,7 @@ export default function EditContentParts({
 
   const updateAndRerun = useCallback(() => {
     const firstChange = changedParts[0];
-    if (!firstChange || !editedMessage || rerunRequiresSave || isBusy) {
+    if (!firstChange || !editedMessage || rerunRequiresSave || hasBlankEdit || isBusy) {
       return;
     }
     const messages = getMessages();
@@ -261,6 +274,7 @@ export default function EditContentParts({
     enterEdit,
     getAddedConvo,
     getMessages,
+    hasBlankEdit,
     isBusy,
     messageId,
     rerunRequiresSave,
@@ -291,6 +305,9 @@ export default function EditContentParts({
   /** Both states share the footer's status slot so neither can add a row and
    *  shift the message below it. */
   const getStatusMessage = () => {
+    if (hasBlankEdit) {
+      return localize('com_ui_message_part_empty');
+    }
     if (rerunRequiresSave) {
       return localize('com_ui_save_before_rerun');
     }
@@ -328,6 +345,7 @@ export default function EditContentParts({
           return (
             <label
               key={`editor-${messageId}-${absoluteIndex}`}
+              dir={isRTL ? 'rtl' : 'ltr'}
               className="flex min-w-0 flex-col gap-1.5 text-xs font-medium text-text-secondary"
             >
               {label}
@@ -345,7 +363,14 @@ export default function EditContentParts({
                 aria-keyshortcuts="Control+Enter Meta+Enter Control+S Meta+S Escape"
                 disabled={isBusy}
                 minRows={3}
-                className="max-h-[65vh] min-h-24 w-full resize-y rounded-lg border border-border-medium bg-surface-tertiary-alt px-3 py-2 text-sm font-normal text-text-primary focus-visible:outline-none disabled:opacity-50 md:max-h-[75vh]"
+                dir={isRTL ? 'rtl' : 'ltr'}
+                className={cn(
+                  'max-h-[65vh] min-h-24 w-full resize-y rounded-lg border border-border-medium',
+                  'bg-surface-tertiary-alt px-3 py-2 text-sm font-normal text-text-primary',
+                  'focus-visible:outline-none',
+                  isRTL ? 'text-right' : 'text-left',
+                  'disabled:opacity-50 md:max-h-[75vh]',
+                )}
               />
             </label>
           );
@@ -370,7 +395,7 @@ export default function EditContentParts({
             size="sm"
             variant="outline"
             onClick={() => void saveChanges()}
-            disabled={changedParts.length === 0 || isBusy}
+            disabled={changedParts.length === 0 || hasBlankEdit || isBusy}
           >
             {isSaving ? localize('com_ui_saving') : localize('com_ui_save')}
           </Button>
@@ -378,7 +403,7 @@ export default function EditContentParts({
             size="sm"
             variant="submit"
             onClick={updateAndRerun}
-            disabled={changedParts.length === 0 || rerunRequiresSave || isBusy}
+            disabled={changedParts.length === 0 || rerunRequiresSave || hasBlankEdit || isBusy}
           >
             {localize('com_ui_update_rerun')}
           </Button>

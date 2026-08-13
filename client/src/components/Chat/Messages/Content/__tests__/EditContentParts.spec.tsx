@@ -7,6 +7,16 @@ import EditContentParts from '../EditContentParts';
 const mockMutateAsync = jest.fn();
 const mockSetMessages = jest.fn();
 const mockAsk = jest.fn();
+let mockChatDirection = 'LTR';
+
+jest.mock('recoil', () => ({
+  useRecoilValue: () => mockChatDirection,
+}));
+
+jest.mock('~/store', () => ({
+  __esModule: true,
+  default: { chatDirection: {} },
+}));
 
 const message = {
   messageId: 'assistant-1',
@@ -61,6 +71,7 @@ describe('EditContentParts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockMutateAsync.mockResolvedValue({});
+    mockChatDirection = 'LTR';
   });
 
   it('uses one editor footer and keeps non-editable parts visible', () => {
@@ -214,5 +225,100 @@ describe('EditContentParts', () => {
 
     expect(screen.queryByRole('textbox')).toBeNull();
     expect(screen.getByTestId('artifact-part')).toBeInTheDocument();
+  });
+
+  it('refuses to persist a part the editor has been emptied of', async () => {
+    const enterEdit = jest.fn();
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={enterEdit}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    const editor = screen.getByRole('textbox');
+    fireEvent.change(editor, { target: { value: '   ' } });
+
+    expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'com_ui_update_rerun' })).toBeDisabled();
+    expect(screen.getByText('com_ui_message_part_empty')).toBeInTheDocument();
+
+    /** The shortcuts reach the save paths directly, so a disabled button is not
+     *  enough on its own. */
+    fireEvent.keyDown(editor, { key: 's', ctrlKey: true });
+    fireEvent.keyDown(editor, { key: 'Enter', ctrlKey: true });
+
+    await waitFor(() => expect(mockMutateAsync).not.toHaveBeenCalled());
+    expect(mockAsk).not.toHaveBeenCalled();
+    expect(enterEdit).not.toHaveBeenCalled();
+  });
+
+  it('lets a restored part save again after being emptied', async () => {
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    const editor = screen.getByRole('textbox');
+    fireEvent.change(editor, { target: { value: '' } });
+    fireEvent.change(editor, { target: { value: 'Restored response' } });
+
+    expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    await waitFor(() =>
+      expect(mockMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ text: 'Restored response' }),
+      ),
+    );
+  });
+
+  it('turns the editor around for a right-to-left chat direction', () => {
+    mockChatDirection = 'RTL';
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    const editor = screen.getByRole('textbox');
+    expect(editor).toHaveAttribute('dir', 'rtl');
+    expect(editor).toHaveClass('text-right');
+  });
+
+  it('leaves the editor left-to-right by default', () => {
+    render(
+      <EditContentParts
+        content={content}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    const editor = screen.getByRole('textbox');
+    expect(editor).toHaveAttribute('dir', 'ltr');
+    expect(editor).toHaveClass('text-left');
   });
 });
