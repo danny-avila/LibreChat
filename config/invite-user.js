@@ -75,7 +75,7 @@ const connect = require('./connect');
       payload: {
         appName: appName,
         inviteLink: inviteLink,
-        year: new Date().getFullYear(),
+        year: String(new Date().getFullYear()),
       },
       template: 'inviteUser.handlebars',
     });
