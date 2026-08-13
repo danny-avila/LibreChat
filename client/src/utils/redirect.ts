@@ -46,13 +46,22 @@ const dropStoredRedirect = (): void => {
   }
 };
 
+/** Suffix rather than whole path, so a deployment served under a basename still matches. */
+const SETUP_PATH_SUFFIX = '/login/2fa/setup';
+
 /**
  * The mandatory enrollment screen holding a live setup token is a destination in its own right, so
  * it is exempt from the post-login redirects that would otherwise send an authenticated but
  * unenrolled user on to the app.
+ *
+ * The router matches case-insensitively and ignores a trailing slash, so recognising the route by
+ * its exact spelling would strand anyone whose URL differs only in those: the screen renders, this
+ * reports it unprotected, and the redirect pulls them off a live enrollment. Normalize the same way
+ * the router does before comparing.
  */
 export function isRequiredTwoFactorSetupRoute(): boolean {
-  return window.location.pathname.endsWith('/login/2fa/setup') && !!readTwoFactorSetupToken();
+  const pathname = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+  return pathname.endsWith(SETUP_PATH_SUFFIX) && !!readTwoFactorSetupToken();
 }
 
 /** Validates that a redirect target is a safe relative path (not an absolute or protocol-relative URL) */

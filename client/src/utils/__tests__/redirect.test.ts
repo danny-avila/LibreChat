@@ -1,4 +1,5 @@
 import {
+  isRequiredTwoFactorSetupRoute,
   persistRedirectToSession,
   clearPostLoginRedirect,
   getPostLoginRedirect,
@@ -6,6 +7,44 @@ import {
   isSafeRedirect,
   SESSION_KEY,
 } from '../redirect';
+
+describe('isRequiredTwoFactorSetupRoute', () => {
+  const setPathname = (pathname: string) => {
+    window.history.replaceState({}, '', pathname);
+  };
+
+  afterEach(() => {
+    sessionStorage.clear();
+    setPathname('/');
+  });
+
+  /** The router matches these spellings, so the guard has to recognise them too. */
+  it.each([
+    '/login/2fa/setup',
+    '/login/2fa/setup/',
+    '/LOGIN/2FA/SETUP',
+    '/Login/2FA/Setup/',
+    '/librechat/login/2fa/setup/',
+  ])('recognises %s as the enrollment screen', (pathname) => {
+    sessionStorage.setItem('two_factor_setup_token', 'setup-token');
+    setPathname(pathname);
+
+    expect(isRequiredTwoFactorSetupRoute()).toBe(true);
+  });
+
+  it('does not claim the route without a live setup token', () => {
+    setPathname('/login/2fa/setup/');
+
+    expect(isRequiredTwoFactorSetupRoute()).toBe(false);
+  });
+
+  it('does not claim a route that merely contains the setup path', () => {
+    sessionStorage.setItem('two_factor_setup_token', 'setup-token');
+    setPathname('/login/2fa/setup/extra');
+
+    expect(isRequiredTwoFactorSetupRoute()).toBe(false);
+  });
+});
 
 describe('isSafeRedirect', () => {
   it('accepts a simple relative path', () => {
