@@ -10,6 +10,7 @@ import { cn } from '~/utils';
 type ActivityPhasePart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> & {
   activity_label_type?: 'phase';
   activity_start_index?: number;
+  activity_end_index?: number;
 };
 
 export default function ActivityPhaseGroup({

@@ -45,6 +45,8 @@ export interface MCPServerDefinition {
   dbId?: string; // MongoDB ObjectId for database servers (used for permissions)
   effectivePermissions: number; // Permission bits (VIEW=1, EDIT=2, DELETE=4, SHARE=8)
   consumeOnly?: boolean;
+  /** True when chat request fields are required before the server can connect. */
+  requestScoped?: boolean;
 }
 
 // Poll intervals are kept local since they're timer references that can't be serialized
@@ -80,7 +82,7 @@ export function useMCPServerManager({
     const definitions: MCPServerDefinition[] = [];
     if (loadedServers) {
       for (const [serverName, metadata] of Object.entries(loadedServers)) {
-        const { dbId, consumeOnly, ...config } = metadata;
+        const { dbId, consumeOnly, requestScoped, ...config } = metadata;
 
         // Get effective permissions from the permissions map using _id
         // Fall back to 1 (VIEW) for YAML-based servers without _id
@@ -91,6 +93,7 @@ export function useMCPServerManager({
           dbId,
           effectivePermissions,
           consumeOnly,
+          requestScoped,
           config,
         });
       }

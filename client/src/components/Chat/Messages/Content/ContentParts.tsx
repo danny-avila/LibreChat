@@ -154,6 +154,8 @@ type ContentPartsProps = {
   nestedActivityPhase?: boolean;
   /** Absolute transcript index represented by `content[0]` in a phase slice. */
   contentIndexOffset?: number;
+  /** Absolute transcript index for each compacted sparse segment entry. */
+  contentIndices?: ReadonlyArray<number>;
   /** Message-wide steer attribution retained across nested phase segments. */
   resumeAuthors?: ReadonlyMap<number, string | undefined>;
   /** Message-wide tool-group expansion overrides retained across phase slices. */
@@ -185,6 +187,7 @@ const ContentParts = memo(function ContentParts({
   createdAt,
   nestedActivityPhase = false,
   contentIndexOffset = 0,
+  contentIndices,
   resumeAuthors,
   toolGroupExpansionState,
 }: ContentPartsProps) {
@@ -201,6 +204,17 @@ const ContentParts = memo(function ContentParts({
     fallbackScopeRef.current.messageId = messageId;
   }
   const fallbackScope = fallbackScopeRef.current.scope;
+  const localIndexByAbsolute = useMemo(
+    () =>
+      contentIndices == null
+        ? undefined
+        : new Map(contentIndices.map((absoluteIndex, localIndex) => [absoluteIndex, localIndex])),
+    [contentIndices],
+  );
+  const absoluteIndexAt = useCallback(
+    (localIndex: number) => contentIndices?.[localIndex] ?? localIndex + contentIndexOffset,
+    [contentIndexOffset, contentIndices],
+  );
 
   const handleGroupExpansionChange = useCallback(
     (groupId: string, state: ToolCallGroupExpansionState) => {
@@ -272,7 +286,7 @@ const ContentParts = memo(function ContentParts({
 
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
-      const localIdx = idx - contentIndexOffset;
+      const localIdx = localIndexByAbsolute?.get(idx) ?? idx - contentIndexOffset;
       return (
         <PartWithContext
           key={`provider-${messageId}-${idx}`}
@@ -297,6 +311,7 @@ const ContentParts = memo(function ContentParts({
       attachmentMap,
       content,
       contentIndexOffset,
+      localIndexByAbsolute,
       conversationId,
       effectiveIsSubmitting,
       isCreatedByUser,
@@ -308,7 +323,7 @@ const ContentParts = memo(function ContentParts({
 
   const renderGroupedPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean, onToolExpand?: () => void) => {
-      const localIdx = idx - contentIndexOffset;
+      const localIdx = localIndexByAbsolute?.get(idx) ?? idx - contentIndexOffset;
       return (
         <PartWithContext
           key={`provider-${messageId}-${idx}`}
@@ -335,6 +350,7 @@ const ContentParts = memo(function ContentParts({
       attachmentMap,
       content,
       contentIndexOffset,
+      localIndexByAbsolute,
       conversationId,
       effectiveIsSubmitting,
       isCreatedByUser,
@@ -363,7 +379,7 @@ const ContentParts = memo(function ContentParts({
       if (!part) {
         return;
       }
-      const idx = localIdx + contentIndexOffset;
+      const idx = absoluteIndexAt(localIdx);
       if (prevType === ContentTypes.STEER && part.type !== ContentTypes.STEER) {
         authors.set(idx, activeAgentId);
       }
@@ -374,7 +390,7 @@ const ContentParts = memo(function ContentParts({
       parts.push({ part, idx });
     });
     return { sequentialParts: parts, detectedResumeAuthors: authors };
-  }, [content, contentIndexOffset]);
+  }, [absoluteIndexAt, content]);
   const postSteerAuthors = resumeAuthors ?? detectedResumeAuthors;
 
   const groupedParts = useMemo(
@@ -440,13 +456,13 @@ const ContentParts = memo(function ContentParts({
   if (phaseSegments != null) {
     const relativeGlobalLastContentIdx = lastVisibleContentIdx(content ?? []);
     const globalLastContentIdx =
-      relativeGlobalLastContentIdx < 0 ? -1 : relativeGlobalLastContentIdx + contentIndexOffset;
+      relativeGlobalLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeGlobalLastContentIdx);
     const renderSegment = (
       segmentContent: Array<TMessageContentParts | undefined>,
       segmentStartIndex: number,
+      segmentIndices: ReadonlyArray<number>,
       key: string,
     ) => {
-      const localLastContentIdx = globalLastContentIdx - segmentStartIndex;
       return (
         <ContentParts
           key={key}
@@ -458,11 +474,12 @@ const ContentParts = memo(function ContentParts({
           attachments={attachments}
           searchResults={searchResults}
           isCreatedByUser={isCreatedByUser}
-          isLast={isLast && segmentContent[localLastContentIdx] != null}
+          isLast={isLast && segmentIndices.includes(globalLastContentIdx)}
           isSubmitting={isSubmitting}
           isLatestMessage={isLatestMessage}
           nestedActivityPhase
           contentIndexOffset={segmentStartIndex}
+          contentIndices={segmentIndices}
           resumeAuthors={postSteerAuthors}
           toolGroupExpansionState={expansionState}
         />
@@ -486,19 +503,21 @@ const ContentParts = memo(function ContentParts({
                 showCursor={
                   isLast &&
                   effectiveIsSubmitting &&
-                  segment.labelIndex + contentIndexOffset === globalLastContentIdx
+                  absoluteIndexAt(segment.labelIndex) === globalLastContentIdx
                 }
               >
                 {renderSegment(
                   segment.content,
-                  segment.startIndex + contentIndexOffset,
+                  absoluteIndexAt(segment.startIndex),
+                  segment.contentIndices.map(absoluteIndexAt),
                   `phase-content-${index}`,
                 )}
               </ActivityPhaseGroup>
             ) : (
               renderSegment(
                 segment.content,
-                segment.startIndex + contentIndexOffset,
+                absoluteIndexAt(segment.startIndex),
+                segment.contentIndices.map(absoluteIndexAt),
                 `phase-adjacent-${index}`,
               )
             ),
@@ -514,8 +533,7 @@ const ContentParts = memo(function ContentParts({
    *  counting one as last would strip the streaming cursor from the last
    *  VISIBLE part until the next delta. */
   const relativeLastContentIdx = lastVisibleContentIdx(safeContent);
-  const lastContentIdx =
-    relativeLastContentIdx < 0 ? -1 : relativeLastContentIdx + contentIndexOffset;
+  const lastContentIdx = relativeLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeLastContentIdx);
 
   // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)
   const hasParallelContent = safeContent.some((part) => part?.groupId != null);
@@ -535,6 +553,7 @@ const ContentParts = memo(function ContentParts({
           renderResumeAttribution={renderResumeAttribution}
           showDecorations={!nestedActivityPhase}
           contentIndexOffset={contentIndexOffset}
+          contentIndices={contentIndices}
         />
       </>
     );

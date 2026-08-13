@@ -211,6 +211,8 @@ export interface MCPServerInfo {
   tools: t.AgentToolType[];
   isConfigured: boolean;
   isConnected: boolean;
+  /** True when tools can only be discovered with live chat request fields. */
+  requestScoped?: boolean;
   consumeOnly?: boolean;
   metadata: t.TPlugin;
 }

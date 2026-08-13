@@ -35,11 +35,6 @@ jest.mock('winston', () => ({
   transports: { Console: jest.fn(), DailyRotateFile: jest.fn(), File: jest.fn() },
 }));
 
-jest.mock('~/utils/env', () => ({
-  resolveHeaders: jest.fn((opts: { headers: unknown }) => opts?.headers ?? {}),
-  createSafeUser: jest.fn(() => ({})),
-}));
-
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
   logger: { debug: jest.fn(), warn: jest.fn(), error: jest.fn(), info: jest.fn() },

@@ -747,6 +747,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
 
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
       if (validEntries.length === 0) {
         if (!hasBroadManage) {
           return res.status(403).json({ error: 'Insufficient permissions' });
@@ -858,6 +862,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const section = getTopLevelSection(fieldPath);
 
       const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
       if (
         !hasBroadManage &&
         !(await hasConfigCapability(user, section as ConfigSection, 'manage'))
@@ -950,7 +959,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       const section = getTopLevelSection(fieldPath);
 
-      if (!(await hasConfigCapability(user, section as ConfigSection, 'manage'))) {
+      const hasBroadManage = await hasConfigCapability(user, null, 'manage');
+
+      if (principalId === BASE_CONFIG_PRINCIPAL_ID && !hasBroadManage) {
+        return res.status(403).json({ error: 'Insufficient permissions' });
+      }
+
+      if (
+        !hasBroadManage &&
+        !(await hasConfigCapability(user, section as ConfigSection, 'manage'))
+      ) {
         return res.status(403).json({
           error: `Insufficient permissions for config section: ${section}`,
         });

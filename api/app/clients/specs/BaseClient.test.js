@@ -1277,6 +1277,80 @@ describe('BaseClient', () => {
     });
   });
 
+  /**
+   * The `transactions.enabled` guard lives in `createTransaction`, which reads it off
+   * the object it is handed. Dropping the config anywhere between here and there
+   * silently re-enables the writes rather than failing, so pin the wiring itself.
+   */
+  describe('recordTokenUsage transactions config', () => {
+    let priorEndpoint;
+    let priorEndpointType;
+
+    const arrangeFallbackPath = () => {
+      TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(50);
+      TestClient.recordTokenUsage = jest.fn().mockResolvedValue(undefined);
+      TestClient.buildMessages.mockReturnValue({
+        prompt: [],
+        tokenCountMap: { res: 50 },
+      });
+    };
+
+    /** `options` is shared across this file's tests, so an endpoint left behind by an earlier
+     * case would route the balance-enabled arrangement into `checkBalance`. */
+    beforeEach(() => {
+      priorEndpoint = TestClient.options.endpoint;
+      priorEndpointType = TestClient.options.endpointType;
+      delete TestClient.options.endpoint;
+      delete TestClient.options.endpointType;
+    });
+
+    afterEach(() => {
+      delete TestClient.options.req;
+      TestClient.options.endpoint = priorEndpoint;
+      TestClient.options.endpointType = priorEndpointType;
+    });
+
+    test('should forward the resolved transactions config to recordTokenUsage', async () => {
+      TestClient.options.req = { config: { transactions: { enabled: false } } };
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: false },
+        }),
+      );
+    });
+
+    test('should default to enabled transactions when no app config is present', async () => {
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: true },
+        }),
+      );
+    });
+
+    test('should forward transactions as enabled when balance tracking overrides the setting', async () => {
+      TestClient.options.req = {
+        config: { transactions: { enabled: false }, balance: { enabled: true } },
+      };
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: true },
+        }),
+      );
+    });
+  });
+
   describe('getMessagesWithinTokenLimit with instructions', () => {
     test('should always include instructions when present', async () => {
       TestClient.maxContextTokens = 50;
@@ -1846,6 +1920,7 @@ describe('BaseClient', () => {
           type: ContentTypes.ACTIVITY_LABEL,
           activity_label_type: 'phase',
           activity_start_index: 0,
+          activity_end_index: 1,
           activity_label: 'Verified deployment health',
         },
       ];
@@ -1853,7 +1928,7 @@ describe('BaseClient', () => {
       expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.TEXT)).toEqual([
         existing[0],
         completion[0],
-        { ...completion[1], activity_start_index: 1 },
+        { ...completion[1], activity_start_index: 1, activity_end_index: 2 },
       ]);
     });
 

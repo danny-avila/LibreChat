@@ -132,6 +132,7 @@ jest.mock('@librechat/client', () => {
         'aria-label': ariaLabel,
         onChange: (e: { target: { checked: boolean } }) => onCheckedChange(e.target.checked),
       }),
+    Skeleton: ({ className }: { className?: string }) => React.createElement('div', { className }),
   };
 });
 
@@ -183,6 +184,19 @@ describe('McpSection', () => {
       'tools',
       ['sys__server__sys_mcp_srv', 'mcp:srv:a'],
       expect.objectContaining({ shouldDirty: true }),
+    );
+  });
+
+  test('selecting a current tool replaces stale catalog ids for the same server', () => {
+    mockGetValues.mockReturnValue(['removed_mcp_srv', 'dalle']);
+
+    render(<McpSection item={item} />);
+    fireEvent.click(screen.getByTestId('tool-mcp:srv:a'));
+
+    expect(mockSetValue).toHaveBeenCalledWith(
+      'tools',
+      ['dalle', 'sys__server__sys_mcp_srv', 'mcp:srv:a'],
+      { shouldDirty: true },
     );
   });
 
@@ -247,6 +261,76 @@ describe('McpSection', () => {
     };
     render(<McpSection item={empty} />);
     expect(screen.getByText('com_ui_tools_mcp_no_tools')).toBeInTheDocument();
+  });
+
+  test('lets an already-connected request-scoped server attach its runtime tools', () => {
+    const runtimeItem: McpItem = {
+      ...item,
+      server: {
+        ...item.server,
+        tools: [],
+        isConnected: true,
+        requestScoped: true,
+      } as never,
+      toolCount: 0,
+    };
+
+    render(<McpSection item={runtimeItem} />);
+
+    expect(screen.getByText('com_ui_tools_mcp_runtime_tools_available')).toBeInTheDocument();
+    expect(mockSetValue).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText('com_ui_tools_mcp_select_all'));
+    expect(mockSetValue).toHaveBeenCalledWith(
+      'tools',
+      ['sys__server__sys_mcp_srv', 'sys__all__sys_mcp_srv'],
+      { shouldDirty: true },
+    );
+  });
+
+  test('detaches every token for a request-scoped server while preserving unrelated tools', () => {
+    mockGetValues.mockReturnValue([
+      'sys__server__sys_mcp_srv',
+      'sys__all__sys_mcp_srv',
+      'search_mcp_srv',
+      'dalle',
+    ]);
+    const runtimeItem: McpItem = {
+      ...item,
+      server: {
+        ...item.server,
+        tools: [],
+        isConnected: true,
+        requestScoped: true,
+      } as never,
+      toolCount: 0,
+    };
+
+    render(<McpSection item={runtimeItem} />);
+
+    expect(screen.getByText('com_ui_tools_mcp_runtime_tools')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('com_ui_tools_mcp_deselect_all'));
+    expect(mockSetValue).toHaveBeenCalledWith('tools', ['dalle'], { shouldDirty: true });
+  });
+
+  test('does not offer runtime attachment before a request-scoped server is connected', () => {
+    const disconnectedRuntimeItem: McpItem = {
+      ...item,
+      server: {
+        ...item.server,
+        tools: [],
+        isConnected: false,
+        requestScoped: true,
+      } as never,
+      toolCount: 0,
+    };
+
+    render(<McpSection item={disconnectedRuntimeItem} />);
+
+    expect(screen.queryByLabelText('com_ui_tools_mcp_select_all')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_tools_mcp_runtime_tools_available')).not.toBeInTheDocument();
+    expect(screen.getByText('com_ui_tools_mcp_no_tools')).toBeInTheDocument();
+    expect(mockSetValue).not.toHaveBeenCalled();
   });
 
   test('deferred connect attaches the whole server via the mcp_all wildcard', async () => {
