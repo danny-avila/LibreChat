@@ -1,13 +1,13 @@
 import { useDeferredValue, useEffect, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowUpDown, Check, Folder, Plus, Search } from 'lucide-react';
-import { Input, Button, Spinner, DropdownPopup, useMediaQuery } from '@librechat/client';
+import { ArrowRight, ArrowUpDown, Check, Folder, FolderPlus, Search } from 'lucide-react';
+import { Input, Button, Skeleton, DropdownPopup } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
 import type { MenuItemProps, RenderProp } from '~/common';
-import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { useProjectsInfiniteQuery } from '~/data-provider';
 import ProjectCreateDialog from './ProjectCreateDialog';
+import ProjectsNavBar from './ProjectsNavBar';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -40,6 +40,87 @@ function formatActivity(project: TChatProject) {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function ProjectCard({
+  project,
+  index,
+  onOpen,
+}: {
+  project: TChatProject;
+  index: number;
+  onOpen: (projectId: string) => void;
+}) {
+  const localize = useLocalize();
+  const activity = formatActivity(project);
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        'group/project flex min-h-[9.5rem] flex-col rounded-2xl bg-surface-secondary p-4 text-left',
+        'transition-[background-color,transform] duration-150 ease-out',
+        'hover:bg-surface-hover active:scale-[0.99]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
+        'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:fill-mode-both',
+      )}
+      style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+      onClick={() => onOpen(project._id)}
+    >
+      <span className="flex items-start justify-between gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-tertiary text-text-secondary transition-colors group-hover/project:text-text-primary">
+          <Folder className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <ArrowRight
+          className="mt-1 h-4 w-4 shrink-0 text-text-tertiary opacity-0 transition-opacity group-hover/project:opacity-100 group-focus-visible/project:opacity-100"
+          aria-hidden="true"
+        />
+      </span>
+      <span className="mt-3 truncate text-base font-semibold tracking-tight text-text-primary">
+        {project.name}
+      </span>
+      {project.description ? (
+        <span className="mt-1 line-clamp-2 text-pretty text-sm leading-relaxed text-text-secondary">
+          {project.description}
+        </span>
+      ) : null}
+      <span className="mt-auto flex items-center gap-2 pt-4 text-xs tabular-nums text-text-secondary">
+        <span>
+          {project.conversationCount === 1
+            ? localize('com_ui_project_chat_count_single')
+            : localize('com_ui_project_chat_count', {
+                count: project.conversationCount,
+              })}
+        </span>
+        {activity ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <time dateTime={project.lastConversationAt ?? project.updatedAt ?? project.createdAt}>
+              {activity}
+            </time>
+          </>
+        ) : null}
+      </span>
+    </button>
+  );
+}
+
+function ProjectGridSkeleton() {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+      {Array.from({ length: 6 }, (_, index) => (
+        <div
+          key={index}
+          className="flex min-h-[9.5rem] flex-col rounded-2xl bg-surface-secondary p-4"
+        >
+          <Skeleton className="h-11 w-11 rounded-xl" />
+          <Skeleton className="mt-3 h-5 w-2/3" />
+          <Skeleton className="mt-2 h-4 w-full" />
+          <Skeleton className="mt-auto h-3 w-24" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ProjectsView() {
   const localize = useLocalize();
   const navigate = useNavigate();
@@ -50,7 +131,6 @@ export default function ProjectsView() {
   const sortMenuId = useId();
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const deferredSearch = useDeferredValue(search);
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
 
   const { data, fetchNextPage, isFetchingNextPage, isLoading } = useProjectsInfiniteQuery({
     search: deferredSearch || undefined,
@@ -86,6 +166,11 @@ export default function ProjectsView() {
     [sortBy, sortOptions],
   );
 
+  const projectCountLabel =
+    projects.length === 1
+      ? localize('com_ui_project_count_single')
+      : localize('com_ui_project_count', { count: projects.length });
+
   useEffect(() => {
     if (searchParams.get('new') === '1') {
       setIsCreating(true);
@@ -103,71 +188,56 @@ export default function ProjectsView() {
 
   return (
     <main className="flex h-full min-h-0 flex-col overflow-auto bg-surface-primary text-text-primary">
-      <div className="container mx-auto flex w-full max-w-4xl flex-1 flex-col gap-6 px-4 py-8 md:px-6 lg:pt-12">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            {isSmallScreen ? <OpenSidebar /> : null}
-            <h1 className="text-2xl font-bold tracking-tight text-text-primary md:text-3xl">
-              {localize('com_ui_projects')}
-            </h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="hidden text-sm text-text-secondary sm:inline">
-              {localize('com_ui_sort_by')}
-            </span>
-            <DropdownPopup
-              portal={true}
-              focusLoop={true}
-              unmountOnHide={true}
-              menuId={sortMenuId}
-              isOpen={isSortMenuOpen}
-              setIsOpen={setIsSortMenuOpen}
-              className="z-[125] min-w-56"
-              trigger={
-                <Ariakit.MenuButton
-                  aria-label={localize('com_ui_sort_projects_by')}
-                  className={cn(
-                    'inline-flex h-10 items-center justify-between gap-2 whitespace-nowrap rounded-lg border border-border-medium bg-surface-secondary px-3 text-sm font-medium text-text-primary transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary disabled:pointer-events-none disabled:opacity-50 sm:w-44',
-                    isSortMenuOpen && 'bg-surface-hover text-text-primary',
-                  )}
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <ArrowUpDown
-                      className="h-4 w-4 shrink-0 text-text-secondary"
-                      aria-hidden="true"
-                    />
-                    <span className="truncate">{selectedSortLabel}</span>
-                  </span>
-                </Ariakit.MenuButton>
-              }
-              items={sortMenuItems}
-            />
-            <Button type="button" variant="submit" size="sm" onClick={() => setIsCreating(true)}>
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              {localize('com_ui_new_project')}
-            </Button>
-          </div>
-        </div>
+      <ProjectsNavBar onCreate={() => setIsCreating(true)} />
 
-        <div className="flex flex-col gap-5">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pb-10 pt-6 md:px-6 md:pt-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">{localize('com_ui_search_projects')}</span>
             <Search
-              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary"
+              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary"
               aria-hidden="true"
             />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder={localize('com_ui_search_projects')}
-              className="border-border-medium bg-surface-secondary pl-9 text-text-primary placeholder:text-text-secondary focus-visible:ring-2 focus-visible:ring-ring-primary"
+              className="h-11 rounded-xl bg-surface-secondary pl-10"
             />
           </label>
-          <div className="flex items-center">
-            <span className="rounded-full bg-surface-active-alt px-4 py-2 text-sm font-medium text-text-primary">
-              {localize('com_ui_your_projects')}
-            </span>
-          </div>
+          <DropdownPopup
+            portal={true}
+            focusLoop={true}
+            unmountOnHide={true}
+            menuId={sortMenuId}
+            isOpen={isSortMenuOpen}
+            setIsOpen={setIsSortMenuOpen}
+            className="z-[125] min-w-56"
+            trigger={
+              <Ariakit.MenuButton
+                aria-label={localize('com_ui_sort_projects_by')}
+                className={cn(
+                  'inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl px-3 text-sm font-medium text-text-secondary transition-colors',
+                  'hover:bg-surface-hover hover:text-text-primary',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
+                  isSortMenuOpen && 'bg-surface-hover text-text-primary',
+                )}
+              >
+                <ArrowUpDown className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="truncate">{selectedSortLabel}</span>
+              </Ariakit.MenuButton>
+            }
+            items={sortMenuItems}
+          />
+        </div>
+
+        <div className="mt-8 flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-medium text-text-primary">
+            {localize('com_ui_your_projects')}
+          </h2>
+          {!isLoading && projects.length > 0 ? (
+            <p className="text-sm tabular-nums text-text-secondary">{projectCountLabel}</p>
+          ) : null}
         </div>
 
         <ProjectCreateDialog
@@ -176,62 +246,54 @@ export default function ProjectsView() {
           onCreated={(project) => navigate(`/projects/${project._id}`)}
         />
 
-        {isLoading ? (
-          <div className="flex flex-1 items-center justify-center">
-            <Spinner className="text-text-primary" />
-          </div>
-        ) : (
-          <div className="grid gap-3 md:grid-cols-2 md:gap-4">
-            {projects.map((project) => {
-              const activity = formatActivity(project);
-              return (
-                <button
+        <div className="mt-4 flex flex-1 flex-col">
+          {isLoading && <ProjectGridSkeleton />}
+          {!isLoading && projects.length > 0 && (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {projects.map((project, index) => (
+                <ProjectCard
                   key={project._id}
-                  type="button"
-                  className={cn(
-                    'group/project flex min-h-[8.5rem] flex-col rounded-xl border border-border-medium bg-surface-secondary p-4 text-left transition-colors',
-                    'hover:border-border-heavy hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
-                  )}
-                  onClick={() => navigate(`/projects/${project._id}`)}
-                >
-                  <span className="flex min-w-0 items-center gap-2">
-                    <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
-                    <span className="truncate text-base font-semibold text-text-primary">
-                      {project.name}
-                    </span>
-                  </span>
-                  {project.description ? (
-                    <span className="mt-2 line-clamp-2 text-sm leading-relaxed text-text-secondary">
-                      {project.description}
-                    </span>
-                  ) : null}
-                  <span className="mt-auto flex items-center justify-between gap-2 pt-4 text-xs text-text-secondary">
-                    <span>
-                      {project.conversationCount === 1
-                        ? localize('com_ui_project_chat_count_single')
-                        : localize('com_ui_project_chat_count', {
-                            count: project.conversationCount,
-                          })}
-                    </span>
-                    {activity ? <span className="shrink-0 truncate">{activity}</span> : null}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {!isLoading && projects.length === 0 && (
-          <div className="rounded-lg border border-border-medium bg-transparent py-16 text-center text-sm text-text-secondary">
-            {localize('com_ui_no_projects')}
-          </div>
-        )}
+                  project={project}
+                  index={index}
+                  onOpen={(projectId) => navigate(`/projects/${projectId}`)}
+                />
+              ))}
+            </div>
+          )}
+          {!isLoading && projects.length === 0 && (
+            <div className="flex flex-1 flex-col items-center justify-center rounded-2xl bg-surface-secondary px-6 py-16 text-center">
+              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-tertiary text-text-secondary">
+                <FolderPlus className="h-7 w-7" aria-hidden="true" />
+              </span>
+              <h3 className="mt-4 text-balance text-base font-semibold text-text-primary">
+                {search ? localize('com_ui_no_matching_projects') : localize('com_ui_no_projects')}
+              </h3>
+              {!search ? (
+                <>
+                  <p className="mt-1 max-w-sm text-pretty text-sm text-text-secondary">
+                    {localize('com_ui_add_first_project')}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="mt-5 active:scale-[0.96]"
+                    onClick={() => setIsCreating(true)}
+                  >
+                    <FolderPlus className="h-4 w-4" aria-hidden="true" />
+                    {localize('com_ui_new_project')}
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          )}
+        </div>
 
         {hasNextPage && (
           <Button
             type="button"
             variant="outline"
-            className="mx-auto"
+            className="mx-auto mt-8"
             onClick={() => fetchNextPage()}
             disabled={isFetchingNextPage}
           >

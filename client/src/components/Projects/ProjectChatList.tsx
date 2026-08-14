@@ -17,7 +17,7 @@ import ConversationEndpointIcon from '~/components/Conversations/ConversationEnd
 import { areConversationRenderPropsEqual } from '~/components/Conversations/utils';
 import { DateLabel } from '~/components/Conversations/Conversations';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
-import { groupConversationsByDate, cn } from '~/utils';
+import { groupConversationsByDate } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
 
 type ChatSortField = 'updatedAt' | 'createdAt';
@@ -84,15 +84,17 @@ const ConversationRow = memo(
     return (
       <button
         type="button"
-        className="flex w-full items-center gap-3 border-b border-border-light py-3 text-left outline-none transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary"
+        className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left outline-none transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
         onClick={() => navigateToConvo(conversation)}
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-tertiary">
           <ConversationEndpointIcon conversation={conversation} size={24} context="menu-item" />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium text-text-primary">{title}</span>
-          <span className="block truncate text-xs text-text-secondary">{formattedDate}</span>
+          <span className="block truncate text-xs tabular-nums text-text-secondary">
+            {formattedDate}
+          </span>
         </span>
         {isGenerating && (
           <Spinner
@@ -194,7 +196,7 @@ const ProjectChatList = ({
       if (item.type === 'empty') {
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <div className="py-12 text-center text-sm text-text-secondary">{emptyLabel}</div>
+            <div className="px-3 py-14 text-center text-sm text-text-secondary">{emptyLabel}</div>
           </MeasuredRow>
         );
       }
@@ -234,9 +236,7 @@ const ProjectChatList = ({
   );
 
   return (
-    <div
-      className={cn('min-h-[280px] flex-1 overflow-hidden rounded-lg border border-border-light')}
-    >
+    <div className="min-h-[280px] flex-1 overflow-hidden">
       <AutoSizer>
         {({ width, height }) => (
           <List

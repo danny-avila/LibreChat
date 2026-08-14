@@ -10,7 +10,6 @@ import {
   Ellipsis,
   Folder,
   FolderPlus,
-  Folders,
   Pencil,
   Trash2,
 } from 'lucide-react';
@@ -40,6 +39,7 @@ import {
 } from '~/data-provider';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
+import { Collapse } from '~/components/ui';
 import { clearMessagesCache, cn } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import Convo from './Convo';
@@ -271,10 +271,11 @@ type ProjectItemProps = {
   project: TChatProject;
   toggleNav: () => void;
   defaultExpanded: boolean;
+  isActive: boolean;
 };
 
 const ProjectItem = memo(
-  function ProjectItem({ project, toggleNav, defaultExpanded }: ProjectItemProps) {
+  function ProjectItem({ project, toggleNav, defaultExpanded, isActive }: ProjectItemProps) {
     const localize = useLocalize();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -332,25 +333,37 @@ const ProjectItem = memo(
 
     return (
       <li className="list-none">
-        <div className="group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary transition-colors hover:bg-surface-active-alt">
+        <div
+          className={cn(
+            'group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary transition-colors hover:bg-surface-hover',
+            isActive && 'bg-surface-active-alt',
+          )}
+        >
           <button
             type="button"
             onClick={() => setExpanded((prev) => !prev)}
             aria-expanded={expanded}
             aria-label={project.name}
-            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-1.5 pl-1.5 pr-14 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-16 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
           >
             <ChevronRight
               className={cn(
-                'h-3.5 w-3.5 shrink-0 text-text-secondary transition-transform duration-200',
+                'h-3.5 w-3.5 shrink-0 text-text-tertiary transition-transform duration-200',
                 expanded && 'rotate-90',
               )}
               aria-hidden="true"
             />
-            <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
-            <span className="truncate">{project.name}</span>
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-tertiary text-text-secondary">
+              <Folder className="h-3.5 w-3.5" aria-hidden="true" />
+            </span>
+            <span className="min-w-0 truncate">{project.name}</span>
+            {project.conversationCount > 0 ? (
+              <span className="ml-auto text-xs tabular-nums text-text-tertiary group-focus-within/project-row:opacity-0 group-hover/project-row:opacity-0">
+                {project.conversationCount}
+              </span>
+            ) : null}
           </button>
-          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-surface-active-alt opacity-0 transition-opacity group-focus-within/project-row:opacity-100 group-hover/project-row:opacity-100 has-[[data-state=open]]:opacity-100">
+          <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-lg bg-surface-hover opacity-0 transition-opacity group-focus-within/project-row:opacity-100 group-hover/project-row:opacity-100 has-[[data-state=open]]:opacity-100">
             <TooltipAnchor
               description={localize('com_ui_new_chat_in_project', { name: project.name })}
               render={
@@ -388,13 +401,13 @@ const ProjectItem = memo(
             />
           </div>
         </div>
-        {expanded && (
+        <Collapse open={expanded} className="pl-2">
           <ProjectChatsInline
             projectId={project._id}
             toggleNav={toggleNav}
             onShowAll={openProject}
           />
-        )}
+        </Collapse>
         <ProjectRenameDialog open={isRenameOpen} onOpenChange={setIsRenameOpen} project={project} />
         <ProjectDeleteDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} project={project} />
       </li>
@@ -403,8 +416,10 @@ const ProjectItem = memo(
   (prevProps, nextProps) =>
     prevProps.project._id === nextProps.project._id &&
     prevProps.project.name === nextProps.project.name &&
+    prevProps.project.conversationCount === nextProps.project.conversationCount &&
     prevProps.project.updatedAt === nextProps.project.updatedAt &&
     prevProps.defaultExpanded === nextProps.defaultExpanded &&
+    prevProps.isActive === nextProps.isActive &&
     prevProps.toggleNav === nextProps.toggleNav,
 );
 
@@ -418,6 +433,7 @@ interface ProjectsSectionProps {
 const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) => {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const location = useLocation();
   const [storedExpanded, setStoredExpanded] = useLocalStorage('projectsSectionExpanded', true);
   const [hasToggledSection, setHasToggledSection] = useLocalStorage(
     'projectsSectionToggled',
@@ -434,11 +450,12 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
 
   const projects = useMemo(() => data?.pages.flatMap((page) => page.projects) ?? [], [data?.pages]);
   const hasMore = (data?.pages[data.pages.length - 1]?.nextCursor ?? null) != null;
+  const isProjectsHome = location.pathname === '/projects';
 
   /**
    * Collapse the section by default for users with no projects who have never
-   * toggled it, to keep the sidebar compact. An explicit toggle — or a collapse
-   * set before this default existed (stored === false) — is always respected.
+   * toggled it, to keep the sidebar compact. An explicit toggle, or a collapse
+   * set before this default existed (stored === false), is always respected.
    */
   const respectStoredExpanded = hasToggledSection || storedExpanded === false;
   const isExpanded = respectStoredExpanded ? storedExpanded : isLoading || projects.length > 0;
@@ -463,9 +480,11 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
           type="button"
           variant="ghost"
           onClick={() => setIsCreateOpen(true)}
-          className="flex h-auto w-full justify-start gap-2 rounded-lg px-2 py-1.5 text-sm font-normal text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+          className="flex h-9 w-full justify-start gap-2 rounded-lg px-2 text-sm font-normal text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
         >
-          <FolderPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-tertiary">
+            <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
           <span className="truncate">{localize('com_ui_new_project')}</span>
         </Button>
       );
@@ -479,6 +498,9 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
             project={project}
             toggleNav={toggleNav}
             defaultExpanded={project._id === activeProjectId}
+            isActive={
+              project._id === activeProjectId || location.pathname === `/projects/${project._id}`
+            }
           />
         ))}
         {hasMore && (
@@ -487,7 +509,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
               type="button"
               variant="ghost"
               onClick={openProjects}
-              className="flex h-auto w-full justify-start gap-2 rounded-lg px-2 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+              className="flex h-8 w-full justify-start rounded-lg px-2 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
             >
               {localize('com_ui_all_projects')}
             </Button>
@@ -503,38 +525,42 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
 
   return (
     <div className="flex flex-col px-3 text-sm">
-      <div className="flex h-8 w-full items-center gap-0.5 pr-2">
+      <div
+        className={cn(
+          'flex h-9 w-full items-center gap-0.5 rounded-lg pr-0.5',
+          isProjectsHome && 'bg-surface-active-alt',
+        )}
+      >
         <button
           onClick={() => {
             setStoredExpanded(!isExpanded);
             setHasToggledSection(true);
           }}
-          className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-secondary outline-none transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
           type="button"
           aria-expanded={isExpanded}
+          aria-label={localize('com_ui_projects')}
         >
-          <span className="select-none truncate">{localize('com_ui_projects')}</span>
           <ChevronDown
             className={cn(
-              'h-3 w-3 shrink-0 transition-transform duration-200',
+              'h-3.5 w-3.5 shrink-0 transition-transform duration-200',
               isExpanded ? '' : '-rotate-90',
             )}
             aria-hidden="true"
           />
         </button>
-        <TooltipAnchor
-          description={localize('com_ui_all_projects')}
-          render={
-            <button
-              type="button"
-              aria-label={localize('com_ui_all_projects')}
-              className={iconButtonClassName}
-              onClick={openProjects}
-            >
-              <Folders className="h-4 w-4" aria-hidden="true" />
-            </button>
-          }
-        />
+        <button
+          type="button"
+          onClick={openProjects}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-medium text-text-primary outline-none hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+        >
+          <span className="select-none truncate">{localize('com_ui_projects')}</span>
+          {projects.length > 0 ? (
+            <span className="text-xs font-normal tabular-nums text-text-tertiary">
+              {projects.length}
+            </span>
+          ) : null}
+        </button>
         <TooltipAnchor
           description={localize('com_ui_new_project')}
           render={
@@ -550,11 +576,11 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
         />
       </div>
 
-      {isExpanded && (
-        <div className="scrollbar-gutter-stable max-h-[42vh] overflow-y-auto">
+      <Collapse open={isExpanded}>
+        <div className="scrollbar-gutter-stable max-h-[42vh] overflow-y-auto pt-0.5">
           {renderProjectsBody()}
         </div>
-      )}
+      </Collapse>
 
       <ProjectCreateDialog
         open={isCreateOpen}

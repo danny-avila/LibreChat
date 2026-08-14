@@ -71,7 +71,7 @@ export default function ProjectLandingChip({ project }: { project: TChatProject 
         showCarat={true}
         placement="top"
         containerClassName="w-auto px-0"
-        className="h-8 w-auto min-w-[11rem] gap-1.5 rounded-full px-2.5 text-sm font-medium text-text-secondary hover:text-text-primary"
+        className="h-8 w-auto min-w-[11rem] gap-1.5 rounded-full bg-surface-secondary px-2.5 text-sm font-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary"
       />
       <TooltipAnchor
         description={localize('com_ui_remove_from_project')}
@@ -80,7 +80,7 @@ export default function ProjectLandingChip({ project }: { project: TChatProject 
             type="button"
             aria-label={localize('com_ui_remove_from_project')}
             onClick={() => applyProject(null)}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-text-secondary opacity-0 outline-none transition-all hover:bg-surface-hover hover:text-text-primary focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary group-hover:opacity-100"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-text-secondary opacity-0 outline-none transition-opacity hover:bg-surface-hover hover:text-text-primary focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-text-primary group-hover:opacity-100"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
