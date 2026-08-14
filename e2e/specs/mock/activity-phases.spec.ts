@@ -147,64 +147,15 @@ test.describe('parent activity phases', () => {
     const run = await sendMessage(page, `E2E_ACTIVITY_PHASE_REPLY:${label}`);
     expect(run.ok()).toBeTruthy();
 
-    const parent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);
-    await expect(parent).toBeVisible({ timeout: 60000 });
-    /** Inspect the durable projection before the live DOM assertion so a
-     *  failure identifies whether the server bound or client grouping is
-     *  wrong. This remains a useful contract assertion after the bug is fixed. */
-    const liveConversationId = await getConversationId(page);
-    const liveToken = await getAccessToken(page);
-    let liveAssistant: PersistedMessage | undefined;
-    await expect
-      .poll(
-        async () => {
-          const messages = await fetchJson<PersistedMessage[]>(
-            page,
-            `/api/messages/${encodeURIComponent(liveConversationId)}`,
-            liveToken,
-          );
-          liveAssistant = messages.find(
-            (message) =>
-              message.isCreatedByUser === false && messageText(message).includes(finalText),
-          );
-          return liveAssistant?.unfinished;
-        },
-        { timeout: 30000 },
-      )
-      .toBe(false);
-    const liveContent = liveAssistant?.content ?? [];
-    const livePhase = liveContent.find(
-      (part) => part?.type === 'activity_label' && part.activity_label_type === 'phase',
-    );
-    const liveFinalTextIndex = liveContent.findIndex((part) =>
-      contentPartText(part).includes(finalText),
-    );
-    expect(liveFinalTextIndex).toBe(livePhase?.activity_end_index);
-
-    await expect(messagesView(page).getByText(finalText)).toBeVisible({ timeout: 60000 });
-    await parent.click();
-    await expect(messagesView(page).getByRole('button', { name: childLabels.first })).toBeVisible();
-    await expect(
-      messagesView(page).getByRole('button', { name: childLabels.second }),
-    ).toBeVisible();
-
-    await expect.poll(async () => (await getLabelRequestsFor(request, label)).length).toBe(3);
-    const labelRequests = await getLabelRequestsFor(request, label);
-    const phaseRequest = labelRequests.find((entry) => entry.model === PHASE_LABEL_MODEL);
-    const childRequests = labelRequests.filter((entry) => entry !== phaseRequest);
-    expect(phaseRequest).toMatchObject({ model: PHASE_LABEL_MODEL, stream: false });
-    expect(childRequests).toHaveLength(2);
-    expect(childRequests.map((entry) => entry.model)).toEqual([
-      CHILD_LABEL_MODEL,
-      CHILD_LABEL_MODEL,
-    ]);
-    expect(
-      childRequests.some((entry) => entry.prompt.includes(`activity phase alpha ${label}`)),
-    ).toBe(true);
-    expect(
-      childRequests.some((entry) => entry.prompt.includes(`activity phase beta ${label}`)),
-    ).toBe(true);
-
+    /**
+     * A parent phase only exists once the turn completes, the phase closes, and
+     * its summary round-trips to the phase-label model. Gate on the durable
+     * projection first: the DOM cannot show a `summary` before the server has
+     * written one, so asserting the DOM up front races that whole pipeline and
+     * leaves retries as the only thing hiding it. Waiting for the persisted
+     * phase also keeps failures attributable — a phase the server never wrote
+     * fails on the content assertions below rather than as a bare "not visible".
+     */
     const conversationId = await getConversationId(page);
     const token = await getAccessToken(page);
     let assistant: PersistedMessage | undefined;
@@ -220,11 +171,16 @@ test.describe('parent activity phases', () => {
             (message) =>
               message.isCreatedByUser === false && messageText(message).includes(finalText),
           );
-          return assistant?.unfinished;
+          if (assistant?.unfinished !== false) {
+            return false;
+          }
+          return (assistant.content ?? []).some(
+            (part) => part?.type === 'activity_label' && part.activity_label_type === 'phase',
+          );
         },
-        { timeout: 30000 },
+        { timeout: 60000 },
       )
-      .toBe(false);
+      .toBe(true);
 
     expect(assistant).toBeDefined();
     expect(assistant?.error).not.toBe(true);
@@ -257,6 +213,32 @@ test.describe('parent activity phases', () => {
     );
     const finalTextIndex = content.findIndex((part) => contentPartText(part).includes(finalText));
     expect(finalTextIndex).toBe(phasePart?.activity_end_index);
+
+    const parent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);
+    await expect(parent).toBeVisible({ timeout: 30000 });
+    await expect(messagesView(page).getByText(finalText)).toBeVisible({ timeout: 30000 });
+    await parent.click();
+    await expect(messagesView(page).getByRole('button', { name: childLabels.first })).toBeVisible();
+    await expect(
+      messagesView(page).getByRole('button', { name: childLabels.second }),
+    ).toBeVisible();
+
+    await expect.poll(async () => (await getLabelRequestsFor(request, label)).length).toBe(3);
+    const labelRequests = await getLabelRequestsFor(request, label);
+    const phaseRequest = labelRequests.find((entry) => entry.model === PHASE_LABEL_MODEL);
+    const childRequests = labelRequests.filter((entry) => entry !== phaseRequest);
+    expect(phaseRequest).toMatchObject({ model: PHASE_LABEL_MODEL, stream: false });
+    expect(childRequests).toHaveLength(2);
+    expect(childRequests.map((entry) => entry.model)).toEqual([
+      CHILD_LABEL_MODEL,
+      CHILD_LABEL_MODEL,
+    ]);
+    expect(
+      childRequests.some((entry) => entry.prompt.includes(`activity phase alpha ${label}`)),
+    ).toBe(true);
+    expect(
+      childRequests.some((entry) => entry.prompt.includes(`activity phase beta ${label}`)),
+    ).toBe(true);
 
     await page.reload();
     const reloadedParent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);
