@@ -193,16 +193,16 @@ export const USER_OWNED_EMBEDDING_CONTEXT: FileContext = FileContext.message_att
  * from, preferring one that owns its embeddings so borrowed references
  * never chain. Returns `undefined` when nothing is reusable.
  *
- * Candidates must already be scoped to the same owner, hash, content type
- * and embedding context by the query that produced them; `extension` closes
- * the remaining gap, since it is what the RAG API's loader keys on first.
+ * The query that produced these has already matched every part of the reuse
+ * key — owner, hash, content type, extension and context — so any of them
+ * would serve; this only chooses the one that keeps the reference flat.
  */
-export function pickVectorReuseSource<
-  T extends VectorFileRef & Pick<Partial<TFile>, 'embedded' | 'filename'>,
->(candidates: T[], extension: string): T | undefined {
+export function pickVectorReuseSource<T extends VectorFileRef & Pick<Partial<TFile>, 'embedded'>>(
+  candidates: T[],
+): T | undefined {
   let borrowed: T | undefined;
   for (const candidate of candidates) {
-    if (candidate.embedded !== true || fileExtension(candidate.filename) !== extension) {
+    if (candidate.embedded !== true) {
       continue;
     }
     if (!candidate.vectorId) {

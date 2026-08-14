@@ -30,6 +30,7 @@ const seedFile = async (overrides: FileSeed = {}): Promise<IMongoFile> => {
     embedded: true,
     hash: HASH,
     vectorOwner: userId.toString(),
+    vectorExtension: '.pdf',
     context: FileContext.message_attachment,
     ...overrides,
   });
@@ -66,7 +67,11 @@ describe('vector reuse file methods', () => {
   });
 
   describe('findVectorReuseCandidates', () => {
-    const scope = () => ({ type: 'application/pdf', vectorOwner: userId.toString() });
+    const scope = () => ({
+      type: 'application/pdf',
+      extension: '.pdf',
+      vectorOwner: userId.toString(),
+    });
 
     it('finds an embedded file with matching content', async () => {
       const seeded = await seedFile();
@@ -95,11 +100,13 @@ describe('vector reuse file methods', () => {
       }
     });
 
-    it('never crosses hashes, types, owners or contexts', async () => {
+    it('never crosses hashes, types, extensions, owners or contexts', async () => {
       await seedFile({ hash: OTHER_HASH });
       await seedFile({ type: 'text/plain' });
       await seedFile({ vectorOwner: 'agent_elsewhere' });
       await seedFile({ vectorOwner: undefined });
+      await seedFile({ vectorExtension: '.txt' });
+      await seedFile({ vectorExtension: undefined });
       await seedFile({ context: FileContext.agents });
 
       const candidates = await fileMethods.findVectorReuseCandidates({
@@ -170,6 +177,7 @@ describe('vector reuse file methods', () => {
       const candidates = await fileMethods.findVectorReuseCandidates({
         hash: HASH,
         type: 'application/pdf',
+        extension: '.pdf',
         vectorOwner: 'agent_shared',
         context: FileContext.agents,
       });
@@ -186,6 +194,7 @@ describe('vector reuse file methods', () => {
         fileMethods.findVectorReuseCandidates({
           hash: HASH,
           type: 'application/pdf',
+          extension: '.pdf',
           vectorOwner: 'agent_b',
           context: FileContext.agents,
         }),
@@ -210,6 +219,7 @@ describe('vector reuse file methods', () => {
           embedded: true,
           hash: String(i).padStart(64, '0'),
           vectorOwner: `owner-${i}`,
+          vectorExtension: '.pdf',
           context: FileContext.message_attachment,
         })),
       );
@@ -219,6 +229,7 @@ describe('vector reuse file methods', () => {
         hash: HASH,
         type: 'application/pdf',
         vectorOwner: userId.toString(),
+        vectorExtension: '.pdf',
         context: FileContext.message_attachment,
         embedded: true,
         expiredAt: null,
@@ -229,6 +240,36 @@ describe('vector reuse file methods', () => {
         .explain('executionStats')) as { executionStats?: { totalDocsExamined?: number } };
 
       expect(stats.executionStats?.totalDocsExamined).toBeLessThan(5);
+    });
+
+    /* The limit must not be able to hide a compatible record behind a run of
+     * same-hash uploads under another extension. */
+    it('finds a compatible record behind many same-hash uploads of another extension', async () => {
+      await File.insertMany(
+        Array.from({ length: 30 }, (_, i) => ({
+          file_id: `as-text-${i}`,
+          user: userId,
+          filename: 'report.txt',
+          filepath: '/uploads/report.txt',
+          type: 'application/pdf',
+          bytes: 1,
+          embedded: true,
+          hash: HASH,
+          vectorOwner: userId.toString(),
+          vectorExtension: '.txt',
+          context: FileContext.message_attachment,
+          createdAt: new Date('2020-01-01'),
+        })),
+      );
+      const reusable = await seedFile({ createdAt: new Date('2030-01-01') });
+
+      const candidates = await fileMethods.findVectorReuseCandidates({
+        hash: HASH,
+        ...scope(),
+        context: FileContext.message_attachment,
+      });
+
+      expect(candidates.map((file) => file.file_id)).toEqual([reusable.file_id]);
     });
 
     it('returns candidates oldest first and honors the limit', async () => {

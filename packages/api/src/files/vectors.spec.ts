@@ -122,53 +122,29 @@ describe('fileExtension', () => {
 
 describe('pickVectorReuseSource', () => {
   it('prefers a file that owns its vectors so references never chain', () => {
-    const source = pickVectorReuseSource(
-      [
-        { file_id: 'borrower', vectorId: 'original', embedded: true, filename: 'a.pdf' },
-        { file_id: 'original', embedded: true, filename: 'a.pdf' },
-      ],
-      '.pdf',
-    );
+    const source = pickVectorReuseSource([
+      { file_id: 'borrower', vectorId: 'original', embedded: true },
+      { file_id: 'original', embedded: true },
+    ]);
 
     expect(source?.file_id).toBe('original');
   });
 
   it('falls back to a borrower when the original is gone', () => {
-    const source = pickVectorReuseSource(
-      [{ file_id: 'borrower', vectorId: 'original', embedded: true, filename: 'a.pdf' }],
-      '.pdf',
-    );
+    const source = pickVectorReuseSource([
+      { file_id: 'borrower', vectorId: 'original', embedded: true },
+    ]);
 
     expect(source?.file_id).toBe('borrower');
   });
 
   it('ignores candidates that are not embedded', () => {
-    expect(
-      pickVectorReuseSource([{ file_id: 'pending', embedded: false, filename: 'a.pdf' }], '.pdf'),
-    ).toBeUndefined();
-    expect(
-      pickVectorReuseSource([{ file_id: 'legacy', filename: 'a.pdf' }], '.pdf'),
-    ).toBeUndefined();
-  });
-
-  it('refuses content whose extension would have used another RAG loader', () => {
-    const candidates = [{ file_id: 'as-csv', embedded: true, filename: 'data.csv' }];
-
-    expect(pickVectorReuseSource(candidates, '.txt')).toBeUndefined();
-    expect(pickVectorReuseSource(candidates, '.csv')?.file_id).toBe('as-csv');
-  });
-
-  it('matches extensions case-insensitively', () => {
-    const source = pickVectorReuseSource(
-      [{ file_id: 'shouty', embedded: true, filename: 'REPORT.PDF' }],
-      '.pdf',
-    );
-
-    expect(source?.file_id).toBe('shouty');
+    expect(pickVectorReuseSource([{ file_id: 'pending', embedded: false }])).toBeUndefined();
+    expect(pickVectorReuseSource([{ file_id: 'legacy' }])).toBeUndefined();
   });
 
   it('returns undefined for an empty candidate list', () => {
-    expect(pickVectorReuseSource([], '.pdf')).toBeUndefined();
+    expect(pickVectorReuseSource([])).toBeUndefined();
   });
 });
 

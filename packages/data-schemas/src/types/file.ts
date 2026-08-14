@@ -69,6 +69,12 @@ export interface IMongoFile extends Omit<Document, 'model'> {
    */
   vectorId?: string;
   /**
+   * Lowercased extension of the filename the RAG API was given. Its loader
+   * keys on that before the content type, so identical bytes under different
+   * extensions are chunked differently and cannot share embeddings.
+   */
+  vectorExtension?: string;
+  /**
    * Who the RAG API stamped as the owner of this file's chunks — the agent
    * id for knowledge files, the user id for chat attachments. Reads from a
    * different owner are refused, so it is the only proof that two records

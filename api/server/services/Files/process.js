@@ -717,10 +717,11 @@ const findVectorReuseSource = async ({ req, hash, type, extension, vectorOwner, 
     hash,
     type,
     context,
+    extension,
     vectorOwner,
     tenantId: req.user.tenantId,
   });
-  return pickVectorReuseSource(candidates, extension) ?? null;
+  return pickVectorReuseSource(candidates) ?? null;
 };
 
 /**
@@ -987,7 +988,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
   // Dual storage pattern for RAG files: Storage + Vector DB
   let storageResult, embeddingResult;
-  let contentHash, vectorId, vectorOwner;
+  let contentHash, vectorId, vectorOwner, vectorExtension;
   const isImageFile = file.mimetype.startsWith('image');
   const source = getFileStrategy(appConfig, { isImage: isImageFile });
 
@@ -996,6 +997,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     /* Mirrors what `uploadVectors` hands the RAG API as `entity_id`, which
      * is what it stamps on the chunks. */
     vectorOwner = entity_id ?? req.user.id;
+    vectorExtension = fileExtension(sanitizeFilename(file.originalname));
 
     // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
     const { handleFileUpload } = getStrategyFunctions(source);
@@ -1018,7 +1020,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       vectorOwner,
       hash: contentHash,
       type: file.mimetype,
-      extension: fileExtension(sanitizeFilename(file.originalname)),
+      extension: vectorExtension,
       context: messageAttachment ? USER_OWNED_EMBEDDING_CONTEXT : FileContext.agents,
     });
 
@@ -1125,6 +1127,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       hash: contentHash,
       vectorId,
       vectorOwner,
+      vectorExtension,
       embedded,
       source,
       height,

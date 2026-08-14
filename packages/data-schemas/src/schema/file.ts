@@ -69,6 +69,15 @@ const file: Schema<IMongoFile> = new Schema(
        * this directly. */
       type: String,
     },
+    vectorExtension: {
+      /* Lowercased extension of the filename the RAG API was given, dot
+       * included. It picks its document loader from that before falling back
+       * to the content type, so the same bytes as `.csv` and as `.txt` are
+       * chunked differently and are not interchangeable. Part of the reuse
+       * key rather than a filter applied afterwards, so a match can never
+       * fall outside the query's window. */
+      type: String,
+    },
     vectorOwner: {
       /* Who the RAG API stamped as the owner of those chunks: the agent id
        * for knowledge files, the user id for chat attachments. Reads from a

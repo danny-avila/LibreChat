@@ -130,6 +130,11 @@ export type TFile = {
    */
   vectorId?: string;
   /**
+   * Lowercased extension of the filename the RAG API was given, which decides
+   * how it chunked the document.
+   */
+  vectorExtension?: string;
+  /**
    * Who the RAG API stamped as the owner of this file's chunks — the agent
    * id for knowledge files, the user id for chat attachments. Two records
    * may only share embeddings when this matches.

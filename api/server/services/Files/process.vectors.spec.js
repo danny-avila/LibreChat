@@ -172,6 +172,7 @@ describe('file_search uploads with no prior copy', () => {
       hash: CONTENT_HASH,
       type: 'application/pdf',
       context: FileContext.message_attachment,
+      extension: '.pdf',
       vectorOwner: 'user-123',
       tenantId: 'tenant-a',
     });
@@ -346,6 +347,7 @@ describe('re-uploading identical content to an agent', () => {
       hash: CONTENT_HASH,
       type: 'application/pdf',
       context: FileContext.agents,
+      extension: '.pdf',
       vectorOwner: 'agent-abc',
       tenantId: 'tenant-a',
     });
@@ -371,16 +373,14 @@ describe('re-uploading identical content to an agent', () => {
 });
 
 describe('content whose extension changes how the RAG API parses it', () => {
-  it('does not reuse chunks produced by a different loader', async () => {
-    db.findVectorReuseCandidates.mockResolvedValue([
-      {
-        file_id: 'as-csv',
-        filename: 'report.csv',
-        hash: CONTENT_HASH,
-        embedded: true,
-        context: FileContext.message_attachment,
-      },
-    ]);
+  /* The extension is part of the persisted reuse key, so records chunked by a
+   * different loader never reach the caller. */
+  it('asks only for candidates the same loader produced', async () => {
+    db.findVectorReuseCandidates.mockImplementation(async ({ extension }) =>
+      extension === '.csv'
+        ? [{ file_id: 'as-csv', hash: CONTENT_HASH, embedded: true, vectorOwner: 'user-123' }]
+        : [],
+    );
 
     await processAgentFileUpload({
       req: makeReq(),
@@ -388,8 +388,21 @@ describe('content whose extension changes how the RAG API parses it', () => {
       metadata: attachmentMetadata(),
     });
 
+    expect(db.findVectorReuseCandidates).toHaveBeenCalledWith(
+      expect.objectContaining({ extension: '.pdf' }),
+    );
     expect(uploadVectors).toHaveBeenCalledTimes(1);
     expect(uploadedFile().vectorId).toBeUndefined();
+  });
+
+  it('records the extension the RAG API parsed it under', async () => {
+    await processAgentFileUpload({
+      req: makeReq(),
+      res: makeRes(),
+      metadata: attachmentMetadata(),
+    });
+
+    expect(uploadedFile().vectorExtension).toBe('.pdf');
   });
 });
 

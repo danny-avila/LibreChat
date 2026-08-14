@@ -17,6 +17,12 @@ export type VectorReuseQuery = {
   /** Mime type the candidate must share, since it steers the RAG API's loader. */
   type: string;
   /**
+   * Filename extension the candidate must share. Matched here rather than
+   * after the fact so the limit below cannot hide a compatible record behind
+   * a run of same-hash uploads under other extensions.
+   */
+  extension: string;
+  /**
    * Who the RAG API must have stamped as the owner of the candidate's chunks —
    * an agent id or a user id. Both the proof that two records may share
    * embeddings, since reads from a different owner are refused, and the scope
@@ -381,11 +387,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * Records carrying an expiry (retention or the upload TTL) are excluded
    * because their vectors are on a deletion clock the new upload does not
    * share.
+   *
+   * Every returned record is a usable source, so `limit` only bounds the work,
+   * never the outcome: the caller prefers one owning its vectors to keep
+   * references from chaining, and a borrower resolves to the same document
+   * anyway.
    */
   async function findVectorReuseCandidates({
     hash,
     context,
     type,
+    extension,
     vectorOwner,
     tenantId,
     limit = 20,
@@ -402,6 +414,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       context,
       type,
       vectorOwner,
+      vectorExtension: extension,
       embedded: true,
       expiredAt: null,
       expiresAt: null,
