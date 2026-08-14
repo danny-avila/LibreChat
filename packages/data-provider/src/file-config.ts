@@ -416,6 +416,10 @@ export const mimeTypeAliases: Readonly<Record<string, string>> = {
   'application/x-zip-compressed': 'application/zip',
   'text/x-python-script': 'text/x-python',
   'text/x-markdown': 'text/markdown',
+  /** freedesktop shared-mime-info (Chrome on Linux) */
+  'application/x-shellscript': 'application/x-sh',
+  /** libmagic, i.e. `file --mime-type` */
+  'text/x-shellscript': 'application/x-sh',
 };
 
 /**

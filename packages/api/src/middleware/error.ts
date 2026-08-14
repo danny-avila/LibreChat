@@ -41,6 +41,18 @@ function isCustomError(err: unknown): err is CustomError {
   return err !== null && typeof err === 'object' && 'statusCode' in err && 'body' in err;
 }
 
+/**
+ * Builds an error that `ErrorController` relays to the client verbatim. `isCustomError` matches only
+ * when both `statusCode` and `body` are present, so a plain `Error` falls through to a bare 500 and
+ * its message never leaves the server log. Use this wherever the caller needs to see the reason.
+ */
+export const createCustomError = (statusCode: number, message: string): CustomError => {
+  const error = new Error(message) as CustomError;
+  error.statusCode = statusCode;
+  error.body = { message };
+  return error;
+};
+
 export const ErrorController = (
   err: Error | CustomError,
   req: Request,

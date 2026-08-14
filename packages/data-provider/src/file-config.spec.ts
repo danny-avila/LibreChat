@@ -33,6 +33,14 @@ describe('inferMimeType', () => {
     expect(inferMimeType('archive.zip', 'application/x-zip-compressed')).toBe('application/zip');
   });
 
+  it('should normalize application/x-shellscript to application/x-sh', () => {
+    expect(inferMimeType('test.sh', 'application/x-shellscript')).toBe('application/x-sh');
+  });
+
+  it('should normalize text/x-shellscript to application/x-sh', () => {
+    expect(inferMimeType('test.sh', 'text/x-shellscript')).toBe('application/x-sh');
+  });
+
   it('should return a type that matches textMimeTypes after normalization', () => {
     const normalized = inferMimeType('test.py', 'text/x-python-script');
     expect(textMimeTypes.test(normalized)).toBe(true);
@@ -64,6 +72,20 @@ describe('inferMimeType', () => {
     const normalized = inferMimeType('test.md', 'text/x-markdown');
     expect(baseFileConfig.checkType(normalized)).toBe(true);
   });
+
+  it.each(['application/x-shellscript', 'text/x-shellscript'])(
+    'should produce a type accepted by checkType after normalizing %s',
+    (browserType) => {
+      expect(baseFileConfig.checkType(inferMimeType('test.sh', browserType))).toBe(true);
+    },
+  );
+
+  it.each(['application/x-shellscript', 'text/x-shellscript'])(
+    'should reject raw %s without normalization',
+    (browserType) => {
+      expect(baseFileConfig.checkType(browserType)).toBe(false);
+    },
+  );
 
   it('should reject raw text/x-python-script without normalization', () => {
     expect(baseFileConfig.checkType('text/x-python-script')).toBe(false);
