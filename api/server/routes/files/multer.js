@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
-const { sanitizeFilename } = require('@librechat/api');
+const { sanitizeFilename, createCustomError } = require('@librechat/api');
 const {
   mergeFileConfig,
   inferMimeType,
@@ -28,25 +28,13 @@ const storage = multer.diskStorage({
   },
 });
 
-/**
- * Multer forwards file-filter rejections to the shared error handler, which only relays a status and
- * message for errors carrying `statusCode` and `body`. A plain `Error` falls through to a bare 500,
- * so the client can't tell the user why the upload was refused.
- */
-const uploadError = (statusCode, message) => {
-  const error = new Error(message);
-  error.statusCode = statusCode;
-  error.body = { message };
-  return error;
-};
-
 const importFileFilter = (req, file, cb) => {
   if (file.mimetype === 'application/json') {
     cb(null, true);
   } else if (path.extname(file.originalname).toLowerCase() === '.json') {
     cb(null, true);
   } else {
-    cb(uploadError(415, 'Only JSON files are allowed'), false);
+    cb(createCustomError(415, 'Only JSON files are allowed'), false);
   }
 };
 
@@ -70,7 +58,7 @@ const createFileFilter = (customFileConfig) => {
    */
   const fileFilter = (req, file, cb) => {
     if (!file) {
-      return cb(uploadError(400, 'No file provided'), false);
+      return cb(createCustomError(400, 'No file provided'), false);
     }
 
     const mimeType = normalizeUploadMimeType(file);
@@ -88,7 +76,10 @@ const createFileFilter = (customFileConfig) => {
     });
 
     if (!defaultFileConfig.checkType(mimeType, endpointFileConfig.supportedMimeTypes)) {
-      return cb(uploadError(415, 'Unsupported file type: ' + (file.mimetype || mimeType)), false);
+      return cb(
+        createCustomError(415, 'Unsupported file type: ' + (file.mimetype || mimeType)),
+        false,
+      );
     }
 
     cb(null, true);

@@ -321,6 +321,33 @@ describe('Multer Configuration', () => {
       },
     );
 
+    /** Normalization runs before the allowlist check, so an admin who applied one of the documented
+     *  `.sh` workarounds must not be broken by it. Both recipes target `application/x-sh`, which is
+     *  exactly what the alias now produces. */
+    it.each([
+      ['the canonical type (#4660, #5689, #6297)', ['application/x-sh']],
+      ['broad patterns (#14804)', ['image/.*', 'text/.*', 'application/.*']],
+    ])(
+      'should keep accepting .sh for an existing workaround config allowing %s',
+      (_label, supportedMimeTypes) => {
+        const { mergeFileConfig } = require('librechat-data-provider');
+        const fileFilter = createFileFilter(
+          mergeFileConfig({ endpoints: { agents: { supportedMimeTypes } } }),
+        );
+        mockReq.body.endpoint = 'agents';
+        const shellFile = {
+          ...mockFile,
+          originalname: 'script.sh',
+          mimetype: 'application/x-shellscript',
+        };
+
+        const cb = jest.fn();
+        fileFilter(mockReq, shellFile, cb);
+
+        expect(cb).toHaveBeenCalledWith(null, true);
+      },
+    );
+
     it('should reject an unsupported type with a 415 the client can surface', () => {
       const { mergeFileConfig } = require('librechat-data-provider');
       const fileFilter = createFileFilter(mergeFileConfig());

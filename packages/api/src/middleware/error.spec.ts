@@ -1,7 +1,7 @@
 import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { ValidationError, MongoServerError, CustomError } from '~/types';
-import { ErrorController } from './error';
+import { ErrorController, createCustomError } from './error';
 
 // Mock the logger
 jest.mock('@librechat/data-schemas', () => ({
@@ -192,6 +192,31 @@ describe('ErrorController', () => {
       } as CustomError;
 
       ErrorController(partialError, mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
+    });
+  });
+
+  describe('createCustomError', () => {
+    it('should build an Error carrying the status and a message body', () => {
+      const error = createCustomError(415, 'Unsupported file type: application/x-shellscript');
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error.message).toBe('Unsupported file type: application/x-shellscript');
+      expect(error.statusCode).toBe(415);
+      expect(error.body).toEqual({ message: 'Unsupported file type: application/x-shellscript' });
+    });
+
+    it('should reach the client through ErrorController instead of a bare 500', () => {
+      ErrorController(createCustomError(415, 'Unsupported file type'), mockReq, mockRes, mockNext);
+
+      expect(mockRes.status).toHaveBeenCalledWith(415);
+      expect(mockRes.send).toHaveBeenCalledWith({ message: 'Unsupported file type' });
+    });
+
+    it('should be the piece a plain Error lacks, which falls through to 500', () => {
+      ErrorController(new Error('Unsupported file type'), mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
       expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
