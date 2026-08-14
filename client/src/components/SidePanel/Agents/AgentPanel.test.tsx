@@ -259,6 +259,10 @@ const mockAgentQuery = (
     data: {
       id: 'agent-123',
       author: 'user-123',
+      /** Matches `createMockAgent`, so a field the submission carries but never edits
+       *  compares equal across the update rather than reading as a change. */
+      provider: 'openai',
+      model: 'gpt-4',
       ...agent,
     } as Agent,
     isInitialLoading: false,
@@ -360,12 +364,15 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
       mockAgentQuery(mockUseGetAgentByIdQuery, {
         name: 'Test Agent',
         version: 2,
+        avatar: { filepath: '/images/agent-123/avatar.png', source: 'local' },
       });
 
       /** A reset rides the update payload as `avatar: null`, and clearing an avatar the
        *  newest version never recorded reads as a duplicate, so the count comes back
        *  unchanged even though the avatar was deleted. */
-      mockUpdateAgent.mockResolvedValue(createMockAgent({ name: 'Test Agent', version: 2 }));
+      mockUpdateAgent.mockResolvedValue(
+        createMockAgent({ name: 'Test Agent', version: 2, avatar: null }),
+      );
 
       const Wrapper = createWrapper();
       const { container } = render(<AgentPanel />, { wrapper: Wrapper });
@@ -386,6 +393,41 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
       expect(mockShowToast).not.toHaveBeenCalledWith(
         expect.objectContaining({ message: 'com_ui_no_changes' }),
       );
+    });
+
+    it('should show "no changes" toast when the server drops the submitted edit', async () => {
+      const { mockUseGetAgentByIdQuery, mockUpdateAgent } = setupMocks();
+
+      mockAgentQuery(mockUseGetAgentByIdQuery, {
+        name: 'Test Agent',
+        version: 2,
+        tools: ['keep'],
+      });
+
+      /** An MCP tool the user added can be stripped by authorization before the write, so
+       *  a dirty submission is no promise that anything was persisted. */
+      mockUpdateAgent.mockResolvedValue(
+        createMockAgent({ name: 'Test Agent', version: 2, tools: ['keep'] }),
+      );
+
+      const Wrapper = createWrapper();
+      const { container } = render(<AgentPanel />, { wrapper: Wrapper });
+
+      act(() => {
+        capturedFormMethods!.setValue('tools', ['keep', 'rejected_mcp_tool'], {
+          shouldDirty: true,
+        });
+      });
+
+      fireEvent.submit(container.querySelector('form')!);
+      mockFormSubmitHandler?.();
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_ui_no_changes',
+          status: 'info',
+        });
+      });
     });
 
     it('should show "update success" toast when version changes', async () => {

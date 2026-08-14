@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
+import isEqual from 'lodash/isEqual';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -12,8 +13,8 @@ import {
   PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
+import type { Agent, AgentUpdateParams } from 'librechat-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
-import type { Agent } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm, StringOption } from '~/common';
 import {
@@ -245,6 +246,29 @@ export const hasPersistedDirtyFields = (
   return result.sawDirty && !result.onlyAvatarDirty;
 };
 
+/**
+ * Whether the save left the stored agent different from the one it replaced, across the
+ * fields the submission carried. A dirty field is no promise that anything was written:
+ * the server can normalize a submission straight back to the stored value, by pruning a
+ * skill that no longer exists or by dropping an MCP tool authorization rejects.
+ *
+ * Read alongside the dirty check rather than instead of it. An agent loaded through the
+ * basic projection carries fewer fields than the update endpoint returns, which reads as
+ * a difference; pairing the two keeps an untouched save honest either way.
+ */
+export const hasPersistedChange = (
+  submitted?: AgentUpdateParams,
+  previous?: Agent,
+  updated?: Agent,
+): boolean => {
+  if (!submitted || !previous || !updated) {
+    return false;
+  }
+
+  const fields = Object.keys(submitted) as Array<keyof AgentUpdateParams & keyof Agent>;
+  return fields.some((field) => !isEqual(previous[field], updated[field]));
+};
+
 export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -337,6 +361,7 @@ export default function AgentPanel() {
   const agent_id = useWatch({ control, name: 'id' });
   const previousVersionRef = useRef<number | undefined>();
   const submittedDirtyRef = useRef(false);
+  const submittedRef = useRef<{ payload?: AgentUpdateParams; previous?: Agent }>({});
 
   const allowedProviders = useMemo(
     () => new Set(agentsConfig?.allowedProviders),
@@ -358,18 +383,24 @@ export default function AgentPanel() {
 
   /* Mutations */
   const update = useUpdateAgentMutation({
-    onMutate: () => {
-      // Store the current version before mutation
+    onMutate: (variables) => {
+      /** The agent as it stands before the write. The mutation replaces this cache entry
+       *  on success, so it has to be captured here to stay comparable afterwards. */
       previousVersionRef.current = agentQuery.data?.version;
       submittedDirtyRef.current = hasPersistedDirtyFields(dirtyFields, getValues('avatar_action'));
+      submittedRef.current = { payload: variables.data, previous: agentQuery.data };
     },
     onSuccess: async (data) => {
       const avatarActionState = getValues('avatar_action');
       /** An update whose result matches the newest version is written without recording a
        *  version entry, so an unchanged count no longer means the save was a no-op. Only
-       *  a submission that carried no edit of its own can claim nothing changed. */
+       *  a save that both carried no edit and left the agent as it found it can claim
+       *  nothing changed. */
+      const persistedEdit =
+        submittedDirtyRef.current &&
+        hasPersistedChange(submittedRef.current.payload, submittedRef.current.previous, data);
       const noVersionChange =
-        !submittedDirtyRef.current &&
+        !persistedEdit &&
         previousVersionRef.current !== undefined &&
         data.version === previousVersionRef.current;
       const toastMessage = getUpdateToastMessage(
@@ -406,6 +437,7 @@ export default function AgentPanel() {
       // Clear the refs after use
       previousVersionRef.current = undefined;
       submittedDirtyRef.current = false;
+      submittedRef.current = {};
     },
     onError: (err) => {
       const error = err as Error;

@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 import { Constants, type Agent } from 'librechat-data-provider';
+import type { AgentModelParameters } from 'librechat-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
 import type { AgentForm } from '~/common';
 import {
@@ -9,6 +10,7 @@ import {
   persistAvatarChanges,
   isAvatarUploadOnlyDirty,
   hasPersistedDirtyFields,
+  hasPersistedChange,
 } from '../AgentPanel';
 
 const createForm = (): AgentForm => ({
@@ -207,5 +209,76 @@ describe('hasPersistedDirtyFields', () => {
     } as unknown as FieldNamesMarkedBoolean<AgentForm>;
 
     expect(hasPersistedDirtyFields(dirtyFields)).toBe(false);
+  });
+});
+
+describe('hasPersistedChange', () => {
+  const agent = (overrides: Partial<Agent> = {}): Agent =>
+    ({
+      id: 'agent_123',
+      provider: 'openai',
+      model: 'gpt-4',
+      name: 'Agent',
+      tools: ['a'],
+      ...overrides,
+    }) as Agent;
+
+  it('returns false when anything needed for the comparison is missing', () => {
+    expect(hasPersistedChange(undefined, agent(), agent())).toBe(false);
+    expect(hasPersistedChange({ name: 'Renamed' }, undefined, agent())).toBe(false);
+    expect(hasPersistedChange({ name: 'Renamed' }, agent(), undefined)).toBe(false);
+  });
+
+  it('returns true when the stored agent came back changed', () => {
+    expect(hasPersistedChange({ name: 'Renamed' }, agent(), agent({ name: 'Renamed' }))).toBe(true);
+  });
+
+  it('returns true for a reset that cleared an avatar the agent was carrying', () => {
+    const previous = agent({ avatar: { filepath: '/images/a.png', source: 'local' } });
+
+    expect(hasPersistedChange({ avatar: null }, previous, agent({ avatar: null }))).toBe(true);
+  });
+
+  it('returns false when the server normalized the submission back to the stored value', () => {
+    /** An MCP tool rejected by authorization, or a skill pruned because it no longer
+     *  exists, is dropped server-side and nothing is persisted. */
+    const stored = agent({ tools: ['a'], skills: ['keep'] });
+
+    expect(
+      hasPersistedChange(
+        { tools: ['a', 'mcp_rejected'], skills: ['keep', 'deleted'] },
+        stored,
+        agent({ tools: ['a'], skills: ['keep'] }),
+      ),
+    ).toBe(false);
+  });
+
+  it('compares nested values rather than object identity', () => {
+    const parameters = (temperature: number): AgentModelParameters => ({
+      ...createForm().model_parameters,
+      temperature,
+    });
+    const previous = agent({ model_parameters: parameters(1) });
+
+    expect(
+      hasPersistedChange(
+        { model_parameters: parameters(1) },
+        previous,
+        agent({ model_parameters: parameters(1) }),
+      ),
+    ).toBe(false);
+    expect(
+      hasPersistedChange(
+        { model_parameters: parameters(2) },
+        previous,
+        agent({ model_parameters: parameters(2) }),
+      ),
+    ).toBe(true);
+  });
+
+  it('ignores fields the submission did not carry', () => {
+    expect(hasPersistedChange({ name: 'Agent' }, agent({ description: 'before' }), agent())).toBe(
+      false,
+    );
   });
 });
