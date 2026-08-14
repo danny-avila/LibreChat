@@ -1649,6 +1649,7 @@ export type TStartupConfig = {
   /** Admin panel link, only present for users with admin access */
   adminPanelURL?: string;
   customFooter?: string;
+  customLoginFooter?: string;
   modelSpecs?: TSpecsConfig;
   modelDescriptions?: Record<string, Record<string, string>>;
   sharedLinksEnabled: boolean;

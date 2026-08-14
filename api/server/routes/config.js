@@ -107,6 +107,10 @@ function buildPreLoginPayload() {
     payload.ldap = ldap;
   }
 
+  if (typeof process.env.CUSTOM_LOGIN_FOOTER === 'string') {
+    payload.customLoginFooter = process.env.CUSTOM_LOGIN_FOOTER;
+  }
+
   return payload;
 }
 
