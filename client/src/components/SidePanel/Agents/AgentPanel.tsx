@@ -225,12 +225,18 @@ export const isAvatarUploadOnlyDirty = (
 };
 
 /**
- * Whether the submission carries an edit the agent update endpoint persists. The avatar
- * travels through its own endpoint, so an avatar-only submission does not count.
+ * Whether the submission carries an edit the agent update endpoint persists. Only an
+ * avatar upload travels through its own endpoint; a reset rides the update payload as
+ * `avatar: null` (see `composeAgentUpdatePayload`), so it is an edit like any other.
  */
 export const hasPersistedDirtyFields = (
   dirtyFields?: FieldNamesMarkedBoolean<AgentForm>,
+  avatarAction?: AgentForm['avatar_action'],
 ): boolean => {
+  if (avatarAction === 'reset') {
+    return true;
+  }
+
   if (!dirtyFields) {
     return false;
   }
@@ -355,7 +361,7 @@ export default function AgentPanel() {
     onMutate: () => {
       // Store the current version before mutation
       previousVersionRef.current = agentQuery.data?.version;
-      submittedDirtyRef.current = hasPersistedDirtyFields(dirtyFields);
+      submittedDirtyRef.current = hasPersistedDirtyFields(dirtyFields, getValues('avatar_action'));
     },
     onSuccess: async (data) => {
       const avatarActionState = getValues('avatar_action');

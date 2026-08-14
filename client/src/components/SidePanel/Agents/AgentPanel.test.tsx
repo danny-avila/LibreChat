@@ -354,6 +354,40 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
       );
     });
 
+    it('should show "update success" toast when an avatar reset reuses the same version', async () => {
+      const { mockUseGetAgentByIdQuery, mockUpdateAgent } = setupMocks();
+
+      mockAgentQuery(mockUseGetAgentByIdQuery, {
+        name: 'Test Agent',
+        version: 2,
+      });
+
+      /** A reset rides the update payload as `avatar: null`, and clearing an avatar the
+       *  newest version never recorded reads as a duplicate, so the count comes back
+       *  unchanged even though the avatar was deleted. */
+      mockUpdateAgent.mockResolvedValue(createMockAgent({ name: 'Test Agent', version: 2 }));
+
+      const Wrapper = createWrapper();
+      const { container } = render(<AgentPanel />, { wrapper: Wrapper });
+
+      act(() => {
+        capturedFormMethods!.setValue('avatar_action', 'reset', { shouldDirty: true });
+      });
+
+      fireEvent.submit(container.querySelector('form')!);
+      mockFormSubmitHandler?.();
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_assistants_update_success_name',
+          status: undefined,
+        });
+      });
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'com_ui_no_changes' }),
+      );
+    });
+
     it('should show "update success" toast when version changes', async () => {
       const { mockUseGetAgentByIdQuery, mockUpdateAgent } = setupMocks();
 

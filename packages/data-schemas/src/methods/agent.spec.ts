@@ -2112,6 +2112,38 @@ describe('Agent Methods', () => {
       expect((await getAgent({ id: agentId }))!.description).toBe('original');
     });
 
+    test('should clear an avatar the newest version never recorded without adding a version', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        name: 'Avatar agent',
+      });
+      await updateAgent({ id: agentId }, { name: 'Avatar agent' });
+
+      /** Avatar writes go through `skipVersioning`, so the newest version can carry no
+       *  avatar at all while the document has one. */
+      await updateAgent(
+        { id: agentId },
+        { avatar: { filepath: '/images/a.png', source: 'local' } },
+        { skipVersioning: true },
+      );
+      const withAvatar = await getAgent({ id: agentId });
+      expect(withAvatar!.avatar).toBeTruthy();
+      expect((withAvatar!.versions![1] as VersionEntry).avatar).toBeUndefined();
+
+      /** `isDuplicateVersion` skips a field when both sides are falsy, so clearing the
+       *  avatar reads as a duplicate: the write lands and the count stays put. */
+      const cleared = await updateAgent({ id: agentId }, { avatar: null });
+
+      expect(cleared!.avatar).toBeNull();
+      expect(cleared!.versions).toHaveLength(2);
+      expect((await getAgent({ id: agentId }))!.avatar).toBeNull();
+    });
+
     test('should leave the document untouched when a duplicate update changes nothing', async () => {
       const agentId = `agent_${uuidv4()}`;
 

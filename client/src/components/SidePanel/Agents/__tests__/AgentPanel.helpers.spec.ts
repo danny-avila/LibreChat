@@ -174,13 +174,22 @@ describe('hasPersistedDirtyFields', () => {
     expect(hasPersistedDirtyFields({} as FieldNamesMarkedBoolean<AgentForm>)).toBe(false);
   });
 
-  it('returns false when only the avatar is dirty, since it uses its own endpoint', () => {
+  it('returns false for an upload-only submission, which uses its own endpoint', () => {
     const dirtyFields = {
       avatar_action: true,
       avatar_preview: true,
     } as FieldNamesMarkedBoolean<AgentForm>;
 
-    expect(hasPersistedDirtyFields(dirtyFields)).toBe(false);
+    expect(hasPersistedDirtyFields(dirtyFields, 'upload')).toBe(false);
+  });
+
+  it('returns true for a reset-only submission, which is sent as avatar: null', () => {
+    const dirtyFields = {
+      avatar_action: true,
+      avatar_preview: true,
+    } as FieldNamesMarkedBoolean<AgentForm>;
+
+    expect(hasPersistedDirtyFields(dirtyFields, 'reset')).toBe(true);
   });
 
   it('returns true for an edit the update endpoint persists', () => {
