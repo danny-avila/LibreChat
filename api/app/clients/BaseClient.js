@@ -726,7 +726,8 @@ class BaseClient {
       this.abortController.requestCompleted = true;
     }
 
-    const isAgentResponse = isAgentsEndpoint(this.options.endpoint);
+    const isAgentResponse =
+      this.clientName === EModelEndpoint.agents || isAgentsEndpoint(this.options.endpoint);
     const langfuseTraceId = isAgentResponse ? traceIdForMessage(responseMessageId) : undefined;
     const langfuseSampled =
       langfuseTraceId != null ? isLangfuseTraceSampled(langfuseTraceId) : undefined;
