@@ -460,6 +460,31 @@ describe('email change service', () => {
       expect(postCommit.map(([query]) => query.email).sort()).toEqual([null, 'old@example.com']);
     });
 
+    it('leaves an email change token issued after the commit intact', async () => {
+      const pending = await pendingToken();
+      const { deps, service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(pending),
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 200 });
+      const emailChangeDeletes = (deps.deleteTokens as jest.Mock).mock.calls.filter(
+        ([query]) => query.type === EMAIL_CHANGE_TOKEN_TYPE,
+      );
+      expect(emailChangeDeletes).toHaveLength(1);
+      expect(emailChangeDeletes[0][0]).toMatchObject({
+        scope: pending.scope,
+        token: pending.token,
+      });
+    });
+
     it('leaves a reset issued for the committed address intact', async () => {
       const resetTokens: Array<string | null> = ['old@example.com'];
       const deleteTokens: EmailChangeDeps['deleteTokens'] = jest.fn(async (query: TokenQuery) => {

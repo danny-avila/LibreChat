@@ -586,14 +586,11 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
      * Restricted to the address that moved and to address-less legacy tokens, so a
      * reset another replica issued for the committed address is not revoked with them.
      * Tokens issued after this sweep are refused by the `emailChangedAt` check in
-     * `resetPassword`, which no longer honours address-less legacy tokens here. */
+     * `resetPassword`, which no longer honours address-less legacy tokens here.
+     * No email change token is swept here: the claim above already consumed the one
+     * this link presented, and the scope is unique per user, so anything under it now
+     * belongs to a request that started after the commit and still has a live link. */
     await Promise.all([
-      deleteTokensOrLog(
-        deps,
-        { userId, type: EMAIL_CHANGE_TOKEN_TYPE },
-        tenantId,
-        'superseded email change tokens',
-      ),
       deleteTokensOrLog(
         deps,
         { userId, email: oldEmail, type: PASSWORD_RESET_TOKEN_TYPE },
