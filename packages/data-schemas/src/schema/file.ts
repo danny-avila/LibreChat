@@ -69,6 +69,16 @@ const file: Schema<IMongoFile> = new Schema(
        * this directly. */
       type: String,
     },
+    vectorOwner: {
+      /* Who the RAG API stamped as the owner of those chunks: the agent id
+       * for knowledge files, the user id for chat attachments. Reads from a
+       * different owner are refused, so content may only be reused between
+       * records sharing this value — membership in an agent's resource list
+       * does not prove it, since a file uploaded to one agent can be
+       * attached to another. Absent on records predating the field, which
+       * therefore never qualify for reuse. */
+      type: String,
+    },
     type: {
       type: String,
       required: true,

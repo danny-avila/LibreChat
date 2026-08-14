@@ -129,6 +129,12 @@ export type TFile = {
    * through `resolveVectorId` so files owning their own vectors work too.
    */
   vectorId?: string;
+  /**
+   * Who the RAG API stamped as the owner of this file's chunks — the agent
+   * id for knowledge files, the user id for chat attachments. Two records
+   * may only share embeddings when this matches.
+   */
+  vectorOwner?: string;
   filename: string;
   filepath: string;
   object: 'file';

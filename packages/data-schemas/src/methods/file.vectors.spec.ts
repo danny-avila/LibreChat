@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { FileContext } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMongoFile } from '~/types/file';
+import type { VectorReuseQuery } from './file';
 import { createFileMethods } from './file';
 import { createModels } from '~/models';
 
@@ -28,6 +29,7 @@ const seedFile = async (overrides: FileSeed = {}): Promise<IMongoFile> => {
     bytes: 1024,
     embedded: true,
     hash: HASH,
+    vectorOwner: userId.toString(),
     context: FileContext.message_attachment,
     ...overrides,
   });
@@ -64,7 +66,11 @@ describe('vector reuse file methods', () => {
   });
 
   describe('findVectorReuseCandidates', () => {
-    const scope = () => ({ userId: userId.toString(), type: 'application/pdf' });
+    const scope = () => ({
+      userId: userId.toString(),
+      type: 'application/pdf',
+      vectorOwner: userId.toString(),
+    });
 
     it('finds an embedded file with matching content', async () => {
       const seeded = await seedFile();
@@ -81,15 +87,12 @@ describe('vector reuse file methods', () => {
     it('refuses to run unscoped', async () => {
       await seedFile();
 
-      const unscoped = [
-        { hash: '', ...scope(), context: FileContext.message_attachment },
-        { hash: HASH, type: 'application/pdf', context: FileContext.message_attachment },
-        {
-          hash: HASH,
-          userId: userId.toString(),
-          type: '',
-          context: FileContext.message_attachment,
-        },
+      const context = FileContext.message_attachment;
+      const unscoped: VectorReuseQuery[] = [
+        { ...scope(), context, hash: '' },
+        { ...scope(), context, hash: HASH, type: '' },
+        { ...scope(), context, hash: HASH, vectorOwner: '' },
+        { ...scope(), context, hash: HASH, userId: undefined },
       ];
 
       for (const query of unscoped) {
@@ -97,10 +100,12 @@ describe('vector reuse file methods', () => {
       }
     });
 
-    it('never crosses users, hashes, types or contexts', async () => {
+    it('never crosses users, hashes, types, owners or contexts', async () => {
       await seedFile({ user: otherUserId });
       await seedFile({ hash: OTHER_HASH });
       await seedFile({ type: 'text/plain' });
+      await seedFile({ vectorOwner: 'agent_elsewhere' });
+      await seedFile({ vectorOwner: undefined });
       await seedFile({ context: FileContext.agents });
 
       const candidates = await fileMethods.findVectorReuseCandidates({
@@ -174,16 +179,40 @@ describe('vector reuse file methods', () => {
     });
 
     it('finds an upload by another editor when scoped by file ids alone', async () => {
-      const byOtherEditor = await seedFile({ user: otherUserId, context: FileContext.agents });
+      const byOtherEditor = await seedFile({
+        user: otherUserId,
+        context: FileContext.agents,
+        vectorOwner: 'agent_shared',
+      });
 
       const candidates = await fileMethods.findVectorReuseCandidates({
         hash: HASH,
         type: 'application/pdf',
+        vectorOwner: 'agent_shared',
         context: FileContext.agents,
         fileIds: [byOtherEditor.file_id],
       });
 
       expect(candidates.map((file) => file.file_id)).toEqual([byOtherEditor.file_id]);
+    });
+
+    /* A file uploaded to one agent can be attached to another, and its chunks
+     * stay stamped with the first — membership must not imply ownership. */
+    it('refuses a file the agent lists but does not own the vectors of', async () => {
+      const fromAnotherAgent = await seedFile({
+        context: FileContext.agents,
+        vectorOwner: 'agent_a',
+      });
+
+      await expect(
+        fileMethods.findVectorReuseCandidates({
+          hash: HASH,
+          type: 'application/pdf',
+          vectorOwner: 'agent_b',
+          context: FileContext.agents,
+          fileIds: [fromAnotherAgent.file_id],
+        }),
+      ).resolves.toEqual([]);
     });
 
     it('returns an empty result for an empty file id set', async () => {

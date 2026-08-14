@@ -17,6 +17,12 @@ export type VectorReuseQuery = {
   /** Mime type the candidate must share, since it steers the RAG API's loader. */
   type: string;
   /**
+   * Who the RAG API must have stamped as the owner of the candidate's chunks.
+   * The only proof two records may share embeddings, since reads from a
+   * different owner are refused.
+   */
+  vectorOwner: string;
+  /**
    * Restricts candidates to one user's own files. Use for content owned by the
    * uploader; omit only when `fileIds` scopes the search instead.
    */
@@ -390,6 +396,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     hash,
     context,
     type,
+    vectorOwner,
     userId,
     fileIds,
     tenantId,
@@ -397,7 +404,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }: VectorReuseQuery): Promise<IMongoFile[]> {
     /* An unscoped hash lookup would reach across owners, so refuse to run
      * without either an uploader or an explicit membership set. */
-    if (!hash || !type || (!userId && !fileIds)) {
+    if (!hash || !type || !vectorOwner || (!userId && !fileIds)) {
       return [];
     }
 
@@ -406,6 +413,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       hash,
       context,
       type,
+      vectorOwner,
       embedded: true,
       expiredAt: null,
       expiresAt: null,

@@ -151,7 +151,12 @@ describe('file_search uploads with no prior copy', () => {
 
     expect(uploadVectors).toHaveBeenCalledTimes(1);
     expect(uploadedFile()).toEqual(
-      expect.objectContaining({ hash: CONTENT_HASH, embedded: true, file_id: 'new-file-id' }),
+      expect.objectContaining({
+        hash: CONTENT_HASH,
+        vectorOwner: 'user-123',
+        embedded: true,
+        file_id: 'new-file-id',
+      }),
     );
     expect(uploadedFile().vectorId).toBeUndefined();
   });
@@ -168,6 +173,7 @@ describe('file_search uploads with no prior copy', () => {
       type: 'application/pdf',
       context: FileContext.message_attachment,
       userId: 'user-123',
+      vectorOwner: 'user-123',
       tenantId: 'tenant-a',
     });
   });
@@ -352,6 +358,7 @@ describe('re-uploading identical content to an agent', () => {
       type: 'application/pdf',
       context: FileContext.agents,
       fileIds: ['agent-file-id'],
+      vectorOwner: 'agent-abc',
       tenantId: 'tenant-a',
     });
   });
@@ -367,6 +374,7 @@ describe('re-uploading identical content to an agent', () => {
 
     expect(uploadVectors).toHaveBeenCalledTimes(1);
     expect(uploadedFile().vectorId).toBeUndefined();
+    expect(uploadedFile().vectorOwner).toBe('agent-abc');
     expect(db.addAgentResourceFile).toHaveBeenCalled();
   });
 

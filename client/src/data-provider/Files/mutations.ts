@@ -44,13 +44,19 @@ export const useUploadFileMutation = (
     },
     ...options,
     onSuccess: (data, formData, context) => {
-      /* An upload of content already stored can answer with the existing
-       * record rather than a new one, so replace any entry it matches
-       * instead of stacking a second copy of the same file. */
-      queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
-        data,
-        ...(_files ?? []).filter((file) => file.file_id !== data.file_id),
-      ]);
+      /* This list is `GET /files`, scoped to the requesting user and left
+       * unrefetched on mount, focus and reconnect. An upload of content the
+       * agent already holds answers with that record, which a collaborator
+       * may own, so only the uploader's own files belong here — and when one
+       * does, it replaces any entry it matches rather than stacking a second
+       * copy of itself. */
+      const cachedUserId = queryClient.getQueryData<t.TUser>([QueryKeys.user])?.id;
+      if (!data.user || !cachedUserId || data.user === cachedUserId) {
+        queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
+          data,
+          ...(_files ?? []).filter((file) => file.file_id !== data.file_id),
+        ]);
+      }
 
       const endpoint = formData.get('endpoint');
       const message_file = formData.get('message_file');

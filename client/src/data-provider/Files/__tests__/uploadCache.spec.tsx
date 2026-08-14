@@ -120,6 +120,57 @@ describe('useUploadFileMutation cache updates', () => {
     ).toEqual(['existing-file']);
   });
 
+  /* `GET /files` only returns the requesting user's files, so a record a
+   * collaborator owns would linger in this list until a manual refresh. */
+  it('keeps a collaborator-owned record out of the uploader file list', async () => {
+    const { queryClient, result } = setup();
+    queryClient.setQueryData([QueryKeys.user], { id: 'user-1' });
+    queryClient.setQueryData([QueryKeys.files], [EXISTING]);
+    queryClient.setQueryData([QueryKeys.agent, AGENT_ID], {
+      id: AGENT_ID,
+      tool_resources: { file_search: { file_ids: [] } },
+    } as unknown as Agent);
+
+    mockUploadFile.mockResolvedValue({
+      ...EXISTING,
+      file_id: 'other-editors-file',
+      user: 'a-different-editor',
+    } as TFileUpload);
+
+    act(() => {
+      result.current.mutate(uploadBody());
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(
+      queryClient.getQueryData<TFile[]>([QueryKeys.files])?.map((file) => file.file_id),
+    ).toEqual(['existing-file']);
+    /* It is genuinely in the agent's resources, so that half still applies. */
+    expect(
+      queryClient.getQueryData<Agent>([QueryKeys.agent, AGENT_ID])?.tool_resources?.file_search
+        ?.file_ids,
+    ).toEqual(['other-editors-file']);
+  });
+
+  it('still lists the uploader own files when the user is cached', async () => {
+    const { queryClient, result } = setup();
+    queryClient.setQueryData([QueryKeys.user], { id: 'user-1' });
+    queryClient.setQueryData([QueryKeys.files], []);
+
+    mockUploadFile.mockResolvedValue({ ...EXISTING, file_id: 'mine' } as TFileUpload);
+
+    act(() => {
+      result.current.mutate(uploadBody());
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(
+      queryClient.getQueryData<TFile[]>([QueryKeys.files])?.map((file) => file.file_id),
+    ).toEqual(['mine']);
+  });
+
   it('leaves the cached agent untouched rather than mutating its resource array', async () => {
     const { queryClient, result } = setup();
     const fileIds = ['existing-file'];

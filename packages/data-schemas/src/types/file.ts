@@ -68,6 +68,13 @@ export interface IMongoFile extends Omit<Document, 'model'> {
    * `resolveVectorId` so both cases are handled.
    */
   vectorId?: string;
+  /**
+   * Who the RAG API stamped as the owner of this file's chunks — the agent
+   * id for knowledge files, the user id for chat attachments. Reads from a
+   * different owner are refused, so it is the only proof that two records
+   * may share embeddings. Absent on records predating the field.
+   */
+  vectorOwner?: string;
   type: string;
   context?: string;
   usage: number;

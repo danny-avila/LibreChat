@@ -709,7 +709,10 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
  *
  * Scoped by the agent's own resource list rather than by uploader: those
  * vectors are owned by the agent, so any editor authorized to upload here
- * may reuse them no matter who embedded them first.
+ * may reuse them no matter who embedded them first. Membership alone is not
+ * enough though — a file uploaded to one agent can be attached to another,
+ * and its chunks stay stamped with the first agent — so `vectorOwner` has to
+ * confirm this agent really owns them.
  *
  * @param {VectorReuseLookup & { agent_id: string, tool_resource: string }} params
  * @returns {Promise<MongoFile | null>}
@@ -729,6 +732,7 @@ const findAgentHeldFile = async ({ req, hash, type, extension, agent_id, tool_re
     hash,
     type,
     fileIds,
+    vectorOwner: agent_id,
     context: FileContext.agents,
     tenantId: req.user.tenantId,
   });
@@ -753,6 +757,7 @@ const findReusableAttachment = async ({ req, hash, type, extension }) => {
     hash,
     type,
     userId: req.user.id,
+    vectorOwner: req.user.id,
     context: USER_OWNED_EMBEDDING_CONTEXT,
     tenantId: req.user.tenantId,
   });
@@ -1023,12 +1028,15 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
   // Dual storage pattern for RAG files: Storage + Vector DB
   let storageResult, embeddingResult;
-  let contentHash, vectorId;
+  let contentHash, vectorId, vectorOwner;
   const isImageFile = file.mimetype.startsWith('image');
   const source = getFileStrategy(appConfig, { isImage: isImageFile });
 
   if (tool_resource === EToolResources.file_search) {
     contentHash = await hashFileContent(file.path);
+    /* Mirrors what `uploadVectors` hands the RAG API as `entity_id`, which
+     * is what it stamps on the chunks. */
+    vectorOwner = entity_id ?? req.user.id;
     const lookup = {
       req,
       hash: contentHash,
@@ -1168,6 +1176,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       type: file.mimetype,
       hash: contentHash,
       vectorId,
+      vectorOwner,
       embedded,
       source,
       height,
