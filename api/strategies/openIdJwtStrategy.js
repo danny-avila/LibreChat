@@ -1,6 +1,6 @@
 const cookies = require('cookie');
 const jwksRsa = require('jwks-rsa');
-const { logger } = require('@librechat/data-schemas');
+const { logger, getTenantId } = require('@librechat/data-schemas');
 const { CacheKeys, SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const {
@@ -55,6 +55,8 @@ const isOpenIdIssuerAllowed = (payload, openIdConfig) => {
 
 const getAuthUserDocCacheStore = () => getLogStores(CacheKeys.AUTH_USER_DOC);
 
+const isUserInTenantScope = (user, tenantId) => (user?.tenantId || undefined) === tenantId;
+
 /**
  * @function openIdJwtLogin
  * @param {import('openid-client').Configuration} openIdConfig - Configuration object for the JWT strategy.
@@ -108,10 +110,12 @@ const openIdJwtLogin = (openIdConfig) => {
         const authHeader = req.headers.authorization;
         const rawToken = authHeader?.replace('Bearer ', '');
         const openidIssuer = getOpenIdIssuer(payload, openIdConfig);
+        const tenantId = getTenantId();
         const authUserCacheKey = buildAuthUserDocCacheKey({
           strategy: 'openid-jwt',
           subject: payload?.sub,
           issuer: openidIssuer,
+          tenantId,
         });
         const authUserCacheMode = getAuthUserDocCacheMode();
         const authUserCacheStore =
@@ -121,7 +125,8 @@ const openIdJwtLogin = (openIdConfig) => {
             ? await getCachedAuthUserDoc(authUserCacheStore, authUserCacheKey)
             : undefined;
 
-        const servedCachedUser = authUserCacheMode === 'on' && cachedUser;
+        const servedCachedUser =
+          authUserCacheMode === 'on' && cachedUser && isUserInTenantScope(cachedUser, tenantId);
         const lookupResult = servedCachedUser
           ? { user: cachedUser, error: null, migration: false }
           : await findOpenIDUser({
@@ -167,7 +172,7 @@ const openIdJwtLogin = (openIdConfig) => {
                 userId: user.id,
                 cacheKey: authUserCacheKey,
               });
-            } else if (!servedCachedUser) {
+            } else if (!servedCachedUser && isUserInTenantScope(user, tenantId)) {
               await setCachedAuthUserDoc(authUserCacheStore, authUserCacheKey, user);
             }
           }
