@@ -2150,6 +2150,7 @@ describe('Agent Methods', () => {
 
       expect(suppressedUpdate.$addToSet).toBeUndefined();
       expect(suppressedUpdate.$push).toBeUndefined();
+      expect(suppressedUpdate.$pull).toBeUndefined();
       expect((await getAgent({ id: agentId }))!.versions).toHaveLength(versionCount);
     });
 

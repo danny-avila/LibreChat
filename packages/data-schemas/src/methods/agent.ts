@@ -771,13 +771,16 @@ export function createAgentMethods(
         );
         if (duplicateVersion && !forceVersion && !mutatesOutsideSnapshot) {
           suppressedVersionEntry = true;
-          /** Only `$addToSet` reaches here, and only after every value it adds was found
-           *  already stored. That reading comes from a document fetched before the write,
-           *  so it cannot bind a concurrent one: a `$pull` landing in between would leave
-           *  this update re-adding the value with no version entry to record it. Drop what
-           *  was judged a no-op rather than race it, which makes the suppression true by
-           *  construction instead of true only if nothing else writes first. */
+          /** Every operator that reaches here was judged unable to change the document,
+           *  and for `$addToSet` that reading came from a document fetched before the
+           *  write, so it cannot bind a concurrent one: a `$pull` landing in between would
+           *  leave this update re-adding the value with no version entry to record it.
+           *  Drop what was judged a no-op rather than race it, so the suppressed write
+           *  carries no operator at all and is true by construction instead of true only
+           *  while nothing else writes first. */
           delete updateData.$addToSet;
+          delete updateData.$push;
+          delete updateData.$pull;
         }
       }
 
