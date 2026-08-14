@@ -17,22 +17,12 @@ export type VectorReuseQuery = {
   /** Mime type the candidate must share, since it steers the RAG API's loader. */
   type: string;
   /**
-   * Who the RAG API must have stamped as the owner of the candidate's chunks.
-   * The only proof two records may share embeddings, since reads from a
-   * different owner are refused.
+   * Who the RAG API must have stamped as the owner of the candidate's chunks —
+   * an agent id or a user id. Both the proof that two records may share
+   * embeddings, since reads from a different owner are refused, and the scope
+   * of the search, since nothing else can carry the same value.
    */
   vectorOwner: string;
-  /**
-   * Restricts candidates to one user's own files. Use for content owned by the
-   * uploader; omit only when `fileIds` scopes the search instead.
-   */
-  userId?: string;
-  /**
-   * Restricts candidates to an explicit set, e.g. the file ids one agent holds.
-   * Scopes by membership rather than by uploader, so a collaborator can reuse
-   * vectors an earlier editor embedded under the same agent.
-   */
-  fileIds?: string[];
   tenantId?: string | null;
   limit?: number;
 };
@@ -397,14 +387,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     context,
     type,
     vectorOwner,
-    userId,
-    fileIds,
     tenantId,
     limit = 20,
   }: VectorReuseQuery): Promise<IMongoFile[]> {
-    /* An unscoped hash lookup would reach across owners, so refuse to run
-     * without either an uploader or an explicit membership set. */
-    if (!hash || !type || !vectorOwner || (!userId && !fileIds)) {
+    /* `vectorOwner` is what keeps this from reaching across owners, so an
+     * absent one has to stop the search rather than widen it. */
+    if (!hash || !type || !vectorOwner) {
       return [];
     }
 
@@ -419,12 +407,6 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       expiresAt: null,
     };
 
-    if (userId) {
-      filter.user = userId;
-    }
-    if (fileIds) {
-      filter.file_id = { $in: fileIds };
-    }
     if (tenantId) {
       filter.tenantId = tenantId;
     }

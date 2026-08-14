@@ -689,66 +689,26 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
 };
 
 /**
- * Reuse is only sound between records sharing a vector-store owner: the RAG
- * API stamps `entity_id` as the document owner and refuses reads from any
- * other. That splits content matching into two lookups — one per owner kind
- * — which is why these are separate functions rather than one branching on
- * the upload shape.
+ * Finds an already-embedded file with identical content whose vectors this
+ * upload can point at, instead of paying to embed the same document again.
  *
- * @typedef {object} VectorReuseLookup
- * @property {ServerRequest} req - The Express request object.
- * @property {string} hash - Hex SHA-256 of the uploaded bytes.
- * @property {string} type - Mime type of the upload.
- * @property {string} extension - Lowercased extension of the staged filename.
- */
-
-/**
- * Finds the record an agent already holds for identical content, so a
- * re-upload of a knowledge file it has is a no-op rather than a duplicate
- * entry with duplicate embeddings.
+ * `vectorOwner` carries the whole ownership question: the RAG API stamps it
+ * on the chunks and refuses reads from anyone else, so matching it is both
+ * necessary and sufficient — for an agent's knowledge as much as for a user's
+ * own attachments. The uploader has already cleared the agent's upload
+ * permission by the time this runs, so reusing what that agent owns is within
+ * their reach no matter which editor embedded it first.
  *
- * Scoped by the agent's own resource list rather than by uploader: those
- * vectors are owned by the agent, so any editor authorized to upload here
- * may reuse them no matter who embedded them first. Membership alone is not
- * enough though — a file uploaded to one agent can be attached to another,
- * and its chunks stay stamped with the first agent — so `vectorOwner` has to
- * confirm this agent really owns them.
- *
- * @param {VectorReuseLookup & { agent_id: string, tool_resource: string }} params
+ * @param {object} params
+ * @param {ServerRequest} params.req - The Express request object.
+ * @param {string} params.hash - Hex SHA-256 of the uploaded bytes.
+ * @param {string} params.type - Mime type of the upload.
+ * @param {string} params.extension - Lowercased extension of the staged filename.
+ * @param {string} params.vectorOwner - Who the RAG API will stamp on this upload.
+ * @param {FileContext} params.context - Upload context, which pins the record's lifecycle.
  * @returns {Promise<MongoFile | null>}
  */
-const findAgentHeldFile = async ({ req, hash, type, extension, agent_id, tool_resource }) => {
-  if (!hash) {
-    return null;
-  }
-
-  const agent = await db.getAgent({ id: agent_id });
-  const fileIds = agent?.tool_resources?.[tool_resource]?.file_ids ?? [];
-  if (fileIds.length === 0) {
-    return null;
-  }
-
-  const candidates = await db.findVectorReuseCandidates({
-    hash,
-    type,
-    fileIds,
-    vectorOwner: agent_id,
-    context: FileContext.agents,
-    tenantId: req.user.tenantId,
-  });
-  return pickVectorReuseSource(candidates, extension) ?? null;
-};
-
-/**
- * Finds one of the uploader's own chat attachments with identical content,
- * whose vectors this upload can point at instead of embedding the same
- * document again. Those are always embedded with no entity — under the user
- * — so an owner-scoped content match is sufficient.
- *
- * @param {VectorReuseLookup} params
- * @returns {Promise<MongoFile | null>}
- */
-const findReusableAttachment = async ({ req, hash, type, extension }) => {
+const findVectorReuseSource = async ({ req, hash, type, extension, vectorOwner, context }) => {
   if (!hash) {
     return null;
   }
@@ -756,9 +716,8 @@ const findReusableAttachment = async ({ req, hash, type, extension }) => {
   const candidates = await db.findVectorReuseCandidates({
     hash,
     type,
-    userId: req.user.id,
-    vectorOwner: req.user.id,
-    context: USER_OWNED_EMBEDDING_CONTEXT,
+    context,
+    vectorOwner,
     tenantId: req.user.tenantId,
   });
   return pickVectorReuseSource(candidates, extension) ?? null;
@@ -1037,24 +996,6 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     /* Mirrors what `uploadVectors` hands the RAG API as `entity_id`, which
      * is what it stamps on the chunks. */
     vectorOwner = entity_id ?? req.user.id;
-    const lookup = {
-      req,
-      hash: contentHash,
-      type: file.mimetype,
-      extension: fileExtension(sanitizeFilename(file.originalname)),
-    };
-
-    /* The agent already holds this exact document, so a second record would
-     * only duplicate its knowledge list. Hand back the one it has. */
-    if (!messageAttachment) {
-      const heldFile = await findAgentHeldFile({ ...lookup, agent_id, tool_resource });
-      if (heldFile) {
-        return sendUploadSuccess(res, sseStream, 'Agent file already uploaded and processed', {
-          ...heldFile,
-          temp_file_id,
-        });
-      }
-    }
 
     // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
     const { handleFileUpload } = getStrategyFunctions(source);
@@ -1072,7 +1013,14 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      * a concurrent delete of that source can drop the vectors this record
      * would point at, leaving it silently unsearchable. Keeping the storage
      * upload out of that gap narrows it to a single write. */
-    const reuseSource = messageAttachment ? await findReusableAttachment(lookup) : null;
+    const reuseSource = await findVectorReuseSource({
+      req,
+      vectorOwner,
+      hash: contentHash,
+      type: file.mimetype,
+      extension: fileExtension(sanitizeFilename(file.originalname)),
+      context: messageAttachment ? USER_OWNED_EMBEDDING_CONTEXT : FileContext.agents,
+    });
 
     // SECOND: Upload to Vector DB, unless identical content is already embedded
     if (reuseSource) {
