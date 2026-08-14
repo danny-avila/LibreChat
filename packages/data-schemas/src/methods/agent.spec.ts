@@ -2059,6 +2059,51 @@ describe('Agent Methods', () => {
       expect(fileIdsOf(await getAgent({ id: agentId }))).toEqual(['f1', 'f2']);
     });
 
+    test('should not record a version when an atomic operator changes nothing', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        actions: [`example.com${actionDelimiter}act_1`],
+        tools: [],
+      });
+
+      await updateAgent({ id: agentId }, { name: 'With actions' });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+
+      /** The document now equals its newest version, so the snapshot is a duplicate and
+       *  only the operator can justify recording an entry. */
+      const settled = await getAgent({ id: agentId });
+      const versionCount = settled!.versions!.length;
+
+      /** Re-attaching an id the agent already holds makes `$addToSet` a Mongo no-op. An
+       *  entry here would record a change the document never took. */
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+
+      const after = await getAgent({ id: agentId });
+      expect(after!.versions).toHaveLength(versionCount);
+      expect(
+        (after?.tool_resources as Record<string, { file_ids?: string[] }> | undefined)?.file_search
+          ?.file_ids,
+      ).toEqual(['f1']);
+    });
+
     test('should record a version when a duplicate direct update carries an atomic operator', async () => {
       const agentId = `agent_${uuidv4()}`;
 
