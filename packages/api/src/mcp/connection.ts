@@ -28,6 +28,7 @@ import { reserveMCPToolsChangedRevision } from './toolsChanged';
 import { isOAuthServer, sanitizeUrlForLogging } from './utils';
 import { isOAuthAuthenticationError } from './errors';
 import { runOutsideTracing } from '~/utils/tracing';
+import { mediaTypeEssence } from '~/utils/headers';
 import { isAddressAllowed } from '~/auth/domain';
 import { withTimeout } from '~/utils/promise';
 import { mcpConfig } from './mcpConfig';
@@ -312,7 +313,7 @@ async function guardMCPStreamableHTTPResponse(
   }
 
   const contentType = response.headers.get('content-type') ?? '';
-  const isEventStream = contentType.toLowerCase().includes('text/event-stream');
+  const isEventStream = mediaTypeEssence(contentType) === 'text/event-stream';
   const { maxResponseBytes, maxLineBytes } = getMCPStreamableHTTPResponseLimits();
   const canEmitFallbackSSEError = isEventStream && maxLineBytes > 0;
   if (!isEventStream && maxResponseBytes === 0) {
