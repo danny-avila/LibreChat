@@ -1,10 +1,10 @@
-import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
 import type {
   NextFunction,
   RequestHandler,
   Request as ServerRequest,
   Response as ServerResponse,
 } from 'express';
+import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
 import type { ProtectionFinding, TextContentFragment } from '../protection/types';
 import {
   contentFilterUninspectableResponse,

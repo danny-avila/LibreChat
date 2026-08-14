@@ -42,10 +42,10 @@ import type {
   TGetSkillByName,
 } from './skills';
 import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/types';
-import type { TFilterFilesByAgentAccess } from './resources';
 import type { MCPToolAlias } from '~/tools/classification';
 import type { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { TextContentFragment } from '../protection/types';
+import type { TFilterFilesByAgentAccess } from './resources';
 import {
   injectSkillCatalog,
   resolveSkillCatalog,
@@ -54,6 +54,11 @@ import {
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
+import {
+  getContentTraversalFragments,
+  isContentTraversalProtected,
+  isContentTraversalLimitError,
+} from '../protection/adapters/nested';
 import {
   normalizeServerName,
   requiresEphemeralUserConnection,
@@ -81,11 +86,6 @@ import {
   isFatalAgentInitializationError,
 } from './errors';
 import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
-import {
-  getContentTraversalFragments,
-  isContentTraversalProtected,
-  isContentTraversalLimitError,
-} from '../protection/adapters/nested';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';

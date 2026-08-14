@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { FiltersConfig } from 'librechat-data-provider';
+import { ContentFilterError } from '../middleware/contentFilter';
 import { CHECK_BACKGROUND_TASK_NAME } from './background';
 import { createToolExecuteHandler } from './handlers';
-import { ContentFilterError } from '../middleware/contentFilter';
 
 interface BatchInput {
   toolCalls: Array<{

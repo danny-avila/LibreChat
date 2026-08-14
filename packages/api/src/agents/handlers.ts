@@ -49,17 +49,16 @@ import {
   isContentTraversalLimitError,
 } from '~/protection';
 import {
-  ContentFilterError,
-  contentFilterBlockResponse,
-  contentFilterModelBoundBlockResponse,
-  isContentFilterError,
-} from '~/middleware/contentFilter';
-import {
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
 } from './tools';
+import {
+  ContentFilterError,
+  contentFilterModelBoundBlockResponse,
+  isContentFilterError,
+} from '~/middleware/contentFilter';
 import {
   hasIntentArg,
   stripIntentArg,

@@ -1,14 +1,14 @@
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
+import type { ContentSource, ProtectionFinding, TextContentFragment } from './types';
 import type { PatternContentInspectorConfig } from './detectors/pattern';
 import type { ContentTraversalLimitError } from './adapters/nested';
-import type { ContentSource, ProtectionFinding, TextContentFragment } from './types';
 import {
   getContentTraversalFragments,
   isContentTraversalLimitError,
   isContentTraversalProtected,
 } from './adapters/nested';
-import { createPatternContentInspector } from './detectors/pattern';
 import { createLegacyPiiInspector, isLegacyPiiFragment } from './legacy';
+import { createPatternContentInspector } from './detectors/pattern';
 
 interface CompiledFilter {
   readonly detectorId: string;

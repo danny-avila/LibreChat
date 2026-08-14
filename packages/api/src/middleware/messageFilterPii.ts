@@ -8,13 +8,6 @@ import type {
 } from 'express';
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
 import type { TextContentFragment } from '../protection/types';
-import { createLegacyPiiInspector, toLegacyPiiMatch } from '../protection/legacy';
-import { extractMessageContent } from '../protection/adapters/messages';
-import {
-  extractFileContent,
-  extractStoredMessageContent,
-} from '../protection/adapters/submissions';
-import { extractChatContent } from '../protection/adapters/chat';
 import {
   contentFilterUninspectableResponse,
   getBlockedOpaqueFileField,
@@ -30,9 +23,16 @@ import {
   isContentTraversalProtected,
   isContentTraversalLimitError,
 } from '../protection/adapters/nested';
-import { inspectContent } from '../protection/runtime';
+import {
+  extractFileContent,
+  extractStoredMessageContent,
+} from '../protection/adapters/submissions';
+import { createLegacyPiiInspector, toLegacyPiiMatch } from '../protection/legacy';
+import { extractMessageContent } from '../protection/adapters/messages';
 import { serializeAskUserAnswerVariants } from '../agents/hitl/resume';
+import { extractChatContent } from '../protection/adapters/chat';
 import { contentFilterBlockResponse } from './contentFilter';
+import { inspectContent } from '../protection/runtime';
 
 function isSupportedMessageFilterRegex(pattern: string): boolean {
   try {

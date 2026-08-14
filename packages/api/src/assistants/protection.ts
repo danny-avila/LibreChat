@@ -1,17 +1,17 @@
 import { hasActivePiiPatterns } from 'librechat-data-provider';
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
 import type {
-  AssistantContentInput,
-  StoredMessageContentInput,
-} from '../protection/adapters/submissions';
-import type { ExternalChatMessage } from '../protection/adapters/messages';
-import type {
   CanonicalFileInspectionFile,
   CanonicalFileInspectionUser,
   GetCanonicalFilesForInspection,
 } from '../protection/files';
-import { ContentTraversalLimitError } from '../protection/adapters/nested';
+import type {
+  AssistantContentInput,
+  StoredMessageContentInput,
+} from '../protection/adapters/submissions';
+import type { ExternalChatMessage } from '../protection/adapters/messages';
 import { hasActiveFilePolicy, resolveCanonicalFileReferences } from '../protection/files';
+import { ContentTraversalLimitError } from '../protection/adapters/nested';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 
 const PAGE_LIMIT = 100;

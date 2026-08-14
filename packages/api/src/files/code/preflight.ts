@@ -1,14 +1,14 @@
 import { hasActivePiiPatterns } from 'librechat-data-provider';
 import type { FileFilterField, FiltersConfig } from 'librechat-data-provider';
-import { ContentFilterError } from '../../middleware/contentFilter';
-import { inspectContent } from '../../protection/runtime';
-import { extractFileContent } from '../../protection/adapters/submissions';
 import type { FileContentInput } from '../../protection/adapters/submissions';
 import {
   UninspectableFileError,
   assertHydratedFileInspectable,
   getBlockedUninspectableFileField,
 } from '../../protection/files';
+import { extractFileContent } from '../../protection/adapters/submissions';
+import { ContentFilterError } from '../../middleware/contentFilter';
+import { inspectContent } from '../../protection/runtime';
 
 const GENERATED_FILE_CONTENT_FIELDS = [
   'content',

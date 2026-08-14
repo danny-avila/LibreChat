@@ -8,12 +8,6 @@ import {
 import type { JsonPointer, TextContentFragment } from '../protection/types';
 import type { FileContentInput } from '../protection/adapters/submissions';
 import {
-  extractFileContent,
-  extractStoredMessageContent,
-} from '../protection/adapters/submissions';
-import { assertModelBoundContent } from '../middleware/modelBoundContent';
-import { ContentFilterError } from '../middleware/contentFilter';
-import {
   CONTENT_TRAVERSAL_MAX_DEPTH,
   CONTENT_TRAVERSAL_MAX_NODES,
   ContentTraversalLimitError,
@@ -27,7 +21,13 @@ import {
   hasActiveFilePolicy,
   UninspectableFileError,
 } from '../protection/files';
+import {
+  extractFileContent,
+  extractStoredMessageContent,
+} from '../protection/adapters/submissions';
+import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { getUserSubmittedPathState } from '../protection/provenance';
+import { ContentFilterError } from '../middleware/contentFilter';
 import { inspectContent } from '../protection/runtime';
 
 export interface SerializedSharedFile extends FileContentInput {

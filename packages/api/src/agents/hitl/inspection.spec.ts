@@ -1,5 +1,5 @@
-import type { AppConfig } from '@librechat/data-schemas';
 import { Constants } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import { getResumeContentInspection } from './inspection';
 
 const strictExtractedTextConfig = {

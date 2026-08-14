@@ -1,6 +1,6 @@
+import { RE2JS } from 're2js';
 import { FILTER_PII_STARTER_PATTERNS } from 'librechat-data-provider';
 import type { FiltersConfig, MessageFilterPiiConfig } from 'librechat-data-provider';
-import { RE2JS } from 're2js';
 import type { ContentFieldMap, ContentSource, TextContentFragment } from './types';
 import {
   createConfiguredContentInspector,

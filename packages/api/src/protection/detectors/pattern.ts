@@ -1,6 +1,6 @@
+import { RE2JS } from 're2js';
 import { logger } from '@librechat/data-schemas';
 import type { MessageFilterPiiConfig, FilterPiiCustomPatternConfig } from 'librechat-data-provider';
-import { RE2JS } from 're2js';
 import type { ProtectionFinding, TextContentFragment } from '../types';
 
 interface TestablePattern {

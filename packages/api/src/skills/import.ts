@@ -25,8 +25,6 @@ import type {
   SkillContentInput,
 } from '~/protection';
 import type { ImportLimits } from './limits';
-import { resolveRequestTenantId } from '~/middleware/tenant';
-import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import {
   inspectContent,
   extractFileContent,
@@ -39,6 +37,8 @@ import {
   contentFilterUninspectableResponse,
   getBlockedUninspectableSkillFileField,
 } from '~/protection';
+import { contentFilterBlockResponse } from '~/middleware/contentFilter';
+import { resolveRequestTenantId } from '~/middleware/tenant';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
 import { isSafeSkillFilePath } from './path';
 import { parseSkillMarkdown } from './parse';

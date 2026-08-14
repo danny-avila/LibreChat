@@ -1,7 +1,7 @@
 import type { FiltersConfig } from 'librechat-data-provider';
-import { inspectContent } from '../runtime';
 import { ContentTraversalLimitError, isNestedMessageTraversalProtected } from './nested';
 import { extractMessageContent } from './messages';
+import { inspectContent } from '../runtime';
 
 describe('extractMessageContent', () => {
   it('treats every caller-supplied role as user provenance', () => {

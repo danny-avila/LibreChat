@@ -1,10 +1,10 @@
-import { inspectContent } from '../runtime';
 import {
   ContentTraversalLimitError,
   getContentTraversalFragments,
   getContentTraversalScopes,
   isContentTraversalProtected,
 } from './nested';
+import { inspectContent } from '../runtime';
 import { extractChatContent } from './chat';
 
 describe('extractChatContent', () => {
