@@ -879,6 +879,8 @@ describe('BaseClient', () => {
 
     test('persists the Langfuse sampling decision for agent clients using a provider endpoint', async () => {
       const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      const previousClientName = TestClient.clientName;
+      const previousEndpoint = TestClient.options.endpoint;
       process.env.LANGFUSE_SAMPLE_RATE = '0';
       TestClient.clientName = 'agents';
       TestClient.options.endpoint = 'bedrock';
@@ -904,6 +906,8 @@ describe('BaseClient', () => {
         } else {
           process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
         }
+        TestClient.clientName = previousClientName;
+        TestClient.options.endpoint = previousEndpoint;
       }
     });
 
