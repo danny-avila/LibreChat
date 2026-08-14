@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 
 export function getValidOpenIdReuseUserId(
   openidUserId: string | undefined,
-  secret = process.env.JWT_REFRESH_SECRET,
+  secret: string | undefined = process.env.JWT_REFRESH_SECRET,
 ): string | null {
   if (!openidUserId || !secret) {
     return null;
