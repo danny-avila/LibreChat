@@ -30,6 +30,16 @@ export type LangfuseScoreDestination = {
   authorization: string;
 };
 
+export type LangfuseScoreDestinationOptions = {
+  waitForCentralProjectId?: boolean;
+  /**
+   * Deployments that route traces per tenant may want a turn's spans to reach
+   * only the tenant destination. Setting this false drops the central project
+   * from resolution without disturbing tenant or connection destinations.
+   */
+  centralTraceExportEnabled?: boolean;
+};
+
 export function getLangfuseDestinationId(baseUrl: string, projectId: string): string {
   return createHash('sha256')
     .update(`${baseUrl.replace(/\/+$/, '')}\n${projectId}`)
@@ -204,7 +214,10 @@ export async function getScoreDestinations(
   appConfig: AppConfig | undefined,
   traceId: string,
   sampled?: boolean,
-  options?: { waitForCentralProjectId?: boolean },
+  {
+    waitForCentralProjectId = true,
+    centralTraceExportEnabled = true,
+  }: LangfuseScoreDestinationOptions = {},
 ): Promise<LangfuseScoreDestination[]> {
   if (
     !isLangfuseTracingEnabled() ||
@@ -216,16 +229,20 @@ export async function getScoreDestinations(
 
   if (!usesLangfuseMultiTenantRouting()) {
     return hasLangfuseEnvCredentials()
-      ? [await getCentralScoreDestination(options?.waitForCentralProjectId !== false)].filter(
-          (destination): destination is LangfuseScoreDestination => Boolean(destination),
-        )
+      ? [
+          centralTraceExportEnabled
+            ? await getCentralScoreDestination(waitForCentralProjectId)
+            : undefined,
+        ].filter((destination): destination is LangfuseScoreDestination => Boolean(destination))
       : [getConfiguredScoreDestination(appConfig)].filter(
           (destination): destination is LangfuseScoreDestination => Boolean(destination),
         );
   }
 
   const destinations = [
-    await getCentralScoreDestination(options?.waitForCentralProjectId !== false),
+    centralTraceExportEnabled
+      ? await getCentralScoreDestination(waitForCentralProjectId)
+      : undefined,
     getTenantScoreDestination(appConfig),
   ].filter((destination): destination is LangfuseScoreDestination => Boolean(destination));
   const unique = new Map<string, LangfuseScoreDestination>();
@@ -251,9 +268,13 @@ export async function getLangfuseTraceDestinationIds(
   appConfig: AppConfig | undefined,
   traceId: string,
   sampled?: boolean,
+  {
+    centralTraceExportEnabled = true,
+  }: Pick<LangfuseScoreDestinationOptions, 'centralTraceExportEnabled'> = {},
 ): Promise<string[] | undefined> {
   const destinations = await getScoreDestinations(appConfig, traceId, sampled, {
     waitForCentralProjectId: false,
+    centralTraceExportEnabled,
   });
   if (destinations.some(({ id }) => id == null)) {
     return undefined;
@@ -264,6 +285,9 @@ export async function getLangfuseTraceDestinationIds(
 export async function getLangfuseTraceMessageFields(
   appConfig: AppConfig | undefined,
   messageId: string,
+  {
+    centralTraceExportEnabled = true,
+  }: Pick<LangfuseScoreDestinationOptions, 'centralTraceExportEnabled'> = {},
 ): Promise<{ langfuseSampled: boolean; langfuseDestinationIds?: string[] }> {
   const traceId = traceIdForMessage(messageId);
   const langfuseSampled = isLangfuseTraceSampled(traceId);
@@ -273,6 +297,7 @@ export async function getLangfuseTraceMessageFields(
       appConfig,
       traceId,
       langfuseSampled,
+      { centralTraceExportEnabled },
     ),
   };
 }
