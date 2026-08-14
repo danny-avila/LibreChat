@@ -15,6 +15,12 @@ describe('getTextDownloadFilename', () => {
       ['scan.png', 'scan.txt'],
       ['bundle.zip', 'bundle.txt'],
       ['quarterly report.v2.pdf', 'quarterly report.v2.txt'],
+      /** OCR reads images, STT reads audio; neither survives as its own bytes. */
+      ['invoice.png', 'invoice.txt'],
+      ['scan.HEIC', 'scan.txt'],
+      ['standup.m4a', 'standup.txt'],
+      ['manual.epub', 'manual.txt'],
+      ['memo.rtf', 'memo.txt'],
     ])('%s -> %s', (filename, expected) => {
       expect(getTextDownloadFilename(filename)).toBe(expected);
     });
@@ -38,6 +44,15 @@ describe('getTextDownloadFilename', () => {
       'style.css',
       /** `parseTextNative` stores a `.eml` as its own RFC 822 source, which is text. */
       'mail.eml',
+      /** Uncatalogued extensions are far likelier to be text formats nobody listed than
+       *  binaries, so they keep their name rather than being assumed binary. */
+      'README.rst',
+      'notes.adoc',
+      'main.tf',
+      'main.hcl',
+      'default.nix',
+      'events.jsonl',
+      'init.vim',
       /** No extension promises nothing, so there is nothing to correct. */
       'Dockerfile',
       'Makefile',

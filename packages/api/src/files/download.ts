@@ -26,6 +26,46 @@ const TEXTUAL_MIME_PATTERN =
   /^text\/|^message\/rfc822$|^application\/(json|sql|typescript|xml|yaml|x-sh|vnd\.coffeescript)$/;
 
 /**
+ * Extensions the text pipeline only ever reads as an extraction *input* — OCR reads documents
+ * and images, STT reads audio — and which `codeTypeMapping` does not already classify. A
+ * `.text` record wearing one of these names holds the extracted transcript, never the file.
+ *
+ * Kept as a closed list because the inverse assumption does not hold: an extension nobody has
+ * catalogued is far likelier to be an uncatalogued text format (`.rst`, `.hcl`, `.jsonl`) than a
+ * binary one, and mislabelling those costs a valid extension for no benefit.
+ */
+const EXTRACTED_INPUT_EXTENSIONS = new Set([
+  'pdf',
+  'rtf',
+  'epub',
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'gif',
+  'bmp',
+  'tiff',
+  'tif',
+  'heic',
+  'heif',
+  'avif',
+  'mp3',
+  'mpga',
+  'm4a',
+  'wav',
+  'wave',
+  'ogg',
+  'oga',
+  'opus',
+  'flac',
+  'aac',
+  'wma',
+  'weba',
+  'webm',
+  'mp4',
+]);
+
+/**
  * Resolves the name a `FileSources.text` download is served under.
  *
  * Every `createTextFile` caller in `processAgentFileUpload` persists extracted or transcribed
@@ -36,9 +76,9 @@ const TEXTUAL_MIME_PATTERN =
  * at the `text/plain` default while the configured-text path stores the original `application/pdf`,
  * so both a derived and a genuine case exist at either value.
  *
- * The extension can, so rename only when it makes a non-text promise. A `.yaml`/`.go`/`.md`
- * upload keeps its own, and so does an extensionless `Dockerfile`, which promises nothing to
- * correct.
+ * The extension can, so rename only where it positively promises something other than text —
+ * a catalogued non-text type, or a known extraction input. Anything else keeps its name: a
+ * `.yaml`/`.go`/`.md` upload, an unlisted `.rst`, and an extensionless `Dockerfile` alike.
  */
 export function getTextDownloadFilename(filename: string): string {
   if (!filename || !filename.includes('.')) {
@@ -46,7 +86,10 @@ export function getTextDownloadFilename(filename: string): string {
   }
   const extension = filename.split('.').pop()?.toLowerCase() ?? '';
   const promisedType = codeTypeMapping[extension];
-  if (promisedType && TEXTUAL_MIME_PATTERN.test(promisedType)) {
+  const promisesNonText = promisedType
+    ? !TEXTUAL_MIME_PATTERN.test(promisedType)
+    : EXTRACTED_INPUT_EXTENSIONS.has(extension);
+  if (!promisesNonText) {
     return filename;
   }
   return `${filename.replace(/\.[^./\\]*$/, '')}.txt`;
