@@ -1,14 +1,15 @@
 const fs = require('fs').promises;
-const mime = require('mime');
 const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   logAxiosError,
   getApprovalTtlMs,
   refreshS3FileUrls,
+  pipeDownloadStream,
   handleFilesUsageRequest,
   shouldUseUploadSse,
   startUploadSseStream,
+  getTextDownloadFilename,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
 } = require('@librechat/api');
@@ -315,49 +316,6 @@ function isValidID(str) {
   return /^[A-Za-z0-9_-]{21}$/.test(str);
 }
 
-/**
- * Headers describing the download that was abandoned. They have to go before the error body
- * replaces it: the code-output route copies the upstream response's headers verbatim, so a
- * proxied `Transfer-Encoding: chunked` would survive alongside the `Content-Length` that
- * `send` adds and clients reject a message carrying both framings.
- */
-const ABANDONED_DOWNLOAD_HEADERS = [
-  'Content-Disposition',
-  'Content-Type',
-  'Content-Length',
-  'Content-Encoding',
-  'Transfer-Encoding',
-  'X-File-Metadata',
-];
-
-/**
- * Pipes a download to the response, terminating it when the source fails.
- *
- * `pipe` does not end the destination on a source error, and the stream errors after the
- * handler has already returned, so the route's try/catch never sees it. Without this the
- * response stays open until the reverse proxy times out — the 504 in #14754. A stream with
- * no `error` listener at all is worse still: the emit becomes an uncaught exception.
- *
- * Nothing is written before the first chunk, so a failure that early can still answer with a
- * status; once the body has started, destroying the socket is the only way to signal a
- * truncated download instead of a short but well-formed one. Mirrors what the shared-link
- * download in `routes/share.js` already does.
- */
-const pipeDownloadStream = (stream, res) => {
-  stream.on('error', (streamError) => {
-    logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
-    if (res.headersSent) {
-      res.destroy(streamError);
-      return;
-    }
-    for (const header of ABANDONED_DOWNLOAD_HEADERS) {
-      res.removeHeader(header);
-    }
-    res.status(500).send('Error downloading file');
-  });
-  stream.pipe(res);
-};
-
 router.get('/code/download/:session_id/:fileId', async (req, res) => {
   try {
     const { session_id, fileId } = req.params;
@@ -508,30 +466,6 @@ const getDirectDownloadURL = async ({
     customFilename,
     contentType: file.type || 'application/octet-stream',
   });
-};
-
-/** Types whose payload is plain text, including the `application/*` ones `mime` reports for
- *  structured text formats. */
-const TEXTUAL_MIME_PATTERN =
-  /^text\/|^application\/(json|xml|javascript|x-sh|x-httpd-php)|\+(json|xml)$/;
-
-/**
- * Resolves the name a `FileSources.text` download is served under.
- *
- * Every `createTextFile` caller in `processAgentFileUpload` stores extracted or transcribed
- * UTF-8 text while keeping the upload's original name, so an OCR'd `report.pdf`, a parsed
- * `notes.docx` and a transcribed `meeting.mp3` all hold text under a name that promises
- * something else — the download would look corrupt or unplayable. Rename only when the name
- * makes that promise: a genuine `.txt`/`.md`/`.yaml` upload keeps its extension, and so does
- * an extensionless `Dockerfile` or a `.go`/`.py` source `mime` has no type for, since neither
- * misrepresents its contents.
- */
-const getTextDownloadFilename = (filename) => {
-  const promisedType = filename && mime.getType(filename);
-  if (!promisedType || TEXTUAL_MIME_PATTERN.test(promisedType)) {
-    return filename;
-  }
-  return `${filename.replace(/\.[^./\\]*$/, '')}.txt`;
 };
 
 // Security allowlist: excludes internal ids, owner/tenant identifiers, and extracted text.
