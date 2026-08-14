@@ -581,6 +581,52 @@ pre {
   margin: 0;
 }
 
+/* Provider name crossfades to the model name on hover. Both labels share
+   one grid cell so the slot is already the longer width. */
+.header-label {
+  display: inline-grid;
+  max-width: 100%;
+}
+
+.header-label > span {
+  grid-area: 1 / 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition:
+    opacity var(--resize-dur) var(--resize-ease),
+    transform var(--resize-dur) var(--resize-ease),
+    filter var(--resize-dur) var(--resize-ease);
+}
+
+.header-label > [data-label='model'] {
+  opacity: 0;
+  transform: translateY(4px);
+  filter: blur(2px);
+}
+
+.header-label:hover > [data-label='provider'],
+.header-label:focus-within > [data-label='provider'] {
+  opacity: 0;
+  transform: translateY(-4px);
+  filter: blur(2px);
+}
+
+.header-label:hover > [data-label='model'],
+.header-label:focus-within > [data-label='model'] {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header-label > span {
+    transition: opacity 150ms ease;
+    transform: none;
+    filter: none;
+  }
+}
+
 /* Show the message time when the row is hovered. Tailwind group-hover
    loses to `[@media(hover:hover)]:opacity-0` (same specificity, :where()). */
 @media (hover: hover) {

@@ -6,6 +6,7 @@ import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader'
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
 import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
+import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import Icon from '~/components/Chat/Messages/MessageIcon';
 import { useAuthContext, useLocalize } from '~/hooks';
 import SearchContent from './Content/SearchContent';
@@ -115,6 +116,7 @@ function SearchMessage({ message }: Pick<TMessageProps, 'message'>) {
           id={message.messageId}
           icon={<Icon iconData={iconData} />}
           label={messageLabel}
+          hoverLabel={getHeaderModelName(message.model)}
           timestamp={message.createdAt ?? message.clientTimestamp}
           ariaLabel={getMessageAriaLabel(message, localize)}
           headerPrefix={getHeaderPrefixForScreenReader(message, localize)}

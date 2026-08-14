@@ -25,6 +25,7 @@ const renderRow = ({
     <MessageRow
       id="message-1"
       label={isCreatedByUser ? 'You' : 'Assistant'}
+      hoverLabel={isCreatedByUser ? undefined : 'gpt-5.6'}
       icon={<span data-testid="message-icon" />}
       footer={<div data-testid="message-actions" />}
       ariaLabel={isCreatedByUser ? 'User message' : 'Assistant message'}
@@ -97,6 +98,13 @@ describe('MessageRow', () => {
 
     expect(heading).toHaveClass('w-full', 'gap-2');
     expect(screen.getByTestId('message-timestamp')).toHaveClass('ml-auto');
+  });
+
+  it('keeps the model name ready to replace the provider on hover', () => {
+    renderRow({ isCreatedByUser: false });
+
+    expect(screen.getByText('Assistant')).toBeVisible();
+    expect(screen.getByText('gpt-5.6')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('preserves the assistant turn marker for parallel content', () => {

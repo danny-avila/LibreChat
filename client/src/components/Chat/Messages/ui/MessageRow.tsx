@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react';
 import MessageTimestamp from './MessageTimestamp';
+import HeaderLabel from './HeaderLabel';
 import { cn } from '~/utils';
 
 type MessageRowProps = {
   id?: string;
   label: string;
+  hoverLabel?: string | null;
   icon: ReactNode;
   children: ReactNode;
   footer: ReactNode;
@@ -22,6 +24,7 @@ export default function MessageRow({
   id,
   icon,
   label,
+  hoverLabel,
   footer,
   children,
   timestamp,
@@ -82,7 +85,7 @@ export default function MessageRow({
                 {icon}
               </span>
               <span className="sr-only">{headerPrefix}</span>
-              {label}
+              <HeaderLabel label={label} hoverLabel={hoverLabel} />
               <MessageTimestamp value={timestamp} className="ml-auto shrink-0 font-normal" />
             </h2>
           ))}
