@@ -215,6 +215,8 @@ describe('Multer Configuration', () => {
       const cb = jest.fn((err, result) => {
         expect(err).toBeInstanceOf(Error);
         expect(err.message).toBe('Only JSON files are allowed');
+        expect(err.statusCode).toBe(415);
+        expect(err.body).toEqual({ message: 'Only JSON files are allowed' });
         expect(result).toBe(false);
         done();
       });
@@ -298,6 +300,45 @@ describe('Multer Configuration', () => {
       });
 
       fileFilter(mockReq, zipFile, cb);
+    });
+
+    it.each(['application/x-shellscript', 'text/x-shellscript'])(
+      'should normalize %s to application/x-sh and accept the upload',
+      (reportedType) => {
+        const { mergeFileConfig } = require('librechat-data-provider');
+        const fileFilter = createFileFilter(mergeFileConfig());
+        const shellFile = {
+          ...mockFile,
+          originalname: 'script.sh',
+          mimetype: reportedType,
+        };
+
+        const cb = jest.fn();
+        fileFilter(mockReq, shellFile, cb);
+
+        expect(cb).toHaveBeenCalledWith(null, true);
+        expect(shellFile.mimetype).toBe('application/x-sh');
+      },
+    );
+
+    it('should reject an unsupported type with a 415 the client can surface', () => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      const fileFilter = createFileFilter(mergeFileConfig());
+      const binaryFile = {
+        ...mockFile,
+        originalname: 'program.exe',
+        mimetype: 'application/x-msdownload',
+      };
+
+      const cb = jest.fn();
+      fileFilter(mockReq, binaryFile, cb);
+
+      expect(cb).toHaveBeenCalledTimes(1);
+      const [error, result] = cb.mock.calls[0];
+      expect(result).toBe(false);
+      expect(error).toBeInstanceOf(Error);
+      expect(error.statusCode).toBe(415);
+      expect(error.body).toEqual({ message: 'Unsupported file type: application/x-msdownload' });
     });
 
     it('should use real mergeFileConfig function', async () => {
