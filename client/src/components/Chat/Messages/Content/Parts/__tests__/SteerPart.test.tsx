@@ -142,6 +142,13 @@ describe('SteerPart presentation', () => {
     expect(part).toHaveClass('steer-render');
   });
 
+  it('only outdents past the avatar gutter where that gutter exists', () => {
+    renderPart();
+    const part = screen.getByTestId('steer-part');
+    expect(part).toHaveClass('w-full', 'md:-ml-9', 'md:w-[calc(100%+2.25rem)]');
+    expect(part).not.toHaveClass('-ml-9');
+  });
+
   it('renders steer attachments', () => {
     renderPart([
       { file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' },
