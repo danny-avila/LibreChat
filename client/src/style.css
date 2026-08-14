@@ -581,7 +581,20 @@ pre {
   margin: 0;
 }
 
-/* Scroll-to-bottom button — enter */
+/* Show the message time when the row is hovered. Tailwind group-hover
+   loses to `[@media(hover:hover)]:opacity-0` (same specificity, :where()). */
+@media (hover: hover) {
+  .message-render .message-timestamp {
+    opacity: 0;
+  }
+
+  .message-render:hover .message-timestamp,
+  .message-render:focus-within .message-timestamp {
+    opacity: 1;
+  }
+}
+
+/* Scroll-to-bottom button: enter */
 .scroll-animation-enter {
   opacity: 0;
   transform: translateY(12px) scale(0.9);

@@ -74,16 +74,16 @@ export default function MessageRow({
               <MessageTimestamp value={timestamp} />
             </h2>
           ) : (
-            <h2 className="flex min-h-7 select-none items-center text-sm font-semibold text-text-primary">
+            <h2 className="flex min-h-7 w-full select-none items-center gap-2 text-sm font-semibold text-text-primary">
               <span
                 aria-hidden="true"
-                className="mr-2 flex size-6 flex-shrink-0 items-center justify-center overflow-hidden rounded-full"
+                className="flex size-6 flex-shrink-0 items-center justify-center overflow-hidden rounded-full"
               >
                 {icon}
               </span>
               <span className="sr-only">{headerPrefix}</span>
               {label}
-              <MessageTimestamp value={timestamp} />
+              <MessageTimestamp value={timestamp} className="ml-auto shrink-0 font-normal" />
             </h2>
           ))}
 

@@ -1,15 +1,27 @@
 import { useTranslation } from 'react-i18next';
 import useTimeTick from '~/hooks/useTimeTick';
-import { getMessageTimestamp } from '~/utils';
+import { cn, getMessageTimestamp } from '~/utils';
 
 type Timestamp = NonNullable<ReturnType<typeof getMessageTimestamp>>;
 
-function TimestampText({ timestamp }: { timestamp: Timestamp }) {
+function TimestampText({
+  timestamp,
+  className,
+  revealOnHover = true,
+}: {
+  timestamp: Timestamp;
+  className?: string;
+  revealOnHover?: boolean;
+}) {
   return (
     <time
       dateTime={timestamp.iso}
       title={timestamp.isRecent ? timestamp.absolute : undefined}
-      className="ml-2 text-xs font-normal text-text-secondary transition-opacity duration-200 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
+      className={cn(
+        'message-timestamp text-xs font-normal text-text-secondary',
+        revealOnHover && 'ml-2 transition-opacity duration-200',
+        className,
+      )}
     >
       {timestamp.isRecent ? timestamp.relative : timestamp.absolute}
     </time>
@@ -18,7 +30,17 @@ function TimestampText({ timestamp }: { timestamp: Timestamp }) {
 
 /** Only recent timestamps subscribe to the shared minute ticker, so the
  * per-minute sweep re-renders a handful of rows instead of every message. */
-function RecentTimestamp({ value, language }: { value?: string | null; language: string }) {
+function RecentTimestamp({
+  value,
+  language,
+  className,
+  revealOnHover,
+}: {
+  value?: string | null;
+  language: string;
+  className?: string;
+  revealOnHover?: boolean;
+}) {
   useTimeTick();
   const timestamp = getMessageTimestamp(value, language);
 
@@ -26,7 +48,9 @@ function RecentTimestamp({ value, language }: { value?: string | null; language:
     return null;
   }
 
-  return <TimestampText timestamp={timestamp} />;
+  return (
+    <TimestampText timestamp={timestamp} className={className} revealOnHover={revealOnHover} />
+  );
 }
 
 /**
@@ -36,7 +60,15 @@ function RecentTimestamp({ value, language }: { value?: string | null; language:
  * ("10 minutes ago") with the absolute date on hover; older messages show the
  * absolute date directly.
  */
-export default function MessageTimestamp({ value }: { value?: string | null }) {
+export default function MessageTimestamp({
+  value,
+  className,
+  revealOnHover,
+}: {
+  value?: string | null;
+  className?: string;
+  revealOnHover?: boolean;
+}) {
   const { i18n } = useTranslation();
   const timestamp = getMessageTimestamp(value, i18n.language);
 
@@ -45,8 +77,17 @@ export default function MessageTimestamp({ value }: { value?: string | null }) {
   }
 
   if (timestamp.isRecent) {
-    return <RecentTimestamp value={value} language={i18n.language} />;
+    return (
+      <RecentTimestamp
+        value={value}
+        language={i18n.language}
+        className={className}
+        revealOnHover={revealOnHover}
+      />
+    );
   }
 
-  return <TimestampText timestamp={timestamp} />;
+  return (
+    <TimestampText timestamp={timestamp} className={className} revealOnHover={revealOnHover} />
+  );
 }

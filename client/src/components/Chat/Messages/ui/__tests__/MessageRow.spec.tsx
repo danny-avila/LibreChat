@@ -3,7 +3,9 @@ import MessageRow from '../MessageRow';
 
 jest.mock('../MessageTimestamp', () => ({
   __esModule: true,
-  default: () => <span data-testid="message-timestamp" />,
+  default: ({ className }: { className?: string }) => (
+    <span data-testid="message-timestamp" className={className} />
+  ),
 }));
 
 const MESSAGE_BODY = 'Message body';
@@ -86,6 +88,15 @@ describe('MessageRow', () => {
     expect(row).not.toHaveClass('gap-3');
     expect(row.children).toHaveLength(1);
     expect(screen.getAllByTestId('message-icon')).toHaveLength(1);
+  });
+
+  it('puts icon, name, and datetime on one bar across the message column', () => {
+    renderRow({ isCreatedByUser: false });
+
+    const heading = screen.getByRole('heading', { name: 'Message from Assistant' });
+
+    expect(heading).toHaveClass('w-full', 'gap-2');
+    expect(screen.getByTestId('message-timestamp')).toHaveClass('ml-auto');
   });
 
   it('preserves the assistant turn marker for parallel content', () => {
