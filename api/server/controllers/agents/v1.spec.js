@@ -1325,6 +1325,43 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agent.tool_resources.context.file_ids).toEqual([cloneAuthorFileId]);
     });
 
+    test('duplicateAgentHandler should copy File Context file_ids without mutating the source agent', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const fileIdA = `file_${uuidv4()}`;
+      const fileIdB = `file_${uuidv4()}`;
+
+      await createFileDoc(fileIdA, authorId);
+      await createFileDoc(fileIdB, authorId);
+      const sourceAgent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Source Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        tool_resources: {
+          context: { file_ids: [fileIdA, fileIdB] },
+        },
+      });
+
+      const db = require('~/models');
+      jest.spyOn(db, 'getActions').mockResolvedValueOnce([]);
+
+      mockReq.user.id = authorId.toString();
+      mockReq.params.id = sourceAgent.id;
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const { agent } = mockRes.json.mock.calls[0][0];
+      expect(agent.tool_resources.context.file_ids).toEqual([fileIdA, fileIdB]);
+      expect(agent.tool_resources.context.file_ids).not.toBe(
+        sourceAgent.tool_resources.context.file_ids,
+      );
+
+      const sourceInDb = await Agent.findOne({ id: sourceAgent.id }).lean();
+      expect(sourceInDb.tool_resources.context.file_ids).toEqual([fileIdA, fileIdB]);
+    });
+
     test('revertAgentVersionHandler should preserve restored attached file_ids with metadata', async () => {
       const agentAuthorId = new mongoose.Types.ObjectId();
       const otherUserId = new mongoose.Types.ObjectId();

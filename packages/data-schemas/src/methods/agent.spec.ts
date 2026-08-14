@@ -56,6 +56,7 @@ let revertAgentVersion: AgentMethods['revertAgentVersion'];
 let addAgentResourceFile: AgentMethods['addAgentResourceFile'];
 let removeAgentResourceFiles: AgentMethods['removeAgentResourceFiles'];
 let removeAgentResourceFilesFromAllAgents: AgentMethods['removeAgentResourceFilesFromAllAgents'];
+let findFileIdsReferencedByAgents: AgentMethods['findFileIdsReferencedByAgents'];
 let getListAgentsByAccess: AgentMethods['getListAgentsByAccess'];
 let generateActionMetadataHash: AgentMethods['generateActionMetadataHash'];
 
@@ -103,6 +104,7 @@ beforeAll(async () => {
   addAgentResourceFile = methods.addAgentResourceFile;
   removeAgentResourceFiles = methods.removeAgentResourceFiles;
   removeAgentResourceFilesFromAllAgents = methods.removeAgentResourceFilesFromAllAgents;
+  findFileIdsReferencedByAgents = methods.findFileIdsReferencedByAgents;
   getListAgentsByAccess = methods.getListAgentsByAccess;
   generateActionMetadataHash = methods.generateActionMetadataHash;
 
@@ -3255,6 +3257,46 @@ describe('Agent Methods', () => {
         const result = await removeAgentResourceFilesFromAllAgents({ file_ids: [fileId] });
         expect(result.matchedCount).toBe(0);
         expect(result.modifiedCount).toBe(0);
+      });
+    });
+
+    describe('findFileIdsReferencedByAgents', () => {
+      beforeEach(async () => {
+        await Agent.deleteMany({});
+      });
+
+      test('returns file_ids still attached to other agents', async () => {
+        const sharedFileId = `file_${uuidv4()}`;
+        const exclusiveFileId = `file_${uuidv4()}`;
+        const agentA = await createBasicAgent();
+        const agentB = await createBasicAgent();
+
+        await addAgentResourceFile({
+          agent_id: agentA.id,
+          tool_resource: EToolResources.context,
+          file_id: sharedFileId,
+        });
+        await addAgentResourceFile({
+          agent_id: agentA.id,
+          tool_resource: EToolResources.context,
+          file_id: exclusiveFileId,
+        });
+        await addAgentResourceFile({
+          agent_id: agentB.id,
+          tool_resource: EToolResources.context,
+          file_id: sharedFileId,
+        });
+
+        const referenced = await findFileIdsReferencedByAgents({
+          file_ids: [sharedFileId, exclusiveFileId],
+          excludeAgentId: agentA.id,
+        });
+
+        expect(referenced).toEqual([sharedFileId]);
+      });
+
+      test('returns empty when file_ids is empty', async () => {
+        await expect(findFileIdsReferencedByAgents({ file_ids: [] })).resolves.toEqual([]);
       });
     });
 

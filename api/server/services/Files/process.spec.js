@@ -96,6 +96,7 @@ jest.mock('~/models', () => ({
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
   removeAgentResourceFilesFromAllAgents: jest.fn(),
+  findFileIdsReferencedByAgents: jest.fn().mockResolvedValue([]),
 }));
 
 jest.mock('~/server/utils/getFileStrategy', () => ({
@@ -1378,6 +1379,73 @@ describe('processDeleteRequest', () => {
     expect(codeDelete).toHaveBeenCalledWith(req, file);
     expect(db.deleteFiles).toHaveBeenCalledWith(['code-resource-file']);
     expect(result).toEqual({ deletedFileIds: ['code-resource-file'], failedFileIds: [] });
+  });
+
+  it('detaches a shared agent file without deleting storage still used by another agent', async () => {
+    db.findFileIdsReferencedByAgents.mockResolvedValue(['shared-file']);
+    db.removeAgentResourceFiles.mockResolvedValue({});
+
+    const result = await processDeleteRequest({
+      req: {
+        body: { agent_id: 'clone-agent', tool_resource: EToolResources.context },
+        config: {},
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+      },
+      files: [
+        {
+          file_id: 'shared-file',
+          filepath: FileSources.text,
+          source: FileSources.text,
+        },
+      ],
+    });
+
+    expect(db.findFileIdsReferencedByAgents).toHaveBeenCalledWith({
+      file_ids: ['shared-file'],
+      excludeAgentId: 'clone-agent',
+    });
+    expect(db.removeAgentResourceFiles).toHaveBeenCalledWith({
+      agent_id: 'clone-agent',
+      files: [{ tool_resource: EToolResources.context, file_id: 'shared-file' }],
+    });
+    expect(db.deleteFiles).not.toHaveBeenCalled();
+    expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedFileIds: [], failedFileIds: [] });
+  });
+
+  it('still deletes an agent file that no other agent references', async () => {
+    db.findFileIdsReferencedByAgents.mockResolvedValue([]);
+    db.removeAgentResourceFiles.mockResolvedValue({});
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    db.removeAgentResourceFilesFromAllAgents.mockResolvedValue({
+      matchedCount: 0,
+      modifiedCount: 0,
+    });
+
+    const result = await processDeleteRequest({
+      req: {
+        body: { agent_id: 'clone-agent', tool_resource: EToolResources.context },
+        config: {},
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+      },
+      files: [
+        {
+          file_id: 'solo-file',
+          filepath: FileSources.text,
+          source: FileSources.text,
+        },
+      ],
+    });
+
+    expect(db.removeAgentResourceFiles).toHaveBeenCalledWith({
+      agent_id: 'clone-agent',
+      files: [{ tool_resource: EToolResources.context, file_id: 'solo-file' }],
+    });
+    expect(db.deleteFiles).toHaveBeenCalledWith(['solo-file']);
+    expect(db.removeAgentResourceFilesFromAllAgents).toHaveBeenCalledWith({
+      file_ids: ['solo-file'],
+    });
+    expect(result).toEqual({ deletedFileIds: ['solo-file'], failedFileIds: [] });
   });
 });
 

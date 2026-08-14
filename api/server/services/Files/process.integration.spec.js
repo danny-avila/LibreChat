@@ -182,6 +182,35 @@ describe('processDeleteRequest — agent reference cleanup (issue #12776)', () =
     expect(after.tool_resources.file_search.file_ids).toEqual(['other_id']);
   });
 
+  test('detaching a duplicated agent file leaves the original agent and file intact', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const sharedId = `file_shared_${Math.random().toString(36).slice(2, 10)}`;
+    const sharedFile = await seedFile(sharedId, userId);
+
+    const originalAgent = await seedAgent(userId, {
+      context: { file_ids: [sharedId] },
+    });
+    const clonedAgent = await seedAgent(userId, {
+      context: { file_ids: [sharedId] },
+    });
+
+    await processDeleteRequest({
+      req: buildReq([sharedFile.toObject()], {
+        agent_id: clonedAgent.id,
+        tool_resource: 'context',
+      }),
+      files: [sharedFile],
+    });
+
+    expect(await File.findOne({ file_id: sharedId })).not.toBeNull();
+
+    const updatedOriginal = await Agent.findOne({ id: originalAgent.id }).lean();
+    const updatedClone = await Agent.findOne({ id: clonedAgent.id }).lean();
+
+    expect(updatedOriginal.tool_resources.context.file_ids).toEqual([sharedId]);
+    expect(updatedClone.tool_resources.context.file_ids).toEqual([]);
+  });
+
   test('still deletes the file when the agent cleanup step throws', async () => {
     const userId = new mongoose.Types.ObjectId();
     const targetId = `file_target_${Math.random().toString(36).slice(2, 10)}`;

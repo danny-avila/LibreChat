@@ -241,6 +241,23 @@ const processDeleteRequest = async ({ req, files }) => {
   }
 
   const agentFiles = [];
+  const fileIdsToDelete = files.map((file) => file.file_id).filter(Boolean);
+  /**
+   * Duplicate Agent copies File Context `file_ids` onto the clone. Deleting
+   * from the clone's File Context must detach that agent only — physically
+   * deleting a file still referenced by another agent (then unlinking every
+   * agent via `removeAgentResourceFilesFromAllAgents`) is issue #14609.
+   */
+  const sharedFileIds = new Set();
+  if (req.body.agent_id && fileIdsToDelete.length > 0) {
+    const referenced = await db.findFileIdsReferencedByAgents({
+      file_ids: fileIdsToDelete,
+      excludeAgentId: req.body.agent_id,
+    });
+    for (const id of referenced ?? []) {
+      sharedFileIds.add(id);
+    }
+  }
 
   for (const file of files) {
     const source = file.source ?? FileSources.local;
@@ -249,6 +266,10 @@ const processDeleteRequest = async ({ req, files }) => {
         tool_resource: req.body.tool_resource,
         file_id: file.file_id,
       });
+    }
+
+    if (sharedFileIds.has(file.file_id)) {
+      continue;
     }
 
     if (source === FileSources.text) {

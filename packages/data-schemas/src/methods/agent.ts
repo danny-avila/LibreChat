@@ -450,6 +450,13 @@ export function createAgentMethods(
   }: {
     file_ids: string[];
   }) => Promise<{ matchedCount: number; modifiedCount: number }>;
+  findFileIdsReferencedByAgents: ({
+    file_ids,
+    excludeAgentId,
+  }: {
+    file_ids: string[];
+    excludeAgentId?: string;
+  }) => Promise<string[]>;
 } {
   const { removeAllPermissions, getActions, getSoleOwnedResourceIds, isExternalSkillId } = deps;
 
@@ -874,6 +881,52 @@ export function createAgentMethods(
   }
 
   /**
+   * Returns the subset of `file_ids` that are still listed on at least one
+   * agent's `tool_resources.*.file_ids`. Used so detaching a file from one
+   * agent (e.g. after Duplicate) does not delete storage still needed by
+   * another agent. See issue #14609.
+   */
+  async function findFileIdsReferencedByAgents({
+    file_ids,
+    excludeAgentId,
+  }: {
+    file_ids: string[];
+    excludeAgentId?: string;
+  }): Promise<string[]> {
+    if (!file_ids || file_ids.length === 0) {
+      return [];
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const wanted = new Set(file_ids);
+    const query: FilterQuery<IAgent> = {
+      $or: TOOL_RESOURCE_KEYS.map((key) => ({
+        [`tool_resources.${key}.file_ids`]: { $in: file_ids },
+      })),
+    };
+    if (excludeAgentId) {
+      query.id = { $ne: excludeAgentId };
+    }
+
+    const agents = await Agent.find(query, { tool_resources: 1 }).lean<IAgent[]>();
+    const referenced = new Set<string>();
+    for (const agent of agents) {
+      for (const key of TOOL_RESOURCE_KEYS) {
+        const ids = agent.tool_resources?.[key]?.file_ids;
+        if (!Array.isArray(ids)) {
+          continue;
+        }
+        for (const id of ids) {
+          if (wanted.has(id)) {
+            referenced.add(id);
+          }
+        }
+      }
+    }
+    return Array.from(referenced);
+  }
+
+  /**
    * Deletes an agent based on the provided search parameter.
    */
   async function deleteAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
@@ -1200,6 +1253,7 @@ export function createAgentMethods(
     generateActionMetadataHash,
     removeAgentFromUserFavorites,
     removeAgentResourceFilesFromAllAgents,
+    findFileIdsReferencedByAgents,
   };
 }
 

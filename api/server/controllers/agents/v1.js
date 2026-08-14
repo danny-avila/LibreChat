@@ -943,18 +943,23 @@ const duplicateAgentHandler = async (req, res) => {
       hour12: false,
     })})`;
 
-    if (_tool_resources?.[EToolResources.context]) {
-      cloneData.tool_resources = {
-        [EToolResources.context]: _tool_resources[EToolResources.context],
-      };
-    }
-
-    if (_tool_resources?.[EToolResources.ocr]) {
-      cloneData.tool_resources = {
+    /**
+     * Copy File Context onto the clone with a new `file_ids` array. Sharing the
+     * source object's array meant pruning or later edits mutated the original
+     * agent in memory (issue #14609).
+     */
+    const contextResource = _tool_resources?.[EToolResources.context];
+    const ocrResource = _tool_resources?.[EToolResources.ocr];
+    if (contextResource || ocrResource) {
+      const merged = {
+        ...(contextResource ?? {}),
         /** Legacy conversion from `ocr` to `context` */
+        ...(ocrResource ?? {}),
+      };
+      cloneData.tool_resources = {
         [EToolResources.context]: {
-          ...(_tool_resources[EToolResources.context] ?? {}),
-          ..._tool_resources[EToolResources.ocr],
+          ...merged,
+          file_ids: Array.isArray(merged.file_ids) ? [...merged.file_ids] : [],
         },
       };
     }
