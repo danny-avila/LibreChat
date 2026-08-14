@@ -1,4 +1,4 @@
-import { memo, useRef, useMemo, useCallback, Fragment } from 'react';
+import { memo, useRef, useMemo, useEffect, useCallback, Fragment } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -215,6 +215,20 @@ const ContentParts = memo(function ContentParts({
     (localIndex: number) => contentIndices?.[localIndex] ?? localIndex + contentIndexOffset,
     [contentIndexOffset, contentIndices],
   );
+  const phaseSegments = nestedActivityPhase ? undefined : groupActivityPhases(content);
+  const completedPhaseIndices = new Set(
+    phaseSegments?.flatMap((segment) => (segment.type === 'phase' ? [segment.labelIndex] : [])) ??
+      [],
+  );
+  /** A phase label can finish after the root text stream settles, so
+   *  `isSubmitting` is not a reliable entrance signal. Compare committed
+   *  phase markers instead: a marker that appears after this renderer has
+   *  mounted is live; markers present on the first render are history. */
+  const previousPhaseIndicesRef = useRef<Set<number> | null>(null);
+  const previousPhaseIndices = previousPhaseIndicesRef.current;
+  useEffect(() => {
+    previousPhaseIndicesRef.current = completedPhaseIndices;
+  });
 
   const handleGroupExpansionChange = useCallback(
     (groupId: string, state: ToolCallGroupExpansionState) => {
@@ -452,7 +466,6 @@ const ContentParts = memo(function ContentParts({
     );
   }
 
-  const phaseSegments = nestedActivityPhase ? undefined : groupActivityPhases(content);
   if (phaseSegments != null) {
     const relativeGlobalLastContentIdx = lastVisibleContentIdx(content ?? []);
     const globalLastContentIdx =
@@ -500,6 +513,9 @@ const ContentParts = memo(function ContentParts({
                 key={`activity-phase-${messageId}-${segment.labelIndex}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
+                animateEntrance={
+                  previousPhaseIndices != null && !previousPhaseIndices.has(segment.labelIndex)
+                }
                 showCursor={
                   isLast &&
                   effectiveIsSubmitting &&
