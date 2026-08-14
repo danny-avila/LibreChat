@@ -16,6 +16,7 @@ import type {
   RootFilterQuery,
   QueryOptions,
   UpdateQuery,
+  Model,
 } from 'mongoose';
 import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
 import { createAgentMethods, type AgentMethods } from './agent';
@@ -2102,6 +2103,54 @@ describe('Agent Methods', () => {
         (after?.tool_resources as Record<string, { file_ids?: string[] }> | undefined)?.file_search
           ?.file_ids,
       ).toEqual(['f1']);
+    });
+
+    test('should send no mutating operator once it has suppressed the version entry', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        actions: [`example.com${actionDelimiter}act_1`],
+        tools: [],
+      });
+
+      await updateAgent({ id: agentId }, { name: 'With actions' });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+
+      const settled = await getAgent({ id: agentId });
+      const versionCount = settled!.versions!.length;
+
+      /** The no-op reading comes from a document fetched before the write, so a `$pull`
+       *  landing in between would leave a surviving `$addToSet` re-adding the value with
+       *  no version entry recording it. Suppressing means the operator is gone, not that
+       *  it is expected to stay harmless. */
+      const Agent = mongoose.models.Agent as Model<IAgent>;
+      const spy = jest.spyOn(Agent, 'findOneAndUpdate');
+
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+
+      const suppressedUpdate = spy.mock.calls[spy.mock.calls.length - 1][1] as UpdateQuery<IAgent>;
+      spy.mockRestore();
+
+      expect(suppressedUpdate.$addToSet).toBeUndefined();
+      expect(suppressedUpdate.$push).toBeUndefined();
+      expect((await getAgent({ id: agentId }))!.versions).toHaveLength(versionCount);
     });
 
     test('should record a version when a duplicate direct update carries an atomic operator', async () => {
