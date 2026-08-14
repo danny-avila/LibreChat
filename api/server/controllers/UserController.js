@@ -8,7 +8,6 @@ const {
   checkEmailConfig,
   isEmailChangeAllowed,
   createEmailChangeService,
-  resolveAppConfigForUser,
   GenerationJobManager,
   getAppConfigOptionsFromUser,
   normalizeHttpError,
@@ -68,7 +67,10 @@ const emailChangeService = createEmailChangeService({
     ),
   getUserById: (userId, tenantId) =>
     withTenant(tenantId, () =>
-      db.getUserById(userId, 'email _id name username provider role tenantId +password'),
+      db.getUserById(
+        userId,
+        'email _id name username provider role tenantId idOnTheSource +password',
+      ),
     ),
   updateUser: (userId, update, expectedState, tenantId) =>
     withTenant(tenantId, () => db.updateUser(userId, update, expectedState)),
@@ -78,8 +80,17 @@ const emailChangeService = createEmailChangeService({
     withTenant(tenantId, () => db.replaceTokenIfCurrent(scope, expectedToken, data)),
   deleteTokens: (query, tenantId) => withTenant(tenantId, () => db.deleteTokens(query)),
   verifyPassword: (user, password) => comparePassword(user, password, { compare: bcrypt.compare }),
-  resolveAllowedDomains: async (user) =>
-    (await resolveAppConfigForUser(getAppConfig, user))?.registration?.allowedDomains,
+  /** Confirmation is unauthenticated and so has no `req.config`. Resolve the same full
+   * principal scope issuance used, otherwise a role, group, or user override of
+   * `registration.allowedDomains` is silently unenforced here. */
+  resolveAllowedDomains: async (user) => {
+    const appConfig = await withTenant(user?.tenantId, () =>
+      getAppConfig(
+        getAppConfigOptionsFromUser({ ...user, id: (user?._id ?? user?.id)?.toString() }),
+      ),
+    );
+    return appConfig?.registration?.allowedDomains;
+  },
   sendEmail,
   isEmailChangeAllowed,
   clientDomain: process.env.DOMAIN_CLIENT ?? 'http://localhost:3080',
