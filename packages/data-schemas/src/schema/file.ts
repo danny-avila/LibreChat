@@ -194,8 +194,22 @@ const file: Schema<IMongoFile> = new Schema(
 
 file.index({ expiredAt: 1 });
 file.index({ createdAt: 1, updatedAt: 1 });
-file.index({ user: 1, hash: 1 }, { partialFilterExpression: { hash: { $type: 'string' } } });
-file.index({ vectorId: 1 }, { partialFilterExpression: { vectorId: { $type: 'string' } } });
+/* Serves `findVectorReuseCandidates`: equality on the hash and the owner that
+ * scopes it, then `createdAt` so the oldest-first sort and its limit come off
+ * the index instead of a scan. The remaining predicates match a handful of
+ * documents at most — files with identical bytes under one owner — so they are
+ * cheaper to filter than to index.
+ *
+ * Both partial filters below use `$exists` rather than `$type`: only the
+ * uploads that carry these fields need indexing, but the planner will only
+ * reach for a partial index when the query provably implies its filter, and it
+ * does not infer a type from an equality. A `$type` filter leaves the index
+ * built, eligible-looking and never used. */
+file.index(
+  { hash: 1, vectorOwner: 1, createdAt: 1 },
+  { partialFilterExpression: { hash: { $exists: true } } },
+);
+file.index({ vectorId: 1 }, { partialFilterExpression: { vectorId: { $exists: true } } });
 file.index(
   { filename: 1, conversationId: 1, context: 1, tenantId: 1 },
   { unique: true, partialFilterExpression: { context: FileContext.execute_code } },

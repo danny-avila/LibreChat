@@ -192,6 +192,45 @@ describe('vector reuse file methods', () => {
       ).resolves.toEqual([]);
     });
 
+    /* Every file-search upload runs this lookup, so its cost must not grow with
+     * the number of hashed files. Asserted on documents examined rather than on
+     * the plan shape: a sort-providing index reads the whole collection while
+     * still reporting an IXSCAN, and a partial index the planner considers
+     * ineligible disappears silently. */
+    it('seeks its candidates instead of scanning the hashed population', async () => {
+      await File.createIndexes();
+      await File.insertMany(
+        Array.from({ length: 300 }, (_, i) => ({
+          file_id: `other-${i}`,
+          user: otherUserId,
+          filename: 'other.pdf',
+          filepath: '/uploads/other.pdf',
+          type: 'application/pdf',
+          bytes: 1,
+          embedded: true,
+          hash: String(i).padStart(64, '0'),
+          vectorOwner: `owner-${i}`,
+          context: FileContext.message_attachment,
+        })),
+      );
+      await seedFile();
+
+      const stats = (await File.find({
+        hash: HASH,
+        type: 'application/pdf',
+        vectorOwner: userId.toString(),
+        context: FileContext.message_attachment,
+        embedded: true,
+        expiredAt: null,
+        expiresAt: null,
+      })
+        .sort({ createdAt: 1 })
+        .limit(20)
+        .explain('executionStats')) as { executionStats?: { totalDocsExamined?: number } };
+
+      expect(stats.executionStats?.totalDocsExamined).toBeLessThan(5);
+    });
+
     it('returns candidates oldest first and honors the limit', async () => {
       const first = await seedFile({ createdAt: new Date('2026-01-01') });
       const second = await seedFile({ createdAt: new Date('2026-02-01') });
