@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import type { MenuItemProps } from '~/common';
 
 const mockAccess: Record<string, boolean> = {};
+const mockBookmarkArgs: { enabled?: boolean }[] = [];
 const mockHookState = {
   multiConvo: { show: true, addConversation: jest.fn() },
   temporary: { show: true, isTemporary: false, toggle: jest.fn() },
@@ -38,7 +39,10 @@ jest.mock('~/hooks/Chat/useTemporaryChat', () => ({
 }));
 jest.mock('~/hooks/Chat/useBookmarkItems', () => ({
   __esModule: true,
-  default: () => mockHookState.bookmarks,
+  default: (args: { enabled?: boolean } = {}) => {
+    mockBookmarkArgs.push(args);
+    return mockHookState.bookmarks;
+  },
 }));
 jest.mock('~/hooks/Chat/useExportShare', () => ({
   __esModule: true,
@@ -47,22 +51,40 @@ jest.mock('~/hooks/Chat/useExportShare', () => ({
 
 /** The real MenuButton needs the MenuProvider that DropdownPopup supplies, which is mocked out below. */
 jest.mock('@ariakit/react', () => ({
-  MenuButton: ({ children, ...props }: React.ComponentProps<'button'>) => (
+  MenuButton: ({
+    children,
+    render: _render,
+    ...props
+  }: React.ComponentProps<'button'> & { render?: React.ReactNode }) => (
     <button {...props}>{children}</button>
   ),
 }));
 
+/**
+ * Mirrors DropdownPopup's real contract: `separate` entries render as a divider
+ * *instead of* an item, and `show: false` entries are dropped. A looser mock
+ * hides the bug where a flag on an actionable item silently deletes it.
+ */
 jest.mock('@librechat/client', () => ({
+  Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
+    <button {...props}>{children}</button>
+  ),
   TooltipAnchor: ({ render: node }: { render: React.ReactNode }) => node,
   DropdownPopup: ({ trigger, items }: { trigger: React.ReactNode; items: MenuItemProps[] }) => (
     <div>
       {trigger}
       <ul data-testid="menu-items">
-        {items.map((item, index) => (
-          <li key={index} data-separate={item.separate === true} data-sub={item.subItems != null}>
-            {item.label}
-          </li>
-        ))}
+        {items
+          .filter((item) => item.show !== false)
+          .map((item, index) =>
+            item.separate === true ? (
+              <li key={index} data-kind="separator" />
+            ) : (
+              <li key={index} data-kind="item" data-sub={item.subItems != null}>
+                {item.label}
+              </li>
+            ),
+          )}
       </ul>
     </div>
   ),
@@ -70,11 +92,15 @@ jest.mock('@librechat/client', () => ({
 
 import HeaderMenu from '../HeaderMenu';
 
+const rows = () => Array.from(screen.getByTestId('menu-items').children);
 const labels = () =>
-  Array.from(screen.getByTestId('menu-items').children).map((node) => node.textContent);
+  rows()
+    .filter((node) => node.getAttribute('data-kind') === 'item')
+    .map((node) => node.textContent);
 
 describe('HeaderMenu', () => {
   beforeEach(() => {
+    mockBookmarkArgs.length = 0;
     for (const key of Object.keys(mockAccess)) {
       delete mockAccess[key];
     }
@@ -82,6 +108,8 @@ describe('HeaderMenu', () => {
     mockHookState.temporary.show = true;
     mockHookState.bookmarks.show = true;
     mockHookState.exportShare.show = true;
+    mockHookState.exportShare.hasSharedLink = false;
+    mockHookState.temporary.isTemporary = false;
   });
 
   it('collapses every secondary action behind one trigger', () => {
@@ -97,11 +125,19 @@ describe('HeaderMenu', () => {
     ]);
   });
 
+  it('keeps every action reachable when groups are divided', () => {
+    render(<HeaderMenu />);
+
+    /** A divider is its own entry; flagging an action as one deletes it. */
+    expect(labels()).toContain('share');
+    expect(labels()).toContain('com_ui_temporary');
+    expect(rows().filter((node) => node.getAttribute('data-kind') === 'separator')).toHaveLength(2);
+  });
+
   it('nests bookmarks rather than flattening every tag into the top level', () => {
     render(<HeaderMenu />);
 
-    const bookmarkRow = screen.getByTestId('menu-items').children[0];
-    expect(bookmarkRow).toHaveAttribute('data-sub', 'true');
+    expect(rows()[0]).toHaveAttribute('data-sub', 'true');
   });
 
   it('renders nothing when no action survives its gate', () => {
@@ -124,19 +160,42 @@ describe('HeaderMenu', () => {
     expect(labels()).toEqual(['share', 'export', 'com_ui_temporary']);
   });
 
-  it('never opens with a leading separator when earlier groups are gated out', () => {
+  it('never opens with a leading divider when earlier groups are gated out', () => {
     mockAccess.BOOKMARKS = false;
     mockAccess.MULTI_CONVO = false;
 
     render(<HeaderMenu />);
 
-    expect(screen.getByTestId('menu-items').children[0]).toHaveAttribute('data-separate', 'false');
+    expect(rows()[0]).toHaveAttribute('data-kind', 'item');
   });
 
-  it('separates the export group from the actions above it', () => {
+  it('does not query bookmark tags without the bookmark permission', () => {
+    mockAccess.BOOKMARKS = false;
+
     render(<HeaderMenu />);
 
-    const rows = screen.getByTestId('menu-items').children;
-    expect(rows[2]).toHaveAttribute('data-separate', 'true');
+    expect(mockBookmarkArgs.every((args) => args.enabled === false)).toBe(true);
+  });
+
+  it('keeps surfacing an active shared link on the collapsed trigger', () => {
+    mockHookState.exportShare.hasSharedLink = true;
+
+    render(<HeaderMenu />);
+
+    expect(screen.getByTestId('header-shared-link-indicator')).toBeInTheDocument();
+    expect(screen.getByTestId('header-overflow-menu')).toHaveAttribute(
+      'aria-label',
+      'com_ui_export_share_link_active',
+    );
+  });
+
+  it('shows temporary chat as active to sighted users, not just assistive tech', () => {
+    mockHookState.temporary.isTemporary = true;
+
+    render(<HeaderMenu />);
+
+    const temporaryRow = rows().find((node) => node.textContent === 'com_ui_temporary');
+    expect(temporaryRow).toBeDefined();
+    expect(labels()).toContain('com_ui_temporary');
   });
 });

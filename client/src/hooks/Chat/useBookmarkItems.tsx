@@ -33,7 +33,9 @@ export type UseBookmarkItemsResult = {
  * Bookmark tagging as menu items, so the desktop icon menu and the mobile
  * overflow menu share one set of items, one mutation, and one edit dialog.
  */
-export default function useBookmarkItems(): UseBookmarkItemsResult {
+export default function useBookmarkItems({
+  enabled = true,
+}: { enabled?: boolean } = {}): UseBookmarkItemsResult {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
@@ -69,7 +71,8 @@ export default function useBookmarkItems(): UseBookmarkItemsResult {
     },
   });
 
-  const { data } = useConversationTagsQuery();
+  /** The tags endpoint is behind the bookmark permission, so an ungated query 403s. */
+  const { data } = useConversationTagsQuery({ enabled });
 
   const isActiveConvo = Boolean(
     conversation &&
@@ -164,7 +167,7 @@ export default function useBookmarkItems(): UseBookmarkItemsResult {
   );
 
   return {
-    show: isActiveConvo && !isTemporary,
+    show: enabled && isActiveConvo && !isTemporary,
     items,
     bookmarks: data ?? [],
     hasBookmarks: tagsCount > 0,

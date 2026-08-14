@@ -1,9 +1,9 @@
 import { useState, useId } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { DropdownPopup, TooltipAnchor } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import { Ellipsis, PlusCircle, MessageCircleDashed } from 'lucide-react';
+import { DropdownPopup, TooltipAnchor, Button } from '@librechat/client';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
+import { Ellipsis, PlusCircle, MessageCircleDashed, Check } from 'lucide-react';
 import type { TStartupConfig } from 'librechat-data-provider';
 import type * as t from '~/common';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
@@ -46,7 +46,7 @@ export default function HeaderMenu({
 
   const multiConvo = useMultiConvo();
   const temporary = useTemporaryChat();
-  const bookmarks = useBookmarkItems();
+  const bookmarks = useBookmarkItems({ enabled: hasAccessToBookmarks === true });
   const exportShare = useExportShare({
     isSharedButtonEnabled: startupConfig?.sharedLinksEnabled ?? false,
   });
@@ -56,6 +56,14 @@ export default function HeaderMenu({
   const showTemporary = hasAccessToTemporaryChat === true && temporary.show;
 
   const items: t.MenuItemProps[] = [];
+
+  /** `separate` marks an entry as *being* a divider, so it needs its own slot. */
+  const pushGroup = (...group: t.MenuItemProps[]) => {
+    if (items.length > 0) {
+      items.push({ separate: true });
+    }
+    items.push(...group);
+  };
 
   if (showBookmarks) {
     items.push({
@@ -80,17 +88,20 @@ export default function HeaderMenu({
   }
 
   if (exportShare.show) {
-    const [first, ...rest] = exportShare.items;
-    items.push({ ...first, separate: items.length > 0 }, ...rest);
+    pushGroup(...exportShare.items);
   }
 
   if (showTemporary) {
-    items.push({
+    pushGroup({
       id: 'header-temporary',
-      separate: items.length > 0,
       label: localize('com_ui_temporary'),
       ariaChecked: temporary.isTemporary,
-      icon: <MessageCircleDashed className="icon-md mr-2 text-text-secondary" />,
+      className: temporary.isTemporary ? 'bg-surface-active' : undefined,
+      icon: temporary.isTemporary ? (
+        <Check className="icon-md mr-2 text-text-primary" />
+      ) : (
+        <MessageCircleDashed className="icon-md mr-2 text-text-secondary" />
+      ),
       onClick: temporary.toggle,
     });
   }
@@ -98,6 +109,11 @@ export default function HeaderMenu({
   if (items.length === 0) {
     return null;
   }
+
+  /** Mirrors the desktop share button, which surfaces an active link in its tooltip. */
+  const triggerDescription = exportShare.hasSharedLink
+    ? localize('com_ui_export_share_link_active')
+    : localize('com_ui_more_options');
 
   return (
     <BookmarkContext.Provider value={{ bookmarks: bookmarks.bookmarks }}>
@@ -111,19 +127,32 @@ export default function HeaderMenu({
         items={items}
         trigger={
           <TooltipAnchor
-            description={localize('com_ui_more_options')}
+            description={triggerDescription}
             render={
               <Ariakit.MenuButton
                 id="header-menu-button"
                 data-testid="header-overflow-menu"
-                aria-label={localize('com_ui_more_options')}
+                aria-label={triggerDescription}
                 aria-expanded={isOpen}
-                className={cn(
-                  'inline-flex size-9 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-colors hover:bg-surface-tertiary',
-                  className,
-                )}
+                render={
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className={cn(
+                      'relative size-9 flex-shrink-0 rounded-xl bg-presentation hover:bg-surface-active-alt',
+                      className,
+                    )}
+                  />
+                }
               >
                 <Ellipsis className="icon-md" aria-hidden="true" />
+                {exportShare.hasSharedLink && (
+                  <span
+                    className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-status-info ring-2 ring-presentation"
+                    data-testid="header-shared-link-indicator"
+                    aria-hidden="true"
+                  />
+                )}
               </Ariakit.MenuButton>
             }
           />

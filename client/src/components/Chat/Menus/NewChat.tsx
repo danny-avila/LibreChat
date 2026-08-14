@@ -1,4 +1,4 @@
-import { TooltipAnchor, NewChatIcon } from '@librechat/client';
+import { TooltipAnchor, NewChatIcon, Button } from '@librechat/client';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import useNewChat from '~/hooks/Chat/useNewChat';
 import { useLocalize } from '~/hooks';
@@ -19,19 +19,25 @@ export default function NewChat({ className }: { className?: string }) {
     <TooltipAnchor
       description={tooltipDescription}
       render={
-        <a
-          href="/c/new"
-          data-testid="header-new-chat-button"
-          aria-label={localize('com_ui_new_chat')}
-          aria-keyshortcuts={ariaKey}
+        <Button
+          asChild
+          size="icon"
+          variant="outline"
           className={cn(
-            'inline-flex size-9 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-colors hover:bg-surface-active-alt',
+            'size-9 flex-shrink-0 rounded-xl bg-presentation hover:bg-surface-active-alt',
             className,
           )}
-          onClick={handleNewChatClick}
         >
-          <NewChatIcon className="icon-md" aria-hidden="true" />
-        </a>
+          <a
+            href="/c/new"
+            data-testid="header-new-chat-button"
+            aria-label={localize('com_ui_new_chat')}
+            aria-keyshortcuts={ariaKey}
+            onClick={handleNewChatClick}
+          >
+            <NewChatIcon className="icon-md" aria-hidden="true" />
+          </a>
+        </Button>
       }
     />
   );
