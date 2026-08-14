@@ -163,6 +163,7 @@ function createSmtpServer() {
 
     socket.setEncoding('utf8');
     socket.setTimeout(30_000, () => socket.destroy());
+    socket.on('error', () => socket.destroy());
     socket.on('data', (chunk) => {
       buffer += chunk;
       let newline = buffer.indexOf('\n');
