@@ -12,42 +12,58 @@ jest.mock('~/hooks/Messages/useSmoothStreaming', () => ({
 }));
 
 jest.mock('~/hooks', () => {
+  const expandCollapse = jest.requireActual('~/hooks/Messages/useExpandCollapse');
   return {
-    useExpandCollapse: jest.requireActual('~/hooks/Messages/useExpandCollapse').default,
+    useExpandCollapse: expandCollapse.default,
+    EXPAND_TRANSITION: expandCollapse.EXPAND_TRANSITION,
     scheduleMessageContentLayoutReconcile: (target: HTMLElement | null) =>
       mockScheduleLayoutReconcile(target),
   };
 });
 
+const LABEL = 'Compared both release paths';
+
 const labelPart = {
   type: ContentTypes.ACTIVITY_LABEL,
-  [ContentTypes.ACTIVITY_LABEL]: 'Compared both release paths',
+  [ContentTypes.ACTIVITY_LABEL]: LABEL,
   activity_label_type: 'phase',
   activity_start_index: 0,
   pending: false,
 } as unknown as Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }>;
 
 describe('ActivityPhaseGroup', () => {
-  let collapseFrame: FrameRequestCallback | undefined;
+  let frames: Array<FrameRequestCallback | undefined>;
   const originalRequestAnimationFrame = window.requestAnimationFrame;
   const originalCancelAnimationFrame = window.cancelAnimationFrame;
 
+  /** The fold waits for a painted start value, so it spans more than one
+   *  frame. Drain the queue the way a real compositor would. */
+  const flushFrames = () =>
+    act(() => {
+      for (let index = 0; index < frames.length; index += 1) {
+        const frame = frames[index];
+        frames[index] = undefined;
+        frame?.(index);
+      }
+    });
+
+  const pendingFrames = () => frames.filter((frame) => frame != null).length;
+
   beforeEach(() => {
-    collapseFrame = undefined;
+    frames = [];
     mockUseSmoothStreaming.mockReturnValue(true);
     mockScheduleLayoutReconcile.mockClear();
     Object.defineProperty(window, 'requestAnimationFrame', {
       configurable: true,
       writable: true,
-      value: jest.fn((callback: FrameRequestCallback) => {
-        collapseFrame = callback;
-        return 1;
-      }),
+      value: jest.fn((callback: FrameRequestCallback) => frames.push(callback)),
     });
     Object.defineProperty(window, 'cancelAnimationFrame', {
       configurable: true,
       writable: true,
-      value: jest.fn(),
+      value: jest.fn((handle: number) => {
+        frames[handle - 1] = undefined;
+      }),
     });
   });
 
@@ -75,21 +91,43 @@ describe('ActivityPhaseGroup', () => {
     expect(container.querySelector('.result-thinking')).toBeInTheDocument();
   });
 
-  test('compresses visible activity into a newly streamed parent label', () => {
+  test('renders the label flush left with no leading glyph', () => {
     render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    const trigger = screen.getByRole('button', { name: LABEL });
+    expect(trigger).toHaveClass('justify-start', 'text-left');
+    expect(screen.getByText(LABEL)).toHaveClass('flex-1', 'text-left');
+    expect(trigger.querySelectorAll('svg')).toHaveLength(1);
+  });
+
+  test('mounts in the pre-marker shape, then folds the activity into the summary', () => {
+    const { container } = render(
       <ActivityPhaseGroup labelPart={labelPart} hasContent animateEntrance>
         <div data-testid="phase-content" />
       </ActivityPhaseGroup>,
     );
 
-    const trigger = screen.getByRole('button', { name: 'Compared both release paths' });
+    const card = container.querySelector('.my-2') as HTMLElement;
+    const trigger = screen.getByRole('button', { name: LABEL });
+    const header = trigger.parentElement?.parentElement as HTMLElement;
     const panel = screen.getByTestId('activity-phase-panel');
+
+    /** Frame zero must be indistinguishable from the layout the marker
+     *  replaced: no chrome, no header height, activity still open. */
+    expect(card).toHaveClass('border-transparent');
+    expect(card).not.toHaveClass('bg-surface-secondary/40');
+    expect(header).toHaveStyle({ gridTemplateRows: '0fr', opacity: '0' });
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     expect(panel).toHaveAttribute('aria-hidden', 'false');
-    expect(trigger).toHaveClass('animate-in', 'fade-in-0', 'slide-in-from-bottom-1');
 
-    act(() => collapseFrame?.(0));
+    flushFrames();
 
+    expect(header).toHaveStyle({ gridTemplateRows: '1fr', opacity: '1' });
+    expect(card).toHaveClass('border-border-light', 'bg-surface-secondary/40');
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(panel).toHaveAttribute('aria-hidden', 'true');
     expect(mockScheduleLayoutReconcile).toHaveBeenCalledTimes(1);
@@ -102,10 +140,11 @@ describe('ActivityPhaseGroup', () => {
       </ActivityPhaseGroup>,
     );
 
-    const trigger = screen.getByRole('button', { name: 'Compared both release paths' });
+    const trigger = screen.getByRole('button', { name: LABEL });
+    const header = trigger.parentElement?.parentElement as HTMLElement;
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    expect(trigger).not.toHaveClass('animate-in');
-    expect(collapseFrame).toBeUndefined();
+    expect(header.getAttribute('style')).toBeNull();
+    expect(pendingFrames()).toBe(0);
 
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
@@ -114,15 +153,43 @@ describe('ActivityPhaseGroup', () => {
   test('honors the smooth-streaming preference', () => {
     mockUseSmoothStreaming.mockReturnValue(false);
 
+    const { container } = render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent animateEntrance>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    const trigger = screen.getByRole('button', { name: LABEL });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(container.querySelector('.my-2')).toHaveClass('border-border-light');
+    expect(pendingFrames()).toBe(0);
+  });
+
+  test('a click during the entrance wins over the scheduled fold', () => {
     render(
       <ActivityPhaseGroup labelPart={labelPart} hasContent animateEntrance>
         <div data-testid="phase-content" />
       </ActivityPhaseGroup>,
     );
 
-    const trigger = screen.getByRole('button', { name: 'Compared both release paths' });
+    const trigger = screen.getByRole('button', { name: LABEL });
+    fireEvent.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    expect(trigger).not.toHaveClass('animate-in');
-    expect(collapseFrame).toBeUndefined();
+
+    flushFrames();
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('a phase without activity renders a label-only header', () => {
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent={false} animateEntrance>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByText(LABEL)).toHaveClass('text-left');
+    expect(pendingFrames()).toBe(0);
   });
 });

@@ -379,7 +379,7 @@ export default function ToolCallGroup({
         <span
           className={cn(
             'tool-status-text min-w-0 truncate font-medium',
-            activityFailed && 'text-amber-600 dark:text-amber-400',
+            activityFailed && 'text-text-warning',
           )}
           role="status"
           title={groupLabel}

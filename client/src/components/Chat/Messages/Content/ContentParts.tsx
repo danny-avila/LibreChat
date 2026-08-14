@@ -215,11 +215,22 @@ const ContentParts = memo(function ContentParts({
     (localIndex: number) => contentIndices?.[localIndex] ?? localIndex + contentIndexOffset,
     [contentIndexOffset, contentIndices],
   );
-  const phaseSegments = nestedActivityPhase ? undefined : groupActivityPhases(content);
-  const completedPhaseIndices = new Set(
-    phaseSegments?.flatMap((segment) => (segment.type === 'phase' ? [segment.labelIndex] : [])) ??
-      [],
+  /** Hoisted above the early returns to feed the entrance-detection hook
+   *  below, so it is memoized rather than re-walked on every unrelated
+   *  re-render of a message that has no phases at all. */
+  const phaseSegments = useMemo(
+    () => (nestedActivityPhase ? undefined : groupActivityPhases(content)),
+    [nestedActivityPhase, content],
   );
+  const completedPhaseIndices = useMemo(() => {
+    const indices = new Set<number>();
+    for (const segment of phaseSegments ?? []) {
+      if (segment.type === 'phase') {
+        indices.add(segment.labelIndex);
+      }
+    }
+    return indices;
+  }, [phaseSegments]);
   /** A phase label can finish after the root text stream settles, so
    *  `isSubmitting` is not a reliable entrance signal. Compare committed
    *  phase markers instead: a marker that appears after this renderer has
@@ -228,7 +239,7 @@ const ContentParts = memo(function ContentParts({
   const previousPhaseIndices = previousPhaseIndicesRef.current;
   useEffect(() => {
     previousPhaseIndicesRef.current = completedPhaseIndices;
-  });
+  }, [completedPhaseIndices]);
 
   const handleGroupExpansionChange = useCallback(
     (groupId: string, state: ToolCallGroupExpansionState) => {
