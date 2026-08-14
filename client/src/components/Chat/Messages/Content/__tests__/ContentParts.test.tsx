@@ -467,4 +467,41 @@ describe('ContentParts — activity phase state', () => {
     );
     expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-initial-expanded', 'false');
   });
+
+  test('does not replay the entrance when switching to a sibling with its own phases', () => {
+    const phase = (label: string) =>
+      ({
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: label,
+        activity_label_type: 'phase',
+        activity_start_index: 0,
+        activity_count: 1,
+        pending: false,
+      }) as unknown as TMessageContentParts;
+
+    const tool = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: { id: 'tool-1', name: 'search', args: {}, output: 'one' },
+    } as unknown as TMessageContentParts;
+
+    const { rerender } = render(
+      <ContentParts {...baseProps} messageId="sibling-a" content={[tool, phase('First')]} />,
+    );
+    expect(screen.getByTestId('activity-phase-group')).toHaveAttribute(
+      'data-animate-entrance',
+      'false',
+    );
+
+    /** MultiMessage swaps siblings without a key, so this instance keeps its
+     *  refs while messageId and content change wholesale. The incoming
+     *  sibling's phase is history and must not animate. */
+    rerender(
+      <ContentParts {...baseProps} messageId="sibling-b" content={[tool, tool, phase('Second')]} />,
+    );
+
+    expect(screen.getByTestId('activity-phase-group')).toHaveAttribute(
+      'data-animate-entrance',
+      'false',
+    );
+  });
 });
