@@ -58,14 +58,11 @@ export default function ChangeEmail() {
   });
 
   const handleOpenChange = (open: boolean) => {
-    if (mutation.isLoading) {
-      return;
-    }
     setIsOpen(open);
+    setErrorKey(undefined);
     if (!open) {
       setNewEmail('');
       setCurrentPassword('');
-      setErrorKey(undefined);
     }
   };
 
@@ -140,7 +137,7 @@ export default function ChangeEmail() {
         </form>
         <OGDialogFooter className="gap-2 sm:space-x-0">
           <OGDialogClose asChild>
-            <Button type="button" variant="outline" disabled={mutation.isLoading}>
+            <Button type="button" variant="outline">
               {localize('com_ui_cancel')}
             </Button>
           </OGDialogClose>

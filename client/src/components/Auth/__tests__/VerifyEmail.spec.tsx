@@ -72,4 +72,46 @@ describe('VerifyEmail', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/Redirecting in/i)).not.toBeInTheDocument();
   });
+
+  it('announces the email-change verification result in a live region', async () => {
+    render(
+      <MemoryRouter
+        initialEntries={[
+          '/verify?type=email-change&userId=507f1f77bcf86cd799439011&email=new%40example.com&token=raw-token',
+        ]}
+      >
+        <VerifyEmail />
+      </MemoryRouter>,
+    );
+
+    const heading = await screen.findByRole('heading', {
+      name: 'Email change verification failed 😢',
+    });
+    expect(heading).toHaveAttribute('aria-live', 'polite');
+    expect(heading).toHaveAttribute('aria-atomic', 'true');
+  });
+
+  it('renders the same live status heading while verification is still pending', () => {
+    mockUseConfirmEmailChangeMutation.mockReturnValue({
+      ...idleMutationState(),
+      mutate: jest.fn(),
+      mutateAsync: jest.fn(),
+    });
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          '/verify?type=email-change&userId=507f1f77bcf86cd799439011&email=new%40example.com&token=raw-token',
+        ]}
+      >
+        <VerifyEmail />
+      </MemoryRouter>,
+    );
+
+    const heading = screen.getByRole('heading', {
+      name: 'Verifying your new email address, please wait',
+    });
+    expect(heading).toHaveAttribute('aria-live', 'polite');
+    expect(heading).toHaveAttribute('aria-atomic', 'true');
+  });
 });
