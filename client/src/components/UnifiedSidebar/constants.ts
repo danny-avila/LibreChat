@@ -8,3 +8,11 @@ export const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
  * frame-locked; a second copy of this string is a visible seam mid-animation.
  */
 export const SIDEBAR_TRANSITION = `transform ${TRANSITION_MS}ms ${EASING}`;
+
+/**
+ * The mobile drawer is opaque and full-screen, so it sits above the chat.
+ * Menus opened from within it must render inside the drawer rather than
+ * portal to `document.body`, where `usePopoverZIndex()` would place them at
+ * 50 — behind this.
+ */
+export const DRAWER_Z_INDEX = 110;

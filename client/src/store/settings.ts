@@ -33,12 +33,24 @@ const staticAtoms = {
   speechSettingsInitialized: atom<boolean>({ key: 'speechSettingsInitialized', default: false }),
 };
 
+/** Read synchronously: `useMediaQuery` only resolves after the first paint. */
+function isSmallViewport(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+}
+
 const localStorageAtoms = {
   // General settings
   autoScroll: atomWithLocalStorage('autoScroll', false),
   sidebarExpanded: atomWithLocalStorage(
     'unifiedSidebarExpanded',
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches ? false : true,
+    !isSmallViewport(),
+    /**
+     * The mobile drawer covers the viewport, so a persisted open state would
+     * launch the app into the navigation instead of the conversation.
+     * Normalized during atom initialization so the closed state reaches the
+     * first paint rather than animating shut after it.
+     */
+    (saved) => (isSmallViewport() ? false : saved),
   ),
   enableUserMsgMarkdown: atomWithLocalStorage<boolean>(
     LocalStorageKeys.ENABLE_USER_MSG_MARKDOWN,

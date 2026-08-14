@@ -10,10 +10,11 @@ import {
   TRANSITION_MS,
   EASING,
   SIDEBAR_TRANSITION,
+  DRAWER_Z_INDEX,
 } from './constants';
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
+import { MobileHeader, MobileBottomBar, MobileShortcutTargets } from './mobile';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
-import { MobileHeader, MobileBottomBar } from './mobile';
 import { useChatHelpers, useLocalize } from '~/hooks';
 import SidePanelNav from '~/components/SidePanel/Nav';
 import Sidebar from './Sidebar';
@@ -134,28 +135,14 @@ function UnifiedSidebar() {
     return () => document.removeEventListener('keydown', handler);
   }, [isSmallScreen, expanded, handleCollapse]);
 
-  /**
-   * `sidebarExpanded` persists to localStorage. Now that the mobile drawer
-   * covers the viewport, a stale open state would launch the app into the nav
-   * instead of the conversation, so reset it once per mount.
-   */
-  const didResetMobileDrawer = useRef(false);
-  useEffect(() => {
-    if (!isSmallScreen || didResetMobileDrawer.current) {
-      return;
-    }
-    didResetMobileDrawer.current = true;
-    setExpanded(false);
-  }, [isSmallScreen, setExpanded]);
-
   if (isSmallScreen) {
     return (
       <div
         className={cn(
-          'fixed inset-y-0 left-0 z-[110] flex w-full flex-col bg-surface-primary-alt',
+          'fixed inset-y-0 left-0 flex w-full flex-col bg-surface-primary-alt',
           expanded ? 'translate-x-0' : '-translate-x-full',
         )}
-        style={{ transition: SIDEBAR_TRANSITION }}
+        style={{ transition: SIDEBAR_TRANSITION, zIndex: DRAWER_Z_INDEX }}
         inert={!expanded ? '' : undefined}
       >
         <SidebarChatProvider>
@@ -167,6 +154,7 @@ function UnifiedSidebar() {
             >
               <SidePanelNav links={links} />
             </nav>
+            <MobileShortcutTargets links={links} />
             <MobileBottomBar links={links} onNewChat={handleCollapse} />
           </ActivePanelProvider>
         </SidebarChatProvider>
