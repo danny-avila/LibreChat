@@ -1,22 +1,24 @@
 import { useCallback, useState, useEffect, useRef, memo, startTransition } from 'react';
-import type { ReactNode } from 'react';
 import { useRecoilState } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { useMediaQuery } from '@librechat/client';
+import type { ReactNode } from 'react';
 import type { ChatFormValues } from '~/common';
+import {
+  COLLAPSED_WIDTH,
+  EXPANDED_MIN,
+  TRANSITION_MS,
+  EASING,
+  SIDEBAR_TRANSITION,
+} from './constants';
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
+import { MobileHeader, MobileBottomBar } from './mobile';
 import { useChatHelpers, useLocalize } from '~/hooks';
 import SidePanelNav from '~/components/SidePanel/Nav';
-import ExpandedPanel from './ExpandedPanel';
 import Sidebar from './Sidebar';
 import { cn } from '~/utils';
 import store from '~/store';
-
-const COLLAPSED_WIDTH = 52;
-const EXPANDED_MIN = 360;
-const TRANSITION_MS = 300;
-const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 
 function getInitialWidth(): number {
   const saved = localStorage.getItem('side:width');
@@ -132,45 +134,43 @@ function UnifiedSidebar() {
     return () => document.removeEventListener('keydown', handler);
   }, [isSmallScreen, expanded, handleCollapse]);
 
+  /**
+   * `sidebarExpanded` persists to localStorage. Now that the mobile drawer
+   * covers the viewport, a stale open state would launch the app into the nav
+   * instead of the conversation, so reset it once per mount.
+   */
+  const didResetMobileDrawer = useRef(false);
+  useEffect(() => {
+    if (!isSmallScreen || didResetMobileDrawer.current) {
+      return;
+    }
+    didResetMobileDrawer.current = true;
+    setExpanded(false);
+  }, [isSmallScreen, setExpanded]);
+
   if (isSmallScreen) {
     return (
-      <>
-        <div
-          className={cn(
-            'fixed left-0 top-0 z-[110] flex h-full bg-surface-primary-alt',
-            expanded ? 'translate-x-0' : '-translate-x-full',
-          )}
-          style={{
-            width: 'min(85vw, 380px)',
-            transition: `transform ${TRANSITION_MS}ms ${EASING}`,
-          }}
-          inert={!expanded ? '' : undefined}
-        >
-          <SidebarChatProvider>
-            <ActivePanelProvider>
-              <ExpandedPanel links={links} onCollapse={handleCollapse} />
-              <nav className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt">
-                <SidePanelNav links={links} />
-              </nav>
-            </ActivePanelProvider>
-          </SidebarChatProvider>
-        </div>
-        <div
-          className={cn(
-            'fixed inset-0 z-[109] bg-black/50',
-            expanded ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
-          )}
-          style={{ transition: `opacity ${TRANSITION_MS}ms ${EASING}` }}
-          role="presentation"
-        >
-          <button
-            className="h-full w-full"
-            onClick={handleCollapse}
-            aria-label={localize('com_nav_close_sidebar')}
-            tabIndex={expanded ? 0 : -1}
-          />
-        </div>
-      </>
+      <div
+        className={cn(
+          'fixed inset-y-0 left-0 z-[110] flex w-full flex-col bg-surface-primary-alt',
+          expanded ? 'translate-x-0' : '-translate-x-full',
+        )}
+        style={{ transition: SIDEBAR_TRANSITION }}
+        inert={!expanded ? '' : undefined}
+      >
+        <SidebarChatProvider>
+          <ActivePanelProvider>
+            <MobileHeader links={links} onClose={handleCollapse} />
+            <nav
+              id="chat-history-nav"
+              className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt"
+            >
+              <SidePanelNav links={links} />
+            </nav>
+            <MobileBottomBar links={links} onNewChat={handleCollapse} />
+          </ActivePanelProvider>
+        </SidebarChatProvider>
+      </div>
     );
   }
 

@@ -114,7 +114,8 @@ const ConversationsSection = memo(() => {
             <BookmarkNav tags={tags} setTags={setTags} />
           </Suspense>
         )}
-        {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
+        {/* On mobile the search field lives in the drawer's bottom bar, within thumb reach. */}
+        {search.enabled && !isSmallScreen && <SearchBar isSmallScreen={isSmallScreen} />}
       </div>
       {!search.query && (
         <div className="px-3">

@@ -1,7 +1,7 @@
 import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Link2, Pin } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import { Link2, Pin, Ellipsis } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
 import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
@@ -193,7 +193,8 @@ function Conversation({
     'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[60px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[60px] group-hover:scale-x-100 group-hover:opacity-100';
   if (isGenerating) {
     actionVisibilityClassName = 'pointer-events-none w-5 scale-x-100 opacity-100';
-  } else if (isPopoverActive || isActiveConvo) {
+  } else if (isPopoverActive || isActiveConvo || isSmallScreen) {
+    /** Touch has no hover, so a reveal-on-hover menu is unreachable there. */
     actionVisibilityClassName = 'pointer-events-auto scale-x-100 opacity-100';
   }
 
@@ -201,13 +202,40 @@ function Conversation({
   if (!isGenerating && !isPopoverActive && isActiveConvo && isShiftHeld) {
     actionWidthClassName = 'max-w-[60px]';
   } else if (!isGenerating) {
-    actionWidthClassName = 'max-w-[28px]';
+    actionWidthClassName = isSmallScreen ? 'max-w-[36px]' : 'max-w-[28px]';
   }
 
   const showConvoOptions = !renaming && (hasInteracted || isActiveConvo);
-  const actionContent = isGenerating
-    ? generatingSpinner
-    : showConvoOptions && <ConvoOptions {...convoOptionsProps} />;
+  /**
+   * `ConvoOptions` carries six mutations and its own menu store, so mounting it
+   * for every overscanned row is wasteful. On touch we render a cheap trigger
+   * instead and let the first tap mount the real menu already open.
+   */
+  const showOptionsTrigger = !renaming && !showConvoOptions && !isGenerating && isSmallScreen;
+
+  let actionContent: React.ReactNode = null;
+  if (isGenerating) {
+    actionContent = generatingSpinner;
+  } else if (showConvoOptions) {
+    actionContent = <ConvoOptions {...convoOptionsProps} />;
+  } else if (showOptionsTrigger) {
+    actionContent = (
+      <button
+        type="button"
+        aria-label={localize('com_nav_convo_menu_options')}
+        data-testid="convo-options-trigger"
+        className="flex size-9 items-center justify-center rounded-lg text-text-secondary"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setHasInteracted(true);
+          setIsPopoverActive(true);
+        }}
+      >
+        <Ellipsis className="icon-md" aria-hidden="true" />
+      </button>
+    );
+  }
 
   return (
     <div
