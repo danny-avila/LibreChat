@@ -70,7 +70,7 @@ const ScrollButton = memo(function ScrollButton({
       in={showScrollButton && scrollButtonPreference}
       timeout={{
         enter: 300,
-        exit: 250,
+        exit: 180,
       }}
       classNames="scroll-animation"
       unmountOnExit={true}

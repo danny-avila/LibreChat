@@ -1,6 +1,7 @@
 import { forwardRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
+import { Button } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -22,19 +23,26 @@ const ScrollToBottom = forwardRef<HTMLDivElement, Props>(
     return (
       <div
         ref={ref}
-        className={cn(
-          'pointer-events-none absolute left-0 right-0 mx-auto flex justify-end px-4 md:px-0',
-          maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
-        )}
+        className="scrollbar-gutter-stable pointer-events-none absolute inset-x-0 z-10 overflow-y-auto"
         style={{ bottom: `calc(1.25rem + ${overlayHeight}px)` }}
       >
-        <button
-          onClick={scrollHandler}
-          className="premium-scroll-button pointer-events-auto cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
-          aria-label={localize('com_ui_scroll_to_bottom')}
+        <div
+          className={cn(
+            'mx-auto flex justify-end px-4 sm:px-2',
+            maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
+          )}
         >
-          <ChevronDown className="h-4 w-4 text-text-secondary" />
-        </button>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={scrollHandler}
+            aria-label={localize('com_ui_scroll_to_bottom')}
+            className="pointer-events-auto rounded-full bg-surface-chat/90 text-text-primary active:scale-[0.96] motion-reduce:active:scale-100"
+          >
+            <ChevronDown className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
       </div>
     );
   },
