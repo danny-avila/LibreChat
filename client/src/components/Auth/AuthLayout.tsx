@@ -63,7 +63,10 @@ function AuthLayout({
     <div className="relative flex min-h-screen flex-col bg-surface-primary">
       <Banner />
       <BlinkAnimation active={isFetching}>
-        <div className="mt-6 h-10 w-full bg-cover">
+        <div
+          className="mt-6 w-full bg-cover"
+          style={{ height: `${startupConfig?.interface?.loginLogoHeight ?? 40}px` }}
+        >
           <img
             src="assets/logo.svg"
             className="h-full w-full object-contain"
