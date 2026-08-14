@@ -1,4 +1,4 @@
-import { memo, useRef, useMemo, useCallback, Fragment } from 'react';
+import { memo, useRef, useMemo, useEffect, useCallback, Fragment } from 'react';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -215,6 +215,37 @@ const ContentParts = memo(function ContentParts({
     (localIndex: number) => contentIndices?.[localIndex] ?? localIndex + contentIndexOffset,
     [contentIndexOffset, contentIndices],
   );
+  /** Hoisted above the early returns to feed the entrance-detection hook
+   *  below, so it is memoized rather than re-walked on every unrelated
+   *  re-render of a message that has no phases at all. */
+  const phaseSegments = useMemo(
+    () => (nestedActivityPhase ? undefined : groupActivityPhases(content)),
+    [nestedActivityPhase, content],
+  );
+  const completedPhaseIndices = useMemo(() => {
+    const indices = new Set<number>();
+    for (const segment of phaseSegments ?? []) {
+      if (segment.type === 'phase') {
+        indices.add(segment.labelIndex);
+      }
+    }
+    return indices;
+  }, [phaseSegments]);
+  /** A phase label can finish after the root text stream settles, so
+   *  `isSubmitting` is not a reliable entrance signal. Compare committed
+   *  phase markers instead: a marker that appears after this renderer has
+   *  mounted is live; markers present on the first render are history.
+   *
+   *  The recorded set is scoped to the message it described. `MultiMessage`
+   *  renders siblings without a key, so this instance survives a sibling
+   *  switch with its refs intact — an unscoped set would report the previous
+   *  sibling's phases and animate the newly selected sibling's history. */
+  const previousPhaseRef = useRef<{ messageId: string; indices: Set<number> } | null>(null);
+  const previousPhaseIndices =
+    previousPhaseRef.current?.messageId === messageId ? previousPhaseRef.current.indices : null;
+  useEffect(() => {
+    previousPhaseRef.current = { messageId, indices: completedPhaseIndices };
+  }, [messageId, completedPhaseIndices]);
 
   const handleGroupExpansionChange = useCallback(
     (groupId: string, state: ToolCallGroupExpansionState) => {
@@ -452,7 +483,6 @@ const ContentParts = memo(function ContentParts({
     );
   }
 
-  const phaseSegments = nestedActivityPhase ? undefined : groupActivityPhases(content);
   if (phaseSegments != null) {
     const relativeGlobalLastContentIdx = lastVisibleContentIdx(content ?? []);
     const globalLastContentIdx =
@@ -500,6 +530,9 @@ const ContentParts = memo(function ContentParts({
                 key={`activity-phase-${messageId}-${segment.labelIndex}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
+                animateEntrance={
+                  previousPhaseIndices != null && !previousPhaseIndices.has(segment.labelIndex)
+                }
                 showCursor={
                   isLast &&
                   effectiveIsSubmitting &&
