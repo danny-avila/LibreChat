@@ -580,6 +580,8 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
 
     /** Repeated after the commit: a reset token issued between the pre-commit
      * cleanup and the update would otherwise outlive the address it was bound to.
+     * Restricted to the address that moved and to address-less legacy tokens, so a
+     * reset another replica issued for the committed address is not revoked with them.
      * Tokens issued after this sweep are refused by the `emailChangedAt` check in
      * `resetPassword`, which no longer honours address-less legacy tokens here. */
     await Promise.all([
@@ -591,9 +593,15 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       ),
       deleteTokensOrLog(
         deps,
-        { userId, type: PASSWORD_RESET_TOKEN_TYPE },
+        { userId, email: oldEmail, type: PASSWORD_RESET_TOKEN_TYPE },
         tenantId,
-        'password reset tokens issued during the change',
+        'password reset tokens bound to the previous address',
+      ),
+      deleteTokensOrLog(
+        deps,
+        { userId, email: null, type: PASSWORD_RESET_TOKEN_TYPE },
+        tenantId,
+        'address-less password reset tokens issued during the change',
       ),
     ]);
     const confirmationPayload = {
