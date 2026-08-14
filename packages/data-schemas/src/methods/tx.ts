@@ -205,7 +205,7 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'gemini-3.1-flash-lite': { prompt: 0.25, completion: 1.5 },
     'gemini-3.5-flash': { prompt: 1.5, completion: 9 },
     'gemini-3.5-flash-lite': { prompt: 0.3, completion: 2.5 },
-    /** Introductory rates through 2026-12-31; both revert to `1.5`/`7.5` on 2027-01-01 */
+    // Gemini 3.6/3.7 Flash introductory pricing through 2026-12-31; revert to { prompt: 1.5, completion: 7.5 } after.
     'gemini-3.6-flash': { prompt: 0.75, completion: 3.75 },
     'gemini-3.7-flash': { prompt: 0.75, completion: 3.75 },
     'gemini-pro-vision': { prompt: 0.5, completion: 1.5 },
@@ -376,11 +376,8 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'gemini-3.5-flash': { write: 1.5, read: 0.15 },
   // Gemini 3.5 Flash-Lite - cache write: $0.30/1M, cache read: $0.03/1M
   'gemini-3.5-flash-lite': { write: 0.3, read: 0.03 },
-  // Gemini 3.6 Flash - cache write: $0.75/1M, cache read: $0.075/1M
-  // Introductory rates through 2026-12-31; revert to $1.50/$0.15 on 2027-01-01
+  // Gemini 3.6/3.7 Flash introductory pricing through 2026-12-31; revert to { write: 1.5, read: 0.15 } after.
   'gemini-3.6-flash': { write: 0.75, read: 0.075 },
-  // Gemini 3.7 Flash - cache write: $0.75/1M, cache read: $0.075/1M
-  // Introductory rates through 2026-12-31; revert to $1.50/$0.15 on 2027-01-01
   'gemini-3.7-flash': { write: 0.75, read: 0.075 },
 };
 
