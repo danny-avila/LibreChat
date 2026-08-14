@@ -9,6 +9,7 @@ import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
 import { ALLOWED_BODY_FIELDS, isPluginSourced } from '~/utils/env';
+import { isEnabled } from '~/utils/common';
 
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
@@ -438,6 +439,17 @@ export function getMissingCustomUserVars(
  */
 export function isUserSourced(config: Pick<ParsedServerConfig, 'source' | 'dbId'>): boolean {
   return config.source != null ? config.source === 'user' : !!config.dbId;
+}
+
+/**
+ * Resolves the instructions text for a server, mirroring how the inspector fills them:
+ * an enabled flag resolves to the text fetched from the server, while an operator-authored
+ * string is used verbatim. Anything else (`false`, unset) yields no instructions.
+ */
+export function resolveServerInstructions(config: ParsedServerConfig): string | undefined {
+  const declared = config.serverInstructions;
+  if (isEnabled(declared)) return config.resolvedInstructions;
+  return typeof declared === 'string' ? declared : undefined;
 }
 
 export type RedactedServerConfig = Partial<ParsedServerConfig> & {

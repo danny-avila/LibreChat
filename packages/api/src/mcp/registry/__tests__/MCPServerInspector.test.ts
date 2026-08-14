@@ -41,7 +41,8 @@ describe('MCPServerInspector', () => {
         type: 'stdio',
         command: 'node',
         args: ['server.js'],
-        serverInstructions: 'instructions for test_server',
+        serverInstructions: true,
+        resolvedInstructions: 'instructions for test_server',
         requiresOAuth: false,
         capabilities:
           '{"tools":{"listChanged":true},"resources":{"listChanged":true},"prompts":{"get":"getPrompts for test_server"}}',
@@ -268,6 +269,8 @@ describe('MCPServerInspector', () => {
       });
     });
 
+    /** The declaration is preserved verbatim: overwriting it in place made a re-inspected
+     * config compare unequal to its own YAML cache entry (issue #14798). */
     it('should handle serverInstructions as string "true" and fetch from server', async () => {
       const rawConfig: t.MCPOptions = {
         type: 'stdio',
@@ -287,7 +290,8 @@ describe('MCPServerInspector', () => {
         type: 'stdio',
         command: 'node',
         args: ['server.js'],
-        serverInstructions: 'instructions for test_server',
+        serverInstructions: 'true',
+        resolvedInstructions: 'instructions for test_server',
         requiresOAuth: false,
         capabilities:
           '{"tools":{"listChanged":true},"resources":{"listChanged":true},"prompts":{"get":"getPrompts for test_server"}}',
@@ -463,7 +467,8 @@ describe('MCPServerInspector', () => {
         type: 'stdio',
         command: 'node',
         args: ['server.js'],
-        serverInstructions: 'instructions for test_server',
+        serverInstructions: true,
+        resolvedInstructions: 'instructions for test_server',
         requiresOAuth: false,
         capabilities:
           '{"tools":{"listChanged":true},"resources":{"listChanged":true},"prompts":{"get":"getPrompts for test_server"}}',

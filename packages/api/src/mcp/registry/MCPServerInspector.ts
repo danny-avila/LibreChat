@@ -150,7 +150,7 @@ export class MCPServerInspector {
 
   private async fetchServerInstructions(): Promise<void> {
     if (isEnabled(this.config.serverInstructions)) {
-      this.config.serverInstructions = this.connection!.client.getInstructions();
+      this.config.resolvedInstructions = this.connection!.client.getInstructions();
     }
   }
 
