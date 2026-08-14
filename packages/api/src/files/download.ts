@@ -30,14 +30,21 @@ const TEXTUAL_MIME_PATTERN =
  * and images, STT reads audio — and which `codeTypeMapping` does not already classify. A
  * `.text` record wearing one of these names holds the extracted transcript, never the file.
  *
- * Kept as a closed list because the inverse assumption does not hold: an extension nobody has
- * catalogued is far likelier to be an uncatalogued text format (`.rst`, `.hcl`, `.jsonl`) than a
- * binary one, and mislabelling those costs a valid extension for no benefit.
+ * It stays a list rather than an inversion because the opposite assumption does not hold: an
+ * extension nobody has catalogued is far likelier to be an uncatalogued text format (`.rst`,
+ * `.hcl`, `.jsonl`) than a binary one, and mislabelling those costs a valid extension for no
+ * benefit. Being generous here is the cheap direction — no text file is named `.mov` — so this
+ * covers the container extensions for `imageMimeTypes`, `audioMimeTypes` and `videoMimeTypes`
+ * rather than only the defaults, since `stt.supportedMimeTypes` is deployment-configurable.
+ *
+ * `svg` is excluded on purpose: it is XML, so an uploaded one is stored as its own source.
  */
 const EXTRACTED_INPUT_EXTENSIONS = new Set([
+  /** Documents `codeTypeMapping` has no entry for; office formats it does are handled above. */
   'pdf',
   'rtf',
   'epub',
+  /** `imageMimeTypes`, plus formats an OCR provider may accept ahead of the allowlist. */
   'png',
   'jpg',
   'jpeg',
@@ -49,9 +56,13 @@ const EXTRACTED_INPUT_EXTENSIONS = new Set([
   'heic',
   'heif',
   'avif',
+  /** `audioMimeTypes` container extensions. */
   'mp3',
+  'mpeg',
   'mpga',
+  'mpg',
   'm4a',
+  'm4b',
   'wav',
   'wave',
   'ogg',
@@ -63,6 +74,15 @@ const EXTRACTED_INPUT_EXTENSIONS = new Set([
   'weba',
   'webm',
   'mp4',
+  '3gp',
+  /** `videoMimeTypes`, reachable whenever a deployment widens `stt.supportedMimeTypes`. */
+  'avi',
+  'mov',
+  'wmv',
+  'flv',
+  'mkv',
+  'm4v',
+  'ogv',
 ]);
 
 /**

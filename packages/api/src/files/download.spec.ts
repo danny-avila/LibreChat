@@ -21,6 +21,12 @@ describe('getTextDownloadFilename', () => {
       ['standup.m4a', 'standup.txt'],
       ['manual.epub', 'manual.txt'],
       ['memo.rtf', 'memo.txt'],
+      /** `audio/mpeg` is accepted by `audioMimeTypes`, so its containers reach STT too. */
+      ['interview.mpeg', 'interview.txt'],
+      ['interview.mpg', 'interview.txt'],
+      /** Reachable whenever a deployment widens `stt.supportedMimeTypes` to video. */
+      ['keynote.mov', 'keynote.txt'],
+      ['keynote.mkv', 'keynote.txt'],
     ])('%s -> %s', (filename, expected) => {
       expect(getTextDownloadFilename(filename)).toBe(expected);
     });
@@ -53,6 +59,8 @@ describe('getTextDownloadFilename', () => {
       'default.nix',
       'events.jsonl',
       'init.vim',
+      /** SVG is XML: an uploaded one is stored as its own source, not an OCR transcript. */
+      'diagram.svg',
       /** No extension promises nothing, so there is nothing to correct. */
       'Dockerfile',
       'Makefile',
