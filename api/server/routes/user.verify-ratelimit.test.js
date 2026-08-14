@@ -3,6 +3,7 @@ const request = require('supertest');
 
 const mockVerifyEmailSubmissionLimiter = jest.fn((req, res, next) => next());
 const mockEmailChangeSubmissionLimiter = jest.fn((req, res, next) => next());
+const mockEmailChangeSubmissionIpLimiter = jest.fn((req, res, next) => next());
 const mockVerifyEmailController = jest.fn((req, res) => res.status(204).end());
 const mockConfirmEmailChangeController = jest.fn((req, res) => res.status(204).end());
 
@@ -27,6 +28,7 @@ jest.mock('~/server/middleware', () => {
     verifyEmailLimiter: pass,
     emailChangeLimiter: pass,
     emailChangeSubmissionLimiter: (...args) => mockEmailChangeSubmissionLimiter(...args),
+    emailChangeSubmissionIpLimiter: (...args) => mockEmailChangeSubmissionIpLimiter(...args),
     verifyEmailSubmissionLimiter: (...args) => mockVerifyEmailSubmissionLimiter(...args),
   };
 });
@@ -45,6 +47,7 @@ describe('POST /api/user/verify rate limiting', () => {
     jest.clearAllMocks();
     mockVerifyEmailSubmissionLimiter.mockImplementation((req, res, next) => next());
     mockEmailChangeSubmissionLimiter.mockImplementation((req, res, next) => next());
+    mockEmailChangeSubmissionIpLimiter.mockImplementation((req, res, next) => next());
     mockVerifyEmailController.mockImplementation((req, res) => res.status(204).end());
     mockConfirmEmailChangeController.mockImplementation((req, res) => res.status(204).end());
 
@@ -86,5 +89,32 @@ describe('POST /api/user/verify rate limiting', () => {
     expect(mockEmailChangeSubmissionLimiter.mock.invocationCallOrder[0]).toBeLessThan(
       mockConfirmEmailChangeController.mock.invocationCallOrder[0],
     );
+  });
+
+  it('caps confirmation per source address before the caller-keyed limiter', async () => {
+    await request(app)
+      .post('/api/user/email/verify')
+      .send({ userId: 'a'.repeat(24), token: 'token' })
+      .expect(204);
+
+    expect(mockEmailChangeSubmissionIpLimiter).toHaveBeenCalledTimes(1);
+    expect(mockEmailChangeSubmissionIpLimiter.mock.invocationCallOrder[0]).toBeLessThan(
+      mockEmailChangeSubmissionLimiter.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('rejects rotated user ids once the source address cap is reached', async () => {
+    mockEmailChangeSubmissionIpLimiter.mockImplementation((req, res) =>
+      res.status(429).json({ message: 'Too many attempts' }),
+    );
+
+    const response = await request(app)
+      .post('/api/user/email/verify')
+      .send({ userId: 'b'.repeat(24), token: 'token' })
+      .expect(429);
+
+    expect(response.body).toEqual({ message: 'Too many attempts' });
+    expect(mockEmailChangeSubmissionLimiter).not.toHaveBeenCalled();
+    expect(mockConfirmEmailChangeController).not.toHaveBeenCalled();
   });
 });
