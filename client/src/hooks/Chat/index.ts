@@ -1,3 +1,4 @@
+export { default as useNewChat } from './useNewChat';
 export { default as useChatHelpers } from './useChatHelpers';
 export { default as useTokenLimits } from './useTokenLimits';
 export { default as useTokenUsage } from './useTokenUsage';

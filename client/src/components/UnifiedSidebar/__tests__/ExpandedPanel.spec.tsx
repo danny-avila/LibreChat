@@ -39,6 +39,31 @@ jest.mock('~/hooks', () => ({
   useNewConvo: () => ({ newConversation: mockNewConversation }),
 }));
 
+/**
+ * Stands in for the real hook, which reaches `useNewConvo` by deep path and so
+ * escapes the `~/hooks` mock above. Mirrors its contract closely enough that
+ * the panel-switch assertions still exercise the `onNewChat` wiring.
+ */
+jest.mock('~/hooks/Chat/useNewChat', () => ({
+  __esModule: true,
+  default: ({ onNewChat }: { onNewChat?: () => void } = {}) => ({
+    newConversation: mockNewConversation,
+    startNewChat: () => {
+      mockNewConversation();
+      onNewChat?.();
+    },
+    handleNewChatClick: (event: React.MouseEvent<HTMLElement>) => {
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) {
+        return;
+      }
+      event.preventDefault();
+      mockClearMessagesCache();
+      mockNewConversation();
+      onNewChat?.();
+    },
+  }),
+}));
+
 jest.mock('~/utils', () => ({
   clearMessagesCache: (...args: unknown[]) => mockClearMessagesCache(...args),
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
