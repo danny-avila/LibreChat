@@ -12,11 +12,18 @@ npm run e2e:mock:redis
 
 Memory mode explicitly disables Redis. Redis mode defaults to database 15 with a `LibreChatE2E` key prefix, and fails closed: the test server pings Redis and verifies that the generation job manager did not silently fall back to memory. Override `REDIS_URI` or `E2E_REDIS_KEY_PREFIX` when needed.
 
-CI runs the complete mock suite in both stream modes. Each mode is split across four Playwright shards, while each shard keeps one worker so tests do not contend for the shard's authenticated user and database:
+Pull request CI runs the complete mock suite in memory mode across three shards, plus a
+focused Redis transport suite. The Redis suite covers streaming fidelity, steering,
+interrupts, resumptions, HITL approvals, completion, thread folding, model icons, and usage:
 
 ```sh
-npx playwright test --config=e2e/playwright.config.mock.ts --shard=1/4
+npx playwright test --config=e2e/playwright.config.mock.ts --shard=1/3
+npm run e2e:mock:redis:transport
 ```
+
+The nightly schedule and manual workflow dispatch run the complete mock suite in both stream
+modes across two shards per mode. Every shard keeps one worker so tests do not contend for its
+authenticated user and database.
 
 ## Property-based browser testing
 
