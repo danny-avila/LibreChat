@@ -529,7 +529,6 @@ describe('Multer Configuration', () => {
       expect(cb).toHaveBeenCalledWith(expect.any(Error), false);
     });
 
-
     it('should use real mergeFileConfig function', async () => {
       const { mergeFileConfig, mbToBytes } = require('librechat-data-provider');
 
