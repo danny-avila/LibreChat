@@ -201,12 +201,22 @@ function isDuplicateKeyError(error: unknown): boolean {
   );
 }
 
-function isTokenExpired(token: EmailChangeToken): boolean {
+function expiryOf(token: EmailChangeToken): number | null {
   if (!token.expiresAt) {
-    return true;
+    return null;
   }
   const expiresAt = new Date(token.expiresAt).getTime();
-  return !Number.isFinite(expiresAt) || expiresAt <= Date.now();
+  return Number.isFinite(expiresAt) ? expiresAt : null;
+}
+
+function isTokenExpired(token: EmailChangeToken): boolean {
+  const expiresAt = expiryOf(token);
+  return expiresAt === null || expiresAt <= Date.now();
+}
+
+function remainingLifetimeSeconds(token: EmailChangeToken): number {
+  const expiresAt = expiryOf(token);
+  return expiresAt === null ? 0 : Math.floor((expiresAt - Date.now()) / 1000);
 }
 
 function tokenMetadataValue(token: EmailChangeToken, key: string): unknown {
@@ -226,6 +236,59 @@ async function deleteTokensOrLog(
     await deps.deleteTokens(query, tenantId);
   } catch (error) {
     logger.error(`[emailChange] Failed to clean up ${context}`, error);
+  }
+}
+
+type TokenClaim = 'claimed' | 'superseded' | 'unavailable';
+
+/** Consumes the pending token only while the stored hash still matches the presented link,
+ * so a confirmation that a newer request superseded finds nothing to claim. A failed delete
+ * is reported separately because it must not be read as a superseded link. */
+async function claimTokenIfCurrent(
+  deps: EmailChangeDeps,
+  query: TokenQuery,
+  tenantId: string | undefined,
+): Promise<TokenClaim> {
+  try {
+    const { deletedCount } = await deps.deleteTokens(query, tenantId);
+    return deletedCount ? 'claimed' : 'superseded';
+  } catch (error) {
+    logger.error('[emailChange] Failed to claim the pending token', error);
+    return 'unavailable';
+  }
+}
+
+/** Reinstates a claimed token so a transient commit failure leaves the link usable. The
+ * conditional insert is a no-op once a newer request owns the scope, and an elapsed
+ * lifetime is left consumed rather than revived. */
+async function restoreClaimedToken(
+  deps: EmailChangeDeps,
+  token: EmailChangeToken,
+  scope: string,
+  tenantId: string | undefined,
+): Promise<void> {
+  const expiresIn = remainingLifetimeSeconds(token);
+  if (expiresIn <= 0) {
+    return;
+  }
+  try {
+    await deps.replaceTokenIfCurrent(
+      scope,
+      null,
+      {
+        userId: token.userId,
+        email: token.email,
+        scope,
+        identifier: token.identifier,
+        type: EMAIL_CHANGE_TOKEN_TYPE,
+        token: token.token,
+        expiresIn,
+        metadata: token.metadata,
+      },
+      tenantId,
+    );
+  } catch (error) {
+    logger.error('[emailChange] Failed to restore the claimed token', error);
   }
 }
 
@@ -469,9 +532,30 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(500, 'Failed to change email address');
     }
 
-    /** The compare-and-set is the commit point and the single-use guard: a competing
-     * confirmation cannot match `oldEmail` twice. Consuming the token only afterwards
-     * keeps the link replayable when the update fails transiently. */
+    /** Claiming the exact hash that was presented binds the commit to this link: a request
+     * that replaced the scoped token between the lookup and here leaves nothing to claim,
+     * so a superseded address can no longer overwrite the one the user was last sent. */
+    const claim = await claimTokenIfCurrent(
+      deps,
+      { ...tokenQuery, token: emailChangeToken.token },
+      tenantId,
+    );
+    if (claim === 'unavailable') {
+      logger.error(
+        `[emailChange] Token claim failed [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
+      );
+      return result(500, 'Failed to change email address');
+    }
+    if (claim === 'superseded') {
+      logger.warn(
+        `[emailChange] Superseded confirmation [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
+      );
+      return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
+    }
+
+    /** The compare-and-set remains the commit point and the single-use guard: a competing
+     * confirmation cannot match `oldEmail` twice. The claimed token is put back when the
+     * update fails transiently, so the link stays replayable. */
     try {
       const updatedUser = await deps.updateUser(
         userId,
@@ -490,6 +574,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
         `[emailChange] Update failed [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
         error,
       );
+      await restoreClaimedToken(deps, emailChangeToken, scope, tenantId);
       return result(500, 'Failed to change email address');
     }
 
