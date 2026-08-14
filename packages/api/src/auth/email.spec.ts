@@ -1,4 +1,5 @@
 import { hashToken } from '@librechat/data-schemas';
+import type { TokenQuery } from '@librechat/data-schemas';
 import {
   EMAIL_CHANGE_TOKEN_TYPE,
   createEmailChangeService,
@@ -457,8 +458,9 @@ describe('email change service', () => {
     });
 
     it('leaves the link usable when the update fails transiently', async () => {
+      const pending = await pendingToken();
       const { deps, service } = createDeps({
-        findToken: jest.fn().mockResolvedValue(await pendingToken()),
+        findToken: jest.fn().mockResolvedValue(pending),
         updateUser: jest.fn().mockRejectedValue(new Error('connection reset')),
       });
 
@@ -471,10 +473,87 @@ describe('email change service', () => {
       });
 
       expect(response).toMatchObject({ status: 500 });
-      expect(deps.deleteTokens).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: EMAIL_CHANGE_TOKEN_TYPE }),
-        expect.anything(),
+      const emailChangeDeletes = (deps.deleteTokens as jest.Mock).mock.calls.filter(
+        ([query]) => query.type === EMAIL_CHANGE_TOKEN_TYPE,
       );
+      expect(emailChangeDeletes).toHaveLength(1);
+      expect(emailChangeDeletes[0][0]).toMatchObject({
+        scope: pending.scope,
+        token: pending.token,
+      });
+      expect(deps.replaceTokenIfCurrent).toHaveBeenCalledWith(
+        pending.scope,
+        null,
+        expect.objectContaining({
+          scope: pending.scope,
+          token: pending.token,
+          type: EMAIL_CHANGE_TOKEN_TYPE,
+          email: 'new@example.com',
+          identifier: 'old@example.com',
+        }),
+        'tenant-1',
+      );
+    });
+
+    it('refuses a confirmation superseded mid-flight and leaves the newer link intact', async () => {
+      const pending = await pendingToken();
+      const supersedingToken = await hashToken('superseding-token');
+      let storedToken: string | null = pending.token;
+      const deleteTokens = jest.fn(async (query: TokenQuery) => {
+        if (query.type !== EMAIL_CHANGE_TOKEN_TYPE) {
+          return { deletedCount: 0 };
+        }
+        if (query.token !== undefined && query.token !== storedToken) {
+          return { deletedCount: 0 };
+        }
+        const deletedCount = storedToken === null ? 0 : 1;
+        storedToken = null;
+        return { deletedCount };
+      });
+      const { deps, service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(pending),
+        /** A second request replaces the scoped token after this confirmation read it. */
+        findUserByEmail: jest.fn(async () => {
+          storedToken = supersedingToken;
+          return null;
+        }),
+        deleteTokens: deleteTokens as EmailChangeDeps['deleteTokens'],
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 400, code: 'invalid_token' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+      expect(storedToken).toBe(supersedingToken);
+    });
+
+    it('reports a failed claim as a server error instead of an invalid link', async () => {
+      const { deps, service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(await pendingToken()),
+        deleteTokens: jest.fn(async (query: TokenQuery) => {
+          if (query.token !== undefined) {
+            throw new Error('token store unavailable');
+          }
+          return { deletedCount: 1 };
+        }) as EmailChangeDeps['deleteTokens'],
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toEqual({ status: 500, message: 'Failed to change email address' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
     });
 
     it('rejects confirmation when the allowlist stopped permitting the pending address', async () => {
@@ -690,6 +769,7 @@ describe('email change service', () => {
 
       expect(response).toMatchObject({ status: 409, code: 'email_in_use' });
       expect(deps.sendEmail).not.toHaveBeenCalled();
+      expect(deps.replaceTokenIfCurrent).not.toHaveBeenCalled();
     });
   });
 });
