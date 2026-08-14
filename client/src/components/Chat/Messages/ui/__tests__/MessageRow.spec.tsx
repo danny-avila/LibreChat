@@ -72,17 +72,17 @@ describe('MessageRow', () => {
       screen.getByTestId('message-icon'),
     );
     expect(avatar).toHaveAttribute('aria-hidden', 'true');
-    expect(avatar).toHaveClass('size-6', 'md:absolute', 'md:left-0', 'md:top-0.5');
+    expect(avatar).toHaveClass('size-6');
+    expect(avatar).not.toHaveClass('md:absolute', 'md:left-0');
   });
 
-  it('reserves the avatar gutter on desktop only so mobile content starts flush left', () => {
+  it('keeps the icon and provider name on the message content edge', () => {
     renderRow({ isCreatedByUser: false });
 
     const row = screen.getByLabelText('Assistant message');
     const agentTurn = row.querySelector('.agent-turn');
 
-    expect(agentTurn).toHaveClass('md:pl-9');
-    expect(agentTurn).not.toHaveClass('pl-9');
+    expect(agentTurn).not.toHaveClass('md:pl-9', 'pl-9');
     expect(row).not.toHaveClass('gap-3');
     expect(row.children).toHaveLength(1);
     expect(screen.getAllByTestId('message-icon')).toHaveLength(1);
@@ -115,7 +115,8 @@ describe('MessageRow', () => {
     const row = screen.getByLabelText('Assistant message');
     const messageSurface = screen.getByTestId('message-body');
 
-    expect(row.querySelector('.agent-turn')).toHaveClass('w-full', 'md:pl-9');
+    expect(row.querySelector('.agent-turn')).toHaveClass('w-full');
+    expect(row.querySelector('.agent-turn')).not.toHaveClass('md:pl-9');
     expect(messageSurface).toHaveClass('w-full');
   });
 

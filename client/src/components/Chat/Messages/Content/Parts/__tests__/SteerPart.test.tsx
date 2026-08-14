@@ -142,11 +142,11 @@ describe('SteerPart presentation', () => {
     expect(part).toHaveClass('steer-render');
   });
 
-  it('only outdents past the avatar gutter where that gutter exists', () => {
+  it('stays on the message content edge instead of outdenting', () => {
     renderPart();
     const part = screen.getByTestId('steer-part');
-    expect(part).toHaveClass('w-full', 'md:-ml-9', 'md:w-[calc(100%+2.25rem)]');
-    expect(part).not.toHaveClass('-ml-9');
+    expect(part).toHaveClass('w-full');
+    expect(part).not.toHaveClass('md:-ml-9', '-ml-9');
   });
 
   it('renders steer attachments', () => {
