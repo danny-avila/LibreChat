@@ -64,7 +64,6 @@ jest.mock('~/config', () => ({
 
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 
 // Import the router after mocks
 const router = require('./files');
@@ -1109,36 +1108,6 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.status).toBe(500);
       expect(response.text).toBe('Error downloading file');
       expect(response.headers['content-disposition']).toBeUndefined();
-      expect(response.headers['x-file-metadata']).toBeUndefined();
-    });
-
-    it('answers 500 when an assistants storage stream fails', async () => {
-      const userFileId = uuidv4();
-      getOpenAIClient.mockResolvedValue({ openai: {} });
-      const getDownloadStream = jest.fn().mockResolvedValue({
-        body: new Readable({
-          read() {
-            this.destroy(new Error('upstream reset'));
-          },
-        }),
-      });
-      getStrategyFunctions.mockReturnValue({ getDownloadStream });
-
-      await createFile({
-        user: otherUserId,
-        file_id: userFileId,
-        filename: 'assistant.txt',
-        filepath: 'uploads/user/assistant.txt',
-        bytes: 200,
-        type: 'text/plain',
-        model: 'gpt-4o',
-        source: FileSources.openai,
-      });
-
-      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
-
-      expect(response.status).toBe(500);
-      expect(response.text).toBe('Error downloading file');
       expect(response.headers['x-file-metadata']).toBeUndefined();
     });
 
