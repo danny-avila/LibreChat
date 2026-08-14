@@ -117,52 +117,52 @@ function RequestPasswordReset() {
     localize,
   ]);
 
-  const VerificationSuccess = () => (
-    <div className="flex flex-col items-center justify-center">
-      <h1 className="mb-4 text-center text-3xl font-semibold text-text-primary">{headerText}</h1>
-      {countdown > 0 && (
-        <p className="text-center text-lg text-text-secondary">
-          {localize('com_auth_email_verification_redirecting', { 0: countdown.toString() })}
-        </p>
-      )}
-      {showResendLink && countdown === 0 && (
-        <p className="text-center text-lg text-text-secondary">
-          {localize('com_auth_email_verification_resend_prompt')}
-          <Button
-            type="button"
-            variant="link"
-            className="ml-2 inline h-auto p-0 text-link"
-            onClick={handleResendEmail}
-            disabled={resendEmailMutation.isLoading}
-          >
-            {localize('com_auth_email_resend_link')}
-          </Button>
-        </p>
-      )}
-    </div>
-  );
-
-  const VerificationInProgress = () => (
-    <div className="flex flex-col items-center justify-center">
-      <h1 className="mb-4 text-center text-3xl font-semibold text-text-primary">
-        {localize(
-          isEmailChange
-            ? 'com_auth_email_change_verification_in_progress'
-            : 'com_auth_email_verification_in_progress',
-        )}
-      </h1>
-      <div className="mt-4 flex justify-center">
-        <Spinner className="h-8 w-8 text-accent-primary" />
-      </div>
-    </div>
-  );
+  const statusText = verificationStatus
+    ? headerText
+    : localize(
+        isEmailChange
+          ? 'com_auth_email_change_verification_in_progress'
+          : 'com_auth_email_verification_in_progress',
+      );
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-surface-primary pt-6 sm:pt-0">
       <div className="absolute bottom-0 left-0 m-4">
         <ThemeSelector />
       </div>
-      {verificationStatus ? <VerificationSuccess /> : <VerificationInProgress />}
+      <div className="flex flex-col items-center justify-center">
+        <h1
+          aria-live="polite"
+          aria-atomic="true"
+          className="mb-4 text-center text-3xl font-semibold text-text-primary"
+        >
+          {statusText}
+        </h1>
+        {!verificationStatus && (
+          <div className="mt-4 flex justify-center">
+            <Spinner className="h-8 w-8 text-accent-primary" />
+          </div>
+        )}
+        {verificationStatus && countdown > 0 && (
+          <p className="text-center text-lg text-text-secondary">
+            {localize('com_auth_email_verification_redirecting', { 0: countdown.toString() })}
+          </p>
+        )}
+        {verificationStatus && showResendLink && countdown === 0 && (
+          <p className="text-center text-lg text-text-secondary">
+            {localize('com_auth_email_verification_resend_prompt')}
+            <Button
+              type="button"
+              variant="link"
+              className="ml-2 inline h-auto p-0 text-link"
+              onClick={handleResendEmail}
+              disabled={resendEmailMutation.isLoading}
+            >
+              {localize('com_auth_email_resend_link')}
+            </Button>
+          </p>
+        )}
+      </div>
     </div>
   );
 }
