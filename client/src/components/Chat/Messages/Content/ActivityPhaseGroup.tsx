@@ -36,9 +36,7 @@ export default function ActivityPhaseGroup({
   /** Capture the marker's arrival state. The parent renderer records the new
    *  marker after this commit; a later sibling update must not cancel the
    *  already-scheduled compression before its first animation frame. */
-  const [shouldAnimateEntrance] = useState(
-    smoothStreaming && animateEntrance && label.length > 0,
-  );
+  const [shouldAnimateEntrance] = useState(smoothStreaming && animateEntrance && label.length > 0);
   /** A newly filled phase replaces activity that was already visible in the
    *  transcript. Keep that content in place for the first painted frame,
    *  then compress it into the summary instead of replacing it with a closed
