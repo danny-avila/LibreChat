@@ -1,4 +1,5 @@
 const fs = require('fs').promises;
+const mime = require('mime');
 const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
@@ -315,6 +316,21 @@ function isValidID(str) {
 }
 
 /**
+ * Headers describing the download that was abandoned. They have to go before the error body
+ * replaces it: the code-output route copies the upstream response's headers verbatim, so a
+ * proxied `Transfer-Encoding: chunked` would survive alongside the `Content-Length` that
+ * `send` adds and clients reject a message carrying both framings.
+ */
+const ABANDONED_DOWNLOAD_HEADERS = [
+  'Content-Disposition',
+  'Content-Type',
+  'Content-Length',
+  'Content-Encoding',
+  'Transfer-Encoding',
+  'X-File-Metadata',
+];
+
+/**
  * Pipes a download to the response, terminating it when the source fails.
  *
  * `pipe` does not end the destination on a source error, and the stream errors after the
@@ -334,9 +350,9 @@ const pipeDownloadStream = (stream, res) => {
       res.destroy(streamError);
       return;
     }
-    res.removeHeader('Content-Disposition');
-    res.removeHeader('Content-Type');
-    res.removeHeader('X-File-Metadata');
+    for (const header of ABANDONED_DOWNLOAD_HEADERS) {
+      res.removeHeader(header);
+    }
     res.status(500).send('Error downloading file');
   });
   stream.pipe(res);
@@ -494,6 +510,30 @@ const getDirectDownloadURL = async ({
   });
 };
 
+/** Types whose payload is plain text, including the `application/*` ones `mime` reports for
+ *  structured text formats. */
+const TEXTUAL_MIME_PATTERN =
+  /^text\/|^application\/(json|xml|javascript|x-sh|x-httpd-php)|\+(json|xml)$/;
+
+/**
+ * Resolves the name a `FileSources.text` download is served under.
+ *
+ * Every `createTextFile` caller in `processAgentFileUpload` stores extracted or transcribed
+ * UTF-8 text while keeping the upload's original name, so an OCR'd `report.pdf`, a parsed
+ * `notes.docx` and a transcribed `meeting.mp3` all hold text under a name that promises
+ * something else — the download would look corrupt or unplayable. Rename only when the name
+ * makes that promise: a genuine `.txt`/`.md`/`.yaml` upload keeps its extension, and so does
+ * an extensionless `Dockerfile` or a `.go`/`.py` source `mime` has no type for, since neither
+ * misrepresents its contents.
+ */
+const getTextDownloadFilename = (filename) => {
+  const promisedType = filename && mime.getType(filename);
+  if (!promisedType || TEXTUAL_MIME_PATTERN.test(promisedType)) {
+    return filename;
+  }
+  return `${filename.replace(/\.[^./\\]*$/, '')}.txt`;
+};
+
 // Security allowlist: excludes internal ids, owner/tenant identifiers, and extracted text.
 // `filepath` stays included because cached TFile records need it for previews/deletes.
 const DOWNLOAD_METADATA_FIELDS = [
@@ -586,8 +626,8 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       return res.status(400).send('The model used when creating this file is not available');
     }
 
-    const setHeaders = () => {
-      res.setHeader('Content-Disposition', getContentDisposition(file.filename));
+    const setHeaders = (downloadFilename = file.filename) => {
+      res.setHeader('Content-Disposition', getContentDisposition(downloadFilename));
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader(
         'X-File-Metadata',
@@ -604,7 +644,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
         return res.status(500).send('Error downloading file');
       }
 
-      setHeaders();
+      setHeaders(getTextDownloadFilename(file.filename));
       /** Sent as a buffer so the body carries a `Content-Length`: a string body would make
        *  Express append a charset to the octet-stream content type. */
       return res.status(200).send(Buffer.from(textFile.text, 'utf8'));

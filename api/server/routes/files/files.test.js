@@ -878,6 +878,72 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(getStrategyFunctions).not.toHaveBeenCalled();
     });
 
+    it('serves derived text under a text filename rather than the original binary name', async () => {
+      const userFileId = uuidv4();
+
+      /** The OCR, document-parser and STT paths all persist extracted text while keeping the
+       *  upload's original name, so the stored filename promises a PDF the body is not. */
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'report.pdf',
+        filepath: '/uploads/temp/deleted-report.pdf',
+        bytes: Buffer.byteLength('extracted page one'),
+        type: 'text/plain',
+        source: FileSources.text,
+        text: 'extracted page one',
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.body.toString()).toBe('extracted page one');
+      expect(response.headers['content-disposition']).toContain('filename="report.txt"');
+      /** The record itself is untouched — only the download name is derived. */
+      const metadata = JSON.parse(decodeURIComponent(response.headers['x-file-metadata']));
+      expect(metadata.filename).toBe('report.pdf');
+    });
+
+    it('keeps the original filename when the upload was genuinely text', async () => {
+      const userFileId = uuidv4();
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'librechat.yaml',
+        filepath: '/uploads/temp/deleted-librechat.yaml',
+        bytes: Buffer.byteLength('version: 1.3.13'),
+        type: 'text/yaml',
+        source: FileSources.text,
+        text: 'version: 1.3.13',
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-disposition']).toContain('filename="librechat.yaml"');
+    });
+
+    it('keeps an extensionless filename, which promises nothing to correct', async () => {
+      const userFileId = uuidv4();
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'Dockerfile',
+        filepath: '/uploads/temp/deleted-Dockerfile',
+        bytes: Buffer.byteLength('FROM node:24'),
+        type: 'text/plain',
+        source: FileSources.text,
+        text: 'FROM node:24',
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-disposition']).toContain('filename="Dockerfile"');
+    });
+
     it('streams proxied downloads by default when a direct URL is available', async () => {
       const userFileId = uuidv4();
       const getDownloadURL = jest.fn().mockResolvedValue('https://cdn.example.com/file.pdf?signed');
@@ -1108,6 +1174,40 @@ describe('File Routes - Delete with Agent Access', () => {
       await expect(
         request(app).get(`/files/download/${otherUserId}/${userFileId}`),
       ).rejects.toThrow();
+    });
+  });
+
+  describe('GET /files/code/download/:session_id/:fileId', () => {
+    const sessionId = 'a'.repeat(21);
+    const codeFileId = 'b'.repeat(21);
+
+    it('drops the upstream framing headers when the stream fails', async () => {
+      /** This route copies the upstream response's headers verbatim, so a proxied
+       *  `Transfer-Encoding: chunked` would otherwise survive onto the error body alongside
+       *  the `Content-Length` `send` adds, and a client rejects a message carrying both. */
+      const getDownloadStream = jest.fn().mockResolvedValue({
+        headers: {
+          'transfer-encoding': 'chunked',
+          'content-type': 'application/pdf',
+          'content-disposition': 'attachment; filename="plot.pdf"',
+        },
+        data: new Readable({
+          read() {
+            this.destroy(new Error('code interpreter session expired'));
+          },
+        }),
+      });
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      const response = await request(app).get(`/files/code/download/${sessionId}/${codeFileId}`);
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error downloading file');
+      expect(response.headers['transfer-encoding']).toBeUndefined();
+      expect(response.headers['content-disposition']).toBeUndefined();
+      expect(response.headers['content-length']).toBe(
+        String(Buffer.byteLength('Error downloading file')),
+      );
     });
   });
 
