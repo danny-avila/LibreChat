@@ -149,7 +149,7 @@ export default function HeaderMenu({
                 {exportShare.hasSharedLink && (
                   <span
                     className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-status-info ring-2 ring-presentation"
-                    data-testid="header-shared-link-indicator"
+                    data-testid="header-menu-shared-link-indicator"
                     aria-hidden="true"
                   />
                 )}

@@ -182,7 +182,8 @@ describe('HeaderMenu', () => {
 
     render(<HeaderMenu />);
 
-    expect(screen.getByTestId('header-shared-link-indicator')).toBeInTheDocument();
+    /** Distinct from the desktop menu's indicator; both are mounted at once. */
+    expect(screen.getByTestId('header-menu-shared-link-indicator')).toBeInTheDocument();
     expect(screen.getByTestId('header-overflow-menu')).toHaveAttribute(
       'aria-label',
       'com_ui_export_share_link_active',
