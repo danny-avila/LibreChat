@@ -23,6 +23,7 @@ import type {
   SteerReceiptInput,
   ParkedSteerClaim,
 } from '~/stream/interfaces/IJobStore';
+import type { ResolvedAskUserQuestion } from '~/agents/hitl/resume';
 import type { RecoveredSteerPayload } from '~/stream/SteerRecovery';
 import {
   JobCreationSupersededError,
@@ -4053,6 +4054,9 @@ export class RedisJobStore implements IJobStoreV2 {
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
+      activityPhaseSnapshot: data.activityPhaseSnapshot
+        ? JSON.parse(data.activityPhaseSnapshot)
+        : undefined,
       /** The owning replica's seal capability. `serializeJob` writes every
        *  boolean generically, but this mapper is explicit — omitting it here
        *  drops the flag on every read, so the steer route would compute
@@ -4066,6 +4070,7 @@ export class RedisJobStore implements IJobStoreV2 {
       contextUsage: data.contextUsage || undefined,
       tokenUsage: data.tokenUsage || undefined,
       pendingAction: this.parsePendingAction(data.pendingAction),
+      resolvedAskUserQuestions: this.parseResolvedAskUserQuestions(data.resolvedAskUserQuestions),
       pendingActionId: data.pendingActionId || undefined,
       lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
       /** `markActivityLabels` persists this, so it has to be read back:
@@ -4216,6 +4221,51 @@ export class RedisJobStore implements IJobStoreV2 {
       return parsed;
     } catch {
       logger.warn('[RedisJobStore] Dropping unparseable pendingAction record');
+      return undefined;
+    }
+  }
+
+  /** Parse the accepted ask answer retained across resume ownership transfer. */
+  private parseResolvedAskUserQuestions(
+    raw: string | undefined,
+  ): ResolvedAskUserQuestion[] | undefined {
+    if (!raw) {
+      return undefined;
+    }
+    try {
+      const value = JSON.parse(raw) as unknown;
+      if (!Array.isArray(value)) {
+        logger.warn('[RedisJobStore] Dropping malformed resolvedAskUserQuestions record');
+        return undefined;
+      }
+      const parsed = value as ResolvedAskUserQuestion[];
+      const valid = parsed.every((answer) => {
+        if (answer == null || typeof answer !== 'object' || Array.isArray(answer)) {
+          return false;
+        }
+        const request = answer.request;
+        const requestOk =
+          typeof request === 'string' ||
+          (request != null &&
+            typeof request === 'object' &&
+            (typeof (request as Agents.AskUserQuestionRequest).question === 'string' ||
+              Array.isArray((request as Agents.AskUserQuestionsRequest).questions)));
+        return (
+          requestOk &&
+          typeof answer.output === 'string' &&
+          (answer.toolCallId == null || typeof answer.toolCallId === 'string') &&
+          (answer.contentIndex == null ||
+            (Number.isSafeInteger(answer.contentIndex) && answer.contentIndex >= 0)) &&
+          (answer.contentMissing == null || answer.contentMissing === true)
+        );
+      });
+      if (!valid || parsed.length === 0) {
+        logger.warn('[RedisJobStore] Dropping malformed resolvedAskUserQuestions record');
+        return undefined;
+      }
+      return parsed;
+    } catch {
+      logger.warn('[RedisJobStore] Dropping unparseable resolvedAskUserQuestions record');
       return undefined;
     }
   }

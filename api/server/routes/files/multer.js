@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
-const { sanitizeFilename } = require('@librechat/api');
+const { sanitizeFilename, createCustomError } = require('@librechat/api');
 const {
   mergeFileConfig,
   inferMimeType,
@@ -34,7 +34,7 @@ const importFileFilter = (req, file, cb) => {
   } else if (path.extname(file.originalname).toLowerCase() === '.json') {
     cb(null, true);
   } else {
-    cb(new Error('Only JSON files are allowed'), false);
+    cb(createCustomError(415, 'Only JSON files are allowed'), false);
   }
 };
 
@@ -58,7 +58,7 @@ const createFileFilter = (customFileConfig) => {
    */
   const fileFilter = (req, file, cb) => {
     if (!file) {
-      return cb(new Error('No file provided'), false);
+      return cb(createCustomError(400, 'No file provided'), false);
     }
 
     const mimeType = normalizeUploadMimeType(file);
@@ -76,7 +76,10 @@ const createFileFilter = (customFileConfig) => {
     });
 
     if (!defaultFileConfig.checkType(mimeType, endpointFileConfig.supportedMimeTypes)) {
-      return cb(new Error('Unsupported file type: ' + (file.mimetype || mimeType)), false);
+      return cb(
+        createCustomError(415, 'Unsupported file type: ' + (file.mimetype || mimeType)),
+        false,
+      );
     }
 
     cb(null, true);

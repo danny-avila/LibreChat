@@ -53,7 +53,7 @@ import jwt from 'jsonwebtoken';
 import jwksRsa from 'jwks-rsa';
 import { SystemRoles } from 'librechat-data-provider';
 import { fetch as undiciFetch } from 'undici';
-import { logger, tenantStorage } from '@librechat/data-schemas';
+import { getTenantId, logger, tenantStorage } from '@librechat/data-schemas';
 import { clearRemoteAgentAuthCache, createRemoteAgentAuth } from './remoteAgentAuth';
 import { findOpenIDUser, getOpenIdEmail } from '../auth/openid';
 import { isEnabled, math } from '~/utils';
@@ -395,6 +395,45 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).toHaveBeenCalled();
     });
 
+    it('restores tenant context from the API key user before continuing', async () => {
+      const deps = makeDeps(makeConfig({}, { enabled: true }));
+      const req = makeReq();
+      let observedTenantId: string | undefined;
+      const next = jest.fn(() => {
+        observedTenantId = getTenantId();
+      });
+      deps.apiKeyMiddleware.mockImplementation((request: unknown, _res: unknown, next) => {
+        (request as Request).user = makeUser({ tenantId: 'tenant-api-key' });
+        next();
+      });
+
+      await createRemoteAgentAuth(asDeps(deps))(req as Request, makeRes().res, next);
+
+      expect(observedTenantId).toBe('tenant-api-key');
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it('preserves pre-auth tenant context for a tenantless API key user', async () => {
+      const deps = makeDeps(makeConfig({}, { enabled: true }));
+      const req = makeReq();
+      let observedTenantId: string | undefined;
+      const next = jest.fn(() => {
+        observedTenantId = getTenantId();
+      });
+      deps.apiKeyMiddleware.mockImplementation((request: unknown, _res: unknown, next) => {
+        (request as Request).user = makeUser({ tenantId: undefined });
+        next();
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-preauth' }, async () => {
+        await createRemoteAgentAuth(asDeps(deps))(req as Request, makeRes().res, next);
+      });
+
+      expect(observedTenantId).toBe('tenant-preauth');
+      expect(req).toMatchObject({ tenantId: 'tenant-preauth' });
+      expect(next).toHaveBeenCalledWith();
+    });
+
     it('returns 401 when apiKey is disabled and no token present', async () => {
       const deps = makeDeps(makeConfig({}, { enabled: false }));
       const { res, status, json } = makeRes();
@@ -444,6 +483,67 @@ describe('createRemoteAgentAuth', () => {
       );
       expect(mockNext).toHaveBeenCalledWith();
       expect(deps.apiKeyMiddleware).not.toHaveBeenCalled();
+    });
+
+    it('restores tenant context from the OIDC user before continuing', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(makeUser({ tenantId: 'tenant-oidc' }));
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      let observedTenantId: string | undefined;
+      const next = jest.fn(() => {
+        observedTenantId = getTenantId();
+      });
+
+      await createRemoteAgentAuth(asDeps(deps))(req as Request, makeRes().res, next);
+
+      expect(observedTenantId).toBe('tenant-oidc');
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it('preserves pre-auth tenant context for a tenantless OIDC user', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      const deps = makeDeps();
+      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+      let observedTenantId: string | undefined;
+      const next = jest.fn(() => {
+        observedTenantId = getTenantId();
+      });
+
+      await tenantStorage.run({ tenantId: 'tenant-preauth' }, async () => {
+        await createRemoteAgentAuth(asDeps(deps))(req as Request, makeRes().res, next);
+      });
+
+      expect(observedTenantId).toBe('tenant-preauth');
+      expect(req).toMatchObject({ tenantId: 'tenant-preauth' });
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it('rejects a tenant context that conflicts with the resolved OIDC user', async () => {
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+      const deps = makeDeps();
+      deps.findUser = makeFindUser(
+        makeUser({
+          tenantId: 'tenant-user',
+          provider: undefined,
+          openidId: undefined,
+          openidIssuer: undefined,
+        }),
+      );
+      const { res, status, json } = makeRes();
+
+      await tenantStorage.run({ tenantId: 'tenant-request' }, async () => {
+        await createRemoteAgentAuth(asDeps(deps))(
+          makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+          res,
+          mockNext,
+        );
+      });
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith({ error: 'Unauthorized' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+      expect(mockNext).not.toHaveBeenCalled();
     });
 
     it('re-evaluates OIDC auth config after resolving the user tenant', async () => {

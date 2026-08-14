@@ -11,6 +11,7 @@ const {
   getReferencedQuotes,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
+  getTransactionsConfig,
   encodeAndFormatDocuments,
   getLangfuseTraceDestinationIds,
   isLangfuseTraceSampled,
@@ -262,11 +263,19 @@ class BaseClient {
    * @param {string} [messageId]
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, balance, promptTokens, completionTokens, messageId }) {
+  async recordTokenUsage({
+    model,
+    balance,
+    messageId,
+    transactions,
+    promptTokens,
+    completionTokens,
+  }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
       balance,
       messageId,
+      transactions,
       promptTokens,
       completionTokens,
     });
@@ -582,7 +591,8 @@ class BaseClient {
       } else if (editedContent != null) {
         // Handle editedContent for content parts
         if (editedContent && latestMessage.content && Array.isArray(latestMessage.content)) {
-          const { index, text, type } = editedContent;
+          const { index, type } = editedContent;
+          const text = editedContent[type];
           if (index >= 0 && index < latestMessage.content.length) {
             const contentPart = latestMessage.content[index];
             if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
@@ -682,6 +692,7 @@ class BaseClient {
     }
 
     const balanceConfig = getBalanceConfig(appConfig);
+    const transactionsConfig = getTransactionsConfig(appConfig);
     if (
       balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
@@ -794,6 +805,7 @@ class BaseClient {
           promptTokens,
           completionTokens,
           balance: balanceConfig,
+          transactions: transactionsConfig,
           /** Note: When using agents, responseMessage.model is the agent ID, not the model */
           model: this.model,
           messageId: this.responseMessageId,
@@ -1265,36 +1277,70 @@ class BaseClient {
       return existingContent.concat(newCompletion);
     }
 
-    if (editedType !== ContentTypes.TEXT && editedType !== ContentTypes.THINK) {
-      return existingContent.concat(newCompletion);
-    }
-
     const lastIndex = existingContent.length - 1;
     const lastExisting = existingContent[lastIndex];
     const firstNew = newCompletion[0];
+    /** Phased and legacy/unphased text are distinct semantic streams. Merging
+     *  either direction would stamp retained text with the wrong phase. */
+    const textPhaseCompatible =
+      editedType !== ContentTypes.TEXT ||
+      (lastExisting?.phase ?? null) === (firstNew?.phase ?? null);
+    const mergesFirstPart =
+      (editedType === ContentTypes.TEXT || editedType === ContentTypes.THINK) &&
+      lastExisting?.type === firstNew?.type &&
+      firstNew?.type === editedType &&
+      textPhaseCompatible;
+    /** Phase bounds are completion-local while the run streams. Persist them
+     *  in the same absolute index space as the edited response assembled
+     *  here. When the first new text/think part merges into the retained tail,
+     *  every completion index shifts by prefixLength - 1; otherwise it shifts
+     *  by the full retained prefix. */
+    const phaseIndexOffset = mergesFirstPart ? lastIndex : existingContent.length;
+    const adjustedCompletion = newCompletion.map((part) => {
+      if (
+        part?.type !== ContentTypes.ACTIVITY_LABEL ||
+        part.activity_label_type !== 'phase' ||
+        typeof part.activity_start_index !== 'number'
+      ) {
+        return part;
+      }
+      return {
+        ...part,
+        activity_start_index: part.activity_start_index + phaseIndexOffset,
+        ...(typeof part.activity_end_index === 'number' && {
+          activity_end_index: part.activity_end_index + phaseIndexOffset,
+        }),
+      };
+    });
 
-    if (lastExisting?.type !== firstNew?.type || firstNew?.type !== editedType) {
-      return existingContent.concat(newCompletion);
+    if (editedType !== ContentTypes.TEXT && editedType !== ContentTypes.THINK) {
+      return existingContent.concat(adjustedCompletion);
+    }
+
+    if (!mergesFirstPart) {
+      return existingContent.concat(adjustedCompletion);
     }
 
     const mergedContent = [...existingContent];
     if (editedType === ContentTypes.TEXT) {
       mergedContent[lastIndex] = {
         ...mergedContent[lastIndex],
+        ...(firstNew.phase != null && { phase: firstNew.phase }),
         [ContentTypes.TEXT]:
-          (mergedContent[lastIndex][ContentTypes.TEXT] || '') + (firstNew[ContentTypes.TEXT] || ''),
+          (mergedContent[lastIndex][ContentTypes.TEXT] || '') +
+          (adjustedCompletion[0][ContentTypes.TEXT] || ''),
       };
     } else {
       mergedContent[lastIndex] = {
         ...mergedContent[lastIndex],
         [ContentTypes.THINK]:
           (mergedContent[lastIndex][ContentTypes.THINK] || '') +
-          (firstNew[ContentTypes.THINK] || ''),
+          (adjustedCompletion[0][ContentTypes.THINK] || ''),
       };
     }
 
     // Add remaining completion items
-    return mergedContent.concat(newCompletion.slice(1));
+    return mergedContent.concat(adjustedCompletion.slice(1));
   }
 
   async sendPayload(payload, opts = {}) {

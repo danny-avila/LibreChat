@@ -3,7 +3,9 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import ToolsMarketplaceDialog from '../ToolsMarketplaceDialog';
 
 const mockSetValue = jest.fn();
-const mockGetValues = jest.fn(() => []);
+const mockGetValues = jest.fn((): string[] => []);
+let mockWatchedTools: string[] = [];
+let mockMcpServersMap = new Map<string, object>();
 
 jest.mock('react-hook-form', () => ({
   useFormContext: () => ({
@@ -13,7 +15,7 @@ jest.mock('react-hook-form', () => ({
   }),
   useWatch: ({ name }: { name: string }) => {
     const map: Record<string, unknown> = {
-      tools: [],
+      tools: mockWatchedTools,
       skills: [],
       execute_code: false,
       web_search: false,
@@ -31,7 +33,7 @@ jest.mock('~/Providers', () => ({
   useAgentPanelContext: () => ({
     agentsConfig: { capabilities: ['execute_code', 'tools'] },
     regularTools: [{ pluginKey: 'dalle', name: 'DALL-E', description: 'Images' }],
-    mcpServersMap: new Map(),
+    mcpServersMap: mockMcpServersMap,
     actions: [],
   }),
 }));
@@ -153,6 +155,8 @@ describe('ToolsMarketplaceDialog', () => {
     mockSetValue.mockClear();
     mockGetValues.mockClear();
     mockGetValues.mockReturnValue([]);
+    mockWatchedTools = [];
+    mockMcpServersMap = new Map();
     mockToggleFavorite.mockClear();
     mockFavoriteKeys = new Set<string>();
   });
@@ -197,6 +201,94 @@ describe('ToolsMarketplaceDialog', () => {
       expect.objectContaining({ shouldDirty: true }),
     );
   });
+
+  test('clicking a connected request-scoped zero-tool server attaches its runtime wildcard', () => {
+    mockMcpServersMap = new Map([
+      [
+        'runtime',
+        {
+          serverName: 'runtime',
+          tools: [],
+          isConfigured: true,
+          isConnected: true,
+          requestScoped: true,
+          metadata: { name: 'runtime', pluginKey: 'runtime', description: '' },
+        },
+      ],
+    ]);
+
+    render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
+    fireEvent.click(screen.getByRole('button', { name: /runtime/ }));
+
+    expect(screen.queryByTestId('item-dialog')).not.toBeInTheDocument();
+    expect(mockSetValue).toHaveBeenCalledWith(
+      'tools',
+      ['sys__server__sys_mcp_runtime', 'sys__all__sys_mcp_runtime'],
+      { shouldDirty: true },
+    );
+  });
+
+  test('clicking a selected zero-tool server removes all of its tokens directly', () => {
+    const selectedTools = [
+      'sys__server__sys_mcp_runtime',
+      'sys__all__sys_mcp_runtime',
+      'search_mcp_runtime',
+      'dalle',
+    ];
+    mockWatchedTools = selectedTools;
+    mockGetValues.mockReturnValue(selectedTools);
+    mockMcpServersMap = new Map([
+      [
+        'runtime',
+        {
+          serverName: 'runtime',
+          tools: [],
+          isConfigured: true,
+          isConnected: true,
+          requestScoped: true,
+          metadata: { name: 'runtime', pluginKey: 'runtime', description: '' },
+        },
+      ],
+    ]);
+
+    render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
+    fireEvent.click(screen.getByRole('button', { name: /runtime/ }));
+
+    expect(screen.queryByTestId('item-dialog')).not.toBeInTheDocument();
+    expect(mockSetValue).toHaveBeenCalledWith('tools', ['dalle'], { shouldDirty: true });
+  });
+
+  test.each([
+    ['an ordinary connected', false, true],
+    ['a disconnected request-scoped', true, false],
+  ])(
+    'clicking %s zero-tool server opens setup without changing the form',
+    (_description, requestScoped, isConnected) => {
+      mockMcpServersMap = new Map([
+        [
+          'setup-required',
+          {
+            serverName: 'setup-required',
+            tools: [],
+            isConfigured: true,
+            isConnected,
+            requestScoped,
+            metadata: {
+              name: 'setup-required',
+              pluginKey: 'setup-required',
+              description: '',
+            },
+          },
+        ],
+      ]);
+
+      render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);
+      fireEvent.click(screen.getByRole('button', { name: /setup-required/ }));
+
+      expect(screen.getByTestId('item-dialog')).toBeInTheDocument();
+      expect(mockSetValue).not.toHaveBeenCalled();
+    },
+  );
 
   test('clicking a card star toggles the favorite without selecting the tool', () => {
     render(<ToolsMarketplaceDialog open onOpenChange={jest.fn()} agentId="a1" />);

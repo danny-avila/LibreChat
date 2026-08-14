@@ -45,6 +45,7 @@ import {
   resolveRunEndTarget,
   findSteerMessageIndex,
   applyActivityLabelPart,
+  offsetActivityPhaseBoundary,
   findActivityLabelMessageIndex,
   appendAppliedSteerIds,
   collectAppliedSteerIds,
@@ -724,6 +725,7 @@ export default function useResumableSSE(
    * `editPrefixLength` must no longer be applied — by run steps or labels.
    */
   const editPrefixClearedRef = useRef(false);
+  const editPrefixFirstPartFoldedRef = useRef(false);
   /** Generation the cleared-prefix state above belongs to, so it is dropped
    *  when a new generation starts rather than when a subscribe happens to be
    *  live. Keyed by response message id — the stream id is the conversation
@@ -1056,13 +1058,15 @@ export default function useResumableSSE(
    * the non-resumable transport, the submission passes through untouched.
    */
   const stepHandler = useCallback(
-    (...[event, submission]: Parameters<typeof rawStepHandler>) =>
-      rawStepHandler(
-        event,
-        editPrefixClearedRef.current
-          ? ({ ...submission, editPrefixCleared: true } as EventSubmission)
-          : submission,
-      ),
+    (...[event, submission]: Parameters<typeof rawStepHandler>) => {
+      const eventSubmission = editPrefixClearedRef.current
+        ? ({ ...submission, editPrefixCleared: true } as EventSubmission)
+        : submission;
+      rawStepHandler(event, eventSubmission);
+      if (eventSubmission.editPrefixFirstPartFolded === true) {
+        editPrefixFirstPartFoldedRef.current = true;
+      }
+    },
     [rawStepHandler],
   );
 
@@ -1165,6 +1169,7 @@ export default function useResumableSSE(
       if (prefixStateGenerationIdRef.current !== generationId) {
         prefixStateGenerationIdRef.current = generationId;
         editPrefixClearedRef.current = false;
+        editPrefixFirstPartFoldedRef.current = false;
       }
       let { userMessage } = currentSubmission;
       let textIndex: number | null = null;
@@ -1353,8 +1358,54 @@ export default function useResumableSSE(
               (currentSubmission.initialResponse as TMessage | undefined)?.content?.length ??
               0)
             : 0;
-        const offsetEvent =
-          prefixLength > 0 ? { ...event, index: event.index + prefixLength } : event;
+        const phasePart = event.part as TActivityLabelEvent['part'] & {
+          activity_label_type?: 'phase';
+          activity_start_index?: number;
+          activity_end_index?: number;
+        };
+        let offsetEvent = event;
+        if (prefixLength > 0) {
+          let offsetPart: TActivityLabelEvent['part'] & {
+            activity_label_type?: 'phase';
+            activity_start_index?: number;
+            activity_end_index?: number;
+          } = phasePart;
+          if (
+            phasePart.activity_label_type === 'phase' &&
+            typeof phasePart.activity_start_index === 'number'
+          ) {
+            let activityStartIndex = phasePart.activity_start_index + prefixLength;
+            const foldedFirstPart = editPrefixFirstPartFoldedRef.current;
+            const targetContent = messages[index]?.content;
+            /** The step handler records an actual server-index-zero text/think
+             *  merge. An empty +prefix slot is insufficient evidence because
+             *  a delayed tool may not have materialized there yet. */
+            if (
+              phasePart.activity_start_index === 0 &&
+              activityStartIndex > 0 &&
+              foldedFirstPart &&
+              targetContent?.[activityStartIndex - 1] != null
+            ) {
+              activityStartIndex -= 1;
+            }
+            offsetPart = {
+              ...phasePart,
+              activity_start_index: activityStartIndex,
+              ...(typeof phasePart.activity_end_index === 'number' && {
+                activity_end_index: offsetActivityPhaseBoundary(
+                  phasePart.activity_end_index,
+                  prefixLength,
+                  foldedFirstPart,
+                ),
+              }),
+            };
+          }
+          offsetEvent = {
+            ...event,
+            index: event.index + prefixLength,
+            part: offsetPart,
+          };
+        }
         const updated = applyActivityLabelPart(messages[index], offsetEvent);
         if (updated !== messages[index]) {
           const nextMessages = [...messages];

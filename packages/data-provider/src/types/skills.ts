@@ -38,11 +38,25 @@ export type SkillSource = 'inline' | 'deployment' | 'github' | 'notion';
  */
 export type SkillFileCategory = 'script' | 'reference' | 'asset' | 'other';
 
+/** Nested object inside a structured frontmatter key. */
+export type SkillFrontmatterObject = { [key: string]: SkillFrontmatterValue | undefined };
+
 /**
- * Allowed value types inside a skill's YAML frontmatter.
- * Kept strict so callers cannot slip arbitrary `unknown` payloads through the API.
+ * Allowed value types inside a skill's YAML frontmatter. Scalars cover the
+ * documented keys; nested arrays and objects describe the structured ones
+ * (`hooks`, `metadata`, `references`), which real `SKILL.md` files write as a
+ * list, a list of objects, or a map.
+ *
+ * Still no `unknown` or `any`: the payload is JSON-safe by construction, and
+ * the server bounds depth, string length and array size when validating it.
  */
-export type SkillFrontmatterValue = string | number | boolean | string[] | null;
+export type SkillFrontmatterValue =
+  | string
+  | number
+  | boolean
+  | null
+  | SkillFrontmatterValue[]
+  | SkillFrontmatterObject;
 
 /**
  * Structured YAML frontmatter for a skill. All keys are optional on the wire
@@ -106,8 +120,8 @@ export type TSkillWarning = {
  * - `description` is the "when to use this skill" sentence. Highest-leverage
  *   field for trigger accuracy; a short/vague one causes undertriggering.
  * - `frontmatter` is the structured YAML bag minus `name`/`description`
- *   (those live as top-level columns). Validated strictly against a known
- *   key set server-side.
+ *   (those live as top-level columns). Known keys receive value validation;
+ *   unknown keys are retained and reported as non-blocking warnings.
  * - `source`/`sourceMetadata` identify whether the row is user-authored,
  *   deployment-provided, or mirrored from an external source such as GitHub.
  */
@@ -215,11 +229,20 @@ export type TGitHubSkillSyncCredentialSummary = {
   createdAt?: string;
 };
 
+/** One upstream skill a sync run dropped, with the reason it was dropped. */
+export type TGitHubSkillSyncSkippedSkill = {
+  path: string;
+  name?: string;
+  errorCode: string;
+  errorMessage: string;
+};
+
 export type TGitHubSkillSyncSourceStatus = {
   provider: 'github';
   sourceId: string;
   tenantId?: string;
-  status: 'idle' | 'running' | 'succeeded' | 'failed' | 'skipped';
+  /** `partial`: some skills published, others were skipped (see `skippedSkills`). */
+  status: 'idle' | 'running' | 'succeeded' | 'partial' | 'failed' | 'skipped';
   credentialKey?: string;
   credentialPresent: boolean;
   owner?: string;
@@ -236,6 +259,8 @@ export type TGitHubSkillSyncSourceStatus = {
   syncedFileCount: number;
   deletedSkillCount: number;
   deletedFileCount: number;
+  skippedSkillCount: number;
+  skippedSkills?: TGitHubSkillSyncSkippedSkill[];
   updatedAt?: string;
   createdAt?: string;
 };

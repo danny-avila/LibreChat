@@ -152,6 +152,90 @@ describe('GenerationJobManager resume replay events', () => {
     expect(resumeState?.runSteps).toEqual([runStep]);
   });
 
+  test('applies retained ask answers to reconnect snapshots', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    manager = createManagerWithStore(store);
+    const streamId = `ask-answer-resume-${Date.now()}`;
+    const job = await manager.createJob(streamId, 'user-1', streamId);
+    manager.setContentParts(streamId, [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' },
+      },
+    ]);
+    await store.updateJob(
+      streamId,
+      {
+        resolvedAskUserQuestions: [
+          { request: { question: 'Which env?' }, output: 'staging', toolCallId: 'ask-1' },
+        ],
+      },
+      job.createdAt,
+    );
+
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(resumeState?.aggregatedContent).toEqual([
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'ask-1',
+          name: 'ask_user_question',
+          args: JSON.stringify({ question: 'Which env?' }),
+          output: 'staging',
+          progress: 1,
+        },
+      },
+    ]);
+  });
+
+  test('does not return a stale pending action with a newly resolved answer', async () => {
+    const store = new InMemoryJobStore({ ttlAfterComplete: 60000 });
+    manager = createManagerWithStore(store);
+    const streamId = `ask-answer-lifecycle-resume-${Date.now()}`;
+    const job = await manager.createJob(streamId, 'user-1', streamId);
+    manager.setContentParts(streamId, [
+      {
+        type: 'tool_call',
+        tool_call: { id: 'ask-1', name: 'ask_user_question', args: '' },
+      },
+    ]);
+    await store.updateJob(
+      streamId,
+      {
+        status: 'running',
+        resolvedAskUserQuestions: [
+          { request: { question: 'Which env?' }, output: 'staging', toolCallId: 'ask-1' },
+        ],
+      },
+      job.createdAt,
+    );
+    const getJob = store.getJob.bind(store);
+    jest.spyOn(store, 'getJob').mockImplementationOnce(async (...args) => {
+      const current = await getJob(...args);
+      if (current == null) {
+        return null;
+      }
+      return {
+        ...current,
+        status: 'requires_action',
+        pendingAction: {
+          actionId: 'stale-action',
+          streamId,
+          createdAt: Date.now(),
+          payload: { type: 'ask_user_question', question: { question: 'Which env?' } },
+        },
+      };
+    });
+
+    const resumeState = await manager.getResumeState(streamId);
+
+    expect(resumeState?.aggregatedContent?.[0]).toMatchObject({
+      tool_call: { output: 'staging' },
+    });
+    expect(resumeState?.pendingAction).toBeUndefined();
+  });
+
   test('realigns a stale run-step index to the aggregated tool card by tool-call id', async () => {
     manager = createInMemoryManager();
     const streamId = `run-step-index-resume-${Date.now()}`;

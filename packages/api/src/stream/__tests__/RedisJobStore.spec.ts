@@ -289,6 +289,18 @@ describe('RedisJobStore', () => {
       discoveredTools: [],
       preemptCapable: true,
       generationProtocolVersion: 2,
+      resolvedAskUserQuestions: [
+        {
+          request: { question: 'Deploy where?' },
+          output: 'prod',
+          toolCallId: 'call-1',
+        },
+        {
+          request: { question: 'Legacy missing?' },
+          output: 'yes',
+          contentMissing: true,
+        },
+      ],
     });
 
     /**
@@ -300,6 +312,18 @@ describe('RedisJobStore', () => {
     expect(job.preemptCapable).toBe(true);
     expect(job.generationProtocolVersion).toBe(2);
     expect(job.checkpointNamespace).toBe(String(job.createdAt));
+    expect(job.resolvedAskUserQuestions).toEqual([
+      {
+        request: { question: 'Deploy where?' },
+        output: 'prod',
+        toolCallId: 'call-1',
+      },
+      {
+        request: { question: 'Legacy missing?' },
+        output: 'yes',
+        contentMissing: true,
+      },
+    ]);
 
     expect(job).toMatchObject({
       streamId: 'stream-metadata',
@@ -318,6 +342,18 @@ describe('RedisJobStore', () => {
       isTemporary: false,
       promptTokens: 0,
       discoveredTools: [],
+      resolvedAskUserQuestions: [
+        {
+          request: { question: 'Deploy where?' },
+          output: 'prod',
+          toolCallId: 'call-1',
+        },
+        {
+          request: { question: 'Legacy missing?' },
+          output: 'yes',
+          contentMissing: true,
+        },
+      ],
     });
 
     const creationArgs = evalJobCreation.mock.calls[0];
@@ -329,6 +365,46 @@ describe('RedisJobStore', () => {
       isTemporary: '0',
       promptTokens: '0',
       discoveredTools: '[]',
+      resolvedAskUserQuestions: JSON.stringify([
+        {
+          request: { question: 'Deploy where?' },
+          output: 'prod',
+          toolCallId: 'call-1',
+        },
+        {
+          request: { question: 'Legacy missing?' },
+          output: 'yes',
+          contentMissing: true,
+        },
+      ]),
+    });
+  });
+
+  test.each([
+    'null',
+    '42',
+    '"answer"',
+    '{}',
+    '[]',
+    '[null]',
+    '[{"request":"Question?","output":"answer","contentIndex":-1}]',
+    '[{"request":"Question?","output":"answer","contentMissing":false}]',
+  ])('drops malformed resolved ask-user metadata: %s', async (resolvedAskUserQuestions) => {
+    const redis = {
+      isCluster: true,
+      hgetall: jest.fn().mockResolvedValue({
+        streamId: 'stream-malformed-answer',
+        userId: 'user-1',
+        status: 'running',
+        createdAt: '100',
+        resolvedAskUserQuestions,
+      }),
+    } as unknown as Cluster;
+    const store = new RedisJobStore(redis);
+
+    await expect(store.getJob('stream-malformed-answer')).resolves.toMatchObject({
+      streamId: 'stream-malformed-answer',
+      resolvedAskUserQuestions: undefined,
     });
   });
 

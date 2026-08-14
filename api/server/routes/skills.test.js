@@ -300,14 +300,27 @@ describe('Skill routes', () => {
       expect(res.status).toBe(400);
     });
 
-    it('rejects frontmatter with unknown keys', async () => {
+    it('accepts frontmatter with unknown keys and warns about them', async () => {
+      const res = await createSkillAsOwner({
+        name: 'unknown-key-frontmatter-skill',
+        frontmatter: { 'not-a-real-key': 'value' },
+      });
+      expect(res.status).toBe(201);
+      expect(res.body.warnings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: 'UNKNOWN_KEY', severity: 'warning' }),
+        ]),
+      );
+    });
+
+    it('rejects malformed frontmatter with 400', async () => {
       const res = await createSkillAsOwner({
         name: 'bad-frontmatter-skill',
-        frontmatter: { 'not-a-real-key': 'value' },
+        frontmatter: { 'user-invocable': 'yes' },
       });
       expect(res.status).toBe(400);
       expect(res.body.issues).toEqual(
-        expect.arrayContaining([expect.objectContaining({ code: 'UNKNOWN_KEY' })]),
+        expect.arrayContaining([expect.objectContaining({ code: 'INVALID_TYPE' })]),
       );
     });
 

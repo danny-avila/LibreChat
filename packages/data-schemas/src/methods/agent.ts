@@ -604,6 +604,9 @@ export function createAgentMethods(
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const { updatingUserId = null, forceVersion = false, skipVersioning = false } = options;
     const mongoOptions = { new: true, upsert: false };
+    /** Set when the update would snapshot a version identical to the newest one. The write
+     *  still lands; only the `versions` entry is dropped. */
+    let suppressedVersionEntry = false;
 
     const currentAgent = await Agent.findOne(searchParameter);
     if (currentAgent) {
@@ -694,12 +697,14 @@ export function createAgentMethods(
           actionsHash,
         );
         if (duplicateVersion && !forceVersion) {
-          const agentObj = currentAgent.toObject() as IAgent & {
-            version?: number;
-            versions?: unknown[];
-          };
-          agentObj.version = (versions as unknown[]).length;
-          return agentObj;
+          /** A snapshot identical to the newest version adds no history, but the update
+           *  itself must still be applied. The document is not always equal to that
+           *  version: `$push`/`$pull`/`$addToSet` updates snapshot the pre-update state,
+           *  and `skipVersioning` writes snapshot nothing at all. Whenever the caller
+           *  moves the document back onto the newest version's content — removing a tool
+           *  `addAgentResourceFile` added, for instance — returning here dropped a real
+           *  change and reported success. */
+          suppressedVersionEntry = true;
         }
       }
 
@@ -717,7 +722,7 @@ export function createAgentMethods(
         versionEntry.updatedBy = new mongoose.Types.ObjectId(updatingUserId);
       }
 
-      if (shouldCreateVersion) {
+      if (shouldCreateVersion && !suppressedVersionEntry) {
         updateData.$push = {
           ...(($push as Record<string, unknown>) || {}),
           versions: versionEntry,
@@ -725,11 +730,20 @@ export function createAgentMethods(
       }
     }
 
-    return (await Agent.findOneAndUpdate(
+    const updatedAgent = (await Agent.findOneAndUpdate(
       searchParameter,
       updateData,
       mongoOptions,
     ).lean()) as IAgent | null;
+
+    /** Callers that create a version read `version` back from their own count of
+     *  `versions`; a suppressed entry leaves that count unchanged, so report it here to
+     *  keep the "no new version" signal these callers already relied on. */
+    if (updatedAgent && suppressedVersionEntry) {
+      (updatedAgent as IAgent & { version?: number }).version = updatedAgent.versions?.length ?? 0;
+    }
+
+    return updatedAgent;
   }
 
   /**

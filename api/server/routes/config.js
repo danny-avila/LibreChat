@@ -319,15 +319,19 @@ router.get('/', async function (req, res) {
       payload.buildInfo = buildInfo;
     }
 
-    if (!payload.allowAccountDeletion) {
+    const adminPanelURL = process.env.ADMIN_PANEL_URL;
+    if (adminPanelURL || !payload.allowAccountDeletion) {
       try {
         const userId = req.user.id ?? req.user._id?.toString();
         if (userId) {
-          const canDelete = await hasCapability(
+          const hasAdminAccess = await hasCapability(
             { id: userId, role: req.user.role ?? '', tenantId: req.user.tenantId },
             SystemCapabilities.ACCESS_ADMIN,
           );
-          if (canDelete) {
+          if (hasAdminAccess && adminPanelURL) {
+            payload.adminPanelURL = adminPanelURL;
+          }
+          if (hasAdminAccess && !payload.allowAccountDeletion) {
             payload.allowAccountDeletion = true;
           }
         }

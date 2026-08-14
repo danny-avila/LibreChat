@@ -142,7 +142,7 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
   const textPart = (text) => ({ type: ContentTypes.TEXT, text });
   const toolCallPart = (id) => ({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
 
-  it('keeps only the last part + tool_call parts when hide_sequential_outputs is on', () => {
+  it('keeps only the last non-label part + tool_call parts when filtering is on', () => {
     const ctx = {
       options: { agent: { hide_sequential_outputs: true } },
       contentParts: [
@@ -156,11 +156,199 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
     expect(ctx.contentParts).toEqual([toolCallPart('tc1'), textPart('final')]);
   });
 
+  it('keeps the final text when a parent phase marker is appended after it', () => {
+    const tool = toolCallPart('tc1');
+    const final = textPart('final');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Completed the investigation',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+    };
+    const ctx = {
+      options: { agent: { hide_sequential_outputs: true } },
+      contentParts: [textPart('intermediate'), tool, final, phase],
+    };
+    const previousParts = [...ctx.contentParts];
+
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(ctx.contentParts).toEqual([tool, final, phase]);
+    expect(phase.activity_start_index).toBe(0);
+    expect(phase.activity_end_index).toBe(1);
+  });
+
+  it('keeps an appended phase before the final text when all phase children are filtered', () => {
+    const final = textPart('final');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Completed both reasoning activities',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+    };
+    const ctx = {
+      options: { agent: { hide_sequential_outputs: true } },
+      contentParts: [
+        { type: ContentTypes.THINK, think: 'first' },
+        { type: ContentTypes.THINK, think: 'second' },
+        final,
+        phase,
+      ],
+    };
+    const previousParts = [...ctx.contentParts];
+
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(ctx.contentParts).toEqual([final, phase]);
+    expect(phase.activity_start_index).toBe(0);
+    expect(phase.activity_end_index).toBe(0);
+  });
+
   it('is a no-op when hide_sequential_outputs is off', () => {
     const parts = [textPart('a'), textPart('b')];
     const ctx = { options: { agent: { hide_sequential_outputs: false } }, contentParts: parts };
     AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
     expect(ctx.contentParts).toEqual([textPart('a'), textPart('b')]);
+  });
+
+  it('rebases phase bounds across skill prepends and sequential filtering', () => {
+    const reasoning = { type: ContentTypes.THINK, think: 'checking' };
+    const activityTool = toolCallPart('activity-tool');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Resolved the session issue',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+    };
+    const final = textPart('final');
+    const previousParts = [reasoning, activityTool, phase, final];
+    const skillCard = toolCallPart('manual-skill');
+    const ctx = {
+      options: { agent: { hide_sequential_outputs: true } },
+      contentParts: [skillCard, ...previousParts],
+    };
+
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(ctx.contentParts).toEqual([skillCard, activityTool, phase, final]);
+    expect(phase.activity_start_index).toBe(1);
+    expect(phase.activity_end_index).toBe(2);
+  });
+
+  it('rebases phase bounds over reshaped sparse content without retaining holes', () => {
+    const reasoning = { type: ContentTypes.THINK, think: 'planning' };
+    const toolCall = toolCallPart('tc-sparse');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Searched for tools',
+      activity_label_type: 'phase',
+      activity_start_index: 1,
+    };
+    const final = textPart('answer');
+    const contentParts = [];
+    contentParts[0] = reasoning;
+    contentParts[2] = toolCall;
+    contentParts[3] = phase;
+    contentParts[4] = final;
+    const previousParts = [...contentParts];
+    const ctx = { options: { agent: {} }, contentParts: [toolCall, phase, final] };
+
+    expect(() =>
+      AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts),
+    ).not.toThrow();
+    expect(phase.activity_start_index).toBe(0);
+  });
+
+  it('rebases explicit bounds using only defined sparse slots', () => {
+    const toolCall = toolCallPart('tc-large-sparse');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Searched the sparse transcript',
+      activity_label_type: 'phase',
+      activity_start_index: 5,
+      activity_end_index: 999_999,
+    };
+    const previousParts = [];
+    previousParts[5] = toolCall;
+    previousParts[999_999] = phase;
+    const ctx = { options: { agent: {} }, contentParts: [toolCall, phase] };
+
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(phase.activity_start_index).toBe(0);
+    expect(phase.activity_end_index).toBe(1);
+  });
+
+  it('preserves a sparse phase reservation when completion does not reshape content', () => {
+    const firstTool = toolCallPart('tool-1');
+    const secondTool = toolCallPart('tool-2');
+    const firstLabel = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Recorded the first result',
+      tool_call_ids: ['tool-1'],
+    };
+    const secondLabel = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Recorded the second result',
+      tool_call_ids: ['tool-2'],
+    };
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Verified both results',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+    };
+    const final = { type: ContentTypes.TEXT, text: 'Final answer', phase: 'final_answer' };
+    const contentParts = [];
+    contentParts[1] = { type: ContentTypes.TEXT, text: '', phase: 'final_answer' };
+    contentParts[2] = firstLabel;
+    contentParts[3] = secondTool;
+    contentParts[4] = secondLabel;
+    contentParts[5] = phase;
+    contentParts[6] = final;
+    const previousParts = [...contentParts];
+    const ctx = { options: { agent: {} }, contentParts };
+
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+    expect(phase.activity_start_index).toBe(0);
+
+    contentParts[0] = firstTool;
+    const phaseChildren = contentParts.slice(
+      phase.activity_start_index,
+      contentParts.indexOf(phase),
+    );
+    expect(phaseChildren.map((part) => part?.tool_call?.id).filter(Boolean)).toEqual([
+      'tool-1',
+      'tool-2',
+    ]);
+  });
+});
+
+describe('AgentClient - activity phase completion', () => {
+  it('completes an uninterrupted root run', () => {
+    const complete = jest.fn();
+    AgentClient.prototype.completeActivityPhase.call(
+      {},
+      { getInterrupt: () => undefined },
+      { complete },
+    );
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains phase state when the root run pauses for HITL', () => {
+    const complete = jest.fn();
+    AgentClient.prototype.completeActivityPhase.call(
+      {},
+      { getInterrupt: () => ({ payload: { type: 'tool_approval' } }) },
+      { complete },
+    );
+    expect(complete).not.toHaveBeenCalled();
   });
 });
 

@@ -1,4 +1,4 @@
-const { Constants } = require('librechat-data-provider');
+const { Constants, ContentTypes } = require('librechat-data-provider');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');
 
 function deferred() {
@@ -691,6 +691,43 @@ describe('BaseClient', () => {
       );
     });
 
+    it('applies edited reasoning content from its typed payload before regeneration', async () => {
+      const responseMessageId = 'response-with-reasoning';
+      const newHistory = [
+        ...messageHistory,
+        {
+          role: 'assistant',
+          isCreatedByUser: false,
+          messageId: responseMessageId,
+          parentMessageId: '3',
+          content: [
+            { type: ContentTypes.THINK, think: 'Original reasoning', phase: 'analysis' },
+            { type: ContentTypes.TEXT, text: 'Original response' },
+          ],
+        },
+      ];
+
+      TestClient = initializeFakeClient(apiKey, options, newHistory);
+      await TestClient.sendMessage('test message', {
+        isEdited: true,
+        overrideParentMessageId: 'user-message-id',
+        parentMessageId: '3',
+        responseMessageId,
+        editedContent: {
+          index: 0,
+          type: ContentTypes.THINK,
+          [ContentTypes.THINK]: 'Updated reasoning',
+        },
+      });
+
+      const editedResponse = TestClient.currentMessages[TestClient.currentMessages.length - 1];
+      expect(editedResponse.content[0]).toEqual({
+        type: ContentTypes.THINK,
+        think: 'Updated reasoning',
+        phase: 'analysis',
+      });
+    });
+
     test('setOptions is called with the correct arguments only when replaceOptions is set to true', async () => {
       TestClient.setOptions = jest.fn();
       const opts = { conversationId: '123', parentMessageId: '456', replaceOptions: true };
@@ -1235,6 +1272,80 @@ describe('BaseClient', () => {
       expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
         expect.objectContaining({
           model: instanceModel,
+        }),
+      );
+    });
+  });
+
+  /**
+   * The `transactions.enabled` guard lives in `createTransaction`, which reads it off
+   * the object it is handed. Dropping the config anywhere between here and there
+   * silently re-enables the writes rather than failing, so pin the wiring itself.
+   */
+  describe('recordTokenUsage transactions config', () => {
+    let priorEndpoint;
+    let priorEndpointType;
+
+    const arrangeFallbackPath = () => {
+      TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(50);
+      TestClient.recordTokenUsage = jest.fn().mockResolvedValue(undefined);
+      TestClient.buildMessages.mockReturnValue({
+        prompt: [],
+        tokenCountMap: { res: 50 },
+      });
+    };
+
+    /** `options` is shared across this file's tests, so an endpoint left behind by an earlier
+     * case would route the balance-enabled arrangement into `checkBalance`. */
+    beforeEach(() => {
+      priorEndpoint = TestClient.options.endpoint;
+      priorEndpointType = TestClient.options.endpointType;
+      delete TestClient.options.endpoint;
+      delete TestClient.options.endpointType;
+    });
+
+    afterEach(() => {
+      delete TestClient.options.req;
+      TestClient.options.endpoint = priorEndpoint;
+      TestClient.options.endpointType = priorEndpointType;
+    });
+
+    test('should forward the resolved transactions config to recordTokenUsage', async () => {
+      TestClient.options.req = { config: { transactions: { enabled: false } } };
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: false },
+        }),
+      );
+    });
+
+    test('should default to enabled transactions when no app config is present', async () => {
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: true },
+        }),
+      );
+    });
+
+    test('should forward transactions as enabled when balance tracking overrides the setting', async () => {
+      TestClient.options.req = {
+        config: { transactions: { enabled: false }, balance: { enabled: true } },
+      };
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: true },
         }),
       );
     });
@@ -1795,6 +1906,55 @@ describe('BaseClient', () => {
       );
       expect(userSave[0].text).toBe('Just a question');
       expect(userSave[0].quotes).toBeUndefined();
+    });
+  });
+
+  describe('mergeEditedContent phase boundaries', () => {
+    test('does not merge commentary into a final answer', () => {
+      const existing = [
+        { type: ContentTypes.TEXT, text: 'Checked the deployment. ', phase: 'commentary' },
+      ];
+      const completion = [
+        { type: ContentTypes.TEXT, text: 'Everything is healthy.', phase: 'final_answer' },
+        {
+          type: ContentTypes.ACTIVITY_LABEL,
+          activity_label_type: 'phase',
+          activity_start_index: 0,
+          activity_end_index: 1,
+          activity_label: 'Verified deployment health',
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.TEXT)).toEqual([
+        existing[0],
+        completion[0],
+        { ...completion[1], activity_start_index: 1, activity_end_index: 2 },
+      ]);
+    });
+
+    test.each([
+      [undefined, 'commentary'],
+      ['commentary', undefined],
+    ])('does not merge phased and unphased text (%s → %s)', (existingPhase, completionPhase) => {
+      const existing = [
+        {
+          type: ContentTypes.TEXT,
+          text: 'Retained text. ',
+          ...(existingPhase != null && { phase: existingPhase }),
+        },
+      ];
+      const completion = [
+        {
+          type: ContentTypes.TEXT,
+          text: 'New text.',
+          ...(completionPhase != null && { phase: completionPhase }),
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.TEXT)).toEqual([
+        existing[0],
+        completion[0],
+      ]);
     });
   });
 });

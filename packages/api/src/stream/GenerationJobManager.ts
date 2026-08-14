@@ -66,9 +66,14 @@ import {
 import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
-import { normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
+import { attachAskUserQuestionAnswers, normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
 import { emitChunkWithReceipt } from './internal/chunkPublication';
 import { resolveCoalesceWindowMs } from './internal/coalescing';
+import {
+  REDIS_ABORT_TERMINAL_GRACE_MS,
+  REDIS_EVENT_REORDER_TIMEOUT_MS,
+  REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS,
+} from './internal/timing';
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
@@ -586,6 +591,12 @@ interface RuntimeJobState {
   allSubscribersLeftHandlers?: Array<(...args: unknown[]) => void | Promise<void>>;
 }
 
+interface FencedRuntimeRetirementContext {
+  controller: AbortController;
+  timer?: NodeJS.Timeout;
+  cleanupStarted?: boolean;
+}
+
 interface PreparedSubscription {
   runtime: RuntimeJobState;
   jobData: SerializableJobData | null;
@@ -656,6 +667,15 @@ class GenerationJobManagerClass {
 
   private cleanupInterval: NodeJS.Timeout | null = null;
 
+  /** Generation-scoped retirement callbacks must not outlive the configured
+   * store/transport pair that created them. */
+  private fencedRuntimeRetirements = new Map<RuntimeJobState, FencedRuntimeRetirementContext>();
+
+  /** Suppresses the stream-global disconnect callback while an exact fenced
+   * predecessor detaches. The callback may otherwise target a same-stream
+   * successor that never owned the departing SSE response. */
+  private fencedSubscriberDetachments = new Set<string>();
+
   /** Rejects new jobs once graceful shutdown has started. */
   private shuttingDown = false;
 
@@ -723,6 +743,7 @@ class GenerationJobManagerClass {
     cleanupOnComplete?: boolean;
   }): void {
     assertJobStoreV2(services.jobStore);
+    this.cancelFencedRuntimeRetirements();
     const previousStore = this.storeLabel;
     if (this.cleanupInterval) {
       logger.warn(
@@ -1281,6 +1302,9 @@ class GenerationJobManagerClass {
 
   private registerAllSubscribersLeft(streamId: string): void {
     this.eventTransport.onAllSubscribersLeft(streamId, () => {
+      if (this.fencedSubscriberDetachments.has(streamId)) {
+        return;
+      }
       const runtime = this.runtimeState.get(streamId);
       if (!runtime) {
         return;
@@ -2380,6 +2404,7 @@ class GenerationJobManagerClass {
         // Surface deferred tools discovered before the pause so the resume route can
         // replay them into createRun (the rebuilt graph passes `messages: []`).
         discoveredTools: jobData.discoveredTools,
+        activityPhaseSnapshot: jobData.activityPhaseSnapshot,
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
@@ -2390,6 +2415,7 @@ class GenerationJobManagerClass {
         // Surface the pending review so status/resume routes built on the
         // facade can render the prompt for a `requires_action` job.
         pendingAction: jobData.pendingAction,
+        resolvedAskUserQuestions: jobData.resolvedAskUserQuestions,
       },
       readyPromise: runtime.readyPromise,
       resolveReady: runtime.resolveReady,
@@ -3489,8 +3515,8 @@ class GenerationJobManagerClass {
    * - Emits abort signal via Redis pub/sub
    * - The replica running generation receives signal and aborts its AbortController
    *
-   * `options.transformAbortContent` rewrites the persistable content BEFORE the
-   * final SSE is emitted (and before it is returned for the DB save), so a
+   * `options.transformAbortContent` rewrites the reconstructed content BEFORE
+   * persistence filtering and the final SSE (and before it is returned for the DB save), so a
    * host-side stamp — e.g. re-attaching a paused `ask_user_question`'s args
    * that the Redis chunk-log reconstruction dropped — reaches the LIVE client
    * too, not just the saved message. Pure/optional; identity when omitted.
@@ -3498,7 +3524,10 @@ class GenerationJobManagerClass {
   async abortJob(
     streamId: string,
     options?: {
-      transformAbortContent?: (content: TMessageContentParts[]) => TMessageContentParts[];
+      transformAbortContent?: (
+        content: TMessageContentParts[],
+        jobData: SerializableJobData,
+      ) => TMessageContentParts[];
       /** Required durable work (for example saving the partial response and
        * pruning the paused checkpoint) that must finish before the normal
        * FINAL lets the client submit against that history. Throwing emits a
@@ -3603,11 +3632,6 @@ class GenerationJobManagerClass {
     const result = await this.jobStore.getContentParts(streamId, jobData.createdAt);
     let content = result?.content ?? [];
     let abortContent = filterPersistableAbortContent(content);
-    if (options?.transformAbortContent) {
-      abortContent = options.transformAbortContent(
-        abortContent as TMessageContentParts[],
-      ) as typeof abortContent;
-    }
     let shouldPersistAbortContent = abortContent.length > 0;
 
     /** Collected usage for all models */
@@ -3697,6 +3721,10 @@ class GenerationJobManagerClass {
         collectedUsage,
       };
     }
+    // The successful CAS may follow a same-generation approval transition.
+    // Use the snapshot that selected the winning source status so host-side
+    // content transforms see metadata committed by that transition.
+    jobData = currentAfterConflict ?? jobData;
     const terminalClaim: TerminalJobClaim = Object.freeze({
       streamId,
       createdAt: jobData.createdAt,
@@ -3736,18 +3764,6 @@ class GenerationJobManagerClass {
         const committed = await this.jobStore.getContentParts(streamId, jobData.createdAt);
         if (committed) {
           content = committed.content;
-          abortContent = filterPersistableAbortContent(content);
-          if (options?.transformAbortContent) {
-            abortContent = options.transformAbortContent(
-              abortContent as TMessageContentParts[],
-            ) as typeof abortContent;
-          }
-          shouldPersistAbortContent = abortContent.length > 0;
-          text = shouldPersistAbortContent
-            ? parseTextParts(abortContent as TMessageContentParts[], false, {
-                includeSteer: true,
-              })
-            : '';
         }
       } catch (contentError) {
         logger.warn(
@@ -3755,6 +3771,20 @@ class GenerationJobManagerClass {
           contentError,
         );
       }
+      if (options?.transformAbortContent) {
+        content = options.transformAbortContent(
+          content as TMessageContentParts[],
+          jobData,
+        ) as typeof content;
+      }
+      // Answer stamps use ordinals from the unfiltered chunk reconstruction.
+      // Filter only after the transform so sparse/empty/OAuth parts cannot
+      // shift a retained ID-less ask answer onto a different tool call.
+      abortContent = filterPersistableAbortContent(content);
+      shouldPersistAbortContent = abortContent.length > 0;
+      text = shouldPersistAbortContent
+        ? parseTextParts(abortContent as TMessageContentParts[], false, { includeSteer: true })
+        : '';
 
       /** Detect "early abort" - aborted before any generation happened (e.g., during tool loading)
       In this case, no messages were saved to DB, so frontend shouldn't navigate to conversation */
@@ -4073,8 +4103,11 @@ class GenerationJobManagerClass {
       streamId,
       {
         onChunk: (event, generationId) => {
+          const currentRuntime = this.runtimeState.get(streamId);
+          const isMatchingTerminalDrain =
+            currentRuntime == null && generationId === runtime.createdAt;
           if (
-            this.runtimeState.get(streamId) !== runtime ||
+            (currentRuntime !== runtime && !isMatchingTerminalDrain) ||
             (generationId != null && generationId !== runtime.createdAt)
           ) {
             return;
@@ -4128,7 +4161,29 @@ class GenerationJobManagerClass {
         runtime.earlyReplayHandlers.delete(queueChunk);
         runtime.localErrorHandlers.delete(queueError);
         detachSignal?.removeEventListener('abort', detachOnAbort);
-        transportSubscription.unsubscribe();
+        const fencedLastSubscriber =
+          runtime.localErrorHandlers.size === 0 &&
+          (this.fencedRuntimeRetirements.has(runtime) ||
+            this.runtimeState.get(streamId) !== runtime);
+        const addFencedDetachmentSuppression =
+          fencedLastSubscriber && !this.fencedSubscriberDetachments.has(streamId);
+        if (fencedLastSubscriber) {
+          runtime.syncSent = false;
+          runtime.hasSubscriber = false;
+          runtime.attachmentGeneration++;
+          runtime.lastSubscriberCleanupGeneration = runtime.attachmentGeneration;
+        }
+        if (addFencedDetachmentSuppression) {
+          this.fencedSubscriberDetachments.add(streamId);
+        }
+        try {
+          this.cleanupUnobservedFencedRuntime(streamId, runtime);
+          transportSubscription.unsubscribe();
+        } finally {
+          if (addFencedDetachmentSuppression) {
+            this.fencedSubscriberDetachments.delete(streamId);
+          }
+        }
         resolveDetached();
       },
     };
@@ -5438,12 +5493,288 @@ class GenerationJobManagerClass {
     }
   }
 
+  private async getReplacementHandoffState(
+    streamId: string,
+    predecessorCreatedAt: number,
+  ): Promise<'none' | 'pending' | 'settled'> {
+    try {
+      const current = (await this.jobStore.getJob(streamId)) as CreatedJobData | null;
+      if (current == null) {
+        /** A fenced append proves that a newer durable owner existed. Its job
+         * may disappear after publishing predecessor DONE but before this poll,
+         * so absence is a settled handoff that still needs delivery grace. */
+        return 'settled';
+      }
+      if (current.createdAt <= predecessorCreatedAt) {
+        return 'none';
+      }
+      const receipts =
+        current.replacedJobs ?? (current.replacedJob != null ? [current.replacedJob] : []);
+      return receipts.some((receipt) => receipt.createdAt === predecessorCreatedAt)
+        ? 'pending'
+        : 'settled';
+    } catch (error) {
+      logger.warn(
+        `[GenerationJobManager] Failed to inspect replacement handoff for fenced generation ${streamId}:`,
+        error,
+      );
+      // A transient read failure cannot prove that DONE publication finished.
+      return 'pending';
+    }
+  }
+
+  private async getReplacementHandoffStateBeforeDeadline(
+    streamId: string,
+    predecessorCreatedAt: number,
+    deadlineAt: number,
+    lifecycleSignal: AbortSignal,
+  ): Promise<'none' | 'pending' | 'settled' | 'deadline' | 'cancelled'> {
+    if (lifecycleSignal.aborted) {
+      return 'cancelled';
+    }
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) {
+      return 'deadline';
+    }
+
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    let removeCancellationListener: (() => void) | undefined;
+    try {
+      const cancellation = new Promise<'cancelled'>((resolve) => {
+        const onCancelled = (): void => resolve('cancelled');
+        removeCancellationListener = (): void =>
+          lifecycleSignal.removeEventListener('abort', onCancelled);
+        lifecycleSignal.addEventListener('abort', onCancelled, { once: true });
+        if (lifecycleSignal.aborted) {
+          onCancelled();
+        }
+      });
+      const deadline = new Promise<'deadline'>((resolve) => {
+        deadlineTimer = setTimeout(() => resolve('deadline'), remainingMs);
+        deadlineTimer.unref?.();
+      });
+      return await Promise.race([
+        this.getReplacementHandoffState(streamId, predecessorCreatedAt),
+        deadline,
+        cancellation,
+      ]);
+    } finally {
+      if (deadlineTimer != null) {
+        clearTimeout(deadlineTimer);
+      }
+      removeCancellationListener?.();
+    }
+  }
+
+  private cancelFencedRuntimeRetirements(): void {
+    for (const retirement of this.fencedRuntimeRetirements.values()) {
+      if (retirement.timer != null) {
+        clearTimeout(retirement.timer);
+        retirement.timer = undefined;
+      }
+      retirement.controller.abort();
+    }
+    this.fencedRuntimeRetirements.clear();
+  }
+
+  private scheduleFencedRuntimeRetirement(
+    streamId: string,
+    runtime: RuntimeJobState,
+    startedAt: number,
+    retirement: FencedRuntimeRetirementContext,
+    handoffPendingObserved = false,
+    postHandoffGraceApplied = false,
+    requestedDelayMs = REDIS_ABORT_TERMINAL_GRACE_MS,
+  ): void {
+    const lifecycleSignal = retirement.controller.signal;
+    if (lifecycleSignal.aborted || this.fencedRuntimeRetirements.get(runtime) !== retirement) {
+      return;
+    }
+    const remainingMs = REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS - (Date.now() - startedAt);
+    /** Handoff inspection is capped at 30 seconds. Once inspection ends, the
+     * final delivery grace is intentionally un-clamped and may extend the
+     * generation-scoped hold by one reorder window. */
+    const delayMs = postHandoffGraceApplied
+      ? Math.max(1, requestedDelayMs)
+      : Math.max(1, Math.min(requestedDelayMs, remainingMs));
+    const retirementTimer = setTimeout(() => {
+      if (retirement.timer === retirementTimer) {
+        retirement.timer = undefined;
+      }
+      if (lifecycleSignal.aborted) {
+        return;
+      }
+      void this.finishFencedRuntimeRetirement(
+        streamId,
+        runtime,
+        startedAt,
+        retirement,
+        handoffPendingObserved,
+        postHandoffGraceApplied,
+        lifecycleSignal,
+      );
+    }, delayMs);
+    retirement.timer = retirementTimer;
+    retirementTimer.unref?.();
+  }
+
+  private async finishFencedRuntimeRetirement(
+    streamId: string,
+    runtime: RuntimeJobState,
+    startedAt: number,
+    retirement: FencedRuntimeRetirementContext,
+    handoffPendingObserved: boolean,
+    postHandoffGraceApplied: boolean,
+    lifecycleSignal: AbortSignal,
+  ): Promise<void> {
+    if (
+      this.shuttingDown ||
+      lifecycleSignal.aborted ||
+      this.fencedRuntimeRetirements.get(runtime) !== retirement
+    ) {
+      return;
+    }
+    if (
+      runtime.localErrorHandlers.size === 0 &&
+      this.cleanupUnobservedFencedRuntime(streamId, runtime)
+    ) {
+      return;
+    }
+    if (!postHandoffGraceApplied) {
+      const deadlineAt = startedAt + REDIS_REPLACEMENT_HANDOFF_MAX_WAIT_MS;
+      const handoffState = await this.getReplacementHandoffStateBeforeDeadline(
+        streamId,
+        runtime.createdAt,
+        deadlineAt,
+        lifecycleSignal,
+      );
+      if (this.shuttingDown || lifecycleSignal.aborted || handoffState === 'cancelled') {
+        return;
+      }
+      if (handoffState === 'pending' && Date.now() < deadlineAt) {
+        this.scheduleFencedRuntimeRetirement(streamId, runtime, startedAt, retirement, true);
+        return;
+      }
+      if (
+        handoffPendingObserved ||
+        handoffState === 'pending' ||
+        handoffState === 'settled' ||
+        handoffState === 'deadline'
+      ) {
+        this.scheduleFencedRuntimeRetirement(
+          streamId,
+          runtime,
+          startedAt,
+          retirement,
+          handoffPendingObserved || handoffState === 'pending',
+          true,
+          REDIS_EVENT_REORDER_TIMEOUT_MS * 2,
+        );
+        return;
+      }
+    }
+
+    if (this.fencedRuntimeRetirements.get(runtime) !== retirement) {
+      return;
+    }
+    retirement.cleanupStarted = true;
+    this.cleanupFencedRuntime(streamId, runtime);
+    if (this.fencedRuntimeRetirements.get(runtime) === retirement) {
+      this.fencedRuntimeRetirements.delete(runtime);
+    }
+  }
+
+  private cleanupUnobservedFencedRuntime(streamId: string, runtime: RuntimeJobState): boolean {
+    if (runtime.localErrorHandlers.size !== 0) {
+      return false;
+    }
+    const retirement = this.fencedRuntimeRetirements.get(runtime);
+    if (retirement == null || retirement.cleanupStarted === true) {
+      return false;
+    }
+    retirement.cleanupStarted = true;
+    if (retirement.timer != null) {
+      clearTimeout(retirement.timer);
+      retirement.timer = undefined;
+    }
+    retirement.controller.abort();
+    this.fencedRuntimeRetirements.delete(runtime);
+    this.cleanupFencedRuntime(streamId, runtime);
+    return true;
+  }
+
+  private recordFencedRuntimeAbortProof(
+    streamId: string,
+    runtime: RuntimeJobState,
+    ownsExactProvider: boolean,
+  ): void {
+    const recordAbortAcknowledgement = this.eventTransport.recordAbortAcknowledgement;
+    if (!this._isRedis || recordAbortAcknowledgement == null || !ownsExactProvider) {
+      return;
+    }
+
+    try {
+      void recordAbortAcknowledgement
+        .call(this.eventTransport, streamId, runtime.createdAt)
+        .then((confirmed) => {
+          if (!confirmed) {
+            logger.warn(
+              `[GenerationJobManager] Abort proof was not persisted for fenced generation ${streamId}`,
+            );
+          }
+        })
+        .catch((error) => {
+          logger.error(
+            `[GenerationJobManager] Failed to persist abort proof for fenced generation ${streamId}:`,
+            error,
+          );
+        });
+    } catch (error) {
+      logger.error(
+        `[GenerationJobManager] Failed to start abort proof for fenced generation ${streamId}:`,
+        error,
+      );
+    }
+  }
+
+  private cleanupFencedRuntime(streamId: string, runtime: RuntimeJobState): void {
+    if (runtime.replacementTransportHold !== true) {
+      this.releaseAbortSubscription(runtime);
+      this.releaseJobOwnership(streamId, runtime.createdAt);
+      this.jobStore.clearContentState(streamId, runtime.createdAt);
+
+      if (this.runtimeState.get(streamId) === runtime) {
+        this.runtimeState.delete(streamId);
+        this.runStepBuffers?.delete(streamId);
+        this.replayEventWriteQueues.delete(streamId);
+        this.tokenUsageWriteQueues.delete(streamId);
+      }
+    }
+
+    // finalEvent/errorEvent are cached before transport dispatch, so they do
+    // not prove that an attached SSE response closed. Each captured handler
+    // ignores this reconnect signal when its terminal is already queued.
+    for (const notify of [...runtime.localErrorHandlers]) {
+      try {
+        notify(TERMINAL_PUBLICATION_RECONNECT_ERROR);
+      } catch (error) {
+        logger.error(
+          `[GenerationJobManager] Failed to recycle a subscriber for fenced generation ${streamId}:`,
+          error,
+        );
+      }
+    }
+  }
+
   /** A generation-fenced append returning false is same-slot proof that this
-   * epoch is no longer the durable owner. This is the provider's backstop when
-   * a replacement abort publication is lost. Retire only the exact captured
-   * runtime; a newer local successor may already occupy the same stream id. */
+   * epoch is no longer the durable owner. Stop its provider immediately, then
+   * preserve captured subscribers while a durable successor still owns their
+   * handoff receipt. A newer runtime is never touched. */
   private retireRuntimeAfterDurableFence(streamId: string, runtime: RuntimeJobState): void {
     if (this.runtimeState.get(streamId) !== runtime) {
+      return;
+    }
+    if (this.fencedRuntimeRetirements.has(runtime)) {
       return;
     }
     /** A runtime whose stop signal already landed (cross-replica abort,
@@ -5458,30 +5789,22 @@ class GenerationJobManagerClass {
     }
     runtime.startupTelemetry?.end('replaced');
     runtime.startupTelemetry = undefined;
+    const ownsExactProvider = this.ownedJobs.get(streamId) === runtime.createdAt;
     runtime.abortController.abort();
+    this.recordFencedRuntimeAbortProof(streamId, runtime, ownsExactProvider);
+    if (this.shuttingDown) {
+      return;
+    }
     if (runtime.replacementTransportHold === true) {
       return;
     }
-    this.releaseAbortSubscription(runtime);
-    if (this.runtimeState.get(streamId) === runtime) {
-      this.runtimeState.delete(streamId);
-      this.releaseJobOwnership(streamId, runtime.createdAt);
-      this.runStepBuffers?.delete(streamId);
-      this.replayEventWriteQueues.delete(streamId);
-      this.tokenUsageWriteQueues.delete(streamId);
-      this.jobStore.clearContentState(streamId, runtime.createdAt);
-      try {
-        // Delete runtime ownership before closing. The transport's
-        // all-subscribers-left callback may run synchronously; it must not
-        // persist a partial response for this already-replaced epoch.
-        this.eventTransport.closeLocalSubscribers?.(streamId, TERMINAL_PUBLICATION_RECONNECT_ERROR);
-      } catch (error) {
-        logger.error(
-          `[GenerationJobManager] Failed to recycle subscribers for fenced generation ${streamId}:`,
-          error,
-        );
-      }
+    if (runtime.localErrorHandlers.size === 0) {
+      this.cleanupFencedRuntime(streamId, runtime);
+      return;
     }
+    const retirement: FencedRuntimeRetirementContext = { controller: new AbortController() };
+    this.fencedRuntimeRetirements.set(runtime, retirement);
+    this.scheduleFencedRuntimeRetirement(streamId, runtime, Date.now(), retirement);
   }
 
   private isCurrentRuntime(streamId: string, runtime: RuntimeJobState): boolean {
@@ -6225,7 +6548,7 @@ class GenerationJobManagerClass {
       this.jobStore.peekSteers(streamId, jobData.createdAt),
       this.jobStore.peekClaimedSteers(streamId, jobData.createdAt),
     ]);
-    const aggregatedContent = result?.content ?? [];
+    const reconstructedContent = result?.content ?? [];
     const bufferState = this.runStepBuffers?.get(streamId);
     const bufferedRunSteps = bufferState?.createdAt === jobData.createdAt ? bufferState.steps : [];
     const runStepsById = new Map(runSteps.map((runStep) => [runStep.id, runStep]));
@@ -6234,7 +6557,7 @@ class GenerationJobManagerClass {
     }
     const effectiveRunSteps = normalizeResumeRunStepIndices(
       [...runStepsById.values()],
-      aggregatedContent,
+      reconstructedContent,
     );
     let titleEvent: t.ResumeState['titleEvent'];
     if (jobData.titleEvent) {
@@ -6278,7 +6601,7 @@ class GenerationJobManagerClass {
     /** Steers still queued (not yet injected); injected ones are already in aggregatedContent. */
     const pendingSteers = omitAlreadyAppliedSteers(
       mergeUnresolvedSteers(claimedSteers, queuedSteers),
-      aggregatedContent as unknown[],
+      reconstructedContent as unknown[],
     ).map(toPendingSteer);
 
     /** The four component reads are generation-fenced, but replacement can
@@ -6289,6 +6612,13 @@ class GenerationJobManagerClass {
     if (!verifiedJob || verifiedJob.createdAt !== jobData.createdAt) {
       return null;
     }
+    /** Redis reconstruction has no completion event for ask_user_question.
+     * Apply the answer stamps from the generation-fenced job read so reload,
+     * status, resume, and abort all expose the same authoritative content. */
+    const aggregatedContent = attachAskUserQuestionAnswers(
+      reconstructedContent,
+      verifiedJob.resolvedAskUserQuestions ?? [],
+    );
 
     logger.debug(`[GenerationJobManager] getResumeState:`, {
       streamId,
@@ -6314,8 +6644,8 @@ class GenerationJobManagerClass {
       // cross-replica client can rebuild the prompt from resumeState. Client-safe
       // projection: the stored record's resumeContext/requestFingerprint stay server-only.
       pendingAction:
-        jobData.status === 'requires_action' && !isPendingActionStale(jobData)
-          ? toClientPendingAction(jobData.pendingAction)
+        verifiedJob.status === 'requires_action' && !isPendingActionStale(verifiedJob)
+          ? toClientPendingAction(verifiedJob.pendingAction)
           : undefined,
       pendingSteers: pendingSteers.length > 0 ? pendingSteers : undefined,
     } satisfies t.ResumeState;
@@ -6723,6 +7053,7 @@ class GenerationJobManagerClass {
   /** Returns sizes of internal runtime maps for diagnostics */
   getRuntimeStats(): {
     runtimeStateSize: number;
+    fencedRuntimeRetirements: number;
     runStepBufferSize: number;
     eventTransportStreams: number;
     earlyBufferedEvents: number;
@@ -6736,6 +7067,7 @@ class GenerationJobManagerClass {
     }
     return {
       runtimeStateSize: this.runtimeState.size,
+      fencedRuntimeRetirements: this.fencedRuntimeRetirements.size,
       runStepBufferSize: this.runStepBuffers?.size ?? 0,
       eventTransportStreams: this.eventTransport.getTrackedStreamIds().length,
       earlyBufferedEvents,
@@ -6846,6 +7178,7 @@ class GenerationJobManagerClass {
       return;
     }
     this.shuttingDown = true;
+    this.cancelFencedRuntimeRetirements();
 
     for (const runtime of this.runtimeState.values()) {
       runtime.startupTelemetry?.end('aborted');
@@ -6867,6 +7200,7 @@ class GenerationJobManagerClass {
    */
   async destroy(): Promise<void> {
     this.shuttingDown = true;
+    this.cancelFencedRuntimeRetirements();
 
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);

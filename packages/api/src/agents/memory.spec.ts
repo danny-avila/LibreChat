@@ -70,17 +70,13 @@ jest.mock('~/utils', () => ({
 
 const { createSafeUser } = jest.requireMock('~/utils');
 
-jest.mock('@librechat/agents', () => {
-  const actual = jest.requireActual('@librechat/agents');
-  return {
-    Run: {
-      create: jest.fn(() => ({
+beforeEach(() => {
+  jest.spyOn(Run, 'create').mockImplementation(
+    () =>
+      ({
         processStream: jest.fn(() => Promise.resolve('success')),
-      })),
-    },
-    Providers: actual.Providers,
-    GraphEvents: actual.GraphEvents,
-  };
+      }) as never,
+  );
 });
 
 function createTestUser(overrides: Partial<IUser> = {}): IUser {

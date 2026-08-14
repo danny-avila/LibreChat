@@ -38,12 +38,14 @@ const handlers = createAdminLangfuseHandlers({
   findConfigByPrincipal: db.findConfigByPrincipal,
   patchConfigFields: db.patchConfigFields,
   toggleConfigActive: db.toggleConfigActive,
+  getMessages: db.getMessages,
   invalidateConfigCaches,
 });
 
 router.use(requireJwtAuth, requireAdminAccess, requireLangfuseManage);
 
 router.get('/connection', handlers.getConnection);
+router.get('/connection/session/:conversationId', handlers.getSessionLink);
 router.put('/connection', handlers.updateConnection);
 router.post('/connection/test', handlers.testConnection);
 

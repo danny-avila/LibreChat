@@ -1,9 +1,9 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import MemoryArtifacts from '../MemoryArtifacts';
-import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import { Tools } from 'librechat-data-provider';
+import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
+import MemoryArtifacts from '../MemoryArtifacts';
 
 // Mock the localize hook
 jest.mock('~/hooks', () => ({
@@ -54,10 +54,7 @@ describe('MemoryArtifacts', () => {
       render(<MemoryArtifacts attachments={attachments} />);
 
       const button = screen.getByRole('button');
-      expect(button).toHaveClass('text-red-500');
-      expect(button).toHaveClass('hover:text-red-600');
-      expect(button).toHaveClass('dark:text-red-400');
-      expect(button).toHaveClass('dark:hover:text-red-500');
+      expect(button).toHaveClass('text-status-error');
     });
 
     test('displays normal styling when no errors present', () => {
@@ -71,7 +68,7 @@ describe('MemoryArtifacts', () => {
       const button = screen.getByRole('button');
       expect(button).toHaveClass('text-text-secondary-alt');
       expect(button).toHaveClass('hover:text-text-primary');
-      expect(button).not.toHaveClass('text-red-500');
+      expect(button).not.toHaveClass('text-status-error');
     });
 
     test('displays error message when errors are present', () => {
@@ -121,7 +118,7 @@ describe('MemoryArtifacts', () => {
       render(<MemoryArtifacts attachments={attachments} />);
 
       const button = screen.getByRole('button');
-      expect(button).toHaveClass('text-red-500');
+      expect(button).toHaveClass('text-status-error');
       expect(screen.getByText('Memory Error')).toBeInTheDocument();
     });
   });
@@ -190,7 +187,7 @@ describe('MemoryArtifacts', () => {
       render(<MemoryArtifacts attachments={attachments} />);
 
       const button = screen.getByRole('button');
-      expect(button).toHaveClass('text-red-500');
+      expect(button).toHaveClass('text-status-error');
       expect(screen.getByText('Memory Error')).toBeInTheDocument();
     });
   });

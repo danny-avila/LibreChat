@@ -21,6 +21,7 @@ interface MCPResponseLike {
 
 interface Disconnectable {
   disconnect: () => Promise<unknown> | unknown;
+  dispose?: () => Promise<unknown> | unknown;
 }
 
 const contexts = new WeakMap<object, MCPRequestContext>();
@@ -50,29 +51,36 @@ export async function cleanupMCPRequestContext(context?: MCPRequestContext): Pro
   }
   context.cleanupStarted = true;
 
-  const connections = new Set<Disconnectable>();
-  for (const connection of context.connections.values()) {
+  const connections = new Map<Disconnectable, string>();
+  for (const [connectionKey, connection] of context.connections) {
     if (isDisconnectable(connection)) {
-      connections.add(connection);
+      connections.set(connection, connectionKey);
     }
   }
 
-  const pending = Array.from(context.pending.values());
+  const pending = Array.from(context.pending.entries());
   if (pending.length > 0) {
-    const settled = await Promise.allSettled(pending);
-    for (const result of settled) {
+    const settled = await Promise.allSettled(pending.map(([, promise]) => promise));
+    for (let index = 0; index < settled.length; index++) {
+      const result = settled[index];
       if (result.status === 'fulfilled' && isDisconnectable(result.value)) {
-        connections.add(result.value);
+        connections.set(result.value, pending[index][0]);
       }
     }
   }
 
   await Promise.allSettled(
-    Array.from(connections).map(async (connection) => {
+    Array.from(connections).map(async ([connection, connectionKey]) => {
       try {
-        await connection.disconnect();
+        if (context.disposeConnection) {
+          await context.disposeConnection(connectionKey, connection);
+        } else if (connection.dispose) {
+          await connection.dispose();
+        } else {
+          await connection.disconnect();
+        }
       } catch (error) {
-        logger.warn('[MCP Request Context] Failed to disconnect request-scoped connection', error);
+        logger.warn('[MCP Request Context] Failed to dispose request-scoped connection', error);
       }
     }),
   );

@@ -1,5 +1,7 @@
 import type { Agents } from 'librechat-data-provider';
 import type { EventEmitter } from 'events';
+import type { ActivityPhaseSnapshot } from '~/agents/activityPhases/runtime';
+import type { ResolvedAskUserQuestion } from '../agents/hitl/resume';
 import type { ServerSentEvent } from './events';
 
 export interface GenerationJobMetadata {
@@ -35,6 +37,8 @@ export interface GenerationJobMetadata {
    * without them the rebuilt model would lose the discovered tool schemas.
    */
   discoveredTools?: string[];
+  /** Bounded collector state for continuing a phase across HITL resume. */
+  activityPhaseSnapshot?: ActivityPhaseSnapshot;
   /** See `SerializableJobData.preemptCapable`. */
   preemptCapable?: boolean;
   /** Terminal close has atomically stopped new steer acceptance, even if the
@@ -48,6 +52,8 @@ export interface GenerationJobMetadata {
   terminalPersistenceStartedAt?: number;
   /** Set when the job is paused for human review (status === 'requires_action') */
   pendingAction?: Agents.PendingAction;
+  /** Accepted ask-user answer retained until this generation terminalizes. */
+  resolvedAskUserQuestions?: ResolvedAskUserQuestion[];
 }
 
 export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';

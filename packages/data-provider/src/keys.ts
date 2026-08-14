@@ -9,6 +9,7 @@ export enum QueryKeys {
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   langfuseConnection = 'langfuseConnection',
+  langfuseSessionLink = 'langfuseSessionLink',
   user = 'user',
   name = 'name', // user key name
   models = 'models',

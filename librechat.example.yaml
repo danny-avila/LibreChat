@@ -2,10 +2,15 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.13
+version: 1.3.14
 
 # Cache settings: Set to true to enable caching
 cache: true
+
+# Langfuse connections are managed through Settings > Langfuse when available.
+# That flow verifies the credentials and stores the secret key encrypted; do not
+# place a plaintext langfuse.secretKey in this file. Environment-managed central
+# credentials and optional fanout routing are documented in .env.example.
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
@@ -257,6 +262,20 @@ registration:
 # Note: If balance.enabled is true, transactions will always be enabled
 # regardless of this setting to ensure balance tracking works correctly
 
+# Speech (STT/TTS) outbound requests to operator-provided target URLs are SSRF-guarded
+# at connect time: private, loopback, link-local, and cloud-metadata targets are blocked
+# by default. To point STT/TTS at a private or self-hosted service (LocalAI, a self-hosted
+# Whisper server), add its host:port to `allowedAddresses` on the `stt` / `tts` section.
+# SECURITY: `allowedAddresses` entries are trusted before the private-IP check. A listed
+# host:port is permitted even when it resolves to a private IP, so list only hosts you fully
+# control and that cannot be repointed by an attacker. Do not list attacker-controllable or
+# DNS-rebindable hostnames, because doing so re-opens the private-address path this guard
+# closes. Prefer a private IP literal over a hostname when exempting a private target. Entries
+# must include a port (`host:port`, `private.ip:port`, or `[ipv6]:port`); do not use URLs, paths,
+# CIDR ranges, bare hosts/IPs, or public IP literals.
+# When a forward proxy is configured (PROXY / HTTP(S)_PROXY), it performs DNS and egress in its
+# own network context, so these requests are delegated to it and it must be SSRF-enforcing; the
+# connect-time guard only covers direct, non-proxied connections.
 # speech:
 #   tts:
 #     openai:
@@ -264,13 +283,32 @@ registration:
 #       apiKey: '${TTS_API_KEY}'
 #       model: ''
 #       voices: ['']
-
+#     allowedAddresses:
+#       - 'localhost:8020'
+#       - '127.0.0.1:8020'
 #
 #   stt:
 #     openai:
 #       url: ''
 #       apiKey: '${STT_API_KEY}'
 #       model: ''
+#     allowedAddresses:
+#       - 'localhost:8000'
+#       - '127.0.0.1:8000'
+
+# OCR (Mistral / Mistral-compatible) outbound requests to `ocr.baseURL` are SSRF-guarded at
+# connect time with the same default-deny for private targets. To point OCR at a private or
+# self-hosted Mistral-compatible service, add its host:port to `allowedAddresses`. The same
+# trust caveat as speech applies: a listed host:port is trusted before the private-IP check,
+# so list only hosts you fully control and that cannot be repointed by an attacker. Entries
+# must include a port and must not be URLs, paths, CIDR ranges, bare hosts/IPs, or public IP
+# literals.
+# ocr:
+#   baseURL: '${OCR_BASEURL}'
+#   apiKey: '${OCR_API_KEY}'
+#   allowedAddresses:
+#     - 'localhost:8080'
+#     - '127.0.0.1:8080'
 
 # rateLimits:
 #   fileUploads:
@@ -426,6 +464,14 @@ endpoints:
   #   #   final: defer generation until the full response completes (legacy behavior).
   #   # Set under `endpoints.all` instead to apply as the global default for all endpoints.
   #   titleTiming: immediate
+  #   # (optional) Generate one-line headers for blocks of Agent reasoning and tool calls.
+  #   # Header generation is a separate model call whose usage and cost are recorded.
+  #   activityLabel: true
+  #   activityEndpoint: openAI
+  #   activityModel: gpt-4.1-nano
+  #   # activityPrompt: 'Write a short activity label...'
+  #   # activityMaxPerRun: 20
+  #   # activityCharLimit: 600
   #   # (optional) Maximum total citations to include in agent responses, defaults to 30
   #   maxCitations: 30
   #   # (optional) Maximum citations per file to include in agent responses, defaults to 7
@@ -438,10 +484,24 @@ endpoints:
   #   skills:
   #     maxCatalogSkills: 20
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
-  #   capabilities: ["deferred_tools", "execute_code", "file_search", "actions", "tools"]
-  #   # Off-by-default capabilities you can add to the list above:
-  #   # - "run_in_background": opted-in tools gain a `run_in_background` param so the model can dispatch them detached and poll via `check_background_task`.
-  #   # - "tool_intents": opted-in tools (native tools by default) gain an `intent` param — one model-written sentence per call, streamed into the tool-call arguments. Backend groundwork today: the chat UI renders it as each call's live status label in an upcoming release; opt tools in per agent via `tool_options[tool].describe_intent`.
+  #   capabilities: ["deferred_tools", "execute_code", "file_search", "web_search", "artifacts", "subagents", "actions", "context", "skills", "memory", "ask_user_question", "tools", "chain", "ocr"]
+  #   # The following capabilities are opt-in and must be added explicitly:
+  #   # "programmatic_tools", "stateful_code_sessions", "run_in_background", "tool_intents"
+  #   # "stateful_code_sessions" is highly experimental and may change substantially.
+  #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
+  #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
+  #   # (optional) Require user approval before matching tool calls. Disabled by default.
+  #   toolApproval:
+  #     enabled: true
+  #     mode: default # default, dontAsk, or bypass
+  #     allow: ["mcp:trusted-server:read_*"]
+  #     deny: ["mcp:*:delete_*"] # Deny rules always take precedence
+  #     ask: ["mcp:*:*"]
+  #     reason: "Review {tool} before it runs."
+  #   # (optional) Persist Agent runs paused for approval or Ask User. MongoDB is the durable default.
+  #   checkpointer:
+  #     type: mongo # mongo (default) or memory (single-process development only)
+  #     ttl: 86400 # Approval window in seconds; defaults to 24 hours
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy
@@ -461,7 +521,9 @@ endpoints:
   # Anthropic endpoint configuration with Vertex AI support
   # Use this to run Anthropic Claude models through Google Cloud Vertex AI
   # anthropic:
-  #   # (optional) Stream rate limiting in milliseconds
+  #   # (optional) Override the adaptive stream-smoothing cadence in milliseconds.
+  #   # Agents SDK-backed providers smooth at 25ms by default; set 0 to disable
+  #   # smoothing. (Legacy Assistants/Ollama paths sleep this long per chunk instead.)
   #   streamRate: 20
   #   # (optional) Title model for conversation titles
   #   titleModel: claude-3.5-haiku  # Use the visible model name (key from models config)
@@ -567,6 +629,13 @@ endpoints:
       # activityPrompt: 'Write a 5-9 word past-tense label...'
       # activityMaxPerRun: 20           # cost cap per response
       # activityCharLimit: 600          # per-entry prompt truncation
+      # Parent phase summaries are an independent opt-in. They collapse 2+
+      # logical activities before the answer into one run-level summary.
+      # activityPhaseLabel: true
+      # activityPhaseModel: 'claude-3-5-haiku' # falls back to activity/title/run model
+      # activityPhaseEndpoint: 'anthropic'     # falls back to activity/run endpoint
+      # activityPhasePrompt: 'Summarize the completed agent phase...'
+      # activityPhaseMaxPerRun: 5               # cost cap per response
       modelDisplayLabel: 'Claude (Compatible)'
 
     # Groq Example
@@ -724,6 +793,7 @@ endpoints:
 #       description: "Most capable GPT-4 model with multimodal support"
 #       # default: true      # Hard admin default; takes precedence over prior user choices
 #       # softDefault: true  # First-time default only; skipped after a user selects a model/spec/agent
+#       # showInMenu: false  # Hide from the model selector while keeping explicit `spec` access
 #       group: "openAI"  # String value matching the endpoint name
 #       preset:
 #         endpoint: "openAI"
@@ -789,6 +859,15 @@ endpoints:
 #         endpoint: "openAI"
 #         model: "gpt-4o-mini"
 
+# Automatic conversation summarization (optional)
+# summarization:
+#   enabled: true
+#   provider: "openAI"
+#   model: "gpt-4o-mini"
+#   retainRecent:
+#     turns: 2 # Keep the newest complete user/assistant turns outside the summary
+#     tokens: 2000 # Also preserve up to this many recent tokens
+
 # fileConfig:
 #   endpoints:
 #     assistants:
@@ -835,6 +914,33 @@ endpoints:
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
+#   # Outbound search and scrape requests are validated at connect time against
+#   # their resolved IP and blocked from reaching private, loopback, link-local,
+#   # or cloud-metadata space. `allowedAddresses` is an SSRF exemption list, NOT a
+#   # strict whitelist: hostname/IP + port pairs listed here bypass that block for
+#   # one deliberately-private endpoint (for example a self-hosted SearXNG
+#   # instance); public destinations continue to work normally.
+#   #
+#   # Entries must include a port: `host:port`, `private.ip:port`, or `[ipv6]:port`.
+#   # Do not use URLs, paths, CIDR ranges, bare hosts/IPs, or public IP literals.
+#   # A hostname entry trusts whatever IP that name resolves to on the listed port,
+#   # so only list hosts you fully control and whose DNS cannot be repointed by an
+#   # attacker. Listing an attacker-controllable or DNS-rebindable host re-opens the
+#   # private-address path this guard closes. Prefer literal IPs where you can.
+#   #
+#   # Self-hosted endpoints need an entry. A private destination such as
+#   # `http://searxng:8080`, `http://firecrawl:3002`, or `http://127.0.0.1:8080` is
+#   # blocked once this guard is active, so list it here or those requests will fail.
+#   #
+#   # A proxy from `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` (either case) is
+#   # exempted automatically and needs no entry. That exemption is applied to the
+#   # whole tool rather than per destination, so a host `NO_PROXY` sends direct also
+#   # carries it. Note that when a proxy carries the request the proxy resolves the
+#   # destination, so destination egress policy is the proxy's to enforce, and for
+#   # https targets the proxy's own tunnel replaces this guard entirely.
+#   # allowedAddresses:
+#   #   - 'searxng:8080'
+#   #   - '127.0.0.1:8080'
 #
 # Tavily as both search and scraper provider example:
 # webSearch:

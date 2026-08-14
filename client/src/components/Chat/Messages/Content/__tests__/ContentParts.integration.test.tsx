@@ -57,7 +57,14 @@ jest.mock('lucide-react', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
-  Button: ({ children }: { children?: React.ReactNode }) => <button>{children}</button>,
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 jest.mock('../Parts', () => ({
@@ -71,7 +78,6 @@ jest.mock('../Parts', () => ({
   Reasoning: () => <div data-testid="reasoning" />,
   Summary: () => <div data-testid="summary" />,
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
-  EditTextPart: () => <div data-testid="edit-text" />,
 }));
 
 jest.mock('../MemoryArtifacts', () => ({

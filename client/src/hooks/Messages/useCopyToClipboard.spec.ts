@@ -1,6 +1,6 @@
-import { renderHook, act } from '@testing-library/react';
 import copy from 'copy-to-clipboard';
 import { ContentTypes } from 'librechat-data-provider';
+import { renderHook, act } from '@testing-library/react';
 import type {
   SearchResultData,
   ProcessedOrganic,
@@ -62,6 +62,35 @@ describe('useCopyToClipboard', () => {
       expect(mockCopy).toHaveBeenCalledWith('First line\nSecond line', {
         format: 'text/plain',
       });
+    });
+
+    it('copies errors and tool input and output with surrounding text', () => {
+      const content = [
+        { type: ContentTypes.TEXT, text: 'I checked the deployment.' },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            type: 'tool_call',
+            name: 'get_deployment',
+            args: '{"service":"web"}',
+            output: '{"status":"failed"}',
+          },
+        },
+        { type: ContentTypes.ERROR, error: 'Deployment lookup failed' },
+      ] as TMessageContentParts[];
+
+      const { result } = renderHook(() => useCopyToClipboard({ content }));
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      const copiedText = mockCopy.mock.calls[0]?.[0];
+      expect(copiedText).toContain('I checked the deployment.');
+      expect(copiedText).toContain('get_deployment');
+      expect(copiedText).toContain('service');
+      expect(copiedText).toContain('status');
+      expect(copiedText).toContain('Deployment lookup failed');
     });
 
     it('should reset isCopied after timeout', () => {

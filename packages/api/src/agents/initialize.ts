@@ -64,6 +64,7 @@ import {
 } from './tools';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
+import { isFatalAgentInitializationError } from './errors';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -706,7 +707,6 @@ export async function initializeAgent(
    * on handoff agents would fail to find previously attached files.
    */
   if (conversationId != null && resendFiles) {
-    const fileIds = (await db.getConvoFiles(conversationId)) ?? [];
     const toolResourceSet = new Set<EToolResources>();
     for (const tool of agent.tools ?? []) {
       if (EToolResources[tool as keyof typeof EToolResources]) {
@@ -714,74 +714,76 @@ export async function initializeAgent(
       }
     }
 
-    const toolFiles = requestFileOwnerScope
-      ? ((await db.getToolFilesByIds(
-          fileIds,
-          toolResourceSet,
-          requestFileOwnerScope,
-        )) as IMongoFile[])
-      : [];
+    const getThreadMessages = db.getMessages;
+    /** Falsy anchors cannot match a parent chain, so they get no walk. */
+    const threadAnchor =
+      parentMessageId && parentMessageId !== Constants.NO_PARENT ? parentMessageId : null;
+    const needsThreadWalk =
+      toolResourceSet.has(EToolResources.execute_code) &&
+      threadAnchor != null &&
+      getThreadMessages != null;
+
+    /**
+     * The conversation's file refs and the thread walk share no inputs, so they resolve
+     * together. Both gate the model call, and this runs on every turn — each serialized
+     * round trip here is time-to-first-token the user waits through.
+     *
+     * Thread walk selects only the fields traversal needs. Both `files` (user uploads)
+     * and `attachments` (code-execution outputs from `processCodeOutput`) carry the
+     * `file_id` refs the next turn must prime — selecting only `files` silently drops
+     * every code-output ref.
+     */
+    const [convoFileIds, threadMessages] = await Promise.all([
+      db.getConvoFiles(conversationId),
+      needsThreadWalk && getThreadMessages
+        ? getThreadMessages({ conversationId }, 'messageId parentMessageId files attachments')
+        : null,
+    ]);
+    const fileIds = convoFileIds ?? [];
+
+    /** Walk the parent chain and collect file_ids referenced by
+     *  any message in the thread (`messages.files[].file_id` +
+     *  `messages.attachments[].file_id`). Used as the primary
+     *  anchor for both `getCodeGeneratedFiles` and
+     *  `getUserCodeFiles` — message ids no longer needed at
+     *  this layer. */
+    const threadFileIds =
+      threadMessages && threadMessages.length > 0
+        ? getThreadData(threadMessages, threadAnchor).fileIds
+        : undefined;
 
     /**
      * Retrieve execute_code files filtered to the current thread.
      * This includes both code-generated files and user-uploaded execute_code files.
+     *
+     * Code-generated and user-uploaded execute_code files share the same primary anchor:
+     * file_ids referenced by messages in the current thread. The two queries differ only
+     * by `context` (`execute_code` for generated outputs, others for uploads). Anchoring
+     * both on `threadFileIds` reaches files regardless of which sibling first generated
+     * them — see `getCodeGeneratedFiles` for the branched-conversation rationale.
      */
-    let codeGeneratedFiles: IMongoFile[] = [];
-    let userCodeFiles: IMongoFile[] = [];
-
-    if (toolResourceSet.has(EToolResources.execute_code)) {
-      let threadFileIds: string[] | undefined;
-
-      if (parentMessageId && parentMessageId !== Constants.NO_PARENT && db.getMessages) {
-        /** Only select fields needed for thread traversal. Both
-         *  `files` (user uploads) and `attachments` (code-execution
-         *  outputs from `processCodeOutput`) carry the `file_id`
-         *  refs the next turn must prime — selecting only `files`
-         *  silently drops every code-output ref. */
-        const messages = await db.getMessages(
-          { conversationId },
-          'messageId parentMessageId files attachments',
-        );
-        if (messages && messages.length > 0) {
-          /** Walk the parent chain and collect file_ids referenced by
-           *  any message in the thread (`messages.files[].file_id` +
-           *  `messages.attachments[].file_id`). Used as the primary
-           *  anchor for both `getCodeGeneratedFiles` and
-           *  `getUserCodeFiles` — message ids no longer needed at
-           *  this layer. */
-          threadFileIds = getThreadData(messages, parentMessageId).fileIds;
-        }
-      }
-
-      /** Code-generated and user-uploaded execute_code files share the
-       *  same primary anchor: file_ids referenced by messages in the
-       *  current thread. The two queries differ only by `context`
-       *  (`execute_code` for generated outputs, others for uploads).
-       *  Anchoring both on `threadFileIds` reaches files regardless of
-       *  which sibling first generated them — see `getCodeGeneratedFiles`
-       *  for the branched-conversation rationale. */
-      if (db.getCodeGeneratedFiles) {
-        codeGeneratedFiles = requestFileOwnerScope
-          ? ((await db.getCodeGeneratedFiles(
-              conversationId,
-              threadFileIds,
-              requestFileOwnerScope,
-            )) as IMongoFile[])
-          : [];
-      }
-
-      if (
-        db.getUserCodeFiles &&
-        requestFileOwnerScope &&
-        threadFileIds &&
-        threadFileIds.length > 0
-      ) {
-        userCodeFiles = (await db.getUserCodeFiles(
-          threadFileIds,
-          requestFileOwnerScope,
-        )) as IMongoFile[];
-      }
-    }
+    const wantsCodeFiles = toolResourceSet.has(EToolResources.execute_code);
+    const [toolFiles, codeGeneratedFiles, userCodeFiles] = await Promise.all([
+      requestFileOwnerScope
+        ? (db.getToolFilesByIds(fileIds, toolResourceSet, requestFileOwnerScope) as Promise<
+            IMongoFile[]
+          >)
+        : ([] as IMongoFile[]),
+      wantsCodeFiles && db.getCodeGeneratedFiles && requestFileOwnerScope
+        ? (db.getCodeGeneratedFiles(
+            conversationId,
+            threadFileIds,
+            requestFileOwnerScope,
+          ) as Promise<IMongoFile[]>)
+        : ([] as IMongoFile[]),
+      wantsCodeFiles &&
+      db.getUserCodeFiles &&
+      requestFileOwnerScope &&
+      threadFileIds &&
+      threadFileIds.length > 0
+        ? (db.getUserCodeFiles(threadFileIds, requestFileOwnerScope) as Promise<IMongoFile[]>)
+        : ([] as IMongoFile[]),
+    ]);
 
     const allToolFiles = toolFiles.concat(codeGeneratedFiles, userCodeFiles);
     if (requestFiles.length || allToolFiles.length) {
@@ -1024,6 +1026,9 @@ export async function initializeAgent(
   try {
     loadToolsResult = await callLoadTools(requestedToolNames);
   } catch (err) {
+    if (isFatalAgentInitializationError(err, { allowExpectedMCPFallback: true })) {
+      throw err;
+    }
     if (extraAllowedToolNames.length > 0) {
       logger.warn(
         `[allowedTools] loadTools threw with skill-added extras [${extraAllowedToolNames.join(', ')}]; retrying without them:`,

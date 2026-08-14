@@ -19,3 +19,4 @@ export { default as useMessageHelpers } from './useMessageHelpers';
 export { default as useCopyToClipboard } from './useCopyToClipboard';
 export { default as useContentMetadata } from './useContentMetadata';
 export { default as useMessageScrolling } from './useMessageScrolling';
+export { default as useSmoothStreaming } from './useSmoothStreaming';

@@ -1,7 +1,7 @@
 import yaml from 'js-yaml';
 import { Types } from 'mongoose';
-import { logger } from '@librechat/data-schemas';
 import { GraphEvents, Constants } from '@librechat/agents';
+import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
 import type {
   LCTool,
   EventHandler,
@@ -12,6 +12,7 @@ import type {
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
+import type { ValidationIssue } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { ServerRequest } from '~/types';
@@ -169,6 +170,7 @@ export interface ToolExecuteOptions {
       body: string;
       version: number;
     };
+    warnings: ValidationIssue[];
   }>;
   /** Updates a skill body and derived metadata from a tool-authored SKILL.md body. */
   updateSkill?: (params: {
@@ -184,6 +186,7 @@ export interface ToolExecuteOptions {
     | {
         status: 'updated';
         skill: { _id: Types.ObjectId; name: string; body: string; version: number };
+        warnings: ValidationIssue[];
       }
     | { status: 'conflict'; current: { _id: Types.ObjectId; name: string; version: number } }
     | { status: 'not_found' }
@@ -346,6 +349,10 @@ const MAX_AUTHORING_BYTES = 10 * 1024 * 1024;
 const MAX_TOOL_ERROR_MESSAGE_CHARS = 12_000;
 const MAX_TOOL_ERROR_STACK_CHARS = 4_000;
 const SKILL_MD = 'SKILL.md';
+const MAX_SKILL_AUTHORING_WARNINGS = 20;
+const MAX_SKILL_WARNING_FIELD_CHARS = 120;
+const MAX_SKILL_WARNING_CODE_CHARS = 64;
+const MAX_SKILL_WARNING_MESSAGE_CHARS = 300;
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
@@ -611,6 +618,34 @@ function successResult(
   return result;
 }
 
+function surfaceSkillAuthoringWarnings(warnings: ValidationIssue[] | undefined): {
+  contentSuffix: string;
+  warnings: Array<ValidationIssue & { severity: 'warning' }>;
+  warningCount: number;
+} | null {
+  if (!warnings?.length) {
+    return null;
+  }
+  const surfaced = warnings.slice(0, MAX_SKILL_AUTHORING_WARNINGS).map((warning) => ({
+    field: truncateMiddle(warning.field, MAX_SKILL_WARNING_FIELD_CHARS),
+    code: truncateMiddle(warning.code, MAX_SKILL_WARNING_CODE_CHARS),
+    message: truncateMiddle(warning.message, MAX_SKILL_WARNING_MESSAGE_CHARS),
+    severity: 'warning' as const,
+  }));
+  const omitted = warnings.length - surfaced.length;
+  const lines = surfaced.map(
+    (warning) => `- ${warning.field} [${warning.code}]: ${warning.message}`,
+  );
+  if (omitted > 0) {
+    lines.push(`- ${omitted} additional warning(s) omitted.`);
+  }
+  return {
+    contentSuffix: `\n\nWarnings:\n${lines.join('\n')}`,
+    warnings: surfaced,
+    warningCount: warnings.length,
+  };
+}
+
 function guessMimeType(filename: string): string {
   return MIME_MAP[lowercaseExtension(filename)] ?? 'application/octet-stream';
 }
@@ -813,7 +848,11 @@ function parseStructuredSkillFrontmatter(
     if (typeof parsed !== 'object' || Array.isArray(parsed)) {
       return { error: `${SKILL_MD} frontmatter must be a YAML mapping.` };
     }
-    return { frontmatter: parsed as Record<string, unknown> };
+    const normalized = normalizeSkillFrontmatterKeys(parsed as Record<string, unknown>);
+    if ('error' in normalized) {
+      return { error: `Invalid ${SKILL_MD} frontmatter: ${normalized.error}` };
+    }
+    return { frontmatter: normalized.frontmatter };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { error: `Invalid ${SKILL_MD} frontmatter: ${message}` };
@@ -1172,6 +1211,7 @@ const BINARY_EXTENSIONS_NEVER_READABLE = new Set([
   '.xlsx',
   '.ppt',
   '.pptx',
+  '.potx',
   '.odt',
   '.ods',
   '.odp',
@@ -2410,13 +2450,20 @@ async function writeSkillMd({
       throw error;
     }
     rememberAuthoredSkill([mergedConfigurable, sourceConfigurable], result.skill);
+    const surfacedWarnings = surfaceSkillAuthoringWarnings(result.warnings);
     return successResult(
       tc,
-      `Created ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`,
+      `Created ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).${surfacedWarnings?.contentSuffix ?? ''}`,
       {
         path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
         bytes_written: Buffer.byteLength(content, 'utf8'),
         created: true,
+        ...(surfacedWarnings
+          ? {
+              warnings: surfacedWarnings.warnings,
+              warning_count: surfacedWarnings.warningCount,
+            }
+          : {}),
       },
     );
   }
@@ -2455,11 +2502,19 @@ async function writeSkillMd({
     content,
   );
   const summary = `Updated ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).`;
-  return successResult(tc, diff ? `${summary}\n\n${diff}` : summary, {
+  const surfacedWarnings = surfaceSkillAuthoringWarnings(result.warnings);
+  const summaryWithWarnings = `${summary}${surfacedWarnings?.contentSuffix ?? ''}`;
+  return successResult(tc, diff ? `${summaryWithWarnings}\n\n${diff}` : summaryWithWarnings, {
     path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
     bytes_written: Buffer.byteLength(content, 'utf8'),
     created: false,
     ...(diff ? { diff } : {}),
+    ...(surfacedWarnings
+      ? {
+          warnings: surfacedWarnings.warnings,
+          warning_count: surfacedWarnings.warningCount,
+        }
+      : {}),
   });
 }
 

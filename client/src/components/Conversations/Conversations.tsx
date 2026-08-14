@@ -2,21 +2,18 @@ import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
 import { ChevronDown } from 'lucide-react';
-import { QueryKeys } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
+import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
-import { Spinner, TooltipAnchor, NewChatIcon, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import {
   useLocalize,
   TranslationKeys,
   useFavorites,
   useShowMarketplace,
-  useNewConvo,
   useElementSize,
 } from '~/hooks';
-import { groupConversationsByDate, clearMessagesCache, cn } from '~/utils';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
+import { groupConversationsByDate, cn } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
 import Convo from './Convo';
 import store from '~/store';
@@ -91,27 +88,15 @@ interface ChatsHeaderProps {
   onToggle: () => void;
 }
 
-const headerIconButtonClassName =
-  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-secondary outline-none transition-colors hover:bg-surface-active-alt hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white';
-
 /** Collapsible header for the Chats section */
 const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
   const localize = useLocalize();
-  const queryClient = useQueryClient();
-  const { newConversation } = useNewConvo();
-  const conversation = useRecoilValue(store.conversationByIndex(0));
-
-  const handleNewChat = useCallback(() => {
-    clearMessagesCache(queryClient, conversation?.conversationId);
-    queryClient.invalidateQueries([QueryKeys.messages]);
-    newConversation();
-  }, [conversation?.conversationId, newConversation, queryClient]);
 
   return (
-    <div className="flex h-8 w-full items-center gap-0.5 pr-2">
+    <div className="flex h-8 w-full items-center pr-2">
       <button
         onClick={onToggle}
-        className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+        className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
         type="button"
         aria-expanded={isExpanded}
       >
@@ -124,19 +109,6 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
           aria-hidden="true"
         />
       </button>
-      <TooltipAnchor
-        description={localize('com_ui_new_chat')}
-        render={
-          <button
-            type="button"
-            aria-label={localize('com_ui_new_chat')}
-            className={headerIconButtonClassName}
-            onClick={handleNewChat}
-          >
-            <NewChatIcon className="h-4 w-4" />
-          </button>
-        }
-      />
     </div>
   );
 });

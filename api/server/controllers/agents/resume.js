@@ -4,8 +4,11 @@ const {
   GenerationJobManager,
   isPendingActionStale,
   mapToolApprovalResolutions,
-  mapAskUserAnswer,
-  attachAskUserQuestionAnswer,
+  resolveAskUserQuestionResume,
+  buildResolvedAskUserQuestion,
+  appendResolvedAskUserQuestion,
+  attachAskUserQuestionAnswers,
+  findAskUserQuestionContentIndex,
   findUndecidedToolCalls,
   findDisallowedDecisions,
   findIncompleteDecisions,
@@ -40,13 +43,6 @@ function sendGenerationJson(res, status, body, generationProtocolVersion) {
   }
   return res.status(status).json({ ...body, generationProtocolVersion });
 }
-
-/**
- * Upper bound on an `ask_user_question` answer (characters). Generous for any real
- * reply typed into the question card while still bounding what a crafted POST can
- * inject into the resumed run's ToolMessage.
- */
-const MAX_ASK_ANSWER_LENGTH = 16_000;
 
 /**
  * How long a resume waits on best-effort steering bookkeeping before answering
@@ -231,15 +227,7 @@ function resolveResumeValue(pendingAction, body) {
     return { resumeValue: mapToolApprovalResolutions(resolutions) };
   }
   if (payload?.type === 'ask_user_question') {
-    if (typeof body.answer !== 'string' || body.answer.length === 0) {
-      return { status: 400, error: 'An answer is required' };
-    }
-    // The answer becomes a ToolMessage the model must ingest — bound it like any
-    // other user-controlled wire field rather than trusting the client.
-    if (body.answer.length > MAX_ASK_ANSWER_LENGTH) {
-      return { status: 400, error: 'Answer exceeds the maximum length' };
-    }
-    return { resumeValue: mapAskUserAnswer({ answer: body.answer }) };
+    return resolveAskUserQuestionResume(payload, body);
   }
   return { status: 400, error: 'Unsupported pending action type' };
 }
@@ -661,6 +649,41 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       generationProtocolVersion,
     );
   }
+  let resolvedAskContentIndex;
+  let resolvedAskContentMissing = false;
+  if (pendingAction.payload.type === 'ask_user_question' && !pendingAction.payload.tool_call_id) {
+    const answerSnapshot = await GenerationJobManager.getResumeState(streamId, job.createdAt);
+    if (answerSnapshot == null) {
+      return sendGenerationJson(res, 409, { code: 'RUN_REPLACED' }, generationProtocolVersion);
+    }
+    const askRequest = Array.isArray(pendingAction.payload.questions)
+      ? { questions: pendingAction.payload.questions }
+      : pendingAction.payload.question;
+    const answerContent = answerSnapshot.aggregatedContent ?? [];
+    if (answerContent.length > 0) {
+      resolvedAskContentIndex = findAskUserQuestionContentIndex(
+        answerContent,
+        undefined,
+        askRequest,
+      );
+      if (resolvedAskContentIndex < 0) {
+        resolvedAskContentIndex = undefined;
+        resolvedAskContentMissing = true;
+      }
+    } else {
+      resolvedAskContentMissing = true;
+    }
+  }
+  const resolvedAskUserQuestion = buildResolvedAskUserQuestion(
+    pendingAction,
+    req.body,
+    resolvedAskContentIndex,
+    resolvedAskContentMissing,
+  );
+  const resolvedAskUserQuestions = appendResolvedAskUserQuestion(
+    job.metadata?.resolvedAskUserQuestions,
+    resolvedAskUserQuestion,
+  );
 
   // A legacy job has no saver-level generation namespace, so snapshot its exact
   // durable ids before the atomic resume claim. New jobs can skip this indexed
@@ -716,6 +739,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       pendingAction.actionId,
       {
         preemptCapable: isSteerPreemptSupported(),
+        ...(resolvedAskUserQuestion && { resolvedAskUserQuestions }),
       },
       job.createdAt,
     );
@@ -902,18 +926,13 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     // resume state afterward would see the new (empty) client array and lose the seed.
     const resumeState = await GenerationJobManager.getResumeState(streamId, job.createdAt);
     let seedContent = resumeState?.aggregatedContent ?? [];
-    // Stamp the answered question onto the paused ask_user_question tool-call part
+    // Stamp retained answers onto their paused ask_user_question tool-call parts
     // (args = the pendingAction's authoritative question, output = the user's answer):
     // the streamed arg chunks carry no tool name so the aggregator dropped them, and
     // no completion event ever fires for this tool — without this the saved part is
-    // an empty "cancelled-looking" tool call. See attachAskUserQuestionAnswer.
-    if (pendingAction.payload?.type === 'ask_user_question') {
-      seedContent = attachAskUserQuestionAnswer(
-        seedContent,
-        pendingAction.payload.question,
-        req.body.answer,
-        pendingAction.payload.tool_call_id,
-      );
+    // an empty "cancelled-looking" tool call. See attachAskUserQuestionAnswers.
+    if (resolvedAskUserQuestions) {
+      seedContent = attachAskUserQuestionAnswers(seedContent, resolvedAskUserQuestions);
     }
     if (client.contentParts) {
       GenerationJobManager.setContentParts(streamId, client.contentParts, job.createdAt);
@@ -929,6 +948,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       // Replay deferred tools discovered before the pause (captured at pause). The rebuilt
       // graph passes `messages: []`, so without these the model would lose their schemas.
       discoveredToolNames: job.metadata?.discoveredTools,
+      activityPhaseSnapshot: job.metadata?.activityPhaseSnapshot,
     });
 
     // The model may pause AGAIN (another tool, or a follow-up question). The pending

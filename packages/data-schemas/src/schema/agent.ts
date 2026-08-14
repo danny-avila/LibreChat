@@ -116,7 +116,6 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
     mcpServerNames: {
       type: [String],
       default: [],
-      index: true,
     },
     /** Per-tool configuration (defer_loading, allowed_callers, run_in_background, describe_intent) */
     tool_options: {
@@ -145,6 +144,7 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
 );
 
 agentSchema.index({ id: 1, tenantId: 1 }, { unique: true });
+agentSchema.index({ mcpServerNames: 1, tenantId: 1 });
 agentSchema.index({ updatedAt: -1, _id: 1 });
 agentSchema.index({ 'edges.to': 1 });
 

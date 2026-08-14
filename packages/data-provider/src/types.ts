@@ -201,6 +201,8 @@ export type TSubmission = {
    * resumes for run steps and activity labels alike.
    */
   editPrefixLength?: number;
+  /** True once server index 0 text/reasoning actually merged into the retained tail. */
+  editPrefixFirstPartFolded?: boolean;
   /**
    * Set once a resume SYNC has replaced the response's retained prefix with
    * the server's completion-local snapshot. From that point the prefix is
@@ -492,6 +494,10 @@ export type TForkSharedConvoRequest = {
    *  fork to that branch. An index is used because shared ids are re-anonymized
    *  per request and `createdAt` can collide, while the payload order is stable. */
   targetMessageIndex?: number;
+  /** `updatedAt` of the shared payload being forked. The shareId survives an
+   *  owner update, so the server rejects a fork whose payload has since moved
+   *  instead of resolving the index against different messages. */
+  shareRevision?: string;
 };
 
 export type TSearchResults = {
@@ -936,3 +942,7 @@ export type TLangfuseConnectionTestErrorCode =
 export type TLangfuseConnectionTestResponse =
   | { success: true }
   | { success: false; errorCode: TLangfuseConnectionTestErrorCode };
+
+export type TLangfuseSessionLinkResponse = {
+  url: string | null;
+};

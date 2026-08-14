@@ -18,6 +18,7 @@ import {
   getRuntimeBodyPlaceholderFields,
   getMissingRuntimeBodyPlaceholderFields,
   isUserSourced,
+  validateMCPServerConfig,
   requiresEphemeralUserConnection,
 } from '~/mcp/utils';
 
@@ -398,6 +399,38 @@ describe('redactServerSecrets', () => {
     expect(redacted.consumeOnly).toBe(false);
     expect(redacted.inspectionFailed).toBe(false);
     expect(redacted.customUserVars).toEqual(config.customUserVars);
+  });
+
+  it('should expose request-scoped behavior without exposing placeholder-bearing fields', () => {
+    const config: ParsedServerConfig = {
+      type: 'streamable-http',
+      url: 'https://infra.internal/mcp',
+      source: 'yaml',
+      headers: { 'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}' },
+    };
+
+    const redacted = redactServerSecrets(config);
+
+    expect(redacted.requestScoped).toBe(true);
+    expect(redacted.url).toBeUndefined();
+    expect((redacted as Record<string, unknown>).headers).toBeUndefined();
+  });
+
+  it('should omit request-scoped metadata for ordinary and unsupported BODY placeholders', () => {
+    expect(
+      redactServerSecrets({
+        type: 'streamable-http',
+        url: 'https://example.com/mcp',
+        source: 'yaml',
+      }).requestScoped,
+    ).toBeUndefined();
+    expect(
+      redactServerSecrets({
+        type: 'streamable-http',
+        url: 'https://example.com/{{LIBRECHAT_BODY_TENANT}}/mcp',
+        source: 'yaml',
+      }).requestScoped,
+    ).toBeUndefined();
   });
 
   it('should pass URLs through unchanged when caller has edit authority', () => {
@@ -809,6 +842,39 @@ describe('hasRuntimeBodyPlaceholders', () => {
       }),
     ).toBe(false);
   });
+
+  it('ignores unsupported BODY placeholder names that the resolver leaves literal', () => {
+    const config = {
+      source: 'yaml' as const,
+      url: 'https://example.com/{{LIBRECHAT_BODY_TENANT}}/mcp',
+    };
+
+    expect(hasRuntimeContextPlaceholders(config)).toBe(false);
+    expect(hasRuntimeUrlPlaceholders(config)).toBe(false);
+    expect(hasRuntimeBodyPlaceholders(config)).toBe(false);
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(getMissingRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(requiresEphemeralUserConnection(config)).toBe(false);
+    expect(requiresUserScopedConnection(config)).toBe(false);
+  });
+
+  it('ignores BODY and USER literals in plugin-sourced configs', () => {
+    const config = {
+      source: 'plugin' as const,
+      url: 'https://example.com/users/{{LIBRECHAT_USER_ID}}/mcp',
+      headers: {
+        'X-Conversation': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+      },
+    };
+
+    expect(hasRuntimeContextPlaceholders(config)).toBe(false);
+    expect(hasRuntimeUrlPlaceholders(config)).toBe(false);
+    expect(hasRuntimeBodyPlaceholders(config)).toBe(false);
+    expect(getRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(getMissingRuntimeBodyPlaceholderFields(config)).toEqual([]);
+    expect(requiresEphemeralUserConnection(config)).toBe(false);
+    expect(requiresUserScopedConnection(config)).toBe(false);
+  });
 });
 
 describe('getMissingRuntimeBodyPlaceholderFields', () => {
@@ -846,6 +912,29 @@ describe('getMissingRuntimeBodyPlaceholderFields', () => {
         url: 'https://example.com/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
       }),
     ).toEqual([]);
+  });
+});
+
+describe('validateMCPServerConfig', () => {
+  it('preserves server-managed metadata on a valid effective config', () => {
+    const config = {
+      type: 'streamable-http' as const,
+      url: 'https://example.com/mcp',
+      source: 'config' as const,
+      dbId: 'server-123',
+    };
+
+    expect(validateMCPServerConfig(config)).toBe(config);
+    expect(validateMCPServerConfig(config)).toMatchObject({
+      source: 'config',
+      dbId: 'server-123',
+    });
+  });
+
+  it('rejects an incomplete effective config', () => {
+    expect(() => validateMCPServerConfig({ type: 'streamable-http' })).toThrow(
+      'Invalid effective MCP server configuration',
+    );
   });
 });
 

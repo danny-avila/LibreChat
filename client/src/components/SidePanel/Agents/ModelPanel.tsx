@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect } from 'react';
 import keyBy from 'lodash/keyBy';
-import { ControlCombobox } from '@librechat/client';
 import { ChevronLeft, RotateCcw } from 'lucide-react';
+import { Button, ControlCombobox } from '@librechat/client';
 import { useFormContext, useWatch, Controller } from 'react-hook-form';
 import {
   alternateName,
@@ -105,14 +105,15 @@ export default function ModelPanel({
   return (
     <div className="mb-1 flex w-full flex-col gap-3 text-sm">
       <header className="grid grid-cols-[auto_1fr_auto] items-center gap-2 pt-1">
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="icon"
           onClick={() => setActivePanel(Panel.builder)}
           aria-label={localize('com_ui_back_to_builder')}
-          className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-border-light text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+          className="h-10 w-10 flex-shrink-0 rounded-xl text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
         >
           <ChevronLeft className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
-        </button>
+        </Button>
         <h2 className="text-center text-base font-semibold text-text-primary">
           {localize('com_ui_model_parameters')}
         </h2>
@@ -250,14 +251,14 @@ export default function ModelPanel({
         </div>
       )}
       {/* Reset Parameters Button */}
-      <button
-        type="button"
+      <Button
+        variant="outline"
         onClick={handleResetParameters}
-        className="mt-2 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl border border-border-light bg-transparent px-4 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+        className="mt-2 h-9 w-full rounded-xl px-4 font-medium text-text-secondary hover:bg-surface-secondary hover:text-text-primary"
       >
         <RotateCcw className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
         {localize('com_ui_reset_var', { 0: localize('com_ui_model_parameters') })}
-      </button>
+      </Button>
     </div>
   );
 }

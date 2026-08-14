@@ -42,5 +42,8 @@ export function sanitizeJobMetadata(metadata: Partial<GenerationJobMetadata>): J
   if (metadata.discoveredTools) {
     patch.discoveredTools = metadata.discoveredTools;
   }
+  if (metadata.activityPhaseSnapshot) {
+    patch.activityPhaseSnapshot = metadata.activityPhaseSnapshot;
+  }
   return patch;
 }

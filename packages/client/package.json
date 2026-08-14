@@ -1,6 +1,6 @@
 {
   "name": "@librechat/client",
-  "version": "0.4.63",
+  "version": "0.4.75",
   "description": "React components for LibreChat",
   "repository": {
     "type": "git",
@@ -20,11 +20,13 @@
         "default": "./dist/index.cjs"
       }
     },
+    "./tailwind-preset": "./tailwind.preset.cjs",
     "./style.css": "./dist/style.css",
     "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "tailwind.preset.cjs"
   ],
   "scripts": {
     "clean": "rimraf dist",

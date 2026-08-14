@@ -32,6 +32,12 @@ export function testLangfuseConnection(
   return request.post(endpoints.adminLangfuseConnectionTest(), payload);
 }
 
+export function getLangfuseSessionLink(
+  conversationId: string,
+): Promise<t.TLangfuseSessionLinkResponse> {
+  return request.get(endpoints.adminLangfuseSessionLink(conversationId));
+}
+
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
 }
@@ -844,8 +850,12 @@ export function forkConversation(payload: t.TForkConvoRequest): Promise<t.TForkC
 export function forkSharedConversation(
   shareId: string,
   targetMessageIndex?: number,
+  shareRevision?: string,
 ): Promise<t.TForkConvoResponse> {
-  return request.post(endpoints.forkSharedMessages(shareId), { targetMessageIndex });
+  return request.post(endpoints.forkSharedMessages(shareId), {
+    targetMessageIndex,
+    shareRevision,
+  });
 }
 
 export function deleteConversation(payload: t.TDeleteConversationRequest) {

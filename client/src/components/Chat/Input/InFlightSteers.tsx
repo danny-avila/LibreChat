@@ -52,6 +52,17 @@ const STEER_OVERFLOW_TOLERANCE = 8;
  *  honest unknown outcome; the idempotent arm may still complete server-side. */
 const ARM_CONFIRM_TIMEOUT_MS = 10_000;
 
+/** The control rail flanking a bubble. `py-3` reproduces the bubble's own
+ *  first-line band — its `py-2.5` padding, its 1px border, and half the gap
+ *  between the 24px control and the taller text line box — so a 24px control
+ *  centers on the first line: visually centered beside a one-line steer, and
+ *  aligned to the opening line of a tall one rather than adrift in its middle.
+ *  `sticky` then keeps it in view while a tall steer scrolls past (the stack
+ *  scrolls once it passes 35vh); the matching `pt-2` on the overlay means the
+ *  topmost rail already clears the sticky inset, so it is not shoved down at
+ *  rest while the rails below it — which never trip the inset — stay put. */
+const STEER_CONTROL_RAIL = 'sticky top-2 flex shrink-0 items-center py-3';
+
 type ArmFailure = {
   name?: string;
   response?: { data?: { code?: string } };
@@ -403,10 +414,10 @@ const InFlightSteer = memo(function InFlightSteer({
       /* pointer-events-auto: the overlay container disables events so wheeling
        * over the gaps reaches the messages behind; each bubble re-enables them
        * for its own controls and internal scroll. */
-      className="group pointer-events-auto flex flex-col items-start gap-1.5"
+      className="group pointer-events-auto flex flex-col items-end gap-1.5"
     >
       {(images.length > 0 || others.length > 0) && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {others.map((file) => (
             <FileContainer
               key={file.file_id}
@@ -427,14 +438,38 @@ const InFlightSteer = memo(function InFlightSteer({
           ))}
         </div>
       )}
-      {/* items-start so the sticky controls have room to travel — see below. */}
+      {/* Mirrors the user turn: the whole group hugs the right edge like every
+       *  other message the user wrote. The two controls flank the bubble rather
+       *  than stacking beside each other — the overflow menu outboard-left, the
+       *  send-now arrow outboard-right — so neither can read as belonging to
+       *  the other, and the pairing repeats cleanly when steers stack.
+       *  items-start so the sticky controls have room to travel — see below. */}
       <div className="flex max-w-full items-start gap-1.5">
+        {!sending && (
+          /* One always-visible affordance: a label-less menu hidden until hover
+           * is undiscoverable, and edit/queue/cancel all live inside it now, so
+           * the menu shows at rest on every pointer (matching the always-on
+           * controls on the queued rows). `sticky` keeps it in view while the
+           * user scrolls through a tall, expanded steer (the stack scrolls once
+           * it passes 35vh). */
+          <div data-testid="steer-controls" className={cn(STEER_CONTROL_RAIL, 'gap-1')}>
+            <RowMenu
+              label={localize('com_ui_more_options')}
+              entries={entries}
+              preferences={preferences}
+              buttonRef={optionsButtonRef}
+            />
+          </div>
+        )}
         <div
           className={cn(
+            /* Same bubble geometry as the applied `SteerPart` and every user
+             * turn, so the words don't reshape when the server injects them. */
+            'flex min-w-0 items-start gap-2 rounded-theme-surface rounded-br-theme-control',
             /* Outlined, not just filled: an in-flight steer is provisional —
              * the fill alone reads as a settled message. */
-            'flex min-w-0 items-start gap-2 rounded-3xl border border-border-medium',
-            'bg-surface-secondary py-2 pl-3 pr-4 text-sm text-text-primary',
+            'border border-border-medium bg-surface-secondary',
+            'px-theme-normal py-2.5 text-sm text-text-primary',
             sending && 'opacity-70',
           )}
         >
@@ -493,32 +528,15 @@ const InFlightSteer = memo(function InFlightSteer({
             )}
           </div>
         </div>
-        {!sending && (
-          /* One always-visible affordance: a label-less menu hidden until hover
-           * is undiscoverable, and edit/queue/cancel all live inside it now, so
-           * the menu shows at rest on every pointer (matching the always-on
-           * controls on the queued rows). `sticky` keeps it in view while the
-           * user scrolls through a tall, expanded steer (the stack scrolls once
-           * it passes 35vh). */
-          <div
-            data-testid="steer-controls"
-            className="sticky top-2 flex shrink-0 items-center gap-1"
-          >
-            {!preempting && (
-              <EscalateNowButton
-                surface="bubble"
-                messageText={steer.text}
-                disabled={
-                  interruptPending || steering.pausedOnApproval || !steering.duringRunActive
-                }
-                onClick={escalate}
-              />
-            )}
-            <RowMenu
-              label={localize('com_ui_more_options')}
-              entries={entries}
-              preferences={preferences}
-              buttonRef={optionsButtonRef}
+        {!sending && !preempting && (
+          /* Sticky for the same reason as the menu: a tall, expanded steer must
+           * never scroll its send-now out of reach. */
+          <div className={STEER_CONTROL_RAIL}>
+            <EscalateNowButton
+              surface="bubble"
+              messageText={steer.text}
+              disabled={interruptPending || steering.pausedOnApproval || !steering.duringRunActive}
+              onClick={escalate}
             />
           </div>
         )}
@@ -622,7 +640,7 @@ const InFlightSteers = memo(function InFlightSteers({
        * steer runs to 16k chars and a run takes up to 10 of them; unbounded it
        * would cover the whole thread. pointer-events-none lets wheeling over
        * the gaps reach those messages (each bubble opts back in). */
-      className="pointer-events-none absolute inset-x-0 bottom-full flex max-h-[35vh] flex-col items-start gap-2 overflow-y-auto px-2 pb-2"
+      className="pointer-events-none absolute inset-x-0 bottom-full mx-auto flex max-h-[35vh] max-w-3xl flex-col items-end gap-2 overflow-y-auto p-2"
     >
       {inFlight.map((steer) => (
         <InFlightSteer

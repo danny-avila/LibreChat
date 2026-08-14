@@ -150,7 +150,7 @@ export class MCPServerInspector {
 
   private async fetchServerInstructions(): Promise<void> {
     if (isEnabled(this.config.serverInstructions)) {
-      this.config.serverInstructions = this.connection!.client.getInstructions();
+      this.config.resolvedInstructions = this.connection!.client.getInstructions();
     }
   }
 
@@ -178,7 +178,11 @@ export class MCPServerInspector {
     serverName: string,
     connection: MCPConnection,
   ): Promise<t.LCAvailableTools> {
-    const tools = await connection.fetchTools();
+    const snapshot = await connection.fetchOrderedToolsSnapshot();
+    if (!snapshot.complete) {
+      throw new Error(`Incomplete tools/list snapshot for MCP server ${serverName}`);
+    }
+    const { tools } = snapshot;
 
     const toolFunctions: t.LCAvailableTools = {};
     /** Model-facing key: must match the runtime instance name, which embeds

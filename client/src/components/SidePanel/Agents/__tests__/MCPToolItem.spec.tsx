@@ -9,6 +9,14 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('@librechat/client', () => ({
   TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
+  Button: ({
+    children,
+    variant: _variant,
+    size: _size,
+    ...props
+  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 const tool = {
@@ -83,6 +91,13 @@ describe('MCPToolItem', () => {
     const deferButton = screen.getByRole('button', { name: 'com_ui_mcp_defer_loading' });
     fireEvent.click(deferButton);
     expect(props.onToggleDefer).toHaveBeenCalledTimes(1);
+  });
+
+  test('deferred tool keeps its warning color while hovered', () => {
+    setup({ deferredToolsEnabled: true, isDeferred: true });
+    const deferButton = screen.getByRole('button', { name: 'com_ui_mcp_defer_loading' });
+    expect(deferButton).toHaveClass('hover:text-text-secondary');
+    expect(deferButton.querySelector('svg')).toHaveClass('text-text-warning');
   });
 
   test('defer button is absent when deferred tools are disabled', () => {
