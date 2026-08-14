@@ -338,6 +338,30 @@ describe('entity_id scoping by file origin', () => {
     expect(bodiesSent()[0].entity_id).toBeUndefined();
   });
 
+  /* An agent's resource list can hold a user-owned attachment, and asking the
+   * RAG API for it under the agent returns nothing. */
+  it('leaves a user-owned file unscoped even when the agent lists it', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      files: [{ file_id: 'f1', filename: 'a.pdf', fromAgent: true, vectorOwner: 'user1' }],
+    });
+    await tool.func({ query: 'q' });
+
+    expect(bodiesSent()[0].entity_id).toBeUndefined();
+  });
+
+  it('scopes a file the entity owns even when it arrived as an attachment', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      files: [{ file_id: 'f1', filename: 'a.pdf', fromAgent: false, vectorOwner: 'agent_123' }],
+    });
+    await tool.func({ query: 'q' });
+
+    expect(bodiesSent()[0].entity_id).toBe('agent_123');
+  });
+
   it('queries the vector document a borrowed file points at', async () => {
     const tool = await createFileSearchTool({
       userId: 'user1',
@@ -414,6 +438,34 @@ describe('files sharing one vector document', () => {
     const [, artifact] = await tool.func({ query: 'q' });
 
     expect(artifact.file_search.sources[0].fileName).toBe('from-metadata.pdf');
+  });
+
+  /* A user attachment reusing the vectors of one the agent also lists: the
+   * surviving query has to stay unscoped or the RAG API rejects it. */
+  it('keeps the collapsed query unscoped when the shared document is user-owned', async () => {
+    axios.post.mockResolvedValue({
+      data: [[{ page_content: 'c', metadata: { source: '/a.pdf' } }, 0.1]],
+    });
+
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      files: [
+        { file_id: 'listed', filename: 'a.pdf', fromAgent: true, vectorOwner: 'user1' },
+        {
+          file_id: 'attached',
+          vectorId: 'listed',
+          filename: 'a.pdf',
+          fromAgent: false,
+          vectorOwner: 'user1',
+        },
+      ],
+    });
+    await tool.func({ query: 'q' });
+
+    const bodies = axios.post.mock.calls.map(([, body]) => body);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].entity_id).toBeUndefined();
   });
 
   it('attributes surviving hits correctly when an earlier query fails', async () => {

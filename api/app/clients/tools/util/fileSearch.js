@@ -77,6 +77,7 @@ const primeFiles = async (options) => {
     files.push({
       file_id: file.file_id,
       vectorId: file.vectorId,
+      vectorOwner: file.vectorOwner,
       filename: file.filename,
       fromAgent: agentResourceIds.has(file.file_id),
     });
@@ -106,6 +107,19 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
       }
 
       /**
+       * Whether the chunks are the entity's, which is what the RAG API's
+       * filter matches on. `vectorOwner` records that directly, so prefer it:
+       * an agent's resource list can hold a user-owned attachment, and asking
+       * for it under the agent returns nothing. Records predating the field
+       * fall back to membership, which was right for the agent knowledge
+       * files of that era.
+       *
+       * @param {import('librechat-data-provider').TFile & { fromAgent?: boolean }} file
+       */
+      const isEntityOwned = (file) =>
+        file.vectorOwner != null ? file.vectorOwner === entity_id : file.fromAgent === true;
+
+      /**
        * @param {import('librechat-data-provider').TFile & { fromAgent?: boolean }} file
        * @returns {{ file_id: string, query: string, k: number, entity_id?: string }}
        */
@@ -115,14 +129,7 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
           query,
           k: 5,
         };
-        // User-attached files are embedded under the user id (no entity);
-        // only agent knowledge-base files carry the agent's entity_id.
-        // Sending entity_id for user attachments makes the RAG API's entity
-        // filter return no results for them. When files are provided by
-        // primeFiles, fromAgent is always set; for callers that pass files
-        // directly without the flag, the safe default is unscoped (no
-        // entity_id).
-        if (!entity_id || file.fromAgent !== true) {
+        if (!entity_id || !isEntityOwned(file)) {
           return body;
         }
         body.entity_id = entity_id;
@@ -131,7 +138,9 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
       };
 
       /* Files sharing a vector-store document return identical hits, so one
-       * query per document is enough. */
+       * query per document is enough. Safe to collapse on the id alone
+       * because reuse requires a matching `vectorOwner`, so records sharing a
+       * document always resolve to the same query scope above. */
       const queryPromises = dedupeByVectorId(files).map((file) =>
         axios
           .post(`${process.env.RAG_API_URL}/query`, createQueryBody(file), {
