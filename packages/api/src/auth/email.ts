@@ -519,22 +519,11 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(409, 'Email address is already linked to another account', 'email_in_use');
     }
 
-    try {
-      await Promise.all([
-        deps.deleteTokens({ userId, type: PASSWORD_RESET_TOKEN_TYPE }, tenantId),
-        deps.deleteTokens({ userId, email: null, identifier: null, type: null }, tenantId),
-      ]);
-    } catch (error) {
-      logger.error(
-        `[emailChange] Credential cleanup failed [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
-        error,
-      );
-      return result(500, 'Failed to change email address');
-    }
-
     /** Claiming the exact hash that was presented binds the commit to this link: a request
      * that replaced the scoped token between the lookup and here leaves nothing to claim,
-     * so a superseded address can no longer overwrite the one the user was last sent. */
+     * so a superseded address can no longer overwrite the one the user was last sent.
+     * Claimed before the credential cleanup so a link that lost the race cannot revoke a
+     * password reset it will never replace. */
     const claim = await claimTokenIfCurrent(
       deps,
       { ...tokenQuery, token: emailChangeToken.token },
@@ -551,6 +540,20 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
         `[emailChange] Superseded confirmation [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
       );
       return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
+    }
+
+    try {
+      await Promise.all([
+        deps.deleteTokens({ userId, type: PASSWORD_RESET_TOKEN_TYPE }, tenantId),
+        deps.deleteTokens({ userId, email: null, identifier: null, type: null }, tenantId),
+      ]);
+    } catch (error) {
+      logger.error(
+        `[emailChange] Credential cleanup failed [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
+        error,
+      );
+      await restoreClaimedToken(deps, emailChangeToken, scope, tenantId);
+      return result(500, 'Failed to change email address');
     }
 
     /** The compare-and-set remains the commit point and the single-use guard: a competing
