@@ -49,26 +49,16 @@ export default function MessageRow({
       className={cn(
         'message-render group mx-auto flex min-w-0 flex-1 font-theme-ui transition-[max-width] duration-theme-normal motion-reduce:transition-none',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
-        isCreatedByUser ? 'justify-end' : 'items-start gap-3',
+        isCreatedByUser ? 'justify-end' : 'items-start',
         widthClass,
         className,
       )}
     >
-      {showAssistantHeader && (
-        <div
-          className="relative flex flex-shrink-0 flex-col items-center pt-0.5"
-          aria-hidden="true"
-        >
-          <div className="flex size-6 items-center justify-center overflow-hidden rounded-full">
-            {icon}
-          </div>
-        </div>
-      )}
-
       <div
         className={cn(
           'relative flex min-w-0 flex-col',
           isCreatedByUser ? 'user-turn' : 'agent-turn',
+          showAssistantHeader && 'md:pl-9',
           (hasParallelContent || isEditing) && 'w-full',
           !hasParallelContent &&
             isCreatedByUser &&
@@ -85,6 +75,12 @@ export default function MessageRow({
             </h2>
           ) : (
             <h2 className="flex min-h-7 select-none items-center text-sm font-semibold text-text-primary">
+              <span
+                aria-hidden="true"
+                className="mr-2 flex size-6 flex-shrink-0 items-center justify-center overflow-hidden rounded-full md:absolute md:left-0 md:top-0.5 md:mr-0"
+              >
+                {icon}
+              </span>
               <span className="sr-only">{headerPrefix}</span>
               {label}
               <MessageTimestamp value={timestamp} />

@@ -6,7 +6,8 @@ import type { ReactNode } from 'react';
  * renders a full user turn inside the response, so the parts that resume
  * after it need the author's icon and label restated — the message-level
  * header only renders once, above the first part. Outdented past the icon
- * column (like `SteerPart`) so it aligns with the top-level header.
+ * column (like `SteerPart`) so it aligns with the top-level header; that
+ * column only exists from `md` up, so the outdent is gated to match.
  */
 const AuthorHeader = memo(function AuthorHeader({
   icon,
@@ -16,7 +17,10 @@ const AuthorHeader = memo(function AuthorHeader({
   label: string;
 }) {
   return (
-    <div className="relative -ml-9 flex w-[calc(100%+2.25rem)] gap-3" data-testid="author-header">
+    <div
+      className="relative flex w-full gap-2 md:-ml-9 md:w-[calc(100%+2.25rem)] md:gap-3"
+      data-testid="author-header"
+    >
       <div className="relative flex flex-shrink-0 flex-col items-center" aria-hidden="true">
         <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
           {icon}

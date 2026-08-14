@@ -62,6 +62,32 @@ describe('MessageRow', () => {
     expect(screen.getByRole('heading', { name: /Assistant/ })).toBeVisible();
   });
 
+  it('carries the assistant avatar inside the heading without naming it', () => {
+    renderRow({ isCreatedByUser: false });
+
+    const avatar = screen.getByTestId('message-icon').parentElement;
+
+    /** The accessible name resolves only when `aria-hidden` excludes the avatar. */
+    expect(screen.getByRole('heading', { name: 'Message from Assistant' })).toContainElement(
+      screen.getByTestId('message-icon'),
+    );
+    expect(avatar).toHaveAttribute('aria-hidden', 'true');
+    expect(avatar).toHaveClass('size-6', 'md:absolute', 'md:left-0', 'md:top-0.5');
+  });
+
+  it('reserves the avatar gutter on desktop only so mobile content starts flush left', () => {
+    renderRow({ isCreatedByUser: false });
+
+    const row = screen.getByLabelText('Assistant message');
+    const agentTurn = row.querySelector('.agent-turn');
+
+    expect(agentTurn).toHaveClass('md:pl-9');
+    expect(agentTurn).not.toHaveClass('pl-9');
+    expect(row).not.toHaveClass('gap-3');
+    expect(row.children).toHaveLength(1);
+    expect(screen.getAllByTestId('message-icon')).toHaveLength(1);
+  });
+
   it('preserves the assistant turn marker for parallel content', () => {
     renderRow({ isCreatedByUser: false, hasParallelContent: true });
 
@@ -89,7 +115,7 @@ describe('MessageRow', () => {
     const row = screen.getByLabelText('Assistant message');
     const messageSurface = screen.getByTestId('message-body');
 
-    expect(row.querySelector('.agent-turn')).toHaveClass('w-full');
+    expect(row.querySelector('.agent-turn')).toHaveClass('w-full', 'md:pl-9');
     expect(messageSurface).toHaveClass('w-full');
   });
 
