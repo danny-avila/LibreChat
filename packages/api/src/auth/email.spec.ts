@@ -574,6 +574,50 @@ describe('email change service', () => {
       expect(storedToken).toBe(supersedingToken);
     });
 
+    it('leaves password resets alone when the confirmation is superseded', async () => {
+      const pending = await pendingToken();
+      const supersedingToken = await hashToken('superseding-token');
+      let storedToken: string | null = pending.token;
+      const resetTokens = ['pending-reset'];
+      const deleteTokens = jest.fn(async (query: TokenQuery) => {
+        if (query.type === 'password_reset') {
+          const deletedCount = resetTokens.length;
+          resetTokens.length = 0;
+          return { deletedCount };
+        }
+        if (query.type !== EMAIL_CHANGE_TOKEN_TYPE) {
+          return { deletedCount: 0 };
+        }
+        if (query.token !== undefined && query.token !== storedToken) {
+          return { deletedCount: 0 };
+        }
+        const deletedCount = storedToken === null ? 0 : 1;
+        storedToken = null;
+        return { deletedCount };
+      });
+      const { deps, service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(pending),
+        /** A second request replaces the scoped token after this confirmation read it. */
+        findUserByEmail: jest.fn(async () => {
+          storedToken = supersedingToken;
+          return null;
+        }),
+        deleteTokens: deleteTokens as EmailChangeDeps['deleteTokens'],
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 400, code: 'invalid_token' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+      expect(resetTokens).toEqual(['pending-reset']);
+    });
+
     it('reports a failed claim as a server error instead of an invalid link', async () => {
       const { deps, service } = createDeps({
         findToken: jest.fn().mockResolvedValue(await pendingToken()),
