@@ -82,20 +82,23 @@ export type SuppressedVectorDeletes<T> = {
   /** The batch to delete, with shared-vector destruction defused. */
   files: T[];
   /**
-   * Vector documents this batch declined to drop because a file outside it
-   * still pointed at them. Recheck these once the batch's metadata is gone —
-   * see `reclaimOrphanedVectors`.
+   * Vector documents this batch declined to drop inline. Recheck these once
+   * the batch's outcomes are known — see `reclaimOrphanedVectors`.
    */
   deferredVectorIds: string[];
 };
 
 /**
- * Rewrites a delete batch so that at most one record drops each shared
- * vector-store document, and none do while a file outside the batch still
- * points at it. Files that would destroy embeddings another record is
- * using come back with `embedded: false`, which every RAG delete path
- * already treats as "nothing to remove" — so the guard holds without each
- * storage strategy having to know about sharing.
+ * Rewrites a delete batch so no record destroys embeddings another one is
+ * still using. Files that would come back with `embedded: false`, which
+ * every RAG delete path already treats as "nothing to remove" — so the guard
+ * holds without each storage strategy having to know about sharing.
+ *
+ * A document goes inline only when exactly one file in the batch holds it and
+ * nothing outside the batch does. Anything shared is deferred, including
+ * within the batch: the per-file deletes run independently and a record whose
+ * storage delete fails is kept, so letting its sibling drop the document here
+ * would leave that survivor pointing at nothing.
  *
  * Files are otherwise returned untouched, and the array is returned as-is
  * when nothing in it is embedded.
@@ -109,33 +112,34 @@ export async function suppressSharedVectorDeletes<T extends DeletableFile>(
     return { files, deferredVectorIds: [] };
   }
 
-  /** First occurrence of each vector id wins the right to delete it. */
-  const deleters = new Map<string, string>();
+  const holdersInBatch = new Map<string, number>();
   for (const file of embeddedFiles) {
     const vectorId = resolveVectorId(file);
-    if (!deleters.has(vectorId)) {
-      deleters.set(vectorId, file.file_id);
-    }
+    holdersInBatch.set(vectorId, (holdersInBatch.get(vectorId) ?? 0) + 1);
   }
 
   const remaining = await countVectorReferences({
-    vectorIds: [...deleters.keys()],
+    vectorIds: [...holdersInBatch.keys()],
     excludeFileIds: files.map((file) => file.file_id),
   });
 
-  const deferredVectorIds = [...deleters.keys()].filter((vectorId) => !!remaining.get(vectorId));
+  const deferredVectorIds: string[] = [];
+  for (const [vectorId, holders] of holdersInBatch) {
+    if (holders > 1 || remaining.get(vectorId)) {
+      deferredVectorIds.push(vectorId);
+    }
+  }
 
-  const rewritten = files.map((file) => {
-    if (file.embedded !== true) {
-      return file;
-    }
-    const vectorId = resolveVectorId(file);
-    const isDeleter = deleters.get(vectorId) === file.file_id;
-    if (isDeleter && !remaining.get(vectorId)) {
-      return file;
-    }
-    return { ...file, embedded: false };
-  });
+  if (deferredVectorIds.length === 0) {
+    return { files, deferredVectorIds };
+  }
+
+  const deferred = new Set(deferredVectorIds);
+  const rewritten = files.map((file) =>
+    file.embedded === true && deferred.has(resolveVectorId(file))
+      ? { ...file, embedded: false }
+      : file,
+  );
 
   return { files: rewritten, deferredVectorIds };
 }

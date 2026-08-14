@@ -469,34 +469,58 @@ describe('deleting files that share vectors', () => {
     );
   });
 
+  const sharedGroup = () => [
+    {
+      file_id: 'original-file-id',
+      filepath: '/uploads/a.pdf',
+      source: FileSources.local,
+      embedded: true,
+    },
+    {
+      file_id: 'borrower',
+      filepath: '/uploads/b.pdf',
+      source: FileSources.local,
+      embedded: true,
+      vectorId: 'original-file-id',
+    },
+  ];
+
   it('deletes shared vectors exactly once when the whole group goes at once', async () => {
     const { vectorDelete } = setupDeletes();
 
-    await processDeleteRequest({
-      req: deleteReq(),
-      files: [
-        {
-          file_id: 'original-file-id',
-          filepath: '/uploads/a.pdf',
-          source: FileSources.local,
-          embedded: true,
-        },
-        {
-          file_id: 'borrower',
-          filepath: '/uploads/b.pdf',
-          source: FileSources.local,
-          embedded: true,
-          vectorId: 'original-file-id',
-        },
-      ],
-    });
+    await processDeleteRequest({ req: deleteReq(), files: sharedGroup() });
 
-    expect(vectorDelete).toHaveBeenCalledTimes(1);
-    expect(vectorDelete.mock.calls[0][1].file_id).toBe('original-file-id');
-    expect(db.countVectorReferences).toHaveBeenCalledWith({
+    expect(db.countVectorReferences).toHaveBeenNthCalledWith(1, {
       vectorIds: ['original-file-id'],
       excludeFileIds: ['original-file-id', 'borrower'],
     });
+    expect(vectorDelete).toHaveBeenCalledTimes(1);
+    expect(vectorDelete.mock.calls[0][1].file_id).toBe('original-file-id');
+  });
+
+  /* A partial storage failure keeps the failed record, so the document it
+   * shares with its deleted sibling has to survive with it. */
+  it('keeps shared vectors when a sibling in the batch fails to delete', async () => {
+    const vectorDelete = jest.fn().mockResolvedValue(undefined);
+    const primaryDelete = jest.fn(async (_req, file) => {
+      if (file.file_id === 'borrower') {
+        throw new Error('S3 unavailable');
+      }
+    });
+    getStrategyFunctions.mockImplementation((source) =>
+      source === FileSources.vectordb
+        ? { deleteFile: vectorDelete }
+        : { deleteFile: primaryDelete },
+    );
+    db.countVectorReferences
+      .mockResolvedValueOnce(new Map())
+      .mockResolvedValueOnce(new Map([['original-file-id', 1]]));
+
+    const result = await processDeleteRequest({ req: deleteReq(), files: sharedGroup() });
+
+    expect(result.deletedFileIds).toEqual(['original-file-id']);
+    expect(result.failedFileIds).toEqual(['borrower']);
+    expect(vectorDelete).not.toHaveBeenCalled();
   });
 
   it('leaves unshared embedded files deleting as before', async () => {

@@ -213,7 +213,9 @@ describe('suppressSharedVectorDeletes', () => {
     expect(result.deferredVectorIds).toEqual(['original']);
   });
 
-  it('lets exactly one file in the batch drop shared vectors', async () => {
+  /* Per-file deletes run independently and a failed one keeps its record, so
+   * letting a sibling drop the document inline could strand the survivor. */
+  it('defers a document more than one file in the batch holds', async () => {
     const result = await suppressSharedVectorDeletes(
       [
         { file_id: 'original', embedded: true },
@@ -223,9 +225,21 @@ describe('suppressSharedVectorDeletes', () => {
     );
 
     expect(result.files).toEqual([
-      { file_id: 'original', embedded: true },
+      { file_id: 'original', embedded: false },
       { file_id: 'borrower', vectorId: 'original', embedded: false },
     ]);
+    expect(result.deferredVectorIds).toEqual(['original']);
+  });
+
+  it('returns the batch untouched when nothing is shared', async () => {
+    const files = [
+      { file_id: 'a', embedded: true },
+      { file_id: 'b', embedded: true },
+    ];
+
+    const result = await suppressSharedVectorDeletes(files, countingSpy());
+
+    expect(result.files).toBe(files);
     expect(result.deferredVectorIds).toEqual([]);
   });
 
