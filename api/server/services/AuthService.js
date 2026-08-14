@@ -558,6 +558,17 @@ const resetPassword = async (userId, token, password) => {
     return new Error('Invalid or expired password reset token');
   }
 
+  /** Runs immediately after the commit rather than after the notification: the delete is not
+   * scoped to the password the pending token was bound to, so every moment it is deferred is
+   * a moment an email change request can issue a link against the new password and have it
+   * revoked here. Confirmation independently refuses tokens bound to the old password, since
+   * it re-checks `passwordFingerprint` against the stored hash. */
+  try {
+    await deleteTokens({ userId, type: AuthTokenTypes.EMAIL_CHANGE });
+  } catch (error) {
+    logger.error('[resetPassword] Failed to clean up pending email changes', error);
+  }
+
   if (checkEmailConfig()) {
     await sendEmail({
       email: user.email,
@@ -572,11 +583,6 @@ const resetPassword = async (userId, token, password) => {
   }
 
   await deleteTokens(getPasswordResetTokenDeleteQuery(passwordResetToken));
-  try {
-    await deleteTokens({ userId, type: AuthTokenTypes.EMAIL_CHANGE });
-  } catch (error) {
-    logger.error('[resetPassword] Failed to clean up pending email changes', error);
-  }
   logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
   return { message: 'Password reset was successful' };
 };
