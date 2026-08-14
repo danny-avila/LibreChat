@@ -64,6 +64,7 @@ jest.mock('~/config', () => ({
 
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 
 // Import the router after mocks
 const router = require('./files');
@@ -819,6 +820,7 @@ describe('File Routes - Delete with Agent Access', () => {
       expect(response.body.toString()).toBe('saved notes');
       expect(response.headers['content-disposition']).toContain('filename="notes.txt"');
       expect(response.headers['content-type']).toBe('application/octet-stream');
+      expect(response.headers['content-length']).toBe(String(Buffer.byteLength('saved notes')));
       const metadata = JSON.parse(decodeURIComponent(response.headers['x-file-metadata']));
       expect(metadata).toMatchObject({
         file_id: userFileId,
@@ -1011,6 +1013,101 @@ describe('File Routes - Delete with Agent Access', () => {
           contentType: 'text/plain',
         }),
       );
+    });
+
+    it('answers 500 when the file stream fails before any bytes are written', async () => {
+      const userFileId = uuidv4();
+      const getDownloadStream = jest.fn().mockResolvedValue(
+        new Readable({
+          read() {
+            this.destroy(
+              Object.assign(new Error('ENOENT: no such file or directory'), { code: 'ENOENT' }),
+            );
+          },
+        }),
+      );
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'deleted.txt',
+        filepath: '/uploads/temp/deleted.txt',
+        bytes: 200,
+        type: 'text/plain',
+        source: FileSources.local,
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error downloading file');
+      expect(response.headers['content-disposition']).toBeUndefined();
+      expect(response.headers['x-file-metadata']).toBeUndefined();
+    });
+
+    it('answers 500 when an assistants storage stream fails', async () => {
+      const userFileId = uuidv4();
+      getOpenAIClient.mockResolvedValue({ openai: {} });
+      const getDownloadStream = jest.fn().mockResolvedValue({
+        body: new Readable({
+          read() {
+            this.destroy(new Error('upstream reset'));
+          },
+        }),
+      });
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'assistant.txt',
+        filepath: 'uploads/user/assistant.txt',
+        bytes: 200,
+        type: 'text/plain',
+        model: 'gpt-4o',
+        source: FileSources.openai,
+      });
+
+      const response = await request(app).get(`/files/download/${otherUserId}/${userFileId}`);
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error downloading file');
+      expect(response.headers['x-file-metadata']).toBeUndefined();
+    });
+
+    it('aborts the response when the stream fails after the body has started', async () => {
+      const userFileId = uuidv4();
+      let pushed = false;
+      const getDownloadStream = jest.fn().mockResolvedValue(
+        new Readable({
+          read() {
+            if (pushed) {
+              this.destroy(new Error('connection reset mid-transfer'));
+              return;
+            }
+            pushed = true;
+            this.push('partial payload');
+          },
+        }),
+      );
+      getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+      await createFile({
+        user: otherUserId,
+        file_id: userFileId,
+        filename: 'truncated.txt',
+        filepath: 'uploads/user/truncated.txt',
+        bytes: 200,
+        type: 'text/plain',
+        source: FileSources.s3,
+      });
+
+      /** A truncated download must not look like a complete one, so the socket is destroyed
+       *  rather than closed cleanly after the partial body. */
+      await expect(
+        request(app).get(`/files/download/${otherUserId}/${userFileId}`),
+      ).rejects.toThrow();
     });
   });
 

@@ -314,6 +314,34 @@ function isValidID(str) {
   return /^[A-Za-z0-9_-]{21}$/.test(str);
 }
 
+/**
+ * Pipes a download to the response, terminating it when the source fails.
+ *
+ * `pipe` does not end the destination on a source error, and the stream errors after the
+ * handler has already returned, so the route's try/catch never sees it. Without this the
+ * response stays open until the reverse proxy times out — the 504 in #14754. A stream with
+ * no `error` listener at all is worse still: the emit becomes an uncaught exception.
+ *
+ * Nothing is written before the first chunk, so a failure that early can still answer with a
+ * status; once the body has started, destroying the socket is the only way to signal a
+ * truncated download instead of a short but well-formed one. Mirrors what the shared-link
+ * download in `routes/share.js` already does.
+ */
+const pipeDownloadStream = (stream, res) => {
+  stream.on('error', (streamError) => {
+    logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
+    if (res.headersSent) {
+      res.destroy(streamError);
+      return;
+    }
+    res.removeHeader('Content-Disposition');
+    res.removeHeader('Content-Type');
+    res.removeHeader('X-File-Metadata');
+    res.status(500).send('Error downloading file');
+  });
+  stream.pipe(res);
+};
+
 router.get('/code/download/:session_id/:fileId', async (req, res) => {
   try {
     const { session_id, fileId } = req.params;
@@ -354,7 +382,7 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       req,
     );
     res.set(response.headers);
-    response.data.pipe(res);
+    pipeDownloadStream(response.data, res);
   } catch (error) {
     /* `logAxiosError` redacts buffer/stream response bodies — without
      * it, a stream-typed axios failure dumps the entire `Readable`'s
@@ -577,7 +605,9 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       }
 
       setHeaders();
-      return res.status(200).end(textFile.text);
+      /** Sent as a buffer so the body carries a `Content-Length`: a string body would make
+       *  Express append a charset to the octet-stream content type. */
+      return res.status(200).send(Buffer.from(textFile.text, 'utf8'));
     }
 
     const { getDownloadStream, getDownloadURL } = getStrategyFunctions(file.source);
@@ -610,7 +640,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
           ? Readable.fromWeb(passThrough.body)
           : passThrough.body;
 
-      stream.pipe(res);
+      pipeDownloadStream(stream, res);
     } else {
       if (getDownloadURL && req.query.direct === 'true') {
         try {
@@ -636,12 +666,8 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
 
       const fileStream = await getDownloadStream(req, file.storageKey || file.filepath);
 
-      fileStream.on('error', (streamError) => {
-        logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
-      });
-
       setHeaders();
-      fileStream.pipe(res);
+      pipeDownloadStream(fileStream, res);
     }
   } catch (error) {
     logger.error('[DOWNLOAD ROUTE] Error downloading file:', error);
