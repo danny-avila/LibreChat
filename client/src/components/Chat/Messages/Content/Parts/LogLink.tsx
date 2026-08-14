@@ -23,9 +23,13 @@ interface AttachmentLinkOptions {
 }
 
 /**
- * Determines if a file is stored locally (not an external API URL).
- * Files with these sources are stored on the LibreChat server and should
- * use the /api/files/download endpoint instead of direct URL access.
+ * Determines if a file is served by the LibreChat server (not an external API URL).
+ * Files with these sources should use the /api/files/download endpoint instead of
+ * direct URL access.
+ *
+ * `text` is included even though nothing is on disk for it: the upload route deletes the
+ * Multer temp file once the extracted text is persisted to MongoDB, so its `filepath` is
+ * stale and only the download route can serve it.
  */
 export const isLocallyStoredSource = (source?: string): boolean => {
   if (!source) {
@@ -37,6 +41,7 @@ export const isLocallyStoredSource = (source?: string): boolean => {
     FileSources.s3,
     FileSources.cloudfront,
     FileSources.azure_blob,
+    FileSources.text,
   ].includes(source as FileSources);
 };
 

@@ -18,10 +18,12 @@ const ABANDONED_DOWNLOAD_HEADERS = [
   'X-File-Metadata',
 ];
 
-/** The textual entries of `codeTypeMapping`, whose payload really is the bytes on disk. Its
- *  remaining values are office documents and archives (`application/vnd.*`, `application/zip`). */
+/** The textual entries of `codeTypeMapping`, whose payload really is the bytes on disk —
+ *  `message/rfc822` among them, since a `.eml` reaching the text pipeline is stored as its own
+ *  RFC 822 source. Its remaining values are office documents and archives
+ *  (`application/vnd.*`, `application/zip`). */
 const TEXTUAL_MIME_PATTERN =
-  /^text\/|^application\/(json|sql|typescript|xml|yaml|x-sh|vnd\.coffeescript)$/;
+  /^text\/|^message\/rfc822$|^application\/(json|sql|typescript|xml|yaml|x-sh|vnd\.coffeescript)$/;
 
 /**
  * Resolves the name a `FileSources.text` download is served under.

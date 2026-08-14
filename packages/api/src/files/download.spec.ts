@@ -36,6 +36,8 @@ describe('getTextDownloadFilename', () => {
       'deploy.sh',
       'query.sql',
       'style.css',
+      /** `parseTextNative` stores a `.eml` as its own RFC 822 source, which is text. */
+      'mail.eml',
       /** No extension promises nothing, so there is nothing to correct. */
       'Dockerfile',
       'Makefile',
