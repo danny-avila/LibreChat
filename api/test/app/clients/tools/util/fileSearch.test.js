@@ -385,6 +385,37 @@ describe('files sharing one vector document', () => {
     expect(artifact.file_search.sources[0].fileId).toBe('original-1');
   });
 
+  it('cites the attached file, not the upload its embeddings came from', async () => {
+    axios.post.mockResolvedValue({
+      data: [
+        [{ page_content: 'shared content', metadata: { source: '/path/original-name.pdf' } }, 0.1],
+      ],
+    });
+
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      files: [
+        { file_id: 'copy-1', vectorId: 'original-1', filename: 'what-the-user-named-it.pdf' },
+      ],
+    });
+    const [formattedString, artifact] = await tool.func({ query: 'q' });
+
+    expect(artifact.file_search.sources[0].fileName).toBe('what-the-user-named-it.pdf');
+    expect(formattedString).toContain('File: what-the-user-named-it.pdf');
+    expect(formattedString).not.toContain('original-name.pdf');
+  });
+
+  it('falls back to the RAG metadata name when the caller passes no filename', async () => {
+    axios.post.mockResolvedValue({
+      data: [[{ page_content: 'c', metadata: { source: '/path/from-metadata.pdf' } }, 0.1]],
+    });
+
+    const tool = await createFileSearchTool({ userId: 'user1', files: [{ file_id: 'f1' }] });
+    const [, artifact] = await tool.func({ query: 'q' });
+
+    expect(artifact.file_search.sources[0].fileName).toBe('from-metadata.pdf');
+  });
+
   it('attributes surviving hits correctly when an earlier query fails', async () => {
     axios.post.mockRejectedValueOnce(new Error('RAG down')).mockResolvedValueOnce({
       data: [[{ page_content: 'from the second file', metadata: { source: '/b.pdf' } }, 0.2]],

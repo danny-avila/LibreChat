@@ -4,6 +4,7 @@ import path from 'path';
 import { createHash } from 'crypto';
 import { FileContext } from 'librechat-data-provider';
 import {
+  fileExtension,
   resolveVectorId,
   hashFileContent,
   dedupeByVectorId,
@@ -104,31 +105,69 @@ describe('dedupeByVectorId', () => {
   });
 });
 
+describe('fileExtension', () => {
+  it('lowercases the extension and keeps the dot', () => {
+    expect(fileExtension('Report.PDF')).toBe('.pdf');
+    expect(fileExtension('a/b/data.csv')).toBe('.csv');
+  });
+
+  it('returns an empty string when there is nothing to compare', () => {
+    expect(fileExtension('README')).toBe('');
+    expect(fileExtension('')).toBe('');
+    expect(fileExtension(undefined)).toBe('');
+    expect(fileExtension(null)).toBe('');
+  });
+});
+
 describe('pickVectorReuseSource', () => {
   it('prefers a file that owns its vectors so references never chain', () => {
-    const source = pickVectorReuseSource([
-      { file_id: 'borrower', vectorId: 'original', embedded: true },
-      { file_id: 'original', embedded: true },
-    ]);
+    const source = pickVectorReuseSource(
+      [
+        { file_id: 'borrower', vectorId: 'original', embedded: true, filename: 'a.pdf' },
+        { file_id: 'original', embedded: true, filename: 'a.pdf' },
+      ],
+      '.pdf',
+    );
 
     expect(source?.file_id).toBe('original');
   });
 
   it('falls back to a borrower when the original is gone', () => {
-    const source = pickVectorReuseSource([
-      { file_id: 'borrower', vectorId: 'original', embedded: true },
-    ]);
+    const source = pickVectorReuseSource(
+      [{ file_id: 'borrower', vectorId: 'original', embedded: true, filename: 'a.pdf' }],
+      '.pdf',
+    );
 
     expect(source?.file_id).toBe('borrower');
   });
 
   it('ignores candidates that are not embedded', () => {
-    expect(pickVectorReuseSource([{ file_id: 'pending', embedded: false }])).toBeUndefined();
-    expect(pickVectorReuseSource([{ file_id: 'legacy' }])).toBeUndefined();
+    expect(
+      pickVectorReuseSource([{ file_id: 'pending', embedded: false, filename: 'a.pdf' }], '.pdf'),
+    ).toBeUndefined();
+    expect(
+      pickVectorReuseSource([{ file_id: 'legacy', filename: 'a.pdf' }], '.pdf'),
+    ).toBeUndefined();
+  });
+
+  it('refuses content whose extension would have used another RAG loader', () => {
+    const candidates = [{ file_id: 'as-csv', embedded: true, filename: 'data.csv' }];
+
+    expect(pickVectorReuseSource(candidates, '.txt')).toBeUndefined();
+    expect(pickVectorReuseSource(candidates, '.csv')?.file_id).toBe('as-csv');
+  });
+
+  it('matches extensions case-insensitively', () => {
+    const source = pickVectorReuseSource(
+      [{ file_id: 'shouty', embedded: true, filename: 'REPORT.PDF' }],
+      '.pdf',
+    );
+
+    expect(source?.file_id).toBe('shouty');
   });
 
   it('returns undefined for an empty candidate list', () => {
-    expect(pickVectorReuseSource([])).toBeUndefined();
+    expect(pickVectorReuseSource([], '.pdf')).toBeUndefined();
   });
 });
 

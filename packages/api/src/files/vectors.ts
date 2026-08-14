@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import { createHash } from 'crypto';
 import { FileContext } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
@@ -17,9 +18,24 @@ export function hashFileContent(filePath: string): Promise<string> {
     const hash = createHash('sha256');
     const stream = fs.createReadStream(filePath);
     stream.on('error', reject);
-    stream.on('data', (chunk: Buffer) => hash.update(chunk));
+    stream.on('data', (chunk: string | Buffer) => {
+      hash.update(chunk);
+    });
     stream.on('end', () => resolve(hash.digest('hex')));
   });
+}
+
+/**
+ * Lowercased extension of a stored filename, including the dot.
+ *
+ * The RAG API picks its document loader from the staged filename's
+ * extension before falling back to the content type, so the same bytes
+ * uploaded as `.csv` and as `.txt` are split into different chunks.
+ * Identical content is therefore only interchangeable when the extension
+ * matches too.
+ */
+export function fileExtension(filename?: string | null): string {
+  return filename ? path.extname(filename).toLowerCase() : '';
 }
 
 /**
@@ -127,15 +143,16 @@ export const USER_OWNED_EMBEDDING_CONTEXT: FileContext = FileContext.message_att
  * from, preferring one that owns its embeddings so borrowed references
  * never chain. Returns `undefined` when nothing is reusable.
  *
- * Candidates must already be scoped to the same owner, hash and embedding
- * context by the query that produced them.
+ * Candidates must already be scoped to the same owner, hash, content type
+ * and embedding context by the query that produced them; `extension` closes
+ * the remaining gap, since it is what the RAG API's loader keys on first.
  */
-export function pickVectorReuseSource<T extends VectorFileRef & Pick<Partial<TFile>, 'embedded'>>(
-  candidates: T[],
-): T | undefined {
+export function pickVectorReuseSource<
+  T extends VectorFileRef & Pick<Partial<TFile>, 'embedded' | 'filename'>,
+>(candidates: T[], extension: string): T | undefined {
   let borrowed: T | undefined;
   for (const candidate of candidates) {
-    if (candidate.embedded !== true) {
+    if (candidate.embedded !== true || fileExtension(candidate.filename) !== extension) {
       continue;
     }
     if (!candidate.vectorId) {

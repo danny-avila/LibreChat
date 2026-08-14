@@ -64,47 +64,48 @@ describe('vector reuse file methods', () => {
   });
 
   describe('findVectorReuseCandidates', () => {
-    const ownerScope = { userId: userId.toString() };
+    const scope = () => ({ userId: userId.toString(), type: 'application/pdf' });
 
     it('finds an embedded file with matching content', async () => {
       const seeded = await seedFile();
 
       const candidates = await fileMethods.findVectorReuseCandidates({
         hash: HASH,
-        ownerScope,
+        ...scope(),
         context: FileContext.message_attachment,
       });
 
       expect(candidates.map((file) => file.file_id)).toEqual([seeded.file_id]);
     });
 
-    it('returns nothing without a hash or owner', async () => {
+    it('refuses to run unscoped', async () => {
       await seedFile();
 
-      await expect(
-        fileMethods.findVectorReuseCandidates({
-          hash: '',
-          ownerScope,
-          context: FileContext.message_attachment,
-        }),
-      ).resolves.toEqual([]);
-      await expect(
-        fileMethods.findVectorReuseCandidates({
+      const unscoped = [
+        { hash: '', ...scope(), context: FileContext.message_attachment },
+        { hash: HASH, type: 'application/pdf', context: FileContext.message_attachment },
+        {
           hash: HASH,
-          ownerScope: { userId: '' },
+          userId: userId.toString(),
+          type: '',
           context: FileContext.message_attachment,
-        }),
-      ).resolves.toEqual([]);
+        },
+      ];
+
+      for (const query of unscoped) {
+        await expect(fileMethods.findVectorReuseCandidates(query)).resolves.toEqual([]);
+      }
     });
 
-    it('never crosses users, hashes or contexts', async () => {
+    it('never crosses users, hashes, types or contexts', async () => {
       await seedFile({ user: otherUserId });
       await seedFile({ hash: OTHER_HASH });
+      await seedFile({ type: 'text/plain' });
       await seedFile({ context: FileContext.agents });
 
       const candidates = await fileMethods.findVectorReuseCandidates({
         hash: HASH,
-        ownerScope,
+        ...scope(),
         context: FileContext.message_attachment,
       });
 
@@ -117,7 +118,7 @@ describe('vector reuse file methods', () => {
 
       const candidates = await fileMethods.findVectorReuseCandidates({
         hash: HASH,
-        ownerScope,
+        ...scope(),
         context: FileContext.message_attachment,
       });
 
@@ -130,7 +131,7 @@ describe('vector reuse file methods', () => {
 
       const candidates = await fileMethods.findVectorReuseCandidates({
         hash: HASH,
-        ownerScope,
+        ...scope(),
         context: FileContext.message_attachment,
       });
 
@@ -143,14 +144,16 @@ describe('vector reuse file methods', () => {
       await expect(
         fileMethods.findVectorReuseCandidates({
           hash: HASH,
-          ownerScope: { userId: userId.toString(), tenantId: 'tenant-b' },
+          ...scope(),
+          tenantId: 'tenant-b',
           context: FileContext.message_attachment,
         }),
       ).resolves.toEqual([]);
 
       const matched = await fileMethods.findVectorReuseCandidates({
         hash: HASH,
-        ownerScope: { userId: userId.toString(), tenantId: 'tenant-a' },
+        ...scope(),
+        tenantId: 'tenant-a',
         context: FileContext.message_attachment,
       });
       expect(matched).toHaveLength(1);
@@ -162,12 +165,25 @@ describe('vector reuse file methods', () => {
 
       const candidates = await fileMethods.findVectorReuseCandidates({
         hash: HASH,
-        ownerScope,
+        ...scope(),
         context: FileContext.agents,
         fileIds: [inSet.file_id],
       });
 
       expect(candidates.map((file) => file.file_id)).toEqual([inSet.file_id]);
+    });
+
+    it('finds an upload by another editor when scoped by file ids alone', async () => {
+      const byOtherEditor = await seedFile({ user: otherUserId, context: FileContext.agents });
+
+      const candidates = await fileMethods.findVectorReuseCandidates({
+        hash: HASH,
+        type: 'application/pdf',
+        context: FileContext.agents,
+        fileIds: [byOtherEditor.file_id],
+      });
+
+      expect(candidates.map((file) => file.file_id)).toEqual([byOtherEditor.file_id]);
     });
 
     it('returns an empty result for an empty file id set', async () => {
@@ -176,7 +192,7 @@ describe('vector reuse file methods', () => {
       await expect(
         fileMethods.findVectorReuseCandidates({
           hash: HASH,
-          ownerScope,
+          ...scope(),
           context: FileContext.agents,
           fileIds: [],
         }),
@@ -190,14 +206,14 @@ describe('vector reuse file methods', () => {
 
       const all = await fileMethods.findVectorReuseCandidates({
         hash: HASH,
-        ownerScope,
+        ...scope(),
         context: FileContext.message_attachment,
       });
       expect(all.slice(0, 2).map((file) => file.file_id)).toEqual([first.file_id, second.file_id]);
 
       const limited = await fileMethods.findVectorReuseCandidates({
         hash: HASH,
-        ownerScope,
+        ...scope(),
         context: FileContext.message_attachment,
         limit: 1,
       });

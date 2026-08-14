@@ -44,9 +44,12 @@ export const useUploadFileMutation = (
     },
     ...options,
     onSuccess: (data, formData, context) => {
+      /* An upload of content already stored can answer with the existing
+       * record rather than a new one, so replace any entry it matches
+       * instead of stacking a second copy of the same file. */
       queryClient.setQueryData<t.TFile[] | undefined>([QueryKeys.files], (_files) => [
         data,
-        ...(_files ?? []),
+        ...(_files ?? []).filter((file) => file.file_id !== data.file_id),
       ]);
 
       const endpoint = formData.get('endpoint');
@@ -73,13 +76,15 @@ export const useUploadFileMutation = (
           ] ?? {
             file_ids: [],
           };
-          if (!prevResource.file_ids) {
-            prevResource.file_ids = [];
-          }
-          prevResource.file_ids.push(data.file_id);
+          const prevFileIds = prevResource.file_ids ?? [];
           update['tool_resources'] = {
             ...prevResources,
-            [tool_resource]: prevResource,
+            [tool_resource]: {
+              ...prevResource,
+              file_ids: prevFileIds.includes(data.file_id)
+                ? prevFileIds
+                : [...prevFileIds, data.file_id],
+            },
           };
           if (!agent.tools?.includes(tool_resource)) {
             update['tools'] = [...(agent.tools ?? []), tool_resource];

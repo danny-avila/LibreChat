@@ -14,9 +14,20 @@ export type VectorReuseQuery = {
   hash: string;
   /** Upload context the candidate must share, which pins the vector-store owner. */
   context: FileContext;
-  /** Restricts candidates to an explicit set, e.g. one agent's knowledge files. */
+  /** Mime type the candidate must share, since it steers the RAG API's loader. */
+  type: string;
+  /**
+   * Restricts candidates to one user's own files. Use for content owned by the
+   * uploader; omit only when `fileIds` scopes the search instead.
+   */
+  userId?: string;
+  /**
+   * Restricts candidates to an explicit set, e.g. the file ids one agent holds.
+   * Scopes by membership rather than by uploader, so a collaborator can reuse
+   * vectors an earlier editor embedded under the same agent.
+   */
   fileIds?: string[];
-  ownerScope: FileOwnerScope;
+  tenantId?: string | null;
   limit?: number;
 };
 
@@ -378,28 +389,36 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   async function findVectorReuseCandidates({
     hash,
     context,
+    type,
+    userId,
     fileIds,
-    ownerScope,
+    tenantId,
     limit = 20,
   }: VectorReuseQuery): Promise<IMongoFile[]> {
-    if (!hash || !ownerScope?.userId) {
+    /* An unscoped hash lookup would reach across owners, so refuse to run
+     * without either an uploader or an explicit membership set. */
+    if (!hash || !type || (!userId && !fileIds)) {
       return [];
     }
 
     const File = mongoose.models.File as Model<IMongoFile>;
-    const filter = withOwnerScope<FilterQuery<IMongoFile>>(
-      {
-        hash,
-        context,
-        embedded: true,
-        expiredAt: null,
-        expiresAt: null,
-      },
-      ownerScope,
-    );
+    const filter: FilterQuery<IMongoFile> = {
+      hash,
+      context,
+      type,
+      embedded: true,
+      expiredAt: null,
+      expiresAt: null,
+    };
 
+    if (userId) {
+      filter.user = userId;
+    }
     if (fileIds) {
       filter.file_id = { $in: fileIds };
+    }
+    if (tenantId) {
+      filter.tenantId = tenantId;
     }
 
     return await File.find(filter)
@@ -416,8 +435,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * or by being the original owner, which stores no `vectorId` of its own.
    *
    * Deliberately unscoped by owner: reuse only ever happens within one
-   * user, and counting too broadly leaves vectors in place, whereas
-   * counting too narrowly destroys embeddings another record is using.
+   * user or one agent, and counting too broadly leaves vectors in place,
+   * whereas counting too narrowly destroys embeddings another record is
+   * using.
+   *
+   * Grouped in the database rather than in memory: a popular document can
+   * accumulate a borrower per upload, and a delete only needs one number
+   * per vector id, not every matching record.
    *
    * @returns Counts keyed by vector id; ids with no remaining references are absent.
    */
@@ -434,21 +458,21 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     }
 
     const File = mongoose.models.File as Model<IMongoFile>;
-    const filter: FilterQuery<IMongoFile> = {
+    const match: FilterQuery<IMongoFile> = {
       $or: [{ vectorId: { $in: vectorIds } }, { vectorId: null, file_id: { $in: vectorIds } }],
     };
 
     if (excludeFileIds?.length) {
-      filter.file_id = { $nin: excludeFileIds };
+      match.file_id = { $nin: excludeFileIds };
     }
 
-    const references = await File.find(filter)
-      .select({ file_id: 1, vectorId: 1, _id: 0 })
-      .lean<Array<Pick<IMongoFile, 'file_id' | 'vectorId'>>>();
+    const grouped = await File.aggregate<{ _id: string; count: number }>([
+      { $match: match },
+      { $group: { _id: { $ifNull: ['$vectorId', '$file_id'] }, count: { $sum: 1 } } },
+    ]);
 
-    for (const reference of references) {
-      const vectorId = reference.vectorId || reference.file_id;
-      counts.set(vectorId, (counts.get(vectorId) ?? 0) + 1);
+    for (const { _id, count } of grouped) {
+      counts.set(_id, count);
     }
 
     return counts;

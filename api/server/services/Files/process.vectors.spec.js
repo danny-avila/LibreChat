@@ -156,7 +156,7 @@ describe('file_search uploads with no prior copy', () => {
     expect(uploadedFile().vectorId).toBeUndefined();
   });
 
-  it('looks for prior copies under the uploading user and attachment context', async () => {
+  it('looks for prior copies under the uploading user, type and attachment context', async () => {
     await processAgentFileUpload({
       req: makeReq(),
       res: makeRes(),
@@ -165,9 +165,33 @@ describe('file_search uploads with no prior copy', () => {
 
     expect(db.findVectorReuseCandidates).toHaveBeenCalledWith({
       hash: CONTENT_HASH,
+      type: 'application/pdf',
       context: FileContext.message_attachment,
-      ownerScope: { userId: 'user-123', tenantId: 'tenant-a' },
+      userId: 'user-123',
+      tenantId: 'tenant-a',
     });
+  });
+
+  it('resolves the reuse source only after the file is safely stored', async () => {
+    const order = [];
+    getStrategyFunctions.mockReturnValue({
+      handleFileUpload: jest.fn(async () => {
+        order.push('storage');
+        return { bytes: 42, filename: 'report.pdf', filepath: '/uploads/report.pdf' };
+      }),
+    });
+    db.findVectorReuseCandidates.mockImplementation(async () => {
+      order.push('lookup');
+      return [];
+    });
+
+    await processAgentFileUpload({
+      req: makeReq(),
+      res: makeRes(),
+      metadata: attachmentMetadata(),
+    });
+
+    expect(order).toEqual(['storage', 'lookup']);
   });
 
   it('leaves uploads outside file_search unhashed', async () => {
@@ -279,11 +303,18 @@ describe('re-uploading identical content to an agent', () => {
     context: FileContext.agents,
   };
 
-  it('hands back the record the agent already holds', async () => {
-    db.findVectorReuseCandidates.mockResolvedValue([knowledgeFile]);
+  /** The lookup is scoped by the agent's own file ids, so honor them. */
+  const holdingAgent = (fileIds, candidates = [knowledgeFile]) => {
     db.getAgent.mockResolvedValue({
-      tool_resources: { [EToolResources.file_search]: { file_ids: ['agent-file-id'] } },
+      tool_resources: { [EToolResources.file_search]: { file_ids: fileIds } },
     });
+    db.findVectorReuseCandidates.mockImplementation(async ({ fileIds: scoped }) =>
+      candidates.filter(({ file_id }) => scoped?.includes(file_id)),
+    );
+  };
+
+  it('hands back the record the agent already holds', async () => {
+    holdingAgent(['agent-file-id']);
     const res = makeRes();
 
     await processAgentFileUpload({ req: makeReq(), res, metadata: agentMetadata() });
@@ -296,11 +327,37 @@ describe('re-uploading identical content to an agent', () => {
     );
   });
 
-  it('embeds again when the match belongs to a different agent', async () => {
-    db.findVectorReuseCandidates.mockResolvedValue([knowledgeFile]);
-    db.getAgent.mockResolvedValue({
-      tool_resources: { [EToolResources.file_search]: { file_ids: ['someone-elses-file'] } },
+  it('reuses a knowledge file another editor uploaded to the same agent', async () => {
+    holdingAgent(['agent-file-id'], [{ ...knowledgeFile, user: 'a-different-editor' }]);
+    const res = makeRes();
+
+    await processAgentFileUpload({ req: makeReq(), res, metadata: agentMetadata() });
+
+    expect(uploadVectors).not.toHaveBeenCalled();
+    expect(respondedWith(res)).toEqual(expect.objectContaining({ file_id: 'agent-file-id' }));
+  });
+
+  it('scopes the search to the agent resource, not the uploader', async () => {
+    holdingAgent(['agent-file-id']);
+
+    await processAgentFileUpload({
+      req: makeReq(),
+      res: makeRes(),
+      metadata: agentMetadata(),
     });
+
+    expect(db.getAgent).toHaveBeenCalledWith({ id: 'agent-abc' });
+    expect(db.findVectorReuseCandidates).toHaveBeenCalledWith({
+      hash: CONTENT_HASH,
+      type: 'application/pdf',
+      context: FileContext.agents,
+      fileIds: ['agent-file-id'],
+      tenantId: 'tenant-a',
+    });
+  });
+
+  it('embeds again when the agent holds nothing matching', async () => {
+    holdingAgent(['someone-elses-file']);
 
     await processAgentFileUpload({
       req: makeReq(),
@@ -313,29 +370,40 @@ describe('re-uploading identical content to an agent', () => {
     expect(db.addAgentResourceFile).toHaveBeenCalled();
   });
 
-  it('does not read the agent when no content matches', async () => {
+  it('skips the lookup entirely for an agent with no knowledge files', async () => {
+    db.getAgent.mockResolvedValue({ tool_resources: {} });
+
     await processAgentFileUpload({
       req: makeReq(),
       res: makeRes(),
       metadata: agentMetadata(),
     });
 
-    expect(db.getAgent).not.toHaveBeenCalled();
+    expect(db.findVectorReuseCandidates).not.toHaveBeenCalled();
     expect(uploadVectors).toHaveBeenCalledTimes(1);
   });
+});
 
-  it('searches agent-context candidates rather than attachments', async () => {
+describe('content whose extension changes how the RAG API parses it', () => {
+  it('does not reuse chunks produced by a different loader', async () => {
+    db.findVectorReuseCandidates.mockResolvedValue([
+      {
+        file_id: 'as-csv',
+        filename: 'report.csv',
+        hash: CONTENT_HASH,
+        embedded: true,
+        context: FileContext.message_attachment,
+      },
+    ]);
+
     await processAgentFileUpload({
       req: makeReq(),
       res: makeRes(),
-      metadata: agentMetadata(),
+      metadata: attachmentMetadata(),
     });
 
-    expect(db.findVectorReuseCandidates).toHaveBeenCalledWith({
-      hash: CONTENT_HASH,
-      context: FileContext.agents,
-      ownerScope: { userId: 'user-123', tenantId: 'tenant-a' },
-    });
+    expect(uploadVectors).toHaveBeenCalledTimes(1);
+    expect(uploadedFile().vectorId).toBeUndefined();
   });
 });
 

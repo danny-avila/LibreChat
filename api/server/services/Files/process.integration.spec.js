@@ -36,6 +36,7 @@ jest.mock('@librechat/api', () => ({
   /* Vector sharing is orthogonal to the agent-reference cleanup under test
    * here; `process.vectors.spec.js` exercises the real reuse and
    * reference-counting behavior. */
+  fileExtension: jest.fn((filename) => (filename ?? '').replace(/^.*(?=\.)/, '').toLowerCase()),
   resolveVectorId: jest.fn((file) => file.vectorId || file.file_id),
   hashFileContent: jest.fn().mockResolvedValue('stub-content-hash'),
   pickVectorReuseSource: jest.fn(() => undefined),

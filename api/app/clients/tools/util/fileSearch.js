@@ -157,10 +157,14 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
         return ['No results found or errors occurred while searching the files.', undefined];
       }
 
+      /* Name hits after the record being searched, not after the RAG
+       * metadata: a file borrowing another upload's embeddings carries that
+       * upload's filename in `metadata.source`, so citing it would point the
+       * model at a name the user never attached. */
       const formattedResults = validResults
         .flatMap(({ file, result }) =>
           result.data.map(([docInfo, distance]) => ({
-            filename: docInfo.metadata.source.split('/').pop(),
+            filename: file.filename || docInfo.metadata.source.split('/').pop(),
             content: docInfo.page_content,
             distance,
             file_id: file.file_id,

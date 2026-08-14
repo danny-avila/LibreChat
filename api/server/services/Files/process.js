@@ -22,6 +22,7 @@ const {
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   parseText,
+  fileExtension,
   resolveVectorId,
   sanitizeFilename,
   hashFileContent,
@@ -662,55 +663,74 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
 };
 
 /**
- * Finds an already-embedded file with identical content, so this upload can
- * point at vectors that already exist instead of paying to embed the same
- * document twice.
- *
  * Reuse is only sound between records sharing a vector-store owner: the RAG
- * API stamps `entity_id` as the owner and refuses reads from any other.
- * Message attachments are always embedded with no entity — under the user —
- * so a content match is enough. Agent knowledge files are owned by their
- * agent, so a match must additionally already belong to the same agent's
- * tool resource, which is also the only case where a second record would
- * add nothing but a duplicate entry.
+ * API stamps `entity_id` as the document owner and refuses reads from any
+ * other. That splits content matching into two lookups — one per owner kind
+ * — which is why these are separate functions rather than one branching on
+ * the upload shape.
  *
- * @param {object} params
- * @param {ServerRequest} params.req - The Express request object.
- * @param {string} params.hash - Hex SHA-256 of the uploaded bytes.
- * @param {boolean} params.messageAttachment - Whether this is a chat attachment.
- * @param {string} [params.agent_id] - The agent receiving the knowledge file.
- * @param {string} params.tool_resource - The tool resource being uploaded to.
+ * @typedef {object} VectorReuseLookup
+ * @property {ServerRequest} req - The Express request object.
+ * @property {string} hash - Hex SHA-256 of the uploaded bytes.
+ * @property {string} type - Mime type of the upload.
+ * @property {string} extension - Lowercased extension of the staged filename.
+ */
+
+/**
+ * Finds the record an agent already holds for identical content, so a
+ * re-upload of a knowledge file it has is a no-op rather than a duplicate
+ * entry with duplicate embeddings.
+ *
+ * Scoped by the agent's own resource list rather than by uploader: those
+ * vectors are owned by the agent, so any editor authorized to upload here
+ * may reuse them no matter who embedded them first.
+ *
+ * @param {VectorReuseLookup & { agent_id: string, tool_resource: string }} params
  * @returns {Promise<MongoFile | null>}
  */
-const findVectorReuseSource = async ({ req, hash, messageAttachment, agent_id, tool_resource }) => {
+const findAgentHeldFile = async ({ req, hash, type, extension, agent_id, tool_resource }) => {
   if (!hash) {
     return null;
   }
 
-  const ownerScope = { userId: req.user.id, tenantId: req.user.tenantId };
-
-  if (messageAttachment) {
-    const attachments = await db.findVectorReuseCandidates({
-      hash,
-      ownerScope,
-      context: USER_OWNED_EMBEDDING_CONTEXT,
-    });
-    return pickVectorReuseSource(attachments) ?? null;
+  const agent = await db.getAgent({ id: agent_id });
+  const fileIds = agent?.tool_resources?.[tool_resource]?.file_ids ?? [];
+  if (fileIds.length === 0) {
+    return null;
   }
 
   const candidates = await db.findVectorReuseCandidates({
     hash,
-    ownerScope,
+    type,
+    fileIds,
     context: FileContext.agents,
+    tenantId: req.user.tenantId,
   });
-  if (candidates.length === 0) {
+  return pickVectorReuseSource(candidates, extension) ?? null;
+};
+
+/**
+ * Finds one of the uploader's own chat attachments with identical content,
+ * whose vectors this upload can point at instead of embedding the same
+ * document again. Those are always embedded with no entity — under the user
+ * — so an owner-scoped content match is sufficient.
+ *
+ * @param {VectorReuseLookup} params
+ * @returns {Promise<MongoFile | null>}
+ */
+const findReusableAttachment = async ({ req, hash, type, extension }) => {
+  if (!hash) {
     return null;
   }
 
-  const agent = await db.getAgent({ id: agent_id });
-  const agentFileIds = new Set(agent?.tool_resources?.[tool_resource]?.file_ids ?? []);
-  const owned = candidates.filter(({ file_id }) => agentFileIds.has(file_id));
-  return pickVectorReuseSource(owned) ?? null;
+  const candidates = await db.findVectorReuseCandidates({
+    hash,
+    type,
+    userId: req.user.id,
+    context: USER_OWNED_EMBEDDING_CONTEXT,
+    tenantId: req.user.tenantId,
+  });
+  return pickVectorReuseSource(candidates, extension) ?? null;
 };
 
 /**
@@ -983,21 +1003,23 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
   if (tool_resource === EToolResources.file_search) {
     contentHash = await hashFileContent(file.path);
-    const reuseSource = await findVectorReuseSource({
+    const lookup = {
       req,
       hash: contentHash,
-      messageAttachment,
-      agent_id,
-      tool_resource,
-    });
+      type: file.mimetype,
+      extension: fileExtension(sanitizeFilename(file.originalname)),
+    };
 
     /* The agent already holds this exact document, so a second record would
      * only duplicate its knowledge list. Hand back the one it has. */
-    if (reuseSource && !messageAttachment) {
-      return sendUploadSuccess(res, sseStream, 'Agent file already uploaded and processed', {
-        ...reuseSource,
-        temp_file_id,
-      });
+    if (!messageAttachment) {
+      const heldFile = await findAgentHeldFile({ ...lookup, agent_id, tool_resource });
+      if (heldFile) {
+        return sendUploadSuccess(res, sseStream, 'Agent file already uploaded and processed', {
+          ...heldFile,
+          temp_file_id,
+        });
+      }
     }
 
     // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
@@ -1010,6 +1032,13 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       basePath,
       entity_id,
     });
+
+    /* Resolved after the storage upload rather than before it: between
+     * choosing a source and persisting the record that borrows from it,
+     * a concurrent delete of that source can drop the vectors this record
+     * would point at, leaving it silently unsearchable. Keeping the storage
+     * upload out of that gap narrows it to a single write. */
+    const reuseSource = messageAttachment ? await findReusableAttachment(lookup) : null;
 
     // SECOND: Upload to Vector DB, unless identical content is already embedded
     if (reuseSource) {

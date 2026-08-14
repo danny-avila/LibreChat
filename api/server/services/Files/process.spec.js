@@ -41,6 +41,7 @@ jest.mock('@librechat/api', () => {
     /* Content-addressed vector reuse is exercised for real in
      * `process.vectors.spec.js`; these stubs only keep the surrounding
      * flows running without touching the staged file on disk. */
+    fileExtension: jest.fn((filename) => (filename ?? '').replace(/^.*(?=\.)/, '').toLowerCase()),
     resolveVectorId: jest.fn((file) => file.vectorId || file.file_id),
     hashFileContent: jest.fn().mockResolvedValue('stub-content-hash'),
     pickVectorReuseSource: jest.fn(() => undefined),
