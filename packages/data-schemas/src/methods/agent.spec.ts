@@ -1980,6 +1980,40 @@ describe('Agent Methods', () => {
       }
     });
 
+    test('should persist an update matching the newest version when the document has diverged from it', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const authorId = new mongoose.Types.ObjectId();
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+        tools: [],
+      });
+
+      /** Atomic-operator updates snapshot the pre-update state as the new version, so the
+       *  document and `versions[versions.length - 1]` legitimately diverge. This is the
+       *  same shape `addAgentResourceFile` produces when it attaches a file. */
+      await updateAgent({ id: agentId }, { $addToSet: { tools: 'file_search' } });
+
+      const afterAdd = await getAgent({ id: agentId });
+      expect(afterAdd!.tools).toEqual(['file_search']);
+      expect(afterAdd!.versions).toHaveLength(2);
+      expect((afterAdd!.versions![1] as VersionEntry).tools).toEqual([]);
+
+      /** Removing the tool lands the document back on the newest version's content. That
+       *  adds no history, but the removal itself must still be written. */
+      const removed = await updateAgent({ id: agentId }, { tools: [] });
+
+      expect(removed!.tools).toEqual([]);
+      expect(removed!.versions).toHaveLength(2);
+
+      const reloaded = await getAgent({ id: agentId });
+      expect(reloaded!.tools).toEqual([]);
+      expect(reloaded!.versions).toHaveLength(2);
+    });
+
     test('should track updatedBy when a different user updates an agent', async () => {
       const agentId = `agent_${uuidv4()}`;
       const originalAuthor = new mongoose.Types.ObjectId();
