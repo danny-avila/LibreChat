@@ -454,7 +454,48 @@ describe('email change service', () => {
       const resetCleanups = (deps.deleteTokens as jest.Mock).mock.calls.filter(
         ([query]) => query.type === 'password_reset',
       );
-      expect(resetCleanups).toHaveLength(2);
+      expect(resetCleanups).toHaveLength(3);
+      const [preCommit, ...postCommit] = resetCleanups;
+      expect(preCommit[0]).not.toHaveProperty('email');
+      expect(postCommit.map(([query]) => query.email).sort()).toEqual([null, 'old@example.com']);
+    });
+
+    it('leaves a reset issued for the committed address intact', async () => {
+      const resetTokens: Array<string | null> = ['old@example.com'];
+      const deleteTokens: EmailChangeDeps['deleteTokens'] = jest.fn(async (query: TokenQuery) => {
+        if (query.type !== 'password_reset') {
+          return { deletedCount: 1 };
+        }
+        const before = resetTokens.length;
+        for (let index = resetTokens.length - 1; index >= 0; index--) {
+          if (query.email === undefined || resetTokens[index] === query.email) {
+            resetTokens.splice(index, 1);
+          }
+        }
+        return { deletedCount: before - resetTokens.length };
+      });
+      /** Stands in for another replica observing the committed address and issuing a
+       * correctly bound reset before this request's post-commit sweep reaches Mongo. */
+      const updateUser: EmailChangeDeps['updateUser'] = jest.fn(async () => {
+        resetTokens.push('new@example.com');
+        return { ...user, email: 'new@example.com' };
+      });
+      const { service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(await pendingToken()),
+        deleteTokens,
+        updateUser,
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 200 });
+      expect(resetTokens).toEqual(['new@example.com']);
     });
 
     it('leaves the link usable when the update fails transiently', async () => {
