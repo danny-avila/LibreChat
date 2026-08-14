@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Constants, getCodeBaseURL } from '@librechat/agents';
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 
@@ -37,28 +38,32 @@ function statefulCodeBaseUrl(): string {
 
 function resolveRuntimeSessionHint(params: {
   environment: StatefulCodeEnvironment;
+  userId: string;
   agentId?: string | null;
   conversationId?: string | null;
 }): string {
-  const { environment, agentId, conversationId } = params;
+  const { environment, userId, agentId, conversationId } = params;
+  const scopeFingerprint = (...parts: string[]): string =>
+    createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 32);
   if (environment === 'agent-user') {
     if (!agentId) {
       throw new Error('Agent-user code environments require an agent ID.');
     }
-    return `v1:agent-user:${agentId}`;
+    return `v2:agent-user:${scopeFingerprint(userId, agentId)}`;
   }
   if (environment === 'conversation') {
     if (!conversationId) {
       throw new Error('Conversation code environments require a conversation ID.');
     }
-    return `v1:conversation:${conversationId}`;
+    return `v2:conversation:${scopeFingerprint(userId, conversationId)}`;
   }
-  return 'v1:user';
+  return `v2:user:${scopeFingerprint(userId)}`;
 }
 
 export function resolveCodeExecutionContext(params: {
   statefulSessions: boolean;
   environment?: StatefulCodeEnvironment | string | null;
+  userId?: string | null;
   agentId?: string | null;
   conversationId?: string | null;
 }): CodeExecutionContext {
@@ -72,8 +77,12 @@ export function resolveCodeExecutionContext(params: {
   }
 
   const environment = normalizeStatefulCodeEnvironment(params.environment);
+  if (!params.userId) {
+    throw new Error('Stateful code environments require an authenticated user ID.');
+  }
   const runtimeSessionHint = resolveRuntimeSessionHint({
     environment,
+    userId: params.userId,
     agentId: params.agentId,
     conversationId: params.conversationId,
   });

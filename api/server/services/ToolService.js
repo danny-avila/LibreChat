@@ -1409,6 +1409,7 @@ async function loadAgentTools({
   const codeExecutionContext = resolveCodeExecutionContext({
     statefulSessions: statefulCodeSessions,
     environment: agent.stateful_code_environment,
+    userId: req.user.id,
     agentId: agent.id,
     conversationId: req.body?.conversationId,
   });
@@ -1729,6 +1730,7 @@ async function loadToolsForExecution({
   const codeExecutionContext = resolveCodeExecutionContext({
     statefulSessions: statefulCodeSessions,
     environment: agent?.stateful_code_environment,
+    userId: req.user.id,
     agentId: agent?.id,
     conversationId: req.body?.conversationId,
   });

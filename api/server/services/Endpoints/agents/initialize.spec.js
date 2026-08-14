@@ -766,6 +766,7 @@ describe('initializeClient — subagent loading', () => {
       model: 'gpt-4',
       author: new mongoose.Types.ObjectId(),
       tools: ['web'],
+      stateful_code_environment: 'agent-user',
     });
     await grantView(subAgent);
 
@@ -795,7 +796,11 @@ describe('initializeClient — subagent loading', () => {
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
     expect(agentClientArgs.agent.lazySubagentConfigs).toHaveLength(1);
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).toEqual(
-      expect.objectContaining({ id: SUBAGENT_ID, configId: expect.any(String) }),
+      expect.objectContaining({
+        id: SUBAGENT_ID,
+        configId: expect.any(String),
+        statefulCodeEnvironment: 'agent-user',
+      }),
     );
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('tools');
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('tool_resources');

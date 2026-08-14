@@ -978,6 +978,7 @@ const initializeClient = async ({
         configId: metadata.configId,
         codeEnvAvailable: metadata.codeEnvAvailable,
         statefulCodeSessions: metadata.statefulCodeSessions,
+        statefulCodeEnvironment: metadata.statefulCodeEnvironment,
         includeReasoningHistory: metadata.includeReasoningHistory,
         lazySubagentConfigs: lazyChildren,
         subagentAgentConfigs: eagerChildren,

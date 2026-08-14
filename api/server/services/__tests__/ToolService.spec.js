@@ -1,3 +1,4 @@
+const { createHash } = require('node:crypto');
 const { Constants: AgentConstants } = require('@librechat/agents');
 const {
   Tools,
@@ -17,7 +18,7 @@ const mockGetCachedTools = jest.fn();
 const mockSendEvent = jest.fn();
 const mockEmitChunk = jest.fn();
 const mockResolveCodeExecutionContext = jest.fn(
-  ({ statefulSessions, environment, agentId, conversationId }) => {
+  ({ statefulSessions, environment, userId, agentId, conversationId }) => {
     if (!statefulSessions) {
       return {
         baseUrl: (process.env.LIBRECHAT_CODE_BASEURL ?? 'https://api.librechat.ai').replace(
@@ -33,11 +34,13 @@ const mockResolveCodeExecutionContext = jest.fn(
     if (!baseUrl) {
       throw new Error('LIBRECHAT_CODE_BASEURL_STATEFUL is not configured');
     }
-    let runtimeSessionHint = 'v1:user';
+    const fingerprint = (...parts) =>
+      createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 32);
+    let runtimeSessionHint = `v2:user:${fingerprint(userId)}`;
     if (environment === 'agent-user') {
-      runtimeSessionHint = `v1:agent-user:${agentId}`;
+      runtimeSessionHint = `v2:agent-user:${fingerprint(userId, agentId)}`;
     } else if (environment === 'conversation') {
-      runtimeSessionHint = `v1:conversation:${conversationId}`;
+      runtimeSessionHint = `v2:conversation:${fingerprint(userId, conversationId)}`;
     }
     return {
       baseUrl,
@@ -1474,9 +1477,9 @@ describe('ToolService - Action Capability Gating', () => {
         });
         expect(stateful.configurable.codeExecutionContext).toEqual({
           baseUrl: 'http://code-stateful.test/v1',
-          codeSessionKey: 'execute_code:stateful:v1:agent-user:stateful-agent',
+          codeSessionKey: 'execute_code:stateful:v2:agent-user:7c684f0773d9642c122f67aa30e9e0f4',
           executionProfile: 'stateful',
-          runtimeSessionHint: 'v1:agent-user:stateful-agent',
+          runtimeSessionHint: 'v2:agent-user:7c684f0773d9642c122f67aa30e9e0f4',
           statefulSessions: true,
         });
       } finally {

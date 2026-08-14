@@ -41,9 +41,10 @@ function prewarmDisabled(): boolean {
 }
 
 /**
- * Per-conversation sandbox state, shared across replicas when Redis is
- * configured and falling back to a process-local store otherwise. Two keys
- * per conversation (= runtime_session_hint):
+ * Sandbox state, shared across replicas when Redis is configured and falling
+ * back to a process-local store otherwise. Runtime-session keys include a
+ * one-way fingerprint of the authenticated user so they cannot collide across
+ * users; the conversation key below controls only that conversation's UI signal.
  * - `inflight:<id>` — a prewarm was fired and no completion has landed yet;
  *   the TTL doubles as the retry backoff when a prewarm fails or hangs.
  * - `ready:<id>` — the sandbox completed a request (prewarm or real exec)
@@ -139,6 +140,7 @@ async function sendPrewarmRequest(
 function collectPrewarmContexts(
   agents: PrewarmAgents,
   conversationId: string,
+  userId: string,
 ): CodeExecutionContext[] {
   const visited = new Set<string>();
   const contexts = new Map<string, CodeExecutionContext>();
@@ -154,6 +156,7 @@ function collectPrewarmContexts(
       const context = resolveCodeExecutionContext({
         statefulSessions: true,
         environment: agent.statefulCodeEnvironment,
+        userId,
         agentId: agent.id,
         conversationId,
       });
@@ -210,7 +213,11 @@ export function maybePrewarmCodeSandbox(params: {
     return;
   }
   void (async () => {
-    const contexts = collectPrewarmContexts(agents, conversationId);
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new Error('Stateful code prewarm requires an authenticated user ID.');
+    }
+    const contexts = collectPrewarmContexts(agents, conversationId, userId);
     await Promise.all(contexts.map((context) => maybePrewarmContext(req, context, conversationId)));
     if (contexts.length > 0) {
       await markSandboxReady(conversationId);

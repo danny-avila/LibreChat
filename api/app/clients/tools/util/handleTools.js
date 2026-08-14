@@ -351,6 +351,7 @@ const loadTools = async ({
         const codeExecutionContext = resolveCodeExecutionContext({
           statefulSessions,
           environment: agent?.stateful_code_environment,
+          userId: user,
           agentId: agent?.id,
           conversationId: options.req?.body?.conversationId,
         });

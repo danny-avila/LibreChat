@@ -1215,6 +1215,7 @@ export async function initializeAgent(
   const codeExecutionContext = resolveCodeExecutionContext({
     statefulSessions: effectiveStatefulSessions,
     environment: statefulCodeEnvironment,
+    userId: requestFileOwnerId,
     agentId: agent.id,
     conversationId,
   });

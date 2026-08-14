@@ -16,7 +16,7 @@ interface TestAgent {
   lazySubagentConfigs?: TestAgent[];
 }
 
-const req = {} as PrewarmParams['req'];
+const req = { user: { id: 'user-1' } } as PrewarmParams['req'];
 const statefulAgent: TestAgent = { id: 'agent_stateful', statefulCodeSessions: true };
 const plainAgent: TestAgent = { id: 'agent_plain', statefulCodeSessions: false };
 
@@ -88,7 +88,7 @@ describe('maybePrewarmCodeSandbox', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       lang: 'bash',
       code: 'true',
-      runtime_session_hint: 'v1:user',
+      runtime_session_hint: 'v2:user:b5729fb0e3ca12e7a61ff6857b99d98e',
     });
     await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(false);
   });
@@ -130,8 +130,29 @@ describe('maybePrewarmCodeSandbox', () => {
       ([, init]) => JSON.parse(init.body).runtime_session_hint,
     );
     expect(hints).toEqual(
-      expect.arrayContaining(['v1:agent-user:agent-1', 'v1:agent-user:agent-2']),
+      expect.arrayContaining([
+        'v2:agent-user:9cf1605ead4951d96f711e1b3db86642',
+        'v2:agent-user:f2a396a5aa5e99ce8e423f5ba6c323a3',
+      ]),
     );
+  });
+
+  it('does not share prewarm cache entries between authenticated users', async () => {
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
+    const otherReq = { user: { id: 'user-2' } } as PrewarmParams['req'];
+    maybePrewarmCodeSandbox({
+      req: otherReq,
+      conversationId: 'convo-2',
+      agents: agents(statefulAgent),
+    });
+    await flushAsync();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const hints = fetchMock.mock.calls.map(
+      ([, init]) => JSON.parse(init.body).runtime_session_hint,
+    );
+    expect(new Set(hints).size).toBe(2);
   });
 
   it('keeps the conversation start signal active until every selected environment is warm', async () => {
