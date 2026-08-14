@@ -1203,4 +1203,51 @@ describe('Langfuse feedback scores', () => {
 
     expect(getFetchMock()).not.toHaveBeenCalled();
   });
+  it('captures no destinations when central export is suppressed without a fanout route', async () => {
+    delete process.env.LANGFUSE_PUBLIC_KEY;
+    delete process.env.LANGFUSE_SECRET_KEY;
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
+    await loadFeedback();
+    const { getLangfuseTraceDestinationIds } = await import('./destinations');
+
+    /** `resolveLangfuseExportPlan` reports `disabled` for this shape — no fanout
+     *  route to fall back on — so capturing the configured connection would let
+     *  later feedback reach a project the trace never went to. */
+    await expect(
+      getLangfuseTraceDestinationIds(
+        appConfigWithLangfuse({
+          publicKey: 'tenant-public-key',
+          secretKey: encryptedTenantSecret(),
+          destination: 'eu',
+        }),
+        'trace-id',
+        true,
+        { centralTraceExportEnabled: false },
+      ),
+    ).resolves.toEqual([]);
+  });
+
+  it('stays restricted when a suppressed-central trace has no identifiable destination', async () => {
+    enableTenantFanout();
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
+    await loadFeedback();
+    const { getLangfuseTraceDestinationIds } = await import('./destinations');
+
+    /** Tenant `projectId` is optional, so this destination carries no stable id.
+     *  Returning `undefined` reads as "unrestricted" downstream and would send
+     *  later feedback to the central project the caller opted out of. */
+    await expect(
+      getLangfuseTraceDestinationIds(
+        appConfigWithLangfuse({
+          publicKey: 'tenant-public-key',
+          secretKey: encryptedTenantSecret(),
+          destination: 'eu',
+          projectId: undefined,
+        }),
+        'trace-id',
+        true,
+        { centralTraceExportEnabled: false },
+      ),
+    ).resolves.toEqual([]);
+  });
 });

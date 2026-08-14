@@ -228,12 +228,17 @@ export async function getScoreDestinations(
   }
 
   if (!usesLangfuseMultiTenantRouting()) {
+    /** Mirrors `resolveLangfuseExportPlan`: without fanout there is no tenant
+     *  route to fall back on, so suppressing central export disables the trace
+     *  outright. Capturing a destination here would let later feedback reach a
+     *  project the trace never went to. */
+    if (!centralTraceExportEnabled) {
+      return [];
+    }
     return hasLangfuseEnvCredentials()
-      ? [
-          centralTraceExportEnabled
-            ? await getCentralScoreDestination(waitForCentralProjectId)
-            : undefined,
-        ].filter((destination): destination is LangfuseScoreDestination => Boolean(destination))
+      ? [await getCentralScoreDestination(waitForCentralProjectId)].filter(
+          (destination): destination is LangfuseScoreDestination => Boolean(destination),
+        )
       : [getConfiguredScoreDestination(appConfig)].filter(
           (destination): destination is LangfuseScoreDestination => Boolean(destination),
         );
@@ -277,7 +282,12 @@ export async function getLangfuseTraceDestinationIds(
     centralTraceExportEnabled,
   });
   if (destinations.some(({ id }) => id == null)) {
-    return undefined;
+    /** `undefined` means "unrestricted" downstream, so returning it here would
+     *  let feedback reach the central project a caller explicitly opted out of
+     *  — e.g. a tenant destination with no configured `projectId`, which has no
+     *  stable id to record. Fail closed instead: an empty list stays restricted,
+     *  matching every destination the trace actually reached (none identifiable). */
+    return centralTraceExportEnabled ? undefined : [];
   }
   return destinations.map(({ id }) => id as string);
 }
