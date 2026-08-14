@@ -2,9 +2,11 @@
  * @jest-environment jsdom
  */
 import * as React from 'react';
-import { render, waitFor, fireEvent } from '@testing-library/react';
+import { render, waitFor, fireEvent, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { UseFormReturn } from 'react-hook-form';
 import type { Agent } from 'librechat-data-provider';
+import type { AgentForm } from '~/common';
 
 // Mock toast context - define this after all mocks
 let mockShowToast: jest.Mock;
@@ -167,6 +169,7 @@ jest.mock('./AgentFooter', () => ({
 
 // Mock react-hook-form to capture form submission
 let mockFormSubmitHandler: (() => void) | null = null;
+let capturedFormMethods: UseFormReturn<AgentForm> | null = null;
 
 jest.mock('react-hook-form', () => {
   const actual = jest.requireActual('react-hook-form') as any;
@@ -186,6 +189,8 @@ jest.mock('react-hook-form', () => {
           web_search: false,
         },
       });
+
+      capturedFormMethods = methods;
 
       return {
         ...methods,
@@ -289,6 +294,7 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
     jest.clearAllMocks();
     mockShowToast = jest.fn();
     mockFormSubmitHandler = null;
+    capturedFormMethods = null;
   });
 
   describe('AgentPanel', () => {
@@ -313,6 +319,39 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
           status: 'info',
         });
       });
+    });
+
+    it('should show "update success" toast when an edited agent reuses the same version', async () => {
+      const { mockUseGetAgentByIdQuery, mockUpdateAgent } = setupMocks();
+
+      mockAgentQuery(mockUseGetAgentByIdQuery, {
+        name: 'Test Agent',
+        version: 2,
+      });
+
+      /** An update whose result matches the newest version is written without recording a
+       *  version entry, so the count comes back unchanged even though the edit was saved. */
+      mockUpdateAgent.mockResolvedValue(createMockAgent({ name: 'Renamed Agent', version: 2 }));
+
+      const Wrapper = createWrapper();
+      const { container } = render(<AgentPanel />, { wrapper: Wrapper });
+
+      act(() => {
+        capturedFormMethods!.setValue('name', 'Renamed Agent', { shouldDirty: true });
+      });
+
+      fireEvent.submit(container.querySelector('form')!);
+      mockFormSubmitHandler?.();
+
+      await waitFor(() => {
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_assistants_update_success_name',
+          status: undefined,
+        });
+      });
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'com_ui_no_changes' }),
+      );
     });
 
     it('should show "update success" toast when version changes', async () => {

@@ -8,6 +8,7 @@ import {
   composeAgentUpdatePayload,
   persistAvatarChanges,
   isAvatarUploadOnlyDirty,
+  hasPersistedDirtyFields,
 } from '../AgentPanel';
 
 const createForm = (): AgentForm => ({
@@ -164,5 +165,38 @@ describe('isAvatarUploadOnlyDirty', () => {
     } as FieldNamesMarkedBoolean<AgentForm>;
 
     expect(isAvatarUploadOnlyDirty(dirtyFields)).toBe(false);
+  });
+});
+
+describe('hasPersistedDirtyFields', () => {
+  it('returns false for an untouched form', () => {
+    expect(hasPersistedDirtyFields(undefined)).toBe(false);
+    expect(hasPersistedDirtyFields({} as FieldNamesMarkedBoolean<AgentForm>)).toBe(false);
+  });
+
+  it('returns false when only the avatar is dirty, since it uses its own endpoint', () => {
+    const dirtyFields = {
+      avatar_action: true,
+      avatar_preview: true,
+    } as FieldNamesMarkedBoolean<AgentForm>;
+
+    expect(hasPersistedDirtyFields(dirtyFields)).toBe(false);
+  });
+
+  it('returns true for an edit the update endpoint persists', () => {
+    const dirtyFields = {
+      avatar_action: true,
+      tools: true,
+    } as unknown as FieldNamesMarkedBoolean<AgentForm>;
+
+    expect(hasPersistedDirtyFields(dirtyFields)).toBe(true);
+  });
+
+  it('ignores the agent field, which tracks selection rather than an edit', () => {
+    const dirtyFields = {
+      agent: { value: true },
+    } as unknown as FieldNamesMarkedBoolean<AgentForm>;
+
+    expect(hasPersistedDirtyFields(dirtyFields)).toBe(false);
   });
 });

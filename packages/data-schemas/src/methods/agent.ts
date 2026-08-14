@@ -696,14 +696,14 @@ export function createAgentMethods(
           versions as Record<string, unknown>[],
           actionsHash,
         );
-        if (duplicateVersion && !forceVersion) {
-          /** A snapshot identical to the newest version adds no history, but the update
-           *  itself must still be applied. The document is not always equal to that
-           *  version: `$push`/`$pull`/`$addToSet` updates snapshot the pre-update state,
-           *  and `skipVersioning` writes snapshot nothing at all. Whenever the caller
-           *  moves the document back onto the newest version's content — removing a tool
-           *  `addAgentResourceFile` added, for instance — returning here dropped a real
-           *  change and reported success. */
+        /** A duplicate snapshot adds no history, but the write itself must still land: the
+         *  document is regularly not equal to its newest version, because `$push`/`$pull`/
+         *  `$addToSet` snapshot the pre-update state and `skipVersioning` snapshots nothing.
+         *  `isDuplicateVersion` compares direct updates only, so it cannot speak for an
+         *  update that also carries an operator; suppressing there would apply a change no
+         *  version records. */
+        const mutatesOutsideSnapshot = Boolean($push || $pull || $addToSet);
+        if (duplicateVersion && !forceVersion && !mutatesOutsideSnapshot) {
           suppressedVersionEntry = true;
         }
       }
@@ -736,9 +736,10 @@ export function createAgentMethods(
       mongoOptions,
     ).lean()) as IAgent | null;
 
-    /** Callers that create a version read `version` back from their own count of
-     *  `versions`; a suppressed entry leaves that count unchanged, so report it here to
-     *  keep the "no new version" signal these callers already relied on. */
+    /** `version` is a response-only field holding the count of `versions`. It is reported
+     *  here so a suppressed entry keeps the shape callers saw before the write was fixed.
+     *  It answers "was a version recorded", never "did the update apply". The two stopped
+     *  being the same question once a suppressed update started landing. */
     if (updatedAgent && suppressedVersionEntry) {
       (updatedAgent as IAgent & { version?: number }).version = updatedAgent.versions?.length ?? 0;
     }

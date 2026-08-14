@@ -2014,6 +2014,129 @@ describe('Agent Methods', () => {
       expect(reloaded!.versions).toHaveLength(2);
     });
 
+    test('should persist a resource file attached to an agent carrying actions', async () => {
+      const agentId = `agent_${uuidv4()}`;
+      const fileIdsOf = (agent: IAgent | null) =>
+        (agent?.tool_resources as Record<string, { file_ids?: string[] }> | undefined)?.file_search
+          ?.file_ids;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        actions: [`example.com${actionDelimiter}act_1`],
+        tools: [],
+      });
+
+      /** `isDuplicateVersion` only skips operator-only updates while `actionsHash` is
+       *  falsy, so an agent with actions reaches the comparison on every file attach. */
+      await updateAgent({ id: agentId }, { name: 'With actions' });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f1',
+      });
+
+      /** The re-attach snapshots the current state, so the document now equals the newest
+       *  version and the next attach is judged a duplicate. */
+      const settled = await getAgent({ id: agentId });
+      const newestVersion = settled!.versions![settled!.versions!.length - 1] as VersionEntry;
+      expect(fileIdsOf(settled)).toEqual(['f1']);
+      expect(newestVersion.tool_resources).toEqual(settled!.tool_resources);
+
+      await addAgentResourceFile({
+        agent_id: agentId,
+        tool_resource: 'file_search',
+        file_id: 'f2',
+      });
+
+      expect(fileIdsOf(await getAgent({ id: agentId }))).toEqual(['f1', 'f2']);
+    });
+
+    test('should record a version when a duplicate direct update carries an atomic operator', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        name: 'Operator agent',
+        tools: [],
+      });
+      await updateAgent({ id: agentId }, { name: 'Renamed' });
+
+      /** The direct half matches the newest version while the operator half really changes
+       *  the document. Suppressing here would apply a change no version entry records, and
+       *  the document would diverge from every entry in its own history. */
+      const updated = await updateAgent(
+        { id: agentId },
+        { name: 'Renamed', $push: { tools: 'appended_tool' } },
+      );
+
+      expect(updated!.tools).toEqual(['appended_tool']);
+      expect(updated!.versions).toHaveLength(3);
+
+      const reloaded = await getAgent({ id: agentId });
+      expect(reloaded!.tools).toEqual(['appended_tool']);
+      expect(reloaded!.versions).toHaveLength(3);
+    });
+
+    test('should persist an update that repairs drift left by a skipVersioning write', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        description: 'original',
+      });
+      await updateAgent({ id: agentId }, { name: 'Versioned' });
+
+      /** `skipVersioning` writes snapshot nothing, so the document drifts from the newest
+       *  version without any entry recording it. */
+      await updateAgent({ id: agentId }, { description: 'drifted' }, { skipVersioning: true });
+      expect((await getAgent({ id: agentId }))!.description).toBe('drifted');
+
+      const repaired = await updateAgent({ id: agentId }, { description: 'original' });
+
+      expect(repaired!.description).toBe('original');
+      expect(repaired!.versions).toHaveLength(2);
+      expect((await getAgent({ id: agentId }))!.description).toBe('original');
+    });
+
+    test('should leave the document untouched when a duplicate update changes nothing', async () => {
+      const agentId = `agent_${uuidv4()}`;
+
+      await createAgent({
+        id: agentId,
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        name: 'Idempotent',
+        tools: ['a', 'b'],
+      });
+      await updateAgent({ id: agentId }, { name: 'Idempotent' });
+
+      const before = await getAgent({ id: agentId });
+      const duplicate = await updateAgent({ id: agentId }, { name: 'Idempotent' });
+
+      /** The suppressed path reports the unchanged version count as `version`. */
+      expect((duplicate as IAgent & { version?: number }).version).toBe(before!.versions!.length);
+
+      const after = await getAgent({ id: agentId });
+      expect(after!.name).toBe(before!.name);
+      expect(after!.tools).toEqual(before!.tools);
+      expect(after!.versions).toHaveLength(before!.versions!.length);
+    });
+
     test('should track updatedBy when a different user updates an agent', async () => {
       const agentId = `agent_${uuidv4()}`;
       const originalAuthor = new mongoose.Types.ObjectId();

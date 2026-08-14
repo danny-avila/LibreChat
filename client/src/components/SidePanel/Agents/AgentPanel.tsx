@@ -224,6 +224,21 @@ export const isAvatarUploadOnlyDirty = (
   return result.sawDirty && result.onlyAvatarDirty;
 };
 
+/**
+ * Whether the submission carries an edit the agent update endpoint persists. The avatar
+ * travels through its own endpoint, so an avatar-only submission does not count.
+ */
+export const hasPersistedDirtyFields = (
+  dirtyFields?: FieldNamesMarkedBoolean<AgentForm>,
+): boolean => {
+  if (!dirtyFields) {
+    return false;
+  }
+
+  const result = evaluateDirtyFields(dirtyFields);
+  return result.sawDirty && !result.onlyAvatarDirty;
+};
+
 export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -315,6 +330,7 @@ export default function AgentPanel() {
   );
   const agent_id = useWatch({ control, name: 'id' });
   const previousVersionRef = useRef<number | undefined>();
+  const submittedDirtyRef = useRef(false);
 
   const allowedProviders = useMemo(
     () => new Set(agentsConfig?.allowedProviders),
@@ -339,11 +355,17 @@ export default function AgentPanel() {
     onMutate: () => {
       // Store the current version before mutation
       previousVersionRef.current = agentQuery.data?.version;
+      submittedDirtyRef.current = hasPersistedDirtyFields(dirtyFields);
     },
     onSuccess: async (data) => {
       const avatarActionState = getValues('avatar_action');
+      /** An update whose result matches the newest version is written without recording a
+       *  version entry, so an unchanged count no longer means the save was a no-op. Only
+       *  a submission that carried no edit of its own can claim nothing changed. */
       const noVersionChange =
-        previousVersionRef.current !== undefined && data.version === previousVersionRef.current;
+        !submittedDirtyRef.current &&
+        previousVersionRef.current !== undefined &&
+        data.version === previousVersionRef.current;
       const toastMessage = getUpdateToastMessage(
         noVersionChange,
         avatarActionState,
@@ -375,8 +397,9 @@ export default function AgentPanel() {
         setValue('avatar_preview', '', { shouldDirty: false });
       }
 
-      // Clear the ref after use
+      // Clear the refs after use
       previousVersionRef.current = undefined;
+      submittedDirtyRef.current = false;
     },
     onError: (err) => {
       const error = err as Error;
