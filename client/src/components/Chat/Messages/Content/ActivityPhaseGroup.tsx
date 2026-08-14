@@ -18,7 +18,7 @@ import { cn } from '~/utils';
 /** Matches `EXPAND_TRANSITION` so the header, the panel, and the card chrome
  *  all resolve on the same curve — three properties animating on two different
  *  easings is what makes a fold read as two separate movements. */
-const FOLD_EASING = 'duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]';
+const FOLD_EASING = 'duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none';
 
 type ActivityPhasePart = Extract<TMessageContentParts, { type: ContentTypes.ACTIVITY_LABEL }> & {
   activity_label_type?: 'phase';
@@ -200,7 +200,7 @@ export default function ActivityPhaseGroup({
             </span>
             <ChevronDown
               className={cn(
-                'size-4 shrink-0 transition-transform duration-200 ease-out',
+                'size-4 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none',
                 isExpanded && 'rotate-180',
               )}
               aria-hidden="true"
