@@ -8,6 +8,7 @@ import { createTokenMethods } from './token';
 /** Mocking logger */
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
+  warn: jest.fn(),
   info: jest.fn(),
   debug: jest.fn(),
 }));
@@ -619,6 +620,31 @@ describe('Token Methods - Detailed Tests', () => {
       ]);
 
       expect(await Token.countDocuments({ userId, type: 'mcp_oauth' })).toBe(2);
+    });
+
+    test('retries a deadlocked index build instead of failing the caller', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const scope = `email_change:${userId.toString()}`;
+      const createIndexes = jest
+        .spyOn(Token, 'createIndexes')
+        .mockRejectedValueOnce(new Error('deadlock detected while creating index'));
+
+      try {
+        const pending = await methods.upsertToken(scope, {
+          userId,
+          type: 'email_change',
+          scope,
+          email: 'retried@example.com',
+          token: 'retried-token',
+          expiresIn: 900,
+        });
+
+        expect(pending.token).toBe('retried-token');
+        expect(createIndexes.mock.calls.length).toBeGreaterThan(1);
+        expect(await Token.countDocuments({ userId, type: 'email_change' })).toBe(1);
+      } finally {
+        createIndexes.mockRestore();
+      }
     });
   });
 
