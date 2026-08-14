@@ -86,12 +86,13 @@ describe('auth user document cache helpers', () => {
     expect(getAuthUserDocCacheMode()).toBe('off');
   });
 
-  it('builds stable keys from strategy, subject, issuer, tenant, and scope', () => {
+  it('builds stable keys from strategy, subject, issuer, tenant, user, and scope', () => {
     const key = buildAuthUserDocCacheKey({
       strategy: ' OpenID-JWT ',
       subject: 'subject-1',
       issuer: 'https://issuer.example.com/',
       tenantId: 'Tenant-A',
+      userId: 'User-A',
       scope: ' Org-A ',
     });
     const equivalent = buildAuthUserDocCacheKey({
@@ -99,6 +100,7 @@ describe('auth user document cache helpers', () => {
       subject: 'subject-1',
       issuer: 'https://issuer.example.com',
       tenantId: 'Tenant-A',
+      userId: 'User-A',
       scope: 'org-a',
     });
     const otherTenant = buildAuthUserDocCacheKey({
@@ -106,6 +108,7 @@ describe('auth user document cache helpers', () => {
       subject: 'subject-1',
       issuer: 'https://issuer.example.com',
       tenantId: 'Tenant-B',
+      userId: 'User-A',
       scope: 'org-a',
     });
     const caseVariantTenant = buildAuthUserDocCacheKey({
@@ -113,6 +116,15 @@ describe('auth user document cache helpers', () => {
       subject: 'subject-1',
       issuer: 'https://issuer.example.com',
       tenantId: 'tenant-a',
+      userId: 'User-A',
+      scope: 'org-a',
+    });
+    const otherUser = buildAuthUserDocCacheKey({
+      strategy: 'openid-jwt',
+      subject: 'subject-1',
+      issuer: 'https://issuer.example.com',
+      tenantId: 'Tenant-A',
+      userId: 'User-B',
       scope: 'org-a',
     });
     const otherScope = buildAuthUserDocCacheKey({
@@ -120,6 +132,7 @@ describe('auth user document cache helpers', () => {
       subject: 'subject-1',
       issuer: 'https://issuer.example.com',
       tenantId: 'Tenant-A',
+      userId: 'User-A',
       scope: 'org-b',
     });
 
@@ -127,6 +140,7 @@ describe('auth user document cache helpers', () => {
     expect(key).toBe(equivalent);
     expect(key).not.toBe(otherTenant);
     expect(key).not.toBe(caseVariantTenant);
+    expect(key).not.toBe(otherUser);
     expect(key).not.toBe(otherScope);
     expect(buildAuthUserDocCacheKey({ strategy: '', subject: 'subject-1' })).toBeUndefined();
     expect(buildAuthUserDocCacheKey({ strategy: 'openid-jwt' })).toBeUndefined();

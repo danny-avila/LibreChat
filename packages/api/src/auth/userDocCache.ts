@@ -20,6 +20,7 @@ export interface AuthUserDocCacheKeyInput {
   subject?: string;
   issuer?: string;
   tenantId?: string;
+  userId?: string;
   scope?: string;
 }
 
@@ -90,6 +91,7 @@ export function buildAuthUserDocCacheKey(input: AuthUserDocCacheKeyInput): strin
         subject,
         normalizeKeyPart(input.issuer),
         normalizeExactKeyPart(input.tenantId),
+        normalizeExactKeyPart(input.userId),
         normalizeKeyPart(input.scope),
       ].join('\0'),
     )

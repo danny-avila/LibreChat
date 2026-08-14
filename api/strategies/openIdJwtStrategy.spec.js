@@ -39,6 +39,7 @@ jest.mock('@librechat/api', () => ({
   buildAuthUserDocCacheKey: jest.fn(() => 'auth-user-doc-key'),
   getAuthUserDocCacheMode: jest.fn(() => 'off'),
   getCachedAuthUserDoc: jest.fn(),
+  getValidOpenIdReuseUserId: jest.fn(),
   invalidateCachedAuthUserDoc: jest.fn(),
   setCachedAuthUserDoc: jest.fn(),
   getHttpsProxyAgent: jest.fn(() => undefined),
@@ -63,6 +64,7 @@ const {
   findOpenIDUser,
   getAuthUserDocCacheMode,
   getCachedAuthUserDoc,
+  getValidOpenIdReuseUserId,
   invalidateCachedAuthUserDoc,
   setCachedAuthUserDoc,
 } = require('@librechat/api');
@@ -78,6 +80,7 @@ function resetAuthUserDocCacheMocks() {
   buildAuthUserDocCacheKey.mockReturnValue('auth-user-doc-key');
   getAuthUserDocCacheMode.mockReturnValue('off');
   getCachedAuthUserDoc.mockResolvedValue(undefined);
+  getValidOpenIdReuseUserId.mockReturnValue(null);
   invalidateCachedAuthUserDoc.mockResolvedValue(undefined);
   setCachedAuthUserDoc.mockResolvedValue(undefined);
 }
@@ -495,6 +498,39 @@ describe('openIdJwtStrategy – auth user document cache', () => {
       'auth-user-doc-key',
       expect.objectContaining({ id: 'tenant-b-user', tenantId: 'tenant-b' }),
     );
+  });
+
+  it('uses the signed OpenID user id as cache scope before tenant context is available', async () => {
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getValidOpenIdReuseUserId.mockReturnValue('tenant-a-user');
+    getCachedAuthUserDoc.mockResolvedValue({
+      _id: 'tenant-a-user',
+      role: SystemRoles.USER,
+      provider: 'openid',
+      email: 'cached@example.com',
+      tenantId: 'tenant-a',
+    });
+
+    const { user } = await invokeVerify(
+      {
+        headers: {
+          authorization: 'Bearer tok',
+          cookie: 'openid_user_id=signed-user-id',
+        },
+        session: {},
+      },
+      payload,
+    );
+
+    expect(getValidOpenIdReuseUserId).toHaveBeenCalledWith('signed-user-id');
+    expect(buildAuthUserDocCacheKey).toHaveBeenCalledWith({
+      strategy: 'openid-jwt',
+      subject: payload.sub,
+      issuer: 'https://issuer.example.com',
+      userId: 'tenant-a-user',
+    });
+    expect(findOpenIDUser).not.toHaveBeenCalled();
+    expect(user).toMatchObject({ id: 'tenant-a-user', tenantId: 'tenant-a' });
   });
 
   it('does not cache a lookup result outside the active tenant scope', async () => {

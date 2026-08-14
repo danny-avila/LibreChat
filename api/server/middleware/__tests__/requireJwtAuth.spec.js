@@ -71,6 +71,19 @@ jest.mock('@librechat/api', () => {
     recordRumProxyRequest: jest.fn(),
     getAuthFailureReasonCategory: actualApi.getAuthFailureReasonCategory,
     buildSafeAuthLogContext: actualApi.buildSafeAuthLogContext,
+    getValidOpenIdReuseUserId: (token) => {
+      if (!token || !process.env.JWT_REFRESH_SECRET) {
+        return null;
+      }
+      try {
+        const payload = require('jsonwebtoken').verify(token, process.env.JWT_REFRESH_SECRET);
+        return typeof payload === 'object' && payload != null && typeof payload.id === 'string'
+          ? payload.id
+          : null;
+      } catch {
+        return null;
+      }
+    },
     maybeRefreshCloudFrontAuthCookiesMiddleware: jest.fn((req, res, next) => next()),
     tenantContextMiddleware: (req, res, next) => {
       const context = {
