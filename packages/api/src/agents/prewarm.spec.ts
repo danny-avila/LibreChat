@@ -112,12 +112,12 @@ describe('maybePrewarmCodeSandbox', () => {
   });
 
   it('prewarms distinct per-agent environments independently', async () => {
-    const first = {
+    const first: TestAgent = {
       id: 'agent-1',
       statefulCodeSessions: true,
       statefulCodeEnvironment: 'agent-user',
     };
-    const second = {
+    const second: TestAgent = {
       id: 'agent-2',
       statefulCodeSessions: true,
       statefulCodeEnvironment: 'agent-user',
