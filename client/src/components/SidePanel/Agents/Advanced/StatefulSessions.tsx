@@ -1,6 +1,5 @@
 import { useFormContext } from 'react-hook-form';
 import { AgentCapabilities } from 'librechat-data-provider';
-import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import {
   Switch,
   Select,
@@ -14,6 +13,7 @@ import {
   HoverCardTrigger,
   CircleHelpIcon,
 } from '@librechat/client';
+import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';

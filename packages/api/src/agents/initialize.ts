@@ -62,9 +62,9 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
+import { normalizeStatefulCodeEnvironment, resolveCodeExecutionContext } from './execution';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
-import { normalizeStatefulCodeEnvironment, resolveCodeExecutionContext } from './execution';
 import { isFatalAgentInitializationError } from './errors';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
