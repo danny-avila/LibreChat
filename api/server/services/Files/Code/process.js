@@ -18,6 +18,7 @@ const {
   getExtractedTextFormat,
   getStorageMetadata,
   buildCodeEnvDownloadQuery,
+  CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
 const {
   Tools,
@@ -1144,8 +1145,16 @@ const primeFiles = async (options) => {
  * @param {ServerRequest} [params.req] - Current authenticated request, used to mint Code API auth.
  * @returns {Promise<{content: string} | null>}
  */
-async function readSandboxFile({ file_path, session_id, files, runtime_session_hint, req }) {
-  const baseURL = getCodeBaseURL();
+async function readSandboxFile({
+  file_path,
+  session_id,
+  files,
+  runtime_session_hint,
+  codeApiBaseUrl,
+  executionProfile,
+  req,
+}) {
+  const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
   if (!baseURL) {
     return null;
   }
@@ -1177,6 +1186,7 @@ async function readSandboxFile({ file_path, session_id, files, runtime_session_h
         'Content-Type': 'application/json',
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
+        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -1225,10 +1235,12 @@ async function readSandboxImage({
   session_id,
   files,
   runtime_session_hint,
+  codeApiBaseUrl,
+  executionProfile,
   maxBytes,
   req,
 }) {
-  const baseURL = getCodeBaseURL();
+  const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
   if (!baseURL) {
     return null;
   }
@@ -1287,6 +1299,7 @@ async function readSandboxImage({
       file_path,
       session_id,
       runtime_session_hint,
+      executionProfile,
       files,
       req,
       chunkBytes,
@@ -1357,6 +1370,7 @@ async function execSandboxImageChunk({
   file_path,
   session_id,
   runtime_session_hint,
+  executionProfile,
   files,
   req,
   chunkBytes,
@@ -1383,6 +1397,7 @@ async function execSandboxImageChunk({
         'Content-Type': 'application/json',
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
+        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -1448,9 +1463,11 @@ async function writeSandboxFile({
   session_id,
   files,
   runtime_session_hint,
+  codeApiBaseUrl,
+  executionProfile,
   req,
 }) {
-  const baseURL = getCodeBaseURL();
+  const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
   if (!baseURL) {
     return null;
   }
@@ -1500,6 +1517,7 @@ async function writeSandboxFile({
         'Content-Type': 'application/json',
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
+        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,

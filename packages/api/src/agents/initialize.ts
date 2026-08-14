@@ -64,6 +64,7 @@ import {
 } from './tools';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
+import { normalizeStatefulCodeEnvironment, resolveCodeExecutionContext } from './execution';
 import { isFatalAgentInitializationError } from './errors';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
@@ -325,10 +326,14 @@ export type InitializedAgent = Agent & {
    * Whether stateful code sessions are active *for this agent*: the admin
    * `stateful_code_sessions` capability AND the agent's builder opt-in
    * (`agent.stateful_code_sessions`) AND `codeEnvAvailable`. Resolved once
-   * here; `createRun` walks this per-agent value to gate the run-level
-   * `toolExecution.sandbox` config.
+   * here and carried with the agent so execution routing never needs a
+   * graph-global stateful flag.
    */
   statefulCodeSessions: boolean;
+  /** Sharing scope for this agent's stateful code environment. */
+  statefulCodeEnvironment: Agent['stateful_code_environment'];
+  /** Trusted partition for transient code session ids and file references. */
+  codeSessionKey: string;
   /** Whether host-side skill file authoring is available for this agent/run. */
   skillAuthoringAvailable: boolean;
   /** Host-side file authoring tool names registered for this run. */
@@ -1201,12 +1206,18 @@ export async function initializeAgent(
   };
   /** Per-agent stateful-session truth: the admin capability AND the agent's
    *  own builder opt-in AND a working code env. Resolved once here so the
-   *  registered bash description, the tool factories, and `createRun`'s
-   *  `toolExecution.sandbox` gate all agree for this agent. */
+   *  registered bash description and per-agent tool factories agree. */
   const effectiveStatefulSessions =
     effectiveCodeEnvAvailable &&
     params.statefulSessionsAvailable === true &&
     agent.stateful_code_sessions === true;
+  const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(agent.stateful_code_environment);
+  const codeExecutionContext = resolveCodeExecutionContext({
+    statefulSessions: effectiveStatefulSessions,
+    environment: statefulCodeEnvironment,
+    agentId: agent.id,
+    conversationId,
+  });
   if (effectiveCodeEnvAvailable) {
     const codeExecResult = registerCodeExecutionTools({
       toolRegistry,
@@ -1527,6 +1538,8 @@ export async function initializeAgent(
     memoryToolsRegistered: inlineMemoryRegistered,
     codeEnvAvailable: effectiveCodeEnvAvailable,
     statefulCodeSessions: effectiveStatefulSessions,
+    statefulCodeEnvironment,
+    codeSessionKey: codeExecutionContext.codeSessionKey,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
     includeReasoningHistory: customEndpointConfig?.customParams?.includeReasoningHistory,
     skillAuthoringAvailable,

@@ -2571,7 +2571,7 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
-      /** Fire-and-forget: boot the per-conversation stateful sandbox in
+      /** Fire-and-forget: boot each selected stateful environment in
        *  parallel with generation so the first execute_code/bash call lands
        *  on a warm VM. No-op unless a reachable agent resolved
        *  `statefulCodeSessions`. */
@@ -2617,13 +2617,7 @@ class AgentClient extends BaseClient {
         ? await this.options.primeInvokedSkills(payload)
         : undefined;
 
-      /**
-       * Seed `Graph.sessions` with code-env files primed across every
-       * reachable agent (primary, handoff/addedConvo, and nested
-       * subagents) plus skill-priming output. The merge logic and its
-       * run-wide semantics live in `buildInitialToolSessions`; see that
-       * helper's doc for why this is intentionally NOT per-agent.
-       */
+      /** Seed each reachable agent's trusted code-session partition. */
       const initialSessions = buildInitialToolSessions({
         skillSessions: skillPrimeResult?.initialSessions,
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],

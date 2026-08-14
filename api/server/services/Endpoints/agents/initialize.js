@@ -796,6 +796,7 @@ const initializeClient = async ({
       codeEnvAvailable === true &&
       agent.stateful_code_sessions === true &&
       agent.tools?.includes(Tools.execute_code) === true,
+    statefulCodeEnvironment: agent.stateful_code_environment,
     includeReasoningHistory: getIncludeReasoningHistory(agent),
   });
 

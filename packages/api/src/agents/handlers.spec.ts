@@ -6,6 +6,7 @@ import type {
   ToolExecuteResult,
   ToolCallRequest,
 } from '@librechat/agents';
+import type { CodeExecutionContext } from './execution';
 import { createToolExecuteHandler, ToolExecuteOptions } from './handlers';
 
 function createMockTool(
@@ -2591,6 +2592,7 @@ describe('createToolExecuteHandler', () => {
       activeSkillNames?: Set<string>;
       skillPrimedIdsByName?: Record<string, string>;
       skillAuthoringAvailable?: boolean;
+      codeExecutionContext?: CodeExecutionContext;
       req?: unknown;
       readSandboxFile?: ToolExecuteOptions['readSandboxFile'];
       readSandboxImage?: ToolExecuteOptions['readSandboxImage'];
@@ -2606,6 +2608,7 @@ describe('createToolExecuteHandler', () => {
           activeSkillNames: params.activeSkillNames,
           skillPrimedIdsByName: params.skillPrimedIdsByName,
           skillAuthoringAvailable: params.skillAuthoringAvailable === true,
+          codeExecutionContext: params.codeExecutionContext,
         },
       }));
       return createToolExecuteHandler({
@@ -2644,6 +2647,42 @@ describe('createToolExecuteHandler', () => {
       });
       expect(result.status).toBe('success');
       expect(result.content).toContain('hello-world');
+    });
+
+    it('routes host file reads with the executing agent profile instead of a graph hint', async () => {
+      const readSandboxFile = jest.fn(async () => ({ content: 'stateful-data' }));
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        codeExecutionContext: {
+          baseUrl: 'https://stateful-code.example.com',
+          codeSessionKey: 'execute_code:stateful:v1:user',
+          executionProfile: 'stateful',
+          runtimeSessionHint: 'v1:user',
+          statefulSessions: true,
+        },
+        readSandboxFile,
+      });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_profiled_read',
+          name: Constants.READ_FILE,
+          args: { path: '/mnt/data/sentinel.txt' },
+          runtimeSessionHint: 'legacy-graph-hint',
+        } as unknown as ToolCallRequest,
+      ]);
+
+      expect(readSandboxFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          codeApiBaseUrl: 'https://stateful-code.example.com',
+          executionProfile: 'stateful',
+          runtime_session_hint: 'v1:user',
+        }),
+      );
+      expect(readSandboxFile).not.toHaveBeenCalledWith(
+        expect.objectContaining({ runtime_session_hint: 'legacy-graph-hint' }),
+      );
     });
 
     it('returns a clear error for /mnt/data/ when codeEnv is not available', async () => {

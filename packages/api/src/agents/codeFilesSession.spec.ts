@@ -144,6 +144,25 @@ describe('seedCodeFilesIntoSessions', () => {
     expect(entry.files).toHaveLength(2);
     expect(entry.files!.map((f) => f.storage_session_id).sort()).toEqual(['sess-A', 'sess-B']);
   });
+
+  it('seeds only the requested code-session partition', () => {
+    const statefulKey = 'execute_code:stateful:v1:user';
+    const existing: ToolSessionMap = new Map();
+    existing.set(Constants.EXECUTE_CODE, {
+      session_id: 'stateless-session',
+      files: [file('s1', 'stateless-session', 'stateless.txt')],
+      lastUpdated: 1,
+    } satisfies CodeSessionContext);
+
+    const result = seedCodeFilesIntoSessions(
+      [file('w1', 'stateful-session', 'stateful.txt')],
+      existing,
+      statefulKey,
+    );
+
+    expect(result!.get(Constants.EXECUTE_CODE)?.files?.map((f) => f.id)).toEqual(['s1']);
+    expect(result!.get(statefulKey)?.files?.map((f) => f.id)).toEqual(['w1']);
+  });
 });
 
 describe('buildInitialToolSessions', () => {
@@ -151,8 +170,10 @@ describe('buildInitialToolSessions', () => {
     name: string,
     primedCodeFiles?: CodeEnvFile[],
     subagents?: CodeFilesAgent[],
+    codeSessionKey?: string,
   ): CodeFilesAgent & { __label: string } => ({
     __label: name,
+    codeSessionKey,
     primedCodeFiles,
     subagentAgentConfigs: subagents,
   });
@@ -326,5 +347,63 @@ describe('buildInitialToolSessions', () => {
     const entry = result!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
     expect(entry.files).toHaveLength(2);
     expect(entry.files!.map((f) => f.name).sort()).toEqual(['shared.csv', 'top.csv']);
+  });
+
+  it('keeps stateless and stateful agent files in separate partitions', () => {
+    const statefulKey = 'execute_code:stateful:v1:user';
+    const skillSessions: ToolSessionMap = new Map();
+    skillSessions.set(Constants.EXECUTE_CODE, {
+      session_id: 'skill-sess',
+      files: [file('skill-1', 'skill-sess', 'skill.py')],
+      lastUpdated: 1,
+    } satisfies CodeSessionContext);
+
+    const result = buildInitialToolSessions({
+      skillSessions,
+      agents: [
+        agent('stateless', [file('s1', 'stateless-sess', 'stateless.txt')]),
+        agent('stateful', [file('w1', 'stateful-sess', 'stateful.txt')], undefined, statefulKey),
+      ],
+    });
+
+    expect(result!.get(Constants.EXECUTE_CODE)?.files?.map((f) => f.id)).toEqual(['skill-1', 's1']);
+    expect(result!.get(statefulKey)?.files?.map((f) => f.id)).toEqual(['skill-1', 'w1']);
+  });
+
+  it('shares user-scoped stateful files but isolates agent-user scopes', () => {
+    const userKey = 'execute_code:stateful:v1:user';
+    const firstAgentKey = 'execute_code:stateful:v1:agent-user:agent-a';
+    const secondAgentKey = 'execute_code:stateful:v1:agent-user:agent-b';
+
+    const result = buildInitialToolSessions({
+      agents: [
+        agent('user-a', [file('u1', 'user-a-sess', 'a.txt')], undefined, userKey),
+        agent('user-b', [file('u2', 'user-b-sess', 'b.txt')], undefined, userKey),
+        agent('agent-a', [file('a1', 'agent-a-sess', 'private-a.txt')], undefined, firstAgentKey),
+        agent('agent-b', [file('b1', 'agent-b-sess', 'private-b.txt')], undefined, secondAgentKey),
+      ],
+    });
+
+    expect(result!.get(userKey)?.files?.map((f) => f.id)).toEqual(['u1', 'u2']);
+    expect(result!.get(firstAgentKey)?.files?.map((f) => f.id)).toEqual(['a1']);
+    expect(result!.get(secondAgentKey)?.files?.map((f) => f.id)).toEqual(['b1']);
+    expect(result!.has(Constants.EXECUTE_CODE)).toBe(false);
+  });
+
+  it('copies immutable skill inputs into a stateful partition even without agent files', () => {
+    const statefulKey = 'execute_code:stateful:v1:user';
+    const skillSessions: ToolSessionMap = new Map();
+    skillSessions.set(Constants.EXECUTE_CODE, {
+      session_id: 'skill-sess',
+      files: [file('skill-1', 'skill-sess', 'skill.py')],
+      lastUpdated: 1,
+    } satisfies CodeSessionContext);
+
+    const result = buildInitialToolSessions({
+      skillSessions,
+      agents: [agent('stateful', undefined, undefined, statefulKey)],
+    });
+
+    expect(result!.get(statefulKey)?.files?.map((f) => f.id)).toEqual(['skill-1']);
   });
 });

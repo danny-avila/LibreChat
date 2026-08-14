@@ -1,3 +1,4 @@
+import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import {
   markSandboxReady,
   maybePrewarmCodeSandbox,
@@ -10,7 +11,9 @@ type PrewarmParams = Parameters<typeof maybePrewarmCodeSandbox>[0];
 interface TestAgent {
   id: string;
   statefulCodeSessions?: boolean;
+  statefulCodeEnvironment?: StatefulCodeEnvironment;
   subagentAgentConfigs?: TestAgent[];
+  lazySubagentConfigs?: TestAgent[];
 }
 
 const req = {} as PrewarmParams['req'];
@@ -35,6 +38,7 @@ describe('maybePrewarmCodeSandbox', () => {
   beforeEach(async () => {
     await resetSandboxStateForTests();
     process.env.LIBRECHAT_CODE_BASEURL = 'http://code.test/v1';
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
     delete process.env.CODE_SANDBOX_PREWARM;
     delete process.env.CODE_SANDBOX_COLD_AFTER_MS;
     delete process.env.CODEAPI_JWT_ENABLED;
@@ -48,6 +52,7 @@ describe('maybePrewarmCodeSandbox', () => {
     fetchMock.mockRestore();
     jest.useRealTimers();
     delete process.env.LIBRECHAT_CODE_BASEURL;
+    delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
   });
 
   it('does nothing when no reachable agent has stateful sessions', async () => {
@@ -70,17 +75,20 @@ describe('maybePrewarmCodeSandbox', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('fires one exec with the conversation as runtime_session_hint and marks ready', async () => {
+  it('fires one stateful-profile exec with the default user environment and marks ready', async () => {
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
     await flushAsync();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('http://code.test/v1/exec');
+    expect(url).toBe('http://code-stateful.test/v1/exec');
+    expect(init.headers).toEqual(
+      expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+    );
     expect(JSON.parse(init.body as string)).toEqual({
       lang: 'bash',
       code: 'true',
-      runtime_session_hint: 'convo-1',
+      runtime_session_hint: 'v1:user',
     });
     await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(false);
   });
@@ -90,6 +98,73 @@ describe('maybePrewarmCodeSandbox', () => {
     maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(parent) });
     await flushAsync();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('walks lazy subagents and deduplicates user-scoped environments', async () => {
+    const parent = {
+      id: 'agent_parent',
+      statefulCodeSessions: true,
+      lazySubagentConfigs: [statefulAgent],
+    };
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(parent) });
+    await flushAsync();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('prewarms distinct per-agent environments independently', async () => {
+    const first = {
+      id: 'agent-1',
+      statefulCodeSessions: true,
+      statefulCodeEnvironment: 'agent-user',
+    };
+    const second = {
+      id: 'agent-2',
+      statefulCodeSessions: true,
+      statefulCodeEnvironment: 'agent-user',
+    };
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(first, second) });
+    await flushAsync();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const hints = fetchMock.mock.calls.map(
+      ([, init]) => JSON.parse(init.body).runtime_session_hint,
+    );
+    expect(hints).toEqual(
+      expect.arrayContaining(['v1:agent-user:agent-1', 'v1:agent-user:agent-2']),
+    );
+  });
+
+  it('keeps the conversation start signal active until every selected environment is warm', async () => {
+    const resolvers: Array<(response: Response) => void> = [];
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const first = {
+      id: 'agent-1',
+      statefulCodeSessions: true,
+      statefulCodeEnvironment: 'agent-user' as const,
+    };
+    const second = {
+      id: 'agent-2',
+      statefulCodeSessions: true,
+      statefulCodeEnvironment: 'agent-user' as const,
+    };
+
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(first, second) });
+    await flushAsync();
+    expect(resolvers).toHaveLength(2);
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(true);
+
+    resolvers[0](mockResponse({ ok: true, status: 200 }));
+    await flushAsync();
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(true);
+
+    resolvers[1](mockResponse({ ok: true, status: 200 }));
+    await flushAsync();
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(false);
   });
 
   it('does not refire while the warm marker is fresh', async () => {
@@ -184,12 +259,14 @@ describe('maybePrewarmCodeSandbox', () => {
 describe('shouldSignalSandboxStart / markSandboxReady', () => {
   beforeEach(async () => {
     await resetSandboxStateForTests();
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
     delete process.env.CODE_SANDBOX_PREWARM;
     delete process.env.CODE_SANDBOX_COLD_AFTER_MS;
   });
 
   afterEach(() => {
     jest.useRealTimers();
+    delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
   });
 
   it('never signals for untracked conversations (stateless deployments)', async () => {

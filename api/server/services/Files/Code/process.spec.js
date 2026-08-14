@@ -63,6 +63,7 @@ jest.mock('@librechat/api', () => {
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
     withTimeout: (...args) => passthroughWithTimeout(...args),
     hasOfficeHtmlPath: (...args) => mockHasOfficeHtmlPath(...args),
     /**
@@ -1608,6 +1609,22 @@ describe('Code Process', () => {
         expect(call.method).toBe('post');
         expect(call.url).toBe('https://code-api.example.com/exec');
         expect(call.data.lang).toBe('bash');
+      });
+
+      it('routes to the selected profile endpoint and asserts the expected profile', async () => {
+        mockAxios.mockResolvedValueOnce({ data: { stdout: 'ok', stderr: '' } });
+
+        await readSandboxFile({
+          file_path: '/mnt/data/x.txt',
+          codeApiBaseUrl: 'https://stateful-code.example.com',
+          executionProfile: 'stateful',
+          runtime_session_hint: 'v1:user',
+        });
+
+        const call = mockAxios.mock.calls[0][0];
+        expect(call.url).toBe('https://stateful-code.example.com/exec');
+        expect(call.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
+        expect(call.data.runtime_session_hint).toBe('v1:user');
       });
 
       it('omits session_id and files when not provided', async () => {

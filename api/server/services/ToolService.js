@@ -35,6 +35,7 @@ const {
   isNormalizationSensitiveName,
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
+  resolveCodeExecutionContext,
 } = require('@librechat/api');
 const {
   Time,
@@ -1401,6 +1402,16 @@ async function loadAgentTools({
   const codeExecutionEnabled =
     agent.tools?.includes(Tools.execute_code) === true &&
     enabledCapabilities.has(AgentCapabilities.execute_code);
+  const statefulCodeSessions =
+    codeExecutionEnabled &&
+    enabledCapabilities.has(AgentCapabilities.stateful_code_sessions) &&
+    agent.stateful_code_sessions === true;
+  const codeExecutionContext = resolveCodeExecutionContext({
+    statefulSessions: statefulCodeSessions,
+    environment: agent.stateful_code_environment,
+    agentId: agent.id,
+    conversationId: req.body?.conversationId,
+  });
   const { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools } =
     await buildToolClassification({
       loadedTools,
@@ -1412,6 +1423,7 @@ async function loadAgentTools({
       programmaticToolsEnabled,
       codeExecutionEnabled,
       authHeaders: () => getCodeApiAuthHeaders(req),
+      codeExecutionContext,
     });
 
   const agentTools = [];
@@ -1707,17 +1719,20 @@ async function loadToolsForExecution({
     enabledCapabilities?.has(AgentCapabilities.execute_code) === true &&
     agent?.tools?.includes(Tools.execute_code) === true;
 
-  /**
-   * Opt bash_tool into the hedged stateful-session description. Gated on code
-   * execution being enabled AND the admin `stateful_code_sessions` capability
-   * AND the agent's own builder opt-in; off by default. Sets prompt text only
-   * (the wire hint is set at run config). PTC keeps its stateless prompt in
-   * v1. Older @librechat/agents ignore the param.
-   */
+  /** Resolve the trusted endpoint/profile from the actually executing agent.
+   * This stays per-agent across handoffs and subagents; no graph-global stateful
+   * flag or model-supplied value is consulted. */
   const statefulCodeSessions =
     codeExecutionEnabled &&
     enabledCapabilities?.has(AgentCapabilities.stateful_code_sessions) === true &&
     agent?.stateful_code_sessions === true;
+  const codeExecutionContext = resolveCodeExecutionContext({
+    statefulSessions: statefulCodeSessions,
+    environment: agent?.stateful_code_environment,
+    agentId: agent?.id,
+    conversationId: req.body?.conversationId,
+  });
+  configurable.codeExecutionContext = codeExecutionContext;
 
   const isPTC =
     isPTCRequested &&
@@ -1747,6 +1762,9 @@ async function loadToolsForExecution({
       for (const name of ptcToolNames) {
         const ptcTool = createBashProgrammaticToolCallingTool({
           authHeaders: () => getCodeApiAuthHeaders(req),
+          baseUrl: codeExecutionContext.baseUrl,
+          executionProfile: codeExecutionContext.executionProfile,
+          runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
         });
         ptcTool.name = name;
         allLoadedTools.push(ptcTool);
@@ -1770,7 +1788,7 @@ async function loadToolsForExecution({
     try {
       const bashTool = createBashExecutionTool({
         authHeaders: () => getCodeApiAuthHeaders(req),
-        statefulSessions: statefulCodeSessions,
+        ...codeExecutionContext,
       });
       allLoadedTools.push(bashTool);
     } catch (error) {
