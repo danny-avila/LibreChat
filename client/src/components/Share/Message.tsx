@@ -51,7 +51,7 @@ export default function Message(props: TMessageProps) {
   return (
     <>
       <div className="w-full border-0 bg-transparent text-text-primary">
-        <div className="m-auto justify-center px-4 py-3 md:px-6">
+        <div className="m-auto justify-center px-4 py-3 sm:px-0">
           <MessageRow
             id={messageId}
             icon={<Icon message={message} conversation={conversation} />}

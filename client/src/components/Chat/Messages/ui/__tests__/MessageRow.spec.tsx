@@ -119,6 +119,16 @@ describe('MessageRow', () => {
     expect(messageSurface).toHaveClass('w-full');
   });
 
+  it('matches the chat form reading width', () => {
+    renderRow({ isCreatedByUser: false });
+
+    expect(screen.getByLabelText('Assistant message')).toHaveClass(
+      'sm:px-2',
+      'md:max-w-3xl',
+      'xl:max-w-4xl',
+    );
+  });
+
   it('allows the maximized preference to use the full conversation width', () => {
     renderRow({ isCreatedByUser: false, fullWidth: true });
 

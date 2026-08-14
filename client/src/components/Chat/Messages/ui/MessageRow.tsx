@@ -34,11 +34,13 @@ export default function MessageRow({
   isEditing = false,
 }: MessageRowProps) {
   const showAssistantHeader = !isCreatedByUser && !hasParallelContent;
-  let widthClass = 'w-full max-w-3xl';
+  // Same column as ChatForm: max-width plus `sm:px-2`, so the body lines
+  // up with the composer surface rather than the form's outer box.
+  let widthClass = 'w-full sm:px-2 md:max-w-3xl xl:max-w-4xl';
   if (fullWidth) {
-    widthClass = 'w-full max-w-full';
+    widthClass = 'w-full max-w-full sm:px-2';
   } else if (hasParallelContent) {
-    widthClass = 'w-full md:max-w-[58rem] xl:max-w-[70rem]';
+    widthClass = 'w-full sm:px-2 md:max-w-[58rem] xl:max-w-[70rem]';
   }
 
   return (

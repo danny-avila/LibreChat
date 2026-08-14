@@ -139,6 +139,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                   <div
                     className={cn(
                       'w-full',
+                      !isLandingPage && 'scrollbar-gutter-stable overflow-y-auto',
                       isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                     )}
                   >

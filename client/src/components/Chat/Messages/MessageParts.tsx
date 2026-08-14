@@ -101,7 +101,7 @@ function MessageParts(props: TMessageProps) {
       onWheel={handleScroll}
       onTouchMove={handleScroll}
     >
-      <div className="m-auto justify-center px-4 py-3 md:px-6">
+      <div className="m-auto justify-center px-4 py-3 sm:px-0">
         <MessageRow
           id={messageId ?? ''}
           icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}

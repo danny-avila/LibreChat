@@ -2122,6 +2122,8 @@ html {
 .message-editor-text {
   font-size: var(--markdown-font-size, var(--font-size-base));
   line-height: 1.6;
+  /* `.prose` sets max-width: 65ch; fill the chat-form column instead. */
+  max-width: none;
 }
 
 .message-content pre code {

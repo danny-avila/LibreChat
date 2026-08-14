@@ -110,7 +110,7 @@ function SearchMessage({ message }: Pick<TMessageProps, 'message'>) {
 
   return (
     <div className="w-full bg-transparent text-text-primary">
-      <div className="m-auto px-4 py-3 md:px-6">
+      <div className="m-auto px-4 py-3 sm:px-0">
         <MessageRow
           id={message.messageId}
           icon={<Icon iconData={iconData} />}
