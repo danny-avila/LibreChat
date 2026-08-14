@@ -1,5 +1,6 @@
 import type { QueryOptions } from 'mongoose';
 import { IToken, TokenCreateData, TokenQuery, TokenUpdateData, TokenDeleteResult } from '~/types';
+import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
 function isDuplicateKeyError(error: unknown): boolean {
@@ -28,7 +29,7 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
 
   function ensureIndexes(): Promise<unknown> {
     if (!indexPromise) {
-      indexPromise = mongoose.models.Token.createIndexes().catch((error: unknown) => {
+      indexPromise = createIndexesWithRetry(mongoose.models.Token).catch((error: unknown) => {
         indexPromise = null;
         throw error;
       });
