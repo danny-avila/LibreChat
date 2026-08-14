@@ -21,11 +21,16 @@ const {
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
-  sanitizeFilename,
   parseText,
+  resolveVectorId,
+  sanitizeFilename,
+  hashFileContent,
   processAudioFile,
   sendUploadSuccess,
   getStorageMetadata,
+  pickVectorReuseSource,
+  suppressSharedVectorDeletes,
+  USER_OWNED_EMBEDDING_CONTEXT,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -207,8 +212,9 @@ const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMeth
  * @returns {Promise<{ deletedFileIds: string[], failedFileIds: string[] }>}
  * @throws {Error} When storage deletion cannot be scheduled or file metadata cleanup fails.
  */
-const processDeleteRequest = async ({ req, files }) => {
+const processDeleteRequest = async ({ req, files: requestedFiles }) => {
   const appConfig = req.config;
+  const files = await suppressSharedVectorDeletes(requestedFiles, db.countVectorReferences);
   const resolvedFileIds = new Set();
   const failedFileIds = new Set();
   const deletionMethods = {};
@@ -656,6 +662,58 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
 };
 
 /**
+ * Finds an already-embedded file with identical content, so this upload can
+ * point at vectors that already exist instead of paying to embed the same
+ * document twice.
+ *
+ * Reuse is only sound between records sharing a vector-store owner: the RAG
+ * API stamps `entity_id` as the owner and refuses reads from any other.
+ * Message attachments are always embedded with no entity — under the user —
+ * so a content match is enough. Agent knowledge files are owned by their
+ * agent, so a match must additionally already belong to the same agent's
+ * tool resource, which is also the only case where a second record would
+ * add nothing but a duplicate entry.
+ *
+ * @param {object} params
+ * @param {ServerRequest} params.req - The Express request object.
+ * @param {string} params.hash - Hex SHA-256 of the uploaded bytes.
+ * @param {boolean} params.messageAttachment - Whether this is a chat attachment.
+ * @param {string} [params.agent_id] - The agent receiving the knowledge file.
+ * @param {string} params.tool_resource - The tool resource being uploaded to.
+ * @returns {Promise<MongoFile | null>}
+ */
+const findVectorReuseSource = async ({ req, hash, messageAttachment, agent_id, tool_resource }) => {
+  if (!hash) {
+    return null;
+  }
+
+  const ownerScope = { userId: req.user.id, tenantId: req.user.tenantId };
+
+  if (messageAttachment) {
+    const attachments = await db.findVectorReuseCandidates({
+      hash,
+      ownerScope,
+      context: USER_OWNED_EMBEDDING_CONTEXT,
+    });
+    return pickVectorReuseSource(attachments) ?? null;
+  }
+
+  const candidates = await db.findVectorReuseCandidates({
+    hash,
+    ownerScope,
+    context: FileContext.agents,
+  });
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const agent = await db.getAgent({ id: agent_id });
+  const agentFileIds = new Set(agent?.tool_resources?.[tool_resource]?.file_ids ?? []);
+  const owned = candidates.filter(({ file_id }) => agentFileIds.has(file_id));
+  return pickVectorReuseSource(owned) ?? null;
+};
+
+/**
  * Applies the current strategy for file uploads.
  * Saves file metadata to the database with an expiry TTL.
  * Files must be deleted from the server filesystem manually.
@@ -919,10 +977,29 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
   // Dual storage pattern for RAG files: Storage + Vector DB
   let storageResult, embeddingResult;
+  let contentHash, vectorId;
   const isImageFile = file.mimetype.startsWith('image');
   const source = getFileStrategy(appConfig, { isImage: isImageFile });
 
   if (tool_resource === EToolResources.file_search) {
+    contentHash = await hashFileContent(file.path);
+    const reuseSource = await findVectorReuseSource({
+      req,
+      hash: contentHash,
+      messageAttachment,
+      agent_id,
+      tool_resource,
+    });
+
+    /* The agent already holds this exact document, so a second record would
+     * only duplicate its knowledge list. Hand back the one it has. */
+    if (reuseSource && !messageAttachment) {
+      return sendUploadSuccess(res, sseStream, 'Agent file already uploaded and processed', {
+        ...reuseSource,
+        temp_file_id,
+      });
+    }
+
     // FIRST: Upload to Storage for permanent backup (S3/local/etc.)
     const { handleFileUpload } = getStrategyFunctions(source);
     const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
@@ -934,15 +1011,23 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       entity_id,
     });
 
-    // SECOND: Upload to Vector DB
-    const { uploadVectors } = require('./VectorDB/crud');
+    // SECOND: Upload to Vector DB, unless identical content is already embedded
+    if (reuseSource) {
+      vectorId = resolveVectorId(reuseSource);
+      embeddingResult = { embedded: true };
+      logger.debug(
+        `[processAgentFileUpload] Reusing embeddings of ${vectorId} for identical upload ${file_id}`,
+      );
+    } else {
+      const { uploadVectors } = require('./VectorDB/crud');
 
-    embeddingResult = await uploadVectors({
-      req,
-      file,
-      file_id,
-      entity_id,
-    });
+      embeddingResult = await uploadVectors({
+        req,
+        file,
+        file_id,
+        entity_id,
+      });
+    }
 
     // Vector status will be stored at root level, no need for metadata
     fileInfoMetadata = {};
@@ -1026,6 +1111,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       model: messageAttachment ? undefined : req.body.model,
       metadata: fileInfoMetadata,
       type: file.mimetype,
+      hash: contentHash,
+      vectorId,
       embedded,
       source,
       height,

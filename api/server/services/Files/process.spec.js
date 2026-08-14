@@ -38,6 +38,14 @@ jest.mock('@librechat/api', () => {
   const RetentionMode = actualDataProvider.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' };
   const getRetentionExpiry = jest.fn(() => ({}));
   return {
+    /* Content-addressed vector reuse is exercised for real in
+     * `process.vectors.spec.js`; these stubs only keep the surrounding
+     * flows running without touching the staged file on disk. */
+    resolveVectorId: jest.fn((file) => file.vectorId || file.file_id),
+    hashFileContent: jest.fn().mockResolvedValue('stub-content-hash'),
+    pickVectorReuseSource: jest.fn(() => undefined),
+    suppressSharedVectorDeletes: jest.fn(async (files) => files),
+    USER_OWNED_EMBEDDING_CONTEXT: actualDataProvider.FileContext.message_attachment,
     sanitizeFilename: jest.fn((n) => n),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
@@ -92,10 +100,13 @@ jest.mock('~/models', () => ({
   deleteFiles: jest.fn(),
   findFileById: jest.fn(),
   getConvo: jest.fn(),
+  getAgent: jest.fn().mockResolvedValue(null),
   getExpiredFiles: jest.fn(),
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
   removeAgentResourceFilesFromAllAgents: jest.fn(),
+  findVectorReuseCandidates: jest.fn().mockResolvedValue([]),
+  countVectorReferences: jest.fn().mockResolvedValue(new Map()),
 }));
 
 jest.mock('~/server/utils/getFileStrategy', () => ({

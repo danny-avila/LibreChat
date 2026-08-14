@@ -1,7 +1,12 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { tool } = require('@librechat/agents/langchain/tools');
-const { generateShortLivedToken, logAxiosError } = require('@librechat/api');
+const {
+  generateShortLivedToken,
+  logAxiosError,
+  resolveVectorId,
+  dedupeByVectorId,
+} = require('@librechat/api');
 const { Tools, EToolResources } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getFiles } = require('~/models');
@@ -71,6 +76,7 @@ const primeFiles = async (options) => {
     }`;
     files.push({
       file_id: file.file_id,
+      vectorId: file.vectorId,
       filename: file.filename,
       fromAgent: agentResourceIds.has(file.file_id),
     });
@@ -105,7 +111,7 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
        */
       const createQueryBody = (file) => {
         const body = {
-          file_id: file.file_id,
+          file_id: resolveVectorId(file),
           query,
           k: 5,
         };
@@ -124,7 +130,9 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
         return body;
       };
 
-      const queryPromises = files.map((file) =>
+      /* Files sharing a vector-store document return identical hits, so one
+       * query per document is enough. */
+      const queryPromises = dedupeByVectorId(files).map((file) =>
         axios
           .post(`${process.env.RAG_API_URL}/query`, createQueryBody(file), {
             headers: {
@@ -132,6 +140,7 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
               'Content-Type': 'application/json',
             },
           })
+          .then((result) => ({ file, result }))
           .catch((error) => {
             logAxiosError({
               message: 'Error encountered in `file_search` while querying file',
@@ -149,12 +158,12 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
       }
 
       const formattedResults = validResults
-        .flatMap((result, fileIndex) =>
+        .flatMap(({ file, result }) =>
           result.data.map(([docInfo, distance]) => ({
             filename: docInfo.metadata.source.split('/').pop(),
             content: docInfo.page_content,
             distance,
-            file_id: files[fileIndex]?.file_id,
+            file_id: file.file_id,
             page: docInfo.metadata.page || null,
           })),
         )

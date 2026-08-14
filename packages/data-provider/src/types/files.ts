@@ -118,6 +118,17 @@ export type TFile = {
   temp_file_id?: string;
   bytes: number;
   embedded: boolean;
+  /**
+   * Hex SHA-256 of the uploaded bytes, present on `file_search` uploads
+   * so identical content can be recognized on a later upload.
+   */
+  hash?: string;
+  /**
+   * The `file_id` the RAG API holds this file's chunks under, present
+   * only when the record borrows another file's embeddings. Resolve
+   * through `resolveVectorId` so files owning their own vectors work too.
+   */
+  vectorId?: string;
   filename: string;
   filepath: string;
   object: 'file';

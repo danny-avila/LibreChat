@@ -53,6 +53,22 @@ const file: Schema<IMongoFile> = new Schema(
     embedded: {
       type: Boolean,
     },
+    hash: {
+      /* Hex SHA-256 of the uploaded bytes. Stamped on `file_search`
+       * uploads so a later upload of identical content can reuse the
+       * embeddings already in the vector store instead of paying to
+       * embed the same document twice. Absent on every other upload
+       * path and on records predating content addressing. */
+      type: String,
+    },
+    vectorId: {
+      /* Set only when this record borrows another file's embeddings:
+       * the `file_id` the RAG API actually holds the chunks under.
+       * Absent means the file owns its own vectors under its own
+       * `file_id` — resolve with `resolveVectorId` rather than reading
+       * this directly. */
+      type: String,
+    },
     type: {
       type: String,
       required: true,
@@ -168,6 +184,8 @@ const file: Schema<IMongoFile> = new Schema(
 
 file.index({ expiredAt: 1 });
 file.index({ createdAt: 1, updatedAt: 1 });
+file.index({ user: 1, hash: 1 }, { partialFilterExpression: { hash: { $type: 'string' } } });
+file.index({ vectorId: 1 }, { partialFilterExpression: { vectorId: { $type: 'string' } } });
 file.index(
   { filename: 1, conversationId: 1, context: 1, tenantId: 1 },
   { unique: true, partialFilterExpression: { context: FileContext.execute_code } },

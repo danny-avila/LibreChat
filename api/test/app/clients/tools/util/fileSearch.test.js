@@ -2,10 +2,15 @@ const axios = require('axios');
 const { ResourceType } = require('librechat-data-provider');
 
 jest.mock('axios');
-jest.mock('@librechat/api', () => ({
-  generateShortLivedToken: jest.fn(),
-  logAxiosError: jest.fn(),
-}));
+jest.mock('@librechat/api', () => {
+  const actual = jest.requireActual('@librechat/api');
+  return {
+    generateShortLivedToken: jest.fn(),
+    logAxiosError: jest.fn(),
+    resolveVectorId: actual.resolveVectorId,
+    dedupeByVectorId: actual.dedupeByVectorId,
+  };
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -47,6 +52,23 @@ describe('fileSearch.js - agent file authorization', () => {
       agentId: 'agent-123',
       resourceType: ResourceType.REMOTE_AGENT,
     });
+  });
+
+  it('carries the vector reference through so borrowed embeddings stay reachable', async () => {
+    const { getFiles } = require('~/models');
+    getFiles.mockResolvedValueOnce([
+      { file_id: 'copy-1', vectorId: 'original-1', filename: 'report.pdf' },
+      { file_id: 'own-1', filename: 'other.pdf' },
+    ]);
+
+    const { files } = await primeFiles({
+      tool_resources: { file_search: { file_ids: ['copy-1', 'own-1'] } },
+    });
+
+    expect(files.map(({ file_id, vectorId }) => ({ file_id, vectorId }))).toEqual([
+      { file_id: 'copy-1', vectorId: 'original-1' },
+      { file_id: 'own-1', vectorId: undefined },
+    ]);
   });
 });
 
@@ -314,5 +336,70 @@ describe('entity_id scoping by file origin', () => {
     });
     await tool.func({ query: 'q' });
     expect(bodiesSent()[0].entity_id).toBeUndefined();
+  });
+
+  it('queries the vector document a borrowed file points at', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      files: [{ file_id: 'copy-1', vectorId: 'original-1', filename: 'report.pdf' }],
+    });
+    await tool.func({ query: 'q' });
+
+    expect(bodiesSent().map((body) => body.file_id)).toEqual(['original-1']);
+  });
+});
+
+describe('files sharing one vector document', () => {
+  const ORIGINAL_RAG_API_URL = process.env.RAG_API_URL;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.RAG_API_URL = 'http://localhost:8000';
+    generateShortLivedToken.mockReturnValue('mock-jwt-token');
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_RAG_API_URL === undefined) {
+      delete process.env.RAG_API_URL;
+    } else {
+      process.env.RAG_API_URL = ORIGINAL_RAG_API_URL;
+    }
+  });
+
+  it('queries each document once and attributes hits to the first holder', async () => {
+    axios.post.mockResolvedValue({
+      data: [[{ page_content: 'shared content', metadata: { source: '/path/report.pdf' } }, 0.1]],
+    });
+
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      files: [
+        { file_id: 'original-1', filename: 'report.pdf' },
+        { file_id: 'copy-1', vectorId: 'original-1', filename: 'report-copy.pdf' },
+      ],
+    });
+    const [, artifact] = await tool.func({ query: 'q' });
+
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(artifact.file_search.sources).toHaveLength(1);
+    expect(artifact.file_search.sources[0].fileId).toBe('original-1');
+  });
+
+  it('attributes surviving hits correctly when an earlier query fails', async () => {
+    axios.post.mockRejectedValueOnce(new Error('RAG down')).mockResolvedValueOnce({
+      data: [[{ page_content: 'from the second file', metadata: { source: '/b.pdf' } }, 0.2]],
+    });
+
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      files: [
+        { file_id: 'file-a', filename: 'a.pdf' },
+        { file_id: 'file-b', filename: 'b.pdf' },
+      ],
+    });
+    const [, artifact] = await tool.func({ query: 'q' });
+
+    expect(artifact.file_search.sources).toHaveLength(1);
+    expect(artifact.file_search.sources[0].fileId).toBe('file-b');
   });
 });

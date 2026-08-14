@@ -9,6 +9,17 @@ export type FileOwnerScope = {
   tenantId?: string | null;
 };
 
+export type VectorReuseQuery = {
+  /** Hex SHA-256 of the newly uploaded bytes. */
+  hash: string;
+  /** Upload context the candidate must share, which pins the vector-store owner. */
+  context: FileContext;
+  /** Restricts candidates to an explicit set, e.g. one agent's knowledge files. */
+  fileIds?: string[];
+  ownerScope: FileOwnerScope;
+  limit?: number;
+};
+
 function withOwnerScope<T extends FilterQuery<IMongoFile>>(
   filter: T,
   ownerScope?: FileOwnerScope,
@@ -55,6 +66,11 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     tenantId?: string | null;
     sourceDispatchedAt?: number;
   }) => Promise<IMongoFile>;
+  findVectorReuseCandidates: (params: VectorReuseQuery) => Promise<IMongoFile[]>;
+  countVectorReferences: (params: {
+    vectorIds: string[];
+    excludeFileIds?: string[];
+  }) => Promise<Map<string, number>>;
   createFile: (data: Partial<IMongoFile>, disableTTL?: boolean) => Promise<IMongoFile | null>;
   updateFile: (
     data: Partial<IMongoFile> & { file_id: string },
@@ -347,6 +363,95 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       );
     }
     return result;
+  }
+
+  /**
+   * Finds already-embedded files whose content hash matches, so a new
+   * upload of identical bytes can point at existing vectors instead of
+   * re-embedding. Candidates are returned oldest-first; the caller picks
+   * one with `pickVectorReuseSource`.
+   *
+   * Records carrying an expiry (retention or the upload TTL) are excluded
+   * because their vectors are on a deletion clock the new upload does not
+   * share.
+   */
+  async function findVectorReuseCandidates({
+    hash,
+    context,
+    fileIds,
+    ownerScope,
+    limit = 20,
+  }: VectorReuseQuery): Promise<IMongoFile[]> {
+    if (!hash || !ownerScope?.userId) {
+      return [];
+    }
+
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const filter = withOwnerScope<FilterQuery<IMongoFile>>(
+      {
+        hash,
+        context,
+        embedded: true,
+        expiredAt: null,
+        expiresAt: null,
+      },
+      ownerScope,
+    );
+
+    if (fileIds) {
+      filter.file_id = { $in: fileIds };
+    }
+
+    return await File.find(filter)
+      .select({ text: 0 })
+      .sort({ createdAt: 1 })
+      .limit(limit)
+      .lean<IMongoFile[]>();
+  }
+
+  /**
+   * Counts, per vector-store document, the files that still rely on it
+   * once `excludeFileIds` (the records being deleted) are set aside. A
+   * file relies on a document either by borrowing it through `vectorId`
+   * or by being the original owner, which stores no `vectorId` of its own.
+   *
+   * Deliberately unscoped by owner: reuse only ever happens within one
+   * user, and counting too broadly leaves vectors in place, whereas
+   * counting too narrowly destroys embeddings another record is using.
+   *
+   * @returns Counts keyed by vector id; ids with no remaining references are absent.
+   */
+  async function countVectorReferences({
+    vectorIds,
+    excludeFileIds,
+  }: {
+    vectorIds: string[];
+    excludeFileIds?: string[];
+  }): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    if (!vectorIds?.length) {
+      return counts;
+    }
+
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const filter: FilterQuery<IMongoFile> = {
+      $or: [{ vectorId: { $in: vectorIds } }, { vectorId: null, file_id: { $in: vectorIds } }],
+    };
+
+    if (excludeFileIds?.length) {
+      filter.file_id = { $nin: excludeFileIds };
+    }
+
+    const references = await File.find(filter)
+      .select({ file_id: 1, vectorId: 1, _id: 0 })
+      .lean<Array<Pick<IMongoFile, 'file_id' | 'vectorId'>>>();
+
+    for (const reference of references) {
+      const vectorId = reference.vectorId || reference.file_id;
+      counts.set(vectorId, (counts.get(vectorId) ?? 0) + 1);
+    }
+
+    return counts;
   }
 
   /**
@@ -677,6 +782,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     getCodeGeneratedFiles,
     getUserCodeFiles,
     claimCodeFile,
+    findVectorReuseCandidates,
+    countVectorReferences,
     createFile,
     updateFile,
     updateFileUsage,

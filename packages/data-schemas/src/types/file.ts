@@ -55,6 +55,19 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   storageRegion?: string;
   object: 'file';
   embedded?: boolean;
+  /**
+   * Hex SHA-256 of the uploaded bytes, stamped on `file_search` uploads
+   * so identical content can be recognized on a later upload. Absent on
+   * other upload paths and on records predating content addressing.
+   */
+  hash?: string;
+  /**
+   * The `file_id` the RAG API holds this file's chunks under, set only
+   * when the record borrows another file's embeddings. Absent means the
+   * file owns its vectors under its own `file_id`; read it through
+   * `resolveVectorId` so both cases are handled.
+   */
+  vectorId?: string;
   type: string;
   context?: string;
   usage: number;
