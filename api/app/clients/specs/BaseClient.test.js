@@ -877,6 +877,40 @@ describe('BaseClient', () => {
       }
     });
 
+    test('persists the Langfuse sampling decision for agent clients using a provider endpoint', async () => {
+      const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      const previousClientName = TestClient.clientName;
+      const previousEndpoint = TestClient.options.endpoint;
+      process.env.LANGFUSE_SAMPLE_RATE = '0';
+      TestClient.clientName = 'agents';
+      TestClient.options.endpoint = 'bedrock';
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      try {
+        const response = await TestClient.sendMessage('Hello, world!', { user: {} });
+
+        expect(response.langfuseSampled).toBe(false);
+        expect(response.langfuseDestinationIds).toEqual([]);
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            endpoint: 'bedrock',
+            langfuseSampled: false,
+            langfuseDestinationIds: [],
+          }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      } finally {
+        if (previousSampleRate == null) {
+          delete process.env.LANGFUSE_SAMPLE_RATE;
+        } else {
+          process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
+        }
+        TestClient.clientName = previousClientName;
+        TestClient.options.endpoint = previousEndpoint;
+      }
+    });
+
     test('persists no Langfuse destination when a sampled trace has no configured export', async () => {
       const envKeys = [
         'LANGFUSE_PUBLIC_KEY',

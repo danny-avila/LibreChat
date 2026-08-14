@@ -152,6 +152,10 @@ jest.mock('@librechat/api', () => ({
   getTransactionsConfig: mockGetTransactionsConfig,
   recordCollectedUsage: mockRecordCollectedUsage,
   createSubagentUsageSink: jest.fn().mockReturnValue(jest.fn()),
+  getLangfuseTraceMessageFields: jest.fn().mockResolvedValue({
+    langfuseSampled: true,
+    langfuseDestinationIds: ['destination-1'],
+  }),
   extractManualSkills: jest.fn().mockReturnValue(undefined),
   injectSkillPrimes: jest.fn().mockReturnValue({
     initialMessages: [],
@@ -404,6 +408,28 @@ describe('createResponse controller', () => {
       'resource recovery required',
       'invalid_request',
       ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+    );
+  });
+
+  it('stores Langfuse trace markers with a persisted response', async () => {
+    const api = require('@librechat/api');
+    const { saveMessage } = require('~/models');
+    api.validateResponseRequest.mockReturnValueOnce({
+      request: { ...req.body, store: true },
+    });
+
+    await createResponse(req, res);
+
+    expect(api.getLangfuseTraceMessageFields).toHaveBeenCalledWith(req.config, 'resp_mock-123');
+    expect(saveMessage).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        messageId: 'resp_mock-123',
+        isCreatedByUser: false,
+        langfuseSampled: true,
+        langfuseDestinationIds: ['destination-1'],
+      }),
+      { context: 'Responses API - save assistant response' },
     );
   });
 

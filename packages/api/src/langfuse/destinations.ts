@@ -11,6 +11,7 @@ import {
 import { normalizeBoolean, resolveTenantCredentials, toBasicAuthorization } from './utils';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { normalizeString } from '~/utils/text';
+import { traceIdForMessage } from './trace';
 
 const DEFAULT_BASE_URL = 'https://cloud.langfuse.com';
 const PROJECT_LOOKUP_TIMEOUT_MS = 10_000;
@@ -258,6 +259,22 @@ export async function getLangfuseTraceDestinationIds(
     return undefined;
   }
   return destinations.map(({ id }) => id as string);
+}
+
+export async function getLangfuseTraceMessageFields(
+  appConfig: AppConfig | undefined,
+  messageId: string,
+): Promise<{ langfuseSampled: boolean; langfuseDestinationIds?: string[] }> {
+  const traceId = traceIdForMessage(messageId);
+  const langfuseSampled = isLangfuseTraceSampled(traceId);
+  return {
+    langfuseSampled,
+    langfuseDestinationIds: await getLangfuseTraceDestinationIds(
+      appConfig,
+      traceId,
+      langfuseSampled,
+    ),
+  };
 }
 
 const centralPublicKey = normalizeString(process.env.LANGFUSE_PUBLIC_KEY);

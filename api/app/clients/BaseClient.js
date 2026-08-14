@@ -13,9 +13,7 @@ const {
   encodeAndFormatVideos,
   getTransactionsConfig,
   encodeAndFormatDocuments,
-  getLangfuseTraceDestinationIds,
-  isLangfuseTraceSampled,
-  traceIdForMessage,
+  getLangfuseTraceMessageFields,
 } = require('@librechat/api');
 const {
   Constants,
@@ -726,10 +724,11 @@ class BaseClient {
       this.abortController.requestCompleted = true;
     }
 
-    const isAgentResponse = isAgentsEndpoint(this.options.endpoint);
-    const langfuseTraceId = isAgentResponse ? traceIdForMessage(responseMessageId) : undefined;
-    const langfuseSampled =
-      langfuseTraceId != null ? isLangfuseTraceSampled(langfuseTraceId) : undefined;
+    const isAgentResponse =
+      this.clientName === EModelEndpoint.agents || isAgentsEndpoint(this.options.endpoint);
+    const langfuseTraceFields = isAgentResponse
+      ? await getLangfuseTraceMessageFields(appConfig, responseMessageId)
+      : undefined;
 
     /** @type {TMessage} */
     const responseMessage = {
@@ -737,14 +736,7 @@ class BaseClient {
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
-      ...(isAgentResponse && {
-        langfuseSampled,
-        langfuseDestinationIds: await getLangfuseTraceDestinationIds(
-          appConfig,
-          langfuseTraceId,
-          langfuseSampled,
-        ),
-      }),
+      ...(langfuseTraceFields ?? {}),
       isEdited,
       model: this.getResponseModel(),
       sender: this.sender,
