@@ -5,6 +5,7 @@ import { createHash } from 'crypto';
 import { FileContext } from 'librechat-data-provider';
 import {
   fileExtension,
+  reclaimOrphanedVectors,
   resolveVectorId,
   hashFileContent,
   dedupeByVectorId,
@@ -185,7 +186,10 @@ describe('suppressSharedVectorDeletes', () => {
     const files = [{ file_id: 'a' }, { file_id: 'b', embedded: false }];
     const count = countingSpy();
 
-    await expect(suppressSharedVectorDeletes(files, count)).resolves.toBe(files);
+    await expect(suppressSharedVectorDeletes(files, count)).resolves.toEqual({
+      files,
+      deferredVectorIds: [],
+    });
     expect(count).not.toHaveBeenCalled();
   });
 
@@ -194,7 +198,8 @@ describe('suppressSharedVectorDeletes', () => {
 
     const result = await suppressSharedVectorDeletes([{ file_id: 'a', embedded: true }], count);
 
-    expect(result).toEqual([{ file_id: 'a', embedded: true }]);
+    expect(result.files).toEqual([{ file_id: 'a', embedded: true }]);
+    expect(result.deferredVectorIds).toEqual([]);
     expect(count).toHaveBeenCalledWith({ vectorIds: ['a'], excludeFileIds: ['a'] });
   });
 
@@ -204,7 +209,8 @@ describe('suppressSharedVectorDeletes', () => {
       countingSpy({ original: 1 }),
     );
 
-    expect(result).toEqual([{ file_id: 'borrower', vectorId: 'original', embedded: false }]);
+    expect(result.files).toEqual([{ file_id: 'borrower', vectorId: 'original', embedded: false }]);
+    expect(result.deferredVectorIds).toEqual(['original']);
   });
 
   it('lets exactly one file in the batch drop shared vectors', async () => {
@@ -216,10 +222,11 @@ describe('suppressSharedVectorDeletes', () => {
       countingSpy(),
     );
 
-    expect(result).toEqual([
+    expect(result.files).toEqual([
       { file_id: 'original', embedded: true },
       { file_id: 'borrower', vectorId: 'original', embedded: false },
     ]);
+    expect(result.deferredVectorIds).toEqual([]);
   });
 
   it('excludes the whole batch from the reference count', async () => {
@@ -249,10 +256,11 @@ describe('suppressSharedVectorDeletes', () => {
       countingSpy({ b: 2 }),
     );
 
-    expect(result).toEqual([
+    expect(result.files).toEqual([
       { file_id: 'a', embedded: true },
       { file_id: 'b', embedded: false },
     ]);
+    expect(result.deferredVectorIds).toEqual(['b']);
   });
 
   it('does not mutate the files it was given', async () => {
@@ -261,5 +269,74 @@ describe('suppressSharedVectorDeletes', () => {
     await suppressSharedVectorDeletes([borrower], countingSpy({ original: 1 }));
 
     expect(borrower.embedded).toBe(true);
+  });
+});
+
+describe('reclaimOrphanedVectors', () => {
+  const countingSpy = (counts: Record<string, number> = {}) =>
+    jest.fn(async () => new Map(Object.entries(counts)));
+
+  it('does nothing when the batch deferred nothing', async () => {
+    const count = countingSpy();
+    const deleteVectors = jest.fn();
+
+    await expect(
+      reclaimOrphanedVectors({ vectorIds: [], countVectorReferences: count, deleteVectors }),
+    ).resolves.toEqual([]);
+    expect(count).not.toHaveBeenCalled();
+    expect(deleteVectors).not.toHaveBeenCalled();
+  });
+
+  /* The concurrent-delete case: this request stood down for a record another
+   * request has since removed, so nothing points at the document any more. */
+  it('drops a document whose last reference went while the batch ran', async () => {
+    const deleteVectors = jest.fn().mockResolvedValue(undefined);
+
+    const reclaimed = await reclaimOrphanedVectors({
+      vectorIds: ['original'],
+      countVectorReferences: countingSpy(),
+      deleteVectors,
+    });
+
+    expect(reclaimed).toEqual(['original']);
+    expect(deleteVectors).toHaveBeenCalledWith('original');
+  });
+
+  it('leaves a document alone while something still references it', async () => {
+    const deleteVectors = jest.fn();
+
+    const reclaimed = await reclaimOrphanedVectors({
+      vectorIds: ['original'],
+      countVectorReferences: countingSpy({ original: 1 }),
+      deleteVectors,
+    });
+
+    expect(reclaimed).toEqual([]);
+    expect(deleteVectors).not.toHaveBeenCalled();
+  });
+
+  it('rechecks without excluding anything, since the batch is already gone', async () => {
+    const count = countingSpy({ kept: 2 });
+
+    await reclaimOrphanedVectors({
+      vectorIds: ['kept', 'orphan'],
+      countVectorReferences: count,
+      deleteVectors: jest.fn().mockResolvedValue(undefined),
+    });
+
+    expect(count).toHaveBeenCalledWith({ vectorIds: ['kept', 'orphan'] });
+  });
+
+  it('reclaims each orphan in one pass', async () => {
+    const deleteVectors = jest.fn().mockResolvedValue(undefined);
+
+    const reclaimed = await reclaimOrphanedVectors({
+      vectorIds: ['a', 'b', 'c'],
+      countVectorReferences: countingSpy({ b: 1 }),
+      deleteVectors,
+    });
+
+    expect(reclaimed).toEqual(['a', 'c']);
+    expect(deleteVectors).toHaveBeenCalledTimes(2);
   });
 });

@@ -30,6 +30,7 @@ const {
   sendUploadSuccess,
   getStorageMetadata,
   pickVectorReuseSource,
+  reclaimOrphanedVectors,
   suppressSharedVectorDeletes,
   USER_OWNED_EMBEDDING_CONTEXT,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
@@ -215,7 +216,10 @@ const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMeth
  */
 const processDeleteRequest = async ({ req, files: requestedFiles }) => {
   const appConfig = req.config;
-  const files = await suppressSharedVectorDeletes(requestedFiles, db.countVectorReferences);
+  const { files, deferredVectorIds } = await suppressSharedVectorDeletes(
+    requestedFiles,
+    db.countVectorReferences,
+  );
   const resolvedFileIds = new Set();
   const failedFileIds = new Set();
   const deletionMethods = {};
@@ -322,6 +326,28 @@ const processDeleteRequest = async ({ req, files: requestedFiles }) => {
       } catch (error) {
         logger.error('Error cleaning up orphaned agent file references', error);
       }
+    }
+
+    /* Runs strictly after this request's records are gone, so a concurrent
+     * delete of the file we stood down for cannot leave the embeddings
+     * stranded — whichever request commits last sees no references left and
+     * clears them. Failure here leaks vectors rather than losing data, so it
+     * must not fail a delete whose metadata is already removed. */
+    try {
+      const reclaimed = await reclaimOrphanedVectors({
+        vectorIds: deferredVectorIds,
+        countVectorReferences: db.countVectorReferences,
+        deleteVectors: (vectorId) =>
+          getDeleteMethod({ source: FileSources.vectordb, deletionMethods })(req, {
+            file_id: vectorId,
+            embedded: true,
+          }),
+      });
+      if (reclaimed.length > 0) {
+        logger.debug(`[processDeleteRequest] Reclaimed shared vectors: ${reclaimed.join(', ')}`);
+      }
+    } catch (error) {
+      logger.error('Error reclaiming shared vectors after delete', error);
     }
   }
 

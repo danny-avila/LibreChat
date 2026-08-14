@@ -527,4 +527,78 @@ describe('deleting files that share vectors', () => {
 
     expect(db.countVectorReferences).not.toHaveBeenCalled();
   });
+
+  /* Two concurrent deletes of files sharing a document each see the other and
+   * stand down; the recheck after this request's records are gone is what
+   * stops the embeddings being stranded. */
+  it('reclaims a document whose last reference went while the delete ran', async () => {
+    const { vectorDelete } = setupDeletes();
+    db.countVectorReferences
+      .mockResolvedValueOnce(new Map([['original-file-id', 1]]))
+      .mockResolvedValueOnce(new Map());
+
+    await processDeleteRequest({
+      req: deleteReq(),
+      files: [
+        {
+          file_id: 'borrower',
+          filepath: '/uploads/report.pdf',
+          source: FileSources.local,
+          embedded: true,
+          vectorId: 'original-file-id',
+        },
+      ],
+    });
+
+    expect(db.countVectorReferences).toHaveBeenLastCalledWith({
+      vectorIds: ['original-file-id'],
+    });
+    expect(vectorDelete).toHaveBeenCalledTimes(1);
+    expect(vectorDelete.mock.calls[0][1]).toEqual({
+      file_id: 'original-file-id',
+      embedded: true,
+    });
+  });
+
+  it('leaves the document alone when the other reference is still there', async () => {
+    const { vectorDelete } = setupDeletes();
+    db.countVectorReferences.mockResolvedValue(new Map([['original-file-id', 1]]));
+
+    await processDeleteRequest({
+      req: deleteReq(),
+      files: [
+        {
+          file_id: 'borrower',
+          filepath: '/uploads/report.pdf',
+          source: FileSources.local,
+          embedded: true,
+          vectorId: 'original-file-id',
+        },
+      ],
+    });
+
+    expect(vectorDelete).not.toHaveBeenCalled();
+  });
+
+  it('does not fail a completed delete when the reclaim errors', async () => {
+    setupDeletes();
+    db.countVectorReferences
+      .mockResolvedValueOnce(new Map([['original-file-id', 1]]))
+      .mockRejectedValueOnce(new Error('mongo blip'));
+
+    const result = await processDeleteRequest({
+      req: deleteReq(),
+      files: [
+        {
+          file_id: 'borrower',
+          filepath: '/uploads/report.pdf',
+          source: FileSources.local,
+          embedded: true,
+          vectorId: 'original-file-id',
+        },
+      ],
+    });
+
+    expect(result.deletedFileIds).toEqual(['borrower']);
+  });
 });

@@ -40,7 +40,8 @@ jest.mock('@librechat/api', () => ({
   resolveVectorId: jest.fn((file) => file.vectorId || file.file_id),
   hashFileContent: jest.fn().mockResolvedValue('stub-content-hash'),
   pickVectorReuseSource: jest.fn(() => undefined),
-  suppressSharedVectorDeletes: jest.fn(async (files) => files),
+  suppressSharedVectorDeletes: jest.fn(async (files) => ({ files, deferredVectorIds: [] })),
+  reclaimOrphanedVectors: jest.fn(async () => []),
   USER_OWNED_EMBEDDING_CONTEXT: 'message_attachment',
 }));
 

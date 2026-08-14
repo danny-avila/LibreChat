@@ -78,6 +78,17 @@ export type VectorReferenceCounter = (params: {
 
 type DeletableFile = VectorFileRef & { embedded?: boolean };
 
+export type SuppressedVectorDeletes<T> = {
+  /** The batch to delete, with shared-vector destruction defused. */
+  files: T[];
+  /**
+   * Vector documents this batch declined to drop because a file outside it
+   * still pointed at them. Recheck these once the batch's metadata is gone —
+   * see `reclaimOrphanedVectors`.
+   */
+  deferredVectorIds: string[];
+};
+
 /**
  * Rewrites a delete batch so that at most one record drops each shared
  * vector-store document, and none do while a file outside the batch still
@@ -92,10 +103,10 @@ type DeletableFile = VectorFileRef & { embedded?: boolean };
 export async function suppressSharedVectorDeletes<T extends DeletableFile>(
   files: T[],
   countVectorReferences: VectorReferenceCounter,
-): Promise<T[]> {
+): Promise<SuppressedVectorDeletes<T>> {
   const embeddedFiles = files.filter((file) => file.embedded === true);
   if (embeddedFiles.length === 0) {
-    return files;
+    return { files, deferredVectorIds: [] };
   }
 
   /** First occurrence of each vector id wins the right to delete it. */
@@ -112,7 +123,9 @@ export async function suppressSharedVectorDeletes<T extends DeletableFile>(
     excludeFileIds: files.map((file) => file.file_id),
   });
 
-  return files.map((file) => {
+  const deferredVectorIds = [...deleters.keys()].filter((vectorId) => !!remaining.get(vectorId));
+
+  const rewritten = files.map((file) => {
     if (file.embedded !== true) {
       return file;
     }
@@ -123,6 +136,39 @@ export async function suppressSharedVectorDeletes<T extends DeletableFile>(
     }
     return { ...file, embedded: false };
   });
+
+  return { files: rewritten, deferredVectorIds };
+}
+
+/**
+ * Drops vector documents that nothing references any more, called once a
+ * delete batch's own metadata is gone.
+ *
+ * Two concurrent deletes of files sharing a document each see the other's
+ * record and both stand down, which would strand the embeddings forever.
+ * Rechecking strictly after a request removes its own records makes that
+ * impossible: for both to stand down again, each recheck would have to
+ * precede the other's delete, and each already follows its own.
+ *
+ * @returns The vector ids actually dropped.
+ */
+export async function reclaimOrphanedVectors({
+  vectorIds,
+  countVectorReferences,
+  deleteVectors,
+}: {
+  vectorIds: string[];
+  countVectorReferences: VectorReferenceCounter;
+  deleteVectors: (vectorId: string) => Promise<unknown>;
+}): Promise<string[]> {
+  if (vectorIds.length === 0) {
+    return [];
+  }
+
+  const remaining = await countVectorReferences({ vectorIds });
+  const orphaned = vectorIds.filter((vectorId) => !remaining.get(vectorId));
+  await Promise.all(orphaned.map((vectorId) => deleteVectors(vectorId)));
+  return orphaned;
 }
 
 /**
