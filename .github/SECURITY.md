@@ -8,7 +8,7 @@ At LibreChat, we prioritize the security of our project and value the contributi
 
 When reporting a security vulnerability, you have the following options to reach out to us:
 
-- **Option 1: GitHub Security Advisory System**: We encourage you to use GitHub's Security Advisory system to report any security vulnerabilities you find. This allows us to receive vulnerability reports directly through GitHub. For more information on how to submit a security advisory report, please refer to the [GitHub Security Advisories documentation](https://docs.github.com/en/code-security/getting-started-with-security-vulnerability-alerts/about-github-security-advisories).
+- **Option 1: GitHub Security Advisory System**: We encourage you to use GitHub's Security Advisory system to report any security vulnerabilities you find. This allows us to receive vulnerability reports directly through GitHub. For more information on how to submit a security advisory report, please refer to the [GitHub Security Advisories documentation](https://docs.github.com/en/code-security/concepts/vulnerability-reporting-and-management/github-advisory-database). To see the list of existing vulnerability reports, visit the [GitHub Security Advisories page](https://github.com/advisories).
 
 - **Option 2: GitHub Issues**: You can initiate first contact via GitHub Issues. However, please note that initial contact through GitHub Issues should not include any sensitive details.
 
