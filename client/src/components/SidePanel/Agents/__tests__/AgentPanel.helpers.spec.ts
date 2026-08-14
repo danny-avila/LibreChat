@@ -10,7 +10,7 @@ import {
   persistAvatarChanges,
   isAvatarUploadOnlyDirty,
   hasPersistedDirtyFields,
-  hasPersistedChange,
+  mayHavePersistedChange,
 } from '../AgentPanel';
 
 const createForm = (): AgentForm => ({
@@ -212,7 +212,7 @@ describe('hasPersistedDirtyFields', () => {
   });
 });
 
-describe('hasPersistedChange', () => {
+describe('mayHavePersistedChange', () => {
   const agent = (overrides: Partial<Agent> = {}): Agent =>
     ({
       id: 'agent_123',
@@ -223,20 +223,24 @@ describe('hasPersistedChange', () => {
       ...overrides,
     }) as Agent;
 
-  it('returns false when anything needed for the comparison is missing', () => {
-    expect(hasPersistedChange(undefined, agent(), agent())).toBe(false);
-    expect(hasPersistedChange({ name: 'Renamed' }, undefined, agent())).toBe(false);
-    expect(hasPersistedChange({ name: 'Renamed' }, agent(), undefined)).toBe(false);
+  it('returns true when anything needed for the comparison is missing', () => {
+    /** Without the expanded agent the comparison cannot be trusted, and reporting no
+     *  change for a save that did change is the worse error. */
+    expect(mayHavePersistedChange(undefined, agent(), agent())).toBe(true);
+    expect(mayHavePersistedChange({ name: 'Renamed' }, undefined, agent())).toBe(true);
+    expect(mayHavePersistedChange({ name: 'Renamed' }, agent(), undefined)).toBe(true);
   });
 
   it('returns true when the stored agent came back changed', () => {
-    expect(hasPersistedChange({ name: 'Renamed' }, agent(), agent({ name: 'Renamed' }))).toBe(true);
+    expect(mayHavePersistedChange({ name: 'Renamed' }, agent(), agent({ name: 'Renamed' }))).toBe(
+      true,
+    );
   });
 
   it('returns true for a reset that cleared an avatar the agent was carrying', () => {
     const previous = agent({ avatar: { filepath: '/images/a.png', source: 'local' } });
 
-    expect(hasPersistedChange({ avatar: null }, previous, agent({ avatar: null }))).toBe(true);
+    expect(mayHavePersistedChange({ avatar: null }, previous, agent({ avatar: null }))).toBe(true);
   });
 
   it('returns false when the server normalized the submission back to the stored value', () => {
@@ -245,7 +249,7 @@ describe('hasPersistedChange', () => {
     const stored = agent({ tools: ['a'], skills: ['keep'] });
 
     expect(
-      hasPersistedChange(
+      mayHavePersistedChange(
         { tools: ['a', 'mcp_rejected'], skills: ['keep', 'deleted'] },
         stored,
         agent({ tools: ['a'], skills: ['keep'] }),
@@ -261,14 +265,14 @@ describe('hasPersistedChange', () => {
     const previous = agent({ model_parameters: parameters(1) });
 
     expect(
-      hasPersistedChange(
+      mayHavePersistedChange(
         { model_parameters: parameters(1) },
         previous,
         agent({ model_parameters: parameters(1) }),
       ),
     ).toBe(false);
     expect(
-      hasPersistedChange(
+      mayHavePersistedChange(
         { model_parameters: parameters(2) },
         previous,
         agent({ model_parameters: parameters(2) }),
@@ -277,8 +281,8 @@ describe('hasPersistedChange', () => {
   });
 
   it('ignores fields the submission did not carry', () => {
-    expect(hasPersistedChange({ name: 'Agent' }, agent({ description: 'before' }), agent())).toBe(
-      false,
-    );
+    expect(
+      mayHavePersistedChange({ name: 'Agent' }, agent({ description: 'before' }), agent()),
+    ).toBe(false);
   });
 });

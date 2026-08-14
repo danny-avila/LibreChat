@@ -247,22 +247,24 @@ export const hasPersistedDirtyFields = (
 };
 
 /**
- * Whether the save left the stored agent different from the one it replaced, across the
- * fields the submission carried. A dirty field is no promise that anything was written:
- * the server can normalize a submission straight back to the stored value, by pruning a
- * skill that no longer exists or by dropping an MCP tool authorization rejects.
+ * Whether the save may have left the stored agent different from the one it replaced,
+ * across the fields the submission carried. A dirty field is no promise that anything was
+ * written: the server can normalize a submission straight back to the stored value, by
+ * pruning a skill that no longer exists or by dropping an MCP tool authorization rejects.
  *
- * Read alongside the dirty check rather than instead of it. An agent loaded through the
- * basic projection carries fewer fields than the update endpoint returns, which reads as
- * a difference; pairing the two keeps an untouched save honest either way.
+ * `previous` must be the expanded agent. A basic projection omits fields the submission
+ * still carries, and the update endpoint answers with their unchanged values, which would
+ * read as a change that never happened. Without it the comparison cannot be trusted and
+ * reports true, leaving the dirty check to decide: claiming nothing changed for a save
+ * that did is the worse error of the two.
  */
-export const hasPersistedChange = (
+export const mayHavePersistedChange = (
   submitted?: AgentUpdateParams,
   previous?: Agent,
   updated?: Agent,
 ): boolean => {
   if (!submitted || !previous || !updated) {
-    return false;
+    return true;
   }
 
   const fields = Object.keys(submitted) as Array<keyof AgentUpdateParams & keyof Agent>;
@@ -384,11 +386,12 @@ export default function AgentPanel() {
   /* Mutations */
   const update = useUpdateAgentMutation({
     onMutate: (variables) => {
-      /** The agent as it stands before the write. The mutation replaces this cache entry
-       *  on success, so it has to be captured here to stay comparable afterwards. */
+      /** The agent as it stands before the write, taken from the expanded query so every
+       *  submitted field is comparable. The mutation replaces this cache entry on success,
+       *  so it has to be captured here to stay comparable afterwards. */
       previousVersionRef.current = agentQuery.data?.version;
       submittedDirtyRef.current = hasPersistedDirtyFields(dirtyFields, getValues('avatar_action'));
-      submittedRef.current = { payload: variables.data, previous: agentQuery.data };
+      submittedRef.current = { payload: variables.data, previous: expandedAgentQuery.data };
     },
     onSuccess: async (data) => {
       const avatarActionState = getValues('avatar_action');
@@ -398,7 +401,7 @@ export default function AgentPanel() {
        *  nothing changed. */
       const persistedEdit =
         submittedDirtyRef.current &&
-        hasPersistedChange(submittedRef.current.payload, submittedRef.current.previous, data);
+        mayHavePersistedChange(submittedRef.current.payload, submittedRef.current.previous, data);
       const noVersionChange =
         !persistedEdit &&
         previousVersionRef.current !== undefined &&

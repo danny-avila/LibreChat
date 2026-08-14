@@ -208,7 +208,7 @@ jest.mock('react-hook-form', () => {
 
 // Import after mocks
 import { dataService } from 'librechat-data-provider';
-import { useGetAgentByIdQuery } from '~/data-provider';
+import { useGetAgentByIdQuery, useGetExpandedAgentByIdQuery } from '~/data-provider';
 import AgentPanel from './AgentPanel';
 
 // Mock useGetAgentByIdQuery
@@ -217,10 +217,7 @@ jest.mock('~/data-provider', () => {
   return {
     ...actual,
     useGetAgentByIdQuery: jest.fn(),
-    useGetExpandedAgentByIdQuery: jest.fn(() => ({
-      data: null,
-      isInitialLoading: false,
-    })),
+    useGetExpandedAgentByIdQuery: jest.fn(),
     useUpdateAgentMutation: actual.useUpdateAgentMutation,
   };
 });
@@ -255,18 +252,22 @@ const mockAgentQuery = (
   mockUseGetAgentByIdQuery: jest.MockedFunction<typeof useGetAgentByIdQuery>,
   agent: Partial<Agent>,
 ) => {
-  mockUseGetAgentByIdQuery.mockReturnValue({
-    data: {
-      id: 'agent-123',
-      author: 'user-123',
-      /** Matches `createMockAgent`, so a field the submission carries but never edits
-       *  compares equal across the update rather than reading as a change. */
-      provider: 'openai',
-      model: 'gpt-4',
-      ...agent,
-    } as Agent,
-    isInitialLoading: false,
-  } as any);
+  const data = {
+    id: 'agent-123',
+    author: 'user-123',
+    /** Matches `createMockAgent`, so a field the submission carries but never edits
+     *  compares equal across the update rather than reading as a change. */
+    provider: 'openai',
+    model: 'gpt-4',
+    ...agent,
+  } as Agent;
+
+  mockUseGetAgentByIdQuery.mockReturnValue({ data, isInitialLoading: false } as any);
+  /** The panel resolves to the expanded query once it has data, and only that projection
+   *  carries every field the submission compares against. */
+  (
+    useGetExpandedAgentByIdQuery as jest.MockedFunction<typeof useGetExpandedAgentByIdQuery>
+  ).mockReturnValue({ data, isInitialLoading: false } as any);
 };
 
 const createMockAgent = (overrides: Partial<Agent> = {}): Agent =>
