@@ -73,13 +73,19 @@ const emailChangeService = createEmailChangeService({
   verifyPassword: (user, password) => comparePassword(user, password, { compare: bcrypt.compare }),
   /** Confirmation is unauthenticated and so has no `req.config`. Resolve the same full
    * principal scope issuance used, otherwise a role, group, or user override of
-   * `registration.allowedDomains` is silently unenforced here. */
+   * `registration.allowedDomains` is silently unenforced here. Deliberately not `withTenant`:
+   * a tenant-less user would fall back to the system context, which suppresses tenant
+   * filtering, so another tenant's override of a shared principal such as the `USER` role
+   * would decide this policy. */
   resolveAllowedDomains: async (user) => {
-    const appConfig = await withTenant(user?.tenantId, () =>
+    const resolveConfig = () =>
       getAppConfig(
         getAppConfigOptionsFromUser({ ...user, id: (user?._id ?? user?.id)?.toString() }),
-      ),
-    );
+      );
+    const tenantId = user?.tenantId;
+    const appConfig = await (tenantId
+      ? tenantStorage.run({ tenantId }, resolveConfig)
+      : resolveConfig());
     return appConfig?.registration?.allowedDomains;
   },
   sendEmail,

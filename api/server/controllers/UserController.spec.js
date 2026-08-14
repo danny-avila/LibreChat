@@ -164,6 +164,49 @@ describe('emailChangeService dependencies', () => {
     );
     expect(getAppConfig).not.toHaveBeenCalledWith(expect.objectContaining({ baseOnly: true }));
   });
+
+  it('resolves a tenant-less domain policy outside the cross-tenant system context', async () => {
+    const { getAppConfig } = require('~/server/services/Config');
+    const { getTenantId, SYSTEM_TENANT_ID } = require('@librechat/data-schemas');
+    let observedTenant = 'unset';
+    getAppConfig.mockImplementation(async () => {
+      observedTenant = getTenantId();
+      return { registration: { allowedDomains: ['allowed.com'] } };
+    });
+
+    await emailChangeDeps.resolveAllowedDomains({
+      _id: '507f1f77bcf86cd799439011',
+      role: 'USER',
+    });
+
+    expect(observedTenant).not.toBe(SYSTEM_TENANT_ID);
+    expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ tenantId: undefined }));
+  });
+
+  it('keeps the domain policy of a tenant user scoped to their own tenant', async () => {
+    const { getAppConfig } = require('~/server/services/Config');
+    const { getTenantId } = require('@librechat/data-schemas');
+    let observedTenant = 'unset';
+    getAppConfig.mockImplementation(async () => {
+      observedTenant = getTenantId();
+      return { registration: { allowedDomains: ['tenant.com'] } };
+    });
+
+    await emailChangeDeps.resolveAllowedDomains({
+      _id: '507f1f77bcf86cd799439011',
+      role: 'USER',
+      tenantId: 'tenant-a',
+    });
+
+    expect(observedTenant).toBe('tenant-a');
+    expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ tenantId: 'tenant-a' }));
+  });
+
+  afterEach(() => {
+    const { getAppConfig } = require('~/server/services/Config');
+    getAppConfig.mockReset();
+    getAppConfig.mockResolvedValue({});
+  });
 });
 
 describe('verifyEmailController', () => {
