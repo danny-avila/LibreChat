@@ -30,7 +30,6 @@ jest.mock('~/Providers', () => {
 });
 
 jest.mock('../Parts', () => ({
-  EditTextPart: () => <div data-testid="edit-text-part" />,
   EmptyText: () => <div data-testid="empty-text" />,
   AgentUpdate: ({ currentAgentId }: { currentAgentId: string }) => (
     <div data-testid="post-steer-agent-update" data-agent-id={currentAgentId} />
@@ -327,6 +326,33 @@ describe('ContentParts — post-steer author re-attribution', () => {
 });
 
 describe('ContentParts — activity phase state', () => {
+  it('renders a completion-appended parent before the final root text', () => {
+    const tool = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: { id: 'tool-1', name: 'search', args: {}, output: 'done' },
+    } as unknown as TMessageContentParts;
+    const final = {
+      type: ContentTypes.TEXT,
+      text: 'Final answer',
+    } as unknown as TMessageContentParts;
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      [ContentTypes.ACTIVITY_LABEL]: 'Completed the full investigation',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+      activity_count: 2,
+      pending: false,
+    } as unknown as TMessageContentParts;
+
+    render(<ContentParts {...baseProps} content={[tool, tool, final, phase]} />);
+
+    const parent = screen.getByTestId('activity-phase-group');
+    const finalPart = screen.getByTestId(`real-part-${ContentTypes.TEXT}`);
+    expect(parent.compareDocumentPosition(finalPart)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(finalPart).toHaveAttribute('data-index', '2');
+  });
+
   it('keeps a streaming cursor when a completed phase marker is the visible tail', () => {
     const phase = {
       type: ContentTypes.ACTIVITY_LABEL,

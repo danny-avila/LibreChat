@@ -203,13 +203,13 @@ describe('extractCodeArtifactText', () => {
   });
 
   describe('skipped categories', () => {
-    it('returns null for pptx when HTML rendering also fails', async () => {
+    it('returns null for presentations when HTML rendering also fails', async () => {
       mockOfficeHtml.mockResolvedValueOnce(null);
       const text = await extractCodeArtifactText(
         Buffer.from('PK'),
         'slides.pptx',
         'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'pptx',
+        'presentation',
       );
       expect(text).toBeNull();
     });
@@ -249,9 +249,21 @@ describe('extractCodeArtifactText', () => {
         Buffer.from('PK'),
         'deck.pptx',
         'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'pptx',
+        'presentation',
       );
       expect(text).toContain('slides');
+    });
+
+    it('returns the HTML rendering for a potx when the producer succeeds', async () => {
+      const html = '<!DOCTYPE html><html><body>template</body></html>';
+      mockOfficeHtml.mockResolvedValueOnce(html);
+      const text = await extractCodeArtifactText(
+        Buffer.from('PK'),
+        'template.potx',
+        'application/vnd.openxmlformats-officedocument.presentationml.template',
+        'presentation',
+      );
+      expect(text).toBe(html);
     });
 
     it('returns the HTML rendering for csv (overriding utf8-text raw output)', async () => {
@@ -422,9 +434,9 @@ describe('extractCodeArtifactText', () => {
       ['deck', 'application/vnd.openxmlformats-officedocument.presentationml.presentation'],
     ])('routes extensionless office files by MIME alone (%s, %s)', async (name, mime) => {
       mockOfficeHtml.mockResolvedValueOnce('<!DOCTYPE html><body>x</body></html>');
-      let category: 'pptx' | 'utf8-text' | 'document' = 'document';
+      let category: 'presentation' | 'utf8-text' | 'document' = 'document';
       if (mime.includes('presentation')) {
-        category = 'pptx';
+        category = 'presentation';
       } else if (mime.startsWith('text/')) {
         category = 'utf8-text';
       }

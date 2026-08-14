@@ -47,3 +47,16 @@ describe('gpt-5.6 tiers', () => {
     expect(getModelMaxTokens('gpt-5', EModelEndpoint.openAI)).toBe(400000);
   });
 });
+
+describe('Gemini 3.7 Flash', () => {
+  it('resolves the 1,048,576-token context window', () => {
+    expect(getModelMaxTokens('gemini-3.7-flash', EModelEndpoint.google)).toBe(1048576);
+  });
+
+  it('matches the longest key over the shorter gemini-3 pattern for aliases', () => {
+    expect(getModelMaxTokens('models/gemini-3.7-flash-latest', EModelEndpoint.google)).toBe(
+      1048576,
+    );
+    expect(getModelMaxTokens('gemini-3', EModelEndpoint.google)).toBe(1000000);
+  });
+});

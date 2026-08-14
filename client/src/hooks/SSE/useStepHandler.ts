@@ -984,6 +984,14 @@ export default function useStepHandler({
               updatedResponse.content,
               phase,
             );
+            if (
+              submission != null &&
+              runStep.index === 0 &&
+              editPrefixOffset > 0 &&
+              currentIndex === editPrefixOffset - 1
+            ) {
+              submission.editPrefixFirstPartFolded = true;
+            }
             updatedResponse = updateContent(
               updatedResponse,
               currentIndex,
@@ -1034,6 +1042,14 @@ export default function useStepHandler({
               contentPart.type || '',
               updatedResponse.content,
             );
+            if (
+              submission != null &&
+              runStep.index === 0 &&
+              editPrefixOffset > 0 &&
+              currentIndex === editPrefixOffset - 1
+            ) {
+              submission.editPrefixFirstPartFolded = true;
+            }
             updatedResponse = updateContent(
               updatedResponse,
               currentIndex,

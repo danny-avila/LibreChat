@@ -8,6 +8,8 @@ import {
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
 import type { RequestBody } from '~/types';
+import { ALLOWED_BODY_FIELDS, isPluginSourced } from '~/utils/env';
+import { isEnabled } from '~/utils/common';
 
 export const mcpToolPattern: RegExp = new RegExp(`^.+${Constants.mcp_delimiter}.+$`);
 
@@ -178,15 +180,18 @@ export function normalizeAgentToolKeys(params: {
   };
 }
 
-const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH|BODY)_[^}]+\}\}/;
-const RUNTIME_BODY_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_BODY_[^}]+\}\}/;
-const RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN = /\{\{LIBRECHAT_BODY_([^}]+)\}\}/g;
-
-const BODY_PLACEHOLDER_FIELDS: Record<string, keyof RequestBody> = {
-  CONVERSATIONID: 'conversationId',
-  PARENTMESSAGEID: 'parentMessageId',
-  MESSAGEID: 'messageId',
-};
+const RUNTIME_CONTEXT_PLACEHOLDER_PATTERN = /\{\{LIBRECHAT_(?:USER|OPENID|GRAPH)_[^}]+\}\}/;
+const BODY_PLACEHOLDER_FIELDS = Object.fromEntries(
+  ALLOWED_BODY_FIELDS.map((field) => [field.toUpperCase(), field]),
+) as Record<string, keyof RequestBody>;
+const RUNTIME_BODY_FIELD_NAMES = Object.keys(BODY_PLACEHOLDER_FIELDS).join('|');
+const RUNTIME_BODY_PLACEHOLDER_PATTERN = new RegExp(
+  `\\{\\{LIBRECHAT_BODY_(?:${RUNTIME_BODY_FIELD_NAMES})\\}\\}`,
+);
+const RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN = new RegExp(
+  `\\{\\{LIBRECHAT_BODY_(${RUNTIME_BODY_FIELD_NAMES})\\}\\}`,
+  'g',
+);
 
 type PlaceholderValue =
   | string
@@ -255,7 +260,10 @@ export function hasCustomUserVars(
 }
 
 function hasRuntimeContextPlaceholder(value: PlaceholderValue): boolean {
-  return hasPlaceholder(value, RUNTIME_CONTEXT_PLACEHOLDER_PATTERN);
+  return (
+    hasPlaceholder(value, RUNTIME_CONTEXT_PLACEHOLDER_PATTERN) ||
+    hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN)
+  );
 }
 
 function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
@@ -277,8 +285,9 @@ function addRuntimeBodyPlaceholderFields(value: PlaceholderValue, fields: Set<st
   if (typeof value === 'string') {
     for (const match of value.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
       const placeholderKey = match[1];
-      if (placeholderKey) {
-        fields.add(BODY_PLACEHOLDER_FIELDS[placeholderKey] ?? placeholderKey);
+      const field = placeholderKey ? BODY_PLACEHOLDER_FIELDS[placeholderKey] : undefined;
+      if (field) {
+        fields.add(field);
       }
     }
     return;
@@ -300,13 +309,18 @@ function addRuntimeBodyPlaceholderFields(value: PlaceholderValue, fields: Set<st
   }
 }
 
+function canResolveRuntimePlaceholders(config: UserScopedConnectionConfig): boolean {
+  return !isUserSourced(config) && !isPluginSourced(config);
+}
+
 /**
  * Trusted YAML/config servers may use per-user/request placeholders that can
  * only be resolved once a real request context exists. User-sourced DB servers
- * deliberately stay sandboxed and only resolve customUserVars.
+ * deliberately stay sandboxed and only resolve customUserVars, while plugin
+ * configs preserve every placeholder literally as a security boundary.
  */
 export function hasRuntimeContextPlaceholders(config: UserScopedConnectionConfig): boolean {
-  if (isUserSourced(config)) {
+  if (!canResolveRuntimePlaceholders(config)) {
     return false;
   }
 
@@ -314,7 +328,7 @@ export function hasRuntimeContextPlaceholders(config: UserScopedConnectionConfig
 }
 
 export function hasRuntimeUrlPlaceholders(config: UserScopedConnectionConfig): boolean {
-  if (isUserSourced(config)) {
+  if (!canResolveRuntimePlaceholders(config)) {
     return false;
   }
 
@@ -322,7 +336,7 @@ export function hasRuntimeUrlPlaceholders(config: UserScopedConnectionConfig): b
 }
 
 export function hasRuntimeBodyPlaceholders(config: UserScopedConnectionConfig): boolean {
-  if (isUserSourced(config)) {
+  if (!canResolveRuntimePlaceholders(config)) {
     return false;
   }
 
@@ -332,7 +346,7 @@ export function hasRuntimeBodyPlaceholders(config: UserScopedConnectionConfig): 
 }
 
 export function getRuntimeBodyPlaceholderFields(config: UserScopedConnectionConfig): string[] {
-  if (isUserSourced(config)) {
+  if (!canResolveRuntimePlaceholders(config)) {
     return [];
   }
 
@@ -366,7 +380,7 @@ export function getMissingRuntimeBodyPlaceholderFields(
  * connection without forcing a reconnect for every invocation.
  */
 export function requiresEphemeralUserConnection(config: UserScopedConnectionConfig): boolean {
-  if (isUserSourced(config)) {
+  if (!canResolveRuntimePlaceholders(config)) {
     return false;
   }
 
@@ -428,6 +442,22 @@ export function isUserSourced(config: Pick<ParsedServerConfig, 'source' | 'dbId'
 }
 
 /**
+ * Resolves the instructions text for a server, mirroring how the inspector fills them:
+ * an enabled flag resolves to the text fetched from the server, while an operator-authored
+ * string is used verbatim. Anything else (`false`, unset) yields no instructions.
+ */
+export function resolveServerInstructions(config: ParsedServerConfig): string | undefined {
+  const declared = config.serverInstructions;
+  if (isEnabled(declared)) return config.resolvedInstructions;
+  return typeof declared === 'string' ? declared : undefined;
+}
+
+export type RedactedServerConfig = Partial<ParsedServerConfig> & {
+  /** True when this config needs chat request fields before it can connect. */
+  requestScoped?: boolean;
+};
+
+/**
  * Allowlist-based sanitization for API responses. Only explicitly listed fields are included;
  * new fields added to ParsedServerConfig are excluded by default until allowlisted here.
  *
@@ -443,8 +473,8 @@ export function isUserSourced(config: Pick<ParsedServerConfig, 'source' | 'dbId'
 export function redactServerSecrets(
   config: ParsedServerConfig,
   options?: { canEdit?: boolean },
-): Partial<ParsedServerConfig> {
-  const safe: Partial<ParsedServerConfig> = {
+): RedactedServerConfig {
+  const safe: RedactedServerConfig = {
     type: config.type,
     url: config.url,
     title: config.title,
@@ -464,6 +494,9 @@ export function redactServerSecrets(
     inspectionFailed: config.inspectionFailed,
     customUserVars: config.customUserVars,
     serverInstructions: config.serverInstructions,
+    /** Safe derived metadata: it exposes no placeholder-bearing value, but lets
+     *  clients attach tools that can only be discovered during a chat turn. */
+    requestScoped: requiresEphemeralUserConnection(config) || undefined,
   };
 
   if (config.apiKey) {
@@ -498,15 +531,15 @@ export function redactServerSecrets(
 
   return Object.fromEntries(
     Object.entries(safe).filter(([, v]) => v !== undefined),
-  ) as Partial<ParsedServerConfig>;
+  ) as RedactedServerConfig;
 }
 
 /** Applies allowlist-based sanitization to a map of server configs. */
 export function redactAllServerSecrets(
   configs: Record<string, ParsedServerConfig>,
   options?: { canEditByServer?: ReadonlyMap<string, boolean> },
-): Record<string, Partial<ParsedServerConfig>> {
-  const result: Record<string, Partial<ParsedServerConfig>> = {};
+): Record<string, RedactedServerConfig> {
+  const result: Record<string, RedactedServerConfig> = {};
   for (const [key, config] of Object.entries(configs)) {
     const canEdit = options?.canEditByServer?.get(key) ?? false;
     result[key] = redactServerSecrets(config, { canEdit });

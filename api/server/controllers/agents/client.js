@@ -2248,17 +2248,25 @@ class AgentClient extends BaseClient {
    */
   /**
    * @deprecated Agent Chain — strip hidden intermediate sequential-agent content
-   * before persistence, keeping only the last part + tool_call parts. Mirrors the
-   * chat path so a HITL resume doesn't persist/emit intermediate outputs the
-   * agent's `hide_sequential_outputs` setting is meant to hide.
+   * before persistence, keeping only the last non-label part + tool_call parts.
+   * Parent activity markers can be appended after the final answer, so physical
+   * array order alone cannot identify the response output that must survive.
    */
   applyHideSequentialOutputsFilter() {
     if (!this.options.agent?.hide_sequential_outputs || !Array.isArray(this.contentParts)) {
       return;
     }
+    let lastOutputIndex = -1;
+    for (let index = this.contentParts.length - 1; index >= 0; index -= 1) {
+      const part = this.contentParts[index];
+      if (part != null && part.type !== ContentTypes.ACTIVITY_LABEL) {
+        lastOutputIndex = index;
+        break;
+      }
+    }
     this.contentParts = this.contentParts.filter(
       (part, index) =>
-        index >= this.contentParts.length - 1 ||
+        index === lastOutputIndex ||
         part.type === ContentTypes.TOOL_CALL ||
         // Steer parts are user speech, not intermediate agent output — dropping
         // one would erase the user's words from the persisted turn.
@@ -2292,26 +2300,39 @@ class AgentClient extends BaseClient {
      *  SDK event lands after the phase closes; scanning retained identities
      *  in an unchanged array would skip that hole and move the bound past the
      *  delayed tool before it arrives. */
+    const previousDefinedIndexes = Object.keys(previousParts)
+      .map(Number)
+      .filter((index) => previousParts[index] != null);
+    const currentDefinedIndexes = Object.keys(this.contentParts)
+      .map(Number)
+      .filter((index) => this.contentParts[index] != null);
     if (previousParts.length === this.contentParts.length) {
-      let unchanged = true;
-      for (let index = 0; index < previousParts.length; index += 1) {
-        if (previousParts[index] !== this.contentParts[index]) {
-          unchanged = false;
-          break;
-        }
-      }
+      const unchanged =
+        previousDefinedIndexes.length === currentDefinedIndexes.length &&
+        previousDefinedIndexes.every(
+          (index, position) =>
+            index === currentDefinedIndexes[position] &&
+            previousParts[index] === this.contentParts[index],
+        );
       if (unchanged) {
         return;
       }
     }
     const retainedIndexes = new Map();
-    for (let index = 0; index < this.contentParts.length; index += 1) {
+    for (const index of currentDefinedIndexes) {
       const part = this.contentParts[index];
       if (part != null) {
         retainedIndexes.set(part, index);
       }
     }
-    for (let markerIndex = 0; markerIndex < this.contentParts.length; markerIndex += 1) {
+    const previousIndexesByPart = new Map();
+    for (const index of previousDefinedIndexes) {
+      const part = previousParts[index];
+      if (part != null) {
+        previousIndexesByPart.set(part, index);
+      }
+    }
+    for (const markerIndex of currentDefinedIndexes) {
       const marker = this.contentParts[markerIndex];
       if (
         marker?.type !== ContentTypes.ACTIVITY_LABEL ||
@@ -2320,24 +2341,63 @@ class AgentClient extends BaseClient {
       ) {
         continue;
       }
-      const previousMarkerIndex = previousParts.indexOf(marker);
-      if (previousMarkerIndex < 0) {
+      const previousMarkerIndex = previousIndexesByPart.get(marker);
+      if (previousMarkerIndex == null) {
         continue;
       }
       const previousStartIndex = Math.min(
         previousMarkerIndex,
         Math.max(0, marker.activity_start_index),
       );
+      const hasExplicitEnd = typeof marker.activity_end_index === 'number';
+      const previousEndIndex = hasExplicitEnd
+        ? Math.max(previousStartIndex, Math.min(previousMarkerIndex, marker.activity_end_index))
+        : previousMarkerIndex;
       let nextStartIndex = markerIndex;
-      for (let index = previousStartIndex; index < previousMarkerIndex; index += 1) {
+      let nextEndIndex = markerIndex;
+      let foundRetainedPart = false;
+      for (const index of previousDefinedIndexes) {
+        if (index < previousStartIndex || index >= previousEndIndex) {
+          continue;
+        }
         const retainedIndex = retainedIndexes.get(previousParts[index]);
         if (retainedIndex != null && retainedIndex < markerIndex) {
-          nextStartIndex = retainedIndex;
-          break;
+          if (!foundRetainedPart) {
+            nextStartIndex = retainedIndex;
+            nextEndIndex = retainedIndex + 1;
+            foundRetainedPart = true;
+          } else {
+            nextStartIndex = Math.min(nextStartIndex, retainedIndex);
+            nextEndIndex = Math.min(markerIndex, Math.max(nextEndIndex, retainedIndex + 1));
+          }
+        }
+      }
+      if (!foundRetainedPart && hasExplicitEnd) {
+        for (const index of previousDefinedIndexes) {
+          if (index < previousEndIndex || index >= previousMarkerIndex) {
+            continue;
+          }
+          const retainedIndex = retainedIndexes.get(previousParts[index]);
+          if (retainedIndex != null && retainedIndex < markerIndex) {
+            nextStartIndex = retainedIndex;
+            nextEndIndex = retainedIndex;
+            break;
+          }
         }
       }
       marker.activity_start_index = nextStartIndex;
+      if (hasExplicitEnd) {
+        marker.activity_end_index = Math.max(nextStartIndex, nextEndIndex);
+      }
     }
+  }
+
+  /** Finalize only a completed root run; HITL interruptions retain their snapshot for resume. */
+  completeActivityPhase(run, activityPhase) {
+    if (typeof run?.getInterrupt === 'function' && run.getInterrupt()?.payload) {
+      return;
+    }
+    activityPhase?.complete?.();
   }
 
   /**
@@ -2904,6 +2964,7 @@ class AgentClient extends BaseClient {
             [Callback.TOOL_ERROR]: logToolError,
           },
         });
+        this.completeActivityPhase(run, activityPhase);
 
         // HITL: if the run paused for tool approval, mark the job
         // `requires_action` + emit the prompt and leave the turn unfinalized
@@ -3278,6 +3339,7 @@ class AgentClient extends BaseClient {
         { callbacks: { [Callback.TOOL_ERROR]: logToolError } },
         commandOptions,
       );
+      this.completeActivityPhase(run, activityPhase);
 
       config.signal = null;
 
@@ -3636,6 +3698,7 @@ class AgentClient extends BaseClient {
    * @param {string} [params.model]
    * @param {OpenAIUsageMetadata} [params.usage]
    * @param {AppConfig['balance']} [params.balance]
+   * @param {AppConfig['transactions']} [params.transactions]
    * @param {string} [params.context='message']
    * @returns {Promise<void>}
    */
@@ -3643,6 +3706,7 @@ class AgentClient extends BaseClient {
     model,
     usage,
     balance,
+    transactions,
     promptTokens,
     completionTokens,
     context = 'message',
@@ -3653,6 +3717,7 @@ class AgentClient extends BaseClient {
           model,
           context,
           balance,
+          transactions,
           messageId: this.responseMessageId,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
@@ -3671,6 +3736,7 @@ class AgentClient extends BaseClient {
           {
             model,
             balance,
+            transactions,
             context: 'reasoning',
             messageId: this.responseMessageId,
             conversationId: this.conversationId,

@@ -1075,7 +1075,7 @@ async function loadToolDefinitionsWrapper({
           connectionTimeout: Time.TWO_MINUTES,
         });
 
-        if (result?.availableTools) {
+        if (result?.availableTools && Object.keys(result.availableTools).length > 0) {
           rememberMCPAvailableTools(serverName, result.availableTools);
           logger.info(`[Tool Definitions] OAuth completed for ${serverName}, tools available`);
           return { serverName, success: true };

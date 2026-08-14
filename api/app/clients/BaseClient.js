@@ -11,6 +11,7 @@ const {
   getReferencedQuotes,
   encodeAndFormatAudios,
   encodeAndFormatVideos,
+  getTransactionsConfig,
   encodeAndFormatDocuments,
   getLangfuseTraceDestinationIds,
   isLangfuseTraceSampled,
@@ -262,11 +263,19 @@ class BaseClient {
    * @param {string} [messageId]
    * @returns {Promise<void>}
    */
-  async recordTokenUsage({ model, balance, promptTokens, completionTokens, messageId }) {
+  async recordTokenUsage({
+    model,
+    balance,
+    messageId,
+    transactions,
+    promptTokens,
+    completionTokens,
+  }) {
     logger.debug('[BaseClient] `recordTokenUsage` not implemented.', {
       model,
       balance,
       messageId,
+      transactions,
       promptTokens,
       completionTokens,
     });
@@ -582,7 +591,8 @@ class BaseClient {
       } else if (editedContent != null) {
         // Handle editedContent for content parts
         if (editedContent && latestMessage.content && Array.isArray(latestMessage.content)) {
-          const { index, text, type } = editedContent;
+          const { index, type } = editedContent;
+          const text = editedContent[type];
           if (index >= 0 && index < latestMessage.content.length) {
             const contentPart = latestMessage.content[index];
             if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
@@ -682,6 +692,7 @@ class BaseClient {
     }
 
     const balanceConfig = getBalanceConfig(appConfig);
+    const transactionsConfig = getTransactionsConfig(appConfig);
     if (
       balanceConfig?.enabled &&
       supportsBalanceCheck[this.options.endpointType ?? this.options.endpoint]
@@ -794,6 +805,7 @@ class BaseClient {
           promptTokens,
           completionTokens,
           balance: balanceConfig,
+          transactions: transactionsConfig,
           /** Note: When using agents, responseMessage.model is the agent ID, not the model */
           model: this.model,
           messageId: this.responseMessageId,
@@ -1295,6 +1307,9 @@ class BaseClient {
       return {
         ...part,
         activity_start_index: part.activity_start_index + phaseIndexOffset,
+        ...(typeof part.activity_end_index === 'number' && {
+          activity_end_index: part.activity_end_index + phaseIndexOffset,
+        }),
       };
     });
 

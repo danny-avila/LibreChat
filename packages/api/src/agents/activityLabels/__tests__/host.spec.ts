@@ -17,7 +17,6 @@ jest.mock('~/endpoints/config/providers', () => ({
   })),
 }));
 jest.mock('~/utils/headers', () => ({ resolveConfigHeaders: jest.fn() }));
-jest.mock('~/utils/env', () => ({ createSafeUser: jest.fn(() => undefined) }));
 
 const appConfig = (endpoints: Record<string, unknown>): AppConfig =>
   ({ endpoints }) as unknown as AppConfig;

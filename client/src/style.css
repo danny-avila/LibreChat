@@ -640,39 +640,6 @@ pre {
   transform: scale(0.95);
 }
 
-.blink {
-  animation: blink 1s linear infinite;
-}
-@keyframes blink {
-  0% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
-@keyframes blink {
-  0% {
-    opacity: 1;
-  }
-  79% {
-    opacity: 1;
-  }
-  80% {
-    opacity: 0;
-  }
-  99% {
-    opacity: 0;
-  }
-  100% {
-    opacity: 1;
-  }
-}
-
 .prose {
   color: var(--tw-prose-body);
   max-width: 65ch;
@@ -1642,16 +1609,6 @@ html {
   text-decoration-line: underline;
   text-underline-offset: 2px;
 }
-@-webkit-keyframes blink {
-  to {
-    visibility: hidden;
-  }
-}
-@keyframes blink {
-  to {
-    visibility: hidden;
-  }
-}
 .hidden-visibility {
   visibility: hidden;
 }
@@ -1719,49 +1676,46 @@ html {
   }
 }
 
-@-webkit-keyframes pulseSize {
+/* Pre-response dot: enters on the streamed-text fade curve, then breathes
+   on opacity — replaces the legacy scale throb so waiting and text arrival
+   share one motion language.
+
+   Custom CSS exception: this indicator is a `::after` pseudo-element on the
+   `.result-thinking` hook, shown only while an ancestor carries `.submitting`
+   and the hook itself is `:empty`. No `@librechat/client` primitive can
+   express "render only while an ancestor is in state X and I have no
+   children" — a component would have to own that state, which the streaming
+   markdown path deliberately keeps in the DOM so the dot costs no React
+   renders per token. Scoped to the one selector, colored from
+   `--text-primary` so both themes follow, and disabled under
+   prefers-reduced-motion. */
+@keyframes lc-dot-breathe {
   0%,
-  to {
-    -webkit-transform: scaleX(1);
-    transform: scaleX(1);
+  100% {
+    opacity: 1;
   }
   50% {
-    -webkit-transform: scale3d(1.25, 1.25, 1);
-    transform: scale3d(1.25, 1.25, 1);
-  }
-}
-@keyframes pulseSize {
-  0%,
-  to {
-    -webkit-transform: scaleX(1);
-    transform: scaleX(1);
-  }
-  50% {
-    -webkit-transform: scale3d(1.25, 1.25, 1);
-    transform: scale3d(1.25, 1.25, 1);
+    opacity: 0.3;
   }
 }
 .submitting .result-thinking:empty:last-child:after {
-  -webkit-font-smoothing: subpixel-antialiased;
-  -webkit-animation: pulseSize 1.25s ease-in-out infinite;
-  animation: pulseSize 1.25s ease-in-out infinite;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  background-color: #0d0d0d;
+  animation:
+    lc-fade-in 250ms ease-out both,
+    lc-dot-breathe 1.5s ease-in-out 250ms infinite;
   background-color: rgb(var(--text-primary));
   border-radius: 50%;
-  box-sizing: border-box;
   content: ' ';
   display: block;
   height: 12px;
   position: absolute;
   top: -11px;
-  -webkit-transform: translateZ(0);
-  transform: translateZ(0);
-  -webkit-transform-origin: center;
-  transform-origin: center;
   width: 12px;
-  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .submitting .result-thinking:empty:last-child:after {
+    animation: none;
+  }
 }
 
 .shadow-stroke {
@@ -1928,30 +1882,6 @@ html {
   [data-lc-fade] {
     animation: none;
   }
-}
-
-/* Pre-first-token dot, restyled to match the word fade: it fades in on the
-   same curve rather than popping, then breathes on opacity instead of the
-   classic size throb, so "run starting" and "text arriving" read as one
-   system. Only applied while the fade is active; without it the dot keeps
-   its original pulseSize behavior. */
-@keyframes lc-dot-breathe {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: translateZ(0) scale(0.85);
-  }
-  50% {
-    opacity: 1;
-    transform: translateZ(0) scale(1);
-  }
-}
-
-.submitting .result-thinking.result-thinking-fade:empty:last-child:after {
-  animation:
-    lc-fade-in 250ms ease-out both,
-    lc-dot-breathe 1.6s ease-in-out 250ms infinite;
-  will-change: opacity, transform;
 }
 
 .webkit-dark-styles,
@@ -2168,9 +2098,10 @@ html {
   transform-origin: 50% 50%;
 }
 
-.message-content {
+.message-content,
+.message-editor-text {
   font-size: var(--markdown-font-size, var(--font-size-base));
-  line-height: 1.4;
+  line-height: 1.6;
 }
 
 .message-content pre code {

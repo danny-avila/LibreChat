@@ -11,10 +11,11 @@ import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
-import { EditTextPart, EmptyText, AgentUpdate } from './Parts';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
+import EditContentParts from './EditContentParts';
+import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
@@ -153,6 +154,8 @@ type ContentPartsProps = {
   nestedActivityPhase?: boolean;
   /** Absolute transcript index represented by `content[0]` in a phase slice. */
   contentIndexOffset?: number;
+  /** Absolute transcript index for each compacted sparse segment entry. */
+  contentIndices?: ReadonlyArray<number>;
   /** Message-wide steer attribution retained across nested phase segments. */
   resumeAuthors?: ReadonlyMap<number, string | undefined>;
   /** Message-wide tool-group expansion overrides retained across phase slices. */
@@ -184,6 +187,7 @@ const ContentParts = memo(function ContentParts({
   createdAt,
   nestedActivityPhase = false,
   contentIndexOffset = 0,
+  contentIndices,
   resumeAuthors,
   toolGroupExpansionState,
 }: ContentPartsProps) {
@@ -200,6 +204,17 @@ const ContentParts = memo(function ContentParts({
     fallbackScopeRef.current.messageId = messageId;
   }
   const fallbackScope = fallbackScopeRef.current.scope;
+  const localIndexByAbsolute = useMemo(
+    () =>
+      contentIndices == null
+        ? undefined
+        : new Map(contentIndices.map((absoluteIndex, localIndex) => [absoluteIndex, localIndex])),
+    [contentIndices],
+  );
+  const absoluteIndexAt = useCallback(
+    (localIndex: number) => contentIndices?.[localIndex] ?? localIndex + contentIndexOffset,
+    [contentIndexOffset, contentIndices],
+  );
 
   const handleGroupExpansionChange = useCallback(
     (groupId: string, state: ToolCallGroupExpansionState) => {
@@ -271,7 +286,7 @@ const ContentParts = memo(function ContentParts({
 
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
-      const localIdx = idx - contentIndexOffset;
+      const localIdx = localIndexByAbsolute?.get(idx) ?? idx - contentIndexOffset;
       return (
         <PartWithContext
           key={`provider-${messageId}-${idx}`}
@@ -296,6 +311,7 @@ const ContentParts = memo(function ContentParts({
       attachmentMap,
       content,
       contentIndexOffset,
+      localIndexByAbsolute,
       conversationId,
       effectiveIsSubmitting,
       isCreatedByUser,
@@ -307,7 +323,7 @@ const ContentParts = memo(function ContentParts({
 
   const renderGroupedPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean, onToolExpand?: () => void) => {
-      const localIdx = idx - contentIndexOffset;
+      const localIdx = localIndexByAbsolute?.get(idx) ?? idx - contentIndexOffset;
       return (
         <PartWithContext
           key={`provider-${messageId}-${idx}`}
@@ -334,6 +350,7 @@ const ContentParts = memo(function ContentParts({
       attachmentMap,
       content,
       contentIndexOffset,
+      localIndexByAbsolute,
       conversationId,
       effectiveIsSubmitting,
       isCreatedByUser,
@@ -362,7 +379,7 @@ const ContentParts = memo(function ContentParts({
       if (!part) {
         return;
       }
-      const idx = localIdx + contentIndexOffset;
+      const idx = absoluteIndexAt(localIdx);
       if (prevType === ContentTypes.STEER && part.type !== ContentTypes.STEER) {
         authors.set(idx, activeAgentId);
       }
@@ -373,7 +390,7 @@ const ContentParts = memo(function ContentParts({
       parts.push({ part, idx });
     });
     return { sequentialParts: parts, detectedResumeAuthors: authors };
-  }, [content, contentIndexOffset]);
+  }, [absoluteIndexAt, content]);
   const postSteerAuthors = resumeAuthors ?? detectedResumeAuthors;
 
   const groupedParts = useMemo(
@@ -414,45 +431,24 @@ const ContentParts = memo(function ContentParts({
     return null;
   }
 
-  // Edit mode: render editable text parts. Interim skill cards are a
-  // mid-stream concern, not relevant in edit mode.
+  // Interim skill cards are a mid-stream concern, not relevant in edit mode.
   if (edit === true && enterEdit && setSiblingIdx) {
     return (
-      <>
-        {(content ?? []).map((part, localIdx) => {
-          if (!part) {
-            return null;
-          }
-          const idx = localIdx + contentIndexOffset;
-          const isTextPart =
-            part?.type === ContentTypes.TEXT ||
-            typeof (part as unknown as Agents.MessageContentText)?.text === 'string';
-          const isThinkPart =
-            part?.type === ContentTypes.THINK ||
-            typeof (part as unknown as Agents.ReasoningDeltaUpdate)?.think === 'string';
-          if (!isTextPart && !isThinkPart) {
-            return null;
-          }
-
-          const isToolCall = part.type === ContentTypes.TOOL_CALL || part['tool_call_ids'] != null;
-          if (isToolCall) {
-            return null;
-          }
-
-          return (
-            <EditTextPart
-              index={idx}
-              part={part as Agents.MessageContentText | Agents.ReasoningDeltaUpdate}
-              messageId={messageId}
-              isSubmitting={isSubmitting}
-              enterEdit={enterEdit}
-              siblingIdx={siblingIdx ?? null}
-              setSiblingIdx={setSiblingIdx}
-              key={`edit-${messageId}-${idx}`}
-            />
-          );
-        })}
-      </>
+      <ApprovalProvider>
+        <SearchContext.Provider value={{ searchResults }}>
+          <MemoryArtifacts attachments={attachments} />
+          <EditContentParts
+            content={content ?? []}
+            contentIndexOffset={contentIndexOffset}
+            messageId={messageId}
+            isSubmitting={isSubmitting}
+            enterEdit={enterEdit}
+            siblingIdx={siblingIdx ?? null}
+            setSiblingIdx={setSiblingIdx}
+            renderReadOnlyPart={(part, idx, isLastPart) => renderPart(part, idx, isLastPart)}
+          />
+        </SearchContext.Provider>
+      </ApprovalProvider>
     );
   }
 
@@ -460,13 +456,13 @@ const ContentParts = memo(function ContentParts({
   if (phaseSegments != null) {
     const relativeGlobalLastContentIdx = lastVisibleContentIdx(content ?? []);
     const globalLastContentIdx =
-      relativeGlobalLastContentIdx < 0 ? -1 : relativeGlobalLastContentIdx + contentIndexOffset;
+      relativeGlobalLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeGlobalLastContentIdx);
     const renderSegment = (
       segmentContent: Array<TMessageContentParts | undefined>,
       segmentStartIndex: number,
+      segmentIndices: ReadonlyArray<number>,
       key: string,
     ) => {
-      const localLastContentIdx = globalLastContentIdx - segmentStartIndex;
       return (
         <ContentParts
           key={key}
@@ -478,11 +474,12 @@ const ContentParts = memo(function ContentParts({
           attachments={attachments}
           searchResults={searchResults}
           isCreatedByUser={isCreatedByUser}
-          isLast={isLast && segmentContent[localLastContentIdx] != null}
+          isLast={isLast && segmentIndices.includes(globalLastContentIdx)}
           isSubmitting={isSubmitting}
           isLatestMessage={isLatestMessage}
           nestedActivityPhase
           contentIndexOffset={segmentStartIndex}
+          contentIndices={segmentIndices}
           resumeAuthors={postSteerAuthors}
           toolGroupExpansionState={expansionState}
         />
@@ -506,19 +503,21 @@ const ContentParts = memo(function ContentParts({
                 showCursor={
                   isLast &&
                   effectiveIsSubmitting &&
-                  segment.labelIndex + contentIndexOffset === globalLastContentIdx
+                  absoluteIndexAt(segment.labelIndex) === globalLastContentIdx
                 }
               >
                 {renderSegment(
                   segment.content,
-                  segment.startIndex + contentIndexOffset,
+                  absoluteIndexAt(segment.startIndex),
+                  segment.contentIndices.map(absoluteIndexAt),
                   `phase-content-${index}`,
                 )}
               </ActivityPhaseGroup>
             ) : (
               renderSegment(
                 segment.content,
-                segment.startIndex + contentIndexOffset,
+                absoluteIndexAt(segment.startIndex),
+                segment.contentIndices.map(absoluteIndexAt),
                 `phase-adjacent-${index}`,
               )
             ),
@@ -534,8 +533,7 @@ const ContentParts = memo(function ContentParts({
    *  counting one as last would strip the streaming cursor from the last
    *  VISIBLE part until the next delta. */
   const relativeLastContentIdx = lastVisibleContentIdx(safeContent);
-  const lastContentIdx =
-    relativeLastContentIdx < 0 ? -1 : relativeLastContentIdx + contentIndexOffset;
+  const lastContentIdx = relativeLastContentIdx < 0 ? -1 : absoluteIndexAt(relativeLastContentIdx);
 
   // Parallel content: use dedicated renderer with columns (TMessageContentParts includes ContentMetadata)
   const hasParallelContent = safeContent.some((part) => part?.groupId != null);
@@ -555,6 +553,7 @@ const ContentParts = memo(function ContentParts({
           renderResumeAttribution={renderResumeAttribution}
           showDecorations={!nestedActivityPhase}
           contentIndexOffset={contentIndexOffset}
+          contentIndices={contentIndices}
         />
       </>
     );

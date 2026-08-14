@@ -20,4 +20,24 @@ describe('groupParallelContent', () => {
     expect(grouped.sequentialParts).toEqual([{ part: sequential, idx: 4 }]);
     expect(grouped.parallelSections[0]?.columns[0]?.parts).toEqual([{ part: parallel, idx: 5 }]);
   });
+
+  test('preserves absolute indices for a compacted sparse phase segment', () => {
+    const sequential = {
+      type: ContentTypes.TEXT,
+      text: 'before lanes',
+    } as unknown as TMessageContentParts;
+    const parallel = {
+      type: ContentTypes.TEXT,
+      text: 'lane result',
+      groupId: 1,
+      agentId: 'agent-1',
+    } as unknown as TMessageContentParts;
+
+    const grouped = groupParallelContent([sequential, parallel], 0, [2, 10_000]);
+
+    expect(grouped.sequentialParts).toEqual([{ part: sequential, idx: 2 }]);
+    expect(grouped.parallelSections[0]?.columns[0]?.parts).toEqual([
+      { part: parallel, idx: 10_000 },
+    ]);
+  });
 });

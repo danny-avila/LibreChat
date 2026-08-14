@@ -8,8 +8,9 @@ import type {
   TLangfuseConnectionTestErrorCode,
   TLangfuseConnectionTestRequest,
   TLangfuseConnectionTestResponse,
+  TLangfuseSessionLinkResponse,
 } from 'librechat-data-provider';
-import type { IConfig } from '@librechat/data-schemas';
+import type { IConfig, MessageMethods } from '@librechat/data-schemas';
 import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { LangfuseTenantDestination } from '~/langfuse/tenantDestinations';
@@ -19,6 +20,7 @@ import {
   resolveLangfuseTenantDestination,
 } from '~/langfuse/tenantDestinations';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
+import { getLangfuseDestinationId } from '~/langfuse/destinations';
 import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
 
 const DEFAULT_PRIORITY = 10;
@@ -46,6 +48,7 @@ export interface AdminLangfuseDeps {
     isActive: boolean,
     session?: ClientSession,
   ) => Promise<IConfig | null>;
+  getMessages: MessageMethods['getMessages'];
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
 }
 
@@ -223,11 +226,17 @@ async function verifyLangfuseCredentials(
  */
 export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   getConnection: (req: ServerRequest, res: Response) => Promise<Response>;
+  getSessionLink: (req: ServerRequest, res: Response) => Promise<Response>;
   updateConnection: (req: ServerRequest, res: Response) => Promise<Response>;
   testConnection: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
-  const { findConfigByPrincipal, patchConfigFields, toggleConfigActive, invalidateConfigCaches } =
-    deps;
+  const {
+    findConfigByPrincipal,
+    patchConfigFields,
+    toggleConfigActive,
+    getMessages,
+    invalidateConfigCaches,
+  } = deps;
 
   function findBaseConfig(options?: { includeInactive?: boolean }): Promise<IConfig | null> {
     return options
@@ -247,6 +256,57 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     } catch (error) {
       logger.error('[adminLangfuse] getConnection error:', error);
       return res.status(500).json({ error: 'Failed to read Langfuse connection' });
+    }
+  }
+
+  async function getSessionLink(req: ServerRequest, res: Response): Promise<Response> {
+    const disabledResponse = rejectWhenConnectionUnavailable(res);
+    if (disabledResponse) {
+      return disabledResponse;
+    }
+
+    const conversationId = (req.params as { conversationId?: string }).conversationId?.trim();
+    const userId = req.user?.id ?? req.user?._id?.toString();
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (!conversationId) {
+      return res.status(400).json({ error: 'conversationId is required' });
+    }
+
+    try {
+      const stored = readStoredLangfuse(await findBaseConfig());
+      const destination = resolveLangfuseTenantDestination(stored?.destination);
+      const projectId = stored?.projectId?.trim();
+      if (stored?.enabled !== true || !destination || !projectId) {
+        const response: TLangfuseSessionLinkResponse = { url: null };
+        return res.status(200).json(response);
+      }
+
+      const destinationId = getLangfuseDestinationId(destination.baseUrl, projectId);
+      const messages = await getMessages(
+        {
+          user: userId,
+          conversationId,
+          langfuseSampled: true,
+          langfuseDestinationIds: destinationId,
+        },
+        '_id',
+        { sort: false, limit: 1 },
+      );
+      if (messages.length === 0) {
+        const response: TLangfuseSessionLinkResponse = { url: null };
+        return res.status(200).json(response);
+      }
+
+      const sessionUrl = new URL(destination.baseUrl);
+      const basePath = sessionUrl.pathname.replace(/\/+$/, '');
+      sessionUrl.pathname = `${basePath}/project/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(conversationId)}`;
+      const response: TLangfuseSessionLinkResponse = { url: sessionUrl.toString() };
+      return res.status(200).json(response);
+    } catch (error) {
+      logger.error('[adminLangfuse] getSessionLink error:', error);
+      return res.status(500).json({ error: 'Failed to resolve Langfuse session' });
     }
   }
 
@@ -418,5 +478,5 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     }
   }
 
-  return { getConnection, updateConnection, testConnection };
+  return { getConnection, getSessionLink, updateConnection, testConnection };
 }
