@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
 
 /**
@@ -52,6 +53,8 @@ export interface CodeHarvestDeps {
     agentId?: string;
     session_id?: string;
     freshClaimAfter?: number;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
   }) => Promise<ProcessedCodeOutput | null>;
   /** Host file service: runs the deferred office-preview extraction. */
   runPreviewFinalize: (params: {
@@ -75,6 +78,7 @@ export interface CodeHarvestParams {
   dispatchedAt?: number;
   output?: string;
   artifact?: unknown;
+  codeExecutionContext?: CodeExecutionContext;
   attachments?: unknown[];
   reapply?: boolean;
 }
@@ -111,6 +115,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
     dispatchedAt,
     output,
     artifact,
+    codeExecutionContext,
     attachments: knownAttachments,
     reapply,
   }) => {
@@ -161,6 +166,8 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
           agentId,
           session_id: file.storage_session_id ?? codeArtifact.session_id,
           freshClaimAfter,
+          codeApiBaseUrl: codeExecutionContext?.baseUrl,
+          executionProfile: codeExecutionContext?.executionProfile,
         });
         if (result?.file) {
           attachments.push(result.file);

@@ -2,7 +2,7 @@ import { resolveCodeExecutionContext } from './execution';
 
 jest.mock('@librechat/agents', () => ({
   Constants: { EXECUTE_CODE: 'execute_code' },
-  getCodeBaseURL: jest.fn(() => 'http://code-default.test/v1/'),
+  getCodeBaseURL: jest.fn(() => 'http://code-default.test/v1///'),
 }));
 
 describe('resolveCodeExecutionContext', () => {
@@ -42,7 +42,7 @@ describe('resolveCodeExecutionContext', () => {
   });
 
   it('defaults stateful agents to one environment per authenticated user', () => {
-    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1/';
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1///';
 
     expect(resolveCodeExecutionContext({ statefulSessions: true, userId: 'user-1' })).toEqual({
       baseUrl: 'http://code-stateful.test/v1',

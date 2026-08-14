@@ -10,6 +10,7 @@ const {
   appendCodeEnvFileIdentity,
   buildCodeEnvDownloadQuery,
   getCodeApiAuthHeaders,
+  CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
 
 const axios = createAxiosInstance();
@@ -24,12 +25,15 @@ const MAX_FILE_SIZE = 150 * 1024 * 1024;
  *   matching sessionKey. For code-output downloads this is always
  *   `kind: 'user', id: <userId>`; for skill/agent re-downloads pass
  *   the kind+id (+version for skill) from the file's `metadata.codeEnvRef`.
+ * @param {ServerRequest} req - Current authenticated request.
+ * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful'}} [route]
+ *   Trusted host-selected Code API route.
  * @returns {Promise<AxiosResponse>} A promise that resolves to a readable stream of the file content.
  * @throws {Error} If there's an error during the download process.
  */
-async function getCodeOutputDownloadStream(fileIdentifier, identity, req) {
+async function getCodeOutputDownloadStream(fileIdentifier, identity, req, route = {}) {
   try {
-    const baseURL = getCodeBaseURL();
+    const baseURL = route.baseUrl ?? getCodeBaseURL();
     const query = buildCodeEnvDownloadQuery(identity);
     const authHeaders = await getCodeApiAuthHeaders(req);
     /** @type {import('axios').AxiosRequestConfig} */
@@ -40,6 +44,9 @@ async function getCodeOutputDownloadStream(fileIdentifier, identity, req) {
       headers: {
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
+        ...(route.executionProfile
+          ? { [CODE_API_EXPECTED_PROFILE_HEADER]: route.executionProfile }
+          : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,

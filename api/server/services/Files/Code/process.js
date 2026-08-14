@@ -17,6 +17,7 @@ const {
   extractCodeArtifactText,
   getExtractedTextFormat,
   getStorageMetadata,
+  getCodeExecutionBaseUrl,
   buildCodeEnvDownloadQuery,
   CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
@@ -54,6 +55,7 @@ const axios = createAxiosInstance();
  * @param {string} params.toolCallId - The tool call ID that generated the file.
  * @param {string} params.messageId - The current message ID.
  * @param {number} params.expiresAt - Expiration timestamp (24 hours from creation).
+ * @param {'default'|'stateful'} [params.executionProfile] - Code API route for later fallback download.
  * @returns {Object} Fallback response with download URL.
  */
 const createDownloadFallback = ({
@@ -65,11 +67,13 @@ const createDownloadFallback = ({
   session_id,
   toolCallId,
   conversationId,
+  executionProfile,
 }) => {
   const basePath = getBasePath();
+  const profileQuery = executionProfile === 'stateful' ? '?execution_profile=stateful' : '';
   return {
     filename: name,
-    filepath: `${basePath}/api/files/code/download/${session_id}/${id}`,
+    filepath: `${basePath}/api/files/code/download/${session_id}/${id}${profileQuery}`,
     expiresAt,
     conversationId,
     toolCallId,
@@ -315,6 +319,8 @@ const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) =
  * @param {string} params.session_id - The code execution session ID.
  * @param {string} params.conversationId - The current conversation ID.
  * @param {string} params.messageId - The current message ID.
+ * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
+ * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
  * @returns {Promise<{ file: MongoFile & { messageId: string, toolCallId: string }, finalize?: () => Promise<MongoFile | null> }>}
  */
 const processCodeOutput = async ({
@@ -327,10 +333,12 @@ const processCodeOutput = async ({
   session_id,
   agentId,
   freshClaimAfter,
+  codeApiBaseUrl,
+  executionProfile = 'default',
 }) => {
   const appConfig = req.config;
   const currentDate = new Date();
-  const baseURL = getCodeBaseURL();
+  const baseURL = codeApiBaseUrl ?? getCodeExecutionBaseUrl(executionProfile);
   const fileExt = path.extname(name).toLowerCase();
   const isImage = fileExt && imageExtRegex.test(name);
 
@@ -357,6 +365,7 @@ const processCodeOutput = async ({
       headers: {
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
+        [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile,
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -379,6 +388,7 @@ const processCodeOutput = async ({
           toolCallId,
           session_id,
           conversationId,
+          executionProfile,
           expiresAt: currentDate.getTime() + 86400000,
         }),
       };
@@ -525,6 +535,7 @@ const processCodeOutput = async ({
         usage,
         filename: safeName,
         conversationId,
+        executionProfile,
         user: req.user.id,
         tenantId: req.user.tenantId,
         type: `image/${appConfig.imageOutputType}`,
@@ -555,6 +566,7 @@ const processCodeOutput = async ({
           toolCallId,
           session_id,
           conversationId,
+          executionProfile,
           expiresAt: currentDate.getTime() + 86400000,
         }),
       };
@@ -732,6 +744,7 @@ const processCodeOutput = async ({
         toolCallId,
         session_id,
         conversationId,
+        executionProfile,
         expiresAt: currentDate.getTime() + 86400000,
       }),
     };

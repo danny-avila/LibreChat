@@ -102,6 +102,7 @@ export interface ToolExecuteOptions {
     dispatchedAt?: number;
     output?: string;
     artifact?: unknown;
+    codeExecutionContext?: CodeExecutionContext;
     attachments?: unknown[];
     reapply?: boolean;
   }) => Promise<{ attachments?: unknown[] } | null>;
@@ -3802,8 +3803,24 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               sourceConfigurable,
               loadedConfigurable,
             );
-            const runtimeSessionHint =
-              getCodeExecutionContext(mergedConfigurable)?.runtimeSessionHint;
+            const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
+            const runtimeSessionHint = codeExecutionContext?.runtimeSessionHint;
+            const sandboxConversationId =
+              ((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
+              (mergedConfigurable?.thread_id as string | undefined) ??
+              (
+                (mergedConfigurable?.req as ServerRequest | undefined)?.body as
+                  | { conversationId?: string }
+                  | undefined
+              )?.conversationId;
+            const markCodeSandboxWarm = (): void => {
+              if (runtimeSessionHint) {
+                void markSandboxReady(runtimeSessionHint);
+              }
+              if (sandboxConversationId) {
+                void markSandboxReady(sandboxConversationId);
+              }
+            };
             const authoringQueues = new Map<string, Promise<void>>();
             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
 
@@ -3914,6 +3931,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                          *  after a newer run wrote the same filename must not
                          *  overwrite it. */
                         dispatchedAt: task.createdAt,
+                        codeExecutionContext,
                         ...params,
                       });
                       if (persisted == null) {
@@ -3963,8 +3981,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       configurable: mergedConfigurable,
                       metadata,
                     } as Record<string, unknown>)) as { content?: unknown; artifact?: unknown };
-                    if (runtimeSessionHint) {
-                      void markSandboxReady(runtimeSessionHint);
+                    if (isCodeCall) {
+                      markCodeSandboxWarm();
                     }
                     const content =
                       isCodeCall && typeof result.content === 'string'
@@ -4057,7 +4075,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                               artifact: pending.artifact,
                             },
                           },
-                          (metadata ?? {}) as ToolEndCallbackMetadata,
+                          {
+                            ...(metadata ?? {}),
+                            executingAgentId: agentId,
+                          } as ToolEndCallbackMetadata,
                         );
                       } catch (callbackError) {
                         /** Only synchronous callback throws land here (e.g. a
@@ -4277,6 +4298,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                             | string
                             | undefined,
                           ...metadata,
+                          executingAgentId: agentId,
+                          codeExecutionContext,
                         },
                       );
                     }
@@ -4292,7 +4315,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       handlerResult.status === 'success' &&
                       runtimeSessionHint
                     ) {
-                      void markSandboxReady(runtimeSessionHint);
+                      markCodeSandboxWarm();
                     }
 
                     return handlerResult;
@@ -4380,8 +4403,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     /* Only sandbox-bound calls carry a runtime session hint, so
                      * this refreshes the prewarm module's warm window without
                      * inspecting tool names. */
-                    if (runtimeSessionHint) {
-                      void markSandboxReady(runtimeSessionHint);
+                    if (isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
+                      markCodeSandboxWarm();
                     }
 
                     // Code-execution tools emit per-call boilerplate
@@ -4415,6 +4438,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                             | string
                             | undefined,
                           ...metadata,
+                          executingAgentId: agentId,
+                          codeExecutionContext,
                         },
                       );
                     }

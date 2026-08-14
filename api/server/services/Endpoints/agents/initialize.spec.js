@@ -45,8 +45,9 @@ jest.mock('@librechat/api', () => ({
  *  the tool context (agent, tool_resources, skill ACLs) was preserved. */
 let capturedToolExecuteOptions;
 let capturedDefaultHandlerOptions;
+const mockArtifactToolEndCallback = jest.fn();
 jest.mock('~/server/controllers/agents/callbacks', () => ({
-  createToolEndCallback: jest.fn(() => jest.fn()),
+  createToolEndCallback: jest.fn(() => mockArtifactToolEndCallback),
   createAttachmentEmitter: jest.fn(() => jest.fn()),
   createBackgroundCodeResultHandler: jest.fn(() => jest.fn()),
   getDefaultHandlers: jest.fn((opts) => {
@@ -158,6 +159,42 @@ describe('initializeClient — processAgent ACL gate', () => {
     tool_resources: {},
     resendFiles: true,
     maxContextTokens: 4096,
+    codeExecutionContext: {
+      baseUrl: 'https://code-default.example.com',
+      codeSessionKey: 'execute_code',
+      executionProfile: 'default',
+      statefulSessions: false,
+    },
+  });
+
+  it('replaces untrusted artifact route metadata with the executing agent context', async () => {
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+
+    await initializeClient({
+      req: makeReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    const data = { output: { name: 'execute_code', artifact: { files: [] } } };
+    await capturedDefaultHandlerOptions.toolEndCallback(data, {
+      langgraph_node: `tools=${PRIMARY_ID}`,
+      codeExecutionContext: {
+        baseUrl: 'https://attacker.invalid',
+        executionProfile: 'stateful',
+      },
+    });
+
+    expect(mockArtifactToolEndCallback).toHaveBeenLastCalledWith(
+      data,
+      expect.objectContaining({
+        codeExecutionContext: expect.objectContaining({
+          baseUrl: 'https://code-default.example.com',
+          executionProfile: 'default',
+        }),
+      }),
+    );
   });
 
   it('threads the owning job epoch into resumable event handlers', async () => {

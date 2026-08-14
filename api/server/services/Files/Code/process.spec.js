@@ -63,6 +63,9 @@ jest.mock('@librechat/api', () => {
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    getCodeExecutionBaseUrl: jest.fn((profile) =>
+      profile === 'stateful' ? 'https://code-stateful.example.com' : 'https://code-api.example.com',
+    ),
     CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
     withTimeout: (...args) => passthroughWithTimeout(...args),
     hasOfficeHtmlPath: (...args) => mockHasOfficeHtmlPath(...args),
@@ -822,6 +825,24 @@ describe('Code Process', () => {
     });
 
     describe('fallback behavior', () => {
+      it('preserves the stateful route in generated downloads and fallbacks', async () => {
+        mockAxios.mockRejectedValue(new Error('Network error'));
+
+        const { file: result } = await processCodeOutput({
+          ...baseParams,
+          codeApiBaseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
+        });
+
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            url: expect.stringContaining('https://code-stateful.example.com/download/'),
+            headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+          }),
+        );
+        expect(result.filepath).toContain('execution_profile=stateful');
+      });
+
       it('should fallback to download URL when saveBuffer is not available', async () => {
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });

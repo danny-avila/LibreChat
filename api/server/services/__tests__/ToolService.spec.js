@@ -1488,6 +1488,44 @@ describe('ToolService - Action Capability Gating', () => {
       }
     });
 
+    it('resolves stateful routing for host file tools with the controller conversation ID', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.stateful_code_sessions,
+      ];
+      const req = createMockReq(capabilities);
+      req.body = {};
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
+
+      try {
+        const result = await loadToolsForExecution({
+          req,
+          res: {},
+          conversationId: 'resolved-api-conversation',
+          agent: {
+            id: 'stateful-agent',
+            tools: [Tools.execute_code],
+            stateful_code_sessions: true,
+            stateful_code_environment: 'conversation',
+          },
+          toolNames: [AgentConstants.READ_FILE],
+          actionsEnabled: false,
+        });
+
+        expect(result.configurable.codeExecutionContext.executionProfile).toBe('stateful');
+        expect(mockResolveCodeExecutionContext).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            statefulSessions: true,
+            conversationId: 'resolved-api-conversation',
+          }),
+        );
+      } finally {
+        delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+      }
+    });
+
     it('loads bash PTC under the legacy programmatic tool name when code capabilities are enabled', async () => {
       const capabilities = [
         AgentCapabilities.tools,

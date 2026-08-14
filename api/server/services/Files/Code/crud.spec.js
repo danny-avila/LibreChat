@@ -50,6 +50,7 @@ jest.mock('@librechat/api', () => {
     }),
     logAxiosError: jest.fn(({ message }) => message),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
     createAxiosInstance: jest.fn(() => mockAxios),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
     codeServerHttpsAgent: new https.Agent({ keepAlive: false }),
@@ -105,6 +106,22 @@ describe('Code CRUD', () => {
       );
       expect(callConfig.responseType).toBe('stream');
       expect(callConfig.timeout).toBe(15000);
+    });
+
+    it('uses the trusted stateful route and fail-closed profile header', async () => {
+      mockAxios.mockResolvedValue({ data: Readable.from(['chunk']) });
+
+      await getCodeOutputDownloadStream('session-1/file-1', userIdentity, undefined, {
+        baseUrl: 'https://code-stateful.example.com',
+        executionProfile: 'stateful',
+      });
+
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://code-stateful.example.com/download/session-1/file-1?kind=user&id=user-123',
+          headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+        }),
+      );
     });
 
     it('forwards Code API auth headers when a request is provided', async () => {

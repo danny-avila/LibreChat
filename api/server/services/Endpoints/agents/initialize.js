@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { createContentAggregator } = require('@librechat/agents');
+const { createContentAggregator, GraphNodeKeys } = require('@librechat/agents');
 const {
   checkAccess,
   loadSkillStates,
@@ -167,7 +167,7 @@ const initializeClient = async ({
   /** @type {Map<string, import('@librechat/api').ToolInputValidationError>} */
   const toolInputValidationErrors = new Map();
   const { contentParts, aggregateContent, stepMap } = createContentAggregator();
-  const toolEndCallback = createToolEndCallback({
+  const artifactToolEndCallback = createToolEndCallback({
     req,
     res,
     artifactPromises,
@@ -279,6 +279,30 @@ const initializeClient = async ({
    * }>}
    */
   const agentToolContexts = new Map();
+  /** Attach only the host-resolved route for the actually executing agent.
+   * Runnable metadata is transport data and may contain caller-controlled
+   * keys, so discard any incoming route context before resolving from the
+   * server-owned per-agent map. This covers both traditional TOOL_END events
+   * and event-driven ON_TOOL_EXECUTE callbacks. */
+  const toolEndCallback = async (data, metadata = {}) => {
+    const node = typeof metadata.langgraph_node === 'string' ? metadata.langgraph_node : '';
+    const nodeAgentId = node.startsWith(GraphNodeKeys.TOOLS)
+      ? node.slice(GraphNodeKeys.TOOLS.length)
+      : undefined;
+    const executingAgentId =
+      metadata.executingAgentId ?? metadata.agentId ?? metadata.agent_id ?? nodeAgentId;
+    const soleContext =
+      agentToolContexts.size === 1 ? agentToolContexts.values().next().value : null;
+    const trustedContext =
+      (typeof executingAgentId === 'string' ? agentToolContexts.get(executingAgentId) : null) ??
+      soleContext;
+    const callbackMetadata = { ...metadata };
+    delete callbackMetadata.codeExecutionContext;
+    if (trustedContext?.codeExecutionContext) {
+      callbackMetadata.codeExecutionContext = trustedContext.codeExecutionContext;
+    }
+    return artifactToolEndCallback(data, callbackMetadata);
+  };
   /** @type {Map<string, import('@librechat/api').EndpointTokenConfig | undefined>} */
   const endpointTokenConfigByAgentId = new Map();
 
@@ -293,6 +317,7 @@ const initializeClient = async ({
         res,
         signal,
         streamId,
+        conversationId,
         toolNames,
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,

@@ -62,7 +62,11 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
-import { normalizeStatefulCodeEnvironment, resolveCodeExecutionContext } from './execution';
+import {
+  normalizeStatefulCodeEnvironment,
+  resolveCodeExecutionContext,
+  type CodeExecutionContext,
+} from './execution';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { isFatalAgentInitializationError } from './errors';
@@ -334,6 +338,8 @@ export type InitializedAgent = Agent & {
   statefulCodeEnvironment: Agent['stateful_code_environment'];
   /** Trusted partition for transient code session ids and file references. */
   codeSessionKey: string;
+  /** Trusted endpoint/profile context for artifact processing and runtime tools. */
+  codeExecutionContext: CodeExecutionContext;
   /** Whether host-side skill file authoring is available for this agent/run. */
   skillAuthoringAvailable: boolean;
   /** Host-side file authoring tool names registered for this run. */
@@ -1541,6 +1547,7 @@ export async function initializeAgent(
     statefulCodeSessions: effectiveStatefulSessions,
     statefulCodeEnvironment,
     codeSessionKey: codeExecutionContext.codeSessionKey,
+    codeExecutionContext,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
     includeReasoningHistory: customEndpointConfig?.customParams?.includeReasoningHistory,
     skillAuthoringAvailable,

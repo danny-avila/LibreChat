@@ -26,8 +26,11 @@ export function normalizeStatefulCodeEnvironment(
   return 'user';
 }
 
-function statefulCodeBaseUrl(): string {
-  const baseUrl = process.env.LIBRECHAT_CODE_BASEURL_STATEFUL?.trim().replace(/\/$/, '');
+export function getCodeExecutionBaseUrl(profile: CodeExecutionProfile): string {
+  if (profile === 'default') {
+    return getCodeBaseURL().replace(/\/+$/, '');
+  }
+  const baseUrl = process.env.LIBRECHAT_CODE_BASEURL_STATEFUL?.trim().replace(/\/+$/, '');
   if (baseUrl) {
     return baseUrl;
   }
@@ -69,7 +72,7 @@ export function resolveCodeExecutionContext(params: {
 }): CodeExecutionContext {
   if (!params.statefulSessions) {
     return {
-      baseUrl: getCodeBaseURL().replace(/\/$/, ''),
+      baseUrl: getCodeExecutionBaseUrl('default'),
       codeSessionKey: Constants.EXECUTE_CODE,
       executionProfile: 'default',
       statefulSessions: false,
@@ -87,7 +90,7 @@ export function resolveCodeExecutionContext(params: {
     conversationId: params.conversationId,
   });
   return {
-    baseUrl: statefulCodeBaseUrl(),
+    baseUrl: getCodeExecutionBaseUrl('stateful'),
     codeSessionKey: `${Constants.EXECUTE_CODE}:stateful:${runtimeSessionHint}`,
     executionProfile: 'stateful',
     runtimeSessionHint,

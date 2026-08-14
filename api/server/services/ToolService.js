@@ -1659,6 +1659,7 @@ async function loadAgentTools({
  * @param {Object} [params.tool_resources] - Tool resources
  * @param {string|null} [params.streamId] - Stream ID for web search callbacks
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
+ * @param {string} [params.conversationId] - Resolved conversation identity for this request
  * @param {boolean} [params.actionsEnabled] - Whether the actions capability is enabled
  * @param {readonly string[]} [params.accessibleMcpServerNames] - COMPLETE accessible-server audit resolved at initialization
  * @returns {Promise<{ loadedTools: Array, configurable: Object }>}
@@ -1679,6 +1680,7 @@ async function loadToolsForExecution({
   tool_resources,
   streamId = null,
   jobCreatedAt,
+  conversationId,
   actionsEnabled,
   accessibleMcpServerNames,
 }) {
@@ -1708,9 +1710,17 @@ async function loadToolsForExecution({
   const isBashToolRequested = toolNames.includes(AgentConstants.BASH_TOOL);
   const isLegacyExecuteCodeRequested = toolNames.includes(Tools.execute_code);
   const isCodeExecutionToolRequested = isBashToolRequested || isLegacyExecuteCodeRequested;
+  const isSandboxFileToolRequested = toolNames.some((name) =>
+    [AgentConstants.READ_FILE, AgentConstants.CREATE_FILE, AgentConstants.EDIT_FILE].includes(name),
+  );
 
   let enabledCapabilities;
-  if (actionsEnabled === undefined || isPTCRequested || isCodeExecutionToolRequested) {
+  if (
+    actionsEnabled === undefined ||
+    isPTCRequested ||
+    isCodeExecutionToolRequested ||
+    isSandboxFileToolRequested
+  ) {
     enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent?.id);
   }
   if (actionsEnabled === undefined) {
@@ -1732,7 +1742,7 @@ async function loadToolsForExecution({
     environment: agent?.stateful_code_environment,
     userId: req.user.id,
     agentId: agent?.id,
-    conversationId: req.body?.conversationId,
+    conversationId: conversationId ?? req.body?.conversationId,
   });
   configurable.codeExecutionContext = codeExecutionContext;
 
