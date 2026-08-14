@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
+import isEqual from 'lodash/isEqual';
 import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
@@ -12,8 +13,8 @@ import {
   PermissionBits,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
+import type { Agent, AgentUpdateParams } from 'librechat-data-provider';
 import type { FieldNamesMarkedBoolean } from 'react-hook-form';
-import type { Agent } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm, StringOption } from '~/common';
 import {
@@ -224,6 +225,52 @@ export const isAvatarUploadOnlyDirty = (
   return result.sawDirty && result.onlyAvatarDirty;
 };
 
+/**
+ * Whether the submission carries an edit the agent update endpoint persists. Only an
+ * avatar upload travels through its own endpoint; a reset rides the update payload as
+ * `avatar: null` (see `composeAgentUpdatePayload`), so it is an edit like any other.
+ */
+export const hasPersistedDirtyFields = (
+  dirtyFields?: FieldNamesMarkedBoolean<AgentForm>,
+  avatarAction?: AgentForm['avatar_action'],
+): boolean => {
+  if (avatarAction === 'reset') {
+    return true;
+  }
+
+  if (!dirtyFields) {
+    return false;
+  }
+
+  const result = evaluateDirtyFields(dirtyFields);
+  return result.sawDirty && !result.onlyAvatarDirty;
+};
+
+/**
+ * Whether the save may have left the stored agent different from the one it replaced,
+ * across the fields the submission carried. A dirty field is no promise that anything was
+ * written: the server can normalize a submission straight back to the stored value, by
+ * pruning a skill that no longer exists or by dropping an MCP tool authorization rejects.
+ *
+ * `previous` must be the expanded agent. A basic projection omits fields the submission
+ * still carries, and the update endpoint answers with their unchanged values, which would
+ * read as a change that never happened. Without it the comparison cannot be trusted and
+ * reports true, leaving the dirty check to decide: claiming nothing changed for a save
+ * that did is the worse error of the two.
+ */
+export const mayHavePersistedChange = (
+  submitted?: AgentUpdateParams,
+  previous?: Agent,
+  updated?: Agent,
+): boolean => {
+  if (!submitted || !previous || !updated) {
+    return true;
+  }
+
+  const fields = Object.keys(submitted) as Array<keyof AgentUpdateParams & keyof Agent>;
+  return fields.some((field) => !isEqual(previous[field], updated[field]));
+};
+
 export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -315,6 +362,8 @@ export default function AgentPanel() {
   );
   const agent_id = useWatch({ control, name: 'id' });
   const previousVersionRef = useRef<number | undefined>();
+  const submittedDirtyRef = useRef(false);
+  const submittedRef = useRef<{ payload?: AgentUpdateParams; previous?: Agent }>({});
 
   const allowedProviders = useMemo(
     () => new Set(agentsConfig?.allowedProviders),
@@ -336,14 +385,27 @@ export default function AgentPanel() {
 
   /* Mutations */
   const update = useUpdateAgentMutation({
-    onMutate: () => {
-      // Store the current version before mutation
+    onMutate: (variables) => {
+      /** The agent as it stands before the write, taken from the expanded query so every
+       *  submitted field is comparable. The mutation replaces this cache entry on success,
+       *  so it has to be captured here to stay comparable afterwards. */
       previousVersionRef.current = agentQuery.data?.version;
+      submittedDirtyRef.current = hasPersistedDirtyFields(dirtyFields, getValues('avatar_action'));
+      submittedRef.current = { payload: variables.data, previous: expandedAgentQuery.data };
     },
     onSuccess: async (data) => {
       const avatarActionState = getValues('avatar_action');
+      /** An update whose result matches the newest version is written without recording a
+       *  version entry, so an unchanged count no longer means the save was a no-op. Only
+       *  a save that both carried no edit and left the agent as it found it can claim
+       *  nothing changed. */
+      const persistedEdit =
+        submittedDirtyRef.current &&
+        mayHavePersistedChange(submittedRef.current.payload, submittedRef.current.previous, data);
       const noVersionChange =
-        previousVersionRef.current !== undefined && data.version === previousVersionRef.current;
+        !persistedEdit &&
+        previousVersionRef.current !== undefined &&
+        data.version === previousVersionRef.current;
       const toastMessage = getUpdateToastMessage(
         noVersionChange,
         avatarActionState,
@@ -375,8 +437,10 @@ export default function AgentPanel() {
         setValue('avatar_preview', '', { shouldDirty: false });
       }
 
-      // Clear the ref after use
+      // Clear the refs after use
       previousVersionRef.current = undefined;
+      submittedDirtyRef.current = false;
+      submittedRef.current = {};
     },
     onError: (err) => {
       const error = err as Error;
