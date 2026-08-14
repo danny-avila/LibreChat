@@ -146,7 +146,7 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
     event.preventDefault();
     try {
       const stream = await downloadFile();
-      if (stream.data == null || stream.data === '') {
+      if (!stream.data?.url) {
         console.error('Error downloading file: No data found');
         showToast({
           status: 'error',
@@ -154,7 +154,7 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
         });
         return;
       }
-      triggerDownload(stream.data, filename);
+      triggerDownload(stream.data.url, stream.data.filename ?? filename);
     } catch (error) {
       console.error('Error downloading file:', error);
     }

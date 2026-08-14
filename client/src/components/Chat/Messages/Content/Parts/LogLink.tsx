@@ -81,7 +81,9 @@ export const useAttachmentLink = ({
       }
 
       const stream = useLocalDownload ? await downloadFromApi() : await downloadFromUrl();
-      if (stream.data == null || stream.data === '') {
+      const download = stream.data;
+      const downloadURL = typeof download === 'string' ? download : download?.url;
+      if (!downloadURL) {
         console.error('Error downloading file: No data found');
         showToast({
           status: 'error',
@@ -89,7 +91,9 @@ export const useAttachmentLink = ({
         });
         return false;
       }
-      triggerDownload(stream.data, filename);
+      const downloadFilename =
+        typeof download === 'string' ? filename : (download?.filename ?? filename);
+      triggerDownload(downloadURL, downloadFilename);
       return true;
     } catch (error) {
       console.error('Error downloading file:', error);

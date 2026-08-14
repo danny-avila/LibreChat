@@ -250,7 +250,7 @@ const FileItem = React.memo(function FileItem({
       }
       try {
         const stream = await downloadFile();
-        if (stream.data == null || stream.data === '') {
+        if (!stream.data?.url) {
           console.error('Error downloading file: No data found');
           showToast({
             status: 'error',
@@ -258,7 +258,7 @@ const FileItem = React.memo(function FileItem({
           });
           return;
         }
-        triggerDownload(stream.data, file.filename);
+        triggerDownload(stream.data.url, stream.data.filename ?? file.filename);
       } catch (error) {
         console.error('Error downloading file:', error);
       }
