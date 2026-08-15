@@ -453,6 +453,50 @@ describe('Conversation Operations', () => {
         expect(new Date(unarchived?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
       });
 
+      /** A pin carries a preserved older timestamp, so the project it belongs to must
+       * not be dragged back to it while the project holds newer conversations. */
+      it('does not drag a project pointer back when only metadata changes', async () => {
+        const project = await ChatProject.create({
+          user: 'user123',
+          name: 'Pinned project',
+          conversationCount: 0,
+          lastConversationAt: null,
+          lastConversationId: null,
+        });
+        const newer = uuidv4();
+        const older = uuidv4();
+        const newerAt = new Date('2026-08-01T00:00:00.000Z');
+        for (const [id, when] of [
+          [newer, newerAt],
+          [older, anchor],
+        ] as Array<[string, Date]>) {
+          await Conversation.collection.insertOne({
+            conversationId: id,
+            user: 'user123',
+            title: id,
+            endpoint: EModelEndpoint.openAI,
+            expiredAt: null,
+            isArchived: false,
+            chatProjectId: String(project._id),
+            createdAt: when,
+            updatedAt: when,
+          });
+        }
+
+        await saveConvo(
+          { userId: 'user123' },
+          { conversationId: older, pinned: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        const after = await ChatProject.findById(project._id).lean<{
+          lastConversationAt: Date;
+          lastConversationId: string;
+        }>();
+        expect(new Date(after?.lastConversationAt ?? 0).toISOString()).toBe(newerAt.toISOString());
+        expect(after?.lastConversationId).toBe(newer);
+      });
+
       it('still bumps updatedAt for an ordinary save', async () => {
         const conversationId = await seedAgedConvo();
 
