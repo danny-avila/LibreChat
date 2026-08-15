@@ -397,8 +397,14 @@ const ChatForm = memo(function ChatForm({
 
   useQueryParams({ textAreaRef });
 
+  /** Attachments stand in for text only on the normal send path. Answer mode
+   *  hands the composer text straight to the paused run, which answers with
+   *  values and cannot consume files, so an empty draft must stay unsubmittable
+   *  there rather than enabling a button whose submit is silently dropped. */
+  const submittableFileCount = answerMode.active ? 0 : files.size;
+
   const { ref, ...registerProps } = methods.register('text', {
-    required: true,
+    required: submittableFileCount === 0,
     onChange: useCallback(
       (e: React.ChangeEvent<HTMLTextAreaElement>) =>
         methods.setValue('text', e.target.value, { shouldValidate: true }),
@@ -699,6 +705,7 @@ const ChatForm = memo(function ChatForm({
                         <SendButton
                           ref={submitButtonRef}
                           control={methods.control}
+                          fileCount={submittableFileCount}
                           disabled={
                             filesLoading ||
                             disableInputs ||

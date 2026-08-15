@@ -25,6 +25,7 @@ const {
   isSteerPreemptSupported,
   buildRecoveredSteerPayload,
   deleteAgentCheckpoint,
+  getAttachmentTitleText,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -1325,7 +1326,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         if (titleEligible && titleTiming === 'immediate') {
           immediateTitlePromise = addTitle(req, {
-            text,
+            text: text || getAttachmentTitleText(req.body.files),
             conversationId,
             client,
             immediate: true,
@@ -1712,7 +1713,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
         } else if (shouldGenerateTitle) {
           addTitle(req, {
-            text,
+            text: text || getAttachmentTitleText(req.body.files),
             response: { ...response },
             client,
           })

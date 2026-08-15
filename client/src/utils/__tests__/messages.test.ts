@@ -11,6 +11,7 @@ import {
   getHeaderPrefixForScreenReader,
   areMessageFieldsEqual,
   areMessageRowPropsEqual,
+  isSubmittableMessage,
 } from '../messages';
 
 const translations: Record<string, string> = {
@@ -342,5 +343,29 @@ describe('areMessageRowPropsEqual', () => {
         makeProps({ message: makeFieldsMsg({ text: 'edited' }) }),
       ),
     ).toBe(false);
+  });
+});
+
+describe('isSubmittableMessage', () => {
+  it('accepts non-whitespace text without files', () => {
+    expect(isSubmittableMessage('Hello')).toBe(true);
+    expect(isSubmittableMessage('  Hello  ', 0)).toBe(true);
+  });
+
+  it('rejects an empty draft with no files', () => {
+    expect(isSubmittableMessage('')).toBe(false);
+    expect(isSubmittableMessage('   ')).toBe(false);
+    expect(isSubmittableMessage(undefined)).toBe(false);
+    expect(isSubmittableMessage(null)).toBe(false);
+  });
+
+  it('accepts an empty draft when files are attached', () => {
+    expect(isSubmittableMessage('', 1)).toBe(true);
+    expect(isSubmittableMessage('   ', 2)).toBe(true);
+    expect(isSubmittableMessage(undefined, 1)).toBe(true);
+  });
+
+  it('accepts text alongside files', () => {
+    expect(isSubmittableMessage('Translate this', 1)).toBe(true);
   });
 });

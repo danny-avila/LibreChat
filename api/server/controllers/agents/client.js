@@ -78,6 +78,7 @@ const {
   countFormattedMessageTokens,
   prependFileContext,
   prependQuotes,
+  applyAttachmentOnlyText,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   collectFreshSkillPrimeNames,
@@ -1367,6 +1368,19 @@ class AgentClient extends BaseClient {
         prependQuotes(formattedMessage, message.quotes);
         prependQuotes(memoryFormattedMessage, message.quotes);
       }
+
+      /**
+       * An attachment-only turn whose files reach the model out-of-band (file
+       * search, code environment) leaves nothing in the content itself, and
+       * providers such as Anthropic reject an empty user message outright.
+       * Applied after the context and quote merges so a turn that already
+       * gained inline content keeps it. The current turn is not carrying
+       * `files` yet (BaseClient assigns them after this returns), so the
+       * resolved attachments come from `message_file_map`.
+       */
+      const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
+      applyAttachmentOnlyText(formattedMessage, turnFiles);
+      applyAttachmentOnlyText(memoryFormattedMessage, turnFiles);
 
       memoryPayload.push(memoryFormattedMessage);
 

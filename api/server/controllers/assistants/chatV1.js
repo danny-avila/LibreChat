@@ -7,6 +7,7 @@ const {
   checkBalance,
   getBalanceConfig,
   getModelMaxTokens,
+  ATTACHMENT_ONLY_TEXT,
 } = require('@librechat/api');
 const {
   Time,
@@ -321,9 +322,14 @@ const chatV1 = async (req, res) => {
       parentMessageId = previousMessages[previousMessages.length - 1].messageId;
     }
 
+    /**
+     * Threads rejects an empty message body, so an attachment-only turn sends
+     * a minimal note instead. The persisted message keeps its empty text.
+     */
+    const isAttachmentOnly = !text?.trim() && files.length > 0;
     let userMessage = {
       role: 'user',
-      content: text,
+      content: isAttachmentOnly ? ATTACHMENT_ONLY_TEXT : text,
       metadata: {
         messageId: userMessageId,
       },
