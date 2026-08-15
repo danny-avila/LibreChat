@@ -455,13 +455,19 @@ export function stripMessageUIResourceMarkers(
   const start = thinkingMatch.index;
   const end = start + thinkingMatch[0].length;
   const regularContent = text.slice(0, start) + text.slice(end);
-  const regularRanges = findUIResourceMarkerRanges(regularContent);
+  const renderedStart = regularContent.length - regularContent.trimStart().length;
+  const renderedEnd = regularContent.trimEnd().length;
+  const regularRanges = findUIResourceMarkerRanges(
+    regularContent.slice(renderedStart, renderedEnd),
+  );
   if (regularRanges.length === 0) {
     return text;
   }
   const sourceRanges: Array<[number, number]> = [];
   const blockLength = end - start;
-  for (const [rangeStart, rangeEnd] of regularRanges) {
+  for (const renderedRange of regularRanges) {
+    const rangeStart = renderedRange[0] + renderedStart;
+    const rangeEnd = renderedRange[1] + renderedStart;
     if (rangeEnd <= start) {
       sourceRanges.push([rangeStart, rangeEnd]);
     } else if (rangeStart >= start) {

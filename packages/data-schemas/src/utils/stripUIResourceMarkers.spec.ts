@@ -108,6 +108,9 @@ describe('stripUIResourceMarkers', () => {
     expect(stripMessageUIResourceMarkers('\\u:::thinking Hidden :::i{formed}')).toBe(
       ':::thinking Hidden :::',
     );
+    expect(stripMessageUIResourceMarkers(':::thinking hidden :::    \\ui{id}')).toBe(
+      ':::thinking hidden :::    ',
+    );
   });
 
   it('handles paragraph continuations and container code according to CommonMark', () => {
