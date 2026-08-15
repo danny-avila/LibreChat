@@ -196,6 +196,26 @@ describe('UIResourceCarousel', () => {
     });
   });
 
+  it('binds scrolling when a singleton becomes a carousel', async () => {
+    const { container, rerender } = render(
+      <UIResourceCarousel uiResources={mockUIResources.slice(0, 1)} />,
+    );
+    expect(container.querySelector('.hide-scrollbar')).not.toBeInTheDocument();
+
+    rerender(<UIResourceCarousel uiResources={mockUIResources.slice(0, 2)} />);
+    const scrollContainer = container.querySelector('.hide-scrollbar');
+    Object.defineProperty(scrollContainer, 'scrollLeft', {
+      configurable: true,
+      value: 200,
+    });
+
+    fireEvent.scroll(scrollContainer!);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Scroll left')).toBeInTheDocument();
+    });
+  });
+
   it('hides right arrow when scrolled to end', async () => {
     const { container } = render(<UIResourceCarousel uiResources={mockUIResources} />);
     const scrollContainer = container.querySelector('.hide-scrollbar');

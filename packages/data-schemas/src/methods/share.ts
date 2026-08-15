@@ -1,6 +1,12 @@
 import { nanoid } from 'nanoid';
 import { Types } from 'mongoose';
-import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-provider';
+import {
+  Constants,
+  ContentTypes,
+  FileSources,
+  Tools,
+  stripUIResourceMarkers,
+} from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
@@ -86,12 +92,6 @@ const SENSITIVE_SHARED_FILE_FIELDS = new Set([
   'usage',
   'metadata',
 ]);
-
-const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
-
-function stripUIResourceMarkers(text: string | undefined): string | undefined {
-  return text?.replace(UI_RESOURCE_PATTERN, '');
-}
 
 /**
  * Strip storage/identity-internal fields from a file or attachment while keeping
@@ -401,6 +401,19 @@ export function anonymizeSharedContent(
   let result: unknown[] | null = null;
   for (let i = 0; i < content.length; i++) {
     const part = content[i];
+    if (
+      part != null &&
+      typeof part === 'object' &&
+      (part as { type?: unknown }).type === ContentTypes.TEXT &&
+      typeof (part as { text?: unknown }).text === 'string'
+    ) {
+      const text = (part as { text: string }).text;
+      const sanitizedText = stripUIResourceMarkers(text);
+      if (sanitizedText !== text) {
+        result ??= [...content];
+        result[i] = { ...(part as Record<string, unknown>), text: sanitizedText };
+      }
+    }
     if (!isSteerPartWithFiles(part)) {
       continue;
     }
@@ -418,9 +431,7 @@ export function anonymizeSharedContent(
           ),
         )
       : undefined;
-    if (result == null) {
-      result = [...content];
-    }
+    result ??= [...content];
     result[i] = files ? { ...rest, files } : rest;
   }
   return result ?? content;

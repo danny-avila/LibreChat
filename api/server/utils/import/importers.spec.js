@@ -3,6 +3,7 @@ const path = require('path');
 const {
   EModelEndpoint,
   Constants,
+  ContentTypes,
   Tools,
   RetentionMode,
   openAISettings,
@@ -887,6 +888,10 @@ describe('importLibreChatConvo', () => {
       parentMessageId: Constants.NO_PARENT,
       text: '\\ui{malicious}',
       isCreatedByUser: false,
+      content: [
+        { type: ContentTypes.TEXT, text: 'Before \\ui{malicious} after' },
+        { type: ContentTypes.TEXT, text: '`\\ui{literal}`' },
+      ],
       attachments: [
         {
           type: Tools.ui_resources,
@@ -916,6 +921,10 @@ describe('importLibreChatConvo', () => {
       { type: Tools.web_search, [Tools.web_search]: { results: [] } },
     ]);
     expect(importBatchBuilder.messages[0].text).toBe('');
+    expect(importBatchBuilder.messages[0].content).toEqual([
+      { type: ContentTypes.TEXT, text: 'Before  after' },
+      { type: ContentTypes.TEXT, text: '`\\ui{literal}`' },
+    ]);
   });
 
   it('should import linear, non-recursive thread correctly with correct endpoint', async () => {

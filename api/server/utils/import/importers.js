@@ -1,15 +1,27 @@
 const { v4: uuidv4 } = require('uuid');
 const { logger, getTenantId } = require('@librechat/data-schemas');
-const { EModelEndpoint, Constants, Tools, openAISettings } = require('librechat-data-provider');
+const {
+  EModelEndpoint,
+  Constants,
+  ContentTypes,
+  Tools,
+  openAISettings,
+  stripUIResourceMarkers,
+} = require('librechat-data-provider');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const { resolveImportDefaultModel } = require('./defaults');
 const { cloneMessagesWithTimestamps } = require('./fork');
 
-const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
-
-function stripUIResourceMarkers(text) {
-  return typeof text === 'string' ? text.replace(UI_RESOURCE_PATTERN, '') : text;
+function sanitizeImportedContent(content) {
+  if (!Array.isArray(content)) {
+    return content;
+  }
+  return content.map((part) =>
+    part?.type === ContentTypes.TEXT && typeof part.text === 'string'
+      ? { ...part, text: stripUIResourceMarkers(part.text) }
+      : part,
+  );
 }
 
 /** Removes executable legacy MCP-UI payloads from untrusted conversation imports. */
@@ -17,6 +29,7 @@ function sanitizeImportedMessage(message) {
   return {
     ...message,
     ...(typeof message.text === 'string' && { text: stripUIResourceMarkers(message.text) }),
+    ...(Array.isArray(message.content) && { content: sanitizeImportedContent(message.content) }),
     ...(Array.isArray(message.attachments) && {
       attachments: message.attachments.filter(
         (attachment) => attachment?.type !== Tools.ui_resources,

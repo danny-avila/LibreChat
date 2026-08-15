@@ -53,7 +53,7 @@ const UIResourceCarousel: React.FC<UIResourceCarouselProps> = React.memo(({ uiRe
       handleScroll();
       return () => container.removeEventListener('scroll', handleScroll);
     }
-  }, [handleScroll]);
+  }, [handleScroll, supportedUIResources.length]);
 
   if (supportedUIResources.length === 0) {
     return null;
