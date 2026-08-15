@@ -11,6 +11,7 @@ import { Constants, ContentTypes } from 'librechat-data-provider';
 const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
 const CITATION_CLEANUP = /\\ue20[0-46]|[\ue200-\ue204\ue206]/g;
 const COMPOSITE_CITATION = /(?:\\ue200|\ue200).*?(?:\\ue201|\ue201)/g;
+const STANDALONE_CITATION = /(?:\\ue202|\ue202)turn\d+(?:search|image|news|video|ref|file)\d+/;
 const MARKDOWN_ESCAPE_OR_REFERENCE = /\\(.)|&(#(?:\d{1,7}|[xX][\dA-Fa-f]{1,6})|[\dA-Za-z]{1,31});/g;
 
 type MarkdownNode = {
@@ -29,12 +30,16 @@ type SourceSegment = {
 
 function removeCitationCleanup(value: string, segments: SourceSegment[]) {
   const removals: Array<[number, number]> = [];
-  for (const pattern of [COMPOSITE_CITATION, CITATION_CLEANUP]) {
-    pattern.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(value)) != null) {
-      removals.push([match.index, pattern.lastIndex]);
+  COMPOSITE_CITATION.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = COMPOSITE_CITATION.exec(value)) != null) {
+    if (STANDALONE_CITATION.test(match[0])) {
+      removals.push([match.index, COMPOSITE_CITATION.lastIndex]);
     }
+  }
+  CITATION_CLEANUP.lastIndex = 0;
+  while ((match = CITATION_CLEANUP.exec(value)) != null) {
+    removals.push([match.index, CITATION_CLEANUP.lastIndex]);
   }
   if (removals.length === 0) {
     return { value, segments };
@@ -223,18 +228,13 @@ function collectMarkerRanges(root: MarkdownNode, source: string, ranges: Array<[
   }
 }
 
-/** Remove MCP-UI markers only from Markdown text nodes visited by the renderer plugin. */
-export function stripUIResourceMarkers(text: string): string;
-export function stripUIResourceMarkers(text: undefined): undefined;
-export function stripUIResourceMarkers(text: string | undefined): string | undefined;
-export function stripUIResourceMarkers(text: string | undefined): string | undefined {
-  if (text == null || (!text.includes('\\') && !text.includes('&'))) {
-    return text;
+function findUIResourceMarkerRanges(text: string): Array<[number, number]> {
+  if (
+    (!text.includes('\\') && !text.includes('&')) ||
+    !decodeString(text).replace(CITATION_CLEANUP, '').includes('\\ui{')
+  ) {
+    return [];
   }
-  if (!decodeString(text).replace(CITATION_CLEANUP, '').includes('\\ui{')) {
-    return text;
-  }
-
   const ranges: Array<[number, number]> = [];
   collectMarkerRanges(
     fromMarkdown(text, {
@@ -244,10 +244,10 @@ export function stripUIResourceMarkers(text: string | undefined): string | undef
     text,
     ranges,
   );
-  if (ranges.length === 0) {
-    return text;
-  }
+  return ranges;
+}
 
+function removeSourceRanges(text: string, ranges: Array<[number, number]>) {
   let result = '';
   let cursor = 0;
   for (const [start, end] of ranges) {
@@ -255,6 +255,18 @@ export function stripUIResourceMarkers(text: string | undefined): string | undef
     cursor = end;
   }
   return result + text.slice(cursor);
+}
+
+/** Remove MCP-UI markers only from Markdown text nodes visited by the renderer plugin. */
+export function stripUIResourceMarkers(text: string): string;
+export function stripUIResourceMarkers(text: undefined): undefined;
+export function stripUIResourceMarkers(text: string | undefined): string | undefined;
+export function stripUIResourceMarkers(text: string | undefined): string | undefined {
+  if (text == null) {
+    return text;
+  }
+  const ranges = findUIResourceMarkerRanges(text);
+  return ranges.length === 0 ? text : removeSourceRanges(text, ranges);
 }
 
 /** Sanitize only the portion of a legacy message that the client renders as Markdown. */
@@ -271,11 +283,23 @@ export function stripMessageUIResourceMarkers(
   }
   const start = thinkingMatch.index;
   const end = start + thinkingMatch[0].length;
-  return (
-    stripUIResourceMarkers(text.slice(0, start)) +
-    thinkingMatch[0] +
-    stripUIResourceMarkers(text.slice(end))
-  );
+  const regularContent = text.slice(0, start) + text.slice(end);
+  const regularRanges = findUIResourceMarkerRanges(regularContent);
+  if (regularRanges.length === 0) {
+    return text;
+  }
+  const sourceRanges: Array<[number, number]> = [];
+  const blockLength = end - start;
+  for (const [rangeStart, rangeEnd] of regularRanges) {
+    if (rangeEnd <= start) {
+      sourceRanges.push([rangeStart, rangeEnd]);
+    } else if (rangeStart >= start) {
+      sourceRanges.push([rangeStart + blockLength, rangeEnd + blockLength]);
+    } else {
+      sourceRanges.push([rangeStart, start], [end, rangeEnd + blockLength]);
+    }
+  }
+  return removeSourceRanges(text, sourceRanges);
 }
 
 function sanitizeTextPart(part: Record<string, unknown>): unknown {

@@ -66,6 +66,9 @@ describe('stripUIResourceMarkers', () => {
     expect(stripUIResourceMarkers(markdown)).toBe(
       '\\ue200\\ue202turn0search0 \\ui{citation}\\ue201 outside ',
     );
+    expect(stripUIResourceMarkers('\\ue200 invalid \\ui{rendered}\\ue201')).toBe(
+      '\\ue200 invalid \\ue201',
+    );
   });
 
   it('preserves markers in message text that bypasses Markdown rendering', () => {
@@ -73,6 +76,9 @@ describe('stripUIResourceMarkers', () => {
     expect(
       stripMessageUIResourceMarkers(':::thinking Hidden \\ui{hidden} ::: Visible \\ui{visible}'),
     ).toBe(':::thinking Hidden \\ui{hidden} ::: Visible ');
+    expect(stripMessageUIResourceMarkers('\\u:::thinking Hidden :::i{formed}')).toBe(
+      ':::thinking Hidden :::',
+    );
   });
 
   it('handles paragraph continuations and container code according to CommonMark', () => {

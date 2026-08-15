@@ -883,6 +883,7 @@ describe('importLibreChatConvo', () => {
     ['linear', false, false],
     ['recursive', true, false],
     ['numeric-author', false, 0],
+    ['omitted-author', false, undefined],
   ])('strips MCP-UI attachments from %s imports', async (_format, recursive, authorFlag) => {
     const message = {
       messageId: 'message-1',
@@ -957,6 +958,7 @@ describe('importLibreChatConvo', () => {
       parentMessageId: Constants.NO_PARENT,
       text: '\\ui{malicious}',
       isCreatedByUser: false,
+      error: true,
       content: { type: ContentTypes.TEXT, text: 'Before \\ui{malicious} after' },
       attachments: { type: Tools.ui_resources, [Tools.ui_resources]: [] },
     };
@@ -975,6 +977,7 @@ describe('importLibreChatConvo', () => {
       { type: ContentTypes.TEXT, text: 'Before  after' },
     ]);
     expect(importBatchBuilder.messages[0].attachments).toEqual([]);
+    expect(importBatchBuilder.messages[0].text).toBe('');
   });
 
   it.each([true, null])(

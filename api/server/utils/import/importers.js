@@ -15,8 +15,11 @@ const { cloneMessagesWithTimestamps } = require('./fork');
 const castImportedBoolean = mongoose.Schema.Types.Boolean.cast();
 
 function isImportedAssistantMessage(isCreatedByUser) {
-  if (isCreatedByUser == null) {
+  if (isCreatedByUser === null) {
     return false;
+  }
+  if (isCreatedByUser === undefined) {
+    return true;
   }
   try {
     return castImportedBoolean(isCreatedByUser) !== true;
@@ -41,7 +44,7 @@ function sanitizeImportedMessage(message) {
     ...message,
     ...(sanitizeMarkers &&
       typeof message.text === 'string' && {
-        text: stripMessageUIResourceMarkers(message.text, message.error),
+        text: stripMessageUIResourceMarkers(message.text, false),
       }),
     ...(content && {
       content: sanitizeUIResourceContent(content, sanitizeMarkers),
