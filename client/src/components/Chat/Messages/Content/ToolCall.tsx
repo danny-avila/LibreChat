@@ -139,8 +139,6 @@ export default function ToolCall({
     window.open(auth, '_blank', 'noopener,noreferrer');
   }, [auth, isMCPToolCall, mcpServerName, actionId]);
 
-  /** A step the run closed as `failed` is an error even when its output text
-   *  does not parse as one. */
   const hasError = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
   /**
    * The step's own terminal status wins when the run emitted one. The

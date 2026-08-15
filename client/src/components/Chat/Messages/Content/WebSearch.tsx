@@ -106,8 +106,6 @@ export default function WebSearch({
    *  persists as the settled label like the other tool cards. */
   const intent = useToolCallIntent(args);
   const { searchResults } = useSearchContext();
-  /** A step the run closed as `failed` is an error even when its output text
-   *  does not say so. */
   const error =
     (typeof output === 'string' && output.toLowerCase().includes('error processing')) ||
     runStepStatus === 'failed';

@@ -27,10 +27,6 @@ export default function useToolCallState(
 ): ToolCallState {
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = output.length > 0;
-  /**
-   * A step the run closed as `failed` is an error even when its output does
-   * not look like one — the run knows something the output text does not.
-   */
   const hasError = (hasOutput && isError(output)) || runStepStatus === 'failed';
   const hasContent = hasInput || hasOutput;
 

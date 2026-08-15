@@ -355,8 +355,6 @@ export default function RetrievalCall({
    *  region below deliberately keeps its stable generic value. */
   const intent = useToolCallIntent(args);
 
-  /** A step the run closed as `failed` is an error even when its output text
-   *  does not parse as one. */
   const errorState = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
   /**
    * The step's own terminal status wins when the run emitted one; the

@@ -75,9 +75,6 @@ export default function OpenAIImageGen({
   const progress = isClosed ? 1 : livingProgress;
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  /** A step the run closed as `failed` is an error even when its output text
-   *  does not parse as one. Without this, forcing a closed step's progress to
-   *  1 would present a failed generation as a finished image. */
   const hasError = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
 
   /**
