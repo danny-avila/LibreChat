@@ -132,6 +132,9 @@ function collectMarkerRanges(root: MarkdownNode, source: string, ranges: Array<[
         }
       }
     }
+    if (node.type === 'textDirective') {
+      continue;
+    }
     if (node.children) {
       for (let i = node.children.length - 1; i >= 0; i--) {
         stack.push(node.children[i]);
@@ -189,50 +192,106 @@ function sanitizeTextPart(part: Record<string, unknown>): unknown {
   return part;
 }
 
-/** Recursively sanitize assistant text parts, including persisted subagent content. */
+type ContentFrame = {
+  content: unknown[];
+  sanitizeTextParts: boolean;
+  index: number;
+  result: unknown[] | null;
+  onComplete: (content: unknown[]) => void;
+};
+
+function updateFramePart(
+  frame: ContentFrame,
+  index: number,
+  originalPart: unknown,
+  sanitizedPart: unknown,
+) {
+  if (sanitizedPart === originalPart) {
+    return;
+  }
+  frame.result ??= [...frame.content];
+  frame.result[index] = sanitizedPart;
+}
+
+/** Sanitize assistant text parts, including arbitrarily nested persisted subagent content. */
 export function sanitizeUIResourceContent(content: unknown, sanitizeTextParts = true): unknown {
   if (!Array.isArray(content)) {
     return content;
   }
 
-  let result: unknown[] | null = null;
-  for (let i = 0; i < content.length; i++) {
-    const part = content[i];
+  let sanitizedContent = content;
+  const stack: ContentFrame[] = [
+    {
+      content,
+      sanitizeTextParts,
+      index: 0,
+      result: null,
+      onComplete: (result) => {
+        sanitizedContent = result;
+      },
+    },
+  ];
+
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    if (frame.index >= frame.content.length) {
+      stack.pop();
+      frame.onComplete(frame.result ?? frame.content);
+      continue;
+    }
+
+    const index = frame.index++;
+    const part = frame.content[index];
     if (part == null || typeof part !== 'object') {
       continue;
     }
 
     let sanitizedPart: unknown = part;
     const record = part as Record<string, unknown>;
-    if (sanitizeTextParts && record.type === ContentTypes.TEXT) {
+    if (frame.sanitizeTextParts && record.type === ContentTypes.TEXT) {
       sanitizedPart = sanitizeTextPart(record);
     }
 
     const current = sanitizedPart as Record<string, unknown>;
-    if (current.tool_call != null && typeof current.tool_call === 'object') {
-      const toolCall = current.tool_call as Record<string, unknown>;
-      let sanitizedToolCall = toolCall;
-      if (toolCall.name === Constants.SUBAGENT && typeof toolCall.output === 'string') {
-        const output = stripUIResourceMarkers(toolCall.output);
-        if (output !== toolCall.output) {
-          sanitizedToolCall = { ...sanitizedToolCall, output };
-        }
-      }
-      if (Array.isArray(toolCall.subagent_content)) {
-        const subagentContent = sanitizeUIResourceContent(toolCall.subagent_content);
-        if (subagentContent !== toolCall.subagent_content) {
-          sanitizedToolCall = { ...sanitizedToolCall, subagent_content: subagentContent };
-        }
-      }
-      if (sanitizedToolCall !== toolCall) {
-        sanitizedPart = { ...current, tool_call: sanitizedToolCall };
+    if (current.tool_call == null || typeof current.tool_call !== 'object') {
+      updateFramePart(frame, index, part, sanitizedPart);
+      continue;
+    }
+
+    const toolCall = current.tool_call as Record<string, unknown>;
+    let sanitizedToolCall = toolCall;
+    if (toolCall.name === Constants.SUBAGENT && typeof toolCall.output === 'string') {
+      const output = stripUIResourceMarkers(toolCall.output);
+      if (output !== toolCall.output) {
+        sanitizedToolCall = { ...sanitizedToolCall, output };
       }
     }
 
-    if (sanitizedPart !== part) {
-      result ??= [...content];
-      result[i] = sanitizedPart;
+    if (Array.isArray(toolCall.subagent_content)) {
+      const originalSubagentContent = toolCall.subagent_content;
+      stack.push({
+        content: originalSubagentContent,
+        sanitizeTextParts: true,
+        index: 0,
+        result: null,
+        onComplete: (subagentContent) => {
+          if (subagentContent !== originalSubagentContent) {
+            sanitizedToolCall = { ...sanitizedToolCall, subagent_content: subagentContent };
+          }
+          if (sanitizedToolCall !== toolCall) {
+            sanitizedPart = { ...current, tool_call: sanitizedToolCall };
+          }
+          updateFramePart(frame, index, part, sanitizedPart);
+        },
+      });
+      continue;
     }
+
+    if (sanitizedToolCall !== toolCall) {
+      sanitizedPart = { ...current, tool_call: sanitizedToolCall };
+    }
+    updateFramePart(frame, index, part, sanitizedPart);
   }
-  return result ?? content;
+
+  return sanitizedContent;
 }

@@ -30,6 +30,11 @@ describe('stripUIResourceMarkers', () => {
     expect(stripUIResourceMarkers(markdown)).toBe(markdown);
   });
 
+  it('preserves text directive labels replaced before MCP marker rendering', () => {
+    const markdown = ':note[\\ui{directive}] outside \\ui{outside}';
+    expect(stripUIResourceMarkers(markdown)).toBe(':note[\\ui{directive}] outside ');
+  });
+
   it('removes markers after Markdown escapes and character references are decoded', () => {
     const markdown = [
       'Encoded &#92;ui{backslash}',
@@ -117,6 +122,26 @@ describe('stripUIResourceMarkers', () => {
         },
       },
     ]);
+  });
+
+  it('sanitizes deeply nested subagent content without recursive traversal', () => {
+    const depth = 10_000;
+    let nestedContent: unknown[] = [{ type: ContentTypes.TEXT, text: 'Deep \\ui{deep} content' }];
+    for (let i = 0; i < depth; i++) {
+      nestedContent = [
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { subagent_content: nestedContent },
+        },
+      ];
+    }
+
+    let cursor = sanitizeUIResourceContent(nestedContent) as unknown[];
+    for (let i = 0; i < depth; i++) {
+      const part = cursor[0] as { tool_call: { subagent_content: unknown[] } };
+      cursor = part.tool_call.subagent_content;
+    }
+    expect(cursor).toEqual([{ type: ContentTypes.TEXT, text: 'Deep  content' }]);
   });
 
   it('preserves top-level user text while sanitizing assistant-rendered subagent fields', () => {
