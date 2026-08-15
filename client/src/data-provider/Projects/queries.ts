@@ -12,6 +12,26 @@ const BKL_PROXY_BASE = '/bkl';
 export const PROJECTS_QUERY_KEY = ['bklProjects'];
 export const projectQueryKey = (projectId: string) => ['bklProject', projectId];
 
+/** HTTP 상태코드를 들고 다니는 에러 — UI 에서 404(구버전 API)/403(sid 없음)을 구분해 보여준다. */
+export class ProjectsApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ProjectsApiError';
+    this.status = status;
+  }
+}
+
+// 4xx 는 재시도해도 결과가 안 바뀐다 (404=API 미배포, 403=sid 없음).
+// 네트워크 오류·5xx 만 1회 재시도해서 "빈 화면 전까지 7초 스피너"를 없앤다.
+function retryOnServerErrorOnly(failureCount: number, error: unknown): boolean {
+  if (error instanceof ProjectsApiError && error.status < 500) {
+    return false;
+  }
+  return failureCount < 1;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BKL_PROXY_BASE}/api/projects${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -23,29 +43,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const err = await res.json();
       detail = typeof err?.detail === 'string' ? err.detail : JSON.stringify(err);
     } catch {
-      detail = await res.text();
+      detail = await res.text().catch(() => '');
     }
-    throw new Error(detail || `projects API failed (${res.status})`);
+    throw new ProjectsApiError(detail || `projects API failed (${res.status})`, res.status);
   }
   return (await res.json()) as T;
 }
 
 export function useProjects(): UseQueryResult<ProjectSummary[], Error> {
-  return useQuery({
+  return useQuery<ProjectSummary[], Error>({
     queryKey: PROJECTS_QUERY_KEY,
     queryFn: async () => {
       const data = await request<{ projects: ProjectSummary[] }>('');
       return data.projects;
     },
     staleTime: 30_000,
+    retry: retryOnServerErrorOnly,
   });
 }
 
 export function useProject(projectId: string | null): UseQueryResult<ProjectDetail, Error> {
-  return useQuery({
+  return useQuery<ProjectDetail, Error>({
     queryKey: projectQueryKey(projectId ?? ''),
     queryFn: () => request<ProjectDetail>(`/${projectId}`),
     enabled: Boolean(projectId),
+    retry: retryOnServerErrorOnly,
   });
 }
 
