@@ -14,6 +14,12 @@ const jwt = require('jsonwebtoken');
 
 let mockPassportError = null;
 let mockRegisteredStrategies = new Set(['jwt']);
+/** The post-mint retirement read; defaults to an account no recovery has touched. */
+let mockGetUserById = jest.fn(async () => ({}));
+
+jest.mock('~/models', () => ({
+  getUserById: (...args) => mockGetUserById(...args),
+}));
 
 jest.mock('passport', () => ({
   _strategy: jest.fn((strategy) => (mockRegisteredStrategies.has(strategy) ? {} : undefined)),
@@ -71,6 +77,9 @@ jest.mock('@librechat/api', () => {
     clearCloudFrontCookies: jest.fn(),
     generateTwoFactorSetupToken: jest.fn(() => 'setup-token'),
     isTwoFactorEnrollmentRequired: jest.fn(() => false),
+    /** Real dating logic: the ordering these tests exercise is the whole point. */
+    isTokenRetired: actualApi.isTokenRetired,
+    TOKEN_RETIREMENT_FIELDS: actualApi.TOKEN_RETIREMENT_FIELDS,
     recordRumProxyRequest: jest.fn(),
     getAuthFailureReasonCategory: actualApi.getAuthFailureReasonCategory,
     buildSafeAuthLogContext: actualApi.buildSafeAuthLogContext,
@@ -135,6 +144,9 @@ function mockRes() {
   };
 }
 
+/** The enrollment policy re-reads the retirement cutoff, so its response lands a tick later. */
+const flushPolicy = () => new Promise((resolve) => setImmediate(resolve));
+
 /** Runs requireJwtAuth and returns the tenantId observed inside next(). */
 function runAuth(user) {
   return new Promise((resolve) => {
@@ -158,8 +170,10 @@ describe('requireJwtAuth tenant context chaining', () => {
   afterEach(() => {
     mockPassportError = null;
     mockRegisteredStrategies = new Set(['jwt']);
+    mockGetUserById = jest.fn(async () => ({}));
     isEnabled.mockReturnValue(false);
     isTwoFactorEnrollmentRequired.mockReturnValue(false);
+    generateTwoFactorSetupToken.mockClear();
     clearCloudFrontCookies.mockClear();
     maybeRefreshCloudFrontAuthCookiesMiddleware.mockClear();
     logger.debug.mockClear();
@@ -208,7 +222,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(next).toHaveBeenCalled();
   });
 
-  it('blocks protected API access for unenrolled local users', () => {
+  it('blocks protected API access for unenrolled local users', async () => {
     isTwoFactorEnrollmentRequired.mockReturnValue(true);
     const req = mockReq(
       { id: 'user-123', provider: 'local', twoFactorEnabled: false },
@@ -218,6 +232,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     const next = jest.fn();
 
     requireJwtAuth(req, res, next);
+    await flushPolicy();
 
     expect(generateTwoFactorSetupToken).toHaveBeenCalledWith('user-123', process.env.JWT_SECRET);
     expect(clearCloudFrontCookies).toHaveBeenCalledWith(res, {
@@ -270,7 +285,7 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it('still blocks a non-logout route that merely ends in a slash', () => {
+  it('still blocks a non-logout route that merely ends in a slash', async () => {
     isTwoFactorEnrollmentRequired.mockReturnValue(true);
     const req = mockReq(
       { id: 'user-123', provider: 'local', twoFactorEnabled: false },
@@ -280,8 +295,83 @@ describe('requireJwtAuth tenant context chaining', () => {
     const next = jest.fn();
 
     requireJwtAuth(req, res, next);
+    await flushPolicy();
 
     expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('withdraws the setup token when recovery lands between the strategy read and the mint', async () => {
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+    const issuedAtMs = Date.now();
+    /** The reset commits after the bearer was minted, so it revokes the credential in flight. */
+    mockGetUserById = jest.fn(async () => ({ passwordResetAt: new Date(issuedAtMs + 1000) }));
+    const req = mockReq(
+      { id: 'user-123', provider: 'local', twoFactorEnabled: false },
+      {
+        method: 'GET',
+        baseUrl: '/api/convos',
+        path: '/',
+        headers: {
+          authorization: `Bearer ${jwt.sign({ id: 'user-123', issuedAtMs }, jwtSecret)}`,
+        },
+      },
+    );
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+    await flushPolicy();
+
+    expect(mockGetUserById).toHaveBeenCalledWith('user-123', 'twoFactorEnrolledAt passwordResetAt');
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Unauthorized' });
+    expect(res.json).not.toHaveBeenCalledWith(
+      expect.objectContaining({ tempToken: 'setup-token' }),
+    );
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('still hands back a setup token when no recovery raced the request', async () => {
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+    const issuedAtMs = Date.now();
+    mockGetUserById = jest.fn(async () => ({ passwordResetAt: new Date(issuedAtMs - 1000) }));
+    const req = mockReq(
+      { id: 'user-123', provider: 'local', twoFactorEnabled: false },
+      {
+        method: 'GET',
+        baseUrl: '/api/convos',
+        path: '/',
+        headers: {
+          authorization: `Bearer ${jwt.sign({ id: 'user-123', issuedAtMs }, jwtSecret)}`,
+        },
+      },
+    );
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+    await flushPolicy();
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ tempToken: 'setup-token' }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('withdraws the setup token for a bearer that carries no datable claim', async () => {
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+    mockGetUserById = jest.fn(async () => ({ passwordResetAt: new Date() }));
+    const req = mockReq(
+      { id: 'user-123', provider: 'local', twoFactorEnabled: false },
+      { method: 'GET', baseUrl: '/api/convos', path: '/', headers: {} },
+    );
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(req, res, next);
+    await flushPolicy();
+
+    expect(res.status).toHaveBeenCalledWith(401);
     expect(next).not.toHaveBeenCalled();
   });
 

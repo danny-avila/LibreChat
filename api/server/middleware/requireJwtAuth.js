@@ -1,9 +1,11 @@
 const cookies = require('cookie');
+const jwt = require('jsonwebtoken');
 const passport = require('passport');
 const { logger } = require('@librechat/data-schemas');
 const { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } = require('librechat-data-provider');
 const {
   isEnabled,
+  isTokenRetired,
   clearCloudFrontCookies,
   tenantContextMiddleware,
   getAuthFailureReasonCategory,
@@ -13,7 +15,9 @@ const {
   getValidOpenIdReuseUserId,
   generateTwoFactorSetupToken,
   isTwoFactorEnrollmentRequired,
+  TOKEN_RETIREMENT_FIELDS,
 } = require('@librechat/api');
+const { getUserById } = require('~/models');
 
 const hasPassportStrategy = (strategy) =>
   typeof passport._strategy === 'function' && passport._strategy(strategy) != null;
@@ -78,24 +82,64 @@ const isTwoFactorPolicyAllowlisted = (req) =>
   normalizeRouteSegment(req.baseUrl) === '/api/auth' &&
   normalizeRouteSegment(req.path) === '/logout';
 
-const enforceTwoFactorPolicy = (req, res) => {
-  if (!isTwoFactorEnrollmentRequired(req.user) || isTwoFactorPolicyAllowlisted(req)) {
-    return false;
-  }
+/**
+ * The bearer that authorized this request, dated the way `isTokenRetired` dates credentials.
+ *
+ * Passport verified this token's signature before the request reached here, so reading its claims
+ * again only re-reads what has already been trusted. Both strategies extract the same
+ * `Authorization` header, so this is the authorizing credential whichever one answered, and a
+ * bearer that cannot be dated at all is refused by `isTokenRetired` once either cutoff is set.
+ */
+const getAuthorizingCredential = (req) => {
+  const authorization = req.headers.authorization;
+  const value = Array.isArray(authorization) ? authorization[0] : authorization;
+  const token = typeof value === 'string' ? value.replace(/^Bearer\s+/i, '') : '';
+  const payload = token ? jwt.decode(token) : null;
+  return { issuedAt: payload?.iat, issuedAtMs: payload?.issuedAtMs };
+};
 
+/**
+ * Rechecks the bearer that authorized this request against a read taken after the setup token
+ * was minted.
+ *
+ * The strategy dates the bearer against a document it read beforehand, so recovery landing between
+ * that read and the mint leaves a setup token stamped past `passwordResetAt`, which
+ * `blockRetiredSetupToken` has nothing to retire it by. `/2fa/setup` onward is authorized by that
+ * token and the nonces it earns, never by the bearer, so the holder of the revoked credential
+ * could otherwise stage and promote a secret of their own over the recovered account. Reading the
+ * cutoff after the mint is what orders the two: a reset later than this read is later than the
+ * mint as well, and the ordinary retirement gates take it from there.
+ */
+const isAuthorizingCredentialRetired = async (userId, credential) => {
+  const retirement = await getUserById(userId, TOKEN_RETIREMENT_FIELDS);
+  return isTokenRetired(credential, retirement);
+};
+
+const isTwoFactorPolicyEnforced = (req) =>
+  isTwoFactorEnrollmentRequired(req.user) && !isTwoFactorPolicyAllowlisted(req);
+
+const enforceTwoFactorPolicy = async (req, res) => {
+  const userId = getAuthenticatedUserId(req.user);
   clearCloudFrontCookies(res, {
-    userId: getAuthenticatedUserId(req.user),
+    userId,
     tenantId: req.user?.tenantId ?? req.user?.orgId,
     storageRegion: req.user?.storageRegion,
   });
+
+  const tempToken = generateTwoFactorSetupToken(userId, process.env.JWT_SECRET);
+  /** The setup token outranks the bearer that bought it, so it is dated the same way. */
+  if (await isAuthorizingCredentialRetired(userId, getAuthorizingCredential(req))) {
+    logger.warn(
+      `[requireJwtAuth] Password was reset while the request was in flight: userId=${userId}`,
+    );
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
   return res.status(403).json({
     code: TWO_FACTOR_ENROLLMENT_REQUIRED_CODE,
     twoFAPending: true,
     twoFASetupRequired: true,
-    tempToken: generateTwoFactorSetupToken(
-      getAuthenticatedUserId(req.user),
-      process.env.JWT_SECRET,
-    ),
+    tempToken,
   });
 };
 
@@ -218,8 +262,9 @@ const requireJwtAuth = (req, res, next) => {
       req.user = user;
       req.authStrategy = strategy;
       logFallbackSuccess(strategy);
-      if (enforceTwoFactorPolicy(req, res)) {
-        return;
+      /** Only the blocked path re-reads the cutoff, so an allowed request stays synchronous. */
+      if (isTwoFactorPolicyEnforced(req)) {
+        return enforceTwoFactorPolicy(req, res).catch(next);
       }
       tenantContextMiddleware(req, res, (tenantErr) => {
         if (tenantErr) {
