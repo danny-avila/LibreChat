@@ -122,7 +122,7 @@ describe('prependQuotes', () => {
 });
 
 describe('applyAttachmentOnlyText', () => {
-  const withFiles = { files: [{ file_id: 'f1' }] } as Pick<TMessage, 'files'>;
+  const withFiles = [{ file_id: 'f1' }] as TMessage['files'];
 
   it('substitutes text for an empty user turn that carries files', () => {
     const message: FormattedMessageWithContent = { role: 'user', content: '' };
@@ -154,7 +154,7 @@ describe('applyAttachmentOnlyText', () => {
   it('ignores turns without files', () => {
     const message: FormattedMessageWithContent = { role: 'user', content: '' };
 
-    applyAttachmentOnlyText(message, { files: [] } as Pick<TMessage, 'files'>);
+    applyAttachmentOnlyText(message, []);
     expect(message.content).toBe('');
 
     applyAttachmentOnlyText(message, null);

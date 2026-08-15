@@ -81,12 +81,16 @@ export type FormattedMessageWithContent = {
  * message outright. Apply after the file-context and quote merges so a turn
  * that already gained inline content is left alone. The stored `message.text`
  * keeps its empty value, so the UI still renders the attachment on its own.
+ *
+ * Takes the turn's files rather than the message because the current turn does
+ * not carry them yet: `BaseClient` assigns `userMessage.files` only after
+ * `buildMessages` returns, so callers pass the resolved attachments instead.
  */
 export function applyAttachmentOnlyText(
   formattedMessage: FormattedMessageWithContent,
-  message?: Pick<TMessage, 'files'> | null,
+  files?: TMessage['files'] | null,
 ): void {
-  if (formattedMessage.role !== 'user' || !message?.files?.length) {
+  if (formattedMessage.role !== 'user' || !files?.length) {
     return;
   }
 
