@@ -69,6 +69,9 @@ describe('stripUIResourceMarkers', () => {
     expect(stripUIResourceMarkers('\\ue200 invalid \\ui{rendered}\\ue201')).toBe(
       '\\ue200 invalid \\ue201',
     );
+    expect(stripUIResourceMarkers('\\ue200\n\\ue202turn0search0 \\ui{rendered}\\ue201')).toBe(
+      '\\ue200\n\\ue202turn0search0 \\ue201',
+    );
   });
 
   it('preserves highlighted citation text-node boundaries before MCP marker rendering', () => {
@@ -78,6 +81,23 @@ describe('stripUIResourceMarkers', () => {
     expect(
       stripUIResourceMarkers('\\ue203 text \\ue200\\ue202turn0search0 \\ui{nested}\\ue201\\ue204'),
     ).toBe('\\ue203 text \\ue200\\ue202turn0search0 \\ue201\\ue204');
+  });
+
+  it('uses the earliest citation match when highlight and composite ranges cross', () => {
+    const markdown = '\\ue203 text \\ue200\\ue202turn0search0 \\ui{id}\\ue204 tail \\ue201';
+    expect(stripUIResourceMarkers(markdown)).toBe(
+      '\\ue203 text \\ue200\\ue202turn0search0 \\ue204 tail \\ue201',
+    );
+  });
+
+  it('preserves text boundaries around invalid composite citations', () => {
+    const markdown = '\\u\\ue200\\ue201i{id}';
+    expect(stripUIResourceMarkers(markdown)).toBe(markdown);
+  });
+
+  it('handles many unmatched citation openers in linear time', () => {
+    const markdown = `${'\\ue203'.repeat(16_000)}\\ui{rendered}`;
+    expect(stripUIResourceMarkers(markdown)).toBe('\\ue203'.repeat(16_000));
   });
 
   it('preserves markers in message text that bypasses Markdown rendering', () => {

@@ -10,10 +10,9 @@ import { Constants, ContentTypes } from 'librechat-data-provider';
 
 const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
 const CITATION_CLEANUP = /\\ue20[0-46]|[\ue200-\ue204\ue206]/g;
-const COMPOSITE_CITATION = /(?:\\ue200|\ue200).*?(?:\\ue201|\ue201)/g;
-const HIGHLIGHTED_CITATION = /(?:\\ue203|\ue203).*?(?:\\ue204|\ue204)/g;
-const STANDALONE_CITATION = /(?:\\ue202|\ue202)turn\d+(?:search|image|news|video|ref|file)\d+/;
+const STANDALONE_SUFFIX = /turn(\d+)(search|image|news|video|ref|file)(\d+)/y;
 const MARKDOWN_ESCAPE_OR_REFERENCE = /\\(.)|&(#(?:\d{1,7}|[xX][\dA-Fa-f]{1,6})|[\dA-Za-z]{1,31});/g;
+const TEXT_BOUNDARY = '\0';
 
 type MarkdownNode = {
   type: string;
@@ -29,107 +28,257 @@ type SourceSegment = {
   literal: boolean;
 };
 
-function removeCitationCleanup(value: string, segments: SourceSegment[]) {
-  const removals: Array<[number, number]> = [];
-  const highlightedRanges: Array<[number, number]> = [];
-  HIGHLIGHTED_CITATION.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = HIGHLIGHTED_CITATION.exec(value)) != null) {
-    highlightedRanges.push([match.index, HIGHLIGHTED_CITATION.lastIndex]);
-  }
-  COMPOSITE_CITATION.lastIndex = 0;
-  let highlightedIndex = 0;
-  while ((match = COMPOSITE_CITATION.exec(value)) != null) {
-    while (highlightedRanges[highlightedIndex]?.[1] <= match.index) {
-      highlightedIndex++;
-    }
-    const highlighted = highlightedRanges[highlightedIndex];
-    const nestedInHighlight =
-      highlighted != null &&
-      match.index >= highlighted[0] &&
-      COMPOSITE_CITATION.lastIndex <= highlighted[1];
-    if (!nestedInHighlight && STANDALONE_CITATION.test(match[0])) {
-      removals.push([match.index, COMPOSITE_CITATION.lastIndex]);
-    }
-  }
-  CITATION_CLEANUP.lastIndex = 0;
-  highlightedIndex = 0;
-  while ((match = CITATION_CLEANUP.exec(value)) != null) {
-    while (highlightedRanges[highlightedIndex]?.[1] <= match.index) {
-      highlightedIndex++;
-    }
-    const highlighted = highlightedRanges[highlightedIndex];
-    if (!highlighted || match.index < highlighted[0]) {
-      removals.push([match.index, CITATION_CLEANUP.lastIndex]);
-    }
-  }
-  if (removals.length === 0) {
-    return { value, segments };
-  }
-  removals.sort((a, b) => a[0] - b[0]);
-  const mergedRemovals: Array<[number, number]> = [];
-  for (const removal of removals) {
-    const previous = mergedRemovals[mergedRemovals.length - 1];
-    if (previous && removal[0] <= previous[1]) {
-      previous[1] = Math.max(previous[1], removal[1]);
-    } else {
-      mergedRemovals.push([...removal]);
-    }
-  }
+type CitationToken = {
+  code: number;
+  start: number;
+  end: number;
+  line: number;
+  literal: boolean;
+};
 
-  let cleanedValue = '';
-  const cleanedSegments: SourceSegment[] = [];
-  let removalIndex = 0;
+type CitationMatch = { start: number; end: number };
 
-  const appendSlice = (segment: SourceSegment, start: number, end: number) => {
-    if (start >= end) {
-      return;
-    }
-    const decodedStart = cleanedValue.length;
-    cleanedValue += value.slice(start, end);
-    const sourceStart = segment.literal
-      ? segment.sourceStart + start - segment.decodedStart
-      : segment.sourceStart;
-    const sourceEnd = segment.literal
-      ? segment.sourceStart + end - segment.decodedStart
-      : segment.sourceEnd;
-    const previous = cleanedSegments[cleanedSegments.length - 1];
-    if (
-      segment.literal &&
-      previous?.literal &&
-      previous.decodedEnd === decodedStart &&
-      previous.sourceEnd === sourceStart
+type CitationOutputSegment =
+  | { kind: 'text'; intervals: Array<[number, number]> }
+  | { kind: 'nontext' };
+
+function collectCitationTokens(value: string) {
+  const tokens: CitationToken[] = [];
+  const allStandalone: CitationMatch[] = [];
+  const standalone: CitationMatch[] = [];
+  let lastCompositeOpen = -1;
+  let lastCompositeClose = -1;
+  let line = 0;
+
+  for (let index = 0; index < value.length; ) {
+    let code = -1;
+    let end = index + 1;
+    let literal = false;
+    const characterCode = value.charCodeAt(index);
+    if (characterCode >= 0xe200 && characterCode <= 0xe206 && characterCode !== 0xe205) {
+      code = characterCode - 0xe200;
+    } else if (
+      value.charCodeAt(index) === 92 &&
+      value.startsWith('ue20', index + 1) &&
+      index + 5 < value.length
     ) {
-      previous.decodedEnd = cleanedValue.length;
-      previous.sourceEnd = sourceEnd;
-      return;
+      const digit = value.charCodeAt(index + 5) - 48;
+      if (digit >= 0 && digit <= 6 && digit !== 5) {
+        code = digit;
+        end = index + 6;
+        literal = true;
+      }
     }
-    cleanedSegments.push({
-      decodedStart,
-      decodedEnd: cleanedValue.length,
-      sourceStart,
-      sourceEnd,
-      literal: segment.literal,
-    });
+
+    if (code < 0) {
+      if (
+        characterCode === 10 ||
+        characterCode === 13 ||
+        characterCode === 0x2028 ||
+        characterCode === 0x2029
+      ) {
+        line++;
+      }
+      index++;
+      continue;
+    }
+
+    const token = { code, start: index, end, line, literal };
+    tokens.push(token);
+    if (code === 2) {
+      STANDALONE_SUFFIX.lastIndex = end;
+      const suffix = STANDALONE_SUFFIX.exec(value);
+      if (suffix) {
+        const citation = { start: index, end: STANDALONE_SUFFIX.lastIndex };
+        allStandalone.push(citation);
+        if (lastCompositeOpen === -1 || lastCompositeClose > lastCompositeOpen) {
+          standalone.push(citation);
+        }
+      }
+    } else if (code === 0) {
+      lastCompositeOpen = index;
+    } else if (code === 1) {
+      lastCompositeClose = index;
+    }
+    index = end;
+  }
+
+  return { tokens, allStandalone, standalone };
+}
+
+function pairCitationRanges(tokens: CitationToken[], openCode: number, closeCode: number) {
+  const openers = tokens.filter((token) => token.code === openCode);
+  const closers = tokens.filter((token) => token.code === closeCode);
+  const ranges: CitationMatch[] = [];
+  let closeIndex = 0;
+  for (const opener of openers) {
+    while (
+      closers[closeIndex] &&
+      (closers[closeIndex].line < opener.line ||
+        (closers[closeIndex].line === opener.line && closers[closeIndex].start < opener.end))
+    ) {
+      closeIndex++;
+    }
+    const closer = closers[closeIndex];
+    if (closer?.line === opener.line) {
+      ranges.push({ start: opener.start, end: closer.end });
+    }
+  }
+  return ranges;
+}
+
+/** Model the citation plugin's emitted text nodes without its unbounded wildcard regexes. */
+function applyCitationTextBoundaries(value: string, sourceSegments: SourceSegment[]) {
+  const { tokens, allStandalone, standalone } = collectCitationTokens(value);
+  const highlighted = pairCitationRanges(tokens, 3, 4);
+  const composite = pairCitationRanges(tokens, 0, 1);
+  const output: CitationOutputSegment[] = [];
+  let tokenIndex = 0;
+
+  const addText = (start: number, end: number, highlightedText = false) => {
+    const intervals: Array<[number, number]> = [];
+    let cursor = start;
+    while (tokens[tokenIndex]?.end <= start) {
+      tokenIndex++;
+    }
+    while (tokens[tokenIndex]?.start < end) {
+      const token = tokens[tokenIndex++];
+      const remove = highlightedText
+        ? token.literal && (token.code === 3 || token.code === 4)
+        : true;
+      if (remove) {
+        if (cursor < token.start) {
+          intervals.push([cursor, token.start]);
+        }
+        cursor = token.end;
+      }
+    }
+    if (cursor < end) {
+      intervals.push([cursor, end]);
+    }
+    if (intervals.length > 0 || highlightedText) {
+      output.push({ kind: 'text', intervals });
+    }
   };
 
-  for (const segment of segments) {
-    let cursor = segment.decodedStart;
-    while (cursor < segment.decodedEnd) {
-      while (mergedRemovals[removalIndex]?.[1] <= cursor) {
-        removalIndex++;
-      }
-      const removal = mergedRemovals[removalIndex];
-      if (!removal || removal[0] >= segment.decodedEnd) {
-        appendSlice(segment, cursor, segment.decodedEnd);
-        break;
-      }
-      appendSlice(segment, cursor, Math.min(removal[0], segment.decodedEnd));
-      cursor = Math.max(cursor, removal[1]);
+  let highlightedIndex = 0;
+  let compositeIndex = 0;
+  let standaloneIndex = 0;
+  let compositeCitationIndex = 0;
+  let position = 0;
+  while (position < value.length) {
+    while (highlighted[highlightedIndex]?.start < position) {
+      highlightedIndex++;
     }
+    while (composite[compositeIndex]?.start < position) {
+      compositeIndex++;
+    }
+    while (standalone[standaloneIndex]?.start < position) {
+      standaloneIndex++;
+    }
+
+    const highlightedMatch = highlighted[highlightedIndex];
+    const compositeMatch = composite[compositeIndex];
+    const standaloneMatch = standalone[standaloneIndex];
+    let type: 'highlighted' | 'composite' | 'standalone' | undefined;
+    let next = highlightedMatch;
+    if (next) {
+      type = 'highlighted';
+    }
+    if (compositeMatch && (!next || compositeMatch.start < next.start)) {
+      type = 'composite';
+      next = compositeMatch;
+    }
+    if (standaloneMatch && (!next || standaloneMatch.start < next.start)) {
+      type = 'standalone';
+      next = standaloneMatch;
+    }
+    if (!next || !type) {
+      addText(position, value.length);
+      break;
+    }
+
+    if (next.start > position) {
+      addText(position, next.start);
+    }
+    if (type === 'highlighted') {
+      addText(next.start, next.end, true);
+      highlightedIndex++;
+    } else if (type === 'standalone') {
+      output.push({ kind: 'nontext' });
+      standaloneIndex++;
+    } else {
+      while (allStandalone[compositeCitationIndex]?.start < next.start) {
+        compositeCitationIndex++;
+      }
+      const citation = allStandalone[compositeCitationIndex];
+      if (citation && citation.end <= next.end) {
+        output.push({ kind: 'nontext' });
+      }
+      compositeIndex++;
+    }
+    position = next.end;
   }
 
-  return { value: cleanedValue, segments: cleanedSegments };
+  if (output.length === 0) {
+    tokenIndex = 0;
+    addText(0, value.length);
+  }
+
+  let transformedValue = '';
+  const transformedSegments: SourceSegment[] = [];
+  let sourceSegmentIndex = 0;
+  const appendInterval = ([start, end]: [number, number]) => {
+    while (sourceSegments[sourceSegmentIndex]?.decodedEnd <= start) {
+      sourceSegmentIndex++;
+    }
+    let index = sourceSegmentIndex;
+    while (sourceSegments[index]?.decodedStart < end) {
+      const segment = sourceSegments[index];
+      const sliceStart = Math.max(start, segment.decodedStart);
+      const sliceEnd = Math.min(end, segment.decodedEnd);
+      if (sliceStart < sliceEnd) {
+        const decodedStart = transformedValue.length;
+        transformedValue += value.slice(sliceStart, sliceEnd);
+        const sourceStart = segment.literal
+          ? segment.sourceStart + sliceStart - segment.decodedStart
+          : segment.sourceStart;
+        const sourceEnd = segment.literal
+          ? segment.sourceStart + sliceEnd - segment.decodedStart
+          : segment.sourceEnd;
+        const previous = transformedSegments[transformedSegments.length - 1];
+        if (
+          segment.literal &&
+          previous?.literal &&
+          previous.decodedEnd === decodedStart &&
+          previous.sourceEnd === sourceStart
+        ) {
+          previous.decodedEnd = transformedValue.length;
+          previous.sourceEnd = sourceEnd;
+        } else {
+          transformedSegments.push({
+            decodedStart,
+            decodedEnd: transformedValue.length,
+            sourceStart,
+            sourceEnd,
+            literal: segment.literal,
+          });
+        }
+      }
+      index++;
+    }
+    sourceSegmentIndex = Math.max(sourceSegmentIndex, index - 1);
+  };
+
+  output.forEach((segment, index) => {
+    if (index > 0) {
+      transformedValue += TEXT_BOUNDARY;
+    }
+    if (segment.kind === 'text') {
+      segment.intervals.forEach(appendInterval);
+    }
+  });
+  return { value: transformedValue, segments: transformedSegments };
 }
 
 function decodeTextWithSourceSpans(source: string) {
@@ -179,7 +328,7 @@ function decodeTextWithSourceSpans(source: string) {
     cursor = MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex;
   }
   appendLiteral(cursor, source.length);
-  return removeCitationCleanup(value, segments);
+  return applyCitationTextBoundaries(value, segments);
 }
 
 function mapDecodedRange(
