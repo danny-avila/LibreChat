@@ -52,6 +52,9 @@
     "url": "https://github.com/danny-avila/LibreChat/issues"
   },
   "homepage": "https://librechat.ai",
+  "dependencies": {
+    "mdast-util-from-markdown": "^2.0.1"
+  },
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/jest": "^29.5.2",

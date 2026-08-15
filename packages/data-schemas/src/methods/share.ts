@@ -1,18 +1,12 @@
 import { nanoid } from 'nanoid';
 import { Types } from 'mongoose';
-import {
-  Constants,
-  ContentTypes,
-  FileSources,
-  Tools,
-  stripUIResourceMarkers,
-  stripUIResourceMarkersFromTextPart,
-} from 'librechat-data-provider';
+import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { sanitizeUIResourceContent, stripUIResourceMarkers } from '~/utils/stripUIResourceMarkers';
 import logger from '~/config/winston';
 
 class ShareServiceError extends Error {
@@ -401,18 +395,15 @@ export function anonymizeSharedContent(
   }
 
   let result: unknown[] | null = null;
-  for (let i = 0; i < content.length; i++) {
-    const part = content[i];
-    if (
-      params.sanitizeUIResourceMarkers === true &&
-      (part as { type?: unknown } | null)?.type === ContentTypes.TEXT
-    ) {
-      const sanitizedPart = stripUIResourceMarkersFromTextPart(part);
-      if (sanitizedPart !== part) {
-        result ??= [...content];
-        result[i] = sanitizedPart;
-      }
+  if (params.sanitizeUIResourceMarkers === true) {
+    const sanitized = sanitizeUIResourceContent(content);
+    if (sanitized !== content) {
+      result = sanitized as unknown[];
     }
+  }
+
+  for (let i = 0; i < content.length; i++) {
+    const part = result?.[i] ?? content[i];
     if (!isSteerPartWithFiles(part)) {
       continue;
     }

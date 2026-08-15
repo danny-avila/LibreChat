@@ -880,14 +880,15 @@ describe('importLibreChatConvo', () => {
   });
 
   it.each([
-    ['linear', false],
-    ['recursive', true],
-  ])('strips MCP-UI attachments from %s imports', async (_format, recursive) => {
+    ['linear', false, false],
+    ['recursive', true, false],
+    ['numeric-author', false, 0],
+  ])('strips MCP-UI attachments from %s imports', async (_format, recursive, authorFlag) => {
     const message = {
       messageId: 'message-1',
       parentMessageId: Constants.NO_PARENT,
       text: '\\ui{malicious}',
-      isCreatedByUser: false,
+      isCreatedByUser: authorFlag,
       content: [
         { type: ContentTypes.TEXT, text: 'Before \\ui{malicious} after' },
         { type: ContentTypes.TEXT, text: '`\\ui{literal}`' },
@@ -896,6 +897,12 @@ describe('importLibreChatConvo', () => {
           text: {
             value: 'Object \\ui{malicious} value',
             annotations: [{ type: 'citation' }],
+          },
+        },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested \\ui{malicious} content' }],
           },
         },
       ],
@@ -934,6 +941,12 @@ describe('importLibreChatConvo', () => {
       {
         type: ContentTypes.TEXT,
         text: { value: 'Object  value', annotations: [{ type: 'citation' }] },
+      },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested  content' }],
+        },
       },
     ]);
   });

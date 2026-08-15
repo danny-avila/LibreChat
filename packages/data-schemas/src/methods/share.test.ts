@@ -542,6 +542,14 @@ describe('Share Methods', () => {
               annotations: [{ type: 'citation' }],
             },
           },
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              subagent_content: [
+                { type: ContentTypes.TEXT, text: 'Nested \\ui{malicious} content' },
+              ],
+            },
+          },
         ],
         attachments: [
           {
@@ -576,6 +584,12 @@ describe('Share Methods', () => {
         {
           type: ContentTypes.TEXT,
           text: { value: 'Object  value', annotations: [{ type: 'citation' }] },
+        },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested  content' }],
+          },
         },
       ]);
     });

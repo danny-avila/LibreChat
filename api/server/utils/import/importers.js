@@ -1,37 +1,36 @@
 const { v4: uuidv4 } = require('uuid');
-const { logger, getTenantId } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
 const {
-  EModelEndpoint,
-  Constants,
-  ContentTypes,
-  Tools,
-  openAISettings,
+  logger,
+  getTenantId,
+  sanitizeUIResourceContent,
   stripUIResourceMarkers,
-  stripUIResourceMarkersFromTextPart,
-} = require('librechat-data-provider');
+} = require('@librechat/data-schemas');
+const { EModelEndpoint, Constants, Tools, openAISettings } = require('librechat-data-provider');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const { resolveImportDefaultModel } = require('./defaults');
 const { cloneMessagesWithTimestamps } = require('./fork');
 
-function sanitizeImportedContent(content) {
-  if (!Array.isArray(content)) {
-    return content;
+const castImportedBoolean = mongoose.Schema.Types.Boolean.cast();
+
+function isImportedAssistantMessage(isCreatedByUser) {
+  try {
+    return castImportedBoolean(isCreatedByUser) !== true;
+  } catch {
+    return true;
   }
-  return content.map((part) =>
-    part?.type === ContentTypes.TEXT ? stripUIResourceMarkersFromTextPart(part) : part,
-  );
 }
 
 /** Removes executable legacy MCP-UI payloads from untrusted conversation imports. */
 function sanitizeImportedMessage(message) {
-  const sanitizeMarkers = message.isCreatedByUser === false;
+  const sanitizeMarkers = isImportedAssistantMessage(message.isCreatedByUser);
   return {
     ...message,
     ...(sanitizeMarkers &&
       typeof message.text === 'string' && { text: stripUIResourceMarkers(message.text) }),
     ...(sanitizeMarkers &&
-      Array.isArray(message.content) && { content: sanitizeImportedContent(message.content) }),
+      Array.isArray(message.content) && { content: sanitizeUIResourceContent(message.content) }),
     ...(Array.isArray(message.attachments) && {
       attachments: message.attachments.filter(
         (attachment) => attachment?.type !== Tools.ui_resources,
