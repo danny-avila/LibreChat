@@ -1,6 +1,7 @@
 const FormData = require('form-data');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
+const { getCodeEnvRefs } = require('librechat-data-provider');
 const {
   logAxiosError,
   appendCodeEnvFile,
@@ -74,22 +75,20 @@ async function getCodeOutputDownloadStream(fileIdentifier, identity, req, route 
  * @returns {Promise<void>}
  */
 async function deleteCodeEnvFile(req, file) {
-  const ref = file?.metadata?.codeEnvRef;
-  if (!ref) {
+  const refs = getCodeEnvRefs(file?.metadata);
+  if (refs.length === 0) {
     return;
   }
 
-  let lastError;
   const missingOrUnsupportedStatuses = new Set([404, 405]);
-  try {
-    const executionProfile = ref.executionProfile === 'stateful' ? 'stateful' : 'default';
+  const authHeaders = await getCodeApiAuthHeaders(req);
+  for (const [executionProfile, ref] of refs) {
     const baseURL = getCodeExecutionBaseUrl(executionProfile);
     const query = buildCodeEnvDownloadQuery({
       kind: ref.kind,
       id: ref.id,
       ...(ref.kind === 'skill' ? { version: ref.version } : {}),
     });
-    const authHeaders = await getCodeApiAuthHeaders(req);
     const baseRequest = {
       method: 'delete',
       headers: {
@@ -106,10 +105,13 @@ async function deleteCodeEnvFile(req, file) {
       `${baseURL}/files/${ref.storage_session_id}/${ref.file_id}${query}`,
     ];
 
+    let lastError;
+    let deleted = false;
     for (const url of urls) {
       try {
         await axios({ ...baseRequest, url });
-        return;
+        deleted = true;
+        break;
       } catch (error) {
         lastError = error;
         if (!missingOrUnsupportedStatuses.has(error.response?.status)) {
@@ -117,19 +119,16 @@ async function deleteCodeEnvFile(req, file) {
         }
       }
     }
-  } catch (error) {
-    lastError = error;
-  }
-
-  if (lastError) {
-    logAxiosError({
-      error: lastError,
-      message: `Error deleting code environment file: ${lastError.message}`,
-    });
-    if (lastError.response?.status === 404) {
-      return;
+    if (!deleted && lastError) {
+      logAxiosError({
+        error: lastError,
+        message: `Error deleting code environment file: ${lastError.message}`,
+      });
+      if (lastError.response?.status === 404) {
+        continue;
+      }
+      throw new Error(lastError.message || 'An error occurred during file deletion.');
     }
-    throw new Error(lastError.message || 'An error occurred during file deletion.');
   }
 }
 

@@ -159,6 +159,31 @@ export function seedCodeFilesIntoSessions(
   return sessions;
 }
 
+/** Builds an isolated child-graph seed from the run's exact trusted partition
+ * plus files resolved specifically for that agent. Lazy subagents are resolved
+ * after the run-wide seed is built, so their attachments must be copied here
+ * when `AgentInputs` is created. */
+export function buildAgentInitialToolSessions(
+  agent: CodeFilesAgent,
+  runSessions: ToolSessionMap | undefined,
+): ToolSessionMap | undefined {
+  const sessionKey = agent.codeSessionKey ?? Constants.EXECUTE_CODE;
+  const runContext = runSessions?.get(sessionKey) as CodeSessionContext | undefined;
+  let sessions: ToolSessionMap | undefined;
+  if (runContext) {
+    sessions = new Map([
+      [
+        sessionKey,
+        {
+          ...runContext,
+          files: runContext.files ? [...runContext.files] : undefined,
+        },
+      ],
+    ]);
+  }
+  return seedCodeFilesIntoSessions(agent.primedCodeFiles, sessions, sessionKey);
+}
+
 /**
  * Builds the run-wide `ToolSessionMap` for `Graph.sessions`, partitioned by
  * each agent's trusted `codeSessionKey`. The legacy `execute_code` partition

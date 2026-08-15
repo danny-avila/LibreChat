@@ -925,6 +925,15 @@ describe('Code Process', () => {
             file_id: 'file-id-123',
             executionProfile: 'default',
           },
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'user-123',
+              storage_session_id: 'session-123',
+              file_id: 'file-id-123',
+              executionProfile: 'default',
+            },
+          },
           sourceDispatchedAt: expect.any(Number),
         });
       });
@@ -2242,9 +2251,37 @@ describe('Code Process', () => {
       );
       expect(updateFile).toHaveBeenCalledWith(
         expect.objectContaining({
-          metadata: expect.objectContaining({
-            codeEnvRef: expect.objectContaining({ executionProfile: 'stateful' }),
+          'metadata.codeEnvRef': expect.objectContaining({ executionProfile: 'default' }),
+          'metadata.codeEnvRefs.stateful': expect.objectContaining({
+            executionProfile: 'stateful',
           }),
+        }),
+      );
+
+      const persistedMetadata = {
+        ...dbFile.metadata,
+        codeEnvRef: updateFile.mock.calls[0][0]['metadata.codeEnvRef'],
+        codeEnvRefs: {
+          default: dbFile.metadata.codeEnvRef,
+          stateful: updateFile.mock.calls[0][0]['metadata.codeEnvRefs.stateful'],
+        },
+      };
+      getFiles.mockResolvedValue([{ ...dbFile, metadata: persistedMetadata }]);
+      mockAxios.mockResolvedValue({ data: { lastModified: new Date().toISOString() } });
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: { file_ids: ['librechat-file-id'], files: [] },
+        },
+        agentId: 'agent-id',
+        executionProfile: 'default',
+      });
+
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: expect.stringContaining('/sessions/DEFAULT_SESSION/objects/DEFAULT_ID'),
         }),
       );
     });
@@ -2280,15 +2317,20 @@ describe('Code Process', () => {
       expect(updateFile).toHaveBeenCalledWith(
         expect.objectContaining({
           file_id: 'librechat-file-id',
-          metadata: expect.objectContaining({
-            codeEnvRef: {
-              kind: 'user',
-              id: 'user-123',
-              storage_session_id: 'NEW_SESSION',
-              file_id: 'NEW_ID',
-              executionProfile: 'default',
-            },
-          }),
+          'metadata.codeEnvRef': {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'NEW_SESSION',
+            file_id: 'NEW_ID',
+            executionProfile: 'default',
+          },
+          'metadata.codeEnvRefs.default': {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'NEW_SESSION',
+            file_id: 'NEW_ID',
+            executionProfile: 'default',
+          },
         }),
       );
     });

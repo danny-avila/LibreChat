@@ -1,6 +1,7 @@
 import { Constants } from '@librechat/agents';
 import type { CodeEnvFile, CodeSessionContext, ToolSessionMap } from '@librechat/agents';
 import {
+  buildAgentInitialToolSessions,
   buildInitialToolSessions,
   collectCodeExecutionProfileRoutes,
   seedCodeFilesIntoSessions,
@@ -163,6 +164,46 @@ describe('seedCodeFilesIntoSessions', () => {
 
     expect(result!.get(Constants.EXECUTE_CODE)?.files?.map((f) => f.id)).toEqual(['s1']);
     expect(result!.get(statefulKey)?.files?.map((f) => f.id)).toEqual(['w1']);
+  });
+});
+
+describe('buildAgentInitialToolSessions', () => {
+  it('clones only the agent partition and merges files resolved after the run seed', () => {
+    const statefulKey = 'execute_code:stateful:v2:user:user-1';
+    const statelessFile = file('stateless', 'stateless-session', 'stateless.txt');
+    const skillFile = file('skill', 'stateful-skill-session', 'skills/tool.py');
+    const lazyAttachment = file('attachment', 'stateful-user-session', 'input.csv');
+    const runSessions: ToolSessionMap = new Map([
+      [
+        Constants.EXECUTE_CODE,
+        {
+          session_id: statelessFile.storage_session_id,
+          files: [statelessFile],
+          lastUpdated: 1,
+        } satisfies CodeSessionContext,
+      ],
+      [
+        statefulKey,
+        {
+          session_id: skillFile.storage_session_id,
+          files: [skillFile],
+          lastUpdated: 2,
+        } satisfies CodeSessionContext,
+      ],
+    ]);
+
+    const result = buildAgentInitialToolSessions(
+      { codeSessionKey: statefulKey, primedCodeFiles: [lazyAttachment] },
+      runSessions,
+    );
+
+    expect(result?.has(Constants.EXECUTE_CODE)).toBe(false);
+    expect(result?.get(statefulKey)?.files?.map((entry) => entry.id)).toEqual([
+      'skill',
+      'attachment',
+    ]);
+    expect(result).not.toBe(runSessions);
+    expect(runSessions.get(statefulKey)?.files?.map((entry) => entry.id)).toEqual(['skill']);
   });
 });
 

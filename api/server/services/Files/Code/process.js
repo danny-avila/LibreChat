@@ -33,6 +33,9 @@ const {
   EModelEndpoint,
   ErrorTypes,
   mergeFileConfig,
+  getCodeEnvRefs,
+  mergeCodeEnvRef,
+  getCodeEnvRefForProfile,
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
@@ -516,6 +519,14 @@ const processCodeOutput = async ({
      * silently excludes the file from priming on subsequent turns.
      */
     const persistedMessageId = isUpdate ? (claimed.messageId ?? messageId) : messageId;
+    /* A generated-output write replaces the file's bytes, so pointers to
+     * earlier content in another profile must not survive as reusable refs. */
+    const codeEnvReferenceSet = mergeCodeEnvRef(undefined, codeEnvRef);
+    const codeEnvMetadata = {
+      ...claimed.metadata,
+      ...codeEnvReferenceSet,
+      sourceDispatchedAt,
+    };
 
     if (isImage) {
       const usage = isUpdate ? (claimed.usage ?? 0) + 1 : 1;
@@ -544,7 +555,7 @@ const processCodeOutput = async ({
         updatedAt: formattedDate,
         source: appConfig.fileStrategy,
         context: FileContext.execute_code,
-        metadata: { codeEnvRef, sourceDispatchedAt },
+        metadata: codeEnvMetadata,
         ...(await getRetentionExpiry(req)),
       };
       if (!(await commitCodeFile(file))) {
@@ -647,7 +658,7 @@ const processCodeOutput = async ({
       tenantId: req.user.tenantId,
       bytes: buffer.length,
       updatedAt: formattedDate,
-      metadata: { codeEnvRef, sourceDispatchedAt },
+      metadata: codeEnvMetadata,
       source: appConfig.fileStrategy,
       context: FileContext.execute_code,
       usage: isUpdate ? (claimed.usage ?? 0) + 1 : 1,
@@ -971,15 +982,16 @@ const primeFiles = async (options) => {
       continue;
     }
 
-    const ref = file.metadata?.codeEnvRef;
-    if (!ref) {
+    const ref = getCodeEnvRefForProfile(file.metadata, executionProfile);
+    const sourceRef = ref ?? getCodeEnvRefs(file.metadata)[0]?.[1];
+    if (!sourceRef) {
       skippedNoRef += 1;
       logger.debug(`[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref`);
       continue;
     }
     requiredCodeFiles += 1;
-    const session_id = ref.storage_session_id;
-    const id = ref.file_id;
+    const session_id = sourceRef.storage_session_id;
+    const id = sourceRef.file_id;
 
     /**
      * `pushFile` accepts optional overrides so the reupload path can
@@ -1010,11 +1022,11 @@ const primeFiles = async (options) => {
        * we still send it for shape uniformity with shared kinds. */
       files.push({
         id: overrideId ?? id,
-        resource_id: ref.id,
+        resource_id: sourceRef.id,
         storage_session_id: overrideSessionId ?? session_id,
         name: file.filename,
-        kind: ref.kind,
-        ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+        kind: sourceRef.kind,
+        ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
       });
     };
 
@@ -1034,9 +1046,9 @@ const primeFiles = async (options) => {
           req: options.req,
           stream,
           filename: file.filename,
-          kind: ref.kind,
-          id: ref.id,
-          ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+          kind: sourceRef.kind,
+          id: sourceRef.id,
+          ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
           codeApiBaseUrl,
           executionProfile,
         });
@@ -1055,22 +1067,20 @@ const primeFiles = async (options) => {
          * pointer changes.
          */
         const newRef = {
-          kind: ref.kind,
-          id: ref.id,
+          kind: sourceRef.kind,
+          id: sourceRef.id,
           storage_session_id: uploaded.storage_session_id,
           file_id: uploaded.file_id,
           executionProfile,
-          ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+          ...(sourceRef.kind === 'skill' ? { version: sourceRef.version } : {}),
         };
 
-        const updatedMetadata = {
-          ...file.metadata,
-          codeEnvRef: newRef,
-        };
+        const updatedRefs = mergeCodeEnvRef(file.metadata, newRef);
 
         await updateFile({
           file_id: file.file_id,
-          metadata: updatedMetadata,
+          'metadata.codeEnvRef': updatedRefs.codeEnvRef,
+          [`metadata.codeEnvRefs.${executionProfile}`]: newRef,
         });
         sessions.set(newRef.storage_session_id, true);
         pushFile(newRef.storage_session_id, newRef.file_id);
@@ -1089,10 +1099,10 @@ const primeFiles = async (options) => {
         );
       }
     };
-    if ((ref.executionProfile ?? 'default') !== executionProfile) {
+    if (!ref) {
       logger.debug(
-        `[primeCodeFiles] file=${file.file_id} path=reupload reason=profile-mismatch ` +
-          `storedProfile=${ref.executionProfile ?? 'default'} requestedProfile=${executionProfile}`,
+        `[primeCodeFiles] file=${file.file_id} path=reupload reason=profile-missing ` +
+          `requestedProfile=${executionProfile}`,
       );
       await reuploadFile();
       continue;

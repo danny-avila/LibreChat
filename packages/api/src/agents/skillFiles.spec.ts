@@ -407,10 +407,12 @@ describe('primeInvokedSkillsForProfiles', () => {
     expect(result.initialSessions?.get(statefulKey)?.files?.map((file) => file.id)).toEqual([
       'stateful-file',
     ]);
-    expect(updateSkillFileCodeEnvIds).toHaveBeenCalledTimes(1);
-    expect(updateSkillFileCodeEnvIds.mock.calls[0][0][0].codeEnvRef.executionProfile).toBe(
-      'default',
-    );
+    expect(updateSkillFileCodeEnvIds).toHaveBeenCalledTimes(2);
+    expect(
+      updateSkillFileCodeEnvIds.mock.calls
+        .map(([updates]) => updates[0].codeEnvRef.executionProfile)
+        .sort(),
+    ).toEqual(['default', 'stateful']);
   });
 });
 

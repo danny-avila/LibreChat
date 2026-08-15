@@ -793,6 +793,15 @@ describe('processAgentFileUpload', () => {
               file_id: 'fid-1',
               executionProfile: 'default',
             },
+            codeEnvRefs: {
+              default: {
+                kind: 'user',
+                id: 'user-123',
+                storage_session_id: 'sess-1',
+                file_id: 'fid-1',
+                executionProfile: 'default',
+              },
+            },
           },
         }),
         true,
@@ -821,6 +830,15 @@ describe('processAgentFileUpload', () => {
               storage_session_id: 'sess-2',
               file_id: 'fid-2',
               executionProfile: 'default',
+            },
+            codeEnvRefs: {
+              default: {
+                kind: 'agent',
+                id: 'agent-abc',
+                storage_session_id: 'sess-2',
+                file_id: 'fid-2',
+                executionProfile: 'default',
+              },
             },
           },
         }),
@@ -882,6 +900,15 @@ describe('processAgentFileUpload', () => {
               storage_session_id: 'sess-5',
               file_id: 'fid-5',
               executionProfile: 'default',
+            },
+            codeEnvRefs: {
+              default: {
+                kind: 'agent',
+                id: 'agent-abc',
+                storage_session_id: 'sess-5',
+                file_id: 'fid-5',
+                executionProfile: 'default',
+              },
             },
           },
         }),

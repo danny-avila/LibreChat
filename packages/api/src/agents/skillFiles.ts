@@ -2,8 +2,12 @@ import { Readable } from 'stream';
 import { isAxiosError } from 'axios';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
+import {
+  getCodeEnvRefForProfile,
+  type CodeEnvRef,
+  type CodeEnvRefMap,
+} from 'librechat-data-provider';
 import type { CodeEnvFile, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
-import type { CodeEnvRef } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
@@ -19,6 +23,7 @@ export interface SkillFileRecord {
   source: string;
   bytes: number;
   codeEnvRef?: CodeEnvRef;
+  codeEnvRefs?: CodeEnvRefMap;
 }
 
 export interface PrimeSkillFilesParams {
@@ -238,14 +243,12 @@ async function executePrimeSkillFiles(
    * upload on the next prime. */
   if (getSessionInfo && checkIfActive && skillFiles.length > 0) {
     const allHaveRefs = skillFiles.every(
-      (sf) =>
-        sf.codeEnvRef !== undefined &&
-        (sf.codeEnvRef.executionProfile ?? 'default') === executionProfile,
+      (sf) => getCodeEnvRefForProfile(sf, executionProfile) !== undefined,
     );
     if (allHaveRefs) {
       const refsBySession = new Map<string, CodeEnvRef>();
       for (const sf of skillFiles) {
-        const ref = sf.codeEnvRef;
+        const ref = getCodeEnvRefForProfile(sf, executionProfile);
         if (ref && !refsBySession.has(ref.storage_session_id)) {
           refsBySession.set(ref.storage_session_id, ref);
         }
@@ -263,7 +266,7 @@ async function executePrimeSkillFiles(
         if (allActive) {
           const files: PrimeSkillFilesResult['files'] = [];
           for (const sf of skillFiles) {
-            const ref = sf.codeEnvRef;
+            const ref = getCodeEnvRefForProfile(sf, executionProfile);
             if (!ref) continue;
             /* Cache-hit refs already carry resource identity (kind / id /
              * version) — pull them through so the artifact emitted by
@@ -530,13 +533,15 @@ export async function primeInvokedSkills(
     // ALL distinct sessions for freshness. If all are active, return cached
     // references with zero re-uploads. If any expired, re-upload everything.
     if (deps.getSessionInfo && deps.checkIfActive) {
-      const allResolved = fileListResults.flatMap((r) =>
-        r.files.map((f) => ({ skillName: r.skill.name, file: f, ref: f.codeEnvRef })),
-      );
       const executionProfile = deps.codeExecutionContext?.executionProfile ?? 'default';
-      const resolvedWithRef = allResolved.filter(
-        (x) => x.ref !== undefined && (x.ref.executionProfile ?? 'default') === executionProfile,
+      const allResolved = fileListResults.flatMap((r) =>
+        r.files.map((f) => ({
+          skillName: r.skill.name,
+          file: f,
+          ref: getCodeEnvRefForProfile(f, executionProfile),
+        })),
       );
+      const resolvedWithRef = allResolved.filter((x) => x.ref !== undefined);
 
       // Only use cache when ALL files have refs (no partial persistence)
       if (resolvedWithRef.length > 0 && resolvedWithRef.length === allResolved.length) {
@@ -683,11 +688,6 @@ export async function primeInvokedSkillsForProfiles(
     return primeInvokedSkills({ ...deps, codeEnvAvailable: false });
   }
 
-  const persistentProfile =
-    deps.executionProfiles.find(
-      ({ codeExecutionContext }) => codeExecutionContext.executionProfile === 'default',
-    )?.codeExecutionContext.executionProfile ??
-    deps.executionProfiles[0].codeExecutionContext.executionProfile;
   const profileResults = await Promise.all(
     deps.executionProfiles.map(async (profile) => ({
       profile,
@@ -695,10 +695,7 @@ export async function primeInvokedSkillsForProfiles(
         ...deps,
         codeEnvAvailable: true,
         codeExecutionContext: profile.codeExecutionContext,
-        updateSkillFileCodeEnvIds:
-          profile.codeExecutionContext.executionProfile === persistentProfile
-            ? deps.updateSkillFileCodeEnvIds
-            : undefined,
+        updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
       }),
     })),
   );

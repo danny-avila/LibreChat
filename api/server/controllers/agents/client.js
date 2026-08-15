@@ -1401,7 +1401,7 @@ class AgentClient extends BaseClient {
             this.contextHandlers?.processFile(file);
             continue;
           }
-          if (file.metadata?.codeEnvRef) {
+          if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
             continue;
           }
         }

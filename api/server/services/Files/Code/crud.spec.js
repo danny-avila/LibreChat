@@ -233,6 +233,42 @@ describe('Code CRUD', () => {
       );
     });
 
+    it('deletes every profile-local object retained for a shared file record', async () => {
+      mockAxios.mockResolvedValue({ status: 204 });
+      const dualProfileFile = {
+        metadata: {
+          codeEnvRef: file.metadata.codeEnvRef,
+          codeEnvRefs: {
+            default: file.metadata.codeEnvRef,
+            stateful: {
+              ...file.metadata.codeEnvRef,
+              storage_session_id: 'stateful-session',
+              file_id: 'stateful-file',
+              executionProfile: 'stateful',
+            },
+          },
+        },
+      };
+
+      await deleteCodeEnvFile(req, dualProfileFile);
+
+      expect(mockAxios).toHaveBeenCalledTimes(2);
+      expect(mockAxios).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          url: expect.stringContaining('/sessions/session-1/objects/file-1'),
+          headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'default' }),
+        }),
+      );
+      expect(mockAxios).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          url: expect.stringContaining('/sessions/stateful-session/objects/stateful-file'),
+          headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+        }),
+      );
+    });
+
     it.each([404, 405])(
       'falls back to the legacy code environment delete route after a %s',
       async (status) => {
