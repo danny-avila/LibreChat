@@ -142,6 +142,9 @@ export const useArchiveConvoMutation = (
           queryKey: archivedConvoQueryKey,
           refetchPage: (_, index) => index === 0,
         });
+        /** Archiving drops the chat from the pinned cache, so restoring one that is
+         * still pinned has to refetch or the section would stay missing it. */
+        queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
         queryClient.invalidateQueries([QueryKeys.projectConversations]);
         queryClient.invalidateQueries([QueryKeys.projects]);
       },

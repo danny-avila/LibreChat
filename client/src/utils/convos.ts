@@ -508,32 +508,49 @@ function updatePinnedConvosQuery(
   queryClient: QueryClient,
   conversationId: string,
   updater: (c: TConversation) => TConversation | null,
+  moveToTop = false,
 ) {
-  queryClient.setQueryData<PinnedConversationsData>([QueryKeys.pinnedConversations], (oldData) => {
-    if (!oldData) {
-      return oldData;
-    }
-    const index = oldData.conversations.findIndex((c) => c.conversationId === conversationId);
-    if (index === -1) {
-      return oldData;
-    }
-    const found = oldData.conversations[index];
-    const updated = updater(found);
-    if (!updated || updated.pinned !== true) {
+  /* Keyed by the active bookmark filter, so every cached variant has to be touched
+     rather than only the unfiltered one. */
+  const queries = queryClient
+    .getQueryCache()
+    .findAll([QueryKeys.pinnedConversations], { exact: false });
+
+  for (const query of queries) {
+    queryClient.setQueryData<PinnedConversationsData>(query.queryKey, (oldData) => {
+      if (!oldData) {
+        return oldData;
+      }
+      const index = oldData.conversations.findIndex((c) => c.conversationId === conversationId);
+      if (index === -1) {
+        return oldData;
+      }
+      const found = oldData.conversations[index];
+      const updated = updater(found);
+      if (!updated || updated.pinned !== true) {
+        return {
+          ...oldData,
+          conversations: oldData.conversations.filter((_, i) => i !== index),
+        };
+      }
+      const merged =
+        updated.isShared === undefined && found.isShared !== undefined
+          ? { ...updated, isShared: found.isShared }
+          : updated;
+
+      /* The server returns pins newest-first, so a pin that just received a message has
+         to lead the section the same way it leads the chats list. */
+      if (moveToTop) {
+        const rest = oldData.conversations.filter((_, i) => i !== index);
+        return { ...oldData, conversations: [merged, ...rest] };
+      }
+
       return {
         ...oldData,
-        conversations: oldData.conversations.filter((_, i) => i !== index),
+        conversations: oldData.conversations.map((c, i) => (i === index ? merged : c)),
       };
-    }
-    const merged =
-      updated.isShared === undefined && found.isShared !== undefined
-        ? { ...updated, isShared: found.isShared }
-        : updated;
-    return {
-      ...oldData,
-      conversations: oldData.conversations.map((c, i) => (i === index ? merged : c)),
-    };
-  });
+    });
+  }
 }
 
 // Update
@@ -543,7 +560,7 @@ export function updateConvoInAllQueries(
   updater: (c: TConversation) => TConversation,
   moveToTop = false,
 ) {
-  updatePinnedConvosQuery(queryClient, conversationId, updater);
+  updatePinnedConvosQuery(queryClient, conversationId, updater, moveToTop);
 
   const queries = queryClient
     .getQueryCache()

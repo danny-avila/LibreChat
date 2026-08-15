@@ -112,18 +112,40 @@ export const useConversationsInfiniteQuery = (
 };
 
 /**
- * Pinned chats are a hand-curated, deliberately small set, so the sidebar section
- * fetches them whole rather than paginating: a pin older than the first page of the
- * Chats list would otherwise stay hidden until that list scrolled far enough to reach it.
+ * Pinned chats are a hand-curated set, so the sidebar fetches the whole thing rather
+ * than paginating it: a pin older than the first page of the Chats list would
+ * otherwise stay hidden until that list scrolled far enough to reach it, and
+ * `groupConversationsByDate` keeps pins out of the Chats groups entirely, so any pin
+ * this query does not return is invisible in the sidebar. The page size is therefore a
+ * request size, not a cap; the query drains the cursor.
  */
-export const pinnedConversationsLimit = 100;
+export const pinnedConversationsPageSize = 100;
 
 export const usePinnedConversationsQuery = (
+  params: Pick<ConversationListParams, 'tags'> = {},
   config?: UseQueryOptions<ConversationListResponse>,
 ): QueryObserverResult<ConversationListResponse> => {
+  const { tags } = params;
+
   return useQuery<ConversationListResponse>(
-    [QueryKeys.pinnedConversations],
-    () => dataService.listConversations({ pinned: true, limit: pinnedConversationsLimit }),
+    [QueryKeys.pinnedConversations, { tags }],
+    async () => {
+      const conversations: ConversationListResponse['conversations'] = [];
+      let cursor: string | undefined;
+
+      do {
+        const page = await dataService.listConversations({
+          pinned: true,
+          tags,
+          limit: pinnedConversationsPageSize,
+          cursor,
+        });
+        conversations.push(...page.conversations);
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor);
+
+      return { conversations, nextCursor: null };
+    },
     {
       staleTime: 5 * 60 * 1000,
       cacheTime: 30 * 60 * 1000,

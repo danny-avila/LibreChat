@@ -81,8 +81,12 @@ const ConversationsSection = memo(() => {
   }, [data]);
 
   /** Pins are fetched on their own so one older than the first page of the chats list
-   * still shows on first paint, instead of appearing only once that list scrolls to it. */
-  const { data: pinnedData } = usePinnedConversationsQuery({ enabled: isAuthenticated });
+   * still shows on first paint, instead of appearing only once that list scrolls to it.
+   * The bookmark filter still applies, matching the chats list beside it. */
+  const { data: pinnedData } = usePinnedConversationsQuery(
+    { tags: tags.length === 0 ? undefined : tags },
+    { enabled: isAuthenticated },
+  );
 
   const pinnedConversations = useMemo(
     () =>
