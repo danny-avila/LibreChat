@@ -61,6 +61,11 @@ describe('stripUIResourceMarkers', () => {
     expect(stripUIResourceMarkers(markdown)).toBe('intro\r\n    \r\nnext ');
   });
 
+  it('maps markers across blockquote paragraph prefixes', () => {
+    const markdown = '> intro\n> \\ui{paragraph}\n>\n>     \\ui{code}';
+    expect(stripUIResourceMarkers(markdown)).toBe(markdown.replace('\\ui{paragraph}', ''));
+  });
+
   it('recursively sanitizes TextData and subagent content while preserving annotations', () => {
     const content = [
       {

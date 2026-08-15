@@ -53,8 +53,8 @@ function alignTextSpans(
   decoded: ReturnType<typeof decodeTextWithSourceSpans>,
   nodeValue: string,
 ): Array<[number, number]> | null {
-  // mdast omits indentation that continues a paragraph, so align decoded text
-  // back to source offsets while allowing only leading line whitespace to differ.
+  // mdast omits continuation indentation and blockquote prefixes, so align
+  // decoded text back to source offsets while allowing those line prefixes.
   const result: Array<[number, number]> = [];
   let sourceIndex = 0;
   let lineHasContent = false;
@@ -75,7 +75,11 @@ function alignTextSpans(
     }
     while (decoded.value[sourceIndex] !== expected) {
       const candidate = decoded.value[sourceIndex];
-      if (candidate == null || lineHasContent || (candidate !== ' ' && candidate !== '\t')) {
+      if (
+        candidate == null ||
+        lineHasContent ||
+        (candidate !== ' ' && candidate !== '\t' && candidate !== '>')
+      ) {
         return null;
       }
       sourceIndex++;
