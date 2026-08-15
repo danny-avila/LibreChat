@@ -86,6 +86,19 @@ export interface IThemeRGB {
   // Brand colors
   'rgb-brand-purple'?: string;
 
+  /**
+   * Categorical data-visualisation scale. Slots carry series identity only — the
+   * order is the colour-vision-deficiency safety mechanism and must not be
+   * reshuffled. Reserved status colors never appear here.
+   */
+  'rgb-series-1'?: string;
+  'rgb-series-2'?: string;
+  'rgb-series-3'?: string;
+  'rgb-series-4'?: string;
+  'rgb-series-5'?: string;
+  'rgb-series-6'?: string;
+  'rgb-series-7'?: string;
+
   // Presentation
   'rgb-presentation'?: string;
 }

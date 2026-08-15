@@ -215,6 +215,15 @@ html {
   --status-neutral-border: var(--gray-300);
   --text-on-status: var(--white);
 
+  /* Categorical series scale — slot order is the CVD-safety mechanism */
+  --series-1: 5 110 189;
+  --series-2: 233 86 13;
+  --series-3: 0 148 142;
+  --series-4: 182 123 5;
+  --series-5: 216 90 142;
+  --series-6: 126 35 205;
+  --series-7: 1 131 1;
+
   --surface-inverted: var(--gray-850);
   --surface-inverted-hover: var(--gray-700);
   --text-inverted: var(--white);
@@ -298,6 +307,15 @@ html {
   --status-neutral-subtle: var(--gray-800);
   --status-neutral-border: var(--gray-700);
   --text-on-status: var(--white);
+
+  /* Categorical series scale — same hues, stepped for the dark surface */
+  --series-1: 9 140 238;
+  --series-2: 217 87 35;
+  --series-3: 6 158 152;
+  --series-4: 200 133 12;
+  --series-5: 213 82 130;
+  --series-6: 171 104 254;
+  --series-7: 80 167 49;
 
   --surface-inverted: var(--white);
   --surface-inverted-hover: var(--gray-100);
