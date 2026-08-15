@@ -3,11 +3,13 @@ import { useOutletContext, useSearchParams } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
-import { FileSearch, RotateCcw } from 'lucide-react';
+import { FileSearch, FolderPlus, RotateCcw, X } from 'lucide-react';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useLocalize } from '~/hooks';
 import { useChatContext } from '~/Providers';
 import { OpenSidebar } from '~/components/Chat/Menus';
+import AddToProjectPopover from '~/components/Projects/AddToProjectPopover';
+import type { ProjectDocumentInput } from '~/data-provider/Projects';
 import {
   useDocumentKeywordSearch,
   type KeywordSearchFilters,
@@ -51,6 +53,8 @@ const DocumentSearch: React.FC = () => {
   const [query, setQuery] = useState(queryFromUrl);
   const [submittedQuery, setSubmittedQuery] = useState(queryFromUrl);
   const [filters, setFilters] = useState<DocumentSearchFilterState>(EMPTY_DOC_FILTERS);
+  // BKL: 다중 선택(프로젝트에 담기) — 현재 결과에서 체크된 doc_id 집합
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
 
   useDocumentTitle(`${localize('com_nav_document_search')} | ${getAppTitle()}`);
 
@@ -60,6 +64,7 @@ const DocumentSearch: React.FC = () => {
     (q: string, f: DocumentSearchFilterState) => {
       setQuery(q);
       setSubmittedQuery(q);
+      setSelectedDocIds(new Set());
       const next = new URLSearchParams(searchParams);
       if (q) next.set('q', q);
       else next.delete('q');
@@ -92,6 +97,37 @@ const DocumentSearch: React.FC = () => {
   const isSearching = search.isLoading;
   const hasActiveFilters = isFilterActive(filters);
   const canReset = !!query || hasQuery || hasActiveFilters || !!search.data || search.isError;
+
+  // BKL: 다중 선택 파생값 — 선택된 hit 을 프로젝트 담기 입력으로 변환
+  const selectableDocIds = useMemo(
+    () => documents.filter((d) => d.doc_id).map((d) => d.doc_id),
+    [documents],
+  );
+  const allSelected =
+    selectableDocIds.length > 0 && selectableDocIds.every((id) => selectedDocIds.has(id));
+  const toggleDocSelection = useCallback((docId: string) => {
+    setSelectedDocIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) {
+        next.delete(docId);
+      } else {
+        next.add(docId);
+      }
+      return next;
+    });
+  }, []);
+  const selectedProjectDocs = useMemo<ProjectDocumentInput[]>(() => {
+    const collection = localStorage.getItem('bkl_selected_collection');
+    return documents
+      .filter((d) => d.doc_id && selectedDocIds.has(d.doc_id))
+      .map((d) => ({
+        doc_id: d.doc_id,
+        collection,
+        file_name: d.file_name ?? null,
+        matter_uid: d.matter_uid ?? null,
+        origin: 'doc_search' as const,
+      }));
+  }, [documents, selectedDocIds]);
 
   const resultHeading = useMemo(() => {
     if (!hasQuery) return null;
@@ -126,6 +162,7 @@ const DocumentSearch: React.FC = () => {
     setQuery('');
     setSubmittedQuery('');
     setFilters(EMPTY_DOC_FILTERS);
+    setSelectedDocIds(new Set());
     setSearchParams(new URLSearchParams(), { replace: true });
     search.reset();
   }, [search, setSearchParams]);
@@ -197,6 +234,17 @@ const DocumentSearch: React.FC = () => {
             {hasQuery && (
               <div className="mt-8 flex items-baseline justify-between border-b border-border-light pb-3">
                 <p className="text-sm text-text-primary">{resultHeading}</p>
+                {hasResults && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedDocIds(allSelected ? new Set() : new Set(selectableDocIds))
+                    }
+                    className="shrink-0 text-xs text-text-secondary underline-offset-2 hover:text-text-primary hover:underline"
+                  >
+                    {allSelected ? '전체 해제' : '전체 선택'}
+                  </button>
+                )}
               </div>
             )}
 
@@ -232,7 +280,14 @@ const DocumentSearch: React.FC = () => {
                     const key = hit.doc_id || hit.file_name;
                     return (
                       <li key={key}>
-                        <ResultCard hit={hit} query={submittedQuery} />
+                        <ResultCard
+                          hit={hit}
+                          query={submittedQuery}
+                          isSelected={!!hit.doc_id && selectedDocIds.has(hit.doc_id)}
+                          onToggleSelect={
+                            hit.doc_id ? () => toggleDocSelection(hit.doc_id) : undefined
+                          }
+                        />
                       </li>
                     );
                   })}
@@ -241,6 +296,38 @@ const DocumentSearch: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* BKL: 다중 선택 액션 바 — 1건 이상 선택 시 하단 고정 */}
+        {selectedProjectDocs.length > 0 && (
+          <div className="pointer-events-none absolute bottom-6 left-0 right-0 z-30 flex justify-center px-4">
+            <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-border-medium bg-surface-primary py-2 pl-4 pr-2 shadow-lg">
+              <span className="text-sm text-text-primary">
+                {selectedProjectDocs.length}건 선택
+              </span>
+              <AddToProjectPopover
+                documents={selectedProjectDocs}
+                align="center"
+                onAdded={() => setSelectedDocIds(new Set())}
+              >
+                <button
+                  type="button"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-full bg-surface-submit px-3 text-sm text-white hover:bg-surface-submit-hover"
+                >
+                  <FolderPlus className="h-4 w-4" aria-hidden="true" />
+                  프로젝트에 담기
+                </button>
+              </AddToProjectPopover>
+              <button
+                type="button"
+                aria-label="선택 해제"
+                onClick={() => setSelectedDocIds(new Set())}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
