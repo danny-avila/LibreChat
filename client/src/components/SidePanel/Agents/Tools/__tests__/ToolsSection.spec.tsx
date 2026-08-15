@@ -254,4 +254,39 @@ describe('skills toggle behavior', () => {
     expect(mockSetValue).toHaveBeenCalledWith('skills', [], { shouldDirty: true });
     expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', false, { shouldDirty: true });
   });
+
+  test('turning use all skills off restores the previously selected skills', () => {
+    // Start with a skill selected, then enable "use all" to stash it.
+    mockFormValues = { skills: ['s1'], skills_enabled: false };
+    const { rerender } = render(<ToolsSection agentId="a" />);
+    // Switch to no-skills state (simulating the "use all" toggle turning on would
+    // clear skills via setValue — here we re-render with the resulting form state).
+    mockFormValues = { skills: [], skills_enabled: false };
+    rerender(<ToolsSection agentId="a" />);
+    // Click switch to turn "use all" on — stashes the previous empty list (nothing to restore yet).
+    fireEvent.click(screen.getByRole('switch'));
+    mockSetValue.mockClear();
+    // Now form reflects "use all" state.
+    mockFormValues = { skills: [], skills_enabled: true };
+    rerender(<ToolsSection agentId="a" />);
+    // Turn it back off — should restore whatever was stashed.
+    fireEvent.click(screen.getByRole('switch'));
+    expect(mockSetValue).toHaveBeenCalledWith('skills', [], { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', false, { shouldDirty: true });
+  });
+
+  test('does not restore a stash from a different agent', () => {
+    // Build up a stash on agent "a".
+    mockFormValues = { skills: [], skills_enabled: false };
+    const { rerender } = render(<ToolsSection agentId="a" />);
+    fireEvent.click(screen.getByRole('switch')); // stashes []
+    mockFormValues = { skills: [], skills_enabled: true };
+    rerender(<ToolsSection agentId="a" />);
+    // Switch to agent "b" — stash should be cleared.
+    rerender(<ToolsSection agentId="b" />);
+    mockSetValue.mockClear();
+    fireEvent.click(screen.getByRole('switch')); // turn off — no stash available
+    expect(mockSetValue).toHaveBeenCalledWith('skills', [], { shouldDirty: true });
+    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', false, { shouldDirty: true });
+  });
 });

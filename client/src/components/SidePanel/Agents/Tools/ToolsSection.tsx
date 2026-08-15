@@ -84,12 +84,20 @@ export default function ToolsSection({ agentId }: Props) {
   const skillsValue = useWatch({ control, name: 'skills' });
   const skillsEnabledValue = useWatch({ control, name: 'skills_enabled' });
   const hasSelectedSkills = (skillsValue ?? []).length > 0;
-  const useAllSkills = !hasSelectedSkills && skillsEnabledValue === true;
-  /** Selection stashed when "use all skills" turns on, so turning it back off
-   * restores the previous picks instead of destroying them. Cleared when the
-   * agent changes — the section isn't remounted on switch (only the form
+  /**
+   * True when `skills_enabled` is on and no skills are pinned — the agent
+   * exposes the full accessible catalog ("use all skills" mode).
+   * When skills are pinned this flag is false; `skills_enabled` instead means
+   * "also allow the user's other activated skills" ("allow other skills" mode).
+   */
+  const skillsEnabledForAll = !hasSelectedSkills && skillsEnabledValue === true;
+  /**
+   * Stashes the current selection when switching into "use all skills" mode so
+   * turning it back off restores the previous picks instead of destroying them.
+   * Cleared on agent switch — the section isn't remounted (only the form
    * resets), so a stale stash could otherwise restore one agent's allowlist
-   * into another. */
+   * into another.
+   */
   const stashedSkillsRef = useRef<string[]>([]);
   const [prevAgentId, setPrevAgentId] = useState(agentId);
   if (prevAgentId !== agentId) {
@@ -97,7 +105,15 @@ export default function ToolsSection({ agentId }: Props) {
     stashedSkillsRef.current = [];
   }
 
-  const handleUseAllSkillsChange = useCallback(
+  /**
+   * Handles the `skills_enabled` toggle regardless of which mode is active:
+   *
+   * - Pinned-skills mode (`hasSelectedSkills`): just flips `skills_enabled`,
+   *   meaning "also allow user's other activated skills".
+   * - No-pinned-skills mode: toggling on clears the selection and enables the
+   *   full-catalog flag; toggling off restores the stashed selection.
+   */
+  const handleSkillsEnabledChange = useCallback(
     (checked: boolean) => {
       if (hasSelectedSkills) {
         setValue('skills_enabled', checked, { shouldDirty: true });
@@ -292,14 +308,14 @@ export default function ToolsSection({ agentId }: Props) {
           onAdd={() => setSkillsOpen(true)}
           onInfo={setDialogItem}
           onRemove={handleQuickRemove}
-          badgeText={useAllSkills ? localize('com_ui_all_proper') : undefined}
+          badgeText={skillsEnabledForAll ? localize('com_ui_all_proper') : undefined}
           showAdd={true}
-          showBody={!useAllSkills}
+          showBody={!skillsEnabledForAll}
         >
           <div className="mb-1.5 flex items-center justify-between gap-3 px-1">
             <div className="flex min-w-0 items-center gap-1.5">
               <span
-                id="use-all-skills-label"
+                id="skills-enabled-label"
                 className="truncate text-[13px] font-medium text-text-primary"
               >
                 {localize(hasSelectedSkills ? 'com_ui_skills_allow_other' : 'com_ui_skills_use_all')}
@@ -320,10 +336,10 @@ export default function ToolsSection({ agentId }: Props) {
               </HoverCard>
             </div>
             <Switch
-              id="use-all-skills"
-              checked={hasSelectedSkills ? skillsEnabledValue === true : useAllSkills}
-              onCheckedChange={handleUseAllSkillsChange}
-              aria-labelledby="use-all-skills-label"
+              id="skills-enabled-toggle"
+              checked={skillsEnabledValue === true}
+              onCheckedChange={handleSkillsEnabledChange}
+              aria-labelledby="skills-enabled-label"
             />
           </div>
         </SelectedSection>
