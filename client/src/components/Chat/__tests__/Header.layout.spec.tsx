@@ -65,9 +65,19 @@ describe('chat header layout', () => {
 
     const centre = screen.getByTestId('model-selector').parentElement;
 
-    expect(centre).toHaveClass('max-md:flex-1', 'max-md:min-w-0');
+    expect(centre).toHaveClass('max-md:flex-1');
     expect(centre).not.toHaveClass('flex-1');
-    expect(centre).not.toHaveClass('min-w-0');
+  });
+
+  /**
+   * Growing and shrinking are separate decisions. In a pane narrower than the
+   * viewport — expanded sidebar, open artifacts panel — the zone must still
+   * yield space, or the trailing controls are pushed outside and clipped.
+   */
+  it('still lets the centre zone shrink at every width', () => {
+    render(<Header />);
+
+    expect(screen.getByTestId('model-selector').parentElement).toHaveClass('min-w-0');
   });
 
   it('holds the trailing cluster to the edge without a growing centre', () => {

@@ -61,7 +61,7 @@ function Header() {
            * on desktop too stretches a short model name to 448px instead of
            * letting it size to its content.
            */
-          'flex items-center gap-2 max-md:min-w-0 max-md:flex-1 md:pl-3 md:transition-all md:duration-200 md:ease-in-out',
+          'flex min-w-0 items-center gap-2 max-md:flex-1 md:pl-3 md:transition-all md:duration-200 md:ease-in-out',
           hiddenBehindNav,
         )}
       >
