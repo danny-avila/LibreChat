@@ -377,13 +377,23 @@ describe('AgentCard', () => {
     expect(description).toHaveClass('line-clamp-2', 'lg:line-clamp-3');
     expect(title.parentElement).toHaveClass('[&>*]:shrink-0');
 
+    /**
+     * The name must not render through the shared Label component. Label hardcodes
+     * `block`, which overrides the `display: -webkit-box` that line-clamp needs and
+     * leaves the clamp inert, plus `break-all`, which splits names mid-word.
+     */
+    expect(title.tagName).toBe('SPAN');
+    expect(title).toHaveClass('break-words');
+    expect(title.className).not.toMatch(/\bbreak-all\b/);
+
     /** A floated spacer reserves badge room on the first title line only */
     const spacer = title.querySelector('[aria-hidden="true"]');
     expect(spacer).toHaveClass('float-right');
   });
 
   it('omits the badge spacer when the agent has no category', () => {
-    const agentWithoutCategory = { ...mockAgent, category: '' };
+    const uncategorizedName = 'Agent Without A Category';
+    const agentWithoutCategory = { ...mockAgent, name: uncategorizedName, category: '' };
 
     render(
       <Wrapper>
@@ -391,7 +401,7 @@ describe('AgentCard', () => {
       </Wrapper>,
     );
 
-    const title = screen.getByText(agentWithoutCategory.name);
+    const title = screen.getByText(uncategorizedName);
     expect(title.querySelector('[aria-hidden="true"]')).toBeNull();
   });
 

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Label, OGDialog, OGDialogTrigger } from '@librechat/client';
+import { OGDialog, OGDialogTrigger } from '@librechat/client';
 import type t from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useAgentCategories } from '~/hooks';
 import AgentDetailContent from './AgentDetailContent';
@@ -84,12 +84,17 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
           {/* Content. Children never shrink, so a clamped line is either fully shown
               or fully hidden, rather than sliced in half by the card's fixed height. */}
           <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden [&>*]:shrink-0">
-            {/* Agent name. The floated spacer keeps only the first line clear of the
-                category badge, so longer names still wrap to the full card width. */}
-            <Label className="line-clamp-2 text-base font-semibold text-text-primary lg:text-lg">
-              {categoryLabel && <span aria-hidden="true" className="float-right h-5 w-24" />}
+            {/* Agent name. Not a <Label>: that component hardcodes `block`, which beats
+                the `display: -webkit-box` line-clamp needs and leaves the clamp inert, and
+                `break-all`, which splits names mid-word. The floated spacer keeps only the
+                first line clear of the category badge, so longer names still wrap to the
+                full card width. */}
+            <span className="line-clamp-2 break-words text-base font-semibold text-text-primary lg:text-lg">
+              {categoryLabel && (
+                <span aria-hidden="true" className="float-right h-5 w-24 max-w-[40%]" />
+              )}
               {agent.name}
-            </Label>
+            </span>
 
             {/* Agent description */}
             {agent.description && (
