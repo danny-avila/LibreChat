@@ -123,8 +123,15 @@ export default function WebSearch({
     [attachments],
   );
   const effectiveProgress = isClosed || (hasResults && !isSubmitting) ? 1 : progress;
+  /**
+   * `error` folds into this branch deliberately: an errored search has always
+   * rendered as nothing (the `cancelled` early-return below), so a step closed
+   * as `failed` lands in the same place rather than inventing a failure UI
+   * this component has never had — or worse, falling through to the streaming
+   * branch and shimmering forever.
+   */
   const cancelled = isClosed
-    ? runStepStatus === 'cancelled'
+    ? runStepStatus === 'cancelled' || error
     : (!isSubmitting && effectiveProgress < 1) || error === true;
 
   const finalizing = !isClosed && isSubmitting && isLast && effectiveProgress === 1;
@@ -134,7 +141,7 @@ export default function WebSearch({
    *  renders and the card shimmers forever. A closed step settles immediately
    *  on its own status instead of waiting for the submission to end. */
   const complete = isClosed
-    ? !cancelled && !error
+    ? !cancelled
     : effectiveProgress === 1 && !finalizing && (!isLast || !isSubmitting);
 
   const ownTurn = useMemo((): string => {

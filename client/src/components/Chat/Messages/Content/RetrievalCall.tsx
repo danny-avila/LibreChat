@@ -446,6 +446,12 @@ export default function RetrievalCall({
           if (cancelled) {
             return localize('com_ui_cancelled');
           }
+          /** Announced before the success string: a terminal step that errored
+           *  must not reach the live region as "retrieved files", which would
+           *  tell a screen-reader user the opposite of what the card shows. */
+          if (errorState) {
+            return localize('com_ui_failed');
+          }
           return intent ?? localize('com_ui_retrieved_files');
         })()}
       </span>
