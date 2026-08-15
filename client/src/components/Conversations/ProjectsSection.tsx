@@ -51,12 +51,14 @@ const noop = () => {};
 
 type ProjectChatsInlineProps = {
   projectId: string;
+  expanded: boolean;
   toggleNav: () => void;
   onShowAll: () => void;
 };
 
 const ProjectChatsInline = memo(function ProjectChatsInline({
   projectId,
+  expanded,
   toggleNav,
   onShowAll,
 }: ProjectChatsInlineProps) {
@@ -66,9 +68,11 @@ const ProjectChatsInline = memo(function ProjectChatsInline({
     () => new Set(activeJobsData?.activeJobIds ?? []),
     [activeJobsData?.activeJobIds],
   );
+  /** Collapse keeps its children mounted, so without this every project row in
+   *  the sidebar would fetch its chats on load whether or not it is open. */
   const { data, isLoading } = useConversationsInfiniteQuery(
     { projectId, sortBy: 'updatedAt', sortDirection: 'desc' },
-    { staleTime: 30000, cacheTime: 300000 },
+    { staleTime: 30000, cacheTime: 300000, enabled: expanded },
   );
 
   const conversations = useMemo<TConversation[]>(
@@ -288,6 +292,7 @@ const ProjectItem = memo(
         <Collapse open={expanded} className="pl-2">
           <ProjectChatsInline
             projectId={project._id}
+            expanded={expanded}
             toggleNav={toggleNav}
             onShowAll={openProject}
           />
