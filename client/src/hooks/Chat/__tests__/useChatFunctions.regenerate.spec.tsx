@@ -293,3 +293,52 @@ describe('useChatFunctions regenerate', () => {
     expect(messages.at(-1)?.messageId).toBe('assistant-1_');
   });
 });
+
+describe('useChatFunctions ask attachments', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockGetQueryData.mockReturnValue({});
+  });
+
+  /** The server titles an attachment-only turn from the submitted filenames
+   *  (getAttachmentTitleText), so the fresh-file mapping must carry them. */
+  it('carries the filename on freshly attached files', () => {
+    const setMessages = jest.fn();
+    const setSubmission = jest.fn();
+    const setFiles = jest.fn();
+    const files = new Map([
+      [
+        'file-1',
+        {
+          file_id: 'file-1',
+          filepath: '/uploads/file-1',
+          filename: 'quarterly-report.pdf',
+          type: 'application/pdf',
+        },
+      ],
+    ]) as unknown as Parameters<typeof useChatFunctions>[0]['files'];
+
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: null,
+        conversation: conversation(Constants.NEW_CONVO as string),
+        getMessages: () => [],
+        setMessages,
+        setSubmission,
+        files,
+        setFiles,
+      }),
+    );
+
+    act(() => {
+      result.current.ask({ text: '' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.files?.[0]).toMatchObject({
+      file_id: 'file-1',
+      filename: 'quarterly-report.pdf',
+    });
+  });
+});

@@ -560,6 +560,7 @@ export default function useChatFunctions({
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
+        filename: file.filename,
         type: file.type ?? '', // Ensure type is not undefined
         height: file.height,
         width: file.width,
