@@ -144,7 +144,7 @@ function UnifiedSidebar() {
       >
         <SidebarChatProvider>
           <ActivePanelProvider>
-            <MobileHeader links={links} onClose={handleCollapse} />
+            <MobileHeader links={links} expanded={expanded} onClose={handleCollapse} />
             <nav
               id="chat-history-nav"
               className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt"

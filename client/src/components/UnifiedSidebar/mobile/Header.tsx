@@ -13,7 +13,15 @@ const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
  * button is the primary dismissal. It keeps `CLOSE_SIDEBAR_ID` because
  * `OpenSidebar` focuses that id shortly after opening.
  */
-function Header({ links, onClose }: { links: NavLink[]; onClose: () => void }) {
+function Header({
+  links,
+  expanded,
+  onClose,
+}: {
+  links: NavLink[];
+  expanded: boolean;
+  onClose: () => void;
+}) {
   const localize = useLocalize();
 
   return (
@@ -23,12 +31,19 @@ function Header({ links, onClose }: { links: NavLink[]; onClose: () => void }) {
         <AccountSettings collapsed />
       </Suspense>
       <Button
-        id={CLOSE_SIDEBAR_ID}
-        data-testid="close-sidebar-button"
+        /**
+         * The drawer stays mounted while closed so it can slide, and a
+         * translated element still counts as visible. Only claim the close
+         * identity while open, or callers that probe for it act on a control
+         * sitting off-viewport.
+         */
+        id={expanded ? CLOSE_SIDEBAR_ID : undefined}
+        data-testid={expanded ? 'close-sidebar-button' : undefined}
         size="icon"
         variant="ghost"
         aria-label={localize('com_nav_close_sidebar')}
-        aria-expanded={true}
+        aria-expanded={expanded}
+        tabIndex={expanded ? 0 : -1}
         className="size-10 flex-shrink-0 rounded-lg"
         onClick={onClose}
       >

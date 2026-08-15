@@ -41,12 +41,13 @@ function Switcher({ links }: { links: NavLink[] }) {
   return (
     <DropdownPopup
       /**
-       * Rendered inside the drawer rather than portaled to `document.body`:
-       * `usePopoverZIndex()` hands portaled menus 50 outside a dialog, which is
-       * behind the opaque full-screen drawer, leaving every destination
-       * unreachable. Nothing between here and the drawer root clips overflow.
+       * The drawer sets a transform, which makes it the containing block for
+       * fixed descendants, so an in-place popup would be positioned and clipped
+       * relative to it. Portaling escapes that, and the drawer cannot occlude
+       * the menu: its z-index only ranks it inside `Root`'s `relative z-0`
+       * stacking context, while this lands on `document.body` outside it.
        */
-      portal={false}
+      portal={true}
       menuId={menuId}
       focusLoop={true}
       unmountOnHide={true}
