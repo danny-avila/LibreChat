@@ -104,6 +104,7 @@ function createTailwindColors() {
     'surface-destructive': cssVar('--surface-destructive'),
     'surface-destructive-hover': cssVar('--surface-destructive-hover'),
     'surface-chat': cssVar('--surface-chat'),
+    'surface-code': cssVar('--surface-code'),
     'surface-qr': cssVar('--surface-qr'),
     'surface-inverted': cssVar('--surface-inverted'),
     'surface-inverted-hover': cssVar('--surface-inverted-hover'),
