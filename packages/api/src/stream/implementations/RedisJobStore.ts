@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { ContentTypes } from 'librechat-data-provider';
 import { createContentAggregator } from '@librechat/agents';
 import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
@@ -3069,6 +3070,14 @@ export class RedisJobStore implements IJobStoreV2 {
     // Use the same content aggregator as live streaming
     const { contentParts, aggregateContent } = createContentAggregator();
 
+    // Step ID -> content index, rebuilt from the replayed `on_run_step`
+    // payloads. Those carry the index the offset wrappers shifted, whereas a
+    // closure event was stored unshifted (the wrappers clone only
+    // `ON_RUN_STEP`/`ON_AGENT_UPDATE`), so a closure must be resolved by ID
+    // rather than by its own index — otherwise a run containing a steer or
+    // HITL resume stamps the status onto the wrong slot.
+    const replayedStepIndices = new Map<string, number>();
+
     // Valid event types for content aggregation
     const validEvents = new Set([
       'on_run_step',
@@ -3108,8 +3117,34 @@ export class RedisJobStore implements IJobStoreV2 {
         continue;
       }
 
+      // Step closures are host-authored like steers and labels: the SDK
+      // aggregator has no notion of the event, so the terminal status is
+      // stamped onto the part the replayed steps already rebuilt. Resolved by
+      // step ID against the replayed indices, never by the closure's own
+      // index — see `replayedStepIndices`. Chronology guarantees the step's
+      // `on_run_step` was replayed first.
+      if (event.event === 'on_run_step_closed') {
+        const closed = event.data as {
+          id?: string;
+          status?: Agents.RunStepClosedStatus;
+        };
+        const index = closed.id != null ? replayedStepIndices.get(closed.id) : undefined;
+        const part = index != null ? contentParts[index] : undefined;
+        if (closed.status && part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
+          part.tool_call.runStepStatus = closed.status;
+        }
+        continue;
+      }
+
       if (!validEvents.has(event.event)) {
         continue;
+      }
+
+      if (event.event === 'on_run_step') {
+        const step = event.data as { id?: string; index?: number };
+        if (step.id != null && typeof step.index === 'number') {
+          replayedStepIndices.set(step.id, step.index);
+        }
       }
 
       // Pass event string directly - GraphEvents values are lowercase strings

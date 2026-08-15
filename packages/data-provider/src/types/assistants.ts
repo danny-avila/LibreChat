@@ -573,6 +573,14 @@ export type PartMetadata = {
   agentId?: string;
   /** Group ID for parallel content - parts with same groupId are displayed in columns */
   groupId?: number;
+  /**
+   * Terminal lifecycle status of the run step that produced this part, from
+   * `on_run_step_closed`. Distinct from `status`, which is already claimed by
+   * activity-label and question-form parts. Absent on parts predating the
+   * event or from endpoints that do not emit it, in which case renderers fall
+   * back to inferring "stopped" from `progress` and `isSubmitting`.
+   */
+  runStepStatus?: Agents.RunStepClosedStatus;
 };
 
 /** Metadata for parallel content rendering - subset of PartMetadata */

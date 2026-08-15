@@ -9,7 +9,7 @@ import {
   actionDomainSeparator,
   splitToolCallName,
 } from 'librechat-data-provider';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
@@ -32,6 +32,7 @@ export default function ToolCall({
   auth,
   hideAttachments = false,
   onExpand,
+  runStepStatus,
 }: {
   initialProgress: number;
   isLast?: boolean;
@@ -44,6 +45,7 @@ export default function ToolCall({
   auth?: string;
   hideAttachments?: boolean;
   onExpand?: () => void;
+  runStepStatus?: PartMetadata['runStepStatus'];
 }) {
   const localize = useLocalize();
   const autoExpand = useRecoilValue(store.autoExpandTools);
@@ -137,8 +139,25 @@ export default function ToolCall({
     window.open(auth, '_blank', 'noopener,noreferrer');
   }, [auth, isMCPToolCall, mcpServerName, actionId]);
 
-  const hasError = typeof output === 'string' && isError(output);
-  const cancelled = !isSubmitting && initialProgress < 1 && !hasError;
+  /** A step the run closed as `failed` is an error even when its output text
+   *  does not parse as one. */
+  const hasError = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
+  /**
+   * The step's own terminal status wins when the run emitted one. The
+   * `isSubmitting` heuristic below it is a whole-message inference: it cannot
+   * tell which step actually stopped, so it holds every unfinished call in a
+   * running state until the entire response ends and then flips them all to
+   * cancelled at once. Retained as the fallback for messages saved before
+   * `on_run_step_closed` and for endpoints that do not emit it.
+   *
+   * The status is authoritative on its own terms — deliberately not gated on
+   * `hasError`, so output parsing cannot demote a stopped step back into an
+   * in-flight state.
+   */
+  const isClosed = runStepStatus != null;
+  const cancelled = isClosed
+    ? runStepStatus === 'cancelled'
+    : !isSubmitting && initialProgress < 1 && !hasError;
   const errorState = hasError;
 
   const args = useMemo(() => {
@@ -165,7 +184,9 @@ export default function ToolCall({
     return parsedAuthUrl?.hostname ?? '';
   }, [parsedAuthUrl]);
 
-  const progress = useProgress(initialProgress);
+  /** A closed step is terminal, so it must never keep animating. */
+  const rawProgress = useProgress(initialProgress);
+  const progress = isClosed ? 1 : rawProgress;
   const showCancelled = cancelled || (errorState && !output);
 
   const handleToggleInfo = useCallback(() => {
@@ -196,6 +217,16 @@ export default function ToolCall({
   const getFinishedText = () => {
     if (cancelled) {
       return localize('com_ui_cancelled');
+    }
+    /**
+     * Announced before the completion strings below: a terminal step that
+     * errored must not reach the live region as "completed", which would tell
+     * a screen-reader user the opposite of what the card shows.
+     */
+    if (errorState) {
+      return function_name
+        ? `${localize('com_ui_failed')}: ${function_name}`
+        : localize('com_ui_failed');
     }
     if (intent != null) {
       return intent;

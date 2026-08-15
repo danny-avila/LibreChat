@@ -39,6 +39,8 @@ export enum StepEvents {
   ON_REASONING_DELTA = 'on_reasoning_delta',
   ON_RUN_STEP_DELTA = 'on_run_step_delta',
   ON_RUN_STEP_COMPLETED = 'on_run_step_completed',
+  /** Terminal signal for a run step: closed with a status and timestamps. */
+  ON_RUN_STEP_CLOSED = 'on_run_step_closed',
   ON_SUMMARIZE_START = 'on_summarize_start',
   ON_SUMMARIZE_DELTA = 'on_summarize_delta',
   ON_SUMMARIZE_COMPLETE = 'on_summarize_complete',

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { ScrollText } from 'lucide-react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import useToolCallState from './useToolCallState';
 import { AttachmentGroup } from './Attachment';
@@ -12,6 +12,7 @@ import { cn } from '~/utils';
 
 export default function SkillCall({
   isSubmitting,
+  runStepStatus,
   initialProgress = 0.1,
   args,
   output = '',
@@ -21,6 +22,7 @@ export default function SkillCall({
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -32,7 +34,7 @@ export default function SkillCall({
   const intent = useToolCallIntent(args);
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
-    useToolCallState(initialProgress, isSubmitting, output, !!skillName, onExpand);
+    useToolCallState(initialProgress, isSubmitting, output, !!skillName, onExpand, runStepStatus);
 
   return (
     <>

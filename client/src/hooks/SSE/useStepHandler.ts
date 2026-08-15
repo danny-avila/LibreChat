@@ -53,6 +53,7 @@ type TStepEvent =
   | { event: StepEvents.ON_REASONING_DELTA; data: Agents.ReasoningDeltaEvent }
   | { event: StepEvents.ON_RUN_STEP_DELTA; data: Agents.RunStepDeltaEvent }
   | { event: StepEvents.ON_RUN_STEP_COMPLETED; data: { result: Agents.ToolEndEvent } }
+  | { event: StepEvents.ON_RUN_STEP_CLOSED; data: Agents.RunStepClosedEvent }
   | { event: StepEvents.ON_SUMMARIZE_START; data: Agents.SummarizeStartEvent }
   | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
   | { event: StepEvents.ON_SUMMARIZE_COMPLETE; data: Agents.SummarizeCompleteEvent }
@@ -1171,6 +1172,61 @@ export default function useStepHandler({
             }),
           );
         }
+      } else if (stepEvent.event === StepEvents.ON_RUN_STEP_CLOSED) {
+        const closed = stepEvent.data;
+        const runStep = stepMap.current.get(closed.id);
+        let responseMessageId = runStep?.runId ?? '';
+        if (responseMessageId === Constants.USE_PRELIM_RESPONSE_MESSAGE_ID) {
+          responseMessageId = submission?.initialResponse?.messageId ?? '';
+          parentMessageId = submission?.initialResponse?.parentMessageId ?? '';
+        }
+
+        /**
+         * A closure for a step this client never saw opened is not an error
+         * worth surfacing — it happens on reconnect, where the replay may
+         * start after the step was created.
+         */
+        if (!runStep || !responseMessageId) {
+          return;
+        }
+
+        const response = messageMap.current.get(responseMessageId);
+        if (!response) {
+          return;
+        }
+
+        const currentIndex = runStep.index + editPrefixOffset;
+        const existing = response.content?.[currentIndex];
+        /**
+         * Only tool calls render a running state, so only they need the
+         * terminal status. Leaving other part types untouched keeps this from
+         * disturbing text or reasoning content.
+         */
+        if (!existing || existing.type !== ContentTypes.TOOL_CALL) {
+          return;
+        }
+
+        const existingToolCall = existing[ContentTypes.TOOL_CALL];
+        if (!existingToolCall) {
+          return;
+        }
+
+        const updatedContent = [...(response.content ?? [])];
+        updatedContent[currentIndex] = {
+          ...existing,
+          [ContentTypes.TOOL_CALL]: {
+            ...existingToolCall,
+            runStepStatus: closed.status,
+          },
+        };
+
+        const updatedResponse = { ...response, content: updatedContent };
+        messageMap.current.set(responseMessageId, updatedResponse);
+        setMessages(
+          mergeResponseMessage(messages, updatedResponse, responseMessageId, {
+            ensureUserMessage: true,
+          }),
+        );
       } else if (stepEvent.event === StepEvents.ON_SANDBOX_STARTING) {
         setSandboxStarting(stepEvent.data.tool_call_id);
       } else if (stepEvent.event === StepEvents.ON_SUBAGENT_UPDATE) {
