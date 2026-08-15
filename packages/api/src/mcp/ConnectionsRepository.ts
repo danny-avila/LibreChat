@@ -2,9 +2,8 @@ import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
 import {
   cancelMCPToolsChanged,
-  notifyMCPToolsChanged,
-  reserveMCPToolsChangedRevision,
   getMCPAppToolsPublicationGeneration,
+  notifyMCPToolsChanged,
 } from './toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
@@ -163,15 +162,12 @@ export class ConnectionsRepository {
 
     this.connections.set(serverName, connection);
     if (this.ownerId === undefined && options.refreshTools !== false) {
-      /** Reserved before `tools/list` runs so a first-connect publication is ordered against
-       * concurrent replicas exactly as a list_changed refresh is. An app-level catalog write
-       * carrying no revision cannot be ordered, and agents saw an empty catalog forever when
-       * this path was the one that populated it (#14857). */
-      const publicationRevision = await this.reserveToolsPublicationRevision(
-        serverName,
-        serverConfig,
-      );
+      /** The snapshot carries ordering reserved before its own `tools/list`, so this
+       * first-connect publication is ordered against concurrent replicas exactly as a
+       * list_changed refresh is. An app-level write that cannot be ordered is dropped, which
+       * left agents with a permanently empty catalog when this path populated it (#14857). */
       if (connection.client.getServerCapabilities()?.tools == null) {
+        const { publicationRevision } = await connection.reserveToolsPublicationRevision();
         await notifyMCPToolsChanged({
           tools: [],
           serverName,
@@ -183,7 +179,7 @@ export class ConnectionsRepository {
       }
       const initialGeneration = toolsChangedGeneration;
       const snapshot = await connection.fetchToolsSnapshot();
-      if (snapshot.complete) {
+      if (snapshot.complete && !snapshot.orderingUnavailable) {
         if (toolsChangedGeneration !== initialGeneration) {
           await latestToolsChangedPublication;
         } else {
@@ -192,7 +188,7 @@ export class ConnectionsRepository {
             serverName,
             serverConfig,
             publicationGeneration,
-            publicationRevision,
+            publicationRevision: snapshot.publicationRevision,
           });
         }
       } else {
@@ -200,22 +196,6 @@ export class ConnectionsRepository {
       }
     }
     return connection;
-  }
-
-  /** Orders a first-connect publication; a failed reservation must not fail the connection. */
-  private async reserveToolsPublicationRevision(
-    serverName: string,
-    serverConfig: t.ParsedServerConfig,
-  ): Promise<string | undefined> {
-    try {
-      return await reserveMCPToolsChangedRevision({ serverName, serverConfig });
-    } catch (error) {
-      logger.warn(
-        `${this.prefix(serverName)} Failed to reserve tool-list publication order; publishing unordered`,
-        error,
-      );
-      return undefined;
-    }
   }
 
   /** Gets or creates connections for multiple servers concurrently */

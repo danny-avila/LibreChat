@@ -1,39 +1,40 @@
-/** Regression coverage for app-level MCP catalogs that never reach agents (#14857). */
+/** Real-SDK coverage for app-level catalogs that never reach agents (#14857). */
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { CacheKeys, Constants, normalizeServerName } from 'librechat-data-provider';
-import type { LCAvailableTools, ParsedServerConfig } from '../types';
-import { getMCPAppToolsPublicationGeneration } from '../toolsChanged';
+import { ListToolsRequestSchema, type Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { MCPToolsChangedEvent } from '../toolsChanged';
+import type { ParsedServerConfig } from '../types';
+import {
+  notifyMCPToolsChanged,
+  setMCPToolsChangedHandler,
+  getMCPAppToolsPublicationGeneration,
+  setMCPToolsChangedRevisionHandler,
+} from '../toolsChanged';
 import { createMCPCatalogStore } from '../catalog/store';
 import { createMCPToolCacheService } from '../tools';
+import { MCPConnection } from '../connection';
+
+jest.setTimeout(10_000);
 
 const SERVER_NAME = 'shared';
 
 const appConfig: ParsedServerConfig = {
   type: 'streamable-http',
   url: 'https://mcp.example.com/mcp',
-  source: 'yaml',
 };
+
+const tool = (name: string): Tool => ({
+  name,
+  description: `${name} the corpus`,
+  inputSchema: { type: 'object', properties: {} },
+});
 
 const toolKey = (name: string) =>
   `${name}${Constants.mcp_delimiter}${normalizeServerName(SERVER_NAME)}`;
 
-const description = (name: string) => `${name} the corpus`;
-
-const catalogOf = (...names: string[]): LCAvailableTools =>
-  Object.fromEntries(
-    names.map((name) => [
-      toolKey(name),
-      {
-        type: 'function' as const,
-        ['function']: {
-          name: toolKey(name),
-          description: description(name),
-          parameters: { type: 'object' as const, properties: {} },
-        },
-      },
-    ]),
-  );
-
-function createService() {
+/** Wires the store, the cache service, and the publication handlers exactly as startup does. */
+function createHarness() {
   const cache = new Map<string, unknown>();
   const store = createMCPCatalogStore({
     cacheConfig: { FORCED_IN_MEMORY_CACHE_NAMESPACES: [CacheKeys.TOOL_CACHE] },
@@ -54,88 +55,143 @@ function createService() {
     setCachedToolsIfCurrent: store.setCachedToolsIfCurrent,
     getCachedAppServerTools: store.getCachedAppServerTools,
     setCachedAppServerTools: store.setCachedAppServerTools,
-    getNextAppToolsPublicationRevision: store.getNextAppToolsPublicationRevision,
     getServerConfig: async () => appConfig,
     getAllServerConfigs: async () => ({ [SERVER_NAME]: appConfig }),
     isAppServerConfig: async () => true,
   });
 
-  return { service, store };
+  setMCPToolsChangedRevisionHandler(({ serverName, configGeneration }) =>
+    store.getNextAppToolsPublicationRevision(serverName, configGeneration),
+  );
+  setMCPToolsChangedHandler(async (event: MCPToolsChangedEvent) => {
+    await service.updateMCPServerTools({
+      userId: event.userId,
+      serverName: event.serverName,
+      tools: event.tools,
+      serverConfig: event.serverConfig as ParsedServerConfig,
+      publicationGeneration: event.publicationGeneration,
+      publicationRevision: event.publicationRevision,
+    });
+  });
+
+  return { store, service };
+}
+
+async function createConnection(tools: Tool[]) {
+  const server = new Server(
+    { name: 'shared-tool-server', version: '1.0.0' },
+    { capabilities: { tools: { listChanged: true } } },
+  );
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: tools.map((entry) => ({ ...entry })),
+  }));
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+
+  /** No userId: this is an app-shared connection, the scope agents read from. */
+  const connection = new MCPConnection({ serverName: SERVER_NAME, serverConfig: appConfig });
+  await connection.client.connect(clientTransport);
+  connection.emit('connectionChange', 'connected');
+
+  return {
+    connection,
+    notifyChanged: () => server.sendToolListChanged(),
+    close: async () => {
+      connection.removeAllListeners();
+      await connection.client.close().catch(() => undefined);
+      await server.close().catch(() => undefined);
+    },
+  };
 }
 
 describe('app-level tool publication', () => {
   const configGeneration = getMCPAppToolsPublicationGeneration(appConfig);
+  let harness: Awaited<ReturnType<typeof createConnection>> | undefined;
 
-  it('publishes a first-connect snapshot that reserved no revision', async () => {
-    const { service } = createService();
-
-    await expect(
-      service.replaceAppServerTools({
-        serverName: SERVER_NAME,
-        serverTools: catalogOf('search'),
-        publicationGeneration: configGeneration,
-      }),
-    ).resolves.toBe(true);
-
-    await expect(service.getMCPServerTools('user-1', SERVER_NAME, appConfig)).resolves.toEqual(
-      catalogOf('search'),
-    );
+  afterEach(async () => {
+    setMCPToolsChangedHandler(null);
+    setMCPToolsChangedRevisionHandler(null);
+    await harness?.close();
+    harness = undefined;
   });
 
-  /** The reinitialize path an agent falls back to when the shared catalog is cold. Returning
-   * null here is what surfaced as "configured to use MCP tools, but none are available". */
-  it('returns the catalog when a user request republishes a shared server', async () => {
-    const { service } = createService();
+  /** The reporter's case: a shared server connecting outside the startup refresh. Its snapshot
+   * has to carry ordering, or the catalog write is dropped and agents see no tools at all. */
+  it('makes a first-connect snapshot readable by agents', async () => {
+    const { service } = createHarness();
+    harness = await createConnection([tool('search')]);
 
-    await expect(
-      service.updateMCPServerTools({
-        userId: 'user-1',
-        serverName: SERVER_NAME,
-        serverConfig: appConfig,
-        publicationGeneration: configGeneration,
-        tools: [{ name: 'search', description: description('search') }],
-      }),
-    ).resolves.toEqual(catalogOf('search'));
+    const snapshot = await harness.connection.fetchToolsSnapshot();
+    expect(snapshot.publicationRevision).toBeDefined();
 
-    await expect(service.getMCPServerTools('user-1', SERVER_NAME, appConfig)).resolves.toEqual(
-      catalogOf('search'),
-    );
-  });
-
-  it('caches a shared catalog discovered on demand', async () => {
-    const { service } = createService();
-
-    await service.cacheMCPServerTools({
-      userId: 'user-1',
+    await notifyMCPToolsChanged({
+      tools: snapshot.tools,
       serverName: SERVER_NAME,
       serverConfig: appConfig,
-      serverTools: catalogOf('search'),
       publicationGeneration: configGeneration,
+      publicationRevision: snapshot.publicationRevision,
     });
 
-    await expect(service.getMCPServerTools('user-2', SERVER_NAME, appConfig)).resolves.toEqual(
-      catalogOf('search'),
-    );
+    const published = await service.getMCPServerTools('user-1', SERVER_NAME, appConfig);
+    expect(Object.keys(published ?? {})).toEqual([toolKey('search')]);
   });
 
-  it('keeps a newer catalog when a publication that reserved earlier lands last', async () => {
-    const { service, store } = createService();
-    const stale = await store.getNextAppToolsPublicationRevision(SERVER_NAME, configGeneration);
+  it('reserves ordering before the tools/list it describes', async () => {
+    const { store } = createHarness();
+    harness = await createConnection([tool('search')]);
 
-    await service.replaceAppServerTools({
+    const before = await store.getNextAppToolsPublicationRevision(SERVER_NAME, configGeneration);
+    const snapshot = await harness.connection.fetchToolsSnapshot();
+    const after = await store.getNextAppToolsPublicationRevision(SERVER_NAME, configGeneration);
+
+    expect(Number(snapshot.publicationRevision)).toBeGreaterThan(Number(before));
+    expect(Number(snapshot.publicationRevision)).toBeLessThan(Number(after));
+  });
+
+  /** A snapshot fetched earlier must not overwrite a catalog published from a later fetch,
+   * which is exactly what a revision allocated at publish time would allow. */
+  it('cannot overwrite a catalog fetched after it', async () => {
+    const { service } = createHarness();
+    harness = await createConnection([tool('stale')]);
+    const stale = await harness.connection.fetchToolsSnapshot();
+
+    const current = await harness.connection.reserveToolsPublicationRevision();
+    await notifyMCPToolsChanged({
+      tools: [tool('current')],
       serverName: SERVER_NAME,
-      serverTools: catalogOf('current'),
+      serverConfig: appConfig,
       publicationGeneration: configGeneration,
+      publicationRevision: current.publicationRevision,
     });
-    await service.replaceAppServerTools({
+    await notifyMCPToolsChanged({
+      tools: stale.tools,
       serverName: SERVER_NAME,
-      serverTools: catalogOf('stale'),
+      serverConfig: appConfig,
       publicationGeneration: configGeneration,
-      publicationRevision: stale,
+      publicationRevision: stale.publicationRevision,
     });
 
-    await expect(service.getMCPServerTools('user-1', SERVER_NAME, appConfig)).resolves.toEqual(
-      catalogOf('current'),
+    const published = await service.getMCPServerTools('user-1', SERVER_NAME, appConfig);
+    expect(Object.keys(published ?? {})).toEqual([toolKey('current')]);
+  });
+
+  /** When a request-time fetch is superseded by a list_changed refresh, it returns the refresh's
+   * catalog — and must return the refresh's revision with it, not its own superseded ticket. */
+  it('carries the refresh revision when a request fetch is superseded', async () => {
+    createHarness();
+    harness = await createConnection([tool('search')]);
+    const published: Array<string | undefined> = [];
+    harness.connection.on('toolsChanged', (_tools: Tool[], revision?: string) =>
+      published.push(revision),
     );
+
+    await harness.notifyChanged();
+    await harness.connection.refreshToolList();
+    const ordered = await harness.connection.fetchOrderedToolsSnapshot();
+
+    expect(published.length).toBeGreaterThan(0);
+    expect(ordered.complete).toBe(true);
+    expect(ordered.publicationRevision).toBeDefined();
   });
 });

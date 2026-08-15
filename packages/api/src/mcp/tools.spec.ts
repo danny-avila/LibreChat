@@ -157,52 +157,9 @@ describe('createMCPToolCacheService', () => {
       ).rejects.toThrow('Redis down');
     });
 
-    it('orders a publication that could not reserve ordering before its fetch', async () => {
-      const setCachedAppServerTools = jest.fn().mockResolvedValue(true);
-      const deps = createMockDeps({
-        setCachedAppServerTools,
-        getNextAppToolsPublicationRevision: jest.fn().mockResolvedValue('7'),
-      });
-
-      await expect(
-        createMCPToolCacheService(deps).replaceAppServerTools({
-          serverName: 'dynamic',
-          serverTools: {},
-          publicationGeneration: 'config-generation',
-        }),
-      ).resolves.toBe(true);
-
-      expect(deps.getNextAppToolsPublicationRevision).toHaveBeenCalledWith(
-        'dynamic',
-        'config-generation',
-      );
-      expect(setCachedAppServerTools).toHaveBeenCalledWith('dynamic', 'config-generation', {}, '7');
-    });
-
-    it('keeps a reserved revision instead of allocating a later one', async () => {
-      const deps = createMockDeps({
-        getNextAppToolsPublicationRevision: jest.fn().mockResolvedValue('7'),
-      });
-
-      await expect(
-        createMCPToolCacheService(deps).replaceAppServerTools({
-          serverName: 'dynamic',
-          serverTools: {},
-          publicationGeneration: 'config-generation',
-          publicationRevision: '3',
-        }),
-      ).resolves.toBe(true);
-
-      expect(deps.getNextAppToolsPublicationRevision).not.toHaveBeenCalled();
-      expect(deps.setCachedAppServerTools).toHaveBeenCalledWith(
-        'dynamic',
-        'config-generation',
-        {},
-        '3',
-      );
-    });
-
-    it('does not publish an unordered snapshot when no revision allocator is wired', async () => {
+    /** A publisher that lost its snapshot's revision fetched at an unknown time. Allocating a
+     * fresh one here would let a slow fetch of an old catalog outrank a newer one. */
+    it('does not publish a live app snapshot without pre-fetch ordering', async () => {
       const deps = createMockDeps();
 
       await expect(

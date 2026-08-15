@@ -87,6 +87,7 @@ describe('ConnectionsRepository', () => {
       disconnect: jest.fn().mockResolvedValue(undefined),
       dispose: jest.fn().mockResolvedValue(undefined),
       fetchToolsSnapshot: jest.fn().mockResolvedValue({ tools: [], complete: true }),
+      reserveToolsPublicationRevision: jest.fn().mockResolvedValue({}),
       refreshToolList: jest.fn().mockResolvedValue(undefined),
       createdAt: Date.now(),
       isStale: jest.fn().mockReturnValue(false),
@@ -190,39 +191,37 @@ describe('ConnectionsRepository', () => {
       await expect(load).resolves.toBe(mockConnection);
     });
 
-    /** Without a revision the catalog write is unordered, and app-level publications that
-     * cannot be ordered never reach the cache agents read from (#14857). */
-    it('orders the initial app publication with a revision reserved before the fetch', async () => {
-      const sequence: string[] = [];
-      setMCPToolsChangedRevisionHandler(() => {
-        sequence.push('reserve');
-        return '4';
-      });
-      mockConnection.fetchToolsSnapshot.mockImplementation(async () => {
-        sequence.push('fetch');
-        return { tools: [], complete: true };
+    /** An app-level write that carries no revision cannot be ordered and is dropped, so the
+     * ordering reserved for this snapshot has to reach the publication (#14857). */
+    it('publishes the initial app snapshot under the revision it was fetched with', async () => {
+      mockConnection.fetchToolsSnapshot.mockResolvedValue({
+        tools: [],
+        complete: true,
+        publicationRevision: '4',
       });
       const handler = jest.fn();
       setMCPToolsChangedHandler(handler);
 
       await repository.get('server1');
 
-      expect(sequence).toEqual(['reserve', 'fetch']);
       expect(handler).toHaveBeenCalledWith(
         expect.objectContaining({ serverName: 'server1', publicationRevision: '4' }),
       );
     });
 
-    it('still publishes the initial app snapshot when the reservation fails', async () => {
-      setMCPToolsChangedRevisionHandler(() => {
-        throw new Error('revision store unavailable');
-      });
+    it('reserves ordering for a server that advertises no tools capability', async () => {
+      (mockConnection.client.getServerCapabilities as jest.Mock).mockReturnValue({});
+      mockConnection.reserveToolsPublicationRevision = jest
+        .fn()
+        .mockResolvedValue({ publicationRevision: '9' });
       const handler = jest.fn();
       setMCPToolsChangedHandler(handler);
 
-      await expect(repository.get('server1')).resolves.toBe(mockConnection);
+      await repository.get('server1');
+
+      expect(mockConnection.fetchToolsSnapshot).not.toHaveBeenCalled();
       expect(handler).toHaveBeenCalledWith(
-        expect.objectContaining({ serverName: 'server1', publicationRevision: undefined }),
+        expect.objectContaining({ serverName: 'server1', tools: [], publicationRevision: '9' }),
       );
     });
 

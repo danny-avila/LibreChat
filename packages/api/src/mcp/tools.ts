@@ -41,10 +41,6 @@ export interface MCPToolCacheDeps {
     tools: LCAvailableTools,
     publicationRevision?: string,
   ) => Promise<boolean>;
-  getNextAppToolsPublicationRevision?: (
-    serverName: string,
-    configGeneration: string,
-  ) => Promise<string>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
   getAllServerConfigs?: () => Promise<Record<string, ParsedServerConfig>>;
   isAppServerConfig?: (serverName: string, effectiveConfig: ParsedServerConfig) => Promise<boolean>;
@@ -95,7 +91,6 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     setCachedToolsIfCurrent,
     getCachedAppServerTools,
     setCachedAppServerTools,
-    getNextAppToolsPublicationRevision,
     getServerConfig,
     getAllServerConfigs,
     isAppServerConfig,
@@ -377,16 +372,13 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         logger.debug(`[MCP Cache] Skipped unaddressed app-level publication for ${serverName}`);
         return false;
       }
-      /** Only a list_changed refresh can reserve ordering before its `tools/list` starts. Every
-       * other publisher — first connect, reinitialization, on-demand catalog reads — has already
-       * fetched by the time it gets here, so it takes the next revision now rather than being
-       * dropped; dropping left agents with a permanently empty app catalog (#14857). */
-      const revision =
-        publicationRevision ??
-        (await getNextAppToolsPublicationRevision?.(serverName, configGeneration));
-      if (!revision) {
+      /** Ordering is reserved before the `tools/list` that produced these tools and travels with
+       * the snapshot, so a publisher that lost it fetched at an unknown time and cannot be
+       * ordered against concurrent replicas. Allocating one here instead would let a slow fetch
+       * of an old catalog outrank a newer one that reserved after it started. */
+      if (!publicationRevision) {
         logger.debug(
-          `[MCP Cache] Skipped unordered app-level publication for ${serverName}: no revision allocator is configured`,
+          `[MCP Cache] Skipped unordered app-level publication for ${serverName}: its snapshot carried no reserved revision`,
         );
         return false;
       }
@@ -394,11 +386,11 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         serverName,
         configGeneration,
         serverTools,
-        revision,
+        publicationRevision,
       );
       if (replaced === false) {
         logger.debug(
-          `[MCP Cache] Ignored superseded app-level tools for ${serverName} at revision ${revision}`,
+          `[MCP Cache] Ignored superseded app-level tools for ${serverName} at revision ${publicationRevision}`,
         );
         return false;
       }

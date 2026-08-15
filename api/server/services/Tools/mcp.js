@@ -66,6 +66,7 @@ async function reinitMCPServer({
   let oauthExpiresAt;
   let ephemeralServer = false;
   let publicationGeneration;
+  let publicationRevision;
 
   try {
     const registry = getMCPServersRegistry();
@@ -279,6 +280,9 @@ async function reinitMCPServer({
       }
       if (snapshot.complete) {
         tools = snapshot.tools;
+        /** Reserved before this snapshot's tools/list; an app-level catalog cannot publish
+         * without it, and allocating a later one here would outrank fresher tools. */
+        publicationRevision = snapshot.publicationRevision;
       } else {
         logger.warn(
           `[MCP Reinitialize] Preserving cached tools for ${serverName} because tools/list returned an incomplete snapshot`,
@@ -306,6 +310,7 @@ async function reinitMCPServer({
         tools,
         serverConfig,
         ...(publicationGeneration && { publicationGeneration }),
+        ...(publicationRevision && { publicationRevision }),
       });
       if (availableTools == null) {
         tools = null;
