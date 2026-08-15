@@ -389,6 +389,88 @@ describe('Conversation Operations', () => {
       expect(new Date(secondSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
       expect(secondSave?.title).toBe('Updated title');
     });
+
+    describe('preserveUpdatedAt', () => {
+      const anchor = new Date('2026-02-11T15:28:18.561Z');
+
+      const seedAgedConvo = async () => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Date And Time Test',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: anchor,
+          updatedAt: anchor,
+        });
+        return conversationId;
+      };
+
+      /** The sidebar orders by `updatedAt`, so a pin that bumped it would hoist an
+       * untouched chat into Today and drop it back out of place on unpin. */
+      it('leaves updatedAt untouched across a pin and unpin round trip', async () => {
+        const conversationId = await seedAgedConvo();
+
+        const pinned = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, pinned: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+        const unpinned = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, pinned: false },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(pinned?.pinned).toBe(true);
+        expect(unpinned?.pinned).toBe(false);
+        expect(new Date(pinned?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+        expect(new Date(unpinned?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+        expect(new Date(pinned?.createdAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      /** Archiving files a chat away rather than touching it, and unarchiving has to
+       * restore it to its real place in the date groups. */
+      it('leaves updatedAt untouched across an archive and unarchive round trip', async () => {
+        const conversationId = await seedAgedConvo();
+
+        const archived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+        const unarchived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: false },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(archived?.isArchived).toBe(true);
+        expect(unarchived?.isArchived).toBe(false);
+        expect(new Date(archived?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+        expect(new Date(unarchived?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      it('still bumps updatedAt for an ordinary save', async () => {
+        const conversationId = await seedAgedConvo();
+
+        const result = await saveConvo({ userId: 'user123' }, { conversationId, title: 'Renamed' });
+
+        expect(new Date(result?.updatedAt ?? 0).getTime()).toBeGreaterThan(anchor.getTime());
+      });
+
+      it('does not insert a timestampless conversation for an unknown id', async () => {
+        const result = await saveConvo(
+          { userId: 'user123' },
+          { conversationId: uuidv4(), pinned: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(result).toBeNull();
+      });
+    });
   });
 
   describe('isTemporary conversation handling', () => {
