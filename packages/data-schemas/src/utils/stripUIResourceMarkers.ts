@@ -11,6 +11,7 @@ import { Constants, ContentTypes } from 'librechat-data-provider';
 const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
 const CITATION_CLEANUP = /\\ue20[0-46]|[\ue200-\ue204\ue206]/g;
 const COMPOSITE_CITATION = /(?:\\ue200|\ue200).*?(?:\\ue201|\ue201)/g;
+const HIGHLIGHTED_CITATION = /(?:\\ue203|\ue203).*?(?:\\ue204|\ue204)/g;
 const STANDALONE_CITATION = /(?:\\ue202|\ue202)turn\d+(?:search|image|news|video|ref|file)\d+/;
 const MARKDOWN_ESCAPE_OR_REFERENCE = /\\(.)|&(#(?:\d{1,7}|[xX][\dA-Fa-f]{1,6})|[\dA-Za-z]{1,31});/g;
 
@@ -30,16 +31,28 @@ type SourceSegment = {
 
 function removeCitationCleanup(value: string, segments: SourceSegment[]) {
   const removals: Array<[number, number]> = [];
-  COMPOSITE_CITATION.lastIndex = 0;
+  const highlightedRanges: Array<[number, number]> = [];
+  HIGHLIGHTED_CITATION.lastIndex = 0;
   let match: RegExpExecArray | null;
+  while ((match = HIGHLIGHTED_CITATION.exec(value)) != null) {
+    highlightedRanges.push([match.index, HIGHLIGHTED_CITATION.lastIndex]);
+  }
+  COMPOSITE_CITATION.lastIndex = 0;
   while ((match = COMPOSITE_CITATION.exec(value)) != null) {
     if (STANDALONE_CITATION.test(match[0])) {
       removals.push([match.index, COMPOSITE_CITATION.lastIndex]);
     }
   }
   CITATION_CLEANUP.lastIndex = 0;
+  let highlightedIndex = 0;
   while ((match = CITATION_CLEANUP.exec(value)) != null) {
-    removals.push([match.index, CITATION_CLEANUP.lastIndex]);
+    while (highlightedRanges[highlightedIndex]?.[1] <= match.index) {
+      highlightedIndex++;
+    }
+    const highlighted = highlightedRanges[highlightedIndex];
+    if (!highlighted || match.index < highlighted[0]) {
+      removals.push([match.index, CITATION_CLEANUP.lastIndex]);
+    }
   }
   if (removals.length === 0) {
     return { value, segments };

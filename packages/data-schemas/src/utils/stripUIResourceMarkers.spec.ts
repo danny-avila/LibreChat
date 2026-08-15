@@ -71,6 +71,12 @@ describe('stripUIResourceMarkers', () => {
     );
   });
 
+  it('preserves highlighted citation text-node boundaries before MCP marker rendering', () => {
+    const acrossBoundary = '\\u\\ue203i{id}\\ue204';
+    expect(stripUIResourceMarkers(acrossBoundary)).toBe(acrossBoundary);
+    expect(stripUIResourceMarkers('\\ue203\\ui{inside}\\ue204')).toBe('\\ue203\\ue204');
+  });
+
   it('preserves markers in message text that bypasses Markdown rendering', () => {
     expect(stripMessageUIResourceMarkers('Error \\ui{literal}', true)).toBe('Error \\ui{literal}');
     expect(
