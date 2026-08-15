@@ -120,6 +120,7 @@ describe('newer windows for existing families', () => {
     ['deepseek-v4-flash', 1048576],
     ['glm-4.7', 204800],
     ['z-ai/glm-5.2', 1048576],
+    ['glm-5.3', 1048576],
     ['moonshotai/kimi-k3', 1048576],
     ['kimi-k2.7-code', 262144],
     ['minimax-m3', 1048576],
@@ -146,6 +147,16 @@ describe('vendor-prefixed model ids', () => {
     expect(getModelMaxTokens('moonshot/v1-8k', EModelEndpoint.openAI)).toBe(
       getModelMaxTokens('moonshot', EModelEndpoint.openAI),
     );
+  });
+
+  it('keeps a vendor-keyed override entry over a bare one', () => {
+    const config: EndpointTokenConfig = {
+      'openrouter/foo': { prompt: 1, completion: 2, context: 900000, output: 1 },
+      foo: { prompt: 1, completion: 2, context: 1000, output: 1 },
+    };
+    expect(getModelMaxTokens('openrouter/foo', EModelEndpoint.custom, config)).toBe(900000);
+    expect(getModelMaxTokens('openrouter/foo-latest', EModelEndpoint.custom, config)).toBe(900000);
+    expect(getModelMaxTokens('other/foo-latest', EModelEndpoint.custom, config)).toBe(1000);
   });
 
   it('leaves dot-separated bedrock ids alone', () => {

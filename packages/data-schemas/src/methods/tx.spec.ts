@@ -2974,6 +2974,39 @@ describe('Newer model pricing', () => {
   });
 });
 
+describe('dot-prefixed Kimi K3 aliases', () => {
+  it('bills both bedrock forms at the K3 rate rather than an older Kimi row', () => {
+    for (const model of ['moonshot.kimi-k3', 'moonshotai.kimi-k3']) {
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['kimi-k3'].completion,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).not.toBe(
+        tokenValues['moonshot.kimi'].completion,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).not.toBe(
+        tokenValues['moonshot'].completion,
+      );
+    }
+  });
+});
+
+describe('Grok long-context premium tier', () => {
+  it('doubles the rate once a prompt passes the 200K threshold', () => {
+    for (const model of ['grok-4.5', 'grok-4.6']) {
+      const { threshold } = premiumTokenValues[model];
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold })).toBe(
+        tokenValues[model].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold + 1 })).toBe(
+        premiumTokenValues[model].prompt,
+      );
+      expect(
+        getMultiplier({ model, tokenType: 'completion', inputTokenCount: threshold + 1 }),
+      ).toBe(premiumTokenValues[model].completion);
+    }
+  });
+});
+
 describe('vendor-prefixed pricing keys', () => {
   it('prices the model segment rather than the vendor prefix', () => {
     expect(getValueKey('moonshotai/kimi-k2')).toBe('kimi-k2');

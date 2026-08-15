@@ -42,10 +42,12 @@ export function findMatchingPattern(
   if (slashIndex === -1) {
     return findLongestKey(lowerModelName, tokensMap);
   }
-  return (
-    findLongestKey(lowerModelName.slice(slashIndex + 1), tokensMap) ??
-    findLongestKey(lowerModelName, tokensMap)
-  );
+
+  const fullMatch = findLongestKey(lowerModelName, tokensMap);
+  if (fullMatch != null && fullMatch.includes('/')) {
+    return fullMatch;
+  }
+  return findLongestKey(lowerModelName.slice(slashIndex + 1), tokensMap) ?? fullMatch;
 }
 
 /**

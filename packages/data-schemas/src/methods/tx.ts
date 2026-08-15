@@ -105,6 +105,10 @@ const bedrockValues: Record<string, { prompt: number; completion: number }> = {
   'moonshot.kimi-k2': { prompt: 0.6, completion: 2.5 },
   'moonshot.kimi-k2.5': { prompt: 0.6, completion: 3.0 },
   'moonshot.kimi-k2-thinking': { prompt: 0.6, completion: 2.5 },
+  /* Both dot-prefixed forms need their own row: longest-substring matching
+     otherwise reaches `moonshot.kimi` or `moonshot` before `kimi-k3`. */
+  'moonshot.kimi-k3': { prompt: 3.0, completion: 15.0 },
+  'moonshotai.kimi-k3': { prompt: 3.0, completion: 15.0 },
 };
 
 /**
@@ -237,8 +241,8 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'grok-4': { prompt: 3.0, completion: 15.0 },
     'grok-4-fast': { prompt: 0.2, completion: 0.5 },
     'grok-4-1-fast': { prompt: 0.2, completion: 0.5 },
-    /* Standard tier. xAI bills roughly double above a 200K-token prompt, which
-       this map has no way to express; see `premiumTokenValues` if that matters. */
+    /* Standard tier. The doubled rate above a 200K prompt lives in
+       `premiumTokenValues`, since the 500K window makes it reachable. */
     'grok-4.5': { prompt: 2.0, completion: 6.0 },
     'grok-4-5': { prompt: 2.0, completion: 6.0 },
     'grok-4.6': { prompt: 2.0, completion: 6.0 },
@@ -299,6 +303,7 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'glm-5': { prompt: 1.4, completion: 4.4 },
     'glm-5.1': { prompt: 1.4, completion: 4.4 },
     'glm-5.2': { prompt: 1.4, completion: 4.4 },
+    'glm-5.3': { prompt: 1.4, completion: 4.4 },
     'minimax-m1': { prompt: 0.55, completion: 2.2 },
     'minimax-m2': { prompt: 0.3, completion: 1.2 },
     'minimax-m2.7': { prompt: 0.3, completion: 1.2 },
@@ -433,6 +438,10 @@ export const premiumTokenValues: Record<
   'gpt-5.6': { threshold: 272000, prompt: 10, completion: 45 },
   'gpt-5.6-terra': { threshold: 272000, prompt: 5, completion: 22.5 },
   'gpt-5.6-luna': { threshold: 272000, prompt: 2, completion: 9 },
+  'grok-4.5': { threshold: 200000, prompt: 4, completion: 12 },
+  'grok-4-5': { threshold: 200000, prompt: 4, completion: 12 },
+  'grok-4.6': { threshold: 200000, prompt: 4, completion: 12 },
+  'grok-4-6': { threshold: 200000, prompt: 4, completion: 12 },
 };
 
 /**

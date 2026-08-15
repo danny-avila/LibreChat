@@ -461,6 +461,7 @@ const aggregateModels = {
   'glm-5': 204800,
   'glm-5.1': 204800,
   'glm-5.2': 1048576,
+  'glm-5.3': 1048576,
   // MiniMax
   'minimax-m1': 1000000,
   'minimax-m2': 204800,
@@ -589,10 +590,13 @@ function findLongestKey(
 /**
  * Finds the longest matching key in the tokens map via substring match.
  *
- * A vendor-prefixed id is matched on its model segment first. No key contains a
- * `/`, so a prefix can only ever contribute a spurious match that outranks the
- * id itself: `moonshotai/kimi-k2` matched `moonshot` (8) over `kimi-k2` (7)
- * and reported half the real window.
+ * A vendor prefix can outrank the id it precedes: `moonshotai/kimi-k2` matched
+ * `moonshot` (8) over `kimi-k2` (7) and reported half the real window. When the
+ * whole id resolves to a prefix-only match, retry against the model segment.
+ *
+ * A key that carries the vendor itself is already the most specific answer and
+ * is kept. `EndpointTokenConfig` is an arbitrary record, and one built from
+ * OpenRouter is keyed by `org/model`, so those must still beat a bare `model`.
  */
 export function findMatchingPattern(
   modelName: string,
@@ -603,10 +607,12 @@ export function findMatchingPattern(
   if (slashIndex === -1) {
     return findLongestKey(lowerModelName, tokensMap);
   }
-  return (
-    findLongestKey(lowerModelName.slice(slashIndex + 1), tokensMap) ??
-    findLongestKey(lowerModelName, tokensMap)
-  );
+
+  const fullMatch = findLongestKey(lowerModelName, tokensMap);
+  if (fullMatch != null && fullMatch.includes('/')) {
+    return fullMatch;
+  }
+  return findLongestKey(lowerModelName.slice(slashIndex + 1), tokensMap) ?? fullMatch;
 }
 
 /**
