@@ -162,6 +162,9 @@ export const usePinConversationMutation = (
     {
       onSuccess: (data, vars, context) => {
         updateConvoInAllQueries(queryClient, vars.conversationId, () => data);
+        /** The pinned section has its own fetch, so a new pin is only visible once
+         * that list is refetched; unpins are already dropped from its cache above. */
+        queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
         onSuccess?.(data, vars, context);
       },
       onError,

@@ -190,7 +190,7 @@ const pinnedConvo = {
   updatedAt: new Date().toISOString(),
 } as TConversation;
 
-describe('Conversations – pinned header', () => {
+describe('Conversations: pinned chats live in PinnedSection', () => {
   const containerRef = createRef<List>();
 
   beforeEach(() => {
@@ -227,18 +227,8 @@ describe('Conversations – pinned header', () => {
       </RecoilRoot>,
     );
 
-  it('shows the pinned header when there are pinned conversations', () => {
-    const { getByText } = renderConversations([pinnedConvo]);
-    expect(getByText('com_ui_pinned')).toBeInTheDocument();
-  });
-
-  it('does not show the pinned header when there are no pinned conversations', () => {
-    const { queryByText } = renderConversations([]);
-    expect(queryByText('com_ui_pinned')).not.toBeInTheDocument();
-  });
-
-  it('does not show the pinned header during search', () => {
-    const { queryByText } = renderConversations([pinnedConvo], 'some query');
+  it('does not render a pinned header inside the chats list', () => {
+    const { queryByText } = renderConversations([pinnedConvo]);
     expect(queryByText('com_ui_pinned')).not.toBeInTheDocument();
   });
 

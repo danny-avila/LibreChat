@@ -2,9 +2,14 @@ import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef
 import { useMediaQuery } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import type { ConversationListResponse, TConversation } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
-import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
+import {
+  useConversationsInfiniteQuery,
+  usePinnedConversationsQuery,
+  useTitleGeneration,
+} from '~/data-provider';
 import {
   useLocalize,
   useHasAccess,
@@ -12,8 +17,8 @@ import {
   useLocalStorage,
   useNavScrolling,
 } from '~/hooks';
-import { useConversationsInfiniteQuery, useTitleGeneration } from '~/data-provider';
 import ProjectsSection from '~/components/Conversations/ProjectsSection';
+import PinnedSection from '~/components/Conversations/PinnedSection';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { Conversations } from '~/components/Conversations';
 import SearchBar from '~/components/Nav/SearchBar';
@@ -75,6 +80,18 @@ const ConversationsSection = memo(() => {
     return data ? data.pages.flatMap((page) => page.conversations) : [];
   }, [data]);
 
+  /** Pins are fetched on their own so one older than the first page of the chats list
+   * still shows on first paint, instead of appearing only once that list scrolls to it. */
+  const { data: pinnedData } = usePinnedConversationsQuery({ enabled: isAuthenticated });
+
+  const pinnedConversations = useMemo(
+    () =>
+      (pinnedData?.conversations ?? []).filter((convo): convo is TConversation =>
+        Boolean(convo?.pinned === true),
+      ),
+    [pinnedData?.conversations],
+  );
+
   const toggleNav = useCallback(() => {
     if (isSmallScreen) {
       setSidebarExpanded(false);
@@ -122,6 +139,7 @@ const ConversationsSection = memo(() => {
         </div>
       )}
       {!search.query && <ProjectsSection toggleNav={toggleNav} isAuthenticated={isAuthenticated} />}
+      {!search.query && <PinnedSection conversations={pinnedConversations} toggleNav={toggleNav} />}
       <div className="flex min-h-0 flex-grow flex-col overflow-hidden">
         <Conversations
           conversations={conversations}

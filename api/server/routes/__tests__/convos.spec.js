@@ -487,6 +487,36 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('GET / pinned filter', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    it('forwards pinned=true so the sidebar section can fetch pins on their own', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query({ pinned: 'true', limit: '100' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ pinned: true, limit: 100 }),
+      );
+    });
+
+    it('leaves the list unfiltered when pinned is absent', async () => {
+      const response = await request(app).get('/api/convos');
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ pinned: false }),
+      );
+    });
+  });
+
   describe('POST /archive', () => {
     it('should archive a conversation successfully', async () => {
       const mockConversationId = 'conv-123';

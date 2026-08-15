@@ -1,3 +1,4 @@
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
   dataService,
@@ -6,14 +7,6 @@ import {
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  UseInfiniteQueryOptions,
-  QueryObserverResult,
-  UseQueryOptions,
-  InfiniteData,
-} from '@tanstack/react-query';
-import type t from 'librechat-data-provider';
 import type {
   Action,
   TPreset,
@@ -30,6 +23,13 @@ import type {
   SharedLinksListParams,
   SharedLinksResponse,
 } from 'librechat-data-provider';
+import type {
+  UseInfiniteQueryOptions,
+  QueryObserverResult,
+  UseQueryOptions,
+  InfiniteData,
+} from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
 import { findConversationInInfinite, isNotFoundError } from '~/utils';
 
@@ -109,6 +109,29 @@ export const useConversationsInfiniteQuery = (
     cacheTime: 30 * 60 * 1000, // 30 minutes
     ...config,
   });
+};
+
+/**
+ * Pinned chats are a hand-curated, deliberately small set, so the sidebar section
+ * fetches them whole rather than paginating: a pin older than the first page of the
+ * Chats list would otherwise stay hidden until that list scrolled far enough to reach it.
+ */
+export const pinnedConversationsLimit = 100;
+
+export const usePinnedConversationsQuery = (
+  config?: UseQueryOptions<ConversationListResponse>,
+): QueryObserverResult<ConversationListResponse> => {
+  return useQuery<ConversationListResponse>(
+    [QueryKeys.pinnedConversations],
+    () => dataService.listConversations({ pinned: true, limit: pinnedConversationsLimit }),
+    {
+      staleTime: 5 * 60 * 1000,
+      cacheTime: 30 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      ...config,
+    },
+  );
 };
 
 export const useMessagesInfiniteQuery = (

@@ -494,6 +494,48 @@ export function upsertConvoInAllQueries(
   }
 }
 
+export type PinnedConversationsData = {
+  conversations: TConversation[];
+  nextCursor?: string | null;
+};
+
+/**
+ * The pinned sidebar section is fed by its own request rather than by the paginated
+ * chats list, so every edit that reaches the chats cache has to reach this one too or
+ * the section keeps showing a stale title, or a chat that is no longer pinned.
+ */
+function updatePinnedConvosQuery(
+  queryClient: QueryClient,
+  conversationId: string,
+  updater: (c: TConversation) => TConversation | null,
+) {
+  queryClient.setQueryData<PinnedConversationsData>([QueryKeys.pinnedConversations], (oldData) => {
+    if (!oldData) {
+      return oldData;
+    }
+    const index = oldData.conversations.findIndex((c) => c.conversationId === conversationId);
+    if (index === -1) {
+      return oldData;
+    }
+    const found = oldData.conversations[index];
+    const updated = updater(found);
+    if (!updated || updated.pinned !== true) {
+      return {
+        ...oldData,
+        conversations: oldData.conversations.filter((_, i) => i !== index),
+      };
+    }
+    const merged =
+      updated.isShared === undefined && found.isShared !== undefined
+        ? { ...updated, isShared: found.isShared }
+        : updated;
+    return {
+      ...oldData,
+      conversations: oldData.conversations.map((c, i) => (i === index ? merged : c)),
+    };
+  });
+}
+
 // Update
 export function updateConvoInAllQueries(
   queryClient: QueryClient,
@@ -501,6 +543,8 @@ export function updateConvoInAllQueries(
   updater: (c: TConversation) => TConversation,
   moveToTop = false,
 ) {
+  updatePinnedConvosQuery(queryClient, conversationId, updater);
+
   const queries = queryClient
     .getQueryCache()
     .findAll([QueryKeys.allConversations], { exact: false });
@@ -588,6 +632,8 @@ export function updateConvoInAllQueries(
 
 // Remove
 export function removeConvoFromAllQueries(queryClient: QueryClient, conversationId: string) {
+  updatePinnedConvosQuery(queryClient, conversationId, () => null);
+
   const queries = queryClient
     .getQueryCache()
     .findAll([QueryKeys.allConversations], { exact: false });

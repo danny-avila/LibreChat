@@ -5,6 +5,7 @@ export enum QueryKeys {
   sharedLinks = 'sharedLinks',
   allConversations = 'allConversations',
   archivedConversations = 'archivedConversations',
+  pinnedConversations = 'pinnedConversations',
   searchConversations = 'searchConversations',
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
