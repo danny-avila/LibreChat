@@ -88,13 +88,13 @@ const ConversationsSection = memo(() => {
     { enabled: isAuthenticated },
   );
 
-  const pinnedConversations = useMemo(
-    () =>
-      (pinnedData?.conversations ?? []).filter((convo): convo is TConversation =>
-        Boolean(convo?.pinned === true),
-      ),
-    [pinnedData?.conversations],
-  );
+  /* `groupConversationsByDate` strips pins from the chats groups, so if the dedicated
+     request fails there is nowhere else for them to show. Fall back to whatever pins the
+     loaded chats pages already carry rather than emptying the section. */
+  const pinnedConversations = useMemo(() => {
+    const source = pinnedData?.conversations ?? conversations;
+    return source.filter((convo): convo is TConversation => Boolean(convo?.pinned === true));
+  }, [pinnedData?.conversations, conversations]);
 
   const toggleNav = useCallback(() => {
     if (isSmallScreen) {

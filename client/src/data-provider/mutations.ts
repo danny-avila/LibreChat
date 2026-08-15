@@ -387,6 +387,8 @@ export const useDeleteSharedLinkMutation = (
          from the links that are actually left, settle it. Every cached page refetches:
          the affected conversation is as likely to sit on page three as on page one. */
       queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+      /** The pinned section renders the same badge from its own cache. */
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
     },
 
     onSuccess: (data, variables) => {
@@ -709,6 +711,8 @@ export const useDuplicateConversationMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+      /** A duplicated, forked or imported chat can arrive already pinned. */
+      queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
       queryClient.invalidateQueries([QueryKeys.projectConversations]);
       queryClient.invalidateQueries([QueryKeys.projects]);
       if (duplicatedConversation.chatProjectId) {
@@ -757,6 +761,8 @@ export const useForkConvoMutation = (
         queryKey: [QueryKeys.allConversations],
         refetchPage: (_, index) => index === 0,
       });
+      /** A duplicated, forked or imported chat can arrive already pinned. */
+      queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
       queryClient.invalidateQueries([QueryKeys.projectConversations]);
       queryClient.invalidateQueries([QueryKeys.projects]);
       if (forkedConversation.chatProjectId) {
@@ -831,6 +837,8 @@ export const useUploadConversationsMutation = (
     onSuccess: (data, variables, context) => {
       /* TODO: optimize to return imported conversations and add manually */
       queryClient.invalidateQueries([QueryKeys.allConversations]);
+      /** An imported chat can carry `pinned: true`. */
+      queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
       if (onSuccess) {
         onSuccess(data, variables, context);
       }
