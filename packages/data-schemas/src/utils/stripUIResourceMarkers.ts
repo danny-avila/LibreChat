@@ -13,7 +13,6 @@ const MARKDOWN_ESCAPE_OR_REFERENCE = /\\(.)|&(#(?:\d{1,7}|x[\da-f]{1,6})|[\da-z]
 
 type MarkdownNode = {
   type: string;
-  value?: string;
   position?: { start: { offset?: number }; end: { offset?: number } };
   children?: MarkdownNode[];
 };
@@ -49,71 +48,16 @@ function decodeTextWithSourceSpans(source: string) {
   return { value, spans };
 }
 
-function alignTextSpans(
-  decoded: ReturnType<typeof decodeTextWithSourceSpans>,
-  nodeValue: string,
-): Array<[number, number]> | null {
-  // mdast omits continuation indentation and blockquote prefixes, so align
-  // decoded text back to source offsets while allowing those line prefixes.
-  const result: Array<[number, number]> = [];
-  let sourceIndex = 0;
-  let lineHasContent = false;
-
-  for (let valueIndex = 0; valueIndex < nodeValue.length; valueIndex++) {
-    const expected = nodeValue[valueIndex];
-    if (expected === '\n' && decoded.value[sourceIndex] === '\r') {
-      const nextIndex = decoded.value[sourceIndex + 1] === '\n' ? sourceIndex + 1 : sourceIndex;
-      const first = decoded.spans[sourceIndex];
-      const last = decoded.spans[nextIndex];
-      if (!first || !last) {
-        return null;
-      }
-      result.push([first[0], last[1]]);
-      sourceIndex = nextIndex + 1;
-      lineHasContent = false;
-      continue;
-    }
-    while (decoded.value[sourceIndex] !== expected) {
-      const candidate = decoded.value[sourceIndex];
-      if (
-        candidate == null ||
-        lineHasContent ||
-        (candidate !== ' ' && candidate !== '\t' && candidate !== '>')
-      ) {
-        return null;
-      }
-      sourceIndex++;
-    }
-    const span = decoded.spans[sourceIndex];
-    if (!span) {
-      return null;
-    }
-    result.push(span);
-    sourceIndex++;
-    if (expected === '\n' || expected === '\r') {
-      lineHasContent = false;
-    } else if (expected !== ' ' && expected !== '\t') {
-      lineHasContent = true;
-    }
-  }
-  return result;
-}
-
 function collectMarkerRanges(node: MarkdownNode, source: string, ranges: Array<[number, number]>) {
   const start = node.position?.start.offset;
   const end = node.position?.end.offset;
-  if (node.type === 'text' && node.value != null && start != null && end != null) {
+  if (node.type === 'text' && start != null && end != null) {
     const decoded = decodeTextWithSourceSpans(source.slice(start, end));
-    const spans = alignTextSpans(decoded, node.value);
-    if (!spans) {
-      return;
-    }
-
     UI_RESOURCE_PATTERN.lastIndex = 0;
     let match: RegExpExecArray | null;
-    while ((match = UI_RESOURCE_PATTERN.exec(node.value)) != null) {
-      const first = spans[match.index];
-      const last = spans[match.index + match[0].length - 1];
+    while ((match = UI_RESOURCE_PATTERN.exec(decoded.value)) != null) {
+      const first = decoded.spans[match.index];
+      const last = decoded.spans[match.index + match[0].length - 1];
       if (first && last) {
         ranges.push([start + first[0], start + last[1]]);
       }

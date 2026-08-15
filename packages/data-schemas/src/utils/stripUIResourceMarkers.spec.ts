@@ -66,6 +66,11 @@ describe('stripUIResourceMarkers', () => {
     expect(stripUIResourceMarkers(markdown)).toBe(markdown.replace('\\ui{paragraph}', ''));
   });
 
+  it('handles escaped blockquote content and CommonMark replacement characters', () => {
+    expect(stripUIResourceMarkers('> intro\n> \\> \\ui{paragraph}')).toBe('> intro\n> \\> ');
+    expect(stripUIResourceMarkers('prefix\0 \\ui{paragraph}')).toBe('prefix\0 ');
+  });
+
   it('recursively sanitizes TextData and subagent content while preserving annotations', () => {
     const content = [
       {

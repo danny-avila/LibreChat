@@ -14,7 +14,10 @@ type UIResourceRendererProps = Omit<
 export function isSupportedUIResource(
   resource: UIResource | null | undefined,
 ): resource is UIResource {
-  return resource?.mimeType?.split(';', 1)[0].trim().toLowerCase() === 'text/html';
+  return (
+    typeof resource?.mimeType === 'string' &&
+    resource.mimeType.split(';', 1)[0].trim().toLowerCase() === 'text/html'
+  );
 }
 
 /** Restricts legacy MCP-UI rendering to sandboxed inline HTML resources. */

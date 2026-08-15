@@ -36,6 +36,20 @@ describe('UIResourceRenderer', () => {
     expect(mockLegacyRenderer).not.toHaveBeenCalled();
   });
 
+  it('blocks malformed non-string MIME values', () => {
+    const resource: UIResource = {
+      resourceId: 'malformed-resource',
+      uri: 'ui://malformed',
+      mimeType: 1 as unknown as string,
+      text: '<p>Malformed resource</p>',
+    };
+
+    const { container } = render(<UIResourceRenderer resource={resource} />);
+
+    expect(container).toBeEmptyDOMElement();
+    expect(mockLegacyRenderer).not.toHaveBeenCalled();
+  });
+
   it('forces text/html through the raw HTML renderer without popup permissions', () => {
     const resource: UIResource = {
       resourceId: 'html-resource',
