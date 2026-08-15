@@ -1021,3 +1021,29 @@ endpoints:
 #       - id: anthropic_api_key
 #         label: Anthropic API key
 #         regex: "sk-ant-[A-Za-z0-9_-]{20,}"
+# Custom interface configuration
+interface:
+  customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  # V--- ADD THIS LINE ---V
+  fileCitations: true 
+  # Enable/disable file search as a chatarea selection (default: true)
+  fileSearch: true
+  # Privacy policy settings
+  privacyPolicy:
+    externalUrl: 'https://librechat.ai/privacy-policy'
+    openNewTab: true
+
+  # Terms of service
+  termsOfService:
+    externalUrl: 'https://librechat.ai/tos'
+    openNewTab: true
+    modalAcceptance: true
+    modalTitle: 'Terms of Service for LibreChat'
+    modalContent: |
+      # Terms and Conditions for LibreChat
+      ... (keep your existing TOS text here) ...
+
+# V--- ADD THIS ENTIRE BLOCK AT THE VERY END OF YOUR FILE ---V
+webSearch:
+  searchProvider: "tavily"  # Options: "tavily", "serper", "google", "searxng"
+  logResult: false
