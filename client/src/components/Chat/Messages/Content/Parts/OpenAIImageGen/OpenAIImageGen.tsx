@@ -66,10 +66,13 @@ export default function OpenAIImageGen({
   const intent = useToolCallIntent(_args);
   const isAgentStyle = toolName != null && AGENT_STYLE_TOOLS.has(toolName);
   const [agentProgress, setAgentProgress] = useState(initialProgress);
-  const legacyProgress = useProgress(isAgentStyle ? 1 : initialProgress);
+  const isClosed = runStepStatus != null;
+  /** Passed the terminal value rather than masked afterwards: `useProgress`
+   *  keeps a 200ms interval alive whenever its input is below 1, so masking
+   *  the result would leave a closed card scheduling work forever. */
+  const legacyProgress = useProgress(isAgentStyle || isClosed ? 1 : initialProgress);
   const livingProgress = isAgentStyle ? agentProgress : legacyProgress;
-  /** A closed step is terminal, so neither path may keep animating. */
-  const progress = runStepStatus != null ? 1 : livingProgress;
+  const progress = isClosed ? 1 : livingProgress;
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   /** A step the run closed as `failed` is an error even when its output text
@@ -156,7 +159,7 @@ export default function OpenAIImageGen({
       return;
     }
 
-    if (isSubmitting) {
+    if (isSubmitting && !isClosed) {
       setAgentProgress(initialProgress);
 
       if (intervalRef.current) {
@@ -202,20 +205,20 @@ export default function OpenAIImageGen({
         clearInterval(intervalRef.current);
       }
     };
-  }, [isSubmitting, initialProgress, quality, isAgentStyle]);
+  }, [isSubmitting, initialProgress, quality, isAgentStyle, isClosed]);
 
   useEffect(() => {
     if (!isAgentStyle) {
       return;
     }
 
-    if (initialProgress >= 1 || cancelled) {
+    if (initialProgress >= 1 || cancelled || isClosed) {
       setAgentProgress(initialProgress);
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
       }
     }
-  }, [initialProgress, cancelled, isAgentStyle]);
+  }, [initialProgress, cancelled, isAgentStyle, isClosed]);
 
   useEffect(() => {
     updateDimensions();
@@ -239,21 +242,27 @@ export default function OpenAIImageGen({
     <>
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
-          if (progress < 1 && !cancelled) {
+          if (progress < 1 && !cancelled && !hasError) {
             return '';
-          }
-          if (cancelled && hasError) {
-            return localize('com_ui_image_gen_failed');
           }
           if (cancelled) {
             return localize('com_ui_cancelled');
+          }
+          if (hasError) {
+            return localize('com_ui_image_gen_failed');
           }
           return intent ?? localize('com_ui_image_created');
         })()}
       </span>
       <div className="relative my-1 flex h-5 shrink-0 items-center gap-2">
         <ToolIcon type="image_gen" isAnimating={isInProgress} />
-        <ProgressText progress={progress} error={cancelled} toolName={toolName} intent={intent} />
+        <ProgressText
+          progress={progress}
+          error={hasError}
+          cancelled={cancelled}
+          toolName={toolName}
+          intent={intent}
+        />
       </div>
       {isAgentStyle && !hideAttachments && (
         <div className="relative mb-2 flex w-full justify-start">

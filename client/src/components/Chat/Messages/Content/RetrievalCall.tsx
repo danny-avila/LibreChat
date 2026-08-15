@@ -339,10 +339,11 @@ export default function RetrievalCall({
   onExpand?: () => void;
   runStepStatus?: PartMetadata['runStepStatus'];
 }) {
-  /** A closed step is terminal, so it must never keep animating. */
   const isClosed = runStepStatus != null;
-  const rawProgress = useProgress(initialProgress);
-  const progress = isClosed ? 1 : rawProgress;
+  /** Passed the terminal value rather than masked afterwards: `useProgress`
+   *  keeps a 200ms interval alive whenever its input is below 1, and a closed
+   *  step usually never receives the completion that would raise it. */
+  const progress = useProgress(isClosed ? 1 : initialProgress);
   const localize = useLocalize();
   /** Model-authored live label (injected when file_search is opted into
    *  describe_intent); persists as the settled label. The sr-only live

@@ -184,9 +184,10 @@ export default function ToolCall({
     return parsedAuthUrl?.hostname ?? '';
   }, [parsedAuthUrl]);
 
-  /** A closed step is terminal, so it must never keep animating. */
-  const rawProgress = useProgress(initialProgress);
-  const progress = isClosed ? 1 : rawProgress;
+  /** Passed the terminal value rather than masked afterwards: `useProgress`
+   *  keeps a 200ms interval alive whenever its input is below 1, and a closed
+   *  step usually never receives the completion that would raise it. */
+  const progress = useProgress(isClosed ? 1 : initialProgress);
   const showCancelled = cancelled || (errorState && !output);
 
   const handleToggleInfo = useCallback(() => {

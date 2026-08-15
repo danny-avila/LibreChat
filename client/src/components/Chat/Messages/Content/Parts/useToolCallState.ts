@@ -43,14 +43,11 @@ export default function useToolCallState(
     }
   }, [autoExpand, hasContent]);
 
-  /**
-   * A closed step is terminal by definition, so it must never animate. Forcing
-   * the bar complete keeps the shimmer from outliving a step that closed
-   * without ever emitting a completion event.
-   */
   const isClosed = runStepStatus != null;
-  const rawProgress = useProgress(initialProgress);
-  const progress = isClosed ? 1 : rawProgress;
+  /** Passed the terminal value rather than masked afterwards: `useProgress`
+   *  keeps a 200ms interval alive whenever its input is below 1, and a closed
+   *  step usually never receives the completion that would raise it. */
+  const progress = useProgress(isClosed ? 1 : initialProgress);
   const toggleCode = useCallback(() => {
     setShowCode((prev) => {
       const next = !prev;
@@ -72,7 +69,7 @@ export default function useToolCallState(
    */
   const cancelled = isClosed
     ? runStepStatus === 'cancelled'
-    : !isSubmitting && rawProgress < 1 && !hasError;
+    : !isSubmitting && progress < 1 && !hasError;
 
   return {
     showCode,
