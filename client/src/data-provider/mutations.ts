@@ -169,6 +169,14 @@ export const usePinConversationMutation = (
     {
       onSuccess: (data, vars, context) => {
         updateConvoInAllQueries(queryClient, vars.conversationId, () => data);
+        /** An older pin may exist only in the dedicated pinned cache. Unpinning
+         * it has to put the returned row onto the chats list; later pages
+         * cannot recover a conversation whose updatedAt just jumped ahead of
+         * the current cursor. addConvoToAllQueries no-ops if it is already
+         * present. */
+        if (data.pinned !== true) {
+          addConvoToAllQueries(queryClient, data);
+        }
         /** The pinned section has its own fetch, so a new pin is only visible once
          * that list is refetched; unpins are already dropped from its cache above. */
         queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
@@ -489,6 +497,10 @@ export const useConversationTagMutation = ({
         : dataService.createConversationTag(payload),
     {
       onSuccess: (...args) => {
+        /** Renaming a selected bookmark rewrites that tag on every matching
+         * conversation. The pinned query is keyed by the old filter until it
+         * is invalidated. */
+        queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
         onMutationSuccess(...args);
         onSuccess?.(...args);
       },
@@ -580,6 +592,8 @@ export const useDeleteConversationTagMutation = (
       });
 
       deleteTagInAllConversations(tagToDelete);
+      /** Deleting a selected bookmark empties that tag-keyed pinned set. */
+      queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
       onSuccess?.(_data, tagToDelete, context);
     },
     ..._options,

@@ -301,4 +301,46 @@ describe('Conversations: all-pin pages still paginate', () => {
     });
     expect(loadMoreConversations).not.toHaveBeenCalled();
   });
+
+  it('does not retry when an empty-page fetch fails without new data', () => {
+    const loadMoreConversations = jest.fn();
+    const conversations = [pinnedConvo];
+    const { rerender } = renderList({ conversations, loadMoreConversations });
+    expect(loadMoreConversations).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <RecoilRoot>
+        <Conversations
+          conversations={conversations}
+          moveToTop={jest.fn()}
+          toggleNav={jest.fn()}
+          containerRef={containerRef}
+          loadMoreConversations={loadMoreConversations}
+          isLoading={true}
+          isSearchLoading={false}
+          isChatsExpanded={true}
+          setIsChatsExpanded={jest.fn()}
+          showFavorites={false}
+        />
+      </RecoilRoot>,
+    );
+    rerender(
+      <RecoilRoot>
+        <Conversations
+          conversations={conversations}
+          moveToTop={jest.fn()}
+          toggleNav={jest.fn()}
+          containerRef={containerRef}
+          loadMoreConversations={loadMoreConversations}
+          isLoading={false}
+          isSearchLoading={false}
+          isChatsExpanded={true}
+          setIsChatsExpanded={jest.fn()}
+          showFavorites={false}
+        />
+      </RecoilRoot>,
+    );
+
+    expect(loadMoreConversations).toHaveBeenCalledTimes(1);
+  });
 });

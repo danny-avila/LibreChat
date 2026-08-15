@@ -10,7 +10,12 @@ import {
   updateConvoInAllQueries,
   upsertConvoInAllQueries,
 } from '~/utils/convos';
-import { useDeleteConversationMutation, usePinConversationMutation } from '../mutations';
+import {
+  useConversationTagMutation,
+  useDeleteConversationMutation,
+  useDeleteConversationTagMutation,
+  usePinConversationMutation,
+} from '../mutations';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -21,6 +26,8 @@ jest.mock('librechat-data-provider', () => {
       listConversations: jest.fn(),
       pinConversation: jest.fn(),
       deleteConversation: jest.fn(),
+      updateConversationTag: jest.fn(),
+      deleteConversationTag: jest.fn(),
     },
   };
 });
@@ -33,6 +40,12 @@ const pinConversation = dataService.pinConversation as jest.MockedFunction<
 >;
 const deleteConversation = dataService.deleteConversation as jest.MockedFunction<
   typeof dataService.deleteConversation
+>;
+const updateConversationTag = dataService.updateConversationTag as jest.MockedFunction<
+  typeof dataService.updateConversationTag
+>;
+const deleteConversationTag = dataService.deleteConversationTag as jest.MockedFunction<
+  typeof dataService.deleteConversationTag
 >;
 
 const pinnedConvo = {
@@ -348,5 +361,97 @@ describe('delete mutation project lookup', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.project, projectId]);
+  });
+});
+
+const tagResponse = {
+  tag: 'office',
+  count: 1,
+  position: 0,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+};
+
+describe('bookmark mutations invalidate the pinned cache', () => {
+  it('invalidates pins when a bookmark is renamed', async () => {
+    updateConversationTag.mockResolvedValue(tagResponse);
+    const queryClient = createQueryClient();
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(
+      () => useConversationTagMutation({ context: 'test', tag: 'work' }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await act(async () => {
+      result.current.mutate({ tag: 'office' });
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
+  });
+
+  it('invalidates pins when a bookmark is deleted', async () => {
+    deleteConversationTag.mockResolvedValue({ ...tagResponse, tag: 'work' });
+    const queryClient = createQueryClient();
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+
+    const { result } = renderHook(() => useDeleteConversationTagMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      result.current.mutate('work');
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
+  });
+});
+
+describe('unpinning a pin that is not on a loaded chats page', () => {
+  it('inserts the unpinned conversation at the top of the chats list', async () => {
+    const unpinned = { ...pinnedConvo, pinned: false } as TConversation;
+    pinConversation.mockResolvedValue(unpinned);
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([pinnedConvo]),
+    );
+    queryClient.setQueryData([QueryKeys.allConversations], {
+      pages: [
+        {
+          conversations: [
+            {
+              conversationId: 'other-recent',
+              title: 'Recent',
+              endpoint: 'openAI',
+            } as TConversation,
+          ],
+          nextCursor: 'cursor-2',
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    const { result } = renderHook(() => usePinConversationMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      result.current.mutate({
+        conversationId: pinnedConvo.conversationId as string,
+        pinned: false,
+      });
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const chats = queryClient.getQueryData<{
+      pages: { conversations: TConversation[] }[];
+    }>([QueryKeys.allConversations]);
+    expect(
+      chats?.pages[0].conversations.map((conversation) => conversation.conversationId),
+    ).toEqual(['convo-pinned', 'other-recent']);
+    expect(chats?.pages[0].conversations[0].pinned).toBe(false);
   });
 });

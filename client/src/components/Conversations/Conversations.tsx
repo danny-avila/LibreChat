@@ -191,18 +191,25 @@ const Conversations: FC<ConversationsProps> = ({
 
   /* Pins are stripped from the date groups. An all-pin page leaves the
      virtual list with no rows, so onRowsRendered never fires and later
-     unpinned chats stay unreachable. Keep paging while the parent still
-     has another cursor; loadMoreConversations no-ops when it does not. */
+     unpinned chats stay unreachable. Ask for another page only when the
+     conversations input actually changes; a failed fetchNextPage leaves
+     the same array and must not loop. */
+  const paginatedFromRef = useRef<Array<TConversation | null> | null>(null);
   useEffect(() => {
     if (!isChatsExpanded || isLoading || isSearchLoading || groupedConversations.length > 0) {
       return;
     }
+    if (paginatedFromRef.current === rawConversations) {
+      return;
+    }
+    paginatedFromRef.current = rawConversations;
     loadMoreConversations();
   }, [
     isChatsExpanded,
     isLoading,
     isSearchLoading,
     groupedConversations.length,
+    rawConversations,
     loadMoreConversations,
   ]);
 
