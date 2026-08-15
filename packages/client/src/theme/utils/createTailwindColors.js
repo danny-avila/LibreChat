@@ -140,6 +140,14 @@ function createTailwindColors() {
     'status-neutral-border': cssVar('--status-neutral-border'),
     'text-on-status': cssVar('--text-on-status'),
 
+    'series-1': cssVar('--series-1'),
+    'series-2': cssVar('--series-2'),
+    'series-3': cssVar('--series-3'),
+    'series-4': cssVar('--series-4'),
+    'series-5': cssVar('--series-5'),
+    'series-6': cssVar('--series-6'),
+    'series-7': cssVar('--series-7'),
+
     'switch-unchecked': hslVar('--switch-unchecked'),
   };
 }

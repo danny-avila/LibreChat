@@ -30,6 +30,8 @@ export * from './Toast';
 export * from './Tooltip';
 export * from './Pagination';
 export * from './Progress';
+export * from './SegmentedMeter';
+export * from './Collapsible';
 export * from './InputOTP';
 export * from './IconButton';
 export * from './MultiSearch';
