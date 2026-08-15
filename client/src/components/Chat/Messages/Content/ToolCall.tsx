@@ -139,7 +139,9 @@ export default function ToolCall({
     window.open(auth, '_blank', 'noopener,noreferrer');
   }, [auth, isMCPToolCall, mcpServerName, actionId]);
 
-  const hasError = typeof output === 'string' && isError(output);
+  /** A step the run closed as `failed` is an error even when its output text
+   *  does not parse as one. */
+  const hasError = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
   /**
    * The step's own terminal status wins when the run emitted one. The
    * `isSubmitting` heuristic below it is a whole-message inference: it cannot
@@ -147,11 +149,15 @@ export default function ToolCall({
    * running state until the entire response ends and then flips them all to
    * cancelled at once. Retained as the fallback for messages saved before
    * `on_run_step_closed` and for endpoints that do not emit it.
+   *
+   * The status is authoritative on its own terms — deliberately not gated on
+   * `hasError`, so output parsing cannot demote a stopped step back into an
+   * in-flight state.
    */
-  const cancelled =
-    runStepStatus != null
-      ? (runStepStatus === 'cancelled' || runStepStatus === 'failed') && !hasError
-      : !isSubmitting && initialProgress < 1 && !hasError;
+  const isClosed = runStepStatus != null;
+  const cancelled = isClosed
+    ? runStepStatus === 'cancelled'
+    : !isSubmitting && initialProgress < 1 && !hasError;
   const errorState = hasError;
 
   const args = useMemo(() => {
@@ -178,7 +184,9 @@ export default function ToolCall({
     return parsedAuthUrl?.hostname ?? '';
   }, [parsedAuthUrl]);
 
-  const progress = useProgress(initialProgress);
+  /** A closed step is terminal, so it must never keep animating. */
+  const rawProgress = useProgress(initialProgress);
+  const progress = isClosed ? 1 : rawProgress;
   const showCancelled = cancelled || (errorState && !output);
 
   const handleToggleInfo = useCallback(() => {

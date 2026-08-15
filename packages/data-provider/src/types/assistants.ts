@@ -580,7 +580,7 @@ export type PartMetadata = {
    * event or from endpoints that do not emit it, in which case renderers fall
    * back to inferring "stopped" from `progress` and `isSubmitting`.
    */
-  runStepStatus?: 'completed' | 'cancelled' | 'failed';
+  runStepStatus?: Agents.RunStepClosedStatus;
 };
 
 /** Metadata for parallel content rendering - subset of PartMetadata */

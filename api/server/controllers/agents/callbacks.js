@@ -4,6 +4,7 @@ const {
   Tools,
   StepTypes,
   StepEvents,
+  ContentTypes,
   FileContext,
   ErrorTypes,
   UsageEvents,
@@ -431,16 +432,28 @@ function getDefaultHandlers({
       /**
        * Handle ON_RUN_STEP_CLOSED event — the terminal signal for a run step.
        *
+       * Stamped onto the aggregated part before it is forwarded. The SDK's
+       * `aggregateContent` has no notion of this event, so without stamping
+       * here the status would exist only on the live client message: a reload
+       * or a resumable reconnect would drop it and fall back to inferring
+       * "stopped" from `isSubmitting`, which is the behavior this fixes.
+       *
        * Forwarded unconditionally, without the visibility gating the other
-       * step events apply: a step whose `on_run_step` reached the client must
-       * get its closure, or the client is left inferring "stopped" from
-       * `isSubmitting`. Not fed to `aggregateContent`, which has no notion of
-       * this event; persistence of terminal status is handled separately.
+       * step events apply — a step whose `on_run_step` reached the client must
+       * get its closure, or the client is left inferring again.
        *
        * @param {string} event - The event name.
        * @param {RunStepClosedEvent} data - The event data.
        */
       handle: async (event, data) => {
+        const stepId = data?.id;
+        if (typeof stepId === 'string' && contentParts) {
+          const index = stepMap?.get(stepId)?.index ?? data?.index;
+          const part = typeof index === 'number' ? contentParts[index] : undefined;
+          if (part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
+            part.tool_call.runStepStatus = data.status;
+          }
+        }
         await emitForJob({ event, data });
       },
     },

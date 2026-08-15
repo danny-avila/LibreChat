@@ -27,7 +27,11 @@ export default function useToolCallState(
 ): ToolCallState {
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = output.length > 0;
-  const hasError = hasOutput && isError(output);
+  /**
+   * A step the run closed as `failed` is an error even when its output does
+   * not look like one — the run knows something the output text does not.
+   */
+  const hasError = (hasOutput && isError(output)) || runStepStatus === 'failed';
   const hasContent = hasInput || hasOutput;
 
   const [showCode, setShowCode] = useState(() => autoExpand && hasContent);
@@ -39,7 +43,14 @@ export default function useToolCallState(
     }
   }, [autoExpand, hasContent]);
 
-  const progress = useProgress(initialProgress);
+  /**
+   * A closed step is terminal by definition, so it must never animate. Forcing
+   * the bar complete keeps the shimmer from outliving a step that closed
+   * without ever emitting a completion event.
+   */
+  const isClosed = runStepStatus != null;
+  const rawProgress = useProgress(initialProgress);
+  const progress = isClosed ? 1 : rawProgress;
   const toggleCode = useCallback(() => {
     setShowCode((prev) => {
       const next = !prev;
@@ -54,11 +65,14 @@ export default function useToolCallState(
    * `isSubmitting` heuristic is a whole-message inference that cannot tell
    * which step stopped. Kept as the fallback for messages saved before
    * `on_run_step_closed` and endpoints that do not emit it.
+   *
+   * The status is authoritative on its own terms — it is deliberately not
+   * gated on `hasError`, so that parsing the output text can never demote a
+   * step the run reported as stopped back into an in-flight state.
    */
-  const cancelled =
-    runStepStatus != null
-      ? (runStepStatus === 'cancelled' || runStepStatus === 'failed') && !hasError
-      : !isSubmitting && progress < 1 && !hasError;
+  const cancelled = isClosed
+    ? runStepStatus === 'cancelled'
+    : !isSubmitting && rawProgress < 1 && !hasError;
 
   return {
     showCode,
