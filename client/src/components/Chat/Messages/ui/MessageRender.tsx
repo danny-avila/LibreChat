@@ -10,6 +10,7 @@ import {
 } from '~/utils';
 import { revealOnRowHoverClasses, messageFooterClasses } from '~/components/Chat/Messages/styles';
 import MessageContent from '~/components/Chat/Messages/Content/MessageContent';
+import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { useLocalize, useMessageActions, useContentMetadata } from '~/hooks';
 import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
@@ -148,6 +149,12 @@ const MessageRender = memo(function MessageRender({
       id={msg.messageId}
       icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
       label={messageLabel ?? ''}
+      hoverLabel={getHeaderModelName(
+        agent?.model,
+        assistant?.model,
+        msg.model,
+        conversation?.model,
+      )}
       timestamp={msg.createdAt ?? msg.clientTimestamp}
       ariaLabel={getMessageAriaLabel(msg, localize)}
       headerPrefix={getHeaderPrefixForScreenReader(msg, localize)}

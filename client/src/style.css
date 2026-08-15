@@ -581,83 +581,69 @@ pre {
   margin: 0;
 }
 
-/* Scroll-to-bottom button — enter */
+/* Show the message time when the row is hovered. Tailwind group-hover
+   loses to `[@media(hover:hover)]:opacity-0` (same specificity, :where()). */
+@media (hover: hover) {
+  .message-render .message-timestamp {
+    opacity: 0;
+  }
+
+  .message-render:hover .message-timestamp,
+  .message-render:focus-within .message-timestamp {
+    opacity: 1;
+  }
+}
+
+/* Scroll-to-bottom: fade and rise on the same path. No scale. */
+/* Inertness during the transition is owned by the button's `interactive` prop,
+   not by these classes: the wrapper is already inert, and a descendant that
+   opts back into pointer events stays hit-testable however its parent paints. */
 .scroll-animation-enter {
   opacity: 0;
-  transform: translateY(12px) scale(0.9);
-  pointer-events: none;
+  transform: translateY(8px);
 }
 
 .scroll-animation-enter-active {
-  animation: scroll-btn-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--resize-dur) var(--resize-ease),
+    transform var(--resize-dur) var(--resize-ease);
 }
 
 .scroll-animation-enter-done {
   opacity: 1;
-  transform: translateY(0) scale(1);
+  transform: translateY(0);
 }
 
-@keyframes scroll-btn-enter {
-  0% {
-    opacity: 0;
-    transform: translateY(12px) scale(0.9);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+.scroll-animation-exit {
+  opacity: 1;
+  transform: translateY(0);
 }
 
-/* Scroll-to-bottom button — exit */
 .scroll-animation-exit-active {
-  animation: scroll-btn-exit 0.25s cubic-bezier(0.4, 0, 1, 1) forwards;
-  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 180ms cubic-bezier(0.4, 0, 1, 1),
+    transform 180ms cubic-bezier(0.4, 0, 1, 1);
 }
 
 .scroll-animation-exit-done {
   display: none;
 }
 
-@keyframes scroll-btn-exit {
-  0% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+@media (prefers-reduced-motion: reduce) {
+  .scroll-animation-enter,
+  .scroll-animation-exit,
+  .scroll-animation-exit-active {
+    transform: none;
   }
-  100% {
-    opacity: 0;
-    transform: translateY(8px) scale(0.95);
+
+  .scroll-animation-enter-active,
+  .scroll-animation-exit-active {
+    transition: opacity 150ms ease;
   }
-}
-
-/* Scroll-to-bottom button */
-.premium-scroll-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  background-color: #ffffff;
-  z-index: 10;
-  overflow: hidden;
-  transition: transform 100ms ease;
-}
-
-.dark .premium-scroll-button {
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  background-color: #2a2a2e;
-}
-
-.scroll-animation-enter-active .premium-scroll-button {
-  pointer-events: none !important;
-}
-
-.premium-scroll-button:active {
-  transform: scale(0.95);
 }
 
 .prose {
@@ -1278,9 +1264,16 @@ button {
 }
 
 /* Webkit scrollbar */
+:root {
+  /* Width of the app's own scrollbars, and so of the band a
+     `scrollbar-gutter: stable` container holds back. `.scrollbar-gutter-spacer`
+     reserves the same band without becoming a scroll container. */
+  --scrollbar-size: 0.5rem;
+}
+
 ::-webkit-scrollbar {
   height: 0.1em;
-  width: 0.5rem;
+  width: var(--scrollbar-size);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -2122,6 +2115,8 @@ html {
 .message-editor-text {
   font-size: var(--markdown-font-size, var(--font-size-base));
   line-height: 1.6;
+  /* `.prose` sets max-width: 65ch; fill the chat-form column instead. */
+  max-width: none;
 }
 
 .message-content pre code {

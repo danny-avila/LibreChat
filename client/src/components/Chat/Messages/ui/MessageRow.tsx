@@ -1,10 +1,12 @@
 import type { ReactNode } from 'react';
 import MessageTimestamp from './MessageTimestamp';
+import HeaderLabel from './HeaderLabel';
 import { cn } from '~/utils';
 
 type MessageRowProps = {
   id?: string;
   label: string;
+  hoverLabel?: string | null;
   icon: ReactNode;
   children: ReactNode;
   footer: ReactNode;
@@ -22,6 +24,7 @@ export default function MessageRow({
   id,
   icon,
   label,
+  hoverLabel,
   footer,
   children,
   timestamp,
@@ -33,12 +36,13 @@ export default function MessageRow({
   fullWidth = false,
   isEditing = false,
 }: MessageRowProps) {
-  const showAssistantHeader = !isCreatedByUser && !hasParallelContent;
-  let widthClass = 'w-full max-w-3xl';
+  // Same column as ChatForm: max-width plus `sm:px-2`, so the body lines
+  // up with the composer surface rather than the form's outer box.
+  let widthClass = 'w-full sm:px-2 md:max-w-3xl xl:max-w-4xl';
   if (fullWidth) {
-    widthClass = 'w-full max-w-full';
+    widthClass = 'w-full max-w-full sm:px-2';
   } else if (hasParallelContent) {
-    widthClass = 'w-full md:max-w-[58rem] xl:max-w-[70rem]';
+    widthClass = 'w-full sm:px-2 md:max-w-[58rem] xl:max-w-[70rem]';
   }
 
   return (
@@ -58,7 +62,6 @@ export default function MessageRow({
         className={cn(
           'relative flex min-w-0 flex-col',
           isCreatedByUser ? 'user-turn' : 'agent-turn',
-          showAssistantHeader && 'md:pl-9',
           (hasParallelContent || isEditing) && 'w-full',
           !hasParallelContent &&
             isCreatedByUser &&
@@ -74,16 +77,16 @@ export default function MessageRow({
               <MessageTimestamp value={timestamp} />
             </h2>
           ) : (
-            <h2 className="flex min-h-7 select-none items-center text-sm font-semibold text-text-primary">
+            <h2 className="flex min-h-7 w-full select-none items-center gap-2 text-sm font-semibold text-text-primary">
               <span
                 aria-hidden="true"
-                className="mr-2 flex size-6 flex-shrink-0 items-center justify-center overflow-hidden rounded-full md:absolute md:left-0 md:top-0.5 md:mr-0"
+                className="flex size-6 flex-shrink-0 items-center justify-center overflow-hidden rounded-full"
               >
                 {icon}
               </span>
               <span className="sr-only">{headerPrefix}</span>
-              {label}
-              <MessageTimestamp value={timestamp} />
+              <HeaderLabel label={label} hoverLabel={hoverLabel} />
+              <MessageTimestamp value={timestamp} className="ml-auto shrink-0 font-normal" />
             </h2>
           ))}
 

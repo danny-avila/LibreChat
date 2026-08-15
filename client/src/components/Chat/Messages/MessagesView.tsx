@@ -4,7 +4,7 @@ import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
-import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
+import { useScreenshot, useMessageScrolling, useScrollbarGutter, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { steerOverlayHeightFamily } from '~/store/steer';
 import { MessagesViewProvider } from '~/Providers';
@@ -38,6 +38,7 @@ const ScrollButton = memo(function ScrollButton({
 }) {
   const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isSettled, setIsSettled] = useState(false);
   const scrollToBottomRef = useRef<HTMLDivElement>(null);
   const timeoutIdRef = useRef<NodeJS.Timeout>();
 
@@ -70,17 +71,20 @@ const ScrollButton = memo(function ScrollButton({
       in={showScrollButton && scrollButtonPreference}
       timeout={{
         enter: 300,
-        exit: 250,
+        exit: 180,
       }}
       classNames="scroll-animation"
       unmountOnExit={true}
       appear={true}
       nodeRef={scrollToBottomRef}
+      onEntered={() => setIsSettled(true)}
+      onExit={() => setIsSettled(false)}
     >
       <ScrollToBottom
         ref={scrollToBottomRef}
         scrollHandler={scrollHandler}
         overlayHeight={overlayHeight}
+        interactive={isSettled}
       />
     </CSSTransition>
   );
@@ -105,6 +109,8 @@ function MessagesViewContent({
     debouncedHandleScroll,
     handleNearBottomChange,
   } = useMessageScrolling(_messagesTree);
+
+  useScrollbarGutter(scrollableRef);
 
   const { conversationId } = conversation ?? {};
 
