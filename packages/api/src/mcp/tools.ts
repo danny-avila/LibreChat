@@ -288,6 +288,17 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           userId == null
             ? (publicationGeneration ?? configGeneration)
             : (configGeneration ?? publicationGeneration);
+        /** Only the shared catalog write needs ordering. These tools were just read from the
+         * server, so the caller should still serve them; discarding a correct tool list because
+         * its write could not be ordered is what makes a cache failure look to the user like a
+         * server with no tools at all (#14857). A superseded write is different — another
+         * replica holds something newer — and still discards below. */
+        if (!publicationRevision) {
+          logger.debug(
+            `[MCP Cache] Serving ${tools.length} unpublished tools for ${serverName}: this snapshot reserved no revision`,
+          );
+          return serverTools;
+        }
         const replaced = await replaceAppServerTools({
           serverName,
           serverTools,
