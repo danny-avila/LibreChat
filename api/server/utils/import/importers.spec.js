@@ -977,50 +977,53 @@ describe('importLibreChatConvo', () => {
     expect(importBatchBuilder.messages[0].attachments).toEqual([]);
   });
 
-  it('preserves user-authored MCP-UI marker examples while stripping attachments', async () => {
-    const message = {
-      messageId: 'message-1',
-      parentMessageId: Constants.NO_PARENT,
-      text: 'Example: \\ui{literal}',
-      isCreatedByUser: true,
-      content: [
+  it.each([true, null])(
+    'preserves user-rendered MCP-UI marker examples for author flag %s while stripping attachments',
+    async (authorFlag) => {
+      const message = {
+        messageId: 'message-1',
+        parentMessageId: Constants.NO_PARENT,
+        text: 'Example: \\ui{literal}',
+        isCreatedByUser: authorFlag,
+        content: [
+          { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
+          {
+            type: ContentTypes.TOOL_CALL,
+            tool_call: {
+              name: Constants.SUBAGENT,
+              output: 'Legacy \\ui{nested} output',
+              subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested \\ui{nested} text' }],
+            },
+          },
+        ],
+        attachments: [{ type: Tools.ui_resources, [Tools.ui_resources]: [] }],
+      };
+      const jsonData = {
+        conversationId: 'user-marker-import',
+        title: 'User marker import',
+        recursive: false,
+        messages: [message],
+      };
+      const importBatchBuilder = new ImportBatchBuilder('user-123');
+
+      const importer = getImporter(jsonData);
+      await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+      expect(importBatchBuilder.messages[0].text).toBe('Example: \\ui{literal}');
+      expect(importBatchBuilder.messages[0].content).toEqual([
         { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
         {
           type: ContentTypes.TOOL_CALL,
           tool_call: {
             name: Constants.SUBAGENT,
-            output: 'Legacy \\ui{nested} output',
-            subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested \\ui{nested} text' }],
+            output: 'Legacy  output',
+            subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested  text' }],
           },
         },
-      ],
-      attachments: [{ type: Tools.ui_resources, [Tools.ui_resources]: [] }],
-    };
-    const jsonData = {
-      conversationId: 'user-marker-import',
-      title: 'User marker import',
-      recursive: false,
-      messages: [message],
-    };
-    const importBatchBuilder = new ImportBatchBuilder('user-123');
-
-    const importer = getImporter(jsonData);
-    await importer(jsonData, 'user-123', () => importBatchBuilder);
-
-    expect(importBatchBuilder.messages[0].text).toBe('Example: \\ui{literal}');
-    expect(importBatchBuilder.messages[0].content).toEqual([
-      { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
-      {
-        type: ContentTypes.TOOL_CALL,
-        tool_call: {
-          name: Constants.SUBAGENT,
-          output: 'Legacy  output',
-          subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested  text' }],
-        },
-      },
-    ]);
-    expect(importBatchBuilder.messages[0].attachments).toEqual([]);
-  });
+      ]);
+      expect(importBatchBuilder.messages[0].attachments).toEqual([]);
+    },
+  );
 
   it('should import linear, non-recursive thread correctly with correct endpoint', async () => {
     mockGetEndpointsConfig.mockResolvedValue({

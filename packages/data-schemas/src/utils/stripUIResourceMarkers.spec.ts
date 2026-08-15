@@ -1,5 +1,9 @@
 import { Constants, ContentTypes } from 'librechat-data-provider';
-import { sanitizeUIResourceContent, stripUIResourceMarkers } from './stripUIResourceMarkers';
+import {
+  sanitizeUIResourceContent,
+  stripMessageUIResourceMarkers,
+  stripUIResourceMarkers,
+} from './stripUIResourceMarkers';
 
 describe('stripUIResourceMarkers', () => {
   it('removes markers from renderable text while preserving non-text Markdown nodes', () => {
@@ -55,6 +59,20 @@ describe('stripUIResourceMarkers', () => {
     expect(stripUIResourceMarkers(markdown)).toBe(
       ['Actual ', 'Literal ', 'Entity ', 'Mixed '].join('\n'),
     );
+  });
+
+  it('preserves markers inside composite citations consumed before MCP marker rendering', () => {
+    const markdown = '\\ue200\\ue202turn0search0 \\ui{citation}\\ue201 outside \\ui{outside}';
+    expect(stripUIResourceMarkers(markdown)).toBe(
+      '\\ue200\\ue202turn0search0 \\ui{citation}\\ue201 outside ',
+    );
+  });
+
+  it('preserves markers in message text that bypasses Markdown rendering', () => {
+    expect(stripMessageUIResourceMarkers('Error \\ui{literal}', true)).toBe('Error \\ui{literal}');
+    expect(
+      stripMessageUIResourceMarkers(':::thinking Hidden \\ui{hidden} ::: Visible \\ui{visible}'),
+    ).toBe(':::thinking Hidden \\ui{hidden} ::: Visible ');
   });
 
   it('handles paragraph continuations and container code according to CommonMark', () => {

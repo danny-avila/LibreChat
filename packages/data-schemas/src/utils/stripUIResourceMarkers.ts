@@ -10,6 +10,7 @@ import { Constants, ContentTypes } from 'librechat-data-provider';
 
 const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
 const CITATION_CLEANUP = /\\ue20[0-46]|[\ue200-\ue204\ue206]/g;
+const COMPOSITE_CITATION = /(?:\\ue200|\ue200).*?(?:\\ue201|\ue201)/g;
 const MARKDOWN_ESCAPE_OR_REFERENCE = /\\(.)|&(#(?:\d{1,7}|[xX][\dA-Fa-f]{1,6})|[\dA-Za-z]{1,31});/g;
 
 type MarkdownNode = {
@@ -28,13 +29,25 @@ type SourceSegment = {
 
 function removeCitationCleanup(value: string, segments: SourceSegment[]) {
   const removals: Array<[number, number]> = [];
-  CITATION_CLEANUP.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = CITATION_CLEANUP.exec(value)) != null) {
-    removals.push([match.index, CITATION_CLEANUP.lastIndex]);
+  for (const pattern of [COMPOSITE_CITATION, CITATION_CLEANUP]) {
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(value)) != null) {
+      removals.push([match.index, pattern.lastIndex]);
+    }
   }
   if (removals.length === 0) {
     return { value, segments };
+  }
+  removals.sort((a, b) => a[0] - b[0]);
+  const mergedRemovals: Array<[number, number]> = [];
+  for (const removal of removals) {
+    const previous = mergedRemovals[mergedRemovals.length - 1];
+    if (previous && removal[0] <= previous[1]) {
+      previous[1] = Math.max(previous[1], removal[1]);
+    } else {
+      mergedRemovals.push([...removal]);
+    }
   }
 
   let cleanedValue = '';
@@ -76,10 +89,10 @@ function removeCitationCleanup(value: string, segments: SourceSegment[]) {
   for (const segment of segments) {
     let cursor = segment.decodedStart;
     while (cursor < segment.decodedEnd) {
-      while (removals[removalIndex]?.[1] <= cursor) {
+      while (mergedRemovals[removalIndex]?.[1] <= cursor) {
         removalIndex++;
       }
-      const removal = removals[removalIndex];
+      const removal = mergedRemovals[removalIndex];
       if (!removal || removal[0] >= segment.decodedEnd) {
         appendSlice(segment, cursor, segment.decodedEnd);
         break;
@@ -242,6 +255,27 @@ export function stripUIResourceMarkers(text: string | undefined): string | undef
     cursor = end;
   }
   return result + text.slice(cursor);
+}
+
+/** Sanitize only the portion of a legacy message that the client renders as Markdown. */
+export function stripMessageUIResourceMarkers(
+  text: string | undefined,
+  error?: unknown,
+): string | undefined {
+  if (text == null || error) {
+    return text;
+  }
+  const thinkingMatch = /:::thinking[\s\S]*?:::/.exec(text);
+  if (!thinkingMatch) {
+    return stripUIResourceMarkers(text);
+  }
+  const start = thinkingMatch.index;
+  const end = start + thinkingMatch[0].length;
+  return (
+    stripUIResourceMarkers(text.slice(0, start)) +
+    thinkingMatch[0] +
+    stripUIResourceMarkers(text.slice(end))
+  );
 }
 
 function sanitizeTextPart(part: Record<string, unknown>): unknown {

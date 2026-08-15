@@ -4,7 +4,10 @@ import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-prov
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
-import { sanitizeUIResourceContent, stripUIResourceMarkers } from '~/utils/stripUIResourceMarkers';
+import {
+  sanitizeUIResourceContent,
+  stripMessageUIResourceMarkers,
+} from '~/utils/stripUIResourceMarkers';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
 import logger from '~/config/winston';
@@ -504,7 +507,10 @@ function anonymizeMessages(
         anonymizeMessageId(message.parentMessageId || ''),
       conversationId: newConvoId,
       sender: message.sender,
-      text: message.isCreatedByUser === false ? stripUIResourceMarkers(message.text) : message.text,
+      text:
+        message.isCreatedByUser === false
+          ? stripMessageUIResourceMarkers(message.text, message.error)
+          : message.text,
       content: anonymizeSharedContent(message.content, {
         newConvoId,
         newMessageId,

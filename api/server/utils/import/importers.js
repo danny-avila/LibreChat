@@ -4,7 +4,7 @@ const {
   logger,
   getTenantId,
   sanitizeUIResourceContent,
-  stripUIResourceMarkers,
+  stripMessageUIResourceMarkers,
 } = require('@librechat/data-schemas');
 const { EModelEndpoint, Constants, Tools, openAISettings } = require('librechat-data-provider');
 const { getEndpointsConfig } = require('~/server/services/Config');
@@ -15,6 +15,9 @@ const { cloneMessagesWithTimestamps } = require('./fork');
 const castImportedBoolean = mongoose.Schema.Types.Boolean.cast();
 
 function isImportedAssistantMessage(isCreatedByUser) {
+  if (isCreatedByUser == null) {
+    return false;
+  }
   try {
     return castImportedBoolean(isCreatedByUser) !== true;
   } catch {
@@ -37,7 +40,9 @@ function sanitizeImportedMessage(message) {
   return {
     ...message,
     ...(sanitizeMarkers &&
-      typeof message.text === 'string' && { text: stripUIResourceMarkers(message.text) }),
+      typeof message.text === 'string' && {
+        text: stripMessageUIResourceMarkers(message.text, message.error),
+      }),
     ...(content && {
       content: sanitizeUIResourceContent(content, sanitizeMarkers),
     }),
