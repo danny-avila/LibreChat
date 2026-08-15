@@ -1,5 +1,7 @@
 import type {
   IThemeAppearance,
+  IThemeColors,
+  IThemeVariables,
   IThemeRGB,
   ResolvedThemeDefinition,
   ThemeDefinition,
@@ -9,6 +11,21 @@ import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
 
 export const THEME_VERSION = 1 as const;
+
+/**
+ * Compile-time guard: the categorical series scale is declared across three
+ * hand-maintained token maps, so a slot added to one and missed in another
+ * fails the build rather than surfacing as a broken theme downstream.
+ */
+type SeriesSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type Assert<Declared extends true> = Declared;
+type DeclaredIn<Keys extends PropertyKey, Tokens> = [Keys] extends [keyof Tokens] ? true : false;
+
+export type SeriesTokensAreDeclared = [
+  Assert<DeclaredIn<`rgb-series-${SeriesSlot}`, IThemeRGB>>,
+  Assert<DeclaredIn<`--series-${SeriesSlot}`, IThemeVariables>>,
+  Assert<DeclaredIn<`series-${SeriesSlot}`, IThemeColors>>,
+];
 
 export const themeColorTokens: readonly (keyof IThemeRGB)[] = Object.freeze(
   Object.keys(defaultTheme) as Array<keyof IThemeRGB>,

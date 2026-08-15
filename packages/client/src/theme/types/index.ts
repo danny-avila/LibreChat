@@ -178,6 +178,15 @@ export interface IThemeVariables {
   '--status-neutral-border': string;
   '--text-on-status': string;
   '--brand-purple': string;
+
+  '--series-1': string;
+  '--series-2': string;
+  '--series-3': string;
+  '--series-4': string;
+  '--series-5': string;
+  '--series-6': string;
+  '--series-7': string;
+
   '--presentation': string;
 }
 
@@ -252,6 +261,14 @@ export interface IThemeColors {
   'status-neutral-border'?: string;
   'text-on-status'?: string;
   'brand-purple'?: string;
+
+  'series-1'?: string;
+  'series-2'?: string;
+  'series-3'?: string;
+  'series-4'?: string;
+  'series-5'?: string;
+  'series-6'?: string;
+  'series-7'?: string;
   presentation?: string;
 
   // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)

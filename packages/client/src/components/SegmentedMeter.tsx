@@ -89,44 +89,71 @@ export interface SegmentedMeterProps extends React.ComponentPropsWithoutRef<'div
   max: number;
 }
 
+/** Surface gap between touching fills, and the floor that keeps a present
+ *  category from rendering as nothing. Both in px. */
+const SEGMENT_GAP = 2;
+const SEGMENT_MIN = 2;
+
 /**
  * A part-to-whole meter: one tinted segment per series, free space left as
- * bare track. Every non-zero segment keeps a 2px floor so a category that is
- * present cannot render as nothing; the shortfall is absorbed by free space,
- * never by a neighbouring category.
+ * bare track.
+ *
+ * Each segment surrenders its share of the gap budget, so the fills and the
+ * gaps between them together span exactly the used fraction — a bar reading
+ * half full means half the window is used, however many categories are in it.
+ *
+ * The one deliberate overshoot is the {@link SEGMENT_MIN} floor: a category
+ * present but too small to see is rounded up, and that rounding comes out of
+ * free space, never out of a neighbouring category. It is bounded by
+ * `SEGMENT_MIN` per sub-pixel category — on a 288px meter, five such categories
+ * read about 3 percentage points fuller than the window actually is, and the
+ * exact figures stay in the legend beside the bar.
  */
 export const SegmentedMeter: React.ForwardRefExoticComponent<
   SegmentedMeterProps & React.RefAttributes<HTMLDivElement>
 > = React.forwardRef<HTMLDivElement, SegmentedMeterProps>(
-  ({ segments, max, className, ...props }, ref) => (
-    <div
-      ref={ref}
-      className={cn(
-        'flex h-2 w-full gap-[2px] overflow-hidden rounded-full bg-surface-tertiary',
-        className,
-      )}
-      {...props}
-    >
-      {segments.map((segment) => {
-        if (segment.value <= 0) {
-          return null;
-        }
-        return (
-          <div
-            key={segment.id}
-            aria-hidden="true"
-            className={cn(
-              'h-full min-w-[2px] transition-[width] duration-300 motion-reduce:transition-none',
-              seriesSwatchClass(segment),
-            )}
-            style={{
-              width: `${Math.min((segment.value / max) * 100, 100)}%`,
-              ...(segment.hatched ? hatchStyle('2.5px') : undefined),
-            }}
-          />
-        );
-      })}
-    </div>
-  ),
+  ({ segments, max, className, ...props }, ref) => {
+    const rendered = segments.filter((segment) => segment.value > 0);
+    const gapBudget = Math.max(rendered.length - 1, 0) * SEGMENT_GAP;
+    const fractions = rendered.map((segment) => Math.min(segment.value / max, 1));
+    const filled = Math.min(
+      fractions.reduce((sum, fraction) => sum + fraction, 0),
+      1,
+    );
+
+    return (
+      <div
+        ref={ref}
+        className={cn(
+          'flex h-2 w-full gap-[2px] overflow-hidden rounded-full bg-surface-tertiary',
+          className,
+        )}
+        {...props}
+      >
+        {rendered.map((segment, index) => {
+          const fraction = fractions[index];
+          /** Each segment gives up its share of the gap budget, so the fills and
+           *  the gaps between them together span exactly `filled` of the track. */
+          const gapShare = filled > 0 ? (gapBudget * fraction) / filled : 0;
+
+          return (
+            <div
+              key={segment.id}
+              aria-hidden="true"
+              className={cn(
+                'h-full transition-[width] duration-300 motion-reduce:transition-none',
+                seriesSwatchClass(segment),
+              )}
+              style={{
+                width: `calc(${fraction} * 100% - ${gapShare.toFixed(3)}px)`,
+                minWidth: `${SEGMENT_MIN}px`,
+                ...(segment.hatched ? hatchStyle('2.5px') : undefined),
+              }}
+            />
+          );
+        })}
+      </div>
+    );
+  },
 );
 SegmentedMeter.displayName = 'SegmentedMeter';

@@ -10,6 +10,7 @@ const sharedComponents = [
   'AlertDialog.tsx',
   'Button.tsx',
   'Chip.tsx',
+  'SegmentedMeter.tsx',
   'Dialog.tsx',
   'DialogTemplate.tsx',
   'IconButton.tsx',
