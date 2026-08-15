@@ -46,8 +46,12 @@ describe('stripUIResourceMarkers', () => {
   });
 
   it('removes markers formed by citation cleanup before MCP marker rendering', () => {
-    const markdown = ['Actual \\u\ue206i{actual}', 'Literal \\u\\ue206i{literal}'].join('\n');
-    expect(stripUIResourceMarkers(markdown)).toBe(['Actual ', 'Literal '].join('\n'));
+    const markdown = [
+      'Actual \\u\ue206i{actual}',
+      'Literal \\u\\ue206i{literal}',
+      'Entity \\u&#xE206;i{entity}',
+    ].join('\n');
+    expect(stripUIResourceMarkers(markdown)).toBe(['Actual ', 'Literal ', 'Entity '].join('\n'));
   });
 
   it('handles paragraph continuations and container code according to CommonMark', () => {

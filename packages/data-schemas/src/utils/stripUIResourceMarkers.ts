@@ -59,11 +59,12 @@ function decodeTextWithSourceSpans(source: string) {
     appendLiteral(cursor, match.index);
     if (match[1] == null) {
       const decoded = decodeString(match[0]);
-      if (decoded === match[0]) {
+      const decodedValue = decoded.replace(CITATION_CLEANUP, '');
+      if (decodedValue === match[0]) {
         appendLiteral(match.index, TEXT_SOURCE_TRANSFORM.lastIndex);
-      } else {
+      } else if (decodedValue !== '') {
         const decodedStart = value.length;
-        value += decoded;
+        value += decodedValue;
         segments.push({
           decodedStart,
           decodedEnd: value.length,
