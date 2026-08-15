@@ -55,7 +55,13 @@ function Header() {
 
       <div
         className={cn(
-          'flex min-w-0 flex-1 items-center gap-2 md:pl-3 md:transition-all md:duration-200 md:ease-in-out',
+          /**
+           * Grows only on mobile, where the selector should span the middle and
+           * truncate. `ModelSelector` is `w-full max-w-md`, so a zone that grows
+           * on desktop too stretches a short model name to 448px instead of
+           * letting it size to its content.
+           */
+          'flex items-center gap-2 max-md:min-w-0 max-md:flex-1 md:pl-3 md:transition-all md:duration-200 md:ease-in-out',
           hiddenBehindNav,
         )}
       >
@@ -75,7 +81,8 @@ function Header() {
         )}
       </div>
 
-      <div className={cn('flex flex-shrink-0 items-center gap-2', hiddenBehindNav)}>
+      {/* `ml-auto` holds the right cluster to the edge now that the centre no longer grows. */}
+      <div className={cn('flex flex-shrink-0 items-center gap-2 md:ml-auto', hiddenBehindNav)}>
         <NewChat className="md:hidden" />
         <HeaderMenu startupConfig={startupConfig} className="md:hidden" />
         <div className="hidden items-center gap-2 md:flex">
