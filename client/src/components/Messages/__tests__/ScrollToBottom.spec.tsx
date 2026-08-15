@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
+import { render, screen } from '@testing-library/react';
 import ScrollToBottom from '../ScrollToBottom';
 import store from '~/store';
 
@@ -30,7 +30,17 @@ describe('ScrollToBottom', () => {
     const column = container.querySelector('.sm\\:px-2');
 
     expect(column).toHaveClass('px-4', 'md:max-w-3xl', 'xl:max-w-4xl');
-    expect(container.firstChild).toHaveClass('scrollbar-gutter-stable');
+    expect(container.firstChild).toHaveClass('scrollbar-gutter-spacer');
+  });
+
+  /* The gutter has to be reserved with padding rather than by reserving a real
+     one: a scroll container clips, and the button's focus ring is painted
+     outside its box. */
+  it('reserves the gutter without becoming a scroll container', () => {
+    const { container } = renderButton();
+
+    expect(container.firstChild).not.toHaveClass('overflow-y-auto');
+    expect(container.firstChild).not.toHaveClass('scrollbar-gutter-stable');
   });
 
   it('rests just above the composer when nothing is queued', () => {

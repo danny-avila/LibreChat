@@ -23,7 +23,7 @@ const ScrollToBottom = forwardRef<HTMLDivElement, Props>(
     return (
       <div
         ref={ref}
-        className="scrollbar-gutter-stable pointer-events-none absolute inset-x-0 z-10 overflow-y-auto"
+        className="scrollbar-gutter-spacer pointer-events-none absolute inset-x-0 z-10"
         style={{ bottom: `calc(1.25rem + ${overlayHeight}px)` }}
       >
         <div

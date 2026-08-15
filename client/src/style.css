@@ -588,7 +588,9 @@ pre {
   max-width: 100%;
 }
 
-.header-label > span {
+/* Only the two crossfading labels; the slot also holds the screen-reader copy
+   of the model name, which stays out of the animation. */
+.header-label > [data-label] {
   grid-area: 1 / 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -605,22 +607,20 @@ pre {
   filter: blur(2px);
 }
 
-.header-label:hover > [data-label='provider'],
-.header-label:focus-within > [data-label='provider'] {
+.header-label:hover > [data-label='provider'] {
   opacity: 0;
   transform: translateY(-4px);
   filter: blur(2px);
 }
 
-.header-label:hover > [data-label='model'],
-.header-label:focus-within > [data-label='model'] {
+.header-label:hover > [data-label='model'] {
   opacity: 1;
   transform: translateY(0);
   filter: blur(0);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .header-label > span {
+  .header-label > [data-label] {
     transition: opacity 150ms ease;
     transform: none;
     filter: none;
@@ -1311,9 +1311,16 @@ button {
 }
 
 /* Webkit scrollbar */
+:root {
+  /* Width of the app's own scrollbars, and so of the band a
+     `scrollbar-gutter: stable` container holds back. `.scrollbar-gutter-spacer`
+     reserves the same band without becoming a scroll container. */
+  --scrollbar-size: 0.5rem;
+}
+
 ::-webkit-scrollbar {
   height: 0.1em;
-  width: 0.5rem;
+  width: var(--scrollbar-size);
 }
 
 ::-webkit-scrollbar-thumb {
