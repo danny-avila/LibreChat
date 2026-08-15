@@ -10,9 +10,11 @@ jest.mock('~/hooks', () => ({
 const renderButton = ({
   maximizeChatSpace = false,
   overlayHeight,
+  interactive,
 }: {
   maximizeChatSpace?: boolean;
   overlayHeight?: number;
+  interactive?: boolean;
 } = {}) =>
   render(
     <RecoilRoot
@@ -20,7 +22,11 @@ const renderButton = ({
         set(store.maximizeChatSpace, maximizeChatSpace);
       }}
     >
-      <ScrollToBottom scrollHandler={jest.fn()} overlayHeight={overlayHeight} />
+      <ScrollToBottom
+        scrollHandler={jest.fn()}
+        overlayHeight={overlayHeight}
+        interactive={interactive}
+      />
     </RecoilRoot>,
   );
 
@@ -41,6 +47,21 @@ describe('ScrollToBottom', () => {
 
     expect(container.firstChild).not.toHaveClass('overflow-y-auto');
     expect(container.firstChild).not.toHaveClass('scrollbar-gutter-stable');
+  });
+
+  /* The wrapper is inert so it never swallows clicks meant for the thread, and
+     the button opts back in. A descendant that opts in stays hit-testable while
+     its parent fades, so the opt-in waits for the enter transition to settle. */
+  it('does not take clicks until the enter transition has settled', () => {
+    renderButton();
+
+    expect(screen.getByRole('button')).toHaveClass('pointer-events-none');
+  });
+
+  it('takes clicks once settled', () => {
+    renderButton({ interactive: true });
+
+    expect(screen.getByRole('button')).toHaveClass('pointer-events-auto');
   });
 
   it('rests just above the composer when nothing is queued', () => {

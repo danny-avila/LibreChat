@@ -36,8 +36,17 @@ describe('HeaderLabel', () => {
     expect(screen.getByText('gemma4:12b-it-qat')).toHaveAttribute('aria-hidden', 'true');
   });
 
-  /* The swap itself is pointer-only, so the model has to reach assistive tech
-     through text that is never hidden. */
+  /* A pointer swap alone would strand a sighted keyboard user, who reaches the
+     row by focus. `.message-render` carries the `group` this keys off. */
+  it('also swaps the model in when the message row takes focus', () => {
+    render(<HeaderLabel label="Ollama" hoverLabel="gemma4:12b-it-qat" />);
+
+    expect(screen.getByText('Ollama')).toHaveClass('group-focus-within:opacity-0');
+    expect(screen.getByText('gemma4:12b-it-qat')).toHaveClass('group-focus-within:opacity-100');
+  });
+
+  /* Screen readers never move the visual focus, so the model also has to reach
+     assistive tech through text that is never hidden. */
   it('names the model in text that does not depend on hover', () => {
     render(<HeaderLabel label="Ollama" hoverLabel="gemma4:12b-it-qat" />);
 

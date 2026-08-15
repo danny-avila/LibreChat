@@ -595,16 +595,17 @@ pre {
 }
 
 /* Scroll-to-bottom: fade and rise on the same path. No scale. */
+/* Inertness during the transition is owned by the button's `interactive` prop,
+   not by these classes: the wrapper is already inert, and a descendant that
+   opts back into pointer events stays hit-testable however its parent paints. */
 .scroll-animation-enter {
   opacity: 0;
   transform: translateY(8px);
-  pointer-events: none;
 }
 
 .scroll-animation-enter-active {
   opacity: 1;
   transform: translateY(0);
-  pointer-events: none;
   transition:
     opacity var(--resize-dur) var(--resize-ease),
     transform var(--resize-dur) var(--resize-ease);
@@ -618,13 +619,11 @@ pre {
 .scroll-animation-exit {
   opacity: 1;
   transform: translateY(0);
-  pointer-events: none;
 }
 
 .scroll-animation-exit-active {
   opacity: 0;
   transform: translateY(8px);
-  pointer-events: none;
   transition:
     opacity 180ms cubic-bezier(0.4, 0, 1, 1),
     transform 180ms cubic-bezier(0.4, 0, 1, 1);

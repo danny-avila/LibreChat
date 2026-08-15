@@ -38,6 +38,7 @@ const ScrollButton = memo(function ScrollButton({
 }) {
   const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isSettled, setIsSettled] = useState(false);
   const scrollToBottomRef = useRef<HTMLDivElement>(null);
   const timeoutIdRef = useRef<NodeJS.Timeout>();
 
@@ -76,11 +77,14 @@ const ScrollButton = memo(function ScrollButton({
       unmountOnExit={true}
       appear={true}
       nodeRef={scrollToBottomRef}
+      onEntered={() => setIsSettled(true)}
+      onExit={() => setIsSettled(false)}
     >
       <ScrollToBottom
         ref={scrollToBottomRef}
         scrollHandler={scrollHandler}
         overlayHeight={overlayHeight}
+        interactive={isSettled}
       />
     </CSSTransition>
   );

@@ -13,10 +13,18 @@ type Props = {
    * composer into this same corner. Lifts the button clear of it.
    */
   overlayHeight?: number;
+  /**
+   * True once the enter transition has settled. The wrapper spans the column
+   * and stays inert so it never swallows clicks meant for the thread, which
+   * leaves the button to opt back in; gate that opt-in, because a descendant
+   * that opts in is hit-testable even while its parent fades, so a fading or
+   * not-yet-visible button would still take the click.
+   */
+  interactive?: boolean;
 };
 
 const ScrollToBottom = forwardRef<HTMLDivElement, Props>(
-  ({ scrollHandler, overlayHeight = 0 }, ref) => {
+  ({ scrollHandler, overlayHeight = 0, interactive = false }, ref) => {
     const localize = useLocalize();
     const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
 
@@ -38,7 +46,10 @@ const ScrollToBottom = forwardRef<HTMLDivElement, Props>(
             size="icon"
             onClick={scrollHandler}
             aria-label={localize('com_ui_scroll_to_bottom')}
-            className="pointer-events-auto rounded-full bg-surface-chat/90 text-text-primary active:scale-[0.96] motion-reduce:active:scale-100"
+            className={cn(
+              'rounded-full bg-surface-chat/90 text-text-primary active:scale-[0.96] motion-reduce:active:scale-100',
+              interactive ? 'pointer-events-auto' : 'pointer-events-none',
+            )}
           >
             <ChevronDown className="size-4" aria-hidden="true" />
           </Button>
