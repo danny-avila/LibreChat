@@ -693,6 +693,10 @@ export function createConversationMethods(
        missing field before every string and every date alike. The paging clauses below
        therefore treat them the same way; `createdAt`/`updatedAt` are always present. */
     const sortFieldIsNullable = finalSortBy === 'title' || finalSortBy === 'archivedAt';
+    /* The archive view renders `archivedAt ?? createdAt`, so the legacy group, which
+       shares a missing `archivedAt`, has to be ordered by the same `createdAt` the cell
+       shows rather than by last activity, or its dates read out of order. */
+    const secondaryField = finalSortBy === 'archivedAt' ? 'createdAt' : 'updatedAt';
 
     let cursorFilter: FilterQuery<IConversation> | null = null;
     if (cursor) {
@@ -702,7 +706,7 @@ export function createConversationMethods(
         const secondaryValue = new Date(secondary);
         const descending = finalSortDirection !== 'asc';
         const op = descending ? '$lt' : '$gt';
-        const sortsByUpdatedAt = finalSortBy === 'updatedAt';
+        const sortsBySecondary = finalSortBy === secondaryField;
         const boundaryId =
           typeof id === 'string' && isValidObjectIdString(id)
             ? { [op]: new mongoose.Types.ObjectId(id) }
@@ -720,9 +724,13 @@ export function createConversationMethods(
            when the boundary is one of them, and the whole group when a descending
            page runs past the last non-null value. */
         if (primary == null) {
-          clauses.push({ [finalSortBy]: null, updatedAt: { [op]: secondaryValue } });
+          clauses.push({ [finalSortBy]: null, [secondaryField]: { [op]: secondaryValue } });
           if (boundaryId) {
-            clauses.push({ [finalSortBy]: null, updatedAt: secondaryValue, _id: boundaryId });
+            clauses.push({
+              [finalSortBy]: null,
+              [secondaryField]: secondaryValue,
+              _id: boundaryId,
+            });
           }
           if (!descending) {
             clauses.push({ [finalSortBy]: { $ne: null } });
@@ -730,13 +738,16 @@ export function createConversationMethods(
         } else {
           const primaryValue = finalSortBy === 'title' ? primary : new Date(primary);
           clauses.push({ [finalSortBy]: { [op]: primaryValue } });
-          if (!sortsByUpdatedAt) {
-            clauses.push({ [finalSortBy]: primaryValue, updatedAt: { [op]: secondaryValue } });
+          if (!sortsBySecondary) {
+            clauses.push({
+              [finalSortBy]: primaryValue,
+              [secondaryField]: { [op]: secondaryValue },
+            });
           }
           if (boundaryId) {
             clauses.push({
               [finalSortBy]: primaryValue,
-              ...(sortsByUpdatedAt ? {} : { updatedAt: secondaryValue }),
+              ...(sortsBySecondary ? {} : { [secondaryField]: secondaryValue }),
               _id: boundaryId,
             });
           }
@@ -761,8 +772,8 @@ export function createConversationMethods(
       const sortOrder: SortOrder = finalSortDirection === 'asc' ? 1 : -1;
       const sortObj: Record<string, SortOrder> = { [finalSortBy]: sortOrder };
 
-      if (finalSortBy !== 'updatedAt') {
-        sortObj.updatedAt = sortOrder;
+      if (finalSortBy !== secondaryField) {
+        sortObj[secondaryField] = sortOrder;
       }
       sortObj._id = sortOrder;
 
@@ -795,7 +806,9 @@ export function createConversationMethods(
         } else if (primaryValue != null) {
           primaryStr = new Date(primaryValue).toISOString();
         }
-        const secondaryStr = new Date(lastReturned.updatedAt ?? 0).toISOString();
+        const secondaryValueOut =
+          secondaryField === 'createdAt' ? lastReturned.createdAt : lastReturned.updatedAt;
+        const secondaryStr = new Date(secondaryValueOut ?? 0).toISOString();
         const composite = {
           primary: primaryStr,
           secondary: secondaryStr,

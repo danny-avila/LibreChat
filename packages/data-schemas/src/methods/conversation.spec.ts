@@ -1929,6 +1929,47 @@ describe('Conversation Operations', () => {
       expect(seen.length).toBe(expected.size);
     });
 
+    /** The cell renders `archivedAt ?? createdAt`, so the legacy group has to come back
+     * in that same createdAt order; ordering it by last activity read out of order. */
+    it('orders the legacy group by the createdAt it displays, not last activity', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const olderCreated = uuidv4();
+      const newerCreated = uuidv4();
+      /* createdAt and updatedAt deliberately disagree: ordering by activity would
+         invert these two relative to the dates the dialog shows. */
+      await Conversation.collection.insertOne({
+        conversationId: olderCreated,
+        user: 'user123',
+        title: 'created first, touched last',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived: true,
+        createdAt: new Date(base.getTime() - 60000),
+        updatedAt: new Date(base.getTime() + 60000),
+      });
+      await Conversation.collection.insertOne({
+        conversationId: newerCreated,
+        user: 'user123',
+        title: 'created last, touched first',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived: true,
+        createdAt: new Date(base.getTime() + 60000),
+        updatedAt: new Date(base.getTime() - 60000),
+      });
+
+      const result = await getConvosByCursor('user123', {
+        isArchived: true,
+        sortBy: 'archivedAt',
+        sortDirection: 'desc',
+      });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([
+        newerCreated,
+        olderCreated,
+      ]);
+    });
+
     it('still rejects a sort field that is not allowed', async () => {
       await expect(getConvosByCursor('user123', { sortBy: 'pinned' })).rejects.toThrow(
         /Invalid sortBy field/,

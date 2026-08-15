@@ -68,8 +68,9 @@ convoSchema.index({ createdAt: 1, updatedAt: 1 });
 convoSchema.index({ conversationId: 1, user: 1, tenantId: 1 }, { unique: true });
 convoSchema.index({ user: 1, chatProjectId: 1, updatedAt: -1, _id: -1 });
 convoSchema.index({ user: 1, chatProjectId: 1, createdAt: -1, _id: -1 });
-/** The archive view pages by `archivedAt` with `_id` breaking ties. */
-convoSchema.index({ user: 1, isArchived: 1, archivedAt: -1, _id: -1 });
+/** The archive view pages by `archivedAt`, then `createdAt`, then `_id`; the middle key
+ * carries the legacy group, whose rows all share a missing `archivedAt`. */
+convoSchema.index({ user: 1, isArchived: 1, archivedAt: -1, createdAt: -1, _id: -1 });
 
 /** The sidebar's pinned section filters on user + pinned and pages by `updatedAt`. */
 convoSchema.index({ user: 1, pinned: 1, updatedAt: -1, _id: -1 });
