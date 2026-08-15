@@ -2,20 +2,24 @@ import { createElement } from 'react';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ConversationListResponse, TConversation } from 'librechat-data-provider';
+import type {
+  ConversationListResponse,
+  TConversationTag,
+  TConversation,
+} from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { pinnedConversationsPageSize, usePinnedConversationsQuery } from '../queries';
-import {
-  removeConvoFromAllQueries,
-  updateConvoInAllQueries,
-  upsertConvoInAllQueries,
-} from '~/utils/convos';
 import {
   useConversationTagMutation,
   useDeleteConversationMutation,
   useDeleteConversationTagMutation,
   usePinConversationMutation,
 } from '../mutations';
+import {
+  removeConvoFromAllQueries,
+  updateConvoInAllQueries,
+  upsertConvoInAllQueries,
+} from '~/utils/convos';
+import { pinnedConversationsPageSize, usePinnedConversationsQuery } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -48,8 +52,10 @@ const deleteConversationTag = dataService.deleteConversationTag as jest.MockedFu
   typeof dataService.deleteConversationTag
 >;
 
+const pinnedConversationId = 'convo-pinned';
+
 const pinnedConvo = {
-  conversationId: 'convo-pinned',
+  conversationId: pinnedConversationId,
   title: 'Initial Greeting',
   endpoint: 'openAI',
   pinned: true,
@@ -356,7 +362,7 @@ describe('delete mutation project lookup', () => {
     });
 
     await act(async () => {
-      result.current.mutate({ conversationId: pinnedConvo.conversationId });
+      result.current.mutate({ conversationId: pinnedConversationId });
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
@@ -364,7 +370,9 @@ describe('delete mutation project lookup', () => {
   });
 });
 
-const tagResponse = {
+const tagResponse: TConversationTag = {
+  _id: 'tag-office',
+  user: 'user-1',
   tag: 'office',
   count: 1,
   position: 0,
