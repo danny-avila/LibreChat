@@ -38,13 +38,22 @@ function removeCitationCleanup(value: string, segments: SourceSegment[]) {
     highlightedRanges.push([match.index, HIGHLIGHTED_CITATION.lastIndex]);
   }
   COMPOSITE_CITATION.lastIndex = 0;
+  let highlightedIndex = 0;
   while ((match = COMPOSITE_CITATION.exec(value)) != null) {
-    if (STANDALONE_CITATION.test(match[0])) {
+    while (highlightedRanges[highlightedIndex]?.[1] <= match.index) {
+      highlightedIndex++;
+    }
+    const highlighted = highlightedRanges[highlightedIndex];
+    const nestedInHighlight =
+      highlighted != null &&
+      match.index >= highlighted[0] &&
+      COMPOSITE_CITATION.lastIndex <= highlighted[1];
+    if (!nestedInHighlight && STANDALONE_CITATION.test(match[0])) {
       removals.push([match.index, COMPOSITE_CITATION.lastIndex]);
     }
   }
   CITATION_CLEANUP.lastIndex = 0;
-  let highlightedIndex = 0;
+  highlightedIndex = 0;
   while ((match = CITATION_CLEANUP.exec(value)) != null) {
     while (highlightedRanges[highlightedIndex]?.[1] <= match.index) {
       highlightedIndex++;

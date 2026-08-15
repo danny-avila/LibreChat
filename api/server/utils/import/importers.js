@@ -13,6 +13,7 @@ const { resolveImportDefaultModel } = require('./defaults');
 const { cloneMessagesWithTimestamps } = require('./fork');
 
 const castImportedBoolean = mongoose.Schema.Types.Boolean.cast();
+const castImportedString = mongoose.Schema.Types.String.cast();
 
 function isImportedAssistantMessage(isCreatedByUser) {
   if (isCreatedByUser === null) {
@@ -28,6 +29,22 @@ function isImportedAssistantMessage(isCreatedByUser) {
   }
 }
 
+function isImportedAssistantContent(isCreatedByUser) {
+  try {
+    return castImportedBoolean(isCreatedByUser) !== true;
+  } catch {
+    return true;
+  }
+}
+
+function castPersistedImportedText(text) {
+  try {
+    return castImportedString(text);
+  } catch {
+    return text;
+  }
+}
+
 function normalizeImportedArray(value) {
   if (value == null) {
     return null;
@@ -37,17 +54,18 @@ function normalizeImportedArray(value) {
 
 /** Removes executable legacy MCP-UI payloads from untrusted conversation imports. */
 function sanitizeImportedMessage(message) {
-  const sanitizeMarkers = isImportedAssistantMessage(message.isCreatedByUser);
+  const sanitizeTextMarkers = isImportedAssistantMessage(message.isCreatedByUser);
+  const sanitizeContentMarkers = isImportedAssistantContent(message.isCreatedByUser);
+  const text = castPersistedImportedText(message.text);
   const content = normalizeImportedArray(message.content);
   const attachments = normalizeImportedArray(message.attachments);
   return {
     ...message,
-    ...(sanitizeMarkers &&
-      typeof message.text === 'string' && {
-        text: stripMessageUIResourceMarkers(message.text, false),
-      }),
+    ...(text !== message.text && { text }),
+    ...(sanitizeTextMarkers &&
+      typeof text === 'string' && { text: stripMessageUIResourceMarkers(text, false) }),
     ...(content && {
-      content: sanitizeUIResourceContent(content, sanitizeMarkers),
+      content: sanitizeUIResourceContent(content, sanitizeContentMarkers),
     }),
     ...(attachments && {
       attachments: attachments.filter((attachment) => attachment?.type !== Tools.ui_resources),

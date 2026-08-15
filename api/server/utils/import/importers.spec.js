@@ -888,7 +888,7 @@ describe('importLibreChatConvo', () => {
     const message = {
       messageId: 'message-1',
       parentMessageId: Constants.NO_PARENT,
-      text: '\\ui{malicious}',
+      text: { _id: '\\ui{malicious}' },
       isCreatedByUser: authorFlag,
       content: [
         { type: ContentTypes.TEXT, text: 'Before \\ui{malicious} after' },
@@ -981,7 +981,7 @@ describe('importLibreChatConvo', () => {
   });
 
   it.each([true, null])(
-    'preserves user-rendered MCP-UI marker examples for author flag %s while stripping attachments',
+    'matches text and content renderers for author flag %s while stripping attachments',
     async (authorFlag) => {
       const message = {
         messageId: 'message-1',
@@ -1014,7 +1014,10 @@ describe('importLibreChatConvo', () => {
 
       expect(importBatchBuilder.messages[0].text).toBe('Example: \\ui{literal}');
       expect(importBatchBuilder.messages[0].content).toEqual([
-        { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
+        {
+          type: ContentTypes.TEXT,
+          text: authorFlag === true ? 'Part: \\ui{literal}' : 'Part: ',
+        },
         {
           type: ContentTypes.TOOL_CALL,
           tool_call: {

@@ -75,6 +75,9 @@ describe('stripUIResourceMarkers', () => {
     const acrossBoundary = '\\u\\ue203i{id}\\ue204';
     expect(stripUIResourceMarkers(acrossBoundary)).toBe(acrossBoundary);
     expect(stripUIResourceMarkers('\\ue203\\ui{inside}\\ue204')).toBe('\\ue203\\ue204');
+    expect(
+      stripUIResourceMarkers('\\ue203 text \\ue200\\ue202turn0search0 \\ui{nested}\\ue201\\ue204'),
+    ).toBe('\\ue203 text \\ue200\\ue202turn0search0 \\ue201\\ue204');
   });
 
   it('preserves markers in message text that bypasses Markdown rendering', () => {

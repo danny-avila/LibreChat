@@ -594,53 +594,59 @@ describe('Share Methods', () => {
       ]);
     });
 
-    test('preserves user-authored MCP-UI marker examples in public shares', async () => {
-      const userId = new mongoose.Types.ObjectId().toString();
-      const conversationId = `conv_${nanoid()}`;
-      const shareId = `share_${nanoid()}`;
+    test.each([true, null])(
+      'matches text and content renderers for author flag %s in public shares',
+      async (authorFlag) => {
+        const userId = new mongoose.Types.ObjectId().toString();
+        const conversationId = `conv_${nanoid()}`;
+        const shareId = `share_${nanoid()}`;
 
-      const message = await Message.create({
-        messageId: `msg_${nanoid()}`,
-        conversationId,
-        user: userId,
-        text: 'Example: \\ui{literal}',
-        isCreatedByUser: true,
-        content: [
-          { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
+        const message = await Message.create({
+          messageId: `msg_${nanoid()}`,
+          conversationId,
+          user: userId,
+          text: 'Example: \\ui{literal}',
+          isCreatedByUser: authorFlag,
+          content: [
+            { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: {
+                name: Constants.SUBAGENT,
+                output: 'Legacy \\ui{nested} output',
+                subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested \\ui{nested} text' }],
+              },
+            },
+          ],
+          attachments: [{ type: Tools.ui_resources, [Tools.ui_resources]: [] }],
+        });
+        await SharedLink.create({
+          shareId,
+          conversationId,
+          user: userId,
+          messages: [message._id],
+        });
+
+        const result = await shareMethods.getSharedMessages(shareId);
+
+        expect(result?.messages[0].text).toBe('Example: \\ui{literal}');
+        expect(result?.messages[0].content).toEqual([
+          {
+            type: ContentTypes.TEXT,
+            text: authorFlag === true ? 'Part: \\ui{literal}' : 'Part: ',
+          },
           {
             type: ContentTypes.TOOL_CALL,
             tool_call: {
               name: Constants.SUBAGENT,
-              output: 'Legacy \\ui{nested} output',
-              subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested \\ui{nested} text' }],
+              output: 'Legacy  output',
+              subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested  text' }],
             },
           },
-        ],
-        attachments: [{ type: Tools.ui_resources, [Tools.ui_resources]: [] }],
-      });
-      await SharedLink.create({
-        shareId,
-        conversationId,
-        user: userId,
-        messages: [message._id],
-      });
-
-      const result = await shareMethods.getSharedMessages(shareId);
-
-      expect(result?.messages[0].text).toBe('Example: \\ui{literal}');
-      expect(result?.messages[0].content).toEqual([
-        { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
-        {
-          type: ContentTypes.TOOL_CALL,
-          tool_call: {
-            name: Constants.SUBAGENT,
-            output: 'Legacy  output',
-            subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested  text' }],
-          },
-        },
-      ]);
-      expect(result?.messages[0].attachments).toBeUndefined();
-    });
+        ]);
+        expect(result?.messages[0].attachments).toBeUndefined();
+      },
+    );
 
     test('strips storage-internal fields while preserving shared render data', async () => {
       const userId = new mongoose.Types.ObjectId().toString();

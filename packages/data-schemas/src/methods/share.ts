@@ -517,7 +517,7 @@ function anonymizeMessages(
         shareId,
         snapshotIds,
         includeFiles,
-        sanitizeUIResourceMarkers: message.isCreatedByUser === false,
+        sanitizeUIResourceMarkers: message.isCreatedByUser !== true,
       }),
       ...(message.iconURL && { iconURL: message.iconURL }),
       ...(model && { model }),
