@@ -107,6 +107,27 @@ describe('Conversation row on touch', () => {
     expect(screen.getByTestId('convo-options')).toHaveAttribute('data-open', 'true');
   });
 
+  it('opens from a click with no pointer event at all', () => {
+    renderRow();
+
+    /**
+     * Assistive tech, voice control and keyboard activation dispatch `click`
+     * directly. Without this path the click bubbles to the row and navigates
+     * to the conversation instead of opening its options.
+     */
+    fireEvent.click(screen.getByTestId('convo-options-trigger'));
+
+    expect(screen.getByTestId('convo-options')).toHaveAttribute('data-open', 'true');
+  });
+
+  it.each(['Enter', ' '])('opens on %s from the keyboard', (key) => {
+    renderRow();
+
+    fireEvent.keyDown(screen.getByTestId('convo-options-trigger'), { key });
+
+    expect(screen.getByTestId('convo-options')).toHaveAttribute('data-open', 'true');
+  });
+
   it('leaves the desktop hover reveal alone', () => {
     mockIsSmallScreen = false;
     renderRow();

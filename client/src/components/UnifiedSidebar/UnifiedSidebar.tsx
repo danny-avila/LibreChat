@@ -1,7 +1,5 @@
 import { useCallback, useState, useEffect, useRef, memo, startTransition } from 'react';
-import { useRecoilState } from 'recoil';
 import { useForm } from 'react-hook-form';
-import { useMediaQuery } from '@librechat/client';
 import type { ReactNode } from 'react';
 import type { ChatFormValues } from '~/common';
 import {
@@ -15,11 +13,11 @@ import {
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
 import { MobileHeader, MobileBottomBar, MobileShortcutTargets } from './mobile';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
+import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { useChatHelpers, useLocalize } from '~/hooks';
 import SidePanelNav from '~/components/SidePanel/Nav';
 import Sidebar from './Sidebar';
 import { cn } from '~/utils';
-import store from '~/store';
 
 function getInitialWidth(): number {
   const saved = localStorage.getItem('side:width');
@@ -44,8 +42,7 @@ function SidebarChatProvider({ children }: { children: ReactNode }) {
 
 function UnifiedSidebar() {
   const localize = useLocalize();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const [expanded, setExpanded] = useRecoilState(store.sidebarExpanded);
+  const { isSmallScreen, expanded, setExpanded } = useSidebarState();
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
@@ -134,21 +131,6 @@ function UnifiedSidebar() {
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [isSmallScreen, expanded, handleCollapse]);
-
-  /**
-   * The persisted value is normalized when the atom initializes, which covers
-   * loading on a phone. Crossing the breakpoint afterwards — narrowing a window
-   * or rotating a tablet — has no such moment, and an expanded desktop sidebar
-   * would become a drawer covering the whole app.
-   */
-  const wasSmallScreen = useRef(isSmallScreen);
-  useEffect(() => {
-    const enteredMobile = isSmallScreen && !wasSmallScreen.current;
-    wasSmallScreen.current = isSmallScreen;
-    if (enteredMobile) {
-      setExpanded(false);
-    }
-  }, [isSmallScreen, setExpanded]);
 
   if (isSmallScreen) {
     return (

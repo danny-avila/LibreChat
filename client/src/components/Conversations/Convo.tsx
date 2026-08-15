@@ -213,6 +213,13 @@ function Conversation({
    */
   const showOptionsTrigger = !renaming && !showConvoOptions && !isGenerating && isSmallScreen;
 
+  const openOptions = (event: React.SyntheticEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setHasInteracted(true);
+    setIsPopoverActive(true);
+  };
+
   let actionContent: React.ReactNode = null;
   if (isGenerating) {
     actionContent = generatingSpinner;
@@ -226,16 +233,23 @@ function Conversation({
         data-testid="convo-options-trigger"
         className="flex size-9 items-center justify-center rounded-lg text-text-secondary"
         /**
-         * `pointerdown`, not `click`: touch browsers focus the button mid-tap,
-         * and the row's `onFocus` sets `hasInteracted`, which swaps this button
-         * for `ConvoOptions` before the click lands — so the first tap would be
-         * swallowed.
+         * Touch browsers focus the button mid-tap, and the row's `onFocus` sets
+         * `hasInteracted`, which swaps this button for `ConvoOptions` before a
+         * click could land — so the tap needs claiming at `pointerdown`.
          */
-        onPointerDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          setHasInteracted(true);
-          setIsPopoverActive(true);
+        onPointerDown={openOptions}
+        /**
+         * Assistive tech, voice control and keyboard activation dispatch `click`
+         * with no preceding pointer event, so that path must open the menu too —
+         * otherwise the click bubbles to the row and navigates away instead.
+         * Safe alongside the above: `pointerdown` removes this button, so the
+         * two never both fire.
+         */
+        onClick={openOptions}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            openOptions(event);
+          }
         }}
       >
         <Ellipsis className="icon-md" aria-hidden="true" />
