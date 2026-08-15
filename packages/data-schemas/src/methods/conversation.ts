@@ -303,6 +303,26 @@ export function createConversationMethods(
         update.updatedAt = new Date();
       }
 
+      /** Date Archived is when the chat was filed away, not the last time
+       * someone sent isArchived: true. A shortcut or retried POST on an
+       * already-archived row must leave the original stamp alone. Unarchive
+       * still clears it. */
+      if (typeof update.isArchived === 'boolean') {
+        if (update.isArchived === true) {
+          const existingArchive = await Conversation.findOne(
+            { conversationId, user: userId },
+            'isArchived archivedAt',
+          ).lean<{ isArchived?: boolean; archivedAt?: Date | null } | null>();
+          if (existingArchive?.isArchived === true) {
+            delete update.archivedAt;
+          } else if (update.archivedAt == null) {
+            update.archivedAt = new Date();
+          }
+        } else {
+          update.archivedAt = null;
+        }
+      }
+
       const updateOperation: Record<string, unknown> = { $set: update };
       if (Object.keys(unsetFields).length > 0) {
         updateOperation.$unset = unsetFields;

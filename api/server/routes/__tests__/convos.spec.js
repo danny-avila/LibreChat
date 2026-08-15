@@ -545,7 +545,6 @@ describe('Convos Routes', () => {
         {
           conversationId: mockConversationId,
           isArchived: true,
-          archivedAt: expect.any(Date),
         },
         {
           context: `POST /api/convos/archive ${mockConversationId}`,
@@ -579,7 +578,7 @@ describe('Convos Routes', () => {
       expect(response.body).toEqual(mockUnarchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'test-user-123' }),
-        { conversationId: mockConversationId, isArchived: false, archivedAt: null },
+        { conversationId: mockConversationId, isArchived: false },
         {
           context: `POST /api/convos/archive ${mockConversationId}`,
           preserveUpdatedAt: true,
@@ -588,7 +587,7 @@ describe('Convos Routes', () => {
       );
     });
 
-    it('stamps archivedAt when a conversation is archived', async () => {
+    it('leaves archivedAt to saveConvo so a redundant archive cannot restamp it', async () => {
       saveConvo.mockResolvedValue({ conversationId: 'conv-789', isArchived: true });
 
       await request(app)
@@ -596,20 +595,8 @@ describe('Convos Routes', () => {
         .send({ arg: { conversationId: 'conv-789', isArchived: true } });
 
       const [, data] = saveConvo.mock.calls[0];
-      expect(data.archivedAt).toBeInstanceOf(Date);
-    });
-
-    /** The stamp has to be cleared, not left behind, or an unarchived chat would sort
-     * back into the archive view the next time it was filed away. */
-    it('clears archivedAt when a conversation is unarchived', async () => {
-      saveConvo.mockResolvedValue({ conversationId: 'conv-789', isArchived: false });
-
-      await request(app)
-        .post('/api/convos/archive')
-        .send({ arg: { conversationId: 'conv-789', isArchived: false } });
-
-      const [, data] = saveConvo.mock.calls[0];
-      expect(data.archivedAt).toBeNull();
+      expect(data).not.toHaveProperty('archivedAt');
+      expect(data.isArchived).toBe(true);
     });
 
     /** `updatedAt` stays the chat's own activity so unarchiving restores its real place

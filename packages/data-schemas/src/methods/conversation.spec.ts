@@ -432,6 +432,74 @@ describe('Conversation Operations', () => {
         expect(new Date(unarchived?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
       });
 
+      /** Opening an archived chat and hitting the archive shortcut (or a retried
+       * POST) sends isArchived: true again. That must not move Date Archived. */
+      it('keeps the original archivedAt when the chat is already archived', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Already filed away',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const again = await saveConvo(
+          { userId: 'user123' },
+          {
+            conversationId,
+            isArchived: true,
+            archivedAt: new Date('2026-08-15T21:00:00.000Z'),
+          },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(new Date(again?.archivedAt ?? 0).toISOString()).toBe(original.toISOString());
+      });
+
+      it('stamps archivedAt on the first archive when the caller omits it', async () => {
+        const conversationId = await seedAgedConvo();
+        const before = Date.now();
+
+        const archived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(archived?.archivedAt).toBeInstanceOf(Date);
+        expect(new Date(archived?.archivedAt ?? 0).getTime()).toBeGreaterThanOrEqual(before);
+      });
+
+      it('clears archivedAt on unarchive when the caller omits it', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'To restore',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const unarchived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: false },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(unarchived?.archivedAt ?? null).toBeNull();
+      });
+
       /** A pin carries a preserved older timestamp, so the project it belongs to must
        * not be dragged back to it while the project holds newer conversations. */
       it('does not drag a project pointer back when only metadata changes', async () => {

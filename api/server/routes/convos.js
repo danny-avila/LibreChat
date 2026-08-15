@@ -207,7 +207,7 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
         isTemporary: req?.body?.isTemporary,
         interfaceConfig: req?.config?.interfaceConfig,
       },
-      { conversationId, isArchived, archivedAt: isArchived ? new Date() : null },
+      { conversationId, isArchived },
       {
         context: `POST /api/convos/archive ${conversationId}`,
         /** Filing a chat away is not activity: `updatedAt` stays the chat's own last
