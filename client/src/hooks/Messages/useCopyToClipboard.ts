@@ -35,13 +35,47 @@ export function serializeMessageForClipboard({
     return text ?? '';
   }
 
-  return content.reduce((acc, curr, i) => {
-    if (curr?.type === ContentTypes.TEXT) {
-      const partText = typeof curr.text === 'string' ? curr.text : (curr.text?.value ?? '');
-      return acc + partText + (i === content.length - 1 ? '' : '\n');
+  const parts: string[] = [];
+  for (const part of content) {
+    if (part?.type !== ContentTypes.TEXT) {
+      continue;
     }
-    return acc;
-  }, '');
+    const partText = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+    if (partText.length > 0) {
+      parts.push(partText);
+    }
+  }
+
+  return parts.join('\n');
+}
+
+function buildClipboardText({
+  text,
+  content,
+  searchResults,
+}: Partial<Pick<TMessage, 'text' | 'content'>> & {
+  searchResults?: { [key: string]: SearchResultData };
+}): string {
+  const messageText = serializeMessageForClipboard({ text, content });
+
+  if (!searchResults || Object.keys(searchResults).length === 0) {
+    return messageText.replace(INVALID_CITATION_REGEX, '').replace(CLEANUP_REGEX, '');
+  }
+
+  const citationManager = processCitations(messageText, searchResults);
+
+  if (citationManager.citations.size === 0) {
+    return citationManager.formattedText;
+  }
+
+  const sortedCitations = Array.from(citationManager.citations.entries()).sort(
+    (a, b) => a[1].referenceNumber - b[1].referenceNumber,
+  );
+  const citationList = sortedCitations
+    .map(([, citation]) => `[${citation.referenceNumber}] ${citation.link}\n`)
+    .join('');
+
+  return `${citationManager.formattedText}\n\nCitations:\n${citationList}`;
 }
 
 export default function useCopyToClipboard({
@@ -63,46 +97,19 @@ export default function useCopyToClipboard({
 
   const copyToClipboard = useCallback(
     (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
-      if (copyTimeoutRef.current) {
-        clearTimeout(copyTimeoutRef.current);
-      }
-      setIsCopied(true);
+      const clipboardText = buildClipboardText({ text, content, searchResults });
 
-      const messageText = serializeMessageForClipboard({ text, content });
-
-      // Early return if no search data
-      if (!searchResults || Object.keys(searchResults).length === 0) {
-        // Clean up any citation markers before returning
-        const cleanedText = messageText
-          .replace(INVALID_CITATION_REGEX, '')
-          .replace(CLEANUP_REGEX, '');
-
-        copy(cleanedText, { format: 'text/plain' });
-        copyTimeoutRef.current = setTimeout(() => {
-          setIsCopied(false);
-        }, 3000);
+      /** Nothing to copy: leave the clipboard untouched rather than clearing it */
+      if (clipboardText.trim().length === 0) {
         return;
       }
 
-      // Process citations and build a citation manager
-      const citationManager = processCitations(messageText, searchResults);
-      let processedText = citationManager.formattedText;
-
-      // Add citations list at the end if we have any
-      if (citationManager.citations.size > 0) {
-        processedText += '\n\nCitations:\n';
-        // Sort citations by their reference number
-        const sortedCitations = Array.from(citationManager.citations.entries()).sort(
-          (a, b) => a[1].referenceNumber - b[1].referenceNumber,
-        );
-
-        // Add each citation to the text
-        for (const [_, citation] of sortedCitations) {
-          processedText += `[${citation.referenceNumber}] ${citation.link}\n`;
-        }
+      if (copyTimeoutRef.current) {
+        clearTimeout(copyTimeoutRef.current);
       }
 
-      copy(processedText, { format: 'text/plain' });
+      copy(clipboardText, { format: 'text/plain' });
+      setIsCopied(true);
       copyTimeoutRef.current = setTimeout(() => {
         setIsCopied(false);
       }, 3000);

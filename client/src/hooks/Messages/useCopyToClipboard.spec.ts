@@ -92,6 +92,63 @@ describe('useCopyToClipboard', () => {
       });
     });
 
+    it('does not append a trailing newline when skipped parts follow the last text part', () => {
+      const content = [
+        { type: ContentTypes.TEXT, text: 'sudo rm nothing' },
+        { type: ContentTypes.ERROR, error: 'Deployment lookup failed' },
+      ] as TMessageContentParts[];
+
+      const { result } = renderHook(() => useCopyToClipboard({ content }));
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      expect(mockCopy).toHaveBeenCalledWith('sudo rm nothing', { format: 'text/plain' });
+    });
+
+    it('does not add blank lines for empty text parts', () => {
+      const content = [
+        { type: ContentTypes.TEXT, text: '' },
+        { type: ContentTypes.TEXT, text: 'Only line' },
+        { type: ContentTypes.TEXT, text: { value: '' } },
+      ] as TMessageContentParts[];
+
+      const { result } = renderHook(() => useCopyToClipboard({ content }));
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      expect(mockCopy).toHaveBeenCalledWith('Only line', { format: 'text/plain' });
+    });
+
+    it('preserves the clipboard when the message has no response text', () => {
+      const content = [
+        { type: ContentTypes.ERROR, error: 'Something went wrong' },
+      ] as TMessageContentParts[];
+
+      const { result } = renderHook(() => useCopyToClipboard({ content }));
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      expect(mockCopy).not.toHaveBeenCalled();
+      expect(mockSetIsCopied).not.toHaveBeenCalled();
+    });
+
+    it('preserves the clipboard when the message text is empty', () => {
+      const { result } = renderHook(() => useCopyToClipboard({ text: '   ' }));
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      expect(mockCopy).not.toHaveBeenCalled();
+      expect(mockSetIsCopied).not.toHaveBeenCalled();
+    });
+
     it('should reset isCopied after timeout', () => {
       const { result } = renderHook(() =>
         useCopyToClipboard({
