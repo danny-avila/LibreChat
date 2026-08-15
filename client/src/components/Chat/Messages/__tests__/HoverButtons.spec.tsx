@@ -32,11 +32,13 @@ function renderHoverButtons({
   message = userMessage,
   isLast = false,
   latestMessageId = 'assistant-1',
+  getCanCopy = () => hasCopyableText({ text: message.text, content: message.content }),
 }: {
   isSubmitting: boolean;
   message?: TMessage;
   isLast?: boolean;
   latestMessageId?: string;
+  getCanCopy?: () => boolean;
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -59,7 +61,7 @@ function renderHoverButtons({
             regenerate={jest.fn()}
             handleContinue={jest.fn()}
             copyToClipboard={jest.fn()}
-            canCopy={hasCopyableText({ text: message.text, content: message.content })}
+            getCanCopy={getCanCopy}
             latestMessageId={latestMessageId}
           />
         </MemoryRouter>
@@ -149,5 +151,26 @@ describe('HoverButtons edit affordance', () => {
     });
 
     expect(screen.getByTestId('copy-response-button')).toBeDisabled();
+  });
+
+  it('never inspects a response that is still streaming', () => {
+    const streamingMessage = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      isCreatedByUser: false,
+      text: 'partial resp',
+    } as TMessage;
+    const getCanCopy = jest.fn(() => true);
+
+    renderHoverButtons({
+      isSubmitting: true,
+      message: streamingMessage,
+      isLast: true,
+      latestMessageId: streamingMessage.messageId,
+      getCanCopy,
+    });
+
+    expect(screen.queryByTestId('copy-response-button')).toBeNull();
+    expect(getCanCopy).not.toHaveBeenCalled();
   });
 });

@@ -123,7 +123,7 @@ export default function useMessageActions(props: TMessageActions) {
 
   const copyToClipboard = useCopyToClipboard({ text, content, searchResults });
 
-  const canCopy = useMemo(
+  const getCanCopy = useCallback(
     () => hasCopyableText({ text, content, searchResults }),
     [text, content, searchResults],
   );
@@ -177,8 +177,8 @@ export default function useMessageActions(props: TMessageActions) {
     edit,
     index,
     agent,
-    canCopy,
     feedback,
+    getCanCopy,
     assistant,
     enterEdit,
     conversation,

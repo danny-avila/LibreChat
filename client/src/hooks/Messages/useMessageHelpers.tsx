@@ -83,7 +83,7 @@ export default function useMessageHelpers(props: TMessageProps) {
 
   const copyToClipboard = useCopyToClipboard({ text, content });
 
-  const canCopy = useMemo(() => hasCopyableText({ text, content }), [text, content]);
+  const getCanCopy = useCallback(() => hasCopyableText({ text, content }), [text, content]);
 
   return {
     ask,
@@ -91,8 +91,8 @@ export default function useMessageHelpers(props: TMessageProps) {
     agent,
     index,
     isLast,
-    canCopy,
     assistant,
+    getCanCopy,
     enterEdit,
     conversation,
     isSubmitting,

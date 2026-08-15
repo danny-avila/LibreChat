@@ -22,7 +22,7 @@ type THoverButtons = {
   isEditing: boolean;
   enterEdit: (cancel?: boolean) => void;
   copyToClipboard: (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => void;
-  canCopy: boolean;
+  getCanCopy: () => boolean;
   conversation: TConversation | null;
   isSubmitting: boolean;
   message: TMessage;
@@ -122,7 +122,7 @@ const HoverButtons = ({
   isEditing,
   enterEdit,
   copyToClipboard,
-  canCopy,
+  getCanCopy,
   conversation,
   isSubmitting,
   message,
@@ -163,6 +163,12 @@ const HoverButtons = ({
     isActiveStreamingMessage,
     isEditableEndpoint,
   } = generationCapabilities;
+
+  /** The copy action is hidden mid-stream, so a partial response is never scanned */
+  const canCopy = useMemo(
+    () => !isActiveStreamingMessage && getCanCopy(),
+    [isActiveStreamingMessage, getCanCopy],
+  );
 
   if (!conversation) {
     return null;
