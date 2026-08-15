@@ -146,9 +146,8 @@ function ConvoOptions({
   }, []);
 
   const projectHandler = useCallback(() => {
-    setIsPopoverActive(false);
     setShowProjectDialog(true);
-  }, [setIsPopoverActive]);
+  }, []);
 
   const removeProjectHandler = useCallback(() => {
     const convoId = conversationId ?? '';
