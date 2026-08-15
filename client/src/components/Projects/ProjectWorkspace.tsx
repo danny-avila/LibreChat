@@ -1,19 +1,19 @@
 import { useCallback, useId, useMemo, useState } from 'react';
-import * as Ariakit from '@ariakit/react';
 import { useRecoilValue } from 'recoil';
+import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowUpDown, Check, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { QueryKeys } from 'librechat-data-provider';
-import type { ConversationListResponse } from 'librechat-data-provider';
+import { Constants, QueryKeys } from 'librechat-data-provider';
+import { ArrowLeft, ArrowUpDown, Check, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button, Spinner, DropdownPopup, TooltipAnchor, useMediaQuery } from '@librechat/client';
+import type { ConversationListResponse } from 'librechat-data-provider';
 import type { MenuItemProps, RenderProp } from '~/common';
-import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { useConversationsInfiniteQuery, useProjectQuery } from '~/data-provider';
-import { useLocalize, useNewConvo } from '~/hooks';
-import { cn, clearMessagesCache } from '~/utils';
+import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import ProjectDeleteDialog from './ProjectDeleteDialog';
 import ProjectEditDialog from './ProjectEditDialog';
+import { useLocalize, useNewConvo } from '~/hooks';
+import { cn, clearMessagesCache } from '~/utils';
 import ProjectChatList from './ProjectChatList';
 import store from '~/store';
 
@@ -112,8 +112,9 @@ export default function ProjectWorkspace() {
     }
     clearMessagesCache(queryClient, conversation?.conversationId);
     queryClient.invalidateQueries([QueryKeys.messages]);
+    navigate(`/c/${Constants.NEW_CONVO}?projectId=${encodeURIComponent(activeProjectId)}`);
     newConversation({ template: { chatProjectId: activeProjectId } });
-  }, [activeProjectId, conversation?.conversationId, newConversation, queryClient]);
+  }, [activeProjectId, conversation?.conversationId, navigate, newConversation, queryClient]);
 
   if (isProjectLoading) {
     return (
