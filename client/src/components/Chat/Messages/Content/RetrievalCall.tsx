@@ -461,7 +461,13 @@ export default function RetrievalCall({
           progress={progress}
           onClick={hasOutput ? handleToggleOutput : undefined}
           inProgressText={intent ?? localize('com_ui_searching_files')}
-          finishedText={intent ?? localize('com_ui_retrieved_files')}
+          /** A cancelled step must not read "Retrieved files" beside a
+           *  cancellation icon while the live region says "Cancelled". */
+          finishedText={
+            cancelled
+              ? localize('com_ui_cancelled')
+              : (intent ?? localize('com_ui_retrieved_files'))
+          }
           errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ToolIcon type="file_search" isAnimating={progress < 1 && !cancelled && !errorState} />

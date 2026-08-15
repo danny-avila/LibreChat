@@ -245,11 +245,13 @@ export default function OpenAIImageGen({
           if (progress < 1 && !cancelled && !hasError) {
             return '';
           }
-          if (cancelled) {
-            return localize('com_ui_cancelled');
-          }
+          /** Failure outranks cancellation, matching `ProgressText`: the legacy
+           *  inference folds errors into its cancellation signal. */
           if (hasError) {
             return localize('com_ui_image_gen_failed');
+          }
+          if (cancelled) {
+            return localize('com_ui_cancelled');
           }
           return intent ?? localize('com_ui_image_created');
         })()}

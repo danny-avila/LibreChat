@@ -21,11 +21,14 @@ export default function ProgressText({
   const localize = useLocalize();
 
   const getText = () => {
-    if (cancelled) {
-      return localize('com_ui_cancelled');
-    }
+    /** Failure outranks cancellation: the legacy inference folds errors into
+     *  its cancellation signal, so checking `cancelled` first would relabel a
+     *  genuine failure as a user stop. */
     if (error) {
       return localize('com_ui_image_gen_failed');
+    }
+    if (cancelled) {
+      return localize('com_ui_cancelled');
     }
     if (intent != null) {
       return intent;
