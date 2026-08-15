@@ -1,5 +1,9 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import {
+  MAX_CHAT_PROJECT_NAME_LENGTH,
+  MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+} from 'librechat-data-provider';
+import {
   Button,
   Input,
   Label,
@@ -11,8 +15,8 @@ import {
 } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
 import { useUpdateProjectMutation } from '~/data-provider';
-import { useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
+import { useLocalize } from '~/hooks';
 
 type ProjectEditDialogProps = {
   open: boolean;
@@ -92,6 +96,7 @@ export default function ProjectEditDialog({ open, onOpenChange, project }: Proje
                 ref={inputRef}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
+                maxLength={MAX_CHAT_PROJECT_NAME_LENGTH}
                 className="w-full"
               />
             </div>
@@ -110,6 +115,7 @@ export default function ProjectEditDialog({ open, onOpenChange, project }: Proje
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 rows={3}
+                maxLength={MAX_CHAT_PROJECT_DESCRIPTION_LENGTH}
                 className="min-h-[4.5rem] bg-transparent"
               />
             </div>

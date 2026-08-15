@@ -8,6 +8,10 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  MAX_CHAT_PROJECT_NAME_LENGTH,
+  MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+} from 'librechat-data-provider';
+import {
   Button,
   Input,
   Label,
@@ -107,6 +111,7 @@ export default function ProjectCreateDialog({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder={localize('com_ui_project_name_placeholder')}
+                maxLength={MAX_CHAT_PROJECT_NAME_LENGTH}
                 className="w-full"
               />
             </div>
@@ -125,6 +130,7 @@ export default function ProjectCreateDialog({
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 rows={3}
+                maxLength={MAX_CHAT_PROJECT_DESCRIPTION_LENGTH}
                 className="min-h-[4.5rem] bg-transparent"
               />
             </div>
