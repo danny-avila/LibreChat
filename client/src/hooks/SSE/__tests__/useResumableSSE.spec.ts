@@ -593,6 +593,9 @@ describe('useResumableSSE', () => {
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.allConversations],
     });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.pinnedConversations],
+    });
     unmount();
   });
 
@@ -1531,6 +1534,9 @@ describe('useResumableSSE', () => {
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.allConversations],
     });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.pinnedConversations],
+    });
     /** The settled response carries no epoch, so it cannot authorize clearing
      * whichever conversation/generation may now own this pane's arm. */
     expect(mockSetDrainAfterAbort).not.toHaveBeenCalled();
@@ -2175,6 +2181,12 @@ describe('useResumableSSE', () => {
       queryKey: [QueryKeys.messages, CONV_ID],
       refetchType: 'none',
     });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.allConversations],
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.pinnedConversations],
+    });
     expect(mockSettleAppliedSteerParts).toHaveBeenCalledWith(CONV_ID, persisted);
     expect(mockSetRunEnd).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: CONV_ID, outcome: 'completed' }),
@@ -2646,6 +2658,12 @@ describe('useResumableSSE', () => {
       queryKey: [QueryKeys.messages, CONV_ID],
       refetchType: 'all',
     });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.allConversations],
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.pinnedConversations],
+    });
     expect(mockErrorHandler).not.toHaveBeenCalled();
     expect(mockSetRunEnd).not.toHaveBeenCalled();
     expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
@@ -2695,6 +2713,12 @@ describe('useResumableSSE', () => {
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.messages, CONV_ID],
       refetchType: 'all',
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.allConversations],
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.pinnedConversations],
     });
     expect(mockErrorHandler).not.toHaveBeenCalled();
     expect(mockSetRunEnd).not.toHaveBeenCalled();

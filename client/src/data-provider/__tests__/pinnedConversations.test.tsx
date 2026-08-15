@@ -10,7 +10,7 @@ import {
   updateConvoInAllQueries,
   upsertConvoInAllQueries,
 } from '~/utils/convos';
-import { usePinConversationMutation } from '../mutations';
+import { useDeleteConversationMutation, usePinConversationMutation } from '../mutations';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -20,6 +20,7 @@ jest.mock('librechat-data-provider', () => {
       ...actual.dataService,
       listConversations: jest.fn(),
       pinConversation: jest.fn(),
+      deleteConversation: jest.fn(),
     },
   };
 });
@@ -29,6 +30,9 @@ const listConversations = dataService.listConversations as jest.MockedFunction<
 >;
 const pinConversation = dataService.pinConversation as jest.MockedFunction<
   typeof dataService.pinConversation
+>;
+const deleteConversation = dataService.deleteConversation as jest.MockedFunction<
+  typeof dataService.deleteConversation
 >;
 
 const pinnedConvo = {
@@ -315,5 +319,34 @@ describe('pinned list cache synchronization', () => {
     expect(readPinnedCache(queryClient)?.conversations).toEqual([
       expect.objectContaining({ ...pinnedConvo, title: 'Root turn' }),
     ]);
+  });
+});
+
+describe('delete mutation project lookup', () => {
+  const projectId = 'project-pinned';
+
+  it('invalidates the project when the deleted pin is only in the pinned cache', async () => {
+    deleteConversation.mockResolvedValue({
+      acknowledged: true,
+      deletedCount: 1,
+      messages: { acknowledged: true, deletedCount: 0 },
+    });
+    const queryClient = createQueryClient();
+    const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([{ ...pinnedConvo, chatProjectId: projectId }]),
+    );
+
+    const { result } = renderHook(() => useDeleteConversationMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      result.current.mutate({ conversationId: pinnedConvo.conversationId });
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.project, projectId]);
   });
 });

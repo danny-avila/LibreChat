@@ -636,6 +636,27 @@ export const useDeleteConversationMutation = (
           }
         }
 
+        /** A project-backed pin can be absent from the loaded chats and
+         * project pages. The pinned cache is the remaining source for
+         * `chatProjectId` so the project workspace can drop its stale count. */
+        if (!deletedProjectId && vars.conversationId) {
+          const pinnedQueries = queryClient
+            .getQueryCache()
+            .findAll([QueryKeys.pinnedConversations], { exact: false });
+          for (const query of pinnedQueries) {
+            const data = queryClient.getQueryData<{ conversations?: t.TConversation[] }>(
+              query.queryKey,
+            );
+            const found = data?.conversations?.find(
+              (conversation) => conversation.conversationId === vars.conversationId,
+            );
+            if (found?.chatProjectId) {
+              deletedProjectId = found.chatProjectId;
+              break;
+            }
+          }
+        }
+
         if (vars.conversationId) {
           removeConvoFromAllQueries(queryClient, vars.conversationId);
           clearDeletedConversationMessagesCache(queryClient, vars.conversationId);
