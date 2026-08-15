@@ -340,10 +340,15 @@ export default function RetrievalCall({
   runStepStatus?: PartMetadata['runStepStatus'];
 }) {
   const isClosed = runStepStatus != null;
-  /** Passed the terminal value rather than masked afterwards: `useProgress`
-   *  keeps a 200ms interval alive whenever its input is below 1, and a closed
-   *  step usually never receives the completion that would raise it. */
-  const progress = useProgress(isClosed ? 1 : initialProgress);
+  /**
+   * Both halves are load-bearing. Passing 1 in stops `useProgress` scheduling
+   * its 200ms interval, which it keeps alive for any input below 1. Masking
+   * the result makes the terminal value observable on the same render — the
+   * hook settles through 0.99 and a 200ms timeout, so a step closing while
+   * mounted would otherwise render as still in progress for that window.
+   */
+  const rawProgress = useProgress(isClosed ? 1 : initialProgress);
+  const progress = isClosed ? 1 : rawProgress;
   const localize = useLocalize();
   /** Model-authored live label (injected when file_search is opted into
    *  describe_intent); persists as the settled label. The sr-only live

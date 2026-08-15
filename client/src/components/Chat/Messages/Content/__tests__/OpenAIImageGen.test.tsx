@@ -189,6 +189,20 @@ describe('OpenAIImageGen', () => {
       expect(progressText).toHaveAttribute('data-cancelled', 'false');
     });
 
+    it('lets an explicit cancellation outrank an error-formatted output', () => {
+      render(
+        <OpenAIImageGen
+          {...defaultProps}
+          output="Error processing tool call"
+          isSubmitting={true}
+          runStepStatus="cancelled"
+        />,
+      );
+      const progressText = screen.getByTestId('progress-text');
+      expect(progressText).toHaveAttribute('data-cancelled', 'true');
+      expect(progressText).toHaveAttribute('data-error', 'false');
+    });
+
     it('keeps failure precedence when the legacy inference folds an error into cancellation', () => {
       render(
         <OpenAIImageGen

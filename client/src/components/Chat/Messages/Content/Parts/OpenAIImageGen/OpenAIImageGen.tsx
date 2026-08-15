@@ -67,9 +67,9 @@ export default function OpenAIImageGen({
   const isAgentStyle = toolName != null && AGENT_STYLE_TOOLS.has(toolName);
   const [agentProgress, setAgentProgress] = useState(initialProgress);
   const isClosed = runStepStatus != null;
-  /** Passed the terminal value rather than masked afterwards: `useProgress`
-   *  keeps a 200ms interval alive whenever its input is below 1, so masking
-   *  the result would leave a closed card scheduling work forever. */
+  /** Passing 1 in stops `useProgress` scheduling its interval; masking the
+   *  result makes the terminal value observable on the same render, since the
+   *  hook settles through 0.99 and a 200ms timeout. */
   const legacyProgress = useProgress(isAgentStyle || isClosed ? 1 : initialProgress);
   const livingProgress = isAgentStyle ? agentProgress : legacyProgress;
   const progress = isClosed ? 1 : livingProgress;
@@ -87,6 +87,13 @@ export default function OpenAIImageGen({
    *   because legacy image gen lacks a submitting signal — only errors cancel.
    */
   const cancelled = computeCancelled(isSubmitting, initialProgress, hasError, runStepStatus);
+  /**
+   * An explicit `cancelled` close is authoritative and outranks an
+   * error-formatted output — aborting a tool can itself produce one. The
+   * legacy inference keeps the opposite precedence, because it folds
+   * `hasError` into its own cancellation signal.
+   */
+  const reportsError = hasError && runStepStatus !== 'cancelled';
 
   let width: number | undefined;
   let height: number | undefined;
@@ -242,12 +249,10 @@ export default function OpenAIImageGen({
     <>
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
-          if (progress < 1 && !cancelled && !hasError) {
+          if (progress < 1 && !cancelled && !reportsError) {
             return '';
           }
-          /** Failure outranks cancellation, matching `ProgressText`: the legacy
-           *  inference folds errors into its cancellation signal. */
-          if (hasError) {
+          if (reportsError) {
             return localize('com_ui_image_gen_failed');
           }
           if (cancelled) {
@@ -260,7 +265,7 @@ export default function OpenAIImageGen({
         <ToolIcon type="image_gen" isAnimating={isInProgress} />
         <ProgressText
           progress={progress}
-          error={hasError}
+          error={reportsError}
           cancelled={cancelled}
           toolName={toolName}
           intent={intent}
