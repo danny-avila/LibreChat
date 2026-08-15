@@ -202,4 +202,14 @@ messageSchema.index({ messageId: 1, user: 1, tenantId: 1 }, { unique: true });
 // index for MeiliSearch sync operations
 messageSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });
 
+/**
+ * The chat-search safety poll keyset-scans `(updatedAt, messageId)` once a
+ * minute, forever. Unindexed that is a collection scan of every message in the
+ * deployment on every pass — the most expensive thing the projector does, on the
+ * largest collection there is, and it never stops. Indexed, the idle case is a
+ * bounded range that returns nothing, which is what makes a separate backlog
+ * probe unnecessary rather than merely optional.
+ */
+messageSchema.index({ updatedAt: 1, messageId: 1 });
+
 export default messageSchema;

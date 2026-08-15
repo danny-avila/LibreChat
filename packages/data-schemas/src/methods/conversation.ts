@@ -834,7 +834,7 @@ export function createConversationMethods(
       const { deleteMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
       const conversations = await Conversation.find(userFilter).select(
-        'conversationId chatProjectId tags',
+        'conversationId chatProjectId tags tenantId',
       );
       const conversationIds = conversations.map((c) => c.conversationId);
       const projectIds = new Set(
@@ -877,6 +877,15 @@ export function createConversationMethods(
       if (deleted) {
         await decrementTagCounts(mongoose, user, tagDecrements);
       }
+
+      /**
+       * Tombstones ride the `deleteMany` hook alone. An explicit enqueue here
+       * once doubled it — same keys, but uncapped where the hook caps at
+       * `DELETE_MANY_EVENT_CAP`, so clearing a large history issued one
+       * unbounded insertMany on the caller's request plus a duplicate of every
+       * capped event. The hook covers the cap's worth and reconciliation sweeps
+       * the remainder, exactly as on every other bulk deletion path.
+       */
 
       /**
        * Post-delete cleanup is best-effort: the conversations are already gone, so a

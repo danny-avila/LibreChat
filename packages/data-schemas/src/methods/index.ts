@@ -35,6 +35,7 @@ import {
   type AuditLogMethods,
 } from './auditLog';
 import { createShareMethods, type ShareMethods } from './share';
+import { createSearchEventMethods, type SearchEventMethods } from './searchevent';
 /* Tier 1 — Simple CRUD */
 import { createActionMethods, type ActionMethods } from './action';
 import { createAssistantMethods, type AssistantMethods } from './assistant';
@@ -147,7 +148,8 @@ export {
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };
 
-export type AllMethods = UserMethods &
+export type AllMethods = SearchEventMethods &
+  UserMethods &
   SessionMethods &
   TokenMethods &
   RoleMethods &
@@ -297,6 +299,7 @@ export function createMethods(
     ...systemGrantMethods,
     ...createAuditLogMethods(mongoose),
     ...createShareMethods(mongoose),
+    ...createSearchEventMethods(mongoose),
     ...createPluginAuthMethods(mongoose),
     /* Tier 1 */
     ...actionMethods,

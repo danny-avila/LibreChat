@@ -79,6 +79,8 @@ export * from './shared-links/access';
 export * from './shared-links/service';
 export * from './shared-links/config';
 export * from './shared-links/http';
+/* Chat search */
+export * from './search';
 /* Stream */
 export * from './stream';
 /* Diagnostics */

@@ -86,4 +86,11 @@ shareSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 });
 shareSchema.index({ conversationId: 1, user: 1, targetMessageId: 1, tenantId: 1 });
 shareSchema.index({ updatedAt: -1 });
 
+/**
+ * Supports the chat-search safety poll's `(updatedAt, shareId)` keyset scan. The
+ * descending index above cannot: the poll scans forward and tiebreaks on
+ * `shareId`, which that index does not carry.
+ */
+shareSchema.index({ updatedAt: 1, shareId: 1 });
+
 export default shareSchema;

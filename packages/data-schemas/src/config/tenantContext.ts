@@ -12,6 +12,134 @@ export interface TenantContext {
 export const SYSTEM_TENANT_ID = '__SYSTEM__';
 
 /**
+ * Sentinel tenant for non-tenant (OSS) data. Mongo documents with an absent or
+ * null `tenantId` normalize to this value everywhere a tenant is required:
+ * projector writes, query-path scope resolution, RLS session settings, cursors,
+ * and rag_api JWT claims.
+ */
+export const BASE_TENANT_ID = '__BASE__';
+
+/**
+ * Reserved sentinels. Neither may arrive as an *inbound* tenant id, so no real
+ * tenant can collide with the base-tenant fallback or inherit the system
+ * wildcard by naming itself after it.
+ */
+export const RESERVED_TENANT_IDS: ReadonlySet<string> = new Set([SYSTEM_TENANT_ID, BASE_TENANT_ID]);
+
+export function isReservedTenantId(tenantId?: string | null): boolean {
+  return tenantId != null && RESERVED_TENANT_IDS.has(tenantId);
+}
+
+/** Maps an absent or null stored tenant id onto the base-tenant sentinel. */
+export function normalizeTenantId(tenantId?: string | null): string {
+  return tenantId == null || tenantId === '' ? BASE_TENANT_ID : tenantId;
+}
+
+/**
+ * Structural scope enforcement, shared by every search tier.
+ *
+ * Messages and files are user-scoped, not merely tenant-scoped, and they are the
+ * kinds whose leakage exposes raw content rather than metadata. The brand is a
+ * module-private symbol, which buys exactly one thing: an unbranded object that
+ * merely has the right shape cannot be substituted for a scope, so no code path
+ * reaches a store without having gone through a constructor that normalizes its
+ * input and throws rather than ever returning a widened result. There is no
+ * "scope optional" path to fall through.
+ *
+ * What the brand is not is a capability token. `createScope` is exported, so any
+ * caller already holding a tenant and a user id can mint a valid scope, and a
+ * spread copies the symbol key along with the rest. Holding a `Scope` therefore
+ * says the value is well-formed, never that its bearer was authorized for it.
+ * RLS is the enforcement boundary; above it the discipline is that request paths
+ * take scope from the ambient request context via `resolveScope()` instead of
+ * calling `createScope()` with ids read off the request.
+ *
+ * The half that is enforced rather than asserted is covered by the `scope brand`
+ * cases in `tenantContext.spec.ts`: a structurally identical unbranded object is
+ * refused, an absent one is refused rather than widened, and the value handed
+ * back is frozen.
+ *
+ * Each tier renders this same value in its own dialect — PostgreSQL `$n`
+ * predicates plus RLS session GUCs, ClickHouse `{name:Type}` bindings — but none
+ * of them re-derives it.
+ */
+const SCOPE_BRAND: unique symbol = Symbol('librechat.scope');
+
+export interface Scope {
+  readonly [SCOPE_BRAND]: true;
+  readonly tenantId: string;
+  readonly userId: string;
+}
+
+export class UnscopedAccessError extends Error {
+  constructor(reason: string) {
+    super(`refusing to proceed without resolved scope: ${reason}`);
+    this.name = 'UnscopedAccessError';
+  }
+}
+
+/**
+ * Builds a branded scope from explicit values.
+ *
+ * Order matters: normalize first, then fail closed. `tenantId === undefined` is
+ * the normal OSS case (no `X-Tenant-Id` header) and resolves to the base tenant.
+ * Failing on "empty tenant" *before* normalization would break search for every
+ * non-tenant deployment — which is why the check sequence is not interchangeable.
+ *
+ * `__SYSTEM__` is rejected outright rather than special-cased. In this codebase
+ * it is a query-time wildcard — `tenantIsolation` skips filter injection under
+ * `runAsSystem()` — so porting that semantic into a store predicate would hand
+ * every background context cross-tenant reach.
+ */
+export function createScope(input: { tenantId?: string | null; userId?: string | null }): Scope {
+  const tenantId = normalizeTenantId(
+    typeof input?.tenantId === 'string' ? input.tenantId.trim() : input?.tenantId,
+  );
+  const userId = typeof input?.userId === 'string' ? input.userId.trim() : '';
+
+  if (tenantId === SYSTEM_TENANT_ID) {
+    throw new UnscopedAccessError('the system tenant is a query-time wildcard, never a scope');
+  }
+  if (userId.length === 0) {
+    throw new UnscopedAccessError('userId is missing or empty');
+  }
+
+  return Object.freeze({ [SCOPE_BRAND]: true, tenantId, userId }) as Scope;
+}
+
+/**
+ * Resolves scope from the ALS context — never from a query, body, or cursor
+ * field. Two separate refusals stand between a background caller and a scope: no
+ * active context at all fails here, and a `runAsSystem()` context fails inside
+ * `createScope`, which rejects the system tenant outright. Neither widens.
+ *
+ * Both refusals are exercised by the `resolveScope` cases in
+ * `tenantContext.spec.ts`, alongside the tenantless context that resolves onto
+ * the base tenant rather than failing.
+ */
+export function resolveScope(): Scope {
+  const store = tenantStorage.getStore();
+  if (!store) {
+    throw new UnscopedAccessError('no request context is active');
+  }
+  return createScope({ tenantId: store.tenantId, userId: store.userId });
+}
+
+/**
+ * Gate for every store-facing builder. A forged or absent scope fails here, so
+ * no code path reaches a search store without one.
+ */
+export function assertScope(scope: Scope | null | undefined): Scope {
+  if (!scope || (scope as { [SCOPE_BRAND]?: true })[SCOPE_BRAND] !== true) {
+    throw new UnscopedAccessError('no Scope supplied — build one with createScope()');
+  }
+  if (!scope.tenantId || !scope.userId || scope.tenantId === SYSTEM_TENANT_ID) {
+    throw new UnscopedAccessError('Scope is missing tenant or user, or names the system tenant');
+  }
+  return scope;
+}
+
+/**
  * AsyncLocalStorage instance for propagating tenant context.
  * Callbacks passed to `tenantStorage.run()` must be `async` for the context to propagate
  * through Mongoose query execution. Sync callbacks returning a Mongoose thenable will lose context.

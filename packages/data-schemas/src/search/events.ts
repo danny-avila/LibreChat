@@ -1,0 +1,138 @@
+import type { Model, Types } from 'mongoose';
+import type { ISearchEvent, SearchEventKind, SearchEventOp } from '~/schema/searchevent';
+import { normalizeTenantId } from '~/config/tenantContext';
+import logger from '~/config/winston';
+
+export type SearchEventInput = {
+  tenantId?: string | null;
+  userId: string;
+  kind: SearchEventKind;
+  recordId: string;
+  op: SearchEventOp;
+};
+
+export type DrainedSearchEvent = {
+  _id: Types.ObjectId;
+  tenantId: string;
+  userId: string;
+  kind: SearchEventKind;
+  recordId: string;
+  op: SearchEventOp;
+};
+
+/**
+ * Enqueue is part of the search feature, not of the projector loop:
+ * `CHAT_SEARCH_SYNC=false` pauses draining while events keep accumulating (they
+ * are TTL'd, and the safety poll plus reconciliation cover anything that
+ * expires), whereas `CHAT_SEARCH_ENABLED=false` costs the write path nothing.
+ */
+export function searchEnqueueEnabled(): boolean {
+  return process.env.CHAT_SEARCH_ENABLED === 'true';
+}
+
+export function searchSyncEnabled(): boolean {
+  return searchEnqueueEnabled() && process.env.CHAT_SEARCH_SYNC !== 'false';
+}
+
+export const searchEventKey = (event: {
+  tenantId: string;
+  userId: string;
+  kind: string;
+  recordId: string;
+}): string => [event.tenantId, event.userId, event.kind, event.recordId].join('\u001f');
+
+function toEventDocument(input: SearchEventInput): Omit<DrainedSearchEvent, '_id'> | null {
+  if (!input.userId || !input.recordId) {
+    return null;
+  }
+  return {
+    tenantId: normalizeTenantId(input.tenantId),
+    userId: input.userId,
+    kind: input.kind,
+    recordId: input.recordId,
+    op: input.op,
+  };
+}
+
+/**
+ * Appends projection events. Failures are logged and swallowed: the queue is an
+ * accelerant, never load-bearing for correctness, so a queue outage must not
+ * fail a user's write. The safety poll and the reconciliation sweep are what
+ * make dropped events recoverable.
+ */
+export async function enqueueSearchEvents(
+  mongoose: typeof import('mongoose'),
+  inputs: readonly SearchEventInput[],
+): Promise<number> {
+  if (!searchEnqueueEnabled() || inputs.length === 0) {
+    return 0;
+  }
+
+  const documents: Array<Omit<DrainedSearchEvent, '_id'>> = [];
+  for (const input of inputs) {
+    const document = toEventDocument(input);
+    if (document) {
+      documents.push(document);
+    }
+  }
+  if (documents.length === 0) {
+    return 0;
+  }
+
+  try {
+    const SearchEvent = mongoose.models.SearchEvent as Model<ISearchEvent> | undefined;
+    if (!SearchEvent) {
+      return 0;
+    }
+    await SearchEvent.insertMany(documents, { ordered: false });
+    return documents.length;
+  } catch (error) {
+    logger.error('[searchEvents] Failed to enqueue projection events', error);
+    return 0;
+  }
+}
+
+/**
+ * Collapses a drained batch to one op per record. Tombstones win: an upsert
+ * queued alongside a delete would otherwise re-project a row the user removed,
+ * and the projector re-reads the source anyway, so an over-eager tombstone
+ * self-corrects on the next event while an over-eager upsert does not.
+ */
+export function dedupeSearchEvents(
+  events: readonly DrainedSearchEvent[],
+): readonly DrainedSearchEvent[] {
+  const byKey = new Map<string, DrainedSearchEvent>();
+  for (const event of events) {
+    const key = searchEventKey(event);
+    const existing = byKey.get(key);
+    if (!existing || (existing.op !== 'tombstone' && event.op === 'tombstone')) {
+      byKey.set(key, event);
+    }
+  }
+  return [...byKey.values()];
+}
+
+export async function readSearchEvents(
+  mongoose: typeof import('mongoose'),
+  limit: number,
+): Promise<readonly DrainedSearchEvent[]> {
+  const SearchEvent = mongoose.models.SearchEvent as Model<ISearchEvent> | undefined;
+  if (!SearchEvent) {
+    return [];
+  }
+  return SearchEvent.find({}).sort({ _id: 1 }).limit(limit).lean<DrainedSearchEvent[]>().exec();
+}
+
+export async function deleteSearchEvents(
+  mongoose: typeof import('mongoose'),
+  ids: readonly Types.ObjectId[],
+): Promise<void> {
+  if (ids.length === 0) {
+    return;
+  }
+  const SearchEvent = mongoose.models.SearchEvent as Model<ISearchEvent> | undefined;
+  if (!SearchEvent) {
+    return;
+  }
+  await SearchEvent.deleteMany({ _id: { $in: [...ids] } });
+}

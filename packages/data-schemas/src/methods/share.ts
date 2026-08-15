@@ -10,6 +10,7 @@ import {
 } from '~/utils/stripUIResourceMarkers';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { enqueueSearchEvents } from '~/search/events';
 import logger from '~/config/winston';
 
 class ShareServiceError extends Error {
@@ -1304,6 +1305,17 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       if (!result) {
         return null;
       }
+
+      /** `findOneAndDelete` fires no delete hook, so the tombstone is explicit. */
+      await enqueueSearchEvents(mongoose, [
+        {
+          tenantId: result.tenantId ?? null,
+          userId: user,
+          kind: 'shared-link',
+          recordId: shareId,
+          op: 'tombstone',
+        },
+      ]);
 
       return {
         _id: result._id?.toString(),

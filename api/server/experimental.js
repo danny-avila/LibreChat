@@ -30,6 +30,7 @@ const {
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const { initializeChatSearch } = require('./services/Search');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
@@ -295,6 +296,14 @@ if (cluster.isMaster) {
     indexSync().catch((err) => {
       logger.error(`[Worker ${process.pid}][indexSync] Background sync failed:`, err);
     });
+
+    /* Same composition root as `server/index.js`, awaited for the same reason:
+     * this entry mounts the same routes, so the stack has to be installed before
+     * they can serve. Every worker serves; exactly one wins the projector lease
+     * and the rest stand by for it. The lease rides a session-scoped advisory
+     * lock, so a worker the master terminates releases it without needing a
+     * shutdown hook of its own. */
+    await initializeChatSearch();
 
     app.disable('x-powered-by');
     app.set('trust proxy', trusted_proxy);
