@@ -171,8 +171,6 @@ describe('OpenAIImageGen', () => {
     it('shows cancelled state when not submitting and incomplete', () => {
       render(<OpenAIImageGen {...defaultProps} isSubmitting={false} initialProgress={0.5} />);
       const progressText = screen.getByTestId('progress-text');
-      /** Cancellation is reported on its own channel now: a stop is not a
-       *  failure, so it must not surface through `error`. */
       expect(progressText).toHaveAttribute('data-cancelled', 'true');
       expect(progressText).toHaveAttribute('data-error', 'false');
     });
