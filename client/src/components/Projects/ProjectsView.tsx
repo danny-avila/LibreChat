@@ -13,7 +13,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { TChatProject } from 'librechat-data-provider';
-import type { MenuItemProps, RenderProp } from '~/common';
+import type { LocalizeFunction, MenuItemProps, RenderProp } from '~/common';
 import { useProjectsInfiniteQuery } from '~/data-provider';
 import ProjectCreateDialog from './ProjectCreateDialog';
 import ProjectDeleteDialog from './ProjectDeleteDialog';
@@ -37,6 +37,16 @@ function renderSortMenuItem(label: string, isSelected: boolean): RenderProp {
       </div>
     );
   };
+}
+
+function getProjectCountLabel(count: number, hasMore: boolean, localize: LocalizeFunction) {
+  if (hasMore) {
+    return localize('com_ui_project_count_partial', { count });
+  }
+  if (count === 1) {
+    return localize('com_ui_project_count_single');
+  }
+  return localize('com_ui_project_count', { count });
 }
 
 function formatActivity(project: TChatProject) {
@@ -222,10 +232,9 @@ export default function ProjectsView() {
     [sortBy, sortOptions],
   );
 
-  const projectCountLabel =
-    projects.length === 1
-      ? localize('com_ui_project_count_single')
-      : localize('com_ui_project_count', { count: projects.length });
+  /** `projects` only holds the pages fetched so far, so while another page
+   *  exists this is a lower bound rather than the total. */
+  const projectCountLabel = getProjectCountLabel(projects.length, hasNextPage, localize);
 
   useEffect(() => {
     if (searchParams.get('new') === '1') {

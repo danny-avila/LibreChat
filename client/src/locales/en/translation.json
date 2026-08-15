@@ -1679,6 +1679,7 @@
   "com_ui_project_chat_count": "{{count}} chats",
   "com_ui_project_chat_count_single": "1 chat",
   "com_ui_project_count": "{{count}} projects",
+  "com_ui_project_count_partial": "{{count}}+ projects",
   "com_ui_project_count_single": "1 project",
   "com_ui_project_create_error": "Failed to create project",
   "com_ui_project_delete_error": "Failed to delete project",
