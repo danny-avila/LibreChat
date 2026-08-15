@@ -14,6 +14,8 @@ interface ResultCardProps {
   query: string;
   isSelected?: boolean;
   onClick?: () => void;
+  /** BKL: 다중 선택(프로젝트에 담기)용 체크박스 토글. 넘기면 카드 좌측에 체크박스 표시. */
+  onToggleSelect?: () => void;
 }
 
 const CHUNKS_PER_PAGE = 8;
@@ -205,7 +207,13 @@ const ChunkRow: React.FC<ChunkRowProps> = ({ chunk, index, total, query, docIman
   );
 };
 
-const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick }) => {
+const ResultCard: React.FC<ResultCardProps> = ({
+  hit,
+  query,
+  isSelected,
+  onClick,
+  onToggleSelect,
+}) => {
   const localize = useLocalize();
   const [page, setPage] = useState(0);
   const displayedChunkCount = hit.top_chunks.length;
@@ -268,6 +276,16 @@ const ResultCard: React.FC<ResultCardProps> = ({ hit, query, isSelected, onClick
       )}
     >
       <div className="flex items-center gap-2 px-4">
+        {onToggleSelect && (
+          <input
+            type="checkbox"
+            aria-label={`${hit.file_name || hit.doc_id} 선택`}
+            checked={Boolean(isSelected)}
+            onChange={onToggleSelect}
+            onClick={(e) => e.stopPropagation()}
+            className="h-4 w-4 shrink-0 cursor-pointer accent-text-primary"
+          />
+        )}
         <span className="inline-flex h-5 shrink-0 items-center rounded-sm border border-border-medium bg-surface-secondary px-1.5 text-[10px] font-semibold tabular-nums leading-none tracking-wide text-text-secondary">
           {fileExtensionLabel(hit.file_name)}
         </span>

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilState } from 'recoil';
-import { X } from 'lucide-react';
+import { FolderPlus, X } from 'lucide-react';
 import { Button } from '@librechat/client';
 import store from '~/store';
 import { cn, FileTypeIcon } from '~/utils';
+import AddToProjectPopover from '~/components/Projects/AddToProjectPopover';
 import { SourceExternalLink, SourceDisabledLink, SourcePopupLink } from './SourceLinkButtons';
 import MarkdownLite from './MarkdownLite';
 import type { BklSource } from './ChunkModal';
@@ -359,6 +360,7 @@ export default function BklSourcesPanel() {
         </div>
         <div className="flex items-center gap-1">
           <ExternalSystemButtons source={current} />
+          <AddToProjectButton source={current} />
           <Button size="icon" variant="ghost" onClick={onClose} aria-label="닫기">
             <X size={16} aria-hidden="true" />
           </Button>
@@ -382,6 +384,61 @@ export default function BklSourcesPanel() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * BKL: 현재 열린 출처 문서를 프로젝트에 담는 버튼. doc_id 가 없는 소스
+ * (업로드 파일 등 인덱스 밖 문서)는 담을 수 없으므로 비활성 처리한다.
+ * collection 은 채팅 입력의 컬렉션 선택과 같은 localStorage 키를 따른다.
+ */
+function AddToProjectButton({ source }: { source: BklSource | null }) {
+  const docId = sourceDocId(source);
+  const meta = source?.metadata?.[0] as Record<string, unknown> | undefined;
+
+  if (!docId) {
+    return (
+      <button
+        type="button"
+        disabled
+        title="이 출처는 프로젝트에 담을 수 없습니다"
+        aria-label="프로젝트에 담기"
+        className="inline-flex h-8 cursor-not-allowed items-center gap-1 rounded-md px-2 text-xs text-text-tertiary opacity-70"
+      >
+        <FolderPlus size={14} aria-hidden="true" />
+        <span>담기</span>
+      </button>
+    );
+  }
+
+  const rawName = typeof meta?.name === 'string' ? extractFileName(meta.name) : null;
+  const fileName =
+    rawName ?? (typeof meta?.file_name === 'string' ? (meta.file_name as string) : null);
+  const matterUid = typeof meta?.matter_uid === 'string' ? (meta.matter_uid as string) : null;
+  const collection = localStorage.getItem('bkl_selected_collection');
+
+  return (
+    <AddToProjectPopover
+      documents={[
+        {
+          doc_id: docId,
+          collection,
+          file_name: fileName,
+          matter_uid: matterUid,
+          origin: 'chat',
+        },
+      ]}
+    >
+      <button
+        type="button"
+        title="프로젝트에 담기"
+        aria-label="프로젝트에 담기"
+        className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-medium"
+      >
+        <FolderPlus size={14} aria-hidden="true" />
+        <span>담기</span>
+      </button>
+    </AddToProjectPopover>
   );
 }
 

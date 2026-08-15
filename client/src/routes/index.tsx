@@ -11,6 +11,7 @@ import {
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import DocumentSearch from '~/components/DocumentSearch/DocumentSearch';
+import ProjectsPage from '~/components/Projects/ProjectsPage';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import RouteErrorBoundary from './RouteErrorBoundary';
@@ -131,6 +132,10 @@ export const router = createBrowserRouter(
             {
               path: 'documents',
               element: <DocumentSearch />,
+            },
+            {
+              path: 'projects',
+              element: <ProjectsPage />,
             },
           ],
         },

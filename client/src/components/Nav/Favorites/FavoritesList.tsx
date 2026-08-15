@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useMemo, useEffect, useState } from 'react';
-import { LayoutGrid, FileSearch, FileText, MessageSquarePlus } from 'lucide-react';
+import { LayoutGrid, FileSearch, FileText, FolderOpen, MessageSquarePlus } from 'lucide-react';
 import { useDrag, useDrop } from 'react-dnd';
 import { Skeleton } from '@librechat/client';
 import { useNavigate } from 'react-router-dom';
@@ -167,6 +167,14 @@ export default function FavoritesList({
   const handleMyFiles = useCallback(() => {
     setIsFilesOpen(true);
   }, []);
+
+  // BKL: "프로젝트" row — 채팅 출처·문서 검색에서 담은 문서 묶음(Vault류).
+  const handleProjects = useCallback(() => {
+    navigate('/projects');
+    if (isSmallScreen && toggleNav) {
+      toggleNav();
+    }
+  }, [navigate, isSmallScreen, toggleNav]);
 
   // BKL: 좌측 패널 상단의 "새 채팅" row. 원래 NewChat.tsx 의 아이콘 버튼이었던 것을
   // 문서 검색 row 와 같은 층위로 옮겼다.
@@ -427,6 +435,28 @@ export default function FavoritesList({
               </div>
             </div>
             {isFilesOpen && <MyFilesModal open={isFilesOpen} onOpenChange={setIsFilesOpen} />}
+            {/* BKL: 프로젝트 row — 내 파일 아래, 같은 층위·같은 스타일 */}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label={localize('com_nav_projects')}
+              className="group relative flex w-full cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-text-primary outline-none hover:bg-surface-active-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+              onClick={handleProjects}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleProjects();
+                }
+              }}
+              data-testid="nav-projects-button"
+            >
+              <div className="flex flex-1 items-center truncate pr-6">
+                <div className="mr-2 h-5 w-5">
+                  <FolderOpen className="h-5 w-5 text-text-primary" />
+                </div>
+                <span className="truncate">{localize('com_nav_projects')}</span>
+              </div>
+            </div>
             {safeFavorites.map((fav, index) => {
               if (fav.agentId) {
                 const agent = combinedAgentsMap?.[fav.agentId];
