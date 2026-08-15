@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import useTimeTick from '~/hooks/useTimeTick';
 import { cn, getMessageTimestamp } from '~/utils';
+import useTimeTick from '~/hooks/useTimeTick';
 
 type Timestamp = NonNullable<ReturnType<typeof getMessageTimestamp>>;
 
