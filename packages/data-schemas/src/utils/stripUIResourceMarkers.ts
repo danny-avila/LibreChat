@@ -9,7 +9,9 @@ import { directiveFromMarkdown } from 'mdast-util-directive';
 import { Constants, ContentTypes } from 'librechat-data-provider';
 
 const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
-const MARKDOWN_ESCAPE_OR_REFERENCE = /\\(.)|&(#(?:\d{1,7}|x[\da-f]{1,6})|[\da-z]{1,31});/gi;
+const CITATION_CLEANUP = /\\ue20[0-46]|[\ue200-\ue204\ue206]/g;
+const TEXT_SOURCE_TRANSFORM =
+  /(\\ue20[0-46]|[\ue200-\ue204\ue206])|\\(.)|&(#(?:\d{1,7}|[xX][\dA-Fa-f]{1,6})|[\dA-Za-z]{1,31});/g;
 
 type MarkdownNode = {
   type: string;
@@ -29,7 +31,7 @@ function decodeTextWithSourceSpans(source: string) {
   let value = '';
   const segments: SourceSegment[] = [];
   let cursor = 0;
-  MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex = 0;
+  TEXT_SOURCE_TRANSFORM.lastIndex = 0;
 
   const appendLiteral = (start: number, end: number) => {
     if (start === end) {
@@ -53,23 +55,25 @@ function decodeTextWithSourceSpans(source: string) {
   };
 
   let match: RegExpExecArray | null;
-  while ((match = MARKDOWN_ESCAPE_OR_REFERENCE.exec(source)) != null) {
+  while ((match = TEXT_SOURCE_TRANSFORM.exec(source)) != null) {
     appendLiteral(cursor, match.index);
-    const decoded = decodeString(match[0]);
-    if (decoded === match[0]) {
-      appendLiteral(match.index, MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex);
-    } else {
-      const decodedStart = value.length;
-      value += decoded;
-      segments.push({
-        decodedStart,
-        decodedEnd: value.length,
-        sourceStart: match.index,
-        sourceEnd: MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex,
-        literal: false,
-      });
+    if (match[1] == null) {
+      const decoded = decodeString(match[0]);
+      if (decoded === match[0]) {
+        appendLiteral(match.index, TEXT_SOURCE_TRANSFORM.lastIndex);
+      } else {
+        const decodedStart = value.length;
+        value += decoded;
+        segments.push({
+          decodedStart,
+          decodedEnd: value.length,
+          sourceStart: match.index,
+          sourceEnd: TEXT_SOURCE_TRANSFORM.lastIndex,
+          literal: false,
+        });
+      }
     }
-    cursor = MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex;
+    cursor = TEXT_SOURCE_TRANSFORM.lastIndex;
   }
   appendLiteral(cursor, source.length);
   return { value, segments };
@@ -151,7 +155,7 @@ export function stripUIResourceMarkers(text: string | undefined): string | undef
   if (text == null || (!text.includes('\\') && !text.includes('&'))) {
     return text;
   }
-  if (!decodeString(text).includes('\\ui{')) {
+  if (!decodeString(text).replace(CITATION_CLEANUP, '').includes('\\ui{')) {
     return text;
   }
 

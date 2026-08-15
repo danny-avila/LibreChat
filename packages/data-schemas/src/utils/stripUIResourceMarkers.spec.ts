@@ -45,6 +45,11 @@ describe('stripUIResourceMarkers', () => {
     expect(stripUIResourceMarkers(markdown)).toBe(['Encoded ', 'Encoded ', 'Escaped '].join('\n'));
   });
 
+  it('removes markers formed by citation cleanup before MCP marker rendering', () => {
+    const markdown = ['Actual \\u\ue206i{actual}', 'Literal \\u\\ue206i{literal}'].join('\n');
+    expect(stripUIResourceMarkers(markdown)).toBe(['Actual ', 'Literal '].join('\n'));
+  });
+
   it('handles paragraph continuations and container code according to CommonMark', () => {
     const markdown = [
       'intro',
