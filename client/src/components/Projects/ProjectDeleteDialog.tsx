@@ -1,3 +1,4 @@
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Button,
   Spinner,
@@ -9,10 +10,9 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
-import { useNavigate, useLocation } from 'react-router-dom';
 import { useDeleteProjectMutation } from '~/data-provider';
-import { useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
+import { useLocalize } from '~/hooks';
 
 type ProjectDeleteDialogProps = {
   open: boolean;
