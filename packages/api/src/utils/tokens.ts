@@ -565,10 +565,14 @@ export const maxOutputTokensMap: Record<string, Record<string, number>> = {
   [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
 };
 
-function findLongestKey(
-  lowerModelName: string,
-  tokensMap: Record<string, number> | EndpointTokenConfig,
-): string | null {
+/**
+ * Any model-keyed map. Matching reads keys only and never inspects a value, so
+ * the value type is deliberately open rather than a union that every caller has
+ * to cast into.
+ */
+type ModelKeyedMap = Readonly<Record<string, unknown>>;
+
+function findLongestKey(lowerModelName: string, tokensMap: ModelKeyedMap): string | null {
   const keys = Object.keys(tokensMap);
   let bestMatch: string | null = null;
   let bestLength = 0;
@@ -598,10 +602,7 @@ function findLongestKey(
  * is kept. `EndpointTokenConfig` is an arbitrary record, and one built from
  * OpenRouter is keyed by `org/model`, so those must still beat a bare `model`.
  */
-export function findMatchingPattern(
-  modelName: string,
-  tokensMap: Record<string, number> | EndpointTokenConfig,
-): string | null {
+export function findMatchingPattern(modelName: string, tokensMap: ModelKeyedMap): string | null {
   const lowerModelName = modelName.toLowerCase();
   const slashIndex = lowerModelName.lastIndexOf('/');
   if (slashIndex === -1) {

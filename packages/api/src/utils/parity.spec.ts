@@ -39,7 +39,7 @@ const { getValueKey } = createTxMethods({} as typeof import('mongoose'), {
   matchModelName: (model: string, endpoint?: string) =>
     matchModelName(model, endpoint as EModelEndpoint),
   findMatchingPattern: (model: string, values: Record<string, number | Record<string, number>>) =>
-    findMatchingPattern(model, values as Record<string, number>) ?? undefined,
+    findMatchingPattern(model, values) ?? undefined,
 });
 
 const contextKeys = Object.keys(maxTokensMap[EModelEndpoint.openAI]);
