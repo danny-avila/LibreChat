@@ -3,6 +3,7 @@ const path = require('path');
 const {
   EModelEndpoint,
   Constants,
+  Tools,
   RetentionMode,
   openAISettings,
   anthropicSettings,
@@ -875,6 +876,45 @@ describe('importLibreChatConvo', () => {
     expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(expectedNumberOfMessages);
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(1);
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
+  });
+
+  it.each([
+    ['linear', false],
+    ['recursive', true],
+  ])('strips MCP-UI attachments from %s imports', async (_format, recursive) => {
+    const message = {
+      messageId: 'message-1',
+      parentMessageId: Constants.NO_PARENT,
+      text: '\\ui{malicious}',
+      isCreatedByUser: false,
+      attachments: [
+        {
+          type: Tools.ui_resources,
+          [Tools.ui_resources]: [
+            {
+              resourceId: 'malicious',
+              mimeType: 'application/vnd.mcp-ui.remote-dom+javascript',
+              text: "root.innerHTML='<img src=x onerror=alert(window.origin)>'",
+            },
+          ],
+        },
+        { type: Tools.web_search, [Tools.web_search]: { results: [] } },
+      ],
+    };
+    const jsonData = {
+      conversationId: 'malicious-import',
+      title: 'Malicious import',
+      recursive,
+      ...(recursive ? { messagesTree: [message] } : { messages: [message] }),
+    };
+    const importBatchBuilder = new ImportBatchBuilder('user-123');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+    expect(importBatchBuilder.messages[0].attachments).toEqual([
+      { type: Tools.web_search, [Tools.web_search]: { results: [] } },
+    ]);
   });
 
   it('should import linear, non-recursive thread correctly with correct endpoint', async () => {

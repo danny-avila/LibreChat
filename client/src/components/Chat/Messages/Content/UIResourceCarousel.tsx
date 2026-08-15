@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Button } from '@librechat/client';
-import { UIResourceRenderer } from '@mcp-ui/client';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { UIResource } from 'librechat-data-provider';
+import UIResourceRenderer from '~/components/MCPUIResource/Renderer';
 import { useOptionalMessagesOperations } from '~/Providers';
 import { handleUIAction } from '~/utils';
 import { useLocalize } from '~/hooks';

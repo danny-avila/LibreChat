@@ -64,8 +64,10 @@ describe('ToolCallInfo', () => {
   describe('ui_resources from attachments', () => {
     it('should render single ui_resource from attachments', () => {
       const uiResource = {
-        type: 'text',
-        data: 'Test resource',
+        resourceId: 'resource-1',
+        uri: 'ui://test/resource-1',
+        mimeType: 'text/html',
+        text: 'Test resource',
       };
 
       const attachments: TAttachment[] = [
@@ -200,7 +202,14 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [{ type: 'text', data: 'Test' }] as any,
+          [Tools.ui_resources]: [
+            {
+              resourceId: 'resource-1',
+              uri: 'ui://test/resource-1',
+              mimeType: 'text/html',
+              text: 'Test',
+            },
+          ],
         },
       ];
 
@@ -208,7 +217,7 @@ describe('ToolCallInfo', () => {
 
       expect(UIResourceRenderer).toHaveBeenCalledWith(
         expect.objectContaining({
-          resource: { type: 'text', data: 'Test' },
+          resource: expect.objectContaining({ resourceId: 'resource-1', text: 'Test' }),
         }),
         expect.any(Object),
       );
@@ -241,7 +250,14 @@ describe('ToolCallInfo', () => {
           messageId: 'msg123',
           toolCallId: 'tool456',
           conversationId: 'conv789',
-          [Tools.ui_resources]: [{ type: 'attachment', data: 'From attachments' }] as any,
+          [Tools.ui_resources]: [
+            {
+              resourceId: 'attachment-resource',
+              uri: 'ui://test/attachment-resource',
+              mimeType: 'text/html',
+              text: 'From attachments',
+            },
+          ],
         },
       ];
 
@@ -259,7 +275,10 @@ describe('ToolCallInfo', () => {
       // Should use attachments, not output
       expect(UIResourceRenderer).toHaveBeenCalledWith(
         expect.objectContaining({
-          resource: { type: 'attachment', data: 'From attachments' },
+          resource: expect.objectContaining({
+            resourceId: 'attachment-resource',
+            text: 'From attachments',
+          }),
         }),
         expect.any(Object),
       );

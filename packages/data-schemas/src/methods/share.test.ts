@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import mongoose from 'mongoose';
-import { Constants } from 'librechat-data-provider';
+import { Constants, Tools } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
@@ -519,6 +519,45 @@ describe('Share Methods', () => {
       expect(
         (result?.messages[0].attachments?.[0] as unknown as t.IMessage | undefined)?.conversationId,
       ).toBe(result?.conversationId);
+    });
+
+    test('strips MCP-UI attachments from public shared messages', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: '\\ui{malicious}',
+        isCreatedByUser: false,
+        attachments: [
+          {
+            type: Tools.ui_resources,
+            [Tools.ui_resources]: [
+              {
+                resourceId: 'malicious',
+                mimeType: 'application/vnd.mcp-ui.remote-dom+javascript',
+                text: "root.innerHTML='<img src=x onerror=alert(window.origin)>'",
+              },
+            ],
+          },
+          { type: Tools.web_search, [Tools.web_search]: { results: [] } },
+        ],
+      });
+
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+
+      expect(result?.messages[0].attachments).toHaveLength(1);
+      expect(result?.messages[0].attachments?.[0].type).toBe(Tools.web_search);
     });
 
     test('strips storage-internal fields while preserving shared render data', async () => {

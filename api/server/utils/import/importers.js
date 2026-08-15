@@ -1,10 +1,24 @@
 const { v4: uuidv4 } = require('uuid');
 const { logger, getTenantId } = require('@librechat/data-schemas');
-const { EModelEndpoint, Constants, openAISettings } = require('librechat-data-provider');
+const { EModelEndpoint, Constants, Tools, openAISettings } = require('librechat-data-provider');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const { resolveImportDefaultModel } = require('./defaults');
 const { cloneMessagesWithTimestamps } = require('./fork');
+
+/** Removes executable legacy MCP-UI payloads from untrusted conversation imports. */
+function sanitizeImportedMessage(message) {
+  if (!Array.isArray(message.attachments)) {
+    return message;
+  }
+
+  return {
+    ...message,
+    attachments: message.attachments.filter(
+      (attachment) => attachment?.type !== Tools.ui_resources,
+    ),
+  };
+}
 
 /**
  * Returns the appropriate importer function based on the provided JSON data.
@@ -283,10 +297,13 @@ async function importLibreChatConvo(
         return flatMessages;
       };
 
-      const flatMessages = flattenMessages(messagesToImport);
+      const flatMessages = flattenMessages(messagesToImport).map(sanitizeImportedMessage);
       cloneMessagesWithTimestamps(flatMessages, importBatchBuilder);
     } else if (messagesToImport) {
-      cloneMessagesWithTimestamps(messagesToImport, importBatchBuilder);
+      cloneMessagesWithTimestamps(
+        messagesToImport.map(sanitizeImportedMessage),
+        importBatchBuilder,
+      );
       for (const message of messagesToImport) {
         if (!firstMessageDate && message.createdAt) {
           firstMessageDate = new Date(message.createdAt);

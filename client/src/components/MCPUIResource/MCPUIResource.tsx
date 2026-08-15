@@ -1,9 +1,9 @@
 import React from 'react';
-import { UIResourceRenderer } from '@mcp-ui/client';
 import { useOptionalMessagesConversation, useOptionalMessagesOperations } from '~/Providers';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
 import { handleUIAction } from '~/utils';
 import { useLocalize } from '~/hooks';
+import UIResourceRenderer from './Renderer';
 
 interface MCPUIResourceProps {
   node: {
@@ -42,7 +42,6 @@ export function MCPUIResource(props: MCPUIResourceProps) {
           onUIAction={async (result) => handleUIAction(result, ask)}
           htmlProps={{
             autoResizeIframe: { width: true, height: true },
-            sandboxPermissions: 'allow-popups',
           }}
         />
       </span>

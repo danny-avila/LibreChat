@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { Types } from 'mongoose';
-import { Constants, ContentTypes, FileSources } from 'librechat-data-provider';
+import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
@@ -116,6 +116,13 @@ function sanitizeSharedFiles(files: unknown): t.SharedFile[] | undefined {
     .filter((file): file is t.SharedFile => file != null);
 
   return sanitized.length > 0 ? sanitized : undefined;
+}
+
+function sanitizeSharedAttachments(attachments: unknown): t.SharedFile[] | undefined {
+  const sanitized = sanitizeSharedFiles(attachments)?.filter(
+    (attachment) => attachment.type !== Tools.ui_resources,
+  );
+  return sanitized && sanitized.length > 0 ? sanitized : undefined;
 }
 
 /**
@@ -456,7 +463,7 @@ function anonymizeMessages(
     // When files are not shared for this link, omit files/attachments entirely so
     // viewers can't load them through the owner's original (e.g. static) paths.
     const attachments = includeFiles
-      ? sanitizeSharedFiles(message.attachments)?.map((attachment) =>
+      ? sanitizeSharedAttachments(message.attachments)?.map((attachment) =>
           applyShareFileRoute(
             {
               ...attachment,
