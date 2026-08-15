@@ -176,7 +176,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
       </button>
     );
 
-    return iconOnly ? <TooltipAnchor description={label} render={button} /> : button;
+    return <TooltipAnchor description={label} render={button} />;
   },
 );
 
