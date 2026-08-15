@@ -1,4 +1,5 @@
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 type HeaderLabelProps = {
   label: string;
@@ -15,12 +16,17 @@ export function getHeaderModelName(
   ...candidates: Array<string | null | undefined>
 ): string | undefined {
   return candidates.find(
-    (value) =>
+    (value): value is string =>
       value != null &&
       value !== '' &&
       !DOCUMENT_ID_PREFIXES.some((prefix) => value.startsWith(prefix)),
   );
 }
+
+/** Both names occupy one grid cell so the slot is sized by the longer of the
+ *  two and neither reflows the header as they cross over. */
+const labelSlot =
+  '[grid-area:1/1] truncate transition-[opacity,transform,filter] [transition-duration:var(--resize-dur)] [transition-timing-function:var(--resize-ease)] motion-reduce:transition-none motion-reduce:transform-none motion-reduce:blur-none';
 
 /** Provider name that crossfades to the model name on hover. The crossfade is
  *  pointer-only, so the model is also carried in text that never hides rather
@@ -33,9 +39,23 @@ export default function HeaderLabel({ label, hoverLabel }: HeaderLabelProps) {
   }
 
   return (
-    <span className="header-label min-w-0">
-      <span data-label="provider">{label}</span>
-      <span data-label="model" aria-hidden="true">
+    <span className="group/label inline-grid min-w-0 max-w-full">
+      <span
+        className={cn(
+          labelSlot,
+          'group-hover/label:-translate-y-1 group-hover/label:opacity-0 group-hover/label:blur-[2px]',
+        )}
+      >
+        {label}
+      </span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          labelSlot,
+          'translate-y-1 opacity-0 blur-[2px]',
+          'group-hover/label:translate-y-0 group-hover/label:opacity-100 group-hover/label:blur-0',
+        )}
+      >
         {hoverLabel}
       </span>
       <span className="sr-only">{localize('com_ui_message_model', { 0: hoverLabel })}</span>
