@@ -9,7 +9,18 @@ import store from '~/store';
 export const CLOSE_SIDEBAR_ID = 'close-sidebar-button';
 export const OPEN_SIDEBAR_ID = 'open-sidebar-button';
 
-export default function OpenSidebar({ className }: { className?: string }) {
+/**
+ * `testId` exists because the sidebar rail publishes `open-sidebar-button` for its own
+ * collapsed toggle. Any caller that can stay mounted alongside the rail must claim a
+ * distinct id, or `getByTestId` resolves to two elements.
+ */
+export default function OpenSidebar({
+  className,
+  testId = OPEN_SIDEBAR_ID,
+}: {
+  className?: string;
+  testId?: string;
+}) {
   const localize = useLocalize();
   const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
   const tooltipDescription = useShortcutHint('toggleSidebar', localize('com_nav_open_sidebar'));
@@ -32,7 +43,7 @@ export default function OpenSidebar({ className }: { className?: string }) {
           id={OPEN_SIDEBAR_ID}
           size="icon"
           variant="outline"
-          data-testid="open-sidebar-button"
+          data-testid={testId}
           aria-label={localize('com_nav_open_sidebar')}
           aria-expanded={false}
           aria-controls="chat-history-nav"

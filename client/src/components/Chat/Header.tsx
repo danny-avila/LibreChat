@@ -50,7 +50,7 @@ function Header() {
   return (
     <div className="absolute top-0 z-10 flex h-[52px] w-full items-center gap-2 bg-gradient-to-b from-presentation via-presentation/70 to-transparent p-2 font-semibold text-text-primary md:from-presentation/80 md:via-presentation/50 2xl:from-presentation/0 2xl:via-transparent">
       <div className="flex flex-shrink-0 items-center md:hidden">
-        <OpenSidebar />
+        <OpenSidebar testId="header-open-sidebar-button" />
       </div>
 
       <div
