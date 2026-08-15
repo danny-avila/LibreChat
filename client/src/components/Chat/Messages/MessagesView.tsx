@@ -4,7 +4,7 @@ import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
-import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
+import { useScreenshot, useMessageScrolling, useScrollbarGutter, useLocalize } from '~/hooks';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { steerOverlayHeightFamily } from '~/store/steer';
 import { MessagesViewProvider } from '~/Providers';
@@ -109,6 +109,8 @@ function MessagesViewContent({
     debouncedHandleScroll,
     handleNearBottomChange,
   } = useMessageScrolling(_messagesTree);
+
+  useScrollbarGutter(scrollableRef);
 
   const { conversationId } = conversation ?? {};
 

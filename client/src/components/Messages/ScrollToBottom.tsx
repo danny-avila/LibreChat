@@ -18,7 +18,9 @@ type Props = {
    * and stays inert so it never swallows clicks meant for the thread, which
    * leaves the button to opt back in; gate that opt-in, because a descendant
    * that opts in is hit-testable even while its parent fades, so a fading or
-   * not-yet-visible button would still take the click.
+   * not-yet-visible button would still take the click. Pointers are only half
+   * of it: until this is true the control is also disabled, since an enabled
+   * button stays in the tab order and answers Enter however it paints.
    */
   interactive?: boolean;
 };
@@ -45,9 +47,13 @@ const ScrollToBottom = forwardRef<HTMLDivElement, Props>(
             variant="outline"
             size="icon"
             onClick={scrollHandler}
+            disabled={!interactive}
             aria-label={localize('com_ui_scroll_to_bottom')}
             className={cn(
               'rounded-full bg-surface-chat/90 text-text-primary active:scale-[0.96] motion-reduce:active:scale-100',
+              /* The wrapper owns the fade, so being briefly unreachable must not
+                 dim the control on its way in on top of it. */
+              'disabled:opacity-100',
               interactive ? 'pointer-events-auto' : 'pointer-events-none',
             )}
           >
