@@ -99,6 +99,33 @@ async function doubleClickWord(page: Page, needle: string) {
 }
 
 /**
+ * Wait for the reply to stop re-rendering before selecting text inside it.
+ *
+ * Distinct from the settle window `QuoteButton` applies to a *selection*: this
+ * is the reply itself still streaming. A markdown re-render swaps out the text
+ * node the selection points at, which collapses it — so a double-click landing
+ * mid-stream loses its selection before the popup can be clicked, and every
+ * `toPass` retry loses the same race rather than recovering from it.
+ *
+ * `sendMessage` resolves on the stream *response*, not on the final render, so
+ * the wait has to be explicit.
+ */
+async function waitForReplyToSettle(page: Page, needle: string) {
+  const readReply = () =>
+    page.evaluate((text) => {
+      const renders = Array.from(document.querySelectorAll('.message-render'));
+      const host = [...renders].reverse().find((el) => (el.textContent ?? '').includes(text));
+      return host?.textContent ?? '';
+    }, needle);
+
+  await expect(async () => {
+    const before = await readReply();
+    await page.waitForTimeout(250);
+    expect(await readReply()).toBe(before);
+  }).toPass({ timeout: 20000 });
+}
+
+/**
  * Triple-click the block containing `needle` with native mouse events, which
  * makes Chromium select that whole block and park the selection's far boundary
  * at the start of the *next* one. For a message's closing block that boundary
@@ -311,6 +338,7 @@ test.describe('quote references', () => {
     const response = await sendMessage(page, 'seed for dblclick');
     expect(response.ok()).toBeTruthy();
     await expect(mockReply(page)).toBeVisible({ timeout: 20000 });
+    await waitForReplyToSettle(page, MOCK_REPLY_TEXT);
 
     // A real double-click selects the word under the cursor. Chromium commits
     // that selection on `dblclick`, AFTER `mouseup` fires, so only a `dblclick`
