@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { TMessage, SearchResultData } from 'librechat-data-provider';
 import { useLocalize, useCopyToClipboard, hasCopyableText } from '~/hooks';
@@ -16,7 +16,10 @@ export default function MinimalHoverButtons({ message, searchResults }: THoverBu
     content: message.content,
     searchResults,
   });
-  const canCopy = hasCopyableText({ text: message.text, content: message.content });
+  const canCopy = useMemo(
+    () => hasCopyableText({ text: message.text, content: message.content, searchResults }),
+    [message.text, message.content, searchResults],
+  );
 
   return (
     <div className="visible mt-1 flex justify-center gap-1 self-end text-text-tertiary lg:justify-start">

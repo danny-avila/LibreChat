@@ -3,7 +3,7 @@ import throttle from 'lodash/throttle';
 import { isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import type { TMessageProps } from '~/common';
 import { useMessagesViewContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
-import useCopyToClipboard from './useCopyToClipboard';
+import useCopyToClipboard, { hasCopyableText } from './useCopyToClipboard';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { logger } from '~/utils';
 
@@ -83,12 +83,15 @@ export default function useMessageHelpers(props: TMessageProps) {
 
   const copyToClipboard = useCopyToClipboard({ text, content });
 
+  const canCopy = useMemo(() => hasCopyableText({ text, content }), [text, content]);
+
   return {
     ask,
     edit,
     agent,
     index,
     isLast,
+    canCopy,
     assistant,
     enterEdit,
     conversation,

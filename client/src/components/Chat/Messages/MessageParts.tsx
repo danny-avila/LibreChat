@@ -40,6 +40,7 @@ function MessageParts(props: TMessageProps) {
     latestMessageId,
     handleContinue,
     copyToClipboard,
+    canCopy,
     regenerateMessage,
   } = useMessageHelpers(props);
 
@@ -142,6 +143,7 @@ function MessageParts(props: TMessageProps) {
                 conversation={conversation ?? null}
                 regenerate={() => regenerateMessage()}
                 copyToClipboard={copyToClipboard}
+                canCopy={canCopy}
                 handleContinue={handleContinue}
                 latestMessageId={latestMessageId}
                 isLast={isLast}

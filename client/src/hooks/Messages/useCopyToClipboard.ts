@@ -27,6 +27,10 @@ const refTypeMap: Record<string, string> = {
   video: 'videos',
 };
 
+type ClipboardSource = Partial<Pick<TMessage, 'text' | 'content'>> & {
+  searchResults?: { [key: string]: SearchResultData };
+};
+
 function getPartText(part: TMessageContentParts): string {
   if (part?.type !== ContentTypes.TEXT) {
     return '';
@@ -54,30 +58,7 @@ export function serializeMessageForClipboard({
   return parts.join('\n');
 }
 
-export function hasCopyableText({
-  text,
-  content,
-}: Partial<Pick<TMessage, 'text' | 'content'>>): boolean {
-  if (!Array.isArray(content) || content.length === 0) {
-    return (text ?? '').trim().length > 0;
-  }
-
-  for (const part of content) {
-    if (getPartText(part).trim().length > 0) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function buildClipboardText({
-  text,
-  content,
-  searchResults,
-}: Partial<Pick<TMessage, 'text' | 'content'>> & {
-  searchResults?: { [key: string]: SearchResultData };
-}): string {
+function buildClipboardText({ text, content, searchResults }: ClipboardSource): string {
   const messageText = serializeMessageForClipboard({ text, content });
 
   if (!searchResults || Object.keys(searchResults).length === 0) {
@@ -100,13 +81,11 @@ function buildClipboardText({
   return `${citationManager.formattedText}\n\nCitations:\n${citationList}`;
 }
 
-export default function useCopyToClipboard({
-  text,
-  content,
-  searchResults,
-}: Partial<Pick<TMessage, 'text' | 'content'>> & {
-  searchResults?: { [key: string]: SearchResultData };
-}) {
+export function hasCopyableText(source: ClipboardSource): boolean {
+  return buildClipboardText(source).trim().length > 0;
+}
+
+export default function useCopyToClipboard({ text, content, searchResults }: ClipboardSource) {
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {

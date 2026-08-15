@@ -227,6 +227,31 @@ describe('useCopyToClipboard', () => {
       expect(hasCopyableText({ text: '  ' })).toBe(false);
       expect(hasCopyableText({})).toBe(false);
     });
+
+    it('is false for text that survives only as citation markup', () => {
+      expect(hasCopyableText({ text: '\\ue202turn0search0' })).toBe(false);
+    });
+
+    it('is true when citation markup resolves against search results', () => {
+      const searchResults = {
+        '0': { organic: [{ link: 'https://example.com/1', title: 'Source 1' }] },
+      };
+
+      expect(hasCopyableText({ text: '\\ue202turn0search0', searchResults })).toBe(true);
+    });
+
+    it('agrees with the copy the hook would perform', () => {
+      const source = { text: '\\ue202turn0search0' };
+      const { result } = renderHook(() => useCopyToClipboard(source));
+
+      let copied: boolean | undefined;
+      act(() => {
+        copied = result.current(mockSetIsCopied);
+      });
+
+      expect(copied).toBe(hasCopyableText(source));
+      expect(copied).toBe(false);
+    });
   });
 
   describe('Citation formatting', () => {

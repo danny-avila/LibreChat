@@ -13,7 +13,7 @@ import {
 import type { TMessageProps } from '~/common';
 import type { TMessageChatContext } from '~/common/types';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
-import useCopyToClipboard from './useCopyToClipboard';
+import useCopyToClipboard, { hasCopyableText } from './useCopyToClipboard';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
@@ -123,6 +123,11 @@ export default function useMessageActions(props: TMessageActions) {
 
   const copyToClipboard = useCopyToClipboard({ text, content, searchResults });
 
+  const canCopy = useMemo(
+    () => hasCopyableText({ text, content, searchResults }),
+    [text, content, searchResults],
+  );
+
   const messageLabel = useMemo(() => {
     if (message?.isCreatedByUser === true) {
       return UsernameDisplay ? (user?.name ?? '') || user?.username : localize('com_user_message');
@@ -172,6 +177,7 @@ export default function useMessageActions(props: TMessageActions) {
     edit,
     index,
     agent,
+    canCopy,
     feedback,
     assistant,
     enterEdit,

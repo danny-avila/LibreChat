@@ -10,7 +10,7 @@ import {
   RegenerateIcon,
 } from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
-import { useGenerationsByLatest, useLocalize, hasCopyableText } from '~/hooks';
+import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
@@ -22,6 +22,7 @@ type THoverButtons = {
   isEditing: boolean;
   enterEdit: (cancel?: boolean) => void;
   copyToClipboard: (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => void;
+  canCopy: boolean;
   conversation: TConversation | null;
   isSubmitting: boolean;
   message: TMessage;
@@ -121,6 +122,7 @@ const HoverButtons = ({
   isEditing,
   enterEdit,
   copyToClipboard,
+  canCopy,
   conversation,
   isSubmitting,
   message,
@@ -140,11 +142,6 @@ const HoverButtons = ({
     }
     return conversation.endpointType ?? conversation.endpoint;
   }, [conversation]);
-
-  const canCopy = useMemo(
-    () => hasCopyableText({ text: message.text, content: message.content }),
-    [message.text, message.content],
-  );
 
   const generationCapabilities = useGenerationsByLatest({
     isEditing,

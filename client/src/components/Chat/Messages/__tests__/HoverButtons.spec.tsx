@@ -10,6 +10,7 @@ import {
   type TMessage,
 } from 'librechat-data-provider';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
+import { hasCopyableText } from '~/hooks/Messages/useCopyToClipboard';
 import store from '~/store';
 
 const conversation = {
@@ -58,6 +59,7 @@ function renderHoverButtons({
             regenerate={jest.fn()}
             handleContinue={jest.fn()}
             copyToClipboard={jest.fn()}
+            canCopy={hasCopyableText({ text: message.text, content: message.content })}
             latestMessageId={latestMessageId}
           />
         </MemoryRouter>
