@@ -5,6 +5,10 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
+jest.mock('~/hooks/useKeyboardShortcuts', () => ({
+  useShortcutAriaKey: () => 'Meta+Shift+S',
+}));
+
 jest.mock('@librechat/client', () => ({
   Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
     <button {...props}>{children}</button>
@@ -49,6 +53,16 @@ describe('mobile drawer header', () => {
 
     expect(screen.queryByTestId('close-sidebar-button')).not.toBeInTheDocument();
     expect(document.getElementById('close-sidebar-button')).toBeNull();
+  });
+
+  /** The only close control while open, so its binding must be discoverable here. */
+  it('advertises the toggle shortcut on the close control', () => {
+    render(<Header links={links} expanded={true} onClose={jest.fn()} />);
+
+    expect(screen.getByTestId('close-sidebar-button')).toHaveAttribute(
+      'aria-keyshortcuts',
+      'Meta+Shift+S',
+    );
   });
 
   it('keeps the closed drawer out of the tab order', () => {

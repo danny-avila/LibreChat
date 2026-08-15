@@ -124,9 +124,19 @@ function UnifiedSidebar() {
       return;
     }
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        handleCollapse();
+      if (e.key !== 'Escape') {
+        return;
       }
+      /**
+       * Menus opened from the drawer portal out of it, so their Escape still
+       * reaches this listener. Dismissing the whole drawer would skip the level
+       * the user meant to leave; those menus unmount when closed, so their
+       * presence is the signal to stand down.
+       */
+      if (document.querySelector('[role="menu"]') != null) {
+        return;
+      }
+      handleCollapse();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);

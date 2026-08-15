@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { Button, Skeleton } from '@librechat/client';
 import type { NavLink } from '~/common';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import { useShortcutAriaKey } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import Switcher from './Switcher';
 
@@ -23,6 +24,7 @@ function Header({
   onClose: () => void;
 }) {
   const localize = useLocalize();
+  const toggleSidebarAriaKey = useShortcutAriaKey('toggleSidebar');
 
   return (
     <div className="flex h-14 flex-shrink-0 items-center gap-2 border-b border-border-light px-2">
@@ -43,6 +45,8 @@ function Header({
         variant="ghost"
         aria-label={localize('com_nav_close_sidebar')}
         aria-expanded={expanded}
+        /** The only close control while open, so its binding must be discoverable here. */
+        aria-keyshortcuts={toggleSidebarAriaKey}
         tabIndex={expanded ? 0 : -1}
         className="size-10 flex-shrink-0 rounded-lg"
         onClick={onClose}
