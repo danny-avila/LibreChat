@@ -71,9 +71,9 @@ describe('MessageRow', () => {
     const avatar = screen.getByTestId('message-icon').parentElement;
 
     /** The accessible name resolves only when `aria-hidden` excludes the avatar. */
-    expect(screen.getByRole('heading', { name: 'Message from Assistant' })).toContainElement(
-      screen.getByTestId('message-icon'),
-    );
+    expect(
+      screen.getByRole('heading', { name: 'Message from Assistant Model: gpt-5.6' }),
+    ).toContainElement(screen.getByTestId('message-icon'));
     expect(avatar).toHaveAttribute('aria-hidden', 'true');
     expect(avatar).toHaveClass('size-6');
     expect(avatar).not.toHaveClass('md:absolute', 'md:left-0');
@@ -94,7 +94,7 @@ describe('MessageRow', () => {
   it('puts icon, name, and datetime on one bar across the message column', () => {
     renderRow({ isCreatedByUser: false });
 
-    const heading = screen.getByRole('heading', { name: 'Message from Assistant' });
+    const heading = screen.getByRole('heading', { name: 'Message from Assistant Model: gpt-5.6' });
 
     expect(heading).toHaveClass('w-full', 'gap-2');
     expect(screen.getByTestId('message-timestamp')).toHaveClass('ml-auto');
@@ -105,6 +105,16 @@ describe('MessageRow', () => {
 
     expect(screen.getByText('Assistant')).toBeVisible();
     expect(screen.getByText('gpt-5.6')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  /* The crossfade is pointer-only, so the header bar has to name the model in
+     the heading itself rather than leave it behind a hover. */
+  it('names the model in the heading for assistive technology', () => {
+    renderRow({ isCreatedByUser: false });
+
+    expect(
+      screen.getByRole('heading', { name: 'Message from Assistant Model: gpt-5.6' }),
+    ).toBeVisible();
   });
 
   it('preserves the assistant turn marker for parallel content', () => {

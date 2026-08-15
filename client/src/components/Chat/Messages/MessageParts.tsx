@@ -10,9 +10,9 @@ import {
 } from '~/utils';
 import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
+import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { revealOnRowHoverClasses, messageFooterClasses } from './styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
-import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
 import SiblingSwitch from './SiblingSwitch';
@@ -107,7 +107,12 @@ function MessageParts(props: TMessageProps) {
           id={messageId ?? ''}
           icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
           label={name}
-          hoverLabel={getHeaderModelName(agent?.model, message.model, conversation?.model)}
+          hoverLabel={getHeaderModelName(
+            agent?.model,
+            assistant?.model,
+            message.model,
+            conversation?.model,
+          )}
           timestamp={message.createdAt ?? message.clientTimestamp}
           ariaLabel={getMessageAriaLabel(message, localize)}
           headerPrefix={getHeaderPrefixForScreenReader(message, localize)}
