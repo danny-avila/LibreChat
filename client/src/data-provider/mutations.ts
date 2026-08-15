@@ -603,6 +603,9 @@ export const useDeleteConversationMutation = (
       onMutate: async () => {
         await queryClient.cancelQueries([QueryKeys.allConversations]);
         await queryClient.cancelQueries([QueryKeys.archivedConversations]);
+        /** A pinned GET already in flight would otherwise resolve after the row is
+         * stripped below and write the deleted conversation back into that cache. */
+        await queryClient.cancelQueries([QueryKeys.pinnedConversations]);
         // could store old state if needed for rollback
       },
       onError: () => {
@@ -678,6 +681,8 @@ export const useDeleteConversationMutation = (
           queryKey: [QueryKeys.archivedConversations],
           refetchPage: (_, index) => index === 0,
         });
+        /** Cancelling races is best effort, so reconcile the pinned list afterwards too. */
+        queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
         queryClient.invalidateQueries([QueryKeys.projectConversations]);
         queryClient.invalidateQueries([QueryKeys.projects]);
         queryClient.invalidateQueries([QueryKeys.conversationTags]);
