@@ -39,12 +39,12 @@ function ProjectChatOptions({ conversation, isMenuOpen, setIsMenuOpen }: Project
     return [
       {
         label: localize('com_ui_change_project'),
-        onClick: () => {
-          setIsMenuOpen(false);
-          setShowProjectDialog(true);
-        },
+        onClick: () => setShowProjectDialog(true),
         icon: <FolderInput className="size-4 text-text-secondary" aria-hidden="true" />,
-        hideOnClick: true,
+        /** Hiding the menu here restores focus to the trigger, which the dialog
+         *  mounting alongside it reads as an outside interaction and closes on.
+         *  Both dialogs receive setIsMenuOpen and close the menu themselves. */
+        hideOnClick: false,
         render: (props) => <button {...props} />,
       },
       {
@@ -81,11 +81,8 @@ function ProjectChatOptions({ conversation, isMenuOpen, setIsMenuOpen }: Project
       },
       {
         label: localize('com_ui_delete'),
-        onClick: () => {
-          setIsMenuOpen(false);
-          setShowDeleteDialog(true);
-        },
-        hideOnClick: true,
+        onClick: () => setShowDeleteDialog(true),
+        hideOnClick: false,
         render: (props) => <button {...props} />,
         icon: <Trash2 className="size-4 text-text-secondary" aria-hidden="true" />,
       },
