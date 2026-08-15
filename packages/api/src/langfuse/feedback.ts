@@ -18,6 +18,13 @@ export type SendFeedbackScoreParams = {
   metadata?: LangfuseFeedbackMetadata;
   observationId?: string;
   appConfig?: AppConfig;
+  /**
+   * Must mirror the value used when the trace was generated. `destinationIds`
+   * only restricts feedback to destinations that carry a stable id, so a caller
+   * that opts out of central export has to re-assert it here for destinations
+   * whose project identity is unknown.
+   */
+  centralTraceExportEnabled?: boolean;
 };
 
 const ENVIRONMENT = process.env.LANGFUSE_TRACING_ENVIRONMENT;
@@ -110,15 +117,16 @@ export async function sendFeedbackScore({
   metadata = {},
   observationId,
   appConfig,
+  centralTraceExportEnabled,
 }: SendFeedbackScoreParams): Promise<void> {
   if (!traceId) {
     return;
   }
 
   const destinationIdSet = destinationIds == null ? undefined : new Set(destinationIds);
-  const destinations = (await getScoreDestinations(appConfig, traceId, sampled)).filter(
-    ({ id }) => destinationIdSet == null || (id != null && destinationIdSet.has(id)),
-  );
+  const destinations = (
+    await getScoreDestinations(appConfig, traceId, sampled, { centralTraceExportEnabled })
+  ).filter(({ id }) => destinationIdSet == null || (id != null && destinationIdSet.has(id)));
   if (destinations.length === 0) {
     return;
   }

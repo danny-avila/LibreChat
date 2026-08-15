@@ -30,6 +30,16 @@ export type LangfuseScoreDestination = {
   authorization: string;
 };
 
+export type LangfuseScoreDestinationOptions = {
+  waitForCentralProjectId?: boolean;
+  /**
+   * Deployments that route traces per tenant may want a turn's spans to reach
+   * only the tenant destination. Setting this false drops the central project
+   * from resolution without disturbing tenant or connection destinations.
+   */
+  centralTraceExportEnabled?: boolean;
+};
+
 export function getLangfuseDestinationId(baseUrl: string, projectId: string): string {
   return createHash('sha256')
     .update(`${baseUrl.replace(/\/+$/, '')}\n${projectId}`)
@@ -204,7 +214,10 @@ export async function getScoreDestinations(
   appConfig: AppConfig | undefined,
   traceId: string,
   sampled?: boolean,
-  options?: { waitForCentralProjectId?: boolean },
+  {
+    waitForCentralProjectId = true,
+    centralTraceExportEnabled = true,
+  }: LangfuseScoreDestinationOptions = {},
 ): Promise<LangfuseScoreDestination[]> {
   if (
     !isLangfuseTracingEnabled() ||
@@ -215,8 +228,15 @@ export async function getScoreDestinations(
   }
 
   if (!usesLangfuseMultiTenantRouting()) {
+    /** Mirrors `resolveLangfuseExportPlan`: without fanout there is no tenant
+     *  route to fall back on, so suppressing central export disables the trace
+     *  outright. Capturing a destination here would let later feedback reach a
+     *  project the trace never went to. */
+    if (!centralTraceExportEnabled) {
+      return [];
+    }
     return hasLangfuseEnvCredentials()
-      ? [await getCentralScoreDestination(options?.waitForCentralProjectId !== false)].filter(
+      ? [await getCentralScoreDestination(waitForCentralProjectId)].filter(
           (destination): destination is LangfuseScoreDestination => Boolean(destination),
         )
       : [getConfiguredScoreDestination(appConfig)].filter(
@@ -225,7 +245,9 @@ export async function getScoreDestinations(
   }
 
   const destinations = [
-    await getCentralScoreDestination(options?.waitForCentralProjectId !== false),
+    centralTraceExportEnabled
+      ? await getCentralScoreDestination(waitForCentralProjectId)
+      : undefined,
     getTenantScoreDestination(appConfig),
   ].filter((destination): destination is LangfuseScoreDestination => Boolean(destination));
   const unique = new Map<string, LangfuseScoreDestination>();
@@ -251,11 +273,21 @@ export async function getLangfuseTraceDestinationIds(
   appConfig: AppConfig | undefined,
   traceId: string,
   sampled?: boolean,
+  {
+    centralTraceExportEnabled = true,
+  }: Pick<LangfuseScoreDestinationOptions, 'centralTraceExportEnabled'> = {},
 ): Promise<string[] | undefined> {
   const destinations = await getScoreDestinations(appConfig, traceId, sampled, {
     waitForCentralProjectId: false,
+    centralTraceExportEnabled,
   });
   if (destinations.some(({ id }) => id == null)) {
+    /** A tenant destination's `projectId` is optional, so an eligible project can
+     *  have no stable id to record. `undefined` defers to whatever policy the
+     *  feedback path resolves — an empty list would instead reject every
+     *  destination, silently dropping feedback the tenant should receive.
+     *  `sendFeedbackScore` must be given the same `centralTraceExportEnabled`
+     *  for that deferral to honor a central opt-out. */
     return undefined;
   }
   return destinations.map(({ id }) => id as string);
@@ -264,6 +296,9 @@ export async function getLangfuseTraceDestinationIds(
 export async function getLangfuseTraceMessageFields(
   appConfig: AppConfig | undefined,
   messageId: string,
+  {
+    centralTraceExportEnabled = true,
+  }: Pick<LangfuseScoreDestinationOptions, 'centralTraceExportEnabled'> = {},
 ): Promise<{ langfuseSampled: boolean; langfuseDestinationIds?: string[] }> {
   const traceId = traceIdForMessage(messageId);
   const langfuseSampled = isLangfuseTraceSampled(traceId);
@@ -273,6 +308,7 @@ export async function getLangfuseTraceMessageFields(
       appConfig,
       traceId,
       langfuseSampled,
+      { centralTraceExportEnabled },
     ),
   };
 }
