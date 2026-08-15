@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
+import type { PartMetadata } from 'librechat-data-provider';
 import { isError } from '~/components/Chat/Messages/Content/ToolOutput';
 import { useProgress, useExpandCollapse } from '~/hooks';
 import store from '~/store';
@@ -22,6 +23,7 @@ export default function useToolCallState(
   output: string,
   hasInput: boolean,
   onExpand?: () => void,
+  runStepStatus?: PartMetadata['runStepStatus'],
 ): ToolCallState {
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = output.length > 0;
@@ -47,7 +49,16 @@ export default function useToolCallState(
       return next;
     });
   }, [onExpand]);
-  const cancelled = !isSubmitting && progress < 1 && !hasError;
+  /**
+   * The step's own terminal status wins when the run emitted one; the
+   * `isSubmitting` heuristic is a whole-message inference that cannot tell
+   * which step stopped. Kept as the fallback for messages saved before
+   * `on_run_step_closed` and endpoints that do not emit it.
+   */
+  const cancelled =
+    runStepStatus != null
+      ? (runStepStatus === 'cancelled' || runStepStatus === 'failed') && !hasError
+      : !isSubmitting && progress < 1 && !hasError;
 
   return {
     showCode,

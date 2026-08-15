@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { FilePenLine, FilePlus2 } from 'lucide-react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import parseJsonField, { parseJsonFieldOccurrences } from './parseJsonField';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import useToolCallState from './useToolCallState';
@@ -106,6 +106,7 @@ function buildEditArgsPreview(args: ToolCallArgs): string {
 export default function FileAuthoringCall({
   toolName,
   isSubmitting,
+  runStepStatus,
   initialProgress = 0.1,
   args,
   output = '',
@@ -116,6 +117,7 @@ export default function FileAuthoringCall({
   toolName: FileAuthoringToolName;
   initialProgress: number;
   isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -148,7 +150,14 @@ export default function FileAuthoringCall({
   }
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError } =
-    useToolCallState(initialProgress, isSubmitting, output, !!filePath || !!preview, onExpand);
+    useToolCallState(
+      initialProgress,
+      isSubmitting,
+      output,
+      !!filePath || !!preview,
+      onExpand,
+      runStepStatus,
+    );
 
   const highlighted = useLazyHighlight(preview || undefined, previewLang);
   const Icon = isCreate && !overwrote ? FilePlus2 : FilePenLine;

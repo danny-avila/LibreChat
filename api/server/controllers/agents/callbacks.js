@@ -427,6 +427,23 @@ function getDefaultHandlers({
         }
       },
     },
+    [GraphEvents.ON_RUN_STEP_CLOSED]: {
+      /**
+       * Handle ON_RUN_STEP_CLOSED event — the terminal signal for a run step.
+       *
+       * Forwarded unconditionally, without the visibility gating the other
+       * step events apply: a step whose `on_run_step` reached the client must
+       * get its closure, or the client is left inferring "stopped" from
+       * `isSubmitting`. Not fed to `aggregateContent`, which has no notion of
+       * this event; persistence of terminal status is handled separately.
+       *
+       * @param {string} event - The event name.
+       * @param {RunStepClosedEvent} data - The event data.
+       */
+      handle: async (event, data) => {
+        await emitForJob({ event, data });
+      },
+    },
     [GraphEvents.ON_RUN_STEP_DELTA]: {
       /**
        * Handle ON_RUN_STEP_DELTA event.

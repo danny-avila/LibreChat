@@ -9,7 +9,7 @@ import {
   actionDomainSeparator,
   splitToolCallName,
 } from 'librechat-data-provider';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
@@ -32,6 +32,7 @@ export default function ToolCall({
   auth,
   hideAttachments = false,
   onExpand,
+  runStepStatus,
 }: {
   initialProgress: number;
   isLast?: boolean;
@@ -44,6 +45,7 @@ export default function ToolCall({
   auth?: string;
   hideAttachments?: boolean;
   onExpand?: () => void;
+  runStepStatus?: PartMetadata['runStepStatus'];
 }) {
   const localize = useLocalize();
   const autoExpand = useRecoilValue(store.autoExpandTools);
@@ -138,7 +140,18 @@ export default function ToolCall({
   }, [auth, isMCPToolCall, mcpServerName, actionId]);
 
   const hasError = typeof output === 'string' && isError(output);
-  const cancelled = !isSubmitting && initialProgress < 1 && !hasError;
+  /**
+   * The step's own terminal status wins when the run emitted one. The
+   * `isSubmitting` heuristic below it is a whole-message inference: it cannot
+   * tell which step actually stopped, so it holds every unfinished call in a
+   * running state until the entire response ends and then flips them all to
+   * cancelled at once. Retained as the fallback for messages saved before
+   * `on_run_step_closed` and for endpoints that do not emit it.
+   */
+  const cancelled =
+    runStepStatus != null
+      ? (runStepStatus === 'cancelled' || runStepStatus === 'failed') && !hasError
+      : !isSubmitting && initialProgress < 1 && !hasError;
   const errorState = hasError;
 
   const args = useMemo(() => {

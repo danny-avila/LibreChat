@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { FileText } from 'lucide-react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
@@ -64,6 +64,7 @@ export function langFromPath(filePath: string): string {
 
 export default function ReadFileCall({
   isSubmitting,
+  runStepStatus,
   initialProgress = 0.1,
   args,
   output = '',
@@ -73,6 +74,7 @@ export default function ReadFileCall({
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -86,7 +88,7 @@ export default function ReadFileCall({
   const lang = useMemo(() => langFromPath(filePath), [filePath]);
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
-    useToolCallState(initialProgress, isSubmitting, output, !!filePath, onExpand);
+    useToolCallState(initialProgress, isSubmitting, output, !!filePath, onExpand, runStepStatus);
 
   const highlighted = useLazyHighlight(hasOutput ? output : undefined, lang);
 
