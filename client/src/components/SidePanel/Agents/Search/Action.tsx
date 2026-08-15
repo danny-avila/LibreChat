@@ -1,11 +1,12 @@
 import { useRef } from 'react';
-import { Button } from '@librechat/client';
+import { KeyRound, CircleCheck } from 'lucide';
 import { useFormContext } from 'react-hook-form';
-import { KeyRound, CircleCheck } from 'lucide-react';
+import { Button, MorphIcon } from '@librechat/client';
 import { AuthType, AgentCapabilities } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
 import { useLocalize, useSearchApiKeyForm } from '~/hooks';
 import ApiKeyDialog from './ApiKeyDialog';
+import { cn } from '~/utils';
 
 export default function Action({
   authTypes = [],
@@ -50,11 +51,10 @@ export default function Action({
         aria-haspopup="dialog"
         className="w-full justify-center gap-2"
       >
-        {isToolAuthenticated ? (
-          <CircleCheck className="h-4 w-4 text-green-500" aria-hidden="true" />
-        ) : (
-          <KeyRound className="h-4 w-4" aria-hidden="true" />
-        )}
+        <MorphIcon
+          icon={isToolAuthenticated ? CircleCheck : KeyRound}
+          className={cn('h-4 w-4', isToolAuthenticated && 'text-green-500')}
+        />
         {localize(
           isToolAuthenticated
             ? 'com_ui_manage_web_search_api_keys'

@@ -82,37 +82,37 @@ jest.mock('../Attachment', () => ({
   ),
 }));
 
-jest.mock('@librechat/client', () => ({
-  __esModule: true,
-  Button: ({
-    children,
-    variant: _variant,
-    size: _size,
-    ...props
-  }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
-    <button {...props}>{children}</button>
-  ),
-  OGDialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  OGDialogContent: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="dialog-content">{children}</div>
-  ),
-  OGDialogTitle: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="dialog-title">{children}</div>
-  ),
-  OGDialogDescription: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="dialog-description">{children}</div>
-  ),
-}));
+jest.mock('@librechat/client', () => {
+  const { createSubagentMorphIconMock } = jest.requireActual('~/../test/mockMorphIcon');
+  return {
+    __esModule: true,
+    Button: ({
+      children,
+      variant: _variant,
+      size: _size,
+      ...props
+    }: React.ComponentProps<'button'> & { variant?: string; size?: string }) => (
+      <button {...props}>{children}</button>
+    ),
+    OGDialog: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    OGDialogContent: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="dialog-content">{children}</div>
+    ),
+    OGDialogTitle: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="dialog-title">{children}</div>
+    ),
+    OGDialogDescription: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="dialog-description">{children}</div>
+    ),
+    MorphIcon: createSubagentMorphIconMock(),
+  };
+});
 
 jest.mock('lucide-react', () => ({
   // eslint-disable-next-line i18next/no-literal-string
   ArrowDown: () => <span>arrow-down</span>,
   // eslint-disable-next-line i18next/no-literal-string
   ChevronRight: () => <span>chevron</span>,
-  // eslint-disable-next-line i18next/no-literal-string
-  Maximize2: () => <span>maximize</span>,
-  // eslint-disable-next-line i18next/no-literal-string
-  Minimize2: () => <span>minimize</span>,
   // eslint-disable-next-line i18next/no-literal-string
   Users: () => <span>users</span>,
 }));
@@ -541,13 +541,13 @@ describe('SubagentCall — dialog content', () => {
 
     const expandButton = screen.getByRole('button', { name: 'Expand' });
     expect(expandButton).toHaveAttribute('aria-expanded', 'false');
+    expect(expandButton.querySelector('[data-icon="maximize-2"]')).not.toBeNull();
 
     fireEvent.click(expandButton);
 
-    expect(screen.getByRole('button', { name: 'Collapse' })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    const collapseButton = screen.getByRole('button', { name: 'Collapse' });
+    expect(collapseButton).toHaveAttribute('aria-expanded', 'true');
+    expect(collapseButton.querySelector('[data-icon="minimize-2"]')).not.toBeNull();
     expect(screen.getByText('final answer')).toBeInTheDocument();
   });
 
