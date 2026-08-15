@@ -448,7 +448,15 @@ function getDefaultHandlers({
       handle: async (event, data) => {
         const stepId = data?.id;
         if (typeof stepId === 'string' && contentParts) {
-          const index = stepMap?.get(stepId)?.index ?? data?.index;
+          /**
+           * Resolved through `stepMap` only. The event's own `index` is the
+           * SDK's, and the steer/HITL offset wrappers shift `ON_RUN_STEP` but
+           * pass closures through untouched — so falling back to it would
+           * stamp an unrelated part in any run containing an injection.
+           * Skipping is the safe failure here; a missing status degrades to
+           * the old heuristic, a misplaced one mislabels the wrong card.
+           */
+          const index = stepMap?.get(stepId)?.index;
           const part = typeof index === 'number' ? contentParts[index] : undefined;
           if (part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
             part.tool_call.runStepStatus = data.status;
