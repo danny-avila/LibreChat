@@ -2,8 +2,8 @@ import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
 import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { DropdownPopup, Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import {
   Ellipsis,
   Share2,
@@ -58,6 +58,7 @@ function ConvoOptions({
 }) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { index } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { navigateToConvo } = useNavigateToConvo(index);
@@ -408,7 +409,13 @@ function ConvoOptions({
         {announcement}
       </span>
       <DropdownPopup
-        portal={true}
+        /**
+         * Portaled menus land on `document.body` at `usePopoverZIndex()`'s 50,
+         * which is behind the opaque full-screen mobile drawer. Inside it the
+         * menu must render in place; on desktop the sidebar is in normal flow,
+         * so portaling still avoids the list's clipping.
+         */
+        portal={!isSmallScreen}
         menuId={menuId}
         focusLoop={true}
         className="z-[125]"

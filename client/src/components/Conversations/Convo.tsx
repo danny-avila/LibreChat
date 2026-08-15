@@ -225,7 +225,13 @@ function Conversation({
         aria-label={localize('com_nav_convo_menu_options')}
         data-testid="convo-options-trigger"
         className="flex size-9 items-center justify-center rounded-lg text-text-secondary"
-        onClick={(event) => {
+        /**
+         * `pointerdown`, not `click`: touch browsers focus the button mid-tap,
+         * and the row's `onFocus` sets `hasInteracted`, which swaps this button
+         * for `ConvoOptions` before the click lands — so the first tap would be
+         * swallowed.
+         */
+        onPointerDown={(event) => {
           event.preventDefault();
           event.stopPropagation();
           setHasInteracted(true);

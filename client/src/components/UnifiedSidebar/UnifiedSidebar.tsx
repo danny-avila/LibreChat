@@ -135,6 +135,21 @@ function UnifiedSidebar() {
     return () => document.removeEventListener('keydown', handler);
   }, [isSmallScreen, expanded, handleCollapse]);
 
+  /**
+   * The persisted value is normalized when the atom initializes, which covers
+   * loading on a phone. Crossing the breakpoint afterwards — narrowing a window
+   * or rotating a tablet — has no such moment, and an expanded desktop sidebar
+   * would become a drawer covering the whole app.
+   */
+  const wasSmallScreen = useRef(isSmallScreen);
+  useEffect(() => {
+    const enteredMobile = isSmallScreen && !wasSmallScreen.current;
+    wasSmallScreen.current = isSmallScreen;
+    if (enteredMobile) {
+      setExpanded(false);
+    }
+  }, [isSmallScreen, setExpanded]);
+
   if (isSmallScreen) {
     return (
       <div
