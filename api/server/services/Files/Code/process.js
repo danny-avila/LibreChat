@@ -402,6 +402,7 @@ const processCodeOutput = async ({
       id: req.user.id,
       storage_session_id: session_id,
       file_id: id,
+      executionProfile,
     };
 
     /* `safeName` keeps the directory structure (`a/b/file.txt` -> `a/b/file.txt`)
@@ -905,8 +906,14 @@ const getReuploadFailureCategory = (error) => {
  * }>}
  */
 const primeFiles = async (options) => {
-  const { tool_resources, req, agentId, agentResourceType, codeApiBaseUrl, executionProfile } =
-    options;
+  const {
+    tool_resources,
+    req,
+    agentId,
+    agentResourceType,
+    codeApiBaseUrl,
+    executionProfile = 'default',
+  } = options;
   const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile };
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
@@ -1011,14 +1018,6 @@ const primeFiles = async (options) => {
       });
     };
 
-    if (sessions.has(session_id)) {
-      logger.debug(
-        `[primeCodeFiles] file=${file.file_id} path=cache-hit-by-session storage_session_id=${session_id}`,
-      );
-      pushFile();
-      continue;
-    }
-
     const reuploadFile = async () => {
       try {
         const { getDownloadStream } = getStrategyFunctions(file.source);
@@ -1060,6 +1059,7 @@ const primeFiles = async (options) => {
           id: ref.id,
           storage_session_id: uploaded.storage_session_id,
           file_id: uploaded.file_id,
+          executionProfile,
           ...(ref.kind === 'skill' ? { version: ref.version } : {}),
         };
 
@@ -1089,6 +1089,21 @@ const primeFiles = async (options) => {
         );
       }
     };
+    if ((ref.executionProfile ?? 'default') !== executionProfile) {
+      logger.debug(
+        `[primeCodeFiles] file=${file.file_id} path=reupload reason=profile-mismatch ` +
+          `storedProfile=${ref.executionProfile ?? 'default'} requestedProfile=${executionProfile}`,
+      );
+      await reuploadFile();
+      continue;
+    }
+    if (sessions.has(session_id)) {
+      logger.debug(
+        `[primeCodeFiles] file=${file.file_id} path=cache-hit-by-session storage_session_id=${session_id}`,
+      );
+      pushFile();
+      continue;
+    }
     const uploadTime = await getSessionInfo(ref, req, codeApiRoute);
     if (!uploadTime) {
       logger.debug(

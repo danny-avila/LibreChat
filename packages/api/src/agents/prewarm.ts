@@ -171,24 +171,29 @@ async function maybePrewarmContext(
   req: ServerRequest,
   context: CodeExecutionContext,
   conversationId: string,
-): Promise<void> {
+): Promise<boolean> {
   const runtimeSessionHint = context.runtimeSessionHint;
   if (!runtimeSessionHint) {
-    return;
+    return true;
   }
   const cache = sandboxCache();
   const [ready, inflight] = await Promise.all([
     cache.get(readyKey(runtimeSessionHint)),
     cache.get(inflightKey(runtimeSessionHint)),
   ]);
-  if (ready != null || inflight != null) {
-    return;
+  if (ready != null) {
+    return true;
+  }
+  if (inflight != null) {
+    await cache.set(inflightKey(conversationId), true, PREWARM_INFLIGHT_COOLDOWN_MS);
+    return false;
   }
   await Promise.all([
     cache.set(inflightKey(runtimeSessionHint), true, PREWARM_INFLIGHT_COOLDOWN_MS),
     cache.set(inflightKey(conversationId), true, PREWARM_INFLIGHT_COOLDOWN_MS),
   ]);
   await sendPrewarmRequest(req, context);
+  return true;
 }
 
 /**
@@ -218,8 +223,10 @@ export function maybePrewarmCodeSandbox(params: {
       throw new Error('Stateful code prewarm requires an authenticated user ID.');
     }
     const contexts = collectPrewarmContexts(agents, conversationId, userId);
-    await Promise.all(contexts.map((context) => maybePrewarmContext(req, context, conversationId)));
-    if (contexts.length > 0) {
+    const ready = await Promise.all(
+      contexts.map((context) => maybePrewarmContext(req, context, conversationId)),
+    );
+    if (ready.length > 0 && ready.every(Boolean)) {
       await markSandboxReady(conversationId);
     }
   })().catch((error) => {

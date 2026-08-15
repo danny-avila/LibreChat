@@ -10,6 +10,7 @@ const {
   appendCodeEnvFileIdentity,
   buildCodeEnvDownloadQuery,
   getCodeApiAuthHeaders,
+  getCodeExecutionBaseUrl,
   CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
 
@@ -81,7 +82,8 @@ async function deleteCodeEnvFile(req, file) {
   let lastError;
   const missingOrUnsupportedStatuses = new Set([404, 405]);
   try {
-    const baseURL = getCodeBaseURL();
+    const executionProfile = ref.executionProfile === 'stateful' ? 'stateful' : 'default';
+    const baseURL = getCodeExecutionBaseUrl(executionProfile);
     const query = buildCodeEnvDownloadQuery({
       kind: ref.kind,
       id: ref.id,
@@ -93,6 +95,7 @@ async function deleteCodeEnvFile(req, file) {
       headers: {
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
+        [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile,
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,

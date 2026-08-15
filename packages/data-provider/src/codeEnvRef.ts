@@ -51,6 +51,9 @@ interface CodeEnvRefBase {
   id: string;
   storage_session_id: string;
   file_id: string;
+  /** Code API deployment that owns this storage pointer. Legacy refs omit
+   *  the field and are treated as `default`; new writes always persist it. */
+  executionProfile?: 'default' | 'stateful';
 }
 
 export type CodeEnvRef =

@@ -50,6 +50,9 @@ jest.mock('@librechat/api', () => {
     }),
     logAxiosError: jest.fn(({ message }) => message),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    getCodeExecutionBaseUrl: jest.fn((profile) =>
+      profile === 'stateful' ? 'https://code-stateful.example.com' : 'https://code-api.example.com',
+    ),
     CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
     createAxiosInstance: jest.fn(() => mockAxios),
     codeServerHttpAgent: new http.Agent({ keepAlive: false }),
@@ -203,6 +206,29 @@ describe('Code CRUD', () => {
           httpAgent: codeServerHttpAgent,
           httpsAgent: codeServerHttpsAgent,
           timeout: 15000,
+        }),
+      );
+    });
+
+    it('deletes a stateful artifact from its originating profile', async () => {
+      mockAxios.mockResolvedValue({ status: 204 });
+      const statefulFile = {
+        metadata: {
+          codeEnvRef: {
+            ...file.metadata.codeEnvRef,
+            executionProfile: 'stateful',
+          },
+        },
+      };
+
+      await deleteCodeEnvFile(req, statefulFile);
+
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: 'https://code-stateful.example.com/sessions/session-1/objects/file-1?kind=agent&id=agent-abc',
+          headers: expect.objectContaining({
+            'X-CodeAPI-Expected-Profile': 'stateful',
+          }),
         }),
       );
     });

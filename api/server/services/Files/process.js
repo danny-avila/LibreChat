@@ -733,6 +733,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         id: codeId,
         storage_session_id: uploaded.storage_session_id,
         file_id: uploaded.file_id,
+        executionProfile: 'default',
       },
     };
   } else if (tool_resource === EToolResources.file_search) {

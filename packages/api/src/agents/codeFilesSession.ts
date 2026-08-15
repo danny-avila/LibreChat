@@ -1,5 +1,7 @@
 import { Constants } from '@librechat/agents';
 import type { FileRefs, CodeEnvFile, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
+import type { StatefulCodeEnvironment } from 'librechat-data-provider';
+import { resolveCodeExecutionContext, type CodeExecutionContext } from './execution';
 
 /**
  * Minimal shape for an agent that may contribute primed code files to its
@@ -9,9 +11,72 @@ import type { FileRefs, CodeEnvFile, ToolSessionMap, CodeSessionContext } from '
  * `agentConfigs` map after pure-subagent pruning) still contribute.
  */
 export interface CodeFilesAgent {
+  id?: string;
+  codeEnvAvailable?: boolean;
+  codeExecutionContext?: CodeExecutionContext;
   codeSessionKey?: string;
   primedCodeFiles?: CodeEnvFile[];
+  statefulCodeSessions?: boolean;
+  statefulCodeEnvironment?: StatefulCodeEnvironment;
   subagentAgentConfigs?: CodeFilesAgent[];
+  lazySubagentConfigs?: CodeFilesAgent[];
+}
+
+export interface CodeExecutionProfileRoute {
+  codeExecutionContext: CodeExecutionContext;
+  codeSessionKeys: string[];
+}
+
+/** Collects the distinct Code API deployments used by a run and every
+ * trusted session partition that must receive that deployment's immutable
+ * skill-file seed. */
+export function collectCodeExecutionProfileRoutes(
+  agents: Iterable<CodeFilesAgent | undefined | null>,
+  scope?: { userId: string; conversationId?: string | null },
+): CodeExecutionProfileRoute[] {
+  const routes = new Map<
+    CodeExecutionContext['executionProfile'],
+    { codeExecutionContext: CodeExecutionContext; codeSessionKeys: Set<string> }
+  >();
+  const visited = new Set<CodeFilesAgent>();
+  const queue: CodeFilesAgent[] = [];
+  for (const agent of agents) {
+    if (agent) queue.push(agent);
+  }
+  while (queue.length > 0) {
+    const agent = queue.shift()!;
+    if (visited.has(agent)) continue;
+    visited.add(agent);
+    const context =
+      agent.codeExecutionContext ??
+      (agent.codeEnvAvailable === true && scope
+        ? resolveCodeExecutionContext({
+            statefulSessions: agent.statefulCodeSessions === true,
+            environment: agent.statefulCodeEnvironment,
+            userId: scope.userId,
+            agentId: agent.id,
+            conversationId: scope.conversationId,
+          })
+        : undefined);
+    if (agent.codeEnvAvailable === true && context) {
+      const route = routes.get(context.executionProfile) ?? {
+        codeExecutionContext: context,
+        codeSessionKeys: new Set<string>(),
+      };
+      route.codeSessionKeys.add(agent.codeSessionKey ?? context.codeSessionKey);
+      routes.set(context.executionProfile, route);
+    }
+    for (const child of [
+      ...(agent.subagentAgentConfigs ?? []),
+      ...(agent.lazySubagentConfigs ?? []),
+    ]) {
+      if (child && !visited.has(child)) queue.push(child);
+    }
+  }
+  return Array.from(routes.values(), (route) => ({
+    codeExecutionContext: route.codeExecutionContext,
+    codeSessionKeys: Array.from(route.codeSessionKeys),
+  }));
 }
 
 /**
@@ -100,9 +165,9 @@ export function seedCodeFilesIntoSessions(
  * remains shared by stateless agents. Stateful agents share only when their
  * configured environment resolves to the same key.
  *
- * Skill files are immutable input resources for the run, so the initial
- * default skill seed is copied once into every non-default partition that
- * appears. Agent-produced session ids and files never cross partitions.
+ * Skill files are immutable input resources for the run, but their storage
+ * pointers are deployment-local. Callers therefore pre-seed each exact
+ * profile partition; this helper never copies a pointer across partitions.
  *
  * **Walk order:** primary first, then `agentConfigs` (handoff/addedConvo)
  * in iteration order, then recurse into each config's
@@ -132,13 +197,6 @@ export function buildInitialToolSessions(params: {
 }): ToolSessionMap | undefined {
   const { skillSessions, agents } = params;
   let sessions = skillSessions;
-  const initialSkillSession = skillSessions?.get(Constants.EXECUTE_CODE) as
-    | CodeSessionContext
-    | undefined;
-  const initialSkillFiles = initialSkillSession?.files
-    ? ([...initialSkillSession.files] as CodeEnvFile[])
-    : undefined;
-  const skillSeededPartitions = new Set<string>();
   const visited = new Set<CodeFilesAgent>();
   /**
    * FIFO queue: primary lands at index 0 and gets visited first, so its
@@ -158,14 +216,6 @@ export function buildInitialToolSessions(params: {
     if (visited.has(agent)) continue;
     visited.add(agent);
     const sessionKey = agent.codeSessionKey ?? Constants.EXECUTE_CODE;
-    if (
-      sessionKey !== Constants.EXECUTE_CODE &&
-      !skillSeededPartitions.has(sessionKey) &&
-      initialSkillFiles?.length
-    ) {
-      sessions = seedCodeFilesIntoSessions(initialSkillFiles, sessions, sessionKey);
-      skillSeededPartitions.add(sessionKey);
-    }
     if (agent.primedCodeFiles && agent.primedCodeFiles.length > 0) {
       sessions = seedCodeFilesIntoSessions(agent.primedCodeFiles, sessions, sessionKey);
     }

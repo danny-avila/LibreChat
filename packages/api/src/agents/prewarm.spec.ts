@@ -205,6 +205,18 @@ describe('maybePrewarmCodeSandbox', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps a second conversation cold while it joins an in-flight user prewarm', async () => {
+    fetchMock.mockImplementation(() => new Promise(() => undefined));
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-1', agents: agents(statefulAgent) });
+    await flushAsync();
+    maybePrewarmCodeSandbox({ req, conversationId: 'convo-2', agents: agents(statefulAgent) });
+    await flushAsync();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(shouldSignalSandboxStart('convo-1')).resolves.toBe(true);
+    await expect(shouldSignalSandboxStart('convo-2')).resolves.toBe(true);
+  });
+
   it('refires once the warm marker has expired', async () => {
     jest.useFakeTimers({ doNotFake: ['setImmediate'] });
     jest.setSystemTime(new Date('2026-07-13T00:00:00Z'));

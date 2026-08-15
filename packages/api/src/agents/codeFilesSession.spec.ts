@@ -2,6 +2,7 @@ import { Constants } from '@librechat/agents';
 import type { CodeEnvFile, CodeSessionContext, ToolSessionMap } from '@librechat/agents';
 import {
   buildInitialToolSessions,
+  collectCodeExecutionProfileRoutes,
   seedCodeFilesIntoSessions,
   type CodeFilesAgent,
 } from './codeFilesSession';
@@ -357,6 +358,11 @@ describe('buildInitialToolSessions', () => {
       files: [file('skill-1', 'skill-sess', 'skill.py')],
       lastUpdated: 1,
     } satisfies CodeSessionContext);
+    skillSessions.set(statefulKey, {
+      session_id: 'stateful-skill-sess',
+      files: [file('stateful-skill-1', 'stateful-skill-sess', 'skill.py')],
+      lastUpdated: 1,
+    } satisfies CodeSessionContext);
 
     const result = buildInitialToolSessions({
       skillSessions,
@@ -367,7 +373,7 @@ describe('buildInitialToolSessions', () => {
     });
 
     expect(result!.get(Constants.EXECUTE_CODE)?.files?.map((f) => f.id)).toEqual(['skill-1', 's1']);
-    expect(result!.get(statefulKey)?.files?.map((f) => f.id)).toEqual(['skill-1', 'w1']);
+    expect(result!.get(statefulKey)?.files?.map((f) => f.id)).toEqual(['stateful-skill-1', 'w1']);
   });
 
   it('shares user-scoped stateful files but isolates agent-user scopes', () => {
@@ -390,10 +396,10 @@ describe('buildInitialToolSessions', () => {
     expect(result!.has(Constants.EXECUTE_CODE)).toBe(false);
   });
 
-  it('copies immutable skill inputs into a stateful partition even without agent files', () => {
+  it('preserves a profile-local stateful skill seed without agent files', () => {
     const statefulKey = 'execute_code:stateful:v1:user';
     const skillSessions: ToolSessionMap = new Map();
-    skillSessions.set(Constants.EXECUTE_CODE, {
+    skillSessions.set(statefulKey, {
       session_id: 'skill-sess',
       files: [file('skill-1', 'skill-sess', 'skill.py')],
       lastUpdated: 1,
@@ -405,5 +411,106 @@ describe('buildInitialToolSessions', () => {
     });
 
     expect(result!.get(statefulKey)?.files?.map((f) => f.id)).toEqual(['skill-1']);
+  });
+
+  it('never copies a default-profile skill pointer into a stateful partition', () => {
+    const statefulKey = 'execute_code:stateful:v1:user';
+    const skillSessions: ToolSessionMap = new Map();
+    skillSessions.set(Constants.EXECUTE_CODE, {
+      session_id: 'default-skill-sess',
+      files: [file('skill-1', 'default-skill-sess', 'skill.py')],
+      lastUpdated: 1,
+    } satisfies CodeSessionContext);
+
+    const result = buildInitialToolSessions({
+      skillSessions,
+      agents: [agent('stateful', undefined, undefined, statefulKey)],
+    });
+
+    expect(result!.has(statefulKey)).toBe(false);
+  });
+});
+
+describe('collectCodeExecutionProfileRoutes', () => {
+  it('groups reachable code agents by deployment and retains each trusted partition', () => {
+    const statelessContext = {
+      baseUrl: 'https://code.example.com/v1',
+      codeSessionKey: Constants.EXECUTE_CODE,
+      executionProfile: 'default' as const,
+      statefulSessions: false,
+    };
+    const statefulContext = (key: string) => ({
+      baseUrl: 'https://stateful.example.com/v1',
+      codeSessionKey: key,
+      executionProfile: 'stateful' as const,
+      runtimeSessionHint: key.slice('execute_code:stateful:'.length),
+      statefulSessions: true,
+    });
+    const childKey = 'execute_code:stateful:v2:agent-user:child';
+    const parentKey = 'execute_code:stateful:v2:user:shared';
+    const child: CodeFilesAgent = {
+      codeEnvAvailable: true,
+      codeExecutionContext: statefulContext(childKey),
+      codeSessionKey: childKey,
+    };
+
+    const routes = collectCodeExecutionProfileRoutes([
+      {
+        codeEnvAvailable: true,
+        codeExecutionContext: statelessContext,
+        codeSessionKey: Constants.EXECUTE_CODE,
+      },
+      {
+        codeEnvAvailable: true,
+        codeExecutionContext: statefulContext(parentKey),
+        codeSessionKey: parentKey,
+        subagentAgentConfigs: [child],
+      },
+      { codeEnvAvailable: false, codeExecutionContext: statefulContext('ignored') },
+    ]);
+
+    expect(routes).toEqual([
+      {
+        codeExecutionContext: statelessContext,
+        codeSessionKeys: [Constants.EXECUTE_CODE],
+      },
+      {
+        codeExecutionContext: statefulContext(parentKey),
+        codeSessionKeys: [parentKey, childKey],
+      },
+    ]);
+  });
+
+  it('derives and includes the trusted profile for a lazy subagent descriptor', () => {
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://stateful.example.com/v1';
+    const routes = collectCodeExecutionProfileRoutes(
+      [
+        {
+          id: 'parent',
+          codeEnvAvailable: false,
+          lazySubagentConfigs: [
+            {
+              id: 'lazy-child',
+              codeEnvAvailable: true,
+              statefulCodeSessions: true,
+              statefulCodeEnvironment: 'agent-user',
+            },
+          ],
+        },
+      ],
+      { userId: 'user-1', conversationId: 'conversation-1' },
+    );
+
+    expect(routes).toHaveLength(1);
+    expect(routes[0].codeExecutionContext).toEqual(
+      expect.objectContaining({
+        executionProfile: 'stateful',
+        statefulSessions: true,
+      }),
+    );
+    expect(routes[0].codeSessionKeys).toEqual([
+      expect.stringMatching(/^execute_code:stateful:v2:agent-user:/),
+    ]);
+    delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
   });
 });

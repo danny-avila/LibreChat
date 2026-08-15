@@ -117,6 +117,10 @@ const skillFileSchema: Schema<ISkillFileDocument> = new Schema(
           storage_session_id: { type: String, required: true },
           file_id: { type: String, required: true },
           version: { type: Number },
+          executionProfile: {
+            type: String,
+            enum: ['default', 'stateful'],
+          },
         },
         { _id: false },
       ),

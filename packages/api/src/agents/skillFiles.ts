@@ -2,11 +2,12 @@ import { Readable } from 'stream';
 import { isAxiosError } from 'axios';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
-import type { ToolSessionMap, CodeSessionContext } from '@librechat/agents';
+import type { CodeEnvFile, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
 import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
+import { seedCodeFilesIntoSessions, type CodeExecutionProfileRoute } from './codeFilesSession';
 import { createConcurrencyLimiter, logAxiosError } from '~/utils';
 import { extractInvokedSkillsFromPayload } from './run';
 import { SKILL_FILE_PREFIX } from './skills';
@@ -227,6 +228,7 @@ async function executePrimeSkillFiles(
     updateSkillFileCodeEnvIds,
     codeExecutionContext,
   } = params;
+  const executionProfile = codeExecutionContext?.executionProfile ?? 'default';
 
   /* Cache-hit path: every skillFile carries a `codeEnvRef` from the
    * previous prime. Check freshness against codeapi for every distinct
@@ -235,7 +237,11 @@ async function executePrimeSkillFiles(
    * skill is edited, the upsert clears the ref and forces a fresh
    * upload on the next prime. */
   if (getSessionInfo && checkIfActive && skillFiles.length > 0) {
-    const allHaveRefs = skillFiles.every((sf) => sf.codeEnvRef !== undefined);
+    const allHaveRefs = skillFiles.every(
+      (sf) =>
+        sf.codeEnvRef !== undefined &&
+        (sf.codeEnvRef.executionProfile ?? 'default') === executionProfile,
+    );
     if (allHaveRefs) {
       const refsBySession = new Map<string, CodeEnvRef>();
       for (const sf of skillFiles) {
@@ -388,6 +394,7 @@ async function executePrimeSkillFiles(
             storage_session_id: result.storage_session_id,
             file_id: f.fileId,
             version: skill.version,
+            executionProfile,
           };
           return {
             skillId: skill._id,
@@ -452,6 +459,11 @@ export interface PrimeInvokedSkillsResult {
   /** Pre-resolved skill bodies keyed by skill name. Passed to formatAgentMessages
    *  so it can reconstruct HumanMessages at the right position in the message sequence. */
   skills?: Map<string, string>;
+}
+
+export interface PrimeInvokedSkillsForProfilesDeps
+  extends Omit<PrimeInvokedSkillsDeps, 'codeEnvAvailable' | 'codeExecutionContext'> {
+  executionProfiles: CodeExecutionProfileRoute[];
 }
 
 /**
@@ -521,7 +533,10 @@ export async function primeInvokedSkills(
       const allResolved = fileListResults.flatMap((r) =>
         r.files.map((f) => ({ skillName: r.skill.name, file: f, ref: f.codeEnvRef })),
       );
-      const resolvedWithRef = allResolved.filter((x) => x.ref !== undefined);
+      const executionProfile = deps.codeExecutionContext?.executionProfile ?? 'default';
+      const resolvedWithRef = allResolved.filter(
+        (x) => x.ref !== undefined && (x.ref.executionProfile ?? 'default') === executionProfile,
+      );
 
       // Only use cache when ALL files have refs (no partial persistence)
       if (resolvedWithRef.length > 0 && resolvedWithRef.length === allResolved.length) {
@@ -655,6 +670,60 @@ export async function primeInvokedSkills(
 
   return {
     initialSessions: sessions,
+    skills: skills.size > 0 ? skills : undefined,
+  };
+}
+
+/** Primes historical skill files once per selected Code API deployment and
+ * seeds only the trusted session partitions that execute on that deployment. */
+export async function primeInvokedSkillsForProfiles(
+  deps: PrimeInvokedSkillsForProfilesDeps,
+): Promise<PrimeInvokedSkillsResult> {
+  if (deps.executionProfiles.length === 0) {
+    return primeInvokedSkills({ ...deps, codeEnvAvailable: false });
+  }
+
+  const persistentProfile =
+    deps.executionProfiles.find(
+      ({ codeExecutionContext }) => codeExecutionContext.executionProfile === 'default',
+    )?.codeExecutionContext.executionProfile ??
+    deps.executionProfiles[0].codeExecutionContext.executionProfile;
+  const profileResults = await Promise.all(
+    deps.executionProfiles.map(async (profile) => ({
+      profile,
+      result: await primeInvokedSkills({
+        ...deps,
+        codeEnvAvailable: true,
+        codeExecutionContext: profile.codeExecutionContext,
+        updateSkillFileCodeEnvIds:
+          profile.codeExecutionContext.executionProfile === persistentProfile
+            ? deps.updateSkillFileCodeEnvIds
+            : undefined,
+      }),
+    })),
+  );
+
+  let initialSessions: ToolSessionMap | undefined;
+  const skills = new Map<string, string>();
+  for (const { profile, result } of profileResults) {
+    for (const [name, body] of result.skills ?? []) {
+      skills.set(name, body);
+    }
+    const skillFiles = result.initialSessions?.get(Constants.EXECUTE_CODE)?.files;
+    if (!skillFiles?.length) {
+      continue;
+    }
+    for (const sessionKey of profile.codeSessionKeys) {
+      initialSessions = seedCodeFilesIntoSessions(
+        skillFiles as CodeEnvFile[],
+        initialSessions,
+        sessionKey,
+      );
+    }
+  }
+
+  return {
+    initialSessions,
     skills: skills.size > 0 ? skills : undefined,
   };
 }

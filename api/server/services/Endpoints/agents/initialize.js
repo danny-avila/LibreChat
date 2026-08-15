@@ -5,7 +5,7 @@ const {
   loadSkillStates,
   initializeAgent,
   isMemoryEnabled,
-  primeInvokedSkills,
+  primeInvokedSkillsForProfiles,
   validateAgentModel,
   extractManualSkills,
   GenerationJobManager,
@@ -17,6 +17,7 @@ const {
   resolveModelSpecSkillIds,
   getAgentStartupTelemetry,
   buildAgentContextAttachmentsByAgentId,
+  collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
 } = require('@librechat/api');
 const {
@@ -1086,17 +1087,23 @@ const initializeClient = async ({
 
   /** History priming uses the user's full ACL-accessible skill set (not
    *  per-agent scoped) because prior turns may reference skills no longer
-   *  in any active agent's scope; the ACL check is the security gate.
-   *  `codeEnvAvailable` comes from `primaryConfig` — @see
-   *  `InitializedAgent.codeEnvAvailable` for the per-agent narrowing. */
+   *  in any active agent's scope; the ACL check is the security gate. Each
+   *  selected Code API deployment receives its own upload, and only session
+   *  partitions routed to that deployment receive those storage pointers. */
+  const codeExecutionProfiles = collectCodeExecutionProfileRoutes(
+    [primaryConfig, ...agentConfigs.values()],
+    {
+      userId: req.user.id,
+      conversationId,
+    },
+  );
   const handlePrimeInvokedSkills = skillsCapabilityEnabled
     ? (payload) =>
-        primeInvokedSkills({
+        primeInvokedSkillsForProfiles({
           req,
           payload,
           accessibleSkillIds,
-          codeEnvAvailable: primaryConfig.codeEnvAvailable === true,
-          codeExecutionContext: primaryConfig.codeExecutionContext,
+          executionProfiles: codeExecutionProfiles,
           ...getSkillToolDeps(),
         })
     : undefined;
