@@ -1,3 +1,4 @@
+const { ATTACHMENT_ONLY_TEXT } = require('@librechat/api');
 const { EModelEndpoint, ContentTypes } = require('librechat-data-provider');
 const {
   AIMessage,
@@ -75,6 +76,15 @@ const formatMessage = ({ message, userName, assistantName, endpoint, langChain =
       image_urls: message.image_urls,
       endpoint,
     });
+  }
+
+  /**
+   * An attachment-only turn whose files reach the model out-of-band (RAG,
+   * code environment) leaves nothing in the content itself, and providers
+   * such as Anthropic reject an empty user message outright.
+   */
+  if (role === 'user' && content === '' && message.files?.length > 0) {
+    formattedMessage.content = ATTACHMENT_ONLY_TEXT;
   }
 
   if (_name) {

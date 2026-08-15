@@ -1,3 +1,4 @@
+const { ATTACHMENT_ONLY_TEXT } = require('@librechat/api');
 const { Constants } = require('librechat-data-provider');
 const { HumanMessage, AIMessage, SystemMessage } = require('@librechat/agents/langchain/messages');
 const { formatMessage, formatLangChainMessages, formatFromLangChain } = require('./formatMessages');
@@ -200,7 +201,7 @@ describe('formatMessage', () => {
       message: { role: 'user', text: '', image_urls: [image] },
       endpoint: 'anthropic',
     });
-    // No empty { type: 'text', text: '' } block — Anthropic rejects those with HTTP 400.
+    // No empty { type: 'text', text: '' } block; Anthropic rejects those with HTTP 400.
     expect(result.content).toEqual([image]);
   });
 
@@ -211,6 +212,35 @@ describe('formatMessage', () => {
       endpoint: 'openAI',
     });
     expect(result.content).toEqual([image]);
+  });
+
+  it('substitutes text for an attachment-only turn with no inline content', () => {
+    const result = formatMessage({
+      message: { role: 'user', text: '', files: [{ file_id: 'f1', embedded: true }] },
+      endpoint: 'anthropic',
+    });
+    expect(result.content).toBe(ATTACHMENT_ONLY_TEXT);
+  });
+
+  it('keeps the user text when an attachment-only turn also has text', () => {
+    const result = formatMessage({
+      message: { role: 'user', text: 'Summarize it', files: [{ file_id: 'f1', embedded: true }] },
+      endpoint: 'anthropic',
+    });
+    expect(result.content).toBe('Summarize it');
+  });
+
+  it('leaves empty content alone when the turn carries no files', () => {
+    const result = formatMessage({ message: { role: 'user', text: '' }, endpoint: 'anthropic' });
+    expect(result.content).toBe('');
+  });
+
+  it('does not substitute text for an assistant turn', () => {
+    const result = formatMessage({
+      message: { role: 'assistant', text: '', files: [{ file_id: 'f1' }] },
+      endpoint: 'anthropic',
+    });
+    expect(result.content).toBe('');
   });
 });
 

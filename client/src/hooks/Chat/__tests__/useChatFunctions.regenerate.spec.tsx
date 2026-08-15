@@ -57,6 +57,7 @@ jest.mock('~/store', () => ({
   useGetEphemeralAgent: () => mockGetEphemeralAgent,
 }));
 jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils'),
   logger: {
     log: jest.fn(),
     dir: jest.fn(),
