@@ -9,8 +9,8 @@ import {
   type TConversation,
   type TMessage,
 } from 'librechat-data-provider';
-import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import { hasCopyableText } from '~/hooks/Messages/useCopyToClipboard';
+import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import store from '~/store';
 
 const conversation = {
