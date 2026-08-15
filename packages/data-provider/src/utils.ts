@@ -210,6 +210,14 @@ function remainsInFenceContainer(containers: MarkdownContainers, fence: Markdown
   return continuationIndent >= fence.listIndent;
 }
 
+function continuesList(containers: MarkdownContainers, listIndent: number): boolean {
+  if (containers.contentAfterBlockquotes.trim() === '') {
+    return true;
+  }
+  const continuationIndent = containers.contentAfterBlockquotes.match(/^[ \t]*/)?.[0].length ?? 0;
+  return continuationIndent >= listIndent;
+}
+
 /** Remove renderable MCP-UI markers without altering literal Markdown code examples. */
 export function stripUIResourceMarkers(text: string): string;
 export function stripUIResourceMarkers(text: undefined): undefined;
@@ -223,6 +231,7 @@ export function stripUIResourceMarkers(text: string | undefined): string | undef
   let result = '';
   let markdown = '';
   let fence: MarkdownFence | null = null;
+  let listContext: { blockquoteDepth: number; indent: number } | null = null;
   const flushMarkdown = () => {
     result += stripMarkersOutsideInlineCode(markdown);
     markdown = '';
@@ -241,6 +250,20 @@ export function stripUIResourceMarkers(text: string | undefined): string | undef
     }
     fence = null;
 
+    if (
+      listContext &&
+      (containers.blockquoteDepth < listContext.blockquoteDepth ||
+        !continuesList(containers, listContext.indent))
+    ) {
+      listContext = null;
+    }
+    if (containers.listIndent > 0) {
+      listContext = {
+        blockquoteDepth: containers.blockquoteDepth,
+        indent: containers.listIndent,
+      };
+    }
+
     const openingFence = getFence(containers.content);
     if (openingFence || /^(?: {4}|\t)/.test(containers.content)) {
       flushMarkdown();
@@ -249,7 +272,7 @@ export function stripUIResourceMarkers(text: string | undefined): string | undef
         ? {
             ...openingFence,
             blockquoteDepth: containers.blockquoteDepth,
-            listIndent: containers.listIndent,
+            listIndent: containers.listIndent || listContext?.indent || 0,
           }
         : null;
       continue;

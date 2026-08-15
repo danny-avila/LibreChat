@@ -938,6 +938,33 @@ describe('importLibreChatConvo', () => {
     ]);
   });
 
+  it('preserves user-authored MCP-UI marker examples while stripping attachments', async () => {
+    const message = {
+      messageId: 'message-1',
+      parentMessageId: Constants.NO_PARENT,
+      text: 'Example: \\ui{literal}',
+      isCreatedByUser: true,
+      content: [{ type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' }],
+      attachments: [{ type: Tools.ui_resources, [Tools.ui_resources]: [] }],
+    };
+    const jsonData = {
+      conversationId: 'user-marker-import',
+      title: 'User marker import',
+      recursive: false,
+      messages: [message],
+    };
+    const importBatchBuilder = new ImportBatchBuilder('user-123');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+    expect(importBatchBuilder.messages[0].text).toBe('Example: \\ui{literal}');
+    expect(importBatchBuilder.messages[0].content).toEqual([
+      { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
+    ]);
+    expect(importBatchBuilder.messages[0].attachments).toEqual([]);
+  });
+
   it('should import linear, non-recursive thread correctly with correct endpoint', async () => {
     mockGetEndpointsConfig.mockResolvedValue({
       [EModelEndpoint.azureOpenAI]: {},

@@ -24,6 +24,13 @@ describe('stripUIResourceMarkers', () => {
     );
   });
 
+  it('inherits list context for fences opened on continuation lines', () => {
+    const markdown = ['- item', '  ~~~', '  \\ui{example}', 'outside \\ui{rendered}'].join('\n');
+    expect(stripUIResourceMarkers(markdown)).toBe(
+      ['- item', '  ~~~', '  \\ui{example}', 'outside '].join('\n'),
+    );
+  });
+
   it('handles long marker-free prose without changing it', () => {
     const text = 'a'.repeat(1_000_000);
     expect(stripUIResourceMarkers(text)).toBe(text);

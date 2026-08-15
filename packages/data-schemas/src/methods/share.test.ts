@@ -580,6 +580,36 @@ describe('Share Methods', () => {
       ]);
     });
 
+    test('preserves user-authored MCP-UI marker examples in public shares', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'Example: \\ui{literal}',
+        isCreatedByUser: true,
+        content: [{ type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' }],
+        attachments: [{ type: Tools.ui_resources, [Tools.ui_resources]: [] }],
+      });
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+      });
+
+      const result = await shareMethods.getSharedMessages(shareId);
+
+      expect(result?.messages[0].text).toBe('Example: \\ui{literal}');
+      expect(result?.messages[0].content).toEqual([
+        { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
+      ]);
+      expect(result?.messages[0].attachments).toBeUndefined();
+    });
+
     test('strips storage-internal fields while preserving shared render data', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;

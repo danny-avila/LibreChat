@@ -393,6 +393,7 @@ export function anonymizeSharedContent(
     shareId: string;
     snapshotIds: Set<string>;
     includeFiles: boolean;
+    sanitizeUIResourceMarkers?: boolean;
   },
 ): unknown[] | undefined {
   if (!Array.isArray(content)) {
@@ -402,7 +403,10 @@ export function anonymizeSharedContent(
   let result: unknown[] | null = null;
   for (let i = 0; i < content.length; i++) {
     const part = content[i];
-    if ((part as { type?: unknown } | null)?.type === ContentTypes.TEXT) {
+    if (
+      params.sanitizeUIResourceMarkers === true &&
+      (part as { type?: unknown } | null)?.type === ContentTypes.TEXT
+    ) {
       const sanitizedPart = stripUIResourceMarkersFromTextPart(part);
       if (sanitizedPart !== part) {
         result ??= [...content];
@@ -511,13 +515,14 @@ function anonymizeMessages(
         anonymizeMessageId(message.parentMessageId || ''),
       conversationId: newConvoId,
       sender: message.sender,
-      text: stripUIResourceMarkers(message.text),
+      text: message.isCreatedByUser === false ? stripUIResourceMarkers(message.text) : message.text,
       content: anonymizeSharedContent(message.content, {
         newConvoId,
         newMessageId,
         shareId,
         snapshotIds,
         includeFiles,
+        sanitizeUIResourceMarkers: message.isCreatedByUser === false,
       }),
       ...(message.iconURL && { iconURL: message.iconURL }),
       ...(model && { model }),

@@ -25,10 +25,13 @@ function sanitizeImportedContent(content) {
 
 /** Removes executable legacy MCP-UI payloads from untrusted conversation imports. */
 function sanitizeImportedMessage(message) {
+  const sanitizeMarkers = message.isCreatedByUser === false;
   return {
     ...message,
-    ...(typeof message.text === 'string' && { text: stripUIResourceMarkers(message.text) }),
-    ...(Array.isArray(message.content) && { content: sanitizeImportedContent(message.content) }),
+    ...(sanitizeMarkers &&
+      typeof message.text === 'string' && { text: stripUIResourceMarkers(message.text) }),
+    ...(sanitizeMarkers &&
+      Array.isArray(message.content) && { content: sanitizeImportedContent(message.content) }),
     ...(Array.isArray(message.attachments) && {
       attachments: message.attachments.filter(
         (attachment) => attachment?.type !== Tools.ui_resources,
