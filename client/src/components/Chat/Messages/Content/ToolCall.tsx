@@ -218,6 +218,16 @@ export default function ToolCall({
     if (cancelled) {
       return localize('com_ui_cancelled');
     }
+    /**
+     * Announced before the completion strings below: a terminal step that
+     * errored must not reach the live region as "completed", which would tell
+     * a screen-reader user the opposite of what the card shows.
+     */
+    if (errorState) {
+      return function_name
+        ? `${localize('com_ui_failed')}: ${function_name}`
+        : localize('com_ui_failed');
+    }
     if (intent != null) {
       return intent;
     }

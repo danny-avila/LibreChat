@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import { ContentTypes } from 'librechat-data-provider';
 import { createContentAggregator } from '@librechat/agents';
 import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
@@ -3104,6 +3105,22 @@ export class RedisJobStore implements IJobStoreV2 {
         const labelData = event.data as { index?: number; part?: Agents.MessageContentComplex };
         if (typeof labelData.index === 'number' && labelData.part != null) {
           contentParts[labelData.index] = labelData.part;
+        }
+        continue;
+      }
+
+      // Step closures are host-authored like steers and labels: the SDK
+      // aggregator has no notion of the event, so the terminal status is
+      // stamped onto the part the replayed steps already rebuilt. Chronology
+      // guarantees the step's own `on_run_step` was replayed first.
+      if (event.event === 'on_run_step_closed') {
+        const closed = event.data as {
+          index?: number;
+          status?: Agents.RunStepClosedStatus;
+        };
+        const part = typeof closed.index === 'number' ? contentParts[closed.index] : undefined;
+        if (closed.status && part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
+          part.tool_call.runStepStatus = closed.status;
         }
         continue;
       }
