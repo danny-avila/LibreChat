@@ -144,6 +144,16 @@ jobs:
       - name: Verify Chrome is present
         run: google-chrome --version
 
+      # `video: 'on-first-retry'` needs ffmpeg; without it the first retry dies in
+      # browserContext.newPage before the test body runs, so a flaky test loses the
+      # retry that would have recovered it. The CLI can hang after the download
+      # finishes on these runners, so bound it and keep it non-fatal — worst case is
+      # today's behaviour of retrying without video.
+      - name: Install Playwright ffmpeg (best effort)
+        timeout-minutes: 3
+        continue-on-error: true
+        run: timeout -k 10 90 npx playwright install ffmpeg
+
       # The runner's Chrome is an apt package, so its real library dependencies are
       # already satisfied; all `install-deps` adds here are optional CJK/Thai/Cyrillic
       # font packages (~21MB from azure.archive.ubuntu.com). Nothing in CI asserts on
@@ -234,6 +244,12 @@ jobs:
 
       - name: Verify Chrome is present
         run: google-chrome --version
+
+      # ffmpeg for retry video — see the note in the e2e_shards job.
+      - name: Install Playwright ffmpeg (best effort)
+        timeout-minutes: 3
+        continue-on-error: true
+        run: timeout -k 10 90 npx playwright install ffmpeg
 
       # Optional fonts only — see the note in the e2e_shards job.
       - name: Install optional Playwright font dependencies (best effort)
