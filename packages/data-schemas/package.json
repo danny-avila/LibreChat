@@ -53,7 +53,10 @@
   },
   "homepage": "https://librechat.ai",
   "dependencies": {
-    "mdast-util-from-markdown": "^2.0.1"
+    "mdast-util-from-markdown": "^2.0.1",
+    "mdast-util-math": "^3.0.0",
+    "micromark-extension-llm-math": "^3.1.0",
+    "micromark-util-decode-string": "^2.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

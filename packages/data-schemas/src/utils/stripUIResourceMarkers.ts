@@ -1,24 +1,102 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
+import { mathFromMarkdown } from 'mdast-util-math';
+import { math } from 'micromark-extension-llm-math';
+import { decodeString } from 'micromark-util-decode-string';
 import { ContentTypes } from 'librechat-data-provider';
 
 const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
+const MARKDOWN_ESCAPE_OR_REFERENCE = /\\(.)|&(#(?:\d{1,7}|x[\da-f]{1,6})|[\da-z]{1,31});/gi;
 
 type MarkdownNode = {
   type: string;
+  value?: string;
   position?: { start: { offset?: number }; end: { offset?: number } };
   children?: MarkdownNode[];
 };
 
+function decodeTextWithSourceSpans(source: string) {
+  let value = '';
+  const spans: Array<[number, number]> = [];
+  let cursor = 0;
+  MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex = 0;
+
+  const appendLiteral = (start: number, end: number) => {
+    value += source.slice(start, end);
+    for (let i = start; i < end; i++) {
+      spans.push([i, i + 1]);
+    }
+  };
+
+  let match: RegExpExecArray | null;
+  while ((match = MARKDOWN_ESCAPE_OR_REFERENCE.exec(source)) != null) {
+    appendLiteral(cursor, match.index);
+    const decoded = decodeString(match[0]);
+    if (decoded === match[0]) {
+      appendLiteral(match.index, MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex);
+    } else {
+      value += decoded;
+      for (let i = 0; i < decoded.length; i++) {
+        spans.push([match.index, MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex]);
+      }
+    }
+    cursor = MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex;
+  }
+  appendLiteral(cursor, source.length);
+  return { value, spans };
+}
+
+function alignTextSpans(
+  decoded: ReturnType<typeof decodeTextWithSourceSpans>,
+  nodeValue: string,
+): Array<[number, number]> | null {
+  // mdast omits indentation that continues a paragraph, so align decoded text
+  // back to source offsets while allowing only leading line whitespace to differ.
+  const result: Array<[number, number]> = [];
+  let sourceIndex = 0;
+  let lineHasContent = false;
+
+  for (let valueIndex = 0; valueIndex < nodeValue.length; valueIndex++) {
+    const expected = nodeValue[valueIndex];
+    while (decoded.value[sourceIndex] !== expected) {
+      const candidate = decoded.value[sourceIndex];
+      if (candidate == null || lineHasContent || (candidate !== ' ' && candidate !== '\t')) {
+        return null;
+      }
+      sourceIndex++;
+    }
+    const span = decoded.spans[sourceIndex];
+    if (!span) {
+      return null;
+    }
+    result.push(span);
+    sourceIndex++;
+    if (expected === '\n' || expected === '\r') {
+      lineHasContent = false;
+    } else if (expected !== ' ' && expected !== '\t') {
+      lineHasContent = true;
+    }
+  }
+  return result;
+}
+
 function collectMarkerRanges(node: MarkdownNode, source: string, ranges: Array<[number, number]>) {
   const start = node.position?.start.offset;
   const end = node.position?.end.offset;
-  if (node.type === 'text' && start != null && end != null) {
-    const value = source.slice(start, end);
+  if (node.type === 'text' && node.value != null && start != null && end != null) {
+    const decoded = decodeTextWithSourceSpans(source.slice(start, end));
+    const spans = alignTextSpans(decoded, node.value);
+    if (!spans) {
+      return;
+    }
+
     UI_RESOURCE_PATTERN.lastIndex = 0;
     let match: RegExpExecArray | null;
-    while ((match = UI_RESOURCE_PATTERN.exec(value)) != null) {
-      const matchStart = start + match.index;
-      ranges.push([matchStart, matchStart + match[0].length]);
+    while ((match = UI_RESOURCE_PATTERN.exec(node.value)) != null) {
+      const first = spans[match.index];
+      const last = spans[match.index + match[0].length - 1];
+      if (first && last) {
+        ranges.push([start + first[0], start + last[1]]);
+      }
     }
   }
   node.children?.forEach((child) => collectMarkerRanges(child, source, ranges));
@@ -29,12 +107,19 @@ export function stripUIResourceMarkers(text: string): string;
 export function stripUIResourceMarkers(text: undefined): undefined;
 export function stripUIResourceMarkers(text: string | undefined): string | undefined;
 export function stripUIResourceMarkers(text: string | undefined): string | undefined {
-  if (text == null || !text.includes('\\ui{')) {
+  if (text == null || (!text.includes('\\') && !text.includes('&'))) {
     return text;
   }
 
   const ranges: Array<[number, number]> = [];
-  collectMarkerRanges(fromMarkdown(text) as unknown as MarkdownNode, text, ranges);
+  collectMarkerRanges(
+    fromMarkdown(text, {
+      extensions: [math()],
+      mdastExtensions: [mathFromMarkdown()],
+    }) as unknown as MarkdownNode,
+    text,
+    ranges,
+  );
   if (ranges.length === 0) {
     return text;
   }

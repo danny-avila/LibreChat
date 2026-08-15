@@ -2,7 +2,7 @@ import path from 'node:path';
 import { defineConfig } from 'tsdown';
 
 const isMarkdownParserDependency = (id) =>
-  /^(?:mdast-util-|micromark(?:-|$)|decode-named-character-reference$|devlop$|unist-util-stringify-position$|character-entities(?:-|$))/.test(
+  /^(?:mdast-util-|micromark(?:-|$)|decode-named-character-reference$|devlop$|longest-streak$|unist-util-|zwitch$|character-entities(?:-|$))/.test(
     id,
   );
 

@@ -10,9 +10,28 @@ describe('stripUIResourceMarkers', () => {
       '\\ui{fenced}',
       '```',
       '<div>\\ui{html}</div>',
+      '$\\ui{inline-math}$',
+      '$$',
+      '\\ui{display-math}',
+      '$$',
     ].join('\n');
 
     expect(stripUIResourceMarkers(markdown)).toBe(markdown.replace('\\ui{rendered}', ''));
+  });
+
+  it('preserves markers inside inline and display math nodes', () => {
+    const markdown = ['$\\ui{inline-math}$', '', '$$', '\\ui{display-math}', '$$'].join('\n');
+    expect(stripUIResourceMarkers(markdown)).toBe(markdown);
+  });
+
+  it('removes markers after Markdown escapes and character references are decoded', () => {
+    const markdown = [
+      'Encoded &#92;ui{backslash}',
+      'Encoded \\ui&#123;braces&#125;',
+      'Escaped \\ui\\{braces\\}',
+    ].join('\n');
+
+    expect(stripUIResourceMarkers(markdown)).toBe(['Encoded ', 'Encoded ', 'Escaped '].join('\n'));
   });
 
   it('handles paragraph continuations and container code according to CommonMark', () => {

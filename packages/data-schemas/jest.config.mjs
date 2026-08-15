@@ -3,7 +3,7 @@ export default {
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   testPathIgnorePatterns: ['/node_modules/', '/dist/', '/misc/'],
   transformIgnorePatterns: [
-    '/node_modules/(?!mdast-util-|micromark|decode-named-character-reference|devlop|unist-util-stringify-position|character-entities)',
+    '/node_modules/(?!mdast-util-|micromark|decode-named-character-reference|devlop|longest-streak|unist-util-|zwitch|character-entities)',
   ],
   coverageReporters: ['text', 'cobertura'],
   testResultsProcessor: 'jest-junit',
