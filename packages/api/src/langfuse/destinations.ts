@@ -282,12 +282,13 @@ export async function getLangfuseTraceDestinationIds(
     centralTraceExportEnabled,
   });
   if (destinations.some(({ id }) => id == null)) {
-    /** `undefined` means "unrestricted" downstream, so returning it here would
-     *  let feedback reach the central project a caller explicitly opted out of
-     *  — e.g. a tenant destination with no configured `projectId`, which has no
-     *  stable id to record. Fail closed instead: an empty list stays restricted,
-     *  matching every destination the trace actually reached (none identifiable). */
-    return centralTraceExportEnabled ? undefined : [];
+    /** A tenant destination's `projectId` is optional, so an eligible project can
+     *  have no stable id to record. `undefined` defers to whatever policy the
+     *  feedback path resolves — an empty list would instead reject every
+     *  destination, silently dropping feedback the tenant should receive.
+     *  `sendFeedbackScore` must be given the same `centralTraceExportEnabled`
+     *  for that deferral to honor a central opt-out. */
+    return undefined;
   }
   return destinations.map(({ id }) => id as string);
 }
