@@ -1,12 +1,23 @@
 import { useDeferredValue, useEffect, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, ArrowUpDown, Check, Folder, FolderPlus, Search } from 'lucide-react';
+import {
+  ArrowUpDown,
+  Check,
+  Ellipsis,
+  Folder,
+  FolderPlus,
+  Pencil,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { Input, Button, Skeleton, DropdownPopup } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
 import type { MenuItemProps, RenderProp } from '~/common';
 import { useProjectsInfiniteQuery } from '~/data-provider';
 import ProjectCreateDialog from './ProjectCreateDialog';
+import ProjectDeleteDialog from './ProjectDeleteDialog';
+import ProjectEditDialog from './ProjectEditDialog';
 import ProjectsNavBar from './ProjectsNavBar';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -50,56 +61,101 @@ function ProjectCard({
   onOpen: (projectId: string) => void;
 }) {
   const localize = useLocalize();
+  const menuId = useId();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const activity = formatActivity(project);
+  const menuItems = useMemo<MenuItemProps[]>(
+    () => [
+      {
+        id: `${menuId}-edit`,
+        label: localize('com_ui_edit_project'),
+        icon: <Pencil className="size-4 text-text-secondary" aria-hidden="true" />,
+        onClick: () => setIsEditOpen(true),
+      },
+      {
+        id: `${menuId}-delete`,
+        label: localize('com_ui_delete'),
+        icon: <Trash2 className="size-4 text-text-secondary" aria-hidden="true" />,
+        onClick: () => setIsDeleteOpen(true),
+      },
+    ],
+    [localize, menuId],
+  );
 
   return (
-    <button
-      type="button"
+    <article
       className={cn(
-        'group/project flex min-h-[9.5rem] flex-col rounded-2xl bg-surface-secondary p-4 text-left',
-        'transition-[background-color,transform] duration-150 ease-out',
-        'hover:bg-surface-hover active:scale-[0.99]',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
+        'group/project relative flex min-h-[9.5rem] flex-col rounded-2xl bg-surface-secondary',
+        'transition-colors duration-150 ease-out hover:bg-surface-hover',
         'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:fill-mode-both',
       )}
       style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
-      onClick={() => onOpen(project._id)}
     >
-      <span className="flex items-start justify-between gap-3">
+      <button
+        type="button"
+        className="flex min-h-[9.5rem] flex-1 flex-col rounded-2xl p-4 pr-12 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+        onClick={() => onOpen(project._id)}
+      >
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-tertiary text-text-secondary transition-colors group-hover/project:text-text-primary">
           <Folder className="h-5 w-5" aria-hidden="true" />
         </span>
-        <ArrowRight
-          className="mt-1 h-4 w-4 shrink-0 text-text-tertiary opacity-0 transition-opacity group-hover/project:opacity-100 group-focus-visible/project:opacity-100"
-          aria-hidden="true"
-        />
-      </span>
-      <span className="mt-3 truncate text-base font-semibold tracking-tight text-text-primary">
-        {project.name}
-      </span>
-      {project.description ? (
-        <span className="mt-1 line-clamp-2 text-pretty text-sm leading-relaxed text-text-secondary">
-          {project.description}
+        <span className="mt-3 truncate text-base font-semibold tracking-tight text-text-primary">
+          {project.name}
         </span>
-      ) : null}
-      <span className="mt-auto flex items-center gap-2 pt-4 text-xs tabular-nums text-text-secondary">
-        <span>
-          {project.conversationCount === 1
-            ? localize('com_ui_project_chat_count_single')
-            : localize('com_ui_project_chat_count', {
-                count: project.conversationCount,
-              })}
-        </span>
-        {activity ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <time dateTime={project.lastConversationAt ?? project.updatedAt ?? project.createdAt}>
-              {activity}
-            </time>
-          </>
+        {project.description ? (
+          <span className="mt-1 line-clamp-2 text-pretty text-sm leading-relaxed text-text-secondary">
+            {project.description}
+          </span>
         ) : null}
-      </span>
-    </button>
+        <span className="mt-auto flex items-center gap-2 pt-4 text-xs tabular-nums text-text-secondary">
+          <span>
+            {project.conversationCount === 1
+              ? localize('com_ui_project_chat_count_single')
+              : localize('com_ui_project_chat_count', {
+                  count: project.conversationCount,
+                })}
+          </span>
+          {activity ? (
+            <>
+              <span aria-hidden="true">·</span>
+              <time dateTime={project.lastConversationAt ?? project.updatedAt ?? project.createdAt}>
+                {activity}
+              </time>
+            </>
+          ) : null}
+        </span>
+      </button>
+      <div className="absolute right-2 top-2">
+        <DropdownPopup
+          portal={true}
+          focusLoop={true}
+          unmountOnHide={true}
+          menuId={menuId}
+          isOpen={isMenuOpen}
+          setIsOpen={setIsMenuOpen}
+          className="z-[125] min-w-44"
+          iconClassName="mr-2 text-text-secondary"
+          trigger={
+            <Ariakit.MenuButton
+              aria-label={localize('com_ui_more_options')}
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg text-text-secondary outline-none transition-colors',
+                'hover:bg-surface-tertiary hover:text-text-primary',
+                'focus-visible:ring-2 focus-visible:ring-text-primary',
+                isMenuOpen && 'bg-surface-tertiary text-text-primary',
+              )}
+            >
+              <Ellipsis className="h-4 w-4" aria-hidden="true" />
+            </Ariakit.MenuButton>
+          }
+          items={menuItems}
+        />
+      </div>
+      <ProjectEditDialog open={isEditOpen} onOpenChange={setIsEditOpen} project={project} />
+      <ProjectDeleteDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} project={project} />
+    </article>
   );
 }
 
