@@ -125,6 +125,50 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
     });
   });
 
+  /** An app-level catalog write is dropped unless it carries the ordering reserved before its
+   * own tools/list. When this path forwarded no revision, every publication was discarded and
+   * agents were told the server had no tools at all (#14857). */
+  it('publishes under the ordering its snapshot was fetched with', async () => {
+    mockGetConnection.mockResolvedValue({
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'search', inputSchema: { type: 'object' } }],
+        complete: true,
+        publicationRevision: '7',
+      }),
+    });
+
+    await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(mockUpdateMCPServerTools).toHaveBeenCalledWith(
+      expect.objectContaining({ serverName, publicationRevision: '7' }),
+    );
+  });
+
+  it('asks the connection to republish a catalog it could not order', async () => {
+    const refreshToolList = jest.fn().mockResolvedValue(undefined);
+    mockGetConnection.mockResolvedValue({
+      refreshToolList,
+      fetchOrderedToolsSnapshot: jest.fn().mockResolvedValue({
+        tools: [{ name: 'search', inputSchema: { type: 'object' } }],
+        complete: true,
+        orderingUnavailable: true,
+      }),
+    });
+
+    const result = await reinitMCPServer({
+      user,
+      serverName,
+      serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
+    });
+
+    expect(refreshToolList).toHaveBeenCalledTimes(1);
+    expect(result.tools).toHaveLength(1);
+  });
+
   it('preserves cached tools when live recovery returns an incomplete snapshot', async () => {
     const fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
       tools: [{ name: 'partial', inputSchema: { type: 'object' } }],

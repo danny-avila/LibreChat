@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { Constants, normalizeServerName } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from './types';
 import type { MCPToolCacheDeps, MCPToolInput } from './tools';
@@ -157,6 +158,8 @@ describe('createMCPToolCacheService', () => {
       ).rejects.toThrow('Redis down');
     });
 
+    /** A publisher that lost its snapshot's revision fetched at an unknown time. Allocating a
+     * fresh one here would let a slow fetch of an old catalog outrank a newer one. */
     it('does not publish a live app snapshot without pre-fetch ordering', async () => {
       const deps = createMockDeps();
 
@@ -169,6 +172,75 @@ describe('createMCPToolCacheService', () => {
       ).resolves.toBe(false);
 
       expect(deps.setCachedAppServerTools).not.toHaveBeenCalled();
+    });
+
+    /** #14857 went a release without a diagnostic because dropping an app catalog only logged
+     * at debug. A drop means agents lose this server's tools, so it has to be visible by
+     * default; a superseded write is routine and must stay quiet. */
+    describe('visibility of a discarded publication', () => {
+      const publish = (params: { publicationGeneration?: string; publicationRevision?: string }) =>
+        createMCPToolCacheService(
+          createMockDeps({ setCachedAppServerTools: jest.fn().mockResolvedValue(false) }),
+        ).replaceAppServerTools({ serverName: 'dynamic', serverTools: {}, ...params });
+
+      let warn: jest.SpyInstance;
+
+      beforeEach(() => {
+        warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+      });
+
+      afterEach(() => warn.mockRestore());
+
+      it('warns when a publication cannot be ordered', async () => {
+        await publish({ publicationGeneration: 'config-generation' });
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('Skipped unordered'));
+      });
+
+      it('warns when a publication cannot be addressed', async () => {
+        await publish({ publicationRevision: '1' });
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('Skipped unaddressed'));
+      });
+
+      it('stays quiet when a concurrent replica already published newer tools', async () => {
+        await publish({ publicationGeneration: 'config-generation', publicationRevision: '1' });
+
+        expect(warn).not.toHaveBeenCalled();
+      });
+    });
+
+    /** The catalog write needs ordering; the tools themselves were read from the server and are
+     * correct to serve. Discarding them is what surfaced as a server with no tools (#14857). */
+    it('serves tools it could not publish instead of discarding them', async () => {
+      const deps = createSharedCacheDeps({ config: cacheableConfig });
+      const search = toolName('search', 'dynamic');
+
+      await expect(
+        createMCPToolCacheService(deps).updateMCPServerTools({
+          userId: 'user-1',
+          serverName: 'dynamic',
+          serverConfig: cacheableConfig,
+          tools: [{ name: 'search' }],
+        }),
+      ).resolves.toEqual({ [search]: expect.objectContaining({ type: 'function' }) });
+
+      expect(deps.setCachedAppServerTools).not.toHaveBeenCalled();
+    });
+
+    it('discards a superseded catalog rather than serving it', async () => {
+      const deps = createSharedCacheDeps({ config: cacheableConfig });
+      deps.setCachedAppServerTools = jest.fn().mockResolvedValue(false);
+
+      await expect(
+        createMCPToolCacheService(deps).updateMCPServerTools({
+          userId: 'user-1',
+          serverName: 'dynamic',
+          serverConfig: cacheableConfig,
+          tools: [{ name: 'search' }],
+          publicationRevision: '1',
+        }),
+      ).resolves.toBeNull();
     });
 
     it('rejects a tool boundary owned by another app server', async () => {
