@@ -1136,6 +1136,7 @@
   "com_ui_delete_not_allowed": "Delete operation is not allowed",
   "com_ui_delete_preset": "Delete Preset?",
   "com_ui_delete_project": "Delete project?",
+  "com_ui_delete_project_action": "Delete project",
   "com_ui_delete_project_confirm": "Delete \"{{name}}\"? The chats inside won't be deleted.",
   "com_ui_delete_prompt": "Delete Prompt?",
   "com_ui_delete_selected": "Delete selected",

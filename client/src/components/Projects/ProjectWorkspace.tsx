@@ -2,7 +2,7 @@ import { useCallback, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowUpDown, Check, Folder, Pencil, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowUpDown, Check, Folder, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
@@ -12,6 +12,7 @@ import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { useConversationsInfiniteQuery, useProjectQuery } from '~/data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { cn, clearMessagesCache } from '~/utils';
+import ProjectDeleteDialog from './ProjectDeleteDialog';
 import ProjectEditDialog from './ProjectEditDialog';
 import ProjectChatList from './ProjectChatList';
 import store from '~/store';
@@ -40,6 +41,7 @@ export default function ProjectWorkspace() {
   const { projectId = '' } = useParams();
   const [sortBy, setSortBy] = useState<ChatSortField>('updatedAt');
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const sortMenuId = useId();
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId);
@@ -175,6 +177,21 @@ export default function ProjectWorkspace() {
                   </Button>
                 }
               />
+              <TooltipAnchor
+                description={localize('com_ui_delete_project_action')}
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0 text-text-secondary hover:text-text-destructive"
+                    aria-label={localize('com_ui_delete_project_action')}
+                    onClick={() => setIsDeleteOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                }
+              />
             </div>
             {project.description ? (
               <p className="mt-1 text-pretty text-sm leading-relaxed text-text-secondary">
@@ -193,6 +210,7 @@ export default function ProjectWorkspace() {
         </div>
 
         <ProjectEditDialog open={isEditOpen} onOpenChange={setIsEditOpen} project={project} />
+        <ProjectDeleteDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} project={project} />
 
         <button
           type="button"

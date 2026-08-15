@@ -16,16 +16,10 @@ import {
 import {
   Button,
   Spinner,
-  OGDialog,
-  OGDialogClose,
-  OGDialogTitle,
-  OGDialogHeader,
-  OGDialogContent,
   TooltipAnchor,
   DropdownPopup,
   NewChatIcon,
   buttonVariants,
-  useToastContext,
 } from '@librechat/client';
 import type { TChatProject, TConversation } from 'librechat-data-provider';
 import type { MenuItemProps } from '~/common';
@@ -33,14 +27,13 @@ import {
   useProjectsInfiniteQuery,
   useActiveJobs,
   useConversationsInfiniteQuery,
-  useDeleteProjectMutation,
 } from '~/data-provider';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
+import ProjectDeleteDialog from '~/components/Projects/ProjectDeleteDialog';
 import ProjectEditDialog from '~/components/Projects/ProjectEditDialog';
 import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
 import { Collapse } from '~/components/ui';
 import { clearMessagesCache, cn } from '~/utils';
-import { NotificationSeverity } from '~/common';
 import Convo from './Convo';
 import store from '~/store';
 
@@ -51,62 +44,6 @@ const iconButtonClassName = cn(
   buttonVariants({ variant: 'section-action', size: 'icon-xs' }),
   'shrink-0',
 );
-
-function ProjectDeleteDialog({
-  open,
-  onOpenChange,
-  project,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  project: TChatProject;
-}) {
-  const localize = useLocalize();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const deleteProject = useDeleteProjectMutation();
-  const { showToast } = useToastContext();
-
-  const confirmDelete = () => {
-    deleteProject.mutate(project._id, {
-      onSuccess: () => {
-        onOpenChange(false);
-        if (location.pathname === `/projects/${project._id}`) {
-          navigate('/projects');
-        }
-      },
-      onError: () =>
-        showToast({
-          message: localize('com_ui_project_delete_error'),
-          severity: NotificationSeverity.ERROR,
-          showIcon: true,
-        }),
-    });
-  };
-
-  return (
-    <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent className="w-11/12 max-w-md" showCloseButton={false}>
-        <OGDialogHeader>
-          <OGDialogTitle>{localize('com_ui_delete_project')}</OGDialogTitle>
-        </OGDialogHeader>
-        <div className="text-sm text-text-secondary">
-          {localize('com_ui_delete_project_confirm', { name: project.name })}
-        </div>
-        <div className="flex justify-end gap-4 pt-4">
-          <OGDialogClose asChild>
-            <Button aria-label="cancel" variant="outline">
-              {localize('com_ui_cancel')}
-            </Button>
-          </OGDialogClose>
-          <Button variant="destructive" onClick={confirmDelete} disabled={deleteProject.isLoading}>
-            {deleteProject.isLoading ? <Spinner className="size-4" /> : localize('com_ui_delete')}
-          </Button>
-        </div>
-      </OGDialogContent>
-    </OGDialog>
-  );
-}
 
 const noop = () => {};
 
