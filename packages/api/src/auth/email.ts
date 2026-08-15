@@ -522,8 +522,8 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
     /** Claiming the exact hash that was presented binds the commit to this link: a request
      * that replaced the scoped token between the lookup and here leaves nothing to claim,
      * so a superseded address can no longer overwrite the one the user was last sent.
-     * Claimed before the credential cleanup so a link that lost the race cannot revoke a
-     * password reset it will never replace. */
+     * Reset tokens stay untouched until after the commit so a failed update cannot revoke
+     * an unrelated password-reset link. */
     const claim = await claimTokenIfCurrent(
       deps,
       { ...tokenQuery, token: emailChangeToken.token },
@@ -542,23 +542,10 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
     }
 
-    try {
-      await Promise.all([
-        deps.deleteTokens({ userId, type: PASSWORD_RESET_TOKEN_TYPE }, tenantId),
-        deps.deleteTokens({ userId, email: null, identifier: null, type: null }, tenantId),
-      ]);
-    } catch (error) {
-      logger.error(
-        `[emailChange] Credential cleanup failed [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
-        error,
-      );
-      await restoreClaimedToken(deps, emailChangeToken, scope, tenantId);
-      return result(500, 'Failed to change email address');
-    }
-
     /** The compare-and-set remains the commit point and the single-use guard: a competing
      * confirmation cannot match `oldEmail` twice. The claimed token is put back when the
-     * update fails transiently, so the link stays replayable. */
+     * update fails transiently, so the link stays replayable. Reset tokens are not touched
+     * here: a failed commit must leave the account's existing reset flow intact. */
     try {
       const updatedUser = await deps.updateUser(
         userId,
@@ -581,15 +568,13 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(500, 'Failed to change email address');
     }
 
-    /** Repeated after the commit: a reset token issued between the pre-commit
-     * cleanup and the update would otherwise outlive the address it was bound to.
-     * Restricted to the address that moved and to address-less legacy tokens, so a
-     * reset another replica issued for the committed address is not revoked with them.
-     * Tokens issued after this sweep are refused by the `emailChangedAt` check in
-     * `resetPassword`, which no longer honours address-less legacy tokens here.
-     * No email change token is swept here: the claim above already consumed the one
-     * this link presented, and the scope is unique per user, so anything under it now
-     * belongs to a request that started after the commit and still has a live link. */
+    /** After the commit only. Restricted to the address that moved, address-less typed
+     * tokens, and untyped legacy tokens, so a reset another replica issued for the
+     * committed address is not revoked with them. `resetPassword` also refuses those
+     * leftovers via the address binding and `emailChangedAt` checks. No email change
+     * token is swept here: the claim above already consumed the one this link
+     * presented, and the scope is unique per user, so anything under it now belongs
+     * to a request that started after the commit and still has a live link. */
     await Promise.all([
       deleteTokensOrLog(
         deps,
@@ -602,6 +587,12 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
         { userId, email: null, type: PASSWORD_RESET_TOKEN_TYPE },
         tenantId,
         'address-less password reset tokens issued during the change',
+      ),
+      deleteTokensOrLog(
+        deps,
+        { userId, email: null, identifier: null, type: null },
+        tenantId,
+        'untyped legacy reset tokens issued before the change',
       ),
     ]);
     const confirmationPayload = {
