@@ -79,26 +79,33 @@ function mapDecodedRange(
   segments: SourceSegment[],
   decodedStart: number,
   decodedEnd: number,
-): [number, number] | null {
-  let sourceStart: number | null = null;
-  for (const segment of segments) {
-    if (
-      sourceStart == null &&
-      decodedStart >= segment.decodedStart &&
-      decodedStart < segment.decodedEnd
-    ) {
-      sourceStart = segment.literal
-        ? segment.sourceStart + decodedStart - segment.decodedStart
-        : segment.sourceStart;
-    }
-    if (decodedEnd > segment.decodedStart && decodedEnd <= segment.decodedEnd) {
-      const sourceEnd = segment.literal
-        ? segment.sourceStart + decodedEnd - segment.decodedStart
-        : segment.sourceEnd;
-      return sourceStart == null ? null : [sourceStart, sourceEnd];
-    }
+  fromIndex: number,
+): { range: [number, number]; segmentIndex: number } | null {
+  let firstIndex = fromIndex;
+  while (segments[firstIndex]?.decodedEnd <= decodedStart) {
+    firstIndex++;
   }
-  return null;
+  const first = segments[firstIndex];
+  if (!first || decodedStart < first.decodedStart) {
+    return null;
+  }
+
+  let lastIndex = firstIndex;
+  while (segments[lastIndex]?.decodedEnd < decodedEnd) {
+    lastIndex++;
+  }
+  const last = segments[lastIndex];
+  if (!last || decodedEnd <= last.decodedStart) {
+    return null;
+  }
+
+  const sourceStart = first.literal
+    ? first.sourceStart + decodedStart - first.decodedStart
+    : first.sourceStart;
+  const sourceEnd = last.literal
+    ? last.sourceStart + decodedEnd - last.decodedStart
+    : last.sourceEnd;
+  return { range: [sourceStart, sourceEnd], segmentIndex: lastIndex };
 }
 
 function collectMarkerRanges(root: MarkdownNode, source: string, ranges: Array<[number, number]>) {
@@ -110,11 +117,18 @@ function collectMarkerRanges(root: MarkdownNode, source: string, ranges: Array<[
     if (node.type === 'text' && start != null && end != null) {
       const decoded = decodeTextWithSourceSpans(source.slice(start, end));
       UI_RESOURCE_PATTERN.lastIndex = 0;
+      let segmentCursor = 0;
       let match: RegExpExecArray | null;
       while ((match = UI_RESOURCE_PATTERN.exec(decoded.value)) != null) {
-        const range = mapDecodedRange(decoded.segments, match.index, match.index + match[0].length);
-        if (range) {
-          ranges.push([start + range[0], start + range[1]]);
+        const mapped = mapDecodedRange(
+          decoded.segments,
+          match.index,
+          match.index + match[0].length,
+          segmentCursor,
+        );
+        if (mapped) {
+          segmentCursor = mapped.segmentIndex;
+          ranges.push([start + mapped.range[0], start + mapped.range[1]]);
         }
       }
     }

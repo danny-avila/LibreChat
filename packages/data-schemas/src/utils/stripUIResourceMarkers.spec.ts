@@ -76,6 +76,11 @@ describe('stripUIResourceMarkers', () => {
     expect(stripUIResourceMarkers(markdown)).toBe(markdown);
   });
 
+  it('maps many encoded markers with a monotonic source-segment cursor', () => {
+    const markdown = Array.from({ length: 1_000 }, (_, index) => `&#92;ui{id${index}}`).join(' ');
+    expect(stripUIResourceMarkers(markdown)).toBe(' '.repeat(999));
+  });
+
   it('walks deeply nested Markdown without recursive traversal', () => {
     const prefix = '> '.repeat(500);
     expect(stripUIResourceMarkers(`${prefix}\\ui{deep}`)).toBe(prefix);
