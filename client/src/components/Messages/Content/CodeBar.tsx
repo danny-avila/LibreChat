@@ -32,11 +32,13 @@ const CodeBar: React.FC<CodeBarProps> = React.memo(
               <>
                 <DownloadButton
                   isDownloaded={isDownloaded}
+                  iconOnly
                   onClick={handleDownload}
                   label={localize('com_ui_download_code')}
                 />
                 <CopyButton
                   isCopied={isCopied}
+                  iconOnly
                   onClick={handleCopy}
                   label={localize('com_ui_copy_code')}
                 />
