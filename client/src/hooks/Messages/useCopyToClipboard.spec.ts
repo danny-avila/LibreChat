@@ -130,12 +130,25 @@ describe('useCopyToClipboard', () => {
 
       const { result } = renderHook(() => useCopyToClipboard({ content }));
 
+      let copied: boolean | undefined;
       act(() => {
-        result.current(mockSetIsCopied);
+        copied = result.current(mockSetIsCopied);
       });
 
+      expect(copied).toBe(false);
       expect(mockCopy).not.toHaveBeenCalled();
       expect(mockSetIsCopied).not.toHaveBeenCalled();
+    });
+
+    it('reports whether the copy reached the clipboard', () => {
+      const { result } = renderHook(() => useCopyToClipboard({ text: 'Copy me' }));
+
+      let copied: boolean | undefined;
+      act(() => {
+        copied = result.current(mockSetIsCopied);
+      });
+
+      expect(copied).toBe(true);
     });
 
     it('preserves the clipboard when the message text is empty', () => {

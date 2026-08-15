@@ -15,7 +15,7 @@ let mockShare: {
   shareId: 'share-1',
   snapshotFiles: true,
 };
-const mockCopyLink = jest.fn();
+const mockCopyLink = jest.fn(() => true);
 const mockAnnouncePolite = jest.fn();
 
 jest.mock('librechat-data-provider/react-query', () => ({
@@ -88,6 +88,7 @@ describe('ShareButton', () => {
       snapshotFiles: true,
     };
     mockCopyLink.mockClear();
+    mockCopyLink.mockReturnValue(true);
     mockAnnouncePolite.mockClear();
   });
 
@@ -127,6 +128,16 @@ describe('ShareButton', () => {
       message: 'com_ui_link_copied',
       isStatus: true,
     });
+  });
+
+  it('does not announce a copy that never reached the clipboard', () => {
+    mockCopyLink.mockReturnValue(false);
+    renderShareButton();
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_copy_link' }));
+
+    expect(mockCopyLink).toHaveBeenCalledTimes(1);
+    expect(mockAnnouncePolite).not.toHaveBeenCalled();
   });
 
   it('passes file-sharing changes to the link actions', () => {

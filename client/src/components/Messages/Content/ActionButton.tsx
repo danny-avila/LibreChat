@@ -13,6 +13,7 @@ interface ActionButtonProps {
   onClick: () => void;
   tabIndex?: number;
   className?: string;
+  disabled?: boolean;
   portalElement?: HTMLElement | null;
 }
 
@@ -27,6 +28,7 @@ const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(
       onClick,
       tabIndex,
       className,
+      disabled = false,
       portalElement,
     },
     ref,
@@ -39,11 +41,13 @@ const ActionButton = React.forwardRef<HTMLButtonElement, ActionButtonProps>(
         type="button"
         onClick={onClick}
         tabIndex={tabIndex}
+        disabled={disabled}
         aria-label={currentLabel}
         className={cn(
           'inline-flex select-none items-center justify-center text-text-secondary transition-all duration-200 ease-out',
           'hover:bg-surface-hover hover:text-text-primary',
           'focus-visible:outline focus-visible:outline-2 focus-visible:outline-border-heavy',
+          'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-text-secondary',
           iconOnly ? 'rounded-lg p-1.5' : 'ml-auto gap-2 rounded-md px-2 py-1',
           className,
         )}

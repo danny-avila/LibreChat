@@ -164,10 +164,10 @@ export default function MCPServerDialog({
                   variant="outline"
                   onClick={() => {
                     if (isCopying) return;
+                    if (!copyLink(setIsCopying)) return;
                     showToast({ message: localize('com_ui_copied_to_clipboard') });
-                    copyLink(setIsCopying);
                   }}
-                  disabled={isCopying}
+                  disabled={isCopying || !redirectUri}
                   className="p-0"
                   aria-label={localize('com_ui_copy_link')}
                 >

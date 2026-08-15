@@ -96,12 +96,12 @@ export default function useCopyToClipboard({
   }, []);
 
   const copyToClipboard = useCallback(
-    (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>) => {
+    (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>): boolean => {
       const clipboardText = buildClipboardText({ text, content, searchResults });
 
       /** Nothing to copy: leave the clipboard untouched rather than clearing it */
       if (clipboardText.trim().length === 0) {
-        return;
+        return false;
       }
 
       if (copyTimeoutRef.current) {
@@ -113,6 +113,8 @@ export default function useCopyToClipboard({
       copyTimeoutRef.current = setTimeout(() => {
         setIsCopied(false);
       }, 3000);
+
+      return true;
     },
     [text, content, searchResults],
   );

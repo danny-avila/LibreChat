@@ -15,7 +15,10 @@ export default function SharedLinkCopyButton({ sharedLink }: { sharedLink: strin
       return;
     }
 
-    copyLink(setIsCopied);
+    if (!copyLink(setIsCopied)) {
+      return;
+    }
+
     announcePolite({ message: localize('com_ui_link_copied'), isStatus: true });
   };
 
@@ -34,6 +37,7 @@ export default function SharedLinkCopyButton({ sharedLink }: { sharedLink: strin
       <CopyButton
         iconOnly
         isCopied={isCopied}
+        disabled={!sharedLink}
         label={localize('com_ui_copy_link')}
         copiedLabel={localize('com_ui_copied')}
         onClick={handleCopy}
