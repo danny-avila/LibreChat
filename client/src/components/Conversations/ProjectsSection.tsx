@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import {
   Button,
-  Input,
   Spinner,
   OGDialog,
   OGDialogClose,
@@ -34,10 +33,10 @@ import {
   useProjectsInfiniteQuery,
   useActiveJobs,
   useConversationsInfiniteQuery,
-  useUpdateProjectMutation,
   useDeleteProjectMutation,
 } from '~/data-provider';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
+import ProjectEditDialog from '~/components/Projects/ProjectEditDialog';
 import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
 import { Collapse } from '~/components/ui';
 import { clearMessagesCache, cn } from '~/utils';
@@ -52,86 +51,6 @@ const iconButtonClassName = cn(
   buttonVariants({ variant: 'section-action', size: 'icon-xs' }),
   'shrink-0',
 );
-
-function ProjectRenameDialog({
-  open,
-  onOpenChange,
-  project,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  project: TChatProject;
-}) {
-  const localize = useLocalize();
-  const formId = useId();
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [name, setName] = useState(project.name);
-  const updateProject = useUpdateProjectMutation();
-  const { showToast } = useToastContext();
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    setName(project.name);
-    const frameId = requestAnimationFrame(() => inputRef.current?.focus());
-    return () => cancelAnimationFrame(frameId);
-  }, [open, project.name]);
-
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed || updateProject.isLoading) {
-      return;
-    }
-    updateProject.mutate(
-      { projectId: project._id, name: trimmed },
-      {
-        onSuccess: () => onOpenChange(false),
-        onError: () =>
-          showToast({
-            message: localize('com_ui_project_rename_error'),
-            severity: NotificationSeverity.ERROR,
-            showIcon: true,
-          }),
-      },
-    );
-  };
-
-  return (
-    <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent className="w-11/12 max-w-md" showCloseButton={false}>
-        <OGDialogHeader>
-          <OGDialogTitle>{localize('com_ui_rename_project')}</OGDialogTitle>
-        </OGDialogHeader>
-        <form id={formId} onSubmit={handleSubmit}>
-          <Input
-            ref={inputRef}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            aria-label={localize('com_ui_project_name')}
-            className="w-full bg-transparent text-text-primary placeholder:text-text-secondary focus-visible:ring-2 focus-visible:ring-ring-primary"
-          />
-        </form>
-        <div className="flex justify-end gap-4 pt-4">
-          <OGDialogClose asChild>
-            <Button aria-label="cancel" variant="outline">
-              {localize('com_ui_cancel')}
-            </Button>
-          </OGDialogClose>
-          <Button
-            type="submit"
-            form={formId}
-            variant="submit"
-            disabled={!name.trim() || updateProject.isLoading}
-          >
-            {updateProject.isLoading ? <Spinner className="size-4" /> : localize('com_ui_save')}
-          </Button>
-        </div>
-      </OGDialogContent>
-    </OGDialog>
-  );
-}
 
 function ProjectDeleteDialog({
   open,
@@ -317,7 +236,7 @@ const ProjectItem = memo(
         },
         {
           id: `${menuId}-rename`,
-          label: localize('com_ui_rename'),
+          label: localize('com_ui_edit_project'),
           icon: <Pencil className="size-4 text-text-secondary" aria-hidden="true" />,
           onClick: () => setIsRenameOpen(true),
         },
@@ -408,7 +327,7 @@ const ProjectItem = memo(
             onShowAll={openProject}
           />
         </Collapse>
-        <ProjectRenameDialog open={isRenameOpen} onOpenChange={setIsRenameOpen} project={project} />
+        <ProjectEditDialog open={isRenameOpen} onOpenChange={setIsRenameOpen} project={project} />
         <ProjectDeleteDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} project={project} />
       </li>
     );
@@ -416,6 +335,7 @@ const ProjectItem = memo(
   (prevProps, nextProps) =>
     prevProps.project._id === nextProps.project._id &&
     prevProps.project.name === nextProps.project.name &&
+    prevProps.project.description === nextProps.project.description &&
     prevProps.project.conversationCount === nextProps.project.conversationCount &&
     prevProps.project.updatedAt === nextProps.project.updatedAt &&
     prevProps.defaultExpanded === nextProps.defaultExpanded &&

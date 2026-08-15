@@ -2,16 +2,17 @@ import { useCallback, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowUpDown, Check, Folder, Plus } from 'lucide-react';
+import { ArrowLeft, ArrowUpDown, Check, Folder, Pencil, Plus } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import type { ConversationListResponse } from 'librechat-data-provider';
-import { Button, Spinner, DropdownPopup, useMediaQuery } from '@librechat/client';
+import { Button, Spinner, DropdownPopup, TooltipAnchor, useMediaQuery } from '@librechat/client';
 import type { MenuItemProps, RenderProp } from '~/common';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { useConversationsInfiniteQuery, useProjectQuery } from '~/data-provider';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { cn, clearMessagesCache } from '~/utils';
+import ProjectEditDialog from './ProjectEditDialog';
 import ProjectChatList from './ProjectChatList';
 import store from '~/store';
 
@@ -38,6 +39,7 @@ export default function ProjectWorkspace() {
   const queryClient = useQueryClient();
   const { projectId = '' } = useParams();
   const [sortBy, setSortBy] = useState<ChatSortField>('updatedAt');
+  const [isEditOpen, setIsEditOpen] = useState(false);
   const sortMenuId = useId();
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
   const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId);
@@ -154,16 +156,43 @@ export default function ProjectWorkspace() {
             <Folder className="h-6 w-6" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1 pt-0.5">
-            <h1 className="truncate text-balance text-2xl font-semibold tracking-tight text-text-primary">
-              {project.name}
-            </h1>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <h1 className="min-w-0 truncate text-balance text-2xl font-semibold tracking-tight text-text-primary">
+                {project.name}
+              </h1>
+              <TooltipAnchor
+                description={localize('com_ui_edit_project')}
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 shrink-0 text-text-secondary hover:text-text-primary"
+                    aria-label={localize('com_ui_edit_project')}
+                    onClick={() => setIsEditOpen(true)}
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                }
+              />
+            </div>
             {project.description ? (
               <p className="mt-1 text-pretty text-sm leading-relaxed text-text-secondary">
                 {project.description}
               </p>
-            ) : null}
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsEditOpen(true)}
+                className="mt-1 text-sm text-text-tertiary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+              >
+                {localize('com_ui_add_description')}
+              </button>
+            )}
           </div>
         </div>
+
+        <ProjectEditDialog open={isEditOpen} onOpenChange={setIsEditOpen} project={project} />
 
         <button
           type="button"
