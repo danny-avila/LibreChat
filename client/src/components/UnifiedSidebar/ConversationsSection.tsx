@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef
 import { useMediaQuery } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { ConversationListResponse, TConversation } from 'librechat-data-provider';
+import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { List } from 'react-virtualized';
 import {
@@ -22,6 +22,7 @@ import PinnedSection from '~/components/Conversations/PinnedSection';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { Conversations } from '~/components/Conversations';
 import SearchBar from '~/components/Nav/SearchBar';
+import { collectPinnedConversations } from '~/utils';
 import store from '~/store';
 
 const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'));
@@ -88,13 +89,13 @@ const ConversationsSection = memo(() => {
     { enabled: isAuthenticated },
   );
 
-  /* `groupConversationsByDate` strips pins from the chats groups, so if the dedicated
-     request fails there is nowhere else for them to show. Fall back to whatever pins the
-     loaded chats pages already carry rather than emptying the section. */
-  const pinnedConversations = useMemo(() => {
-    const source = pinnedData?.conversations ?? conversations;
-    return source.filter((convo): convo is TConversation => Boolean(convo?.pinned === true));
-  }, [pinnedData?.conversations, conversations]);
+  /* `groupConversationsByDate` strips pins from the chats groups. A failed
+     refetch keeps the previous dedicated result, so merge in pins from the
+     live chats cache rather than hiding a newly pinned row. */
+  const pinnedConversations = useMemo(
+    () => collectPinnedConversations(pinnedData?.conversations, conversations),
+    [pinnedData?.conversations, conversations],
+  );
 
   const toggleNav = useCallback(() => {
     if (isSmallScreen) {

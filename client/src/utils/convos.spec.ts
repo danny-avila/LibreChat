@@ -10,6 +10,7 @@ import {
   groupConversationsByDate,
   updateConvoFieldsInfinite,
   addConvoToAllQueries,
+  collectPinnedConversations,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
@@ -208,6 +209,32 @@ describe('Conversation Utilities', () => {
         0,
       );
       expect(totalGroupedConversations).toBe(conversations.length);
+    });
+  });
+
+  describe('collectPinnedConversations', () => {
+    const dedicated = {
+      conversationId: 'old-pin',
+      title: 'Old pin',
+      pinned: true,
+    } as TConversation;
+    const newlyPinned = {
+      conversationId: 'new-pin',
+      title: 'Just pinned',
+      pinned: true,
+    } as TConversation;
+
+    it('keeps dedicated pins and adds a pin that only lives on the chats cache', () => {
+      const merged = collectPinnedConversations([dedicated], [newlyPinned]);
+      expect(merged.map((conversation) => conversation.conversationId)).toEqual([
+        'old-pin',
+        'new-pin',
+      ]);
+    });
+
+    it('falls back to chats pins when the dedicated list is missing', () => {
+      const merged = collectPinnedConversations(undefined, [newlyPinned]);
+      expect(merged).toEqual([newlyPinned]);
     });
   });
 
@@ -606,6 +633,40 @@ describe('Conversation Utilities', () => {
         addConvoToAllQueries(queryClient, convoA);
         const data = queryClient.getQueryData<InfiniteData<any>>(['allConversations']);
         expect(data!.pages[0].conversations.filter((c) => c.conversationId === 'a').length).toBe(1);
+      });
+
+      it('addConvoToAllQueries does not insert into a bookmark filter the chat does not match', () => {
+        queryClient.setQueryData(['allConversations', { tags: ['work'] }], {
+          pages: [{ conversations: [convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        addConvoToAllQueries(queryClient, convoB);
+
+        const filtered = queryClient.getQueryData<InfiniteData<any>>([
+          'allConversations',
+          { tags: ['work'] },
+        ]);
+        expect(
+          filtered!.pages[0].conversations.map((c: TConversation) => c.conversationId),
+        ).toEqual(['a']);
+      });
+
+      it('addConvoToAllQueries does not insert into a cached search result', () => {
+        queryClient.setQueryData(['allConversations', { search: 'unrelated' }], {
+          pages: [{ conversations: [convoA], nextCursor: null }],
+          pageParams: [],
+        });
+
+        addConvoToAllQueries(queryClient, convoB);
+
+        const searched = queryClient.getQueryData<InfiniteData<any>>([
+          'allConversations',
+          { search: 'unrelated' },
+        ]);
+        expect(
+          searched!.pages[0].conversations.map((c: TConversation) => c.conversationId),
+        ).toEqual(['a']);
       });
 
       it('upsertConvoInAllQueries adds missing conversations to the top', () => {

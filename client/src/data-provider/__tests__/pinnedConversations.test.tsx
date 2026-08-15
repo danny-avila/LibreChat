@@ -454,4 +454,49 @@ describe('unpinning a pin that is not on a loaded chats page', () => {
     ).toEqual(['convo-pinned', 'other-recent']);
     expect(chats?.pages[0].conversations[0].pinned).toBe(false);
   });
+
+  it('does not insert the unpinned chat into an unrelated bookmark cache', async () => {
+    const unpinned = { ...pinnedConvo, pinned: false, tags: [] } as TConversation;
+    pinConversation.mockResolvedValue(unpinned);
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([pinnedConvo]),
+    );
+    queryClient.setQueryData([QueryKeys.allConversations, { tags: ['work'] }], {
+      pages: [
+        {
+          conversations: [
+            {
+              conversationId: 'work-chat',
+              title: 'Work',
+              endpoint: 'openAI',
+              tags: ['work'],
+            } as TConversation,
+          ],
+          nextCursor: null,
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    const { result } = renderHook(() => usePinConversationMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      result.current.mutate({
+        conversationId: pinnedConvo.conversationId as string,
+        pinned: false,
+      });
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const filtered = queryClient.getQueryData<{
+      pages: { conversations: TConversation[] }[];
+    }>([QueryKeys.allConversations, { tags: ['work'] }]);
+    expect(
+      filtered?.pages[0].conversations.map((conversation) => conversation.conversationId),
+    ).toEqual(['work-chat']);
+  });
 });

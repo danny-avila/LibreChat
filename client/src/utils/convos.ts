@@ -171,6 +171,66 @@ function conversationMatchesProjectQuery(
   return conversation.chatProjectId === projectId;
 }
 
+function getConversationListQueryParams(queryKey: readonly unknown[]): {
+  tags?: string[];
+  search?: string;
+} {
+  const params = queryKey[1];
+  if (!params || typeof params !== 'object') {
+    return {};
+  }
+  return params as { tags?: string[]; search?: string };
+}
+
+/** Inserts must not land in a bookmark or search cache the row would not
+ * appear in on the server. Search is not matchable client-side, so those
+ * variants are skipped. */
+function conversationMatchesListQuery(
+  queryKey: readonly unknown[],
+  conversation: Pick<TConversation, 'chatProjectId' | 'tags'>,
+): boolean {
+  if (!conversationMatchesProjectQuery(queryKey, conversation)) {
+    return false;
+  }
+  const { tags, search } = getConversationListQueryParams(queryKey);
+  if (typeof search === 'string' && search.trim() !== '') {
+    return false;
+  }
+  if (Array.isArray(tags) && tags.length > 0) {
+    const conversationTags = conversation.tags;
+    if (!Array.isArray(conversationTags) || conversationTags.length === 0) {
+      return false;
+    }
+    return tags.some((tag) => conversationTags.includes(tag));
+  }
+  return true;
+}
+
+/** Dedicated pinned data wins for ids it already has. Pins that only live on
+ * the loaded chats pages are appended so a failed refetch of the dedicated
+ * query cannot hide a newly pinned row. */
+export function collectPinnedConversations(
+  dedicated: Array<TConversation | null | undefined> | undefined,
+  fromChats: Array<TConversation | null | undefined>,
+): TConversation[] {
+  const byId = new Map<string, TConversation>();
+  for (const conversation of dedicated ?? []) {
+    if (conversation?.conversationId && conversation.pinned === true) {
+      byId.set(conversation.conversationId, conversation);
+    }
+  }
+  for (const conversation of fromChats) {
+    if (
+      conversation?.conversationId &&
+      conversation.pinned === true &&
+      !byId.has(conversation.conversationId)
+    ) {
+      byId.set(conversation.conversationId, conversation);
+    }
+  }
+  return [...byId.values()];
+}
+
 /**
  * Reads the project id from the current URL's `?projectId` param — the source of
  * truth for a new chat's project scope (the conversation atom can lag behind it).
@@ -366,7 +426,7 @@ export function addConvoToAllQueries(queryClient: QueryClient, newConvo: TConver
     .findAll([QueryKeys.allConversations], { exact: false });
 
   for (const query of queries) {
-    if (!conversationMatchesProjectQuery(query.queryKey, newConvo)) {
+    if (!conversationMatchesListQuery(query.queryKey, newConvo)) {
       continue;
     }
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
@@ -443,7 +503,7 @@ export function upsertConvoInAllQueries(
 
       const now = new Date().toISOString();
       if (pageIdx === -1) {
-        if (!conversationMatchesProjectQuery(query.queryKey, nextConvo)) {
+        if (!conversationMatchesListQuery(query.queryKey, nextConvo)) {
           return oldData;
         }
         const firstPage = oldData.pages[0] ?? { conversations: [], nextCursor: null };
