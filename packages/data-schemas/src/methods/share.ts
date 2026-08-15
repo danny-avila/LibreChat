@@ -1,9 +1,13 @@
 import { nanoid } from 'nanoid';
 import { Types } from 'mongoose';
-import { Constants, ContentTypes, FileSources } from 'librechat-data-provider';
+import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
+import {
+  sanitizeUIResourceContent,
+  stripMessageUIResourceMarkers,
+} from '~/utils/stripUIResourceMarkers';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
 import logger from '~/config/winston';
@@ -116,6 +120,13 @@ function sanitizeSharedFiles(files: unknown): t.SharedFile[] | undefined {
     .filter((file): file is t.SharedFile => file != null);
 
   return sanitized.length > 0 ? sanitized : undefined;
+}
+
+function sanitizeSharedAttachments(attachments: unknown): t.SharedFile[] | undefined {
+  const sanitized = sanitizeSharedFiles(attachments)?.filter(
+    (attachment) => attachment.type !== Tools.ui_resources,
+  );
+  return sanitized && sanitized.length > 0 ? sanitized : undefined;
 }
 
 /**
@@ -379,6 +390,7 @@ export function anonymizeSharedContent(
     shareId: string;
     snapshotIds: Set<string>;
     includeFiles: boolean;
+    sanitizeUIResourceMarkers?: boolean;
   },
 ): unknown[] | undefined {
   if (!Array.isArray(content)) {
@@ -386,8 +398,13 @@ export function anonymizeSharedContent(
   }
 
   let result: unknown[] | null = null;
+  const sanitized = sanitizeUIResourceContent(content, params.sanitizeUIResourceMarkers === true);
+  if (sanitized !== content) {
+    result = sanitized as unknown[];
+  }
+
   for (let i = 0; i < content.length; i++) {
-    const part = content[i];
+    const part = result?.[i] ?? content[i];
     if (!isSteerPartWithFiles(part)) {
       continue;
     }
@@ -405,9 +422,7 @@ export function anonymizeSharedContent(
           ),
         )
       : undefined;
-    if (result == null) {
-      result = [...content];
-    }
+    result ??= [...content];
     result[i] = files ? { ...rest, files } : rest;
   }
   return result ?? content;
@@ -456,7 +471,7 @@ function anonymizeMessages(
     // When files are not shared for this link, omit files/attachments entirely so
     // viewers can't load them through the owner's original (e.g. static) paths.
     const attachments = includeFiles
-      ? sanitizeSharedFiles(message.attachments)?.map((attachment) =>
+      ? sanitizeSharedAttachments(message.attachments)?.map((attachment) =>
           applyShareFileRoute(
             {
               ...attachment,
@@ -492,13 +507,17 @@ function anonymizeMessages(
         anonymizeMessageId(message.parentMessageId || ''),
       conversationId: newConvoId,
       sender: message.sender,
-      text: message.text,
+      text:
+        message.isCreatedByUser === false
+          ? stripMessageUIResourceMarkers(message.text, message.error)
+          : message.text,
       content: anonymizeSharedContent(message.content, {
         newConvoId,
         newMessageId,
         shareId,
         snapshotIds,
         includeFiles,
+        sanitizeUIResourceMarkers: message.isCreatedByUser !== true,
       }),
       ...(message.iconURL && { iconURL: message.iconURL }),
       ...(model && { model }),

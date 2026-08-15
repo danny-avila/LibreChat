@@ -2,6 +2,9 @@ export default {
   collectCoverageFrom: ['src/**/*.{js,jsx,ts,tsx}', '!<rootDir>/node_modules/'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
   testPathIgnorePatterns: ['/node_modules/', '/dist/', '/misc/'],
+  transformIgnorePatterns: [
+    '/node_modules/(?!mdast-util-|micromark|decode-named-character-reference|devlop|longest-streak|unist-util-|zwitch|character-(?:entities|reference)|parse-entities|stringify-entities|is-(?:alphanumerical|alphabetical|decimal|hexadecimal)|ccount|markdown-table|escape-string-regexp)',
+  ],
   coverageReporters: ['text', 'cobertura'],
   testResultsProcessor: 'jest-junit',
   moduleNameMapper: {
