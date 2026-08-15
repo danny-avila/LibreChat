@@ -87,12 +87,7 @@ describe('Conversation row on touch', () => {
   it('opens the menu on the very first tap', () => {
     renderRow();
 
-    /**
-     * `pointerdown`, not `click`: touch focuses the button mid-tap, and the
-     * row's `onFocus` swaps this trigger for `ConvoOptions` before a click
-     * could land, so a click-based handler loses the first tap entirely.
-     */
-    fireEvent.pointerDown(screen.getByTestId('convo-options-trigger'));
+    fireEvent.click(screen.getByTestId('convo-options-trigger'));
 
     expect(screen.getByTestId('convo-options')).toHaveAttribute('data-open', 'true');
   });
@@ -100,32 +95,29 @@ describe('Conversation row on touch', () => {
   it('survives focus arriving before the press completes', () => {
     renderRow();
 
-    const trigger = screen.getByTestId('convo-options-trigger');
-    fireEvent.pointerDown(trigger);
-    fireEvent.focus(trigger);
-
-    expect(screen.getByTestId('convo-options')).toHaveAttribute('data-open', 'true');
-  });
-
-  it('opens from a click with no pointer event at all', () => {
-    renderRow();
-
     /**
-     * Assistive tech, voice control and keyboard activation dispatch `click`
-     * directly. Without this path the click bubbles to the row and navigates
-     * to the conversation instead of opening its options.
+     * Touch focuses the button mid-tap. The trigger must not be swapped out
+     * from under the finger, or the click never lands on it.
      */
+    fireEvent.focus(screen.getByTestId('convo-options-trigger'));
+
+    expect(screen.getByTestId('convo-options-trigger')).toBeInTheDocument();
+
     fireEvent.click(screen.getByTestId('convo-options-trigger'));
 
     expect(screen.getByTestId('convo-options')).toHaveAttribute('data-open', 'true');
   });
 
-  it.each(['Enter', ' '])('opens on %s from the keyboard', (key) => {
+  it('does not open from a press that turns into a scroll', () => {
     renderRow();
 
-    fireEvent.keyDown(screen.getByTestId('convo-options-trigger'), { key });
+    /**
+     * A press that becomes a vertical swipe fires `pointerdown` but never a
+     * click. Committing on the earlier event opened the menu mid-scroll.
+     */
+    fireEvent.pointerDown(screen.getByTestId('convo-options-trigger'));
 
-    expect(screen.getByTestId('convo-options')).toHaveAttribute('data-open', 'true');
+    expect(screen.queryByTestId('convo-options')).not.toBeInTheDocument();
   });
 
   it('leaves the desktop hover reveal alone', () => {

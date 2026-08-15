@@ -4,6 +4,7 @@ import { SquarePen } from 'lucide-react';
 import { Button } from '@librechat/client';
 import type { NavLink } from '~/common';
 import { useActivePanel, resolveActivePanel, DEFAULT_PANEL } from '~/Providers';
+import { useShortcutAriaKey } from '~/hooks/useKeyboardShortcuts';
 import SearchBar from '~/components/Nav/SearchBar';
 import useNewChat from '~/hooks/Chat/useNewChat';
 import { useLocalize } from '~/hooks';
@@ -29,6 +30,8 @@ function BottomBar({ links, onNewChat }: { links: NavLink[]; onNewChat: () => vo
   }, [switchToHistory, setActive, onNewChat]);
 
   const { handleNewChatClick } = useNewChat({ onNewChat: handleNewChat });
+  /** The shortcut fires globally; assistive tech needs it discoverable here too. */
+  const newChatAriaKey = useShortcutAriaKey('newChat');
 
   /** Searching messages only means anything from the conversation list. */
   const showSearch = search.enabled === true && resolveActivePanel(active, links) === DEFAULT_PANEL;
@@ -47,7 +50,13 @@ function BottomBar({ links, onNewChat }: { links: NavLink[]; onNewChat: () => vo
         asChild
         className={showSearch ? 'h-11 flex-shrink-0 gap-2 rounded-full px-5' : 'h-11 w-full gap-2'}
       >
-        <a href="/c/new" data-testid="nav-new-chat-fab" onClick={handleNewChatClick}>
+        <a
+          href="/c/new"
+          data-testid="nav-new-chat-fab"
+          aria-label={localize('com_ui_new_chat')}
+          aria-keyshortcuts={newChatAriaKey}
+          onClick={handleNewChatClick}
+        >
           <SquarePen className="size-5" aria-hidden="true" />
           <span className="text-sm font-medium">{localize('com_ui_new_chat')}</span>
         </a>

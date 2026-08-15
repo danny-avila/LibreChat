@@ -11,8 +11,12 @@ export const SIDEBAR_TRANSITION = `transform ${TRANSITION_MS}ms ${EASING}`;
 
 /**
  * The mobile drawer is opaque and full-screen, so it sits above the chat.
- * Menus opened from within it must render inside the drawer rather than
- * portal to `document.body`, where `usePopoverZIndex()` would place them at
- * 50 — behind this.
+ *
+ * This ranks the drawer only *within* `Root`'s `relative z-0` stacking
+ * context, so it cannot occlude anything portaled to `document.body` no
+ * matter the value. Menus opened from inside the drawer should therefore keep
+ * portaling: rendering them in place puts them under the nav's
+ * `overflow-hidden` and the virtualized list, and the drawer's transform makes
+ * it their containing block, which clips them.
  */
 export const DRAWER_Z_INDEX = 110;

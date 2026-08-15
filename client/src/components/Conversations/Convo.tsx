@@ -205,20 +205,24 @@ function Conversation({
     actionWidthClassName = isSmallScreen ? 'max-w-[36px]' : 'max-w-[28px]';
   }
 
-  const showConvoOptions = !renaming && (hasInteracted || isActiveConvo);
+  /**
+   * `hasInteracted` is hover- and focus-driven, which is meaningful on a
+   * pointer device but not on touch, where focus lands mid-tap. Letting it
+   * decide here would swap the trigger for `ConvoOptions` while the finger is
+   * still down; the menu then has to be claimed before the gesture is even
+   * known to be a tap. Keyed to the menu's own state instead, there is no race
+   * to defend against and an ordinary click suffices.
+   */
+  const showConvoOptions =
+    !renaming &&
+    (isSmallScreen ? isPopoverActive || isActiveConvo : hasInteracted || isActiveConvo);
+
   /**
    * `ConvoOptions` carries six mutations and its own menu store, so mounting it
-   * for every overscanned row is wasteful. On touch we render a cheap trigger
-   * instead and let the first tap mount the real menu already open.
+   * for every overscanned row is wasteful. Touch gets a cheap trigger instead,
+   * and the first tap mounts the real menu already open.
    */
   const showOptionsTrigger = !renaming && !showConvoOptions && !isGenerating && isSmallScreen;
-
-  const openOptions = (event: React.SyntheticEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setHasInteracted(true);
-    setIsPopoverActive(true);
-  };
 
   let actionContent: React.ReactNode = null;
   if (isGenerating) {
@@ -233,23 +237,13 @@ function Conversation({
         data-testid="convo-options-trigger"
         className="flex size-9 items-center justify-center rounded-lg text-text-secondary"
         /**
-         * Touch browsers focus the button mid-tap, and the row's `onFocus` sets
-         * `hasInteracted`, which swaps this button for `ConvoOptions` before a
-         * click could land — so the tap needs claiming at `pointerdown`.
+         * A plain click: the browser already withholds it until a press
+         * resolves as a tap rather than a scroll, and synthesises it for
+         * keyboard and assistive-technology activation.
          */
-        onPointerDown={openOptions}
-        /**
-         * Assistive tech, voice control and keyboard activation dispatch `click`
-         * with no preceding pointer event, so that path must open the menu too —
-         * otherwise the click bubbles to the row and navigates away instead.
-         * Safe alongside the above: `pointerdown` removes this button, so the
-         * two never both fire.
-         */
-        onClick={openOptions}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            openOptions(event);
-          }
+        onClick={(event) => {
+          event.stopPropagation();
+          setIsPopoverActive(true);
         }}
       >
         <Ellipsis className="icon-md" aria-hidden="true" />
