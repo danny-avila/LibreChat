@@ -49,7 +49,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
             'group relative flex h-40 gap-5 overflow-hidden rounded-xl',
             'cursor-pointer select-none px-6 py-4',
             'bg-surface-tertiary transition-colors duration-150 hover:bg-surface-hover',
-            'md:min-h-36 lg:min-h-40',
+            'lg:h-44',
             '[&_*]:cursor-pointer',
             className,
           )}
@@ -69,7 +69,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
         >
           {/* Category badge - top right */}
           {categoryLabel && (
-            <span className="absolute right-3 top-2 rounded-md bg-surface-hover px-2 py-0.5 text-xs text-text-secondary">
+            <span className="absolute right-4 top-3 max-w-[40%] truncate rounded-md bg-surface-hover px-2 py-0.5 text-xs text-text-secondary">
               {categoryLabel}
             </span>
           )}
@@ -81,10 +81,13 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
             </div>
           </div>
 
-          {/* Content */}
-          <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden">
-            {/* Agent name */}
-            <Label className="line-clamp-2 mt-3 text-base font-semibold text-text-primary md:text-lg">
+          {/* Content. Children never shrink, so a clamped line is either fully shown
+              or fully hidden, rather than sliced in half by the card's fixed height. */}
+          <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden [&>*]:shrink-0">
+            {/* Agent name. The floated spacer keeps only the first line clear of the
+                category badge, so longer names still wrap to the full card width. */}
+            <Label className="line-clamp-2 text-base font-semibold text-text-primary lg:text-lg">
+              {categoryLabel && <span aria-hidden="true" className="float-right h-5 w-24" />}
               {agent.name}
             </Label>
 
@@ -92,7 +95,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
             {agent.description && (
               <p
                 id={`agent-${agent.id}-description`}
-                className="mt-0.5 line-clamp-2 text-sm leading-snug text-text-secondary md:line-clamp-3"
+                className="mt-0.5 line-clamp-2 text-sm leading-snug text-text-secondary lg:line-clamp-3"
                 aria-label={localize('com_agents_description_card', {
                   description: agent.description,
                 })}
