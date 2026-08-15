@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { Constants, normalizeServerName } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from './types';
 import type { MCPToolCacheDeps, MCPToolInput } from './tools';
@@ -171,6 +172,42 @@ describe('createMCPToolCacheService', () => {
       ).resolves.toBe(false);
 
       expect(deps.setCachedAppServerTools).not.toHaveBeenCalled();
+    });
+
+    /** #14857 went a release without a diagnostic because dropping an app catalog only logged
+     * at debug. A drop means agents lose this server's tools, so it has to be visible by
+     * default; a superseded write is routine and must stay quiet. */
+    describe('visibility of a discarded publication', () => {
+      const publish = (params: { publicationGeneration?: string; publicationRevision?: string }) =>
+        createMCPToolCacheService(
+          createMockDeps({ setCachedAppServerTools: jest.fn().mockResolvedValue(false) }),
+        ).replaceAppServerTools({ serverName: 'dynamic', serverTools: {}, ...params });
+
+      let warn: jest.SpyInstance;
+
+      beforeEach(() => {
+        warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+      });
+
+      afterEach(() => warn.mockRestore());
+
+      it('warns when a publication cannot be ordered', async () => {
+        await publish({ publicationGeneration: 'config-generation' });
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('Skipped unordered'));
+      });
+
+      it('warns when a publication cannot be addressed', async () => {
+        await publish({ publicationRevision: '1' });
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('Skipped unaddressed'));
+      });
+
+      it('stays quiet when a concurrent replica already published newer tools', async () => {
+        await publish({ publicationGeneration: 'config-generation', publicationRevision: '1' });
+
+        expect(warn).not.toHaveBeenCalled();
+      });
     });
 
     /** The catalog write needs ordering; the tools themselves were read from the server and are
