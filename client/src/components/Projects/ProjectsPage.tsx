@@ -32,6 +32,7 @@ import {
   useRenameProject,
   useDeleteProject,
   useRemoveProjectDocuments,
+  ProjectsApiError,
 } from '~/data-provider/Projects';
 import type { ProjectDocument } from '~/data-provider/Projects';
 import { clearMessagesCache, cn } from '~/utils';
@@ -54,7 +55,7 @@ const ProjectsPage: React.FC = () => {
     }`,
   );
 
-  const { data: projects = [], isLoading } = useProjects();
+  const { data: projects = [], isLoading, isError, error, refetch } = useProjects();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -190,6 +191,8 @@ const ProjectsPage: React.FC = () => {
               <div className="flex justify-center py-16">
                 <Spinner className="size-5" />
               </div>
+            ) : isError ? (
+              <ProjectsError error={error} onRetry={() => refetch()} />
             ) : projects.length === 0 ? (
               <EmptyProjects onCreate={() => setCreating(true)} />
             ) : (
@@ -241,6 +244,41 @@ const ProjectsPage: React.FC = () => {
   );
 };
 
+/**
+ * 목록 로드 실패를 빈 상태와 구분해 표시. 인스펙터 없이도 화면에서
+ * 상태코드로 원인을 진단할 수 있게 안내 문구를 함께 그린다.
+ * (404 = 구버전 bkl-api 배포, 403 = 프록시가 X-BKL-User-Sid 를 못 넣는 계정)
+ */
+const ProjectsError: React.FC<{ error: unknown; onRetry: () => void }> = ({ error, onRetry }) => {
+  const status = error instanceof ProjectsApiError ? error.status : null;
+  const message = error instanceof Error ? error.message : String(error);
+  const hint =
+    status === 404
+      ? 'bkl-api 가 구버전입니다. 프로젝트 API 가 포함된 이미지(main-3d7fb57 이후)로 교체가 필요합니다.'
+      : status === 403
+        ? '이 계정에는 BIMS 사용자 식별자(sid)가 없어 프로젝트를 사용할 수 없습니다. BIMS 연동 계정으로 로그인해 주세요.'
+        : '네트워크 또는 서버 오류입니다. 잠시 후 다시 시도해 주세요.';
+
+  return (
+    <div className="flex w-full flex-col items-center justify-center gap-3 rounded-xl border border-red-300 bg-red-50 px-6 py-14 text-center dark:border-red-800 dark:bg-red-950/40">
+      <p className="text-sm font-medium text-red-700 dark:text-red-300">
+        프로젝트 목록을 불러오지 못했습니다{status != null ? ` (HTTP ${status})` : ''}
+      </p>
+      <p className="max-w-lg text-xs leading-relaxed text-red-700/90 dark:text-red-300/90">
+        {hint}
+      </p>
+      {message && (
+        <code className="max-w-lg truncate rounded bg-red-100 px-2 py-1 text-[11px] text-red-800 dark:bg-red-900/60 dark:text-red-200">
+          {message}
+        </code>
+      )}
+      <Button type="button" variant="outline" size="sm" className="mt-1" onClick={onRetry}>
+        다시 시도
+      </Button>
+    </div>
+  );
+};
+
 const EmptyProjects: React.FC<{ onCreate: () => void }> = ({ onCreate }) => (
   <div className="flex w-full flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border-medium py-20 text-center">
     <FolderOpen className="h-10 w-10 text-text-secondary opacity-40" aria-hidden="true" />
@@ -278,7 +316,8 @@ const ProjectDetailPanel: React.FC<{
   onSearchDocuments: (query: string) => void;
 }> = ({ projectId, onDeleted, onSearchDocuments }) => {
   const { showToast } = useToastContext();
-  const { data: project, isLoading } = useProject(projectId);
+  const { data: project, isLoading, isError: isDetailError, error: detailError } =
+    useProject(projectId);
   const renameProject = useRenameProject();
   const deleteProject = useDeleteProject();
   const removeDocuments = useRemoveProjectDocuments();
@@ -359,6 +398,15 @@ const ProjectDetailPanel: React.FC<{
       showToast({ message: e instanceof Error ? e.message : String(e), status: 'error' });
     }
   };
+
+  if (isDetailError) {
+    return (
+      <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-8 text-center text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300">
+        프로젝트 상세를 불러오지 못했습니다:{' '}
+        {detailError instanceof Error ? detailError.message : String(detailError)}
+      </div>
+    );
+  }
 
   if (isLoading || !project) {
     return (

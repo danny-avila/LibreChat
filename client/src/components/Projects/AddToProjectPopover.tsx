@@ -32,7 +32,7 @@ export default function AddToProjectPopover({
   const [newName, setNewName] = useState('');
   const [busyProjectId, setBusyProjectId] = useState<string | null>(null);
 
-  const { data: projects = [], isLoading } = useProjects();
+  const { data: projects = [], isLoading, isError, error } = useProjects();
   const createProject = useCreateProject();
   const addDocuments = useAddProjectDocuments();
 
@@ -108,6 +108,11 @@ export default function AddToProjectPopover({
             {isLoading ? (
               <div className="flex items-center justify-center py-4">
                 <Spinner className="size-4" />
+              </div>
+            ) : isError ? (
+              <div className="px-2 py-3 text-xs text-red-600 dark:text-red-400">
+                프로젝트 목록을 불러오지 못했습니다:{' '}
+                {error instanceof Error ? error.message : String(error)}
               </div>
             ) : projects.length === 0 ? (
               <div className="px-2 py-3 text-sm text-text-secondary">
