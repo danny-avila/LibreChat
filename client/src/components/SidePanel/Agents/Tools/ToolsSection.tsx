@@ -83,7 +83,8 @@ export default function ToolsSection({ agentId }: Props) {
 
   const skillsValue = useWatch({ control, name: 'skills' });
   const skillsEnabledValue = useWatch({ control, name: 'skills_enabled' });
-  const useAllSkills = skillsEnabledValue === true && (skillsValue ?? []).length === 0;
+  const hasSelectedSkills = (skillsValue ?? []).length > 0;
+  const useAllSkills = !hasSelectedSkills && skillsEnabledValue === true;
   /** Selection stashed when "use all skills" turns on, so turning it back off
    * restores the previous picks instead of destroying them. Cleared when the
    * agent changes — the section isn't remounted on switch (only the form
@@ -98,6 +99,10 @@ export default function ToolsSection({ agentId }: Props) {
 
   const handleUseAllSkillsChange = useCallback(
     (checked: boolean) => {
+      if (hasSelectedSkills) {
+        setValue('skills_enabled', checked, { shouldDirty: true });
+        return;
+      }
       if (checked) {
         stashedSkillsRef.current = (getValues('skills') ?? []) as string[];
         setValue('skills', [], { shouldDirty: true });
@@ -108,7 +113,7 @@ export default function ToolsSection({ agentId }: Props) {
       setValue('skills', restored, { shouldDirty: true });
       setValue('skills_enabled', restored.length > 0, { shouldDirty: true });
     },
-    [getValues, setValue],
+    [hasSelectedSkills, getValues, setValue],
   );
 
   const uninstallToolCredentials = useUninstallToolCredentials();
@@ -288,7 +293,7 @@ export default function ToolsSection({ agentId }: Props) {
           onInfo={setDialogItem}
           onRemove={handleQuickRemove}
           badgeText={useAllSkills ? localize('com_ui_all_proper') : undefined}
-          showAdd={!useAllSkills}
+          showAdd={true}
           showBody={!useAllSkills}
         >
           <div className="mb-1.5 flex items-center justify-between gap-3 px-1">
@@ -297,14 +302,18 @@ export default function ToolsSection({ agentId }: Props) {
                 id="use-all-skills-label"
                 className="truncate text-[13px] font-medium text-text-primary"
               >
-                {localize('com_ui_skills_use_all')}
+                {localize(hasSelectedSkills ? 'com_ui_skills_allow_other' : 'com_ui_skills_use_all')}
               </span>
               <HoverCard openDelay={50}>
                 <InfoTrigger />
                 <HoverCardPortal>
                   <HoverCardContent side={ESide.Top} className="w-80">
                     <p className="text-sm text-text-secondary">
-                      {localize('com_ui_skills_use_all_hint')}
+                      {localize(
+                        hasSelectedSkills
+                          ? 'com_ui_skills_allow_other_hint'
+                          : 'com_ui_skills_use_all_hint',
+                      )}
                     </p>
                   </HoverCardContent>
                 </HoverCardPortal>
@@ -312,7 +321,7 @@ export default function ToolsSection({ agentId }: Props) {
             </div>
             <Switch
               id="use-all-skills"
-              checked={useAllSkills}
+              checked={hasSelectedSkills ? skillsEnabledValue === true : useAllSkills}
               onCheckedChange={handleUseAllSkillsChange}
               aria-labelledby="use-all-skills-label"
             />

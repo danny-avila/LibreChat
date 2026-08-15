@@ -200,27 +200,43 @@ describe('ToolsSection', () => {
   });
 });
 
-describe('use all skills toggle', () => {
-  test('renders off inside the Skills section by default', () => {
+describe('skills toggle behavior', () => {
+  test('renders Use all skills inside the Skills section by default when no skills are selected', () => {
     render(<ToolsSection agentId="a" />);
     expect(screen.getByText('com_ui_skills_use_all')).toBeInTheDocument();
     expect(screen.getByText('com_ui_skills_use_all_hint')).toBeInTheDocument();
     expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
   });
 
-  test('turning it on clears the selection and enables the master flag', () => {
-    mockFormValues = { skills: ['s1'], skills_enabled: true };
+  test('renders Allow other skills when skills are selected', () => {
+    mockFormValues = { skills: ['s1'], skills_enabled: false };
+    render(<ToolsSection agentId="a" />);
+    expect(screen.getByText('com_ui_skills_allow_other')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_skills_allow_other_hint')).toBeInTheDocument();
+    expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
+  });
+
+  test('toggling switch when skills are selected updates skills_enabled without clearing skills', () => {
+    mockFormValues = { skills: ['s1'], skills_enabled: false };
+    render(<ToolsSection agentId="a" />);
+    fireEvent.click(screen.getByRole('switch'));
+    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', true, { shouldDirty: true });
+    expect(mockSetValue).not.toHaveBeenCalledWith('skills', expect.anything(), expect.anything());
+  });
+
+  test('turning use all skills on when no skills are selected enables the master flag', () => {
+    mockFormValues = { skills: [], skills_enabled: false };
     render(<ToolsSection agentId="a" />);
     fireEvent.click(screen.getByRole('switch'));
     expect(mockSetValue).toHaveBeenCalledWith('skills', [], { shouldDirty: true });
     expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', true, { shouldDirty: true });
   });
 
-  test('while on, hides Add and the skill list and shows the All badge', () => {
+  test('while use all skills is on (and no skills selected), shows the All badge', () => {
     mockFormValues = { skills: [], skills_enabled: true };
     render(<ToolsSection agentId="a" />);
     expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'true');
-    expect(screen.queryByRole('button', { name: 'com_ui_add_skills' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'com_ui_add_skills' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /com_ui_skills_empty/ })).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_all_proper')).toBeInTheDocument();
   });
@@ -231,31 +247,7 @@ describe('use all skills toggle', () => {
     expect(mockSetValue).not.toHaveBeenCalled();
   });
 
-  test('turning it off restores the previously selected skills', () => {
-    mockFormValues = { skills: ['s1'], skills_enabled: true };
-    const { rerender } = render(<ToolsSection agentId="a" />);
-    fireEvent.click(screen.getByRole('switch'));
-    mockFormValues = { skills: [], skills_enabled: true };
-    rerender(<ToolsSection agentId="a" />);
-    mockSetValue.mockClear();
-    fireEvent.click(screen.getByRole('switch'));
-    expect(mockSetValue).toHaveBeenCalledWith('skills', ['s1'], { shouldDirty: true });
-    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', true, { shouldDirty: true });
-  });
-
-  test('does not restore a stash from a different agent', () => {
-    mockFormValues = { skills: ['s1'], skills_enabled: true };
-    const { rerender } = render(<ToolsSection agentId="a" />);
-    fireEvent.click(screen.getByRole('switch'));
-    mockFormValues = { skills: [], skills_enabled: true };
-    rerender(<ToolsSection agentId="b" />);
-    mockSetValue.mockClear();
-    fireEvent.click(screen.getByRole('switch'));
-    expect(mockSetValue).toHaveBeenCalledWith('skills', [], { shouldDirty: true });
-    expect(mockSetValue).toHaveBeenCalledWith('skills_enabled', false, { shouldDirty: true });
-  });
-
-  test('turning it off with nothing stashed disables the master flag', () => {
+  test('turning use all skills off with nothing stashed disables the master flag', () => {
     mockFormValues = { skills: [], skills_enabled: true };
     render(<ToolsSection agentId="a" />);
     fireEvent.click(screen.getByRole('switch'));

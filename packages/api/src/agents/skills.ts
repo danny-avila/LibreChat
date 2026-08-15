@@ -5,7 +5,7 @@ import { formatSkillCatalog, SkillToolDefinition, ReadFileToolDefinition } from 
 import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Agent } from 'librechat-data-provider';
-import type { Types } from 'mongoose';
+import { Types } from 'mongoose';
 import { registerCodeExecutionTools } from './tools';
 import { logAxiosError } from '~/utils';
 
@@ -353,13 +353,37 @@ export function resolveAgentScopedSkillIds(
     }
     return ephemeralSkillsToggle ? scopeSkillIds(accessibleSkillIds, undefined) : [];
   }
+
+  const pinnedSkillObjectIds: Types.ObjectId[] = [];
+  if (Array.isArray(agent.skills) && agent.skills.length > 0) {
+    for (const idStr of agent.skills) {
+      if (typeof idStr === 'string' && Types.ObjectId.isValid(idStr)) {
+        pinnedSkillObjectIds.push(new Types.ObjectId(idStr));
+      }
+    }
+  }
+
+  const hasPinnedSkills = pinnedSkillObjectIds.length > 0;
+
+  if (hasPinnedSkills) {
+    if (agent.skills_enabled === true) {
+      const set = new Set(accessibleSkillIds.map((id) => id.toString()));
+      const union = [...accessibleSkillIds];
+      for (const pId of pinnedSkillObjectIds) {
+        if (!set.has(pId.toString())) {
+          set.add(pId.toString());
+          union.push(pId);
+        }
+      }
+      return union;
+    }
+    return pinnedSkillObjectIds;
+  }
+
   if (agent.skills_enabled !== true) {
     return [];
   }
-  if (!Array.isArray(agent.skills) || agent.skills.length === 0) {
-    return scopeSkillIds(accessibleSkillIds, undefined);
-  }
-  return scopeSkillIds(accessibleSkillIds, agent.skills);
+  return scopeSkillIds(accessibleSkillIds, undefined);
 }
 
 export interface ResolveSkillActiveParams {
@@ -371,20 +395,26 @@ export interface ResolveSkillActiveParams {
   userId?: string;
   /** Admin-configured default for shared skills. `true` = shared skills auto-activate. */
   defaultActiveOnShare?: boolean;
+  /** Set of skill IDs pinned to the current agent by the agent creator */
+  pinnedSkillIds?: Set<string>;
 }
 
 /**
  * Resolves whether a skill should be injected into the agent catalog for the
  * current user. Precedence (pinned by unit tests):
  *
- * 1. Explicit override in `skillStates` wins above all.
- * 2. Absent `userId` → fail closed. The caller lost user context, so we do
+ * 1. Pinned skills explicitly selected on the agent auto-activate for that agent.
+ * 2. Explicit override in `skillStates` wins for non-pinned skills.
+ * 3. Absent `userId` → fail closed. The caller lost user context, so we do
  *    not fall back to ownership-based defaults that could leak shared skills.
- * 3. Owned skills (author === userId) default to **active**.
- * 4. Shared skills default to `defaultActiveOnShare` (admin-configured, default `false`).
+ * 4. Owned skills (author === userId) default to **active**.
+ * 5. Shared skills default to `defaultActiveOnShare` (admin-configured, default `false`).
  */
 export function resolveSkillActive(params: ResolveSkillActiveParams): boolean {
-  const { skill, skillStates, userId, defaultActiveOnShare = false } = params;
+  const { skill, skillStates, userId, defaultActiveOnShare = false, pinnedSkillIds } = params;
+  if (pinnedSkillIds && pinnedSkillIds.has(skill._id.toString())) {
+    return true;
+  }
   const override = skillStates?.[skill._id.toString()];
   if (override !== undefined) {
     return override;
@@ -494,8 +524,12 @@ export async function injectSkillCatalog(
 
   type SkillSummary = Awaited<ReturnType<NonNullable<typeof listSkillsByAccess>>>['skills'][number];
 
+  const pinnedSkillIds = new Set<string>(
+    Array.isArray(agent.skills) ? agent.skills.map((id) => id.toString()) : [],
+  );
+
   const isActive = (s: SkillSummary): boolean =>
-    resolveSkillActive({ skill: s, skillStates, userId, defaultActiveOnShare });
+    resolveSkillActive({ skill: s, skillStates, userId, defaultActiveOnShare, pinnedSkillIds });
 
   const activeSkills: SkillSummary[] = [];
   /**
