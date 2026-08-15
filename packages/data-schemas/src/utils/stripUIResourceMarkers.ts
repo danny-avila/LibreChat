@@ -17,17 +17,39 @@ type MarkdownNode = {
   children?: MarkdownNode[];
 };
 
+type SourceSegment = {
+  decodedStart: number;
+  decodedEnd: number;
+  sourceStart: number;
+  sourceEnd: number;
+  literal: boolean;
+};
+
 function decodeTextWithSourceSpans(source: string) {
   let value = '';
-  const spans: Array<[number, number]> = [];
+  const segments: SourceSegment[] = [];
   let cursor = 0;
   MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex = 0;
 
   const appendLiteral = (start: number, end: number) => {
-    value += source.slice(start, end);
-    for (let i = start; i < end; i++) {
-      spans.push([i, i + 1]);
+    if (start === end) {
+      return;
     }
+    const decodedStart = value.length;
+    value += source.slice(start, end);
+    const previous = segments[segments.length - 1];
+    if (previous?.literal && previous.decodedEnd === decodedStart && previous.sourceEnd === start) {
+      previous.decodedEnd = value.length;
+      previous.sourceEnd = end;
+      return;
+    }
+    segments.push({
+      decodedStart,
+      decodedEnd: value.length,
+      sourceStart: start,
+      sourceEnd: end,
+      literal: true,
+    });
   };
 
   let match: RegExpExecArray | null;
@@ -37,33 +59,71 @@ function decodeTextWithSourceSpans(source: string) {
     if (decoded === match[0]) {
       appendLiteral(match.index, MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex);
     } else {
+      const decodedStart = value.length;
       value += decoded;
-      for (let i = 0; i < decoded.length; i++) {
-        spans.push([match.index, MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex]);
-      }
+      segments.push({
+        decodedStart,
+        decodedEnd: value.length,
+        sourceStart: match.index,
+        sourceEnd: MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex,
+        literal: false,
+      });
     }
     cursor = MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex;
   }
   appendLiteral(cursor, source.length);
-  return { value, spans };
+  return { value, segments };
 }
 
-function collectMarkerRanges(node: MarkdownNode, source: string, ranges: Array<[number, number]>) {
-  const start = node.position?.start.offset;
-  const end = node.position?.end.offset;
-  if (node.type === 'text' && start != null && end != null) {
-    const decoded = decodeTextWithSourceSpans(source.slice(start, end));
-    UI_RESOURCE_PATTERN.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = UI_RESOURCE_PATTERN.exec(decoded.value)) != null) {
-      const first = decoded.spans[match.index];
-      const last = decoded.spans[match.index + match[0].length - 1];
-      if (first && last) {
-        ranges.push([start + first[0], start + last[1]]);
+function mapDecodedRange(
+  segments: SourceSegment[],
+  decodedStart: number,
+  decodedEnd: number,
+): [number, number] | null {
+  let sourceStart: number | null = null;
+  for (const segment of segments) {
+    if (
+      sourceStart == null &&
+      decodedStart >= segment.decodedStart &&
+      decodedStart < segment.decodedEnd
+    ) {
+      sourceStart = segment.literal
+        ? segment.sourceStart + decodedStart - segment.decodedStart
+        : segment.sourceStart;
+    }
+    if (decodedEnd > segment.decodedStart && decodedEnd <= segment.decodedEnd) {
+      const sourceEnd = segment.literal
+        ? segment.sourceStart + decodedEnd - segment.decodedStart
+        : segment.sourceEnd;
+      return sourceStart == null ? null : [sourceStart, sourceEnd];
+    }
+  }
+  return null;
+}
+
+function collectMarkerRanges(root: MarkdownNode, source: string, ranges: Array<[number, number]>) {
+  const stack = [root];
+  while (stack.length > 0) {
+    const node = stack.pop() as MarkdownNode;
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (node.type === 'text' && start != null && end != null) {
+      const decoded = decodeTextWithSourceSpans(source.slice(start, end));
+      UI_RESOURCE_PATTERN.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = UI_RESOURCE_PATTERN.exec(decoded.value)) != null) {
+        const range = mapDecodedRange(decoded.segments, match.index, match.index + match[0].length);
+        if (range) {
+          ranges.push([start + range[0], start + range[1]]);
+        }
+      }
+    }
+    if (node.children) {
+      for (let i = node.children.length - 1; i >= 0; i--) {
+        stack.push(node.children[i]);
       }
     }
   }
-  node.children?.forEach((child) => collectMarkerRanges(child, source, ranges));
 }
 
 /** Remove MCP-UI markers only from Markdown text nodes visited by the renderer plugin. */
@@ -72,6 +132,9 @@ export function stripUIResourceMarkers(text: undefined): undefined;
 export function stripUIResourceMarkers(text: string | undefined): string | undefined;
 export function stripUIResourceMarkers(text: string | undefined): string | undefined {
   if (text == null || (!text.includes('\\') && !text.includes('&'))) {
+    return text;
+  }
+  if (!decodeString(text).includes('\\ui{')) {
     return text;
   }
 

@@ -22,20 +22,27 @@ function isImportedAssistantMessage(isCreatedByUser) {
   }
 }
 
+function normalizeImportedArray(value) {
+  if (value == null) {
+    return null;
+  }
+  return Array.isArray(value) ? value : [value];
+}
+
 /** Removes executable legacy MCP-UI payloads from untrusted conversation imports. */
 function sanitizeImportedMessage(message) {
   const sanitizeMarkers = isImportedAssistantMessage(message.isCreatedByUser);
+  const content = normalizeImportedArray(message.content);
+  const attachments = normalizeImportedArray(message.attachments);
   return {
     ...message,
     ...(sanitizeMarkers &&
       typeof message.text === 'string' && { text: stripUIResourceMarkers(message.text) }),
-    ...(Array.isArray(message.content) && {
-      content: sanitizeUIResourceContent(message.content, sanitizeMarkers),
+    ...(content && {
+      content: sanitizeUIResourceContent(content, sanitizeMarkers),
     }),
-    ...(Array.isArray(message.attachments) && {
-      attachments: message.attachments.filter(
-        (attachment) => attachment?.type !== Tools.ui_resources,
-      ),
+    ...(attachments && {
+      attachments: attachments.filter((attachment) => attachment?.type !== Tools.ui_resources),
     }),
   };
 }

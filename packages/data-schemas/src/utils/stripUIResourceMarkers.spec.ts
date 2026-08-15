@@ -71,6 +71,16 @@ describe('stripUIResourceMarkers', () => {
     expect(stripUIResourceMarkers('prefix\0 \\ui{paragraph}')).toBe('prefix\0 ');
   });
 
+  it('handles long literal text without per-character source-span objects', () => {
+    const markdown = `\\not-a-marker ${'a'.repeat(100_000)} & plain text`;
+    expect(stripUIResourceMarkers(markdown)).toBe(markdown);
+  });
+
+  it('walks deeply nested Markdown without recursive traversal', () => {
+    const prefix = '> '.repeat(500);
+    expect(stripUIResourceMarkers(`${prefix}\\ui{deep}`)).toBe(prefix);
+  });
+
   it('recursively sanitizes TextData and subagent content while preserving annotations', () => {
     const content = [
       {

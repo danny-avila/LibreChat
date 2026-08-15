@@ -951,6 +951,32 @@ describe('importLibreChatConvo', () => {
     ]);
   });
 
+  it('sanitizes singleton content and attachment fields before Mongoose array casting', async () => {
+    const message = {
+      messageId: 'message-1',
+      parentMessageId: Constants.NO_PARENT,
+      text: '\\ui{malicious}',
+      isCreatedByUser: false,
+      content: { type: ContentTypes.TEXT, text: 'Before \\ui{malicious} after' },
+      attachments: { type: Tools.ui_resources, [Tools.ui_resources]: [] },
+    };
+    const jsonData = {
+      conversationId: 'singleton-import',
+      title: 'Singleton fields',
+      recursive: false,
+      messages: [message],
+    };
+    const importBatchBuilder = new ImportBatchBuilder('user-123');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+    expect(importBatchBuilder.messages[0].content).toEqual([
+      { type: ContentTypes.TEXT, text: 'Before  after' },
+    ]);
+    expect(importBatchBuilder.messages[0].attachments).toEqual([]);
+  });
+
   it('preserves user-authored MCP-UI marker examples while stripping attachments', async () => {
     const message = {
       messageId: 'message-1',
