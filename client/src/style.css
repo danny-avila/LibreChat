@@ -2339,25 +2339,6 @@ html[data-input-modality='keyboard']
   transform: scale(1) translateY(0);
 }
 
-.animate-popover-bottom {
-  transform-origin: bottom left;
-  opacity: 0;
-  transition:
-    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
-  transform: translateY(0.5rem) scale(0.96);
-}
-.animate-popover-bottom[data-enter] {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-}
-@media (prefers-reduced-motion: reduce) {
-  .animate-popover-bottom {
-    transition: none !important;
-    transform: none;
-  }
-}
-
 /* Left (existing) */
 .animate-popover-left {
   transform-origin: left;
