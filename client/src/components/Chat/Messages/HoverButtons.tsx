@@ -164,7 +164,6 @@ const HoverButtons = ({
     isEditableEndpoint,
   } = generationCapabilities;
 
-  /** The copy action is hidden mid-stream, so a partial response is never scanned */
   const canCopy = useMemo(
     () => !isActiveStreamingMessage && getCanCopy(),
     [isActiveStreamingMessage, getCanCopy],
