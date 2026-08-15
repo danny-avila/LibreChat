@@ -155,7 +155,7 @@ fi
 # Three tiers, most-authoritative first: mongosh, then the repo's own
 # `mongodb` driver (already a dependency at the repo root - does a real
 # SCRAM-SHA-256 authenticated ping + insert/find/drop round trip, verified
-# working during Track 1 development), then a bare TCP check as last resort.
+# working while this stack was written), then a bare TCP check as last resort.
 log "-- ferretdb: mongo wire protocol reachability"
 FERRETDB_HOST_PORT="${FERRETDB_HOST_PORT:-27021}"
 MONGO_URI="mongodb://${FERRETDB_PG_USER:?set in search/.env}:${FERRETDB_PG_PASSWORD:?set in search/.env}@localhost:${FERRETDB_HOST_PORT}/?authMechanism=SCRAM-SHA-256"

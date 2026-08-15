@@ -1,0 +1,277 @@
+import { logger } from '@librechat/data-schemas';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'crypto';
+import type { Scope } from '@librechat/data-schemas';
+import type Keyv from 'keyv';
+import type { SearchFilters, SearchTarget } from './types';
+import { CURSOR_VERSION } from './constants';
+
+/**
+ * Cursors are opaque, versioned and HMAC-signed. They never carry tenant or user
+ * scope — that is re-derived from the request context on every page — and never
+ * carry watermark or arm state.
+ *
+ * One shape, `{v, snapshotId, offset, queryHash}`, because fused rank positions
+ * are not stable keys: projections re-rank both arms between pages, so live
+ * keyset pagination over RRF cannot produce gap-free pages at any depth.
+ * Freezing the candidate list once and paging within it is what buys stable
+ * ordering. The conversation and shared-link listings never mint a cursor here
+ * at all — they resolve one candidate window and page it in the primary store,
+ * which owns the sort.
+ *
+ * The snapshot id alone is not an authorization token: the snapshot records the
+ * scope that created it, and a page request whose re-derived scope differs is
+ * rejected even with a perfectly valid signature.
+ */
+export type SnapshotCursor = Readonly<{
+  v: number;
+  snapshotId: string;
+  offset: number;
+  queryHash: string;
+}>;
+
+export type DecodedCursor<T extends SnapshotCursor> =
+  | { status: 'ok'; payload: T }
+  | { status: 'absent' }
+  /**
+   * Legacy grace: an unversioned or malformed cursor behaves as page one rather
+   * than 400ing, so cursors already in flight from the previous implementation
+   * do not break mid-session.
+   */
+  | { status: 'restart'; reason: string };
+
+export class CursorConfigurationError extends Error {
+  constructor() {
+    super(
+      '[chatSearch] CHAT_SEARCH_CURSOR_SECRET is required to sign cursors ' +
+        '(operator-supplied, no default)',
+    );
+    this.name = 'CursorConfigurationError';
+  }
+}
+
+/**
+ * Signing key is operator-supplied and required. A fallback default would make
+ * every deployment that forgot to set one share a forgeable key, which is worse
+ * than refusing to start.
+ */
+export function requireCursorSecret(): string {
+  const secret = process.env.CHAT_SEARCH_CURSOR_SECRET;
+  if (!secret) {
+    throw new CursorConfigurationError();
+  }
+  return secret;
+}
+
+function sign(secret: string, body: string): string {
+  return createHmac('sha256', secret).update(body).digest('base64url');
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) {
+    return false;
+  }
+  return timingSafeEqual(left, right);
+}
+
+export function encodeCursor(payload: SnapshotCursor, secret: string): string {
+  const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return `${body}.${sign(secret, body)}`;
+}
+
+export function decodeCursor<T extends SnapshotCursor>(
+  token: string | undefined,
+  secret: string,
+): DecodedCursor<T> {
+  if (!token) {
+    return { status: 'absent' };
+  }
+
+  const separator = token.lastIndexOf('.');
+  if (separator <= 0) {
+    return { status: 'restart', reason: 'unsigned or legacy cursor' };
+  }
+
+  const body = token.slice(0, separator);
+  const signature = token.slice(separator + 1);
+  if (!safeEqual(signature, sign(secret, body))) {
+    /**
+     * A tampered signature is never served: it restarts at page one rather than
+     * being honoured. Combined with scope re-derivation, a forged cursor cannot
+     * shift what a caller can see — only where their own results start.
+     */
+    return { status: 'restart', reason: 'cursor signature mismatch' };
+  }
+
+  try {
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as T;
+    if (payload?.v !== CURSOR_VERSION) {
+      return { status: 'restart', reason: `unsupported cursor version ${String(payload?.v)}` };
+    }
+    return { status: 'ok', payload };
+  } catch {
+    return { status: 'restart', reason: 'malformed cursor payload' };
+  }
+}
+
+/**
+ * Normalized so the same search re-issued produces the same snapshot key —
+ * and only the same search. Every filter that changes which records the arms
+ * admit is part of the key: a cursor minted under one filter set must not be
+ * accepted for another, or a stale frozen list is served and the per-page
+ * re-filtering yields near-empty pages under a live cursor. Separators are
+ * written as escapes, never as literal control bytes — see `hash.ts` for why.
+ */
+export function hashQuery(
+  query: string,
+  target: SearchTarget,
+  filters: SearchFilters = {},
+): string {
+  const tags = [...(filters.tags ?? [])].sort().join('\u001e');
+  return createHash('sha256')
+    .update(
+      [
+        target,
+        query,
+        filters.archived === undefined ? '' : String(filters.archived),
+        tags,
+        filters.projectId ?? '',
+        filters.sort ?? '',
+        filters.direction ?? '',
+      ].join('\u001f'),
+    )
+    .digest('base64url');
+}
+
+export type Snapshot = Readonly<{
+  tenantId: string;
+  userId: string;
+  target: SearchTarget;
+  queryHash: string;
+  recordIds: readonly string[];
+  createdAt: number;
+}>;
+
+export interface SnapshotStore {
+  get(snapshotId: string): Promise<Snapshot | null>;
+  set(snapshotId: string, snapshot: Snapshot, ttlMs: number): Promise<void>;
+}
+
+/**
+ * How many live snapshots one process keeps. At the 200-candidate cap each entry
+ * is a few kilobytes, so this is a bounded ceiling rather than a tuning knob.
+ */
+export const SNAPSHOT_STORE_CAPACITY = 1_000;
+
+/**
+ * Process-local snapshot store, bounded.
+ *
+ * For a single process only: on a multi-instance deployment a next-page request
+ * that lands elsewhere misses the snapshot, re-runs, and serves page one again
+ * under a fresh cursor — 'continues pagination on a second instance through a
+ * shared snapshot store' in `search.spec.ts` pins exactly that repeat, which is
+ * why `createChatSearch` swaps in the Keyv store below whenever Redis is
+ * configured. A miss is still never an error — the search re-runs and
+ * re-snapshots — which is what makes evicting under pressure safe.
+ *
+ * The bound is a real one. Sweeping expired entries alone bounds nothing: a burst
+ * of searches inside one TTL window is entirely *live*, so nothing is eligible and
+ * the map grows for as long as the traffic lasts. Once the sweep frees nothing,
+ * the oldest entries go — `Map` preserves insertion order, so its own iteration
+ * order is the eviction order, and the oldest snapshot is the one whose reader has
+ * most likely stopped paging.
+ */
+export function createMemorySnapshotStore(
+  capacity: number = SNAPSHOT_STORE_CAPACITY,
+): SnapshotStore {
+  const entries = new Map<string, { snapshot: Snapshot; expiresAt: number }>();
+
+  const evict = (): void => {
+    const now = Date.now();
+    for (const [key, value] of entries) {
+      if (value.expiresAt <= now) {
+        entries.delete(key);
+      }
+    }
+    for (const key of entries.keys()) {
+      if (entries.size <= capacity) {
+        return;
+      }
+      entries.delete(key);
+    }
+  };
+
+  return {
+    async get(snapshotId) {
+      const entry = entries.get(snapshotId);
+      if (!entry) {
+        return null;
+      }
+      if (entry.expiresAt <= Date.now()) {
+        entries.delete(snapshotId);
+        return null;
+      }
+      return entry.snapshot;
+    },
+    async set(snapshotId, snapshot, ttlMs) {
+      entries.set(snapshotId, { snapshot, expiresAt: Date.now() + ttlMs });
+      if (entries.size > capacity) {
+        evict();
+      }
+    },
+  };
+}
+
+/**
+ * Snapshot store over a Keyv cache, which is how a multi-instance deployment
+ * shares pagination state. The memory store above is per-process: a next-page
+ * request that lands on a different pod misses the snapshot there, and the
+ * search re-runs from page one under a fresh cursor — a loop, not a shifted
+ * page. Behind a shared cache every pod reads the same snapshot. TTL is passed
+ * per entry, and capacity is the backing store's own eviction rather than a
+ * count bound here. `search.spec.ts` pins the property in 'continues pagination
+ * on a second instance through a shared snapshot store'.
+ */
+export function createKeyvSnapshotStore(cache: Keyv<Snapshot>): SnapshotStore {
+  return {
+    async get(snapshotId) {
+      const snapshot = await cache.get(snapshotId);
+      return snapshot ?? null;
+    },
+    async set(snapshotId, snapshot, ttlMs) {
+      await cache.set(snapshotId, snapshot, ttlMs);
+    },
+  };
+}
+
+export function newSnapshotId(): string {
+  return randomUUID();
+}
+
+export type SnapshotRejection = 'scope-mismatch' | 'query-mismatch' | 'missing';
+
+/**
+ * Binds a snapshot to the scope that created it.
+ *
+ * A cursor minted under one user must not read another user's snapshot even
+ * with a valid signature, so the check is on the re-derived request scope rather
+ * than on anything the cursor carries.
+ */
+export function acceptSnapshot(
+  snapshot: Snapshot | null,
+  scope: Scope,
+  queryHash: string,
+): { ok: true; snapshot: Snapshot } | { ok: false; reason: SnapshotRejection } {
+  if (!snapshot) {
+    return { ok: false, reason: 'missing' };
+  }
+  if (snapshot.tenantId !== scope.tenantId || snapshot.userId !== scope.userId) {
+    logger.warn('[chatSearch] rejected a cursor whose snapshot belongs to another principal');
+    return { ok: false, reason: 'scope-mismatch' };
+  }
+  if (snapshot.queryHash !== queryHash) {
+    return { ok: false, reason: 'query-mismatch' };
+  }
+  return { ok: true, snapshot };
+}

@@ -3,6 +3,11 @@ const request = require('supertest');
 
 const MOCKS = '../__test-utils__/convos-route-mocks';
 
+const mockResolveCandidates = jest.fn();
+
+jest.mock('~/server/services/Search/candidates', () => ({
+  resolveCandidates: (...args) => mockResolveCandidates(...args),
+}));
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () => require(MOCKS).api());
 jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
@@ -450,19 +455,38 @@ describe('Convos Routes', () => {
 
     beforeEach(() => {
       getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+      /** `recordId` and `conversationId` coincide for the conversation kind in production,
+       * so they are deliberately distinct here. Only `recordIds` is always populated —
+       * the resolver drops any hit whose conversation id is null from `conversationIds` —
+       * and with both fields set to the same value, reading the wrong one would silently
+       * shrink the result set with every assertion still green. */
+      mockResolveCandidates.mockResolvedValue({
+        recordIds: ['convo-a'],
+        conversationIds: ['not-the-ids-the-listing-wants'],
+        nextCursor: null,
+      });
     });
 
-    /** Express already percent-decodes `req.query`, so decoding a second time in the route
-     * threw URIError on any term containing a bare `%` and mangled `%xx`-looking text. */
+    /** The search term is now resolved to candidate ids before the listing query, so the
+     * term's own handling is pinned at `resolveCandidates` and the listing query is only
+     * checked for the ids that came back.
+     *
+     * Express already percent-decodes `req.query`; decoding a second time anywhere along
+     * this path would throw URIError on a bare `%` and mangle `%xx`-looking text. */
     it('accepts a search term containing a literal percent sign', async () => {
       const response = await request(app)
         .get('/api/convos')
         .query({ isArchived: 'true', search: '100% ready' });
 
       expect(response.status).toBe(200);
+      expect(mockResolveCandidates).toHaveBeenCalledWith(
+        'conversations',
+        '100% ready',
+        expect.objectContaining({ filters: expect.objectContaining({ archived: true }) }),
+      );
       expect(getConvosByCursor).toHaveBeenCalledWith(
         'test-user-123',
-        expect.objectContaining({ search: '100% ready' }),
+        expect.objectContaining({ searchIds: ['convo-a'] }),
       );
     });
 
@@ -470,19 +494,46 @@ describe('Convos Routes', () => {
       const response = await request(app).get('/api/convos').query({ search: 'a%41b' });
 
       expect(response.status).toBe(200);
+      expect(mockResolveCandidates).toHaveBeenCalledWith(
+        'conversations',
+        'a%41b',
+        expect.objectContaining({ filters: expect.objectContaining({ archived: false }) }),
+      );
       expect(getConvosByCursor).toHaveBeenCalledWith(
         'test-user-123',
-        expect.objectContaining({ search: 'a%41b' }),
+        expect.objectContaining({ searchIds: ['convo-a'] }),
       );
     });
 
+    /** The listing filters are pushed *into* the search, not applied to its output.
+     * Applied afterwards they truncate first and filter second, so a page whose
+     * candidates are all archived comes back empty while matching conversations sit one
+     * rank below the cut with no cursor to reach them. */
+    it('pushes the listing filters down into the candidate search', async () => {
+      const response = await request(app).get('/api/convos').query({
+        search: 'quarterly report',
+        isArchived: 'false',
+        tags: 'work',
+        projectId: '0123456789abcdef01234567',
+      });
+
+      expect(response.status).toBe(200);
+      expect(mockResolveCandidates).toHaveBeenCalledWith('conversations', 'quarterly report', {
+        filters: { archived: false, tags: ['work'], projectId: '0123456789abcdef01234567' },
+      });
+    });
+
+    /** `undefined` and `[]` are different instructions to the listing query: the first is
+     * "not a search", the second is "searched, matched nothing". A whitespace-only term
+     * must produce the first, which means it must never reach the candidate resolver. */
     it('treats a whitespace-only search as no search', async () => {
       const response = await request(app).get('/api/convos').query({ search: '   ' });
 
       expect(response.status).toBe(200);
+      expect(mockResolveCandidates).not.toHaveBeenCalled();
       expect(getConvosByCursor).toHaveBeenCalledWith(
         'test-user-123',
-        expect.objectContaining({ search: undefined }),
+        expect.objectContaining({ searchIds: undefined }),
       );
     });
   });

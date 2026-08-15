@@ -23,6 +23,7 @@ const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
 const getLogStores = require('~/cache/getLogStores');
 const db = require('~/models');
+const { resolveCandidates } = require('~/server/services/Search/candidates');
 
 const assistantClients = {
   [EModelEndpoint.azureAssistants]: require('~/server/services/Endpoints/azureAssistants'),
@@ -57,12 +58,33 @@ router.get('/', async (req, res) => {
   }
 
   try {
+    /**
+     * `undefined` when this is not a search; `[]` when it matched nothing.
+     *
+     * The listing filters go into the search rather than being applied to its
+     * output: ranking only rows this listing can actually show is what stops a
+     * page of archived candidates from coming back empty while matching
+     * conversations sit one rank below the cut with no cursor to reach them.
+     *
+     * Every candidate is resolved, not just this page's worth. `getConvosByCursor`
+     * pages the primary store by `(sortField, _id)` and detects "more" with a
+     * `limit + 1` read; handed exactly `limit` ids that test can never fire, so a
+     * search would return one page and no cursor however many matches existed.
+     */
+    const searchIds = search
+      ? (
+          await resolveCandidates('conversations', search, {
+            filters: { archived: isArchived, tags, projectId },
+          })
+        ).recordIds
+      : undefined;
+
     const result = await db.getConvosByCursor(req.user.id, {
       cursor,
       limit,
       isArchived,
       tags,
-      search,
+      searchIds,
       sortBy,
       sortDirection,
       projectId,

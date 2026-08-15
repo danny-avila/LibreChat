@@ -12,6 +12,11 @@ export default defineConfig({
   dts: { oxc: true },
   outDir: 'dist',
   sourcemap: true,
+  // The chat_search migration runner resolves `migrations/` relative to the
+  // emitted bundle, so the plain SQL files ship beside `dist/index.cjs`. `to` is
+  // the destination *directory*, so naming `dist/migrations` here would nest the
+  // folder one level deeper and the runner would read an empty set.
+  copy: [{ from: 'src/search/migrations', to: 'dist' }],
   // Warn on module cycles at build time; CI enforces via config/circular-deps.mjs.
   checks: { circularDependency: true },
   // Externalize every third-party dependency (consumers provide the peers) and bundle

@@ -1,10 +1,126 @@
+import type { Scope } from './tenantContext';
 import {
   tenantStorage,
   getUserId,
+  assertScope,
+  createScope,
   getRequestId,
   runAsSystem,
+  resolveScope,
   scopedCacheKey,
+  normalizeTenantId,
+  isReservedTenantId,
+  RESERVED_TENANT_IDS,
+  UnscopedAccessError,
+  SYSTEM_TENANT_ID,
+  BASE_TENANT_ID,
 } from './tenantContext';
+
+describe('reserved tenant sentinels', () => {
+  it('defines the base tenant beside the system tenant', () => {
+    expect(BASE_TENANT_ID).toBe('__BASE__');
+    expect(SYSTEM_TENANT_ID).toBe('__SYSTEM__');
+    expect([...RESERVED_TENANT_IDS].sort()).toEqual(['__BASE__', '__SYSTEM__']);
+  });
+
+  it('treats both sentinels as reserved inbound values', () => {
+    expect(isReservedTenantId(BASE_TENANT_ID)).toBe(true);
+    expect(isReservedTenantId(SYSTEM_TENANT_ID)).toBe(true);
+  });
+
+  it('leaves ordinary and absent tenant ids unreserved', () => {
+    expect(isReservedTenantId('acme')).toBe(false);
+    expect(isReservedTenantId('')).toBe(false);
+    expect(isReservedTenantId(undefined)).toBe(false);
+    expect(isReservedTenantId(null)).toBe(false);
+  });
+
+  it('normalizes absent, null and empty stored tenants onto the base sentinel', () => {
+    expect(normalizeTenantId(undefined)).toBe(BASE_TENANT_ID);
+    expect(normalizeTenantId(null)).toBe(BASE_TENANT_ID);
+    expect(normalizeTenantId('')).toBe(BASE_TENANT_ID);
+  });
+
+  it('never rewrites a real tenant id', () => {
+    expect(normalizeTenantId('acme')).toBe('acme');
+  });
+});
+
+/**
+ * Pins what the brand actually guarantees, which is narrower than "unforgeable":
+ * a structurally identical object is refused, and every accepted value came out
+ * of a constructor that normalized it and failed closed. Authorization is not
+ * among the guarantees — that is what RLS is for.
+ */
+describe('scope brand', () => {
+  it('refuses a structurally identical but unbranded object', () => {
+    expect(() => assertScope({ tenantId: 'acme', userId: 'alice' } as Scope)).toThrow(
+      UnscopedAccessError,
+    );
+  });
+
+  it('refuses an absent scope rather than widening', () => {
+    expect(() => assertScope(null)).toThrow(/no Scope supplied/);
+    expect(() => assertScope(undefined)).toThrow(/no Scope supplied/);
+  });
+
+  it('passes through a value a constructor produced', () => {
+    const scope = createScope({ tenantId: 'acme', userId: 'alice' });
+    expect(assertScope(scope)).toBe(scope);
+  });
+
+  it('normalizes and trims before it fails closed', () => {
+    expect(createScope({ tenantId: '  ', userId: ' alice ' })).toMatchObject({
+      tenantId: BASE_TENANT_ID,
+      userId: 'alice',
+    });
+  });
+
+  it('freezes the value it hands back', () => {
+    expect(Object.isFrozen(createScope({ tenantId: 'acme', userId: 'alice' }))).toBe(true);
+  });
+});
+
+/**
+ * The two refusals the JSDoc on `resolveScope` describes, asserted rather than
+ * promised: no active context fails in `resolveScope` itself, and a
+ * `runAsSystem()` context fails inside `createScope` because `__SYSTEM__` is a
+ * query-time wildcard and never a scope. Neither path widens to "all tenants".
+ */
+describe('resolveScope', () => {
+  it('refuses to build a scope with no request context active', () => {
+    expect(() => resolveScope()).toThrow(UnscopedAccessError);
+    expect(() => resolveScope()).toThrow(/no request context is active/);
+  });
+
+  it('refuses the system tenant inside runAsSystem', async () => {
+    await tenantStorage.run({ tenantId: 'acme', userId: 'alice' }, async () => {
+      await runAsSystem(async () => {
+        expect(() => resolveScope()).toThrow(/system tenant is a query-time wildcard/);
+      });
+    });
+  });
+
+  it('returns the active context as a branded scope', async () => {
+    await tenantStorage.run({ tenantId: 'acme', userId: 'alice' }, async () => {
+      const scope = resolveScope();
+      expect(assertScope(scope)).toBe(scope);
+      expect(scope).toMatchObject({ tenantId: 'acme', userId: 'alice' });
+    });
+  });
+
+  it('resolves a context with no tenant onto the base tenant rather than failing', async () => {
+    await tenantStorage.run({ userId: 'alice' }, async () => {
+      expect(resolveScope()).toMatchObject({ tenantId: BASE_TENANT_ID, userId: 'alice' });
+    });
+  });
+
+  it('refuses a context carrying a tenant but no user', async () => {
+    await tenantStorage.run({ tenantId: 'acme' }, async () => {
+      expect(() => resolveScope()).toThrow(/userId is missing or empty/);
+    });
+  });
+});
 
 describe('scopedCacheKey', () => {
   it('returns base key when no ALS context is set', () => {

@@ -66,4 +66,7 @@ convoSchema.index({ user: 1, isTemporary: 1, expiredAt: 1 });
 // index for MeiliSearch sync operations
 convoSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });
 
+/** Supports the chat-search safety poll's `(updatedAt, conversationId)` keyset scan. */
+convoSchema.index({ updatedAt: 1, conversationId: 1 });
+
 export default convoSchema;

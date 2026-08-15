@@ -1,6 +1,8 @@
 const { v4: uuidv4 } = require('uuid');
 const {
   logger,
+  getTenantId,
+  SYSTEM_TENANT_ID,
   createFallbackRetentionDate,
   createTempChatExpirationDate,
 } = require('@librechat/data-schemas');
@@ -10,7 +12,12 @@ const {
   RetentionMode,
   openAISettings,
 } = require('librechat-data-provider');
-const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
+const {
+  bulkIncrementTagCounts,
+  bulkSaveConvos,
+  bulkSaveMessages,
+  enqueueSearchEvents,
+} = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
 /**
@@ -150,12 +157,72 @@ class ImportBatchBuilder {
         ),
       );
       await Promise.all(promises);
+      await this.enqueueProjectionEvents();
       logger.debug(
         `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,
       );
     } catch (error) {
       logger.error('Error saving batch', error);
       throw error;
+    }
+  }
+
+  /**
+   * Announces imported records to the search projector.
+   *
+   * Imports are structurally invisible to the projector's `(updatedAt, _id)`
+   * safety poll: `bulkSaveConvos` hard-codes `timestamps: false` and message
+   * import passes `overrideTimestamp = true`, so imported rows carry historic or
+   * absent `updatedAt` values that sort behind any forward cursor. `bulkWrite`
+   * also skips Mongoose middleware entirely, so the search-sync hooks never fire.
+   * These explicit events are the only fast path this data has; without them it
+   * waits for the hourly reconciliation sweep.
+   * @returns {Promise<void>}
+   */
+  async enqueueProjectionEvents() {
+    /**
+     * Resolved from the active request context, not from the staged objects.
+     * `tenantSafeBulkWrite` injects the tenant into *clones* of the bulk
+     * operations, so `this.conversations` and `this.messages` still carry no
+     * `tenantId` after the write lands. Reading it from them would announce every
+     * import under the base tenant while Mongo stored it under the request
+     * tenant, and the projector's key-scoped source read — which exists to stop a
+     * recycled record id projecting one user's content under another's scope —
+     * would correctly reject the mismatch and project nothing at all.
+     */
+    const active = getTenantId();
+    const tenantId = active && active !== SYSTEM_TENANT_ID ? active : null;
+
+    const events = [];
+    for (const convo of this.conversations) {
+      events.push({
+        tenantId: tenantId ?? convo.tenantId ?? null,
+        userId: this.requestUserId,
+        kind: 'conversation',
+        recordId: convo.conversationId,
+        op: 'upsert',
+      });
+    }
+    for (const message of this.messages) {
+      events.push({
+        tenantId: tenantId ?? message.tenantId ?? null,
+        userId: this.requestUserId,
+        kind: 'message',
+        recordId: message.messageId,
+        op: 'upsert',
+      });
+    }
+    try {
+      await enqueueSearchEvents(events);
+    } catch (error) {
+      /**
+       * A failed enqueue must not fail a user's import. Recovery is the
+       * reconciliation sweep's backfill pass, which projects source records
+       * PostgreSQL is missing — the forward safety poll cannot help here, because
+       * imports deliberately preserve historic `updatedAt` values that sort
+       * behind its cursor forever.
+       */
+      logger.error('[ImportBatchBuilder] Failed to enqueue projection events', error);
     }
   }
 

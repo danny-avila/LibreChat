@@ -43,7 +43,8 @@ export interface ConversationMethods {
       limit?: number;
       isArchived?: boolean;
       tags?: string[];
-      search?: string;
+      /** Externally resolved candidate conversation ids; `[]` means no matches. */
+      searchIds?: string[] | null;
       sortBy?: string;
       sortDirection?: string;
       projectId?: string;
@@ -569,7 +570,7 @@ export function createConversationMethods(
       limit = 25,
       isArchived = false,
       tags,
-      search,
+      searchIds,
       sortBy = 'updatedAt',
       sortDirection = 'desc',
       projectId,
@@ -578,7 +579,7 @@ export function createConversationMethods(
       limit?: number;
       isArchived?: boolean;
       tags?: string[];
-      search?: string;
+      searchIds?: string[] | null;
       sortBy?: string;
       sortDirection?: string;
       projectId?: string;
@@ -608,29 +609,20 @@ export function createConversationMethods(
 
     filters.push(getVisibleConversationRetentionFilter());
 
-    if (search) {
-      try {
-        const meiliResults = await (
-          Conversation as unknown as {
-            meiliSearch: (
-              query: string,
-              options: Record<string, string>,
-            ) => Promise<{
-              hits: Array<{ conversationId: string }>;
-            }>;
-          }
-        ).meiliSearch(search, { filter: `user = "${user}"` });
-        const matchingIds = Array.isArray(meiliResults.hits)
-          ? meiliResults.hits.map((result) => result.conversationId)
-          : [];
-        if (!matchingIds.length) {
-          return { conversations: [], nextCursor: null };
-        }
-        filters.push({ conversationId: { $in: matchingIds } } as FilterQuery<IConversation>);
-      } catch (error) {
-        logger.error('[getConvosByCursor] Error during meiliSearch', error);
-        throw new Error('Error during meiliSearch');
+    /**
+     * Candidate ids are resolved by the caller, not here. This method owns
+     * filtering, ordering and pagination over the primary store; whichever search
+     * store produced the candidates is the route adapter's concern, which is what
+     * lets this package stay independent of it.
+     *
+     * An empty array means "searched, matched nothing" and must return nothing —
+     * distinct from `undefined`, which means "not a search".
+     */
+    if (searchIds) {
+      if (searchIds.length === 0) {
+        return { conversations: [], nextCursor: null };
       }
+      filters.push({ conversationId: { $in: searchIds } } as FilterQuery<IConversation>);
     }
 
     const validSortFields = ['title', 'createdAt', 'updatedAt'];
@@ -834,7 +826,7 @@ export function createConversationMethods(
       const { deleteMessages } = getMessageMethods();
       const userFilter = { ...filter, user };
       const conversations = await Conversation.find(userFilter).select(
-        'conversationId chatProjectId tags',
+        'conversationId chatProjectId tags tenantId',
       );
       const conversationIds = conversations.map((c) => c.conversationId);
       const projectIds = new Set(
@@ -877,6 +869,15 @@ export function createConversationMethods(
       if (deleted) {
         await decrementTagCounts(mongoose, user, tagDecrements);
       }
+
+      /**
+       * Tombstones ride the `deleteMany` hook alone. An explicit enqueue here
+       * once doubled it — same keys, but uncapped where the hook caps at
+       * `DELETE_MANY_EVENT_CAP`, so clearing a large history issued one
+       * unbounded insertMany on the caller's request plus a duplicate of every
+       * capped event. The hook covers the cap's worth and reconciliation sweeps
+       * the remainder, exactly as on every other bulk deletion path.
+       */
 
       /**
        * Post-delete cleanup is best-effort: the conversations are already gone, so a

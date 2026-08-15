@@ -63,9 +63,35 @@ export {
   getRequestPath,
   runAsSystem,
   scopedCacheKey,
+  normalizeTenantId,
+  isReservedTenantId,
+  RESERVED_TENANT_IDS,
   SYSTEM_TENANT_ID,
+  BASE_TENANT_ID,
+  createScope,
+  resolveScope,
+  assertScope,
+  UnscopedAccessError,
 } from './config/tenantContext';
-export type { TenantContext } from './config/tenantContext';
+export type { TenantContext, Scope } from './config/tenantContext';
+export {
+  dedupeSearchEvents,
+  deleteSearchEvents,
+  enqueueSearchEvents,
+  readSearchEvents,
+  searchEventKey,
+  searchEnqueueEnabled,
+  searchSyncEnabled,
+} from './search/events';
+export type { DrainedSearchEvent, SearchEventInput } from './search/events';
+export {
+  flattenContent,
+  isUnfinished,
+  isIndexableDocument,
+  effectiveTemporaryFlag,
+  normalizeSearchText,
+  preprocessObjectForIndex,
+} from './search/document';
 export {
   MCPServerNameMigrationError,
   createMCPAuthorityLookupIndexes,
