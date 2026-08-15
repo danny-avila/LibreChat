@@ -167,13 +167,19 @@ export class ConnectionsRepository {
        * list_changed refresh is. An app-level write that cannot be ordered is dropped, which
        * left agents with a permanently empty catalog when this path populated it (#14857). */
       if (connection.client.getServerCapabilities()?.tools == null) {
-        const { publicationRevision } = await connection.reserveToolsPublicationRevision();
+        const ordering = await connection.reserveToolsPublicationRevision();
+        /** The refresh path reserves again under backoff. Publishing unordered instead would be
+         * dropped in silence, leaving whatever this server last advertised in place. */
+        if (ordering.orderingUnavailable) {
+          await connection.refreshToolList();
+          return connection;
+        }
         await notifyMCPToolsChanged({
           tools: [],
           serverName,
           serverConfig,
           publicationGeneration,
-          publicationRevision,
+          publicationRevision: ordering.publicationRevision,
         });
         return connection;
       }

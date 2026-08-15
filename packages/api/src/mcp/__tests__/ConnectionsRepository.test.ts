@@ -225,6 +225,37 @@ describe('ConnectionsRepository', () => {
       );
     });
 
+    /** An unordered publication is dropped in silence, so a server left with no way to order
+     * its empty catalog has to retry rather than leave the previous one advertised. */
+    it('retries an empty catalog it could not reserve ordering for', async () => {
+      (mockConnection.client.getServerCapabilities as jest.Mock).mockReturnValue({});
+      mockConnection.reserveToolsPublicationRevision = jest
+        .fn()
+        .mockResolvedValue({ orderingUnavailable: true });
+      const handler = jest.fn();
+      setMCPToolsChangedHandler(handler);
+
+      await repository.get('server1');
+
+      expect(mockConnection.refreshToolList).toHaveBeenCalledTimes(1);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('retries a fetched catalog it could not reserve ordering for', async () => {
+      mockConnection.fetchToolsSnapshot.mockResolvedValue({
+        tools: [],
+        complete: true,
+        orderingUnavailable: true,
+      });
+      const handler = jest.fn();
+      setMCPToolsChangedHandler(handler);
+
+      await repository.get('server1');
+
+      expect(mockConnection.refreshToolList).toHaveBeenCalledTimes(1);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
     it('can defer the initial app tool refresh for startup synchronization', async () => {
       await repository.get('server1', { refreshTools: false });
 
