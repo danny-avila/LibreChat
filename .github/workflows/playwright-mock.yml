@@ -141,11 +141,18 @@ jobs:
         if: steps.cache-client-app.outputs.cache-hit != 'true'
         run: npm run build:client
 
-      - name: Install Playwright runtime dependencies
-        timeout-minutes: 5
-        run: |
-          google-chrome --version
-          npx playwright install-deps chrome
+      - name: Verify Chrome is present
+        run: google-chrome --version
+
+      # The runner's Chrome is an apt package, so its real library dependencies are
+      # already satisfied; all `install-deps` adds here are optional CJK/Thai/Cyrillic
+      # font packages (~21MB from azure.archive.ubuntu.com). Nothing in CI asserts on
+      # them — visual baselines are opt-in via E2E_VISUAL_SNAPSHOTS — so a stalled
+      # Ubuntu mirror must never be able to fail the suite.
+      - name: Install optional Playwright font dependencies (best effort)
+        timeout-minutes: 4
+        continue-on-error: true
+        run: .github/scripts/install-playwright-fonts.sh
 
       - name: Run full mock-LLM Tier-1 e2e
         if: matrix.suite == 'full'
@@ -225,11 +232,19 @@ jobs:
       - name: Build e2e dependencies
         run: npm run e2e:prepare
 
-      - name: Install Playwright and Redis runtime dependencies
+      - name: Verify Chrome is present
+        run: google-chrome --version
+
+      # Optional fonts only — see the note in the e2e_shards job.
+      - name: Install optional Playwright font dependencies (best effort)
+        timeout-minutes: 4
+        continue-on-error: true
+        run: .github/scripts/install-playwright-fonts.sh
+
+      # Redis is a hard requirement for this job, so this step stays fatal.
+      - name: Install Redis runtime dependencies
         timeout-minutes: 5
         run: |
-          google-chrome --version
-          npx playwright install-deps chrome
           sudo apt-get update
           sudo apt-get install -y redis-server redis-tools
 

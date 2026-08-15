@@ -119,11 +119,14 @@ jobs:
         if: steps.cache-client-app.outputs.cache-hit != 'true'
         run: npm run build:client
 
-      - name: Install Playwright runtime dependencies
-        timeout-minutes: 5
-        run: |
-          google-chrome --version
-          npx playwright install-deps chrome
+      - name: Verify Chrome is present
+        run: google-chrome --version
+
+      # Optional fonts only — see the note in playwright-mock.yml's e2e_shards job.
+      - name: Install optional Playwright font dependencies (best effort)
+        timeout-minutes: 4
+        continue-on-error: true
+        run: .github/scripts/install-playwright-fonts.sh
 
       - name: Run five-minute Bombadil exploration
         id: bombadil
