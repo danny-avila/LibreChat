@@ -87,6 +87,12 @@ const SENSITIVE_SHARED_FILE_FIELDS = new Set([
   'metadata',
 ]);
 
+const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
+
+function stripUIResourceMarkers(text: string | undefined): string | undefined {
+  return text?.replace(UI_RESOURCE_PATTERN, '');
+}
+
 /**
  * Strip storage/identity-internal fields from a file or attachment while keeping
  * render-relevant data (including tool-call payloads keyed by tool name).
@@ -499,7 +505,7 @@ function anonymizeMessages(
         anonymizeMessageId(message.parentMessageId || ''),
       conversationId: newConvoId,
       sender: message.sender,
-      text: message.text,
+      text: stripUIResourceMarkers(message.text),
       content: anonymizeSharedContent(message.content, {
         newConvoId,
         newMessageId,

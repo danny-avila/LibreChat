@@ -558,6 +558,7 @@ describe('Share Methods', () => {
 
       expect(result?.messages[0].attachments).toHaveLength(1);
       expect(result?.messages[0].attachments?.[0].type).toBe(Tools.web_search);
+      expect(result?.messages[0].text).toBe('');
     });
 
     test('strips storage-internal fields while preserving shared render data', async () => {

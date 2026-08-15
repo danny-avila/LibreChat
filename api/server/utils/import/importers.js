@@ -6,17 +6,22 @@ const { createImportBatchBuilder } = require('./importBatchBuilder');
 const { resolveImportDefaultModel } = require('./defaults');
 const { cloneMessagesWithTimestamps } = require('./fork');
 
+const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
+
+function stripUIResourceMarkers(text) {
+  return typeof text === 'string' ? text.replace(UI_RESOURCE_PATTERN, '') : text;
+}
+
 /** Removes executable legacy MCP-UI payloads from untrusted conversation imports. */
 function sanitizeImportedMessage(message) {
-  if (!Array.isArray(message.attachments)) {
-    return message;
-  }
-
   return {
     ...message,
-    attachments: message.attachments.filter(
-      (attachment) => attachment?.type !== Tools.ui_resources,
-    ),
+    ...(typeof message.text === 'string' && { text: stripUIResourceMarkers(message.text) }),
+    ...(Array.isArray(message.attachments) && {
+      attachments: message.attachments.filter(
+        (attachment) => attachment?.type !== Tools.ui_resources,
+      ),
+    }),
   };
 }
 

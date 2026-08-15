@@ -915,6 +915,7 @@ describe('importLibreChatConvo', () => {
     expect(importBatchBuilder.messages[0].attachments).toEqual([
       { type: Tools.web_search, [Tools.web_search]: { results: [] } },
     ]);
+    expect(importBatchBuilder.messages[0].text).toBe('');
   });
 
   it('should import linear, non-recursive thread correctly with correct endpoint', async () => {

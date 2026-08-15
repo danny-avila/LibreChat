@@ -3,7 +3,7 @@ import { useOptionalMessagesConversation, useOptionalMessagesOperations } from '
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
 import { handleUIAction } from '~/utils';
 import { useLocalize } from '~/hooks';
-import UIResourceRenderer from './Renderer';
+import UIResourceRenderer, { isSupportedUIResource } from './Renderer';
 
 interface MCPUIResourceProps {
   node: {
@@ -32,6 +32,10 @@ export function MCPUIResource(props: MCPUIResourceProps) {
         })}
       </span>
     );
+  }
+
+  if (!isSupportedUIResource(uiResource)) {
+    return null;
   }
 
   try {

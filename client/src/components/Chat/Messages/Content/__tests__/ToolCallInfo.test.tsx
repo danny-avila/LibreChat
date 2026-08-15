@@ -106,10 +106,25 @@ describe('ToolCallInfo', () => {
           toolCallId: 'tool1',
           conversationId: 'conv1',
           [Tools.ui_resources]: [
-            { type: 'text', data: 'Resource 1' },
-            { type: 'text', data: 'Resource 2' },
-            { type: 'text', data: 'Resource 3' },
-          ] as any,
+            {
+              resourceId: 'resource-1',
+              uri: 'ui://test/resource-1',
+              mimeType: 'text/html',
+              text: 'Resource 1',
+            },
+            {
+              resourceId: 'resource-2',
+              uri: 'ui://test/resource-2',
+              mimeType: 'text/html',
+              text: 'Resource 2',
+            },
+            {
+              resourceId: 'resource-3',
+              uri: 'ui://test/resource-3',
+              mimeType: 'text/html',
+              text: 'Resource 3',
+            },
+          ],
         },
       ];
 
@@ -119,9 +134,9 @@ describe('ToolCallInfo', () => {
       expect(UIResourceCarousel).toHaveBeenCalledWith(
         expect.objectContaining({
           uiResources: [
-            { type: 'text', data: 'Resource 1' },
-            { type: 'text', data: 'Resource 2' },
-            { type: 'text', data: 'Resource 3' },
+            expect.objectContaining({ resourceId: 'resource-1' }),
+            expect.objectContaining({ resourceId: 'resource-2' }),
+            expect.objectContaining({ resourceId: 'resource-3' }),
           ],
         }),
         expect.any(Object),
@@ -129,6 +144,65 @@ describe('ToolCallInfo', () => {
 
       // Should not render individual UIResourceRenderer
       expect(UIResourceRenderer).not.toHaveBeenCalled();
+    });
+
+    it('renders a single supported resource without carousel layout', () => {
+      const attachments: TAttachment[] = [
+        {
+          type: Tools.ui_resources,
+          messageId: 'msg1',
+          toolCallId: 'tool1',
+          conversationId: 'conv1',
+          [Tools.ui_resources]: [
+            {
+              resourceId: 'blocked-resource',
+              uri: 'ui://test/blocked',
+              mimeType: 'application/vnd.mcp-ui.remote-dom+javascript',
+              text: 'malicious script',
+            },
+            {
+              resourceId: 'html-resource',
+              uri: 'ui://test/html',
+              mimeType: 'text/html',
+              text: '<p>Supported</p>',
+            },
+          ],
+        },
+      ];
+
+      render(<ToolCallInfo {...mockProps} attachments={attachments} />);
+
+      expect(UIResourceRenderer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          resource: expect.objectContaining({ resourceId: 'html-resource' }),
+        }),
+        expect.any(Object),
+      );
+      expect(UIResourceCarousel).not.toHaveBeenCalled();
+    });
+
+    it('omits the resource section when every resource is blocked', () => {
+      const attachments: TAttachment[] = [
+        {
+          type: Tools.ui_resources,
+          messageId: 'msg1',
+          toolCallId: 'tool1',
+          conversationId: 'conv1',
+          [Tools.ui_resources]: [
+            {
+              resourceId: 'blocked-resource',
+              uri: 'ui://test/blocked',
+              mimeType: 'text/uri-list',
+              text: 'https://example.com',
+            },
+          ],
+        },
+      ];
+
+      render(<ToolCallInfo input="" attachments={attachments} />);
+
+      expect(UIResourceRenderer).not.toHaveBeenCalled();
+      expect(UIResourceCarousel).not.toHaveBeenCalled();
     });
 
     it('should handle no attachments', () => {
