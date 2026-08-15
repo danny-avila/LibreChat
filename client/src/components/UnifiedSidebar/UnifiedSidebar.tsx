@@ -130,10 +130,13 @@ function UnifiedSidebar() {
       /**
        * Menus opened from the drawer portal out of it, so their Escape still
        * reaches this listener. Dismissing the whole drawer would skip the level
-       * the user meant to leave; those menus unmount when closed, so their
-       * presence is the signal to stand down.
+       * the user meant to leave.
+       *
+       * Presence alone is not the signal: not every menu unmounts when closed —
+       * the account menu stays mounted and merely `hidden` — so matching those
+       * too would suppress Escape for the drawer permanently.
        */
-      if (document.querySelector('[role="menu"]') != null) {
+      if (document.querySelector('[role="menu"]:not([hidden])') != null) {
         return;
       }
       handleCollapse();
