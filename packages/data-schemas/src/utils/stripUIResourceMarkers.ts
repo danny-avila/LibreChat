@@ -10,8 +10,7 @@ import { Constants, ContentTypes } from 'librechat-data-provider';
 
 const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
 const CITATION_CLEANUP = /\\ue20[0-46]|[\ue200-\ue204\ue206]/g;
-const TEXT_SOURCE_TRANSFORM =
-  /(\\ue20[0-46]|[\ue200-\ue204\ue206])|\\(.)|&(#(?:\d{1,7}|[xX][\dA-Fa-f]{1,6})|[\dA-Za-z]{1,31});/g;
+const MARKDOWN_ESCAPE_OR_REFERENCE = /\\(.)|&(#(?:\d{1,7}|[xX][\dA-Fa-f]{1,6})|[\dA-Za-z]{1,31});/g;
 
 type MarkdownNode = {
   type: string;
@@ -27,11 +26,77 @@ type SourceSegment = {
   literal: boolean;
 };
 
+function removeCitationCleanup(value: string, segments: SourceSegment[]) {
+  const removals: Array<[number, number]> = [];
+  CITATION_CLEANUP.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = CITATION_CLEANUP.exec(value)) != null) {
+    removals.push([match.index, CITATION_CLEANUP.lastIndex]);
+  }
+  if (removals.length === 0) {
+    return { value, segments };
+  }
+
+  let cleanedValue = '';
+  const cleanedSegments: SourceSegment[] = [];
+  let removalIndex = 0;
+
+  const appendSlice = (segment: SourceSegment, start: number, end: number) => {
+    if (start >= end) {
+      return;
+    }
+    const decodedStart = cleanedValue.length;
+    cleanedValue += value.slice(start, end);
+    const sourceStart = segment.literal
+      ? segment.sourceStart + start - segment.decodedStart
+      : segment.sourceStart;
+    const sourceEnd = segment.literal
+      ? segment.sourceStart + end - segment.decodedStart
+      : segment.sourceEnd;
+    const previous = cleanedSegments[cleanedSegments.length - 1];
+    if (
+      segment.literal &&
+      previous?.literal &&
+      previous.decodedEnd === decodedStart &&
+      previous.sourceEnd === sourceStart
+    ) {
+      previous.decodedEnd = cleanedValue.length;
+      previous.sourceEnd = sourceEnd;
+      return;
+    }
+    cleanedSegments.push({
+      decodedStart,
+      decodedEnd: cleanedValue.length,
+      sourceStart,
+      sourceEnd,
+      literal: segment.literal,
+    });
+  };
+
+  for (const segment of segments) {
+    let cursor = segment.decodedStart;
+    while (cursor < segment.decodedEnd) {
+      while (removals[removalIndex]?.[1] <= cursor) {
+        removalIndex++;
+      }
+      const removal = removals[removalIndex];
+      if (!removal || removal[0] >= segment.decodedEnd) {
+        appendSlice(segment, cursor, segment.decodedEnd);
+        break;
+      }
+      appendSlice(segment, cursor, Math.min(removal[0], segment.decodedEnd));
+      cursor = Math.max(cursor, removal[1]);
+    }
+  }
+
+  return { value: cleanedValue, segments: cleanedSegments };
+}
+
 function decodeTextWithSourceSpans(source: string) {
   let value = '';
   const segments: SourceSegment[] = [];
   let cursor = 0;
-  TEXT_SOURCE_TRANSFORM.lastIndex = 0;
+  MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex = 0;
 
   const appendLiteral = (start: number, end: number) => {
     if (start === end) {
@@ -55,29 +120,26 @@ function decodeTextWithSourceSpans(source: string) {
   };
 
   let match: RegExpExecArray | null;
-  while ((match = TEXT_SOURCE_TRANSFORM.exec(source)) != null) {
+  while ((match = MARKDOWN_ESCAPE_OR_REFERENCE.exec(source)) != null) {
     appendLiteral(cursor, match.index);
-    if (match[1] == null) {
-      const decoded = decodeString(match[0]);
-      const decodedValue = decoded.replace(CITATION_CLEANUP, '');
-      if (decodedValue === match[0]) {
-        appendLiteral(match.index, TEXT_SOURCE_TRANSFORM.lastIndex);
-      } else if (decodedValue !== '') {
-        const decodedStart = value.length;
-        value += decodedValue;
-        segments.push({
-          decodedStart,
-          decodedEnd: value.length,
-          sourceStart: match.index,
-          sourceEnd: TEXT_SOURCE_TRANSFORM.lastIndex,
-          literal: false,
-        });
-      }
+    const decoded = decodeString(match[0]);
+    if (decoded === match[0]) {
+      appendLiteral(match.index, MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex);
+    } else {
+      const decodedStart = value.length;
+      value += decoded;
+      segments.push({
+        decodedStart,
+        decodedEnd: value.length,
+        sourceStart: match.index,
+        sourceEnd: MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex,
+        literal: false,
+      });
     }
-    cursor = TEXT_SOURCE_TRANSFORM.lastIndex;
+    cursor = MARKDOWN_ESCAPE_OR_REFERENCE.lastIndex;
   }
   appendLiteral(cursor, source.length);
-  return { value, segments };
+  return removeCitationCleanup(value, segments);
 }
 
 function mapDecodedRange(

@@ -50,8 +50,11 @@ describe('stripUIResourceMarkers', () => {
       'Actual \\u\ue206i{actual}',
       'Literal \\u\\ue206i{literal}',
       'Entity \\u&#xE206;i{entity}',
+      'Mixed \\u&#92;ue206i{mixed}',
     ].join('\n');
-    expect(stripUIResourceMarkers(markdown)).toBe(['Actual ', 'Literal ', 'Entity '].join('\n'));
+    expect(stripUIResourceMarkers(markdown)).toBe(
+      ['Actual ', 'Literal ', 'Entity ', 'Mixed '].join('\n'),
+    );
   });
 
   it('handles paragraph continuations and container code according to CommonMark', () => {
