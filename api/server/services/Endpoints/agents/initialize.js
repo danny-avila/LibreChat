@@ -97,6 +97,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
     provider,
     tool_options,
     tool_resources,
+    codeExecutionContext,
     accessibleMcpServerNames,
   }) {
     const agent = { id: agentId, tools, provider, model, tool_options };
@@ -109,6 +110,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
         streamId,
         jobCreatedAt,
         tool_resources,
+        codeExecutionContext,
         definitionsOnly,
         accessibleMcpServerNames,
       });
@@ -1094,6 +1096,7 @@ const initializeClient = async ({
           payload,
           accessibleSkillIds,
           codeEnvAvailable: primaryConfig.codeEnvAvailable === true,
+          codeExecutionContext: primaryConfig.codeExecutionContext,
           ...getSkillToolDeps(),
         })
     : undefined;

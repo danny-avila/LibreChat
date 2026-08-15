@@ -5,6 +5,7 @@ import { logger } from '@librechat/data-schemas';
 import type { ToolSessionMap, CodeSessionContext } from '@librechat/agents';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { Types } from 'mongoose';
+import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
 import { createConcurrencyLimiter, logAxiosError } from '~/utils';
 import { extractInvokedSkillsFromPayload } from './run';
@@ -49,12 +50,23 @@ export interface PrimeSkillFilesParams {
      *  (read-only inputs that must never surface as generated artifacts,
      *  even if sandboxed code mutates the bytes on disk). */
     read_only?: boolean;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
   }>;
   /** Checks if a code env file is still active. Returns lastModified timestamp or null. */
-  getSessionInfo?: (ref: CodeEnvRef, req?: ServerRequest) => Promise<string | null>;
+  getSessionInfo?: (
+    ref: CodeEnvRef,
+    req?: ServerRequest,
+    route?: {
+      baseUrl?: string;
+      executionProfile?: CodeExecutionContext['executionProfile'];
+    },
+  ) => Promise<string | null>;
+  /** Trusted Code API route selected for the executing agent. */
+  codeExecutionContext?: Pick<CodeExecutionContext, 'baseUrl' | 'executionProfile'>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists `codeEnvRef` on skill files after upload. Implementations
@@ -190,7 +202,7 @@ export async function primeSkillFiles(
    * resource-scoped (`<tenant>:skill:<id>:v:<version>`), so sharing the
    * result across requests is sound. Per-process best-effort; the awaited
    * codeEnvRef persist covers cross-turn and cross-node dedupe. */
-  const flightKey = `${params.skill._id}:v:${params.skill.version}`;
+  const flightKey = `${params.codeExecutionContext?.executionProfile ?? 'default'}:${params.skill._id}:v:${params.skill.version}`;
   const inflight = inflightPrimes.get(flightKey);
   if (inflight) {
     return inflight;
@@ -213,6 +225,7 @@ async function executePrimeSkillFiles(
     getSessionInfo,
     checkIfActive,
     updateSkillFileCodeEnvIds,
+    codeExecutionContext,
   } = params;
 
   /* Cache-hit path: every skillFile carries a `codeEnvRef` from the
@@ -235,7 +248,7 @@ async function executePrimeSkillFiles(
       try {
         const checkResults = await Promise.all(
           Array.from(refsBySession.values()).map(async (ref) => {
-            const lastModified = await getSessionInfo(ref, req);
+            const lastModified = await getSessionInfo(ref, req, codeExecutionContext);
             return !!(lastModified && checkIfActive(lastModified));
           }),
         );
@@ -305,6 +318,8 @@ async function executePrimeSkillFiles(
            * skill files surface as ghost generated artifacts the user has no
            * authority to download. */
           read_only: true,
+          codeApiBaseUrl: codeExecutionContext?.baseUrl,
+          executionProfile: codeExecutionContext?.executionProfile,
         });
         return { filesToUpload, result };
       }, `skill "${skill.name}"`),
@@ -429,6 +444,7 @@ export interface PrimeInvokedSkillsDeps {
   getSessionInfo?: PrimeSkillFilesParams['getSessionInfo'];
   checkIfActive?: PrimeSkillFilesParams['checkIfActive'];
   updateSkillFileCodeEnvIds?: PrimeSkillFilesParams['updateSkillFileCodeEnvIds'];
+  codeExecutionContext?: PrimeSkillFilesParams['codeExecutionContext'];
 }
 
 export interface PrimeInvokedSkillsResult {
@@ -519,7 +535,11 @@ export async function primeInvokedSkills(
         const checkResults = await Promise.all(
           Array.from(refsBySession.values()).map(async (ref) => {
             try {
-              const lastModified = await deps.getSessionInfo?.(ref, deps.req);
+              const lastModified = await deps.getSessionInfo?.(
+                ref,
+                deps.req,
+                deps.codeExecutionContext,
+              );
               return !!(lastModified && deps.checkIfActive?.(lastModified));
             } catch {
               return false;
@@ -589,6 +609,7 @@ export async function primeInvokedSkills(
           getSessionInfo: deps.getSessionInfo,
           checkIfActive: deps.checkIfActive,
           updateSkillFileCodeEnvIds: deps.updateSkillFileCodeEnvIds,
+          codeExecutionContext: deps.codeExecutionContext,
         });
         return { skill, result };
       }),

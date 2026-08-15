@@ -1,3 +1,7 @@
+jest.mock('./prewarm', () => ({
+  markSandboxReady: jest.fn(),
+}));
+
 import { Readable } from 'stream';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
@@ -8,6 +12,7 @@ import type {
 } from '@librechat/agents';
 import type { CodeExecutionContext } from './execution';
 import { createToolExecuteHandler, ToolExecuteOptions } from './handlers';
+import { markSandboxReady } from './prewarm';
 
 function createMockTool(
   name: string,
@@ -2683,6 +2688,66 @@ describe('createToolExecuteHandler', () => {
       expect(readSandboxFile).not.toHaveBeenCalledWith(
         expect.objectContaining({ runtime_session_hint: 'legacy-graph-hint' }),
       );
+    });
+
+    it('marks an actual sandbox read warm without marking skill-backed reads', async () => {
+      const readSandboxFile = jest.fn(async () => ({ content: 'stateful-data' }));
+      const context: CodeExecutionContext = {
+        baseUrl: 'https://stateful-code.example.com',
+        codeSessionKey: 'execute_code:stateful:v2:user:abc',
+        executionProfile: 'stateful',
+        runtimeSessionHint: 'v2:user:abc',
+        statefulSessions: true,
+      };
+      const handler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        codeExecutionContext: context,
+        readSandboxFile,
+      });
+
+      const [result] = await new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            {
+              id: 'call_warm_read',
+              name: Constants.READ_FILE,
+              args: { path: '/mnt/data/sentinel.txt' },
+            },
+          ],
+          metadata: { thread_id: 'conversation-1' },
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+
+      expect(result.status).toBe('success');
+      expect(markSandboxReady).toHaveBeenCalledWith('v2:user:abc');
+      expect(markSandboxReady).toHaveBeenCalledWith('conversation-1');
+
+      jest.mocked(markSandboxReady).mockClear();
+      const skillHandler = makeReadFileHandler({
+        codeEnvAvailable: true,
+        accessibleSkillIds: skillsInScope(),
+        activeSkillNames: new Set(['docs']),
+        codeExecutionContext: context,
+        getSkillByName: jest.fn(async () => ({
+          _id: '507f1f77bcf86cd799439011' as never,
+          name: 'docs',
+          body: '# Docs',
+          fileCount: 0,
+          version: 1,
+        })),
+      });
+
+      await invokeHandler(skillHandler, [
+        {
+          id: 'call_skill_read',
+          name: Constants.READ_FILE,
+          args: { path: 'docs/SKILL.md' },
+        },
+      ]);
+      expect(markSandboxReady).not.toHaveBeenCalled();
     });
 
     it('returns a clear error for /mnt/data/ when codeEnv is not available', async () => {

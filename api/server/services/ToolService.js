@@ -584,6 +584,7 @@ async function loadToolDefinitionsWrapper({
   streamId = null,
   jobCreatedAt,
   tool_resources,
+  codeExecutionContext,
   accessibleMcpServerNames,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
@@ -609,6 +610,18 @@ async function loadToolDefinitionsWrapper({
   const codeExecutionEnabled =
     agent.tools?.includes(Tools.execute_code) === true &&
     enabledCapabilities.has(AgentCapabilities.execute_code);
+  const resolvedCodeExecutionContext =
+    codeExecutionContext ??
+    resolveCodeExecutionContext({
+      statefulSessions:
+        codeExecutionEnabled &&
+        enabledCapabilities.has(AgentCapabilities.stateful_code_sessions) &&
+        agent.stateful_code_sessions === true,
+      environment: agent.stateful_code_environment,
+      userId: req.user.id,
+      agentId: agent.id,
+      conversationId: req.body?.conversationId,
+    });
   const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
   const mcpPermissionContext = createMCPPermissionContext(req);
   const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
@@ -1159,6 +1172,8 @@ async function loadToolDefinitionsWrapper({
         tool_resources,
         agentId: agent.id,
         agentResourceType,
+        codeApiBaseUrl: resolvedCodeExecutionContext.baseUrl,
+        executionProfile: resolvedCodeExecutionContext.executionProfile,
       });
       if (toolContext) {
         dynamicToolContextMap[Tools.execute_code] = toolContext;
@@ -1259,6 +1274,7 @@ async function loadAgentTools({
   streamId = null,
   jobCreatedAt,
   definitionsOnly = true,
+  codeExecutionContext: providedCodeExecutionContext,
   accessibleMcpServerNames,
 }) {
   if (definitionsOnly) {
@@ -1271,6 +1287,7 @@ async function loadAgentTools({
         streamId,
         jobCreatedAt,
         tool_resources,
+        codeExecutionContext: providedCodeExecutionContext,
         accessibleMcpServerNames,
       });
     } catch (error) {
@@ -1369,6 +1386,23 @@ async function loadAgentTools({
     });
   }
 
+  const codeExecutionEnabled =
+    agent.tools?.includes(Tools.execute_code) === true &&
+    enabledCapabilities.has(AgentCapabilities.execute_code);
+  const statefulCodeSessions =
+    codeExecutionEnabled &&
+    enabledCapabilities.has(AgentCapabilities.stateful_code_sessions) &&
+    agent.stateful_code_sessions === true;
+  const codeExecutionContext =
+    providedCodeExecutionContext ??
+    resolveCodeExecutionContext({
+      statefulSessions: statefulCodeSessions,
+      environment: agent.stateful_code_environment,
+      userId: req.user.id,
+      agentId: agent.id,
+      conversationId: req.body?.conversationId,
+    });
+
   const { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles } = await loadTools({
     agent,
     signal,
@@ -1389,6 +1423,7 @@ async function loadAgentTools({
       returnMetadata: true,
       mcpPermissionContext,
       requestScopedConnections: getMCPRequestContext(req, res),
+      codeExecutionContext,
       [Tools.web_search]: webSearchCallbacks,
     },
     webSearch: appConfig.webSearch,
@@ -1399,20 +1434,6 @@ async function loadAgentTools({
   /** Build tool registry from MCP tools and create PTC/tool search tools if configured */
   const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
   const programmaticToolsEnabled = enabledCapabilities.has(AgentCapabilities.programmatic_tools);
-  const codeExecutionEnabled =
-    agent.tools?.includes(Tools.execute_code) === true &&
-    enabledCapabilities.has(AgentCapabilities.execute_code);
-  const statefulCodeSessions =
-    codeExecutionEnabled &&
-    enabledCapabilities.has(AgentCapabilities.stateful_code_sessions) &&
-    agent.stateful_code_sessions === true;
-  const codeExecutionContext = resolveCodeExecutionContext({
-    statefulSessions: statefulCodeSessions,
-    environment: agent.stateful_code_environment,
-    userId: req.user.id,
-    agentId: agent.id,
-    conversationId: req.body?.conversationId,
-  });
   const { toolRegistry, toolDefinitions, additionalTools, hasDeferredTools } =
     await buildToolClassification({
       loadedTools,

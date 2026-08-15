@@ -332,9 +332,23 @@ const loadTools = async ({
   for (const tool of tools) {
     if (tool === Tools.execute_code) {
       requestedTools[tool] = async () => {
+        const statefulSessions =
+          agent?.stateful_code_sessions === true &&
+          (await checkCapability(options.req, AgentCapabilities.stateful_code_sessions));
+        const codeExecutionContext =
+          options.codeExecutionContext ??
+          resolveCodeExecutionContext({
+            statefulSessions,
+            environment: agent?.stateful_code_environment,
+            userId: user,
+            agentId: agent?.id,
+            conversationId: options.req?.body?.conversationId,
+          });
         const { files, toolContext } = await primeCodeFiles({
           ...options,
           agentId: agent?.id,
+          codeApiBaseUrl: codeExecutionContext.baseUrl,
+          executionProfile: codeExecutionContext.executionProfile,
         });
         if (toolContext) {
           dynamicToolContextMap[tool] = toolContext;
@@ -342,19 +356,6 @@ const loadTools = async ({
         if (files?.length) {
           primedCodeFiles = files;
         }
-        /* Resolve the trusted route from this agent's builder setting. Stateful
-         * agents fail closed onto the dedicated endpoint; all others remain on
-         * the default stateless Code API. */
-        const statefulSessions =
-          agent?.stateful_code_sessions === true &&
-          (await checkCapability(options.req, AgentCapabilities.stateful_code_sessions));
-        const codeExecutionContext = resolveCodeExecutionContext({
-          statefulSessions,
-          environment: agent?.stateful_code_environment,
-          userId: user,
-          agentId: agent?.id,
-          conversationId: options.req?.body?.conversationId,
-        });
         return createCodeExecutionTool({
           user_id: user,
           files,

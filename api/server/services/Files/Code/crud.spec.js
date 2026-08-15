@@ -334,6 +334,26 @@ describe('Code CRUD', () => {
       expect(callConfig.headers.Authorization).toBe('Bearer codeapi-token');
     });
 
+    it('routes uploads through the trusted stateful endpoint and profile header', async () => {
+      mockAxios.post.mockResolvedValue({
+        data: {
+          message: 'success',
+          storage_session_id: 'sess-1',
+          files: [{ fileId: 'fid-1', filename: 'data.csv' }],
+        },
+      });
+
+      await uploadCodeEnvFile({
+        ...baseUploadParams,
+        codeApiBaseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+      });
+
+      const [url, , callConfig] = mockAxios.post.mock.calls[0];
+      expect(url).toBe('https://stateful-code.example.com/upload');
+      expect(callConfig.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
+    });
+
     /* Phase C / option α (codeapi #1455): the upload wire carries the
      * resource identity codeapi uses for sessionKey derivation. Without
      * these on the form, codeapi falls back to user bucketing for every

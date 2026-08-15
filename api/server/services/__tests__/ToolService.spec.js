@@ -303,7 +303,43 @@ describe('ToolService - Action Capability Gating', () => {
         agentResourceType: ResourceType.REMOTE_AGENT,
       };
       expect(primeSearchFiles).toHaveBeenCalledWith(expectedParams);
-      expect(primeCodeFiles).toHaveBeenCalledWith(expectedParams);
+      expect(primeCodeFiles).toHaveBeenCalledWith({
+        ...expectedParams,
+        codeApiBaseUrl: 'https://api.librechat.ai',
+        executionProfile: 'default',
+      });
+    });
+
+    it('primes code files through the initializer-selected stateful route', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.execute_code];
+      const req = createMockReq(capabilities);
+      const tool_resources = { execute_code: { file_ids: ['stateful-file'] } };
+      const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'stateful-agent', tools: [Tools.execute_code] },
+        tool_resources,
+        definitionsOnly: true,
+        codeExecutionContext: {
+          baseUrl: 'https://stateful-code.example.com',
+          codeSessionKey: 'execute_code:stateful:v2:user:abc',
+          executionProfile: 'stateful',
+          runtimeSessionHint: 'v2:user:abc',
+          statefulSessions: true,
+        },
+      });
+
+      expect(primeCodeFiles).toHaveBeenCalledWith({
+        req,
+        tool_resources,
+        agentId: 'stateful-agent',
+        agentResourceType: undefined,
+        codeApiBaseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+      });
     });
 
     it('propagates a typed CodeAPI resource recovery failure before model invocation', async () => {

@@ -766,14 +766,16 @@ function checkIfActive(dateString) {
  *   into codeapi storage. Carries kind/id/storage_session_id/file_id;
  *   codeapi resolves the sessionKey from the request's auth context.
  * @param {ServerRequest} [req] - Current authenticated request, used to mint Code API auth.
+ * @param {{baseUrl?: string, executionProfile?: 'default'|'stateful'}} [route]
+ *   Trusted host-selected Code API route.
  *
  * @returns {Promise<string|null>}
  *          A promise that resolves to the `lastModified` time string of the file if successful, or null if there is an
  *          error in initialization or fetching the info.
  */
-async function getSessionInfo(ref, req) {
+async function getSessionInfo(ref, req, route = {}) {
   try {
-    const baseURL = getCodeBaseURL();
+    const baseURL = route.baseUrl ?? getCodeBaseURL();
     const authHeaders = await getCodeApiAuthHeaders(req);
     /* `/sessions/.../objects/...` is gated by codeapi's `sessionAuth`
      * middleware (post-Phase C). The middleware reconstructs the
@@ -792,6 +794,9 @@ async function getSessionInfo(ref, req) {
       headers: {
         'User-Agent': 'LibreChat/1.0',
         ...authHeaders,
+        ...(route.executionProfile
+          ? { [CODE_API_EXPECTED_PROFILE_HEADER]: route.executionProfile }
+          : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -900,7 +905,9 @@ const getReuploadFailureCategory = (error) => {
  * }>}
  */
 const primeFiles = async (options) => {
-  const { tool_resources, req, agentId, agentResourceType } = options;
+  const { tool_resources, req, agentId, agentResourceType, codeApiBaseUrl, executionProfile } =
+    options;
+  const codeApiRoute = { baseUrl: codeApiBaseUrl, executionProfile };
   const file_ids = tool_resources?.[EToolResources.execute_code]?.file_ids ?? [];
   const agentResourceIds = new Set(file_ids);
   const resourceFiles = tool_resources?.[EToolResources.execute_code]?.files ?? [];
@@ -1031,6 +1038,8 @@ const primeFiles = async (options) => {
           kind: ref.kind,
           id: ref.id,
           ...(ref.kind === 'skill' ? { version: ref.version } : {}),
+          codeApiBaseUrl,
+          executionProfile,
         });
 
         /**
@@ -1080,7 +1089,7 @@ const primeFiles = async (options) => {
         );
       }
     };
-    const uploadTime = await getSessionInfo(ref, req);
+    const uploadTime = await getSessionInfo(ref, req, codeApiRoute);
     if (!uploadTime) {
       logger.debug(
         `[primeCodeFiles] file=${file.file_id} path=reupload reason=no-uploadtime ` +

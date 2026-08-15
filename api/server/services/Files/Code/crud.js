@@ -149,17 +149,28 @@ async function deleteCodeEnvFile(req, file) {
  *   ignores this for `kind: 'user'` (auth context provides userId), but it's
  *   sent uniformly for shape symmetry with the discriminated union.
  * @param {number} [params.version] - Required when `kind === 'skill'`; absent otherwise.
+ * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
+ * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
  * @returns {Promise<{ storage_session_id: string; file_id: string }>}
  *   The codeapi storage location of the uploaded file.
  * @throws {Error} If there's an error during the upload process.
  */
-async function uploadCodeEnvFile({ req, stream, filename, kind, id, version }) {
+async function uploadCodeEnvFile({
+  req,
+  stream,
+  filename,
+  kind,
+  id,
+  version,
+  codeApiBaseUrl,
+  executionProfile,
+}) {
   try {
     const form = new FormData();
     appendCodeEnvFileIdentity(form, { kind, id, version });
     appendCodeEnvFile(form, stream, filename);
 
-    const baseURL = getCodeBaseURL();
+    const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
     const authHeaders = await getCodeApiAuthHeaders(req);
     /** @type {import('axios').AxiosRequestConfig} */
     const options = {
@@ -169,6 +180,7 @@ async function uploadCodeEnvFile({ req, stream, filename, kind, id, version }) {
         'User-Agent': 'LibreChat/1.0',
         'User-Id': req.user.id,
         ...authHeaders,
+        ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
       },
       httpAgent: codeServerHttpAgent,
       httpsAgent: codeServerHttpsAgent,
@@ -218,10 +230,21 @@ async function uploadCodeEnvFile({ req, stream, filename, kind, id, version }) {
  *   through subsequent download/walk passes — sandboxed-code modifications
  *   are dropped on the floor and the original ref is echoed back as
  *   `inherited: true`, never as a generated artifact.
+ * @param {string} [params.codeApiBaseUrl] - Trusted per-agent Code API endpoint.
+ * @param {'default'|'stateful'} [params.executionProfile] - Trusted execution profile.
  * @returns {Promise<{ storage_session_id: string; files: Array<{ fileId: string; filename: string }> }>}
  * @throws {Error} If the batch upload fails entirely.
  */
-async function batchUploadCodeEnvFiles({ req, files, kind, id, version, read_only = false }) {
+async function batchUploadCodeEnvFiles({
+  req,
+  files,
+  kind,
+  id,
+  version,
+  read_only = false,
+  codeApiBaseUrl,
+  executionProfile,
+}) {
   const form = new FormData();
   appendCodeEnvFileIdentity(form, { kind, id, version });
   if (read_only) {
@@ -231,7 +254,7 @@ async function batchUploadCodeEnvFiles({ req, files, kind, id, version, read_onl
     appendCodeEnvFile(form, file.stream, file.filename);
   }
 
-  const baseURL = getCodeBaseURL();
+  const baseURL = codeApiBaseUrl ?? getCodeBaseURL();
   const authHeaders = await getCodeApiAuthHeaders(req);
   /** @type {import('axios').AxiosRequestConfig} */
   const options = {
@@ -241,6 +264,7 @@ async function batchUploadCodeEnvFiles({ req, files, kind, id, version, read_onl
       'User-Agent': 'LibreChat/1.0',
       'User-Id': req.user.id,
       ...authHeaders,
+      ...(executionProfile ? { [CODE_API_EXPECTED_PROFILE_HEADER]: executionProfile } : {}),
     },
     httpAgent: codeServerHttpAgent,
     httpsAgent: codeServerHttpsAgent,

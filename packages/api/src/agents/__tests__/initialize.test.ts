@@ -1739,6 +1739,49 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
   });
 
+  it('routes code-file priming through the stateful profile before tools load', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'agent-user';
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://stateful-code.example.com/v1/';
+
+    try {
+      const result = await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      );
+
+      expect(loadTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          codeExecutionContext: expect.objectContaining({
+            baseUrl: 'https://stateful-code.example.com/v1',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+          }),
+        }),
+      );
+      expect(result.codeExecutionContext).toEqual(
+        expect.objectContaining({
+          baseUrl: 'https://stateful-code.example.com/v1',
+          executionProfile: 'stateful',
+        }),
+      );
+    } finally {
+      delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+    }
+  });
+
   it('upgrades read_file to the skill-aware description when active skills are in scope', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['execute_code'];

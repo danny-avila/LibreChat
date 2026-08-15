@@ -52,6 +52,11 @@ import {
   normalizeAgentToolKeys,
 } from '~/mcp/utils';
 import {
+  normalizeStatefulCodeEnvironment,
+  resolveCodeExecutionContext,
+  type CodeExecutionContext,
+} from './execution';
+import {
   optionalChainWithEmptyCheck,
   extractLibreChatParams,
   getModelMaxTokens,
@@ -62,11 +67,6 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
-import {
-  normalizeStatefulCodeEnvironment,
-  resolveCodeExecutionContext,
-  type CodeExecutionContext,
-} from './execution';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { isFatalAgentInitializationError } from './errors';
@@ -421,6 +421,8 @@ export interface InitializeAgentParams {
     model: string | null;
     tool_options: AgentToolOptions | undefined;
     tool_resources: AgentToolResources | undefined;
+    /** Trusted endpoint/profile resolved for this agent before any code-file priming. */
+    codeExecutionContext: CodeExecutionContext;
     /** Full accessible MCP server names (operator + user DB) when the heal
      *  already fetched them — lets execution-side collision guards see
      *  cross-tier shadowing without another registry round-trip. */
@@ -710,6 +712,24 @@ export async function initializeAgent(
 
   const provider = agent.provider;
   agent.endpoint = provider;
+
+  /** Resolve the per-agent Code API route before resource/tool priming. A
+   * stateful agent must perform freshness checks and recovery uploads against
+   * the same isolated deployment its eventual `/exec` request will use. */
+  const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
+  const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
+  const effectiveStatefulSessions =
+    effectiveCodeEnvAvailable &&
+    params.statefulSessionsAvailable === true &&
+    agent.stateful_code_sessions === true;
+  const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(agent.stateful_code_environment);
+  const codeExecutionContext = resolveCodeExecutionContext({
+    statefulSessions: effectiveStatefulSessions,
+    environment: statefulCodeEnvironment,
+    userId: requestFileOwnerId,
+    agentId: agent.id,
+    conversationId,
+  });
 
   /**
    * Load conversation files for ALL agents, not just the initial agent.
@@ -1028,6 +1048,7 @@ export async function initializeAgent(
       model: agent.model,
       tool_options: agent.tool_options,
       tool_resources,
+      codeExecutionContext,
       accessibleMcpServerNames: resolvedAuditNames,
     });
 
@@ -1192,8 +1213,6 @@ export async function initializeAgent(
    * code-only description to the skill-aware description without adding a
    * duplicate — exactly one copy of each tool reaches the LLM.
    */
-  const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
-  const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
   /**
    * Capability marker → definition names its registration produced this run,
    * reported by the registrars themselves. `tool_options` entries keyed by a
@@ -1210,21 +1229,6 @@ export async function initializeAgent(
     const existing = capabilityToolNames.get(capability);
     capabilityToolNames.set(capability, existing ? [...existing, ...toolNames] : toolNames);
   };
-  /** Per-agent stateful-session truth: the admin capability AND the agent's
-   *  own builder opt-in AND a working code env. Resolved once here so the
-   *  registered bash description and per-agent tool factories agree. */
-  const effectiveStatefulSessions =
-    effectiveCodeEnvAvailable &&
-    params.statefulSessionsAvailable === true &&
-    agent.stateful_code_sessions === true;
-  const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(agent.stateful_code_environment);
-  const codeExecutionContext = resolveCodeExecutionContext({
-    statefulSessions: effectiveStatefulSessions,
-    environment: statefulCodeEnvironment,
-    userId: requestFileOwnerId,
-    agentId: agent.id,
-    conversationId,
-  });
   if (effectiveCodeEnvAvailable) {
     const codeExecResult = registerCodeExecutionTools({
       toolRegistry,

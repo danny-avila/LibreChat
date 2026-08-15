@@ -235,12 +235,21 @@ export interface ToolExecuteOptions {
     id: string;
     version?: number;
     read_only?: boolean;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
   }>;
   /** Checks if a code env file is still active. Returns lastModified or null. */
-  getSessionInfo?: (ref: CodeEnvRef, req?: ServerRequest) => Promise<string | null>;
+  getSessionInfo?: (
+    ref: CodeEnvRef,
+    req?: ServerRequest,
+    route?: {
+      baseUrl?: string;
+      executionProfile?: CodeExecutionContext['executionProfile'];
+    },
+  ) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists `codeEnvRef` on skill files after upload */
@@ -1495,6 +1504,7 @@ async function handleSandboxImageRead(
   options: ToolExecuteOptions,
   req?: ServerRequest,
   codeExecutionContext?: CodeExecutionContext,
+  onSuccess?: () => void,
 ): Promise<ToolExecuteResult> {
   const { readSandboxImage } = options;
   const binaryHint = (): ToolExecuteResult => ({
@@ -1528,6 +1538,7 @@ async function handleSandboxImageRead(
     return binaryHint();
   }
   if ('tooLarge' in read) {
+    onSuccess?.();
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -1551,6 +1562,7 @@ async function handleSandboxImageRead(
   if (!mimeType || !isCompleteImage(buffer, mimeType)) {
     return binaryHint();
   }
+  onSuccess?.();
   return buildImageArtifactResult(tc.id, filePath, mimeType, buffer.length, read.base64);
 }
 
@@ -1580,10 +1592,11 @@ async function handleSandboxFileFallback(
   options: ToolExecuteOptions,
   req?: ServerRequest,
   codeExecutionContext?: CodeExecutionContext,
+  onSuccess?: () => void,
 ): Promise<ToolExecuteResult> {
   const ext = lowercaseExtension(filePath);
   if (SANDBOX_IMAGE_EXTENSIONS.has(ext)) {
-    return handleSandboxImageRead(tc, filePath, ext, options, req, codeExecutionContext);
+    return handleSandboxImageRead(tc, filePath, ext, options, req, codeExecutionContext, onSuccess);
   }
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
     return {
@@ -1648,6 +1661,7 @@ async function handleSandboxFileFallback(
     if (truncated) {
       numbered += `\n\n[truncated at ${MAX_READABLE_BYTES} bytes — use \`bash_tool\` (e.g. \`head -c\` / \`tail\`) to read the rest of "${filePath}"]`;
     }
+    onSuccess?.();
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -2997,6 +3011,7 @@ async function handleReadFileCall(
   mergedConfigurable: Record<string, unknown>,
   options: ToolExecuteOptions,
   req?: ServerRequest,
+  onSandboxReadSuccess?: () => void,
 ): Promise<ToolExecuteResult> {
   const { getSkillByName, getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } =
     options;
@@ -3021,7 +3036,14 @@ async function handleReadFileCall(
    */
   if (args.path.startsWith('/mnt/data/')) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.path, options, req, codeExecutionContext);
+      return handleSandboxFileFallback(
+        tc,
+        args.path,
+        options,
+        req,
+        codeExecutionContext,
+        onSandboxReadSuccess,
+      );
     }
     return {
       toolCallId: tc.id,
@@ -3050,7 +3072,14 @@ async function handleReadFileCall(
     const slashIdx = args.path.indexOf('/');
     if (slashIdx < 1) {
       if (codeEnvAvailable) {
-        return handleSandboxFileFallback(tc, args.path, options, req, codeExecutionContext);
+        return handleSandboxFileFallback(
+          tc,
+          args.path,
+          options,
+          req,
+          codeExecutionContext,
+          onSandboxReadSuccess,
+        );
       }
       return {
         toolCallId: tc.id,
@@ -3070,7 +3099,14 @@ async function handleReadFileCall(
        * dead-ending with a skill-centric error message.
        */
       if (codeEnvAvailable) {
-        return handleSandboxFileFallback(tc, args.path, options, req, codeExecutionContext);
+        return handleSandboxFileFallback(
+          tc,
+          args.path,
+          options,
+          req,
+          codeExecutionContext,
+          onSandboxReadSuccess,
+        );
       }
       return {
         toolCallId: tc.id,
@@ -3132,7 +3168,14 @@ async function handleReadFileCall(
    */
   if (!skillsEffectivelyEnabled) {
     if (codeEnvAvailable && !explicitSkillNamespace) {
-      return handleSandboxFileFallback(tc, args.path, options, req, codeExecutionContext);
+      return handleSandboxFileFallback(
+        tc,
+        args.path,
+        options,
+        req,
+        codeExecutionContext,
+        onSandboxReadSuccess,
+      );
     }
     return {
       toolCallId: tc.id,
@@ -3171,7 +3214,14 @@ async function handleReadFileCall(
     const recovered = await recoverAuthorSkill();
     if (!recovered) {
       if (codeEnvAvailable && !explicitSkillNamespace) {
-        return handleSandboxFileFallback(tc, args.path, options, req, codeExecutionContext);
+        return handleSandboxFileFallback(
+          tc,
+          args.path,
+          options,
+          req,
+          codeExecutionContext,
+          onSandboxReadSuccess,
+        );
       }
       return {
         toolCallId: tc.id,
@@ -3554,6 +3604,7 @@ async function handleSkillToolCall(
   // is enabled for this run. The flag is threaded via configurable upstream
   // so this gate cannot be bypassed.
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
+  const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
   if (
     codeEnvAvailable &&
     skill.fileCount > 0 &&
@@ -3574,6 +3625,7 @@ async function handleSkillToolCall(
         getSessionInfo,
         checkIfActive,
         updateSkillFileCodeEnvIds,
+        codeExecutionContext,
       });
       if (primeResult) {
         /* `session_id` at the top of the artifact is the (representative)
@@ -4216,6 +4268,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     isFileAuthoringCall &&
                     typeof (tc.args as { path?: unknown }).path === 'string' &&
                     !(tc.args as { path: string }).path.startsWith(SKILL_FILE_PREFIX);
+                  let sandboxReadSucceeded = false;
                   if (
                     tc.name === Constants.SKILL_TOOL ||
                     tc.name === Constants.READ_FILE ||
@@ -4237,6 +4290,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           mergedConfigurable,
                           options,
                           req,
+                          () => {
+                            sandboxReadSucceeded = true;
+                          },
                         );
                       } else if (tc.name === CREATE_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleCreateFileCall(
@@ -4304,16 +4360,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       );
                     }
 
-                    /* Sandbox-routed create_file/edit_file return before the
+                    /* Sandbox-routed host file tools return before the
                      * generic invoke path's marker below, so refresh the warm
-                     * window here. Gated on `isSandboxFileAuthoringCall`:
-                     * skill-path writes and skill/read_file calls on this
-                     * branch may resolve without touching the Code API, and
-                     * under-marking only costs a redundant cold-boot label. */
+                     * window here. `sandboxReadSucceeded` is set only after an
+                     * actual Code API read succeeds, so skill reads never mark
+                     * the sandbox warm. */
                     if (
-                      isSandboxFileAuthoringCall &&
+                      (isSandboxFileAuthoringCall || sandboxReadSucceeded) &&
                       handlerResult.status === 'success' &&
-                      runtimeSessionHint
+                      (runtimeSessionHint || sandboxConversationId)
                     ) {
                       markCodeSandboxWarm();
                     }

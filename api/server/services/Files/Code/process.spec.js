@@ -1230,6 +1230,35 @@ describe('Code Process', () => {
           }),
         );
       });
+
+      it('checks freshness against the trusted stateful endpoint and profile', async () => {
+        mockAxios.mockResolvedValue({
+          data: { lastModified: '2026-08-15T00:00:00Z' },
+        });
+
+        await getSessionInfo(
+          {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'session-123',
+            file_id: 'file-123',
+          },
+          mockReq,
+          {
+            baseUrl: 'https://stateful-code.example.com',
+            executionProfile: 'stateful',
+          },
+        );
+
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            url: expect.stringMatching(/^https:\/\/stateful-code\.example\.com\/sessions\//),
+            headers: expect.objectContaining({
+              'X-CodeAPI-Expected-Profile': 'stateful',
+            }),
+          }),
+        );
+      });
     });
 
     describe('deferred-preview flow (office-bucket files)', () => {
