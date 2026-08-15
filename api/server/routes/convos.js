@@ -245,17 +245,7 @@ router.post('/pin', validateConvoAccess, async (req, res) => {
   }
 
   try {
-    const dbResponse = await db.saveConvo(
-      { userId: req.user.id },
-      { conversationId, pinned },
-      {
-        context: `POST /api/convos/pin ${conversationId}`,
-        /** Pinning is a bookmark, not activity, so the sidebar's `updatedAt` order stands. */
-        preserveUpdatedAt: true,
-        /** Without timestamps, an upsert would insert a conversation that has none. */
-        noUpsert: true,
-      },
-    );
+    const dbResponse = await db.setConvoPinned(req.user.id, conversationId, pinned);
 
     if (!dbResponse) {
       return res.status(404).json({ error: 'Conversation not found' });

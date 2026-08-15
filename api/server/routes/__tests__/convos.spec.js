@@ -659,49 +659,45 @@ describe('Convos Routes', () => {
 
   describe('POST /convos/pin', () => {
     const mockConversationId = 'conv-123';
+    const { setConvoPinned } = require('~/models');
 
     it('should pin a conversation', async () => {
       const mockPinnedConvo = { conversationId: mockConversationId, pinned: true };
-      saveConvo.mockResolvedValue(mockPinnedConvo);
+      setConvoPinned.mockResolvedValue(mockPinnedConvo);
 
       const response = await request(app).post('/api/convos/pin').send({ arg: mockPinnedConvo });
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockPinnedConvo);
-      expect(saveConvo).toHaveBeenCalledWith(
-        { userId: 'test-user-123' },
-        { conversationId: mockConversationId, pinned: true },
-        {
-          context: `POST /api/convos/pin ${mockConversationId}`,
-          preserveUpdatedAt: true,
-          noUpsert: true,
-        },
-      );
+      expect(setConvoPinned).toHaveBeenCalledWith('test-user-123', mockConversationId, true);
+    });
+
+    /** A pin is one boolean: it must not drag in `saveConvo`'s message-id refresh
+     * and project-stats recompute, which cost an extra read and a large write. */
+    it('does not route a pin through the full conversation save', async () => {
+      setConvoPinned.mockResolvedValue({ conversationId: mockConversationId, pinned: true });
+
+      await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: mockConversationId, pinned: true } });
+
+      expect(setConvoPinned).toHaveBeenCalledTimes(1);
+      expect(saveConvo).not.toHaveBeenCalled();
     });
 
     it('should unpin a conversation', async () => {
       const mockUnpinnedConvo = { conversationId: mockConversationId, pinned: false };
-      saveConvo.mockResolvedValue(mockUnpinnedConvo);
+      setConvoPinned.mockResolvedValue(mockUnpinnedConvo);
 
       const response = await request(app).post('/api/convos/pin').send({ arg: mockUnpinnedConvo });
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockUnpinnedConvo);
-      expect(saveConvo).toHaveBeenCalledWith(
-        { userId: 'test-user-123' },
-        { conversationId: mockConversationId, pinned: false },
-        {
-          context: `POST /api/convos/pin ${mockConversationId}`,
-          preserveUpdatedAt: true,
-          noUpsert: true,
-        },
-      );
+      expect(setConvoPinned).toHaveBeenCalledWith('test-user-123', mockConversationId, false);
     });
 
-    /** With timestamps suppressed, an upsert would insert a conversation carrying
-     * neither createdAt nor updatedAt, so an unknown id has to be rejected instead. */
     it('should return 404 when the conversation does not exist', async () => {
-      saveConvo.mockResolvedValue(null);
+      setConvoPinned.mockResolvedValue(null);
 
       const response = await request(app)
         .post('/api/convos/pin')
@@ -718,7 +714,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'conversationId is required' });
-      expect(saveConvo).not.toHaveBeenCalled();
+      expect(setConvoPinned).not.toHaveBeenCalled();
     });
 
     it('should return 400 when pinned is not a boolean', async () => {
@@ -728,7 +724,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'pinned must be a boolean' });
-      expect(saveConvo).not.toHaveBeenCalled();
+      expect(setConvoPinned).not.toHaveBeenCalled();
     });
 
     it('should return 400 when pinned is missing', async () => {
@@ -738,11 +734,11 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'pinned is required' });
-      expect(saveConvo).not.toHaveBeenCalled();
+      expect(setConvoPinned).not.toHaveBeenCalled();
     });
 
-    it('should return 500 when saveConvo fails', async () => {
-      saveConvo.mockRejectedValue(new Error('Database error'));
+    it('should return 500 when the pin update fails', async () => {
+      setConvoPinned.mockRejectedValue(new Error('Database error'));
 
       const response = await request(app)
         .post('/api/convos/pin')

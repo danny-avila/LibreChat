@@ -70,6 +70,8 @@ afterAll(async () => {
 
 const saveConvo = (...args: Parameters<ConversationMethods['saveConvo']>) =>
   methods.saveConvo(...args) as Promise<IConversation | null>;
+const setConvoPinned = (...args: Parameters<ConversationMethods['setConvoPinned']>) =>
+  methods.setConvoPinned(...args);
 const getConvo = (...args: Parameters<ConversationMethods['getConvo']>) =>
   methods.getConvo(...args);
 const getConvoRetention = (...args: Parameters<ConversationMethods['getConvoRetention']>) =>
@@ -408,29 +410,6 @@ describe('Conversation Operations', () => {
         return conversationId;
       };
 
-      /** The sidebar orders by `updatedAt`, so a pin that bumped it would hoist an
-       * untouched chat into Today and drop it back out of place on unpin. */
-      it('leaves updatedAt untouched across a pin and unpin round trip', async () => {
-        const conversationId = await seedAgedConvo();
-
-        const pinned = await saveConvo(
-          { userId: 'user123' },
-          { conversationId, pinned: true },
-          { preserveUpdatedAt: true, noUpsert: true },
-        );
-        const unpinned = await saveConvo(
-          { userId: 'user123' },
-          { conversationId, pinned: false },
-          { preserveUpdatedAt: true, noUpsert: true },
-        );
-
-        expect(pinned?.pinned).toBe(true);
-        expect(unpinned?.pinned).toBe(false);
-        expect(new Date(pinned?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
-        expect(new Date(unpinned?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
-        expect(new Date(pinned?.createdAt ?? 0).toISOString()).toBe(anchor.toISOString());
-      });
-
       /** Archiving files a chat away rather than touching it, and unarchiving has to
        * restore it to its real place in the date groups. */
       it('leaves updatedAt untouched across an archive and unarchive round trip', async () => {
@@ -537,11 +516,94 @@ describe('Conversation Operations', () => {
       it('does not insert a timestampless conversation for an unknown id', async () => {
         const result = await saveConvo(
           { userId: 'user123' },
-          { conversationId: uuidv4(), pinned: true },
+          { conversationId: uuidv4(), isArchived: true },
           { preserveUpdatedAt: true, noUpsert: true },
         );
 
         expect(result).toBeNull();
+      });
+    });
+
+    describe('setConvoPinned', () => {
+      const anchor = new Date('2026-03-05T22:17:14.997Z');
+
+      const seedAgedConvo = async (user = 'user123') => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({
+          conversationId,
+          user,
+          title: 'Living Room Light And Temperature',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          messages: [],
+          createdAt: anchor,
+          updatedAt: anchor,
+        });
+        return conversationId;
+      };
+
+      it('pins a conversation without disturbing its timestamps', async () => {
+        const conversationId = await seedAgedConvo();
+
+        const result = await setConvoPinned('user123', conversationId, true);
+
+        expect(result?.pinned).toBe(true);
+        expect(result?.title).toBe('Living Room Light And Temperature');
+        expect(new Date(result?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+        expect(new Date(result?.createdAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      it('unpins a conversation without disturbing its timestamps', async () => {
+        const conversationId = await seedAgedConvo();
+        await setConvoPinned('user123', conversationId, true);
+
+        const result = await setConvoPinned('user123', conversationId, false);
+
+        expect(result?.pinned).toBe(false);
+        expect(new Date(result?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      /** The whole point of the dedicated method: a one-field toggle should not pay for
+       * `saveConvo`'s message-id read, nor rewrite the array it returns. */
+      it('does not read the conversation messages', async () => {
+        const conversationId = await seedAgedConvo();
+
+        await setConvoPinned('user123', conversationId, true);
+
+        expect(getMessages).not.toHaveBeenCalled();
+      });
+
+      it('leaves the stored message list alone', async () => {
+        const conversationId = await seedAgedConvo();
+        await Conversation.collection.updateOne(
+          { conversationId },
+          { $set: { messages: ['message-a', 'message-b'] } },
+        );
+
+        await setConvoPinned('user123', conversationId, true);
+
+        const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
+        expect(stored?.messages).toEqual(['message-a', 'message-b']);
+      });
+
+      it('returns null for an unknown id rather than inserting one', async () => {
+        const conversationId = uuidv4();
+
+        const result = await setConvoPinned('user123', conversationId, true);
+
+        expect(result).toBeNull();
+        expect(await Conversation.countDocuments({ conversationId })).toBe(0);
+      });
+
+      it('cannot pin another user’s conversation', async () => {
+        const conversationId = await seedAgedConvo('other-user');
+
+        const result = await setConvoPinned('user123', conversationId, true);
+
+        expect(result).toBeNull();
+        const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
+        expect(stored?.pinned).toBeUndefined();
       });
     });
   });

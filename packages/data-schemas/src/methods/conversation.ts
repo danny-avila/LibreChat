@@ -36,6 +36,11 @@ export interface ConversationMethods {
       preserveUpdatedAt?: boolean;
     },
   ): Promise<IConversation | { message: string } | null>;
+  setConvoPinned(
+    user: string,
+    conversationId: string,
+    pinned: boolean,
+  ): Promise<IConversation | null>;
   bulkSaveConvos(conversations: Array<Record<string, unknown>>): Promise<unknown>;
   getConvosByCursor(
     user: string,
@@ -413,6 +418,31 @@ export function createConversationMethods(
         logger.info(`[saveConvo] ${metadata.context}`);
       }
       return { message: 'Error saving conversation' };
+    }
+  }
+
+  /**
+   * Flips the pinned flag on its own rather than routing through `saveConvo`.
+   *
+   * Pinning is pure metadata: it moves no chat between projects, changes nothing the
+   * project workspace hides, and opens no retention window, so none of `saveConvo`'s
+   * tail work applies. Going direct drops the `getMessages` round trip and the rewrite
+   * of the whole message-id array that a one-field toggle would otherwise pay for, and
+   * `timestamps: false` keeps the sidebar ordering by real activity.
+   *
+   * Returns null when no conversation matched, so a pin can never insert one.
+   */
+  async function setConvoPinned(user: string, conversationId: string, pinned: boolean) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOneAndUpdate(
+        { conversationId, user },
+        { $set: { pinned } },
+        { new: true, timestamps: false },
+      ).lean<IConversation>();
+    } catch (error) {
+      logger.error('[setConvoPinned] Error updating pinned state', error);
+      throw new Error('Error updating pinned state');
     }
   }
 
@@ -945,6 +975,7 @@ export function createConversationMethods(
     searchConversation,
     deleteNullOrEmptyConversations,
     saveConvo,
+    setConvoPinned,
     bulkSaveConvos,
     getConvosByCursor,
     getConvosQueried,
