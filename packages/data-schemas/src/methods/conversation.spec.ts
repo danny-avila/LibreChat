@@ -1809,6 +1809,133 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('getConvosByCursor archivedAt sorting', () => {
+    const insertArchived = async (title: string, archivedAt: Date | null, updatedAt: Date) => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId,
+        user: 'user123',
+        title,
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived: true,
+        createdAt: updatedAt,
+        updatedAt,
+        ...(archivedAt === null ? {} : { archivedAt }),
+      });
+      return conversationId;
+    };
+
+    it('accepts archivedAt as a sort field', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const older = await insertArchived('older', new Date(base.getTime() - 60000), base);
+      const newer = await insertArchived('newer', new Date(base.getTime() + 60000), base);
+
+      const result = await getConvosByCursor('user123', {
+        isArchived: true,
+        sortBy: 'archivedAt',
+        sortDirection: 'desc',
+      });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([newer, older]);
+    });
+
+    /* Everything archived before the field existed has no stamp, so the missing-value
+       group is the common case here, not an edge case. A cursor that collapsed a null
+       stamp to the epoch would restart paging from 1970 and replay the whole archive. */
+    it('pages across stamped and unstamped chats without repeating or dropping any', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const expected = new Set<string>();
+      for (let index = 0; index < 4; index++) {
+        expected.add(
+          await insertArchived(`stamped ${index}`, new Date(base.getTime() + index * 60000), base),
+        );
+      }
+      for (let index = 0; index < 4; index++) {
+        expected.add(
+          await insertArchived(`legacy ${index}`, null, new Date(base.getTime() + index * 60000)),
+        );
+      }
+
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page++) {
+        const result = await getConvosByCursor('user123', {
+          isArchived: true,
+          sortBy: 'archivedAt',
+          sortDirection: 'desc',
+          limit: 3,
+          cursor,
+        });
+        seen.push(...result.conversations.map((convo) => convo.conversationId));
+        cursor = result.nextCursor;
+        if (!cursor) {
+          break;
+        }
+      }
+
+      expect(new Set(seen)).toEqual(expected);
+      expect(seen.length).toBe(expected.size);
+    });
+
+    it('orders unstamped chats last when sorting newest first', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const stamped = await insertArchived('stamped', base, base);
+      const legacy = await insertArchived('legacy', null, base);
+
+      const result = await getConvosByCursor('user123', {
+        isArchived: true,
+        sortBy: 'archivedAt',
+        sortDirection: 'desc',
+      });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([stamped, legacy]);
+    });
+
+    /** Ascending takes the other null branch: the unstamped group comes first and the
+     * page that leaves it has to pick up every stamped chat behind it. */
+    it('pages across stamped and unstamped chats when sorting oldest first', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const expected = new Set<string>();
+      for (let index = 0; index < 3; index++) {
+        expected.add(
+          await insertArchived(`stamped ${index}`, new Date(base.getTime() + index * 60000), base),
+        );
+      }
+      for (let index = 0; index < 3; index++) {
+        expected.add(
+          await insertArchived(`legacy ${index}`, null, new Date(base.getTime() + index * 60000)),
+        );
+      }
+
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page++) {
+        const result = await getConvosByCursor('user123', {
+          isArchived: true,
+          sortBy: 'archivedAt',
+          sortDirection: 'asc',
+          limit: 2,
+          cursor,
+        });
+        seen.push(...result.conversations.map((convo) => convo.conversationId));
+        cursor = result.nextCursor;
+        if (!cursor) {
+          break;
+        }
+      }
+
+      expect(new Set(seen)).toEqual(expected);
+      expect(seen.length).toBe(expected.size);
+    });
+
+    it('still rejects a sort field that is not allowed', async () => {
+      await expect(getConvosByCursor('user123', { sortBy: 'pinned' })).rejects.toThrow(
+        /Invalid sortBy field/,
+      );
+    });
+  });
+
   describe('getConvosByCursor pinned filter', () => {
     const insertConvo = async ({
       user = 'user123',

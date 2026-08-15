@@ -295,9 +295,8 @@ export function createConversationMethods(
           ? metadata.createdAtOnInsert
           : undefined;
       /**
-       * Metadata-only edits (pinning, archiving) must not read as activity: the
-       * sidebar orders chats by `updatedAt`, so bumping it would hoist an untouched
-       * chat to Today and misplace it again the moment the flag is cleared.
+       * Metadata-only edits (pinning) must not read as activity: the sidebar orders
+       * chats by `updatedAt`, so bumping it would hoist an untouched chat to Today.
        */
       const preserveUpdatedAt = metadata?.preserveUpdatedAt === true;
       if (createdAtOnInsert && !preserveUpdatedAt) {
@@ -682,7 +681,7 @@ export function createConversationMethods(
       }
     }
 
-    const validSortFields = ['title', 'createdAt', 'updatedAt'];
+    const validSortFields = ['title', 'createdAt', 'updatedAt', 'archivedAt'];
     if (!validSortFields.includes(sortBy)) {
       throw new Error(
         `Invalid sortBy field: ${sortBy}. Must be one of ${validSortFields.join(', ')}`,
@@ -690,6 +689,10 @@ export function createConversationMethods(
     }
     const finalSortBy = sortBy;
     const finalSortDirection = sortDirection === 'asc' ? 'asc' : 'desc';
+    /* `title` and `archivedAt` are both absent on plenty of rows, and BSON orders a
+       missing field before every string and every date alike. The paging clauses below
+       therefore treat them the same way; `createdAt`/`updatedAt` are always present. */
+    const sortFieldIsNullable = finalSortBy === 'title' || finalSortBy === 'archivedAt';
 
     let cursorFilter: FilterQuery<IConversation> | null = null;
     if (cursor) {
@@ -711,11 +714,11 @@ export function createConversationMethods(
            (sort field, updatedAt) pair is skipped instead of returned. */
         const clauses: FilterQuery<IConversation>[] = [];
 
-        /* A title can be absent, and BSON orders a missing field before every
-           string while `$lt`/`$gt` never cross that type boundary. Titleless rows
-           therefore need clauses of their own: their own tail when the boundary is
-           one of them, and the whole group when a descending page runs past the
-           last title. */
+        /* A title or an archive stamp can be absent, and BSON orders a missing field
+           before every string and date while `$lt`/`$gt` never cross that type
+           boundary. Those rows therefore need clauses of their own: their own tail
+           when the boundary is one of them, and the whole group when a descending
+           page runs past the last non-null value. */
         if (primary == null) {
           clauses.push({ [finalSortBy]: null, updatedAt: { [op]: secondaryValue } });
           if (boundaryId) {
@@ -737,7 +740,7 @@ export function createConversationMethods(
               _id: boundaryId,
             });
           }
-          if (descending && finalSortBy === 'title') {
+          if (descending && sortFieldIsNullable) {
             clauses.push({ [finalSortBy]: null });
           }
         }
@@ -765,7 +768,7 @@ export function createConversationMethods(
 
       const convos = await Conversation.find(query)
         .select(
-          'conversationId endpoint title createdAt updatedAt user model agent_id assistant_id spec iconURL chatProjectId pinned',
+          'conversationId endpoint title createdAt updatedAt archivedAt user model agent_id assistant_id spec iconURL chatProjectId pinned',
         )
         .sort(sortObj)
         .limit(limit + 1)
@@ -775,16 +778,23 @@ export function createConversationMethods(
       if (convos.length > limit) {
         convos.pop();
         const lastReturned = convos[convos.length - 1];
-        let primaryValue: string | Date | undefined = lastReturned.updatedAt;
+        const sortValues: Record<string, string | Date | null | undefined> = {
+          title: lastReturned.title,
+          createdAt: lastReturned.createdAt,
+          updatedAt: lastReturned.updatedAt,
+          archivedAt: lastReturned.archivedAt,
+        };
+        const primaryValue = sortValues[finalSortBy];
+
+        /* A null primary is what tells the next page it is inside the missing-value
+           group, so an absent stamp has to survive as null rather than collapse to
+           the epoch, which would page from 1970 and replay the whole archive. */
+        let primaryStr: string | null = null;
         if (finalSortBy === 'title') {
-          primaryValue = lastReturned.title;
-        } else if (finalSortBy === 'createdAt') {
-          primaryValue = lastReturned.createdAt;
+          primaryStr = typeof primaryValue === 'string' ? primaryValue : null;
+        } else if (primaryValue != null) {
+          primaryStr = new Date(primaryValue).toISOString();
         }
-        const primaryStr =
-          finalSortBy === 'title'
-            ? (primaryValue ?? null)
-            : new Date(primaryValue ?? 0).toISOString();
         const secondaryStr = new Date(lastReturned.updatedAt ?? 0).toISOString();
         const composite = {
           primary: primaryStr,

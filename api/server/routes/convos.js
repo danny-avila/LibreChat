@@ -207,11 +207,12 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
         isTemporary: req?.body?.isTemporary,
         interfaceConfig: req?.config?.interfaceConfig,
       },
-      { conversationId, isArchived },
+      { conversationId, isArchived, archivedAt: isArchived ? new Date() : null },
       {
         context: `POST /api/convos/archive ${conversationId}`,
         /** Filing a chat away is not activity: `updatedAt` stays the chat's own last
-         * activity so unarchiving restores it to its real place in the date groups. */
+         * activity so unarchiving restores it to its real place in the date groups.
+         * When it was archived is recorded separately, on `archivedAt`. */
         preserveUpdatedAt: true,
         /** Without timestamps, an upsert would insert a conversation that has none. */
         noUpsert: true,

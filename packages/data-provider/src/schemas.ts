@@ -946,6 +946,8 @@ export const tConversationSchema = z.object({
   endpoint: eModelEndpointSchema.nullable(),
   endpointType: eModelEndpointSchema.nullable().optional(),
   isArchived: z.boolean().optional(),
+  /** When the chat was archived; absent on chats archived before this was recorded. */
+  archivedAt: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
   /** Server-derived: an active shared link exists for this conversation. Not persisted. */
   isShared: z.boolean().optional(),

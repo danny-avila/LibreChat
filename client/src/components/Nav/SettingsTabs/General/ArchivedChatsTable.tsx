@@ -31,10 +31,19 @@ import store from '~/store';
 
 const DEFAULT_PARAMS: ConversationListParams = {
   isArchived: true,
-  sortBy: 'createdAt',
+  sortBy: 'archivedAt',
   sortDirection: 'desc',
   search: '',
 };
+
+const SORTABLE_COLUMNS = new Set<ConversationListParams['sortBy']>(['title', 'archivedAt']);
+
+/**
+ * Chats archived before `archivedAt` was recorded have none, so they keep showing the
+ * date this column has always shown for them rather than going blank.
+ */
+const getArchivedDate = (conversation: TConversation): string =>
+  conversation.archivedAt?.toString() ?? conversation.createdAt?.toString() ?? '';
 
 type ArchivedConversationRow = TConversation & Record<string, unknown>;
 
@@ -79,7 +88,7 @@ export default function ArchivedChatsTable() {
   const sorting = useMemo<SortingState>(
     () => [
       {
-        id: queryParams.sortBy ?? 'createdAt',
+        id: queryParams.sortBy ?? 'archivedAt',
         desc: queryParams.sortDirection === 'desc',
       },
     ],
@@ -89,22 +98,23 @@ export default function ArchivedChatsTable() {
   const handleSortingChange = useCallback((updater: Updater<SortingState>) => {
     setQueryParams((prev) => {
       const currentSorting: SortingState = [
-        { id: prev.sortBy ?? 'createdAt', desc: prev.sortDirection === 'desc' },
+        { id: prev.sortBy ?? 'archivedAt', desc: prev.sortDirection === 'desc' },
       ];
       const nextSorting = typeof updater === 'function' ? updater(currentSorting) : updater;
       const nextSort = nextSorting[0];
+      const nextSortBy = nextSort?.id as ConversationListParams['sortBy'];
 
-      if (nextSort?.id !== 'title' && nextSort?.id !== 'createdAt') {
+      if (!SORTABLE_COLUMNS.has(nextSortBy)) {
         return {
           ...prev,
-          sortBy: 'createdAt',
+          sortBy: 'archivedAt',
           sortDirection: 'desc',
         };
       }
 
       return {
         ...prev,
-        sortBy: nextSort.id,
+        sortBy: nextSortBy,
         sortDirection: nextSort.desc ? 'desc' : 'asc',
       };
     });
@@ -191,9 +201,9 @@ export default function ArchivedChatsTable() {
         },
       },
       {
-        accessorKey: 'createdAt',
+        accessorKey: 'archivedAt',
         header: localize('com_nav_archive_created_at'),
-        cell: ({ row }) => formatDate(row.original.createdAt?.toString() ?? '', isSmallScreen),
+        cell: ({ row }) => formatDate(getArchivedDate(row.original), isSmallScreen),
         meta: {
           width: 25,
           desktopOnly: true,
