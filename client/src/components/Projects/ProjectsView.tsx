@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Input, Button, Skeleton, DropdownPopup } from '@librechat/client';
 import {
   ArrowUpDown,
   Check,
@@ -11,7 +12,6 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import { Input, Button, Skeleton, DropdownPopup } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
 import type { MenuItemProps, RenderProp } from '~/common';
 import { useProjectsInfiniteQuery } from '~/data-provider';
@@ -87,7 +87,7 @@ function ProjectCard({
   return (
     <article
       className={cn(
-        'group/project relative flex min-h-[9.5rem] flex-col rounded-2xl bg-surface-secondary',
+        'group/project relative flex min-h-[9.5rem] flex-col rounded-2xl border border-border-light bg-surface-secondary',
         'transition-colors duration-150 ease-out hover:bg-surface-hover',
         'motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:fill-mode-both',
       )}
@@ -243,10 +243,10 @@ export default function ProjectsView() {
   };
 
   return (
-    <main className="flex h-full min-h-0 flex-col overflow-auto bg-surface-primary text-text-primary">
+    <main className="flex h-full min-h-0 flex-col overflow-auto bg-presentation text-text-primary">
       <ProjectsNavBar onCreate={() => setIsCreating(true)} />
 
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-4 pb-10 pt-6 md:px-6 md:pt-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pb-10 pt-6 md:px-6 md:pt-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <label className="relative min-w-0 flex-1">
             <span className="sr-only">{localize('com_ui_search_projects')}</span>
@@ -333,7 +333,7 @@ export default function ProjectsView() {
                     type="button"
                     variant="default"
                     size="sm"
-                    className="mt-5 active:scale-[0.96]"
+                    className="mt-5"
                     onClick={() => setIsCreating(true)}
                   >
                     <FolderPlus className="h-4 w-4" aria-hidden="true" />
