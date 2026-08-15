@@ -189,6 +189,23 @@ const Conversations: FC<ConversationsProps> = ({
     [filteredConversations],
   );
 
+  /* Pins are stripped from the date groups. An all-pin page leaves the
+     virtual list with no rows, so onRowsRendered never fires and later
+     unpinned chats stay unreachable. Keep paging while the parent still
+     has another cursor; loadMoreConversations no-ops when it does not. */
+  useEffect(() => {
+    if (!isChatsExpanded || isLoading || isSearchLoading || groupedConversations.length > 0) {
+      return;
+    }
+    loadMoreConversations();
+  }, [
+    isChatsExpanded,
+    isLoading,
+    isSearchLoading,
+    groupedConversations.length,
+    loadMoreConversations,
+  ]);
+
   const flattenedItems = useMemo(() => {
     const items: FlattenedItem[] = [];
     // Only include favorites row if FavoritesList will render content

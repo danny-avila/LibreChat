@@ -237,3 +237,68 @@ describe('Conversations: pinned chats live in PinnedSection', () => {
     expect(queryByRole('button', { name: 'com_ui_new_chat' })).not.toBeInTheDocument();
   });
 });
+
+describe('Conversations: all-pin pages still paginate', () => {
+  const containerRef = createRef<List>();
+
+  beforeEach(() => {
+    mockCapturedCache = null;
+    mockFavoritesState.favorites = [];
+    mockFavoritesState.isLoading = false;
+    mockShowMarketplace = false;
+  });
+
+  const renderList = ({
+    conversations,
+    loadMoreConversations,
+    isChatsExpanded = true,
+    isLoading = false,
+  }: {
+    conversations: TConversation[];
+    loadMoreConversations: () => void;
+    isChatsExpanded?: boolean;
+    isLoading?: boolean;
+  }) =>
+    render(
+      <RecoilRoot>
+        <Conversations
+          conversations={conversations}
+          moveToTop={jest.fn()}
+          toggleNav={jest.fn()}
+          containerRef={containerRef}
+          loadMoreConversations={loadMoreConversations}
+          isLoading={isLoading}
+          isSearchLoading={false}
+          isChatsExpanded={isChatsExpanded}
+          setIsChatsExpanded={jest.fn()}
+          showFavorites={false}
+        />
+      </RecoilRoot>,
+    );
+
+  it('requests another page when grouping leaves the chats list empty', () => {
+    const loadMoreConversations = jest.fn();
+    renderList({ conversations: [pinnedConvo], loadMoreConversations });
+    expect(loadMoreConversations).toHaveBeenCalled();
+  });
+
+  it('does not request another page while chats are collapsed', () => {
+    const loadMoreConversations = jest.fn();
+    renderList({
+      conversations: [pinnedConvo],
+      loadMoreConversations,
+      isChatsExpanded: false,
+    });
+    expect(loadMoreConversations).not.toHaveBeenCalled();
+  });
+
+  it('does not request another page while a fetch is already in flight', () => {
+    const loadMoreConversations = jest.fn();
+    renderList({
+      conversations: [pinnedConvo],
+      loadMoreConversations,
+      isLoading: true,
+    });
+    expect(loadMoreConversations).not.toHaveBeenCalled();
+  });
+});

@@ -403,6 +403,21 @@ export function upsertConvoInAllQueries(
     return;
   }
 
+  /* Root-level SSE updates and resumable settlement go through upsert, not
+     update. Merge into any already-cached pin so that path cannot leave the
+     section at the old title or position. Do not insert: a new chat is not
+     pinned until the pin mutation refetches. */
+  updatePinnedConvosQuery(
+    queryClient,
+    nextConvo.conversationId,
+    (found) => ({
+      ...found,
+      ...nextConvo,
+      updatedAt: nextConvo.updatedAt ?? (moveToTop ? new Date().toISOString() : found.updatedAt),
+    }),
+    moveToTop,
+  );
+
   const queries = queryClient
     .getQueryCache()
     .findAll([QueryKeys.allConversations], { exact: false });

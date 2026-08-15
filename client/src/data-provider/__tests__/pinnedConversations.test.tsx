@@ -5,7 +5,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ConversationListResponse, TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { pinnedConversationsPageSize, usePinnedConversationsQuery } from '../queries';
-import { removeConvoFromAllQueries, updateConvoInAllQueries } from '~/utils/convos';
+import {
+  removeConvoFromAllQueries,
+  updateConvoInAllQueries,
+  upsertConvoInAllQueries,
+} from '~/utils/convos';
 import { usePinConversationMutation } from '../mutations';
 
 jest.mock('librechat-data-provider', () => {
@@ -238,5 +242,78 @@ describe('pinned list cache synchronization', () => {
     }));
 
     expect(readPinnedCache(queryClient)?.conversations).toEqual([pinnedConvo]);
+  });
+
+  /** Root-level SSE updates and resumable settlement call upsert rather than
+   * update, so the independently cached pin has to follow that path too. */
+  it('updates an existing pin when the conversation is upserted', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([pinnedConvo]),
+    );
+
+    upsertConvoInAllQueries(queryClient, {
+      ...pinnedConvo,
+      title: 'Settled title',
+    });
+
+    expect(readPinnedCache(queryClient)?.conversations).toEqual([
+      expect.objectContaining({ ...pinnedConvo, title: 'Settled title' }),
+    ]);
+  });
+
+  it('moves an upserted pin to the top of the pinned cache', () => {
+    const other = { ...pinnedConvo, conversationId: 'convo-other' } as TConversation;
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([other, pinnedConvo]),
+    );
+
+    upsertConvoInAllQueries(queryClient, {
+      ...pinnedConvo,
+      title: 'Replied',
+    });
+
+    expect(readPinnedCache(queryClient)?.conversations.map((c) => c.conversationId)).toEqual([
+      'convo-pinned',
+      'convo-other',
+    ]);
+  });
+
+  it('does not insert a conversation that is not already in the pinned cache', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([pinnedConvo]),
+    );
+
+    upsertConvoInAllQueries(queryClient, {
+      conversationId: 'convo-new',
+      title: 'Brand new',
+      endpoint: 'openAI',
+      pinned: true,
+    } as TConversation);
+
+    expect(readPinnedCache(queryClient)?.conversations).toEqual([pinnedConvo]);
+  });
+
+  it('keeps the cached pinned flag when the upsert payload omits it', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([pinnedConvo]),
+    );
+
+    upsertConvoInAllQueries(queryClient, {
+      conversationId: pinnedConvo.conversationId,
+      title: 'Root turn',
+      endpoint: 'openAI',
+    } as TConversation);
+
+    expect(readPinnedCache(queryClient)?.conversations).toEqual([
+      expect.objectContaining({ ...pinnedConvo, title: 'Root turn' }),
+    ]);
   });
 });
