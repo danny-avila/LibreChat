@@ -2,10 +2,10 @@ export const isHttpDownloadTarget = (target?: string | null): boolean =>
   /^https?:\/\//i.test(target ?? '');
 
 /**
- * Fenced-block language hint → file extension. Used to name downloads of
- * chat code blocks (`code.<ext>`). Only languages whose common name
- * differs from their extension need an entry — hints that already look
- * like an extension (`py`, `ts`, `json`, …) pass through unchanged.
+ * Maps a fenced-block language hint to a file extension. Used to name
+ * downloads of chat code blocks (`code.<ext>`). Only languages whose common
+ * name differs from their extension need an entry; hints that already look
+ * like an extension (`py`, `ts`, `json`) pass through unchanged.
  */
 const LANGUAGE_TO_EXTENSION: Record<string, string> = {
   javascript: 'js',
