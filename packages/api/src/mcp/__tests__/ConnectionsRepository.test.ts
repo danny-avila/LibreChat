@@ -1,6 +1,10 @@
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
-import { getMCPAppToolsPublicationGeneration, setMCPToolsChangedHandler } from '~/mcp/toolsChanged';
+import {
+  setMCPToolsChangedHandler,
+  setMCPToolsChangedRevisionHandler,
+  getMCPAppToolsPublicationGeneration,
+} from '~/mcp/toolsChanged';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPConnection } from '~/mcp/connection';
@@ -101,6 +105,7 @@ describe('ConnectionsRepository', () => {
 
   afterEach(() => {
     setMCPToolsChangedHandler(null);
+    setMCPToolsChangedRevisionHandler(null);
     jest.clearAllMocks();
   });
 
@@ -183,6 +188,42 @@ describe('ConnectionsRepository', () => {
 
       releasePublication?.();
       await expect(load).resolves.toBe(mockConnection);
+    });
+
+    /** Without a revision the catalog write is unordered, and app-level publications that
+     * cannot be ordered never reach the cache agents read from (#14857). */
+    it('orders the initial app publication with a revision reserved before the fetch', async () => {
+      const sequence: string[] = [];
+      setMCPToolsChangedRevisionHandler(() => {
+        sequence.push('reserve');
+        return '4';
+      });
+      mockConnection.fetchToolsSnapshot.mockImplementation(async () => {
+        sequence.push('fetch');
+        return { tools: [], complete: true };
+      });
+      const handler = jest.fn();
+      setMCPToolsChangedHandler(handler);
+
+      await repository.get('server1');
+
+      expect(sequence).toEqual(['reserve', 'fetch']);
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'server1', publicationRevision: '4' }),
+      );
+    });
+
+    it('still publishes the initial app snapshot when the reservation fails', async () => {
+      setMCPToolsChangedRevisionHandler(() => {
+        throw new Error('revision store unavailable');
+      });
+      const handler = jest.fn();
+      setMCPToolsChangedHandler(handler);
+
+      await expect(repository.get('server1')).resolves.toBe(mockConnection);
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ serverName: 'server1', publicationRevision: undefined }),
+      );
     });
 
     it('can defer the initial app tool refresh for startup synchronization', async () => {

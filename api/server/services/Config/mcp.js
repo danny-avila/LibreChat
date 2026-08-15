@@ -24,6 +24,7 @@ const {
   setCachedToolsIfCurrent,
   getCachedAppServerTools,
   setCachedAppServerTools,
+  getNextAppToolsPublicationRevision,
   getServerConfig: (serverName, userId) =>
     MCPServersRegistry.getInstance().getServerConfig(serverName, userId),
   getAllServerConfigs: () => MCPServersRegistry.getInstance().getAllServerConfigs(),

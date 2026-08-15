@@ -41,6 +41,10 @@ export interface MCPToolCacheDeps {
     tools: LCAvailableTools,
     publicationRevision?: string,
   ) => Promise<boolean>;
+  getNextAppToolsPublicationRevision?: (
+    serverName: string,
+    configGeneration: string,
+  ) => Promise<string>;
   getServerConfig: (serverName: string, userId?: string) => Promise<ParsedServerConfig | undefined>;
   getAllServerConfigs?: () => Promise<Record<string, ParsedServerConfig>>;
   isAppServerConfig?: (serverName: string, effectiveConfig: ParsedServerConfig) => Promise<boolean>;
@@ -91,6 +95,7 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
     setCachedToolsIfCurrent,
     getCachedAppServerTools,
     setCachedAppServerTools,
+    getNextAppToolsPublicationRevision,
     getServerConfig,
     getAllServerConfigs,
     isAppServerConfig,
@@ -372,19 +377,28 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         logger.debug(`[MCP Cache] Skipped unaddressed app-level publication for ${serverName}`);
         return false;
       }
-      if (!publicationRevision) {
-        logger.debug(`[MCP Cache] Skipped unordered app-level publication for ${serverName}`);
+      /** Only a list_changed refresh can reserve ordering before its `tools/list` starts. Every
+       * other publisher — first connect, reinitialization, on-demand catalog reads — has already
+       * fetched by the time it gets here, so it takes the next revision now rather than being
+       * dropped; dropping left agents with a permanently empty app catalog (#14857). */
+      const revision =
+        publicationRevision ??
+        (await getNextAppToolsPublicationRevision?.(serverName, configGeneration));
+      if (!revision) {
+        logger.debug(
+          `[MCP Cache] Skipped unordered app-level publication for ${serverName}: no revision allocator is configured`,
+        );
         return false;
       }
       const replaced = await setCachedAppServerTools(
         serverName,
         configGeneration,
         serverTools,
-        publicationRevision,
+        revision,
       );
       if (replaced === false) {
         logger.debug(
-          `[MCP Cache] Ignored superseded app-level tools for ${serverName} at revision ${publicationRevision ?? '0'}`,
+          `[MCP Cache] Ignored superseded app-level tools for ${serverName} at revision ${revision}`,
         );
         return false;
       }

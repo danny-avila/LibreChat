@@ -2,8 +2,9 @@ import { logger } from '@librechat/data-schemas';
 import type * as t from './types';
 import {
   cancelMCPToolsChanged,
-  getMCPAppToolsPublicationGeneration,
   notifyMCPToolsChanged,
+  reserveMCPToolsChangedRevision,
+  getMCPAppToolsPublicationGeneration,
 } from './toolsChanged';
 import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
@@ -162,12 +163,21 @@ export class ConnectionsRepository {
 
     this.connections.set(serverName, connection);
     if (this.ownerId === undefined && options.refreshTools !== false) {
+      /** Reserved before `tools/list` runs so a first-connect publication is ordered against
+       * concurrent replicas exactly as a list_changed refresh is. An app-level catalog write
+       * carrying no revision cannot be ordered, and agents saw an empty catalog forever when
+       * this path was the one that populated it (#14857). */
+      const publicationRevision = await this.reserveToolsPublicationRevision(
+        serverName,
+        serverConfig,
+      );
       if (connection.client.getServerCapabilities()?.tools == null) {
         await notifyMCPToolsChanged({
           tools: [],
           serverName,
           serverConfig,
           publicationGeneration,
+          publicationRevision,
         });
         return connection;
       }
@@ -182,6 +192,7 @@ export class ConnectionsRepository {
             serverName,
             serverConfig,
             publicationGeneration,
+            publicationRevision,
           });
         }
       } else {
@@ -189,6 +200,22 @@ export class ConnectionsRepository {
       }
     }
     return connection;
+  }
+
+  /** Orders a first-connect publication; a failed reservation must not fail the connection. */
+  private async reserveToolsPublicationRevision(
+    serverName: string,
+    serverConfig: t.ParsedServerConfig,
+  ): Promise<string | undefined> {
+    try {
+      return await reserveMCPToolsChangedRevision({ serverName, serverConfig });
+    } catch (error) {
+      logger.warn(
+        `${this.prefix(serverName)} Failed to reserve tool-list publication order; publishing unordered`,
+        error,
+      );
+      return undefined;
+    }
   }
 
   /** Gets or creates connections for multiple servers concurrently */
