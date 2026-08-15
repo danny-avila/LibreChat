@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef
 import { useMediaQuery } from '@librechat/client';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
-import type { ConversationListResponse } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
+import type { ConversationListResponse } from 'librechat-data-provider';
 import type { List } from 'react-virtualized';
 import {
   useConversationsInfiniteQuery,
@@ -21,8 +21,8 @@ import ProjectsSection from '~/components/Conversations/ProjectsSection';
 import PinnedSection from '~/components/Conversations/PinnedSection';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { Conversations } from '~/components/Conversations';
-import SearchBar from '~/components/Nav/SearchBar';
 import { collectPinnedConversations } from '~/utils';
+import SearchBar from '~/components/Nav/SearchBar';
 import store from '~/store';
 
 const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'));
