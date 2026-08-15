@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import copy from 'copy-to-clipboard';
-import { SearchResultData } from 'librechat-data-provider';
+import { ContentTypes, SearchResultData } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import type { LocalizeFunction } from '~/common';
 import {
   SPAN_REGEX,
   CLEANUP_REGEX,
@@ -10,8 +9,6 @@ import {
   STANDALONE_PATTERN,
   INVALID_CITATION_REGEX,
 } from '~/utils/citations';
-import { formatMessageContent } from '~/hooks/Conversations/format';
-import useLocalize from '~/hooks/useLocalize';
 
 type Source = {
   link: string;
@@ -33,30 +30,18 @@ const refTypeMap: Record<string, string> = {
 export function serializeMessageForClipboard({
   text,
   content,
-  localize,
-}: Partial<Pick<TMessage, 'text' | 'content'>> & { localize: LocalizeFunction }): string {
+}: Partial<Pick<TMessage, 'text' | 'content'>>): string {
   if (!Array.isArray(content) || content.length === 0) {
     return text ?? '';
   }
 
-  return content
-    .filter((part) => part != null)
-    .map((part) => {
-      const formatted = formatMessageContent({
-        sender: '',
-        content: part,
-        format: 'text',
-        localize,
-      });
-      if (formatted.length === 0) {
-        return '';
-      }
-
-      const [label, value] = formatted;
-      return label ? `${label}:\n${value}` : value;
-    })
-    .filter((value) => value.trim().length > 0)
-    .join('\n');
+  return content.reduce((acc, curr, i) => {
+    if (curr?.type === ContentTypes.TEXT) {
+      const partText = typeof curr.text === 'string' ? curr.text : (curr.text?.value ?? '');
+      return acc + partText + (i === content.length - 1 ? '' : '\n');
+    }
+    return acc;
+  }, '');
 }
 
 export default function useCopyToClipboard({
@@ -66,7 +51,6 @@ export default function useCopyToClipboard({
 }: Partial<Pick<TMessage, 'text' | 'content'>> & {
   searchResults?: { [key: string]: SearchResultData };
 }) {
-  const localize = useLocalize();
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -84,7 +68,7 @@ export default function useCopyToClipboard({
       }
       setIsCopied(true);
 
-      const messageText = serializeMessageForClipboard({ text, content, localize });
+      const messageText = serializeMessageForClipboard({ text, content });
 
       // Early return if no search data
       if (!searchResults || Object.keys(searchResults).length === 0) {
@@ -123,7 +107,7 @@ export default function useCopyToClipboard({
         setIsCopied(false);
       }, 3000);
     },
-    [text, content, searchResults, localize],
+    [text, content, searchResults],
   );
 
   return copyToClipboard;

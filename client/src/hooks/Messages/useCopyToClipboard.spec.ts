@@ -64,7 +64,7 @@ describe('useCopyToClipboard', () => {
       });
     });
 
-    it('copies errors and tool input and output with surrounding text', () => {
+    it('copies only response text and skips tools, errors, and thinking', () => {
       const content = [
         { type: ContentTypes.TEXT, text: 'I checked the deployment.' },
         {
@@ -76,7 +76,9 @@ describe('useCopyToClipboard', () => {
             output: '{"status":"failed"}',
           },
         },
+        { type: ContentTypes.THINK, think: 'Let me reason about this' },
         { type: ContentTypes.ERROR, error: 'Deployment lookup failed' },
+        { type: ContentTypes.TEXT, text: 'The service is down.' },
       ] as TMessageContentParts[];
 
       const { result } = renderHook(() => useCopyToClipboard({ content }));
@@ -85,12 +87,9 @@ describe('useCopyToClipboard', () => {
         result.current(mockSetIsCopied);
       });
 
-      const copiedText = mockCopy.mock.calls[0]?.[0];
-      expect(copiedText).toContain('I checked the deployment.');
-      expect(copiedText).toContain('get_deployment');
-      expect(copiedText).toContain('service');
-      expect(copiedText).toContain('status');
-      expect(copiedText).toContain('Deployment lookup failed');
+      expect(mockCopy).toHaveBeenCalledWith('I checked the deployment.\nThe service is down.', {
+        format: 'text/plain',
+      });
     });
 
     it('should reset isCopied after timeout', () => {
