@@ -1,18 +1,9 @@
 import { memo, useCallback, useId, useMemo, useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
-import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilCallback, useRecoilValue } from 'recoil';
-import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  ChevronDown,
-  ChevronRight,
-  Ellipsis,
-  Folder,
-  FolderPlus,
-  Pencil,
-  Trash2,
-} from 'lucide-react';
+import { Constants, QueryKeys } from 'librechat-data-provider';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   Button,
   Spinner,
@@ -21,7 +12,18 @@ import {
   NewChatIcon,
   buttonVariants,
 } from '@librechat/client';
+import {
+  ChevronDown,
+  ChevronRight,
+  Ellipsis,
+  Folder,
+  FolderPlus,
+  Folders,
+  Pencil,
+  Trash2,
+} from 'lucide-react';
 import type { TChatProject, TConversation } from 'librechat-data-provider';
+import type { MouseEvent } from 'react';
 import type { MenuItemProps } from '~/common';
 import {
   useProjectsInfiniteQuery,
@@ -32,8 +34,8 @@ import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import ProjectDeleteDialog from '~/components/Projects/ProjectDeleteDialog';
 import ProjectEditDialog from '~/components/Projects/ProjectEditDialog';
 import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
-import { Collapse } from '~/components/ui';
 import { clearMessagesCache, cn } from '~/utils';
+import { Collapse } from '~/components/ui';
 import Convo from './Convo';
 import store from '~/store';
 
@@ -134,34 +136,57 @@ const ProjectItem = memo(
   function ProjectItem({ project, toggleNav, defaultExpanded, isActive }: ProjectItemProps) {
     const localize = useLocalize();
     const navigate = useNavigate();
+    const location = useLocation();
+    const [searchParams, setSearchParams] = useSearchParams();
     const queryClient = useQueryClient();
     const { newConversation } = useNewConvo();
-    const getCurrentConversationId = useRecoilCallback(
-      ({ snapshot }) =>
-        async () => {
-          const conversation = await snapshot.getPromise(store.conversationByIndex(0));
-          return conversation?.conversationId;
-        },
-      [],
-    );
+    const conversationId = useRecoilValue(store.conversationIdByIndex(0));
     const menuId = useId();
     const [expanded, setExpanded] = useState(defaultExpanded);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isRenameOpen, setIsRenameOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+    const projectChatPath = `/c/${Constants.NEW_CONVO}?projectId=${encodeURIComponent(project._id)}`;
 
     const openProject = useCallback(() => {
       navigate(`/projects/${project._id}`);
       toggleNav();
     }, [navigate, project._id, toggleNav]);
 
-    const startChat = useCallback(async () => {
-      const conversationId = await getCurrentConversationId();
-      clearMessagesCache(queryClient, conversationId);
-      queryClient.invalidateQueries([QueryKeys.messages]);
-      newConversation({ template: { chatProjectId: project._id } });
-      toggleNav();
-    }, [getCurrentConversationId, newConversation, project._id, queryClient, toggleNav]);
+    const startChat = useCallback(
+      (event: MouseEvent<HTMLAnchorElement>) => {
+        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) {
+          return;
+        }
+        event.preventDefault();
+        clearMessagesCache(queryClient, conversationId);
+        queryClient.invalidateQueries([QueryKeys.messages]);
+        /** `navigate()` defers search-param updates; ChatRoute then sees a
+         *  project-scoped draft against an unscoped `/c/new` and wipes it.
+         *  Commit `?projectId` in the same turn, the same way the landing chip does. */
+        if (location.pathname === `/c/${Constants.NEW_CONVO}`) {
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.set('projectId', project._id);
+          setSearchParams(nextParams, { replace: true, flushSync: true });
+        } else {
+          navigate(projectChatPath);
+        }
+        newConversation({ template: { chatProjectId: project._id } });
+        toggleNav();
+      },
+      [
+        conversationId,
+        location.pathname,
+        navigate,
+        newConversation,
+        project._id,
+        projectChatPath,
+        queryClient,
+        searchParams,
+        setSearchParams,
+        toggleNav,
+      ],
+    );
 
     const menuItems = useMemo<MenuItemProps[]>(
       () => [
@@ -191,12 +216,14 @@ const ProjectItem = memo(
       <li className="list-none">
         <div
           className={cn(
-            'group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary transition-colors hover:bg-surface-hover',
-            isActive && 'bg-surface-active-alt',
+            'group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary hover:bg-surface-hover',
+            isActive && 'bg-surface-active-alt hover:bg-surface-active-alt',
+            !isActive && isMenuOpen && 'bg-surface-hover',
           )}
         >
           <button
             type="button"
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => setExpanded((prev) => !prev)}
             aria-expanded={expanded}
             aria-label={project.name}
@@ -209,28 +236,32 @@ const ProjectItem = memo(
               )}
               aria-hidden="true"
             />
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-tertiary text-text-secondary">
-              <Folder className="h-3.5 w-3.5" aria-hidden="true" />
-            </span>
+            <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
             <span className="min-w-0 truncate">{project.name}</span>
-            {project.conversationCount > 0 ? (
-              <span className="ml-auto text-xs tabular-nums text-text-tertiary group-focus-within/project-row:opacity-0 group-hover/project-row:opacity-0">
-                {project.conversationCount}
-              </span>
-            ) : null}
           </button>
-          <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-0.5 rounded-lg bg-surface-hover opacity-0 transition-opacity group-focus-within/project-row:opacity-100 group-hover/project-row:opacity-100 has-[[data-state=open]]:opacity-100">
+          <div
+            className={cn(
+              'absolute right-1 top-1/2 flex -translate-y-1/2 items-center',
+              isMenuOpen
+                ? 'opacity-100'
+                : [
+                    '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity',
+                    'group-hover/project-row:opacity-100',
+                    'has-[:focus-visible]:opacity-100',
+                  ],
+            )}
+          >
             <TooltipAnchor
               description={localize('com_ui_new_chat_in_project', { name: project.name })}
               render={
-                <button
-                  type="button"
+                <a
+                  href={projectChatPath}
                   aria-label={localize('com_ui_new_chat_in_project', { name: project.name })}
                   className={iconButtonClassName}
                   onClick={startChat}
                 >
                   <NewChatIcon className="h-4 w-4" />
-                </button>
+                </a>
               }
             />
             <DropdownPopup
@@ -245,10 +276,7 @@ const ProjectItem = memo(
               trigger={
                 <Ariakit.MenuButton
                   aria-label={localize('com_ui_more_options')}
-                  className={cn(
-                    iconButtonClassName,
-                    isMenuOpen && 'bg-surface-active-alt text-text-primary',
-                  )}
+                  className={cn(iconButtonClassName, isMenuOpen && 'text-text-primary')}
                 >
                   <Ellipsis className="h-4 w-4" aria-hidden="true" />
                 </Ariakit.MenuButton>
@@ -307,7 +335,6 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
 
   const projects = useMemo(() => data?.pages.flatMap((page) => page.projects) ?? [], [data?.pages]);
   const hasMore = (data?.pages[data.pages.length - 1]?.nextCursor ?? null) != null;
-  const isProjectsHome = location.pathname === '/projects';
 
   /**
    * Collapse the section by default for users with no projects who have never
@@ -339,9 +366,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
           onClick={() => setIsCreateOpen(true)}
           className="flex h-9 w-full justify-start gap-2 rounded-lg px-2 text-sm font-normal text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
         >
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-surface-tertiary">
-            <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
-          </span>
+          <FolderPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="truncate">{localize('com_ui_new_project')}</span>
         </Button>
       );
@@ -382,52 +407,35 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
 
   return (
     <div className="flex flex-col px-3 text-sm">
-      <div
-        className={cn(
-          'flex h-9 w-full items-center gap-0.5 rounded-lg pr-0.5',
-          isProjectsHome && 'bg-surface-active-alt',
-        )}
-      >
+      <div className="flex h-8 w-full items-center pr-2">
         <button
+          type="button"
           onClick={() => {
             setStoredExpanded(!isExpanded);
             setHasToggledSection(true);
           }}
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-text-secondary outline-none transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
-          type="button"
+          className="group flex min-w-0 flex-1 items-center gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
           aria-expanded={isExpanded}
-          aria-label={localize('com_ui_projects')}
         >
+          <span className="select-none truncate">{localize('com_ui_projects')}</span>
           <ChevronDown
             className={cn(
-              'h-3.5 w-3.5 shrink-0 transition-transform duration-200',
+              'h-3 w-3 shrink-0 transition-transform duration-200',
               isExpanded ? '' : '-rotate-90',
             )}
             aria-hidden="true"
           />
         </button>
-        <button
-          type="button"
-          onClick={openProjects}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.5 text-left text-sm font-medium text-text-primary outline-none hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
-        >
-          <span className="select-none truncate">{localize('com_ui_projects')}</span>
-          {projects.length > 0 ? (
-            <span className="text-xs font-normal tabular-nums text-text-tertiary">
-              {projects.length}
-            </span>
-          ) : null}
-        </button>
         <TooltipAnchor
-          description={localize('com_ui_new_project')}
+          description={localize('com_ui_all_projects')}
           render={
             <button
               type="button"
-              aria-label={localize('com_ui_new_project')}
-              className={iconButtonClassName}
-              onClick={() => setIsCreateOpen(true)}
+              aria-label={localize('com_ui_all_projects')}
+              className={cn(iconButtonClassName, 'hover:bg-surface-hover')}
+              onClick={openProjects}
             >
-              <FolderPlus className="h-4 w-4" aria-hidden="true" />
+              <Folders className="h-4 w-4" aria-hidden="true" />
             </button>
           }
         />
