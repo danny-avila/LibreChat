@@ -2,7 +2,12 @@ import { useMemo, useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { Globe, ChevronDown } from 'lucide-react';
-import type { TAttachment, ValidSource, SearchResultData } from 'librechat-data-provider';
+import type {
+  TAttachment,
+  ValidSource,
+  SearchResultData,
+  PartMetadata,
+} from 'librechat-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { useLocalize, useExpandCollapse } from '~/hooks';
@@ -85,6 +90,7 @@ export default function WebSearch({
   output,
   attachments,
   onExpand,
+  runStepStatus,
 }: {
   isLast?: boolean;
   isSubmitting: boolean;
@@ -93,13 +99,21 @@ export default function WebSearch({
   initialProgress: number;
   attachments?: TAttachment[];
   onExpand?: () => void;
+  runStepStatus?: PartMetadata['runStepStatus'];
 }) {
   const localize = useLocalize();
   /** Model-authored live label (web_search carries `intent` natively);
    *  persists as the settled label like the other tool cards. */
   const intent = useToolCallIntent(args);
   const { searchResults } = useSearchContext();
-  const error = typeof output === 'string' && output.toLowerCase().includes('error processing');
+  /** A step the run closed as `failed` is an error even when its output text
+   *  does not say so. */
+  const error =
+    (typeof output === 'string' && output.toLowerCase().includes('error processing')) ||
+    runStepStatus === 'failed';
+  /** A closed step is terminal: it can neither animate nor sit "finalizing"
+   *  waiting on a submission that no longer concerns it. */
+  const isClosed = runStepStatus != null;
 
   // Server tool calls (srvtoolu_) never receive ON_RUN_STEP_COMPLETED, so progress
   // stays at the default 0.1. Treat the search as complete if attachments have results.
@@ -108,15 +122,20 @@ export default function WebSearch({
       attachments?.some((att) => att.type === Tools.web_search && att[Tools.web_search]) ?? false,
     [attachments],
   );
-  const effectiveProgress = hasResults && !isSubmitting ? 1 : progress;
-  const cancelled = (!isSubmitting && effectiveProgress < 1) || error === true;
+  const effectiveProgress = isClosed || (hasResults && !isSubmitting) ? 1 : progress;
+  const cancelled = isClosed
+    ? runStepStatus === 'cancelled'
+    : (!isSubmitting && effectiveProgress < 1) || error === true;
 
-  const finalizing = isSubmitting && isLast && effectiveProgress === 1;
+  const finalizing = !isClosed && isSubmitting && isLast && effectiveProgress === 1;
   /** A search that is the message's FINAL part stays "finalizing" only while
    *  the submission is live — afterwards it must settle like any other call,
    *  or the completed label (and its settled intent announcement) never
-   *  renders and the card shimmers forever. */
-  const complete = effectiveProgress === 1 && !finalizing && (!isLast || !isSubmitting);
+   *  renders and the card shimmers forever. A closed step settles immediately
+   *  on its own status instead of waiting for the submission to end. */
+  const complete = isClosed
+    ? !cancelled && !error
+    : effectiveProgress === 1 && !finalizing && (!isLast || !isSubmitting);
 
   const ownTurn = useMemo((): string => {
     if (!attachments) {

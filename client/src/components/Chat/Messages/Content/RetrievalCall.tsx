@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { TooltipAnchor } from '@librechat/client';
 import { FileText, FileSpreadsheet, FileCode, FileImage, File } from 'lucide-react';
-import type { TAttachment, TFile } from 'librechat-data-provider';
+import type { TAttachment, TFile, PartMetadata } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
 import FilePreviewDialog from './FilePreviewDialog';
@@ -329,6 +329,7 @@ export default function RetrievalCall({
   output,
   attachments,
   onExpand,
+  runStepStatus,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
@@ -336,16 +337,32 @@ export default function RetrievalCall({
   output?: string;
   attachments?: TAttachment[];
   onExpand?: () => void;
+  runStepStatus?: PartMetadata['runStepStatus'];
 }) {
-  const progress = useProgress(initialProgress);
+  /** A closed step is terminal, so it must never keep animating. */
+  const isClosed = runStepStatus != null;
+  const rawProgress = useProgress(initialProgress);
+  const progress = isClosed ? 1 : rawProgress;
   const localize = useLocalize();
   /** Model-authored live label (injected when file_search is opted into
    *  describe_intent); persists as the settled label. The sr-only live
    *  region below deliberately keeps its stable generic value. */
   const intent = useToolCallIntent(args);
 
-  const errorState = typeof output === 'string' && isError(output);
-  const cancelled = !isSubmitting && initialProgress < 1 && !errorState;
+  /** A step the run closed as `failed` is an error even when its output text
+   *  does not parse as one. */
+  const errorState = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
+  /**
+   * The step's own terminal status wins when the run emitted one; the
+   * `isSubmitting` heuristic is a whole-message inference that cannot tell
+   * which step stopped. Authoritative on its own terms — not gated on
+   * `errorState`, so output parsing cannot demote a stopped step back into an
+   * in-flight state. Fallback retained for messages saved before
+   * `on_run_step_closed` and endpoints that do not emit it.
+   */
+  const cancelled = isClosed
+    ? runStepStatus === 'cancelled'
+    : !isSubmitting && initialProgress < 1 && !errorState;
   const hasOutput = !!output && !isError(output);
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const [showOutput, setShowOutput] = useState(() => autoExpand && hasOutput);

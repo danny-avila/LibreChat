@@ -1,7 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AGENT_STYLE_TOOLS } from '.';
 import { PixelCard } from '@librechat/client';
-import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
+import type {
+  TAttachment,
+  TFile,
+  TAttachmentMetadata,
+  PartMetadata,
+} from 'librechat-data-provider';
 import { ToolIcon, isError } from '~/components/Chat/Messages/Content/ToolOutput';
 import Image from '~/components/Chat/Messages/Content/Image';
 import { useProgress, useLocalize } from '~/hooks';
@@ -13,7 +18,18 @@ function computeCancelled(
   isSubmitting: boolean | undefined,
   initialProgress: number,
   hasError: boolean,
+  runStepStatus?: PartMetadata['runStepStatus'],
 ): boolean {
+  /**
+   * The step's own terminal status wins when the run emitted one. Checked
+   * first and not gated on `hasError`, so output parsing cannot demote a step
+   * the run reported as stopped. Everything below is the pre-existing
+   * inference, kept for messages saved before `on_run_step_closed` and for the
+   * legacy path that has no submitting signal at all.
+   */
+  if (runStepStatus != null) {
+    return runStepStatus === 'cancelled';
+  }
   if (isSubmitting !== undefined) {
     return (!isSubmitting && initialProgress < 1) || hasError;
   }
@@ -33,6 +49,7 @@ export default function OpenAIImageGen({
   output,
   attachments,
   hideAttachments = false,
+  runStepStatus,
 }: {
   initialProgress: number;
   isSubmitting?: boolean;
@@ -41,6 +58,7 @@ export default function OpenAIImageGen({
   output?: string | null;
   attachments?: TAttachment[];
   hideAttachments?: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
 }) {
   const localize = useLocalize();
   /** Model-authored live label (injected when the tool is opted into
@@ -49,7 +67,9 @@ export default function OpenAIImageGen({
   const isAgentStyle = toolName != null && AGENT_STYLE_TOOLS.has(toolName);
   const [agentProgress, setAgentProgress] = useState(initialProgress);
   const legacyProgress = useProgress(isAgentStyle ? 1 : initialProgress);
-  const progress = isAgentStyle ? agentProgress : legacyProgress;
+  const livingProgress = isAgentStyle ? agentProgress : legacyProgress;
+  /** A closed step is terminal, so neither path may keep animating. */
+  const progress = runStepStatus != null ? 1 : livingProgress;
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const hasError = typeof output === 'string' && isError(output);
@@ -60,7 +80,7 @@ export default function OpenAIImageGen({
    * - Legacy path (isSubmitting undefined): in-progress (0 < progress < 1) is never cancelled
    *   because legacy image gen lacks a submitting signal — only errors cancel.
    */
-  const cancelled = computeCancelled(isSubmitting, initialProgress, hasError);
+  const cancelled = computeCancelled(isSubmitting, initialProgress, hasError, runStepStatus);
 
   let width: number | undefined;
   let height: number | undefined;
