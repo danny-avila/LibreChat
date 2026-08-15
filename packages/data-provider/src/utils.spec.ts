@@ -28,4 +28,32 @@ describe('stripUIResourceMarkers', () => {
   it('removes multiple resource ids and leaves malformed markers unchanged', () => {
     expect(stripUIResourceMarkers('\\ui{one,two} \\ui{not-valid!}')).toBe(' \\ui{not-valid!}');
   });
+
+  it('preserves markers in code fences nested in Markdown containers', () => {
+    const markdown = [
+      '> ```',
+      '> \\ui{blockquote}',
+      '> ```',
+      '',
+      '- ~~~html',
+      '  \\ui{list-item}',
+      '  ~~~',
+      '',
+      '> Outside \\ui{rendered}',
+    ].join('\n');
+
+    expect(stripUIResourceMarkers(markdown)).toBe(
+      [
+        '> ```',
+        '> \\ui{blockquote}',
+        '> ```',
+        '',
+        '- ~~~html',
+        '  \\ui{list-item}',
+        '  ~~~',
+        '',
+        '> Outside ',
+      ].join('\n'),
+    );
+  });
 });

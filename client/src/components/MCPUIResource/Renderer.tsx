@@ -14,7 +14,7 @@ type UIResourceRendererProps = Omit<
 export function isSupportedUIResource(
   resource: UIResource | null | undefined,
 ): resource is UIResource {
-  return resource?.mimeType === 'text/html';
+  return resource?.mimeType?.split(';', 1)[0].trim().toLowerCase() === 'text/html';
 }
 
 /** Restricts legacy MCP-UI rendering to sandboxed inline HTML resources. */
@@ -30,6 +30,7 @@ export default function UIResourceRenderer({
   const safeResource = { ...resource };
   const safeHtmlProps = { ...htmlProps };
   delete safeResource.contentType;
+  safeResource.mimeType = 'text/html';
   delete safeHtmlProps.sandboxPermissions;
 
   return (

@@ -135,6 +135,23 @@ function stripMarkersOutsideInlineCode(text: string): string {
   return result;
 }
 
+function stripMarkdownContainerPrefixes(line: string): string {
+  let content = line;
+  while (true) {
+    const blockquote = content.match(/^ {0,3}>[ \t]?/)?.[0];
+    if (blockquote) {
+      content = content.slice(blockquote.length);
+      continue;
+    }
+    const listItem = content.match(/^ {0,3}(?:[*+-]|\d{1,9}[.)])[ \t]+/)?.[0];
+    if (listItem) {
+      content = content.slice(listItem.length);
+      continue;
+    }
+    return content;
+  }
+}
+
 function getFence(line: string): { character: '`' | '~'; length: number } | null {
   const indent = line.match(/^ {0,3}/)?.[0].length ?? 0;
   const character = line[indent];
@@ -177,16 +194,17 @@ export function stripUIResourceMarkers(text: string | undefined): string | undef
 
   for (const line of lines) {
     const content = line.endsWith('\n') ? line.slice(0, -1) : line;
+    const containerContent = stripMarkdownContainerPrefixes(content);
     if (fence) {
       flushMarkdown();
       result += line;
-      if (closesFence(content, fence)) {
+      if (closesFence(containerContent, fence)) {
         fence = null;
       }
       continue;
     }
 
-    const openingFence = getFence(content);
+    const openingFence = getFence(containerContent);
     if (openingFence || /^(?: {4}|\t)/.test(content)) {
       flushMarkdown();
       result += line;

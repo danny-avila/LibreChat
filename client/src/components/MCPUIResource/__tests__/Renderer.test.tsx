@@ -62,4 +62,23 @@ describe('UIResourceRenderer', () => {
       expect.any(Object),
     );
   });
+
+  it.each(['text/html; charset=utf-8', 'TEXT/HTML'])('normalizes HTML MIME type %s', (mimeType) => {
+    const resource: UIResource = {
+      resourceId: 'html-resource',
+      uri: 'ui://html',
+      mimeType,
+      text: '<p>Safe iframe content</p>',
+    };
+
+    render(<UIResourceRenderer resource={resource} />);
+
+    expect(mockLegacyRenderer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resource: expect.objectContaining({ mimeType: 'text/html' }),
+        supportedContentTypes: ['rawHtml'],
+      }),
+      expect.any(Object),
+    );
+  });
 });
