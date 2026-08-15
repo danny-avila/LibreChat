@@ -39,6 +39,7 @@ export async function loadDefaultInterface({
     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
     loginLogoHeight: interfaceConfig?.loginLogoHeight ?? defaults.loginLogoHeight,
+    showLoginTitle: interfaceConfig?.showLoginTitle ?? defaults.showLoginTitle,
     autoSubmitFromUrl: interfaceConfig?.autoSubmitFromUrl ?? defaults.autoSubmitFromUrl,
     buildInfo: interfaceConfig?.buildInfo ?? defaults.buildInfo,
     contextUsage: interfaceConfig?.contextUsage ?? defaults.contextUsage,

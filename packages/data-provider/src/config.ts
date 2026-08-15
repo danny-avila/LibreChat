@@ -1417,6 +1417,7 @@ export const interfaceSchema = z
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
     loginLogoHeight: z.number().positive().optional(),
+    showLoginTitle: z.boolean().optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
     parameters: z.boolean().optional(),

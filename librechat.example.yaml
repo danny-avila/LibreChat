@@ -103,6 +103,9 @@ interface:
   # Height, in pixels, of the app logo shown on the login/registration page.
   # Leave unset to use the default size (40px).
   # loginLogoHeight: 80
+  # Show the app title (APP_TITLE) below the logo on the login/registration
+  # page. Disabled by default.
+  # showLoginTitle: true
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.

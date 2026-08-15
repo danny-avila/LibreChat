@@ -76,6 +76,14 @@ function AuthLayout({
             alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
           />
         </div>
+        {startupConfig?.interface?.showLoginTitle && (
+          <h1
+            className="mb-4 mt-2 text-center text-3xl font-semibold text-text-primary"
+            style={{ userSelect: 'none' }}
+          >
+            {startupConfig.appTitle}
+          </h1>
+        )}
       </BlinkAnimation>
       <DisplayError />
       <div className="absolute bottom-0 left-0 md:m-4">

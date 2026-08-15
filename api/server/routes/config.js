@@ -234,7 +234,8 @@ router.get('/', async function (req, res) {
         interfaceConfig?.privacyPolicy ||
         interfaceConfig?.termsOfService ||
         buildInfoDisabled ||
-        interfaceConfig?.loginLogoHeight != null
+        interfaceConfig?.loginLogoHeight != null ||
+        interfaceConfig?.showLoginTitle != null
       ) {
         payload.interface = {};
         if (interfaceConfig.privacyPolicy) {
@@ -248,6 +249,9 @@ router.get('/', async function (req, res) {
         }
         if (interfaceConfig.loginLogoHeight != null) {
           payload.interface.loginLogoHeight = interfaceConfig.loginLogoHeight;
+        }
+        if (interfaceConfig.showLoginTitle != null) {
+          payload.interface.showLoginTitle = interfaceConfig.showLoginTitle;
         }
       }
 
