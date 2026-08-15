@@ -37,7 +37,6 @@ export default function SharedLinkCopyButton({ sharedLink }: { sharedLink: strin
       <CopyButton
         iconOnly
         isCopied={isCopied}
-        disabled={!sharedLink}
         label={localize('com_ui_copy_link')}
         copiedLabel={localize('com_ui_copied')}
         onClick={handleCopy}

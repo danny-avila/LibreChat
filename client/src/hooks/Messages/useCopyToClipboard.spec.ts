@@ -6,7 +6,7 @@ import type {
   ProcessedOrganic,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import useCopyToClipboard from '~/hooks/Messages/useCopyToClipboard';
+import useCopyToClipboard, { hasCopyableText } from '~/hooks/Messages/useCopyToClipboard';
 
 // Mock the copy-to-clipboard module
 jest.mock('copy-to-clipboard');
@@ -17,6 +17,7 @@ describe('useCopyToClipboard', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCopy.mockReturnValue(true);
     jest.useFakeTimers();
   });
 
@@ -151,6 +152,19 @@ describe('useCopyToClipboard', () => {
       expect(copied).toBe(true);
     });
 
+    it('does not report success when the clipboard write fails', () => {
+      mockCopy.mockReturnValueOnce(false);
+      const { result } = renderHook(() => useCopyToClipboard({ text: 'Copy me' }));
+
+      let copied: boolean | undefined;
+      act(() => {
+        copied = result.current(mockSetIsCopied);
+      });
+
+      expect(copied).toBe(false);
+      expect(mockSetIsCopied).not.toHaveBeenCalled();
+    });
+
     it('preserves the clipboard when the message text is empty', () => {
       const { result } = renderHook(() => useCopyToClipboard({ text: '   ' }));
 
@@ -180,6 +194,38 @@ describe('useCopyToClipboard', () => {
       });
 
       expect(mockSetIsCopied).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe('hasCopyableText', () => {
+    it('is false for a response made only of skipped parts', () => {
+      const content = [
+        { type: ContentTypes.TOOL_CALL, tool_call: { type: 'tool_call', name: 'search' } },
+        { type: ContentTypes.ERROR, error: 'Something went wrong' },
+      ] as TMessageContentParts[];
+
+      expect(hasCopyableText({ content })).toBe(false);
+    });
+
+    it('is true when any text part carries content', () => {
+      const content = [
+        { type: ContentTypes.ERROR, error: 'Something went wrong' },
+        { type: ContentTypes.TEXT, text: 'The service is down.' },
+      ] as TMessageContentParts[];
+
+      expect(hasCopyableText({ content })).toBe(true);
+    });
+
+    it('is false for whitespace-only text parts', () => {
+      const content = [{ type: ContentTypes.TEXT, text: '   \n' }] as TMessageContentParts[];
+
+      expect(hasCopyableText({ content })).toBe(false);
+    });
+
+    it('falls back to the message text when there are no content parts', () => {
+      expect(hasCopyableText({ text: 'Plain response' })).toBe(true);
+      expect(hasCopyableText({ text: '  ' })).toBe(false);
+      expect(hasCopyableText({})).toBe(false);
     });
   });
 

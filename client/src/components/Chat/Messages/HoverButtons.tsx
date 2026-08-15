@@ -10,7 +10,7 @@ import {
   RegenerateIcon,
 } from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
-import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { useGenerationsByLatest, useLocalize, hasCopyableText } from '~/hooks';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
@@ -43,6 +43,7 @@ type HoverButtonProps = {
   className?: string;
   buttonStyle?: string;
   dataTestId?: string;
+  disabled?: boolean;
 };
 
 const extractMessageContent = (message: TMessage): string => {
@@ -87,6 +88,7 @@ const HoverButton = memo(
     isLast = false,
     className = '',
     dataTestId,
+    disabled = false,
   }: HoverButtonProps) => {
     const buttonStyle = hoverButtonClasses({ isActive, isLast, className });
 
@@ -102,6 +104,7 @@ const HoverButton = memo(
             aria-label={title}
             className={buttonStyle}
             onClick={onClick}
+            disabled={disabled}
           >
             {icon}
           </Button>
@@ -137,6 +140,11 @@ const HoverButtons = ({
     }
     return conversation.endpointType ?? conversation.endpoint;
   }, [conversation]);
+
+  const canCopy = useMemo(
+    () => hasCopyableText({ text: message.text, content: message.content }),
+    [message.text, message.content],
+  );
 
   const generationCapabilities = useGenerationsByLatest({
     isEditing,
@@ -205,6 +213,7 @@ const HoverButtons = ({
           }
           icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
           isLast={isLast}
+          disabled={!canCopy}
           className={cn(
             'ml-0 flex items-center gap-1.5 text-xs',
             isSubmitting && isCreatedByUser

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { ContentTypes, SearchResultData } from 'librechat-data-provider';
-import type { TMessage } from 'librechat-data-provider';
+import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import {
   SPAN_REGEX,
   CLEANUP_REGEX,
@@ -27,6 +27,14 @@ const refTypeMap: Record<string, string> = {
   video: 'videos',
 };
 
+function getPartText(part: TMessageContentParts): string {
+  if (part?.type !== ContentTypes.TEXT) {
+    return '';
+  }
+
+  return typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+}
+
 export function serializeMessageForClipboard({
   text,
   content,
@@ -37,16 +45,30 @@ export function serializeMessageForClipboard({
 
   const parts: string[] = [];
   for (const part of content) {
-    if (part?.type !== ContentTypes.TEXT) {
-      continue;
-    }
-    const partText = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+    const partText = getPartText(part);
     if (partText.length > 0) {
       parts.push(partText);
     }
   }
 
   return parts.join('\n');
+}
+
+export function hasCopyableText({
+  text,
+  content,
+}: Partial<Pick<TMessage, 'text' | 'content'>>): boolean {
+  if (!Array.isArray(content) || content.length === 0) {
+    return (text ?? '').trim().length > 0;
+  }
+
+  for (const part of content) {
+    if (getPartText(part).trim().length > 0) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function buildClipboardText({
@@ -99,8 +121,11 @@ export default function useCopyToClipboard({
     (setIsCopied: React.Dispatch<React.SetStateAction<boolean>>): boolean => {
       const clipboardText = buildClipboardText({ text, content, searchResults });
 
-      /** Nothing to copy: leave the clipboard untouched rather than clearing it */
       if (clipboardText.trim().length === 0) {
+        return false;
+      }
+
+      if (!copy(clipboardText, { format: 'text/plain' })) {
         return false;
       }
 
@@ -108,7 +133,6 @@ export default function useCopyToClipboard({
         clearTimeout(copyTimeoutRef.current);
       }
 
-      copy(clipboardText, { format: 'text/plain' });
       setIsCopied(true);
       copyTimeoutRef.current = setTimeout(() => {
         setIsCopied(false);

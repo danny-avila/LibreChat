@@ -3,7 +3,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { render, screen } from '@testing-library/react';
 import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { EModelEndpoint, type TConversation, type TMessage } from 'librechat-data-provider';
+import {
+  ContentTypes,
+  EModelEndpoint,
+  type TConversation,
+  type TMessage,
+} from 'librechat-data-provider';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import store from '~/store';
 
@@ -122,5 +127,25 @@ describe('HoverButtons edit affordance', () => {
     });
 
     expect(screen.getByTestId('copy-response-button')).toBeEnabled();
+  });
+
+  it('disables copy when the response serializes to nothing', () => {
+    const errorPartMessage = {
+      ...userMessage,
+      messageId: 'assistant-error-part',
+      isCreatedByUser: false,
+      error: true,
+      text: '',
+      content: [{ type: ContentTypes.ERROR, error: 'Deployment lookup failed' }],
+    } as TMessage;
+
+    renderHoverButtons({
+      isSubmitting: false,
+      message: errorPartMessage,
+      isLast: true,
+      latestMessageId: errorPartMessage.messageId,
+    });
+
+    expect(screen.getByTestId('copy-response-button')).toBeDisabled();
   });
 });
