@@ -155,12 +155,12 @@ async function createConflictingServer(): Promise<ConflictTestServer> {
 }
 
 async function waitForCondition(
-  predicate: () => boolean,
+  predicate: () => boolean | Promise<boolean>,
   timeoutMs = 10000,
   intervalMs = 25,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() > deadline) {
       throw new Error('Timed out waiting for condition');
     }
@@ -261,10 +261,15 @@ describe('MCPConnection standalone SSE stream conflict', () => {
       ?.sessionId;
     expect(firstSessionId).toBeTruthy();
 
-    await waitForCondition(() => {
+    /**
+     * `client.connect()` assigns the new session id as soon as initialize returns,
+     * before `connectClient` emits `connected`. Waiting on the id swap alone races
+     * that handshake, so require a live connection on the rebuilt session.
+     */
+    await waitForCondition(async () => {
       const current = (conn as unknown as { transport?: { sessionId?: string } }).transport
         ?.sessionId;
-      return Boolean(current) && current !== firstSessionId;
+      return Boolean(current) && current !== firstSessionId && (await conn.isConnected());
     }, 15000);
 
     expect(await conn.isConnected()).toBe(true);
