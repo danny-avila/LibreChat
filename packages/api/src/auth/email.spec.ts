@@ -437,7 +437,7 @@ describe('email change service', () => {
       );
     });
 
-    it('revokes reset tokens again after the commit to close the issuance race', async () => {
+    it('revokes leftover reset tokens only after the commit', async () => {
       const { deps, service } = createDeps({
         findToken: jest.fn().mockResolvedValue(await pendingToken()),
       });
@@ -451,13 +451,19 @@ describe('email change service', () => {
       });
 
       expect(response).toMatchObject({ status: 200 });
-      const resetCleanups = (deps.deleteTokens as jest.Mock).mock.calls.filter(
-        ([query]) => query.type === 'password_reset',
-      );
-      expect(resetCleanups).toHaveLength(3);
-      const [preCommit, ...postCommit] = resetCleanups;
-      expect(preCommit[0]).not.toHaveProperty('email');
-      expect(postCommit.map(([query]) => query.email).sort()).toEqual([null, 'old@example.com']);
+      const deleteMock = deps.deleteTokens as jest.Mock;
+      const updateOrder = (deps.updateUser as jest.Mock).mock.invocationCallOrder[0];
+      const resetCleanups = deleteMock.mock.calls
+        .map((call, index) => ({
+          query: call[0] as TokenQuery,
+          order: deleteMock.mock.invocationCallOrder[index],
+        }))
+        .filter(({ query }) => query.type === 'password_reset');
+      expect(resetCleanups.map(({ query }) => query.email).sort()).toEqual([
+        null,
+        'old@example.com',
+      ]);
+      expect(resetCleanups.every(({ order }) => order > updateOrder)).toBe(true);
     });
 
     it('leaves an email change token issued after the commit intact', async () => {
@@ -559,6 +565,39 @@ describe('email change service', () => {
         }),
         'tenant-1',
       );
+      expect(
+        (deps.deleteTokens as jest.Mock).mock.calls.some(
+          ([query]) => query.type === 'password_reset' || query.type == null,
+        ),
+      ).toBe(false);
+    });
+
+    it('leaves an existing password reset intact when the update fails transiently', async () => {
+      const resetTokens = ['pending-reset'];
+      const deleteTokens = jest.fn(async (query: TokenQuery) => {
+        if (query.type === 'password_reset' || query.type == null) {
+          const deletedCount = resetTokens.length;
+          resetTokens.length = 0;
+          return { deletedCount };
+        }
+        return { deletedCount: 1 };
+      });
+      const { service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(await pendingToken()),
+        deleteTokens: deleteTokens as EmailChangeDeps['deleteTokens'],
+        updateUser: jest.fn().mockRejectedValue(new Error('connection reset')),
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 500 });
+      expect(resetTokens).toEqual(['pending-reset']);
     });
 
     it('refuses a confirmation superseded mid-flight and leaves the newer link intact', async () => {
