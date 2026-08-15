@@ -84,7 +84,7 @@ export function normalizeEndpointName(name = ''): string {
   return name.toLowerCase() === 'ollama' ? 'ollama' : name;
 }
 
-const UI_RESOURCE_AT_START = /^\\ui\{[\w]+(?:,[\w]+)*\}/;
+const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
 
 function findClosingBackticks(text: string, start: number, length: number): number {
   let cursor = start;
@@ -106,50 +106,68 @@ function findClosingBackticks(text: string, start: number, length: number): numb
 }
 
 function stripMarkersOutsideInlineCode(text: string): string {
-  let result = '';
+  const chunks: string[] = [];
+  let copyStart = 0;
   let cursor = 0;
   while (cursor < text.length) {
-    if (text[cursor] === '`') {
-      let openerEnd = cursor;
-      while (text[openerEnd] === '`') {
-        openerEnd++;
+    const backtick = text.indexOf('`', cursor);
+    const marker = text.indexOf('\\ui{', cursor);
+    if (marker !== -1 && (backtick === -1 || marker < backtick)) {
+      UI_RESOURCE_PATTERN.lastIndex = marker;
+      const match = UI_RESOURCE_PATTERN.exec(text);
+      if (match?.index === marker) {
+        chunks.push(text.slice(copyStart, marker));
+        cursor = marker + match[0].length;
+        copyStart = cursor;
+      } else {
+        cursor = marker + 4;
       }
-      const closerEnd = findClosingBackticks(text, openerEnd, openerEnd - cursor);
-      if (closerEnd !== -1) {
-        result += text.slice(cursor, closerEnd);
-        cursor = closerEnd;
-        continue;
-      }
-      result += text.slice(cursor, openerEnd);
-      cursor = openerEnd;
       continue;
+    }
+    if (backtick === -1) {
+      break;
     }
 
-    const marker = text.slice(cursor).match(UI_RESOURCE_AT_START)?.[0];
-    if (marker) {
-      cursor += marker.length;
-      continue;
+    let openerEnd = backtick;
+    while (text[openerEnd] === '`') {
+      openerEnd++;
     }
-    result += text[cursor++];
+    const closerEnd = findClosingBackticks(text, openerEnd, openerEnd - backtick);
+    cursor = closerEnd === -1 ? openerEnd : closerEnd;
   }
-  return result;
+  return chunks.length === 0 ? text : chunks.join('') + text.slice(copyStart);
 }
 
-function stripMarkdownContainerPrefixes(line: string): string {
+type MarkdownContainers = {
+  blockquoteDepth: number;
+  content: string;
+  contentAfterBlockquotes: string;
+  listIndent: number;
+};
+
+function parseMarkdownContainers(line: string): MarkdownContainers {
   let content = line;
+  let blockquoteDepth = 0;
   while (true) {
     const blockquote = content.match(/^ {0,3}>[ \t]?/)?.[0];
-    if (blockquote) {
-      content = content.slice(blockquote.length);
-      continue;
+    if (!blockquote) {
+      break;
     }
-    const listItem = content.match(/^ {0,3}(?:[*+-]|\d{1,9}[.)])[ \t]+/)?.[0];
-    if (listItem) {
-      content = content.slice(listItem.length);
-      continue;
-    }
-    return content;
+    blockquoteDepth++;
+    content = content.slice(blockquote.length);
   }
+
+  const contentAfterBlockquotes = content;
+  let listIndent = 0;
+  while (true) {
+    const listItem = content.match(/^ {0,3}(?:[*+-]|\d{1,9}[.)])[ \t]+/)?.[0];
+    if (!listItem) {
+      break;
+    }
+    listIndent += listItem.length;
+    content = content.slice(listItem.length);
+  }
+  return { blockquoteDepth, content, contentAfterBlockquotes, listIndent };
 }
 
 function getFence(line: string): { character: '`' | '~'; length: number } | null {
@@ -165,7 +183,14 @@ function getFence(line: string): { character: '`' | '~'; length: number } | null
   return end - indent >= 3 ? { character, length: end - indent } : null;
 }
 
-function closesFence(line: string, fence: { character: '`' | '~'; length: number }): boolean {
+type MarkdownFence = {
+  character: '`' | '~';
+  length: number;
+  blockquoteDepth: number;
+  listIndent: number;
+};
+
+function closesFence(line: string, fence: MarkdownFence): boolean {
   const indent = line.match(/^ {0,3}/)?.[0].length ?? 0;
   let end = indent;
   while (line[end] === fence.character) {
@@ -174,19 +199,30 @@ function closesFence(line: string, fence: { character: '`' | '~'; length: number
   return end - indent >= fence.length && line.slice(end).trim() === '';
 }
 
+function remainsInFenceContainer(containers: MarkdownContainers, fence: MarkdownFence): boolean {
+  if (containers.blockquoteDepth < fence.blockquoteDepth) {
+    return false;
+  }
+  if (fence.listIndent === 0 || containers.contentAfterBlockquotes.trim() === '') {
+    return true;
+  }
+  const continuationIndent = containers.contentAfterBlockquotes.match(/^[ \t]*/)?.[0].length ?? 0;
+  return continuationIndent >= fence.listIndent;
+}
+
 /** Remove renderable MCP-UI markers without altering literal Markdown code examples. */
 export function stripUIResourceMarkers(text: string): string;
 export function stripUIResourceMarkers(text: undefined): undefined;
 export function stripUIResourceMarkers(text: string | undefined): string | undefined;
 export function stripUIResourceMarkers(text: string | undefined): string | undefined {
-  if (text == null) {
+  if (text == null || !text.includes('\\ui{')) {
     return text;
   }
 
   const lines = text.match(/[^\n]*(?:\n|$)/g) ?? [];
   let result = '';
   let markdown = '';
-  let fence: { character: '`' | '~'; length: number } | null = null;
+  let fence: MarkdownFence | null = null;
   const flushMarkdown = () => {
     result += stripMarkersOutsideInlineCode(markdown);
     markdown = '';
@@ -194,25 +230,52 @@ export function stripUIResourceMarkers(text: string | undefined): string | undef
 
   for (const line of lines) {
     const content = line.endsWith('\n') ? line.slice(0, -1) : line;
-    const containerContent = stripMarkdownContainerPrefixes(content);
-    if (fence) {
+    const containers = parseMarkdownContainers(content);
+    if (fence && remainsInFenceContainer(containers, fence)) {
       flushMarkdown();
       result += line;
-      if (closesFence(containerContent, fence)) {
+      if (closesFence(containers.content, fence)) {
         fence = null;
       }
       continue;
     }
+    fence = null;
 
-    const openingFence = getFence(containerContent);
-    if (openingFence || /^(?: {4}|\t)/.test(content)) {
+    const openingFence = getFence(containers.content);
+    if (openingFence || /^(?: {4}|\t)/.test(containers.content)) {
       flushMarkdown();
       result += line;
-      fence = openingFence;
+      fence = openingFence
+        ? {
+            ...openingFence,
+            blockquoteDepth: containers.blockquoteDepth,
+            listIndent: containers.listIndent,
+          }
+        : null;
       continue;
     }
     markdown += line;
   }
   flushMarkdown();
   return result;
+}
+
+/** Sanitize string and TextData object representations while preserving annotations. */
+export function stripUIResourceMarkersFromTextPart(part: unknown): unknown {
+  if (part == null || typeof part !== 'object') {
+    return part;
+  }
+  const record = part as Record<string, unknown>;
+  if (typeof record.text === 'string') {
+    const text = stripUIResourceMarkers(record.text);
+    return text === record.text ? part : { ...record, text };
+  }
+  if (record.text != null && typeof record.text === 'object') {
+    const textData = record.text as Record<string, unknown>;
+    if (typeof textData.value === 'string') {
+      const value = stripUIResourceMarkers(textData.value);
+      return value === textData.value ? part : { ...record, text: { ...textData, value } };
+    }
+  }
+  return part;
 }

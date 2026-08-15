@@ -535,6 +535,13 @@ describe('Share Methods', () => {
         content: [
           { type: ContentTypes.TEXT, text: 'Before \\ui{malicious} after' },
           { type: ContentTypes.TEXT, text: '`\\ui{literal}`' },
+          {
+            type: ContentTypes.TEXT,
+            text: {
+              value: 'Object \\ui{malicious} value',
+              annotations: [{ type: 'citation' }],
+            },
+          },
         ],
         attachments: [
           {
@@ -566,6 +573,10 @@ describe('Share Methods', () => {
       expect(result?.messages[0].content).toEqual([
         { type: ContentTypes.TEXT, text: 'Before  after' },
         { type: ContentTypes.TEXT, text: '`\\ui{literal}`' },
+        {
+          type: ContentTypes.TEXT,
+          text: { value: 'Object  value', annotations: [{ type: 'citation' }] },
+        },
       ]);
     });
 

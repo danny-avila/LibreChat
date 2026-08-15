@@ -6,6 +6,7 @@ import {
   FileSources,
   Tools,
   stripUIResourceMarkers,
+  stripUIResourceMarkersFromTextPart,
 } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
@@ -401,17 +402,11 @@ export function anonymizeSharedContent(
   let result: unknown[] | null = null;
   for (let i = 0; i < content.length; i++) {
     const part = content[i];
-    if (
-      part != null &&
-      typeof part === 'object' &&
-      (part as { type?: unknown }).type === ContentTypes.TEXT &&
-      typeof (part as { text?: unknown }).text === 'string'
-    ) {
-      const text = (part as { text: string }).text;
-      const sanitizedText = stripUIResourceMarkers(text);
-      if (sanitizedText !== text) {
+    if ((part as { type?: unknown } | null)?.type === ContentTypes.TEXT) {
+      const sanitizedPart = stripUIResourceMarkersFromTextPart(part);
+      if (sanitizedPart !== part) {
         result ??= [...content];
-        result[i] = { ...(part as Record<string, unknown>), text: sanitizedText };
+        result[i] = sanitizedPart;
       }
     }
     if (!isSteerPartWithFiles(part)) {

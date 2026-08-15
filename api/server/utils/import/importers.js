@@ -7,6 +7,7 @@ const {
   Tools,
   openAISettings,
   stripUIResourceMarkers,
+  stripUIResourceMarkersFromTextPart,
 } = require('librechat-data-provider');
 const { getEndpointsConfig } = require('~/server/services/Config');
 const { createImportBatchBuilder } = require('./importBatchBuilder');
@@ -18,9 +19,7 @@ function sanitizeImportedContent(content) {
     return content;
   }
   return content.map((part) =>
-    part?.type === ContentTypes.TEXT && typeof part.text === 'string'
-      ? { ...part, text: stripUIResourceMarkers(part.text) }
-      : part,
+    part?.type === ContentTypes.TEXT ? stripUIResourceMarkersFromTextPart(part) : part,
   );
 }
 
