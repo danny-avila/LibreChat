@@ -74,6 +74,8 @@ export const useDeleteProjectMutation = (): UseMutationResult<
       queryClient.removeQueries([QueryKeys.project, projectId], { type: 'inactive' });
       queryClient.invalidateQueries([QueryKeys.projects]);
       queryClient.invalidateQueries([QueryKeys.allConversations]);
+      /** Deleting a project unsets chatProjectId on its chats, pinned ones included. */
+      queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
     },
   });
 };
