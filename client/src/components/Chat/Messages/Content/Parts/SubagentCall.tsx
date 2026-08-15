@@ -216,7 +216,13 @@ export default function SubagentCall({
    * saved before `on_run_step_closed` and endpoints that do not emit it.
    */
   const isClosed = runStepStatus != null;
-  const hasError = progress?.status === 'error' || runStepStatus === 'failed';
+  /**
+   * An explicit `cancelled` close outranks a live `error` phase: aborting a
+   * child can surface through its execution as an error, and the run's own
+   * status is the authority on why it stopped.
+   */
+  const hasError =
+    (progress?.status === 'error' || runStepStatus === 'failed') && runStepStatus !== 'cancelled';
   const finished = isClosed
     ? runStepStatus !== 'cancelled'
     : initialProgress >= 1 || progress?.status === 'stop' || hasError;

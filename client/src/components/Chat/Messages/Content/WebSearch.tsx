@@ -111,8 +111,6 @@ export default function WebSearch({
   const error =
     (typeof output === 'string' && output.toLowerCase().includes('error processing')) ||
     runStepStatus === 'failed';
-  /** A closed step is terminal: it can neither animate nor sit "finalizing"
-   *  waiting on a submission that no longer concerns it. */
   const isClosed = runStepStatus != null;
 
   // Server tool calls (srvtoolu_) never receive ON_RUN_STEP_COMPLETED, so progress
