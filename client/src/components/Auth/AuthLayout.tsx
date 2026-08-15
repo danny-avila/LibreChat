@@ -7,6 +7,9 @@ import { BlinkAnimation } from './BlinkAnimation';
 import { Banner } from '../Banners';
 import Footer from './Footer';
 
+/** Injected into index.html by the server when APP_ICON_URL is set */
+const appIcon = document.querySelector('meta[name="app-icon"]')?.getAttribute('content');
+
 function AuthLayout({
   children,
   header,
@@ -68,7 +71,7 @@ function AuthLayout({
           style={{ height: `${startupConfig?.interface?.loginLogoHeight ?? 40}px` }}
         >
           <img
-            src="assets/logo.svg"
+            src={appIcon || 'assets/logo.svg'}
             className="h-full w-full object-contain"
             alt={localize('com_ui_logo', { 0: startupConfig?.appTitle ?? 'LibreChat' })}
           />
