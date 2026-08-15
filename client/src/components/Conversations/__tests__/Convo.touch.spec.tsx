@@ -1,8 +1,9 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 
 let mockIsSmallScreen = true;
 const mockConvoOptionsProps: { isPopoverActive: boolean }[] = [];
+let mockCloseMenu: () => void = () => undefined;
 
 jest.mock('@librechat/client', () => ({
   useMediaQuery: () => mockIsSmallScreen,
@@ -40,8 +41,9 @@ jest.mock('~/utils', () => ({
 }));
 
 jest.mock('../ConvoOptions', () => ({
-  ConvoOptions: (props: { isPopoverActive: boolean }) => {
+  ConvoOptions: (props: { isPopoverActive: boolean; setIsPopoverActive: (o: boolean) => void }) => {
     mockConvoOptionsProps.push(props);
+    mockCloseMenu = () => props.setIsPopoverActive(false);
     return <div data-testid="convo-options" data-open={props.isPopoverActive} />;
   },
 }));
@@ -106,6 +108,23 @@ describe('Conversation row on touch', () => {
     fireEvent.click(screen.getByTestId('convo-options-trigger'));
 
     expect(screen.getByTestId('convo-options')).toHaveAttribute('data-open', 'true');
+  });
+
+  it('keeps the real menu mounted once dismissed, so focus has somewhere to return', () => {
+    renderRow();
+
+    fireEvent.click(screen.getByTestId('convo-options-trigger'));
+    expect(screen.getByTestId('convo-options')).toHaveAttribute('data-open', 'true');
+
+    /**
+     * Ariakit returns focus to its own trigger on close. Swapping back to the
+     * lightweight button would destroy that node mid-dismissal and strand
+     * focus on the document.
+     */
+    act(() => mockCloseMenu());
+
+    expect(screen.getByTestId('convo-options')).toBeInTheDocument();
+    expect(screen.queryByTestId('convo-options-trigger')).not.toBeInTheDocument();
   });
 
   it('does not open from a press that turns into a scroll', () => {

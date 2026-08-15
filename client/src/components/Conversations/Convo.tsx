@@ -50,6 +50,13 @@ function Conversation({
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   // Lazy-load ConvoOptions to avoid running heavy hooks for all conversations
   const [hasInteracted, setHasInteracted] = useState(false);
+  /**
+   * Touch swaps a lightweight trigger for the real menu on first use. Unmounting
+   * the menu again on dismissal would destroy Ariakit's own button mid-close and
+   * strand focus on the document, since the replacement is a different node.
+   * Rows the user never opened still pay nothing, which was the point.
+   */
+  const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
 
   const previousTitle = useRef(title);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -215,7 +222,9 @@ function Conversation({
    */
   const showConvoOptions =
     !renaming &&
-    (isSmallScreen ? isPopoverActive || isActiveConvo : hasInteracted || isActiveConvo);
+    (isSmallScreen
+      ? isPopoverActive || isActiveConvo || hasOpenedMenu
+      : hasInteracted || isActiveConvo);
 
   /**
    * `ConvoOptions` carries six mutations and its own menu store, so mounting it
@@ -243,6 +252,7 @@ function Conversation({
          */
         onClick={(event) => {
           event.stopPropagation();
+          setHasOpenedMenu(true);
           setIsPopoverActive(true);
         }}
       >
