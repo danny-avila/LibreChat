@@ -279,6 +279,7 @@ const Part = memo(function Part({
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
+              runStepStatus={toolCall.runStepStatus}
               attachments={attachments}
               persistedContent={persistedContent}
               hideAttachments={hideAttachments}
