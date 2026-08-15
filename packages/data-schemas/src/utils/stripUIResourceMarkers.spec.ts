@@ -10,7 +10,7 @@ describe('stripUIResourceMarkers', () => {
       '\\ui{fenced}',
       '```',
       '<div>\\ui{html}</div>',
-      '$\\ui{inline-math}$',
+      '$$\\ui{inline-math}$$',
       '$$',
       '\\ui{display-math}',
       '$$',
@@ -20,7 +20,13 @@ describe('stripUIResourceMarkers', () => {
   });
 
   it('preserves markers inside inline and display math nodes', () => {
-    const markdown = ['$\\ui{inline-math}$', '', '$$', '\\ui{display-math}', '$$'].join('\n');
+    const markdown = ['$$\\ui{inline-math}$$', '', '$$', '\\ui{display-math}', '$$'].join('\n');
+    expect(stripUIResourceMarkers(markdown)).toBe(markdown);
+    expect(stripUIResourceMarkers('$\\ui{rendered}$')).toBe('$$');
+  });
+
+  it('preserves directive attributes that the renderer does not visit as text', () => {
+    const markdown = '::artifact{title="\\ui{example}"}';
     expect(stripUIResourceMarkers(markdown)).toBe(markdown);
   });
 
@@ -48,6 +54,11 @@ describe('stripUIResourceMarkers', () => {
     expect(stripUIResourceMarkers(markdown)).toBe(
       markdown.replace('\\ui{paragraph}', '').replace('\\ui{outside}', ''),
     );
+  });
+
+  it('maps markers across CRLF paragraph continuations', () => {
+    const markdown = 'intro\r\n    \\ui{paragraph}\r\nnext \\ui{next}';
+    expect(stripUIResourceMarkers(markdown)).toBe('intro\r\n    \r\nnext ');
   });
 
   it('recursively sanitizes TextData and subagent content while preserving annotations', () => {

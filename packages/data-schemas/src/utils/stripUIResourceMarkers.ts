@@ -1,5 +1,9 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
+import { directiveFromMarkdown } from 'mdast-util-directive';
+import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { mathFromMarkdown } from 'mdast-util-math';
+import { directive } from 'micromark-extension-directive';
+import { gfm } from 'micromark-extension-gfm';
 import { math } from 'micromark-extension-llm-math';
 import { decodeString } from 'micromark-util-decode-string';
 import { ContentTypes } from 'librechat-data-provider';
@@ -57,6 +61,18 @@ function alignTextSpans(
 
   for (let valueIndex = 0; valueIndex < nodeValue.length; valueIndex++) {
     const expected = nodeValue[valueIndex];
+    if (expected === '\n' && decoded.value[sourceIndex] === '\r') {
+      const nextIndex = decoded.value[sourceIndex + 1] === '\n' ? sourceIndex + 1 : sourceIndex;
+      const first = decoded.spans[sourceIndex];
+      const last = decoded.spans[nextIndex];
+      if (!first || !last) {
+        return null;
+      }
+      result.push([first[0], last[1]]);
+      sourceIndex = nextIndex + 1;
+      lineHasContent = false;
+      continue;
+    }
     while (decoded.value[sourceIndex] !== expected) {
       const candidate = decoded.value[sourceIndex];
       if (candidate == null || lineHasContent || (candidate !== ' ' && candidate !== '\t')) {
@@ -114,8 +130,8 @@ export function stripUIResourceMarkers(text: string | undefined): string | undef
   const ranges: Array<[number, number]> = [];
   collectMarkerRanges(
     fromMarkdown(text, {
-      extensions: [math()],
-      mdastExtensions: [mathFromMarkdown()],
+      extensions: [gfm(), directive(), math({ singleDollarTextMath: false })],
+      mdastExtensions: [gfmFromMarkdown(), directiveFromMarkdown(), mathFromMarkdown()],
     }) as unknown as MarkdownNode,
     text,
     ranges,
