@@ -6,8 +6,8 @@ import UIResourceRenderer, { isSupportedUIResource } from '~/components/MCPUIRes
 import { useOptionalMessagesOperations } from '~/Providers';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import UIResourceCarousel from './UIResourceCarousel';
-import { handleUIAction, cn } from '~/utils';
 import { OutputRenderer } from './ToolOutput';
+import { handleUIAction, cn } from '~/utils';
 
 function isSimpleObject(obj: unknown): obj is Record<string, string | number | boolean | null> {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {

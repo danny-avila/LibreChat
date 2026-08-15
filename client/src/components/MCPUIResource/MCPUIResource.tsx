@@ -1,9 +1,9 @@
 import React from 'react';
 import { useOptionalMessagesConversation, useOptionalMessagesOperations } from '~/Providers';
 import { useConversationUIResources } from '~/hooks/Messages/useConversationUIResources';
+import UIResourceRenderer, { isSupportedUIResource } from './Renderer';
 import { handleUIAction } from '~/utils';
 import { useLocalize } from '~/hooks';
-import UIResourceRenderer, { isSupportedUIResource } from './Renderer';
 
 interface MCPUIResourceProps {
   node: {

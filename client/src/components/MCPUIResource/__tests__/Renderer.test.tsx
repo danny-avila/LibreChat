@@ -1,5 +1,5 @@
-import { UIResourceRenderer as LegacyUIResourceRenderer } from '@mcp-ui/client';
 import { render, screen } from '@testing-library/react';
+import { UIResourceRenderer as LegacyUIResourceRenderer } from '@mcp-ui/client';
 import type { UIResource } from 'librechat-data-provider';
 import UIResourceRenderer from '../Renderer';
 

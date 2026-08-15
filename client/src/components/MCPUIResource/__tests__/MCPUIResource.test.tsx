@@ -1,14 +1,14 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
-import { MCPUIResource } from '../MCPUIResource';
+import { render, screen } from '@testing-library/react';
 import {
   useMessageContext,
   useOptionalMessagesConversation,
   useOptionalMessagesOperations,
 } from '~/Providers';
-import { useLocalize } from '~/hooks';
+import { MCPUIResource } from '../MCPUIResource';
 import { handleUIAction } from '~/utils';
+import { useLocalize } from '~/hooks';
 
 // Mock dependencies
 jest.mock('~/Providers', () => ({

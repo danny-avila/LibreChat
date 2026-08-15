@@ -4,9 +4,9 @@ import { Constants, ContentTypes, FileSources, Tools } from 'librechat-data-prov
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
+import { sanitizeUIResourceContent, stripUIResourceMarkers } from '~/utils/stripUIResourceMarkers';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
-import { sanitizeUIResourceContent, stripUIResourceMarkers } from '~/utils/stripUIResourceMarkers';
 import logger from '~/config/winston';
 
 class ShareServiceError extends Error {
