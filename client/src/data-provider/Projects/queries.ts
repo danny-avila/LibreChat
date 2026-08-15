@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UseMutationResult, UseQueryResult } from '@tanstack/react-query';
 import type {
@@ -32,22 +33,36 @@ function retryOnServerErrorOnly(failureCount: number, error: unknown): boolean {
   return failureCount < 1;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BKL_PROXY_BASE}/api/projects${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
-  if (!res.ok) {
-    let detail = '';
-    try {
-      const err = await res.json();
-      detail = typeof err?.detail === 'string' ? err.detail : JSON.stringify(err);
-    } catch {
-      detail = await res.text().catch(() => '');
+/**
+ * fetch 가 아니라 전역 axios 를 쓴다 — 로그인 시 setTokenHeader() 가 심어둔
+ * Authorization: Bearer <LibreChat JWT> 기본 헤더가 실려야 /bkl 프록시의
+ * optionalJwtAuth 가 req.user 를 복원해 X-BKL-User-Sid 를 주입할 수 있다.
+ * (plain fetch 는 이 헤더가 없어 sid 미전달 → 403 "user identity required")
+ */
+async function request<T>(
+  path: string,
+  init?: { method?: string; body?: unknown },
+): Promise<T> {
+  try {
+    const res = await axios.request<T>({
+      url: `${BKL_PROXY_BASE}/api/projects${path}`,
+      method: init?.method ?? 'GET',
+      data: init?.body,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return res.data;
+  } catch (e) {
+    if (axios.isAxiosError(e) && e.response) {
+      const data = e.response.data as { detail?: unknown } | undefined;
+      const detail =
+        typeof data?.detail === 'string' ? data.detail : data ? JSON.stringify(data) : '';
+      throw new ProjectsApiError(
+        detail || `projects API failed (${e.response.status})`,
+        e.response.status,
+      );
     }
-    throw new ProjectsApiError(detail || `projects API failed (${res.status})`, res.status);
+    throw e;
   }
-  return (await res.json()) as T;
 }
 
 export function useProjects(): UseQueryResult<ProjectSummary[], Error> {
@@ -88,8 +103,7 @@ export function useCreateProject(): UseMutationResult<
 > {
   const invalidate = useInvalidateProjects();
   return useMutation({
-    mutationFn: (body) =>
-      request<ProjectSummary>('', { method: 'POST', body: JSON.stringify(body) }),
+    mutationFn: (body) => request<ProjectSummary>('', { method: 'POST', body }),
     onSuccess: () => invalidate(),
   });
 }
@@ -102,7 +116,7 @@ export function useRenameProject(): UseMutationResult<
   const invalidate = useInvalidateProjects();
   return useMutation({
     mutationFn: ({ projectId, ...body }) =>
-      request<ProjectDetail>(`/${projectId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+      request<ProjectDetail>(`/${projectId}`, { method: 'PATCH', body }),
     onSuccess: (_data, { projectId }) => invalidate(projectId),
   });
 }
@@ -130,7 +144,7 @@ export function useAddProjectDocuments(): UseMutationResult<
     mutationFn: ({ projectId, documents }) =>
       request<AddDocumentsResult>(`/${projectId}/documents`, {
         method: 'POST',
-        body: JSON.stringify({ documents }),
+        body: { documents },
       }),
     onSuccess: (_data, { projectId }) => invalidate(projectId),
   });
@@ -146,7 +160,7 @@ export function useRemoveProjectDocuments(): UseMutationResult<
     mutationFn: ({ projectId, docIds }) =>
       request<{ removed: number }>(`/${projectId}/documents`, {
         method: 'DELETE',
-        body: JSON.stringify({ doc_ids: docIds }),
+        body: { doc_ids: docIds },
       }),
     onSuccess: (_data, { projectId }) => invalidate(projectId),
   });
