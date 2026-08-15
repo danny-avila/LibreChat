@@ -497,6 +497,35 @@ describe('Conversation Operations', () => {
         expect(after?.lastConversationId).toBe(newer);
       });
 
+      /** Under RetentionMode.ALL a legacy chat also gets an isTemporary backfill after
+       * the main write; that second update has to stay silent too. */
+      it('keeps updatedAt through the retention backfill', async () => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'legacy chat with no isTemporary',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: anchor,
+          updatedAt: anchor,
+        });
+
+        const result = await saveConvo(
+          {
+            userId: 'user123',
+            interfaceConfig: { retentionMode: RetentionMode.ALL, temporaryChatRetention: 24 },
+          },
+          { conversationId, isArchived: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(result?.isArchived).toBe(true);
+        const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
+        expect(new Date(stored?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
       it('still bumps updatedAt for an ordinary save', async () => {
         const conversationId = await seedAgedConvo();
 
