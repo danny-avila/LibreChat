@@ -395,11 +395,9 @@ export function anonymizeSharedContent(
   }
 
   let result: unknown[] | null = null;
-  if (params.sanitizeUIResourceMarkers === true) {
-    const sanitized = sanitizeUIResourceContent(content);
-    if (sanitized !== content) {
-      result = sanitized as unknown[];
-    }
+  const sanitized = sanitizeUIResourceContent(content, params.sanitizeUIResourceMarkers === true);
+  if (sanitized !== content) {
+    result = sanitized as unknown[];
   }
 
   for (let i = 0; i < content.length; i++) {

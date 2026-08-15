@@ -6,7 +6,7 @@ import { directive } from 'micromark-extension-directive';
 import { gfm } from 'micromark-extension-gfm';
 import { math } from 'micromark-extension-llm-math';
 import { decodeString } from 'micromark-util-decode-string';
-import { ContentTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 
 const UI_RESOURCE_PATTERN = /\\ui\{[\w]+(?:,[\w]+)*\}/g;
 const MARKDOWN_ESCAPE_OR_REFERENCE = /\\(.)|&(#(?:\d{1,7}|x[\da-f]{1,6})|[\da-z]{1,31});/gi;
@@ -113,7 +113,7 @@ function sanitizeTextPart(part: Record<string, unknown>): unknown {
 }
 
 /** Recursively sanitize assistant text parts, including persisted subagent content. */
-export function sanitizeUIResourceContent(content: unknown): unknown {
+export function sanitizeUIResourceContent(content: unknown, sanitizeTextParts = true): unknown {
   if (!Array.isArray(content)) {
     return content;
   }
@@ -127,21 +127,28 @@ export function sanitizeUIResourceContent(content: unknown): unknown {
 
     let sanitizedPart: unknown = part;
     const record = part as Record<string, unknown>;
-    if (record.type === ContentTypes.TEXT) {
+    if (sanitizeTextParts && record.type === ContentTypes.TEXT) {
       sanitizedPart = sanitizeTextPart(record);
     }
 
     const current = sanitizedPart as Record<string, unknown>;
     if (current.tool_call != null && typeof current.tool_call === 'object') {
       const toolCall = current.tool_call as Record<string, unknown>;
+      let sanitizedToolCall = toolCall;
+      if (toolCall.name === Constants.SUBAGENT && typeof toolCall.output === 'string') {
+        const output = stripUIResourceMarkers(toolCall.output);
+        if (output !== toolCall.output) {
+          sanitizedToolCall = { ...sanitizedToolCall, output };
+        }
+      }
       if (Array.isArray(toolCall.subagent_content)) {
         const subagentContent = sanitizeUIResourceContent(toolCall.subagent_content);
         if (subagentContent !== toolCall.subagent_content) {
-          sanitizedPart = {
-            ...current,
-            tool_call: { ...toolCall, subagent_content: subagentContent },
-          };
+          sanitizedToolCall = { ...sanitizedToolCall, subagent_content: subagentContent };
         }
+      }
+      if (sanitizedToolCall !== toolCall) {
+        sanitizedPart = { ...current, tool_call: sanitizedToolCall };
       }
     }
 

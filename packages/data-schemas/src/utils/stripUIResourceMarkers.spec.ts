@@ -1,4 +1,4 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 import { sanitizeUIResourceContent, stripUIResourceMarkers } from './stripUIResourceMarkers';
 
 describe('stripUIResourceMarkers', () => {
@@ -97,6 +97,47 @@ describe('stripUIResourceMarkers', () => {
             {
               type: ContentTypes.TEXT,
               text: { value: 'Before  after', annotations: [{ type: 'citation' }] },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it('preserves top-level user text while sanitizing assistant-rendered subagent fields', () => {
+    const content = [
+      { type: ContentTypes.TEXT, text: 'User example \\ui{literal}' },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          name: Constants.SUBAGENT,
+          output: 'Legacy \\ui{legacy} output',
+          subagent_content: [
+            { type: ContentTypes.TEXT, text: 'Nested \\ui{nested} content' },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: {
+                name: Constants.SUBAGENT,
+                output: 'Deep \\ui{deep} output',
+              },
+            },
+          ],
+        },
+      },
+    ];
+
+    expect(sanitizeUIResourceContent(content, false)).toEqual([
+      { type: ContentTypes.TEXT, text: 'User example \\ui{literal}' },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          name: Constants.SUBAGENT,
+          output: 'Legacy  output',
+          subagent_content: [
+            { type: ContentTypes.TEXT, text: 'Nested  content' },
+            {
+              type: ContentTypes.TOOL_CALL,
+              tool_call: { name: Constants.SUBAGENT, output: 'Deep  output' },
             },
           ],
         },

@@ -29,8 +29,9 @@ function sanitizeImportedMessage(message) {
     ...message,
     ...(sanitizeMarkers &&
       typeof message.text === 'string' && { text: stripUIResourceMarkers(message.text) }),
-    ...(sanitizeMarkers &&
-      Array.isArray(message.content) && { content: sanitizeUIResourceContent(message.content) }),
+    ...(Array.isArray(message.content) && {
+      content: sanitizeUIResourceContent(message.content, sanitizeMarkers),
+    }),
     ...(Array.isArray(message.attachments) && {
       attachments: message.attachments.filter(
         (attachment) => attachment?.type !== Tools.ui_resources,

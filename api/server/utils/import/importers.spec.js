@@ -957,7 +957,17 @@ describe('importLibreChatConvo', () => {
       parentMessageId: Constants.NO_PARENT,
       text: 'Example: \\ui{literal}',
       isCreatedByUser: true,
-      content: [{ type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' }],
+      content: [
+        { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            name: Constants.SUBAGENT,
+            output: 'Legacy \\ui{nested} output',
+            subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested \\ui{nested} text' }],
+          },
+        },
+      ],
       attachments: [{ type: Tools.ui_resources, [Tools.ui_resources]: [] }],
     };
     const jsonData = {
@@ -974,6 +984,14 @@ describe('importLibreChatConvo', () => {
     expect(importBatchBuilder.messages[0].text).toBe('Example: \\ui{literal}');
     expect(importBatchBuilder.messages[0].content).toEqual([
       { type: ContentTypes.TEXT, text: 'Part: \\ui{literal}' },
+      {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          name: Constants.SUBAGENT,
+          output: 'Legacy  output',
+          subagent_content: [{ type: ContentTypes.TEXT, text: 'Nested  text' }],
+        },
+      },
     ]);
     expect(importBatchBuilder.messages[0].attachments).toEqual([]);
   });
