@@ -1,4 +1,18 @@
-import type { Agents } from './types/agents';
+/**
+ * The timestamp pair these helpers derive from.
+ *
+ * Both stamps are optional here even though `closed_at` is required on
+ * `Agents.RunStepClosedEvent`, because not every caller holds a well-typed
+ * event: the Redis replay branch reconstructs closures from persisted JSON and
+ * legitimately has nothing stronger than "might be a number". Widening the
+ * parameter rather than making callers assert keeps the guards below as the
+ * single place that decides what is trustworthy — an assertion at a call site
+ * would move that decision somewhere it cannot be enforced.
+ */
+export interface RunStepTimestamps {
+  created_at?: number;
+  closed_at?: number;
+}
 
 /**
  * Below this, a duration is noise rather than information: sub-second tool
@@ -26,10 +40,7 @@ export const MIN_REPORTABLE_RUN_STEP_DURATION_MS = 1000;
  * - Non-finite input is treated as absent instead of propagating `NaN` into
  *   rendering.
  */
-export function getRunStepDurationMs(closed: {
-  created_at?: number;
-  closed_at?: number;
-}): number | undefined {
+export function getRunStepDurationMs(closed: RunStepTimestamps): number | undefined {
   const { created_at: createdAt, closed_at: closedAt } = closed;
   if (typeof createdAt !== 'number' || typeof closedAt !== 'number') {
     return undefined;
@@ -51,9 +62,7 @@ export function isReportableRunStepDuration(durationMs?: number): durationMs is 
  * (live SSE, server-side aggregation, and Redis replay reconstruction): the
  * value to persist, or `undefined` when nothing should be written.
  */
-export function getReportableRunStepDurationMs(
-  closed: Pick<Agents.RunStepClosedEvent, 'created_at' | 'closed_at'>,
-): number | undefined {
+export function getReportableRunStepDurationMs(closed: RunStepTimestamps): number | undefined {
   const durationMs = getRunStepDurationMs(closed);
   return isReportableRunStepDuration(durationMs) ? durationMs : undefined;
 }
