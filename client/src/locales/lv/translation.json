@@ -1805,6 +1805,7 @@
   "com_ui_skill_running": "Strādā {{0}}",
   "com_ui_skill_sr_public": "Publiskā prasme",
   "com_ui_skill_states_limit": "Jūs esat sasniedzis šādu ierobežojumu: {{0}} aktīva/neaktīva prasmju ignorēšana. Noņemiet dažas ignorēšanas iespējas, lai pārslēgtu jaunas prasmes.",
+  "com_ui_skill_toggle_active": "Pārslēgt prasmju aktīvo stāvokli",
   "com_ui_skill_unavailable": "Nepieejama prasme",
   "com_ui_skill_update_conflict": "Cits labojums tika saglabāts pirms jūsu. Jaunākās versijas atkārtota ielāde.",
   "com_ui_skill_update_error": "Neizdevās saglabāt prasmi",

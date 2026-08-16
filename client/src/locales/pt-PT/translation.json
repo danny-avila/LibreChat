@@ -1198,6 +1198,7 @@
   "com_ui_skill_running": "A executar {{0}}",
   "com_ui_skill_sr_public": "Competência pública",
   "com_ui_skill_states_limit": "Atingiu o limite de {{0}} substituições de competências ativas/inativas. Remova algumas substituições para ativar novas competências.",
+  "com_ui_skill_toggle_active": "Alternar estado ativo da competência",
   "com_ui_skill_updated": "Competência guardada",
   "com_ui_skill_upload": "Carregar uma competência",
   "com_ui_special_var_current_date": "Data Atual",

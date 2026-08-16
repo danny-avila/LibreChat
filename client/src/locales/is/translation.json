@@ -1799,6 +1799,7 @@
   "com_ui_skill_running": "Keyrir {{0}}",
   "com_ui_skill_sr_public": "Opinber færni",
   "com_ui_skill_states_limit": "Þú hefur náð hámarki {{0}} virkra/óvirkra frávika fyrir færni. Fjarlægðu einhver frávik til að kveikja á nýrri færni.",
+  "com_ui_skill_toggle_active": "Víxla virkni færni",
   "com_ui_skill_unavailable": "Ótiltæk færni",
   "com_ui_skill_update_conflict": "Aðrar breytingar voru vistaðar á undan þínum. Hleð nýjustu útgáfu.",
   "com_ui_skill_update_error": "Gat ekki vistað færni",
