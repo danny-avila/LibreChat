@@ -1205,16 +1205,18 @@ export const tModelSpecPresetSchema = tPresetSchema
   )
   .superRefine((preset, ctx) => {
     /**
-     * Omission is only legal when the endpoint is inferable. An explicit
-     * `endpoint: null` stays accepted — it validated before the key became
-     * optional, so rejecting it now would break previously valid configs.
+     * Omission is only legal when the endpoint is inferable, which requires a
+     * NON-EMPTY `agent_id` — form-backed writers persist untouched fields as
+     * `''`, which names no agent. An explicit `endpoint: null` stays accepted:
+     * it validated before the key became optional, so rejecting it now would
+     * break previously valid configs.
      */
-    if (preset.endpoint === undefined && preset.agent_id == null) {
+    if (preset.endpoint === undefined && !preset.agent_id) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['endpoint'],
         message:
-          'endpoint is required unless the preset names an agent_id (the agents endpoint is then inferred)',
+          'endpoint is required unless the preset names a non-empty agent_id (the agents endpoint is then inferred)',
       });
     }
   });

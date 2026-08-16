@@ -1230,6 +1230,35 @@ describe('specsConfigSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  /** Form-backed writers persist untouched fields as `''`, which names no agent. */
+  it('rejects an endpoint-less preset whose agent_id is an empty string', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [{ name: 'empty-agent', label: 'Empty Agent', preset: { agent_id: '' } }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /**
+   * An explicit `endpoint: null` is a statement, not an omission: such specs
+   * validated and stayed inert before inference existed, and must remain so.
+   */
+  it('does not infer over an explicit null endpoint, even with an agent_id', () => {
+    const parsed = specsConfigSchema.parse({
+      list: [
+        {
+          name: 'null-agent-spec',
+          label: 'Null Agent Spec',
+          preset: { endpoint: null, agent_id: 'agent_abc' },
+        },
+      ],
+    });
+
+    const materialized = materializeModelSpecEndpoints(parsed);
+
+    expect(materialized.list[0].preset.endpoint).toBeNull();
+    expect(materialized).toBe(parsed);
+  });
+
   it('materializes the inferred endpoint onto parsed agent specs', () => {
     const parsed = specsConfigSchema.parse({
       list: [

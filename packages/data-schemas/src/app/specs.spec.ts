@@ -51,6 +51,23 @@ describe('processModelSpecs', () => {
     expect(result?.list?.map((spec) => spec?.name)).toEqual(['live-spec']);
   });
 
+  /** Prior behavior for previously valid configs: a null endpoint means skip, even with an agent. */
+  it('still skips specs with an explicit null endpoint, even when they name an agent', () => {
+    const result = processModelSpecs(
+      undefined,
+      specsConfig([
+        {
+          name: 'null-agent-spec',
+          label: 'Null Agent Spec',
+          preset: { endpoint: null, agent_id: 'agent_abc' },
+        },
+      ]),
+      undefined,
+    );
+
+    expect(result?.list).toHaveLength(0);
+  });
+
   it('keeps an explicit endpoint over the inferred one', () => {
     const result = processModelSpecs(
       undefined,

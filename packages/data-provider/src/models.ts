@@ -111,7 +111,17 @@ export function resolveModelSpecEndpoint(
   if (preset?.endpoint != null) {
     return preset.endpoint;
   }
-  return preset?.agent_id != null ? EModelEndpoint.agents : undefined;
+  /**
+   * An explicit `endpoint: null` is a statement, not an omission — such specs
+   * validated (and were skipped downstream) before inference existed, so
+   * inferring here would silently activate them. Only an absent key infers,
+   * and only from a non-empty `agent_id`: form-backed writers persist
+   * untouched fields as `''`, which names no agent.
+   */
+  if (preset?.endpoint === null) {
+    return undefined;
+  }
+  return preset?.agent_id ? EModelEndpoint.agents : undefined;
 }
 
 /**
