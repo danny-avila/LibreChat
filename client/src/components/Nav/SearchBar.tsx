@@ -76,28 +76,15 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   );
 
   /**
-   * The pending callback writes to shared state, so it outlives this instance.
-   * Crossing the breakpoint mid-keystroke swaps the list's field for the bottom
-   * bar's; without this the departing instance's timer still fires and
-   * reinstates the query the replacement has since edited or cleared.
+   * The commit writes to shared state, so a timer left running outlives the
+   * field that scheduled it. This one publishes instead of discarding, because
+   * the field can leave with work pending and no successor to inherit it: the
+   * bottom bar drops the search entirely when you switch panels, and abandoning
+   * the commit there would strand `isTyping` with results the box no longer
+   * matches. Flushing is synchronous with the unmount, so it lands before any
+   * edit a replacement field might make and cannot overwrite one.
    */
-  useEffect(() => () => debouncedSetDebouncedQuery.cancel(), [debouncedSetDebouncedQuery]);
-
-  /**
-   * Cancelling alone would strand a handoff where the user simply stops typing:
-   * the arriving field shows the text, but the commit that would have published
-   * it died with its scheduler, leaving the list filtered by the previous query
-   * and `isTyping` never cleared. Captured at first render, so it reflects the
-   * moment of the swap rather than any later state.
-   */
-  const inheritedQuery = useRef(search.query !== search.debouncedQuery ? search.query : null);
-
-  useEffect(() => {
-    if (inheritedQuery.current == null) {
-      return;
-    }
-    debouncedSetDebouncedQuery(inheritedQuery.current);
-  }, [debouncedSetDebouncedQuery]);
+  useEffect(() => () => debouncedSetDebouncedQuery.flush(), [debouncedSetDebouncedQuery]);
 
   const clearText = useCallback(
     (pathname?: string) => {

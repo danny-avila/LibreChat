@@ -102,11 +102,11 @@ describe('SearchBar across a breakpoint remount', () => {
     });
   });
 
-  describe('what the departing instance must not do', () => {
+  describe('what the departing instance owes the search state', () => {
     beforeEach(() => jest.useFakeTimers());
     afterEach(() => jest.useRealTimers());
 
-    /** Without this the two negative cases below would pass on a dead debounce. */
+    /** Without this the cases below could pass on a debounce that never fires. */
     it('commits the typed query once typing settles', () => {
       render(<SearchBar />);
 
@@ -116,7 +116,7 @@ describe('SearchBar across a breakpoint remount', () => {
       expect(mockSearchState.debouncedQuery).toBe('mobile nav');
     });
 
-    /** The cancel must be bound to unmount, not to the debounce being rebuilt. */
+    /** The flush must be bound to unmount, not to the debounce being rebuilt. */
     it('keeps its pending query when its dependencies are rebuilt mid-keystroke', () => {
       const { rerender } = render(<SearchBar />);
 
@@ -128,33 +128,30 @@ describe('SearchBar across a breakpoint remount', () => {
       expect(mockSearchState.debouncedQuery).toBe('mobile nav');
     });
 
-    it('drops its pending query when it is replaced mid-keystroke', () => {
+    /**
+     * Switching panels drops the bottom bar's field with no replacement, so a
+     * discarded commit would leave results stale and `isTyping` stuck on.
+     */
+    it('publishes its pending query on the way out', () => {
       const { unmount } = render(<SearchBar />);
 
       type('mobile nav');
       unmount();
-      settle();
-
-      expect(mockSearchState.debouncedQuery).toBe('');
-    });
-
-    /**
-     * The swap must not strand a user who simply stops typing: the arriving
-     * field takes the uncommitted query over rather than showing text no
-     * search is running on.
-     */
-    it('commits the query it inherited uncommitted', () => {
-      mockSearchState = { ...mockSearchState, query: 'mobile nav', isTyping: true };
-
-      render(<SearchBar />);
-      settle();
 
       expect(mockSearchState.debouncedQuery).toBe('mobile nav');
       expect(mockSearchState.isTyping).toBe(false);
     });
 
-    it('lets an edit of the arriving field beat the inherited query', () => {
-      mockSearchState = { ...mockSearchState, query: 'mobile nav', isTyping: true };
+    /**
+     * The original defect: a timer surviving its instance and landing on top of
+     * whatever the replacement field has since typed. Flushing at unmount is
+     * synchronous, so the later edit is always last.
+     */
+    it('cannot overwrite what the field replacing it typed', () => {
+      const { unmount } = render(<SearchBar />);
+
+      type('mobile nav');
+      unmount();
 
       render(<SearchBar />);
       type('full width');
@@ -182,6 +179,17 @@ describe('SearchBar across a breakpoint remount', () => {
       type('mobile nav');
       fireEvent.click(screen.getByLabelText('com_ui_clear_search'));
       settle();
+
+      expect(mockSearchState.debouncedQuery).toBe('');
+    });
+
+    /** A cleared field has nothing pending, so leaving must not resurrect it. */
+    it('publishes nothing after the field was cleared', () => {
+      const { unmount } = render(<SearchBar />);
+
+      type('mobile nav');
+      fireEvent.click(screen.getByLabelText('com_ui_clear_search'));
+      unmount();
 
       expect(mockSearchState.debouncedQuery).toBe('');
     });

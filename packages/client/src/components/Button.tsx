@@ -19,16 +19,7 @@ type ButtonVariantOptions =
         | 'section-action'
         | null
         | undefined;
-      size?:
-        | 'default'
-        | 'icon'
-        | 'icon-sm'
-        | 'icon-xs'
-        | 'sm'
-        | 'lg'
-        | 'theme'
-        | null
-        | undefined;
+      size?: 'default' | 'icon' | 'icon-sm' | 'icon-xs' | 'sm' | 'lg' | 'theme' | null | undefined;
       shape?: 'default' | 'theme' | null | undefined;
     } & ClassProp)
   | undefined;
