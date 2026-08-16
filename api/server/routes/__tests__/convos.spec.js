@@ -543,7 +543,11 @@ describe('Convos Routes', () => {
       expect(saveConvo).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: true },
-        { context: `POST /api/convos/archive ${mockConversationId}` },
+        {
+          context: `POST /api/convos/archive ${mockConversationId}`,
+          preserveUpdatedAt: true,
+          noUpsert: true,
+        },
       );
     });
 
@@ -572,7 +576,11 @@ describe('Convos Routes', () => {
       expect(saveConvo).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: false },
-        { context: `POST /api/convos/archive ${mockConversationId}` },
+        {
+          context: `POST /api/convos/archive ${mockConversationId}`,
+          preserveUpdatedAt: true,
+          noUpsert: true,
+        },
       );
     });
 
@@ -663,7 +671,11 @@ describe('Convos Routes', () => {
       expect(saveConvo).toHaveBeenCalledWith(
         { userId: 'test-user-123' },
         { conversationId: mockConversationId, pinned: true },
-        { context: `POST /api/convos/pin ${mockConversationId}` },
+        {
+          context: `POST /api/convos/pin ${mockConversationId}`,
+          preserveUpdatedAt: true,
+          noUpsert: true,
+        },
       );
     });
 
@@ -678,8 +690,25 @@ describe('Convos Routes', () => {
       expect(saveConvo).toHaveBeenCalledWith(
         { userId: 'test-user-123' },
         { conversationId: mockConversationId, pinned: false },
-        { context: `POST /api/convos/pin ${mockConversationId}` },
+        {
+          context: `POST /api/convos/pin ${mockConversationId}`,
+          preserveUpdatedAt: true,
+          noUpsert: true,
+        },
       );
+    });
+
+    /** With timestamps suppressed, an upsert would insert a conversation carrying
+     * neither createdAt nor updatedAt, so an unknown id has to be rejected instead. */
+    it('should return 404 when the conversation does not exist', async () => {
+      saveConvo.mockResolvedValue(null);
+
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: 'missing-convo', pinned: true } });
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: 'Conversation not found' });
     });
 
     it('should return 400 when conversationId is missing', async () => {

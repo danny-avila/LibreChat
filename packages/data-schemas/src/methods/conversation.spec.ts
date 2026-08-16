@@ -389,6 +389,161 @@ describe('Conversation Operations', () => {
       expect(new Date(secondSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
       expect(secondSave?.title).toBe('Updated title');
     });
+
+    describe('preserveUpdatedAt', () => {
+      const anchor = new Date('2026-02-11T15:28:18.561Z');
+
+      const seedAgedConvo = async () => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Date And Time Test',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: anchor,
+          updatedAt: anchor,
+        });
+        return conversationId;
+      };
+
+      /** The sidebar orders by `updatedAt`, so a pin that bumped it would hoist an
+       * untouched chat into Today and drop it back out of place on unpin. */
+      it('leaves updatedAt untouched across a pin and unpin round trip', async () => {
+        const conversationId = await seedAgedConvo();
+
+        const pinned = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, pinned: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+        const unpinned = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, pinned: false },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(pinned?.pinned).toBe(true);
+        expect(unpinned?.pinned).toBe(false);
+        expect(new Date(pinned?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+        expect(new Date(unpinned?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+        expect(new Date(pinned?.createdAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      /** Archiving files a chat away rather than touching it, and unarchiving has to
+       * restore it to its real place in the date groups. */
+      it('leaves updatedAt untouched across an archive and unarchive round trip', async () => {
+        const conversationId = await seedAgedConvo();
+
+        const archived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+        const unarchived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: false },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(archived?.isArchived).toBe(true);
+        expect(unarchived?.isArchived).toBe(false);
+        expect(new Date(archived?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+        expect(new Date(unarchived?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      /** A pin carries a preserved older timestamp, so the project it belongs to must
+       * not be dragged back to it while the project holds newer conversations. */
+      it('does not drag a project pointer back when only metadata changes', async () => {
+        const project = await ChatProject.create({
+          user: 'user123',
+          name: 'Pinned project',
+          conversationCount: 0,
+          lastConversationAt: null,
+          lastConversationId: null,
+        });
+        const newer = uuidv4();
+        const older = uuidv4();
+        const newerAt = new Date('2026-08-01T00:00:00.000Z');
+        for (const [id, when] of [
+          [newer, newerAt],
+          [older, anchor],
+        ] as Array<[string, Date]>) {
+          await Conversation.collection.insertOne({
+            conversationId: id,
+            user: 'user123',
+            title: id,
+            endpoint: EModelEndpoint.openAI,
+            expiredAt: null,
+            isArchived: false,
+            chatProjectId: String(project._id),
+            createdAt: when,
+            updatedAt: when,
+          });
+        }
+
+        await saveConvo(
+          { userId: 'user123' },
+          { conversationId: older, pinned: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        const after = await ChatProject.findById(project._id).lean<{
+          lastConversationAt: Date;
+          lastConversationId: string;
+        }>();
+        expect(new Date(after?.lastConversationAt ?? 0).toISOString()).toBe(newerAt.toISOString());
+        expect(after?.lastConversationId).toBe(newer);
+      });
+
+      /** Under RetentionMode.ALL a legacy chat also gets an isTemporary backfill after
+       * the main write; that second update has to stay silent too. */
+      it('keeps updatedAt through the retention backfill', async () => {
+        const conversationId = uuidv4();
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'legacy chat with no isTemporary',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: anchor,
+          updatedAt: anchor,
+        });
+
+        const result = await saveConvo(
+          {
+            userId: 'user123',
+            interfaceConfig: { retentionMode: RetentionMode.ALL, temporaryChatRetention: 24 },
+          },
+          { conversationId, isArchived: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(result?.isArchived).toBe(true);
+        const stored = await Conversation.findOne({ conversationId }).lean<IConversation>();
+        expect(new Date(stored?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      it('still bumps updatedAt for an ordinary save', async () => {
+        const conversationId = await seedAgedConvo();
+
+        const result = await saveConvo({ userId: 'user123' }, { conversationId, title: 'Renamed' });
+
+        expect(new Date(result?.updatedAt ?? 0).getTime()).toBeGreaterThan(anchor.getTime());
+      });
+
+      it('does not insert a timestampless conversation for an unknown id', async () => {
+        const result = await saveConvo(
+          { userId: 'user123' },
+          { conversationId: uuidv4(), pinned: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(result).toBeNull();
+      });
+    });
   });
 
   describe('isTemporary conversation handling', () => {

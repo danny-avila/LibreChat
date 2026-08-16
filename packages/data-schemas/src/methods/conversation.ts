@@ -33,6 +33,7 @@ export interface ConversationMethods {
       unsetFields?: Record<string, number>;
       noUpsert?: boolean;
       createdAtOnInsert?: Date;
+      preserveUpdatedAt?: boolean;
     },
   ): Promise<IConversation | { message: string } | null>;
   bulkSaveConvos(conversations: Array<Record<string, unknown>>): Promise<unknown>;
@@ -208,6 +209,7 @@ export function createConversationMethods(
       unsetFields?: Record<string, number>;
       noUpsert?: boolean;
       createdAtOnInsert?: Date;
+      preserveUpdatedAt?: boolean;
     },
   ) {
     try {
@@ -287,7 +289,13 @@ export function createConversationMethods(
         !Number.isNaN(metadata.createdAtOnInsert.getTime())
           ? metadata.createdAtOnInsert
           : undefined;
-      if (createdAtOnInsert) {
+      /**
+       * Metadata-only edits (pinning, archiving) must not read as activity: the
+       * sidebar orders chats by `updatedAt`, so bumping it would hoist an untouched
+       * chat to Today and misplace it again the moment the flag is cleared.
+       */
+      const preserveUpdatedAt = metadata?.preserveUpdatedAt === true;
+      if (createdAtOnInsert && !preserveUpdatedAt) {
         update.updatedAt = new Date();
       }
 
@@ -306,7 +314,7 @@ export function createConversationMethods(
           new: true,
           upsert: metadata?.noUpsert !== true,
           includeResultMetadata: true,
-          ...(createdAtOnInsert ? { timestamps: false } : {}),
+          ...(createdAtOnInsert || preserveUpdatedAt ? { timestamps: false } : {}),
         },
       )) as unknown as {
         value:
@@ -333,9 +341,13 @@ export function createConversationMethods(
         (conversation.isTemporary == null ||
           (conversation.isTemporary === false && conversation.$isDefault('isTemporary')))
       ) {
+        /* This backfill runs after the main write, so it needs the same timestamp
+           suppression: otherwise the first pin or archive of a legacy chat under
+           `RetentionMode.ALL` bumps `updatedAt` here and lands in Today anyway. */
         await Conversation.updateOne(
           { _id: conversation._id, isTemporary: { $ne: false } },
           { $set: { isTemporary: false } },
+          preserveUpdatedAt ? { timestamps: false } : {},
         );
         conversation.isTemporary = false;
       }
