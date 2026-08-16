@@ -1173,24 +1173,36 @@ export const tQueryParamsSchema = tConversationSchema
  * `spec` is set by the client from `modelSpec.name` via `getModelSpecPreset` and is
  * omitted to avoid duplicate configuration surface.
  */
-export const tModelSpecPresetSchema = tPresetSchema.omit({
-  conversationId: true,
-  presetId: true,
-  title: true,
-  defaultPreset: true,
-  order: true,
-  isArchived: true,
-  user: true,
-  messages: true,
-  tags: true,
-  file_ids: true,
-  expiredAt: true,
-  parentMessageId: true,
-  resendImages: true,
-  chatGptLabel: true,
-  presetOverride: true,
-  spec: true,
-});
+export const tModelSpecPresetSchema = tPresetSchema
+  .omit({
+    conversationId: true,
+    presetId: true,
+    title: true,
+    defaultPreset: true,
+    order: true,
+    isArchived: true,
+    user: true,
+    messages: true,
+    tags: true,
+    file_ids: true,
+    expiredAt: true,
+    parentMessageId: true,
+    resendImages: true,
+    chatGptLabel: true,
+    presetOverride: true,
+    spec: true,
+  })
+  .merge(
+    z.object({
+      /**
+       * Optional here, unlike `tPresetSchema`, where the key is required (though
+       * nullable). A preset naming an `agent_id` has an unambiguous endpoint, so
+       * config may omit it and `resolveModelSpecEndpoint` infers `agents` when
+       * specs are materialized at config load.
+       */
+      endpoint: extendedModelEndpointSchema.nullish(),
+    }),
+  );
 
 export type TModelSpecPreset = z.infer<typeof tModelSpecPresetSchema>;
 

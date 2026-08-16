@@ -20,7 +20,7 @@ import {
   ReasoningParameterFormat,
   ReasoningResponseKey,
 } from '../src/schemas';
-import { specsConfigSchema } from '../src/models';
+import { specsConfigSchema, materializeModelSpecEndpoints } from '../src/models';
 import { FileSources } from '../src/types/files';
 
 describe('paramDefinitionSchema', () => {
@@ -1191,6 +1191,55 @@ describe('specsConfigSchema', () => {
   it('still rejects null list', () => {
     const result = specsConfigSchema.safeParse({ list: null });
     expect(result.success).toBe(false);
+  });
+
+  /**
+   * The endpoint is inferable from `agent_id`, so config validation must not
+   * reject the spec before `materializeModelSpecEndpoints` can fill it in.
+   */
+  it('accepts an agent spec whose preset omits endpoint', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [
+        {
+          name: 'agent-spec',
+          label: 'Agent Spec',
+          preset: { agent_id: 'agent_abc' },
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list[0].preset.agent_id).toBe('agent_abc');
+      expect(result.data.list[0].preset.endpoint).toBeUndefined();
+    }
+  });
+
+  it('materializes the inferred endpoint onto parsed agent specs', () => {
+    const parsed = specsConfigSchema.parse({
+      list: [
+        { name: 'agent-spec', label: 'Agent Spec', preset: { agent_id: 'agent_abc' } },
+        {
+          name: 'explicit-spec',
+          label: 'Explicit Spec',
+          preset: { endpoint: EModelEndpoint.openAI, agent_id: 'agent_abc' },
+        },
+        { name: 'bare-spec', label: 'Bare Spec', preset: { endpoint: null } },
+      ],
+    });
+
+    const materialized = materializeModelSpecEndpoints(parsed);
+
+    expect(materialized.list[0].preset.endpoint).toBe(EModelEndpoint.agents);
+    expect(materialized.list[1].preset.endpoint).toBe(EModelEndpoint.openAI);
+    expect(materialized.list[1]).toBe(parsed.list[1]);
+    expect(materialized.list[2].preset.endpoint).toBeNull();
+  });
+
+  it('returns the same object when every spec already has an endpoint', () => {
+    const parsed = specsConfigSchema.parse({
+      list: [{ name: 'spec', label: 'Spec', preset: { endpoint: EModelEndpoint.openAI } }],
+    });
+    expect(materializeModelSpecEndpoints(parsed)).toBe(parsed);
   });
 
   it('rejects model spec subagent ids above the shared cap', () => {

@@ -96,14 +96,60 @@ export const modelSpecSubagentsSchema = z.object({
  *
  * Shared so the selector and the request pipeline resolve a spec identically.
  */
+/**
+ * Structural view of the fields endpoint resolution reads, so partial spec
+ * shapes (e.g. `AppConfig['modelSpecs']`, which is deep-partial) qualify.
+ */
+type ModelSpecEndpointSource = {
+  preset?: Pick<TModelSpecPreset, 'endpoint' | 'agent_id'> | null;
+};
+
 export function resolveModelSpecEndpoint(
-  modelSpec: Pick<TModelSpec, 'preset'> | undefined,
+  modelSpec: ModelSpecEndpointSource | undefined,
 ): string | undefined {
   const preset = modelSpec?.preset;
   if (preset?.endpoint != null) {
     return preset.endpoint;
   }
   return preset?.agent_id != null ? EModelEndpoint.agents : undefined;
+}
+
+/**
+ * Writes each spec's resolved endpoint back onto its preset so every consumer —
+ * endpoint matching, the selector, access filters, startup presets, provider-key
+ * reachability — reads a complete spec instead of re-deriving it. Apply once
+ * where the effective config is assembled (YAML load and DB-override merge);
+ * downstream code then needs no awareness of inference.
+ *
+ * Returns the original object, and the original spec objects, when nothing
+ * needs filling in, so cached configs and memoized consumers see no new
+ * identities.
+ */
+export function materializeModelSpecEndpoints<
+  T extends { list?: ModelSpecEndpointSource[] } | null | undefined,
+>(modelSpecs: T): T {
+  const list = modelSpecs?.list;
+  if (!list?.length) {
+    return modelSpecs;
+  }
+
+  let changed = false;
+  const materialized = list.map((spec) => {
+    if (spec?.preset == null || spec.preset.endpoint != null) {
+      return spec;
+    }
+    const endpoint = resolveModelSpecEndpoint(spec);
+    if (endpoint == null) {
+      return spec;
+    }
+    changed = true;
+    return { ...spec, preset: { ...spec.preset, endpoint } };
+  });
+
+  if (!changed) {
+    return modelSpecs;
+  }
+  return { ...modelSpecs, list: materialized } as T;
 }
 
 export const tModelSpecSchema = z.object({
