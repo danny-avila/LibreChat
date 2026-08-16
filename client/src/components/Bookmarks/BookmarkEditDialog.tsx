@@ -95,7 +95,6 @@ const BookmarkEditDialog = ({
         main={
           <BookmarkForm
             tags={tags}
-            setOpen={setOpen}
             mutation={mutation}
             conversationId={conversationId}
             bookmark={bookmark}

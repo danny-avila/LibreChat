@@ -1,13 +1,12 @@
 import React, { createRef } from 'react';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import BookmarkForm from '../BookmarkForm';
 import type { TConversationTag } from 'librechat-data-provider';
+import BookmarkForm from '../BookmarkForm';
 
 const mockMutate = jest.fn();
 const mockShowToast = jest.fn();
 const mockGetQueryData = jest.fn();
-const mockSetOpen = jest.fn();
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, params?: Record<string, unknown>) => {
@@ -136,7 +135,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
               typeof import('~/data-provider').useConversationTagMutation
             >
           }
-          setOpen={mockSetOpen}
           formRef={formRef}
         />,
       );
@@ -160,7 +158,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
         );
       });
       expect(mockShowToast).not.toHaveBeenCalled();
-      expect(mockSetOpen).toHaveBeenCalledWith(false);
     });
 
     it('should not submit when both tag and description are unchanged', async () => {
@@ -179,7 +176,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
               typeof import('~/data-provider').useConversationTagMutation
             >
           }
-          setOpen={mockSetOpen}
           formRef={formRef}
         />,
       );
@@ -191,12 +187,11 @@ describe('BookmarkForm - Bookmark Editing', () => {
       await waitFor(() => {
         expect(mockMutate).not.toHaveBeenCalled();
       });
-      expect(mockSetOpen).not.toHaveBeenCalled();
     });
   });
 
-  describe('Renaming a tag to an existing tag (should show error)', () => {
-    it('should show error toast when renaming to an existing tag name (via allTags)', async () => {
+  describe('Renaming a tag to an existing tag (should show inline error)', () => {
+    it('should show an inline error when renaming to an existing tag name (via allTags)', async () => {
       const existingBookmark = createMockBookmark({
         tag: 'Original Tag',
         description: 'Description',
@@ -218,7 +213,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
               typeof import('~/data-provider').useConversationTagMutation
             >
           }
-          setOpen={mockSetOpen}
           formRef={formRef}
         />,
       );
@@ -234,16 +228,15 @@ describe('BookmarkForm - Bookmark Editing', () => {
       });
 
       await waitFor(() => {
-        expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'This bookmark already exists',
-          status: 'warning',
-        });
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'A bookmark with this title already exists',
+        );
       });
+      expect(mockShowToast).not.toHaveBeenCalled();
       expect(mockMutate).not.toHaveBeenCalled();
-      expect(mockSetOpen).not.toHaveBeenCalled();
     });
 
-    it('should show error toast when renaming to an existing tag name (via tags prop)', async () => {
+    it('should show an inline error when renaming to an existing tag name (via tags prop)', async () => {
       const existingBookmark = createMockBookmark({
         tag: 'Original Tag',
         description: 'Description',
@@ -260,7 +253,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
               typeof import('~/data-provider').useConversationTagMutation
             >
           }
-          setOpen={mockSetOpen}
           formRef={formRef}
         />,
       );
@@ -276,13 +268,12 @@ describe('BookmarkForm - Bookmark Editing', () => {
       });
 
       await waitFor(() => {
-        expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'This bookmark already exists',
-          status: 'warning',
-        });
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'A bookmark with this title already exists',
+        );
       });
+      expect(mockShowToast).not.toHaveBeenCalled();
       expect(mockMutate).not.toHaveBeenCalled();
-      expect(mockSetOpen).not.toHaveBeenCalled();
     });
   });
 
@@ -303,7 +294,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
               typeof import('~/data-provider').useConversationTagMutation
             >
           }
-          setOpen={mockSetOpen}
           formRef={formRef}
         />,
       );
@@ -327,7 +317,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
         );
       });
       expect(mockShowToast).not.toHaveBeenCalled();
-      expect(mockSetOpen).toHaveBeenCalledWith(false);
     });
 
     it('should allow keeping the same tag name when editing (not trigger duplicate error)', async () => {
@@ -346,7 +335,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
               typeof import('~/data-provider').useConversationTagMutation
             >
           }
-          setOpen={mockSetOpen}
           formRef={formRef}
         />,
       );
@@ -396,7 +384,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
               typeof import('~/data-provider').useConversationTagMutation
             >
           }
-          setOpen={mockSetOpen}
           formRef={formRef}
         />,
       );
@@ -412,11 +399,11 @@ describe('BookmarkForm - Bookmark Editing', () => {
       });
 
       await waitFor(() => {
-        expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'This bookmark already exists',
-          status: 'warning',
-        });
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'A bookmark with this title already exists',
+        );
       });
+      expect(mockShowToast).not.toHaveBeenCalled();
       expect(mockMutate).not.toHaveBeenCalled();
     });
 
@@ -436,7 +423,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
               typeof import('~/data-provider').useConversationTagMutation
             >
           }
-          setOpen={mockSetOpen}
           formRef={formRef}
         />,
       );
@@ -472,7 +458,6 @@ describe('BookmarkForm - Bookmark Editing', () => {
               typeof import('~/data-provider').useConversationTagMutation
             >
           }
-          setOpen={mockSetOpen}
           formRef={formRef}
         />,
       );
