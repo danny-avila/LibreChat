@@ -63,6 +63,7 @@ const {
   cacheMCPServerTools,
 } = require('./Config');
 const { getLogStores } = require('~/cache');
+const { resolveImageToolArguments } = require('./MCP/images');
 
 const MAX_CACHE_SIZE = 1000;
 const lastReconnectAttempts = new Map();
@@ -725,6 +726,7 @@ async function reconnectServer({
  *
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {ServerRequest} [params.request] - The originating request, including resolved upload context.
  * @param {{ canUseServers: (user?: IUser) => Promise<boolean> }} [params.mcpPermissionContext] - Request-scoped MCP permission context.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
@@ -742,6 +744,7 @@ async function reconnectServer({
  */
 async function createMCPTools({
   res,
+  request,
   mcpPermissionContext,
   user,
   index,
@@ -809,6 +812,7 @@ async function createMCPTools({
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
       res,
+      request,
       mcpPermissionContext,
       user,
       provider,
@@ -837,6 +841,7 @@ async function createMCPTools({
  * Creates a single tool from the specified MCP Server via `toolKey`.
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {ServerRequest} [params.request] - The originating request, including resolved upload context.
  * @param {{ canUseServers: (user?: IUser) => Promise<boolean> }} [params.mcpPermissionContext] - Request-scoped MCP permission context.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.toolKey - The toolKey for the tool.
@@ -856,6 +861,7 @@ async function createMCPTools({
  */
 async function createMCPTool({
   res,
+  request,
   mcpPermissionContext,
   user,
   index,
@@ -992,6 +998,7 @@ async function createMCPTool({
 
   return createToolInstance({
     res,
+    request,
     mcpPermissionContext,
     user,
     requestBody,
@@ -1008,6 +1015,7 @@ async function createMCPTool({
 
 function createToolInstance({
   res,
+  request: capturedRequest,
   mcpPermissionContext,
   user: capturedUser = null,
   requestBody: capturedRequestBody,
@@ -1061,6 +1069,13 @@ function createToolInstance({
       const flowManager = getFlowStateManager(flowsCache);
       const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
+      const resolvedToolArguments = await resolveImageToolArguments({
+        serverName,
+        toolName,
+        toolArguments,
+        request: capturedRequest,
+        user: effectiveUser,
+      });
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
       const flowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
@@ -1092,7 +1107,7 @@ function createToolInstance({
         serverConfig: capturedServerConfig,
         toolName,
         provider,
-        toolArguments,
+        toolArguments: resolvedToolArguments,
         options: {
           signal: derivedSignal,
         },

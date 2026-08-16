@@ -1,5 +1,8 @@
 // Mock all dependencies - define mocks before imports
 const mockGetTenantId = jest.fn();
+const mockResolveImageToolArguments = jest.fn(({ toolArguments }) =>
+  Promise.resolve(toolArguments),
+);
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -85,6 +88,10 @@ jest.mock('~/models', () => ({
 
 jest.mock('./Tools/mcp', () => ({
   reinitMCPServer: jest.fn(),
+}));
+
+jest.mock('./MCP/images', () => ({
+  resolveImageToolArguments: (...args) => mockResolveImageToolArguments(...args),
 }));
 
 jest.mock('./GraphTokenService', () => ({
@@ -2087,6 +2094,68 @@ describe('User parameter passing tests', () => {
           serverName: 'test-server',
           toolName: 'test-tool',
           requestBody,
+        }),
+      );
+    });
+
+    it('passes the uploaded-image data URL to ImageTools instead of its local placeholder', async () => {
+      const mockUser = { id: 'image-user', role: 'USER' };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+      const request = { body: { files: [{ file_id: 'upload-1', type: 'image/png' }] } };
+      const { getRoleByName } = require('~/models');
+      getRoleByName.mockResolvedValue({
+        permissions: {
+          [PermissionTypes.MCP_SERVERS]: {
+            [Permissions.USE]: true,
+          },
+        },
+      });
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      mockGetMCPManager.mockReturnValue({ callTool: mockCallTool });
+      mockResolveImageToolArguments.mockResolvedValueOnce({
+        images: ['data:image/png;base64,aW1hZ2U='],
+        prompt: 'remove the robot',
+      });
+
+      const mcpTool = await createMCPTool({
+        res: mockRes,
+        request,
+        user: mockUser,
+        toolKey: `edit_image${D}image-generation`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`edit_image${D}image-generation`]: {
+            function: { description: 'Edit image', parameters: { type: 'object', properties: {} } },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          { images: ['/mnt/data/0.png'], prompt: 'remove the robot' },
+          {
+            configurable: { user: mockUser },
+            metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+            toolCall: {},
+          },
+        ),
+      ).resolves.toBe('ok');
+
+      expect(mockResolveImageToolArguments).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverName: 'image-generation',
+          toolName: 'edit_image',
+          request,
+          toolArguments: { images: ['/mnt/data/0.png'], prompt: 'remove the robot' },
+        }),
+      );
+      expect(mockCallTool).toHaveBeenCalledWith(
+        expect.objectContaining({
+          toolArguments: {
+            images: ['data:image/png;base64,aW1hZ2U='],
+            prompt: 'remove the robot',
+          },
         }),
       );
     });
