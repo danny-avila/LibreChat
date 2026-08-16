@@ -45,7 +45,8 @@ const baseCtx = (over: Partial<PasteAsFileContext> = {}): PasteAsFileContext => 
   ...over,
 });
 
-const longText = 'a'.repeat(PASTE_AS_FILE_MIN_LENGTH);
+const longText = 'a'.repeat(PASTE_AS_FILE_MIN_LENGTH + 1);
+const thresholdText = 'a'.repeat(PASTE_AS_FILE_MIN_LENGTH);
 const shortText = 'a'.repeat(PASTE_AS_FILE_MIN_LENGTH - 1);
 
 /** jsdom's File has no `text()`, so read it the way the browser upload path would */
@@ -70,6 +71,10 @@ describe('resolvePastedTextFile', () => {
 
   it('leaves a paste one character below the threshold inline', () => {
     expect(resolvePastedTextFile(shortText, baseCtx())).toBeNull();
+  });
+
+  it('leaves a paste at the threshold inline', () => {
+    expect(resolvePastedTextFile(thresholdText, baseCtx())).toBeNull();
   });
 
   it('leaves an empty paste inline', () => {

@@ -534,7 +534,7 @@ export const resolvePastedTextFile = (
   text: string,
   ctx: PasteAsFileContext,
 ): PastedTextAttachment | null => {
-  if (!ctx.enabled || ctx.uploadsDisabled || text.length < PASTE_AS_FILE_MIN_LENGTH) {
+  if (!ctx.enabled || ctx.uploadsDisabled || text.length <= PASTE_AS_FILE_MIN_LENGTH) {
     return null;
   }
 
