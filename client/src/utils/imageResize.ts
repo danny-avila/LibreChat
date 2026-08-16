@@ -246,112 +246,111 @@ export async function resizeImage(
       return;
     }
     const requestedMimeType = `image/${opts.format}`;
-    const reader = new FileReader();
+    /** Decoding through an object URL avoids the ~33% larger base64 copy a data URL would hold */
+    const sourceUrl = URL.createObjectURL(file);
+    const img = new Image();
 
-    reader.onload = (event) => {
-      const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(sourceUrl);
+      try {
+        const originalDimensions = { width: img.width, height: img.height };
+        const newDimensions = calculateDimensions(img.width, img.height, maxWidth, maxHeight);
 
-      img.onload = () => {
-        try {
-          const originalDimensions = { width: img.width, height: img.height };
-          const newDimensions = calculateDimensions(img.width, img.height, maxWidth, maxHeight);
+        // If no resizing needed, return original file
+        if (
+          newDimensions.width === originalDimensions.width &&
+          newDimensions.height === originalDimensions.height
+        ) {
+          resolve({
+            file,
+            originalSize: file.size,
+            newSize: file.size,
+            originalDimensions,
+            newDimensions,
+            compressionRatio: 1,
+          });
+          return;
+        }
 
-          // If no resizing needed, return original file
-          if (
-            newDimensions.width === originalDimensions.width &&
-            newDimensions.height === originalDimensions.height
-          ) {
+        // Create canvas and resize
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+
+        canvas.width = newDimensions.width;
+        canvas.height = newDimensions.height;
+
+        // Use high-quality image smoothing
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        // Draw resized image
+        ctx.drawImage(img, 0, 0, newDimensions.width, newDimensions.height);
+
+        // Convert to blob
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Failed to create blob from canvas'));
+              return;
+            }
+
+            if (blob.size >= file.size) {
+              resolve({
+                file,
+                originalSize: file.size,
+                newSize: file.size,
+                originalDimensions,
+                newDimensions: originalDimensions,
+                compressionRatio: 1,
+              });
+              return;
+            }
+
+            const outputFormat = RESIZE_FORMAT_BY_MIME_TYPE[blob.type];
+            if (blob.type !== requestedMimeType || outputFormat == null) {
+              resolve({
+                file,
+                originalSize: file.size,
+                newSize: file.size,
+                originalDimensions,
+                newDimensions: originalDimensions,
+                compressionRatio: 1,
+              });
+              return;
+            }
+
+            // Create new file with same name but potentially different extension
+            const extension = outputFormat === 'jpeg' ? '.jpg' : `.${outputFormat}`;
+            const baseName = file.name.replace(/\.[^/.]+$/, '');
+            const newFileName = `${baseName}${extension}`;
+
+            const resizedFile = new File([blob], newFileName, {
+              type: blob.type,
+              lastModified: Date.now(),
+            });
+
             resolve({
-              file,
+              file: resizedFile,
               originalSize: file.size,
-              newSize: file.size,
+              newSize: resizedFile.size,
               originalDimensions,
               newDimensions,
-              compressionRatio: 1,
+              compressionRatio: resizedFile.size / file.size,
             });
-            return;
-          }
-
-          // Create canvas and resize
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d')!;
-
-          canvas.width = newDimensions.width;
-          canvas.height = newDimensions.height;
-
-          // Use high-quality image smoothing
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-
-          // Draw resized image
-          ctx.drawImage(img, 0, 0, newDimensions.width, newDimensions.height);
-
-          // Convert to blob
-          canvas.toBlob(
-            (blob) => {
-              if (!blob) {
-                reject(new Error('Failed to create blob from canvas'));
-                return;
-              }
-
-              if (blob.size >= file.size) {
-                resolve({
-                  file,
-                  originalSize: file.size,
-                  newSize: file.size,
-                  originalDimensions,
-                  newDimensions: originalDimensions,
-                  compressionRatio: 1,
-                });
-                return;
-              }
-
-              const outputFormat = RESIZE_FORMAT_BY_MIME_TYPE[blob.type];
-              if (blob.type !== requestedMimeType || outputFormat == null) {
-                resolve({
-                  file,
-                  originalSize: file.size,
-                  newSize: file.size,
-                  originalDimensions,
-                  newDimensions: originalDimensions,
-                  compressionRatio: 1,
-                });
-                return;
-              }
-
-              // Create new file with same name but potentially different extension
-              const extension = outputFormat === 'jpeg' ? '.jpg' : `.${outputFormat}`;
-              const baseName = file.name.replace(/\.[^/.]+$/, '');
-              const newFileName = `${baseName}${extension}`;
-
-              const resizedFile = new File([blob], newFileName, {
-                type: blob.type,
-                lastModified: Date.now(),
-              });
-
-              resolve({
-                file: resizedFile,
-                originalSize: file.size,
-                newSize: resizedFile.size,
-                originalDimensions,
-                newDimensions,
-                compressionRatio: resizedFile.size / file.size,
-              });
-            },
-            requestedMimeType,
-            opts.quality,
-          );
-        } catch (error) {
-          reject(error);
-        }
-      };
-
-      img.onerror = () => reject(new Error('Failed to load image'));
-      img.src = event.target?.result as string;
+          },
+          requestedMimeType,
+          opts.quality,
+        );
+      } catch (error) {
+        reject(error);
+      }
     };
 
-    reader.onerror = () => reject(new Error('Failed to read file'));
-    reader.readAsDataURL(file);
+    img.onerror = () => {
+      URL.revokeObjectURL(sourceUrl);
+      reject(new Error('Failed to load image'));
+    };
+    img.src = sourceUrl;
   });
 }
 

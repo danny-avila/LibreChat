@@ -241,8 +241,15 @@ describe('imageResize utility', () => {
     const originalToBlob = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'toBlob');
     const canvasToBlob = jest.fn();
     const drawImage = jest.fn();
+    const originalCreateObjectURL = global.URL.createObjectURL;
+    const originalRevokeObjectURL = global.URL.revokeObjectURL;
+    const createObjectURL = jest.fn(() => 'blob:image-source');
+    const revokeObjectURL = jest.fn();
 
     beforeAll(() => {
+      global.URL.createObjectURL = createObjectURL;
+      global.URL.revokeObjectURL = revokeObjectURL;
+
       Object.defineProperty(global, 'Image', {
         configurable: true,
         value: class {
@@ -272,6 +279,8 @@ describe('imageResize utility', () => {
     });
 
     afterAll(() => {
+      global.URL.createObjectURL = originalCreateObjectURL;
+      global.URL.revokeObjectURL = originalRevokeObjectURL;
       Object.defineProperty(global, 'Image', {
         configurable: true,
         value: originalImage,
@@ -289,6 +298,8 @@ describe('imageResize utility', () => {
       imageHeight = 1600;
       canvasToBlob.mockClear();
       drawImage.mockClear();
+      createObjectURL.mockClear();
+      revokeObjectURL.mockClear();
     });
 
     it('does not flatten an animated image', async () => {
@@ -296,6 +307,18 @@ describe('imageResize utility', () => {
         'Animated images cannot be resized without losing animation',
       );
       expect(drawImage).not.toHaveBeenCalled();
+    });
+
+    it('decodes through an object URL and releases it', async () => {
+      const file = new File(['source image data'], 'photo.jpg', { type: 'image/jpeg' });
+      canvasToBlob.mockImplementationOnce((callback: BlobCallback, type?: string) => {
+        callback(new Blob(['x'], { type }));
+      });
+
+      await resizeImage(file);
+
+      expect(createObjectURL).toHaveBeenCalledWith(file);
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:image-source');
     });
 
     it('preserves a PNG MIME type while resizing', async () => {
