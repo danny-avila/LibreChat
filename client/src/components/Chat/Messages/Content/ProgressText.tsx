@@ -89,17 +89,20 @@ export default function ProgressText({
   const icon = getIcon();
   const showShimmer = progress < 1 && !error;
   /**
-   * Shown only on a settled, non-error card. While the step is still running
+   * Shown only on a settled, successful card. While the step is still running
    * the number would be stale the instant it rendered, and on a cancelled or
    * failed card "how long it took" is not the fact the reader needs — that
    * slot already carries the cancelled icon or the error suffix.
    *
-   * Gating on the component's own `progress`/`error` rather than on a separate
-   * caller-supplied flag keeps this consistent with the label beside it by
-   * construction; the callers only forward the number.
+   * Both terminal-failure channels must be checked: at every call site
+   * `error` carries cancellation while failure arrives as `errorSuffix`
+   * alone, so gating on `error` by itself would print a duration beside
+   * "failed". Gating here on the component's own props rather than on a
+   * separate caller-supplied flag keeps this consistent with the label
+   * beside it by construction; the callers only forward the number.
    */
   const duration =
-    progress >= 1 && !error && isReportableRunStepDuration(durationMs)
+    progress >= 1 && !error && !errorSuffix && isReportableRunStepDuration(durationMs)
       ? getRunStepDurationLabels(durationMs)
       : undefined;
 

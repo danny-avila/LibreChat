@@ -55,11 +55,20 @@ describe('ProgressText duration', () => {
   /**
    * On a cancelled or failed card the slot already carries the cancelled icon
    * or the error suffix, and "how long it took" is not the fact the reader
-   * needs.
+   * needs. The two states arrive through different props — `error` carries
+   * cancellation, `errorSuffix` alone carries failure — so both are pinned
+   * separately; gating on `error` alone rendered a duration beside "failed"
+   * (Codex round 1 on #14892).
    */
-  it('does not render on an errored or cancelled card', () => {
+  it('does not render on a cancelled card', () => {
     renderProgressText({ error: true, durationMs: 3500 });
     expect(screen.queryByText('· 3.5s')).not.toBeInTheDocument();
+  });
+
+  it('does not render on a failed card, where failure arrives as errorSuffix alone', () => {
+    renderProgressText({ errorSuffix: 'failed', durationMs: 3500 });
+    expect(screen.queryByText('· 3.5s')).not.toBeInTheDocument();
+    expect(screen.queryByText('took 3.5 seconds')).not.toBeInTheDocument();
   });
 
   it('renders nothing when no duration was derivable', () => {
