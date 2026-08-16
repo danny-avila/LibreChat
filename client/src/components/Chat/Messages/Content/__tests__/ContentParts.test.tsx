@@ -238,6 +238,33 @@ describe('ContentParts — thinking-dot header alignment', () => {
     render(<ContentParts {...submittingProps} nestedActivityPhase />);
     expect(screen.getByTestId('empty-text')).toHaveAttribute('data-under-header-icon', 'false');
   });
+
+  it('routes a solitary seeded empty text part through the nudged placeholder', () => {
+    const seeded = [{ type: ContentTypes.TEXT, text: { value: '' } }] as TMessageContentParts[];
+    render(<ContentParts {...submittingProps} content={seeded} />);
+    expect(screen.getByTestId('empty-text')).toHaveAttribute('data-under-header-icon', 'true');
+    expect(screen.queryByTestId('real-part-text')).toBeNull();
+  });
+
+  it('keeps the gate for a seeded placeholder behind pending skill rows', () => {
+    const seeded = [{ type: ContentTypes.TEXT, text: '' }] as TMessageContentParts[];
+    render(<ContentParts {...submittingProps} content={seeded} manualSkills={['pptx']} />);
+    expect(screen.getByTestId('empty-text')).toHaveAttribute('data-under-header-icon', 'false');
+  });
+
+  it('renders a persisted empty text part normally once submission ends', () => {
+    const seeded = [{ type: ContentTypes.TEXT, text: { value: '' } }] as TMessageContentParts[];
+    render(<ContentParts {...baseProps} content={seeded} />);
+    expect(screen.queryByTestId('empty-text')).toBeNull();
+    expect(screen.getByTestId('real-part-text')).toBeInTheDocument();
+  });
+
+  it('leaves real text content out of the placeholder path', () => {
+    const textContent = [{ type: ContentTypes.TEXT, text: 'hello' }] as TMessageContentParts[];
+    render(<ContentParts {...submittingProps} content={textContent} />);
+    expect(screen.queryByTestId('empty-text')).toBeNull();
+    expect(screen.getByTestId('real-part-text')).toBeInTheDocument();
+  });
 });
 
 describe('ContentParts — post-steer author re-attribution', () => {
