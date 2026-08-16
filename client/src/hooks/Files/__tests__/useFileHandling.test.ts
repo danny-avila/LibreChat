@@ -988,5 +988,40 @@ describe('useFileHandling', () => {
       expect(firstRecovery).toHaveBeenCalledTimes(1);
       consoleLog.mockRestore();
     });
+
+    it('does not recover pasted text after a separate file form removes the pending attachment', async () => {
+      const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      const recovery = jest.fn();
+      const { default: useFileHandling, useFileHandlingNoChatContext } = await import(
+        '../useFileHandling'
+      );
+      const { result: uploadResult } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await uploadResult.current.handleFiles(
+          [new File(['pasted text'], 'pasted-text.txt', { type: 'text/plain' })],
+          undefined,
+          recovery,
+        );
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      const uploadOptions = mockUploadOptions;
+      const fileId = uploadBody.get('file_id') as string;
+      const { result: removalResult } = renderHook(() =>
+        useFileHandlingNoChatContext(undefined, {
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      );
+
+      act(() => {
+        removalResult.current.abortUpload(fileId);
+      });
+      act(() => uploadOptions.onError?.(new Error('upload failed after removal'), uploadBody));
+
+      expect(recovery).not.toHaveBeenCalled();
+      consoleLog.mockRestore();
+    });
   });
 });

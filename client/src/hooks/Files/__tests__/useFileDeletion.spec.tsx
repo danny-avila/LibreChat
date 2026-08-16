@@ -7,6 +7,10 @@ import useFileDeletion from '../useFileDeletion';
 
 const mockMutateAsync = jest.fn();
 
+jest.mock('../useFileHandling', () => ({
+  clearUploadRecovery: jest.fn(),
+}));
+
 jest.mock('~/data-provider', () => ({
   useDeleteFilesMutation: () => ({ mutateAsync: mockMutateAsync }),
 }));
@@ -49,6 +53,8 @@ jest.mock('~/components/Chat/Input/Files/Image', () => {
   };
 });
 
+const mockClearUploadRecovery = jest.requireMock('../useFileHandling').clearUploadRecovery;
+
 /** Mirrors the shape `utils/forms.tsx` builds for agent Context/File Search panels */
 const makeFile = (file_id: string): ExtendedFile =>
   ({
@@ -82,6 +88,7 @@ describe('useFileDeletion', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockMutateAsync.mockClear();
+    mockClearUploadRecovery.mockClear();
   });
   afterEach(() => jest.useRealTimers());
 
@@ -130,6 +137,19 @@ describe('useFileDeletion', () => {
       jest.advanceTimersByTime(3000);
     });
 
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('clears upload recovery before returning for a pending attachment', () => {
+    const { result } = renderHook(() => useFileDeletion({ mutateAsync: mockMutateAsync }));
+
+    act(() => {
+      result.current.deleteFile({
+        file: { ...makeFile('pending-file'), progress: 0.5 },
+      });
+    });
+
+    expect(mockClearUploadRecovery).toHaveBeenCalledWith('pending-file');
     expect(mockMutateAsync).not.toHaveBeenCalled();
   });
 });
