@@ -95,6 +95,15 @@ const deleteNullOrEmptyConversations = (
 const searchConversation = (...args: Parameters<ConversationMethods['searchConversation']>) =>
   methods.searchConversation(...args);
 
+/** The archive sweep discovers projects either by a bounded id list or by its own
+ * `archivedAt` marker, and the tests below assert which of the two a call used. */
+type ArchiveDistinctFilter = {
+  _id?: { $in?: unknown[] };
+  user?: string;
+  isArchived?: boolean;
+  archivedAt?: Date;
+};
+
 describe('Conversation Operations', () => {
   let mockCtx: {
     userId: string;
@@ -1778,7 +1787,7 @@ describe('Conversation Operations', () => {
       expect(unarchivedCount).toBe(0);
     });
 
-    it('recovers destination projects in bounded batches after a large archive', async () => {
+    it('recovers destination projects from the sweep marker, not a per-conversation id list', async () => {
       const conversations = Array.from({ length: 501 }, (_, index) => ({
         conversationId: `archive-recovery-batch-${index}`,
         user: 'user123',
@@ -1787,15 +1796,12 @@ describe('Conversation Operations', () => {
       await Conversation.insertMany(conversations);
 
       const distinct = Conversation.distinct.bind(Conversation);
-      const distinctInSizes: number[] = [];
+      const distinctFilters: ArchiveDistinctFilter[] = [];
       const distinctSpy = jest.spyOn(Conversation, 'distinct').mockImplementation(((
         field,
         filter,
       ) => {
-        const ids = (filter as { _id?: { $in?: unknown[] } } | undefined)?._id?.$in;
-        if (Array.isArray(ids)) {
-          distinctInSizes.push(ids.length);
-        }
+        distinctFilters.push((filter ?? {}) as ArchiveDistinctFilter);
         return distinct(field, filter);
       }) as typeof Conversation.distinct);
 
@@ -1806,8 +1812,67 @@ describe('Conversation Operations', () => {
         distinctSpy.mockRestore();
       }
 
-      expect(distinctInSizes.length).toBeGreaterThan(0);
-      expect(Math.max(...distinctInSizes)).toBeLessThanOrEqual(500);
+      /** Every id list stays within one batch, so nothing accumulates across the sweep. */
+      const idListSizes = distinctFilters
+        .map((filter) => filter._id?.$in?.length)
+        .filter((size): size is number => size !== undefined);
+      expect(idListSizes.length).toBeGreaterThan(0);
+      expect(Math.max(...idListSizes)).toBeLessThanOrEqual(500);
+
+      const recoveryFilters = distinctFilters.filter((filter) => filter.archivedAt instanceof Date);
+      expect(recoveryFilters).toHaveLength(1);
+      expect(recoveryFilters[0]._id).toBeUndefined();
+      expect(recoveryFilters[0]).toMatchObject({ user: 'user123', isArchived: true });
+    });
+
+    it('recovers a batch-sized destination move from the marker alone', async () => {
+      const destinationProject = await ChatProject.create({ user: 'user123', name: 'Destination' });
+      const conversations = Array.from({ length: 501 }, (_, index) => ({
+        conversationId: `archive-recovery-scale-${index}`,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      }));
+      await Conversation.insertMany(conversations);
+
+      /** The chats carry no project when the sweep captures them, so the destination is
+       * reachable only through the marker: nothing in the loop ever saw it. */
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        const result = await updateMany(filter, update, options);
+        await Conversation.updateMany(
+          { user: 'user123' },
+          { $set: { chatProjectId: destinationProject._id!.toString() } },
+          { timestamps: false },
+        );
+        await ChatProject.findByIdAndUpdate(destinationProject._id, {
+          conversationCount: conversations.length,
+          lastConversationId: conversations[conversations.length - 1].conversationId,
+        });
+        return result;
+      }) as typeof Conversation.updateMany);
+      const distinct = Conversation.distinct.bind(Conversation);
+      const distinctSpy = jest
+        .spyOn(Conversation, 'distinct')
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockImplementation(((...args) => distinct(...args)) as typeof Conversation.distinct);
+
+      try {
+        await expect(archiveAllConvos('user123')).rejects.toThrow('project discovery failed');
+      } finally {
+        updateManySpy.mockRestore();
+        distinctSpy.mockRestore();
+      }
+
+      const archived = await Conversation.countDocuments({ user: 'user123', isArchived: true });
+      expect(archived).toBe(500);
+      const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(1);
     });
 
     it('continues refreshing later project batches after an individual refresh fails', async () => {

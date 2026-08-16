@@ -35,18 +35,14 @@ const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
 const PROJECT_DISCOVERY_MAX_ATTEMPTS = 3;
 
-async function discoverCommittedBatchProjectIds(
+async function discoverProjectIds(
   Conversation: Model<IConversation>,
-  conversationIds: Types.ObjectId[],
-  user: string,
+  filter: FilterQuery<IConversation>,
 ): Promise<string[]> {
   let lastError: unknown;
   for (let attempt = 0; attempt < PROJECT_DISCOVERY_MAX_ATTEMPTS; attempt++) {
     try {
-      const currentProjectIds = await Conversation.distinct('chatProjectId', {
-        _id: { $in: conversationIds },
-        user,
-      });
+      const currentProjectIds = await Conversation.distinct('chatProjectId', filter);
       return currentProjectIds.filter((projectId): projectId is string => Boolean(projectId));
     } catch (error) {
       lastError = error;
@@ -54,26 +50,6 @@ async function discoverCommittedBatchProjectIds(
     }
   }
   throw lastError;
-}
-
-async function recoverCommittedBatchProjectIds(
-  Conversation: Model<IConversation>,
-  conversationIds: Types.ObjectId[],
-  user: string,
-): Promise<string[]> {
-  const recoveredProjectIds = new Set<string>();
-  for (let index = 0; index < conversationIds.length; index += ARCHIVE_CONVERSATION_BATCH_SIZE) {
-    const batch = conversationIds.slice(index, index + ARCHIVE_CONVERSATION_BATCH_SIZE);
-    try {
-      const batchProjectIds = await discoverCommittedBatchProjectIds(Conversation, batch, user);
-      for (const projectId of batchProjectIds) {
-        recoveredProjectIds.add(projectId);
-      }
-    } catch (error) {
-      logger.error('[archiveAllConvos] Conversations archived but project recovery failed', error);
-    }
-  }
-  return [...recoveredProjectIds];
 }
 
 async function refreshChatProjectStatsInBatches(
@@ -1168,9 +1144,10 @@ export function createConversationMethods(
   async function archiveAllConvos(user: string) {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const projectIds = new Set<string>();
-    const committedConversationIds: Types.ObjectId[] = [];
     /** One stamp for the whole sweep so the archived view groups the run together
-     * instead of fanning it out across however long the batching took. */
+     * instead of fanning it out across however long the batching took, and so the
+     * recovery below can find everything this call committed without holding an id
+     * per conversation in memory. */
     const archivedAt = new Date();
     let archivedCount = 0;
     try {
@@ -1230,12 +1207,10 @@ export function createConversationMethods(
         archivedCount += batchArchivedCount;
 
         if (batchArchivedCount > 0) {
-          committedConversationIds.push(...conversationIds);
-          const currentProjectIds = await discoverCommittedBatchProjectIds(
-            Conversation,
-            conversationIds,
+          const currentProjectIds = await discoverProjectIds(Conversation, {
+            _id: { $in: conversationIds },
             user,
-          );
+          });
           for (const projectId of currentProjectIds) {
             projectIds.add(projectId);
           }
@@ -1250,17 +1225,26 @@ export function createConversationMethods(
       /**
        * Best-effort, mirroring `deleteConvos`: committed batches are already archived, so
        * a stats failure must not hide that from the caller. Recover destination projects
-       * from committed conversation IDs first: in-loop distinct can throw after a move,
-       * and a retry cannot see those already-archived chats.
+       * first, because in-loop discovery can throw after a move and a retry cannot see
+       * those already-archived chats. The sweep marker is what identifies them, so this
+       * costs one indexed query rather than a per-conversation id list: history size
+       * changes how much this reads, never how much it holds.
        */
-      if (committedConversationIds.length > 0) {
-        const recoveredProjectIds = await recoverCommittedBatchProjectIds(
-          Conversation,
-          committedConversationIds,
-          user,
-        );
-        for (const projectId of recoveredProjectIds) {
-          projectIds.add(projectId);
+      if (archivedCount > 0) {
+        try {
+          const recoveredProjectIds = await discoverProjectIds(Conversation, {
+            user,
+            isArchived: true,
+            archivedAt,
+          });
+          for (const projectId of recoveredProjectIds) {
+            projectIds.add(projectId);
+          }
+        } catch (error) {
+          logger.error(
+            '[archiveAllConvos] Conversations archived but project recovery failed',
+            error,
+          );
         }
       }
       if (archivedCount > 0 && projectIds.size > 0) {
