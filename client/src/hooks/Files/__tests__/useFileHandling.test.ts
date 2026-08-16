@@ -424,7 +424,6 @@ describe('useFileHandling', () => {
           files: new Map(),
           setFiles: jest.fn(),
           setFilesLoading: mockSetFilesLoading,
-          conversation: mockConversation,
         };
         const { useFileHandlingNoChatContext } = await import('../useFileHandling');
         const menu = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
