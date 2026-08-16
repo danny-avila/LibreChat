@@ -6,6 +6,7 @@ let mockResizeState = {
   isEnabled: true,
   isEnforced: false,
   isSupported: true,
+  isConfigUnavailable: false,
 };
 
 jest.mock('recoil', () => ({
@@ -28,6 +29,7 @@ describe('ImageResize', () => {
       isEnabled: true,
       isEnforced: false,
       isSupported: true,
+      isConfigUnavailable: false,
     };
   });
 
@@ -60,6 +62,18 @@ describe('ImageResize', () => {
     expect(screen.getByTestId('clientImageResize')).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'com_nav_info_client_image_resize_unsupported' }),
+    ).toBeInTheDocument();
+  });
+
+  it('disables the setting and explains when the file config is unavailable', () => {
+    mockResizeState.isEnabled = false;
+    mockResizeState.isConfigUnavailable = true;
+
+    render(<ImageResize />);
+
+    expect(screen.getByTestId('clientImageResize')).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'com_nav_info_client_image_resize_unavailable' }),
     ).toBeInTheDocument();
   });
 

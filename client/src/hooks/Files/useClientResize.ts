@@ -41,6 +41,7 @@ export const useClientResize = () => {
   const isSupported = supportsClientResize();
   const isEnforced = config.enforced === true;
   const isConfigPending = !isFileConfigLoaded && !isFileConfigError && !isFileConfigPaused;
+  const isConfigUnavailable = !isFileConfigLoaded && !isConfigPending;
   const hasValidDimensions =
     typeof maxWidth === 'number' &&
     Number.isFinite(maxWidth) &&
@@ -163,6 +164,7 @@ export const useClientResize = () => {
     isEnforced,
     isSupported,
     isConfigPending,
+    isConfigUnavailable,
     config,
     waitForConfig,
     resizeImageIfNeeded,

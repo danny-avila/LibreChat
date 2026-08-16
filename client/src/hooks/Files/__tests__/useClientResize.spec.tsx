@@ -43,6 +43,27 @@ describe('useClientResize', () => {
     expect(result.current.isConfigPending).toBe(true);
   });
 
+  it('reports the config as unavailable when the request errors', () => {
+    mockConfigIsSuccess = false;
+    mockConfigIsError = true;
+    setUserPreference(true);
+
+    const { result } = renderHook(() => useClientResize(), { wrapper });
+
+    expect(result.current.isConfigPending).toBe(false);
+    expect(result.current.isConfigUnavailable).toBe(true);
+    expect(result.current.isEnabled).toBe(false);
+  });
+
+  it('does not report the config as unavailable once it resolves', () => {
+    setUserPreference(true);
+
+    const { result } = renderHook(() => useClientResize(), { wrapper });
+
+    expect(result.current.isConfigUnavailable).toBe(false);
+    expect(result.current.isEnabled).toBe(true);
+  });
+
   it('releases uploads when the file config request errors', async () => {
     mockConfigIsSuccess = false;
     const { result, rerender } = renderHook(() => useClientResize(), { wrapper });

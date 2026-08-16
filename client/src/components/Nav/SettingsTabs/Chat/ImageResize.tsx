@@ -3,9 +3,12 @@ import { Switch, InfoHoverCard, ESide } from '@librechat/client';
 import { useLocalize, useClientResize } from '~/hooks';
 import store from '~/store';
 
-const getInfoKey = (isSupported: boolean, isEnforced: boolean) => {
+const getInfoKey = (isSupported: boolean, isEnforced: boolean, isConfigUnavailable: boolean) => {
   if (!isSupported) {
     return 'com_nav_info_client_image_resize_unsupported' as const;
+  }
+  if (isConfigUnavailable) {
+    return 'com_nav_info_client_image_resize_unavailable' as const;
   }
   if (isEnforced) {
     return 'com_nav_info_client_image_resize_enforced' as const;
@@ -16,10 +19,10 @@ const getInfoKey = (isSupported: boolean, isEnforced: boolean) => {
 export default function ImageResize() {
   const localize = useLocalize();
   const setUserPreference = useSetRecoilState(store.clientImageResize);
-  const { isEnabled, isEnforced, isSupported } = useClientResize();
+  const { isEnabled, isEnforced, isSupported, isConfigUnavailable } = useClientResize();
 
   const labelId = 'clientImageResize-label';
-  const infoKey = getInfoKey(isSupported, isEnforced);
+  const infoKey = getInfoKey(isSupported, isEnforced, isConfigUnavailable);
 
   return (
     <div className="flex items-center justify-between">
@@ -31,7 +34,7 @@ export default function ImageResize() {
         id="clientImageResize"
         checked={isEnabled}
         onCheckedChange={setUserPreference}
-        disabled={isEnforced || !isSupported}
+        disabled={isEnforced || !isSupported || isConfigUnavailable}
         className="ml-4"
         data-testid="clientImageResize"
         aria-labelledby={labelId}
