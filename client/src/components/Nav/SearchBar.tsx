@@ -21,13 +21,20 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   const navigate = useNavigate();
   const { isSmallScreen } = props;
 
-  const [text, setText] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [showClearIcon, setShowClearIcon] = useState(false);
-  const focusSearchAriaKey = useShortcutAriaKey('focusSearch');
-
   const { newConversation: newConvo } = useNewConvo();
   const [search, setSearchState] = useRecoilState(store.search);
+
+  /**
+   * Seeded from the stored query rather than blank. The field is mounted in
+   * two places — the list on a pointer device, the drawer's bottom bar on
+   * touch — so crossing the breakpoint mid-search destroys one instance and
+   * builds another. Starting empty would leave the results still filtered by a
+   * query the box no longer shows, with no clear affordance to undo it.
+   */
+  const [text, setText] = useState(() => search.query ?? '');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [showClearIcon, setShowClearIcon] = useState(() => (search.query ?? '').length > 0);
+  const focusSearchAriaKey = useShortcutAriaKey('focusSearch');
 
   const clearSearch = useCallback(
     (pathname?: string) => {
