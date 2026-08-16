@@ -17,16 +17,21 @@ const {
   removeNullishValues,
   isAssistantsEndpoint,
   getEndpointFileConfig,
+  documentParserSources,
   documentParserMimeTypes,
   isPermissiveMimeConfig,
+  resolveEffectiveMimeType,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   sanitizeFilename,
   parseText,
+  parseTextNative,
   processAudioFile,
   sendUploadSuccess,
   getStorageMetadata,
+  annotateMissingPages,
+  summarizeMissingPages,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -72,6 +77,44 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 
 const hasCodeEnvRef = (file) =>
   file?.metadata?.codeEnvRef != null || file?.metadata?.codeEnvRefs != null;
+
+/** Same resolution the client validates and offers upload options with. */
+const resolveUploadMimeType = (file) =>
+  resolveEffectiveMimeType(file?.originalname ?? '', file?.mimetype ?? '');
+
+/**
+ * Document types the parser only reformats, whose raw bytes are already the content.
+ * Converting a dense CSV to a Markdown table adds pipes and padding to every cell, so a
+ * source file inside the storage limit can convert to one that is not.
+ */
+const delimitedTextTypes = /^(?:text|application)\/csv$/i;
+const isDelimitedTextType = (mimetype) => delimitedTextTypes.test(mimetype);
+
+const isZipBombError = (err) => err?.code === 'ZIP_BOMB' || err?.name === 'ZipBombError';
+/* An archive the guard identified and then could not walk. Past detection there is no
+ * third answer, so forwarding it to a configured OCR provider would hand the same bytes
+ * the guard refused to someone else's parser. */
+const isArchiveRefusal = (err) =>
+  err?.code === 'ARCHIVE_INVALID' || err?.name === 'ArchiveValidationError';
+const isPdfPageLimitError = (err) =>
+  err?.code === 'PDF_PAGE_LIMIT' || err?.name === 'PdfPageLimitError';
+/* Shed load, not an unreadable document. Surfaced to the caller so a retry is the
+ * obvious next step, rather than swallowed into a fallback that would bill a
+ * configured OCR service, or into "no text found" for a perfectly readable file. */
+const isParserBusyError = (err) =>
+  err?.code === 'CONCURRENCY_LIMIT' || err?.name === 'ConcurrencyLimitError';
+/* The parser declined to hand back an extraction that would not fit. Surfaced rather
+ * than swallowed so the file is not reported as unreadable, and so no fallback rebuilds
+ * in this process the string a child process just declined to send. */
+const isParserOutputLimitError = (err) =>
+  err?.code === 'PARSER_OUTPUT_LIMIT' || err?.name === 'ParserOutputLimitError';
+
+const isDocumentParserRefusal = (err) =>
+  isZipBombError(err) ||
+  isArchiveRefusal(err) ||
+  isPdfPageLimitError(err) ||
+  isParserBusyError(err) ||
+  isParserOutputLimitError(err);
 
 const isMissingStorageError = (err) => {
   const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
@@ -797,13 +840,21 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
 
     const fileConfig = mergeFileConfig(appConfig.fileConfig);
 
+    const effectiveMimeType = resolveUploadMimeType(file);
+    const parserMimeTypes =
+      fileConfig.documentParser?.supportedMimeTypes || documentParserMimeTypes;
+    const isKnownDocumentType = fileConfig.checkType(effectiveMimeType, documentParserMimeTypes);
+
     const shouldUseConfiguredOCR =
       appConfig?.ocr != null &&
-      fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
+      fileConfig.checkType(effectiveMimeType, fileConfig.ocr?.supportedMimeTypes || []);
 
-    const isDocumentParserEligible = documentParserMimeTypes.some((regex) =>
-      regex.test(file.mimetype),
-    );
+    /* Admin file config wins over the parser's own defaults. `fileConfig.documentParser`
+     * falls back to `documentParserMimeTypes` when unconfigured, so this keeps the
+     * built-in behavior while giving operators the same override they already have for
+     * `fileConfig.ocr` and `fileConfig.text`. Each provider still validates the type it
+     * receives, which is what turns an unroutable file into a named error. */
+    const isDocumentParserEligible = fileConfig.checkType(effectiveMimeType, parserMimeTypes);
 
     /**
      * When an admin narrows `fileConfig.text.supportedMimeTypes` to a non-permissive allowlist that
@@ -811,35 +862,31 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
      * RAG `/text` instead of the built-in document parser. The permissive default catch-all is
      * excluded via `isPermissiveMimeConfig`, so RAG deployments that never customized text handling
      * keep the built-in parser introduced in #11900.
+     *
+     * Scoped by the built-in document list, not by `isDocumentParserEligible`: an admin who
+     * removes a type from `documentParser.supportedMimeTypes` while naming it in the text
+     * allowlist is asking for RAG to handle it, and reading local-parser eligibility here
+     * would turn that pair of settings into a refused upload.
      */
     const shouldUseConfiguredText =
       !!process.env.RAG_API_URL &&
-      isDocumentParserEligible &&
+      isKnownDocumentType &&
       !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
-      fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || []);
+      fileConfig.checkType(effectiveMimeType, fileConfig.text?.supportedMimeTypes || []);
 
-    const shouldUseDocumentParser =
-      !shouldUseConfiguredOCR && !shouldUseConfiguredText && isDocumentParserEligible;
-
-    const shouldUseOCR = shouldUseConfiguredOCR || shouldUseDocumentParser;
+    const shouldUseDocumentParser = !shouldUseConfiguredText && isDocumentParserEligible;
 
     const resolveDocumentText = async () => {
-      if (shouldUseConfiguredOCR) {
-        try {
-          const ocrStrategy = appConfig?.ocr?.strategy ?? FileSources.document_parser;
-          const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
-          return await handleFileUpload({ req, file, loadAuthValues });
-        } catch (err) {
-          logger.error(
-            `[processAgentFileUpload] Configured OCR failed for "${file.originalname}", falling back to document_parser:`,
-            err,
-          );
-        }
+      if (!isDocumentParserEligible) {
+        return;
       }
       try {
         const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
         return await handleFileUpload({ req, file, loadAuthValues });
       } catch (err) {
+        if (isDocumentParserRefusal(err)) {
+          throw err;
+        }
         logger.error(
           `[processAgentFileUpload] Document parser failed for "${file.originalname}":`,
           err,
@@ -847,23 +894,171 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       }
     };
 
-    if (shouldUseConfiguredOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
-      throw new Error('OCR capability is not enabled for Agents');
-    }
-
-    if (shouldUseOCR) {
-      const ocrResult = await resolveDocumentText();
-      if (ocrResult) {
-        const { text, bytes, filepath: ocrFileURL } = ocrResult;
-        return await createTextFile({ text, bytes, filepath: ocrFileURL });
+    const resolveConfiguredOCR = async ({ throwOnMissingCapability = true } = {}) => {
+      if (!shouldUseConfiguredOCR) {
+        return;
       }
+      if (!(await checkCapability(req, AgentCapabilities.ocr))) {
+        if (throwOnMissingCapability) {
+          throw new Error('OCR capability is not enabled for Agents');
+        }
+        return;
+      }
+      try {
+        const ocrStrategy = appConfig?.ocr?.strategy ?? FileSources.mistral_ocr;
+        const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
+        return await handleFileUpload({ req, file, loadAuthValues });
+      } catch (err) {
+        logger.error(
+          `[processAgentFileUpload] Configured OCR failed for "${file.originalname}":`,
+          err,
+        );
+      }
+    };
+
+    /**
+     * Single entry point for every extraction result, so the OCR branch and the RAG
+     * fallback below store the same shape: omitted pages are always logged, annotated
+     * into the text and reflected in the byte count.
+     *
+     * Local parser output keeps the document's real MIME type. Storing the default
+     * `text/plain` there would discard what kind of file this was, and every
+     * extracted-text affordance in the client keys on that type. Configured OCR keeps
+     * `text/plain`: its supported types include images, and an `image/*` record whose
+     * `filepath` is a marker string, not a URL, renders as a broken thumbnail.
+     *
+     * Model routing is unaffected either way: parsed records are short-circuited on
+     * `source === text` both in `filterFilesByEndpointConfig` (packages/api/src/files/filter.ts,
+     * which runs first, during agent initialization) and in `BaseClient#categorizeAttachments`,
+     * before any type-based categorization.
+     *
+     * @param {MistralOCRUploadResult} result
+     * @return {Promise<void>}
+     */
+    const createDocumentTextFile = async ({
+      text,
+      bytes,
+      filepath,
+      pagesNeedingOcr,
+      mayOmitContent,
+    }) => {
+      if (pagesNeedingOcr?.length) {
+        const pageSummary = summarizeMissingPages(pagesNeedingOcr);
+        logger.warn(
+          `[processAgentFileUpload] "${file.originalname}" has no extractable text on page(s) ${pageSummary}; those pages were omitted.`,
+        );
+      }
+      /* Logged rather than written into the text: unlike an omitted page, embedded
+       * artwork is not evidence that anything was lost. Most documents that carry it
+       * carry a logo, so a notice in the model's copy would assert an omission that
+       * usually did not happen, on the majority of office uploads. */
+      if (mayOmitContent === true) {
+        logger.warn(
+          `[processAgentFileUpload] "${file.originalname}" embeds images the local parser reads no text from; configure an OCR service to recover any text they hold.`,
+        );
+      }
+      const annotated = annotateMissingPages(text, pagesNeedingOcr);
+      return await createTextFile({
+        text: annotated,
+        bytes: annotated === text ? bytes : Buffer.byteLength(annotated, 'utf8'),
+        filepath,
+        type: documentParserSources.has(filepath) ? effectiveMimeType : undefined,
+      });
+    };
+
+    /**
+     * Stores a delimited file as the bytes it already was, when conversion cannot ship.
+     * Reports whether it did, since the creators here answer the request rather than
+     * return a value.
+     *
+     * Reads the file directly rather than through `parseText`: with a RAG service
+     * configured that would spend a health check and an extraction request before
+     * reaching the bytes, and could come back with transformed content, or with another
+     * extraction too large for the same limit that sent us here. The point of this path
+     * is the bytes themselves.
+     */
+    const storeDelimitedTextAsIs = async () => {
+      const { text, bytes } = await parseTextNative(file);
+      if (!text?.trim()) {
+        return false;
+      }
+      await createTextFile({ text, bytes, type: effectiveMimeType });
+      return true;
+    };
+
+    if (shouldUseDocumentParser) {
+      let localResult;
+      try {
+        localResult = await resolveDocumentText();
+      } catch (err) {
+        /* A delimited file is already text: the parser only reformats it as a table, and
+         * that table can outgrow the storage limit on a source file well inside it. */
+        if (
+          isParserOutputLimitError(err) &&
+          isDelimitedTextType(effectiveMimeType) &&
+          (await storeDelimitedTextAsIs())
+        ) {
+          return;
+        }
+        throw err;
+      }
+      const hasLocalText = !!localResult?.text?.trim();
+      /* Two ways a local result can be incomplete, and an engine reports whichever it can
+       * observe: a page-oriented engine names the pages it could not read, one that returns
+       * undifferentiated text reports only that content may be missing. Either way the
+       * answer is the same: consult OCR when one is configured, and keep the local text
+       * when it is not. A document with nothing omitted is complete as it is. */
+      const localNeedsOCR =
+        !hasLocalText ||
+        !!localResult?.pagesNeedingOcr?.length ||
+        localResult?.mayOmitContent === true;
+
+      if (hasLocalText && !localNeedsOCR) {
+        return await createDocumentTextFile(localResult);
+      }
+
+      if (localNeedsOCR && shouldUseConfiguredOCR) {
+        const ocrResult = await resolveConfiguredOCR({
+          throwOnMissingCapability: !hasLocalText,
+        });
+        if (ocrResult?.text?.trim()) {
+          return await createDocumentTextFile(ocrResult);
+        }
+      }
+
+      /* A partially readable PDF is still useful when OCR is unavailable or fails.
+       * Persist the local text with its missing-page notice instead of discarding it. */
+      if (hasLocalText) {
+        return await createDocumentTextFile(localResult);
+      }
+
+      /* Same reasoning as the refusal above, for a conversion that failed rather than
+       * one that was declined: the bytes are the whole document either way. */
+      if (isDelimitedTextType(effectiveMimeType) && (await storeDelimitedTextAsIs())) {
+        return;
+      }
+
       throw new Error(
         `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
       );
     }
 
+    if (shouldUseConfiguredOCR) {
+      const ocrResult = await resolveConfiguredOCR();
+      if (ocrResult?.text?.trim()) {
+        return await createDocumentTextFile(ocrResult);
+      }
+      throw new Error(
+        `Unable to extract text from "${file.originalname}" with the configured OCR service.`,
+      );
+    }
+
+    if (isKnownDocumentType && !shouldUseConfiguredText) {
+      throw new Error(`File type ${effectiveMimeType} is not enabled for document parsing.`);
+    }
+
     const shouldUseSTT = fileConfig.checkType(
-      file.mimetype,
+      effectiveMimeType,
       fileConfig.stt?.supportedMimeTypes || [],
     );
 
@@ -874,12 +1069,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     }
 
     const shouldUseText = fileConfig.checkType(
-      file.mimetype,
+      effectiveMimeType,
       fileConfig.text?.supportedMimeTypes || [],
     );
 
     if (!shouldUseText) {
-      throw new Error(`File type ${file.mimetype} is not supported for text parsing.`);
+      throw new Error(`File type ${effectiveMimeType} is not supported for text parsing.`);
     }
 
     /**
@@ -904,8 +1099,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
             `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
           );
         }
-        const { text, bytes, filepath: docFileURL } = documentText;
-        return await createTextFile({ text, bytes, filepath: docFileURL });
+        return await createDocumentTextFile(documentText);
       }
       return await createTextFile({
         text: configuredText.text,
@@ -1357,10 +1551,16 @@ function filterFile({ req, image, isAvatar }) {
     );
   }
 
-  const isSupportedMimeType = fileConfig.checkType(
-    file.mimetype,
-    endpointFileConfig.supportedMimeTypes,
-  );
+  /* Admission and routing both honor `documentParser.supportedMimeTypes`, so this gate
+   * has to as well: an admin who names a vendor MIME there has said the server parses
+   * it, and a second check that disagrees only moves the refusal one step later. The
+   * request body is complete here, so this is the authoritative place to scope it to
+   * the context path, the only one that reaches the parser. */
+  const parserTypes = fileConfig.documentParser?.supportedMimeTypes;
+  const isContextUpload = req.body?.tool_resource === EToolResources.context;
+  const isSupportedMimeType =
+    fileConfig.checkType(file.mimetype, endpointFileConfig.supportedMimeTypes) ||
+    (isContextUpload && parserTypes != null && fileConfig.checkType(file.mimetype, parserTypes));
 
   if (!isSupportedMimeType) {
     throw new Error('Unsupported file type');

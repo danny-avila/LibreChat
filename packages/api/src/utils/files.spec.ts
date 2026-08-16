@@ -4,6 +4,7 @@ import {
   flattenArtifactPath,
   resolveUploadErrorMessage,
 } from './files';
+import { ConcurrencyLimitError } from './promise';
 
 jest.mock('node:crypto', () => {
   const actualModule = jest.requireActual('node:crypto');
@@ -542,6 +543,45 @@ describe('resolveUploadErrorMessage', () => {
   test('surfaces "Unable to extract text from" errors', () => {
     const msg = 'Unable to extract text from "doc.pdf". The document may be image-based.';
     expect(resolveUploadErrorMessage({ message: msg })).toBe(msg);
+  });
+
+  /**
+   * A refusal the caller can act on is worth surfacing; "Error processing file" tells
+   * them to retry a document that will fail the same way, or not to retry one that
+   * would have succeeded a moment later.
+   */
+  test('surfaces the shed-load refusal, which is retryable', () => {
+    const limit = new ConcurrencyLimitError(
+      'Too many document parsing requests are already waiting (2 running, 6 queued).',
+    );
+
+    expect(resolveUploadErrorMessage(limit)).toBe(limit.message);
+    expect(limit.userErrorStatusCode).toBe(503);
+  });
+
+  /**
+   * Each of these is permanent for the document that caused it: the caller has to send a
+   * smaller or different one, and "Error processing file" invites them to retry the
+   * same bytes instead. Matched on the code, so rewording a message cannot quietly turn
+   * one back into a generic failure.
+   */
+  test.each([
+    ['an oversized extraction', 'PARSER_OUTPUT_LIMIT', 'anydoc extracted 22MB of text'],
+    ['a refused archive', 'ARCHIVE_INVALID', 'report.docx: archive could not be read safely'],
+    ['a zip bomb', 'ZIP_BOMB', 'evil.docx: entry count (9000) exceeds the 4096-entry cap'],
+    [
+      'a page-flooded PDF',
+      'PDF_PAGE_LIMIT',
+      'PDF contains 4000 pages, exceeding the 1000-page limit',
+    ],
+  ])('surfaces %s', (_label, code, message) => {
+    expect(resolveUploadErrorMessage({ message, code })).toBe(message);
+  });
+
+  test('still hides an untagged internal failure', () => {
+    expect(resolveUploadErrorMessage({ message: 'ECONNREFUSED 127.0.0.1:6379' })).toBe(
+      'Error processing file',
+    );
   });
 
   test('accepts a custom default message', () => {

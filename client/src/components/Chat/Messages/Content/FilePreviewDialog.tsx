@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import { Download } from 'lucide-react';
+import { FileSources, isParsedDocument } from 'librechat-data-provider';
 import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogDescription } from '@librechat/client';
+import ExtractedTextPanel from '~/components/Chat/Input/Files/ExtractedTextPanel';
 import { useFileDownload, useSharedFileDownload } from '~/data-provider';
 import { logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import CopyButton from '~/components/Messages/Content/CopyButton';
@@ -21,6 +23,14 @@ interface FilePreviewDialogProps {
   pageRelevance?: Record<number, number>;
   fileType?: string;
   fileSize?: number;
+  /**
+   * Storage backend the record was written to. Only `FileSources.text` records
+   * hold extracted text, so the parsed-text fallback stays off when the caller
+   * cannot supply it rather than promising text that was never stored.
+   */
+  source?: FileSources;
+  /** Share-safe replacement for `source`, which shared-message sanitization removes. */
+  hasTextPreview?: boolean;
 }
 
 function getFileExtension(filename: string): string {
@@ -28,12 +38,30 @@ function getFileExtension(filename: string): string {
   return dot > 0 ? filename.slice(dot + 1).toLowerCase() : '';
 }
 
+/**
+ * Parsed documents whose bytes still read as text. The parser handles them, but a
+ * record stored as an ordinary file (a direct attachment, a code-generated artifact)
+ * has no extracted text to fall back on and renders perfectly well raw.
+ */
+const textRenderableParsedTypes = /^(?:text|application)\/(?:csv|rtf)$/i;
+
+/** Parsed documents with no readable raw form. PDF has its own inline preview. */
+const isParsedOfficeDoc = (mime: string): boolean =>
+  !mime.includes('pdf') && !textRenderableParsedTypes.test(mime) && isParsedDocument(mime);
+
 function canPreviewByMime(mime?: string): 'pdf' | 'text' | false {
   if (!mime) {
     return false;
   }
   if (mime.includes('pdf')) {
     return 'pdf';
+  }
+  /* Office MIME types contain the substring "xml"
+   * (application/vnd.openxmlformats-officedocument...), so the check below would
+   * classify a binary .docx/.pptx/.xlsx as text and render its raw bytes. They
+   * have no inline preview; their extracted text is shown instead. */
+  if (isParsedOfficeDoc(mime)) {
+    return false;
   }
   if (
     mime.startsWith('text/') ||
@@ -136,9 +164,20 @@ export default function FilePreviewDialog({
   pageRelevance,
   fileType,
   fileSize,
+  source,
+  hasTextPreview,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
   const user = useRecoilValue(store.user);
+  /**
+   * Parsed documents render no preview of their own, so fall back to their text.
+   * The MIME type alone is not enough: a stored PDF whose download fails is not a
+   * parsed record, and offering its "extracted text" hides the real "preview
+   * unavailable" outcome behind an empty state.
+   */
+  const showParsedText =
+    (source === FileSources.text || hasTextPreview === true) &&
+    isParsedDocument(fileType, fileName);
   const { shareId } = useShareContext();
   const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
   const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
@@ -154,7 +193,9 @@ export default function FilePreviewDialog({
   const [isCopied, setIsCopied] = useState(false);
   const loadingRef = useRef(false);
 
-  const previewKind = canPreviewByMime(fileType) || canPreviewByExt(fileName);
+  const previewKind = showParsedText
+    ? false
+    : canPreviewByMime(fileType) || canPreviewByExt(fileName);
 
   const cancelledRef = useRef(false);
 
@@ -279,7 +320,7 @@ export default function FilePreviewDialog({
             <OGDialogDescription className="min-w-0 truncate">
               {metaParts.join(' · ')}
             </OGDialogDescription>
-            {fileId && (
+            {fileId && !showParsedText && (
               <button
                 type="button"
                 onClick={handleDownload}
@@ -301,7 +342,7 @@ export default function FilePreviewDialog({
               </span>
             </div>
           )}
-          {previewError && (
+          {previewError && !showParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
@@ -333,12 +374,22 @@ export default function FilePreviewDialog({
               </div>
             </>
           )}
-          {!previewKind && !loading && (
+          {!previewKind && !loading && !showParsedText && (
             <div className="flex h-32 items-center justify-center rounded-lg bg-surface-secondary">
               <span className="text-sm text-text-secondary">
                 {localize('com_ui_preview_unavailable')}
               </span>
             </div>
+          )}
+          {/* Parsed documents have no stored binary here, but the parser already read
+           * them for the model. Showing that text avoids a request for a marker path. */}
+          {!previewKind && !loading && showParsedText && (
+            <>
+              <p className="pb-3 text-sm text-text-secondary">
+                {localize('com_ui_extracted_text_description')}
+              </p>
+              <ExtractedTextPanel fileId={fileId} enabled={open} shareId={shareId} />
+            </>
           )}
         </div>
       </OGDialogContent>

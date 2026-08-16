@@ -66,8 +66,9 @@ jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
 }));
 
-function getFileInput(container: HTMLElement): HTMLInputElement {
-  const input = container.querySelector('input[type="file"]');
+function getFileInput(): HTMLInputElement {
+  const inputs = document.querySelectorAll('input[type="file"][accept=".zip,.skill,.md"]');
+  const input = inputs[inputs.length - 1];
   if (!(input instanceof HTMLInputElement)) {
     throw new Error('Upload input was not rendered');
   }
@@ -103,12 +104,12 @@ describe('UploadSkillDialog', () => {
   });
 
   it('rejects files above the configured skill import limit before upload', () => {
-    const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+    render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
     const file = new File([new Uint8Array(1024 * 1024 + 1)], 'too-large.skill', {
       type: 'application/zip',
     });
 
-    fireEvent.change(getFileInput(container), {
+    fireEvent.change(getFileInput(), {
       target: {
         files: [file],
       },
@@ -123,12 +124,12 @@ describe('UploadSkillDialog', () => {
 
   it('uploads files exactly at the configured skill import limit', () => {
     const appendSpy = jest.spyOn(FormData.prototype, 'append');
-    const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+    render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
     const file = new File([new Uint8Array(1024 * 1024)], 'exact-limit.skill', {
       type: 'application/zip',
     });
 
-    fireEvent.change(getFileInput(container), {
+    fireEvent.change(getFileInput(), {
       target: {
         files: [file],
       },
@@ -142,12 +143,12 @@ describe('UploadSkillDialog', () => {
 
   it('uploads files under the configured skill import limit', () => {
     const appendSpy = jest.spyOn(FormData.prototype, 'append');
-    const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+    render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
     const file = new File([new Uint8Array(1024)], 'small.skill', {
       type: 'application/zip',
     });
 
-    fireEvent.change(getFileInput(container), {
+    fireEvent.change(getFileInput(), {
       target: {
         files: [file],
       },

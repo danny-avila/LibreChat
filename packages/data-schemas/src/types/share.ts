@@ -19,6 +19,8 @@ export interface SharedFileSnapshot {
   width?: number;
   height?: number;
   model?: string;
+  /** Preview-only parsed record with durable text in the live File document. */
+  hasTextPreview?: boolean;
   /** Deferred-preview generation marker captured at share time. The share routes
    * refuse to serve when the live file's revision no longer matches (the file_id
    * was reused/overwritten by a later turn), so a link can't surface post-share
@@ -49,6 +51,11 @@ export interface ISharedLink {
   snapshotFiles?: boolean;
   /** Per-share file snapshot referenced by the share-scoped file routes. */
   fileSnapshots?: SharedFileSnapshot[];
+  /**
+   * Build version of `fileSnapshots`. Absent on links snapshotted before versioning,
+   * whose arrays omit records later builds capture; those are rebuilt on next view.
+   */
+  snapshotVersion?: number;
 }
 
 export interface ShareServiceError extends Error {

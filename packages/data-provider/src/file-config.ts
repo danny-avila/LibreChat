@@ -233,21 +233,87 @@ export const defaultOCRMimeTypes = [
   imageMimeTypes,
   excelMimeTypes,
   /^application\/pdf$/,
-  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation)$/,
-  /^application\/vnd\.openxmlformats-officedocument\.presentationml\.template$/,
-  /^application\/vnd\.ms-(word|powerpoint)$/,
+  /^application\/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.(presentation|slideshow|template))$/,
+  /* `application/msword` is the canonical legacy Word type; `vnd.ms-word` is not, and
+   * matching only the latter left every `.doc` outside the OCR defaults while the parser
+   * happily read it. */
+  /^application\/(msword|vnd\.ms-(word|powerpoint))$/,
+  /* RTF embeds pictures the same way, and the parser reports them. */
+  /^(application|text)\/rtf$/,
+  /* The same document families in their macro-enabled and binary containers. The local
+   * parser reads these, and a scan inside one is exactly what it hands to OCR, so
+   * leaving them out would mean a DOCM's scanned page is silently kept as partial text
+   * where the same content in a DOCX is recovered. */
+  /^application\/vnd\.ms-word\.document\.macroenabled\.12$/i,
+  /^application\/vnd\.ms-powerpoint\.(presentation|slideshow)\.macroenabled\.12$/i,
+  /^application\/vnd\.ms-excel\.sheet\.(macroenabled|binary\.macroenabled)\.12$/i,
   /^application\/epub\+zip$/,
   /^application\/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$/,
 ];
 
-/** MIME types handled by the built-in document parser (pdf, docx, excel variants, ods/odt) */
-export const documentParserMimeTypes = [
+/**
+ * Non-PDF document types local extraction handles. Named for the formats rather than
+ * the engine reading them: this list is part of the shared configuration contract the
+ * client validates against, and it should not have to change because the engine did.
+ */
+export const officeDocumentMimeTypes = [
   excelMimeTypes,
-  /^application\/pdf$/,
-  /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/,
-  /^application\/vnd\.oasis\.opendocument\.spreadsheet$/,
-  /^application\/vnd\.oasis\.opendocument\.text$/,
+  /^application\/msword$/i,
+  /^application\/vnd\.ms-word\.document\.macroenabled\.12$/i,
+  /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/i,
+  /^application\/(?:rtf|epub\+zip|csv)$/i,
+  /^text\/(?:rtf|csv)$/i,
+  /^application\/vnd\.ms-powerpoint$/i,
+  /^application\/vnd\.ms-powerpoint\.presentation\.macroenabled\.12$/i,
+  /^application\/vnd\.ms-powerpoint\.slideshow\.macroenabled\.12$/i,
+  /^application\/vnd\.openxmlformats-officedocument\.presentationml\.(?:presentation|slideshow)$/i,
+  /^application\/vnd\.ms-excel\.sheet\.(?:macroenabled|binary\.macroenabled)\.12$/i,
+  /^application\/vnd\.oasis\.opendocument\.(?:text|spreadsheet|presentation)$/i,
 ];
+
+/** MIME types handled by local document extraction, PDF first. */
+export const documentParserMimeTypes = [/^application\/pdf$/i, ...officeDocumentMimeTypes];
+
+/** Extension fallback for uploads whose MIME type arrives generic or missing. */
+const parsedDocumentExtensions = new Set([
+  'pdf',
+  'doc',
+  'docx',
+  'docm',
+  'odt',
+  'rtf',
+  'epub',
+  'ppt',
+  'pps',
+  'pot',
+  'pptx',
+  'pptm',
+  'ppsx',
+  'ppsm',
+  'odp',
+  'xls',
+  'xlsx',
+  'xlsm',
+  'xlsb',
+  'ods',
+  'csv',
+]);
+
+/**
+ * Whether the document parser extracts text for this file, resolved the way the
+ * parser itself routes: MIME type first, filename extension as fallback.
+ * Single source of truth for every UI affordance that offers extracted text.
+ */
+export function isParsedDocument(type?: string | null, filename?: string | null): boolean {
+  if (type && documentParserMimeTypes.some((regex) => regex.test(type))) {
+    return true;
+  }
+  const dot = filename?.lastIndexOf('.') ?? -1;
+  if (filename == null || dot <= 0) {
+    return false;
+  }
+  return parsedDocumentExtensions.has(filename.slice(dot + 1).toLowerCase());
+}
 
 export const defaultTextMimeTypes = [/^[\w.-]+\/[\w.-]+$/];
 
@@ -257,6 +323,7 @@ export const supportedMimeTypes = [
   textMimeTypes,
   excelMimeTypes,
   applicationMimeTypes,
+  ...documentParserMimeTypes,
   imageMimeTypes,
   videoMimeTypes,
   audioMimeTypes,
@@ -274,6 +341,7 @@ export const codeInterpreterMimeTypes = [
 ];
 
 export const codeTypeMapping: { [key: string]: string } = {
+  pdf: 'application/pdf', // .pdf - Portable Document Format
   c: 'text/x-c', // .c - C source
   cs: 'text/x-csharp', // .cs - C# source
   cpp: 'text/x-c++', // .cpp - C++ source
@@ -394,11 +462,21 @@ export const codeTypeMapping: { [key: string]: string } = {
   odg: 'application/vnd.oasis.opendocument.graphics', // .odg - OpenDocument Graphics
   doc: 'application/msword', // .doc - Word (legacy)
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx - Word
+  docm: 'application/vnd.ms-word.document.macroEnabled.12', // .docm - Word with macros
+  rtf: 'application/rtf', // .rtf - Rich Text Format
+  epub: 'application/epub+zip', // .epub - EPUB publication
   xls: 'application/vnd.ms-excel', // .xls - Excel (legacy)
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx - Excel
+  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12', // .xlsm - Excel with macros
+  xlsb: 'application/vnd.ms-excel.sheet.binary.macroEnabled.12', // .xlsb - Excel binary workbook
   ppt: 'application/vnd.ms-powerpoint', // .ppt - PowerPoint (legacy)
+  pps: 'application/vnd.ms-powerpoint', // .pps - PowerPoint slideshow (legacy)
+  pot: 'application/vnd.ms-powerpoint', // .pot - PowerPoint template (legacy)
   pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx - PowerPoint
   potx: 'application/vnd.openxmlformats-officedocument.presentationml.template', // .potx - PowerPoint template
+  pptm: 'application/vnd.ms-powerpoint.presentation.macroEnabled.12', // .pptm - PowerPoint with macros
+  ppsx: 'application/vnd.openxmlformats-officedocument.presentationml.slideshow', // .ppsx - PowerPoint slideshow
+  ppsm: 'application/vnd.ms-powerpoint.slideshow.macroEnabled.12', // .ppsm - PowerPoint slideshow with macros
   ics: 'text/calendar', // .ics - iCalendar
   ical: 'text/calendar', // .ical - iCalendar
   ifb: 'text/calendar', // .ifb - iCalendar free/busy
@@ -422,6 +500,8 @@ export const mimeTypeAliases: Readonly<Record<string, string>> = {
   'text/x-shellscript': 'application/x-sh',
 };
 
+const genericMimeTypes = new Set(['application/octet-stream', 'binary/octet-stream']);
+
 /**
  * Infers the MIME type from a file's extension when the browser doesn't recognize it,
  * and normalizes known non-standard MIME type aliases to their canonical forms.
@@ -430,12 +510,48 @@ export const mimeTypeAliases: Readonly<Record<string, string>> = {
  * @returns The normalized or inferred MIME type; empty string if unresolvable
  */
 export function inferMimeType(fileName: string, currentType: string): string {
+  const declaredType = currentType.split(';')[0].trim().toLowerCase();
+  const shouldInfer = !currentType || genericMimeTypes.has(declaredType);
+  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
+  const inferredType = codeTypeMapping[extension] || imageTypeMapping[extension];
+
+  if (shouldInfer && inferredType) {
+    return inferredType;
+  }
+
   if (currentType) {
     return mimeTypeAliases[currentType] ?? currentType;
   }
 
-  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
-  return codeTypeMapping[extension] || imageTypeMapping[extension] || currentType;
+  return currentType;
+}
+
+/**
+ * Zip containers a client may report in place of the document's own type. OOXML, ODF
+ * and EPUB documents are archives, so a client that types uploads by magic bytes calls
+ * an ordinary `.docx` one; Windows reports the `x-zip-compressed` alias for both.
+ */
+const archiveMimeTypes = new Set(['application/zip', 'application/x-zip-compressed']);
+
+/**
+ * The MIME type an upload should be routed by. Extends {@link inferMimeType} with the
+ * archive case, where the declared type is real but says only "zip" about a document
+ * the parser reads, and normalizes the rest so casing and `; charset=` parameters
+ * cannot decide a route.
+ *
+ * Shared by the client's upload validation and the server's routing: a file offered
+ * the extracted-text affordance on one side and stored as raw bytes on the other is
+ * the failure this exists to prevent.
+ */
+export function resolveEffectiveMimeType(fileName: string, currentType: string): string {
+  const declared = (currentType ?? '').split(';')[0].trim().toLowerCase();
+  if (!declared || genericMimeTypes.has(declared)) {
+    return inferMimeType(fileName, currentType);
+  }
+  if (archiveMimeTypes.has(declared) && isParsedDocument(null, fileName)) {
+    return inferMimeType(fileName, '') || declared;
+  }
+  return mimeTypeAliases[declared] ?? declared;
 }
 
 export const retrievalMimeTypes = [
@@ -494,6 +610,9 @@ export const fileConfig = {
   ocr: {
     supportedMimeTypes: defaultOCRMimeTypes,
   },
+  documentParser: {
+    supportedMimeTypes: documentParserMimeTypes,
+  },
   text: {
     supportedMimeTypes: defaultTextMimeTypes,
   },
@@ -542,9 +661,21 @@ export const fileConfigSchema = z.object({
   ocr: z
     .object({
       supportedMimeTypes: supportedMimeTypesSchema.optional(),
+      enabled: z.boolean().optional(),
+    })
+    .optional(),
+  documentParser: z
+    .object({
+      supportedMimeTypes: supportedMimeTypesSchema.optional(),
     })
     .optional(),
   text: z
+    .object({
+      supportedMimeTypes: supportedMimeTypesSchema.optional(),
+      enabled: z.boolean().optional(),
+    })
+    .optional(),
+  stt: z
     .object({
       supportedMimeTypes: supportedMimeTypesSchema.optional(),
     })
@@ -989,6 +1120,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...fileConfig.ocr,
       supportedMimeTypes: fileConfig.ocr?.supportedMimeTypes || [],
     },
+    documentParser: {
+      ...fileConfig.documentParser,
+      supportedMimeTypes: fileConfig.documentParser?.supportedMimeTypes || [],
+    },
     text: {
       ...fileConfig.text,
       supportedMimeTypes: fileConfig.text?.supportedMimeTypes || [],
@@ -1041,6 +1176,18 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     }
   }
 
+  if (dynamic.documentParser !== undefined) {
+    const { supportedMimeTypes: documentParserTypes, ...documentParserRest } =
+      dynamic.documentParser;
+    mergedConfig.documentParser = {
+      ...mergedConfig.documentParser,
+      ...documentParserRest,
+    };
+    if (documentParserTypes) {
+      mergedConfig.documentParser.supportedMimeTypes = convertStringsToRegex(documentParserTypes);
+    }
+  }
+
   if (dynamic.text !== undefined) {
     const { supportedMimeTypes: textMimeTypes, ...textRest } = dynamic.text;
     mergedConfig.text = {
@@ -1049,6 +1196,17 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     };
     if (textMimeTypes) {
       mergedConfig.text.supportedMimeTypes = convertStringsToRegex(textMimeTypes);
+    }
+  }
+
+  if (dynamic.stt !== undefined) {
+    const { supportedMimeTypes: sttMimeTypes, ...sttRest } = dynamic.stt;
+    mergedConfig.stt = {
+      ...mergedConfig.stt,
+      ...sttRest,
+    };
+    if (sttMimeTypes) {
+      mergedConfig.stt.supportedMimeTypes = convertStringsToRegex(sttMimeTypes);
     }
   }
 

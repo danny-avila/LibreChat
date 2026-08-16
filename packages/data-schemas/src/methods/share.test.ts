@@ -1,10 +1,21 @@
 import { nanoid } from 'nanoid';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
+import {
+  Constants,
+  ContentTypes,
+  DocumentParser,
+  FileSources,
+  Tools,
+} from 'librechat-data-provider';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type * as t from '~/types';
-import { createShareMethods, anonymizeSharedContent, type ShareMethods } from './share';
+import {
+  createShareMethods,
+  anonymizeSharedContent,
+  FILE_SNAPSHOT_VERSION,
+  type ShareMethods,
+} from './share';
 
 describe('Share Methods', () => {
   let mongoServer: MongoMemoryServer;
@@ -31,6 +42,7 @@ describe('Share Methods', () => {
         expiredAt: { type: Date },
         snapshotFiles: { type: Boolean },
         fileSnapshots: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+        snapshotVersion: { type: Number },
       },
       { timestamps: true },
     );
@@ -51,6 +63,7 @@ describe('Share Methods', () => {
         textFormat: { type: String, enum: ['html', 'text'] },
         status: { type: String, enum: ['pending', 'ready', 'failed'] },
         previewError: String,
+        previewRevision: String,
         tenantId: String,
       },
       { timestamps: true },
@@ -877,7 +890,7 @@ describe('Share Methods', () => {
         newConvoId: 'convo_anon',
         newMessageId: 'msg_anon',
         shareId: 'share_ref',
-        snapshotIds: new Set<string>(),
+        snapshots: new Map<string, t.SharedFileSnapshot>(),
         includeFiles: true,
       };
 
@@ -2468,6 +2481,47 @@ describe('Share Methods', () => {
       expect(byId.get(docId)?.filepath).toBe(`/uploads/${userId}/${docId}`);
     });
 
+    test('snapshots parsed document text without retaining its parser marker as a path', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId, {
+        source: FileSources.text,
+        filepath: DocumentParser.anydoc,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'report.docx',
+        text: '# Parsed report',
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'parsed document',
+        isCreatedByUser: true,
+        files: [
+          {
+            file_id: docId,
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename: 'report.docx',
+            filepath: DocumentParser.anydoc,
+          },
+        ],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.fileSnapshots?.[0]).toEqual(
+        expect.objectContaining({ file_id: docId, hasTextPreview: true }),
+      );
+      expect(saved?.fileSnapshots?.[0].filepath).toBeUndefined();
+
+      const shared = await shareMethods.getSharedMessages(shareId);
+      const file = shared?.messages[0].files?.[0];
+      expect(file?.hasTextPreview).toBe(true);
+      expect(file?.filepath).toBeUndefined();
+      expect(file?.source).toBeUndefined();
+    });
+
     test('createSharedLink with snapshotFiles=false stores no snapshots', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
@@ -2620,6 +2674,181 @@ describe('Share Methods', () => {
       const missing = await shareMethods.getSharedLinkFile(shareId, 'file_does_not_exist');
       expect(missing.file).toBeNull();
       expect(missing.hasSnapshots).toBe(true);
+    });
+
+    /**
+     * Links shared between the snapshot feature and parsed-text previews hold a
+     * populated array that skipped every `FileSources.text` record. A presence check
+     * treats that as complete, so the preview stays missing until the owner updates
+     * the link; the stored version is what marks it for rebuild.
+     */
+    test('rebuilds a snapshot built before parsed text was captured', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId, {
+        source: FileSources.text,
+        filepath: DocumentParser.anydoc,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'report.docx',
+        text: '# Parsed report',
+      });
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'parsed document',
+        isCreatedByUser: true,
+        files: [{ file_id: docId, filepath: DocumentParser.anydoc }],
+      });
+
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        fileSnapshots: [],
+      });
+
+      const stale = await shareMethods.getSharedLinkFile(shareId, docId);
+      expect(stale.hasSnapshots).toBe(false);
+
+      const shared = await shareMethods.getSharedMessages(shareId);
+      expect(shared?.messages[0].files?.[0]?.hasTextPreview).toBe(true);
+
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.fileSnapshots).toHaveLength(1);
+      expect(saved?.snapshotVersion).toBe(FILE_SNAPSHOT_VERSION);
+
+      const current = await shareMethods.getSharedLinkFile(shareId, docId);
+      expect(current.hasSnapshots).toBe(true);
+      expect(current.file?.hasTextPreview).toBe(true);
+    });
+
+    /**
+     * Every existing entry pins the file as it was at share time, and the file route
+     * refuses to serve when the live document no longer matches. Re-reading those
+     * entries during the version upgrade would re-pin them to whatever the id holds
+     * now, so a link shared before a same-filename code output reused it would start
+     * serving the newer content. The upgrade may only add.
+     */
+    test('keeps the pins of a stale snapshot while adding the records it missed', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const imageId = await createFile(userId, {
+        type: 'image/png',
+        filename: 'pic.png',
+        filepath: `/images/${userId}/pic.png`,
+        bytes: 4096,
+        previewRevision: 'rev-2',
+      });
+      const docId = await createFile(userId, {
+        source: FileSources.text,
+        filepath: DocumentParser.anydoc,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'report.docx',
+        text: '# Parsed report',
+      });
+      const message = await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'image and parsed document',
+        isCreatedByUser: true,
+        files: [{ file_id: imageId }, { file_id: docId, filepath: DocumentParser.anydoc }],
+      });
+
+      const shareId = `share_${nanoid()}`;
+      await SharedLink.create({
+        shareId,
+        conversationId,
+        user: userId,
+        messages: [message._id],
+        fileSnapshots: [
+          {
+            file_id: imageId,
+            source: FileSources.local,
+            filepath: `/images/${userId}/pic.png`,
+            type: 'image/png',
+            filename: 'pic.png',
+            bytes: 512,
+            previewRevision: 'rev-1',
+          },
+        ],
+      });
+
+      await shareMethods.getSharedMessages(shareId);
+
+      const saved = await SharedLink.findOne({ shareId }).lean();
+      expect(saved?.snapshotVersion).toBe(FILE_SNAPSHOT_VERSION);
+      const byId = new Map(saved?.fileSnapshots?.map((snapshot) => [snapshot.file_id, snapshot]));
+      expect(byId.get(imageId)).toEqual(
+        expect.objectContaining({ previewRevision: 'rev-1', bytes: 512 }),
+      );
+      expect(byId.get(docId)).toEqual(expect.objectContaining({ hasTextPreview: true }));
+    });
+
+    /**
+     * A configured RAG extraction stores the document's own MIME type and the temporary
+     * upload path, which is gone by the time anyone opens the share. Keying only on the
+     * local parser's marker left those links reporting no preview while the text sat in
+     * MongoDB, which is the one thing the snapshot exists to make available.
+     */
+    test('snapshots a document extracted by a configured RAG service', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const docId = await createFile(userId, {
+        source: FileSources.text,
+        filepath: `/tmp/uploads/${userId}/upload-uuid.bin`,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        filename: 'report.docx',
+        text: '# Extracted by RAG',
+      });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'rag document',
+        isCreatedByUser: true,
+        files: [{ file_id: docId }],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      const saved = await SharedLink.findOne({ shareId }).lean();
+
+      expect(saved?.fileSnapshots?.[0]).toEqual(
+        expect.objectContaining({ file_id: docId, hasTextPreview: true }),
+      );
+      /** The dead temporary path never reaches a viewer. */
+      expect(saved?.fileSnapshots?.[0].filepath).toBeUndefined();
+    });
+
+    test('leaves a current snapshot alone when a referenced file is unsnapshottable', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      await seedConversation(userId, conversationId);
+      const skippedId = await createFile(userId, { source: FileSources.vectordb });
+      await Message.create({
+        messageId: `msg_${nanoid()}`,
+        conversationId,
+        user: userId,
+        text: 'vector file',
+        isCreatedByUser: true,
+        files: [{ file_id: skippedId }],
+      });
+
+      const { shareId } = await shareMethods.createSharedLink(userId, conversationId);
+      const created = await SharedLink.findOne({ shareId }).lean();
+      expect(created?.fileSnapshots).toHaveLength(0);
+      expect(created?.snapshotVersion).toBe(FILE_SNAPSHOT_VERSION);
+
+      await shareMethods.getSharedMessages(shareId);
+
+      const { hasSnapshots } = await shareMethods.getSharedLinkFile(shareId, skippedId);
+      expect(hasSnapshots).toBe(true);
     });
 
     test('backfillSharedLinkFiles populates a legacy share missing snapshots', async () => {
@@ -2795,10 +3024,17 @@ describe('Share Methods', () => {
     });
 
     test('does not snapshot transient text-source files', async () => {
+      /* A `text` record whose type is not a document the parser reads holds no preview
+       * worth serving: the durable text belongs to parsed documents, and this one's
+       * upload path is gone. The parsed cases are covered above. */
       const userId = new mongoose.Types.ObjectId().toString();
       const conversationId = `conv_${nanoid()}`;
       await seedConversation(userId, conversationId);
-      const textId = await createFile(userId, { source: 'text' });
+      const textId = await createFile(userId, {
+        source: 'text',
+        type: 'text/plain',
+        filename: 'context.txt',
+      });
       await Message.create({
         messageId: `msg_${nanoid()}`,
         conversationId,

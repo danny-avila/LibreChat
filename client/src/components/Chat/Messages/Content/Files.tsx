@@ -49,6 +49,8 @@ const Files = ({ message }: { message?: TMessage }) => {
         filePath={selectedFile?.filepath}
         fileType={selectedFile?.type ?? undefined}
         fileSize={(selectedFile as TFile)?.bytes}
+        source={selectedFile?.source}
+        hasTextPreview={selectedFile?.hasTextPreview}
       />
     </>
   );
