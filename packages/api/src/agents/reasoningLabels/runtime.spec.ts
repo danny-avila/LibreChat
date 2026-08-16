@@ -820,4 +820,44 @@ describe('reasoning labels', () => {
       },
     ]);
   });
+
+  it('synthesizes a reset when a reused gap slot loses its prior label', () => {
+    const snapshot = [
+      {
+        type: ContentTypes.THINK,
+        think: 'old reasoning',
+        reasoning_label: 'Inspecting the stream',
+        reasoning_label_step_id: 'step-old',
+        reasoning_label_revision: 1,
+        reasoning_label_status: 'streaming',
+      },
+    ];
+    const fresh = [
+      {
+        type: ContentTypes.THINK,
+        think: 'old reasoning plus a short new step',
+        reasoning_label_step_id: 'step-new',
+        reasoning_label_attempts: 1,
+      },
+    ];
+
+    expect(
+      synthesizeReasoningLabelGapEvents(snapshot, fresh, {
+        conversationId: 'conversation-1',
+        responseMessageId: 'response-1',
+      }),
+    ).toEqual([
+      {
+        event: 'on_reasoning_label',
+        data: {
+          index: 0,
+          stepId: 'step-new',
+          reset: true,
+          attempts: 1,
+          conversationId: 'conversation-1',
+          responseMessageId: 'response-1',
+        },
+      },
+    ]);
+  });
 });

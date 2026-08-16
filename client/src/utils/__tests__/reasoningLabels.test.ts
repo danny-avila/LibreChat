@@ -68,6 +68,36 @@ describe('reasoning label utilities', () => {
     expect(applyReasoningLabel(completed, baseEvent)).toBe(completed);
   });
 
+  it('clears a stale snapshot label when its THINK slot belongs to a new step', () => {
+    const oldStep = applyReasoningLabel(response(), {
+      ...baseEvent,
+      stepId: 'old-step',
+      revision: 3,
+      label: 'Inspecting the old direction',
+      status: 'complete',
+    });
+    const updated = applyReasoningLabel(oldStep, {
+      index: 0,
+      stepId: 'new-step',
+      reset: true,
+      attempts: 4,
+      responseMessageId: 'response-1',
+    });
+
+    expect(updated.content?.[0]).toMatchObject({
+      type: ContentTypes.THINK,
+      think: 'Visible reasoning',
+      reasoning_label_step_id: 'new-step',
+      reasoning_label_attempts: 4,
+    });
+    expect(updated.content?.[0]).not.toHaveProperty('reasoning_label');
+    expect(updated.content?.[0]).not.toHaveProperty('reasoning_label_revision');
+    expect(updated.content?.[0]).not.toHaveProperty('reasoning_label_status');
+    expect(applyReasoningLabel(updated, { index: 0, stepId: 'new-step', reset: true })).toBe(
+      updated,
+    );
+  });
+
   it('does not overwrite another reasoning step at the raw index', () => {
     const oldStep = applyReasoningLabel(response(), {
       ...baseEvent,

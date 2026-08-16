@@ -100,18 +100,31 @@ export enum ReasoningLabelEvents {
   ON_REASONING_LABEL_ATTEMPT = 'on_reasoning_label_attempt',
 }
 
-/** Payload of the `on_reasoning_label` SSE event. */
-export type TReasoningLabelEvent = {
+type TReasoningLabelEventBase = {
   /** Completion-local content index of the reasoning part being updated. */
   index: number;
   stepId: string;
-  /** Run-unique provider-call revision; may contain gaps after unsuccessful attempts. */
-  revision: number;
-  label: string;
-  status: 'streaming' | 'complete';
   responseMessageId?: string;
   conversationId?: string;
 };
+
+/** Payload of the `on_reasoning_label` SSE event. */
+export type TReasoningLabelEvent = TReasoningLabelEventBase &
+  (
+    | {
+        /** Clears a snapshot title when its THINK slot changed during the resume gap. */
+        reset: true;
+        /** Latest run-global call-budget high-water, when present on fresh content. */
+        attempts?: number;
+      }
+    | {
+        reset?: false;
+        /** Run-unique provider-call revision; may contain gaps after unsuccessful attempts. */
+        revision: number;
+        label: string;
+        status: 'streaming' | 'complete';
+      }
+  );
 
 /** Durable run-cumulative call-budget reservation, attributed to one reasoning step. */
 export type TReasoningLabelAttemptEvent = {

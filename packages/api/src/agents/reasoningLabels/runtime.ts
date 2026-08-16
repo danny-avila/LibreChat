@@ -165,7 +165,7 @@ function getReasoningPart(
   return part?.type === ContentTypes.THINK ? part : undefined;
 }
 
-/** Re-emits reasoning-title revisions committed in the resume snapshot gap. */
+/** Re-emits reasoning-title revisions or resets committed in the resume snapshot gap. */
 export function synthesizeReasoningLabelGapEvents(
   snapshotContent: ReadonlyArray<LooseContentPart | null | undefined>,
   freshContent: ReadonlyArray<LooseContentPart | null | undefined>,
@@ -174,15 +174,42 @@ export function synthesizeReasoningLabelGapEvents(
   const events: ReasoningLabelGapEvent[] = [];
   for (let i = 0; i < freshContent.length; i += 1) {
     const part = freshContent[i];
-    if (
-      part?.type !== ContentTypes.THINK ||
-      typeof part.reasoning_label !== 'string' ||
-      typeof part.reasoning_label_revision !== 'number' ||
-      typeof part.reasoning_label_step_id !== 'string'
-    ) {
+    if (part?.type !== ContentTypes.THINK) {
       continue;
     }
     const snapshot = snapshotContent[i];
+    const snapshotHasLabel =
+      snapshot?.type === ContentTypes.THINK &&
+      typeof snapshot.reasoning_label === 'string' &&
+      snapshot.reasoning_label.trim().length > 0;
+    const freshHasLabel =
+      typeof part.reasoning_label === 'string' &&
+      part.reasoning_label.trim().length > 0 &&
+      typeof part.reasoning_label_revision === 'number' &&
+      typeof part.reasoning_label_step_id === 'string';
+    if (!freshHasLabel) {
+      const stepId =
+        typeof part.reasoning_label_step_id === 'string'
+          ? part.reasoning_label_step_id
+          : snapshot?.reasoning_label_step_id;
+      if (!snapshotHasLabel || typeof stepId !== 'string') {
+        continue;
+      }
+      events.push({
+        event: 'on_reasoning_label',
+        data: {
+          index: i,
+          stepId,
+          reset: true,
+          ...(typeof part.reasoning_label_attempts === 'number' && {
+            attempts: part.reasoning_label_attempts,
+          }),
+          conversationId: meta.conversationId,
+          ...(meta.responseMessageId != null && { responseMessageId: meta.responseMessageId }),
+        },
+      });
+      continue;
+    }
     if (
       snapshot?.type === ContentTypes.THINK &&
       snapshot.reasoning_label_step_id === part.reasoning_label_step_id &&

@@ -1,4 +1,4 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes, stripReasoningLabelMetadata } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts, TReasoningLabelEvent } from 'librechat-data-provider';
 
 /** Resolves the assistant response targeted by a reasoning-label update. */
@@ -22,10 +22,37 @@ export function findReasoningLabelMessageIndex(
 
 /** Applies a monotonic title revision to an existing THINK part without moving it. */
 export function applyReasoningLabel(message: TMessage, event: TReasoningLabelEvent): TMessage {
-  if (event.index < 0 || !Number.isInteger(event.index) || !event.label.trim()) {
+  if (event.index < 0 || !Number.isInteger(event.index)) {
     return message;
   }
   const content = Array.isArray(message.content) ? message.content : [];
+  if (event.reset === true) {
+    const existing = content[event.index];
+    if (existing?.type !== ContentTypes.THINK) {
+      return message;
+    }
+    const attempts = event.attempts ?? existing.reasoning_label_attempts;
+    const alreadyReset =
+      existing.reasoning_label_step_id === event.stepId &&
+      existing.reasoning_label == null &&
+      existing.reasoning_label_revision == null &&
+      existing.reasoning_label_status == null &&
+      existing.reasoning_label_submitted_chars == null &&
+      existing.reasoning_label_attempts === attempts;
+    if (alreadyReset) {
+      return message;
+    }
+    const nextContent = [...content] as TMessageContentParts[];
+    nextContent[event.index] = {
+      ...stripReasoningLabelMetadata(existing),
+      reasoning_label_step_id: event.stepId,
+      ...(attempts != null && { reasoning_label_attempts: attempts }),
+    };
+    return { ...message, content: nextContent };
+  }
+  if (!event.label.trim()) {
+    return message;
+  }
   let targetIndex = event.index;
   let existing = content[targetIndex];
   if (
