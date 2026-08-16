@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import { Link2, Pin, Ellipsis } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
-import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
+import { Spinner, useToastContext, useMediaQuery, Button } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import { useGetStartupConfig, useUpdateConversationMutation } from '~/data-provider';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
@@ -143,6 +143,15 @@ function Conversation({
 
   const handlePopoverOpenChange = useCallback((open: boolean) => {
     setIsPopoverActive(open);
+    if (open) {
+      /**
+       * Every opening counts, not just the one routed through the touch
+       * trigger. The active row already renders the real menu, so a row opened
+       * while active and later demoted would otherwise swap its focused button
+       * for a new node and drop focus.
+       */
+      setHasOpenedMenu(true);
+    }
     if (!open) {
       requestAnimationFrame(() => {
         const container = containerRef.current;
@@ -240,11 +249,12 @@ function Conversation({
     actionContent = <ConvoOptions {...convoOptionsProps} />;
   } else if (showOptionsTrigger) {
     actionContent = (
-      <button
-        type="button"
+      <Button
+        size="icon"
+        variant="ghost"
         aria-label={localize('com_nav_convo_menu_options')}
         data-testid="convo-options-trigger"
-        className="flex size-9 items-center justify-center rounded-lg text-text-secondary"
+        className="size-9 text-text-secondary"
         /**
          * A plain click: the browser already withholds it until a press
          * resolves as a tap rather than a scroll, and synthesises it for
@@ -257,7 +267,7 @@ function Conversation({
         }}
       >
         <Ellipsis className="icon-md" aria-hidden="true" />
-      </button>
+      </Button>
     );
   }
 

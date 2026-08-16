@@ -2,8 +2,8 @@ import { useState, useId, useRef, memo, useCallback, useMemo } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
-import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
 import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
+import { DropdownPopup, Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import {
   Ellipsis,
   Share2,
@@ -58,6 +58,7 @@ function ConvoOptions({
 }) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
+  const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const { index } = useChatContext();
   const { data: startupConfig } = useGetStartupConfig();
   const { navigateToConvo } = useNavigateToConvo(index);
@@ -366,7 +367,8 @@ function ConvoOptions({
 
   const buttonClassName = cn(
     'inline-flex h-7 w-7 items-center justify-center rounded-md border-none p-0 text-sm font-medium ring-ring-primary transition-all duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50',
-    isActiveConvo === true || isPopoverActive
+    /** Touch has no hover, so a reveal-on-hover trigger is simply invisible there. */
+    isActiveConvo === true || isPopoverActive || isSmallScreen
       ? 'opacity-100'
       : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
   );

@@ -9,6 +9,9 @@ jest.mock('@librechat/client', () => ({
   useMediaQuery: () => mockIsSmallScreen,
   useToastContext: () => ({ showToast: jest.fn() }),
   Spinner: () => <div data-testid="spinner" />,
+  Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
+    <button {...props}>{children}</button>
+  ),
 }));
 
 jest.mock('~/hooks', () => ({
