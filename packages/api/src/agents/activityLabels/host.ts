@@ -297,26 +297,29 @@ export async function resolveActivityLabelModel({
   const appConfig = req.config as AppConfig | undefined;
   const agentEndpoint = agent.endpoint ?? '';
   let providerConfig = getProviderConfig({ provider: agentEndpoint, appConfig });
-  const activity = reasoning
-    ? resolveReasoningLabelConfig(
-        appConfig,
-        agentEndpoint,
-        providerConfig.customEndpointConfig,
-        publicEndpoint,
-      )
-    : phase
-      ? resolveActivityPhaseConfig(
-          appConfig,
-          agentEndpoint,
-          providerConfig.customEndpointConfig,
-          publicEndpoint,
-        )
-      : resolveActivityConfig(
-          appConfig,
-          agentEndpoint,
-          providerConfig.customEndpointConfig,
-          publicEndpoint,
-        );
+  let activity: ResolvedActivityConfig | ResolvedActivityPhaseConfig | ResolvedReasoningLabelConfig;
+  if (reasoning) {
+    activity = resolveReasoningLabelConfig(
+      appConfig,
+      agentEndpoint,
+      providerConfig.customEndpointConfig,
+      publicEndpoint,
+    );
+  } else if (phase) {
+    activity = resolveActivityPhaseConfig(
+      appConfig,
+      agentEndpoint,
+      providerConfig.customEndpointConfig,
+      publicEndpoint,
+    );
+  } else {
+    activity = resolveActivityConfig(
+      appConfig,
+      agentEndpoint,
+      providerConfig.customEndpointConfig,
+      publicEndpoint,
+    );
+  }
 
   /**
    * Captured from the ORIGINATING endpoint, before any `activityEndpoint`
@@ -340,11 +343,12 @@ export async function resolveActivityLabelModel({
       providerConfig = getProviderConfig({ provider: activity.endpoint, appConfig });
       endpoint = activity.endpoint;
     } catch (error) {
-      const endpointField = reasoning
-        ? 'reasoningLabelEndpoint'
-        : phase
-          ? 'activityPhaseEndpoint'
-          : 'activityEndpoint';
+      let endpointField = 'activityEndpoint';
+      if (reasoning) {
+        endpointField = 'reasoningLabelEndpoint';
+      } else if (phase) {
+        endpointField = 'activityPhaseEndpoint';
+      }
       logger.warn(
         `[activityLabels] Unknown ${endpointField} "${activity.endpoint}", falling back to "${agentEndpoint}"`,
         error,

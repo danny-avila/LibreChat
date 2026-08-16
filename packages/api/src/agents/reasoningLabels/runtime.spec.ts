@@ -168,7 +168,7 @@ describe('reasoning labels', () => {
       await harness.settle();
       expect(generate).toHaveBeenCalledTimes(2);
       expect(generate.mock.calls[1][0]).toMatchObject({ revision: 2 });
-      expect(harness.events.at(-1)).toMatchObject({
+      expect(harness.events[harness.events.length - 1]).toMatchObject({
         revision: 2,
         label: 'Tracing the stream race',
       });
@@ -323,10 +323,11 @@ describe('reasoning labels', () => {
     await harness.append('x'.repeat(120));
     await harness.close();
     await terminalEmit;
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(generate).toHaveBeenCalledTimes(2);
     expect(generate.mock.calls[1][0]).toMatchObject({ revision: 2, status: 'complete' });
-    expect(harness.events.at(-1)).toMatchObject({
+    expect(harness.events[harness.events.length - 1]).toMatchObject({
       revision: 2,
       label: 'Validated the terminal result',
       status: 'complete',
@@ -482,7 +483,7 @@ describe('reasoning labels', () => {
       previousLabel: 'Investigating the direction',
       visibleReasoning: '123456789',
     });
-    expect(harness.events.at(-1)).toMatchObject({
+    expect(harness.events[harness.events.length - 1]).toMatchObject({
       revision: 2,
       status: 'complete',
       label: 'Resolved the final direction',
@@ -500,7 +501,10 @@ describe('reasoning labels', () => {
     await harness.settle();
 
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(harness.events.at(-1)).toMatchObject({ revision: 1, status: 'complete' });
+    expect(harness.events[harness.events.length - 1]).toMatchObject({
+      revision: 1,
+      status: 'complete',
+    });
   });
 
   it('rewrites a meaningful 120-character final tail inside the streaming revision gates', async () => {
@@ -522,7 +526,7 @@ describe('reasoning labels', () => {
 
     expect(generate).toHaveBeenCalledTimes(2);
     expect(generate.mock.calls[1][0]).toMatchObject({ revision: 2, status: 'complete' });
-    expect(harness.events.at(-1)).toMatchObject({
+    expect(harness.events[harness.events.length - 1]).toMatchObject({
       revision: 2,
       status: 'complete',
       label: 'Resolved the stream direction',

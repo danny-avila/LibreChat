@@ -113,7 +113,12 @@ function textValue(value: unknown): string {
 
 function deltaText(data: unknown): string {
   const raw = (data as { delta?: { content?: unknown } } | null)?.delta?.content;
-  const parts = Array.isArray(raw) ? raw : raw != null ? [raw] : [];
+  let parts: unknown[] = [];
+  if (Array.isArray(raw)) {
+    parts = raw;
+  } else if (raw != null) {
+    parts = [raw];
+  }
   return parts
     .filter((part) => (part as { type?: unknown } | null)?.type === ContentTypes.THINK)
     .map((part) => textValue((part as { think?: unknown }).think))
@@ -423,7 +428,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
        *  parallel so balance persistence never delays the visible revision. */
       const usageTask = (async () => {
         try {
-          await generatedLabel.collectUsage?.(generatedLabel.label || label);
+          await generatedLabel.collectUsage?.(generatedLabel.label || label || undefined);
         } catch {
           // Accounting failures must not suppress a valid visible title.
         }

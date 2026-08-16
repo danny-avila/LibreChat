@@ -3898,7 +3898,7 @@ describe('RedisJobStore Integration Tests', () => {
       expect(result?.content).toHaveLength(1);
       expect(result?.content[0]).toMatchObject({
         type: 'think',
-        think: 'Continuing after the pause.',
+        think: 'Inspecting a compacted stream.Continuing after the pause.',
         reasoning_label_step_id: 'reasoning-step-after-pause',
         reasoning_label_attempts: 2,
       });

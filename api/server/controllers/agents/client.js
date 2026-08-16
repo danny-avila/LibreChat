@@ -151,9 +151,12 @@ function extractLLMCompletionText(output) {
   }
   if (Array.isArray(content)) {
     return content
-      .map((block) =>
-        typeof block === 'string' ? block : typeof block?.text === 'string' ? block.text : '',
-      )
+      .map((block) => {
+        if (typeof block === 'string') {
+          return block;
+        }
+        return typeof block?.text === 'string' ? block.text : '';
+      })
       .join('');
   }
   return typeof generation?.text === 'string' ? generation.text : undefined;
