@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Constants, EToolResources } from 'librechat-data-provider';
 import type { UploadLifecycleCallbacks } from '~/hooks/Files/useFileHandling';
-import { getFilesDraft, renewNewConversationDraftToken } from '~/utils/drafts';
+import { getFilesDraft, getPendingDraftId, renewNewConversationDraftToken } from '~/utils/drafts';
 
 const mockForceResize = jest.fn();
 const mockInsertTextAtCursor = jest.fn();
@@ -15,6 +15,8 @@ const mockLocalize = jest.fn((key: string) => key);
 const mockSetActivePrompt = jest.fn();
 
 let useTextarea: typeof import('./useTextarea').default;
+let mockIndex = 0;
+let mockIsSubmitting = false;
 let mockConversation: { endpoint: string; conversationId?: string } = {
   endpoint: 'openAI',
   conversationId: 'convo-1',
@@ -90,9 +92,9 @@ jest.mock('~/data-provider', () => ({
 
 jest.mock('~/Providers/ChatContext', () => ({
   useChatContext: jest.fn(() => ({
-    index: 0,
+    index: mockIndex,
     conversation: mockConversation,
-    isSubmitting: false,
+    isSubmitting: mockIsSubmitting,
     files: new Map(),
     setFilesLoading: mockSetFilesLoading,
   })),
@@ -151,6 +153,8 @@ describe('useTextarea long-paste fallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    mockIndex = 0;
+    mockIsSubmitting = false;
     mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
     mockGetUploadOptions.mockReturnValue([EToolResources.context]);
     mockResolvePastedTextFile.mockImplementation((text: string) => ({
@@ -397,6 +401,59 @@ describe('useTextarea long-paste fallback', () => {
 
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
     expect(mockForceResize).not.toHaveBeenCalled();
+  });
+
+  it('still restores a failed paste when another pane starts a new conversation', async () => {
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        lifecycle?.onStart?.('first-draft-file');
+        return Promise.resolve(true);
+      },
+    );
+    const { result, textArea } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
+    renewNewConversationDraftToken(1);
+
+    act(() => uploadLifecycle?.onError?.('first-draft-file'));
+
+    expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
+    expect(mockForceResize).toHaveBeenCalledWith(textArea);
+    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+  });
+
+  it('stores a pending paste under the submitting pane draft key', async () => {
+    mockIndex = 1;
+    mockIsSubmitting = true;
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        lifecycle?.onStart?.('pane-1-file');
+        return Promise.resolve(true);
+      },
+    );
+    const { result } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() =>
+      expect(getFilesDraft(getPendingDraftId(1)).pendingPastes['pane-1-file']?.text).toBe(
+        pastedText,
+      ),
+    );
+    expect(getFilesDraft(Constants.PENDING_CONVO)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(uploadLifecycle).toBeDefined();
   });
 
   it('removes durable pasted text after a successful upload', async () => {

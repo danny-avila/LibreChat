@@ -21,13 +21,26 @@ type StoredFilesDraft = {
   pendingPastes: Record<string, StoredPendingTextAttachmentDraft>;
 };
 
-let newConversationDraftToken = Symbol('new-conversation-draft');
+const newConversationDraftTokens = new Map<number, symbol>();
 
-export const getNewConversationDraftToken = (): symbol => newConversationDraftToken;
-
-export const renewNewConversationDraftToken = (): void => {
-  newConversationDraftToken = Symbol('new-conversation-draft');
+/** Per-composer identity so a side-by-side new-chat reset cannot discard another pane's paste recovery. */
+export const getNewConversationDraftToken = (index = 0): symbol => {
+  const existing = newConversationDraftTokens.get(index);
+  if (existing) {
+    return existing;
+  }
+  const token = Symbol('new-conversation-draft');
+  newConversationDraftTokens.set(index, token);
+  return token;
 };
+
+export const renewNewConversationDraftToken = (index = 0): void => {
+  newConversationDraftTokens.set(index, Symbol('new-conversation-draft'));
+};
+
+/** Draft key used while a run is in flight. Extra panes get a suffix so one run cannot migrate another pane's attachments. */
+export const getPendingDraftId = (index = 0): string =>
+  index === 0 ? Constants.PENDING_CONVO : `${Constants.PENDING_CONVO}:${index}`;
 
 export const clearDraft = debounce((id?: string | null) => {
   localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);

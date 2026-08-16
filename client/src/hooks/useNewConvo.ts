@@ -310,7 +310,7 @@ const useNewConvo = (index = 0) => {
       keepAddedConvos?: boolean;
       disableParams?: boolean;
     } = {}) {
-      renewNewConversationDraftToken();
+      renewNewConversationDraftToken(index);
       pauseGlobalAudio();
       if (!saveBadgesState) {
         resetBadges();
@@ -403,6 +403,7 @@ const useNewConvo = (index = 0) => {
       );
     },
     [
+      index,
       files,
       setFiles,
       agentsMap,

@@ -11,6 +11,7 @@ import {
   insertTextAtCursor,
   resolvePastedTextFile,
   getNewConversationDraftToken,
+  getPendingDraftId,
   setPendingTextAttachmentDraft,
   removePendingTextAttachmentDraft,
   setDraft,
@@ -353,9 +354,9 @@ export default function useTextarea({
       e.preventDefault();
       const conversationId = conversation?.conversationId;
       const draftId = isSubmitting
-        ? Constants.PENDING_CONVO
+        ? getPendingDraftId(index)
         : (conversationId ?? Constants.NEW_CONVO);
-      const draftToken = getNewConversationDraftToken();
+      const draftToken = getNewConversationDraftToken(index);
       const selectionStart = textArea.selectionStart;
       const selectionEnd = textArea.selectionEnd;
       if (selectionStart !== selectionEnd) {
@@ -375,7 +376,7 @@ export default function useTextarea({
           !currentTextArea ||
           answerModeActiveRef.current ||
           conversationIdRef.current !== conversationId ||
-          getNewConversationDraftToken() !== draftToken ||
+          getNewConversationDraftToken(index) !== draftToken ||
           currentTextArea.value !== composerValue
         ) {
           return false;
@@ -384,7 +385,7 @@ export default function useTextarea({
         restorePaste(currentTextArea);
         if (saveDrafts) {
           const currentDraftId = isSubmittingRef.current
-            ? Constants.PENDING_CONVO
+            ? getPendingDraftId(index)
             : (conversationIdRef.current ?? Constants.NEW_CONVO);
           setDraft({ id: currentDraftId, value: currentTextArea.value });
         }
@@ -393,7 +394,7 @@ export default function useTextarea({
       const clearPendingPasteDraft = (fileId: string, removeFile = false) => {
         removePendingTextAttachmentDraft({ id: draftId, fileId, removeFile });
         const currentDraftId = isSubmittingRef.current
-          ? Constants.PENDING_CONVO
+          ? getPendingDraftId(index)
           : (conversationIdRef.current ?? Constants.NEW_CONVO);
         if (currentDraftId !== draftId) {
           removePendingTextAttachmentDraft({ id: currentDraftId, fileId, removeFile });
@@ -418,7 +419,7 @@ export default function useTextarea({
         },
         onError: (fileId) => {
           const restored = restorePasteAfterUploadFailure();
-          if (restored || getNewConversationDraftToken() !== draftToken) {
+          if (restored || getNewConversationDraftToken(index) !== draftToken) {
             clearPendingPasteDraft(fileId, true);
           }
         },
@@ -442,6 +443,7 @@ export default function useTextarea({
       localize,
       showToast,
       conversation,
+      index,
       textAreaRef,
       uploadsDisabled,
       getUploadOptions,

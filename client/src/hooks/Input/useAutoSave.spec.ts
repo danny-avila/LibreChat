@@ -316,3 +316,44 @@ describe('useAutoSave — debounced autosave', () => {
     expect(mockSetDraft).toHaveBeenLastCalledWith({ id: 'convo-1', value: 'still typing' });
   });
 });
+
+describe('useAutoSave — side-by-side pending drafts', () => {
+  const pane0PendingId = Constants.PENDING_CONVO;
+  const pane1PendingId = `${Constants.PENDING_CONVO}:1`;
+
+  it('migrates only this pane pending file draft when a run finishes', () => {
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          index: 1,
+          isSubmitting,
+          conversationId: 'convo-side',
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    setFilesDraft(pane0PendingId, {
+      fileIds: ['pane-0-file'],
+      pendingPastes: {
+        'pane-0-file': { text: 'pane 0 paste', selectionStart: 0 },
+      },
+    });
+    setFilesDraft(pane1PendingId, {
+      fileIds: ['pane-1-file'],
+      pendingPastes: {
+        'pane-1-file': { text: 'pane 1 paste', selectionStart: 0 },
+      },
+    });
+
+    act(() => {
+      rerender({ isSubmitting: false });
+    });
+
+    expect(getFilesDraft(pane0PendingId).pendingPastes['pane-0-file']?.text).toBe('pane 0 paste');
+    expect(getFilesDraft(pane1PendingId)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'pane 1 paste');
+  });
+});

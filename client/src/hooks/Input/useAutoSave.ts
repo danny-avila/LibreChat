@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
-import { LocalStorageKeys, Constants } from 'librechat-data-provider';
+import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { PendingTextAttachmentDraft } from '~/utils';
 import type { ExtendedFile } from '~/common';
@@ -9,6 +9,7 @@ import {
   clearDraft,
   getDraft,
   getFilesDraft,
+  getPendingDraftId,
   isAskAnswerDraftId,
   setDraft,
   setFilesDraft,
@@ -18,6 +19,7 @@ import { useGetFiles } from '~/data-provider';
 import store from '~/store';
 
 export const useAutoSave = ({
+  index = 0,
   isSubmitting,
   conversationId: _conversationId,
   draftId,
@@ -25,9 +27,10 @@ export const useAutoSave = ({
   setFiles,
   files,
 }: {
+  index?: number;
   isSubmitting?: boolean;
   conversationId?: string | null;
-  /** Explicit draft-key override — wins over the conversation id AND the
+  /** Explicit draft-key override: wins over the conversation id AND the
    *  PENDING_CONVO redirect. Set while an `ask_user_question` pause turns the
    *  composer into the answer box: the answer phase drafts under its own key,
    *  and the key change itself drives the save/restore swap below, so the
@@ -41,7 +44,8 @@ export const useAutoSave = ({
   // setting for auto-save
   const { setValue } = useChatFormContext();
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
-  const conversationId = draftId ?? (isSubmitting ? Constants.PENDING_CONVO : _conversationId);
+  const pendingDraftId = getPendingDraftId(index);
+  const conversationId = draftId ?? (isSubmitting ? pendingDraftId : _conversationId);
 
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);
@@ -221,25 +225,25 @@ export const useAutoSave = ({
       // pending draft's destination — migrating would delete the very draft
       // the answer-phase swap-back is supposed to restore.
       if (
-        prevConversationIdRef.current === Constants.PENDING_CONVO &&
-        conversationId !== Constants.PENDING_CONVO &&
+        prevConversationIdRef.current === pendingDraftId &&
+        conversationId !== pendingDraftId &&
         !isAskAnswerDraftId(conversationId) &&
         conversationId.length > 3
       ) {
         const pendingDraft = localStorage.getItem(
-          `${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`,
+          `${LocalStorageKeys.TEXT_DRAFT}${pendingDraftId}`,
         );
 
         // Clear the pending text draft, if it exists, and save the current draft to the new conversationId;
         // otherwise, save the current text area value to the new conversationId
-        localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}`);
+        localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${pendingDraftId}`);
         if (pendingDraft) {
           localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${conversationId}`, pendingDraft);
         } else if (textAreaRef?.current?.value) {
           setDraft({ id: conversationId, value: textAreaRef.current.value });
         }
         const pendingFileDraft = localStorage.getItem(
-          `${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}`,
+          `${LocalStorageKeys.FILES_DRAFT}${pendingDraftId}`,
         );
 
         if (pendingFileDraft) {
@@ -247,7 +251,7 @@ export const useAutoSave = ({
             `${LocalStorageKeys.FILES_DRAFT}${conversationId}`,
             pendingFileDraft,
           );
-          localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}`);
+          localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${pendingDraftId}`);
         }
       } else if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);
@@ -264,6 +268,7 @@ export const useAutoSave = ({
   }, [
     currentConversationId,
     conversationId,
+    pendingDraftId,
     restoreFiles,
     textAreaRef,
     restoreText,

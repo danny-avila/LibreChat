@@ -181,6 +181,7 @@ const ChatForm = memo(function ChatForm({
     : (answerMode.otherLabel ?? localize('com_ui_something_else'));
 
   useAutoSave({
+    index,
     files,
     setFiles,
     textAreaRef,
