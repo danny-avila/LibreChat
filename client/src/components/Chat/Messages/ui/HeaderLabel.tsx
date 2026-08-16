@@ -55,9 +55,9 @@ export default function HeaderLabel({ label, hoverLabel }: HeaderLabelProps) {
         className={cn(
           labelSlot,
           'group-hover/label:-translate-y-1 group-hover/label:opacity-0 group-hover/label:blur-[2px]',
-          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:-translate-y-1',
-          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:opacity-0',
-          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:blur-[2px]',
+          'group-focus-visible:-translate-y-1 group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]:-translate-y-1',
+          'group-focus-visible:opacity-0 group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]:opacity-0',
+          'group-focus-visible:blur-[2px] group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]:blur-[2px]',
         )}
       >
         {label}
@@ -68,9 +68,9 @@ export default function HeaderLabel({ label, hoverLabel }: HeaderLabelProps) {
           labelSlot,
           'translate-y-1 opacity-0 blur-[2px]',
           'group-hover/label:translate-y-0 group-hover/label:opacity-100 group-hover/label:blur-0',
-          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:translate-y-0',
-          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:opacity-100',
-          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:blur-0',
+          'group-focus-visible:translate-y-0 group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]:translate-y-0',
+          'group-focus-visible:opacity-100 group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]:opacity-100',
+          'group-focus-visible:blur-0 group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]:blur-0',
         )}
       >
         {hoverLabel}

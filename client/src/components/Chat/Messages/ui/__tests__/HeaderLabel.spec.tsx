@@ -41,13 +41,16 @@ describe('HeaderLabel', () => {
   it('also swaps the model in when the message row takes keyboard focus', () => {
     render(<HeaderLabel label="Ollama" hoverLabel="gemma4:12b-it-qat" />);
 
-    const swap =
-      '&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))';
+    const self = 'group-focus-visible';
+    const descendant = 'group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]';
 
-    expect(screen.getByText('Ollama').className).toContain(`group-[${swap}]:opacity-0`);
-    expect(screen.getByText('gemma4:12b-it-qat').className).toContain(
-      `group-[${swap}]:opacity-100`,
-    );
+    const provider = screen.getByText('Ollama').className;
+    const model = screen.getByText('gemma4:12b-it-qat').className;
+
+    expect(provider).toContain(`${self}:opacity-0`);
+    expect(provider).toContain(`${descendant}:opacity-0`);
+    expect(model).toContain(`${self}:opacity-100`);
+    expect(model).toContain(`${descendant}:opacity-100`);
   });
 
   /* Clicking a tool card inside the row leaves focus on it. `:focus-within`

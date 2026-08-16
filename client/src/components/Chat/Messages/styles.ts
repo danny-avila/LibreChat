@@ -25,13 +25,18 @@ import { cn } from '~/utils';
  *   clicking one pins the row open with the pointer somewhere else entirely. Every
  *   toolbar action is a button, so a keyboard user still never focuses a hidden one.
  *
+ * The two halves stay two variants on purpose. Folding them into a single
+ * `group-[&:is(...)]` makes Tailwind emit a bare `.group$ { opacity: 1 }` rule, which
+ * lightningcss rejects and which fails the production CSS build while leaving `jest`
+ * and `tsc` perfectly green.
+ *
  * The transition names `color` and `background-color` alongside `opacity` rather than
  * naming opacity alone: `cn` merges the whole `transition-*` group, so a bare
  * `transition-opacity` here would replace the `transition-colors` a `Button` brings and
  * the hover tint would snap instead of fading.
  */
 export const revealOnRowHoverClasses =
-  'transition-[opacity,color,background-color] duration-theme-normal ease-out group-hover:opacity-100 group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:opacity-100 motion-reduce:transition-none [@media(hover:hover)]:opacity-0';
+  'transition-[opacity,color,background-color] duration-theme-normal ease-out group-hover:opacity-100 group-focus-visible:opacity-100 group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]:opacity-100 motion-reduce:transition-none [@media(hover:hover)]:opacity-0';
 
 /**
  * The message footer, holding the height of its action row.
@@ -72,7 +77,7 @@ export const hoverButtonClasses = ({
   cn(
     'hover-button size-auto rounded-lg p-1.5 text-text-secondary-alt',
     'hover:text-text-primary hover:bg-surface-hover',
-    'group-hover:visible group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:visible group-[.final-completion]:visible',
+    'group-hover:visible group-focus-visible:visible group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]:visible group-[.final-completion]:visible',
     !isLast && revealOnRowHoverClasses,
     'group-has-[.hover-button-active]:visible group-has-[.hover-button-active]:opacity-100',
     'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',

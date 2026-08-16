@@ -2,16 +2,17 @@ import { hoverButtonClasses, messageFooterClasses, revealOnRowHoverClasses } fro
 
 const FADE = '[@media(hover:hover)]:opacity-0';
 
-/** The row-wide keyboard-focus condition: the row itself, or a descendant that
- *  is not a text-entry control. */
-const KEYBOARD_FOCUS =
-  'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]';
+/** The row-wide keyboard-focus condition, as two variants. It cannot be one
+ *  `group-[&:is(...)]`: that form makes Tailwind emit a bare `.group$` rule
+ *  that lightningcss rejects, which fails the production CSS build. */
+const FOCUS_SELF = 'group-focus-visible';
+const FOCUS_DESCENDANT = 'group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]';
 
 describe('revealOnRowHoverClasses', () => {
   it('reveals on row hover and on keyboard focus', () => {
     expect(revealOnRowHoverClasses).toContain(FADE);
     expect(revealOnRowHoverClasses).toContain('group-hover:opacity-100');
-    expect(revealOnRowHoverClasses).toContain(`${KEYBOARD_FOCUS}:opacity-100`);
+    expect(revealOnRowHoverClasses).toContain(`${FOCUS_DESCENDANT}:opacity-100`);
   });
 
   /* Clicking a tool card in the message body parks focus there. `:focus-within`
@@ -23,15 +24,19 @@ describe('revealOnRowHoverClasses', () => {
   /* MessageNav moves the reader by focusing the row itself through
      tabindex="-1", and :has() never matches its own subject. */
   it('reveals when the row element itself is focus-visible', () => {
-    expect(revealOnRowHoverClasses).toContain('&:is(:focus-visible,');
+    expect(revealOnRowHoverClasses).toContain(`${FOCUS_SELF}:opacity-100`);
   });
 
   /* Text-entry controls match :focus-visible even on a mouse click, and
      ToolApproval and AskUserQuestion both render textareas inside a row. */
   it('ignores focus that landed in a text-entry control', () => {
-    expect(revealOnRowHoverClasses).toContain(
-      ':has(:focus-visible:not(:is(input,textarea,[contenteditable])))',
-    );
+    expect(revealOnRowHoverClasses).toContain(':not(:is(input,textarea,[contenteditable]))');
+  });
+
+  /* A bare `.group$` rule in the emitted CSS fails the lightningcss minify
+     step, so the variant form itself is worth pinning. */
+  it('does not use a group-[&:...] variant', () => {
+    expect(revealOnRowHoverClasses).not.toContain('group-[&');
   });
 
   it('fades on the shared motion role rather than snapping', () => {
@@ -56,7 +61,7 @@ describe('hoverButtonClasses', () => {
   });
 
   it('reveals an idle action on keyboard focus, not on a click parking focus in the row', () => {
-    expect(hoverButtonClasses()).toContain(`${KEYBOARD_FOCUS}:opacity-100`);
+    expect(hoverButtonClasses()).toContain(`${FOCUS_DESCENDANT}:opacity-100`);
     expect(hoverButtonClasses()).not.toContain('group-focus-within:');
   });
 
