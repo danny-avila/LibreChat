@@ -1123,6 +1123,8 @@ export function createConversationMethods(
    * chat list, so archiving them would only resurrect them in the archived view.
    */
   async function archiveAllConvos(user: string) {
+    const projectIds = new Set<string>();
+    let archivedCount = 0;
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const filter = {
@@ -1141,8 +1143,6 @@ export function createConversationMethods(
         return { archivedCount: 0 };
       }
 
-      const projectIds = new Set<string>();
-      let archivedCount = 0;
       let lastConversationId: Types.ObjectId | null = null;
 
       while (true) {
@@ -1199,9 +1199,15 @@ export function createConversationMethods(
         }
       }
 
+      return { archivedCount };
+    } catch (error) {
+      logger.error('[archiveAllConvos] Error archiving conversations', error);
+      throw error;
+    } finally {
       /**
-       * Best-effort, mirroring `deleteConvos`: the conversations are already archived, so
-       * a stats failure must not hide that from the caller.
+       * Best-effort, mirroring `deleteConvos`: committed batches are already archived, so
+       * a stats failure must not hide that from the caller. Runs here so a later-batch
+       * read or update error still reconciles projects touched by earlier batches.
        */
       if (archivedCount > 0 && projectIds.size > 0) {
         try {
@@ -1210,11 +1216,6 @@ export function createConversationMethods(
           logger.error('[archiveAllConvos] Conversations archived but stats refresh failed', error);
         }
       }
-
-      return { archivedCount };
-    } catch (error) {
-      logger.error('[archiveAllConvos] Error archiving conversations', error);
-      throw error;
     }
   }
 

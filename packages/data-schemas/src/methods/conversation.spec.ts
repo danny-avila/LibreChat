@@ -1727,10 +1727,10 @@ describe('Conversation Operations', () => {
   });
 
   describe('archiveAllConvos', () => {
-    it('defines an index for the tenant-scoped ObjectId batch scan', () => {
+    it('defines an index for the user-scoped ObjectId batch scan', () => {
       const indexFields = Conversation.schema.indexes().map(([fields]) => fields);
 
-      expect(indexFields).toContainEqual({ user: 1, tenantId: 1, _id: 1 });
+      expect(indexFields).toContainEqual({ user: 1, _id: 1 });
     });
 
     it('archives every unarchived conversation for the user only', async () => {
@@ -1993,6 +1993,51 @@ describe('Conversation Operations', () => {
       const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
       expect(refreshed?.conversationCount).toBe(0);
       expect(refreshed?.lastConversationId).toBeNull();
+    });
+
+    it('refreshes project stats for committed batches when a later batch fails', async () => {
+      const project = await ChatProject.create({ user: 'user123', name: 'Project' });
+      const projectId = project._id!.toString();
+      const conversations = Array.from({ length: 501 }, (_, index) => ({
+        conversationId: `archive-partial-fail-${index}`,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectId,
+      }));
+      await Conversation.insertMany(conversations);
+      await ChatProject.findByIdAndUpdate(project._id, {
+        conversationCount: conversations.length,
+        lastConversationId: conversations[conversations.length - 1].conversationId,
+      });
+
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest
+        .spyOn(Conversation, 'updateMany')
+        .mockImplementationOnce(((...args) =>
+          updateMany(...args)) as typeof Conversation.updateMany)
+        .mockImplementationOnce(async () => {
+          throw new Error('later batch update failed');
+        });
+
+      try {
+        await expect(archiveAllConvos('user123')).rejects.toThrow('later batch update failed');
+      } finally {
+        updateManySpy.mockRestore();
+      }
+
+      const archivedCount = await Conversation.countDocuments({
+        user: 'user123',
+        isArchived: true,
+      });
+      expect(archivedCount).toBe(500);
+
+      const remaining = await Conversation.findOne({
+        user: 'user123',
+        isArchived: { $ne: true },
+      }).lean<IConversation>();
+      const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(1);
+      expect(refreshed?.lastConversationId).toBe(remaining?.conversationId);
     });
 
     it('returns zero when the user has no conversations', async () => {
