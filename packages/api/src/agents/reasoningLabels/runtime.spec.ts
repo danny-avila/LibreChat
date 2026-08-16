@@ -145,6 +145,42 @@ describe('reasoning labels', () => {
     });
   });
 
+  it('waits for new reasoning when a new step reuses a THINK slot', async () => {
+    const generate = jest.fn(async () => ({ label: 'Inspecting the new reasoning' }));
+    const harness = createHarness(generate, {
+      minChars: 5,
+      updateChars: 4,
+      updateIntervalMs: 0,
+      preservePartOnStart: true,
+      initialParts: [
+        {
+          type: ContentTypes.THINK,
+          think: 'stale reasoning from the prior step',
+          reasoning_label: 'Inspecting the prior reasoning',
+          reasoning_label_step_id: 'reasoning-old',
+          reasoning_label_revision: 1,
+          reasoning_label_status: 'complete',
+        },
+      ],
+    });
+
+    await harness.start('reasoning-new', 0);
+    await harness.settle();
+    expect(generate).not.toHaveBeenCalled();
+
+    await harness.append('1234', 'reasoning-new');
+    await harness.settle();
+    expect(generate).not.toHaveBeenCalled();
+
+    await harness.append('5', 'reasoning-new');
+    await harness.settle();
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ visibleReasoning: '12345', revision: 1 }),
+    );
+  });
+
   it('requires both changed characters and the minimum interval for revisions', async () => {
     jest.useFakeTimers();
     try {

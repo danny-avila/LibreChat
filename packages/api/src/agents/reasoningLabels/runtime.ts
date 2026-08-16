@@ -510,7 +510,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
       ownsExistingStep && typeof part.reasoning_label === 'string'
         ? part.reasoning_label
         : undefined;
-    const existingText = part?.type === ContentTypes.THINK ? textValue(part.think) : '';
+    const existingText = ownsExistingStep ? textValue(part?.think) : '';
     const persistedSubmittedChars =
       ownsExistingStep && typeof part.reasoning_label_submitted_chars === 'number'
         ? Math.min(part.reasoning_label_submitted_chars, existingText.trim().length)
