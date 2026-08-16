@@ -11,8 +11,8 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TUserMemory } from 'librechat-data-provider';
+import { getMemoryKeyError, getMemoryValueError, getMemoryApiErrorMessage } from '~/utils/memory';
 import { useUpdateMemoryMutation, useMemoriesQuery } from '~/data-provider';
-import { getMemoryKeyError, getMemoryValueError } from '~/utils/memory';
 import { useLocalize, useHasAccess } from '~/hooks';
 import MemoryUsageBadge from './MemoryUsageBadge';
 import { FieldMessage } from '~/components/ui';
@@ -62,9 +62,9 @@ export default function MemoryEditDialog({
         triggerRef?.current?.focus();
       }, 0);
     },
-    onError: () => {
+    onError: (error: Error) => {
       showToast({
-        message: localize('com_ui_error'),
+        message: getMemoryApiErrorMessage(error, localize('com_ui_error')),
         status: 'error',
       });
     },

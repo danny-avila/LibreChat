@@ -13,6 +13,10 @@ type MemoryKeyErrorParams = {
   originalKey?: string;
 };
 
+type MemoryApiError = {
+  response?: { data?: { error?: string } };
+};
+
 /** Mirrors the `key` validator on the memory schema in `packages/data-schemas`. */
 export const MEMORY_KEY_PATTERN = /^[a-z_]+$/;
 
@@ -60,6 +64,15 @@ export function getMemoryKeyError({
  */
 export function getMemoryValueError(value: string): TranslationKeys | null {
   return value.trim() ? null : 'com_ui_field_required';
+}
+
+export function getMemoryApiErrorMessage(error: Error, fallback: string): string {
+  if (!('response' in error)) {
+    return fallback;
+  }
+
+  const message = (error as Error & MemoryApiError).response?.data?.error;
+  return typeof message === 'string' && message.trim() ? message : fallback;
 }
 
 /**
