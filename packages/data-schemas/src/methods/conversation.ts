@@ -4,14 +4,14 @@ import type { DeleteResult } from 'mongoose';
 import type { AppConfig, IChatProjectDocument, IConversation, ISharedLink } from '~/types';
 import type { MessageMethods } from './message';
 import {
+  refreshChatProjectStatsForUser,
+  updateChatProjectLastConversationForUser,
+} from './chatProject';
+import {
   activeExpirationFilter,
   buildRetentionVisibilityFilter,
   createFallbackRetentionDate,
 } from '~/utils/retention';
-import {
-  refreshChatProjectStatsForUser,
-  updateChatProjectLastConversationForUser,
-} from './chatProject';
 import { createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
@@ -257,7 +257,16 @@ export function createConversationMethods(
         update.conversationId = newConversationId;
       }
 
-      if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
+      if (interfaceConfig?.retentionMode === RetentionMode.EPHEMERAL) {
+        update.isTemporary = true;
+        try {
+          update.expiredAt = createTempChatExpirationDate(interfaceConfig);
+        } catch (err) {
+          logger.error('Error creating temporary chat expiration date:', err);
+          logger.info(`---\`saveConvo\` context: ${metadata?.context}`);
+          update.expiredAt = createFallbackRetentionDate();
+        }
+      } else if (interfaceConfig?.retentionMode === RetentionMode.ALL) {
         if (typeof isTemporary === 'boolean') {
           update.isTemporary = isTemporary;
         }

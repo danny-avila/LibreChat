@@ -654,6 +654,30 @@ describe('Conversation Operations', () => {
       expect(result?.isTemporary).toBe(false);
     });
 
+    it('should force temporary conversation and set expiredAt when retentionMode is EPHEMERAL even if isTemporary is false', async () => {
+      mockCtx.isTemporary = false;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.EPHEMERAL,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).not.toBeNull();
+    });
+
+    it('should force temporary conversation when retentionMode is EPHEMERAL and isTemporary is omitted', async () => {
+      mockCtx.isTemporary = undefined;
+      mockCtx.interfaceConfig = {
+        temporaryChatRetention: 24,
+        retentionMode: RetentionMode.EPHEMERAL,
+      };
+      const result = await saveConvo(mockCtx, mockConversationData);
+      expect(result?.isTemporary).toBe(true);
+      expect(result?.expiredAt).toBeDefined();
+      expect(result?.expiredAt).not.toBeNull();
+    });
+
     it('should filter out temporary conversations in getConvosByCursor', async () => {
       // Create some test conversations
       const newNonTemporaryConvo = await Conversation.create({

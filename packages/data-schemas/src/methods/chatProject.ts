@@ -3,11 +3,11 @@ import {
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
 } from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
-import type { IChatProject, IChatProjectDocument, IConversation } from '~/types';
-import { buildRetentionVisibilityFilter } from '~/utils/retention';
-import { isValidObjectIdString } from '~/utils/objectId';
-import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
+import { isValidObjectIdString } from '~/utils/objectId';
+import { buildRetentionVisibilityFilter } from '~/utils/retention';
+import { escapeRegExp } from '~/utils/string';
+import type { IChatProject, IChatProjectDocument, IConversation } from '~/types';
 
 export type ChatProjectSortBy = 'name' | 'createdAt' | 'lastConversationAt';
 export type ChatProjectSortDirection = 'asc' | 'desc';

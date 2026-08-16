@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import { useToastContext } from '@librechat/client';
 import { useMatch, useNavigate } from 'react-router-dom';
-import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PermissionTypes, Permissions, isForcedTemporaryRetention } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { ShortcutBinding } from '~/utils/shortcuts';
 import type { ShortcutOverride } from '~/store/misc';
@@ -14,8 +14,8 @@ import {
   isMacPlatform,
   parseBinding,
 } from '~/utils/shortcuts';
+import { useArchiveConvoMutation, useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, NotificationSeverity } from '~/common';
-import { useArchiveConvoMutation } from '~/data-provider';
 import { useHasAccess, useLocalize } from '~/hooks';
 import useNewChat from '~/hooks/Chat/useNewChat';
 import store from '~/store';
@@ -508,6 +508,8 @@ export function useShortcutActions(): ShortcutAction[] {
     permissionType: PermissionTypes.TEMPORARY_CHAT,
     permission: Permissions.USE,
   });
+  const { data: startupConfig } = useGetStartupConfig();
+  const isRetentionEnforced = isForcedTemporaryRetention(startupConfig?.interface?.retentionMode);
 
   const archiveMutation = useArchiveConvoMutation();
 
@@ -680,7 +682,7 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleToggleTemporaryChat = useCallback(() => {
-    if (hasAccessToTemporaryChat !== true) {
+    if (hasAccessToTemporaryChat !== true || isRetentionEnforced) {
       return false;
     }
     if (!routeConvoId) {
@@ -694,6 +696,7 @@ export function useShortcutActions(): ShortcutAction[] {
     return true;
   }, [
     hasAccessToTemporaryChat,
+    isRetentionEnforced,
     routeConvoId,
     conversation?.messages,
     isSubmitting,

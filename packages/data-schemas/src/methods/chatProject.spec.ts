@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { createModels } from '~/models';
 import type { IChatProject, IConversation } from '~/types';
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
-import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
