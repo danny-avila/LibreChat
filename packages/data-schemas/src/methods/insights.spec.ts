@@ -752,15 +752,16 @@ describe('Insights methods', () => {
       });
 
       type FacetStage = { $facet?: Record<string, unknown> };
-      const unfilteredPipeline = aggregateSpy.mock.calls[0]?.[0] as FacetStage[];
-      const searchedPipeline = aggregateSpy.mock.calls[1]?.[0] as FacetStage[];
-      const unfilteredFacet = unfilteredPipeline.find((stage) => stage.$facet)?.$facet;
-      const searchedFacets = searchedPipeline
-        .map((stage) => stage.$facet)
+      const facets = aggregateSpy.mock.calls
+        .flatMap(([pipeline]) => (pipeline as FacetStage[]).map((stage) => stage.$facet))
         .filter((facet): facet is Record<string, unknown> => facet != null);
+      const unfilteredFacet = facets.find((facet) => 'daily' in facet);
+      const searchedFacet = facets.find(
+        (facet) => 'recentConversations' in facet && !('daily' in facet),
+      );
 
       expect(unfilteredFacet).not.toHaveProperty('recentConversations');
-      expect(searchedFacets.some((facet) => 'recentConversations' in facet)).toBe(true);
+      expect(searchedFacet).toHaveProperty('recentConversations');
     } finally {
       aggregateSpy.mockRestore();
     }
@@ -780,9 +781,11 @@ describe('Insights methods', () => {
         $addFields?: Record<string, unknown>;
         $lookup?: Record<string, unknown>;
       };
-      const searchedPipeline = aggregateSpy.mock.calls[1]?.[0] as SearchStage[];
-      const identityLookup = searchedPipeline.find((stage) => stage.$lookup)?.$lookup;
-      const ownerConversion = searchedPipeline.find((stage) => stage.$addFields)?.$addFields;
+      const searchedPipeline = aggregateSpy.mock.calls
+        .map(([pipeline]) => pipeline as SearchStage[])
+        .find((pipeline) => pipeline.some((stage) => stage.$lookup));
+      const identityLookup = searchedPipeline?.find((stage) => stage.$lookup)?.$lookup;
+      const ownerConversion = searchedPipeline?.find((stage) => stage.$addFields)?.$addFields;
 
       expect(identityLookup).toEqual({
         from: 'users',

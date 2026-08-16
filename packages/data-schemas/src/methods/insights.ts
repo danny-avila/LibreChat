@@ -285,8 +285,68 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
     const requestedSearch = options.search?.trim().slice(0, INSIGHTS_SEARCH_MAX_LENGTH) ?? '';
     const search = requestedSearch.length >= INSIGHTS_SEARCH_MIN_LENGTH ? requestedSearch : '';
     const searchRegex = search ? new RegExp(escapeRegex(search), 'i') : undefined;
+    const searchedConversationAggregation = searchRegex
+      ? Conversation.aggregate<ConversationListFacet>([
+          { $match: conversationMatch },
+          {
+            $addFields: {
+              insightsUserId: {
+                $convert: { input: '$user', to: 'objectId', onError: null, onNull: null },
+              },
+            },
+          },
+          {
+            $lookup: {
+              from: 'users',
+              localField: 'insightsUserId',
+              foreignField: '_id',
+              as: 'matchedIdentity',
+            },
+          },
+          {
+            $match: {
+              $or: [
+                { conversationId: searchRegex },
+                { user: searchRegex },
+                {
+                  matchedIdentity: {
+                    $elemMatch: {
+                      ...(options.tenantId
+                        ? { tenantId: options.tenantId }
+                        : { tenantId: { $exists: false } }),
+                      $or: [
+                        { name: searchRegex },
+                        { username: searchRegex },
+                        { email: searchRegex },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+          {
+            $facet: {
+              conversationCount: [{ $count: 'total' }],
+              recentConversations: [
+                { $sort: { createdAt: -1, _id: -1 } },
+                { $skip: (page - 1) * pageSize },
+                { $limit: pageSize },
+                {
+                  $project: {
+                    _id: 0,
+                    conversationId: 1,
+                    date: '$createdAt',
+                    userId: '$user',
+                  },
+                },
+              ],
+            },
+          },
+        ])
+      : Promise.resolve([] as ConversationListFacet[]);
 
-    const [conversationFacets, messageFacets, churnedUserRows] = await Promise.all([
+    const insightsAggregations = await Promise.all([
       Conversation.aggregate<ConversationFacet>([
         ...conversationScope,
         {
@@ -417,71 +477,13 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
         { $sort: { lastSeen: -1, _id: 1 } },
         { $limit: churnedUserLimit },
       ]),
+      searchedConversationAggregation,
     ]);
+    const [conversationFacets, messageFacets, churnedUserRows, searchedConversationFacets] =
+      insightsAggregations;
 
     const conversationFacet = conversationFacets[0];
-    const conversationListFacet = searchRegex
-      ? (
-          await Conversation.aggregate<ConversationListFacet>([
-            { $match: conversationMatch },
-            {
-              $addFields: {
-                insightsUserId: {
-                  $convert: { input: '$user', to: 'objectId', onError: null, onNull: null },
-                },
-              },
-            },
-            {
-              $lookup: {
-                from: 'users',
-                localField: 'insightsUserId',
-                foreignField: '_id',
-                as: 'matchedIdentity',
-              },
-            },
-            {
-              $match: {
-                $or: [
-                  { conversationId: searchRegex },
-                  { user: searchRegex },
-                  {
-                    matchedIdentity: {
-                      $elemMatch: {
-                        ...(options.tenantId
-                          ? { tenantId: options.tenantId }
-                          : { tenantId: { $exists: false } }),
-                        $or: [
-                          { name: searchRegex },
-                          { username: searchRegex },
-                          { email: searchRegex },
-                        ],
-                      },
-                    },
-                  },
-                ],
-              },
-            },
-            {
-              $facet: {
-                conversationCount: [{ $count: 'total' }],
-                recentConversations: [
-                  { $sort: { createdAt: -1, _id: -1 } },
-                  { $skip: (page - 1) * pageSize },
-                  { $limit: pageSize },
-                  {
-                    $project: {
-                      _id: 0,
-                      conversationId: 1,
-                      date: '$createdAt',
-                      userId: '$user',
-                    },
-                  },
-                ],
-              },
-            },
-          ])
-        )[0]
-      : conversationFacet;
+    const conversationListFacet = searchRegex ? searchedConversationFacets[0] : conversationFacet;
     const messageFacet = messageFacets[0];
     const messageTotals = messageFacet?.totals ?? [];
     const topMessageUsers = messageFacet?.topUsers ?? [];
