@@ -64,6 +64,7 @@ describe('createBackgroundCodeResultHandler', () => {
       agentId: 'agent_a',
       output: 'stdout:\nhello',
       attachments: [{ file_id: 'f1', filename: 'plot.png', toolCallId: 'call_code' }],
+      markBackgrounded: true,
     });
     expect(result).toEqual({
       attachments: [{ file_id: 'f1', filename: 'plot.png', toolCallId: 'call_code' }],
@@ -156,7 +157,11 @@ describe('createBackgroundCodeResultHandler', () => {
     const result = await handler(baseParams);
 
     expect(updateToolCallResult).toHaveBeenCalledWith(
-      expect.objectContaining({ output: 'stdout:\nhello', attachments: [] }),
+      expect.objectContaining({
+        output: 'stdout:\nhello',
+        attachments: [],
+        markBackgrounded: true,
+      }),
     );
     expect(result).toEqual({ attachments: [] });
   });
@@ -180,6 +185,9 @@ describe('createBackgroundCodeResultHandler', () => {
         toolCallId: 'call_code',
         output: 'stdout:\nhello',
         attachments: [{ file_id: 'f1' }],
+        /** The heal path must re-stamp the marker: the full-row save it
+         *  repairs reverted the whole patched part, marker included. */
+        markBackgrounded: true,
       }),
     );
     expect(result).toEqual({ attachments: [{ file_id: 'f1' }] });

@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
-import { ContentTypes } from 'librechat-data-provider';
 import { createContentAggregator } from '@librechat/agents';
+import { ContentTypes, getRunStepDurationMs } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
@@ -3127,11 +3127,17 @@ export class RedisJobStore implements IJobStoreV2 {
         const closed = event.data as {
           id?: string;
           status?: Agents.RunStepClosedStatus;
+          created_at?: number;
+          closed_at?: number;
         };
         const index = closed.id != null ? replayedStepIndices.get(closed.id) : undefined;
         const part = index != null ? contentParts[index] : undefined;
         if (closed.status && part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
           part.tool_call.runStepStatus = closed.status;
+          const durationMs = getRunStepDurationMs(closed);
+          if (durationMs != null) {
+            part.tool_call.runStepDurationMs = durationMs;
+          }
         }
         continue;
       }

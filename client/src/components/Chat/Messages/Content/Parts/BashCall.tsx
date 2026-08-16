@@ -19,6 +19,8 @@ import { cn } from '~/utils';
 export default function BashCall({
   isSubmitting,
   runStepStatus,
+  runStepDurationMs,
+  backgrounded,
   initialProgress = 0.1,
   args,
   output = '',
@@ -31,6 +33,8 @@ export default function BashCall({
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
+  backgrounded?: PartMetadata['backgrounded'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -107,6 +111,15 @@ export default function BashCall({
             cancelled
               ? localize('com_ui_cancelled')
               : (backgroundFinishedText ?? intent ?? localize('com_ui_command_finished'))
+          }
+          /** A backgrounded call's run step closes when dispatch returns the
+           *  handle, so its duration is the dispatch time — showing it would
+           *  misstate a detached task's runtime as seconds. The handle check
+           *  covers the live card; the persisted `backgrounded` marker covers
+           *  the card after harvest replaces the handle with real stdout
+           *  (and after any reload), when no transient signal survives. */
+          durationMs={
+            backgroundHandle == null && backgrounded !== true ? runStepDurationMs : undefined
           }
           errorSuffix={
             (hasError && !cancelled) || backgroundFailed

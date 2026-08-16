@@ -330,6 +330,7 @@ export default function RetrievalCall({
   attachments,
   onExpand,
   runStepStatus,
+  runStepDurationMs,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
@@ -338,6 +339,7 @@ export default function RetrievalCall({
   attachments?: TAttachment[];
   onExpand?: () => void;
   runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
 }) {
   const isClosed = runStepStatus != null;
   /**
@@ -471,6 +473,7 @@ export default function RetrievalCall({
               ? localize('com_ui_cancelled')
               : (intent ?? localize('com_ui_retrieved_files'))
           }
+          durationMs={runStepDurationMs}
           errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ToolIcon type="file_search" isAnimating={progress < 1 && !cancelled && !errorState} />

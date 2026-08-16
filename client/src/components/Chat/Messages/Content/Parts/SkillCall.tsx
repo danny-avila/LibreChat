@@ -13,6 +13,7 @@ import { cn } from '~/utils';
 export default function SkillCall({
   isSubmitting,
   runStepStatus,
+  runStepDurationMs,
   initialProgress = 0.1,
   args,
   output = '',
@@ -23,6 +24,7 @@ export default function SkillCall({
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -48,6 +50,7 @@ export default function SkillCall({
               ? localize('com_ui_cancelled')
               : (intent ?? localize('com_ui_skill_finished', { 0: skillName }))
           }
+          durationMs={runStepDurationMs}
           errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ScrollText

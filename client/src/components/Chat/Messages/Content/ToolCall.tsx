@@ -33,6 +33,7 @@ export default function ToolCall({
   hideAttachments = false,
   onExpand,
   runStepStatus,
+  runStepDurationMs,
 }: {
   initialProgress: number;
   isLast?: boolean;
@@ -46,6 +47,7 @@ export default function ToolCall({
   hideAttachments?: boolean;
   onExpand?: () => void;
   runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
 }) {
   const localize = useLocalize();
   const autoExpand = useRecoilValue(store.autoExpandTools);
@@ -281,6 +283,7 @@ export default function ToolCall({
           }
           finishedText={getFinishedText()}
           subtitle={subtitle}
+          durationMs={runStepDurationMs}
           errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ToolIcon

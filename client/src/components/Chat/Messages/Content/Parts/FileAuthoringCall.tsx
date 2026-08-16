@@ -107,6 +107,7 @@ export default function FileAuthoringCall({
   toolName,
   isSubmitting,
   runStepStatus,
+  runStepDurationMs,
   initialProgress = 0.1,
   args,
   output = '',
@@ -118,6 +119,7 @@ export default function FileAuthoringCall({
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -184,6 +186,7 @@ export default function FileAuthoringCall({
               ? localize('com_ui_cancelled')
               : (intent ?? localize(finishedKey, { 0: fileName }))
           }
+          durationMs={runStepDurationMs}
           errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <Icon
