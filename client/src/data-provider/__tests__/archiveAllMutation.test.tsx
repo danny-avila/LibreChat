@@ -101,6 +101,76 @@ describe('archive-all mutation cache refresh', () => {
     queryClient.clear();
   });
 
+  it('refetches the pinned section so archived pins leave the sidebar', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: 5 * 60 * 1000 },
+        mutations: { retry: false },
+      },
+    });
+    const pinnedQuery = jest.fn().mockResolvedValue({ conversations: [], nextCursor: null });
+
+    mockArchiveAllConversations.mockResolvedValue({ archivedCount: 1 });
+    const { result } = renderHook(
+      () => ({
+        archiveAll: useArchiveAllConversationsMutation(),
+        pinned: useQuery([QueryKeys.pinnedConversations, { pinned: true }], pinnedQuery),
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.pinned.isSuccess).toBe(true);
+      expect(pinnedQuery).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      await result.current.archiveAll.mutateAsync();
+    });
+
+    await waitFor(() => {
+      expect(pinnedQuery).toHaveBeenCalledTimes(2);
+    });
+
+    queryClient.clear();
+  });
+
+  it('refetches the pinned section when the request fails after a partial archive', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, staleTime: 5 * 60 * 1000 },
+        mutations: { retry: false },
+      },
+    });
+    const pinnedQuery = jest.fn().mockResolvedValue({ conversations: [], nextCursor: null });
+
+    mockArchiveAllConversations.mockRejectedValue(new Error('later archive batch failed'));
+    const { result } = renderHook(
+      () => ({
+        archiveAll: useArchiveAllConversationsMutation(),
+        pinned: useQuery([QueryKeys.pinnedConversations, { pinned: true }], pinnedQuery),
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.pinned.isSuccess).toBe(true);
+      expect(pinnedQuery).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      await expect(result.current.archiveAll.mutateAsync()).rejects.toThrow(
+        'later archive batch failed',
+      );
+    });
+
+    await waitFor(() => {
+      expect(pinnedQuery).toHaveBeenCalledTimes(2);
+    });
+
+    queryClient.clear();
+  });
+
   it('reconciles caches when the request fails after a partial archive', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {

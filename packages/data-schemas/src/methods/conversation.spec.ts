@@ -1911,6 +1911,52 @@ describe('Conversation Operations', () => {
       expect(archived?.updatedAt?.toISOString()).toBe(updatedAt.toISOString());
     });
 
+    it('stamps archivedAt so the sweep is dated and sorted as archived now', async () => {
+      const before = Date.now();
+      const convoIds = [uuidv4(), uuidv4()];
+      await Conversation.insertMany(
+        convoIds.map((conversationId) => ({
+          conversationId,
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+        })),
+      );
+
+      await archiveAllConvos('user123');
+
+      const archived = await Conversation.find({ conversationId: { $in: convoIds } }).lean<
+        IConversation[]
+      >();
+      expect(archived).toHaveLength(2);
+      for (const conversation of archived) {
+        expect(conversation.archivedAt).toBeInstanceOf(Date);
+        expect(new Date(conversation.archivedAt ?? 0).getTime()).toBeGreaterThanOrEqual(before);
+      }
+      expect(new Date(archived[0].archivedAt ?? 0).toISOString()).toBe(
+        new Date(archived[1].archivedAt ?? 0).toISOString(),
+      );
+    });
+
+    it('leaves the archivedAt of an already-archived chat alone', async () => {
+      const original = new Date('2026-01-01T00:00:00.000Z');
+      const archivedId = uuidv4();
+      await Conversation.create({
+        conversationId: archivedId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        isArchived: true,
+        archivedAt: original,
+      });
+
+      await archiveAllConvos('user123');
+
+      const untouched = await Conversation.findOne({
+        conversationId: archivedId,
+      }).lean<IConversation>();
+      expect(new Date(untouched?.archivedAt ?? 0).toISOString()).toBe(original.toISOString());
+    });
+
     it('refreshes stats for every project the archived conversations belonged to', async () => {
       const project = await ChatProject.create({ user: 'user123', name: 'Project' });
       const projectId = project._id!.toString();
@@ -2158,7 +2204,7 @@ describe('Conversation Operations', () => {
         .spyOn(Conversation, 'updateMany')
         .mockImplementationOnce(((...args) =>
           updateMany(...args)) as typeof Conversation.updateMany)
-        .mockImplementationOnce(async () => {
+        .mockImplementationOnce(() => {
           throw new Error('later batch update failed');
         });
 

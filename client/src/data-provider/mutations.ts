@@ -174,6 +174,9 @@ export const useArchiveAllConversationsMutation = (
       queryKey: [QueryKeys.archivedConversations],
       refetchType: 'all',
     });
+    /** The pinned section fetches on its own key with a five-minute stale time, so an
+     * archived pin would keep rendering in the sidebar without this. */
+    queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
     queryClient.invalidateQueries([QueryKeys.projectConversations]);
     queryClient.invalidateQueries([QueryKeys.projects]);
     queryClient.invalidateQueries([QueryKeys.project]);

@@ -1169,6 +1169,9 @@ export function createConversationMethods(
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const projectIds = new Set<string>();
     const committedConversationIds: Types.ObjectId[] = [];
+    /** One stamp for the whole sweep so the archived view groups the run together
+     * instead of fanning it out across however long the batching took. */
+    const archivedAt = new Date();
     let archivedCount = 0;
     try {
       const filter = {
@@ -1214,10 +1217,13 @@ export function createConversationMethods(
         /**
          * `timestamps: false` keeps each conversation's own `updatedAt`, so the archived
          * view stays sorted by real activity instead of collapsing onto the archive time.
+         * `archivedAt` is still stamped: the filter only matches unarchived chats, so this
+         * cannot move an existing stamp, and leaving it unset would drop the whole sweep
+         * into the legacy group the archived table sorts and dates by `createdAt`.
          */
         const result = await Conversation.updateMany(
           { ...filter, _id: { $in: conversationIds } },
-          { $set: { isArchived: true } },
+          { $set: { isArchived: true, archivedAt } },
           { timestamps: false },
         );
         const batchArchivedCount = result.modifiedCount ?? 0;
