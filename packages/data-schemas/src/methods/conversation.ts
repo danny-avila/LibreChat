@@ -1146,10 +1146,11 @@ export function createConversationMethods(
    * chat list, so archiving them would only resurrect them in the archived view.
    */
   async function archiveAllConvos(user: string) {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
     const projectIds = new Set<string>();
+    const committedConversationIds: Types.ObjectId[] = [];
     let archivedCount = 0;
     try {
-      const Conversation = mongoose.models.Conversation as Model<IConversation>;
       const filter = {
         user,
         $and: [
@@ -1203,6 +1204,7 @@ export function createConversationMethods(
         archivedCount += batchArchivedCount;
 
         if (batchArchivedCount > 0) {
+          committedConversationIds.push(...conversationIds);
           const currentProjectIds = await discoverCommittedBatchProjectIds(
             Conversation,
             conversationIds,
@@ -1221,9 +1223,27 @@ export function createConversationMethods(
     } finally {
       /**
        * Best-effort, mirroring `deleteConvos`: committed batches are already archived, so
-       * a stats failure must not hide that from the caller. Runs here so a later-batch
-       * read or update error still reconciles projects touched by earlier batches.
+       * a stats failure must not hide that from the caller. Recover destination projects
+       * from committed conversation IDs first: in-loop distinct can throw after a move,
+       * and a retry cannot see those already-archived chats.
        */
+      if (committedConversationIds.length > 0) {
+        try {
+          const recoveredProjectIds = await discoverCommittedBatchProjectIds(
+            Conversation,
+            committedConversationIds,
+            user,
+          );
+          for (const projectId of recoveredProjectIds) {
+            projectIds.add(projectId);
+          }
+        } catch (error) {
+          logger.error(
+            '[archiveAllConvos] Conversations archived but project recovery failed',
+            error,
+          );
+        }
+      }
       if (archivedCount > 0 && projectIds.size > 0) {
         try {
           await refreshChatProjectStatsInBatches(mongoose, user, projectIds);

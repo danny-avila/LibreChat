@@ -2001,6 +2001,63 @@ describe('Conversation Operations', () => {
       expect(refreshed?.lastConversationId).toBeNull();
     });
 
+    it('reconciles the destination project when discovery retries exhaust after a move', async () => {
+      const sourceProject = await ChatProject.create({ user: 'user123', name: 'Source' });
+      const destinationProject = await ChatProject.create({ user: 'user123', name: 'Destination' });
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: sourceProject._id!.toString(),
+      });
+      await ChatProject.findByIdAndUpdate(sourceProject._id, {
+        conversationCount: 1,
+        lastConversationId: conversationId,
+      });
+
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        await Conversation.updateOne(
+          { conversationId },
+          { $set: { chatProjectId: destinationProject._id!.toString() } },
+        );
+        await ChatProject.findByIdAndUpdate(sourceProject._id, {
+          conversationCount: 0,
+          lastConversationId: null,
+        });
+        await ChatProject.findByIdAndUpdate(destinationProject._id, {
+          conversationCount: 1,
+          lastConversationId: conversationId,
+        });
+        return await updateMany(filter, update, options);
+      }) as typeof Conversation.updateMany);
+      const distinct = Conversation.distinct.bind(Conversation);
+      const distinctSpy = jest
+        .spyOn(Conversation, 'distinct')
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockRejectedValueOnce(new Error('project discovery failed'))
+        .mockImplementation(((...args) => distinct(...args)) as typeof Conversation.distinct);
+
+      try {
+        await expect(archiveAllConvos('user123')).rejects.toThrow('project discovery failed');
+      } finally {
+        updateManySpy.mockRestore();
+        distinctSpy.mockRestore();
+      }
+
+      const archived = await Conversation.findOne({ conversationId }).lean<IConversation>();
+      const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
+      expect(archived?.isArchived).toBe(true);
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
+    });
+
     it('refreshes the destination project when a captured conversation moves before archiving', async () => {
       const sourceProject = await ChatProject.create({ user: 'user123', name: 'Source' });
       const destinationProject = await ChatProject.create({ user: 'user123', name: 'Destination' });
