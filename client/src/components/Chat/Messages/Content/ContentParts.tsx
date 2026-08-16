@@ -604,7 +604,7 @@ const ContentParts = memo(function ContentParts({
       {!nestedActivityPhase && renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
-          <EmptyText />
+          <EmptyText underHeaderIcon />
         </Container>
       )}
       {groupedParts.flatMap((group) => {
