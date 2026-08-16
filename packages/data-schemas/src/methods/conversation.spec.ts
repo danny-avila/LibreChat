@@ -1748,6 +1748,30 @@ describe('Conversation Operations', () => {
       expect(untouched?.isArchived).not.toBe(true);
     });
 
+    it('archives large snapshots in bounded batches', async () => {
+      const conversations = Array.from({ length: 501 }, (_, index) => ({
+        conversationId: `archive-batch-${index}`,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      }));
+      await Conversation.insertMany(conversations);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany');
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(conversations.length);
+        expect(updateManySpy).toHaveBeenCalledTimes(2);
+      } finally {
+        updateManySpy.mockRestore();
+      }
+
+      const unarchivedCount = await Conversation.countDocuments({
+        user: 'user123',
+        isArchived: { $ne: true },
+      });
+      expect(unarchivedCount).toBe(0);
+    });
+
     it('leaves already-archived conversations untouched', async () => {
       const alreadyArchived = uuidv4();
       await Conversation.create({

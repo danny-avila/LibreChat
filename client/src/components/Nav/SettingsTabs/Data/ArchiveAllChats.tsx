@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { Constants } from 'librechat-data-provider';
 import {
   Label,
   Button,
@@ -9,6 +10,7 @@ import {
   useToastContext,
   OGDialogTemplate,
 } from '@librechat/client';
+import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import { useArchiveAllConversationsMutation } from '~/data-provider';
 import useNewChat from '~/hooks/Chat/useNewChat';
 import { NotificationSeverity } from '~/common';
@@ -17,13 +19,28 @@ import { useLocalize } from '~/hooks';
 export const ArchiveAllChats = () => {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
+  const submittedConversationRef = useRef<{
+    conversationId: string;
+    isTemporary?: boolean;
+  } | null>(null);
+  const getConversation = useGetConversation();
   const { startNewChat } = useNewChat();
   const { showToast } = useToastContext();
 
   const archiveAllMutation = useArchiveAllConversationsMutation({
     onSuccess: () => {
-      /** Drops the archived chat the user was reading, message cache included. */
-      startNewChat();
+      const submittedConversation = submittedConversationRef.current;
+      const currentConversation = getConversation();
+      submittedConversationRef.current = null;
+      if (
+        submittedConversation != null &&
+        submittedConversation.conversationId !== Constants.NEW_CONVO &&
+        submittedConversation.isTemporary !== true &&
+        currentConversation?.conversationId === submittedConversation.conversationId &&
+        currentConversation?.isTemporary !== true
+      ) {
+        startNewChat();
+      }
       showToast({
         message: localize('com_ui_archive_all_success'),
         severity: NotificationSeverity.SUCCESS,
@@ -39,6 +56,17 @@ export const ArchiveAllChats = () => {
     },
   });
 
+  const archiveAllChats = () => {
+    const conversation = getConversation();
+    submittedConversationRef.current = conversation?.conversationId
+      ? {
+          conversationId: conversation.conversationId,
+          isTemporary: conversation.isTemporary,
+        }
+      : null;
+    archiveAllMutation.mutate();
+  };
+
   return (
     <div className="flex items-center justify-between">
       <Label id="archive-all-chats-label">{localize('com_nav_archive_all_chats')}</Label>
@@ -47,6 +75,7 @@ export const ArchiveAllChats = () => {
           <Button
             aria-labelledby="archive-all-chats-label"
             variant="outline"
+            disabled={archiveAllMutation.isLoading}
             onClick={() => setOpen(true)}
           >
             {localize('com_ui_archive')}
@@ -64,9 +93,10 @@ export const ArchiveAllChats = () => {
               <Button
                 aria-label={localize('com_ui_archive')}
                 aria-busy={archiveAllMutation.isLoading}
+                disabled={archiveAllMutation.isLoading}
                 variant="submit"
                 className="border-none font-normal max-sm:order-first max-sm:w-full sm:order-none"
-                onClick={() => archiveAllMutation.mutate()}
+                onClick={archiveAllChats}
               >
                 {archiveAllMutation.isLoading ? <Spinner /> : localize('com_ui_archive')}
               </Button>

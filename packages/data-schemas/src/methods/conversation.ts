@@ -1,5 +1,5 @@
 import { RetentionMode } from 'librechat-data-provider';
-import type { FilterQuery, Model, SortOrder } from 'mongoose';
+import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
 import type { AppConfig, IChatProjectDocument, IConversation, ISharedLink } from '~/types';
 import type { MessageMethods } from './message';
@@ -30,6 +30,23 @@ type ConversationUpdateResult = {
     updatedExisting?: boolean;
   };
 };
+
+const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
+const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
+
+async function refreshChatProjectStatsInBatches(
+  mongoose: typeof import('mongoose'),
+  user: string,
+  projectIds: Iterable<string>,
+): Promise<void> {
+  const ids = [...projectIds];
+  for (let index = 0; index < ids.length; index += PROJECT_STATS_REFRESH_CONCURRENCY) {
+    const batch = ids.slice(index, index + PROJECT_STATS_REFRESH_CONCURRENCY);
+    await Promise.all(
+      batch.map((projectId) => refreshChatProjectStatsForUser(mongoose, user, projectId)),
+    );
+  }
+}
 
 export interface ConversationMethods {
   getConvoFiles(conversationId: string): Promise<string[]>;
@@ -1075,11 +1092,7 @@ export function createConversationMethods(
        */
       if (deleted && projectIds.size > 0) {
         try {
-          await Promise.all(
-            [...projectIds].map((projectId) =>
-              refreshChatProjectStatsForUser(mongoose, user, projectId),
-            ),
-          );
+          await refreshChatProjectStatsInBatches(mongoose, user, projectIds);
         } catch (error) {
           logger.error('[deleteConvos] Conversations deleted but stats refresh failed', error);
         }
@@ -1111,46 +1124,69 @@ export function createConversationMethods(
         ],
       } as FilterQuery<IConversation>;
 
-      const conversations = await Conversation.find(filter).select('_id chatProjectId');
-      const conversationIds = conversations.map((conversation) => conversation._id);
-      const projectIds = new Set(
-        conversations
-          .map((conversation) => conversation.chatProjectId)
-          .filter((projectId): projectId is string => Boolean(projectId)),
-      );
-
-      if (conversationIds.length === 0) {
+      const snapshotBoundary = await Conversation.findOne(filter)
+        .select('_id')
+        .sort({ _id: -1 })
+        .lean<Pick<IConversation, '_id'>>();
+      if (!snapshotBoundary) {
         return { archivedCount: 0 };
       }
 
-      /**
-       * `timestamps: false` keeps each conversation's own `updatedAt`, so the archived
-       * view stays sorted by real activity instead of collapsing onto the archive time.
-       */
-      const result = await Conversation.updateMany(
-        { ...filter, _id: { $in: conversationIds } },
-        { $set: { isArchived: true } },
-        { timestamps: false },
-      );
+      const projectIds = new Set<string>();
+      let archivedCount = 0;
+      let lastConversationId: Types.ObjectId | null = null;
 
-      const archivedCount = result.modifiedCount ?? 0;
+      while (true) {
+        const idRange = lastConversationId
+          ? { $gt: lastConversationId, $lte: snapshotBoundary._id }
+          : { $lte: snapshotBoundary._id };
+        const conversations = await Conversation.find({ ...filter, _id: idRange })
+          .select('_id chatProjectId')
+          .sort({ _id: 1 })
+          .limit(ARCHIVE_CONVERSATION_BATCH_SIZE)
+          .lean<Array<Pick<IConversation, '_id' | 'chatProjectId'>>>();
+        if (conversations.length === 0) {
+          break;
+        }
 
-      if (archivedCount > 0) {
-        try {
-          const currentProjectIds = await Conversation.distinct('chatProjectId', {
-            _id: { $in: conversationIds },
-            user,
-          });
-          for (const projectId of currentProjectIds) {
-            if (projectId) {
-              projectIds.add(projectId);
-            }
+        const conversationIds: Types.ObjectId[] = [];
+        for (const conversation of conversations) {
+          conversationIds.push(conversation._id);
+          if (conversation.chatProjectId) {
+            projectIds.add(conversation.chatProjectId);
           }
-        } catch (error) {
-          logger.error(
-            '[archiveAllConvos] Conversations archived but project discovery failed',
-            error,
-          );
+        }
+        lastConversationId = conversationIds[conversationIds.length - 1];
+
+        /**
+         * `timestamps: false` keeps each conversation's own `updatedAt`, so the archived
+         * view stays sorted by real activity instead of collapsing onto the archive time.
+         */
+        const result = await Conversation.updateMany(
+          { ...filter, _id: { $in: conversationIds } },
+          { $set: { isArchived: true } },
+          { timestamps: false },
+        );
+        const batchArchivedCount = result.modifiedCount ?? 0;
+        archivedCount += batchArchivedCount;
+
+        if (batchArchivedCount > 0) {
+          try {
+            const currentProjectIds = await Conversation.distinct('chatProjectId', {
+              _id: { $in: conversationIds },
+              user,
+            });
+            for (const projectId of currentProjectIds) {
+              if (projectId) {
+                projectIds.add(projectId);
+              }
+            }
+          } catch (error) {
+            logger.error(
+              '[archiveAllConvos] Conversations archived but project discovery failed',
+              error,
+            );
+          }
         }
       }
 
@@ -1160,11 +1196,7 @@ export function createConversationMethods(
        */
       if (archivedCount > 0 && projectIds.size > 0) {
         try {
-          await Promise.all(
-            [...projectIds].map((projectId) =>
-              refreshChatProjectStatsForUser(mongoose, user, projectId),
-            ),
-          );
+          await refreshChatProjectStatsInBatches(mongoose, user, projectIds);
         } catch (error) {
           logger.error('[archiveAllConvos] Conversations archived but stats refresh failed', error);
         }
