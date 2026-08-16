@@ -27,6 +27,7 @@ import {
   isEnrollmentSupersededByRecovery,
   hasPasswordResetSince,
   requireTwoFactorSetupToken,
+  createBlockRetiredSetupToken,
   requireTwoFactorSetupFinalizationToken,
   requireTwoFactorSetupAcknowledgementToken,
   verifyTwoFactorSetupToken,
@@ -798,6 +799,144 @@ describe('requireTwoFactorSetupToken', () => {
       expect(next).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(401);
     }
+  });
+});
+
+describe('createBlockRetiredSetupToken', () => {
+  const resetAt = new Date('2026-02-02T00:00:10.500Z');
+  const resetSecond = Math.floor(resetAt.getTime() / 1000);
+  const getUserById = jest.fn();
+  const blockRetiredSetupToken = createBlockRetiredSetupToken({ getUserById });
+
+  const run = async (req: Partial<TwoFactorEnrollmentRequest>) => {
+    const res = createResponse();
+    const next = jest.fn() as jest.MockedFunction<NextFunction>;
+    await blockRetiredSetupToken(req as Request, res, next);
+    return { res, next };
+  };
+
+  beforeEach(() => {
+    getUserById.mockReset();
+    getUserById.mockResolvedValue({ _id: 'user-1' });
+  });
+
+  it('continues when nothing has retired the setup token', async () => {
+    const { res, next } = await run({
+      user: { id: 'user-1' },
+      twoFactorSetupIssuedAt: resetSecond,
+    });
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('refuses a setup token minted before the password reset', async () => {
+    getUserById.mockResolvedValue({ _id: 'user-1', passwordResetAt: resetAt });
+
+    const { res, next } = await run({
+      user: { id: 'user-1' },
+      twoFactorSetupIssuedAt: resetSecond - 1,
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('admits a setup token minted after the password reset', async () => {
+    getUserById.mockResolvedValue({ _id: 'user-1', passwordResetAt: resetAt });
+
+    const { res, next } = await run({
+      user: { id: 'user-1' },
+      twoFactorSetupIssuedAt: resetSecond + 1,
+    });
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('refuses a setup token minted earlier in the second the password reset landed', async () => {
+    getUserById.mockResolvedValue({ _id: 'user-1', passwordResetAt: resetAt });
+
+    const { res, next } = await run({
+      user: { id: 'user-1' },
+      twoFactorSetupIssuedAt: resetSecond,
+      twoFactorSetupIssuedAtMs: resetAt.getTime() - 1,
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('admits a setup token minted later in the second the password reset landed', async () => {
+    getUserById.mockResolvedValue({ _id: 'user-1', passwordResetAt: resetAt });
+
+    const { res, next } = await run({
+      user: { id: 'user-1' },
+      twoFactorSetupIssuedAt: resetSecond,
+      twoFactorSetupIssuedAtMs: resetAt.getTime() + 1,
+    });
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('refuses a setup token minted before enrollment promoted the account', async () => {
+    getUserById.mockResolvedValue({ _id: 'user-1', twoFactorEnrolledAt: resetAt });
+
+    const { res, next } = await run({
+      user: { id: 'user-1' },
+      twoFactorSetupIssuedAt: resetSecond - 1,
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('refuses an undatable setup token once a cutoff is set', async () => {
+    getUserById.mockResolvedValue({ _id: 'user-1', passwordResetAt: resetAt });
+
+    const { res, next } = await run({ user: { id: 'user-1' } });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('reads only the fields the cutoff needs', async () => {
+    await run({ user: { id: 'user-1' }, twoFactorSetupIssuedAt: resetSecond });
+
+    expect(getUserById).toHaveBeenCalledWith('user-1', 'twoFactorEnrolledAt passwordResetAt');
+  });
+
+  it('refuses when the named account no longer exists', async () => {
+    getUserById.mockResolvedValue(null);
+
+    const { res, next } = await run({
+      user: { id: 'user-1' },
+      twoFactorSetupIssuedAt: resetSecond,
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('refuses when no setup user was stamped on the request', async () => {
+    const { res, next } = await run({});
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(getUserById).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the lookup throws', async () => {
+    getUserById.mockRejectedValue(new Error('mongo is down'));
+
+    const { res, next } = await run({
+      user: { id: 'user-1' },
+      twoFactorSetupIssuedAt: resetSecond,
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
   });
 });
 

@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { createHash, randomBytes } from 'node:crypto';
+import { logger } from '@librechat/data-schemas';
 import { isTwoFactorPolicyProvider } from 'librechat-data-provider';
 import type {
   IUser,
@@ -425,6 +426,58 @@ export function verifyTwoFactorSetupToken(
   jwtSecret: string | undefined,
 ): TwoFactorTokenCredential | undefined {
   return verifyDatedTwoFactorToken(tempToken, jwtSecret, TWO_FACTOR_TOKEN_PURPOSE.REQUIRED_SETUP);
+}
+
+export interface BlockRetiredSetupTokenDependencies {
+  getUserById: (userId: string, projection: string) => Promise<TokenRetirementSignals | null>;
+}
+
+/**
+ * Refuses a required-enrollment setup token that a later account event has retired.
+ *
+ * The setup token is the one credential in the enrollment chain carrying no server-side nonce, so
+ * nothing else can date it. Password recovery revokes the credential it was minted for and strands
+ * the staged enrollment, but a holder of the old credential could otherwise present a setup token
+ * from before the reset, stage a secret of their own, and promote it over the recovered account.
+ * The later steps are already covered, because recovery clears the nonce hashes they consume.
+ *
+ * Runs after `requireTwoFactorSetupToken`, which verifies the signature and stamps the request.
+ */
+export function createBlockRetiredSetupToken(deps: BlockRetiredSetupTokenDependencies) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<Response | void> => {
+    try {
+      const setupRequest = req as TwoFactorEnrollmentRequest;
+      const userId = setupRequest.user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Invalid or expired two-factor setup token' });
+      }
+
+      const user = await deps.getUserById(userId, TOKEN_RETIREMENT_FIELDS);
+      if (!user) {
+        return res.status(401).json({ message: 'Invalid or expired two-factor setup token' });
+      }
+
+      if (
+        isTokenRetired(
+          {
+            issuedAt: setupRequest.twoFactorSetupIssuedAt,
+            issuedAtMs: setupRequest.twoFactorSetupIssuedAtMs,
+          },
+          user,
+        )
+      ) {
+        logger.warn(
+          `[blockRetiredSetupToken] Setup token predates enrollment or password reset: userId=${userId}`,
+        );
+        return res.status(401).json({ message: 'Invalid or expired two-factor setup token' });
+      }
+
+      next();
+    } catch (err) {
+      logger.error('[blockRetiredSetupToken]', err);
+      return res.status(500).json({ message: 'Something went wrong' });
+    }
+  };
 }
 
 export function requireTwoFactorSetupToken(
