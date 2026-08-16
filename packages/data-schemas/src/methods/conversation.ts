@@ -18,6 +18,19 @@ import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
 
+type ConversationUpdateResult = {
+  value:
+    | (IConversation & {
+        _id: unknown;
+        $isDefault: (path: string) => boolean;
+        toObject: () => IConversation;
+      })
+    | null;
+  lastErrorObject?: {
+    updatedExisting?: boolean;
+  };
+};
+
 export interface ConversationMethods {
   getConvoFiles(conversationId: string): Promise<string[]>;
   searchConversation(conversationId: string): Promise<IConversation | null>;
@@ -304,115 +317,74 @@ export function createConversationMethods(
         update.updatedAt = new Date();
       }
 
-      let updateOperation: Record<string, unknown> | Array<Record<string, unknown>>;
-      if (updatesArchiveState) {
-        /** Pipeline expressions read the pre-update document, and `_id` is absent only
-         * from the synthetic document MongoDB creates for an upsert. */
-        const isInsert = { $eq: [{ $type: '$_id' }, 'missing'] };
-        const setStage: Record<string, unknown> = {};
-        for (const [path, value] of Object.entries(update)) {
-          if (
-            value === undefined ||
-            path === '_id' ||
-            path === 'createdAt' ||
-            path === 'archivedAt' ||
-            path === 'tenantId'
-          ) {
-            continue;
-          }
+      const timestampOptions: { timestamps?: false } = {};
+      if (updatesArchiveState || createdAtOnInsert || preserveUpdatedAt) {
+        timestampOptions.timestamps = false;
+      }
 
-          const schemaType = Conversation.schema.path(path);
-          if (!schemaType || schemaType.options.immutable) {
-            continue;
-          }
-          setStage[path] = { $literal: value == null ? value : schemaType.cast(value) };
-        }
-
-        const insertDefaults: Record<string, unknown> = Conversation.applyDefaults({});
-        for (const [path, value] of Object.entries(insertDefaults)) {
-          if (
-            value === undefined ||
-            path === '_id' ||
-            path === 'createdAt' ||
-            path === 'updatedAt' ||
-            path === 'archivedAt' ||
-            path === 'tenantId' ||
-            Object.prototype.hasOwnProperty.call(setStage, path)
-          ) {
-            continue;
-          }
-          setStage[path] = {
-            $cond: [isInsert, { $literal: value }, `$${path}`],
-          };
-        }
-
-        const archiveTimestamp =
-          update.archivedAt == null
-            ? '$$NOW'
-            : { $convert: { input: { $literal: update.archivedAt }, to: 'date' } };
-        setStage.archivedAt =
-          update.isArchived === true
-            ? {
-                $cond: [{ $eq: ['$isArchived', true] }, '$archivedAt', archiveTimestamp],
-              }
-            : { $literal: null };
-
-        const createdAtForInsert =
-          createdAtOnInsert ??
-          (!preserveUpdatedAt && update.updatedAt instanceof Date ? update.updatedAt : undefined);
-        if (createdAtForInsert) {
-          setStage.createdAt = {
-            $cond: [isInsert, { $literal: createdAtForInsert }, '$createdAt'],
-          };
-        }
-
-        updateOperation = [{ $set: setStage }];
-        const fieldsToUnset = Object.keys(unsetFields).filter((path) => {
-          const schemaType = Conversation.schema.path(path);
-          return path !== 'tenantId' && schemaType != null && !schemaType.options.immutable;
-        });
-        if (fieldsToUnset.length > 0) {
-          updateOperation.push({ $unset: fieldsToUnset });
-        }
-      } else {
-        updateOperation = { $set: update };
+      const buildOperation = (setFields: Record<string, unknown>) => {
+        const operation: Record<string, unknown> = { $set: setFields };
         if (Object.keys(unsetFields).length > 0) {
-          updateOperation.$unset = unsetFields;
+          operation.$unset = unsetFields;
         }
-        if (createdAtOnInsert) {
-          updateOperation.$setOnInsert = { createdAt: createdAtOnInsert };
+        const createdAtForInsert = updatesArchiveState
+          ? (createdAtOnInsert ??
+            (!preserveUpdatedAt && update.updatedAt instanceof Date ? update.updatedAt : undefined))
+          : createdAtOnInsert;
+        if (createdAtForInsert) {
+          operation.$setOnInsert = { createdAt: createdAtForInsert };
         }
-      }
+        return operation;
+      };
 
-      const timestampOptions: { timestamps?: false; setDefaultsOnInsert?: false } = {};
-      if (updatesArchiveState) {
-        timestampOptions.timestamps = false;
-        timestampOptions.setDefaultsOnInsert = false;
-      } else if (createdAtOnInsert || preserveUpdatedAt) {
-        timestampOptions.timestamps = false;
-      }
-
-      const conversationResult = (await Conversation.findOneAndUpdate(
-        { conversationId, user: userId },
-        updateOperation,
-        {
+      const baseFilter = { conversationId, user: userId };
+      const canUpsert = metadata?.noUpsert !== true;
+      const runUpdate = (
+        filter: Record<string, unknown>,
+        operation: Record<string, unknown>,
+        upsert: boolean,
+      ) =>
+        Conversation.findOneAndUpdate(filter, operation, {
           new: true,
-          upsert: metadata?.noUpsert !== true,
+          upsert,
           includeResultMetadata: true,
           ...timestampOptions,
-        },
-      )) as unknown as {
-        value:
-          | (IConversation & {
-              _id: unknown;
-              $isDefault: (path: string) => boolean;
-              toObject: () => IConversation;
-            })
-          | null;
-        lastErrorObject?: {
-          updatedExisting?: boolean;
-        };
-      };
+        }) as unknown as Promise<ConversationUpdateResult>;
+
+      let conversationResult: ConversationUpdateResult;
+      if (update.isArchived === true) {
+        /** DocumentDB documents no support for pipeline-form updates on any engine
+         * version (`misc/documentdb/documentdb-compat.md`), so the stamp is applied
+         * by compare-and-set instead of `$cond`. Matching on the flag is what keeps
+         * it atomic: only the write that finds the chat unarchived stamps it, so a
+         * duplicate or retried archive cannot move `archivedAt`, and an unarchive
+         * that lands first is re-stamped rather than left bare. */
+        const withoutStamp = { ...update };
+        delete withoutStamp.archivedAt;
+        const stamped = { ...withoutStamp, archivedAt: update.archivedAt ?? new Date() };
+
+        conversationResult = await runUpdate(
+          { ...baseFilter, isArchived: { $ne: true } },
+          buildOperation(stamped),
+          false,
+        );
+        if (!conversationResult.value) {
+          conversationResult = await runUpdate(
+            { ...baseFilter, isArchived: true },
+            buildOperation(withoutStamp),
+            false,
+          );
+        }
+        if (!conversationResult.value && canUpsert) {
+          conversationResult = await runUpdate(baseFilter, buildOperation(stamped), true);
+        }
+      } else {
+        conversationResult = await runUpdate(
+          baseFilter,
+          buildOperation(updatesArchiveState ? { ...update, archivedAt: null } : update),
+          canUpsert,
+        );
+      }
       const conversation = conversationResult.value;
 
       if (!conversation) {

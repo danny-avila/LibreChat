@@ -488,6 +488,63 @@ describe('Conversation Operations', () => {
         expect(new Date(again?.archivedAt ?? 0).toISOString()).toBe(original.toISOString());
       });
 
+      /** DocumentDB documents no support for pipeline-form updates on any engine
+       * version (`misc/documentdb/documentdb-compat.md`), so both archive transitions
+       * have to stay on plain update operators. */
+      it('archives with plain update operators rather than an aggregation pipeline', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Plain operators only',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        const updates: Array<UpdateFilter<Document> | Document[]> = [];
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              updates.push(update);
+              return findOneAndUpdate(filter, update, options ?? {});
+            },
+          );
+
+        try {
+          const archived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+          const unarchived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: false },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+
+          expect(archived?.archivedAt).toBeInstanceOf(Date);
+          expect(unarchived?.archivedAt ?? null).toBeNull();
+          expect(updates.length).toBeGreaterThan(0);
+          for (const update of updates) {
+            expect(Array.isArray(update)).toBe(false);
+          }
+        } finally {
+          writeSpy.mockRestore();
+        }
+      });
+
       it('stamps again when unarchive lands before a pending repeated archive write', async () => {
         const conversationId = uuidv4();
         const original = new Date('2026-03-01T12:00:00.000Z');
