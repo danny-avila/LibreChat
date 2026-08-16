@@ -63,6 +63,16 @@ export default function MemoryCreateDialog({
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
   const [touched, setTouched] = useState({ key: false, value: false });
+  const [prevOpen, setPrevOpen] = useState(open);
+
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (!open) {
+      setKey('');
+      setValue('');
+      setTouched({ key: false, value: false });
+    }
+  }
 
   const keyError = getMemoryKeyError({ key, memories: memData?.memories });
   const valueError = getMemoryValueError(value);
