@@ -124,7 +124,7 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
         </div>
 
         {/* Actions */}
-        <div className="flex shrink-0 items-center gap-2 sm:pt-1">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pt-1">
           <SkillToggle enabled={skillEnabled} onChange={() => toggle(skill)} />
           <ShareSkill skill={skill} />
           {permissions.canEdit && onEdit && (
