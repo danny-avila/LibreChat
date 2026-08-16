@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
+import type { Document, Filter, FindOneAndUpdateOptions, UpdateFilter } from 'mongodb';
 import type { IChatProject, IConversation } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -392,6 +393,31 @@ describe('Conversation Operations', () => {
       expect(secondSave?.title).toBe('Updated title');
     });
 
+    it('preserves insert defaults and suppressed timestamps for an archive pipeline upsert', async () => {
+      const conversationId = uuidv4();
+      const firstAnchor = new Date('2024-02-03T04:05:06.000Z');
+      const secondAnchor = new Date('2025-02-03T04:05:06.000Z');
+
+      const firstSave = await saveConvo(
+        { userId: 'user123' },
+        { conversationId, isArchived: true },
+        { createdAtOnInsert: firstAnchor, preserveUpdatedAt: true },
+      );
+      const secondSave = await saveConvo(
+        { userId: 'user123' },
+        { conversationId, isArchived: true },
+        { createdAtOnInsert: secondAnchor, preserveUpdatedAt: true },
+      );
+
+      expect(firstSave?.title).toBe('New Chat');
+      expect(firstSave?.isTemporary).toBe(false);
+      expect(firstSave?.updatedAt ?? null).toBeNull();
+      expect(new Date(firstSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
+      expect(secondSave?.updatedAt ?? null).toBeNull();
+      expect(new Date(secondSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
+      expect(secondSave?.archivedAt).toEqual(firstSave?.archivedAt);
+    });
+
     describe('preserveUpdatedAt', () => {
       const anchor = new Date('2026-02-11T15:28:18.561Z');
 
@@ -430,6 +456,315 @@ describe('Conversation Operations', () => {
         expect(unarchived?.isArchived).toBe(false);
         expect(new Date(archived?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
         expect(new Date(unarchived?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+      });
+
+      /** Opening an archived chat and hitting the archive shortcut (or a retried
+       * POST) sends isArchived: true again. That must not move Date Archived. */
+      it('keeps the original archivedAt when the chat is already archived', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Already filed away',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const again = await saveConvo(
+          { userId: 'user123' },
+          {
+            conversationId,
+            isArchived: true,
+            archivedAt: new Date('2026-08-15T21:00:00.000Z'),
+          },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(new Date(again?.archivedAt ?? 0).toISOString()).toBe(original.toISOString());
+      });
+
+      /** DocumentDB documents no support for pipeline-form updates on any engine
+       * version (`misc/documentdb/documentdb-compat.md`), so both archive transitions
+       * have to stay on plain update operators. */
+      it('archives with plain update operators rather than an aggregation pipeline', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Plain operators only',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: false,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        const updates: Array<UpdateFilter<Document> | Document[]> = [];
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              updates.push(update);
+              return findOneAndUpdate(filter, update, options ?? {});
+            },
+          );
+
+        try {
+          const archived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+          const unarchived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: false },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+
+          expect(archived?.archivedAt).toBeInstanceOf(Date);
+          expect(unarchived?.archivedAt ?? null).toBeNull();
+          expect(updates.length).toBeGreaterThan(0);
+          for (const update of updates) {
+            expect(Array.isArray(update)).toBe(false);
+          }
+        } finally {
+          writeSpy.mockRestore();
+        }
+      });
+
+      /** Both conditional writes of the compare-and-set miss when an unarchive lands
+       * between them. The conversation still exists, so the route must not 404. */
+      it('does not report a missing chat when an unarchive splits the archive writes', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Split archive',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        let writeCount = 0;
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              writeCount += 1;
+              const result = await findOneAndUpdate(filter, update, options ?? {});
+              /** The transition write has just missed on an already archived chat.
+               * Unarchive it now so the already-archived write misses too. */
+              if (writeCount === 1) {
+                await Conversation.collection.updateOne(
+                  { conversationId },
+                  { $set: { isArchived: false, archivedAt: null } },
+                );
+              }
+              return result;
+            },
+          );
+
+        try {
+          const archived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+
+          expect(archived).not.toBeNull();
+          expect(archived?.isArchived).toBe(true);
+          expect(archived?.archivedAt).toBeInstanceOf(Date);
+        } finally {
+          writeSpy.mockRestore();
+        }
+      });
+
+      /** Alternating requests can split every retry, and exhausting them still proves
+       * nothing about whether the chat exists, so it must not become a 404 either. */
+      it('does not report a missing chat when every archive retry is split', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Perpetually split',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              const result = await findOneAndUpdate(filter, update, options ?? {});
+              /** Flip the flag after every write so no transition write and no
+               * already-archived write can ever match. */
+              const archived = await Conversation.collection.findOne({ conversationId });
+              await Conversation.collection.updateOne(
+                { conversationId },
+                { $set: { isArchived: archived?.isArchived !== true } },
+              );
+              return result;
+            },
+          );
+
+        try {
+          const archived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+
+          expect(archived).not.toBeNull();
+          expect(archived?.conversationId).toBe(conversationId);
+        } finally {
+          writeSpy.mockRestore();
+        }
+      });
+
+      it('stamps again when unarchive lands before a pending repeated archive write', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Archive race',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        let markArchiveWriteReached = () => {};
+        const archiveWriteReached = new Promise<void>((resolve) => {
+          markArchiveWriteReached = resolve;
+        });
+        let releaseArchiveWrite = () => {};
+        const archiveWriteBlocked = new Promise<void>((resolve) => {
+          releaseArchiveWrite = resolve;
+        });
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        let writeCount = 0;
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              writeCount += 1;
+              if (writeCount === 1) {
+                markArchiveWriteReached();
+                await archiveWriteBlocked;
+              }
+              return findOneAndUpdate(filter, update, options ?? {});
+            },
+          );
+
+        try {
+          const archive = saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+          await archiveWriteReached;
+
+          const unarchived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: false },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+          releaseArchiveWrite();
+          const archived = await archive;
+
+          expect(unarchived?.isArchived).toBe(false);
+          expect(archived?.isArchived).toBe(true);
+          expect(archived?.archivedAt).toBeInstanceOf(Date);
+          expect(new Date(archived?.archivedAt ?? 0).toISOString()).not.toBe(
+            original.toISOString(),
+          );
+        } finally {
+          releaseArchiveWrite();
+          writeSpy.mockRestore();
+        }
+      });
+
+      it('stamps archivedAt on the first archive when the caller omits it', async () => {
+        const conversationId = await seedAgedConvo();
+        const before = Date.now();
+
+        const archived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: true },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(archived?.archivedAt).toBeInstanceOf(Date);
+        expect(new Date(archived?.archivedAt ?? 0).getTime()).toBeGreaterThanOrEqual(before);
+      });
+
+      it('clears archivedAt on unarchive when the caller omits it', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'To restore',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const unarchived = await saveConvo(
+          { userId: 'user123' },
+          { conversationId, isArchived: false },
+          { preserveUpdatedAt: true, noUpsert: true },
+        );
+
+        expect(unarchived?.archivedAt ?? null).toBeNull();
       });
 
       /** A pin carries a preserved older timestamp, so the project it belongs to must
@@ -1806,6 +2141,174 @@ describe('Conversation Operations', () => {
 
       expect(result?.conversations).toHaveLength(25);
       expect(result?.nextCursor).toBeNull(); // No next page
+    });
+  });
+
+  describe('getConvosByCursor archivedAt sorting', () => {
+    const insertArchived = async (title: string, archivedAt: Date | null, updatedAt: Date) => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId,
+        user: 'user123',
+        title,
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived: true,
+        createdAt: updatedAt,
+        updatedAt,
+        ...(archivedAt === null ? {} : { archivedAt }),
+      });
+      return conversationId;
+    };
+
+    it('accepts archivedAt as a sort field', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const older = await insertArchived('older', new Date(base.getTime() - 60000), base);
+      const newer = await insertArchived('newer', new Date(base.getTime() + 60000), base);
+
+      const result = await getConvosByCursor('user123', {
+        isArchived: true,
+        sortBy: 'archivedAt',
+        sortDirection: 'desc',
+      });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([newer, older]);
+    });
+
+    /* Everything archived before the field existed has no stamp, so the missing-value
+       group is the common case here, not an edge case. A cursor that collapsed a null
+       stamp to the epoch would restart paging from 1970 and replay the whole archive. */
+    it('pages across stamped and unstamped chats without repeating or dropping any', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const expected = new Set<string>();
+      for (let index = 0; index < 4; index++) {
+        expected.add(
+          await insertArchived(`stamped ${index}`, new Date(base.getTime() + index * 60000), base),
+        );
+      }
+      for (let index = 0; index < 4; index++) {
+        expected.add(
+          await insertArchived(`legacy ${index}`, null, new Date(base.getTime() + index * 60000)),
+        );
+      }
+
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page++) {
+        const result = await getConvosByCursor('user123', {
+          isArchived: true,
+          sortBy: 'archivedAt',
+          sortDirection: 'desc',
+          limit: 3,
+          cursor,
+        });
+        seen.push(...result.conversations.map((convo) => convo.conversationId));
+        cursor = result.nextCursor;
+        if (!cursor) {
+          break;
+        }
+      }
+
+      expect(new Set(seen)).toEqual(expected);
+      expect(seen.length).toBe(expected.size);
+    });
+
+    it('orders unstamped chats last when sorting newest first', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const stamped = await insertArchived('stamped', base, base);
+      const legacy = await insertArchived('legacy', null, base);
+
+      const result = await getConvosByCursor('user123', {
+        isArchived: true,
+        sortBy: 'archivedAt',
+        sortDirection: 'desc',
+      });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([stamped, legacy]);
+    });
+
+    /** Ascending takes the other null branch: the unstamped group comes first and the
+     * page that leaves it has to pick up every stamped chat behind it. */
+    it('pages across stamped and unstamped chats when sorting oldest first', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const expected = new Set<string>();
+      for (let index = 0; index < 3; index++) {
+        expected.add(
+          await insertArchived(`stamped ${index}`, new Date(base.getTime() + index * 60000), base),
+        );
+      }
+      for (let index = 0; index < 3; index++) {
+        expected.add(
+          await insertArchived(`legacy ${index}`, null, new Date(base.getTime() + index * 60000)),
+        );
+      }
+
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 10; page++) {
+        const result = await getConvosByCursor('user123', {
+          isArchived: true,
+          sortBy: 'archivedAt',
+          sortDirection: 'asc',
+          limit: 2,
+          cursor,
+        });
+        seen.push(...result.conversations.map((convo) => convo.conversationId));
+        cursor = result.nextCursor;
+        if (!cursor) {
+          break;
+        }
+      }
+
+      expect(new Set(seen)).toEqual(expected);
+      expect(seen.length).toBe(expected.size);
+    });
+
+    /** The cell renders `archivedAt ?? createdAt`, so the legacy group has to come back
+     * in that same createdAt order; ordering it by last activity read out of order. */
+    it('orders the legacy group by the createdAt it displays, not last activity', async () => {
+      const base = new Date('2026-06-01T00:00:00.000Z');
+      const olderCreated = uuidv4();
+      const newerCreated = uuidv4();
+      /* createdAt and updatedAt deliberately disagree: ordering by activity would
+         invert these two relative to the dates the dialog shows. */
+      await Conversation.collection.insertOne({
+        conversationId: olderCreated,
+        user: 'user123',
+        title: 'created first, touched last',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived: true,
+        createdAt: new Date(base.getTime() - 60000),
+        updatedAt: new Date(base.getTime() + 60000),
+      });
+      await Conversation.collection.insertOne({
+        conversationId: newerCreated,
+        user: 'user123',
+        title: 'created last, touched first',
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived: true,
+        createdAt: new Date(base.getTime() + 60000),
+        updatedAt: new Date(base.getTime() - 60000),
+      });
+
+      const result = await getConvosByCursor('user123', {
+        isArchived: true,
+        sortBy: 'archivedAt',
+        sortDirection: 'desc',
+      });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([
+        newerCreated,
+        olderCreated,
+      ]);
+    });
+
+    it('still rejects a sort field that is not allowed', async () => {
+      await expect(getConvosByCursor('user123', { sortBy: 'pinned' })).rejects.toThrow(
+        /Invalid sortBy field/,
+      );
     });
   });
 

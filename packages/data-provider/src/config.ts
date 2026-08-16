@@ -65,6 +65,7 @@ export const excludedKeys = new Set([
   'messages',
   'isArchived',
   'pinned',
+  'archivedAt',
   'tags',
   'user',
   '__v',
