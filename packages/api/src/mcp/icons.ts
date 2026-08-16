@@ -1,5 +1,4 @@
-import { JSDOM } from 'jsdom';
-import createDOMPurify from 'dompurify';
+import type createDOMPurify from 'dompurify';
 import {
   MAX_MCP_ICON_PATH_LENGTH,
   SVG_SANITIZE_CONFIG,
@@ -26,18 +25,28 @@ import {
 /** Matches an `image/svg+xml` data URI regardless of the encoding suffix. */
 const SVG_DATA_URI = /^data:image\/svg\+xml/i;
 
-let purifier: ReturnType<typeof createDOMPurify> | null = null;
+type SvgPurifier = ReturnType<typeof createDOMPurify>;
+
+let purifier: SvgPurifier | null = null;
 
 /**
- * DOMPurify bound to a jsdom window, built on first use so a server that never
- * saves an icon never pays for the window, and reused afterwards because the
- * reference hook only needs to be registered once.
+ * DOMPurify bound to a jsdom window. jsdom and dompurify are required here, not
+ * at module load, so `require('@librechat/api')` does not pull their graphs into
+ * workers and tests that never sanitize an icon. The instance is reused because
+ * the reference hook only needs to be registered once.
  */
-function getSvgPurifier(): ReturnType<typeof createDOMPurify> {
+function getSvgPurifier(): SvgPurifier {
   if (purifier) {
     return purifier;
   }
-  purifier = createDOMPurify(new JSDOM('').window);
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- deferred off the api barrel
+  const { JSDOM } = require('jsdom') as typeof import('jsdom');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- same as jsdom
+  const loaded = require('dompurify') as
+    | typeof createDOMPurify
+    | { default: typeof createDOMPurify };
+  const create = typeof loaded === 'function' ? loaded : loaded.default;
+  purifier = create(new JSDOM('').window);
   purifier.addHook('afterSanitizeAttributes', restrictSvgReferences);
   return purifier;
 }
