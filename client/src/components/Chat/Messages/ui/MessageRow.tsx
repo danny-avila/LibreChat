@@ -77,7 +77,8 @@ export default function MessageRow({
               <MessageTimestamp value={timestamp} />
             </h2>
           ) : (
-            <h2 className="flex min-h-7 w-full select-none items-center gap-2 text-sm font-semibold text-text-primary">
+            /** `mb-1` keeps the name off its own first line of body text. */
+            <h2 className="mb-1 flex min-h-7 w-full select-none items-center gap-2 text-sm font-semibold text-text-primary">
               <span
                 aria-hidden="true"
                 className="flex size-6 flex-shrink-0 items-center justify-center overflow-hidden rounded-full"
