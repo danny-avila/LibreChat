@@ -3,14 +3,25 @@ import { getRunStepDurationLabels } from '../runStepDuration';
 describe('getRunStepDurationLabels', () => {
   describe('under ten seconds', () => {
     it('keeps one decimal, where the tenth still distinguishes two durations', () => {
-      expect(getRunStepDurationLabels(1400)).toMatchObject({
+      expect(getRunStepDurationLabels(1400, 'en')).toMatchObject({
         key: 'com_ui_duration_seconds',
-        values: { 0: 1.4 },
+        values: { 0: '1.4' },
       });
     });
 
     it('drops a trailing zero rather than rendering "1.0s"', () => {
-      expect(getRunStepDurationLabels(1000).values).toEqual({ 0: 1 });
+      expect(getRunStepDurationLabels(1000, 'en').values).toEqual({ 0: '1' });
+    });
+
+    /** The decimal separator belongs to the locale, not to the code — a raw
+     *  JS number interpolated into the label hardcodes the en-US point into
+     *  every language (Codex-era self-audit finding on #14892). */
+    it('formats the decimal for the active locale', () => {
+      expect(getRunStepDurationLabels(1400, 'de').values).toEqual({ 0: '1,4' });
+    });
+
+    it('falls back to the plain number on a malformed language tag', () => {
+      expect(getRunStepDurationLabels(1400, 'not a tag').values).toEqual({ 0: '1.4' });
     });
 
     it('announces the singular form only for exactly one second', () => {
@@ -23,11 +34,11 @@ describe('getRunStepDurationLabels', () => {
 
   describe('ten seconds to a minute', () => {
     it('rounds to whole seconds, where the tenth is only jitter', () => {
-      expect(getRunStepDurationLabels(12_400)).toMatchObject({
+      expect(getRunStepDurationLabels(12_400, 'en')).toMatchObject({
         key: 'com_ui_duration_seconds',
-        values: { 0: 12 },
+        values: { 0: '12' },
       });
-      expect(getRunStepDurationLabels(12_600).values).toEqual({ 0: 13 });
+      expect(getRunStepDurationLabels(12_600, 'en').values).toEqual({ 0: '13' });
     });
   });
 

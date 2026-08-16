@@ -39,6 +39,14 @@ export const MIN_REPORTABLE_RUN_STEP_DURATION_MS = 1000;
  *   the two stamps can legitimately originate on different machines.
  * - Non-finite input is treated as absent instead of propagating `NaN` into
  *   rendering.
+ *
+ * Known limits, accepted rather than guessed at: only the negative direction
+ * of clock skew is detectable from a single stamp pair — positive skew
+ * inflates the result and cannot be distinguished from a genuinely long
+ * step. And the value is wall-clock elapsed between open and close, so a
+ * step held open across a suspension (a checkpoint resume, a HITL approval
+ * wait) includes that held-open time. Both are properties of the only data
+ * available, not derivation bugs.
  */
 export function getRunStepDurationMs(closed: RunStepTimestamps): number | undefined {
   const { created_at: createdAt, closed_at: closedAt } = closed;

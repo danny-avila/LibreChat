@@ -18,6 +18,10 @@ jest.mock('~/hooks', () => ({
     },
 }));
 
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({ i18n: { language: 'en' } }),
+}));
+
 jest.mock('../CancelledIcon', () => ({
   __esModule: true,
   default: () => <span data-testid="cancelled-icon" />,

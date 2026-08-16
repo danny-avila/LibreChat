@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import { Button } from '@librechat/client';
+import { useTranslation } from 'react-i18next';
 import * as Popover from '@radix-ui/react-popover';
 import { isReportableRunStepDuration } from 'librechat-data-provider';
 import { cn, getRunStepDurationLabels } from '~/utils';
@@ -68,6 +69,8 @@ export default function ProgressText({
   error?: boolean;
 }) {
   const localize = useLocalize();
+  /** For locale-aware decimal formatting of the sub-10s duration value. */
+  const { i18n } = useTranslation();
   const getText = () => {
     if (error) {
       return finishedText;
@@ -103,7 +106,7 @@ export default function ProgressText({
    */
   const duration =
     progress >= 1 && !error && !errorSuffix && isReportableRunStepDuration(durationMs)
-      ? getRunStepDurationLabels(durationMs)
+      ? getRunStepDurationLabels(durationMs, i18n.language)
       : undefined;
 
   return (

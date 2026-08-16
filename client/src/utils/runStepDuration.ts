@@ -18,6 +18,22 @@ export interface RunStepDurationLabels {
 }
 
 /**
+ * The sub-10s value is the only fractional number this feature renders, and
+ * interpolating it raw would hardcode the en-US decimal point into every
+ * locale ("1.4s" where the convention is "1,4 s"). Translators cannot fix a
+ * number formatted in code, so it is formatted per-locale here, following
+ * `MessageTimestamp`'s pattern of threading `i18n.language` into the util.
+ * The guard covers malformed language tags, which `Intl` throws on.
+ */
+function formatSecondsValue(seconds: number, language?: string): string {
+  try {
+    return new Intl.NumberFormat(language, { maximumFractionDigits: 1 }).format(seconds);
+  } catch {
+    return String(seconds);
+  }
+}
+
+/**
  * Resolve the localization keys and interpolation values for a run-step
  * duration.
  *
@@ -31,7 +47,10 @@ export interface RunStepDurationLabels {
  * the precise value stays on the button, which assistive technology reads
  * when the reader navigates to it.
  */
-export function getRunStepDurationLabels(durationMs: number): RunStepDurationLabels {
+export function getRunStepDurationLabels(
+  durationMs: number,
+  language?: string,
+): RunStepDurationLabels {
   const totalSeconds = durationMs / MS_PER_SECOND;
 
   /** Branch on the rounded value, not the raw one, so 59.6s renders as
@@ -41,9 +60,12 @@ export function getRunStepDurationLabels(durationMs: number): RunStepDurationLab
       totalSeconds < DECIMAL_PRECISION_BELOW_SECONDS
         ? Number(totalSeconds.toFixed(1))
         : Math.round(totalSeconds);
+    /** Plural selection stays on the numeric value; only the interpolated
+     *  text is locale-formatted. */
+    const formatted = formatSecondsValue(seconds, language);
     return {
       key: 'com_ui_duration_seconds',
-      values: { 0: seconds },
+      values: { 0: formatted },
       /** The caller picks the plural form explicitly, matching the
        *  `com_ui_tools_count` / `_one` convention already used across the
        *  locale files, rather than relying on i18next's plural resolution. */
@@ -51,7 +73,7 @@ export function getRunStepDurationLabels(durationMs: number): RunStepDurationLab
         seconds === 1
           ? 'com_ui_duration_announced_seconds_one'
           : 'com_ui_duration_announced_seconds',
-      announcedValues: { count: seconds },
+      announcedValues: { count: formatted },
     };
   }
 
