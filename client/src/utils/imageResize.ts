@@ -117,6 +117,9 @@ const isAnimatedWebP = async (file: File): Promise<boolean> => {
     if (chunkType === 'ANIM' || chunkType === 'ANMF') {
       return true;
     }
+    if (chunkType === 'VP8 ' || chunkType === 'VP8L') {
+      return false;
+    }
     if (chunkType === 'VP8X' && chunkSize > 0) {
       const flags = bytes[offset + 8];
       if (flags == null) {

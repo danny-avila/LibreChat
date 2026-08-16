@@ -254,13 +254,24 @@ describe('imageResize utility', () => {
       const largePng = createPngWithChunks([
         createChunk('IDAT', new Array<number>(64 * 1024).fill(0)),
       ]);
-      const largeWebP = createWebPWithChunks([
-        createWebPChunk('VP8 ', new Array<number>(64 * 1024).fill(0)),
-      ]);
 
       await expect(isAnimatedImage(largePng)).resolves.toBe(false);
-      await expect(isAnimatedImage(largeWebP)).resolves.toBe(false);
     });
+
+    it.each([
+      ['VP8 ', 'EXIF'],
+      ['VP8L', 'XMP '],
+    ])(
+      'allows a large static WebP with a %s payload followed by %s metadata',
+      async (imageChunk, metadataChunk) => {
+        const largeWebP = createWebPWithChunks([
+          createWebPChunk(imageChunk, new Array<number>(64 * 1024).fill(0)),
+          createWebPChunk(metadataChunk, [1, 2, 3, 4]),
+        ]);
+
+        await expect(isAnimatedImage(largeWebP)).resolves.toBe(false);
+      },
+    );
   });
 
   describe('resizeImage', () => {
