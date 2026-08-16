@@ -57,7 +57,7 @@ export default function ItemDialogHeader({ item }: { item: AgentItem }) {
         <OGDialogTitle className="truncate text-base font-semibold text-text-primary">
           {displayName}
         </OGDialogTitle>
-        <OGDialogDescription className="m-0 text-[11px] uppercase tracking-wide text-text-secondary">
+        <OGDialogDescription className="m-0 text-[0.6875rem] uppercase tracking-wide text-text-secondary">
           {kindLabel}
         </OGDialogDescription>
       </div>

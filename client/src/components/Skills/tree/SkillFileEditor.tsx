@@ -107,7 +107,7 @@ export default function SkillFileEditor({ skillId, nodeId, fileName }: SkillFile
           onChange={handleChange}
           spellCheck={false}
           className={cn(
-            'size-full resize-none rounded-none border-0 bg-transparent px-4 py-3 font-mono text-[13px] leading-6 text-text-primary outline-none',
+            'size-full resize-none rounded-none border-0 bg-transparent px-4 py-3 font-mono text-[0.8125rem] leading-6 text-text-primary outline-none',
             'focus:ring-0 focus:ring-offset-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
             'selection:bg-blue-500/20',
           )}
@@ -115,12 +115,12 @@ export default function SkillFileEditor({ skillId, nodeId, fileName }: SkillFile
         />
       </div>
       <div className="flex items-center justify-between border-t border-border-light px-4 py-1">
-        <span className="text-[11px] text-text-secondary">
+        <span className="text-[0.6875rem] text-text-secondary">
           {lineCount === 1
             ? localize('com_ui_line_count', { 0: String(lineCount) })
             : localize('com_ui_lines_count', { 0: String(lineCount) })}
         </span>
-        <span className="text-[11px] text-text-secondary">
+        <span className="text-[0.6875rem] text-text-secondary">
           {isDirty ? localize('com_ui_file_modified') : localize('com_ui_saved')}
         </span>
       </div>

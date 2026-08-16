@@ -109,7 +109,7 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
               viewBox="0 0 18 18"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
-              className="mb-[-1px]"
+              className="mb-[-0.0625rem]"
             >
               <path
                 d="M6 3C4.89543 3 4 3.89543 4 5V13C4 14.1046 4.89543 15 6 15L6 3Z"

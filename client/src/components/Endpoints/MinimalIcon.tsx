@@ -8,6 +8,7 @@ import {
   OpenAIMinimalIcon,
   GoogleMinimalIcon,
   CustomMinimalIcon,
+  pxToRem,
 } from '@librechat/client';
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
@@ -67,8 +68,8 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
       title={name}
       aria-hidden="true"
       style={{
-        width: size,
-        height: size,
+        width: pxToRem(size),
+        height: pxToRem(size),
       }}
       className={cn(
         'relative flex items-center justify-center rounded-sm text-text-secondary',
@@ -77,7 +78,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
     >
       {icon}
       {error === true && (
-        <span className="absolute right-0 top-[20px] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-status-error text-[10px] text-text-secondary">
+        <span className="absolute right-0 top-[1.25rem] -mr-2 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-status-error text-[0.625rem] text-text-secondary">
           !
         </span>
       )}

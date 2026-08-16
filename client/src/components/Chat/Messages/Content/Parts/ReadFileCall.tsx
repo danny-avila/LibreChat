@@ -131,7 +131,7 @@ export default function ReadFileCall({
           {hasOutput && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <CodeWindowHeader language={fileName} code={output} />
-              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
+              <pre className="max-h-[18.75rem] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
                 <code className={`hljs language-${lang} !whitespace-pre`}>
                   {highlighted ?? output}
                 </code>

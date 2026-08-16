@@ -45,7 +45,7 @@ const SelectionCheckbox = memo(
       role="button"
       tabIndex={0}
       onKeyDown={(e) => e.stopPropagation()}
-      className="flex h-full w-[30px] items-center justify-center"
+      className="flex h-full w-[1.875rem] items-center justify-center"
       onClick={(e) => e.stopPropagation()}
     >
       <Checkbox checked={checked} onCheckedChange={onChange} aria-label={ariaLabel} />
@@ -191,7 +191,7 @@ const DeleteButton = memo(
         variant="outline"
         onClick={onDelete}
         disabled={disabled}
-        className={cn('min-w-[40px] transition-all duration-200', isSmallScreen && 'px-2 py-1')}
+        className={cn('min-w-[2.5rem] transition-all duration-200', isSmallScreen && 'px-2 py-1')}
         aria-label={ariaLabel}
       >
         {isDeleting ? (
@@ -244,7 +244,7 @@ export default function DataTable<TData, TValue>({
     const selectColumn = {
       id: 'select',
       header: ({ table }: { table: TTable<TData> }) => (
-        <div className="flex h-full w-[30px] items-center justify-center">
+        <div className="flex h-full w-[1.875rem] items-center justify-center">
           <Checkbox
             checked={table.getIsAllPageRowsSelected()}
             onCheckedChange={(value) => table.toggleAllPageRowsSelected(Boolean(value))}
@@ -437,7 +437,7 @@ export default function DataTable<TData, TValue>({
       >
         <Table
           unwrapped
-          className="w-full min-w-[300px] table-fixed border-separate border-spacing-0"
+          className="w-full min-w-[18.75rem] table-fixed border-separate border-spacing-0"
         >
           <TableHeader className="sticky top-0 z-50 bg-surface-secondary">
             {table.getHeaderGroups().map((headerGroup) => (

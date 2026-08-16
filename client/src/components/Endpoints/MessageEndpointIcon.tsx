@@ -13,6 +13,7 @@ import {
   TooltipAnchor,
   AzureMinimalIcon,
   CustomMinimalIcon,
+  pxToRem,
 } from '@librechat/client';
 import UnknownIcon from '~/hooks/Endpoint/UnknownIcon';
 import { IconProps } from '~/common';
@@ -66,8 +67,8 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
         <TooltipAnchor
           description={assistantName ?? ''}
           style={{
-            width: size,
-            height: size,
+            width: pxToRem(size),
+            height: pxToRem(size),
           }}
           className={cn('overflow-hidden rounded-full', props.className ?? '')}
         >
@@ -95,8 +96,8 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
         <TooltipAnchor
           description={agentName ?? ''}
           style={{
-            width: size,
-            height: size,
+            width: pxToRem(size),
+            height: pxToRem(size),
           }}
           className={cn('overflow-hidden rounded-full', props.className ?? '')}
         >
@@ -190,8 +191,8 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       title={name ?? ''}
       style={{
         background: bg != null ? bg || 'transparent' : 'transparent',
-        width: size,
-        height: size,
+        width: pxToRem(size),
+        height: pxToRem(size),
       }}
       className={cn(
         'relative flex h-9 w-9 items-center justify-center rounded-sm p-1',
@@ -201,7 +202,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     >
       {icon}
       {error === true && (
-        <span className="absolute right-0 top-[20px] -mr-2 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-status-error text-[10px] text-white">
+        <span className="absolute right-0 top-[1.25rem] -mr-2 flex h-3 w-3 items-center justify-center rounded-full border border-white bg-status-error text-[0.625rem] text-white">
           !
         </span>
       )}

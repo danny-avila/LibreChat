@@ -3,6 +3,7 @@ import { getEndpointField } from 'librechat-data-provider';
 import type { TModelSpec, TEndpointsConfig } from 'librechat-data-provider';
 import type { IconMapProps } from '~/common';
 import { getModelSpecIconURL, getIconKey } from '~/utils';
+import { pxToRem } from '@librechat/client';
 import { URLIcon } from '~/components/Endpoints/URLIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { isImageURL } from '~/utils/icons';
@@ -31,7 +32,7 @@ const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig, agent
       <URLIcon
         iconURL={iconURL}
         altName={currentSpec.name}
-        containerStyle={{ width: 20, height: 20 }}
+        containerStyle={{ width: pxToRem(20), height: pxToRem(20) }}
         className="icon-md shrink-0 overflow-hidden rounded-full"
         endpoint={endpoint || undefined}
       />

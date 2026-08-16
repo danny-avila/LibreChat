@@ -1,5 +1,6 @@
 import React, { memo, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { pxToRem } from '@librechat/client';
 import type { IconMapProps } from '~/common';
 import { getKnownEndpointAsset, hasKnownEndpointIcon } from '~/hooks/Endpoint/UnknownIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
@@ -27,14 +28,17 @@ const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
   if (imageError) {
     const DefaultIcon: IconType = icons.unknown as IconType;
     return (
-      <div className="relative" style={{ width: 20, height: 20, margin: '2px' }}>
+      <div
+        className="relative"
+        style={{ width: pxToRem(20), height: pxToRem(20), margin: pxToRem(2) }}
+      >
         <div className="icon-md shrink-0 overflow-hidden rounded-full">
-          <DefaultIcon context="menu-item" size={20} />
+          <DefaultIcon context="menu-item" size={20} className="h-full w-full" />
         </div>
         {imageError && iconURL && (
           <div
             className="absolute flex items-center justify-center rounded-full bg-surface-destructive"
-            style={{ width: '14px', height: '14px', top: 0, right: 0 }}
+            style={{ width: pxToRem(14), height: pxToRem(14), top: 0, right: 0 }}
           >
             <AlertCircle size={10} className="text-white" />
           </div>
@@ -60,7 +64,7 @@ const GroupIcon: React.FC<GroupIconProps> = ({ iconURL, groupName }) => {
   return (
     <div
       className="icon-md shrink-0 overflow-hidden rounded-full"
-      style={{ width: 20, height: 20 }}
+      style={{ width: pxToRem(20), height: pxToRem(20) }}
     >
       <img
         src={resolvedIconURL || iconURL}

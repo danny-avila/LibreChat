@@ -284,7 +284,7 @@ function TopUsersTable({
         <EmptyState message={localize('com_insights_no_data')} />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[420px] text-left text-sm">
+          <table className="w-full min-w-[26.25rem] text-left text-sm">
             <thead className="border-b border-border-medium text-xs text-text-secondary">
               <tr>
                 <th className="px-2 py-2 font-medium">{localize('com_insights_user')}</th>
@@ -352,7 +352,7 @@ function ChurnedUsersTable({
         <EmptyState message={localize('com_insights_no_data')} />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] table-fixed text-left text-sm">
+          <table className="w-full min-w-[35rem] table-fixed text-left text-sm">
             <thead className="border-b border-border-medium text-xs text-text-secondary">
               <tr>
                 <th className="w-[34%] px-2 py-2 font-medium">{localize('com_insights_user')}</th>
@@ -446,11 +446,11 @@ function LatestConversations({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] table-fixed text-left text-sm">
+        <table className="w-full min-w-[47.5rem] table-fixed text-left text-sm">
           <thead className="border-b border-border-medium text-xs text-text-secondary">
             <tr>
-              <th className="w-[120px] px-2 py-2 font-medium">{localize('com_insights_date')}</th>
-              <th className="w-[192px] px-2 py-2 font-medium">{localize('com_insights_user')}</th>
+              <th className="w-[7.5rem] px-2 py-2 font-medium">{localize('com_insights_date')}</th>
+              <th className="w-[12rem] px-2 py-2 font-medium">{localize('com_insights_user')}</th>
               <th className="px-2 py-2 font-medium">{localize('com_insights_first_message')}</th>
               <th className="w-20 px-2 py-2 text-right font-medium">
                 {localize('com_insights_messages')}
@@ -683,7 +683,7 @@ export default function InsightsView() {
               </Button>
             ))}
           </div>
-          <div className="w-full min-w-0 sm:w-[340px]">
+          <div className="w-full min-w-0 sm:w-[21.25rem]">
             <LocalizedDateRangePicker
               endDate={displayDateRange.endDate}
               futureDatesDisabled
@@ -716,12 +716,12 @@ export default function InsightsView() {
           )}
           {data && (
             <>
-              <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,220px),1fr))] gap-3">
+              <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,13.75rem),1fr))] gap-3">
                 {kpiCards.map((card) => (
                   <KpiCard key={card.id} card={card} locale={locale} />
                 ))}
               </div>
-              <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,580px),1fr))] gap-3">
+              <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,36.25rem),1fr))] gap-3">
                 <TopUsersTable rows={data.topUsers} localize={localize} locale={locale} />
                 <ChurnedUsersTable rows={data.churnedUsers} localize={localize} locale={locale} />
               </div>

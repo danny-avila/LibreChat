@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useAtomValue } from 'jotai';
 import { List } from 'react-virtualized';
 import * as Ariakit from '@ariakit/react';
 import type { ListRowProps } from 'react-virtualized';
 import type { Endpoint } from '~/common';
 import { EndpointModelItem } from './EndpointModelItem';
+import { uiScaleValueAtom } from '~/store/uiScale';
 
 /** Matches the rendered height of a `CustomMenuItem` row (px-2 py-1 around a py-1 body). */
 const ROW_HEIGHT = 36;
@@ -48,6 +50,7 @@ export default function VirtualizedModelList({
   const listRef = useRef<List>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const combobox = Ariakit.useComboboxContext();
+  const uiScale = useAtomValue(uiScaleValueAtom);
   const indexSuffix = endpointIndex != null ? `-${endpointIndex}` : '';
   const rowCount = modelIds.length;
 
@@ -101,9 +104,10 @@ export default function VirtualizedModelList({
     return () => document.removeEventListener('keydown', handleBoundaryNavigation, true);
   }, [combobox, rowCount, rowAt]);
 
+  const rowHeight = ROW_HEIGHT * uiScale;
   const height = useMemo(
-    () => Math.min(MAX_LIST_HEIGHT, Math.max(ROW_HEIGHT, rowCount * ROW_HEIGHT)),
-    [rowCount],
+    () => Math.min(MAX_LIST_HEIGHT * uiScale, Math.max(rowHeight, rowCount * rowHeight)),
+    [rowCount, rowHeight, uiScale],
   );
 
   const rowRenderer = useCallback(
@@ -141,7 +145,7 @@ export default function VirtualizedModelList({
         width={360}
         height={height}
         rowCount={rowCount}
-        rowHeight={ROW_HEIGHT}
+        rowHeight={rowHeight}
         overscanRowCount={OVERSCAN}
         rowRenderer={rowRenderer}
         className="outline-none!"

@@ -56,7 +56,7 @@ export default function NavToggle({
         className,
         '-translate-y-1/2 transition-transform',
         navVisible ? 'rotate-0' : 'rotate-180',
-        navVisible && translateX ? 'translate-x-[260px]' : 'translate-x-0',
+        navVisible && translateX ? 'translate-x-[16.25rem]' : 'translate-x-0',
       )}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
@@ -76,7 +76,7 @@ export default function NavToggle({
       >
         <span className="" data-state="closed">
           <div
-            className="flex h-[72px] w-8 items-center justify-center"
+            className="flex h-[4.5rem] w-8 items-center justify-center"
             style={{ ...transition, opacity: isHovering ? 1 : 0.25 }}
           >
             <div className="flex h-6 w-6 flex-col items-center">

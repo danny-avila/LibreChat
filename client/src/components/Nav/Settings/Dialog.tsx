@@ -64,7 +64,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
             <DialogPanel
               className={cn(
                 'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-surface-dialog shadow-2xl',
-                'md:h-[85vh] md:w-[900px]',
+                'md:h-[85vh] md:w-[56.25rem]',
               )}
             >
               <DialogTitle

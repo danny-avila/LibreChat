@@ -173,7 +173,7 @@ export function RowMenu({
             <div role="group" aria-labelledby={preferencesLabelId}>
               <div
                 id={preferencesLabelId}
-                className="px-2 pb-0.5 pt-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+                className="px-2 pb-0.5 pt-1 text-[0.6875rem] font-medium uppercase tracking-wide text-text-secondary"
               >
                 {localize('com_ui_preferences')}
               </div>

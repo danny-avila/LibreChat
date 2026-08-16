@@ -214,7 +214,9 @@ const HoverButtons = ({
           title={
             isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_to_clipboard')
           }
-          icon={isCopied ? <CheckMark className="h-[18px] w-[18px]" /> : <Clipboard size="19" />}
+          icon={
+            isCopied ? <CheckMark className="h-[1.125rem] w-[1.125rem]" /> : <Clipboard size="19" />
+          }
           isLast={isLast}
           disabled={!canCopy}
           className={cn(

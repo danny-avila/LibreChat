@@ -48,9 +48,9 @@ export default function MinimalHoverButtons({ message, searchResults }: THoverBu
             onClick={() => copyToClipboard(setIsCopied)}
           >
             {isCopied ? (
-              <CheckMark className="h-[19px] w-[19px]" />
+              <CheckMark className="h-[1.1875rem] w-[1.1875rem]" />
             ) : (
-              <Clipboard className="h-[19px] w-[19px]" />
+              <Clipboard className="h-[1.1875rem] w-[1.1875rem]" />
             )}
           </Button>
         }

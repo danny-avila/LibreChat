@@ -41,7 +41,7 @@ export default function DeleteKeyDialog({
       <OGDialogTemplate
         showCloseButton={false}
         title={localize('com_ui_delete_api_key')}
-        className="max-w-[450px]"
+        className="max-w-[28.125rem]"
         main={
           <div className="space-y-3 text-left">
             <p className="text-sm text-text-primary">

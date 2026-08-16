@@ -214,7 +214,9 @@ const MessageIndicator = memo(function MessageIndicator({
   label: string;
   onSelect: (id: string) => void;
 }) {
-  const baseSize = entry.isEnd ? 'mr-[4.5px] h-[3px] w-[3px]' : 'h-[3px] w-3';
+  const baseSize = entry.isEnd
+    ? 'mr-[0.28125rem] h-[0.1875rem] w-[0.1875rem]'
+    : 'h-[0.1875rem] w-3';
   return (
     <button
       type="button"
@@ -1361,7 +1363,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
               transform: 'translateY(-50%)',
               zIndex: 999,
             }}
-            className="pointer-events-none max-w-[280px] rounded-md border border-border-medium bg-surface-secondary px-3 py-2 text-text-secondary shadow-lg"
+            className="pointer-events-none max-w-[17.5rem] rounded-md border border-border-medium bg-surface-secondary px-3 py-2 text-text-secondary shadow-lg"
           >
             <p className="line-clamp-3 text-xs">{tipText}</p>
           </div>,

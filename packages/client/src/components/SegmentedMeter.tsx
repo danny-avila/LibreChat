@@ -125,7 +125,7 @@ export const SegmentedMeter: React.ForwardRefExoticComponent<
       <div
         ref={ref}
         className={cn(
-          'flex h-2 w-full gap-[2px] overflow-hidden rounded-full bg-surface-tertiary',
+          'flex h-2 w-full gap-[0.125rem] overflow-hidden rounded-full bg-surface-tertiary',
           className,
         )}
         {...props}

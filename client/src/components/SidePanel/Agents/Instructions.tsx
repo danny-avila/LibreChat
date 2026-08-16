@@ -58,7 +58,7 @@ export default function Instructions() {
     <div className="mb-3 flex flex-col">
       <div className="mb-1 flex items-center justify-between">
         <Label
-          className="block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+          className="block text-[0.6875rem] font-medium uppercase tracking-wide text-text-secondary"
           htmlFor="instructions"
         >
           {localize('com_ui_instructions')}
@@ -108,7 +108,7 @@ export default function Instructions() {
             <Textarea
               {...field}
               value={field.value ?? ''}
-              className="min-h-[88px] resize-y"
+              className="min-h-[5.5rem] resize-y"
               id="instructions"
               placeholder={localize('com_agents_instructions_placeholder')}
               rows={3}

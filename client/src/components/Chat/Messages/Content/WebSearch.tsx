@@ -70,7 +70,7 @@ function SourceFaviconStack({ sources }: { sources: ValidSource[] }) {
           key={source.link}
           className={cn(
             'relative flex items-center justify-center rounded-full border border-border-medium bg-surface-secondary',
-            'h-[22px] w-[22px]',
+            'h-[1.375rem] w-[1.375rem]',
             i > 0 && '-ml-2.5',
           )}
           style={{ zIndex: MAX_VISIBLE_FAVICONS - i }}
@@ -277,7 +277,7 @@ export default function WebSearch({
           <div style={sourceExpandStyle} onTransitionEnd={handleTransitionEnd}>
             <div className="overflow-hidden" ref={sourceExpandRef}>
               {shouldRenderBody && (
-                <div className="my-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
+                <div className="my-2 max-h-[17.5rem] overflow-y-auto rounded-lg border border-border-light">
                   {allSources.map((source, i) => {
                     const domain = getCleanDomain(source.link);
                     return (
@@ -295,7 +295,7 @@ export default function WebSearch({
                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">
                           {source.title || domain}
                         </span>
-                        <span className="shrink-0 text-[11px] text-text-secondary">{domain}</span>
+                        <span className="shrink-0 text-[0.6875rem] text-text-secondary">{domain}</span>
                       </a>
                     );
                   })}

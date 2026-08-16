@@ -100,14 +100,14 @@ function MCPSelectContent() {
           unmountOnHide={true}
           aria-label={localize('com_ui_mcp_servers')}
           className={cn(
-            'z-50 flex min-w-[260px] max-w-[320px] flex-col rounded-xl',
+            'z-50 flex min-w-[16.25rem] max-w-[20rem] flex-col rounded-xl',
             'border border-border-light bg-presentation p-1.5 shadow-lg',
             'origin-top opacity-0 transition-[opacity,transform] duration-200 ease-out',
             'data-[enter]:scale-100 data-[enter]:opacity-100',
             'scale-95 data-[leave]:scale-95 data-[leave]:opacity-0',
           )}
         >
-          <div className="flex max-h-[320px] flex-col gap-1 overflow-y-auto">
+          <div className="flex max-h-[20rem] flex-col gap-1 overflow-y-auto">
             {selectableServers.map((server) => (
               <MCPServerMenuItem
                 key={server.serverName}

@@ -248,7 +248,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         );
       },
       meta: {
-        className: 'max-w-[20px] flex-1',
+        className: 'max-w-[1.25rem] flex-1',
       },
     };
 

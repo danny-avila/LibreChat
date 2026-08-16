@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, memo, useCallback } from 'react';
+import { useAtomValue } from 'jotai';
 import { AutoSizer, List } from 'react-virtualized';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { Input, Spinner, useCombobox } from '@librechat/client';
@@ -9,6 +10,7 @@ import { removeCharIfLast, detectVariables } from '~/utils';
 import { useRecordPromptUsage } from '~/data-provider';
 import { VariableDialog } from '~/components/Prompts';
 import { usePromptGroupsContext } from '~/Providers';
+import { uiScaleValueAtom } from '~/store/uiScale';
 import MentionItem from './MentionItem';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -62,6 +64,7 @@ function PromptsCommand({
   submitPrompt: (textPrompt: string) => void;
 }) {
   const localize = useLocalize();
+  const uiScale = useAtomValue(uiScaleValueAtom);
   const { mutate: recordUsage } = useRecordPromptUsage();
   const promptGroupsContext = usePromptGroupsContext();
   const { allPromptGroups, hasAccess } = promptGroupsContext ?? {};
@@ -267,11 +270,11 @@ function PromptsCommand({
                   <List
                     width={width}
                     overscanRowCount={5}
-                    rowHeight={ROW_HEIGHT}
+                    rowHeight={ROW_HEIGHT * uiScale}
                     rowCount={matches.length}
                     rowRenderer={rowRenderer}
                     scrollToIndex={activeIndex}
-                    height={Math.min(matches.length * ROW_HEIGHT, 160)}
+                    height={Math.min(matches.length * ROW_HEIGHT, 160) * uiScale}
                   />
                 )}
               </AutoSizer>

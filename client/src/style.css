@@ -78,6 +78,14 @@
   --font-size-lg: 1.125rem;
   --font-size-xl: 1.25rem;
   --markdown-font-size: 1rem;
+  --ui-scale: 1;
+}
+
+/* Every size in the app is expressed in rem, so scaling the root font size scales
+   the whole interface. A percentage keeps the reader's own browser font-size
+   preference intact instead of pinning the root to a fixed pixel value. */
+html {
+  font-size: calc(100% * var(--ui-scale));
 }
 
 /* transitions-dev tokens — semantic names shared by every t-* class below. */

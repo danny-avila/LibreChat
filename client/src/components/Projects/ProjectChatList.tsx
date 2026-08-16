@@ -261,7 +261,7 @@ const ProjectChatList = ({
   );
 
   return (
-    <div className="min-h-[280px] flex-1 overflow-hidden">
+    <div className="min-h-[17.5rem] flex-1 overflow-hidden">
       <AutoSizer>
         {({ width, height }) => (
           <List

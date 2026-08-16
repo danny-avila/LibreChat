@@ -120,7 +120,7 @@ const RevokeKeysButton = ({
             {localize('com_ui_revoke')}
           </Button>
         </OGDialogTrigger>
-        <OGDialogContent className="max-w-[450px]">
+        <OGDialogContent className="max-w-[28.125rem]">
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_ui_revoke_key_endpoint', { 0: endpoint })}</OGDialogTitle>
           </OGDialogHeader>
@@ -388,7 +388,7 @@ const SetKeyDialog = ({
             value={expiresAtLabel}
             onChange={handleExpirationChange}
             options={expirationOptions.map((option) => option.label)}
-            sizeClasses="w-[185px]"
+            sizeClasses="w-[11.5625rem]"
             portal={false}
           />
           <FormProvider {...methods}>

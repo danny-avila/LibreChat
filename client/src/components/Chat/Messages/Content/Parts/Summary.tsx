@@ -45,7 +45,7 @@ const SummaryContent = memo(({ children, meta }: { children: React.ReactNode; me
   return (
     <div className="relative rounded-3xl border border-border-medium bg-surface-tertiary p-4 pb-10 text-text-secondary">
       {meta && <span className="mb-1 block text-xs text-text-secondary">{meta}</span>}
-      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{children}</p>
+      <p className={cn('whitespace-pre-wrap leading-[1.625rem]', fontSize)}>{children}</p>
     </div>
   );
 });
@@ -81,11 +81,11 @@ const SummaryButton = memo(
           aria-expanded={isExpanded}
           aria-controls={contentId}
           className={cn(
-            'group/button h-auto flex-1 justify-start gap-0 rounded-lg p-0 font-normal leading-[18px] hover:bg-transparent',
+            'group/button h-auto flex-1 justify-start gap-0 rounded-lg p-0 font-normal leading-[1.125rem] hover:bg-transparent',
             fontSize,
           )}
         >
-          <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
+          <span className="relative mr-1.5 inline-flex h-[1.125rem] w-[1.125rem] items-center justify-center">
             <ScrollText
               className="icon-sm absolute text-text-secondary opacity-100 transition-opacity group-hover/button:opacity-0"
               aria-hidden="true"
@@ -121,7 +121,7 @@ const SummaryButton = memo(
               {isCopied ? localize('com_ui_copied_to_clipboard') : localize('com_ui_copy_summary')}
             </span>
             {isCopied ? (
-              <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+              <CheckMark className="h-[1.125rem] w-[1.125rem]" aria-hidden="true" />
             ) : (
               <Clipboard size="19" aria-hidden="true" />
             )}
@@ -177,7 +177,7 @@ const FloatingSummaryBar = memo(
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
               )}
             >
-              <ChevronUp className="h-[18px] w-[18px]" aria-hidden="true" />
+              <ChevronUp className="h-[1.125rem] w-[1.125rem]" aria-hidden="true" />
             </button>
           }
         />
@@ -197,7 +197,7 @@ const FloatingSummaryBar = memo(
                 )}
               >
                 {isCopied ? (
-                  <CheckMark className="h-[18px] w-[18px]" aria-hidden="true" />
+                  <CheckMark className="h-[1.125rem] w-[1.125rem]" aria-hidden="true" />
                 ) : (
                   <Clipboard size="18" aria-hidden="true" />
                 )}

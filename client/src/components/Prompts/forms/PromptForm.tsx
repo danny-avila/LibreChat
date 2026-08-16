@@ -108,7 +108,7 @@ const VersionsPanel = React.memo(
           {isLoadingPrompts &&
             Array.from({ length: 6 }).map((_, index: number) => (
               <div key={index} className="my-2">
-                <Skeleton className="h-[72px] w-full" />
+                <Skeleton className="h-[4.5rem] w-full" />
               </div>
             ))}
           {!isLoadingPrompts && prompts.length > 0 && (
