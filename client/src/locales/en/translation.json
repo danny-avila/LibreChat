@@ -2245,7 +2245,7 @@
   "com_insights_total_users": "Unique users",
   "com_insights_total_conversations": "Conversations",
   "com_insights_churned_users": "Churned users",
-  "com_insights_churned_users_definition": "Users whose latest message reached 28 days old during the selected date range.",
+  "com_insights_churned_users_definition": "Users whose latest message sent to an assistant reached 28 days old during the selected date range.",
   "com_insights_top_users": "Top users",
   "com_insights_no_data": "No data yet",
   "com_insights_user": "User",

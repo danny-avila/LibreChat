@@ -275,6 +275,7 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
     };
     const messageMatch = {
       ...tenant,
+      user: { $nin: [null, ''] },
       isTemporary: { $ne: true },
       createdAt: { $gte: from, $lte: to },
     };

@@ -70,6 +70,7 @@ const NavIconButton = memo(function NavIconButton({
   setActive,
   onExpand,
   onCollapse,
+  onNavigate,
   onLeaveInsights,
 }: {
   link: NavLink;
@@ -78,6 +79,7 @@ const NavIconButton = memo(function NavIconButton({
   setActive: (id: string) => void;
   onExpand?: () => void;
   onCollapse?: () => void;
+  onNavigate?: () => void;
   onLeaveInsights?: () => void;
 }) {
   const localize = useLocalize();
@@ -86,6 +88,7 @@ const NavIconButton = memo(function NavIconButton({
     (e: React.MouseEvent<HTMLButtonElement>) => {
       if (link.onClick) {
         link.onClick(e);
+        onNavigate?.();
         return;
       }
       if (isActive && expanded) {
@@ -101,7 +104,7 @@ const NavIconButton = memo(function NavIconButton({
         onLeaveInsights?.();
       }
     },
-    [link, isActive, setActive, expanded, onExpand, onCollapse, onLeaveInsights],
+    [link, isActive, setActive, expanded, onExpand, onCollapse, onNavigate, onLeaveInsights],
   );
 
   return (
@@ -133,12 +136,14 @@ function ExpandedPanel({
   expanded = true,
   onCollapse,
   onExpand,
+  onNavigate,
   onLeaveInsights,
 }: {
   links: NavLink[];
   expanded?: boolean;
   onCollapse?: () => void;
   onExpand?: () => void;
+  onNavigate?: () => void;
   onLeaveInsights?: () => void;
 }) {
   const localize = useLocalize();
@@ -189,6 +194,7 @@ function ExpandedPanel({
             setActive={setActive}
             onExpand={onExpand}
             onCollapse={onCollapse}
+            onNavigate={onNavigate}
             onLeaveInsights={isInsightsRoute ? onLeaveInsights : undefined}
           />
         ))}

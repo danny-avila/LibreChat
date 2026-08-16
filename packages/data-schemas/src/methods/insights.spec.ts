@@ -97,8 +97,8 @@ describe('Insights methods', () => {
       ['other-assistant', 'other-conversation', otherTenantUserId, false],
     ] as const;
 
-    await mongoose.models.Message.collection.insertMany(
-      messages.map(([messageId, conversationId, userId, isCreatedByUser]) => ({
+    await mongoose.models.Message.collection.insertMany([
+      ...messages.map(([messageId, conversationId, userId, isCreatedByUser]) => ({
         messageId,
         conversationId,
         tenantId: conversationId === 'other-conversation' ? 'tenant-b' : 'tenant-a',
@@ -110,7 +110,31 @@ describe('Insights methods', () => {
         text: messageId,
         tokenCount: 10,
       })),
-    );
+      {
+        messageId: 'unattributed-null',
+        conversationId: 'old-conversation',
+        tenantId: 'tenant-a',
+        user: null,
+        createdAt: activeAt,
+        updatedAt: activeAt,
+        isCreatedByUser: false,
+        isTemporary: false,
+        text: 'Unattributed message',
+        tokenCount: 10,
+      },
+      {
+        messageId: 'unattributed-empty',
+        conversationId: 'old-conversation',
+        tenantId: 'tenant-a',
+        user: '',
+        createdAt: activeAt,
+        updatedAt: activeAt,
+        isCreatedByUser: false,
+        isTemporary: false,
+        text: 'Unattributed message',
+        tokenCount: 10,
+      },
+    ]);
 
     const result = await createInsightsMethods(mongoose).getInsights({
       tenantId: 'tenant-a',

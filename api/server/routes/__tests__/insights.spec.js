@@ -5,6 +5,7 @@ const mockCreateInsightsAccessHandler = jest.fn(() => (_req, res) => res.json({ 
 const mockCreateInsightsHandler = jest.fn(() => (_req, res) => res.json({ summary: {} }));
 const mockGrantedCapabilities = new Set(['access:admin', 'read:insights']);
 const mockGetInsights = jest.fn();
+let mockUser = { id: 'admin-id', role: 'ADMIN' };
 
 jest.mock('@librechat/api', () => ({
   createInsightsAccessHandler: (...args) => mockCreateInsightsAccessHandler(...args),
@@ -21,7 +22,13 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, _res, next) => {
-    req.user = { id: 'admin-id', role: 'ADMIN' };
+    req.user = mockUser;
+    next();
+  },
+  checkAdmin: (req, res, next) => {
+    if (req.user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Forbidden' });
+    }
     next();
   },
 }));
@@ -49,9 +56,18 @@ function createApp() {
 
 describe('Insights routes', () => {
   beforeEach(() => {
+    mockUser = { id: 'admin-id', role: 'ADMIN' };
     mockGrantedCapabilities.clear();
     mockGrantedCapabilities.add('access:admin');
     mockGrantedCapabilities.add('read:insights');
+  });
+
+  it('requires the ADMIN role', async () => {
+    mockUser = { id: 'delegated-admin-id', role: 'DELEGATED_ADMIN' };
+
+    const response = await request(createApp()).get('/api/admin/insights');
+
+    expect(response.status).toBe(403);
   });
 
   it('serves the access probe and dashboard', async () => {

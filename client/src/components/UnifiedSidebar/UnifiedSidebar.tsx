@@ -166,6 +166,7 @@ function UnifiedSidebar() {
               <ExpandedPanel
                 links={links}
                 onCollapse={handleCollapse}
+                onNavigate={handleCollapse}
                 onLeaveInsights={handleLeaveInsights}
               />
               <nav className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt">
