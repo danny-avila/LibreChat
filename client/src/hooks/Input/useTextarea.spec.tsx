@@ -178,6 +178,30 @@ describe('useTextarea long-paste fallback', () => {
     expect(mockForceResize).not.toHaveBeenCalled();
   });
 
+  it('restores the paste when the accepted attachment later fails to upload', async () => {
+    let onUploadError: (() => void) | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, callback?: () => void) => {
+        onUploadError = callback;
+        return Promise.resolve(true);
+      },
+    );
+    const { result, textArea } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(onUploadError).toBeDefined());
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+
+    act(() => onUploadError?.());
+
+    expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
+    expect(mockForceResize).toHaveBeenCalledWith(textArea);
+  });
+
   it('restores the paste when attachment routing rejects unexpectedly', async () => {
     const error = new Error('upload failed');
     const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);

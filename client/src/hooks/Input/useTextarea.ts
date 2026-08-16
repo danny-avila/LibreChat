@@ -243,7 +243,11 @@ export default function useTextarea({
    * viable. `preferred` skips that prompt when the caller already knows the intent.
    */
   const routeClipboardFiles = useCallback(
-    async (clipboardFiles: File[], preferred?: EToolResources): Promise<boolean> => {
+    async (
+      clipboardFiles: File[],
+      preferred?: EToolResources,
+      onUploadError?: () => void,
+    ): Promise<boolean> => {
       setFilesLoading(true);
 
       try {
@@ -269,7 +273,7 @@ export default function useTextarea({
         const destination = usePreferred ? preferred : options[0];
         /** Held until the upload is accepted so a rejected file (a duplicate, an oversized one)
          * reports only its own error instead of pairing it with a success message. */
-        const accepted = await routeFiles(clipboardFiles, destination);
+        const accepted = await routeFiles(clipboardFiles, destination, onUploadError);
         if (accepted && destination === EToolResources.context) {
           showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
         }
@@ -332,11 +336,13 @@ export default function useTextarea({
         insertTextAtCursor(textArea, pastedText);
         forceResize(textArea);
       };
-      void routeClipboardFiles([attachment.file], attachment.toolResource).then((accepted) => {
-        if (!accepted) {
-          restorePaste();
-        }
-      });
+      void routeClipboardFiles([attachment.file], attachment.toolResource, restorePaste).then(
+        (accepted) => {
+          if (!accepted) {
+            restorePaste();
+          }
+        },
+      );
     },
     [
       files,

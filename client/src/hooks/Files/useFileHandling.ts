@@ -255,7 +255,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     abortControllerRef.current?.signal,
   );
 
-  const startUpload = async (extendedFile: ExtendedFile) => {
+  const startUpload = async (extendedFile: ExtendedFile, onUploadError?: () => void) => {
     const filename = extendedFile.file?.name ?? 'File';
     startUploadTimer(extendedFile.file_id, filename, extendedFile.size);
 
@@ -305,7 +305,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         formData.append('agent_id', conversation.agent_id);
       }
 
-      uploadFile.mutate(formData);
+      uploadFile.mutate(formData, onUploadError ? { onError: onUploadError } : undefined);
       return;
     }
 
@@ -335,10 +335,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       formData.append('model', convoModel);
     }
 
-    uploadFile.mutate(formData);
+    uploadFile.mutate(formData, onUploadError ? { onError: onUploadError } : undefined);
   };
 
-  const loadImage = (extendedFile: ExtendedFile, preview: string) => {
+  const loadImage = (extendedFile: ExtendedFile, preview: string, onUploadError?: () => void) => {
     const img = new Image();
     img.onload = async () => {
       extendedFile.width = img.width;
@@ -349,13 +349,17 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       };
       replaceFile(extendedFile);
 
-      await startUpload(extendedFile);
+      await startUpload(extendedFile, onUploadError);
     };
     img.src = preview;
   };
 
   /** Resolves to whether the files passed validation and were accepted for upload. */
-  const processFiles = async (fileList: File[], _toolResource?: string): Promise<boolean> => {
+  const processFiles = async (
+    fileList: File[],
+    _toolResource?: string,
+    onUploadError?: () => void,
+  ): Promise<boolean> => {
     abortControllerRef.current = new AbortController();
 
     const existingFiles = tracksReservations
@@ -571,11 +575,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       }
 
       if (extendedFile.file?.type.startsWith('image/') === true) {
-        loadImage(extendedFile, preview);
+        loadImage(extendedFile, preview, onUploadError);
         continue;
       }
 
-      await startUpload(extendedFile);
+      await startUpload(extendedFile, onUploadError);
     }
 
     return true;
@@ -584,6 +588,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const handleFiles = async (
     _files: FileList | File[],
     _toolResource?: string,
+    onUploadError?: () => void,
   ): Promise<boolean> => {
     /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
     const fileList = Array.from(_files);
@@ -598,7 +603,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     await previousProcessing;
     try {
       await configReady;
-      return await processFiles(fileList, _toolResource);
+      return await processFiles(fileList, _toolResource, onUploadError);
     } finally {
       releaseProcessing();
     }

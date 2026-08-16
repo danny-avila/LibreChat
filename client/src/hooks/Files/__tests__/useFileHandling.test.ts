@@ -927,5 +927,24 @@ describe('useFileHandling', () => {
       expect(accepted).toBe(true);
       expect(mockMutate).toHaveBeenCalledTimes(1);
     });
+
+    it('registers a call-scoped upload error callback', async () => {
+      const onUploadError = jest.fn();
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles(
+          [new File(['hello'], 'notes.txt', { type: 'text/plain' })],
+          undefined,
+          onUploadError,
+        );
+      });
+
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+      const mutationOptions = mockMutate.mock.calls[0][1];
+      mutationOptions.onError();
+      expect(onUploadError).toHaveBeenCalledTimes(1);
+    });
   });
 });
