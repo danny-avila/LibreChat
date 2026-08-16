@@ -5,6 +5,12 @@ import MemoryInfo from './MemoryInfo';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
+/** Single source of truth for whether this component will render anything —
+ * callers that lay out around it (e.g. the thinking-dot nudge) must agree
+ * with the render guard below. */
+export const hasMemoryArtifacts = (attachments?: TAttachment[]): boolean =>
+  attachments?.some((attachment) => attachment?.[Tools.memory] != null) ?? false;
+
 export default function MemoryArtifacts({ attachments }: { attachments?: TAttachment[] }) {
   const localize = useLocalize();
   const [showInfo, setShowInfo] = useState(false);
@@ -77,7 +83,7 @@ export default function MemoryArtifacts({ attachments }: { attachments?: TAttach
     };
   }, [showInfo, isAnimating]);
 
-  if (!memoryArtifacts || memoryArtifacts.length === 0) {
+  if (!hasMemoryArtifacts(attachments)) {
     return null;
   }
 

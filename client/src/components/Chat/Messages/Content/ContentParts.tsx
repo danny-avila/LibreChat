@@ -11,13 +11,13 @@ import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
+import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import EditContentParts from './EditContentParts';
 import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
-import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
@@ -604,7 +604,13 @@ const ContentParts = memo(function ContentParts({
       {!nestedActivityPhase && renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
-          <EmptyText underHeaderIcon />
+          {/** Nudge only when the dot is truly first under the header — leading
+           * memory/skill rows and nested phases keep it flush. */}
+          <EmptyText
+            underHeaderIcon={
+              !nestedActivityPhase && !hasPendingSkills && !hasMemoryArtifacts(attachments)
+            }
+          />
         </Container>
       )}
       {groupedParts.flatMap((group) => {

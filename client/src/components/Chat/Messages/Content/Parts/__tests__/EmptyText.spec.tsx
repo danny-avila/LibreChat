@@ -10,13 +10,15 @@ describe('EmptyText', () => {
     const { container } = render(<EmptyText />);
     const wrapper = dotWrapper(container);
     expect(wrapper).toHaveClass('absolute');
-    expect(wrapper).not.toHaveClass('pl-1.5');
+    expect(wrapper).not.toHaveClass('ps-1.5');
   });
 
   it('centers the dot on the header icon axis when it sits directly beneath one', () => {
     const { container } = render(<EmptyText underHeaderIcon />);
     const wrapper = dotWrapper(container);
     expect(wrapper).toHaveClass('absolute');
-    expect(wrapper).toHaveClass('pl-1.5');
+    /** Logical (inline-start) padding: the header icon sits at inline-start,
+     * so the nudge must mirror with the document direction under RTL. */
+    expect(wrapper).toHaveClass('ps-1.5');
   });
 });
