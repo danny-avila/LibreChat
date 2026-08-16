@@ -256,8 +256,8 @@ function PanelsSection({
 }) {
   const localize = useLocalize();
   return (
-    <section className="border-t border-border-light px-5 pb-2 pt-4">
-      <div className="mb-2 flex items-baseline justify-between gap-3 px-2">
+    <section className="mb-6 border-t border-border-light pt-4 last:mb-0 md:col-span-2 lg:col-span-1 lg:border-t-0 lg:pt-0">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 px-2">
         <h3 className="text-[12px] font-medium text-text-secondary">
           {localize('com_shortcut_group_panels')}
         </h3>
@@ -265,7 +265,7 @@ function PanelsSection({
           {localize('com_shortcut_group_panels_hint')}
         </p>
       </div>
-      <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2 lg:grid-cols-1">
         {bindings.map((info) => (
           <ShortcutRow
             key={info.id}
@@ -348,7 +348,7 @@ function KeyboardShortcutsDialog() {
     >
       <OGDialogContent
         showCloseButton={false}
-        className="flex max-h-[85vh] w-11/12 max-w-3xl flex-col overflow-hidden p-0"
+        className="flex max-h-[85vh] w-11/12 max-w-3xl flex-col overflow-hidden p-0 lg:max-w-5xl"
       >
         <header className="flex shrink-0 items-center justify-between gap-4 px-7 pt-6">
           <OGDialogTitle className="text-[16px] font-semibold text-text-primary">
@@ -387,7 +387,7 @@ function KeyboardShortcutsDialog() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="grid grid-cols-1 gap-x-10 px-5 pb-2 pt-5 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-x-10 px-5 pb-2 pt-5 md:grid-cols-2 lg:grid-cols-3">
             <div>
               {leftColumn.map(([groupKey, items]) => (
                 <ShortcutGroup
@@ -422,20 +422,20 @@ function KeyboardShortcutsDialog() {
                 />
               ))}
             </div>
+            {panelEntries.length > 0 && (
+              <PanelsSection
+                bindings={panelEntries}
+                editingId={editingId}
+                disabled={!enabled}
+                onStartEdit={handleStartEdit}
+                onStopEdit={handleStopEdit}
+                bindingMap={bindingMap}
+                getActionLabel={getActionLabel}
+                setBinding={setBinding}
+                resetBinding={resetBinding}
+              />
+            )}
           </div>
-          {panelEntries.length > 0 && (
-            <PanelsSection
-              bindings={panelEntries}
-              editingId={editingId}
-              disabled={!enabled}
-              onStartEdit={handleStartEdit}
-              onStopEdit={handleStopEdit}
-              bindingMap={bindingMap}
-              getActionLabel={getActionLabel}
-              setBinding={setBinding}
-              resetBinding={resetBinding}
-            />
-          )}
         </div>
 
         {hasAnyCustom && (
