@@ -33,13 +33,15 @@ const labelSlot =
   '[grid-area:1/1] truncate transition-[opacity,transform,filter] duration-theme-normal ease-out motion-reduce:transition-none motion-reduce:transform-none motion-reduce:blur-none';
 
 /** Provider name that crossfades to the model name. A pointer swaps it on the
- *  label itself; keyboard focus landing anywhere in the message row swaps it
- *  too, so a sighted keyboard user reaches the model the same way they reach
- *  the timestamp. That second path is keyed on `:focus-visible` rather than
- *  `:focus-within`, because a pointer clicking a tool card inside the row also
- *  leaves focus there, and the swap would then outlast the pointer. The model
- *  is additionally carried in text that never hides, for screen readers that
- *  never move the visual focus at all. */
+ *  label itself; keyboard focus landing on the message row swaps it too, so a
+ *  sighted keyboard user reaches the model the same way they reach the
+ *  timestamp. The model is additionally carried in text that never hides, for
+ *  screen readers that never move the visual focus at all.
+ *
+ *  The focus condition is the row-wide one documented on
+ *  `revealOnRowHoverClasses` in `../styles`: the row itself or a descendant
+ *  that is not a text-entry control. Both halves matter here for the same
+ *  reasons they matter to the timestamp and the footer actions. */
 export default function HeaderLabel({ label, hoverLabel }: HeaderLabelProps) {
   const localize = useLocalize();
 
@@ -53,7 +55,9 @@ export default function HeaderLabel({ label, hoverLabel }: HeaderLabelProps) {
         className={cn(
           labelSlot,
           'group-hover/label:-translate-y-1 group-hover/label:opacity-0 group-hover/label:blur-[2px]',
-          'group-has-[:focus-visible]:-translate-y-1 group-has-[:focus-visible]:opacity-0 group-has-[:focus-visible]:blur-[2px]',
+          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:-translate-y-1',
+          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:opacity-0',
+          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:blur-[2px]',
         )}
       >
         {label}
@@ -64,7 +68,9 @@ export default function HeaderLabel({ label, hoverLabel }: HeaderLabelProps) {
           labelSlot,
           'translate-y-1 opacity-0 blur-[2px]',
           'group-hover/label:translate-y-0 group-hover/label:opacity-100 group-hover/label:blur-0',
-          'group-has-[:focus-visible]:translate-y-0 group-has-[:focus-visible]:opacity-100 group-has-[:focus-visible]:blur-0',
+          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:translate-y-0',
+          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:opacity-100',
+          'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]:blur-0',
         )}
       >
         {hoverLabel}

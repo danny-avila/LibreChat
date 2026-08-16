@@ -2,17 +2,36 @@ import { hoverButtonClasses, messageFooterClasses, revealOnRowHoverClasses } fro
 
 const FADE = '[@media(hover:hover)]:opacity-0';
 
+/** The row-wide keyboard-focus condition: the row itself, or a descendant that
+ *  is not a text-entry control. */
+const KEYBOARD_FOCUS =
+  'group-[&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))]';
+
 describe('revealOnRowHoverClasses', () => {
   it('reveals on row hover and on keyboard focus', () => {
     expect(revealOnRowHoverClasses).toContain(FADE);
     expect(revealOnRowHoverClasses).toContain('group-hover:opacity-100');
-    expect(revealOnRowHoverClasses).toContain('group-has-[:focus-visible]:opacity-100');
+    expect(revealOnRowHoverClasses).toContain(`${KEYBOARD_FOCUS}:opacity-100`);
   });
 
   /* Clicking a tool card in the message body parks focus there. `:focus-within`
      would hold the footer open with the pointer nowhere near the row. */
   it('does not reveal on plain focus-within', () => {
     expect(revealOnRowHoverClasses).not.toContain('group-focus-within:');
+  });
+
+  /* MessageNav moves the reader by focusing the row itself through
+     tabindex="-1", and :has() never matches its own subject. */
+  it('reveals when the row element itself is focus-visible', () => {
+    expect(revealOnRowHoverClasses).toContain('&:is(:focus-visible,');
+  });
+
+  /* Text-entry controls match :focus-visible even on a mouse click, and
+     ToolApproval and AskUserQuestion both render textareas inside a row. */
+  it('ignores focus that landed in a text-entry control', () => {
+    expect(revealOnRowHoverClasses).toContain(
+      ':has(:focus-visible:not(:is(input,textarea,[contenteditable])))',
+    );
   });
 
   it('fades on the shared motion role rather than snapping', () => {
@@ -37,7 +56,7 @@ describe('hoverButtonClasses', () => {
   });
 
   it('reveals an idle action on keyboard focus, not on a click parking focus in the row', () => {
-    expect(hoverButtonClasses()).toContain('group-has-[:focus-visible]:opacity-100');
+    expect(hoverButtonClasses()).toContain(`${KEYBOARD_FOCUS}:opacity-100`);
     expect(hoverButtonClasses()).not.toContain('group-focus-within:');
   });
 

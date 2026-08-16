@@ -587,14 +587,21 @@ pre {
    Keyboard focus reveals it too, but only `:focus-visible`: a pointer that
    clicks a tool card or an expand toggle inside the row leaves focus sitting
    there, and plain `:focus-within` would pin the time open long after the
-   pointer moved away. */
+   pointer moved away.
+
+   The condition matches the row itself as well as its descendants, because
+   `MessageNav` focuses the row through `tabindex="-1"` and `:has()` never
+   matches its own subject. Text-entry controls are excluded, because they
+   match `:focus-visible` on a plain mouse click. See `revealOnRowHoverClasses`
+   in `components/Chat/Messages/styles.ts` for the full reasoning. */
 @media (hover: hover) {
   .message-render .message-timestamp {
     opacity: 0;
   }
 
   .message-render:hover .message-timestamp,
-  .message-render:has(:focus-visible) .message-timestamp {
+  .message-render:is(:focus-visible, :has(:focus-visible:not(:is(input, textarea, [contenteditable]))))
+    .message-timestamp {
     opacity: 1;
   }
 }

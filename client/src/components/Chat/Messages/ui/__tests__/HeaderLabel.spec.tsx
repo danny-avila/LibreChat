@@ -41,9 +41,12 @@ describe('HeaderLabel', () => {
   it('also swaps the model in when the message row takes keyboard focus', () => {
     render(<HeaderLabel label="Ollama" hoverLabel="gemma4:12b-it-qat" />);
 
-    expect(screen.getByText('Ollama')).toHaveClass('group-has-[:focus-visible]:opacity-0');
-    expect(screen.getByText('gemma4:12b-it-qat')).toHaveClass(
-      'group-has-[:focus-visible]:opacity-100',
+    const swap =
+      '&:is(:focus-visible,:has(:focus-visible:not(:is(input,textarea,[contenteditable]))))';
+
+    expect(screen.getByText('Ollama').className).toContain(`group-[${swap}]:opacity-0`);
+    expect(screen.getByText('gemma4:12b-it-qat').className).toContain(
+      `group-[${swap}]:opacity-100`,
     );
   });
 
