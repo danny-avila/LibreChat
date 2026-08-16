@@ -1837,6 +1837,100 @@ describe('Conversation Operations', () => {
       expect(refreshed?.lastConversationId).toBeNull();
     });
 
+    it('does not archive a project conversation created after the initial snapshot', async () => {
+      const project = await ChatProject.create({ user: 'user123', name: 'Project' });
+      const projectId = project._id!.toString();
+      const initialConversationId = uuidv4();
+      const concurrentConversationId = uuidv4();
+      await Conversation.create({
+        conversationId: initialConversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        await Conversation.create({
+          conversationId: concurrentConversationId,
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          chatProjectId: projectId,
+        });
+        await ChatProject.findByIdAndUpdate(project._id, {
+          conversationCount: 1,
+          lastConversationId: concurrentConversationId,
+        });
+        return await updateMany(filter, update, options);
+      }) as typeof Conversation.updateMany);
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(1);
+      } finally {
+        updateManySpy.mockRestore();
+      }
+
+      const concurrentConversation = await Conversation.findOne({
+        conversationId: concurrentConversationId,
+      }).lean<IConversation>();
+      const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(concurrentConversation?.isArchived).not.toBe(true);
+      expect(refreshed?.conversationCount).toBe(1);
+      expect(refreshed?.lastConversationId).toBe(concurrentConversationId);
+    });
+
+    it('refreshes the destination project when a captured conversation moves before archiving', async () => {
+      const sourceProject = await ChatProject.create({ user: 'user123', name: 'Source' });
+      const destinationProject = await ChatProject.create({ user: 'user123', name: 'Destination' });
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: sourceProject._id!.toString(),
+      });
+      await ChatProject.findByIdAndUpdate(sourceProject._id, {
+        conversationCount: 1,
+        lastConversationId: conversationId,
+      });
+
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        await Conversation.updateOne(
+          { conversationId },
+          { $set: { chatProjectId: destinationProject._id!.toString() } },
+        );
+        await ChatProject.findByIdAndUpdate(sourceProject._id, {
+          conversationCount: 0,
+          lastConversationId: null,
+        });
+        await ChatProject.findByIdAndUpdate(destinationProject._id, {
+          conversationCount: 1,
+          lastConversationId: conversationId,
+        });
+        return await updateMany(filter, update, options);
+      }) as typeof Conversation.updateMany);
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(1);
+      } finally {
+        updateManySpy.mockRestore();
+      }
+
+      const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
+    });
+
     it('returns zero when the user has no conversations', async () => {
       const result = await archiveAllConvos('user123');
       expect(result.archivedCount).toBe(0);

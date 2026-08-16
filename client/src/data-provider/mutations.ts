@@ -171,9 +171,14 @@ export const useArchiveAllConversationsMutation = (
   return useMutation(() => dataService.archiveAllConversations(), {
     onSuccess: (data, vars, context) => {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
-      queryClient.invalidateQueries([QueryKeys.archivedConversations]);
+      queryClient.invalidateQueries({
+        queryKey: [QueryKeys.archivedConversations],
+        refetchType: 'all',
+      });
       queryClient.invalidateQueries([QueryKeys.projectConversations]);
       queryClient.invalidateQueries([QueryKeys.projects]);
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.project], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: [QueryKeys.conversation], refetchType: 'all' });
       onSuccess?.(data, vars, context);
     },
     ..._options,

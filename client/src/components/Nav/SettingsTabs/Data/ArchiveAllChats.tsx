@@ -4,6 +4,7 @@ import {
   Button,
   Spinner,
   OGDialog,
+  OGDialogClose,
   OGDialogTrigger,
   useToastContext,
   OGDialogTemplate,
@@ -58,11 +59,19 @@ export const ArchiveAllChats = () => {
           main={
             <Label className="break-words">{localize('com_nav_archive_all_confirm_message')}</Label>
           }
-          selection={{
-            selectHandler: () => archiveAllMutation.mutate(),
-            selectClasses: 'bg-surface-submit text-text-on-status hover:bg-surface-submit-hover',
-            selectText: archiveAllMutation.isLoading ? <Spinner /> : localize('com_ui_archive'),
-          }}
+          selection={
+            <OGDialogClose asChild>
+              <Button
+                aria-label={localize('com_ui_archive')}
+                aria-busy={archiveAllMutation.isLoading}
+                variant="submit"
+                className="border-none font-normal max-sm:order-first max-sm:w-full sm:order-none"
+                onClick={() => archiveAllMutation.mutate()}
+              >
+                {archiveAllMutation.isLoading ? <Spinner /> : localize('com_ui_archive')}
+              </Button>
+            </OGDialogClose>
+          }
         />
       </OGDialog>
     </div>

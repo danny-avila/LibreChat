@@ -1111,30 +1111,57 @@ export function createConversationMethods(
         ],
       } as FilterQuery<IConversation>;
 
-      const projectIds = (await Conversation.distinct('chatProjectId', filter)).filter(
-        (projectId): projectId is string => Boolean(projectId),
+      const conversations = await Conversation.find(filter).select('_id chatProjectId');
+      const conversationIds = conversations.map((conversation) => conversation._id);
+      const projectIds = new Set(
+        conversations
+          .map((conversation) => conversation.chatProjectId)
+          .filter((projectId): projectId is string => Boolean(projectId)),
       );
+
+      if (conversationIds.length === 0) {
+        return { archivedCount: 0 };
+      }
 
       /**
        * `timestamps: false` keeps each conversation's own `updatedAt`, so the archived
        * view stays sorted by real activity instead of collapsing onto the archive time.
        */
       const result = await Conversation.updateMany(
-        filter,
+        { ...filter, _id: { $in: conversationIds } },
         { $set: { isArchived: true } },
         { timestamps: false },
       );
 
       const archivedCount = result.modifiedCount ?? 0;
 
+      if (archivedCount > 0) {
+        try {
+          const currentProjectIds = await Conversation.distinct('chatProjectId', {
+            _id: { $in: conversationIds },
+            user,
+          });
+          for (const projectId of currentProjectIds) {
+            if (projectId) {
+              projectIds.add(projectId);
+            }
+          }
+        } catch (error) {
+          logger.error(
+            '[archiveAllConvos] Conversations archived but project discovery failed',
+            error,
+          );
+        }
+      }
+
       /**
        * Best-effort, mirroring `deleteConvos`: the conversations are already archived, so
        * a stats failure must not hide that from the caller.
        */
-      if (archivedCount > 0 && projectIds.length > 0) {
+      if (archivedCount > 0 && projectIds.size > 0) {
         try {
           await Promise.all(
-            projectIds.map((projectId) =>
+            [...projectIds].map((projectId) =>
               refreshChatProjectStatsForUser(mongoose, user, projectId),
             ),
           );
