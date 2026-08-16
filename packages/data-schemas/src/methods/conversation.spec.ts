@@ -392,6 +392,31 @@ describe('Conversation Operations', () => {
       expect(secondSave?.title).toBe('Updated title');
     });
 
+    it('preserves insert defaults and suppressed timestamps for an archive pipeline upsert', async () => {
+      const conversationId = uuidv4();
+      const firstAnchor = new Date('2024-02-03T04:05:06.000Z');
+      const secondAnchor = new Date('2025-02-03T04:05:06.000Z');
+
+      const firstSave = await saveConvo(
+        { userId: 'user123' },
+        { conversationId, isArchived: true },
+        { createdAtOnInsert: firstAnchor, preserveUpdatedAt: true },
+      );
+      const secondSave = await saveConvo(
+        { userId: 'user123' },
+        { conversationId, isArchived: true },
+        { createdAtOnInsert: secondAnchor, preserveUpdatedAt: true },
+      );
+
+      expect(firstSave?.title).toBe('New Chat');
+      expect(firstSave?.isTemporary).toBe(false);
+      expect(firstSave?.updatedAt ?? null).toBeNull();
+      expect(new Date(firstSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
+      expect(secondSave?.updatedAt ?? null).toBeNull();
+      expect(new Date(secondSave?.createdAt ?? 0).toISOString()).toBe(firstAnchor.toISOString());
+      expect(secondSave?.archivedAt).toEqual(firstSave?.archivedAt);
+    });
+
     describe('preserveUpdatedAt', () => {
       const anchor = new Date('2026-02-11T15:28:18.561Z');
 
@@ -460,6 +485,72 @@ describe('Conversation Operations', () => {
         );
 
         expect(new Date(again?.archivedAt ?? 0).toISOString()).toBe(original.toISOString());
+      });
+
+      it('stamps again when unarchive lands before a pending repeated archive write', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Archive race',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        let markArchiveWriteReached = () => {};
+        const archiveWriteReached = new Promise<void>((resolve) => {
+          markArchiveWriteReached = resolve;
+        });
+        let releaseArchiveWrite = () => {};
+        const archiveWriteBlocked = new Promise<void>((resolve) => {
+          releaseArchiveWrite = resolve;
+        });
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        let writeCount = 0;
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(async (filter, update, options) => {
+            writeCount += 1;
+            if (writeCount === 1) {
+              markArchiveWriteReached();
+              await archiveWriteBlocked;
+            }
+            return findOneAndUpdate(filter, update, options);
+          });
+
+        try {
+          const archive = saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+          await archiveWriteReached;
+
+          const unarchived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: false },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+          releaseArchiveWrite();
+          const archived = await archive;
+
+          expect(unarchived?.isArchived).toBe(false);
+          expect(archived?.isArchived).toBe(true);
+          expect(archived?.archivedAt).toBeInstanceOf(Date);
+          expect(new Date(archived?.archivedAt ?? 0).toISOString()).not.toBe(
+            original.toISOString(),
+          );
+        } finally {
+          releaseArchiveWrite();
+          writeSpy.mockRestore();
+        }
       });
 
       it('stamps archivedAt on the first archive when the caller omits it', async () => {

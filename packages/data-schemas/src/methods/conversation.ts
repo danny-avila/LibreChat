@@ -299,36 +299,97 @@ export function createConversationMethods(
        * chats by `updatedAt`, so bumping it would hoist an untouched chat to Today.
        */
       const preserveUpdatedAt = metadata?.preserveUpdatedAt === true;
-      if (createdAtOnInsert && !preserveUpdatedAt) {
+      const updatesArchiveState = typeof update.isArchived === 'boolean';
+      if (!preserveUpdatedAt && (createdAtOnInsert || updatesArchiveState)) {
         update.updatedAt = new Date();
       }
 
-      /** Date Archived is when the chat was filed away, not the last time
-       * someone sent isArchived: true. A shortcut or retried POST on an
-       * already-archived row must leave the original stamp alone. Unarchive
-       * still clears it. */
-      if (typeof update.isArchived === 'boolean') {
-        if (update.isArchived === true) {
-          const existingArchive = await Conversation.findOne(
-            { conversationId, user: userId },
-            'isArchived archivedAt',
-          ).lean<{ isArchived?: boolean; archivedAt?: Date | null } | null>();
-          if (existingArchive?.isArchived === true) {
-            delete update.archivedAt;
-          } else if (update.archivedAt == null) {
-            update.archivedAt = new Date();
+      let updateOperation: Record<string, unknown> | Array<Record<string, unknown>>;
+      if (updatesArchiveState) {
+        /** Pipeline expressions read the pre-update document, and `_id` is absent only
+         * from the synthetic document MongoDB creates for an upsert. */
+        const isInsert = { $eq: [{ $type: '$_id' }, 'missing'] };
+        const setStage: Record<string, unknown> = {};
+        for (const [path, value] of Object.entries(update)) {
+          if (
+            value === undefined ||
+            path === '_id' ||
+            path === 'createdAt' ||
+            path === 'archivedAt' ||
+            path === 'tenantId'
+          ) {
+            continue;
           }
-        } else {
-          update.archivedAt = null;
+
+          const schemaType = Conversation.schema.path(path);
+          if (!schemaType || schemaType.options.immutable) {
+            continue;
+          }
+          setStage[path] = { $literal: value == null ? value : schemaType.cast(value) };
+        }
+
+        const insertDefaults: Record<string, unknown> = Conversation.applyDefaults({});
+        for (const [path, value] of Object.entries(insertDefaults)) {
+          if (
+            value === undefined ||
+            path === '_id' ||
+            path === 'createdAt' ||
+            path === 'updatedAt' ||
+            path === 'archivedAt' ||
+            path === 'tenantId' ||
+            Object.prototype.hasOwnProperty.call(setStage, path)
+          ) {
+            continue;
+          }
+          setStage[path] = {
+            $cond: [isInsert, { $literal: value }, `$${path}`],
+          };
+        }
+
+        const archiveTimestamp =
+          update.archivedAt == null
+            ? '$$NOW'
+            : { $convert: { input: { $literal: update.archivedAt }, to: 'date' } };
+        setStage.archivedAt =
+          update.isArchived === true
+            ? {
+                $cond: [{ $eq: ['$isArchived', true] }, '$archivedAt', archiveTimestamp],
+              }
+            : { $literal: null };
+
+        const createdAtForInsert =
+          createdAtOnInsert ??
+          (!preserveUpdatedAt && update.updatedAt instanceof Date ? update.updatedAt : undefined);
+        if (createdAtForInsert) {
+          setStage.createdAt = {
+            $cond: [isInsert, { $literal: createdAtForInsert }, '$createdAt'],
+          };
+        }
+
+        updateOperation = [{ $set: setStage }];
+        const fieldsToUnset = Object.keys(unsetFields).filter((path) => {
+          const schemaType = Conversation.schema.path(path);
+          return path !== 'tenantId' && schemaType != null && !schemaType.options.immutable;
+        });
+        if (fieldsToUnset.length > 0) {
+          updateOperation.push({ $unset: fieldsToUnset });
+        }
+      } else {
+        updateOperation = { $set: update };
+        if (Object.keys(unsetFields).length > 0) {
+          updateOperation.$unset = unsetFields;
+        }
+        if (createdAtOnInsert) {
+          updateOperation.$setOnInsert = { createdAt: createdAtOnInsert };
         }
       }
 
-      const updateOperation: Record<string, unknown> = { $set: update };
-      if (Object.keys(unsetFields).length > 0) {
-        updateOperation.$unset = unsetFields;
-      }
-      if (createdAtOnInsert) {
-        updateOperation.$setOnInsert = { createdAt: createdAtOnInsert };
+      const timestampOptions: { timestamps?: false; setDefaultsOnInsert?: false } = {};
+      if (updatesArchiveState) {
+        timestampOptions.timestamps = false;
+        timestampOptions.setDefaultsOnInsert = false;
+      } else if (createdAtOnInsert || preserveUpdatedAt) {
+        timestampOptions.timestamps = false;
       }
 
       const conversationResult = (await Conversation.findOneAndUpdate(
@@ -338,7 +399,7 @@ export function createConversationMethods(
           new: true,
           upsert: metadata?.noUpsert !== true,
           includeResultMetadata: true,
-          ...(createdAtOnInsert || preserveUpdatedAt ? { timestamps: false } : {}),
+          ...timestampOptions,
         },
       )) as unknown as {
         value:
