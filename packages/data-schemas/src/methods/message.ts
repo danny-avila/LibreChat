@@ -13,9 +13,11 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * Exclusion projection for message reads that feed the chat client (the
  * conversation GET and shared-link reads). Every excluded field is either
  * server-internal (ids, replay signatures, legacy summarization state) or a
- * web_search SERP vertical with no client reader; content parts, attachments
- * the Sources UI consumes, files, and usage metadata all still ship. The JSON
- * export mirrors this cache, so fields removed here also leave user exports.
+ * web_search SERP vertical no citation marker or UI can address: markers
+ * resolve `search|image|news|video|ref|file` through organic/images/
+ * topStories/videos/references (all kept — `news` markers read topStories,
+ * never the `news` collection). The JSON export mirrors this cache, so
+ * fields removed here also leave user exports.
  */
 export const CLIENT_MESSAGE_SELECT: string = [
   '-_id',
@@ -36,7 +38,6 @@ export const CLIENT_MESSAGE_SELECT: string = [
   '-attachments.web_search.shopping',
   '-attachments.web_search.places',
   '-attachments.web_search.news',
-  '-attachments.web_search.videos',
   '-attachments.web_search.organic.sitelinks',
   '-attachments.web_search.organic.highlights',
   '-attachments.web_search.topStories.highlights',

@@ -588,13 +588,15 @@ describe('Message Operations', () => {
       expect(webSearch.topStories[0].highlights).toBeUndefined();
       expect(webSearch.references).toHaveLength(1);
       expect(webSearch.images).toHaveLength(1);
+      /** `videos` stays: `turn…video…` citation markers resolve against it
+       *  (the clipboard refTypeMap addresses it explicitly). */
+      expect(webSearch.videos).toHaveLength(1);
       expect(webSearch.answerBox).toBeDefined();
       for (const vertical of [
         'knowledgeGraph',
         'peopleAlsoAsk',
         'relatedSearches',
         'news',
-        'videos',
         'places',
         'shopping',
       ]) {
