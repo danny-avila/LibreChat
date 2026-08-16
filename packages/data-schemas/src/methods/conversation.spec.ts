@@ -545,6 +545,64 @@ describe('Conversation Operations', () => {
         }
       });
 
+      /** Both conditional writes of the compare-and-set miss when an unarchive lands
+       * between them. The conversation still exists, so the route must not 404. */
+      it('does not report a missing chat when an unarchive splits the archive writes', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Split archive',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        let writeCount = 0;
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              writeCount += 1;
+              const result = await findOneAndUpdate(filter, update, options ?? {});
+              /** The transition write has just missed on an already archived chat.
+               * Unarchive it now so the already-archived write misses too. */
+              if (writeCount === 1) {
+                await Conversation.collection.updateOne(
+                  { conversationId },
+                  { $set: { isArchived: false, archivedAt: null } },
+                );
+              }
+              return result;
+            },
+          );
+
+        try {
+          const archived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+
+          expect(archived).not.toBeNull();
+          expect(archived?.isArchived).toBe(true);
+          expect(archived?.archivedAt).toBeInstanceOf(Date);
+        } finally {
+          writeSpy.mockRestore();
+        }
+      });
+
       it('stamps again when unarchive lands before a pending repeated archive write', async () => {
         const conversationId = uuidv4();
         const original = new Date('2026-03-01T12:00:00.000Z');

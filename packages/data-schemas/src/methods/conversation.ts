@@ -363,17 +363,32 @@ export function createConversationMethods(
         delete withoutStamp.archivedAt;
         const stamped = { ...withoutStamp, archivedAt: update.archivedAt ?? new Date() };
 
-        conversationResult = await runUpdate(
-          { ...baseFilter, isArchived: { $ne: true } },
-          buildOperation(stamped),
-          false,
-        );
-        if (!conversationResult.value) {
-          conversationResult = await runUpdate(
+        const runArchiveWrites = async () => {
+          const transitioned = await runUpdate(
+            { ...baseFilter, isArchived: { $ne: true } },
+            buildOperation(stamped),
+            false,
+          );
+          if (transitioned.value) {
+            return transitioned;
+          }
+          return runUpdate(
             { ...baseFilter, isArchived: true },
             buildOperation(withoutStamp),
             false,
           );
+        };
+
+        conversationResult = await runArchiveWrites();
+        /** Both conditional writes miss when the flag flips between them: the chat was
+         * already archived when the first ran and unarchived again before the second.
+         * That is a live conversation, so confirm it is really gone before letting the
+         * route answer 404, and retry the pair when it is not. */
+        for (let attempt = 0; !conversationResult.value && attempt < 2; attempt++) {
+          if (!(await Conversation.exists(baseFilter))) {
+            break;
+          }
+          conversationResult = await runArchiveWrites();
         }
         if (!conversationResult.value && canUpsert) {
           conversationResult = await runUpdate(baseFilter, buildOperation(stamped), true);
