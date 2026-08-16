@@ -20,3 +20,9 @@ export const SIDEBAR_TRANSITION = `transform ${TRANSITION_MS}ms ${EASING}`;
  * it their containing block, which clips them.
  */
 export const DRAWER_Z_INDEX = 110;
+
+/**
+ * Lets the swipe gesture (mounted in Root, which owns the chat pane) reach
+ * the drawer element without threading a ref across sibling trees.
+ */
+export const MOBILE_DRAWER_ID = 'mobile-drawer';

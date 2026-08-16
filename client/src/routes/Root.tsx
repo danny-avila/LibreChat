@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, startTransition } from 'react';
 import { Outlet } from 'react-router-dom';
 import {
   PromptGroupsProvider,
@@ -21,6 +21,7 @@ import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
 import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { TermsAndConditionsModal } from '~/components/ui';
+import useDrawerSwipe from '~/hooks/Nav/useDrawerSwipe';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 
@@ -39,7 +40,26 @@ export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const [bannerHeight, setBannerHeight] = useState(0);
   /** Shared with the drawer so the two agree on the breakpoint-transition frame. */
-  const { isSmallScreen, expanded: sidebarExpanded } = useSidebarState();
+  const {
+    isSmallScreen,
+    expanded: sidebarExpanded,
+    setExpanded: setSidebarExpanded,
+  } = useSidebarState();
+  const paneRef = useRef<HTMLDivElement>(null);
+  const handleDrawerOpenChange = useCallback(
+    (next: boolean) => {
+      startTransition(() => {
+        setSidebarExpanded(next);
+      });
+    },
+    [setSidebarExpanded],
+  );
+  useDrawerSwipe({
+    paneRef,
+    enabled: isSmallScreen,
+    open: sidebarExpanded,
+    onOpenChange: handleDrawerOpenChange,
+  });
 
   const { isAuthenticated, logout } = useAuthContext();
 
@@ -86,6 +106,7 @@ export default function Root() {
                 <div className="relative z-0 flex h-full w-full overflow-hidden">
                   <UnifiedSidebar />
                   <div
+                    ref={paneRef}
                     className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
                     style={{
                       /** Self-referential, so it needs no width literal and survives rotation. */

@@ -9,6 +9,7 @@ import {
   EASING,
   SIDEBAR_TRANSITION,
   DRAWER_Z_INDEX,
+  MOBILE_DRAWER_ID,
 } from './constants';
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
 import { MobileHeader, MobileBottomBar, MobileShortcutTargets } from './mobile';
@@ -148,8 +149,11 @@ function UnifiedSidebar() {
   if (isSmallScreen) {
     return (
       <div
+        id={MOBILE_DRAWER_ID}
         className={cn(
-          'fixed inset-y-0 left-0 flex w-full flex-col bg-surface-primary-alt',
+          /** `touch-pan-y`: the close swipe reads horizontal touches here; the
+           * drawer holds no horizontal scrollers, so nothing else wants them. */
+          'fixed inset-y-0 left-0 flex w-full touch-pan-y flex-col bg-surface-primary-alt',
           expanded ? 'translate-x-0' : '-translate-x-full',
         )}
         style={{ transition: SIDEBAR_TRANSITION, zIndex: DRAWER_Z_INDEX }}
