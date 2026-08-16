@@ -19,7 +19,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/Selectors';
-import { cn, getResponseStatus, selectActiveBranchTail } from '~/utils';
+import { cn, DEFAULT_APP_TITLE, getResponseStatus, selectActiveBranchTail } from '~/utils';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
 import { useForkSharedConvoMutation } from '~/data-provider';
 import { useGetSharedStartupConfig } from '~/data-provider';
@@ -120,7 +120,7 @@ function SharedView() {
   const chatTitleInTab = useRecoilValue(store.chatTitleInTab);
   let docTitle = '';
   if (!chatTitleInTab) {
-    docTitle = config?.appTitle ?? document.title;
+    docTitle = config?.appTitle || DEFAULT_APP_TITLE;
   } else if (config?.appTitle != null && data?.title != null) {
     docTitle = `${data.title} | ${config.appTitle}`;
   } else {

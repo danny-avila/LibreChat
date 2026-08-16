@@ -8,6 +8,10 @@ describe('document title', () => {
     document.title = '';
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('uses a conversation title when chat titles are enabled', () => {
     setDocumentTitle('Project status', true);
 
@@ -21,6 +25,32 @@ describe('document title', () => {
   });
 
   it('uses the app title when the conversation title is empty', () => {
+    setDocumentTitle('', true);
+
+    expect(document.title).toBe('LibreChat');
+  });
+
+  it('uses the default app title when no app title is stored', () => {
+    localStorage.removeItem(LocalStorageKeys.APP_TITLE);
+
+    setDocumentTitle('', true);
+
+    expect(document.title).toBe('LibreChat');
+  });
+
+  it('uses the default app title when the stored app title is empty', () => {
+    localStorage.setItem(LocalStorageKeys.APP_TITLE, '');
+
+    setDocumentTitle('', true);
+
+    expect(document.title).toBe('LibreChat');
+  });
+
+  it('uses the default app title when storage is unavailable', () => {
+    jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('Storage unavailable');
+    });
+
     setDocumentTitle('', true);
 
     expect(document.title).toBe('LibreChat');

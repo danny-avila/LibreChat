@@ -161,9 +161,7 @@ function Conversation({
 
     toggleNav();
 
-    if (typeof title === 'string' && title.length > 0) {
-      setDocumentTitle(title);
-    }
+    setDocumentTitle(title);
 
     navigateToConvo(conversation, {
       currentConvoId,

@@ -1,8 +1,15 @@
 import { LocalStorageKeys } from 'librechat-data-provider';
 
 export const CHAT_TITLE_IN_TAB_KEY = 'chatTitleInTab';
+export const DEFAULT_APP_TITLE = 'LibreChat';
 
-const getAppTitle = (): string => localStorage.getItem(LocalStorageKeys.APP_TITLE) ?? '';
+const getAppTitle = (): string => {
+  try {
+    return localStorage.getItem(LocalStorageKeys.APP_TITLE) || DEFAULT_APP_TITLE;
+  } catch {
+    return DEFAULT_APP_TITLE;
+  }
+};
 
 /** Reads the setting straight from localStorage so non-React callers stay in sync with the atom. */
 export const isChatTitleInTabEnabled = (): boolean => {
