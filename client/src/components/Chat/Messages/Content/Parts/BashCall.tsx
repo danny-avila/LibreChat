@@ -110,7 +110,11 @@ export default function BashCall({
               ? localize('com_ui_cancelled')
               : (backgroundFinishedText ?? intent ?? localize('com_ui_command_finished'))
           }
-          durationMs={runStepDurationMs}
+          /** A backgrounded call's run step closes when dispatch returns the
+           *  handle, so its duration is the dispatch time — showing it beside
+           *  "Running/Finished in background" would misstate a detached
+           *  task's runtime as seconds. */
+          durationMs={backgroundHandle == null ? runStepDurationMs : undefined}
           errorSuffix={
             (hasError && !cancelled) || backgroundFailed
               ? localize('com_ui_tool_failed')
