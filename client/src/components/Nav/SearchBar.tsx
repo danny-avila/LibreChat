@@ -47,8 +47,45 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
     [newConvo, navigate, queryClient],
   );
 
+  const sendRequest = useCallback(
+    (value: string) => {
+      if (!value) {
+        return;
+      }
+      queryClient.invalidateQueries([QueryKeys.messages]);
+    },
+    [queryClient],
+  );
+
+  const commitQuery = useRef<(value: string) => void>(() => undefined);
+  commitQuery.current = (value: string) => {
+    setSearchState((prev) => ({ ...prev, debouncedQuery: value, isTyping: false }));
+    sendRequest(value);
+  };
+
+  /**
+   * One instance for the lifetime of the field, reading the current handlers
+   * through the ref, so `cancel` always reaches the timer that is actually
+   * pending. Rebuilding the debounce whenever its dependencies changed would
+   * leave the previous instance's timer running past the cancel meant to stop
+   * it, and cancelling on that rebuild would instead discard live keystrokes.
+   */
+  const debouncedSetDebouncedQuery = useMemo(
+    () => debounce((value: string) => commitQuery.current(value), 500),
+    [],
+  );
+
+  /**
+   * The pending callback writes to shared state, so it outlives this instance.
+   * Crossing the breakpoint mid-keystroke swaps the list's field for the bottom
+   * bar's; without this the departing instance's timer still fires and
+   * reinstates the query the replacement has since edited or cleared.
+   */
+  useEffect(() => () => debouncedSetDebouncedQuery.cancel(), [debouncedSetDebouncedQuery]);
+
   const clearText = useCallback(
     (pathname?: string) => {
+      debouncedSetDebouncedQuery.cancel();
       setShowClearIcon(false);
       setText('');
       setSearchState((prev) => ({
@@ -60,7 +97,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
       clearSearch(pathname);
       inputRef.current?.focus();
     },
-    [setSearchState, clearSearch],
+    [setSearchState, clearSearch, debouncedSetDebouncedQuery],
   );
 
   const handleKeyUp = useCallback(
@@ -71,25 +108,6 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
       }
     },
     [clearText, location.pathname],
-  );
-
-  const sendRequest = useCallback(
-    (value: string) => {
-      if (!value) {
-        return;
-      }
-      queryClient.invalidateQueries([QueryKeys.messages]);
-    },
-    [queryClient],
-  );
-
-  const debouncedSetDebouncedQuery = useMemo(
-    () =>
-      debounce((value: string) => {
-        setSearchState((prev) => ({ ...prev, debouncedQuery: value, isTyping: false }));
-        sendRequest(value);
-      }, 500),
-    [setSearchState, sendRequest],
   );
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
