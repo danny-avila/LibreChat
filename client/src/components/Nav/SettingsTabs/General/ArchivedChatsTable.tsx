@@ -62,6 +62,11 @@ export default function ArchivedChatsTable() {
     }));
   }, []);
 
+  const getRowId = useCallback(
+    (row: ArchivedConversationRow, index: number) => row.conversationId ?? `archived-${index}`,
+    [],
+  );
+
   const allConversations = useMemo<ArchivedConversationRow[]>(() => {
     if (!data?.pages) {
       return [];
@@ -151,30 +156,32 @@ export default function ArchivedChatsTable() {
         header: localize('com_nav_archive_name'),
         cell: ({ row }) => {
           const { conversationId, title } = row.original;
+          const link = (
+            <Link
+              to={`/c/${conversationId ?? ''}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center gap-1.5 truncate rounded-sm font-medium text-text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+              aria-label={localize('com_ui_open_archived_chat_new_tab_title', {
+                title: title ?? localize('com_ui_untitled'),
+              })}
+            >
+              <span className="truncate">{title}</span>
+              <ExternalLink
+                className="size-3.5 flex-shrink-0 text-text-tertiary transition-colors group-hover:text-text-secondary"
+                aria-hidden="true"
+              />
+            </Link>
+          );
           return (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2.5">
               <MinimalIcon
                 endpoint={row.original.endpoint}
                 size={28}
                 isCreatedByUser={false}
                 iconClassName="size-4"
               />
-              <Link
-                to={`/c/${conversationId ?? ''}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group flex items-center gap-1 truncate rounded-sm text-link underline decoration-1 underline-offset-2 hover:decoration-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
-                title={title ?? undefined}
-                aria-label={localize('com_ui_open_archived_chat_new_tab_title', {
-                  title: title ?? localize('com_ui_untitled'),
-                })}
-              >
-                <span className="truncate">{title}</span>
-                <ExternalLink
-                  className="size-3 flex-shrink-0 opacity-70 group-hover:opacity-100"
-                  aria-hidden="true"
-                />
-              </Link>
+              {title ? <TooltipAnchor description={title} render={link} /> : link}
             </div>
           );
         },
@@ -204,8 +211,8 @@ export default function ArchivedChatsTable() {
                 description={localize('com_ui_unarchive_conversation')}
                 render={
                   <Button
-                    variant="ghost"
-                    className="h-8 w-8 p-0 hover:bg-surface-hover"
+                    variant="row-action"
+                    size="icon-sm"
                     onClick={() =>
                       unarchiveConversation({
                         conversationId: conversation.conversationId ?? '',
@@ -223,8 +230,8 @@ export default function ArchivedChatsTable() {
                 description={localize('com_ui_delete_conversation_tooltip')}
                 render={
                   <Button
-                    variant="ghost"
-                    className="h-8 w-8 p-0 hover:bg-surface-hover"
+                    variant="row-action"
+                    size="icon-sm"
                     onClick={() => {
                       setDeleteConversation(row.original);
                       setIsDeleteOpen(true);
@@ -248,37 +255,31 @@ export default function ArchivedChatsTable() {
 
   return (
     <>
-      {/* Fixed height keeps the loading (skeleton) and loaded states the same
-          size, so the virtualized table can't reflow the dialog on load. */}
-      <div className="h-[60vh]">
-        <VirtualizedDataTable
-          columns={columns}
-          data={allConversations}
-          getRowId={(row, index) => row.conversationId ?? `archived-${index}`}
-          className="scrollbar-gutter-stable h-full max-h-none"
-          onFilterChange={handleFilterChange}
-          filterValue={queryParams.search}
-          fetchNextPage={handleFetchNextPage}
-          hasNextPage={hasNextPage}
-          isFetchingNextPage={isFetchingNextPage}
-          isFetching={isFetching}
-          isLoading={isLoading}
-          sorting={sorting}
-          onSortingChange={handleSortingChange}
-          config={{
-            selection: { enableRowSelection: false, showCheckboxes: false },
-            search: { enableSearch: searchState.enabled === true, debounce: 300 },
-          }}
-        />
-      </div>
+      {/* The skeleton count matches the minimum height so the loading and loaded
+          states are close in size, while a short list still collapses the box. */}
+      <VirtualizedDataTable
+        columns={columns}
+        data={allConversations}
+        getRowId={getRowId}
+        className="scrollbar-gutter-stable max-h-[60vh] min-h-80"
+        onFilterChange={handleFilterChange}
+        filterValue={queryParams.search}
+        fetchNextPage={handleFetchNextPage}
+        hasNextPage={hasNextPage}
+        isFetchingNextPage={isFetchingNextPage}
+        isFetching={isFetching}
+        isLoading={isLoading}
+        sorting={sorting}
+        onSortingChange={handleSortingChange}
+        config={{
+          selection: { enableRowSelection: false, showCheckboxes: false },
+          skeleton: { count: 6 },
+          search: { enableSearch: searchState.enabled === true, debounce: 300 },
+        }}
+      />
 
       <OGDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
-        <OGDialogContent
-          title={localize('com_ui_delete_confirm', {
-            title: deleteConversation?.title ?? localize('com_ui_untitled'),
-          })}
-          className="w-11/12 max-w-md"
-        >
+        <OGDialogContent showCloseButton={false} className="w-11/12 max-w-md">
           <OGDialogHeader>
             <OGDialogTitle>
               <Trans
