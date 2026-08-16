@@ -1,4 +1,4 @@
-export { Button } from '@librechat/client';
+export { Button, FieldMessage } from '@librechat/client';
 export { default as Collapse } from './Collapse';
 export { default as PanelFooter } from './PanelFooter';
 export { default as PanelContent } from './PanelContent';

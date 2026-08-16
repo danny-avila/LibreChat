@@ -31,6 +31,7 @@ import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
 import { ForkSettings } from '../SettingsTabs/Chat/ForkSettings';
 import ChatDirection from '../SettingsTabs/Chat/ChatDirection';
 import { DeleteCache } from '../SettingsTabs/Data/DeleteCache';
+import { ManageFiles } from '../SettingsTabs/Data/ManageFiles';
 import { smoothStreamingAtom } from '~/store/smoothStreaming';
 import { RevokeKeys } from '../SettingsTabs/Data/RevokeKeys';
 import { ClearChats } from '../SettingsTabs/Data/ClearChats';
@@ -522,6 +523,14 @@ export const registry: SettingEntry[] = [
     section: 'data',
     labelKey: 'com_ui_settings_label_shared_links',
     Component: SharedLinks,
+  },
+  {
+    id: 'manageFiles',
+    tab: DATA,
+    section: 'data',
+    labelKey: 'com_ui_settings_label_manage_files',
+    keywords: ['file', 'files', 'upload', 'uploads', 'storage', 'attachments'],
+    Component: ManageFiles,
   },
   // Data controls · API keys
   {

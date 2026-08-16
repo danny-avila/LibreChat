@@ -72,12 +72,12 @@ export default function GroupSidePanel({
       )}
       <div className="relative flex min-h-0 flex-1 flex-col">
         {/* Sticky header: filter and toggles stay put while the list scrolls */}
-        <div className="shrink-0 space-y-2 px-3 pb-2 pt-2 text-text-primary">{children}</div>
+        <div className="shrink-0 space-y-2 px-3 pb-2 text-text-primary">{children}</div>
         <PanelContent
           ref={containerRef}
           isLoading={!!groupsQuery.isLoading}
           skeleton={<PromptGroupSkeleton />}
-          className="scrollbar-gutter-stable flex flex-col gap-2 overflow-x-hidden pl-3 pr-1 text-text-primary"
+          className="scrollbar-gutter-stable flex flex-col gap-2 overflow-x-hidden pb-3 pl-3 pr-1 text-text-primary"
         >
           <List groups={promptGroups} isChatRoute={isChatRoute} />
           {/* Appending the next page, so the loaded rows stay put */}

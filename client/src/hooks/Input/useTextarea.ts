@@ -60,7 +60,7 @@ export default function useTextarea({
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
-  const { submitOverride, yieldedChords } = useComposerBindings();
+  const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
 
   const { index, conversation, isSubmitting, setFilesLoading } = useChatContext();
   const latestMessage = useLatestMessageMeta(index);
@@ -184,6 +184,7 @@ export default function useTextarea({
         isSubmitting,
         allowSubmitWhileGenerating,
         hasDuringRunModifier: onDuringRunModifier != null,
+        shortcutsEnabled,
         enterToSend,
         submitOverride,
         yieldedChords,
@@ -216,6 +217,7 @@ export default function useTextarea({
       isSubmitting,
       allowSubmitWhileGenerating,
       onDuringRunModifier,
+      shortcutsEnabled,
       yieldedChords,
       checkHealth,
       enterToSend,
