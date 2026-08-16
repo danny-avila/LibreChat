@@ -6,6 +6,7 @@ let mockResizeState = {
   isEnabled: true,
   isEnforced: false,
   isSupported: true,
+  isConfigPending: false,
   isConfigUnavailable: false,
 };
 
@@ -29,6 +30,7 @@ describe('ImageResize', () => {
       isEnabled: true,
       isEnforced: false,
       isSupported: true,
+      isConfigPending: false,
       isConfigUnavailable: false,
     };
   });
@@ -62,6 +64,20 @@ describe('ImageResize', () => {
     expect(screen.getByTestId('clientImageResize')).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'com_nav_info_client_image_resize_unsupported' }),
+    ).toBeInTheDocument();
+  });
+
+  it('disables the setting while the file config is pending', () => {
+    mockResizeState.isEnabled = false;
+    mockResizeState.isConfigPending = true;
+
+    render(<ImageResize />);
+
+    const toggle = screen.getByTestId('clientImageResize');
+    expect(toggle).toBeDisabled();
+    expect(toggle).toHaveAttribute('aria-busy', 'true');
+    expect(
+      screen.getByRole('button', { name: 'com_nav_info_client_image_resize' }),
     ).toBeInTheDocument();
   });
 

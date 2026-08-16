@@ -19,7 +19,8 @@ const getInfoKey = (isSupported: boolean, isEnforced: boolean, isConfigUnavailab
 export default function ImageResize() {
   const localize = useLocalize();
   const setUserPreference = useSetRecoilState(store.clientImageResize);
-  const { isEnabled, isEnforced, isSupported, isConfigUnavailable } = useClientResize();
+  const { isEnabled, isEnforced, isSupported, isConfigPending, isConfigUnavailable } =
+    useClientResize();
 
   const labelId = 'clientImageResize-label';
   const infoKey = getInfoKey(isSupported, isEnforced, isConfigUnavailable);
@@ -34,7 +35,8 @@ export default function ImageResize() {
         id="clientImageResize"
         checked={isEnabled}
         onCheckedChange={setUserPreference}
-        disabled={isEnforced || !isSupported || isConfigUnavailable}
+        disabled={isEnforced || !isSupported || isConfigUnavailable || isConfigPending}
+        aria-busy={isConfigPending}
         className="ml-4"
         data-testid="clientImageResize"
         aria-labelledby={labelId}
