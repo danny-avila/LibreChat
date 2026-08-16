@@ -89,14 +89,15 @@ type Gesture = {
   rafScheduled: boolean;
 };
 
-/** Returns every transient inline property to what React/classes render:
- * the drawer's transform is class-driven and the pane's is a React style
- * whose committed value React re-asserts whenever `open` changes. */
-const releaseInlineStyles = (drawer: HTMLElement, pane: HTMLElement) => {
+/** Returns every transient inline property to what React/classes render for
+ * `paneOpen`. The drawer's transform is class-driven so clearing suffices, but
+ * the pane's is a React style prop React will NOT re-assert while its value is
+ * unchanged — an open pane must get its committed transform back explicitly. */
+const releaseInlineStyles = (drawer: HTMLElement, pane: HTMLElement, paneOpen: boolean) => {
   drawer.style.transform = '';
   drawer.style.willChange = '';
   drawer.style.transition = SIDEBAR_TRANSITION;
-  pane.style.transform = '';
+  pane.style.transform = paneOpen ? 'translateX(100%)' : '';
   pane.style.willChange = '';
   pane.style.transition = SIDEBAR_TRANSITION;
 };
@@ -153,7 +154,20 @@ export default function useDrawerSwipe({
     if (pending != null && (!enabled || pending.target !== open)) {
       clearTimeout(pending.id);
       settleRef.current = null;
-      releaseInlineStyles(pending.drawer, pending.pane);
+      releaseInlineStyles(pending.drawer, pending.pane, enabled && open);
+    }
+    /** A gesture surviving into a new effect run was interrupted — its
+     * listeners are gone, so its drag styles must resolve to the CURRENT
+     * state (this closure knows it; the torn-down one did not). */
+    const abandoned = gestureRef.current;
+    if (abandoned != null) {
+      if (abandoned.phase === 'claimed' && !abandoned.reducedMotion) {
+        releaseInlineStyles(abandoned.drawer, abandoned.pane, enabled && open);
+      }
+      if (abandoned.raf != null) {
+        cancelAnimationFrame(abandoned.raf);
+      }
+      gestureRef.current = null;
     }
     if (!enabled) {
       return;
@@ -367,15 +381,14 @@ export default function useDrawerSwipe({
       surface.removeEventListener('touchmove', onTouchMove);
       surface.removeEventListener('touchend', onTouchEnd);
       surface.removeEventListener('touchcancel', onTouchCancel);
+      /** Interrupted gestures are resolved by the NEXT effect run, which
+       * knows the new state; here only the frame is cancelled so nothing
+       * writes after teardown. Unmount discards the DOM with its styles. */
       const gesture = gestureRef.current;
-      if (gesture != null) {
-        /** An external open-change (keyboard toggle) mid-drag tears down these
-         * listeners with the finger still down; the drag's inline transform
-         * and `transition: none` must not outlive the gesture. */
-        if (gesture.phase === 'claimed' && !gesture.reducedMotion) {
-          releaseInlineStyles(drawer, pane);
-        }
-        clearDrag(gesture);
+      if (gesture?.raf != null) {
+        cancelAnimationFrame(gesture.raf);
+        gesture.raf = null;
+        gesture.rafScheduled = false;
       }
     };
   }, [enabled, open, paneRef]);

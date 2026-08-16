@@ -352,7 +352,9 @@ describe('useDrawerSwipe — interruptions and re-arming', () => {
     harness.rerender({ open: true, enabled: true });
     expect(harness.drawer.style.transform).toBe('');
     expect(harness.drawer.style.transition).not.toBe('none');
-    expect(harness.pane.style.transform).toBe('');
+    /** React committed the open pane transform before this cleanup and will
+     * not re-assert it — the release must restore it, not clear it. */
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
     harness.unmount();
   });
 
