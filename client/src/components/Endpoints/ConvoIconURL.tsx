@@ -1,5 +1,4 @@
 import { memo, useMemo } from 'react';
-import { pxToRem } from '@librechat/client';
 import { URLIcon } from '~/components/Endpoints/URLIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { isImageURL } from '~/utils/icons';
@@ -22,7 +21,8 @@ const classMap = {
 };
 
 const styleMap = {
-  'menu-item': { width: pxToRem(20), height: pxToRem(20) },
+  /** 1.25rem is 20px at the 16px baseline, and follows the UI scale. */
+  'menu-item': { width: '1.25rem', height: '1.25rem' },
   default: { width: '100%', height: '100%' },
 };
 

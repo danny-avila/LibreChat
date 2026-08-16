@@ -38,7 +38,7 @@ const MinimalIcon: React.FC<IconProps> = (props) => {
       name: props.modelLabel ?? 'Claude',
     },
     [EModelEndpoint.custom]: {
-      icon: <CustomMinimalIcon />,
+      icon: <CustomMinimalIcon className="h-[83.33%] w-[83.33%]" />,
       name: 'Custom',
     },
     [EModelEndpoint.assistants]: { icon: <Sparkles className="icon-sm" />, name: 'Assistant' },

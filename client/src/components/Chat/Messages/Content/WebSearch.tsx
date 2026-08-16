@@ -295,7 +295,9 @@ export default function WebSearch({
                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">
                           {source.title || domain}
                         </span>
-                        <span className="shrink-0 text-[0.6875rem] text-text-secondary">{domain}</span>
+                        <span className="shrink-0 text-[0.6875rem] text-text-secondary">
+                          {domain}
+                        </span>
                       </a>
                     );
                   })}

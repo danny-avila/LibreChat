@@ -1,5 +1,4 @@
 import { memo, useState, useRef, useEffect } from 'react';
-import { useAtomValue } from 'jotai';
 import { AutoSizer, List } from 'react-virtualized';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
@@ -12,7 +11,7 @@ import useSelectMention from '~/hooks/Input/useSelectMention';
 import { useAssistantsMapContext } from '~/Providers';
 import useMentions from '~/hooks/Input/useMentions';
 import { removeCharIfLast } from '~/utils';
-import { uiScaleValueAtom } from '~/store/uiScale';
+import useRemScale from '~/hooks/useRemScale';
 import MentionItem from './MentionItem';
 
 const ROW_HEIGHT = 44;
@@ -36,7 +35,7 @@ function MentionContent({
   includeAssistants = true,
 }: Omit<MentionProps, 'index'>) {
   const localize = useLocalize();
-  const uiScale = useAtomValue(uiScaleValueAtom);
+  const remScale = useRemScale();
   const getConversation = useGetConversation(0);
   const assistantsMap = useAssistantsMapContext();
   const setShowPopover = useSetRecoilState(popoverAtom);
@@ -249,11 +248,11 @@ function MentionContent({
                 <List
                   width={width}
                   overscanRowCount={5}
-                  rowHeight={ROW_HEIGHT * uiScale}
+                  rowHeight={ROW_HEIGHT * remScale}
                   rowCount={matches.length}
                   rowRenderer={rowRenderer}
                   scrollToIndex={activeIndex}
-                  height={Math.min(matches.length * ROW_HEIGHT, 160) * uiScale}
+                  height={Math.min(matches.length * ROW_HEIGHT, 160) * remScale}
                 />
               )}
             </AutoSizer>

@@ -35,11 +35,11 @@ function getOpenAIColor(_model: string | null | undefined) {
 
 function getGoogleIcon(model: string | null | undefined, size: number) {
   if (model?.toLowerCase().includes('code') === true) {
-    return <CodeyIcon size={size * 0.75} />;
+    return <CodeyIcon size={size * 0.75} className="h-[75%] w-[75%]" />;
   } else if (/gemini|learnlm|gemma/.test(model?.toLowerCase() ?? '')) {
-    return <GeminiIcon size={size * 0.7} />;
+    return <GeminiIcon size={size * 0.7} className="h-[70%] w-[70%]" />;
   } else {
-    return <PaLMIcon size={size * 0.7} />;
+    return <PaLMIcon size={size * 0.7} className="h-[70%] w-[70%]" />;
   }
 }
 
@@ -126,12 +126,12 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
     [EModelEndpoint.agents]: agentsIcon,
     [EModelEndpoint.azureAssistants]: assistantsIcon,
     [EModelEndpoint.azureOpenAI]: {
-      icon: <AzureMinimalIcon size={size * 0.5555555555555556} />,
+      icon: <AzureMinimalIcon size={size * 0.5555555555555556} className="h-[55.56%] w-[55.56%]" />,
       bg: 'linear-gradient(0.375turn, #61bde2, #4389d0)',
       name: 'ChatGPT',
     },
     [EModelEndpoint.openAI]: {
-      icon: <GPTIcon size={size * 0.5555555555555556} />,
+      icon: <GPTIcon size={size * 0.5555555555555556} className="h-[55.56%] w-[55.56%]" />,
       bg: getOpenAIColor(model),
       name: 'ChatGPT',
     },
@@ -140,7 +140,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       name: getGoogleModelName(model),
     },
     [EModelEndpoint.anthropic]: {
-      icon: <AnthropicIcon size={size * 0.5555555555555556} />,
+      icon: <AnthropicIcon size={size * 0.5555555555555556} className="h-[55.56%] w-[55.56%]" />,
       bg: '#d09a74',
       name: 'Claude',
     },
@@ -150,10 +150,14 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
       name: alternateName[EModelEndpoint.bedrock],
     },
     [EModelEndpoint.custom]: {
-      icon: <CustomMinimalIcon size={size * 0.7} />,
+      icon: <CustomMinimalIcon size={size * 0.7} className="h-[70%] w-[70%]" />,
       name: 'Custom',
     },
-    null: { icon: <GPTIcon size={size * 0.7} />, bg: 'grey', name: 'N/A' },
+    null: {
+      icon: <GPTIcon size={size * 0.7} className="h-[70%] w-[70%]" />,
+      bg: 'grey',
+      name: 'N/A',
+    },
     default: {
       icon: (
         <div className="h-6 w-6">
@@ -195,7 +199,7 @@ const MessageEndpointIcon: React.FC<IconProps> = (props) => {
         height: pxToRem(size),
       }}
       className={cn(
-        'relative flex h-9 w-9 items-center justify-center rounded-sm p-1',
+        'relative flex h-9 w-9 items-center justify-center rounded-sm',
         hasBackground ? 'text-white' : 'text-text-primary',
         props.className ?? '',
       )}

@@ -1,13 +1,12 @@
 import React, { useMemo, useEffect, useCallback, useRef } from 'react';
 import { throttle } from 'lodash';
-import { useAtomValue } from 'jotai';
 import { Spinner } from '@librechat/client';
 import { PermissionBits } from 'librechat-data-provider';
 import { AutoSizer, List as VirtualList, WindowScroller } from 'react-virtualized';
 import type t from 'librechat-data-provider';
 import { useMarketplaceAgentsInfiniteQuery } from '~/data-provider/Agents';
 import { useAgentCategories, useLocalize } from '~/hooks';
-import { uiScaleValueAtom } from '~/store/uiScale';
+import useRemScale from '~/hooks/useRemScale';
 import { useHasData } from './SmartLoader';
 import ErrorDisplay from './ErrorDisplay';
 import AgentCard from './AgentCard';
@@ -38,7 +37,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
   scrollElement,
 }) => {
   const localize = useLocalize();
-  const uiScale = useAtomValue(uiScaleValueAtom);
+  const remScale = useRemScale();
   const listRef = useRef<VirtualList>(null);
   const { categories } = useAgentCategories();
 
@@ -294,7 +293,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
                         onScroll={onChildScroll}
                         overscanRowCount={OVERSCAN_ROW_COUNT}
                         rowCount={rowCount}
-                        rowHeight={ROW_HEIGHT * uiScale}
+                        rowHeight={ROW_HEIGHT * remScale}
                         rowRenderer={rowRenderer}
                         scrollTop={scrollTop}
                         width={width}
@@ -323,7 +322,7 @@ const VirtualizedAgentGrid: React.FC<VirtualizedAgentGridProps> = ({
                     height={height}
                     overscanRowCount={OVERSCAN_ROW_COUNT}
                     rowCount={rowCount}
-                    rowHeight={ROW_HEIGHT * uiScale}
+                    rowHeight={ROW_HEIGHT * remScale}
                     rowRenderer={rowRenderer}
                     width={width}
                     style={{ outline: 'none' }}
