@@ -1,11 +1,30 @@
-import { hoverButtonClasses, messageFooterClasses } from '../styles';
+import { hoverButtonClasses, messageFooterClasses, revealOnRowHoverClasses } from '../styles';
 
 const FADE = '[@media(hover:hover)]:opacity-0';
+
+describe('revealOnRowHoverClasses', () => {
+  it('reveals on row hover and on keyboard focus', () => {
+    expect(revealOnRowHoverClasses).toContain(FADE);
+    expect(revealOnRowHoverClasses).toContain('group-hover:opacity-100');
+    expect(revealOnRowHoverClasses).toContain('group-has-[:focus-visible]:opacity-100');
+  });
+
+  /* Clicking a tool card in the message body parks focus there. `:focus-within`
+     would hold the footer open with the pointer nowhere near the row. */
+  it('does not reveal on plain focus-within', () => {
+    expect(revealOnRowHoverClasses).not.toContain('group-focus-within:');
+  });
+});
 
 describe('hoverButtonClasses', () => {
   it('fades an idle action out until the row is hovered', () => {
     expect(hoverButtonClasses()).toContain(FADE);
     expect(hoverButtonClasses()).toContain('group-hover:opacity-100');
+  });
+
+  it('reveals an idle action on keyboard focus, not on a click parking focus in the row', () => {
+    expect(hoverButtonClasses()).toContain('group-has-[:focus-visible]:opacity-100');
+    expect(hoverButtonClasses()).not.toContain('group-focus-within:');
   });
 
   it('marks an active action so the toolbar can key off it', () => {
