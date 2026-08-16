@@ -250,23 +250,24 @@ describe('MCPConnection standalone SSE stream conflict', () => {
   it('rebuilds the session so the connection recovers from the conflict', async () => {
     const srv = await createConflictingServer();
     server = srv;
-    conn = new MCPConnection({
+    const connection = new MCPConnection({
       serverName: 'test',
       serverConfig: { type: 'streamable-http', url: srv.url },
       useSSRFProtection: false,
     });
+    conn = connection;
 
-    await conn.connect();
-    const firstSessionId = (conn as unknown as { transport?: { sessionId?: string } }).transport
-      ?.sessionId;
+    await connection.connect();
+    const firstSessionId = (connection as unknown as { transport?: { sessionId?: string } })
+      .transport?.sessionId;
     expect(firstSessionId).toBeTruthy();
 
     await waitForCondition(async () => {
-      const current = (conn as unknown as { transport?: { sessionId?: string } }).transport
+      const current = (connection as unknown as { transport?: { sessionId?: string } }).transport
         ?.sessionId;
-      return Boolean(current) && current !== firstSessionId && (await conn.isConnected());
+      return Boolean(current) && current !== firstSessionId && (await connection.isConnected());
     }, 15000);
 
-    expect(await conn.isConnected()).toBe(true);
+    expect(await connection.isConnected()).toBe(true);
   }, 25000);
 });
