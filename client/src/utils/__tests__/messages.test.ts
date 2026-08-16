@@ -373,7 +373,10 @@ describe('isSubmittableMessage', () => {
 });
 
 describe('createDualMessageContent', () => {
-  const asConvo = (convo: Partial<TConversation>) => convo as TConversation;
+  /** Custom endpoints carry their configured name (e.g. "Together AI") in
+   *  `endpoint` at runtime, which `TConversation` types as `EModelEndpoint`. */
+  const asConvo = (convo: Partial<Omit<TConversation, 'endpoint'>> & { endpoint: string }) =>
+    convo as unknown as TConversation;
   const agentIds = (parts: ReturnType<typeof createDualMessageContent>) =>
     parts.map((part) => (part as unknown as { agentId: string }).agentId);
 
