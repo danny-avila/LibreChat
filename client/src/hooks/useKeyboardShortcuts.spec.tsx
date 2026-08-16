@@ -351,9 +351,9 @@ describe('global shortcut dispatch', () => {
   });
 });
 
-describe('disabling every shortcut', () => {
-  it('ignores a matched chord and leaves the native event alone', () => {
-    window.localStorage.setItem('keyboardShortcutsDisabled', JSON.stringify(true));
+describe('the keyboard shortcuts switch', () => {
+  it('ignores a matched chord and leaves the native event alone when off', () => {
+    window.localStorage.setItem('keyboardShortcutsEnabled', JSON.stringify(false));
     const { getByTestId } = renderHarness();
     const before = getByTestId('sidebar').textContent;
 
@@ -363,8 +363,8 @@ describe('disabling every shortcut', () => {
     expect(getByTestId('sidebar').textContent).toBe(before);
   });
 
-  it('still dispatches once the setting is off', () => {
-    window.localStorage.setItem('keyboardShortcutsDisabled', JSON.stringify(false));
+  it('still dispatches while on', () => {
+    window.localStorage.setItem('keyboardShortcutsEnabled', JSON.stringify(true));
     const { getByTestId } = renderHarness();
     const before = getByTestId('sidebar').textContent;
 
@@ -374,8 +374,19 @@ describe('disabling every shortcut', () => {
     expect(getByTestId('sidebar').textContent).not.toBe(before);
   });
 
-  it('stops advertising chords through the hint and aria hooks', () => {
-    window.localStorage.setItem('keyboardShortcutsDisabled', JSON.stringify(true));
+  it('defaults to on, so shortcuts work with nothing stored', () => {
+    expect(window.localStorage.getItem('keyboardShortcutsEnabled')).toBeNull();
+    const { getByTestId } = renderHarness();
+    const before = getByTestId('sidebar').textContent;
+
+    const event = dispatchKey({ key: 's', ctrlKey: true, shiftKey: true });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(getByTestId('sidebar').textContent).not.toBe(before);
+  });
+
+  it('stops advertising chords through the hint and aria hooks when off', () => {
+    window.localStorage.setItem('keyboardShortcutsEnabled', JSON.stringify(false));
     const { result } = renderHook(
       () => ({
         display: useShortcutDisplay('newChat'),

@@ -897,22 +897,22 @@ export function useShortcutActions(): ShortcutAction[] {
 
 export function useShortcutDisplay(actionId?: ShortcutActionId): string {
   const overrides = useRecoilValue(store.customShortcuts);
-  const disabled = useRecoilValue(store.shortcutsDisabled);
+  const enabled = useRecoilValue(store.shortcutsEnabled);
   return useMemo(() => {
-    if (!actionId || disabled) return '';
+    if (!actionId || !enabled) return '';
     const binding = resolveShortcutBindings(overrides).get(actionId) ?? null;
     return binding ? bindingDisplayString(binding, isMac) : '';
-  }, [actionId, overrides, disabled]);
+  }, [actionId, overrides, enabled]);
 }
 
 export function useShortcutAriaKey(actionId?: ShortcutActionId): string | undefined {
   const overrides = useRecoilValue(store.customShortcuts);
-  const disabled = useRecoilValue(store.shortcutsDisabled);
+  const enabled = useRecoilValue(store.shortcutsEnabled);
   return useMemo(() => {
-    if (!actionId || disabled) return undefined;
+    if (!actionId || !enabled) return undefined;
     const binding = resolveShortcutBindings(overrides).get(actionId) ?? null;
     return binding ? (bindingToString(binding) ?? undefined) : undefined;
-  }, [actionId, overrides, disabled]);
+  }, [actionId, overrides, enabled]);
 }
 
 export function useShortcutHint(actionId: ShortcutActionId | undefined, label: string): string {
@@ -1012,7 +1012,7 @@ export default function useKeyboardShortcuts() {
   const actions = useShortcutActions();
   const overrides = useRecoilValue(store.customShortcuts);
   const shortcutsDialogOpen = useRecoilValue(store.showShortcutsDialog);
-  const shortcutsDisabled = useRecoilValue(store.shortcutsDisabled);
+  const shortcutsEnabled = useRecoilValue(store.shortcutsEnabled);
 
   const actionMap = useMemo(() => new Map(actions.map((action) => [action.id, action])), [actions]);
 
@@ -1031,7 +1031,7 @@ export default function useKeyboardShortcuts() {
 
   const handler = useCallback(
     (e: KeyboardEvent) => {
-      if (shortcutsDisabled) {
+      if (!shortcutsEnabled) {
         return;
       }
 
@@ -1086,7 +1086,7 @@ export default function useKeyboardShortcuts() {
         e.preventDefault();
       }
     },
-    [actionMap, bindingMap, shortcutsDialogOpen, shortcutsDisabled],
+    [actionMap, bindingMap, shortcutsDialogOpen, shortcutsEnabled],
   );
 
   useEffect(() => {
