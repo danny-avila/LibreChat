@@ -255,3 +255,39 @@ describe('sanitizeMcpIconPath', () => {
     expect(sanitizeMcpIconPath(ok)).toBe(ok);
   });
 });
+
+describe('sanitizeMcpIconPath dependency loading', () => {
+  afterEach(() => {
+    jest.dontMock('jsdom');
+    jest.dontMock('dompurify');
+    jest.resetModules();
+  });
+
+  it('does not load jsdom or dompurify until an SVG data URI is sanitized', () => {
+    jest.resetModules();
+    const loadJsdom = jest.fn();
+    const loadDompurify = jest.fn();
+    jest.doMock('jsdom', () => {
+      loadJsdom();
+      return jest.requireActual('jsdom');
+    });
+    jest.doMock('dompurify', () => {
+      loadDompurify();
+      return jest.requireActual('dompurify');
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- doMock only applies to a fresh require
+    const { sanitizeMcpIconPath: sanitize } = require('./icons') as typeof import('./icons');
+
+    expect(loadJsdom).not.toHaveBeenCalled();
+    expect(loadDompurify).not.toHaveBeenCalled();
+
+    sanitize('https://example.com/icon.png');
+    expect(loadJsdom).not.toHaveBeenCalled();
+    expect(loadDompurify).not.toHaveBeenCalled();
+
+    sanitize(`data:image/svg+xml,${encodeURIComponent('<svg><path d="M0 0h1v1z"/></svg>')}`);
+    expect(loadJsdom).toHaveBeenCalledTimes(1);
+    expect(loadDompurify).toHaveBeenCalledTimes(1);
+  });
+});
