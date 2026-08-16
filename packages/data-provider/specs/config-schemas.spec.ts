@@ -1214,6 +1214,22 @@ describe('specsConfigSchema', () => {
     }
   });
 
+  /** Omission is only legal when inferable — a preset naming no agent still needs the key. */
+  it('rejects an endpoint-less preset that names no agent', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [{ name: 'dead-spec', label: 'Dead Spec', preset: { model: 'gpt-4o' } }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /** `endpoint: null` validated before the key became optional; it must keep validating. */
+  it('still accepts an explicit null endpoint without an agent', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [{ name: 'null-spec', label: 'Null Spec', preset: { endpoint: null } }],
+    });
+    expect(result.success).toBe(true);
+  });
+
   it('materializes the inferred endpoint onto parsed agent specs', () => {
     const parsed = specsConfigSchema.parse({
       list: [
