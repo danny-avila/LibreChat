@@ -80,6 +80,7 @@ describe('reasoning label utilities', () => {
       index: 0,
       stepId: 'new-step',
       reset: true,
+      previousStepId: 'old-step',
       attempts: 4,
       responseMessageId: 'response-1',
     });
@@ -93,9 +94,33 @@ describe('reasoning label utilities', () => {
     expect(updated.content?.[0]).not.toHaveProperty('reasoning_label');
     expect(updated.content?.[0]).not.toHaveProperty('reasoning_label_revision');
     expect(updated.content?.[0]).not.toHaveProperty('reasoning_label_status');
-    expect(applyReasoningLabel(updated, { index: 0, stepId: 'new-step', reset: true })).toBe(
-      updated,
-    );
+    expect(
+      applyReasoningLabel(updated, {
+        index: 0,
+        stepId: 'new-step',
+        reset: true,
+        previousStepId: 'old-step',
+      }),
+    ).toBe(updated);
+  });
+
+  it('ignores a reset after the new step already received a label', () => {
+    const newer = applyReasoningLabel(response(), {
+      ...baseEvent,
+      stepId: 'new-step',
+      revision: 2,
+      label: 'Inspecting the new direction',
+    });
+
+    expect(
+      applyReasoningLabel(newer, {
+        index: 0,
+        stepId: 'new-step',
+        reset: true,
+        previousStepId: 'old-step',
+        attempts: 2,
+      }),
+    ).toBe(newer);
   });
 
   it('does not overwrite another reasoning step at the raw index', () => {

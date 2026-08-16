@@ -853,6 +853,7 @@ describe('reasoning labels', () => {
           index: 0,
           stepId: 'step-new',
           reset: true,
+          previousStepId: 'step-old',
           attempts: 1,
           conversationId: 'conversation-1',
           responseMessageId: 'response-1',

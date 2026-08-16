@@ -181,18 +181,22 @@ export function synthesizeReasoningLabelGapEvents(
     const snapshotHasLabel =
       snapshot?.type === ContentTypes.THINK &&
       typeof snapshot.reasoning_label === 'string' &&
-      snapshot.reasoning_label.trim().length > 0;
+      snapshot.reasoning_label.trim().length > 0 &&
+      typeof snapshot.reasoning_label_step_id === 'string';
     const freshHasLabel =
       typeof part.reasoning_label === 'string' &&
       part.reasoning_label.trim().length > 0 &&
       typeof part.reasoning_label_revision === 'number' &&
       typeof part.reasoning_label_step_id === 'string';
     if (!freshHasLabel) {
-      const stepId =
-        typeof part.reasoning_label_step_id === 'string'
-          ? part.reasoning_label_step_id
-          : snapshot?.reasoning_label_step_id;
-      if (!snapshotHasLabel || typeof stepId !== 'string') {
+      const stepId = part.reasoning_label_step_id;
+      const previousStepId = snapshot?.reasoning_label_step_id;
+      if (
+        !snapshotHasLabel ||
+        typeof stepId !== 'string' ||
+        typeof previousStepId !== 'string' ||
+        stepId === previousStepId
+      ) {
         continue;
       }
       events.push({
@@ -201,6 +205,7 @@ export function synthesizeReasoningLabelGapEvents(
           index: i,
           stepId,
           reset: true,
+          previousStepId,
           ...(typeof part.reasoning_label_attempts === 'number' && {
             attempts: part.reasoning_label_attempts,
           }),

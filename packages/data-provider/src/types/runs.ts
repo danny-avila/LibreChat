@@ -114,6 +114,8 @@ export type TReasoningLabelEvent = TReasoningLabelEventBase &
     | {
         /** Clears a snapshot title when its THINK slot changed during the resume gap. */
         reset: true;
+        /** Step identity observed in the snapshot and exclusively eligible for this reset. */
+        previousStepId: string;
         /** Latest run-global call-budget high-water, when present on fresh content. */
         attempts?: number;
       }

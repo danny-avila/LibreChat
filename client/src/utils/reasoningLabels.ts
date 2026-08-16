@@ -28,7 +28,10 @@ export function applyReasoningLabel(message: TMessage, event: TReasoningLabelEve
   const content = Array.isArray(message.content) ? message.content : [];
   if (event.reset === true) {
     const existing = content[event.index];
-    if (existing?.type !== ContentTypes.THINK) {
+    if (
+      existing?.type !== ContentTypes.THINK ||
+      existing.reasoning_label_step_id !== event.previousStepId
+    ) {
       return message;
     }
     const attempts = event.attempts ?? existing.reasoning_label_attempts;
