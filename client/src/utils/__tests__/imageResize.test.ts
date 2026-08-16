@@ -275,6 +275,8 @@ describe('imageResize utility', () => {
   });
 
   describe('resizeImage', () => {
+    let imageWidth = 2400;
+    let imageHeight = 1600;
     const originalImage = global.Image;
     const originalGetContext = Object.getOwnPropertyDescriptor(
       HTMLCanvasElement.prototype,
@@ -288,8 +290,8 @@ describe('imageResize utility', () => {
       Object.defineProperty(global, 'Image', {
         configurable: true,
         value: class {
-          width = 2400;
-          height = 1600;
+          width = imageWidth;
+          height = imageHeight;
           onload: (() => void) | null = null;
           onerror: (() => void) | null = null;
 
@@ -327,6 +329,8 @@ describe('imageResize utility', () => {
     });
 
     beforeEach(() => {
+      imageWidth = 2400;
+      imageHeight = 1600;
       canvasToBlob.mockClear();
       drawImage.mockClear();
     });
@@ -377,6 +381,20 @@ describe('imageResize utility', () => {
         expect(canvasToBlob).not.toHaveBeenCalled();
       },
     );
+
+    it('clamps panoramic image dimensions to at least one pixel', async () => {
+      imageWidth = 4000;
+      imageHeight = 1000;
+      const file = new File(['source image data'], 'panorama.jpg', { type: 'image/jpeg' });
+      canvasToBlob.mockImplementationOnce((callback: BlobCallback, type?: string) => {
+        callback(new Blob(['x'], { type }));
+      });
+
+      const result = await resizeImage(file, { maxWidth: 1, maxHeight: 1 });
+
+      expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1, 1);
+      expect(result.newDimensions).toEqual({ width: 1, height: 1 });
+    });
 
     it('keeps the original file when the resized blob is not smaller', async () => {
       const file = new File(['small'], 'photo.jpg', { type: 'image/jpeg' });

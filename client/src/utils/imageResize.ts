@@ -198,8 +198,8 @@ function calculateDimensions(
   const scalingFactor = Math.min(widthRatio, heightRatio);
 
   return {
-    width: Math.round(width * scalingFactor),
-    height: Math.round(height * scalingFactor),
+    width: Math.max(1, Math.round(width * scalingFactor)),
+    height: Math.max(1, Math.round(height * scalingFactor)),
   };
 }
 
