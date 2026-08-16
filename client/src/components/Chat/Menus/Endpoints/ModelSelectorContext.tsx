@@ -19,6 +19,7 @@ import { useAgentsMapContext, useAssistantsMapContext, useLiveAnnouncer } from '
 import { useGetEndpointsQuery, useListAgentsQuery } from '~/data-provider';
 import { useModelSelectorChatContext } from './ModelSelectorChatContext';
 import useSelectMention from '~/hooks/Input/useSelectMention';
+import { normalizeModelSpecs } from '~/utils';
 import { filterItems } from './utils';
 
 type ModelSelectorContextType = {
@@ -68,7 +69,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const localize = useLocalize();
   const { announcePolite } = useLiveAnnouncer();
   const modelSpecs = useMemo(() => {
-    const specs = startupConfig?.modelSpecs?.list ?? [];
+    const specs = normalizeModelSpecs(startupConfig?.modelSpecs?.list ?? []);
     if (!agentsMap) {
       return specs;
     }

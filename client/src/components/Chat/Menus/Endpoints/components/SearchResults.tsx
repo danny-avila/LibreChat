@@ -87,7 +87,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   </div>
                 )}
                 <div className="flex min-w-0 flex-col gap-1">
-                  <span className="truncate text-left">{spec.label || spec.name}</span>
+                  <span className="truncate text-left">{spec.label}</span>
                   <SpecDescription description={spec.description} />
                 </div>
               </div>

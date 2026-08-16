@@ -49,8 +49,9 @@ function ModelSelectorContent() {
         selectedValues,
         modelSpecs,
         endpointsConfig,
+        agentsMap,
       }),
-    [mappedEndpoints, selectedValues, modelSpecs, endpointsConfig],
+    [mappedEndpoints, selectedValues, modelSpecs, endpointsConfig, agentsMap],
   );
   const selectedDisplayValue = useMemo(
     () =>

@@ -12,6 +12,7 @@ import {
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';
 import { getTimestampedValue } from './timestamps';
+import { getAgentAvatarUrl } from './agents';
 
 /**
  * Clears model for non-ephemeral agent conversations.
@@ -562,8 +563,41 @@ export function getSpecAgentAvatarURL(
   modelSpec: t.TModelSpec,
   agentsMap?: t.TAgentsMap,
 ): string | undefined {
-  const agentId = modelSpec.preset?.agent_id;
-  return agentId != null ? agentsMap?.[agentId]?.avatar?.filepath : undefined;
+  const preset = modelSpec.preset;
+  /**
+   * `tModelSpecPresetSchema` permits `agent_id` alongside any endpoint, so a
+   * leftover id on a non-agent spec would otherwise surface an unrelated
+   * agent's identity ahead of that spec's own endpoint icon.
+   */
+  if (!isAgentsEndpoint(preset?.endpoint)) {
+    return undefined;
+  }
+
+  const agentId = preset?.agent_id;
+  if (agentId == null) {
+    return undefined;
+  }
+
+  /** Agents persist `avatar` as either a URL string or an object. */
+  return getAgentAvatarUrl(agentsMap?.[agentId]) ?? undefined;
+}
+
+/**
+ * `label` is required by `tModelSpecSchema`, yet specs can still reach the
+ * client without one when an external writer persists an incomplete config.
+ * Normalizing on ingest keeps every consumer — row rendering, search
+ * filtering, and the spec/endpoint discriminator — working from a complete
+ * spec, rather than each guarding separately and one inevitably being missed.
+ *
+ * Returns the original array, and the original spec objects, when nothing
+ * needs filling in, so memoized consumers see no new identities.
+ */
+export function normalizeModelSpecs(specs: t.TModelSpec[]): t.TModelSpec[] {
+  if (!specs.some((spec) => !spec.label)) {
+    return specs;
+  }
+
+  return specs.map((spec) => (spec.label ? spec : { ...spec, label: spec.name }));
 }
 
 /** Gets the default frontend-facing endpoint, dependent on iconURL definition.
