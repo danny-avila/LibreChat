@@ -667,6 +667,10 @@ export default function InsightsView() {
                   !customDateRange && range === item.value && 'bg-surface-active-alt',
                 )}
                 onClick={() => {
+                  if (dateRangeSelectionTimeout.current != null) {
+                    window.clearTimeout(dateRangeSelectionTimeout.current);
+                    dateRangeSelectionTimeout.current = undefined;
+                  }
                   setRange(item.value);
                   setCustomDateRange(undefined);
                   setPage(1);

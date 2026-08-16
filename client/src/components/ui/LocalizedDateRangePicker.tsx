@@ -139,11 +139,11 @@ export default function LocalizedDateRangePicker({
     if (!parsedStartDate || !parsedEndDate || !isValidRange) {
       return;
     }
-    if (selectedRangeIsValid && startDate && endDate) {
-      onSelectDateRange(new Date(startDate), new Date(endDate));
-    } else {
-      onSelectDateRange(parsedStartDate, parsedEndDate);
+    if (matchesSelectedRange) {
+      setIsOpen(false);
+      return;
     }
+    onSelectDateRange(parsedStartDate, parsedEndDate);
     setIsOpen(false);
   };
 

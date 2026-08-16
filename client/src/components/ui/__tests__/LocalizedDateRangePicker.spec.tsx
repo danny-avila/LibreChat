@@ -65,7 +65,7 @@ describe('LocalizedDateRangePicker', () => {
     expect([endDate.getHours(), endDate.getMinutes(), endDate.getSeconds()]).toEqual([23, 59, 59]);
   });
 
-  it('preserves an unchanged rolling shortcut at the maximum duration', () => {
+  it('does not convert an unchanged rolling shortcut to a custom range', () => {
     const onSelectDateRange = jest.fn();
     const startDate = new Date(2026, 7, 1, 15, 30);
     const endDate = new Date(2026, 7, 31, 15, 30);
@@ -86,6 +86,7 @@ describe('LocalizedDateRangePicker', () => {
     fireEvent.click(screen.getByRole('button', { name: rangeName }));
     fireEvent.click(screen.getByRole('button', { name: labels.apply }));
 
-    expect(onSelectDateRange).toHaveBeenCalledWith(startDate, endDate);
+    expect(onSelectDateRange).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: labels.apply })).not.toBeInTheDocument();
   });
 });
