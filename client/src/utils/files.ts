@@ -486,6 +486,77 @@ export const getViableUploadOptions = (
   return options;
 };
 
+/**
+ * Character count past which a plain-text paste is attached as a file rather than inserted
+ * into the composer. Roughly a screenful of prose, so ordinary pastes are untouched.
+ */
+export const PASTE_AS_FILE_MIN_LENGTH = 2500;
+
+export const PASTED_TEXT_FILENAME = 'pasted-text.txt';
+
+export type PasteAsFileContext = {
+  /** The user's `pasteLongTextAsFile` preference. */
+  enabled: boolean;
+  uploadsDisabled: boolean;
+  isAssistants: boolean;
+  /** Names already attached to the composer, used to keep successive pastes distinct. */
+  attachedFilenames: Set<string>;
+  getOptions: (files: File[]) => (EToolResources | undefined)[];
+};
+
+/**
+ * Uploads are deduped on name + size + type, so a fixed name would collapse that key to size
+ * alone for pastes and reject a second, different paste that merely matched the first one's
+ * length. Numbering keeps every paste attachable while staying readable in the UI.
+ */
+const nextPastedTextFilename = (taken: Set<string>): string => {
+  let candidate = PASTED_TEXT_FILENAME;
+  let suffix = 1;
+  while (taken.has(candidate)) {
+    suffix += 1;
+    candidate = `pasted-text-${suffix}.txt`;
+  }
+  return candidate;
+};
+
+export type PastedTextAttachment = {
+  file: File;
+  /** Left undefined for assistants, which resolve their own destination on upload. */
+  toolResource?: EToolResources;
+};
+
+/**
+ * Turns a long plain-text paste into the text file to attach, keeping the composer readable
+ * while the model still receives the paste in full. Returns `null` whenever the paste should
+ * stay inline, so the caller can leave the browser's native paste untouched.
+ */
+export const resolvePastedTextFile = (
+  text: string,
+  ctx: PasteAsFileContext,
+): PastedTextAttachment | null => {
+  if (!ctx.enabled || ctx.uploadsDisabled || text.length < PASTE_AS_FILE_MIN_LENGTH) {
+    return null;
+  }
+
+  const name = nextPastedTextFilename(ctx.attachedFilenames);
+  const file = new File([text], name, { type: 'text/plain' });
+  if (ctx.isAssistants) {
+    return { file };
+  }
+
+  /** `context` inlines the paste verbatim, so it wins whenever it is viable. Anything else is
+   * only taken when it is the sole destination: pasting text must never pop a picker. */
+  const options = ctx.getOptions([file]);
+  if (options.includes(EToolResources.context)) {
+    return { file, toolResource: EToolResources.context };
+  }
+  if (options.length !== 1) {
+    return null;
+  }
+
+  return { file, toolResource: options[0] };
+};
+
 export function sortPagesByRelevance(
   pages: number[],
   pageRelevance: Record<number, number>,

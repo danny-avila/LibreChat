@@ -8,6 +8,7 @@ import type { KeyboardEvent } from 'react';
 import {
   forceResize,
   insertTextAtCursor,
+  resolvePastedTextFile,
   getEntityName,
   getEntity,
   checkIfScrollable,
@@ -60,9 +61,10 @@ export default function useTextarea({
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
+  const pasteLongTextAsFile = useRecoilValue(store.pasteLongTextAsFile);
   const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
 
-  const { index, conversation, isSubmitting, setFilesLoading } = useChatContext();
+  const { index, conversation, isSubmitting, files, setFilesLoading } = useChatContext();
   const latestMessage = useLatestMessageMeta(index);
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
@@ -236,6 +238,46 @@ export default function useTextarea({
     isComposing.current = false;
   };
 
+  /**
+   * Sends clipboard-derived files to their upload destination, prompting when several are
+   * viable. `preferred` skips that prompt when the caller already knows the intent.
+   */
+  const routeClipboardFiles = useCallback(
+    (clipboardFiles: File[], preferred?: EToolResources) => {
+      setFilesLoading(true);
+
+      /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
+      if (isAssistantsEndpoint(conversation?.endpoint)) {
+        routeFiles(clipboardFiles);
+        return;
+      }
+
+      const options = getUploadOptions(clipboardFiles);
+      if (options.length === 0) {
+        showToast({ message: localize('com_error_files_unsupported'), status: 'error' });
+        setFilesLoading(false);
+        return;
+      }
+
+      const usePreferred = preferred != null && options.includes(preferred);
+      if (!usePreferred && options.length > 1) {
+        setFilesLoading(false);
+        openModal(clipboardFiles);
+        return;
+      }
+
+      const destination = usePreferred ? preferred : options[0];
+      /** Held until the upload is accepted so a rejected file (a duplicate, an oversized one)
+       * reports only its own error instead of pairing it with a success message. */
+      void routeFiles(clipboardFiles, destination).then((accepted) => {
+        if (accepted && destination === EToolResources.context) {
+          showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
+        }
+      });
+    },
+    [localize, showToast, openModal, routeFiles, conversation, setFilesLoading, getUploadOptions],
+  );
+
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       const textArea = textAreaRef.current;
@@ -249,7 +291,6 @@ export default function useTextarea({
       }
 
       if (clipboardData.files.length > 0) {
-        setFilesLoading(true);
         const timestampedFiles: File[] = [];
         for (const file of clipboardData.files) {
           const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
@@ -260,43 +301,39 @@ export default function useTextarea({
 
         if (uploadsDisabled) {
           showToast({ message: localize('com_ui_attach_error_disabled'), status: 'error' });
-          setFilesLoading(false);
           return;
         }
 
-        /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
-        if (isAssistantsEndpoint(conversation?.endpoint)) {
-          routeFiles(timestampedFiles);
-          return;
-        }
-
-        const options = getUploadOptions(timestampedFiles);
-        if (options.length === 0) {
-          showToast({ message: localize('com_error_files_unsupported'), status: 'error' });
-          setFilesLoading(false);
-          return;
-        }
-        if (options.length === 1) {
-          routeFiles(timestampedFiles, options[0]);
-          if (options[0] === EToolResources.context) {
-            showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
-          }
-          return;
-        }
-        setFilesLoading(false);
-        openModal(timestampedFiles);
+        routeClipboardFiles(timestampedFiles);
+        return;
       }
+
+      const attachment = resolvePastedTextFile(clipboardData.getData('text/plain'), {
+        enabled: pasteLongTextAsFile,
+        uploadsDisabled,
+        isAssistants: isAssistantsEndpoint(conversation?.endpoint),
+        attachedFilenames: new Set(
+          Array.from(files.values(), (attached) => attached.file?.name ?? attached.filename ?? ''),
+        ),
+        getOptions: getUploadOptions,
+      });
+      if (!attachment) {
+        return;
+      }
+
+      e.preventDefault();
+      routeClipboardFiles([attachment.file], attachment.toolResource);
     },
     [
+      files,
       localize,
       showToast,
-      openModal,
-      routeFiles,
       conversation,
       textAreaRef,
       uploadsDisabled,
-      setFilesLoading,
       getUploadOptions,
+      pasteLongTextAsFile,
+      routeClipboardFiles,
     ],
   );
 

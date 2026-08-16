@@ -7,7 +7,8 @@ import useFileHandling from './useFileHandling';
 /**
  * Returns a function that attaches files to a chosen upload destination, enabling the
  * matching ephemeral-agent capability first (file search is left for explicit opt-in to
- * preserve legacy behavior). Shared by the paste, drag, and modal flows.
+ * preserve legacy behavior). Shared by the paste, drag, and modal flows. Resolves to
+ * whether the files were accepted, so callers can gate success messaging on it.
  */
 export default function useFileUploadRouter() {
   const { handleFiles } = useFileHandling();
@@ -24,7 +25,7 @@ export default function useFileUploadRouter() {
           [toolResource]: true,
         }));
       }
-      handleFiles(files, toolResource);
+      return handleFiles(files, toolResource);
     },
     [handleFiles, setEphemeralAgent],
   );

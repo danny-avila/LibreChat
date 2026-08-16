@@ -354,7 +354,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     img.src = preview;
   };
 
-  const processFiles = async (fileList: File[], _toolResource?: string) => {
+  /** Resolves to whether the files passed validation and were accepted for upload. */
+  const processFiles = async (fileList: File[], _toolResource?: string): Promise<boolean> => {
     abortControllerRef.current = new AbortController();
 
     const existingFiles = tracksReservations
@@ -383,11 +384,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       console.error('file validation error', error);
       setError('com_error_files_validation');
       setFilesLoading(false);
-      return;
+      return false;
     }
     if (!filesAreValid) {
       setFilesLoading(false);
-      return;
+      return false;
     }
 
     /* Process files */
@@ -538,12 +539,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       setError('com_error_files_validation');
       discardProcessedUploads();
       setFilesLoading(false);
-      return;
+      return false;
     }
     if (!batchIsValid) {
       discardProcessedUploads();
       setFilesLoading(false);
-      return;
+      return false;
     }
 
     const filesWithProcessedUploads = new Map(existingFiles);
@@ -576,9 +577,14 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
 
       await startUpload(extendedFile);
     }
+
+    return true;
   };
 
-  const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
+  const handleFiles = async (
+    _files: FileList | File[],
+    _toolResource?: string,
+  ): Promise<boolean> => {
     /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
     const fileList = Array.from(_files);
     /** Started before queueing so every waiting batch shares one bounded config window */
@@ -592,7 +598,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     await previousProcessing;
     try {
       await configReady;
-      await processFiles(fileList, _toolResource);
+      return await processFiles(fileList, _toolResource);
     } finally {
       releaseProcessing();
     }

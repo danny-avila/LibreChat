@@ -80,6 +80,11 @@ const localStorageAtoms = {
   chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
   autoExpandTools: atomWithLocalStorage(LocalStorageKeys.AUTO_EXPAND_TOOLS, false),
   saveDrafts: atomWithLocalStorage('saveDrafts', true),
+  /**
+   * Whether pasting a large block of text attaches it as a `.txt` file instead of
+   * flooding the composer. The text still reaches the model in full.
+   */
+  pasteLongTextAsFile: atomWithLocalStorage('pasteLongTextAsFile', true),
   showScrollButton: atomWithLocalStorage('showScrollButton', true),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),

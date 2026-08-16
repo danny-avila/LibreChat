@@ -873,4 +873,59 @@ describe('useFileHandling', () => {
       expect(uploadedFile.type).toBe('image/jpeg');
     });
   });
+
+  /** Callers gate success messaging on this result, so a rejected upload must not report true */
+  describe('acceptance result', () => {
+    it('resolves false when validation rejects the files', async () => {
+      mockValidateFiles.mockImplementationOnce(() => false);
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.handleFiles([
+          new File(['hello'], 'dupe.txt', { type: 'text/plain' }),
+        ]);
+      });
+
+      expect(accepted).toBe(false);
+      expect(mockMutate).not.toHaveBeenCalled();
+    });
+
+    it('resolves false when validation throws', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockValidateFiles.mockImplementationOnce(() => {
+        throw new Error('invalid file config');
+      });
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.handleFiles([
+          new File(['hello'], 'test.txt', { type: 'text/plain' }),
+        ]);
+      });
+
+      expect(accepted).toBe(false);
+      consoleError.mockRestore();
+    });
+
+    it('resolves true when the files are accepted', async () => {
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.handleFiles([
+          new File(['hello'], 'notes.txt', { type: 'text/plain' }),
+        ]);
+      });
+
+      expect(accepted).toBe(true);
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+  });
 });
