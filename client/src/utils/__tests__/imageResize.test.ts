@@ -174,6 +174,25 @@ describe('imageResize utility', () => {
       const result = shouldResizeImage(gifFile);
       expect(result).toBe(false);
     });
+
+    it.each([
+      ['image/svg', 'test.svg'],
+      ['image/svg+xml', 'test.svg'],
+      ['image/heic', 'test.heic'],
+      ['image/heif', 'test.heif'],
+    ])('should return false for unsupported image type %s', (type, name) => {
+      const unsupportedImage = new File([''], name, {
+        type,
+        lastModified: Date.now(),
+      });
+
+      Object.defineProperty(unsupportedImage, 'size', {
+        value: 3 * 1024 * 1024,
+        writable: false,
+      });
+
+      expect(shouldResizeImage(unsupportedImage)).toBe(false);
+    });
   });
 
   describe('isAnimatedImage', () => {

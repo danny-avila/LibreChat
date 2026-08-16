@@ -33,7 +33,7 @@ const DEFAULT_RESIZE_OPTIONS: ResizeOptions = {
   format: 'jpeg', // Most compatible format
 };
 
-const RESIZE_FORMAT_BY_MIME_TYPE: Record<string, ResizeFormat> = {
+const RESIZE_FORMAT_BY_MIME_TYPE: Partial<Record<string, ResizeFormat>> = {
   'image/jpeg': 'jpeg',
   'image/png': 'png',
   'image/webp': 'webp',
@@ -344,15 +344,5 @@ export function shouldResizeImage(file: File, minSizeBytes: number = MIN_RESIZE_
     return false;
   }
 
-  // Don't process non-images
-  if (!file.type.startsWith('image/')) {
-    return false;
-  }
-
-  // Don't process GIFs (they might be animated)
-  if (file.type === 'image/gif') {
-    return false;
-  }
-
-  return true;
+  return RESIZE_FORMAT_BY_MIME_TYPE[file.type] != null;
 }

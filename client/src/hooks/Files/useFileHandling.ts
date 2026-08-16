@@ -383,7 +383,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
               const savedPercent = Math.round((1 - compressionRatio) * 100);
 
               showToast({
-                message: `Image resized: ${originalSizeMB}MB → ${newSizeMB}MB (${savedPercent}% smaller)`,
+                message: localize('com_info_image_resized', {
+                  0: originalSizeMB,
+                  1: newSizeMB,
+                  2: savedPercent,
+                }),
                 status: 'success',
                 duration: 3000,
               });

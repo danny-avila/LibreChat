@@ -425,6 +425,7 @@
   "com_generated_files": "Generated files:",
   "com_hide_examples": "Hide Examples",
   "com_info_heic_converting": "Converting HEIC image to JPEG...",
+  "com_info_image_resized": "Image resized: {{0}} MB to {{1}} MB ({{2}}% smaller)",
   "com_nav_2fa": "Two-Factor Authentication (2FA)",
   "com_nav_about_branch": "Branch",
   "com_nav_about_build_date": "Built",

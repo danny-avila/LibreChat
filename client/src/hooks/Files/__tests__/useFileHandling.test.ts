@@ -24,6 +24,7 @@ const mockMutate = jest.fn();
 const mockProcessFileForUpload = jest.fn(
   async (_file: File, _quality?: number, _onProgress?: (progress: number) => void) => _file,
 );
+const mockResizeImageIfNeeded = jest.fn(async (file: File) => ({ file, resized: false }));
 const mockLocalize = jest.fn((key: string) => key);
 
 let mockConversation: Record<string, string | null | undefined> = {};
@@ -92,7 +93,7 @@ jest.mock('~/utils/heicConverter', () => ({
 jest.mock('../useClientResize', () => ({
   __esModule: true,
   default: jest.fn(() => ({
-    resizeImageIfNeeded: jest.fn(async (file: File) => ({ file, resized: false })),
+    resizeImageIfNeeded: mockResizeImageIfNeeded,
   })),
 }));
 
@@ -119,6 +120,7 @@ describe('useFileHandling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockProcessFileForUpload.mockImplementation(async (file: File) => file);
+    mockResizeImageIfNeeded.mockImplementation(async (file: File) => ({ file, resized: false }));
     mockConversation = {};
     mockIsTemporary = false;
   });
@@ -156,6 +158,41 @@ describe('useFileHandling', () => {
 
       expect(mockProcessFileForUpload).not.toHaveBeenCalled();
       expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
+    it('localizes the image resize success toast with size details', async () => {
+      const originalFile = new File(['original'], 'photo.jpg', { type: 'image/jpeg' });
+      const resizedFile = new File(['resized'], 'photo.jpg', { type: 'image/jpeg' });
+      mockResizeImageIfNeeded.mockImplementationOnce(async () => ({
+        file: resizedFile,
+        resized: true,
+        result: {
+          file: resizedFile,
+          originalSize: 2 * 1024 * 1024,
+          newSize: 1024 * 1024,
+          originalDimensions: { width: 2400, height: 1600 },
+          newDimensions: { width: 1200, height: 800 },
+          compressionRatio: 0.5,
+        },
+      }));
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([originalFile]);
+      });
+
+      expect(mockLocalize).toHaveBeenCalledWith('com_info_image_resized', {
+        0: '2.0',
+        1: '1.0',
+        2: 50,
+      });
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: 'com_info_image_resized',
+        status: 'success',
+        duration: 3000,
+      });
     });
 
     it('uses conversation endpoint when no override is provided', async () => {
