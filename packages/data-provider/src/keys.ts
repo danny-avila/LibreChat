@@ -21,6 +21,8 @@ export enum QueryKeys {
   tokenCount = 'tokenCount',
   availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
+  insights = 'insights',
+  insightsAccess = 'insightsAccess',
   assistants = 'assistants',
   assistant = 'assistant',
   agents = 'agents',

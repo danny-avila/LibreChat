@@ -1,4 +1,5 @@
 import type { AxiosResponse } from 'axios';
+import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
@@ -15,6 +16,21 @@ import * as config from './config';
 import request from './request';
 import * as s from './schemas';
 import * as r from './roles';
+
+export function getInsights(params: TInsightsParams = {}): Promise<TInsightsResponse> {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request.get(`${endpoints.insights()}${suffix}`);
+}
+
+export function getInsightsAccess(): Promise<TInsightsAccessResponse> {
+  return request.get(endpoints.insightsAccess());
+}
 
 export function getLangfuseConnection(): Promise<t.TLangfuseConnectionStatus> {
   return request.get(endpoints.adminLangfuseConnection());
