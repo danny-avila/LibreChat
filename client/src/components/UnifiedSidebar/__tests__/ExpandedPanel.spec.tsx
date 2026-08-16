@@ -21,6 +21,10 @@ jest.mock('~/store', () => {
     key: 'mock-customShortcuts',
     default: {},
   });
+  const shortcutsEnabledAtom = atom({
+    key: 'mock-shortcutsEnabled',
+    default: true,
+  });
   return {
     __esModule: true,
     default: {
@@ -30,6 +34,7 @@ jest.mock('~/store', () => {
         atom({ key: `mock-conversationIdByIndex-${counter++}`, default: null }),
       newChatSwitchToHistory: switchAtom,
       customShortcuts: customShortcutsAtom,
+      shortcutsEnabled: shortcutsEnabledAtom,
     },
   };
 });
