@@ -414,6 +414,26 @@ describe('useFileHandling', () => {
       }
     });
 
+    it('does not retain reservations when uploads target a custom file setter', async () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: { default: { fileSizeLimit: 10, totalSizeLimit: 7 } },
+      });
+      const customSetter = jest.fn();
+      const useFileHandling = await loadHook();
+      const { result, rerender } = renderHook(() => useFileHandling({ fileSetter: customSetter }));
+
+      await act(async () => {
+        await result.current.handleFiles([makeSizedFile('one.txt', 'text/plain', 4 * megabyte)]);
+      });
+      /** The custom setter owns the uploads, so a rerender restores the observable chat state */
+      rerender();
+      await act(async () => {
+        await result.current.handleFiles([makeSizedFile('two.txt', 'text/plain', 4 * megabyte)]);
+      });
+
+      expect(mockMutate).toHaveBeenCalledTimes(2);
+    });
+
     it('starts the config wait for queued batches without stacking the timeouts', async () => {
       mockIsConfigPending = true;
       let releaseConfig: () => void = () => undefined;

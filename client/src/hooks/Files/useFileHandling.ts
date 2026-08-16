@@ -114,9 +114,13 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   filesRef.current = files;
   const fileSetter = params?.fileSetter ?? setFiles;
   const uploadScope = getUploadScope(fileSetter);
-  for (const file_id of uploadScope.recent.keys()) {
-    if (files.has(file_id)) {
-      uploadScope.recent.delete(file_id);
+  /** Reservations are only observable when the rendered state is the state being written */
+  const tracksReservations = fileSetter === setFiles;
+  if (tracksReservations) {
+    for (const file_id of uploadScope.recent.keys()) {
+      if (files.has(file_id)) {
+        uploadScope.recent.delete(file_id);
+      }
     }
   }
   const setFilesLoading = fileState.setFilesLoading ?? noop;
@@ -353,7 +357,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const processFiles = async (fileList: File[], _toolResource?: string) => {
     abortControllerRef.current = new AbortController();
 
-    const existingFiles = mergeRecentUploads(filesRef.current, uploadScope.recent);
+    const existingFiles = tracksReservations
+      ? mergeRecentUploads(filesRef.current, uploadScope.recent)
+      : filesRef.current;
     const currentFileConfig = fileConfigRef.current;
     const endpointFileConfig = getEndpointFileConfig({
       endpoint,
@@ -543,7 +549,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     const filesWithProcessedUploads = new Map(existingFiles);
     for (const { extendedFile } of processedUploads) {
       filesWithProcessedUploads.set(extendedFile.file_id, extendedFile);
-      uploadScope.recent.set(extendedFile.file_id, extendedFile);
+      if (tracksReservations) {
+        uploadScope.recent.set(extendedFile.file_id, extendedFile);
+      }
     }
     filesRef.current = filesWithProcessedUploads;
 
