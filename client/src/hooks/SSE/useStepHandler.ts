@@ -7,7 +7,7 @@ import {
   ContentTypes,
   ToolCallTypes,
   getNonEmptyValue,
-  getReportableRunStepDurationMs,
+  getRunStepDurationMs,
 } from 'librechat-data-provider';
 import type {
   Agents,
@@ -1215,7 +1215,7 @@ export default function useStepHandler({
         /** Spread conditionally so an unknowable duration leaves any value the
          *  server already stamped in place, rather than overwriting it with
          *  `undefined`. */
-        const durationMs = getReportableRunStepDurationMs(closed);
+        const durationMs = getRunStepDurationMs(closed);
         const updatedContent = [...(response.content ?? [])];
         updatedContent[currentIndex] = {
           ...existing,

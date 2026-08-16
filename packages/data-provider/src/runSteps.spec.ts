@@ -1,7 +1,6 @@
 import {
   getRunStepDurationMs,
   isReportableRunStepDuration,
-  getReportableRunStepDurationMs,
   MIN_REPORTABLE_RUN_STEP_DURATION_MS,
 } from './runSteps';
 
@@ -60,18 +59,15 @@ describe('isReportableRunStepDuration', () => {
   });
 });
 
-describe('getReportableRunStepDurationMs', () => {
-  it('returns the duration when it is both derivable and worth showing', () => {
-    expect(getReportableRunStepDurationMs({ created_at: 1000, closed_at: 4500 })).toBe(3500);
-  });
-
-  /** The distinction the callers rely on: absent means "not knowable or not
-   *  worth reporting", never "instant". */
-  it('returns undefined for a step too fast to be worth reporting', () => {
-    expect(getReportableRunStepDurationMs({ created_at: 1000, closed_at: 1300 })).toBeUndefined();
-  });
-
-  it('returns undefined when the duration is not derivable at all', () => {
-    expect(getReportableRunStepDurationMs({ closed_at: 4500 })).toBeUndefined();
-  });
+/**
+ * The stamp sites persist {@link getRunStepDurationMs} raw — a sub-threshold
+ * duration is stored as the fact it is, and only the renderer decides
+ * whether to show it. This pins that a fast step still yields a value, so a
+ * future "helpful" pre-filter at a stamp site fails a test instead of
+ * silently discarding data.
+ */
+it('derives sub-threshold durations rather than discarding them at the source', () => {
+  const durationMs = getRunStepDurationMs({ created_at: 1000, closed_at: 1300 });
+  expect(durationMs).toBe(300);
+  expect(isReportableRunStepDuration(durationMs)).toBe(false);
 });

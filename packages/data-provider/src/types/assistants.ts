@@ -590,10 +590,11 @@ export type PartMetadata = {
   /**
    * Wall-clock milliseconds the run step took, derived from the same
    * `on_run_step_closed` event as {@link runStepStatus} via
-   * `getReportableRunStepDurationMs`. Only written when the event carried
-   * both timestamps, they agree in order, and the result clears
-   * `MIN_REPORTABLE_RUN_STEP_DURATION_MS` — so its absence means "not worth
-   * reporting or not knowable", never "instant".
+   * `getRunStepDurationMs`. Only written when the event carried both
+   * timestamps and they agree in order — so its absence means "not
+   * derivable", never "instant". The raw value is persisted unfiltered;
+   * whether it is worth showing (`isReportableRunStepDuration`) is decided
+   * at render time.
    */
   runStepDurationMs?: number;
 };

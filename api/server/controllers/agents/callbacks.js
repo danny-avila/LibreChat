@@ -8,7 +8,7 @@ const {
   FileContext,
   ErrorTypes,
   UsageEvents,
-  getReportableRunStepDurationMs,
+  getRunStepDurationMs,
 } = require('librechat-data-provider');
 const {
   GraphEvents,
@@ -462,11 +462,13 @@ function getDefaultHandlers({
           if (part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
             part.tool_call.runStepStatus = data.status;
             /**
-             * Left unset rather than zeroed when the event cannot support a
-             * trustworthy duration, so a reader can tell "we don't know" from
-             * "it was fast".
+             * The raw derivable duration, left unset rather than zeroed when
+             * the event cannot support a trustworthy one — no `created_at`,
+             * or clocks that disagree. Whether it is *worth showing* is the
+             * renderer's call; persisting the fact unfiltered keeps that
+             * threshold adjustable without data loss.
              */
-            const durationMs = getReportableRunStepDurationMs(data);
+            const durationMs = getRunStepDurationMs(data);
             if (durationMs != null) {
               part.tool_call.runStepDurationMs = durationMs;
             }

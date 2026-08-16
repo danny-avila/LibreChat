@@ -1,6 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import { createContentAggregator } from '@librechat/agents';
-import { ContentTypes, getReportableRunStepDurationMs } from 'librechat-data-provider';
+import { ContentTypes, getRunStepDurationMs } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
@@ -3134,7 +3134,7 @@ export class RedisJobStore implements IJobStoreV2 {
         const part = index != null ? contentParts[index] : undefined;
         if (closed.status && part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
           part.tool_call.runStepStatus = closed.status;
-          const durationMs = getReportableRunStepDurationMs(closed);
+          const durationMs = getRunStepDurationMs(closed);
           if (durationMs != null) {
             part.tool_call.runStepDurationMs = durationMs;
           }

@@ -52,17 +52,15 @@ export function getRunStepDurationMs(closed: RunStepTimestamps): number | undefi
   return durationMs >= 0 ? durationMs : undefined;
 }
 
-/** Whether a derived duration is worth showing to the reader. */
+/**
+ * Whether a derived duration is worth showing to the reader.
+ *
+ * This is a presentation judgment, so it belongs at render time only. The
+ * stamp sites persist the raw {@link getRunStepDurationMs} value instead of
+ * pre-filtering through this — thresholding at write time would bake a
+ * display rule into stored data, making "fast" indistinguishable from "not
+ * derivable" and unrecoverable if the rule ever changes.
+ */
 export function isReportableRunStepDuration(durationMs?: number): durationMs is number {
   return typeof durationMs === 'number' && durationMs >= MIN_REPORTABLE_RUN_STEP_DURATION_MS;
-}
-
-/**
- * Convenience for the three sites that stamp a closure onto a content part
- * (live SSE, server-side aggregation, and Redis replay reconstruction): the
- * value to persist, or `undefined` when nothing should be written.
- */
-export function getReportableRunStepDurationMs(closed: RunStepTimestamps): number | undefined {
-  const durationMs = getRunStepDurationMs(closed);
-  return isReportableRunStepDuration(durationMs) ? durationMs : undefined;
 }
