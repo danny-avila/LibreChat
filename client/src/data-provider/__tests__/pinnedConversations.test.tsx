@@ -18,6 +18,7 @@ import {
   removeConvoFromAllQueries,
   updateConvoInAllQueries,
   upsertConvoInAllQueries,
+  collectPinnedConversations,
 } from '~/utils/convos';
 import { pinnedConversationsPageSize, usePinnedConversationsQuery } from '../queries';
 
@@ -282,6 +283,38 @@ describe('pinned list cache synchronization', () => {
     ]);
   });
 
+  /** The SSE payload can still carry the previous turn's timestamp, and the section is
+   * sorted newest-first downstream, so the move has to refresh it or the sort undoes it. */
+  it('refreshes the timestamp of a pin it moves to the top', () => {
+    const stale = '2026-03-01T12:00:00.000Z';
+    const other = {
+      ...pinnedConvo,
+      conversationId: 'convo-other',
+      updatedAt: '2026-08-16T12:00:00.000Z',
+    } as TConversation;
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([other, { ...pinnedConvo, updatedAt: stale } as TConversation]),
+    );
+
+    updateConvoInAllQueries(
+      queryClient,
+      pinnedConvo.conversationId as string,
+      (convo) => ({ ...convo, title: 'Replied', updatedAt: stale }),
+      true,
+    );
+
+    const moved = readPinnedCache(queryClient)?.conversations[0];
+    expect(moved?.conversationId).toBe('convo-pinned');
+    expect(Date.parse(moved?.updatedAt ?? '')).toBeGreaterThan(Date.parse(other.updatedAt ?? ''));
+    expect(
+      collectPinnedConversations(readPinnedCache(queryClient)?.conversations, []).map(
+        (c) => c.conversationId,
+      ),
+    ).toEqual(['convo-pinned', 'convo-other']);
+  });
+
   it('leaves the pinned cache untouched for an unrelated conversation', () => {
     const queryClient = createQueryClient();
     queryClient.setQueryData(
@@ -491,6 +524,41 @@ describe('unpinning a pin that is not on a loaded chats page', () => {
       chats?.pages[0].conversations.map((conversation) => conversation.conversationId),
     ).toEqual(['convo-pinned', 'other-recent']);
     expect(chats?.pages[0].conversations[0].pinned).toBe(false);
+  });
+
+  /** `isShared` is derived per list request, so the pin response never carries it. The
+   * reinserted row has no existing chats row to merge it from, so it has to come off
+   * the cached pin or the shared badge disappears until the next list refetch. */
+  it('keeps the shared badge on the reinserted row', async () => {
+    const unpinned = { ...pinnedConvo, pinned: false } as TConversation;
+    pinConversation.mockResolvedValue(unpinned);
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([{ ...pinnedConvo, isShared: true } as TConversation]),
+    );
+    queryClient.setQueryData([QueryKeys.allConversations], {
+      pages: [{ conversations: [], nextCursor: null }],
+      pageParams: [undefined],
+    });
+
+    const { result } = renderHook(() => usePinConversationMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      result.current.mutate({
+        conversationId: pinnedConvo.conversationId as string,
+        pinned: false,
+      });
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const chats = queryClient.getQueryData<{
+      pages: { conversations: TConversation[] }[];
+    }>([QueryKeys.allConversations]);
+    expect(chats?.pages[0].conversations[0].conversationId).toBe('convo-pinned');
+    expect(chats?.pages[0].conversations[0].isShared).toBe(true);
   });
 
   /** Deleting the last loaded row drops every page, so the insert has to rebuild the

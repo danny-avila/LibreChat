@@ -11,6 +11,7 @@ import {
   logger,
   /* Conversations */
   addConvoToAllQueries,
+  findPinnedConversation,
   findConversationInInfinite,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
@@ -168,14 +169,22 @@ export const usePinConversationMutation = (
     (payload: t.TPinConversationRequest) => dataService.pinConversation(payload),
     {
       onSuccess: (data, vars, context) => {
-        updateConvoInAllQueries(queryClient, vars.conversationId, () => data);
+        /** `isShared` is derived per list request and is absent from this response, so
+         * read it off the cached pin before the update drops that row: the reinsert
+         * below has no existing chats row to carry the badge over from. */
+        const cachedPin = findPinnedConversation(queryClient, vars.conversationId);
+        const next =
+          data.isShared === undefined && cachedPin?.isShared !== undefined
+            ? { ...data, isShared: cachedPin.isShared }
+            : data;
+        updateConvoInAllQueries(queryClient, vars.conversationId, () => next);
         /** An older pin may exist only in the dedicated pinned cache. Unpinning
          * it has to put the returned row onto the chats list; later pages
          * cannot recover a conversation whose updatedAt just jumped ahead of
          * the current cursor. addConvoToAllQueries no-ops if it is already
          * present. */
-        if (data.pinned !== true) {
-          addConvoToAllQueries(queryClient, data);
+        if (next.pinned !== true) {
+          addConvoToAllQueries(queryClient, next);
         }
         /** The pinned section has its own fetch, so a new pin is only visible once
          * that list is refetched; unpins are already dropped from its cache above. */

@@ -585,6 +585,27 @@ export type PinnedConversationsData = {
   nextCursor?: string | null;
 };
 
+/** Reads a pin out of whichever cached bookmark variant holds it. Single-conversation
+ * responses omit server-derived fields like `isShared`, so callers that insert one
+ * elsewhere need the cached row to carry them over. */
+export function findPinnedConversation(
+  queryClient: QueryClient,
+  conversationId: string,
+): TConversation | undefined {
+  const queries = queryClient
+    .getQueryCache()
+    .findAll([QueryKeys.pinnedConversations], { exact: false });
+
+  for (const query of queries) {
+    const data = queryClient.getQueryData<PinnedConversationsData>(query.queryKey);
+    const found = data?.conversations.find((c) => c.conversationId === conversationId);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
 /**
  * The pinned sidebar section is fed by its own request rather than by the paginated
  * chats list, so every edit that reaches the chats cache has to reach this one too or
@@ -625,10 +646,16 @@ function updatePinnedConvosQuery(
           : updated;
 
       /* The server returns pins newest-first, so a pin that just received a message has
-         to lead the section the same way it leads the chats list. */
+         to lead the section the same way it leads the chats list. The SSE payload can
+         still carry the previous turn's `updatedAt`, so refresh it exactly as the chats
+         cache does: anything that sorts this list afterwards would otherwise read the
+         stale value and undo the move. */
       if (moveToTop) {
         const rest = oldData.conversations.filter((_, i) => i !== index);
-        return { ...oldData, conversations: [merged, ...rest] };
+        return {
+          ...oldData,
+          conversations: [{ ...merged, updatedAt: new Date().toISOString() }, ...rest],
+        };
       }
 
       return {
