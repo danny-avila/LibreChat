@@ -8,6 +8,17 @@ import {
 } from 'librechat-data-provider';
 
 type MockUploadMutationOptions = {
+  onSuccess?: (data: {
+    temp_file_id: string;
+    file_id: string;
+    filepath: string;
+    type: string;
+    filename: string;
+    source: string;
+    embedded: boolean;
+    height?: number;
+    width?: number;
+  }) => void;
   onError?: (error: unknown, body: FormData) => void;
 };
 
@@ -935,6 +946,39 @@ describe('useFileHandling', () => {
       expect(mockMutate).toHaveBeenCalledTimes(1);
     });
 
+    it('reports the temporary id at upload start and success', async () => {
+      const onStart = jest.fn();
+      const onSuccess = jest.fn();
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles(
+          [new File(['hello'], 'notes.txt', { type: 'text/plain' })],
+          undefined,
+          { onStart, onSuccess },
+        );
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      const fileId = uploadBody.get('file_id') as string;
+      expect(onStart).toHaveBeenCalledWith(fileId);
+
+      act(() => {
+        mockUploadOptions.onSuccess?.({
+          temp_file_id: fileId,
+          file_id: 'saved-file-id',
+          filepath: '/files/notes.txt',
+          type: 'text/plain',
+          filename: 'notes.txt',
+          source: 'local',
+          embedded: false,
+        });
+      });
+
+      expect(onSuccess).toHaveBeenCalledWith(fileId);
+    });
+
     it('resolves false when every file fails preprocessing', async () => {
       const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
       mockProcessFileForUpload.mockRejectedValue(new Error('HEIC conversion failed'));
@@ -967,12 +1011,12 @@ describe('useFileHandling', () => {
         await result.current.handleFiles(
           [new File(['first'], 'pasted-text.txt', { type: 'text/plain' })],
           undefined,
-          firstRecovery,
+          { onError: firstRecovery },
         );
         await result.current.handleFiles(
           [new File(['second'], 'pasted-text-2.txt', { type: 'text/plain' })],
           undefined,
-          secondRecovery,
+          { onError: secondRecovery },
         );
       });
 
@@ -1001,7 +1045,7 @@ describe('useFileHandling', () => {
         await uploadResult.current.handleFiles(
           [new File(['pasted text'], 'pasted-text.txt', { type: 'text/plain' })],
           undefined,
-          recovery,
+          { onError: recovery },
         );
       });
 

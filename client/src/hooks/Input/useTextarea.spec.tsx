@@ -1,5 +1,7 @@
-import { EToolResources } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { Constants, EToolResources } from 'librechat-data-provider';
+import type { UploadLifecycleCallbacks } from '~/hooks/Files/useFileHandling';
+import { getFilesDraft, renewNewConversationDraftToken } from '~/utils/drafts';
 
 const mockForceResize = jest.fn();
 const mockInsertTextAtCursor = jest.fn();
@@ -19,6 +21,7 @@ let mockConversation: { endpoint: string; conversationId?: string } = {
 };
 
 jest.mock('~/utils', () => ({
+  ...jest.requireActual('~/utils/drafts'),
   forceResize: mockForceResize,
   insertTextAtCursor: mockInsertTextAtCursor,
   resolvePastedTextFile: mockResolvePastedTextFile,
@@ -40,6 +43,7 @@ jest.mock('~/store', () => ({
   __esModule: true,
   default: {
     enterToSend: { key: 'enterToSend' },
+    saveDrafts: { key: 'saveDrafts' },
     pasteLongTextAsFile: { key: 'pasteLongTextAsFile' },
     activePromptByIndex: jest.fn(() => ({ key: 'activePrompt' })),
   },
@@ -146,6 +150,7 @@ const renderTextareaHook = (initialAnswerModeActive = false) => {
 describe('useTextarea long-paste fallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    localStorage.clear();
     mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
     mockGetUploadOptions.mockReturnValue([EToolResources.context]);
     mockResolvePastedTextFile.mockImplementation((text: string) => ({
@@ -231,10 +236,11 @@ describe('useTextarea long-paste fallback', () => {
   });
 
   it('restores the paste after an upload failure when the composer is unchanged', async () => {
-    let onUploadError: (() => void) | undefined;
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
     mockRouteFiles.mockImplementationOnce(
-      (_files: File[], _toolResource: EToolResources, callback?: () => void) => {
-        onUploadError = callback;
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        lifecycle?.onStart?.('file-1');
         return Promise.resolve(true);
       },
     );
@@ -247,21 +253,23 @@ describe('useTextarea long-paste fallback', () => {
       result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
     );
 
-    await waitFor(() => expect(onUploadError).toBeDefined());
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
     expect(textArea.value).toBe('before  after');
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
 
-    act(() => onUploadError?.());
+    act(() => uploadLifecycle?.onError?.('file-1'));
 
     expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
     expect(mockForceResize).toHaveBeenCalledWith(textArea);
+    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
   });
 
   it('skips upload-failure recovery when the conversation changed', async () => {
-    let onUploadError: (() => void) | undefined;
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
     mockRouteFiles.mockImplementationOnce(
-      (_files: File[], _toolResource: EToolResources, callback?: () => void) => {
-        onUploadError = callback;
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        lifecycle?.onStart?.('file-1');
         return Promise.resolve(true);
       },
     );
@@ -272,21 +280,22 @@ describe('useTextarea long-paste fallback', () => {
       result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
     );
 
-    await waitFor(() => expect(onUploadError).toBeDefined());
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
     mockConversation = { endpoint: 'openAI', conversationId: 'convo-2' };
     rerender();
 
-    act(() => onUploadError?.());
+    act(() => uploadLifecycle?.onError?.('file-1'));
 
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
     expect(mockForceResize).not.toHaveBeenCalled();
+    expect(getFilesDraft('convo-1').pendingPastes['file-1']?.text).toBe(pastedText);
   });
 
   it('skips upload-failure recovery when answer mode becomes active', async () => {
-    let onUploadError: (() => void) | undefined;
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
     mockRouteFiles.mockImplementationOnce(
-      (_files: File[], _toolResource: EToolResources, callback?: () => void) => {
-        onUploadError = callback;
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
         return Promise.resolve(true);
       },
     );
@@ -297,20 +306,21 @@ describe('useTextarea long-paste fallback', () => {
       result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
     );
 
-    await waitFor(() => expect(onUploadError).toBeDefined());
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
     rerender(true);
 
-    act(() => onUploadError?.());
+    act(() => uploadLifecycle?.onError?.('file-1'));
 
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
     expect(mockForceResize).not.toHaveBeenCalled();
   });
 
   it('skips upload-failure recovery when the composer content changed', async () => {
-    let onUploadError: (() => void) | undefined;
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
     mockRouteFiles.mockImplementationOnce(
-      (_files: File[], _toolResource: EToolResources, callback?: () => void) => {
-        onUploadError = callback;
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        lifecycle?.onStart?.('file-1');
         return Promise.resolve(true);
       },
     );
@@ -322,21 +332,26 @@ describe('useTextarea long-paste fallback', () => {
       result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
     );
 
-    await waitFor(() => expect(onUploadError).toBeDefined());
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
     textArea.value = 'draft after more typing';
 
-    act(() => onUploadError?.());
+    act(() => uploadLifecycle?.onError?.('file-1'));
 
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
     expect(mockForceResize).not.toHaveBeenCalled();
+    expect(getFilesDraft('convo-1').pendingPastes['file-1']?.text).toBe(pastedText);
   });
 
   it('forwards upload recovery through the assistants route', async () => {
     mockConversation = { endpoint: 'assistants' };
-    let onUploadError: (() => void) | undefined;
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
     mockRouteFiles.mockImplementationOnce(
-      (_files: File[], _toolResource: EToolResources | undefined, callback?: () => void) => {
-        onUploadError = callback;
+      (
+        _files: File[],
+        _toolResource: EToolResources | undefined,
+        lifecycle?: UploadLifecycleCallbacks,
+      ) => {
+        uploadLifecycle = lifecycle;
         return Promise.resolve(true);
       },
     );
@@ -347,13 +362,68 @@ describe('useTextarea long-paste fallback', () => {
       result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
     );
 
-    await waitFor(() => expect(onUploadError).toBeDefined());
-    expect(mockRouteFiles).toHaveBeenCalledWith(expect.any(Array), undefined, onUploadError);
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
+    expect(mockRouteFiles).toHaveBeenCalledWith(expect.any(Array), undefined, uploadLifecycle);
 
-    act(() => onUploadError?.());
+    act(() => uploadLifecycle?.onError?.('file-1'));
 
     expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
     expect(mockForceResize).toHaveBeenCalledWith(textArea);
+  });
+
+  it('does not restore a failed paste into a second unsaved draft', async () => {
+    mockConversation = { endpoint: 'openAI', conversationId: Constants.NEW_CONVO as string };
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        lifecycle?.onStart?.('first-draft-file');
+        return Promise.resolve(true);
+      },
+    );
+    const { result, rerender } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
+    renewNewConversationDraftToken();
+    mockConversation = { endpoint: 'openAI', conversationId: Constants.NEW_CONVO as string };
+    rerender();
+
+    act(() => uploadLifecycle?.onError?.('first-draft-file'));
+
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockForceResize).not.toHaveBeenCalled();
+  });
+
+  it('removes durable pasted text after a successful upload', async () => {
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        lifecycle?.onStart?.('successful-file');
+        return Promise.resolve(true);
+      },
+    );
+    const { result } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() =>
+      expect(getFilesDraft('convo-1').pendingPastes['successful-file']?.text).toBe(pastedText),
+    );
+    act(() => uploadLifecycle?.onSuccess?.('successful-file'));
+
+    expect(getFilesDraft('convo-1')).toEqual({
+      fileIds: ['successful-file'],
+      pendingPastes: {},
+    });
   });
 
   it('restores the paste when attachment routing rejects unexpectedly', async () => {

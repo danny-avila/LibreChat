@@ -60,11 +60,24 @@ type ProcessedUpload = {
   };
 };
 
+export type UploadLifecycleCallbacks = {
+  onStart?: (fileId: string) => void;
+  onSuccess?: (fileId: string) => void;
+  onError?: (fileId: string) => void;
+  onAbort?: (fileId: string) => void;
+};
+
 const noop = () => {};
-const uploadErrorCallbacks = new Map<string, () => void>();
+const uploadErrorCallbacks = new Map<string, UploadLifecycleCallbacks>();
+
+const takeUploadRecovery = (fileId: string): UploadLifecycleCallbacks | undefined => {
+  const callbacks = uploadErrorCallbacks.get(fileId);
+  uploadErrorCallbacks.delete(fileId);
+  return callbacks;
+};
 
 export const clearUploadRecovery = (fileId: string) => {
-  uploadErrorCallbacks.delete(fileId);
+  takeUploadRecovery(fileId)?.onAbort?.(fileId);
 };
 
 type UploadScope = {
@@ -194,7 +207,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const uploadFile = useUploadFileMutation(
     {
       onSuccess: (data) => {
-        clearUploadRecovery(data.temp_file_id);
+        takeUploadRecovery(data.temp_file_id)?.onSuccess?.(data.temp_file_id);
         clearUploadTimer(data.temp_file_id);
         console.log('upload success', data);
         if (agent_id) {
@@ -238,8 +251,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         const error = _error as TError | undefined;
         console.log('upload error', error);
         const file_id = body.get('file_id') as string;
-        const onUploadError = uploadErrorCallbacks.get(file_id);
-        clearUploadRecovery(file_id);
+        const uploadLifecycle = takeUploadRecovery(file_id);
         const tool_resource = body.get('tool_resource');
         if (tool_resource === EToolResources.execute_code) {
           setEphemeralAgent((prev) => ({
@@ -258,20 +270,28 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           errorMessage = error.response.data.message;
         }
         setError(errorMessage);
-        onUploadError?.();
+        uploadLifecycle?.onError?.(file_id);
       },
     },
     abortControllerRef.current?.signal,
   );
 
-  const uploadWithRecovery = (formData: FormData, file_id: string, onUploadError?: () => void) => {
-    if (onUploadError) {
-      uploadErrorCallbacks.set(file_id, onUploadError);
+  const uploadWithRecovery = (
+    formData: FormData,
+    file_id: string,
+    uploadLifecycle?: UploadLifecycleCallbacks,
+  ) => {
+    if (uploadLifecycle) {
+      uploadErrorCallbacks.set(file_id, uploadLifecycle);
+      uploadLifecycle.onStart?.(file_id);
     }
     uploadFile.mutate(formData);
   };
 
-  const startUpload = async (extendedFile: ExtendedFile, onUploadError?: () => void) => {
+  const startUpload = async (
+    extendedFile: ExtendedFile,
+    uploadLifecycle?: UploadLifecycleCallbacks,
+  ) => {
     const filename = extendedFile.file?.name ?? 'File';
     startUploadTimer(extendedFile.file_id, filename, extendedFile.size);
 
@@ -321,7 +341,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         formData.append('agent_id', conversation.agent_id);
       }
 
-      uploadWithRecovery(formData, extendedFile.file_id, onUploadError);
+      uploadWithRecovery(formData, extendedFile.file_id, uploadLifecycle);
       return;
     }
 
@@ -351,10 +371,14 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       formData.append('model', convoModel);
     }
 
-    uploadWithRecovery(formData, extendedFile.file_id, onUploadError);
+    uploadWithRecovery(formData, extendedFile.file_id, uploadLifecycle);
   };
 
-  const loadImage = (extendedFile: ExtendedFile, preview: string, onUploadError?: () => void) => {
+  const loadImage = (
+    extendedFile: ExtendedFile,
+    preview: string,
+    uploadLifecycle?: UploadLifecycleCallbacks,
+  ) => {
     const img = new Image();
     img.onload = async () => {
       extendedFile.width = img.width;
@@ -365,7 +389,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       };
       replaceFile(extendedFile);
 
-      await startUpload(extendedFile, onUploadError);
+      await startUpload(extendedFile, uploadLifecycle);
     };
     img.src = preview;
   };
@@ -374,7 +398,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const processFiles = async (
     fileList: File[],
     _toolResource?: string,
-    onUploadError?: () => void,
+    uploadLifecycle?: UploadLifecycleCallbacks,
   ): Promise<boolean> => {
     abortControllerRef.current = new AbortController();
 
@@ -591,11 +615,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       }
 
       if (extendedFile.file?.type.startsWith('image/') === true) {
-        loadImage(extendedFile, preview, onUploadError);
+        loadImage(extendedFile, preview, uploadLifecycle);
         continue;
       }
 
-      await startUpload(extendedFile, onUploadError);
+      await startUpload(extendedFile, uploadLifecycle);
     }
 
     return processedUploads.length > 0;
@@ -604,7 +628,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const handleFiles = async (
     _files: FileList | File[],
     _toolResource?: string,
-    onUploadError?: () => void,
+    uploadLifecycle?: UploadLifecycleCallbacks,
   ): Promise<boolean> => {
     /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
     const fileList = Array.from(_files);
@@ -619,7 +643,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     await previousProcessing;
     try {
       await configReady;
-      return await processFiles(fileList, _toolResource, onUploadError);
+      return await processFiles(fileList, _toolResource, uploadLifecycle);
     } finally {
       releaseProcessing();
     }
@@ -645,7 +669,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       clearUploadRecovery(fileId);
       return;
     }
-    uploadErrorCallbacks.clear();
+    for (const uploadId of Array.from(uploadErrorCallbacks.keys())) {
+      clearUploadRecovery(uploadId);
+    }
   };
 
   return {

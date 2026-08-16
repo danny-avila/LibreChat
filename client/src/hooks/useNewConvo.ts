@@ -33,11 +33,13 @@ import {
   hasModelSelection,
   buildDefaultConvo,
   requestChatFocus,
+  renewNewConversationDraftToken,
   logger,
 } from '~/utils';
 import { useDeleteFilesMutation, useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useGetConversation from './Conversations/useGetConversation';
 import useAssistantListMap from './Assistants/useAssistantListMap';
+import { clearUploadRecovery } from './Files/useFileHandling';
 import { useResetChatBadges } from './useChatBadges';
 import { useApplyModelSpecEffects } from './Agents';
 import { useAgentsMapContext } from '~/Providers';
@@ -308,6 +310,7 @@ const useNewConvo = (index = 0) => {
       keepAddedConvos?: boolean;
       disableParams?: boolean;
     } = {}) {
+      renewNewConversationDraftToken();
       pauseGlobalAudio();
       if (!saveBadgesState) {
         resetBadges();
@@ -355,21 +358,31 @@ const useNewConvo = (index = 0) => {
       });
 
       if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
-        const filesToDelete = Array.from(files.values())
-          .filter(
-            (file) =>
-              file.filepath != null &&
-              file.filepath !== '' &&
-              file.source &&
-              !(file.embedded ?? false) &&
-              file.temp_file_id,
-          )
-          .map((file) => ({
-            file_id: file.file_id,
-            embedded: !!(file.embedded ?? false),
-            filepath: file.filepath as string,
-            source: file.source as FileSources, // Ensure that the source is of type FileSources
-          }));
+        const filesToDelete = Array.from(files.entries()).flatMap(([fileId, file]) => {
+          clearUploadRecovery(fileId);
+          if (file.temp_file_id && file.temp_file_id !== fileId) {
+            clearUploadRecovery(file.temp_file_id);
+          }
+
+          if (
+            file.filepath == null ||
+            file.filepath === '' ||
+            !file.source ||
+            (file.embedded ?? false) ||
+            !file.temp_file_id
+          ) {
+            return [];
+          }
+
+          return [
+            {
+              file_id: file.file_id,
+              embedded: false,
+              filepath: file.filepath,
+              source: file.source as FileSources,
+            },
+          ];
+        });
 
         setFiles(new Map());
         localStorage.setItem(LocalStorageKeys.FILES_TO_DELETE, JSON.stringify({}));

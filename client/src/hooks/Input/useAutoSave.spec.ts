@@ -29,7 +29,14 @@ import { useRecoilValue } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
-import { encodeBase64, getAskAnswerDraftId, getDraft, setDraft } from '~/utils';
+import {
+  encodeBase64,
+  getAskAnswerDraftId,
+  getDraft,
+  getFilesDraft,
+  setDraft,
+  setFilesDraft,
+} from '~/utils';
 import store from '~/store';
 import { useAutoSave } from '~/hooks';
 
@@ -43,6 +50,7 @@ const makeTextAreaRef = (value = '') =>
   }) as unknown as React.RefObject<HTMLTextAreaElement>;
 
 beforeEach(() => {
+  localStorage.clear();
   (useRecoilValue as jest.Mock).mockImplementation((atom) => {
     if (atom === store.saveDrafts) return true;
     return undefined;
@@ -107,6 +115,35 @@ describe('useAutoSave — conversation switching', () => {
     });
 
     expect(mockSetDraft).toHaveBeenCalledWith({ id: 'convo-1', value: 'draft in progress' });
+  });
+
+  it('restores an incomplete pasted-text upload into the composer after reload', () => {
+    mockGetDraft.mockReturnValue('before  after');
+    setFilesDraft('convo-1', {
+      fileIds: ['pending-paste-file'],
+      pendingPastes: {
+        'pending-paste-file': {
+          text: 'recovered pasted text',
+          selectionStart: 7,
+        },
+      },
+    });
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'before recovered pasted text after');
+    expect(mockSetDraft).toHaveBeenCalledWith({
+      id: 'convo-1',
+      value: 'before recovered pasted text after',
+    });
+    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
   });
 });
 

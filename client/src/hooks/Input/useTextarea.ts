@@ -2,13 +2,18 @@ import { useEffect, useRef, useCallback } from 'react';
 import debounce from 'lodash/debounce';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import { EToolResources, isAssistantsEndpoint } from 'librechat-data-provider';
+import { Constants, EToolResources, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
+import type { UploadLifecycleCallbacks } from '~/hooks/Files/useFileHandling';
 import {
   forceResize,
   insertTextAtCursor,
   resolvePastedTextFile,
+  getNewConversationDraftToken,
+  setPendingTextAttachmentDraft,
+  removePendingTextAttachmentDraft,
+  setDraft,
   getEntityName,
   getEntity,
   checkIfScrollable,
@@ -64,12 +69,15 @@ export default function useTextarea({
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
+  const saveDrafts = useRecoilValue(store.saveDrafts);
   const pasteLongTextAsFile = useRecoilValue(store.pasteLongTextAsFile);
   const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
 
   const { index, conversation, isSubmitting, files, setFilesLoading } = useChatContext();
   const conversationIdRef = useRef(conversation?.conversationId);
   conversationIdRef.current = conversation?.conversationId;
+  const isSubmittingRef = useRef(isSubmitting);
+  isSubmittingRef.current = isSubmitting;
   const answerModeActiveRef = useRef(answerModeActive);
   answerModeActiveRef.current = answerModeActive;
   const latestMessage = useLatestMessageMeta(index);
@@ -253,14 +261,14 @@ export default function useTextarea({
     async (
       clipboardFiles: File[],
       preferred?: EToolResources,
-      onUploadError?: () => void,
+      uploadLifecycle?: UploadLifecycleCallbacks,
     ): Promise<boolean> => {
       setFilesLoading(true);
 
       try {
         /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
         if (isAssistantsEndpoint(conversation?.endpoint)) {
-          return await routeFiles(clipboardFiles, undefined, onUploadError);
+          return await routeFiles(clipboardFiles, undefined, uploadLifecycle);
         }
 
         const options = getUploadOptions(clipboardFiles);
@@ -280,7 +288,7 @@ export default function useTextarea({
         const destination = usePreferred ? preferred : options[0];
         /** Held until the upload is accepted so a rejected file (a duplicate, an oversized one)
          * reports only its own error instead of pairing it with a success message. */
-        const accepted = await routeFiles(clipboardFiles, destination, onUploadError);
+        const accepted = await routeFiles(clipboardFiles, destination, uploadLifecycle);
         if (accepted && destination === EToolResources.context) {
           showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
         }
@@ -344,6 +352,10 @@ export default function useTextarea({
 
       e.preventDefault();
       const conversationId = conversation?.conversationId;
+      const draftId = isSubmitting
+        ? Constants.PENDING_CONVO
+        : (conversationId ?? Constants.NEW_CONVO);
+      const draftToken = getNewConversationDraftToken();
       const selectionStart = textArea.selectionStart;
       const selectionEnd = textArea.selectionEnd;
       if (selectionStart !== selectionEnd) {
@@ -357,28 +369,73 @@ export default function useTextarea({
         insertTextAtCursor(target, pastedText);
         forceResize(target);
       };
-      const restorePasteAfterUploadFailure = () => {
+      const restorePasteAfterUploadFailure = (): boolean => {
         const currentTextArea = textAreaRef.current;
         if (
           !currentTextArea ||
           answerModeActiveRef.current ||
           conversationIdRef.current !== conversationId ||
+          getNewConversationDraftToken() !== draftToken ||
           currentTextArea.value !== composerValue
         ) {
-          return;
+          return false;
         }
 
         restorePaste(currentTextArea);
-      };
-      void routeClipboardFiles(
-        [attachment.file],
-        attachment.toolResource,
-        restorePasteAfterUploadFailure,
-      ).then((accepted) => {
-        if (!accepted) {
-          restorePaste(textArea);
+        if (saveDrafts) {
+          const currentDraftId = isSubmittingRef.current
+            ? Constants.PENDING_CONVO
+            : (conversationIdRef.current ?? Constants.NEW_CONVO);
+          setDraft({ id: currentDraftId, value: currentTextArea.value });
         }
-      });
+        return true;
+      };
+      const clearPendingPasteDraft = (fileId: string, removeFile = false) => {
+        removePendingTextAttachmentDraft({ id: draftId, fileId, removeFile });
+        const currentDraftId = isSubmittingRef.current
+          ? Constants.PENDING_CONVO
+          : (conversationIdRef.current ?? Constants.NEW_CONVO);
+        if (currentDraftId !== draftId) {
+          removePendingTextAttachmentDraft({ id: currentDraftId, fileId, removeFile });
+        }
+      };
+      let pendingFileId: string | undefined;
+      const uploadLifecycle: UploadLifecycleCallbacks = {
+        onStart: (fileId) => {
+          pendingFileId = fileId;
+          if (!saveDrafts) {
+            return;
+          }
+          setPendingTextAttachmentDraft({
+            id: draftId,
+            fileId,
+            text: pastedText,
+            selectionStart,
+          });
+        },
+        onSuccess: (fileId) => {
+          clearPendingPasteDraft(fileId);
+        },
+        onError: (fileId) => {
+          const restored = restorePasteAfterUploadFailure();
+          if (restored || getNewConversationDraftToken() !== draftToken) {
+            clearPendingPasteDraft(fileId, true);
+          }
+        },
+        onAbort: (fileId) => {
+          clearPendingPasteDraft(fileId, true);
+        },
+      };
+      void routeClipboardFiles([attachment.file], attachment.toolResource, uploadLifecycle).then(
+        (accepted) => {
+          if (!accepted) {
+            if (pendingFileId) {
+              clearPendingPasteDraft(pendingFileId, true);
+            }
+            restorePaste(textArea);
+          }
+        },
+      );
     },
     [
       files,
@@ -391,6 +448,8 @@ export default function useTextarea({
       pasteLongTextAsFile,
       routeClipboardFiles,
       answerModeActive,
+      isSubmitting,
+      saveDrafts,
     ],
   );
 

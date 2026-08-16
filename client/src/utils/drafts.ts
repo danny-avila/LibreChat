@@ -1,6 +1,34 @@
 import debounce from 'lodash/debounce';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 
+export type PendingTextAttachmentDraft = {
+  text: string;
+  selectionStart: number;
+};
+
+export type FilesDraft = {
+  fileIds: string[];
+  pendingPastes: Record<string, PendingTextAttachmentDraft>;
+};
+
+type StoredPendingTextAttachmentDraft = {
+  encodedText: string;
+  selectionStart: number;
+};
+
+type StoredFilesDraft = {
+  fileIds: string[];
+  pendingPastes: Record<string, StoredPendingTextAttachmentDraft>;
+};
+
+let newConversationDraftToken = Symbol('new-conversation-draft');
+
+export const getNewConversationDraftToken = (): symbol => newConversationDraftToken;
+
+export const renewNewConversationDraftToken = (): void => {
+  newConversationDraftToken = Symbol('new-conversation-draft');
+};
+
 export const clearDraft = debounce((id?: string | null) => {
   localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
 }, 2500);
@@ -32,6 +60,111 @@ export const decodeBase64 = (base64String: string): string => {
   } catch {
     return '';
   }
+};
+
+export const getFilesDraft = (id: string): FilesDraft => {
+  const storedValue = localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${id}`);
+  if (!storedValue) {
+    return { fileIds: [], pendingPastes: {} };
+  }
+
+  try {
+    const storedDraft = JSON.parse(storedValue) as string[] | StoredFilesDraft;
+    if (Array.isArray(storedDraft)) {
+      return { fileIds: storedDraft, pendingPastes: {} };
+    }
+
+    const pendingPastes = Object.fromEntries(
+      Object.entries(storedDraft.pendingPastes ?? {}).map(
+        ([fileId, pendingPaste]): [string, PendingTextAttachmentDraft] => [
+          fileId,
+          {
+            text: decodeBase64(pendingPaste.encodedText),
+            selectionStart: pendingPaste.selectionStart,
+          },
+        ],
+      ),
+    );
+
+    return {
+      fileIds: Array.isArray(storedDraft.fileIds) ? storedDraft.fileIds : [],
+      pendingPastes,
+    };
+  } catch {
+    return { fileIds: [], pendingPastes: {} };
+  }
+};
+
+export const setFilesDraft = (id: string, draft: FilesDraft): void => {
+  const key = `${LocalStorageKeys.FILES_DRAFT}${id}`;
+  const pendingPasteEntries = Object.entries(draft.pendingPastes);
+  if (draft.fileIds.length === 0 && pendingPasteEntries.length === 0) {
+    localStorage.removeItem(key);
+    return;
+  }
+
+  if (pendingPasteEntries.length === 0) {
+    localStorage.setItem(key, JSON.stringify(draft.fileIds));
+    return;
+  }
+
+  const pendingPastes = Object.fromEntries(
+    pendingPasteEntries.map(
+      ([fileId, pendingPaste]): [string, StoredPendingTextAttachmentDraft] => [
+        fileId,
+        {
+          encodedText: encodeBase64(pendingPaste.text),
+          selectionStart: pendingPaste.selectionStart,
+        },
+      ],
+    ),
+  );
+
+  localStorage.setItem(
+    key,
+    JSON.stringify({ fileIds: draft.fileIds, pendingPastes } satisfies StoredFilesDraft),
+  );
+};
+
+export const setPendingTextAttachmentDraft = ({
+  id,
+  fileId,
+  text,
+  selectionStart,
+}: {
+  id: string;
+  fileId: string;
+  text: string;
+  selectionStart: number;
+}): void => {
+  const draft = getFilesDraft(id);
+  setFilesDraft(id, {
+    fileIds: draft.fileIds.includes(fileId) ? draft.fileIds : [...draft.fileIds, fileId],
+    pendingPastes: {
+      ...draft.pendingPastes,
+      [fileId]: { text, selectionStart },
+    },
+  });
+};
+
+export const removePendingTextAttachmentDraft = ({
+  id,
+  fileId,
+  removeFile = false,
+}: {
+  id: string;
+  fileId: string;
+  removeFile?: boolean;
+}): void => {
+  const draft = getFilesDraft(id);
+  const pendingPastes = { ...draft.pendingPastes };
+  delete pendingPastes[fileId];
+  setFilesDraft(id, {
+    fileIds: removeFile
+      ? draft.fileIds.filter((draftFileId) => draftFileId !== fileId)
+      : draft.fileIds,
+    pendingPastes,
+  });
 };
 
 export const setDraft = ({ id, value }: { id: string; value?: string }) => {

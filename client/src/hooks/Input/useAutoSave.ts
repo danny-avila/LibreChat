@@ -3,8 +3,16 @@ import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
 import { LocalStorageKeys, Constants } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
+import type { PendingTextAttachmentDraft } from '~/utils';
 import type { ExtendedFile } from '~/common';
-import { clearDraft, getDraft, isAskAnswerDraftId, setDraft } from '~/utils';
+import {
+  clearDraft,
+  getDraft,
+  getFilesDraft,
+  isAskAnswerDraftId,
+  setDraft,
+  setFilesDraft,
+} from '~/utils';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
@@ -38,21 +46,29 @@ export const useAutoSave = ({
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);
   const { data: fileList } = useGetFiles<TFile[]>();
+  const filesRef = useRef(files);
+  filesRef.current = files;
 
   const restoreFiles = useCallback(
-    (id: string) => {
-      const filesDraft = JSON.parse(
-        (localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${id}`) ?? '') || '[]',
-      ) as string[];
+    (id: string): PendingTextAttachmentDraft[] => {
+      const filesDraft = getFilesDraft(id);
 
-      if (filesDraft.length === 0) {
+      if (filesDraft.fileIds.length === 0) {
         setFiles(new Map());
-        return;
+        return [];
       }
+      if (fileList == null) {
+        return [];
+      }
+
+      const activeFileIds = new Set(filesRef.current.keys());
+      const fileIdsToKeep: string[] = [];
+      const pendingPastes = { ...filesDraft.pendingPastes };
+      const pastesToRecover: PendingTextAttachmentDraft[] = [];
 
       // Retrieve files stored in localStorage from files in fileList and set them to `setFiles`
       // If a file is found with `temp_file_id`, use `temp_file_id` as a key in `setFiles`
-      filesDraft.forEach((fileId) => {
+      filesDraft.fileIds.forEach((fileId) => {
         const fileData = fileList?.find((f) => f.file_id === fileId);
         const tempFileData = fileList?.find((f) => f.temp_file_id === fileId);
         const { fileToRecover, fileIdToRecover } = fileData
@@ -63,6 +79,8 @@ export const useAutoSave = ({
             };
 
         if (fileToRecover) {
+          fileIdsToKeep.push(fileId);
+          delete pendingPastes[fileId];
           setFiles((currentFiles) => {
             const updatedFiles = new Map(currentFiles);
             updatedFiles.set(fileIdToRecover, {
@@ -73,15 +91,41 @@ export const useAutoSave = ({
             });
             return updatedFiles;
           });
+          return;
         }
+
+        const pendingPaste = pendingPastes[fileId];
+        if (pendingPaste && !activeFileIds.has(fileId)) {
+          pastesToRecover.push(pendingPaste);
+          delete pendingPastes[fileId];
+          return;
+        }
+
+        fileIdsToKeep.push(fileId);
       });
+
+      setFilesDraft(id, { fileIds: fileIdsToKeep, pendingPastes });
+      return pastesToRecover;
     },
     [fileList, setFiles],
   );
 
   const restoreText = useCallback(
-    (id: string) => {
-      setValue('text', getDraft(id) ?? '');
+    (id: string, pendingPastes: PendingTextAttachmentDraft[] = []) => {
+      let draftText = getDraft(id) ?? '';
+      const orderedPastes = pendingPastes
+        .map((pendingPaste, index) => ({ ...pendingPaste, index }))
+        .sort((a, b) => b.selectionStart - a.selectionStart || b.index - a.index);
+
+      for (const pendingPaste of orderedPastes) {
+        const insertionPoint = Math.min(pendingPaste.selectionStart, draftText.length);
+        draftText = `${draftText.slice(0, insertionPoint)}${pendingPaste.text}${draftText.slice(insertionPoint)}`;
+      }
+
+      if (pendingPastes.length > 0) {
+        setDraft({ id, value: draftText });
+      }
+      setValue('text', draftText);
     },
     [setValue],
   );
@@ -204,17 +248,13 @@ export const useAutoSave = ({
             pendingFileDraft,
           );
           localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}`);
-          const filesDraft = JSON.parse(pendingFileDraft || '[]') as string[];
-          if (filesDraft.length > 0) {
-            restoreFiles(conversationId);
-          }
         }
       } else if (currentConversationId != null && currentConversationId) {
         saveText(currentConversationId);
       }
 
-      restoreText(conversationId);
-      restoreFiles(conversationId);
+      const pendingPastes = restoreFiles(conversationId);
+      restoreText(conversationId, pendingPastes);
     } catch (e) {
       console.error(e);
     }
@@ -233,6 +273,23 @@ export const useAutoSave = ({
   ]);
 
   useEffect(() => {
+    if (
+      !saveDrafts ||
+      conversationId == null ||
+      conversationId === '' ||
+      currentConversationId !== conversationId ||
+      fileList == null
+    ) {
+      return;
+    }
+
+    const pendingPastes = restoreFiles(conversationId);
+    if (pendingPastes.length > 0) {
+      restoreText(conversationId, pendingPastes);
+    }
+  }, [conversationId, currentConversationId, fileList, restoreFiles, restoreText, saveDrafts]);
+
+  useEffect(() => {
     // This useEffect is responsible for saving or removing the current conversation's file drafts
     // in localStorage whenever the file attachments change.
     // It ensures that the file drafts are kept up-to-date and can be restored
@@ -247,13 +304,15 @@ export const useAutoSave = ({
       return;
     }
 
-    if (fileIds.length === 0) {
-      localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${conversationId}`);
-    } else {
-      localStorage.setItem(
-        `${LocalStorageKeys.FILES_DRAFT}${conversationId}`,
-        JSON.stringify(fileIds),
-      );
-    }
-  }, [files, conversationId, saveDrafts, currentConversationId, fileIds]);
+    const existingDraft = getFilesDraft(conversationId);
+    const pendingFileIds = Object.keys(existingDraft.pendingPastes);
+    const draftFileIds = [
+      ...fileIds,
+      ...pendingFileIds.filter((fileId) => !fileIds.includes(fileId)),
+    ];
+    setFilesDraft(conversationId, {
+      fileIds: draftFileIds,
+      pendingPastes: existingDraft.pendingPastes,
+    });
+  }, [conversationId, saveDrafts, currentConversationId, fileIds]);
 };

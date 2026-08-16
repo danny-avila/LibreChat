@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, EToolResources } from 'librechat-data-provider';
+import type { UploadLifecycleCallbacks } from './useFileHandling';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useFileHandling from './useFileHandling';
 
@@ -18,14 +19,14 @@ export default function useFileUploadRouter() {
   );
 
   return useCallback(
-    (files: File[], toolResource?: EToolResources, onUploadError?: () => void) => {
+    (files: File[], toolResource?: EToolResources, uploadLifecycle?: UploadLifecycleCallbacks) => {
       if (toolResource && toolResource !== EToolResources.file_search) {
         setEphemeralAgent((prev) => ({
           ...prev,
           [toolResource]: true,
         }));
       }
-      return handleFiles(files, toolResource, onUploadError);
+      return handleFiles(files, toolResource, uploadLifecycle);
     },
     [handleFiles, setEphemeralAgent],
   );
