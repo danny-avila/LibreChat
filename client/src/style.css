@@ -1349,6 +1349,18 @@ html {
   height: 100%;
 }
 
+/* Scoped to the drawer-gesture breakpoint (useSidebarState's 768px): on small
+   screens the app never scrolls at the root, so chaining out of nested
+   scrollers has nothing legitimate to reach — this kills Chrome Android's
+   pull-to-refresh and horizontal overscroll gliding into browser navigation.
+   Desktop keeps native trackpad back/forward and refresh gestures. */
+@media (max-width: 768px) {
+  body,
+  html {
+    overscroll-behavior: none;
+  }
+}
+
 .dark body,
 .dark html {
   --tw-bg-opacity: 1;
