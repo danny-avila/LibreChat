@@ -597,6 +597,15 @@ export type PartMetadata = {
    * at render time.
    */
   runStepDurationMs?: number;
+  /**
+   * Stamped by the background harvester when a detached task's final output
+   * replaces the dispatch handle in `tool_call.output`. The handle JSON and
+   * the live status-marker attachment are both transient, so after the patch
+   * (or a reload) this is the only signal that the call ran in the
+   * background — renderers use it to keep treating {@link runStepDurationMs}
+   * as dispatch time rather than the task's runtime.
+   */
+  backgrounded?: boolean;
 };
 
 /** Metadata for parallel content rendering - subset of PartMetadata */

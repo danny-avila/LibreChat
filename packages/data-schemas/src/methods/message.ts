@@ -41,6 +41,7 @@ export interface MessageMethods {
     agentId?: string;
     output?: string;
     attachments?: unknown[];
+    markBackgrounded?: boolean;
   }): Promise<{ matched: boolean; unfinished: boolean }>;
   updateMessage(
     userId: string,
@@ -298,6 +299,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     agentId,
     output,
     attachments,
+    markBackgrounded,
   }: {
     userId: string;
     messageId: string;
@@ -309,6 +311,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     agentId?: string;
     output?: string;
     attachments?: unknown[];
+    /**
+     * Stamps `backgrounded: true` onto the patched tool call. Replacing the
+     * dispatch-handle output with the settled task's stdout destroys the only
+     * signal renderers had that this call ran detached (the handle JSON and
+     * the live status-marker attachment are both transient), so the patch
+     * that erases it must persist a durable one alongside.
+     */
+    markBackgrounded?: boolean;
   }): Promise<{ matched: boolean; unfinished: boolean }> {
     const stages: Record<string, unknown>[] = [];
     if (output !== undefined) {
@@ -341,7 +351,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                       '$$part',
                       {
                         tool_call: {
-                          $mergeObjects: ['$$part.tool_call', { output: { $literal: output } }],
+                          $mergeObjects: [
+                            '$$part.tool_call',
+                            {
+                              output: { $literal: output },
+                              ...(markBackgrounded === true ? { backgrounded: true } : {}),
+                            },
+                          ],
                         },
                       },
                     ],

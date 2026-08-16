@@ -44,34 +44,41 @@ describe('getRunStepDurationLabels', () => {
 
   describe('a minute and over', () => {
     it('splits into minutes and seconds', () => {
-      expect(getRunStepDurationLabels(65_000)).toMatchObject({
+      expect(getRunStepDurationLabels(65_000, 'en')).toMatchObject({
         key: 'com_ui_duration_minutes',
-        values: { 0: 1, 1: 5 },
+        values: { 0: '1', 1: '5' },
       });
-      expect(getRunStepDurationLabels(723_000).values).toEqual({ 0: 12, 1: 3 });
+      expect(getRunStepDurationLabels(723_000, 'en').values).toEqual({ 0: '12', 1: '3' });
     });
 
     it('renders an exact minute without a stray remainder', () => {
-      expect(getRunStepDurationLabels(60_000).values).toEqual({ 0: 1, 1: 0 });
+      expect(getRunStepDurationLabels(60_000, 'en').values).toEqual({ 0: '1', 1: '0' });
     });
 
     /** Branching on the raw seconds would render the nonsensical `60s`. */
     it('promotes a value that rounds up to a full minute', () => {
-      expect(getRunStepDurationLabels(59_600)).toMatchObject({
+      expect(getRunStepDurationLabels(59_600, 'en')).toMatchObject({
         key: 'com_ui_duration_minutes',
-        values: { 0: 1, 1: 0 },
+        values: { 0: '1', 1: '0' },
       });
     });
 
     it('announces whole minutes, leaving the precise value on the button', () => {
-      expect(getRunStepDurationLabels(65_000)).toMatchObject({
+      expect(getRunStepDurationLabels(65_000, 'en')).toMatchObject({
         announcedKey: 'com_ui_duration_announced_minutes_one',
-        announcedValues: { count: 1 },
+        announcedValues: { count: '1' },
       });
-      expect(getRunStepDurationLabels(150_000)).toMatchObject({
+      expect(getRunStepDurationLabels(150_000, 'en')).toMatchObject({
         announcedKey: 'com_ui_duration_announced_minutes',
-        announcedValues: { count: 3 },
+        announcedValues: { count: '3' },
       });
+    });
+
+    /** Locales with localized digits must not silently revert to ASCII in
+     *  the minute branch while the seconds branch respects them (Codex
+     *  round 3 on #14892). */
+    it('uses localized digits in the minute branch', () => {
+      expect(getRunStepDurationLabels(65_000, 'ar-EG').values).toEqual({ 0: '١', 1: '٥' });
     });
   });
 });

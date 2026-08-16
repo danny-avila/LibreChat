@@ -18,18 +18,20 @@ export interface RunStepDurationLabels {
 }
 
 /**
- * The sub-10s value is the only fractional number this feature renders, and
- * interpolating it raw would hardcode the en-US decimal point into every
- * locale ("1.4s" where the convention is "1,4 s"). Translators cannot fix a
- * number formatted in code, so it is formatted per-locale here, following
- * `MessageTimestamp`'s pattern of threading `i18n.language` into the util.
- * The guard covers malformed language tags, which `Intl` throws on.
+ * Every interpolated number goes through this, not just the fractional one:
+ * a raw JS number hardcodes en-US conventions into every locale — the
+ * decimal point ("1.4s" where the convention is "1,4 s") and the digits
+ * themselves (Arabic and Persian locales write localized digits, which a raw
+ * `1` silently reverts to ASCII). Translators cannot fix a number formatted
+ * in code, so it is formatted per-locale here, following `MessageTimestamp`'s
+ * pattern of threading `i18n.language` into the util. The guard covers
+ * malformed language tags, which `Intl` throws on.
  */
-function formatSecondsValue(seconds: number, language?: string): string {
+function formatDurationValue(value: number, language?: string): string {
   try {
-    return new Intl.NumberFormat(language, { maximumFractionDigits: 1 }).format(seconds);
+    return new Intl.NumberFormat(language, { maximumFractionDigits: 1 }).format(value);
   } catch {
-    return String(seconds);
+    return String(value);
   }
 }
 
@@ -62,7 +64,7 @@ export function getRunStepDurationLabels(
         : Math.round(totalSeconds);
     /** Plural selection stays on the numeric value; only the interpolated
      *  text is locale-formatted. */
-    const formatted = formatSecondsValue(seconds, language);
+    const formatted = formatDurationValue(seconds, language);
     return {
       key: 'com_ui_duration_seconds',
       values: { 0: formatted },
@@ -83,11 +85,14 @@ export function getRunStepDurationLabels(
   const announcedMinutes = Math.round(totalSeconds / SECONDS_PER_MINUTE);
   return {
     key: 'com_ui_duration_minutes',
-    values: { 0: minutes, 1: seconds },
+    values: {
+      0: formatDurationValue(minutes, language),
+      1: formatDurationValue(seconds, language),
+    },
     announcedKey:
       announcedMinutes === 1
         ? 'com_ui_duration_announced_minutes_one'
         : 'com_ui_duration_announced_minutes',
-    announcedValues: { count: announcedMinutes },
+    announcedValues: { count: formatDurationValue(announcedMinutes, language) },
   };
 }
