@@ -139,8 +139,6 @@ export default function ToolCall({
     window.open(auth, '_blank', 'noopener,noreferrer');
   }, [auth, isMCPToolCall, mcpServerName, actionId]);
 
-  /** A step the run closed as `failed` is an error even when its output text
-   *  does not parse as one. */
   const hasError = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
   /**
    * The step's own terminal status wins when the run emitted one. The
@@ -184,8 +182,12 @@ export default function ToolCall({
     return parsedAuthUrl?.hostname ?? '';
   }, [parsedAuthUrl]);
 
-  /** A closed step is terminal, so it must never keep animating. */
-  const rawProgress = useProgress(initialProgress);
+  /**
+   * Both halves are load-bearing: passing 1 in stops `useProgress` scheduling
+   * its 200ms interval, and masking the result makes the terminal value
+   * observable on the same render rather than after the hook settles.
+   */
+  const rawProgress = useProgress(isClosed ? 1 : initialProgress);
   const progress = isClosed ? 1 : rawProgress;
   const showCancelled = cancelled || (errorState && !output);
 

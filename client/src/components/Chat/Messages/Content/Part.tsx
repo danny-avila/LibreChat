@@ -226,6 +226,7 @@ const Part = memo(function Part({
             <ImageGen
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
+              runStepStatus={toolCall.runStepStatus}
               toolName={toolCall.name}
               args={toolCall.args ?? ''}
               output={toolCall.output ?? ''}
@@ -278,6 +279,7 @@ const Part = memo(function Part({
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
+              runStepStatus={toolCall.runStepStatus}
               attachments={attachments}
               persistedContent={persistedContent}
               hideAttachments={hideAttachments}
@@ -331,6 +333,7 @@ const Part = memo(function Part({
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
+              runStepStatus={toolCall.runStepStatus}
               attachments={attachments}
               isLast={isLast}
               onExpand={onToolExpand}
@@ -341,6 +344,7 @@ const Part = memo(function Part({
             <RetrievalCall
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
+              runStepStatus={toolCall.runStepStatus}
               args={toolCall.args}
               output={toolCall.output ?? undefined}
               attachments={attachments}
@@ -403,6 +407,7 @@ const Part = memo(function Part({
         <RetrievalCall
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
+          runStepStatus={toolCall.runStepStatus}
           output={(toolCall as { output?: string }).output}
           attachments={attachments}
           onExpand={onToolExpand}
@@ -418,6 +423,7 @@ const Part = memo(function Part({
           initialProgress={toolCall.progress ?? 0.1}
           args={toolCall.function.arguments as string}
           isSubmitting={isSubmitting}
+          runStepStatus={toolCall.runStepStatus}
           toolName={toolCall.function.name}
           output={toolCall.function.output ?? ''}
         />

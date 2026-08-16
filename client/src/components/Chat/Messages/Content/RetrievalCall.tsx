@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { TooltipAnchor } from '@librechat/client';
 import { FileText, FileSpreadsheet, FileCode, FileImage, File } from 'lucide-react';
-import type { TAttachment, TFile } from 'librechat-data-provider';
+import type { TAttachment, TFile, PartMetadata } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
 import FilePreviewDialog from './FilePreviewDialog';
@@ -329,6 +329,7 @@ export default function RetrievalCall({
   output,
   attachments,
   onExpand,
+  runStepStatus,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
@@ -336,16 +337,36 @@ export default function RetrievalCall({
   output?: string;
   attachments?: TAttachment[];
   onExpand?: () => void;
+  runStepStatus?: PartMetadata['runStepStatus'];
 }) {
-  const progress = useProgress(initialProgress);
+  const isClosed = runStepStatus != null;
+  /**
+   * Both halves are load-bearing. Passing 1 in stops `useProgress` scheduling
+   * its 200ms interval, which it keeps alive for any input below 1. Masking
+   * the result makes the terminal value observable on the same render — the
+   * hook settles through 0.99 and a 200ms timeout, so a step closing while
+   * mounted would otherwise render as still in progress for that window.
+   */
+  const rawProgress = useProgress(isClosed ? 1 : initialProgress);
+  const progress = isClosed ? 1 : rawProgress;
   const localize = useLocalize();
   /** Model-authored live label (injected when file_search is opted into
    *  describe_intent); persists as the settled label. The sr-only live
    *  region below deliberately keeps its stable generic value. */
   const intent = useToolCallIntent(args);
 
-  const errorState = typeof output === 'string' && isError(output);
-  const cancelled = !isSubmitting && initialProgress < 1 && !errorState;
+  const errorState = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
+  /**
+   * The step's own terminal status wins when the run emitted one; the
+   * `isSubmitting` heuristic is a whole-message inference that cannot tell
+   * which step stopped. Authoritative on its own terms — not gated on
+   * `errorState`, so output parsing cannot demote a stopped step back into an
+   * in-flight state. Fallback retained for messages saved before
+   * `on_run_step_closed` and endpoints that do not emit it.
+   */
+  const cancelled = isClosed
+    ? runStepStatus === 'cancelled'
+    : !isSubmitting && initialProgress < 1 && !errorState;
   const hasOutput = !!output && !isError(output);
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const [showOutput, setShowOutput] = useState(() => autoExpand && hasOutput);
@@ -429,6 +450,12 @@ export default function RetrievalCall({
           if (cancelled) {
             return localize('com_ui_cancelled');
           }
+          /** Announced before the success string: a terminal step that errored
+           *  must not reach the live region as "retrieved files", which would
+           *  tell a screen-reader user the opposite of what the card shows. */
+          if (errorState) {
+            return localize('com_ui_failed');
+          }
           return intent ?? localize('com_ui_retrieved_files');
         })()}
       </span>
@@ -437,7 +464,13 @@ export default function RetrievalCall({
           progress={progress}
           onClick={hasOutput ? handleToggleOutput : undefined}
           inProgressText={intent ?? localize('com_ui_searching_files')}
-          finishedText={intent ?? localize('com_ui_retrieved_files')}
+          /** A cancelled step must not read "Retrieved files" beside a
+           *  cancellation icon while the live region says "Cancelled". */
+          finishedText={
+            cancelled
+              ? localize('com_ui_cancelled')
+              : (intent ?? localize('com_ui_retrieved_files'))
+          }
           errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ToolIcon type="file_search" isAnimating={progress < 1 && !cancelled && !errorState} />
