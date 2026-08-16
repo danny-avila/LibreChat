@@ -70,9 +70,9 @@ export default function HeaderMenu({
       id: 'header-bookmarks',
       label: localize('com_ui_bookmarks'),
       icon: bookmarks.hasBookmarks ? (
-        <BookmarkFilledIcon className="icon-md mr-2 text-text-secondary" />
+        <BookmarkFilledIcon className="size-4 text-text-secondary" />
       ) : (
-        <BookmarkIcon className="icon-md mr-2 text-text-secondary" />
+        <BookmarkIcon className="size-4 text-text-secondary" />
       ),
       subItems: bookmarks.items,
     });
@@ -82,7 +82,7 @@ export default function HeaderMenu({
     items.push({
       id: 'header-compare',
       label: localize('com_ui_add_multi_conversation'),
-      icon: <PlusCircle className="icon-md mr-2 text-text-secondary" />,
+      icon: <PlusCircle className="size-4 text-text-secondary" />,
       onClick: multiConvo.addConversation,
     });
   }
@@ -98,9 +98,9 @@ export default function HeaderMenu({
       ariaChecked: temporary.isTemporary,
       className: temporary.isTemporary ? 'bg-surface-active' : undefined,
       icon: temporary.isTemporary ? (
-        <Check className="icon-md mr-2 text-text-primary" />
+        <Check className="size-4 text-text-primary" />
       ) : (
-        <MessageCircleDashed className="icon-md mr-2 text-text-secondary" />
+        <MessageCircleDashed className="size-4 text-text-secondary" />
       ),
       onClick: temporary.toggle,
     });
