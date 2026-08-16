@@ -19,7 +19,7 @@ export const ManageFiles = () => {
       >
         {localize('com_ui_manage')}
       </Button>
-      <MyFilesModal open={open} onOpenChange={setOpen} triggerRef={triggerRef} />
+      {open && <MyFilesModal open={open} onOpenChange={setOpen} triggerRef={triggerRef} />}
     </div>
   );
 };
