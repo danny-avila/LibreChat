@@ -1468,13 +1468,8 @@ export async function createRun({
       contextPruningConfig: summarization.contextPruning,
       maxToolResultChars: agent.maxToolResultChars,
       initialSessions: buildAgentInitialToolSessions(agent, initialSessions),
+      codeSessionKey: agent.codeSessionKey,
     };
-    /**
-     * `codeSessionKey` lands in the Agents SDK with the execution-profile
-     * release. Keep this structural assignment until LibreChat bumps that
-     * package so this PR can be reviewed independently of publish timing.
-     */
-    (agentInput as AgentInputs & { codeSessionKey?: string }).codeSessionKey = agent.codeSessionKey;
     if (askGraphTools) {
       /**
        * Typed structurally — not as `AgentInputs['graphTools']` — because the

@@ -1,6 +1,6 @@
 import { Schema } from 'mongoose';
 
-export const codeEnvRefSchema = new Schema(
+export const codeEnvRefSchema: Schema = new Schema(
   {
     kind: {
       type: String,
@@ -19,7 +19,7 @@ export const codeEnvRefSchema = new Schema(
   { _id: false },
 );
 
-export const codeEnvRefMapSchema = new Schema(
+export const codeEnvRefMapSchema: Schema = new Schema(
   {
     default: { type: codeEnvRefSchema, default: undefined },
     stateful: { type: codeEnvRefSchema, default: undefined },

@@ -1562,6 +1562,39 @@ describe('ToolService - Action Capability Gating', () => {
       }
     });
 
+    it('resolves stateful routing when handle_skill is the only requested tool', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.stateful_code_sessions,
+      ];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
+
+      try {
+        const result = await loadToolsForExecution({
+          req,
+          res: {},
+          agent: {
+            id: 'stateful-agent',
+            tools: [Tools.execute_code],
+            stateful_code_sessions: true,
+            stateful_code_environment: 'agent-user',
+          },
+          toolNames: [AgentConstants.SKILL_TOOL],
+          actionsEnabled: false,
+        });
+
+        expect(result.configurable.codeExecutionContext.executionProfile).toBe('stateful');
+        expect(mockResolveCodeExecutionContext).toHaveBeenLastCalledWith(
+          expect.objectContaining({ statefulSessions: true, environment: 'agent-user' }),
+        );
+      } finally {
+        delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+      }
+    });
+
     it('loads bash PTC under the legacy programmatic tool name when code capabilities are enabled', async () => {
       const capabilities = [
         AgentCapabilities.tools,

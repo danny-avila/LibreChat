@@ -1731,6 +1731,7 @@ async function loadToolsForExecution({
   const isBashToolRequested = toolNames.includes(AgentConstants.BASH_TOOL);
   const isLegacyExecuteCodeRequested = toolNames.includes(Tools.execute_code);
   const isCodeExecutionToolRequested = isBashToolRequested || isLegacyExecuteCodeRequested;
+  const isSkillToolRequested = toolNames.includes(AgentConstants.SKILL_TOOL);
   const isSandboxFileToolRequested = toolNames.some((name) =>
     [AgentConstants.READ_FILE, AgentConstants.CREATE_FILE, AgentConstants.EDIT_FILE].includes(name),
   );
@@ -1740,6 +1741,7 @@ async function loadToolsForExecution({
     actionsEnabled === undefined ||
     isPTCRequested ||
     isCodeExecutionToolRequested ||
+    isSkillToolRequested ||
     isSandboxFileToolRequested
   ) {
     enabledCapabilities = await resolveAgentCapabilities(req, appConfig, agent?.id);
