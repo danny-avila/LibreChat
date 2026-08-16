@@ -10,7 +10,7 @@ import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
 import { areConversationRenderPropsEqual } from './utils';
 import { NotificationSeverity } from '~/common';
-import { ConvoOptions } from './ConvoOptions';
+import ConvoActions from './ConvoActions';
 import RenameForm from './RenameForm';
 import { cn, logger } from '~/utils';
 import ConvoLink from './ConvoLink';
@@ -179,7 +179,7 @@ function Conversation({
     conversationId,
     chatProjectId: conversation.chatProjectId,
     isPopoverActive,
-    setIsPopoverActive: handlePopoverOpenChange,
+    onOpenChange: handlePopoverOpenChange,
     isShiftHeld: isActiveConvo ? isShiftHeld : false,
   };
 
@@ -193,7 +193,8 @@ function Conversation({
     'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[60px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[60px] group-hover:scale-x-100 group-hover:opacity-100';
   if (isGenerating) {
     actionVisibilityClassName = 'pointer-events-none w-5 scale-x-100 opacity-100';
-  } else if (isPopoverActive || isActiveConvo) {
+  } else if (isPopoverActive || isActiveConvo || isSmallScreen) {
+    /** Touch has no hover, so a reveal-on-hover menu is unreachable there. */
     actionVisibilityClassName = 'pointer-events-auto scale-x-100 opacity-100';
   }
 
@@ -201,13 +202,15 @@ function Conversation({
   if (!isGenerating && !isPopoverActive && isActiveConvo && isShiftHeld) {
     actionWidthClassName = 'max-w-[60px]';
   } else if (!isGenerating) {
-    actionWidthClassName = 'max-w-[28px]';
+    actionWidthClassName = isSmallScreen ? 'max-w-[36px]' : 'max-w-[28px]';
   }
 
-  const showConvoOptions = !renaming && (hasInteracted || isActiveConvo);
-  const actionContent = isGenerating
-    ? generatingSpinner
-    : showConvoOptions && <ConvoOptions {...convoOptionsProps} />;
+  let actionContent: React.ReactNode = null;
+  if (isGenerating) {
+    actionContent = generatingSpinner;
+  } else if (!renaming) {
+    actionContent = <ConvoActions {...convoOptionsProps} hasInteracted={hasInteracted} />;
+  }
 
   return (
     <div

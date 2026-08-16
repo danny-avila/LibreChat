@@ -108,14 +108,19 @@ const ConversationsSection = memo(() => {
       role="region"
       aria-label={localize('com_ui_chat_history')}
     >
-      <div className="flex items-center gap-0.5 px-3">
-        {hasAccessToBookmarks && (
-          <Suspense fallback={null}>
-            <BookmarkNav tags={tags} setTags={setTags} />
-          </Suspense>
-        )}
-        {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
-      </div>
+      {/* On mobile the search field lives in the drawer's bottom bar, within thumb reach,
+          which would leave the bookmark filter alone on a row of its own — so it moves
+          beside the Chats heading, where the Projects heading already keeps its actions. */}
+      {!isSmallScreen && (
+        <div className="flex items-center gap-0.5 px-3">
+          {hasAccessToBookmarks && (
+            <Suspense fallback={null}>
+              <BookmarkNav tags={tags} setTags={setTags} />
+            </Suspense>
+          )}
+          {search.enabled && <SearchBar isSmallScreen={isSmallScreen} />}
+        </div>
+      )}
       {!search.query && (
         <div className="px-3">
           <FavoritesList isSmallScreen={isSmallScreen} toggleNav={toggleNav} />
@@ -134,6 +139,13 @@ const ConversationsSection = memo(() => {
           isChatsExpanded={isChatsExpanded}
           setIsChatsExpanded={setIsChatsExpanded}
           showFavorites={false}
+          chatsHeaderTrailing={
+            isSmallScreen && hasAccessToBookmarks ? (
+              <Suspense fallback={null}>
+                <BookmarkNav tags={tags} setTags={setTags} />
+              </Suspense>
+            ) : undefined
+          }
         />
       </div>
     </div>

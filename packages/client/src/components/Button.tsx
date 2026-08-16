@@ -16,9 +16,10 @@ type ButtonVariantOptions =
         | 'secondary'
         | 'ghost'
         | 'row-action'
+        | 'section-action'
         | null
         | undefined;
-      size?: 'default' | 'icon' | 'icon-sm' | 'sm' | 'lg' | 'theme' | null | undefined;
+      size?: 'default' | 'icon' | 'icon-sm' | 'icon-xs' | 'sm' | 'lg' | 'theme' | null | undefined;
       shape?: 'default' | 'theme' | null | undefined;
     } & ClassProp)
   | undefined;
@@ -40,6 +41,14 @@ const buttonVariantRecipe = cva(
         'row-action': 'hover:bg-surface-hover-alt hover:text-text-primary',
         link: 'text-text-primary underline-offset-4 hover:underline',
         submit: 'bg-surface-submit text-text-on-status hover:bg-surface-submit-hover',
+        /**
+         * A quiet icon action sitting beside a section heading in the sidebar.
+         * Unlike `row-action`, it recedes until hovered so the heading stays
+         * the thing being read, and its ring sits inside the control because
+         * these sit close enough that an offset one would cross a neighbour.
+         */
+        'section-action':
+          'rounded-md text-text-secondary hover:bg-surface-active-alt hover:text-text-primary focus-visible:ring-inset focus-visible:ring-offset-0',
       },
       size: {
         default: 'h-10 px-4 py-2',
@@ -47,6 +56,7 @@ const buttonVariantRecipe = cva(
         lg: 'h-11 rounded-lg px-8',
         icon: 'size-10',
         'icon-sm': 'size-8 p-0',
+        'icon-xs': 'size-7',
         theme: 'h-theme-control gap-theme-compact px-theme-normal',
       },
       shape: {

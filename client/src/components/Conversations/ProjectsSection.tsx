@@ -26,6 +26,7 @@ import {
   TooltipAnchor,
   DropdownPopup,
   NewChatIcon,
+  buttonVariants,
   useToastContext,
 } from '@librechat/client';
 import type { TChatProject, TConversation } from 'librechat-data-provider';
@@ -46,8 +47,11 @@ import store from '~/store';
 
 const INLINE_CHAT_LIMIT = 8;
 
-const iconButtonClassName =
-  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-secondary outline-none transition-colors hover:bg-surface-active-alt hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary';
+/** `cn` is what resolves the base utilities this variant overrides. */
+const iconButtonClassName = cn(
+  buttonVariants({ variant: 'section-action', size: 'icon-xs' }),
+  'shrink-0',
+);
 
 function ProjectRenameDialog({
   open,

@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useRecoilValue } from 'recoil';
 import { Outlet } from 'react-router-dom';
-import { useMediaQuery } from '@librechat/client';
 import {
   PromptGroupsProvider,
   AssistantsMapContext,
@@ -16,15 +14,15 @@ import {
   useAgentsMap,
   useFileMap,
 } from '~/hooks';
+import { UnifiedSidebar, SIDEBAR_TRANSITION } from '~/components/UnifiedSidebar';
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
-import { UnifiedSidebar } from '~/components/UnifiedSidebar';
+import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { TermsAndConditionsModal } from '~/components/ui';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
-import store from '~/store';
 
 /** Isolates keyboard shortcut listeners so they only mount after auth. */
 function KeyboardShortcutsProvider() {
@@ -40,8 +38,8 @@ function KeyboardShortcutsProvider() {
 export default function Root() {
   const [showTerms, setShowTerms] = useState(false);
   const [bannerHeight, setBannerHeight] = useState(0);
-  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
+  /** Shared with the drawer so the two agree on the breakpoint-transition frame. */
+  const { isSmallScreen, expanded: sidebarExpanded } = useSidebarState();
 
   const { isAuthenticated, logout } = useAuthContext();
 
@@ -90,9 +88,9 @@ export default function Root() {
                   <div
                     className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden"
                     style={{
-                      transform:
-                        isSmallScreen && sidebarExpanded ? 'translateX(min(85vw, 380px))' : 'none',
-                      transition: 'transform 300ms cubic-bezier(0.2, 0, 0, 1)',
+                      /** Self-referential, so it needs no width literal and survives rotation. */
+                      transform: isSmallScreen && sidebarExpanded ? 'translateX(100%)' : 'none',
+                      transition: SIDEBAR_TRANSITION,
                     }}
                     inert={isSmallScreen && sidebarExpanded ? '' : undefined}
                   >
