@@ -65,6 +65,7 @@ export type FileConfig = {
     maxWidth?: number;
     maxHeight?: number;
     quality?: number;
+    minFileSizeKB?: number;
   };
   ocr?: {
     supportedMimeTypes?: RegexLike[];
@@ -92,6 +93,7 @@ export type FileConfigInput = {
     maxWidth?: number;
     maxHeight?: number;
     quality?: number;
+    minFileSizeKB?: number;
   };
   ocr?: {
     supportedMimeTypes?: string[];
