@@ -56,14 +56,11 @@ const loginController = async (req, res) => {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
-    if (req.user.twoFactorEnabled) {
-      const tempToken = generate2FATempToken(req.user._id);
-      if (await wasPasswordRevokedDuringLogin(req.user)) {
-        return refuseRevokedLogin(res, req.user);
-      }
-      return res.status(200).json({ twoFAPending: true, tempToken });
-    }
-
+    /**
+     * A recovered password can sit on a federated record that already has LibreChat 2FA. Issuing
+     * the challenge first would let `/2fa/verify-temp` mint a session from that password and TOTP,
+     * which is not the identity-provider path enforcement requires.
+     */
     if (isCredentialLoginBlockedByTwoFactorPolicy(req.user)) {
       logger.warn(
         `[loginController] Refused a password login for a federated record under required 2FA [provider: ${req.user.provider}] [Request-IP: ${req.ip}]`,
@@ -72,6 +69,14 @@ const loginController = async (req, res) => {
         code: TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE,
         message: 'Sign in with your identity provider to continue.',
       });
+    }
+
+    if (req.user.twoFactorEnabled) {
+      const tempToken = generate2FATempToken(req.user._id);
+      if (await wasPasswordRevokedDuringLogin(req.user)) {
+        return refuseRevokedLogin(res, req.user);
+      }
+      return res.status(200).json({ twoFAPending: true, tempToken });
     }
 
     if (isTwoFactorEnrollmentRequired(req.user)) {

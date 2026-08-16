@@ -173,17 +173,19 @@ describe('loginController', () => {
     expect(res.send).not.toHaveBeenCalled();
   });
 
-  it('allows a federated password login that still presents a second factor', async () => {
+  it('refuses a federated password login even when LibreChat 2FA is already enabled', async () => {
     process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
     const req = { user: { _id: 'user-5', provider: 'openid', twoFactorEnabled: true } };
     const res = createResponse();
 
     await loginController(req, res);
 
+    expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({
-      twoFAPending: true,
-      tempToken: 'challenge-token',
+      code: 'TWO_FACTOR_FEDERATED_LOGIN_BLOCKED',
+      message: 'Sign in with your identity provider to continue.',
     });
+    expect(mockGenerate2FATempToken).not.toHaveBeenCalled();
     expect(mockSetAuthTokens).not.toHaveBeenCalled();
   });
 

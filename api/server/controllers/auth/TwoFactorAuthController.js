@@ -1,4 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
+const { TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE } = require('librechat-data-provider');
 const {
   isTokenRetired,
   clearCloudFrontCookies,
@@ -9,6 +10,7 @@ const {
   sanitizeUserForResponse,
   verifyTwoFactorLoginChallengeToken,
   isEnrollmentSupersededByRecovery,
+  isCredentialLoginBlockedByTwoFactorPolicy,
   generateTwoFactorSetupAcknowledgementToken,
   generateTwoFactorSetupFinalizationToken,
 } = require('@librechat/api');
@@ -68,6 +70,21 @@ const verify2FAWithTempToken = async (req, res) => {
     const user = await getUserById(credential.userId, '+totpSecret +backupCodes');
     if (!user || !user.twoFactorEnabled) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
+    }
+
+    /**
+     * Login used to issue this challenge before the federated-provider guard ran. Re-check here so
+     * an already-minted token cannot finish the identity-provider-only path with a local password
+     * and TOTP.
+     */
+    if (isCredentialLoginBlockedByTwoFactorPolicy(user)) {
+      logger.warn(
+        `[verify2FAWithTempToken] Refused a password challenge for a federated record under required 2FA [provider: ${user.provider}]`,
+      );
+      return res.status(403).json({
+        code: TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE,
+        message: 'Sign in with your identity provider to continue.',
+      });
     }
 
     /**

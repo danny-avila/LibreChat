@@ -190,6 +190,24 @@ describe('verify2FAWithTempToken', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('refuses a federated password challenge under enforcement', async () => {
+    store.reset({ provider: 'openid', twoFactorEnabled: true, totpSecret: 'encrypted-secret' });
+    const tempToken = jwt.sign(
+      { userId: 'user-1', purpose: 'login_2fa_challenge' },
+      process.env.JWT_SECRET,
+    );
+    const res = createResponse();
+
+    await verify2FAWithTempToken({ body: { tempToken, token: '123456' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(jsonPayload(res)).toEqual({
+      code: 'TWO_FACTOR_FEDERATED_LOGIN_BLOCKED',
+      message: 'Sign in with your identity provider to continue.',
+    });
+    expect(mockSetAuthTokens).not.toHaveBeenCalled();
+  });
+
   it.each([
     'required_2fa_setup',
     'required_2fa_acknowledgement',
