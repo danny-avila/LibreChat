@@ -138,6 +138,44 @@ describe('SearchBar across a breakpoint remount', () => {
       expect(mockSearchState.debouncedQuery).toBe('');
     });
 
+    /**
+     * The swap must not strand a user who simply stops typing: the arriving
+     * field takes the uncommitted query over rather than showing text no
+     * search is running on.
+     */
+    it('commits the query it inherited uncommitted', () => {
+      mockSearchState = { ...mockSearchState, query: 'mobile nav', isTyping: true };
+
+      render(<SearchBar />);
+      settle();
+
+      expect(mockSearchState.debouncedQuery).toBe('mobile nav');
+      expect(mockSearchState.isTyping).toBe(false);
+    });
+
+    it('lets an edit of the arriving field beat the inherited query', () => {
+      mockSearchState = { ...mockSearchState, query: 'mobile nav', isTyping: true };
+
+      render(<SearchBar />);
+      type('full width');
+      settle();
+
+      expect(mockSearchState.debouncedQuery).toBe('full width');
+    });
+
+    it('leaves a settled query alone on arrival', () => {
+      mockSearchState = {
+        ...mockSearchState,
+        query: 'mobile nav',
+        debouncedQuery: 'mobile nav',
+      };
+
+      render(<SearchBar />);
+      settle();
+
+      expect(mockSetSearchState).not.toHaveBeenCalled();
+    });
+
     it('drops its pending query when the field is cleared', () => {
       render(<SearchBar />);
 

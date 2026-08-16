@@ -83,6 +83,22 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
    */
   useEffect(() => () => debouncedSetDebouncedQuery.cancel(), [debouncedSetDebouncedQuery]);
 
+  /**
+   * Cancelling alone would strand a handoff where the user simply stops typing:
+   * the arriving field shows the text, but the commit that would have published
+   * it died with its scheduler, leaving the list filtered by the previous query
+   * and `isTyping` never cleared. Captured at first render, so it reflects the
+   * moment of the swap rather than any later state.
+   */
+  const inheritedQuery = useRef(search.query !== search.debouncedQuery ? search.query : null);
+
+  useEffect(() => {
+    if (inheritedQuery.current == null) {
+      return;
+    }
+    debouncedSetDebouncedQuery(inheritedQuery.current);
+  }, [debouncedSetDebouncedQuery]);
+
   const clearText = useCallback(
     (pathname?: string) => {
       debouncedSetDebouncedQuery.cancel();
