@@ -26,14 +26,14 @@ const defaultConfig: ClientImageResizeConfig = {
  */
 export const useClientResize = () => {
   const userPreference = useRecoilValue(store.clientImageResize);
-  const { data: fileConfig = null } = useGetFileConfig({
+  const { data: fileConfig = null, isSuccess: isFileConfigLoaded } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
 
   const config = fileConfig?.clientImageResize ?? defaultConfig;
   const { maxWidth, maxHeight, quality } = config;
   const isEnforced = config.enforced === true;
-  const isEnabled = isEnforced ? config.enabled === true : userPreference;
+  const isEnabled = isFileConfigLoaded && (isEnforced ? config.enabled === true : userPreference);
 
   /**
    * Resizes an image if client-side resizing is enabled and supported
@@ -71,7 +71,7 @@ export const useClientResize = () => {
         };
 
         const result = await resizeImage(file, resizeOptions);
-        return { file: result.file, resized: true, result };
+        return { file: result.file, resized: result.file !== file, result };
       } catch (error) {
         console.warn('Client-side image resizing failed:', error);
         return { file, resized: false };

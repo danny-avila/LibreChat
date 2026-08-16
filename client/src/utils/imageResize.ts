@@ -19,6 +19,8 @@ export interface ResizeResult {
   compressionRatio: number;
 }
 
+type ResizeFormat = NonNullable<ResizeOptions['format']>;
+
 /**
  * Default resize options based on backend 'high' resolution settings
  * Backend 'high' uses maxShortSide=768, maxLongSide=2000
@@ -29,6 +31,121 @@ const DEFAULT_RESIZE_OPTIONS: ResizeOptions = {
   maxHeight: 1900, // Slightly less than backend maxLongSide=2000
   quality: 0.92, // High quality while reducing file size
   format: 'jpeg', // Most compatible format
+};
+
+const RESIZE_FORMAT_BY_MIME_TYPE: Record<string, ResizeFormat> = {
+  'image/jpeg': 'jpeg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
+
+const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const;
+const WEBP_ANIMATION_FLAG = 0x02;
+
+const readBytes = (file: File, start: number, length: number): Promise<Uint8Array> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (!(reader.result instanceof ArrayBuffer)) {
+        reject(new Error('Failed to read image container'));
+        return;
+      }
+      resolve(new Uint8Array(reader.result));
+    };
+    reader.onerror = () => reject(new Error('Failed to read image container'));
+    reader.readAsArrayBuffer(file.slice(start, start + length));
+  });
+
+const readAscii = (bytes: Uint8Array, start: number, length: number): string =>
+  String.fromCharCode(...bytes.slice(start, start + length));
+
+const hasSignature = (bytes: Uint8Array, signature: readonly number[]): boolean =>
+  bytes.length >= signature.length && signature.every((value, index) => bytes[index] === value);
+
+const isAnimatedPng = async (file: File): Promise<boolean> => {
+  const signature = await readBytes(file, 0, PNG_SIGNATURE.length);
+  if (!hasSignature(signature, PNG_SIGNATURE)) {
+    return false;
+  }
+
+  let offset: number = PNG_SIGNATURE.length;
+  while (offset + 12 <= file.size) {
+    const header = await readBytes(file, offset, 8);
+    if (header.length < 8) {
+      return false;
+    }
+
+    const chunkLength = new DataView(header.buffer, header.byteOffset, header.byteLength).getUint32(
+      0,
+    );
+    const chunkType = readAscii(header, 4, 4);
+    const nextOffset = offset + 12 + chunkLength;
+    if (nextOffset > file.size) {
+      return false;
+    }
+    if (chunkType === 'acTL') {
+      return true;
+    }
+    if (chunkType === 'IDAT' || chunkType === 'IEND') {
+      return false;
+    }
+
+    offset = nextOffset;
+  }
+
+  return false;
+};
+
+const isAnimatedWebP = async (file: File): Promise<boolean> => {
+  const signature = await readBytes(file, 0, 12);
+  if (readAscii(signature, 0, 4) !== 'RIFF' || readAscii(signature, 8, 4) !== 'WEBP') {
+    return false;
+  }
+
+  let offset = 12;
+  while (offset + 8 <= file.size) {
+    const header = await readBytes(file, offset, 8);
+    if (header.length < 8) {
+      return false;
+    }
+
+    const chunkType = readAscii(header, 0, 4);
+    const chunkSize = new DataView(header.buffer, header.byteOffset, header.byteLength).getUint32(
+      4,
+      true,
+    );
+    const dataEnd = offset + 8 + chunkSize;
+    if (dataEnd > file.size) {
+      return false;
+    }
+    if (chunkType === 'ANIM' || chunkType === 'ANMF') {
+      return true;
+    }
+    if (chunkType === 'VP8X' && chunkSize > 0) {
+      const flags = await readBytes(file, offset + 8, 1);
+      if (flags.length === 1 && (flags[0] & WEBP_ANIMATION_FLAG) !== 0) {
+        return true;
+      }
+    }
+
+    offset = dataEnd + (chunkSize % 2);
+  }
+
+  return false;
+};
+
+/** Checks image containers whose animation would be flattened by canvas. */
+export const isAnimatedImage = async (file: File): Promise<boolean> => {
+  if (file.type === 'image/apng') {
+    return true;
+  }
+  if (file.type === 'image/png') {
+    return isAnimatedPng(file);
+  }
+  if (file.type === 'image/webp') {
+    return isAnimatedWebP(file);
+  }
+  return false;
 };
 
 /**
@@ -83,10 +200,14 @@ function calculateDimensions(
 /**
  * Resizes an image file using canvas
  */
-export function resizeImage(
+export async function resizeImage(
   file: File,
   options: Partial<ResizeOptions> = {},
 ): Promise<ResizeResult> {
+  if (await isAnimatedImage(file)) {
+    throw new Error('Animated images cannot be resized without losing animation');
+  }
+
   return new Promise((resolve, reject) => {
     // Check browser support
     if (!supportsClientResize()) {
@@ -100,7 +221,12 @@ export function resizeImage(
       return;
     }
 
-    const opts = { ...DEFAULT_RESIZE_OPTIONS, ...options };
+    const sourceFormat = RESIZE_FORMAT_BY_MIME_TYPE[file.type];
+    const opts = {
+      ...DEFAULT_RESIZE_OPTIONS,
+      format: sourceFormat ?? DEFAULT_RESIZE_OPTIONS.format,
+      ...options,
+    };
     const reader = new FileReader();
 
     reader.onload = (event) => {
@@ -151,6 +277,18 @@ export function resizeImage(
             (blob) => {
               if (!blob) {
                 reject(new Error('Failed to create blob from canvas'));
+                return;
+              }
+
+              if (blob.size >= file.size) {
+                resolve({
+                  file,
+                  originalSize: file.size,
+                  newSize: file.size,
+                  originalDimensions,
+                  newDimensions: originalDimensions,
+                  compressionRatio: 1,
+                });
                 return;
               }
 

@@ -6,10 +6,12 @@ import type { ReactNode } from 'react';
 import useClientResize from '../useClientResize';
 
 let mockAdminConfig: FileConfigInput | undefined;
+let mockConfigIsSuccess = true;
 
 jest.mock('~/data-provider', () => ({
   useGetFileConfig: <T,>({ select }: { select: (data: unknown) => T }) => ({
     data: select(mockAdminConfig),
+    isSuccess: mockConfigIsSuccess,
   }),
 }));
 
@@ -22,6 +24,16 @@ describe('useClientResize', () => {
   beforeEach(() => {
     localStorage.clear();
     mockAdminConfig = undefined;
+    mockConfigIsSuccess = true;
+  });
+
+  it('keeps resizing off until the file config resolves', () => {
+    mockConfigIsSuccess = false;
+    setUserPreference(true);
+
+    const { result } = renderHook(() => useClientResize(), { wrapper });
+
+    expect(result.current.isEnabled).toBe(false);
   });
 
   describe('without an admin-configured value', () => {
