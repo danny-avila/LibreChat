@@ -68,6 +68,7 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
   const localize = useLocalize();
   const { announcePolite } = useLiveAnnouncer();
   const modelSpecs = useMemo(() => {
+    /** Labels are normalized at the startup-config query boundary. */
     const specs = startupConfig?.modelSpecs?.list ?? [];
     if (!agentsMap) {
       return specs;
