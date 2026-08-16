@@ -1,5 +1,7 @@
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { LoadAgentDeps } from './load';
 import { loadEphemeralAgent } from './load';
+import { resolveSender } from './sender';
 
 const deps: LoadAgentDeps = {
   getAgent: async () => null,
@@ -48,5 +50,51 @@ describe('loadEphemeralAgent ephemeral id stability (#14253 Bug 2)', () => {
     const a = await idFor({ model: 'claude-opus-4', modelLabel: 'My Opus' });
     const b = await idFor({ model: 'claude-opus-4', modelLabel: 'My Opus' });
     expect(a).toEqual(b);
+  });
+});
+
+/** Custom endpoints carry their configured name in `endpoint` at runtime,
+ *  which `TEndpointOption` types as `EModelEndpoint`. */
+const customEndpointOption = {
+  endpoint: 'my-custom-endpoint' as EModelEndpoint,
+  model: 'claude-opus-4',
+};
+
+describe('loadEphemeralAgent → resolveSender composition', () => {
+  test('the spec label encoded at load time round-trips into the persisted sender', async () => {
+    const agent = await loadEphemeralAgent(
+      {
+        req: baseReq,
+        spec: 'my-opus-spec',
+        endpoint: 'my-custom-endpoint',
+        model_parameters: { model: 'claude-opus-4' } as never,
+      },
+      deps,
+    );
+    expect(agent?.id).toBeTruthy();
+    expect(
+      resolveSender({
+        agent: { id: agent?.id },
+        endpointOption: customEndpointOption,
+      }),
+    ).toBe('Spec Label');
+  });
+
+  test('a user modelLabel wins over the spec label in the persisted sender', async () => {
+    const agent = await loadEphemeralAgent(
+      {
+        req: baseReq,
+        spec: 'my-opus-spec',
+        endpoint: 'my-custom-endpoint',
+        model_parameters: { model: 'claude-opus-4', modelLabel: 'My Opus' } as never,
+      },
+      deps,
+    );
+    expect(
+      resolveSender({
+        agent: { id: agent?.id },
+        endpointOption: customEndpointOption,
+      }),
+    ).toBe('My Opus');
   });
 });
