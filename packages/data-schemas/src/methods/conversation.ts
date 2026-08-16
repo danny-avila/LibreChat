@@ -540,8 +540,10 @@ export function createConversationMethods(
          * refresh: the incremental path only bumps the count for brand-new inserts,
          * so a pre-existing chat joining the project would otherwise be uncounted.
          */
+        const isNewConversation = conversationResult.lastErrorObject?.updatedExisting === false;
         const shouldRefreshProjectStats =
           projectMembershipChanged ||
+          isNewConversation ||
           typeof update.isArchived === 'boolean' ||
           Object.prototype.hasOwnProperty.call(unsetFields, 'isArchived') ||
           isRetentionVisibilityUpdate ||
@@ -555,7 +557,6 @@ export function createConversationMethods(
             userId,
             conversation.chatProjectId,
             conversation,
-            conversationResult.lastErrorObject?.updatedExisting === false,
           );
         }
       }

@@ -18,7 +18,10 @@ import useNewChat from '~/hooks/Chat/useNewChat';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 
-type SubmittedConversation = Pick<TConversation, 'conversationId' | 'isTemporary' | 'expiredAt'>;
+type SubmittedConversation = Pick<
+  TConversation,
+  'conversationId' | 'isArchived' | 'isTemporary' | 'expiredAt'
+>;
 
 const isSubmittedChatStillActive = (
   submittedConversation: SubmittedConversation | null,
@@ -27,8 +30,10 @@ const isSubmittedChatStillActive = (
   submittedConversation != null &&
   submittedConversation.conversationId != null &&
   submittedConversation.conversationId !== Constants.NEW_CONVO &&
+  submittedConversation.isArchived !== true &&
   !isTemporaryConversation(submittedConversation) &&
   currentConversation?.conversationId === submittedConversation.conversationId &&
+  currentConversation?.isArchived !== true &&
   !isTemporaryConversation(currentConversation);
 
 export const ArchiveAllChats = () => {
@@ -86,6 +91,7 @@ export const ArchiveAllChats = () => {
     submittedConversationRef.current = conversation?.conversationId
       ? {
           conversationId: conversation.conversationId,
+          isArchived: conversation.isArchived,
           isTemporary: conversation.isTemporary,
           expiredAt: conversation.expiredAt,
         }

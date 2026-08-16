@@ -1,7 +1,11 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IChatProject, IConversation } from '~/types';
-import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
+import {
+  createChatProjectMethods,
+  updateChatProjectLastConversationForUser,
+  type ChatProjectMethods,
+} from './chatProject';
 import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
@@ -395,6 +399,41 @@ describe('ChatProject methods', () => {
     const persisted = await ChatProject.findById(project._id).lean<IChatProject>();
     expect(persisted?.conversationCount).toBe(4);
     expect(persisted?.lastConversationId).toBe('stale-convo');
+  });
+
+  it('does not increment again when a refresh already counted the new conversation', async () => {
+    const project = await methods.createChatProject(user, { name: 'Pending Increment' });
+    const chatProjectId = project._id!.toString();
+    const createdAt = new Date('2026-04-01T00:00:00.000Z');
+    await Conversation.create({
+      conversationId: 'new-convo',
+      title: 'New',
+      user,
+      endpoint: 'openAI',
+      chatProjectId,
+      createdAt,
+      updatedAt: createdAt,
+    });
+
+    const refreshed = await methods.refreshChatProjectStats(user, chatProjectId);
+    expect(refreshed?.conversationCount).toBe(1);
+    expect(refreshed?.lastConversationId).toBe('new-convo');
+
+    await updateChatProjectLastConversationForUser(
+      mongoose,
+      user,
+      chatProjectId,
+      {
+        conversationId: 'new-convo',
+        createdAt,
+        updatedAt: createdAt,
+      },
+      true,
+    );
+
+    const persisted = await ChatProject.findById(project._id).lean<IChatProject>();
+    expect(persisted?.conversationCount).toBe(1);
+    expect(persisted?.lastConversationId).toBe('new-convo');
   });
 
   it('enforces one project per chat when moving conversations', async () => {

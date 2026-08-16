@@ -153,6 +153,21 @@ describe('ArchiveAllChats', () => {
     expect(mockStartNewChat).not.toHaveBeenCalled();
   });
 
+  it('keeps an already-archived conversation that archive-all could not have changed', () => {
+    mockGetConversation.mockReturnValue({
+      conversationId: 'archived-conversation',
+      isArchived: true,
+      isTemporary: false,
+    });
+    render(<ArchiveAllChats />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_nav_archive_all_chats' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_archive' }));
+
+    mockOnSuccess?.();
+
+    expect(mockStartNewChat).not.toHaveBeenCalled();
+  });
+
   it('keeps a new chat that has no persisted conversation id', () => {
     mockGetConversation.mockReturnValue(null);
     render(<ArchiveAllChats />);

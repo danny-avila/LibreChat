@@ -278,18 +278,30 @@ export async function updateChatProjectLastConversationForUser(
   }
 
   const lastConversationAt = conversation.updatedAt ?? conversation.createdAt ?? new Date();
-  const update: Record<string, unknown> = {
-    $set: {
-      lastConversationAt,
-      lastConversationId: conversation.conversationId,
-    },
+  const lastConversationFields = {
+    lastConversationAt,
+    lastConversationId: conversation.conversationId,
   };
-  if (incrementCount) {
-    update.$inc = { conversationCount: 1 };
+  const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
+  const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), user };
+
+  if (!incrementCount) {
+    await ChatProject.updateOne(projectFilter, { $set: lastConversationFields });
+    return;
   }
 
-  const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
-  await ChatProject.updateOne({ _id: new mongoose.Types.ObjectId(projectId), user }, update);
+  /**
+   * Skip `$inc` when a concurrent refresh already recorded this conversation as
+   * `lastConversationId`. The conversation is visible to countDocuments as soon
+   * as it is persisted, so a later increment would double-count it.
+   */
+  const incremented = await ChatProject.updateOne(
+    { ...projectFilter, lastConversationId: { $ne: conversation.conversationId } },
+    { $set: lastConversationFields, $inc: { conversationCount: 1 } },
+  );
+  if ((incremented.matchedCount ?? 0) === 0) {
+    await ChatProject.updateOne(projectFilter, { $set: lastConversationFields });
+  }
 }
 
 export function createChatProjectMethods(mongoose: typeof import('mongoose')): ChatProjectMethods {
