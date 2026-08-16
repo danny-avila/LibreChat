@@ -2,6 +2,18 @@ import type { TFile } from './types/files';
 import type { TMessage } from './types';
 
 export type ParentMessage = TMessage & { children: TMessage[]; depth: number };
+
+/**
+ * Memoizes built trees per messages-array identity, sub-keyed by fileMap
+ * identity. The same query data feeds several independent `select`s (ChatView
+ * plus the branch-tail helpers), which used to rebuild the full tree five
+ * times per cache write; entries die with the messages array itself.
+ */
+const treeCache = new WeakMap<
+  (TMessage | undefined)[],
+  Map<Record<string, TFile> | null, TMessage[]>
+>();
+
 /**
  * Builds the render tree from the flat messages array. Order-robust: live
  * stream/steer/preempt cache writes can momentarily place a child before its
@@ -19,6 +31,13 @@ export function buildTree({
 }) {
   if (messages === null) {
     return null;
+  }
+
+  const cacheKey = fileMap ?? null;
+  const cachedTrees = treeCache.get(messages);
+  const cachedTree = cachedTrees?.get(cacheKey);
+  if (cachedTree) {
+    return cachedTree;
   }
 
   const messageMap: Record<string, ParentMessage> = {};
@@ -95,5 +114,11 @@ export function buildTree({
     }
   }
 
-  return rootMessages as TMessage[];
+  const tree = rootMessages as TMessage[];
+  if (cachedTrees) {
+    cachedTrees.set(cacheKey, tree);
+  } else {
+    treeCache.set(messages, new Map([[cacheKey, tree]]));
+  }
+  return tree;
 }
