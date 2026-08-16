@@ -42,7 +42,6 @@ jest.mock('../Presentation', () => ({
 jest.mock('../Header', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Footer', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Landing', () => ({ __esModule: true, default: () => <div /> }));
-jest.mock('../ProjectLandingChip', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Messages/MessagesView', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Input/ChatForm', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Input/ConversationStarters', () => ({ __esModule: true, default: () => <div /> }));

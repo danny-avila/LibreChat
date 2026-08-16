@@ -1,12 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type FormEvent,
-  type MutableRefObject,
-  type ReactNode,
-} from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import {
   MAX_CHAT_PROJECT_NAME_LENGTH,
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
@@ -22,31 +14,33 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TChatProject } from 'librechat-data-provider';
-import { useCreateProjectMutation } from '~/data-provider';
+import { useUpdateProjectMutation } from '~/data-provider';
+import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 
-type ProjectCreateDialogProps = {
+type ProjectEditDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated?: (project: TChatProject) => void;
-  children?: ReactNode;
-  triggerRef?: MutableRefObject<HTMLButtonElement | null>;
+  project: TChatProject;
 };
 
-export default function ProjectCreateDialog({
-  open,
-  onOpenChange,
-  onCreated,
-  children,
-  triggerRef,
-}: ProjectCreateDialogProps) {
+export default function ProjectEditDialog({ open, onOpenChange, project }: ProjectEditDialogProps) {
   const localize = useLocalize();
   const formId = useId();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const createProject = useCreateProjectMutation();
+  const [name, setName] = useState(project.name);
+  const [description, setDescription] = useState(project.description ?? '');
+  const [wasOpen, setWasOpen] = useState(open);
+  const updateProject = useUpdateProjectMutation();
   const { showToast } = useToastContext();
+
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setName(project.name);
+      setDescription(project.description ?? '');
+    }
+  }
 
   useEffect(() => {
     if (!open) {
@@ -56,51 +50,43 @@ export default function ProjectCreateDialog({
     return () => cancelAnimationFrame(frameId);
   }, [open]);
 
-  const resetForm = () => {
-    setName('');
-    setDescription('');
-  };
+  const trimmedName = name.trim();
+  const trimmedDescription = description.trim();
+  const isUnchanged =
+    trimmedName === project.name && trimmedDescription === (project.description ?? '').trim();
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    onOpenChange(nextOpen);
-    if (!nextOpen && !createProject.isLoading) {
-      resetForm();
-    }
-  };
-
-  const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const trimmedName = name.trim();
-    if (!trimmedName || createProject.isLoading) {
+    if (!trimmedName || isUnchanged || updateProject.isLoading) {
       return;
     }
 
-    try {
-      const trimmedDescription = description.trim();
-      const project = await createProject.mutateAsync({
+    updateProject.mutate(
+      {
+        projectId: project._id,
         name: trimmedName,
-        ...(trimmedDescription ? { description: trimmedDescription } : {}),
-      });
-      resetForm();
-      onOpenChange(false);
-      onCreated?.(project);
-    } catch {
-      showToast({
-        message: localize('com_ui_project_create_error'),
-        status: 'error',
-      });
-    }
+        description: trimmedDescription,
+      },
+      {
+        onSuccess: () => onOpenChange(false),
+        onError: () =>
+          showToast({
+            message: localize('com_ui_project_rename_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          }),
+      },
+    );
   };
 
   return (
-    <OGDialog open={open} onOpenChange={handleOpenChange} triggerRef={triggerRef}>
-      {children}
+    <OGDialog open={open} onOpenChange={onOpenChange}>
       <OGDialogTemplate
-        title={localize('com_ui_create_project')}
+        title={localize('com_ui_edit_project')}
         showCloseButton={false}
         className="w-11/12 max-w-md"
         main={
-          <form id={formId} onSubmit={handleCreate} className="flex flex-col gap-4">
+          <form id={formId} onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="space-y-2">
               <Label htmlFor={`${formId}-name`} className="text-sm font-medium text-text-primary">
                 {localize('com_ui_project_name')}
@@ -110,7 +96,6 @@ export default function ProjectCreateDialog({
                 ref={inputRef}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder={localize('com_ui_project_name_placeholder')}
                 maxLength={MAX_CHAT_PROJECT_NAME_LENGTH}
                 className="w-full"
               />
@@ -141,15 +126,10 @@ export default function ProjectCreateDialog({
             type="submit"
             form={formId}
             variant="submit"
-            disabled={!name.trim() || createProject.isLoading}
-            aria-label={localize('com_ui_create_project')}
+            disabled={!trimmedName || isUnchanged || updateProject.isLoading}
             className="active:scale-[0.96]"
           >
-            {createProject.isLoading ? (
-              <Spinner className="size-4" />
-            ) : (
-              localize('com_ui_create_project')
-            )}
+            {updateProject.isLoading ? <Spinner className="size-4" /> : localize('com_ui_save')}
           </Button>
         }
       />

@@ -1,9 +1,13 @@
+import {
+  MAX_CHAT_PROJECT_NAME_LENGTH,
+  MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+} from 'librechat-data-provider';
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
-import logger from '~/config/winston';
-import { isValidObjectIdString } from '~/utils/objectId';
-import { buildRetentionVisibilityFilter } from '~/utils/retention';
-import { escapeRegExp } from '~/utils/string';
 import type { IChatProject, IChatProjectDocument, IConversation } from '~/types';
+import { buildRetentionVisibilityFilter } from '~/utils/retention';
+import { isValidObjectIdString } from '~/utils/objectId';
+import { escapeRegExp } from '~/utils/string';
+import logger from '~/config/winston';
 
 export type ChatProjectSortBy = 'name' | 'createdAt' | 'lastConversationAt';
 export type ChatProjectSortDirection = 'asc' | 'desc';
@@ -88,8 +92,8 @@ function normalizeLimit(limit?: number): number {
 
 function sanitizeProjectInput(input: CreateChatProjectInput): CreateChatProjectInput {
   return {
-    name: input.name.trim().slice(0, 100),
-    description: input.description?.trim().slice(0, 1000) ?? '',
+    name: input.name.trim().slice(0, MAX_CHAT_PROJECT_NAME_LENGTH),
+    description: input.description?.trim().slice(0, MAX_CHAT_PROJECT_DESCRIPTION_LENGTH) ?? '',
   };
 }
 
@@ -296,7 +300,8 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     const filters: FilterQuery<IChatProjectDocument>[] = [{ user }];
 
     if (options.search?.trim()) {
-      filters.push({ name: { $regex: escapeRegExp(options.search.trim()), $options: 'i' } });
+      const searchRegex = { $regex: escapeRegExp(options.search.trim()), $options: 'i' };
+      filters.push({ $or: [{ name: searchRegex }, { description: searchRegex }] });
     }
 
     const cursorFilter = createCursorFilter(
@@ -340,14 +345,15 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
     const update: Partial<Pick<IChatProject, 'name' | 'description'>> = {};
     if (typeof input.name === 'string') {
-      const name = input.name.trim().slice(0, 100);
+      const name = input.name.trim().slice(0, MAX_CHAT_PROJECT_NAME_LENGTH);
       if (!name) {
         throw new Error('Project name is required');
       }
       update.name = name;
     }
     if (input.description !== undefined) {
-      update.description = input.description?.trim().slice(0, 1000) ?? '';
+      update.description =
+        input.description?.trim().slice(0, MAX_CHAT_PROJECT_DESCRIPTION_LENGTH) ?? '';
     }
 
     return await ChatProject.findOneAndUpdate(

@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createModels } from '~/models';
 import type { IChatProject, IConversation } from '~/types';
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
+import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -81,6 +81,26 @@ describe('ChatProject methods', () => {
     const list = await methods.listChatProjects(user, { sortBy: 'name', sortDirection: 'asc' });
     expect(list.projects).toHaveLength(1);
     expect(list.projects[0].name).toBe('Customer Alpha Updated');
+  });
+
+  it('filters projects by name or description search', async () => {
+    await methods.createChatProject(user, {
+      name: 'Customer Alpha',
+      description: 'Support work',
+    });
+    await methods.createChatProject(user, {
+      name: 'Internal Tools',
+      description: 'Overflow menu test',
+    });
+
+    const byName = await methods.listChatProjects(user, { search: 'alpha' });
+    expect(byName.projects.map((project) => project.name)).toEqual(['Customer Alpha']);
+
+    const byDescription = await methods.listChatProjects(user, { search: 'overflow' });
+    expect(byDescription.projects.map((project) => project.name)).toEqual(['Internal Tools']);
+
+    const noMatch = await methods.listChatProjects(user, { search: 'zzzz' });
+    expect(noMatch.projects).toHaveLength(0);
   });
 
   it('paginates projects deterministically when latest activity is null', async () => {

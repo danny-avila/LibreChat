@@ -69,6 +69,7 @@ function ConvoOptions({
   const { newConversation } = useNewConvo();
 
   const menuId = useId();
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
   const projectButtonRef = useRef<HTMLButtonElement>(null);
@@ -427,6 +428,7 @@ function ConvoOptions({
         setIsOpen={setIsPopoverActive}
         trigger={
           <Ariakit.MenuButton
+            ref={menuButtonRef}
             id={`conversation-menu-${conversationId}`}
             aria-label={localize('com_nav_convo_menu_options')}
             aria-expanded={isPopoverActive}
@@ -470,7 +472,7 @@ function ConvoOptions({
           conversationId={conversationId ?? ''}
           chatProjectId={chatProjectId}
           setMenuOpen={setIsPopoverActive}
-          triggerRef={projectButtonRef}
+          triggerRef={menuButtonRef}
           showProjectDialog={showProjectDialog}
           setShowProjectDialog={setShowProjectDialog}
         />

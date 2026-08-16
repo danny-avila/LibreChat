@@ -4,6 +4,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
   type FC,
   type ReactNode,
@@ -14,10 +15,11 @@ import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtuali
 import type { TConversation } from 'librechat-data-provider';
 import type { MeasuredCellParent } from '~/components/Conversations/Conversations';
 import ConversationEndpointIcon from '~/components/Conversations/ConversationEndpointIcon';
-import { areConversationRenderPropsEqual } from '~/components/Conversations/utils';
+import { areConversationListItemFieldsEqual } from '~/components/Conversations/utils';
 import { DateLabel } from '~/components/Conversations/Conversations';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
-import { groupConversationsByDate, cn } from '~/utils';
+import { cn, groupConversationsByDate } from '~/utils';
+import ProjectChatOptions from './ProjectChatOptions';
 import { useActiveJobs } from '~/data-provider';
 
 type ChatSortField = 'updatedAt' | 'createdAt';
@@ -77,33 +79,56 @@ const ConversationRow = memo(
   ({ conversation, isGenerating }: { conversation: TConversation; isGenerating: boolean }) => {
     const { navigateToConvo } = useNavigateToConvo();
     const localize = useLocalize();
+    const conversationId = conversation.conversationId ?? '';
     const title = conversation.title || localize('com_ui_untitled');
     const updatedAt = conversation.updatedAt || conversation.createdAt;
     const formattedDate = updatedAt ? new Date(updatedAt).toLocaleString() : '';
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     return (
-      <button
-        type="button"
-        className="flex w-full items-center gap-3 border-b border-border-light py-3 text-left outline-none transition-colors hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary"
-        onClick={() => navigateToConvo(conversation)}
-      >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center">
-          <ConversationEndpointIcon conversation={conversation} size={24} context="menu-item" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-text-primary">{title}</span>
-          <span className="block truncate text-xs text-text-secondary">{formattedDate}</span>
-        </span>
-        {isGenerating && (
-          <Spinner
-            className="h-4 w-4 shrink-0 text-text-primary"
-            aria-label={localize('com_ui_generating')}
-          />
+      <article
+        className={cn(
+          'group/project-chat mb-2 flex items-center rounded-2xl border border-border-light bg-surface-secondary',
+          'transition-colors hover:bg-surface-hover',
+          isMenuOpen && 'bg-surface-hover',
         )}
-      </button>
+      >
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-3.5 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+          onClick={() => navigateToConvo(conversation)}
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+            <ConversationEndpointIcon conversation={conversation} size={40} context="landing" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium text-text-primary">{title}</span>
+            <span className="block truncate text-xs tabular-nums text-text-secondary">
+              {formattedDate}
+            </span>
+          </span>
+          {isGenerating ? (
+            <Spinner
+              className="h-4 w-4 shrink-0 text-text-primary"
+              aria-label={localize('com_ui_generating')}
+            />
+          ) : null}
+        </button>
+        {conversationId ? (
+          <div className="pr-2">
+            <ProjectChatOptions
+              conversation={conversation}
+              isMenuOpen={isMenuOpen}
+              setIsMenuOpen={setIsMenuOpen}
+            />
+          </div>
+        ) : null}
+      </article>
     );
   },
-  areConversationRenderPropsEqual,
+  (prevProps, nextProps) =>
+    areConversationListItemFieldsEqual(prevProps.conversation, nextProps.conversation) &&
+    prevProps.isGenerating === nextProps.isGenerating,
 );
 
 ConversationRow.displayName = 'ProjectWorkspaceConversationRow';
@@ -194,7 +219,7 @@ const ProjectChatList = ({
       if (item.type === 'empty') {
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <div className="py-12 text-center text-sm text-text-secondary">{emptyLabel}</div>
+            <div className="px-3 py-14 text-center text-sm text-text-secondary">{emptyLabel}</div>
           </MeasuredRow>
         );
       }
@@ -202,7 +227,9 @@ const ProjectChatList = ({
       if (item.type === 'date') {
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <DateLabel groupName={item.groupName} />
+            <div className="pb-3">
+              <DateLabel groupName={item.groupName} />
+            </div>
           </MeasuredRow>
         );
       }
@@ -234,9 +261,7 @@ const ProjectChatList = ({
   );
 
   return (
-    <div
-      className={cn('min-h-[280px] flex-1 overflow-hidden rounded-lg border border-border-light')}
-    >
+    <div className="min-h-[280px] flex-1 overflow-hidden">
       <AutoSizer>
         {({ width, height }) => (
           <List
