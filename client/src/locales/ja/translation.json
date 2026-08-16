@@ -1537,7 +1537,6 @@
   "com_ui_skill_running": "実行中 {{0}}",
   "com_ui_skill_sr_public": "パブリックスキル",
   "com_ui_skill_states_limit": "上限に達しました {{0}} アクティブ/非アクティブなスキルの上書き。いくつかのオーバーライドを削除して、新しいスキルを切り替えます。",
-  "com_ui_skill_toggle_active": "スキルのアクティブ状態を切り替えます",
   "com_ui_skill_update_conflict": "あなたの前に別の編集が保存されました。最新バージョンを再読み込みしています。",
   "com_ui_skill_update_error": "スキルの保存に失敗しました",
   "com_ui_skill_updated": "スキルを保存しました",

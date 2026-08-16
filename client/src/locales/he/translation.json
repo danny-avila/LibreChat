@@ -1553,7 +1553,6 @@
   "com_ui_skill_running": "מריץ את {{0}}",
   "com_ui_skill_sr_public": "מיומנות (skill) ציבורית",
   "com_ui_skill_states_limit": "הגעת למגבלה של {{0}} עקיפות מיומניות (skills) פעילות/לא פעילות. הסר חלק מהעקיפות כדי להפעיל או לכבות מיומניות נוספות.",
-  "com_ui_skill_toggle_active": "שנה את מצב הפעילות של המיומנות (skill)",
   "com_ui_skill_update_conflict": "עריכה אחרת נשמרה לפני העריכה שלך. טוען את הגרסה העדכנית.",
   "com_ui_skill_update_error": "שמירת המיומנות (skill) נכשלה",
   "com_ui_skill_updated": "המיומנות (skill) נשמרה",

@@ -1681,7 +1681,6 @@
   "com_ui_skill_running": "Vykdoma {{0}}",
   "com_ui_skill_sr_public": "Viešas įgūdis",
   "com_ui_skill_states_limit": "Pasiekėte {{0}} aktyvių / neaktyvių įgūdžių perrašymų limitą. Pašalinkite kai kuriuos perrašymus, kad galėtumėte įjungti naujus įgūdžius.",
-  "com_ui_skill_toggle_active": "Perjungti įgūdžio aktyvumo būseną",
   "com_ui_skill_unavailable": "Nepasiekiamas įgūdis",
   "com_ui_skill_update_conflict": "Prieš jūsų pakeitimus buvo išsaugotas kitas redagavimas. Įkeliama naujausia versija.",
   "com_ui_skill_update_error": "Nepavyko išsaugoti įgūdžio",

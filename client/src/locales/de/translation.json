@@ -1799,7 +1799,6 @@
   "com_ui_skill_running": "Läuft {{0}}",
   "com_ui_skill_sr_public": "Öffentlicher Skill",
   "com_ui_skill_states_limit": "Du hast das Limit von {{0}} aktiven/inaktiven Skill-Overrides erreicht. Entferne einige Overrides, um neue Skills umzuschalten.",
-  "com_ui_skill_toggle_active": "Aktivstatus des Skills umschalten",
   "com_ui_skill_unavailable": "Nicht verfügbarer Skill",
   "com_ui_skill_update_conflict": "Eine andere Änderung wurde vor deiner gespeichert. Die neueste Version wird geladen.",
   "com_ui_skill_update_error": "Speichern des Skills fehlgeschlagen",

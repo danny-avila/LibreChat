@@ -965,7 +965,6 @@
   "com_ui_skill_running": "Executant {{0}}",
   "com_ui_skill_sr_public": "Habilitat pública",
   "com_ui_skill_states_limit": "Has assolit el límit de {{0}} modificacions d'habilitats actives/inactives. Elimina algunes modificacions per activar noves habilitats.",
-  "com_ui_skill_toggle_active": "Alterna l'estat actiu de l'habilitat",
   "com_ui_skill_updated": "Habilitat desada",
   "com_ui_skill_upload": "Puja una habilitat",
   "com_ui_special_var_current_date": "Data actual",

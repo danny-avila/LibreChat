@@ -1797,7 +1797,6 @@
   "com_ui_skill_running": "Uruchamianie {{0}}",
   "com_ui_skill_sr_public": "Umiejętność publiczna",
   "com_ui_skill_states_limit": "Osiągnąłeś limit {{0}} aktywnych/nieaktywnych nadpisań umiejętności. Usuń niektóre zastąpienia, aby przełączyć nowe umiejętności.",
-  "com_ui_skill_toggle_active": "Przełącz aktywny stan umiejętności",
   "com_ui_skill_unavailable": "Niedostępna umiejętność",
   "com_ui_skill_update_conflict": "Kolejna zmiana została zapisana przed Twoją. Ponowne załadowanie najnowszej wersji.",
   "com_ui_skill_update_error": "Nie udało się zapisać umiejętności",

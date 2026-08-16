@@ -1421,7 +1421,6 @@
   "com_ui_skill_running": "{{0}} çalıştırılıyor",
   "com_ui_skill_sr_public": "Herkese açık yetenek",
   "com_ui_skill_states_limit": "{{0}} aktif/inaktif yetenek geçersiz kılma sınırına ulaştınız. Yeni yetenekleri değiştirmek için bazı geçersiz kılmaları kaldırın.",
-  "com_ui_skill_toggle_active": "Yeteneğin aktiflik durumunu değiştir",
   "com_ui_skill_updated": "Yetenek kaydedildi",
   "com_ui_skill_upload": "Bir yetenek yükle",
   "com_ui_special": "özel",

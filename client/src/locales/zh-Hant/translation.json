@@ -978,7 +978,6 @@
   "com_ui_skill_running": "正在執行 {{0}}",
   "com_ui_skill_sr_public": "公開技能",
   "com_ui_skill_states_limit": "已達 {{0}} 個啟用／停用技能覆寫的上限。請移除部分覆寫後再切換其他技能。",
-  "com_ui_skill_toggle_active": "切換技能的啟用狀態",
   "com_ui_skill_updated": "技能已儲存",
   "com_ui_skill_upload": "上傳技能",
   "com_ui_special_variables": "特殊變數",
