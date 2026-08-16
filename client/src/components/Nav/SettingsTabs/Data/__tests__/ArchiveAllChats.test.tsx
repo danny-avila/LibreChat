@@ -6,8 +6,10 @@ const mockMutate = jest.fn();
 const mockShowToast = jest.fn();
 const mockStartNewChat = jest.fn();
 const mockGetConversation = jest.fn();
+const mockGetConversationById = jest.fn();
 let mockIsLoading = false;
 let mockOnSuccess: (() => void) | undefined;
+let mockOnError: (() => void | Promise<void>) | undefined;
 
 jest.mock('@librechat/client', () => {
   const actual = jest.requireActual('@librechat/client');
@@ -17,9 +19,24 @@ jest.mock('@librechat/client', () => {
   };
 });
 
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      getConversationById: (...args: unknown[]) => mockGetConversationById(...args),
+    },
+  };
+});
+
 jest.mock('~/data-provider', () => ({
-  useArchiveAllConversationsMutation: (options?: { onSuccess?: () => void }) => {
+  useArchiveAllConversationsMutation: (options?: {
+    onSuccess?: () => void;
+    onError?: () => void | Promise<void>;
+  }) => {
     mockOnSuccess = options?.onSuccess;
+    mockOnError = options?.onError;
     return {
       mutate: mockMutate,
       isLoading: mockIsLoading,
@@ -45,6 +62,7 @@ describe('ArchiveAllChats', () => {
   beforeEach(() => {
     mockIsLoading = false;
     mockOnSuccess = undefined;
+    mockOnError = undefined;
     jest.clearAllMocks();
     mockGetConversation.mockReturnValue({
       conversationId: 'conversation-1',
@@ -143,6 +161,68 @@ describe('ArchiveAllChats', () => {
 
     mockOnSuccess?.();
 
+    expect(mockStartNewChat).not.toHaveBeenCalled();
+  });
+
+  it('starts a new chat when a partial archive already committed the active conversation', async () => {
+    mockGetConversationById.mockResolvedValue({
+      conversationId: 'conversation-1',
+      isArchived: true,
+    });
+    render(<ArchiveAllChats />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_nav_archive_all_chats' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_archive' }));
+
+    await mockOnError?.();
+
+    expect(mockGetConversationById).toHaveBeenCalledWith('conversation-1');
+    expect(mockStartNewChat).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_archive_all_error' }),
+    );
+  });
+
+  it('keeps the active chat when a later archive batch fails before committing it', async () => {
+    mockGetConversationById.mockResolvedValue({
+      conversationId: 'conversation-1',
+      isArchived: false,
+    });
+    render(<ArchiveAllChats />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_nav_archive_all_chats' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_archive' }));
+
+    await mockOnError?.();
+
+    expect(mockGetConversationById).toHaveBeenCalledWith('conversation-1');
+    expect(mockStartNewChat).not.toHaveBeenCalled();
+  });
+
+  it('keeps the active chat when archive state cannot be confirmed after an error', async () => {
+    mockGetConversationById.mockRejectedValue(new Error('conversation lookup failed'));
+    render(<ArchiveAllChats />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_nav_archive_all_chats' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_archive' }));
+
+    await mockOnError?.();
+
+    expect(mockStartNewChat).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'com_ui_archive_all_error' }),
+    );
+  });
+
+  it('does not refetch when the user opened another conversation before the error', async () => {
+    render(<ArchiveAllChats />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_nav_archive_all_chats' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_archive' }));
+    mockGetConversation.mockReturnValue({
+      conversationId: 'conversation-2',
+      isTemporary: false,
+    });
+
+    await mockOnError?.();
+
+    expect(mockGetConversationById).not.toHaveBeenCalled();
     expect(mockStartNewChat).not.toHaveBeenCalled();
   });
 });

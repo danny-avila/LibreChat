@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Constants } from 'librechat-data-provider';
+import { Constants, dataService } from 'librechat-data-provider';
 import {
   Label,
   Button,
@@ -18,13 +18,23 @@ import useNewChat from '~/hooks/Chat/useNewChat';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
 
+type SubmittedConversation = Pick<TConversation, 'conversationId' | 'isTemporary' | 'expiredAt'>;
+
+const isSubmittedChatStillActive = (
+  submittedConversation: SubmittedConversation | null,
+  currentConversation: TConversation | null,
+): submittedConversation is SubmittedConversation & { conversationId: string } =>
+  submittedConversation != null &&
+  submittedConversation.conversationId != null &&
+  submittedConversation.conversationId !== Constants.NEW_CONVO &&
+  !isTemporaryConversation(submittedConversation) &&
+  currentConversation?.conversationId === submittedConversation.conversationId &&
+  !isTemporaryConversation(currentConversation);
+
 export const ArchiveAllChats = () => {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
-  const submittedConversationRef = useRef<Pick<
-    TConversation,
-    'conversationId' | 'isTemporary' | 'expiredAt'
-  > | null>(null);
+  const submittedConversationRef = useRef<SubmittedConversation | null>(null);
   const getConversation = useGetConversation();
   const { startNewChat } = useNewChat();
   const { showToast } = useToastContext();
@@ -34,13 +44,7 @@ export const ArchiveAllChats = () => {
       const submittedConversation = submittedConversationRef.current;
       const currentConversation = getConversation();
       submittedConversationRef.current = null;
-      if (
-        submittedConversation != null &&
-        submittedConversation.conversationId !== Constants.NEW_CONVO &&
-        !isTemporaryConversation(submittedConversation) &&
-        currentConversation?.conversationId === submittedConversation.conversationId &&
-        !isTemporaryConversation(currentConversation)
-      ) {
+      if (isSubmittedChatStillActive(submittedConversation, currentConversation)) {
         startNewChat();
       }
       showToast({
@@ -49,12 +53,28 @@ export const ArchiveAllChats = () => {
         showIcon: true,
       });
     },
-    onError: () => {
+    onError: async () => {
+      const submittedConversation = submittedConversationRef.current;
+      const currentConversation = getConversation();
+      submittedConversationRef.current = null;
       showToast({
         message: localize('com_ui_archive_all_error'),
         severity: NotificationSeverity.ERROR,
         showIcon: true,
       });
+      if (!isSubmittedChatStillActive(submittedConversation, currentConversation)) {
+        return;
+      }
+      try {
+        const persistedConversation = await dataService.getConversationById(
+          submittedConversation.conversationId,
+        );
+        if (persistedConversation.isArchived === true) {
+          startNewChat();
+        }
+      } catch {
+        // Leave Recoil alone when we cannot confirm this chat was archived.
+      }
     },
   });
 
