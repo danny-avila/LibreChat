@@ -37,6 +37,7 @@ describe('useComposerBindings', () => {
       ...result.current,
     };
 
+    expect(result.current.shortcutsEnabled).toBe(false);
     expect(result.current.submitOverride).toBeNull();
     expect(result.current.yieldedChords).toEqual(new Set());
     expect(

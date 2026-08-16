@@ -7,6 +7,8 @@ import { bindingHash } from '~/utils/shortcuts';
 import store from '~/store';
 
 export type ComposerBindings = {
+  /** Whether user-configurable keyboard shortcuts are globally enabled. */
+  shortcutsEnabled: boolean;
   /**
    * Effective `submitMessage` override: `undefined` when unset (default Ctrl/Cmd+Enter applies),
    * `null` when explicitly unbound, otherwise the rebound chord.
@@ -65,5 +67,8 @@ export default function useComposerBindings(): ComposerBindings {
     return hashes;
   }, [resolvedBindings, shortcutsEnabled]);
 
-  return useMemo(() => ({ submitOverride, yieldedChords }), [submitOverride, yieldedChords]);
+  return useMemo(
+    () => ({ shortcutsEnabled, submitOverride, yieldedChords }),
+    [shortcutsEnabled, submitOverride, yieldedChords],
+  );
 }
