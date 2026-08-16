@@ -151,9 +151,10 @@ function UnifiedSidebar() {
       <div
         id={MOBILE_DRAWER_ID}
         className={cn(
-          /** `touch-pan-y`: the close swipe reads horizontal touches here; the
-           * drawer holds no horizontal scrollers, so nothing else wants them. */
-          'fixed inset-y-0 left-0 flex w-full touch-pan-y flex-col bg-surface-primary-alt',
+          /** The close swipe reads horizontal touches here (the drawer holds no
+           * horizontal scrollers), while pinch-zoom stays with the browser —
+           * this full-viewport surface must not disable zooming entirely. */
+          'fixed inset-y-0 left-0 flex w-full touch-pan-y touch-pinch-zoom flex-col bg-surface-primary-alt',
           expanded ? 'translate-x-0' : '-translate-x-full',
         )}
         style={{ transition: SIDEBAR_TRANSITION, zIndex: DRAWER_Z_INDEX }}

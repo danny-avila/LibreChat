@@ -15,6 +15,8 @@ const COMMIT_DISTANCE_RATIO = 0.35;
 const COMMIT_VELOCITY = 0.3;
 /** …but never from a twitch shorter than this. */
 const FLICK_MIN_DISTANCE = 24;
+/** A release this long after the last move is a hold, not a flick. */
+const VELOCITY_HOLD_MS = 100;
 /** Inline styles are cleared this long after TRANSITION_MS, then classes own the state. */
 const SETTLE_BUFFER_MS = 80;
 
@@ -71,6 +73,8 @@ type Sample = { t: number; x: number };
 type Gesture = {
   phase: 'tracking' | 'claimed' | 'dead';
   opening: boolean;
+  /** Identifier of the initiating touch — a second finger never becomes it. */
+  touchId: number;
   startX: number;
   startY: number;
   dx: number;
@@ -130,11 +134,27 @@ export default function useDrawerSwipe({
   onOpenChange,
 }: DrawerSwipeOptions) {
   const gestureRef = useRef<Gesture | null>(null);
-  const settleRef = useRef<{ id: ReturnType<typeof setTimeout>; target: boolean } | null>(null);
+  const settleRef = useRef<{
+    id: ReturnType<typeof setTimeout>;
+    target: boolean;
+    drawer: HTMLElement;
+    pane: HTMLElement;
+  } | null>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
 
   useEffect(() => {
+    /** A settle whose target the world has since contradicted — drawer closed
+     * via a button inside its 380ms window, or the breakpoint crossed and
+     * disabled the hook — must not fire: its stale write would strand the
+     * pane offscreen with React believing nothing changed. A settle that
+     * AGREES with `open` keeps running so its handoff finishes undisturbed. */
+    const pending = settleRef.current;
+    if (pending != null && (!enabled || pending.target !== open)) {
+      clearTimeout(pending.id);
+      settleRef.current = null;
+      releaseInlineStyles(pending.drawer, pending.pane);
+    }
     if (!enabled) {
       return;
     }
@@ -145,17 +165,6 @@ export default function useDrawerSwipe({
     }
     const opening = !open;
     const surface = opening ? pane : drawer;
-
-    /** A settle whose target the world has since contradicted (drawer closed
-     * via a button inside its 380ms window) must not fire — its stale write
-     * would strand the pane offscreen with React believing nothing changed.
-     * A settle that AGREES with `open` keeps running so its animation and
-     * handoff finish undisturbed. */
-    if (settleRef.current != null && settleRef.current.target !== open) {
-      clearTimeout(settleRef.current.id);
-      settleRef.current = null;
-      releaseInlineStyles(drawer, pane);
-    }
 
     const clearDrag = (gesture: Gesture) => {
       if (gesture.raf != null) {
@@ -170,7 +179,17 @@ export default function useDrawerSwipe({
       clearDrag(gesture);
       if (gesture.reducedMotion) {
         if (next !== open) {
+          /** Snap: suppress the shared 300ms transition for this state flip,
+           * then hand it back once the render has committed. */
+          gesture.drawer.style.transition = 'none';
+          gesture.pane.style.transition = 'none';
           onOpenChangeRef.current(next);
+          const id = setTimeout(() => {
+            settleRef.current = null;
+            gesture.drawer.style.transition = SIDEBAR_TRANSITION;
+            gesture.pane.style.transition = SIDEBAR_TRANSITION;
+          }, SETTLE_BUFFER_MS);
+          settleRef.current = { id, target: next, drawer: gesture.drawer, pane: gesture.pane };
         }
         return;
       }
@@ -191,7 +210,7 @@ export default function useDrawerSwipe({
         paneEl.style.willChange = '';
         paneEl.style.transition = SIDEBAR_TRANSITION;
       }, TRANSITION_MS + SETTLE_BUFFER_MS);
-      settleRef.current = { id, target: next };
+      settleRef.current = { id, target: next, drawer: drawerEl, pane: paneEl };
     };
 
     const onTouchStart = (event: TouchEvent) => {
@@ -207,6 +226,7 @@ export default function useDrawerSwipe({
       gestureRef.current = {
         phase: 'tracking',
         opening,
+        touchId: touch.identifier,
         startX: touch.clientX,
         startY: touch.clientY,
         dx: 0,
@@ -240,7 +260,10 @@ export default function useDrawerSwipe({
       if (gesture == null || gesture.phase === 'dead') {
         return;
       }
-      if (event.touches.length !== 1) {
+      const touch = Array.from(event.touches).find(
+        (candidate) => candidate.identifier === gesture.touchId,
+      );
+      if (event.touches.length !== 1 || touch == null) {
         if (gesture.phase === 'claimed') {
           settle(gesture, open);
         } else {
@@ -248,7 +271,6 @@ export default function useDrawerSwipe({
         }
         return;
       }
-      const touch = event.touches[0];
       const dx = touch.clientX - gesture.startX;
       const dy = touch.clientY - gesture.startY;
 
@@ -292,18 +314,31 @@ export default function useDrawerSwipe({
       if (gesture == null) {
         return;
       }
-      /** A second finger lifting is not a release — settle only once the
-       * surface is empty, or a lingering finger commits half a gesture. */
-      if (event.touches.length > 0) {
+      /** Only the initiating finger's lift ends the gesture; a second finger
+       * lifting is not a release. */
+      const initiatingEnded = Array.from(event.changedTouches).some(
+        (candidate) => candidate.identifier === gesture.touchId,
+      );
+      if (!initiatingEnded) {
         return;
       }
       if (gesture.phase !== 'claimed') {
         clearDrag(gesture);
         return;
       }
+      /** The initiating finger left while another remains — ambiguous, so
+       * revert rather than let the survivor inherit half a gesture. */
+      if (event.touches.length > 0) {
+        settle(gesture, open);
+        return;
+      }
       const progress = gesture.opening ? gesture.dx : -gesture.dx;
       const elapsed = gesture.lastSample.t - gesture.prevSample.t;
-      const velocity = elapsed > 0 ? (gesture.lastSample.x - gesture.prevSample.x) / elapsed : 0;
+      /** A flick's momentum expires if the finger holds still before lifting —
+       * velocity is only trusted when release follows the last move promptly. */
+      const held = event.timeStamp - gesture.lastSample.t > VELOCITY_HOLD_MS;
+      const velocity =
+        !held && elapsed > 0 ? (gesture.lastSample.x - gesture.prevSample.x) / elapsed : 0;
       const towardTarget = gesture.opening ? velocity : -velocity;
       const committed =
         progress >= gesture.width * COMMIT_DISTANCE_RATIO ||

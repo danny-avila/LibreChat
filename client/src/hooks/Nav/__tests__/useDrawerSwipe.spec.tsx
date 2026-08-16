@@ -4,11 +4,20 @@ import { MOBILE_DRAWER_ID } from '~/components/UnifiedSidebar/constants';
 
 const DRAWER_WIDTH = 375;
 
-const createTouch = (x: number, y: number) => ({ clientX: x, clientY: y }) as Touch;
+const createTouch = (x: number, y: number, identifier = 0) =>
+  ({ clientX: x, clientY: y, identifier }) as Touch;
 
-const touchEvent = (type: string, touches: Touch[], timeStamp: number): TouchEvent => {
+const touchEvent = (
+  type: string,
+  touches: Touch[],
+  timeStamp: number,
+  changedTouches?: Touch[],
+): TouchEvent => {
   const event = new Event(type, { bubbles: true, cancelable: true }) as TouchEvent;
   Object.defineProperty(event, 'touches', { value: touches });
+  Object.defineProperty(event, 'changedTouches', {
+    value: changedTouches ?? [createTouch(0, 0, 0)],
+  });
   Object.defineProperty(event, 'timeStamp', { value: timeStamp });
   return event;
 };
@@ -215,6 +224,9 @@ describe('useDrawerSwipe — opening from the chat pane', () => {
     expect(harness.drawer.style.transform).toBe('');
     expect(harness.pane.style.transform).toBe('');
     expect(harness.onOpenChange).toHaveBeenCalledWith(true);
+    /** The snap must suppress the shared 300ms transition for the flip. */
+    expect(harness.drawer.style.transition).toBe('none');
+    expect(harness.pane.style.transition).toBe('none');
     harness.unmount();
   });
 
@@ -314,7 +326,9 @@ describe('useDrawerSwipe — interruptions and re-arming', () => {
       false,
     );
 
-    harness.pane.dispatchEvent(touchEvent('touchend', [createTouch(220, 100)], 80));
+    harness.pane.dispatchEvent(
+      touchEvent('touchend', [createTouch(220, 100, 0)], 80, [createTouch(80, 200, 1)]),
+    );
     expect(harness.onOpenChange).not.toHaveBeenCalled();
     expect(harness.pane.style.transform).toBe('translate3d(200px, 0, 0)');
 
@@ -339,6 +353,61 @@ describe('useDrawerSwipe — interruptions and re-arming', () => {
     expect(harness.drawer.style.transform).toBe('');
     expect(harness.drawer.style.transition).not.toBe('none');
     expect(harness.pane.style.transform).toBe('');
+    harness.unmount();
+  });
+
+  it('cancels a stale settle when crossing the breakpoint disables the hook', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    harness.swipe(harness.pane, [
+      { x: 20, y: 100, t: 0 },
+      { x: 220, y: 100, t: 50 },
+    ]);
+    harness.rerender({ open: true, enabled: true });
+    harness.rerender({ open: true, enabled: false });
+
+    expect(harness.pane.style.transform).toBe('');
+    jest.runAllTimers();
+    expect(harness.pane.style.transform).toBe('');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('reverts when the initiating finger lifts while a second remains', () => {
+    const harness = setup(false);
+    harness.swipe(
+      harness.pane,
+      [
+        { x: 20, y: 100, t: 0 },
+        { x: 220, y: 100, t: 50 },
+      ],
+      false,
+    );
+
+    harness.pane.dispatchEvent(
+      touchEvent('touchend', [createTouch(80, 200, 1)], 80, [createTouch(220, 100, 0)]),
+    );
+
+    expect(harness.onOpenChange).not.toHaveBeenCalled();
+    expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
+    harness.unmount();
+  });
+
+  it('expires flick momentum when the finger holds still before lifting', () => {
+    const harness = setup(false);
+    harness.swipe(
+      harness.pane,
+      [
+        { x: 20, y: 100, t: 0 },
+        { x: 50, y: 100, t: 20 },
+        { x: 80, y: 100, t: 40 },
+      ],
+      false,
+    );
+    harness.pane.dispatchEvent(touchEvent('touchend', [], 600));
+
+    expect(harness.onOpenChange).not.toHaveBeenCalled();
+    expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
     harness.unmount();
   });
 

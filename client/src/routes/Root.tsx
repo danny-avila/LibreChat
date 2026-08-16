@@ -18,6 +18,7 @@ import { UnifiedSidebar, SIDEBAR_TRANSITION } from '~/components/UnifiedSidebar'
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
+import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
 import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { TermsAndConditionsModal } from '~/components/ui';
@@ -51,6 +52,13 @@ export default function Root() {
       startTransition(() => {
         setSidebarExpanded(next);
       });
+      if (next) {
+        /** Same handoff as the OpenSidebar button: opening makes the pane
+         * inert, so keyboard/AT focus must land inside the drawer. */
+        setTimeout(() => {
+          document.getElementById(CLOSE_SIDEBAR_ID)?.focus();
+        }, 250);
+      }
     },
     [setSidebarExpanded],
   );
