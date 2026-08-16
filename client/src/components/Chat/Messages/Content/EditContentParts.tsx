@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
-import { ContentTypes } from 'librechat-data-provider';
 import { Alert, Button, TextareaAutosize } from '@librechat/client';
+import { ContentTypes, stripReasoningLabelMetadata } from 'librechat-data-provider';
 import { useUpdateMessageContentMutation } from 'librechat-data-provider/react-query';
 import type { TMessageContentParts, TextData } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
@@ -166,10 +166,13 @@ export default function EditContentParts({
               if (!part || !change || part.type !== change.type) {
                 return part;
               }
-              return {
+              const editedPart = {
                 ...part,
                 [change.type]: withPartText(part, change.text),
               } as TMessageContentParts;
+              return change.type === ContentTypes.THINK
+                ? stripReasoningLabelMetadata(editedPart)
+                : editedPart;
             }),
           };
         }),

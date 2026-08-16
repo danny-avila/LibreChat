@@ -701,7 +701,17 @@ describe('BaseClient', () => {
           messageId: responseMessageId,
           parentMessageId: '3',
           content: [
-            { type: ContentTypes.THINK, think: 'Original reasoning', phase: 'analysis' },
+            {
+              type: ContentTypes.THINK,
+              think: 'Original reasoning',
+              phase: 'analysis',
+              reasoning_label: 'Inspecting the original path',
+              reasoning_label_step_id: 'old-step',
+              reasoning_label_attempts: 2,
+              reasoning_label_submitted_chars: 18,
+              reasoning_label_revision: 2,
+              reasoning_label_status: 'complete',
+            },
             { type: ContentTypes.TEXT, text: 'Original response' },
           ],
         },
@@ -1944,6 +1954,71 @@ describe('BaseClient', () => {
   });
 
   describe('mergeEditedContent phase boundaries', () => {
+    test('carries the new reasoning label when adjacent THINK parts merge', () => {
+      const existing = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Retained reasoning. ',
+          reasoning_label: 'Inspecting the old path',
+          reasoning_label_step_id: 'old-step',
+          reasoning_label_attempts: 1,
+          reasoning_label_submitted_chars: 18,
+          reasoning_label_revision: 1,
+          reasoning_label_status: 'complete',
+        },
+      ];
+      const completion = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Continued reasoning.',
+          reasoning_label: 'Tracing the regenerated path',
+          reasoning_label_step_id: 'new-step',
+          reasoning_label_attempts: 3,
+          reasoning_label_submitted_chars: 20,
+          reasoning_label_revision: 2,
+          reasoning_label_status: 'streaming',
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.THINK)).toEqual([
+        {
+          ...completion[0],
+          think: 'Retained reasoning. Continued reasoning.',
+        },
+      ]);
+    });
+
+    test('clears a retained reasoning label when the merged THINK has no label', () => {
+      const existing = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Retained reasoning. ',
+          agentId: 'agent-1',
+          reasoning_label: 'Inspecting the old path',
+          reasoning_label_step_id: 'old-step',
+          reasoning_label_attempts: 3,
+          reasoning_label_submitted_chars: 18,
+          reasoning_label_revision: 2,
+          reasoning_label_status: 'complete',
+        },
+      ];
+      const completion = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Continued without a generated title.',
+          agentId: 'agent-1',
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.THINK)).toEqual([
+        {
+          type: ContentTypes.THINK,
+          think: 'Retained reasoning. Continued without a generated title.',
+          agentId: 'agent-1',
+        },
+      ]);
+    });
+
     test('does not merge commentary into a final answer', () => {
       const existing = [
         { type: ContentTypes.TEXT, text: 'Checked the deployment. ', phase: 'commentary' },

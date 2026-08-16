@@ -29,6 +29,7 @@ const {
   supportsBalanceCheck,
   isBedrockDocumentType,
   getEndpointFileConfig,
+  stripReasoningLabelMetadata,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -595,6 +596,12 @@ class BaseClient {
             const contentPart = latestMessage.content[index];
             if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
               contentPart[ContentTypes.THINK] = text;
+              delete contentPart.reasoning_label;
+              delete contentPart.reasoning_label_step_id;
+              delete contentPart.reasoning_label_attempts;
+              delete contentPart.reasoning_label_submitted_chars;
+              delete contentPart.reasoning_label_revision;
+              delete contentPart.reasoning_label_status;
             } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
               contentPart[ContentTypes.TEXT] = text;
             }
@@ -1324,7 +1331,15 @@ class BaseClient {
       };
     } else {
       mergedContent[lastIndex] = {
-        ...mergedContent[lastIndex],
+        ...stripReasoningLabelMetadata(mergedContent[lastIndex]),
+        ...(adjustedCompletion[0].reasoning_label_step_id != null && {
+          reasoning_label: adjustedCompletion[0].reasoning_label,
+          reasoning_label_step_id: adjustedCompletion[0].reasoning_label_step_id,
+          reasoning_label_attempts: adjustedCompletion[0].reasoning_label_attempts,
+          reasoning_label_submitted_chars: adjustedCompletion[0].reasoning_label_submitted_chars,
+          reasoning_label_revision: adjustedCompletion[0].reasoning_label_revision,
+          reasoning_label_status: adjustedCompletion[0].reasoning_label_status,
+        }),
         [ContentTypes.THINK]:
           (mergedContent[lastIndex][ContentTypes.THINK] || '') +
           (adjustedCompletion[0][ContentTypes.THINK] || ''),

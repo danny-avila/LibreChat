@@ -144,7 +144,13 @@ const Part = memo(function Part({
     if (typeof reasoning !== 'string') {
       return null;
     }
-    return <Reasoning reasoning={reasoning} isLast={isLast ?? false} />;
+    return (
+      <Reasoning
+        reasoning={reasoning}
+        isLast={isLast ?? false}
+        reasoningLabel={part.reasoning_label}
+      />
+    );
   } else if (part.type === ContentTypes.SUMMARY) {
     return (
       <Summary
@@ -192,6 +198,8 @@ const Part = memo(function Part({
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
+              runStepDurationMs={toolCall.runStepDurationMs}
+              backgrounded={toolCall.backgrounded}
               attachments={attachments}
               commandField="code"
               hideAttachments={hideAttachments}
@@ -209,6 +217,8 @@ const Part = memo(function Part({
               attachments={attachments}
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
+              runStepDurationMs={toolCall.runStepDurationMs}
+              backgrounded={toolCall.backgrounded}
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
               args={toolCall.args}
@@ -255,6 +265,7 @@ const Part = memo(function Part({
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
+              runStepDurationMs={toolCall.runStepDurationMs}
               attachments={attachments}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
@@ -293,6 +304,7 @@ const Part = memo(function Part({
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
+              runStepDurationMs={toolCall.runStepDurationMs}
               attachments={attachments}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
@@ -307,6 +319,7 @@ const Part = memo(function Part({
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
+              runStepDurationMs={toolCall.runStepDurationMs}
               attachments={attachments}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
@@ -320,6 +333,8 @@ const Part = memo(function Part({
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
+              runStepDurationMs={toolCall.runStepDurationMs}
+              backgrounded={toolCall.backgrounded}
               attachments={attachments}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
@@ -345,6 +360,7 @@ const Part = memo(function Part({
               initialProgress={toolCall.progress ?? 0.1}
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
+              runStepDurationMs={toolCall.runStepDurationMs}
               args={toolCall.args}
               output={toolCall.output ?? undefined}
               attachments={attachments}
@@ -368,6 +384,7 @@ const Part = memo(function Part({
             hideAttachments={hideAttachments}
             onExpand={onToolExpand}
             runStepStatus={toolCall.runStepStatus}
+            runStepDurationMs={toolCall.runStepDurationMs}
           />
         );
       })();
@@ -408,6 +425,7 @@ const Part = memo(function Part({
           initialProgress={toolCall.progress ?? 0.1}
           isSubmitting={isSubmitting}
           runStepStatus={toolCall.runStepStatus}
+          runStepDurationMs={toolCall.runStepDurationMs}
           output={(toolCall as { output?: string }).output}
           attachments={attachments}
           onExpand={onToolExpand}

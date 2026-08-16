@@ -124,6 +124,49 @@ describe('EditContentParts', () => {
     expect(enterEdit).toHaveBeenCalledWith(true);
   });
 
+  it('clears the cached reasoning title when its reasoning text is edited', async () => {
+    const reasoningContent = [
+      {
+        type: ContentTypes.THINK,
+        think: 'Original reasoning',
+        agentId: 'agent-1',
+        reasoning_label: 'Inspecting the original path',
+        reasoning_label_step_id: 'reasoning-step-1',
+        reasoning_label_attempts: 3,
+        reasoning_label_submitted_chars: 18,
+        reasoning_label_revision: 2,
+        reasoning_label_status: 'complete',
+      },
+    ] as TMessageContentParts[];
+    message.content = reasoningContent;
+
+    render(
+      <EditContentParts
+        content={reasoningContent}
+        messageId={message.messageId}
+        isSubmitting={false}
+        enterEdit={jest.fn()}
+        siblingIdx={0}
+        setSiblingIdx={jest.fn()}
+        renderReadOnlyPart={() => null}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Edited reasoning' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    await waitFor(() => expect(mockSetMessages).toHaveBeenCalledTimes(1));
+    const reconciled = mockSetMessages.mock.calls[0][0] as TMessage[];
+    const edited = reconciled.find((item) => item.messageId === message.messageId);
+    expect(edited?.content).toEqual([
+      {
+        type: ContentTypes.THINK,
+        think: 'Edited reasoning',
+        agentId: 'agent-1',
+      },
+    ]);
+  });
+
   it('reruns an assistant response with the edited content value', () => {
     const enterEdit = jest.fn();
     render(

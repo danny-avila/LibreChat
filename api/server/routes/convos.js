@@ -208,8 +208,21 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
         interfaceConfig: req?.config?.interfaceConfig,
       },
       { conversationId, isArchived },
-      { context: `POST /api/convos/archive ${conversationId}` },
+      {
+        context: `POST /api/convos/archive ${conversationId}`,
+        /** Filing a chat away is not activity: `updatedAt` stays the chat's own last
+         * activity so unarchiving restores it to its real place in the date groups.
+         * When it was archived is recorded separately, on `archivedAt`. */
+        preserveUpdatedAt: true,
+        /** Without timestamps, an upsert would insert a conversation that has none. */
+        noUpsert: true,
+      },
     );
+
+    if (!dbResponse) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
     res.status(200).json(dbResponse);
   } catch (error) {
     logger.error('Error archiving conversation', error);
@@ -233,11 +246,12 @@ router.post('/pin', validateConvoAccess, async (req, res) => {
   }
 
   try {
-    const dbResponse = await db.saveConvo(
-      { userId: req.user.id },
-      { conversationId, pinned },
-      { context: `POST /api/convos/pin ${conversationId}` },
-    );
+    const dbResponse = await db.setConvoPinned(req.user.id, conversationId, pinned);
+
+    if (!dbResponse) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
     res.status(200).json(dbResponse);
   } catch (error) {
     logger.error('Error pinning conversation', error);

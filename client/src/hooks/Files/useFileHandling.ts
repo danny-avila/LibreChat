@@ -16,7 +16,15 @@ import {
 import type { EModelEndpoint, TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
-import { logger, validateFiles, cachePreview, getCachedPreview, removePreviewEntry } from '~/utils';
+import {
+  logger,
+  validateFiles,
+  cachePreview,
+  validateFileSizes,
+  getCachedPreview,
+  removePreviewEntry,
+  validateFileDuplicates,
+} from '~/utils';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
@@ -42,7 +50,57 @@ export type FileHandlingState = {
   conversation?: TConversation | null;
 };
 
+type ProcessedUpload = {
+  extendedFile: ExtendedFile;
+  preview: string;
+  resizeDetails?: {
+    originalSize: number;
+    newSize: number;
+    compressionRatio: number;
+  };
+};
+
 const noop = () => {};
+
+type UploadScope = {
+  queue: Promise<void>;
+  /** Accepted uploads that have not been observed in the shared file state yet */
+  recent: Map<string, ExtendedFile>;
+};
+
+/**
+ * Upload batches are validated against the file map they write to, so every hook instance
+ * sharing a setter (attachment menu, paste routing, SharePoint) must share one queue.
+ */
+const uploadScopes = new WeakMap<FileSetter, UploadScope>();
+
+const getUploadScope = (fileSetter: FileSetter): UploadScope => {
+  const scope = uploadScopes.get(fileSetter);
+  if (scope != null) {
+    return scope;
+  }
+
+  const created: UploadScope = { queue: Promise.resolve(), recent: new Map() };
+  uploadScopes.set(fileSetter, created);
+  return created;
+};
+
+const mergeRecentUploads = (
+  files: Map<string, ExtendedFile>,
+  recent: Map<string, ExtendedFile>,
+): Map<string, ExtendedFile> => {
+  if (recent.size === 0) {
+    return files;
+  }
+
+  const merged = new Map(files);
+  for (const [file_id, extendedFile] of recent) {
+    if (!merged.has(file_id)) {
+      merged.set(file_id, extendedFile);
+    }
+  }
+  return merged;
+};
 
 const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: FileHandlingState) => {
   const localize = useLocalize();
@@ -52,16 +110,27 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const abortControllerRef = useRef<AbortController | null>(null);
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, conversation } = fileState;
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  const fileSetter = params?.fileSetter ?? setFiles;
+  const uploadScope = getUploadScope(fileSetter);
+  /** Reservations are only observable when the rendered state is the state being written */
+  const tracksReservations = fileSetter === setFiles;
+  if (tracksReservations) {
+    for (const file_id of uploadScope.recent.keys()) {
+      if (files.has(file_id)) {
+        uploadScope.recent.delete(file_id);
+      }
+    }
+  }
   const setFilesLoading = fileState.setFilesLoading ?? noop;
   const setEphemeralAgent = useSetRecoilState(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );
   const isTemporary = useRecoilValue(store.isTemporary);
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
-  const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
-    params?.fileSetter ?? setFiles,
-  );
-  const { resizeImageIfNeeded } = useClientResize();
+  const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(fileSetter);
+  const { isConfigPending, waitForConfig, resizeImageIfNeeded } = useClientResize();
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
@@ -80,6 +149,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
+  const fileConfigRef = useRef(fileConfig);
+  fileConfigRef.current = fileConfig;
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
@@ -283,25 +354,30 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     img.src = preview;
   };
 
-  const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
+  const processFiles = async (fileList: File[], _toolResource?: string) => {
     abortControllerRef.current = new AbortController();
-    const fileList = Array.from(_files);
+
+    const existingFiles = tracksReservations
+      ? mergeRecentUploads(filesRef.current, uploadScope.recent)
+      : filesRef.current;
+    const currentFileConfig = fileConfigRef.current;
+    const endpointFileConfig = getEndpointFileConfig({
+      endpoint,
+      fileConfig: currentFileConfig,
+      endpointType,
+    });
+
     /* Validate files */
     let filesAreValid: boolean;
     try {
-      const endpointFileConfig = getEndpointFileConfig({
-        endpoint,
-        fileConfig,
-        endpointType,
-      });
-
       filesAreValid = validateFiles({
-        files,
+        files: existingFiles,
         fileList,
         setError,
-        fileConfig,
+        fileConfig: currentFileConfig,
         endpointFileConfig,
         toolResource: _toolResource,
+        skipSizeValidation: true,
       });
     } catch (error) {
       console.error('file validation error', error);
@@ -315,6 +391,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     }
 
     /* Process files */
+    const processedUploads: ProcessedUpload[] = [];
     for (const originalFile of fileList) {
       const file_id = v4();
       try {
@@ -368,6 +445,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           : originalFile;
 
         let finalProcessedFile = heicProcessedFile;
+        let resizeDetails: ProcessedUpload['resizeDetails'];
 
         // Apply client-side resizing if available and appropriate
         if (heicProcessedFile.type.startsWith('image/')) {
@@ -375,18 +453,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
             const resizeResult = await resizeImageIfNeeded(heicProcessedFile);
             finalProcessedFile = resizeResult.file;
 
-            // Show toast notification if image was resized
             if (resizeResult.resized && resizeResult.result) {
               const { originalSize, newSize, compressionRatio } = resizeResult.result;
-              const originalSizeMB = (originalSize / (1024 * 1024)).toFixed(1);
-              const newSizeMB = (newSize / (1024 * 1024)).toFixed(1);
-              const savedPercent = Math.round((1 - compressionRatio) * 100);
-
-              showToast({
-                message: `Image resized: ${originalSizeMB}MB → ${newSizeMB}MB (${savedPercent}% smaller)`,
-                status: 'success',
-                duration: 3000,
-              });
+              resizeDetails = { originalSize, newSize, compressionRatio };
             }
           } catch (resizeError) {
             console.warn('Image resize failed, using original:', resizeError);
@@ -410,31 +479,23 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           };
 
           replaceFile(updatedExtendedFile);
-
-          const isImage = finalProcessedFile.type.split('/')[0] === 'image';
-          if (isImage) {
-            loadImage(updatedExtendedFile, newPreview);
-            continue;
-          }
-
-          await startUpload(updatedExtendedFile);
+          processedUploads.push({
+            extendedFile: updatedExtendedFile,
+            preview: newPreview,
+            resizeDetails,
+          });
         } else {
-          // File wasn't processed, proceed with original
-          const isImage = originalFile.type.split('/')[0] === 'image';
-
           // Update progress to show ready for upload
           const readyExtendedFile = {
             ...initialExtendedFile,
             progress: 0.2,
           };
           replaceFile(readyExtendedFile);
-
-          if (isImage) {
-            loadImage(readyExtendedFile, initialPreview);
-            continue;
-          }
-
-          await startUpload(readyExtendedFile);
+          processedUploads.push({
+            extendedFile: readyExtendedFile,
+            preview: initialPreview,
+            resizeDetails,
+          });
         }
       } catch (error) {
         deleteFileById(file_id);
@@ -445,6 +506,95 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           setError('com_error_files_process');
         }
       }
+    }
+
+    const discardProcessedUploads = () => {
+      for (const { extendedFile, preview } of processedUploads) {
+        deleteFileById(extendedFile.file_id);
+        removePreviewEntry(extendedFile.file_id);
+        URL.revokeObjectURL(preview);
+      }
+      filesRef.current = existingFiles;
+    };
+
+    const processedFileList = processedUploads.map(({ extendedFile }) => extendedFile.file as File);
+
+    let batchIsValid: boolean;
+    try {
+      batchIsValid =
+        validateFileDuplicates({
+          files: existingFiles,
+          fileList: processedFileList,
+          setError,
+        }) &&
+        validateFileSizes({
+          files: existingFiles,
+          fileList: processedFileList,
+          setError,
+          endpointFileConfig,
+        });
+    } catch (error) {
+      console.error('file validation error', error);
+      setError('com_error_files_validation');
+      discardProcessedUploads();
+      setFilesLoading(false);
+      return;
+    }
+    if (!batchIsValid) {
+      discardProcessedUploads();
+      setFilesLoading(false);
+      return;
+    }
+
+    const filesWithProcessedUploads = new Map(existingFiles);
+    for (const { extendedFile } of processedUploads) {
+      filesWithProcessedUploads.set(extendedFile.file_id, extendedFile);
+      if (tracksReservations) {
+        uploadScope.recent.set(extendedFile.file_id, extendedFile);
+      }
+    }
+    filesRef.current = filesWithProcessedUploads;
+
+    for (const { extendedFile, preview, resizeDetails } of processedUploads) {
+      if (resizeDetails) {
+        const { originalSize, newSize, compressionRatio } = resizeDetails;
+        showToast({
+          message: localize('com_info_image_resized', {
+            0: (originalSize / (1024 * 1024)).toFixed(1),
+            1: (newSize / (1024 * 1024)).toFixed(1),
+            2: Math.round((1 - compressionRatio) * 100),
+          }),
+          status: 'success',
+          duration: 3000,
+        });
+      }
+
+      if (extendedFile.file?.type.startsWith('image/') === true) {
+        loadImage(extendedFile, preview);
+        continue;
+      }
+
+      await startUpload(extendedFile);
+    }
+  };
+
+  const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
+    /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
+    const fileList = Array.from(_files);
+    /** Started before queueing so every waiting batch shares one bounded config window */
+    const configReady = isConfigPending ? waitForConfig() : undefined;
+    const previousProcessing = uploadScope.queue;
+    let releaseProcessing: () => void = () => undefined;
+    uploadScope.queue = new Promise<void>((resolve) => {
+      releaseProcessing = resolve;
+    });
+
+    await previousProcessing;
+    try {
+      await configReady;
+      await processFiles(fileList, _toolResource);
+    } finally {
+      releaseProcessing();
     }
   };
 

@@ -635,6 +635,12 @@ export default function useChatFunctions({
           const contentPart = initialResponse.content[index];
           if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
             contentPart[ContentTypes.THINK] = part[ContentTypes.THINK];
+            delete contentPart.reasoning_label;
+            delete contentPart.reasoning_label_step_id;
+            delete contentPart.reasoning_label_attempts;
+            delete contentPart.reasoning_label_submitted_chars;
+            delete contentPart.reasoning_label_revision;
+            delete contentPart.reasoning_label_status;
           } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
             contentPart[ContentTypes.TEXT] = part[ContentTypes.TEXT];
           }

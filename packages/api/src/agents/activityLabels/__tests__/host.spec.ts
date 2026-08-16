@@ -4,6 +4,7 @@ import {
   mapCollectedMetadataToUsage,
   resolveActivityConfig,
   resolveActivityPhaseConfig,
+  resolveReasoningLabelConfig,
   resolveActivityLabelModel,
 } from '../host';
 
@@ -165,6 +166,57 @@ describe('resolveActivityPhaseConfig', () => {
       prompt: 'phase prompt',
       maxPerRun: 3,
       charLimit: 240,
+    });
+  });
+});
+
+describe('resolveReasoningLabelConfig', () => {
+  it('is independently opt-in and inherits activity model and endpoint settings', () => {
+    const config = resolveReasoningLabelConfig(
+      appConfig({
+        openAI: {
+          activityModel: 'activity-model',
+          activityEndpoint: 'anthropic',
+        },
+      }),
+      'openAI',
+    );
+    expect(config).toMatchObject({
+      enabled: false,
+      model: 'activity-model',
+      endpoint: 'anthropic',
+    });
+  });
+
+  it('resolves dedicated tuning field-by-field through the public endpoint', () => {
+    const config = resolveReasoningLabelConfig(
+      appConfig({
+        all: { reasoningLabelUpdateIntervalMs: 2_000 },
+        agents: {
+          reasoningLabel: true,
+          reasoningLabelModel: 'reasoning-model',
+          reasoningLabelPrompt: 'reasoning prompt',
+          reasoningLabelMinChars: 600,
+        },
+        openAI: {
+          reasoningLabelEndpoint: 'google',
+          reasoningLabelUpdateChars: 450,
+          reasoningLabelMaxPerRun: 6,
+        },
+      }),
+      'openAI',
+      undefined,
+      'agents',
+    );
+    expect(config).toEqual({
+      enabled: true,
+      model: 'reasoning-model',
+      endpoint: 'google',
+      prompt: 'reasoning prompt',
+      minChars: 600,
+      updateChars: 450,
+      updateIntervalMs: 2_000,
+      maxPerRun: 6,
     });
   });
 });

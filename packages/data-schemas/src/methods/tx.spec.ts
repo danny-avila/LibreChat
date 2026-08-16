@@ -2915,5 +2915,109 @@ describe('Long-Context Premium Cache Pricing', () => {
   });
 });
 
+describe('Newer model pricing', () => {
+  const newlyPriced = [
+    'llama4-scout',
+    'llama-4-maverick',
+    'muse-spark-1.1',
+    'musespark',
+    'muse-glimmer-30b',
+    'deepseek-v4-flash',
+    'deepseek-v4-pro',
+    'kimi-k3',
+    'glm-4.7',
+    'glm-4.7-flash',
+    'glm-5.1',
+    'glm-5.2',
+    'grok-4.5',
+    'grok-4.6',
+    'ministral-8b-2512',
+    'ministral-14b-2512',
+    'nova-2-lite',
+    'command-a',
+    'minimax-m2.7',
+    'minimax-m3',
+    'qwen3-coder-next',
+  ];
+
+  it.each(newlyPriced)('bills %s at its own rate rather than the default', (model) => {
+    const valueKey = getValueKey(model);
+    expect(valueKey).toBe(model);
+    expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues[model].prompt);
+    expect(getMultiplier({ model, tokenType: 'completion' })).toBe(tokenValues[model].completion);
+    expect(getMultiplier({ model, tokenType: 'prompt' })).not.toBe(defaultRate);
+  });
+
+  it('keeps the preceding generation on its own rate', () => {
+    for (const model of [
+      'grok-4',
+      'grok-4-fast',
+      'ministral-8b',
+      'qwen3-coder',
+      'command-r-plus',
+    ]) {
+      expect(getValueKey(model)).toBe(model);
+      expect(getMultiplier({ model, tokenType: 'prompt' })).toBe(tokenValues[model].prompt);
+    }
+  });
+
+  it('resolves dated and vendor-prefixed variants to the same rate', () => {
+    expect(getMultiplier({ model: 'moonshotai/kimi-k3', tokenType: 'completion' })).toBe(
+      tokenValues['kimi-k3'].completion,
+    );
+    expect(getMultiplier({ model: 'x-ai/grok-4-6', tokenType: 'prompt' })).toBe(
+      tokenValues['grok-4-6'].prompt,
+    );
+    expect(getMultiplier({ model: 'command-a-plus-05-2026', tokenType: 'prompt' })).toBe(
+      tokenValues['command-a'].prompt,
+    );
+  });
+});
+
+describe('dot-prefixed Kimi K3 aliases', () => {
+  it('bills both bedrock forms at the K3 rate rather than an older Kimi row', () => {
+    for (const model of ['moonshot.kimi-k3', 'moonshotai.kimi-k3']) {
+      expect(getMultiplier({ model, tokenType: 'completion' })).toBe(
+        tokenValues['kimi-k3'].completion,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).not.toBe(
+        tokenValues['moonshot.kimi'].completion,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion' })).not.toBe(
+        tokenValues['moonshot'].completion,
+      );
+    }
+  });
+});
+
+describe('Grok long-context premium tier', () => {
+  it('doubles the rate once a prompt passes the 200K threshold', () => {
+    for (const model of ['grok-4.5', 'grok-4.6']) {
+      const { threshold } = premiumTokenValues[model];
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold })).toBe(
+        tokenValues[model].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount: threshold + 1 })).toBe(
+        premiumTokenValues[model].prompt,
+      );
+      expect(
+        getMultiplier({ model, tokenType: 'completion', inputTokenCount: threshold + 1 }),
+      ).toBe(premiumTokenValues[model].completion);
+    }
+  });
+});
+
+describe('vendor-prefixed pricing keys', () => {
+  it('prices the model segment rather than the vendor prefix', () => {
+    expect(getValueKey('moonshotai/kimi-k2')).toBe('kimi-k2');
+    expect(getMultiplier({ model: 'moonshotai/kimi-k2', tokenType: 'prompt' })).toBe(
+      tokenValues['kimi-k2'].prompt,
+    );
+    expect(getMultiplier({ model: 'moonshotai/kimi-k2', tokenType: 'prompt' })).not.toBe(
+      tokenValues['moonshot'].prompt,
+    );
+  });
+});
+
 // Cross-package sync validation tests (tokens.ts ↔ tx.ts) moved to
 // packages/api tests since they require maxTokensMap from @librechat/api.

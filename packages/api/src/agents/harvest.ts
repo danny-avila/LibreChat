@@ -41,6 +41,7 @@ export interface CodeHarvestDeps {
     agentId?: string;
     output?: string;
     attachments?: unknown[];
+    markBackgrounded?: boolean;
   }) => Promise<{ matched: boolean; unfinished: boolean }>;
   /** Host file service: downloads and persists one code output file. */
   processCodeOutput: (params: {
@@ -133,6 +134,9 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         agentId,
         output,
         attachments: knownAttachments ?? [],
+        /** The heal path must re-stamp the marker too: the full-row save it
+         *  repairs reverted the whole patched part, marker included. */
+        markBackgrounded: true,
       });
       if (!reapplied.matched) {
         logger.debug(
@@ -194,6 +198,10 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         agentId,
         output,
         attachments,
+        /** This patch replaces the dispatch-handle output — the client's only
+         *  transient signal that the call ran detached — so it persists the
+         *  durable `backgrounded` marker in the same atomic write. */
+        markBackgrounded: true,
       });
       patched = result.matched;
       /** An `unfinished` match is a mid-turn partial save (client disconnect):

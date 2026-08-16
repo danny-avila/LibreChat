@@ -472,6 +472,21 @@ endpoints:
   #   # activityPrompt: 'Write a short activity label...'
   #   # activityMaxPerRun: 20
   #   # activityCharLimit: 600
+  #   # (optional) Replace the generic Thinking/Thoughts heading with a live
+  #   # generated orientation as sufficiently long top-level reasoning evolves.
+  #   # Enabling this sends a bounded snapshot (up to 4,000 characters) of the
+  #   # visible reasoning to the resolved label endpoint, which may be a different provider.
+  #   # With Langfuse tracing enabled, that snapshot is also recorded as generation input
+  #   # unless the active redaction policy suppresses the label call.
+  #   # reasoningLabel: true
+  #   # reasoningLabelModel: gpt-4.1-nano # falls back to activity/title/run model
+  #   # reasoningLabelEndpoint: openAI    # falls back to activity/run endpoint
+  #   # reasoningLabelPrompt: 'Describe the current reasoning direction...'
+  #   # reasoningLabelMinChars: 500       # text required before the first label
+  #   # reasoningLabelUpdateChars: 400    # new text between streaming revisions
+  #   # reasoningLabelUpdateIntervalMs: 3000 # minimum time between streaming revisions
+  #   # A final rewrite may run immediately after a meaningful 120-character tail.
+  #   # reasoningLabelMaxPerRun: 8        # provider-call cap per response
   #   # (optional) Maximum total citations to include in agent responses, defaults to 30
   #   maxCitations: 30
   #   # (optional) Maximum citations per file to include in agent responses, defaults to 7
@@ -636,6 +651,21 @@ endpoints:
       # activityPhaseEndpoint: 'anthropic'     # falls back to activity/run endpoint
       # activityPhasePrompt: 'Summarize the completed agent phase...'
       # activityPhaseMaxPerRun: 5               # cost cap per response
+      # Live reasoning labels are also independent. They update one top-level
+      # THINK heading in place and never create or shift message content parts.
+      # Enabling this sends a bounded snapshot (up to 4,000 characters) of the
+      # visible reasoning to the resolved label endpoint, which may be a different provider.
+      # With Langfuse tracing enabled, that snapshot is also recorded as generation input
+      # unless the active redaction policy suppresses the label call.
+      # reasoningLabel: true
+      # reasoningLabelModel: 'claude-3-5-haiku' # falls back to activity/title/run model
+      # reasoningLabelEndpoint: 'anthropic'     # falls back to activity/run endpoint
+      # reasoningLabelPrompt: 'Describe the current reasoning direction...'
+      # reasoningLabelMinChars: 500
+      # reasoningLabelUpdateChars: 400
+      # reasoningLabelUpdateIntervalMs: 3000
+      # A final rewrite may run immediately after a meaningful 120-character tail.
+      # reasoningLabelMaxPerRun: 8
       modelDisplayLabel: 'Claude (Compatible)'
 
     # Groq Example
@@ -890,6 +920,8 @@ endpoints:
 #     percentage: 100
 #     px: 1024
 #   # Client-side image resizing to prevent upload errors
+#   # Users can toggle this in Settings > Chat. Setting `enabled` here overrides
+#   # that choice for everyone and locks the toggle; omit it to leave users in control.
 #   clientImageResize:
 #     enabled: false  # Enable/disable client-side image resizing (default: false)
 #     maxWidth: 1900  # Maximum width for resized images (default: 1900)

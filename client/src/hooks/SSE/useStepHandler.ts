@@ -7,6 +7,7 @@ import {
   ContentTypes,
   ToolCallTypes,
   getNonEmptyValue,
+  getRunStepDurationMs,
 } from 'librechat-data-provider';
 import type {
   Agents,
@@ -68,6 +69,27 @@ type MessageDeltaUpdate = {
 };
 
 type ReasoningDeltaUpdate = { type: ContentTypes.THINK; think: string };
+
+/** Starts a fresh label-revision domain when a different reasoning step
+ * reuses or folds into an existing THINK slot. The step id is stamped before
+ * the first generated title so compacted resume snapshots can still correlate
+ * later label events by identity rather than relying only on a sparse index. */
+function prepareReasoningPartForStep(message: TMessage, index: number, stepId: string): TMessage {
+  const current = message.content?.[index];
+  if (current?.type !== ContentTypes.THINK || current.reasoning_label_step_id === stepId) {
+    return message;
+  }
+  const nextPart = { ...current };
+  delete nextPart.reasoning_label;
+  delete nextPart.reasoning_label_attempts;
+  delete nextPart.reasoning_label_submitted_chars;
+  delete nextPart.reasoning_label_revision;
+  delete nextPart.reasoning_label_status;
+  nextPart.reasoning_label_step_id = stepId;
+  const nextContent = [...(message.content ?? [])];
+  nextContent[index] = nextPart;
+  return { ...message, content: nextContent };
+}
 
 type AllContentTypes =
   | ContentTypes.TEXT
@@ -484,6 +506,7 @@ export default function useStepHandler({
     ) {
       const currentContent = updatedContent[index] as ReasoningDeltaUpdate;
       const update: ReasoningDeltaUpdate = {
+        ...currentContent,
         type: ContentTypes.THINK,
         think: (currentContent.think || '') + contentPart.think,
       };
@@ -993,6 +1016,13 @@ export default function useStepHandler({
             ) {
               submission.editPrefixFirstPartFolded = true;
             }
+            if (phasedContentPart.type === ContentTypes.THINK) {
+              updatedResponse = prepareReasoningPartForStep(
+                updatedResponse,
+                currentIndex,
+                messageDelta.id,
+              );
+            }
             updatedResponse = updateContent(
               updatedResponse,
               currentIndex,
@@ -1051,6 +1081,11 @@ export default function useStepHandler({
             ) {
               submission.editPrefixFirstPartFolded = true;
             }
+            updatedResponse = prepareReasoningPartForStep(
+              updatedResponse,
+              currentIndex,
+              reasoningDelta.id,
+            );
             updatedResponse = updateContent(
               updatedResponse,
               currentIndex,
@@ -1211,12 +1246,17 @@ export default function useStepHandler({
           return;
         }
 
+        /** Spread conditionally so an unknowable duration leaves any value the
+         *  server already stamped in place, rather than overwriting it with
+         *  `undefined`. */
+        const durationMs = getRunStepDurationMs(closed);
         const updatedContent = [...(response.content ?? [])];
         updatedContent[currentIndex] = {
           ...existing,
           [ContentTypes.TOOL_CALL]: {
             ...existingToolCall,
             runStepStatus: closed.status,
+            ...(durationMs != null && { runStepDurationMs: durationMs }),
           },
         };
 

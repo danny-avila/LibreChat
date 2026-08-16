@@ -65,6 +65,7 @@ export function langFromPath(filePath: string): string {
 export default function ReadFileCall({
   isSubmitting,
   runStepStatus,
+  runStepDurationMs,
   initialProgress = 0.1,
   args,
   output = '',
@@ -75,6 +76,7 @@ export default function ReadFileCall({
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -104,6 +106,7 @@ export default function ReadFileCall({
               ? localize('com_ui_cancelled')
               : (intent ?? localize('com_ui_read_file', { 0: fileName }))
           }
+          durationMs={runStepDurationMs}
           errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <FileText
