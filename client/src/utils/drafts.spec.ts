@@ -182,9 +182,9 @@ describe('clearComposerDrafts', () => {
   });
 
   it('clears pane-scoped pending and new-chat keys without touching another pane', () => {
-    setDraft({ id: Constants.NEW_CONVO, value: 'pane 0 new' });
+    setDraft({ id: Constants.NEW_CONVO as string, value: 'pane 0 new' });
     setDraft({ id: `${Constants.NEW_CONVO}:1`, value: 'pane 1 new' });
-    setDraft({ id: Constants.PENDING_CONVO, value: 'pane 0 pending' });
+    setDraft({ id: Constants.PENDING_CONVO as string, value: 'pane 0 pending' });
     setDraft({ id: `${Constants.PENDING_CONVO}:1`, value: 'pane 1 pending' });
     setFilesDraft(`${Constants.PENDING_CONVO}:1`, {
       fileIds: ['pane-1-file'],
@@ -193,7 +193,7 @@ describe('clearComposerDrafts', () => {
       },
     });
 
-    clearComposerDrafts(1, Constants.NEW_CONVO);
+    clearComposerDrafts(1, Constants.NEW_CONVO as string);
 
     expect(getDraft(Constants.NEW_CONVO)).toBe('pane 0 new');
     expect(getDraft(Constants.PENDING_CONVO)).toBe('pane 0 pending');
@@ -204,6 +204,32 @@ describe('clearComposerDrafts', () => {
     expect(
       localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}:1`),
     ).not.toBeNull();
+  });
+
+  it('does not clear an unrelated new-chat draft when a saved conversation finishes', () => {
+    setDraft({ id: `${Constants.NEW_CONVO}:1`, value: 'unsent new chat' });
+    setDraft({ id: 'convo-side', value: 'sent message leftover' });
+
+    clearComposerDrafts(1, 'convo-side');
+
+    expect(getDraft(`${Constants.NEW_CONVO}:1`)).toBe('unsent new chat');
+    expect(getDraft('convo-side')).toBe('');
+  });
+});
+
+describe('setDraft persistExact', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('drops a one-character value by default', () => {
+    setDraft({ id: 'convo-1', value: 'x' });
+    expect(getDraft('convo-1')).toBe('');
+  });
+
+  it('keeps a one-character snapshot when persistExact is set', () => {
+    setDraft({ id: 'convo-1', value: 'x', persistExact: true });
+    expect(getDraft('convo-1')).toBe('x');
   });
 });
 

@@ -524,6 +524,29 @@ describe('useTextarea long-paste fallback', () => {
     expect(uploadLifecycle).toBeDefined();
   });
 
+  it('persists a one-character composer snapshot while the paste upload is pending', async () => {
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        lifecycle?.onStart?.('one-char-file');
+        return Promise.resolve(true);
+      },
+    );
+    const { result, textArea } = renderTextareaHook();
+    textArea.value = 'x';
+    textArea.setSelectionRange(1, 1);
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
+    expect(textArea.value).toBe('x');
+    expect(getDraft('convo-1')).toBe('x');
+  });
+
   it('removes durable pasted text after a successful upload', async () => {
     let uploadLifecycle: UploadLifecycleCallbacks | undefined;
     mockRouteFiles.mockImplementationOnce(

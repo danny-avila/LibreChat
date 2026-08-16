@@ -4,6 +4,7 @@ import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
 import {
   request,
+  Constants,
   UsageEvents,
   StepEvents,
   createPayload,
@@ -18,6 +19,7 @@ import type {
   EventSubmission,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
+import { isInitialNewConversationSubmission } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { clearComposerDrafts, applyPendingAction, findPendingActionMessageIndex } from '~/utils';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
@@ -66,6 +68,7 @@ export default function useSSE(
     getMessages,
     setCompleted,
     isAddedRequest,
+    runIndex,
     setConversation,
     setIsSubmitting,
     newConversation,
@@ -121,7 +124,12 @@ export default function useSSE(
         /** A queued delta flush reading the older streaming copy must never
          * land on top of the server-final write. */
         cancelPendingDeltaFlush();
-        clearComposerDrafts(runIndex, submission.conversation?.conversationId);
+        clearComposerDrafts(runIndex, submission.conversation?.conversationId, {
+          includeNewChatDraft:
+            !submission.conversation?.conversationId ||
+            submission.conversation.conversationId === Constants.NEW_CONVO ||
+            isInitialNewConversationSubmission(submission),
+        });
         try {
           finalHandler(data, submission as EventSubmission);
           finalizeUsage(data, { ...submission, userMessage });

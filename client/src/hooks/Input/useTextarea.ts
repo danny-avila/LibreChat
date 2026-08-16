@@ -366,7 +366,7 @@ export default function useTextarea({
       }
       const composerValue = textArea.value;
       if (saveDrafts) {
-        setDraft({ id: draftId, value: composerValue });
+        setDraft({ id: draftId, value: composerValue, persistExact: true });
       }
       const restorePaste = (target: HTMLTextAreaElement) => {
         target.setSelectionRange(selectionStart, selectionStart);

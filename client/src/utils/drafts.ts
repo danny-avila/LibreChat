@@ -224,9 +224,22 @@ export const clearAllDrafts = (conversationId?: string | null) => {
   localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${key}`);
 };
 
-/** Clears this pane's idle new-chat key and a concrete conversation draft. Leaves the in-flight PENDING key so unsent during-run attachments can migrate. */
-export const clearComposerDrafts = (index = 0, conversationId?: string | null): void => {
-  const keys = new Set<string>([getNewConversationDraftId(index)]);
+/** Clears this pane's concrete conversation draft. The idle new-chat key is only removed when the finished run originated as an unsaved chat. Leaves PENDING so unsent during-run attachments can migrate. */
+export const clearComposerDrafts = (
+  index = 0,
+  conversationId?: string | null,
+  options?: { includeNewChatDraft?: boolean },
+): void => {
+  const originatedFromNewChat =
+    options?.includeNewChatDraft ??
+    (conversationId == null ||
+      conversationId === '' ||
+      conversationId === Constants.NEW_CONVO ||
+      isNewConversationDraftId(conversationId));
+  const keys = new Set<string>();
+  if (originatedFromNewChat) {
+    keys.add(getNewConversationDraftId(index));
+  }
   if (conversationId != null && conversationId !== '') {
     keys.add(getConversationDraftId(index, conversationId));
     if (conversationId !== Constants.NEW_CONVO && conversationId !== Constants.PENDING_CONVO) {
@@ -417,9 +430,20 @@ export const removePendingTextAttachmentDraft = ({
   });
 };
 
-export const setDraft = ({ id, value }: { id: string; value?: string }) => {
-  if (value && value.length > 1) {
-    localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value));
+export const setDraft = ({
+  id,
+  value,
+  persistExact = false,
+}: {
+  id: string;
+  value?: string;
+  persistExact?: boolean;
+}) => {
+  const shouldPersist = persistExact
+    ? value != null && value.length > 0
+    : value && value.length > 1;
+  if (shouldPersist) {
+    localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value ?? ''));
     return;
   }
   localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);

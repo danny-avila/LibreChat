@@ -473,7 +473,7 @@ describe('useAutoSave — side-by-side pending drafts', () => {
     renderHook(() =>
       useAutoSave({
         index: 1,
-        conversationId: Constants.NEW_CONVO,
+        conversationId: Constants.NEW_CONVO as string,
         textAreaRef: makeTextAreaRef(),
         files: new Map(),
         setFiles: jest.fn(),
