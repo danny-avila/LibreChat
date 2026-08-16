@@ -226,6 +226,27 @@ describe('ActivityPhaseGroup', () => {
     expect(screen.queryByTestId('phase-content')).not.toBeInTheDocument();
   });
 
+  test('a pending approval retains the collapsed body until it resolves', () => {
+    const { rerender } = render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent hasPendingApproval>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    const trigger = screen.getByRole('button', { name: LABEL });
+    fireEvent.click(trigger);
+    fireEvent.click(trigger);
+    fireEvent.transitionEnd(screen.getByTestId('activity-phase-panel'));
+    expect(screen.getByTestId('phase-content')).toBeInTheDocument();
+
+    rerender(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent hasPendingApproval={false}>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+    expect(screen.queryByTestId('phase-content')).not.toBeInTheDocument();
+  });
+
   test('the entrance fold keeps the body mounted, then releases it after settling', () => {
     render(
       <ActivityPhaseGroup labelPart={labelPart} hasContent animateEntrance>

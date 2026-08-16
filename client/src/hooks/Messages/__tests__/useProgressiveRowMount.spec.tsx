@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, renderHook } from '@testing-library/react';
 import type { RowMountWindow } from '../useProgressiveRowMount';
-import { useProgressiveRowMount } from '../useProgressiveRowMount';
+import { useProgressiveRowMount, completeProgressiveRowMounts } from '../useProgressiveRowMount';
 
 type HookProps = {
   tailDepth: number | undefined;
@@ -103,6 +103,30 @@ describe('useProgressiveRowMount', () => {
       conversationId: 'convo-a',
     });
     expect(result.current).toBeNull();
+  });
+
+  it('force-completes in-flight mounts for DOM consumers, resolving after paint', async () => {
+    const { result } = setup();
+    expect(result.current).not.toBeNull();
+
+    let resolved = false;
+    let completion: Promise<void> = Promise.resolve();
+    act(() => {
+      completion = completeProgressiveRowMounts().then(() => {
+        resolved = true;
+      });
+    });
+    expect(result.current).toBeNull();
+
+    flushFrames();
+    flushFrames();
+    await act(async () => {
+      await completion;
+    });
+    expect(resolved).toBe(true);
+
+    /** With nothing in flight it resolves immediately, no frames needed. */
+    await expect(completeProgressiveRowMounts()).resolves.toBeUndefined();
   });
 
   it('re-arms a fresh window when the conversation changes', () => {

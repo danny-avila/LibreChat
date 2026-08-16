@@ -55,12 +55,14 @@ export default function ActivityPhaseGroup({
   hasContent,
   showCursor = false,
   animateEntrance = false,
+  hasPendingApproval = false,
 }: {
   labelPart: ActivityPhasePart;
   children: ReactNode;
   hasContent: boolean;
   showCursor?: boolean;
   animateEntrance?: boolean;
+  hasPendingApproval?: boolean;
 }) {
   const label = getActivityLabelText(labelPart);
   const hasFailure = labelPart.status === 'failed' || labelPart.status === 'partial';
@@ -86,10 +88,14 @@ export default function ActivityPhaseGroup({
   const previousIsExpandedRef = useRef(isExpanded);
   const userOverrideRef = useRef(false);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
-  /** Settled phases collapse by default, and a pending tool approval blocks
-   *  its batch from ever settling, so — unlike ToolCallGroup — no approval
-   *  form state can be stranded inside an unmounted collapsed body. */
-  const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(isExpanded);
+  /** A phase label can resolve while an approval card inside it is still
+   *  pending (see ApprovalContext), and ToolApproval owns unsent local
+   *  edit/respond/reason state — so a collapsed phase retains its body until
+   *  every nested approval resolves, exactly like ToolCallGroup. */
+  const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(
+    isExpanded,
+    hasPendingApproval,
+  );
 
   useEffect(() => {
     if (!foldsIn || userOverrideRef.current) {

@@ -67,6 +67,7 @@ jest.mock('~/utils', () => ({
    *  so stubbing them out would hide the header logic under test. */
   getBatchActivityLabelPart: jest.requireActual('~/utils/activityLabels').getBatchActivityLabelPart,
   getActivityLabelText: jest.requireActual('~/utils/activityLabels').getActivityLabelText,
+  hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
 }));
 
 jest.mock('../Parts', () => ({

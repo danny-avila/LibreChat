@@ -180,5 +180,19 @@ describe('buildTree', () => {
       const treeB = buildTree({ messages, fileMap: {} });
       expect(treeB).not.toBe(treeA);
     });
+
+    it('keeps only the latest hydrated tree, leaving the bare slot intact', () => {
+      const messages = chain();
+      const bare = buildTree({ messages });
+      const fileMapA = { f1: { file_id: 'f1' } as TFile };
+      const fileMapB = { f1: { file_id: 'f1' } as TFile };
+
+      const treeA = buildTree({ messages, fileMap: fileMapA });
+      const treeB = buildTree({ messages, fileMap: fileMapB });
+
+      expect(buildTree({ messages, fileMap: fileMapB })).toBe(treeB);
+      expect(buildTree({ messages, fileMap: fileMapA })).not.toBe(treeA);
+      expect(buildTree({ messages })).toBe(bare);
+    });
   });
 });

@@ -90,7 +90,7 @@ export function useProgressiveRowMount({
   const [mountWindow, setMountWindow] = useState<RowMountWindow>(() =>
     initialWindow(tailDepth, anchorBottom, isSubmitting),
   );
-  const anchorRef = useRef<{ element: Element; top: number } | null>(null);
+  const anchorRef = useRef<{ element: Element; documentOffset: number } | null>(null);
 
   /** Re-arm per conversation so every navigation gets the anchored fast
    *  first commit (state adjustment during render, per React's guidance,
@@ -115,7 +115,14 @@ export function useProgressiveRowMount({
       return;
     }
     const element = container.querySelector('.message-render');
-    anchorRef.current = element ? { element, top: element.getBoundingClientRect().top } : null;
+    /** Document-space offset (viewport top + scrollTop): the widening commit
+     *  is transition-deferred, so the user may scroll between capture and
+     *  commit. User scrolling moves viewport coordinates but not document
+     *  ones, so measuring here isolates the inserted-row shift and never
+     *  folds the user's own movement into the correction. */
+    anchorRef.current = element
+      ? { element, documentOffset: element.getBoundingClientRect().top + container.scrollTop }
+      : null;
   }, [anchorBottom, scrollableRef]);
 
   useEffect(() => {
@@ -150,11 +157,46 @@ export function useProgressiveRowMount({
     if (!captured || !container || !captured.element.isConnected) {
       return;
     }
-    const delta = captured.element.getBoundingClientRect().top - captured.top;
-    if (delta !== 0) {
-      container.scrollTop += delta;
+    const shift =
+      captured.element.getBoundingClientRect().top + container.scrollTop - captured.documentOffset;
+    if (shift !== 0) {
+      container.scrollTop += shift;
     }
   }, [mountWindow, scrollableRef]);
 
+  /** Registered while a window is active so `completeProgressiveRowMounts`
+   *  (screenshot capture) can force the remaining rows in and wait for the
+   *  commit to paint before cloning the DOM. */
+  const isWindowActive = mountWindow != null;
+  useEffect(() => {
+    if (!isWindowActive) {
+      return;
+    }
+    const complete = () =>
+      new Promise<void>((resolve) => {
+        setMountWindow(null);
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+    activeCompleters.add(complete);
+    return () => {
+      activeCompleters.delete(complete);
+    };
+  }, [isWindowActive]);
+
   return mountWindow;
+}
+
+const activeCompleters = new Set<() => Promise<void>>();
+
+/**
+ * Forces every in-flight progressive mount to completion and resolves after
+ * the resulting commit has painted. DOM consumers that clone the thread
+ * (screenshot export) call this so a capture taken mid-widening cannot
+ * silently truncate the rows still outside the window.
+ */
+export async function completeProgressiveRowMounts(): Promise<void> {
+  if (activeCompleters.size === 0) {
+    return;
+  }
+  await Promise.all([...activeCompleters].map((complete) => complete()));
 }

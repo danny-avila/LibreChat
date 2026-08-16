@@ -4,15 +4,19 @@ import type { TMessage } from './types';
 export type ParentMessage = TMessage & { children: TMessage[]; depth: number };
 
 /**
- * Memoizes built trees per messages-array identity, sub-keyed by fileMap
- * identity. The same query data feeds several independent `select`s (ChatView
- * plus the branch-tail helpers), which used to rebuild the full tree five
- * times per cache write; entries die with the messages array itself.
+ * Memoizes built trees per messages-array identity. The same query data feeds
+ * several independent `select`s (ChatView plus the branch-tail helpers), which
+ * used to rebuild the full tree five times per cache write. Exactly two slots
+ * per array — the bare tree and the tree for the LATEST fileMap identity — so
+ * a long-lived cached conversation cannot accumulate a tree per historical
+ * file-map; entries die with the messages array itself.
  */
-const treeCache = new WeakMap<
-  (TMessage | undefined)[],
-  Map<Record<string, TFile> | null, TMessage[]>
->();
+type TreeCacheEntry = {
+  bare?: TMessage[];
+  fileMap?: Record<string, TFile>;
+  hydrated?: TMessage[];
+};
+const treeCache = new WeakMap<(TMessage | undefined)[], TreeCacheEntry>();
 
 /**
  * Builds the render tree from the flat messages array. Order-robust: live
@@ -33,11 +37,14 @@ export function buildTree({
     return null;
   }
 
-  const cacheKey = fileMap ?? null;
-  const cachedTrees = treeCache.get(messages);
-  const cachedTree = cachedTrees?.get(cacheKey);
-  if (cachedTree) {
-    return cachedTree;
+  const cached = treeCache.get(messages);
+  if (cached) {
+    if (fileMap == null && cached.bare) {
+      return cached.bare;
+    }
+    if (fileMap != null && cached.fileMap === fileMap && cached.hydrated) {
+      return cached.hydrated;
+    }
   }
 
   const messageMap: Record<string, ParentMessage> = {};
@@ -115,10 +122,15 @@ export function buildTree({
   }
 
   const tree = rootMessages as TMessage[];
-  if (cachedTrees) {
-    cachedTrees.set(cacheKey, tree);
+  const entry = cached ?? {};
+  if (fileMap == null) {
+    entry.bare = tree;
   } else {
-    treeCache.set(messages, new Map([[cacheKey, tree]]));
+    entry.fileMap = fileMap;
+    entry.hydrated = tree;
+  }
+  if (!cached) {
+    treeCache.set(messages, entry);
   }
   return tree;
 }

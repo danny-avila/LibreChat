@@ -118,11 +118,16 @@ function MessagesViewContent({
   const { index, latestMessageDepth } = useChatContext();
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
   const autoScroll = useRecoilValue(store.autoScroll);
+  /** Re-arm from the conversation that owns the RENDERED tree: the Recoil
+   *  conversation id lags the route during warm-cache navigation, and keying
+   *  off it would first mount the new tree unwindowed, then narrow it after
+   *  the fact — visibly unmounting rows the user is already reading. */
+  const treeConversationId = _messagesTree?.[0]?.conversationId ?? conversationId;
   const mountWindow = useProgressiveRowMount({
     tailDepth: latestMessageDepth,
     anchorBottom: autoScroll || isSubmitting,
     isSubmitting,
-    conversationId,
+    conversationId: treeConversationId,
     scrollableRef,
   });
 
@@ -145,6 +150,10 @@ function MessagesViewContent({
               height: '100%',
               overflowY: 'auto',
               width: '100%',
+              /** The mount hook pins the anchor row itself (document-space
+               *  measurement); native scroll anchoring reacting to the same
+               *  insertions would double-correct. */
+              overflowAnchor: mountWindow != null ? 'none' : undefined,
             }}
           >
             <div
