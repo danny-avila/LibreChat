@@ -231,6 +231,16 @@ describe('setDraft persistExact', () => {
     setDraft({ id: 'convo-1', value: 'x', persistExact: true });
     expect(getDraft('convo-1')).toBe('x');
   });
+
+  it('does not throw when localStorage.setItem fails', () => {
+    const setItem = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota exceeded');
+    });
+    expect(() =>
+      setDraft({ id: 'convo-1', value: 'draft text', persistExact: true }),
+    ).not.toThrow();
+    setItem.mockRestore();
+  });
 });
 
 describe('resolvePendingPasteInsertStart', () => {

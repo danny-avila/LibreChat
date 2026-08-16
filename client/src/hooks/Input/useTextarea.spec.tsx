@@ -547,6 +547,25 @@ describe('useTextarea long-paste fallback', () => {
     expect(getDraft('convo-1')).toBe('x');
   });
 
+  it('still starts the paste upload when draft persistence throws', async () => {
+    const setItem = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota exceeded');
+    });
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    expect(() =>
+      act(() =>
+        result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+      ),
+    ).not.toThrow();
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalledTimes(1));
+    setItem.mockRestore();
+  });
+
   it('removes durable pasted text after a successful upload', async () => {
     let uploadLifecycle: UploadLifecycleCallbacks | undefined;
     mockRouteFiles.mockImplementationOnce(

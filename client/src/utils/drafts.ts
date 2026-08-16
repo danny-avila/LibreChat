@@ -213,15 +213,31 @@ export const applyPendingPastesToDraft = (
   return text;
 };
 
+const setLocalStorageItem = (key: string, value: string): void => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Quota or disabled storage must not abort paste/upload recovery.
+  }
+};
+
+const removeLocalStorageItem = (key: string): void => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures on cleanup.
+  }
+};
+
 export const clearDraft = debounce((id?: string | null) => {
-  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
+  removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
 }, 2500);
 
 /** Synchronously removes both text and file drafts for a conversation (or NEW_CONVO fallback) */
 export const clearAllDrafts = (conversationId?: string | null) => {
   const key = conversationId || Constants.NEW_CONVO;
-  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${key}`);
-  localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${key}`);
+  removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${key}`);
+  removeLocalStorageItem(`${LocalStorageKeys.FILES_DRAFT}${key}`);
 };
 
 /** Clears this pane's concrete conversation draft. The idle new-chat key is only removed when the finished run originated as an unsaved chat. Leaves PENDING so unsent during-run attachments can migrate. */
@@ -324,12 +340,12 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
   const key = `${LocalStorageKeys.FILES_DRAFT}${id}`;
   const pendingPasteEntries = Object.entries(draft.pendingPastes);
   if (draft.fileIds.length === 0 && pendingPasteEntries.length === 0) {
-    localStorage.removeItem(key);
+    removeLocalStorageItem(key);
     return;
   }
 
   if (pendingPasteEntries.length === 0) {
-    localStorage.setItem(key, JSON.stringify(draft.fileIds));
+    setLocalStorageItem(key, JSON.stringify(draft.fileIds));
     return;
   }
 
@@ -360,7 +376,7 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
     ),
   );
 
-  localStorage.setItem(
+  setLocalStorageItem(
     key,
     JSON.stringify({ fileIds: draft.fileIds, pendingPastes } satisfies StoredFilesDraft),
   );
@@ -443,10 +459,10 @@ export const setDraft = ({
     ? value != null && value.length > 0
     : value && value.length > 1;
   if (shouldPersist) {
-    localStorage.setItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value ?? ''));
+    setLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`, encodeBase64(value ?? ''));
     return;
   }
-  localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);
+  removeLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id}`);
 };
 
 export const getDraft = (id?: string): string | null =>

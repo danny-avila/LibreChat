@@ -19,10 +19,10 @@ import type {
   EventSubmission,
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
-import { isInitialNewConversationSubmission } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { clearComposerDrafts, applyPendingAction, findPendingActionMessageIndex } from '~/utils';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import { isInitialNewConversationSubmission } from './useEventHandlers';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import useUsageHandler from './useUsageHandler';

@@ -1,8 +1,9 @@
 import { useCallback } from 'react';
-import { useRecoilValue, useSetRecoilState } from 'recoil';
+import { useSetRecoilState } from 'recoil';
 import { Constants, EToolResources } from 'librechat-data-provider';
 import type { UploadLifecycleCallbacks } from './useFileHandling';
-import store, { ephemeralAgentByConvoId } from '~/store';
+import { useChatContext } from '~/Providers/ChatContext';
+import { ephemeralAgentByConvoId } from '~/store';
 import useFileHandling from './useFileHandling';
 
 /**
@@ -13,7 +14,7 @@ import useFileHandling from './useFileHandling';
  */
 export default function useFileUploadRouter() {
   const { handleFiles } = useFileHandling();
-  const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
+  const { conversation } = useChatContext();
   const setEphemeralAgent = useSetRecoilState(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );

@@ -366,7 +366,11 @@ export default function useTextarea({
       }
       const composerValue = textArea.value;
       if (saveDrafts) {
-        setDraft({ id: draftId, value: composerValue, persistExact: true });
+        try {
+          setDraft({ id: draftId, value: composerValue, persistExact: true });
+        } catch {
+          // Persistence must not prevent the generated attachment from uploading.
+        }
       }
       const restorePaste = (target: HTMLTextAreaElement) => {
         target.setSelectionRange(selectionStart, selectionStart);
@@ -412,17 +416,21 @@ export default function useTextarea({
           if (!saveDrafts) {
             return;
           }
-          setPendingTextAttachmentDraft({
-            id: draftId,
-            fileId,
-            text: pastedText,
-            selectionStart,
-            selectionEnd,
-            replacedText,
-            replacedApplied: true,
-            anchorBefore: composerValue.slice(0, selectionStart),
-            anchorAfter: composerValue.slice(selectionStart),
-          });
+          try {
+            setPendingTextAttachmentDraft({
+              id: draftId,
+              fileId,
+              text: pastedText,
+              selectionStart,
+              selectionEnd,
+              replacedText,
+              replacedApplied: true,
+              anchorBefore: composerValue.slice(0, selectionStart),
+              anchorAfter: composerValue.slice(selectionStart),
+            });
+          } catch {
+            // Keep the upload going if durable recovery cannot be written.
+          }
         },
         onSuccess: (fileId) => {
           clearPendingPasteDraft(fileId);
