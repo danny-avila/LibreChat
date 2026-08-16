@@ -1592,6 +1592,109 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('getConvosByCursor pinned filter', () => {
+    const insertConvo = async ({
+      user = 'user123',
+      title,
+      updatedAt,
+      pinned,
+      isArchived = false,
+    }: {
+      user?: string;
+      title: string;
+      updatedAt: Date;
+      pinned?: boolean;
+      isArchived?: boolean;
+    }) => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId,
+        user,
+        title,
+        endpoint: EModelEndpoint.openAI,
+        expiredAt: null,
+        isArchived,
+        createdAt: updatedAt,
+        updatedAt,
+        ...(pinned === undefined ? {} : { pinned }),
+      });
+      return conversationId;
+    };
+
+    it('returns only pinned conversations when pinned is requested', async () => {
+      const baseTime = new Date('2026-05-01T00:00:00.000Z');
+      const pinnedId = await insertConvo({
+        title: 'Pinned chat',
+        updatedAt: baseTime,
+        pinned: true,
+      });
+      await insertConvo({ title: 'Unpinned chat', updatedAt: baseTime, pinned: false });
+      await insertConvo({ title: 'Never pinned chat', updatedAt: baseTime });
+
+      const result = await getConvosByCursor('user123', { pinned: true });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([pinnedId]);
+    });
+
+    /** The sidebar's pinned section used to filter the paginated chats list, so a pin
+     * older than the first page stayed hidden until that list scrolled far enough. */
+    it('returns a pin that falls outside the first page of the unfiltered list', async () => {
+      const baseTime = new Date('2026-05-01T00:00:00.000Z');
+      const pinnedId = await insertConvo({
+        title: 'Initial Greeting',
+        updatedAt: baseTime,
+        pinned: true,
+      });
+      for (let index = 0; index < 30; index++) {
+        await insertConvo({
+          title: `Newer chat ${index}`,
+          updatedAt: new Date(baseTime.getTime() + (index + 1) * 60000),
+        });
+      }
+
+      const firstPage = await getConvosByCursor('user123', { limit: 25 });
+      expect(firstPage.conversations.map((convo) => convo.conversationId)).not.toContain(pinnedId);
+
+      const pinnedResult = await getConvosByCursor('user123', { pinned: true });
+      expect(pinnedResult.conversations.map((convo) => convo.conversationId)).toEqual([pinnedId]);
+    });
+
+    it('excludes archived pins and other users’ pins', async () => {
+      const baseTime = new Date('2026-05-01T00:00:00.000Z');
+      const visibleId = await insertConvo({
+        title: 'Visible pin',
+        updatedAt: baseTime,
+        pinned: true,
+      });
+      await insertConvo({
+        title: 'Archived pin',
+        updatedAt: baseTime,
+        pinned: true,
+        isArchived: true,
+      });
+      await insertConvo({
+        user: 'other-user',
+        title: 'Someone else’s pin',
+        updatedAt: baseTime,
+        pinned: true,
+      });
+
+      const result = await getConvosByCursor('user123', { pinned: true });
+
+      expect(result.conversations.map((convo) => convo.conversationId)).toEqual([visibleId]);
+    });
+
+    it('leaves the list unfiltered when pinned is not requested', async () => {
+      const baseTime = new Date('2026-05-01T00:00:00.000Z');
+      await insertConvo({ title: 'Pinned chat', updatedAt: baseTime, pinned: true });
+      await insertConvo({ title: 'Unpinned chat', updatedAt: baseTime });
+
+      const result = await getConvosByCursor('user123', {});
+
+      expect(result.conversations).toHaveLength(2);
+    });
+  });
+
   describe('tenantId stripping', () => {
     it('saveConvo should not write caller-supplied tenantId to the document', async () => {
       const conversationId = uuidv4();

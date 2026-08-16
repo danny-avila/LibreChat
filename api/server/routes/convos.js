@@ -39,6 +39,7 @@ router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 25;
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
+  const pinned = isEnabled(req.query.pinned);
   const search =
     typeof req.query.search === 'string' ? req.query.search.trim() || undefined : undefined;
   const sortBy = req.query.sortBy || 'updatedAt';
@@ -61,6 +62,7 @@ router.get('/', async (req, res) => {
       cursor,
       limit,
       isArchived,
+      pinned,
       tags,
       search,
       sortBy,

@@ -42,6 +42,7 @@ export interface ConversationMethods {
       cursor?: string | null;
       limit?: number;
       isArchived?: boolean;
+      pinned?: boolean;
       tags?: string[];
       search?: string;
       sortBy?: string;
@@ -568,6 +569,7 @@ export function createConversationMethods(
       cursor,
       limit = 25,
       isArchived = false,
+      pinned = false,
       tags,
       search,
       sortBy = 'updatedAt',
@@ -577,6 +579,7 @@ export function createConversationMethods(
       cursor?: string | null;
       limit?: number;
       isArchived?: boolean;
+      pinned?: boolean;
       tags?: string[];
       search?: string;
       sortBy?: string;
@@ -592,6 +595,10 @@ export function createConversationMethods(
       filters.push({
         $or: [{ isArchived: false }, { isArchived: { $exists: false } }],
       } as FilterQuery<IConversation>);
+    }
+
+    if (pinned) {
+      filters.push({ pinned: true } as FilterQuery<IConversation>);
     }
 
     if (Array.isArray(tags) && tags.length > 0) {

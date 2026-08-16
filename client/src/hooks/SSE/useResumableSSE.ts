@@ -2265,6 +2265,10 @@ export default function useResumableSSE(
           if (!isCurrentSubscription()) {
             return;
           }
+          await queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
+          if (!isCurrentSubscription()) {
+            return;
+          }
         } catch (error) {
           if (!isCurrentSubscription()) {
             return;
@@ -2646,6 +2650,7 @@ export default function useResumableSSE(
               // existed (the winner died before persisting). Don't guess: reconcile against
               // the server so a real conversation stays and a phantom is dropped.
               queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+              queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
             } else {
               // Fresh optimistic stream that never started: prune immediately.
               removeConvoFromAllQueries(queryClient, currentStreamId);
@@ -3603,6 +3608,10 @@ export default function useResumableSSE(
                 if (!isCurrentEffect()) {
                   return;
                 }
+                await queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
+                if (!isCurrentEffect()) {
+                  return;
+                }
               } catch (error) {
                 if (!isCurrentEffect()) {
                   return;
@@ -3666,6 +3675,10 @@ export default function useResumableSSE(
                   return;
                 }
                 await queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+                if (!isCurrentEffect()) {
+                  return;
+                }
+                await queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
                 if (!isCurrentEffect()) {
                   return;
                 }
@@ -3808,6 +3821,10 @@ export default function useResumableSSE(
                 return;
               }
               await queryClient.invalidateQueries({ queryKey: [QueryKeys.allConversations] });
+              if (!isCurrentEffect()) {
+                return;
+              }
+              await queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
               if (!isCurrentEffect()) {
                 return;
               }

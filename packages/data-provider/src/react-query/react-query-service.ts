@@ -134,6 +134,7 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
   return useMutation(() => dataService.clearAllConversations(), {
     onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.allConversations]);
+      queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
       queryClient.invalidateQueries([QueryKeys.conversationTags]);
     },
   });
