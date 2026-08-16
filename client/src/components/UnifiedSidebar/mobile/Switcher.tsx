@@ -64,7 +64,10 @@ function Switcher({ links }: { links: NavLink[] }) {
           className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-text-primary hover:bg-surface-hover"
         >
           <activeLink.icon className="size-5 flex-shrink-0" aria-hidden="true" />
-          <span className="truncate text-sm font-medium">{localize(activeLink.title)}</span>
+          {/* Grows so the chevron settles on the trailing edge rather than trailing the label. */}
+          <span className="flex-1 truncate text-left text-sm font-medium">
+            {localize(activeLink.title)}
+          </span>
           <ChevronDown className="size-4 flex-shrink-0 text-text-secondary" aria-hidden="true" />
         </Ariakit.MenuButton>
       }

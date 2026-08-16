@@ -5,6 +5,7 @@ import { ChevronDown } from 'lucide-react';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import {
   useLocalize,
   TranslationKeys,
@@ -39,6 +40,8 @@ interface ConversationsProps {
   isChatsExpanded: boolean;
   setIsChatsExpanded: (expanded: boolean) => void;
   showFavorites?: boolean;
+  /** Actions for the Chats header, alongside the Projects header's own. */
+  chatsHeaderTrailing?: ReactNode;
 }
 
 interface MeasuredRowProps {
@@ -86,10 +89,12 @@ LoadingSpinner.displayName = 'LoadingSpinner';
 interface ChatsHeaderProps {
   isExpanded: boolean;
   onToggle: () => void;
+  /** Section-scoped actions, mirroring the Projects header. */
+  trailing?: ReactNode;
 }
 
 /** Collapsible header for the Chats section */
-const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
+const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle, trailing }) => {
   const localize = useLocalize();
 
   return (
@@ -109,6 +114,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
           aria-hidden="true"
         />
       </button>
+      {trailing}
     </div>
   );
 });
@@ -162,6 +168,7 @@ const Conversations: FC<ConversationsProps> = ({
   isChatsExpanded,
   setIsChatsExpanded,
   showFavorites = true,
+  chatsHeaderTrailing,
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
@@ -435,6 +442,7 @@ const Conversations: FC<ConversationsProps> = ({
         <ChatsHeader
           isExpanded={isChatsExpanded}
           onToggle={() => setIsChatsExpanded(!isChatsExpanded)}
+          trailing={chatsHeaderTrailing}
         />
       </div>
       {isSearchLoading ? (
