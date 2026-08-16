@@ -421,7 +421,7 @@ export default function GenericGrantAccessDialog({
                     variant="outline"
                     onClick={() => {
                       if (isCopying) return;
-                      copyResourceUrl(setIsCopying);
+                      if (!copyResourceUrl(setIsCopying)) return;
                       showToast({
                         message: localize('com_ui_agent_url_copied'),
                         status: 'success',

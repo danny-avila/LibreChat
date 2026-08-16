@@ -90,6 +90,7 @@ const MessageRender = memo(function MessageRender({
     handleContinue,
     latestMessageId,
     copyToClipboard,
+    getCanCopy,
     regenerateMessage,
     latestMessageDepth,
   } = useMessageActions({
@@ -188,6 +189,7 @@ const MessageRender = memo(function MessageRender({
             conversation={conversation ?? null}
             regenerate={handleRegenerateMessage}
             copyToClipboard={copyToClipboard}
+            getCanCopy={getCanCopy}
             handleContinue={handleContinue}
             latestMessageId={latestMessageId}
             handleFeedback={handleFeedback}

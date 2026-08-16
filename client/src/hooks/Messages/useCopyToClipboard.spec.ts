@@ -6,7 +6,7 @@ import type {
   ProcessedOrganic,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import useCopyToClipboard from '~/hooks/Messages/useCopyToClipboard';
+import useCopyToClipboard, { hasCopyableText } from '~/hooks/Messages/useCopyToClipboard';
 
 // Mock the copy-to-clipboard module
 jest.mock('copy-to-clipboard');
@@ -17,6 +17,7 @@ describe('useCopyToClipboard', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockCopy.mockReturnValue(true);
     jest.useFakeTimers();
   });
 
@@ -92,6 +93,89 @@ describe('useCopyToClipboard', () => {
       });
     });
 
+    it('does not append a trailing newline when skipped parts follow the last text part', () => {
+      const content = [
+        { type: ContentTypes.TEXT, text: 'sudo rm nothing' },
+        { type: ContentTypes.ERROR, error: 'Deployment lookup failed' },
+      ] as TMessageContentParts[];
+
+      const { result } = renderHook(() => useCopyToClipboard({ content }));
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      expect(mockCopy).toHaveBeenCalledWith('sudo rm nothing', { format: 'text/plain' });
+    });
+
+    it('does not add blank lines for empty text parts', () => {
+      const content = [
+        { type: ContentTypes.TEXT, text: '' },
+        { type: ContentTypes.TEXT, text: 'Only line' },
+        { type: ContentTypes.TEXT, text: { value: '' } },
+      ] as TMessageContentParts[];
+
+      const { result } = renderHook(() => useCopyToClipboard({ content }));
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      expect(mockCopy).toHaveBeenCalledWith('Only line', { format: 'text/plain' });
+    });
+
+    it('preserves the clipboard when the message has no response text', () => {
+      const content = [
+        { type: ContentTypes.ERROR, error: 'Something went wrong' },
+      ] as TMessageContentParts[];
+
+      const { result } = renderHook(() => useCopyToClipboard({ content }));
+
+      let copied: boolean | undefined;
+      act(() => {
+        copied = result.current(mockSetIsCopied);
+      });
+
+      expect(copied).toBe(false);
+      expect(mockCopy).not.toHaveBeenCalled();
+      expect(mockSetIsCopied).not.toHaveBeenCalled();
+    });
+
+    it('reports whether the copy reached the clipboard', () => {
+      const { result } = renderHook(() => useCopyToClipboard({ text: 'Copy me' }));
+
+      let copied: boolean | undefined;
+      act(() => {
+        copied = result.current(mockSetIsCopied);
+      });
+
+      expect(copied).toBe(true);
+    });
+
+    it('does not report success when the clipboard write fails', () => {
+      mockCopy.mockReturnValueOnce(false);
+      const { result } = renderHook(() => useCopyToClipboard({ text: 'Copy me' }));
+
+      let copied: boolean | undefined;
+      act(() => {
+        copied = result.current(mockSetIsCopied);
+      });
+
+      expect(copied).toBe(false);
+      expect(mockSetIsCopied).not.toHaveBeenCalled();
+    });
+
+    it('preserves the clipboard when the message text is empty', () => {
+      const { result } = renderHook(() => useCopyToClipboard({ text: '   ' }));
+
+      act(() => {
+        result.current(mockSetIsCopied);
+      });
+
+      expect(mockCopy).not.toHaveBeenCalled();
+      expect(mockSetIsCopied).not.toHaveBeenCalled();
+    });
+
     it('should reset isCopied after timeout', () => {
       const { result } = renderHook(() =>
         useCopyToClipboard({
@@ -110,6 +194,63 @@ describe('useCopyToClipboard', () => {
       });
 
       expect(mockSetIsCopied).toHaveBeenCalledWith(false);
+    });
+  });
+
+  describe('hasCopyableText', () => {
+    it('is false for a response made only of skipped parts', () => {
+      const content = [
+        { type: ContentTypes.TOOL_CALL, tool_call: { type: 'tool_call', name: 'search' } },
+        { type: ContentTypes.ERROR, error: 'Something went wrong' },
+      ] as TMessageContentParts[];
+
+      expect(hasCopyableText({ content })).toBe(false);
+    });
+
+    it('is true when any text part carries content', () => {
+      const content = [
+        { type: ContentTypes.ERROR, error: 'Something went wrong' },
+        { type: ContentTypes.TEXT, text: 'The service is down.' },
+      ] as TMessageContentParts[];
+
+      expect(hasCopyableText({ content })).toBe(true);
+    });
+
+    it('is false for whitespace-only text parts', () => {
+      const content = [{ type: ContentTypes.TEXT, text: '   \n' }] as TMessageContentParts[];
+
+      expect(hasCopyableText({ content })).toBe(false);
+    });
+
+    it('falls back to the message text when there are no content parts', () => {
+      expect(hasCopyableText({ text: 'Plain response' })).toBe(true);
+      expect(hasCopyableText({ text: '  ' })).toBe(false);
+      expect(hasCopyableText({})).toBe(false);
+    });
+
+    it('is false for text that survives only as citation markup', () => {
+      expect(hasCopyableText({ text: '\\ue202turn0search0' })).toBe(false);
+    });
+
+    it('is true when citation markup resolves against search results', () => {
+      const searchResults = {
+        '0': { organic: [{ link: 'https://example.com/1', title: 'Source 1' }] },
+      };
+
+      expect(hasCopyableText({ text: '\\ue202turn0search0', searchResults })).toBe(true);
+    });
+
+    it('agrees with the copy the hook would perform', () => {
+      const source = { text: '\\ue202turn0search0' };
+      const { result } = renderHook(() => useCopyToClipboard(source));
+
+      let copied: boolean | undefined;
+      act(() => {
+        copied = result.current(mockSetIsCopied);
+      });
+
+      expect(copied).toBe(hasCopyableText(source));
+      expect(copied).toBe(false);
     });
   });
 
