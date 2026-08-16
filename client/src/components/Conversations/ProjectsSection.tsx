@@ -331,7 +331,11 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
   );
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const conversation = useRecoilValue(store.conversationByIndex(0));
-  const activeProjectId = conversation?.chatProjectId ?? null;
+  const conversationProjectId = conversation?.chatProjectId ?? null;
+  /** A project workspace route wins so a leftover conversation scope cannot
+   *  highlight a second row at the same time. */
+  const routeProjectId = /^\/projects\/([^/]+)$/.exec(location.pathname)?.[1] ?? null;
+  const highlightedProjectId = routeProjectId ?? conversationProjectId;
 
   const { data, isLoading } = useProjectsInfiniteQuery(
     { sortBy: 'lastConversationAt', sortDirection: 'desc', limit: 25 },
@@ -384,10 +388,8 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
             key={project._id}
             project={project}
             toggleNav={toggleNav}
-            defaultExpanded={project._id === activeProjectId}
-            isActive={
-              project._id === activeProjectId || location.pathname === `/projects/${project._id}`
-            }
+            defaultExpanded={project._id === highlightedProjectId}
+            isActive={project._id === highlightedProjectId}
           />
         ))}
         {hasMore && (
