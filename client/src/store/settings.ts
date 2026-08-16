@@ -1,6 +1,7 @@
 import { atom } from 'recoil';
 import { SettingsViews, LocalStorageKeys } from 'librechat-data-provider';
 import type { TOptionSettings } from '~/common';
+import { CHAT_TITLE_IN_TAB_KEY } from '~/utils/documentTitle';
 import { atomWithLocalStorage } from '~/store/utils';
 import { STTEndpoints } from '~/common';
 
@@ -58,6 +59,7 @@ const localStorageAtoms = {
   ),
   keepScreenAwake: atomWithLocalStorage('keepScreenAwake', true),
   newChatSwitchToHistory: atomWithLocalStorage('newChatSwitchToHistory', true),
+  chatTitleInTab: atomWithLocalStorage(CHAT_TITLE_IN_TAB_KEY, true),
 
   // Chat settings
   enterToSend: atomWithLocalStorage('enterToSend', true),

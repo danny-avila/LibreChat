@@ -24,6 +24,7 @@ import { toggleControl, ThemeSetting, LangSetting } from './controls';
 import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
 import { EngineSTTSetting, EngineTTSSetting } from './SpeechControls';
 import FontSizeSelector from '../SettingsTabs/Chat/FontSizeSelector';
+import ChatTitleInTab from '../SettingsTabs/General/ChatTitleInTab';
 import AdvancedPrompts from '../SettingsTabs/Chat/AdvancedPrompts';
 import DuringRunAction from '../SettingsTabs/Chat/DuringRunAction';
 import DeleteAccount from '../SettingsTabs/Account/DeleteAccount';
@@ -114,6 +115,14 @@ export const registry: SettingEntry[] = [
       localizationKey: 'com_nav_scroll_button',
       switchId: 'showScrollButton',
     }),
+  },
+  {
+    id: 'chatTitleInTab',
+    tab: GENERAL,
+    section: 'layout',
+    labelKey: 'com_nav_chat_title_in_tab',
+    keywords: ['tab', 'title', 'browser', 'window'],
+    Component: ChatTitleInTab,
   },
   // General · Accessibility
   {

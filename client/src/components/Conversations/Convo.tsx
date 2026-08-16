@@ -9,10 +9,10 @@ import { useGetStartupConfig, useUpdateConversationMutation } from '~/data-provi
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
 import { areConversationRenderPropsEqual } from './utils';
+import { cn, logger, setDocumentTitle } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import ConvoActions from './ConvoActions';
 import RenameForm from './RenameForm';
-import { cn, logger } from '~/utils';
 import ConvoLink from './ConvoLink';
 import store from '~/store';
 
@@ -161,9 +161,7 @@ function Conversation({
 
     toggleNav();
 
-    if (typeof title === 'string' && title.length > 0) {
-      document.title = title;
-    }
+    setDocumentTitle(title);
 
     navigateToConvo(conversation, {
       currentConvoId,
