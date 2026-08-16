@@ -21,6 +21,9 @@ describe('mayEmbedMedia', () => {
     ['a slide picture', 'ppt/media/image3.jpeg'],
     ['a worksheet picture', 'xl/media/image1.emf'],
     ['an OpenDocument picture', 'Pictures/10000201.png'],
+    ['a Word SVG', 'word/media/chart1.svg'],
+    ['a slide SVG', 'ppt/media/diagram2.svg'],
+    ['an OpenDocument SVG', 'Pictures/figure.svg'],
   ])('reports %s', async (_label, entryName) => {
     expect(await mayEmbedMedia(await buildArchive([entryName]))).toBe(true);
   });
@@ -70,6 +73,7 @@ describe('mayEmbedMedia', () => {
     ['an OEBPS image', 'OEBPS/images/page012.jpg'],
     ['an EPUB3 image', 'EPUB/images/cover.png'],
     ['an image at the archive root', 'scan-001.tiff'],
+    ['an EPUB SVG', 'OEBPS/images/figure.svg'],
   ])('reports %s', async (_label, entryName) => {
     const archive = await buildArchive(['mimetype', 'META-INF/container.xml', entryName]);
     expect(await mayEmbedMedia(archive)).toBe(true);

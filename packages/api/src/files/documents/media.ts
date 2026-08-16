@@ -9,9 +9,10 @@ import { isZipArchive } from './zipSafety';
  * has nothing for OCR to read. EPUB has no fixed place at all. Matching the extension
  * answers both: it finds an EPUB image wherever the manifest put it, and it leaves
  * `ppt/media/media1.mp4` alone. EMF and WMF are included because Office routinely wraps
- * a scanned page in one.
+ * a scanned page in one. SVG is included because it often carries the only extra text
+ * in an otherwise selectable document, and AnyDoc does not read that text.
  */
-const IMAGE_ENTRY = /\.(?:jpe?g|png|gif|tiff?|bmp|webp|jp2|jpx|avif|heic|heif|emf|wmf)$/i;
+const IMAGE_ENTRY = /\.(?:jpe?g|png|gif|tiff?|bmp|webp|jp2|jpx|avif|heic|heif|emf|wmf|svg)$/i;
 
 /**
  * Renderings of the document itself rather than content within it. Office writes
