@@ -19,6 +19,7 @@ import { cn } from '~/utils';
 export default function BashCall({
   isSubmitting,
   runStepStatus,
+  runStepDurationMs,
   initialProgress = 0.1,
   args,
   output = '',
@@ -31,6 +32,7 @@ export default function BashCall({
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -108,6 +110,7 @@ export default function BashCall({
               ? localize('com_ui_cancelled')
               : (backgroundFinishedText ?? intent ?? localize('com_ui_command_finished'))
           }
+          durationMs={runStepDurationMs}
           errorSuffix={
             (hasError && !cancelled) || backgroundFailed
               ? localize('com_ui_tool_failed')

@@ -44,6 +44,7 @@ export * from './favoritesError';
 export * from './approval';
 export * from './steer';
 export * from './activityLabels';
+export * from './runStepDuration';
 export * from './documentTitle';
 export * from './numbers';
 export { default as cn } from './cn';

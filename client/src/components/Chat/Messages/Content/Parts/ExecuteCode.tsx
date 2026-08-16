@@ -57,6 +57,7 @@ export const ERROR_PATTERNS = /^(Traceback|Error:|Exception:|.*Error:)/m;
 export default function ExecuteCode({
   isSubmitting,
   runStepStatus,
+  runStepDurationMs,
   initialProgress = 0.1,
   args,
   output = '',
@@ -68,6 +69,7 @@ export default function ExecuteCode({
   initialProgress: number;
   isSubmitting: boolean;
   runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -120,6 +122,7 @@ export default function ExecuteCode({
               ? localize('com_ui_cancelled')
               : (backgroundFinishedText ?? intent ?? localize('com_ui_analyzing_finished'))
           }
+          durationMs={runStepDurationMs}
           errorSuffix={
             (hasError && !cancelled) || backgroundFailed
               ? localize('com_ui_tool_failed')

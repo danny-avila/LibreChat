@@ -587,6 +587,15 @@ export type PartMetadata = {
    * back to inferring "stopped" from `progress` and `isSubmitting`.
    */
   runStepStatus?: Agents.RunStepClosedStatus;
+  /**
+   * Wall-clock milliseconds the run step took, derived from the same
+   * `on_run_step_closed` event as {@link runStepStatus} via
+   * `getReportableRunStepDurationMs`. Only written when the event carried
+   * both timestamps, they agree in order, and the result clears
+   * `MIN_REPORTABLE_RUN_STEP_DURATION_MS` — so its absence means "not worth
+   * reporting or not knowable", never "instant".
+   */
+  runStepDurationMs?: number;
 };
 
 /** Metadata for parallel content rendering - subset of PartMetadata */

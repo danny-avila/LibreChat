@@ -8,6 +8,7 @@ const {
   FileContext,
   ErrorTypes,
   UsageEvents,
+  getReportableRunStepDurationMs,
 } = require('librechat-data-provider');
 const {
   GraphEvents,
@@ -460,6 +461,15 @@ function getDefaultHandlers({
           const part = typeof index === 'number' ? contentParts[index] : undefined;
           if (part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
             part.tool_call.runStepStatus = data.status;
+            /**
+             * Left unset rather than zeroed when the event cannot support a
+             * trustworthy duration, so a reader can tell "we don't know" from
+             * "it was fast".
+             */
+            const durationMs = getReportableRunStepDurationMs(data);
+            if (durationMs != null) {
+              part.tool_call.runStepDurationMs = durationMs;
+            }
           }
         }
         await emitForJob({ event, data });
