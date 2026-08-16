@@ -1,11 +1,12 @@
 import { memo, useId, useMemo, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { ChevronDown } from 'lucide-react';
-import { DropdownPopup } from '@librechat/client';
+import { DropdownPopup, buttonVariants } from '@librechat/client';
 import type { NavLink } from '~/common';
 import type * as t from '~/common';
 import { useActivePanel, resolveActivePanel } from '~/Providers';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 
 /**
  * Doubles as the drawer's title: it names the panel you are in and is also how
@@ -61,7 +62,16 @@ function Switcher({ links }: { links: NavLink[] }) {
           data-testid="panel-switcher-button"
           aria-label={localize('com_nav_control_panel')}
           aria-expanded={isOpen}
-          className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-text-primary hover:bg-surface-hover"
+          /**
+           * The drawer's primary navigation control, so it takes the shared
+           * button's focus ring and transition rather than restating a hover
+           * treatment with no visible focus state of its own. Only the layout
+           * — filling the row and left-aligning the label — stays local.
+           */
+          className={cn(
+            buttonVariants({ variant: 'ghost' }),
+            'h-10 min-w-0 flex-1 justify-start px-2 text-text-primary',
+          )}
         >
           <activeLink.icon className="size-5 flex-shrink-0" aria-hidden="true" />
           {/* Grows so the chevron settles on the trailing edge rather than trailing the label. */}

@@ -26,6 +26,7 @@ import {
   TooltipAnchor,
   DropdownPopup,
   NewChatIcon,
+  buttonVariants,
   useToastContext,
 } from '@librechat/client';
 import type { TChatProject, TConversation } from 'librechat-data-provider';
@@ -39,7 +40,6 @@ import {
 } from '~/data-provider';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
-import { sectionActionClassName } from './styles';
 import { clearMessagesCache, cn } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import Convo from './Convo';
@@ -47,7 +47,11 @@ import store from '~/store';
 
 const INLINE_CHAT_LIMIT = 8;
 
-const iconButtonClassName = sectionActionClassName;
+/** `cn` is what resolves the base utilities this variant overrides. */
+const iconButtonClassName = cn(
+  buttonVariants({ variant: 'section-action', size: 'icon-xs' }),
+  'shrink-0',
+);
 
 function ProjectRenameDialog({
   open,
