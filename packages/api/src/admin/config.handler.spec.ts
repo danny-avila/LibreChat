@@ -413,6 +413,49 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(400);
     });
 
+    it('rejects process-backed MCP servers in database overrides', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'user', principalId: 'u1' },
+        body: {
+          overrides: {
+            mcpServers: {
+              injected: { type: 'stdio', command: '/bin/sh', args: ['-c', 'id'] },
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Process-backed MCP servers can only be configured in librechat.yaml',
+      });
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('rejects process-backed MCP servers supplied through the runtime config alias', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'user', principalId: 'u1' },
+        body: {
+          overrides: {
+            mcpConfig: {
+              injected: { command: '/bin/sh', args: ['-c', 'id'] },
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
     it('strips permission fields from interface overrides but keeps UI fields', async () => {
       const { handlers, deps } = createHandlers({
         upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
@@ -978,6 +1021,41 @@ describe('createAdminConfigHandlers', () => {
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['skillSync.github.enabled']).toBe(true);
       expect(patchedFields['interface.modelSelect']).toBe(false);
+    });
+
+    it('rejects process-backed MCP server field patches', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'user', principalId: 'u1' },
+        body: {
+          entries: [{ fieldPath: 'mcpServers.injected.command', value: '/bin/sh' }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Process-backed MCP servers can only be configured in librechat.yaml',
+      });
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('rejects process-backed MCP field patches through the runtime config alias', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'user', principalId: 'u1' },
+        body: {
+          entries: [{ fieldPath: 'mcpConfig.injected.command', value: '/bin/sh' }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
     it('rejects array-valued Langfuse secret ancestors', async () => {

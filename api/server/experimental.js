@@ -299,6 +299,18 @@ if (cluster.isMaster) {
     app.disable('x-powered-by');
     app.set('trust proxy', trusted_proxy);
 
+    if (isEnabled(process.env.TRUST_TENANT_HEADER)) {
+      logger.warn(
+        '[Security] TRUST_TENANT_HEADER is active. Ensure your reverse proxy strips and sets ' +
+          'X-Tenant-Id — untrusted clients must not be able to supply it directly.',
+      );
+    } else if (isEnabled(process.env.TENANT_ISOLATION_STRICT)) {
+      logger.warn(
+        '[Security] TENANT_ISOLATION_STRICT is active while TRUST_TENANT_HEADER is disabled. ' +
+          'Pre-authentication tenant headers will be ignored.',
+      );
+    }
+
     /** Seed database (idempotent) */
     await runAsSystem(seedDatabase);
 

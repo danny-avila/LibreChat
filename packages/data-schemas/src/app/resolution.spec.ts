@@ -525,6 +525,85 @@ describe('mergeConfigOverrides', () => {
     expect(result.mcpServers).toBeUndefined();
   });
 
+  it('drops process-backed MCP servers from database overrides', () => {
+    const base = {
+      ...baseConfig,
+      mcpConfig: {
+        operator: { type: 'stdio', command: 'node', args: ['trusted-server.js'] },
+      },
+    } as unknown as AppConfig;
+    const configs = [
+      fakeConfig(
+        {
+          mcpServers: {
+            injected: { type: 'stdio', command: '/bin/sh', args: ['-c', 'id'] },
+            remote: { type: 'streamable-http', url: 'https://mcp.example.com' },
+          },
+        },
+        10,
+      ),
+    ];
+
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const mcpConfig = result.mcpConfig as Record<string, unknown>;
+
+    expect(mcpConfig.injected).toBeUndefined();
+    expect(mcpConfig.remote).toEqual({
+      type: 'streamable-http',
+      url: 'https://mcp.example.com',
+    });
+    expect(mcpConfig.operator).toEqual({
+      type: 'stdio',
+      command: 'node',
+      args: ['trusted-server.js'],
+    });
+  });
+
+  it('does not let database overrides mutate an operator-owned stdio server', () => {
+    const base = {
+      ...baseConfig,
+      mcpConfig: {
+        operator: { type: 'stdio', command: 'node', args: ['trusted-server.js'] },
+      },
+    } as unknown as AppConfig;
+    const configs = [
+      fakeConfig(
+        {
+          mcpServers: {
+            operator: { command: '/bin/sh', args: ['-c', 'id'] },
+          },
+        },
+        10,
+      ),
+    ];
+
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
+    const mcpConfig = result.mcpConfig as Record<string, unknown>;
+
+    expect(mcpConfig.operator).toEqual({
+      type: 'stdio',
+      command: 'node',
+      args: ['trusted-server.js'],
+    });
+  });
+
+  it('drops process-backed MCP servers supplied through the runtime config alias', () => {
+    const configs = [
+      fakeConfig(
+        {
+          mcpConfig: {
+            injected: { command: '/bin/sh', args: ['-c', 'id'] },
+          },
+        },
+        10,
+      ),
+    ];
+
+    const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
+
+    expect(result.mcpConfig).toEqual({});
+  });
+
   it('applies tombstones after remapping YAML paths to AppConfig paths', () => {
     const base = {
       mcpConfig: {

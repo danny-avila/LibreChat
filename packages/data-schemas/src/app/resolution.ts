@@ -3,6 +3,7 @@ import {
   BASE_ONLY_CONFIG_SECTIONS,
   INTERFACE_PERMISSION_FIELDS,
   PERMISSION_SUB_KEYS,
+  isProcessMCPServerConfig,
 } from 'librechat-data-provider';
 import type { TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig, IConfig } from '~/types';
@@ -181,6 +182,41 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
   return result as T;
 }
 
+function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const currentServers =
+    current != null && typeof current === 'object' && !Array.isArray(current)
+      ? (current as AnyObject)
+      : {};
+  const filtered: AnyObject = {};
+
+  for (const [serverName, serverOverride] of Object.entries(value)) {
+    if (
+      serverOverride == null ||
+      typeof serverOverride !== 'object' ||
+      Array.isArray(serverOverride)
+    ) {
+      filtered[serverName] = serverOverride;
+      continue;
+    }
+
+    const currentServer = currentServers[serverName];
+    const baseServer =
+      currentServer != null && typeof currentServer === 'object' && !Array.isArray(currentServer)
+        ? (currentServer as AnyObject)
+        : {};
+    const resolved = deepMerge(baseServer, serverOverride as AnyObject);
+    if (!isProcessMCPServerConfig(resolved)) {
+      filtered[serverName] = serverOverride;
+    }
+  }
+
+  return filtered;
+}
+
 /**
  * Merge DB config overrides into a base AppConfig.
  *
@@ -218,7 +254,12 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
           continue;
         }
         const mappedKey = OVERRIDE_KEY_MAP[key as keyof typeof OVERRIDE_KEY_MAP] ?? key;
-        if (
+        if (mappedKey === 'mcpConfig') {
+          remapped[mappedKey] = filterMCPServerOverrides(
+            value,
+            (merged as unknown as AnyObject)[mappedKey],
+          );
+        } else if (
           key === 'interface' &&
           value != null &&
           typeof value === 'object' &&
