@@ -345,6 +345,37 @@ describe('useFileHandling', () => {
       }
     });
 
+    it('uploads the selected file when the input is reset before processing starts', async () => {
+      const selectedFile = makeSizedFile('notes.txt', 'text/plain', 1024);
+      /** Mirrors the live `FileList` an input clears in place when its value is reset */
+      const liveFiles = [selectedFile];
+      const target = {
+        files: liveFiles as unknown as FileList,
+        get value() {
+          return '';
+        },
+        set value(_next: string) {
+          liveFiles.length = 0;
+        },
+      };
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        result.current.handleFileChange({
+          stopPropagation: jest.fn(),
+          target,
+        } as unknown as React.ChangeEvent<HTMLInputElement>);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(target.files).toHaveLength(0);
+      expect(mockValidateFiles).toHaveBeenCalledWith(
+        expect.objectContaining({ fileList: [selectedFile] }),
+      );
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
     it('rejects a reattached image that resizing turns into a duplicate', async () => {
       jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
       try {

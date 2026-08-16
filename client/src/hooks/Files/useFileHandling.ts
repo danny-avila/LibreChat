@@ -306,14 +306,13 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     img.src = preview;
   };
 
-  const processFiles = async (_files: FileList | File[], _toolResource?: string) => {
+  const processFiles = async (fileList: File[], _toolResource?: string) => {
     abortControllerRef.current = new AbortController();
 
     if (isConfigPending) {
       await waitForConfig();
     }
 
-    const fileList = Array.from(_files);
     const existingFiles = filesRef.current;
     const currentFileConfig = fileConfigRef.current;
     const endpointFileConfig = getEndpointFileConfig({
@@ -531,6 +530,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   };
 
   const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
+    /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
+    const fileList = Array.from(_files);
     const previousProcessing = fileProcessingQueueRef.current;
     let releaseProcessing: () => void = () => undefined;
     fileProcessingQueueRef.current = new Promise<void>((resolve) => {
@@ -539,7 +540,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
 
     await previousProcessing;
     try {
-      await processFiles(_files, _toolResource);
+      await processFiles(fileList, _toolResource);
     } finally {
       releaseProcessing();
     }
