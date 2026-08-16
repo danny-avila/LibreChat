@@ -12,7 +12,9 @@ import {
   apiBaseUrl,
   SteerEvents,
   dataService,
+  ContentTypes,
   ActivityLabelEvents,
+  ReasoningLabelEvents,
   UsageEvents,
   createPayload,
   ApprovalEvents,
@@ -30,6 +32,7 @@ import type {
   TSteerAppliedEvent,
   TSteerUpdatedEvent,
   TActivityLabelEvent,
+  TReasoningLabelEvent,
 } from 'librechat-data-provider';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
 import type { DrainAfterAbort, QueuedMessageOrigin } from '~/store/families';
@@ -45,8 +48,10 @@ import {
   resolveRunEndTarget,
   findSteerMessageIndex,
   applyActivityLabelPart,
+  applyReasoningLabel,
   offsetActivityPhaseBoundary,
   findActivityLabelMessageIndex,
+  findReasoningLabelMessageIndex,
   appendAppliedSteerIds,
   collectAppliedSteerIds,
   removeConvoFromAllQueries,
@@ -1415,6 +1420,61 @@ export default function useResumableSSE(
         }
       };
 
+      /** Patches a generated title onto its existing reasoning part. */
+      const applyReasoningLabelToMessages = (event: TReasoningLabelEvent, attempt = 0) => {
+        if (!isCurrentSubscription()) {
+          return;
+        }
+        const retryNextFrame = () => {
+          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            const frameId = requestAnimationFrame(() => {
+              activityLabelRetryFramesRef.current.delete(frameId);
+              if (isCurrentSubscription()) {
+                applyReasoningLabelToMessages(event, attempt + 1);
+              }
+            });
+            activityLabelRetryFramesRef.current.add(frameId);
+          }
+        };
+        flushPendingDeltas();
+        const messages = getMessages() ?? [];
+        const messageIndex = findReasoningLabelMessageIndex(messages, event);
+        if (messageIndex < 0) {
+          retryNextFrame();
+          return;
+        }
+        const prefixLength =
+          currentSubmission.editedContent != null && !editPrefixClearedRef.current
+            ? (currentSubmission.editPrefixLength ??
+              (currentSubmission.initialResponse as TMessage | undefined)?.content?.length ??
+              0)
+            : 0;
+        let contentIndex = event.index + prefixLength;
+        if (
+          prefixLength > 0 &&
+          event.index === 0 &&
+          editPrefixFirstPartFoldedRef.current &&
+          messages[messageIndex]?.content?.[contentIndex - 1]?.type === ContentTypes.THINK
+        ) {
+          contentIndex -= 1;
+        }
+        const updated = applyReasoningLabel(messages[messageIndex], {
+          ...event,
+          index: contentIndex,
+        });
+        if (updated === messages[messageIndex]) {
+          const part = messages[messageIndex]?.content?.[contentIndex];
+          if (part?.type !== ContentTypes.THINK && attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
+            retryNextFrame();
+          }
+          return;
+        }
+        const nextMessages = [...messages];
+        nextMessages[messageIndex] = updated;
+        setMessages(nextMessages);
+        syncStepMessage(updated);
+      };
+
       const baseUrl = `${apiBaseUrl()}/api/agents/chat/stream/${encodeURIComponent(currentStreamId)}`;
       const query = new URLSearchParams();
       if (isResume) {
@@ -1664,6 +1724,15 @@ export default function useResumableSSE(
             return;
           }
 
+          if (data.event === ReasoningLabelEvents.ON_REASONING_LABEL) {
+            applyReasoningLabelToMessages(data.data as TReasoningLabelEvent);
+            return;
+          }
+
+          if (data.event === ReasoningLabelEvents.ON_REASONING_LABEL_ATTEMPT) {
+            return;
+          }
+
           if (data.event != null) {
             if (
               data.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1893,6 +1962,10 @@ export default function useResumableSSE(
                   updateSteerChips(replayEvent.data as TSteerUpdatedEvent);
                 } else if (replayEvent.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
                   applyActivityLabelToMessages(replayEvent.data as TActivityLabelEvent);
+                } else if (replayEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL) {
+                  applyReasoningLabelToMessages(replayEvent.data as TReasoningLabelEvent);
+                } else if (replayEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL_ATTEMPT) {
+                  // Durable provider-call budget reservations never render.
                 } else if (replayEvent.event != null) {
                   if (
                     replayEvent.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -1926,6 +1999,10 @@ export default function useResumableSSE(
                   updateSteerChips(pendingEvent.data as TSteerUpdatedEvent);
                 } else if (pendingEvent.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
                   applyActivityLabelToMessages(pendingEvent.data as TActivityLabelEvent);
+                } else if (pendingEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL) {
+                  applyReasoningLabelToMessages(pendingEvent.data as TReasoningLabelEvent);
+                } else if (pendingEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL_ATTEMPT) {
+                  // Durable provider-call budget reservations never render.
                 } else if (pendingEvent.event != null) {
                   if (
                     pendingEvent.event === StepEvents.ON_MESSAGE_DELTA ||

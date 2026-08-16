@@ -64,6 +64,7 @@ import {
   synthesizeAppliedSteerEvents,
 } from './SteeringLifecycle';
 import { synthesizeActivityLabelGapEvents } from '~/agents/activityLabels/wiring';
+import { synthesizeReasoningLabelGapEvents } from '~/agents/reasoningLabels';
 import { InMemoryEventTransport } from './implementations/InMemoryEventTransport';
 import { InMemoryJobStore } from './implementations/InMemoryJobStore';
 import { attachAskUserQuestionAnswers, normalizeResumeRunStepIndices } from '~/agents/hitl/resume';
@@ -5001,10 +5002,20 @@ class GenerationJobManagerClass {
         resumeState?.aggregatedContent?.some(
           (part) => (part as { type?: string } | null)?.type === 'activity_label',
         ) === true;
+      const snapshotHasReasoningLabels =
+        resumeState?.aggregatedContent?.some(
+          (part) =>
+            (part as { type?: string; reasoning_label_revision?: unknown } | null)?.type ===
+              'think' &&
+            typeof (part as { reasoning_label_revision?: unknown }).reasoning_label_revision ===
+              'number',
+        ) === true;
       if (
         resumeState != null &&
         jobActive &&
-        (liveJob?.activityLabels === true || snapshotHasActivityLabels)
+        (liveJob?.activityLabels === true ||
+          snapshotHasActivityLabels ||
+          snapshotHasReasoningLabels)
       ) {
         const labelContent = await readFreshContent();
         if (options?.signal?.aborted || this.detachSubscriptionDuringShutdown(subscription)) {
@@ -5020,6 +5031,16 @@ class GenerationJobManagerClass {
           );
           if (labelGapEvents.length > 0) {
             pendingEvents.push(...(labelGapEvents as t.ServerSentEvent[]));
+          }
+          const reasoningGapEvents = synthesizeReasoningLabelGapEvents(
+            (resumeState.aggregatedContent ?? []) as Parameters<
+              typeof synthesizeReasoningLabelGapEvents
+            >[0],
+            labelContent as Parameters<typeof synthesizeReasoningLabelGapEvents>[1],
+            { conversationId: streamId, responseMessageId: resumeState.responseMessageId },
+          );
+          if (reasoningGapEvents.length > 0) {
+            pendingEvents.push(...(reasoningGapEvents as t.ServerSentEvent[]));
           }
         }
       }

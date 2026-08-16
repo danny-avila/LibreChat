@@ -44,4 +44,5 @@ export * from './hooks';
 export * from './steering';
 export * from './activityLabels';
 export * from './activityPhases';
+export * from './reasoningLabels';
 export * from './toolValidation';

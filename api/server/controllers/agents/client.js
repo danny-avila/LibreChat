@@ -58,13 +58,16 @@ const {
   stampSteerPartMedia,
   createActivityLabelWiring,
   createActivityPhaseWiring,
+  createReasoningLabelWiring,
   createAssistantPhaseStampingHandlers,
   resolveActivityConfig,
   resolveActivityPhaseConfig,
+  resolveReasoningLabelConfig,
   getCustomEndpointConfig,
   mapCollectedMetadataToUsage,
   resolveActivityLabelModel,
   resolveActivityPhaseLabelModel,
+  resolveReasoningLabelModel,
   traceIdForMessage,
   settlePendingLabelFills,
   stripActivityLabelParts,
@@ -109,6 +112,7 @@ const {
   Constants,
   SteerEvents,
   ActivityLabelEvents,
+  ReasoningLabelEvents,
   UsageEvents,
   Permissions,
   VisionModes,
@@ -134,6 +138,26 @@ const db = require('~/models');
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
+
+/** Extracts the raw text that the label model produced from a LangChain
+ * `handleLLMEnd` payload. This is used only for token-estimation fallback:
+ * the persisted reasoning title remains normalized and bounded. */
+function extractLLMCompletionText(output) {
+  const generations = output?.generations;
+  const generation = Array.isArray(generations) ? generations.at(-1)?.[0] : undefined;
+  const content = generation?.message?.content;
+  if (typeof content === 'string') {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((block) =>
+        typeof block === 'string' ? block : typeof block?.text === 'string' ? block.text : '',
+      )
+      .join('');
+  }
+  return typeof generation?.text === 'string' ? generation.text : undefined;
+}
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -448,6 +472,52 @@ class AgentClient extends BaseClient {
         throw error;
       });
     return this.activityPhaseLabelLLMPromise;
+  }
+
+  /** Reasoning-label resolution is independently configurable and memoized per response. */
+  async resolveReasoningLabelLLM() {
+    this.reasoningLabelLLMPromise =
+      this.reasoningLabelLLMPromise ??
+      resolveReasoningLabelModel({
+        req: this.options.req,
+        agent: this.options.agent,
+        publicEndpoint: this.options.endpoint,
+        ids: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+        db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+      }).catch((error) => {
+        this.reasoningLabelLLMPromise = null;
+        throw error;
+      });
+    return this.reasoningLabelLLMPromise;
+  }
+
+  /** Seeds the shared negative usage sequence from durable label-call state. */
+  seedActivityLabelUsageSequence() {
+    const activityLabels = (this.contentParts ?? []).filter(
+      (part) => part?.type === ContentTypes.ACTIVITY_LABEL,
+    ).length;
+    const reasoningAttempts = (this.contentParts ?? []).reduce((highest, part) => {
+      if (part?.type !== ContentTypes.THINK || typeof part.reasoning_label_attempts !== 'number') {
+        return highest;
+      }
+      return Math.max(highest, part.reasoning_label_attempts);
+    }, 0);
+    const reasoningCommittedFallback = (this.contentParts ?? []).reduce((count, part) => {
+      if (
+        part?.type !== ContentTypes.THINK ||
+        typeof part.reasoning_label_revision !== 'number' ||
+        part.reasoning_label_revision <= 0
+      ) {
+        return count;
+      }
+      return count + part.reasoning_label_revision;
+    }, 0);
+    const committed = activityLabels + Math.max(reasoningAttempts, reasoningCommittedFallback);
+    this.activityLabelUsageSeq = Math.max(this.activityLabelUsageSeq ?? 0, committed);
   }
 
   /**
@@ -857,6 +927,112 @@ class AgentClient extends BaseClient {
     };
   }
 
+  /** SDK bridge for one revision of a live reasoning-step title. */
+  async generateReasoningLabelViaRun({
+    visibleReasoning,
+    reasoningStepId,
+    revision,
+    status,
+    previousLabel,
+    agentId,
+    charLimit,
+    prompt,
+    signal,
+  }) {
+    if (typeof this.run?.generateReasoningLabel !== 'function') {
+      return {};
+    }
+    const { provider, clientOptions, endpointTokenConfig, sameEndpoint } =
+      await this.resolveReasoningLabelLLM();
+    const { handleLLMEnd, collected } = createMetadataAggregator();
+    let sdkPromptText;
+    let sdkCompletionText;
+    const capturePrompt = {
+      handleLLMStart: (_llm, prompts) => {
+        sdkPromptText = Array.isArray(prompts) ? prompts.join('\n') : undefined;
+      },
+      handleChatModelStart: (_llm, messages) => {
+        try {
+          sdkPromptText = (messages ?? [])
+            .flat()
+            .map((message) =>
+              typeof message?.content === 'string'
+                ? message.content
+                : JSON.stringify(message?.content ?? ''),
+            )
+            .join('\n');
+        } catch {
+          // Providers with usage metadata do not need the estimate fallback.
+        }
+      },
+      handleLLMEnd: (output) => {
+        const completionText = extractLLMCompletionText(output);
+        if (completionText != null) {
+          sdkCompletionText = completionText;
+        }
+        handleLLMEnd(output);
+      },
+    };
+    let label;
+    let usage;
+    let completed = false;
+    try {
+      ({ label, usage } = await this.run.generateReasoningLabel({
+        provider,
+        clientOptions,
+        visibleReasoning,
+        reasoningStepId,
+        revision,
+        status,
+        ...(previousLabel != null && { previousLabel }),
+        ...(agentId != null && { agentId }),
+        charLimit,
+        prompt,
+        sourceRunId: this.responseMessageId,
+        sourceTraceId: traceIdForMessage(this.responseMessageId),
+        responseId: this.responseMessageId,
+        chainOptions: {
+          signal,
+          callbacks: [capturePrompt],
+          configurable: {
+            thread_id: this.conversationId,
+            user_id: this.user ?? this.options.req?.user?.id,
+            requestBody: { parentMessageId: this.parentMessageId },
+          },
+        },
+      }));
+      completed = true;
+    } catch (error) {
+      if (!signal?.aborted) {
+        logger.warn('[AgentClient] Reasoning label generation failed', error);
+      }
+    }
+    const usageMetadata = usage != null ? [{ usage_metadata: usage }] : collected;
+    const shouldCollectUsage =
+      usage != null ||
+      collected.length > 0 ||
+      (completed && (label != null || sdkPromptText != null || sdkCompletionText != null));
+    return {
+      label,
+      ...(shouldCollectUsage && {
+        collectUsage: async (completionText) =>
+          this.recordActivityLabelUsage(
+            usageMetadata,
+            clientOptions.model,
+            endpointTokenConfig,
+            sameEndpoint,
+            undefined,
+            provider,
+            () => ({
+              promptText: sdkPromptText ?? '',
+              completionText: sdkCompletionText ?? completionText ?? '',
+            }),
+            'reasoning-label',
+          ),
+      }),
+    };
+  }
+
   /** Bounded settle for in-flight label fills before finalization. On
    *  timeout the label scope is closed and its abort controller fired, so a
    *  straggler cannot mutate the saved response or emit into a dead job. */
@@ -871,20 +1047,34 @@ class AgentClient extends BaseClient {
         scope.detach?.();
       }
     };
-    const pending = this.pendingActivityLabelFills;
-    if (!pending || pending.length === 0) {
-      detachScopeListeners();
-      return;
-    }
-    this.pendingActivityLabelFills = [];
-    await settlePendingLabelFills(pending, timeoutMs, () => {
+    const closeScopes = () => {
       /** Close EVERY generation's scope: a pre-pause wiring's straggler must
        *  stay closed even though a resume built a newer one. */
       for (const scope of this.activityLabelScopes ?? []) {
         scope.closed = true;
         scope.abort.abort();
       }
-    });
+    };
+    const deadline = Date.now() + timeoutMs;
+    while ((this.pendingActivityLabelFills?.length ?? 0) > 0) {
+      const pending = this.pendingActivityLabelFills;
+      this.pendingActivityLabelFills = [];
+      const remainingMs = Math.max(0, deadline - Date.now());
+      let timedOut = remainingMs === 0;
+      if (!timedOut) {
+        await settlePendingLabelFills(pending, remainingMs, () => {
+          timedOut = true;
+          closeScopes();
+        });
+      }
+      if (timedOut) {
+        closeScopes();
+        break;
+      }
+      /** A reasoning revision can synchronously enqueue its trailing final
+       *  revision from the settled task's `finally`; drain it under the same
+       *  deadline before any content reshaping can invalidate its index. */
+    }
     detachScopeListeners();
   }
 
@@ -975,9 +1165,7 @@ class AgentClient extends BaseClient {
      *  the client's `runId:seq` deduper would discard the post-approval
      *  label's usage as already counted. Each label generation is a single
      *  non-streaming invoke, so one existing label part == one consumed seq. */
-    this.activityLabelUsageSeq =
-      this.activityLabelUsageSeq ??
-      (this.contentParts ?? []).filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length;
+    this.seedActivityLabelUsageSequence();
     this.activityLabelAbort = labelScope.abort;
     /** An abort CLOSES the scope, not just cancels the call. The rejected
      *  generation still runs its catch and calls `fill(null)`; with the scope
@@ -1124,9 +1312,7 @@ class AgentClient extends BaseClient {
         scope.detach = () => abortSignal.removeEventListener('abort', closeOnAbort);
       }
     }
-    this.activityLabelUsageSeq =
-      this.activityLabelUsageSeq ??
-      (this.contentParts ?? []).filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length;
+    this.seedActivityLabelUsageSequence();
 
     const wiring = createActivityPhaseWiring({
       maxPerRun: phaseConfig.maxPerRun,
@@ -1161,6 +1347,103 @@ class AgentClient extends BaseClient {
       generatePhase: (payload) => this.generateActivityPhaseViaRun(payload),
     });
     this.activityPhaseWiring = wiring;
+    return wiring;
+  }
+
+  /** Builds the independently opt-in live reasoning-label controller. */
+  buildReasoningLabelWiring(streamId, abortSignal, seedFromContent = false) {
+    if (!streamId || typeof Run?.prototype?.generateReasoningLabel !== 'function') {
+      return undefined;
+    }
+    const agentEndpoint = this.options.agent?.endpoint ?? '';
+    const appConfig = this.options.req?.config;
+    let customEndpointConfig;
+    try {
+      customEndpointConfig = getCustomEndpointConfig({ endpoint: agentEndpoint, appConfig });
+    } catch {
+      customEndpointConfig = undefined;
+    }
+    const config = resolveReasoningLabelConfig(
+      appConfig,
+      agentEndpoint,
+      customEndpointConfig,
+      this.options.endpoint,
+    );
+    if (!config.enabled) {
+      return undefined;
+    }
+
+    this.activityLabelsMarkedPromise =
+      this.activityLabelsMarkedPromise ??
+      GenerationJobManager.markActivityLabels(streamId, this.jobCreatedAt).catch(() =>
+        GenerationJobManager.markActivityLabels(streamId, this.jobCreatedAt).catch(() => {
+          logger.warn(
+            `[AgentClient] Could not flag reasoning labels for ${streamId}; an update resolving during a resume gap may not be reconciled.`,
+          );
+        }),
+      );
+
+    const scope = { closed: false, abort: new AbortController() };
+    this.activityLabelScopes = this.activityLabelScopes ?? [];
+    this.activityLabelScopes.push(scope);
+    const closeOnAbort = () => {
+      scope.closed = true;
+      scope.abort.abort();
+    };
+    if (abortSignal != null) {
+      if (abortSignal.aborted) {
+        closeOnAbort();
+      } else {
+        abortSignal.addEventListener('abort', closeOnAbort, { once: true });
+        scope.detach = () => abortSignal.removeEventListener('abort', closeOnAbort);
+      }
+    }
+    this.seedActivityLabelUsageSequence();
+
+    const wiring = createReasoningLabelWiring({
+      minChars: config.minChars,
+      updateChars: config.updateChars,
+      updateIntervalMs: config.updateIntervalMs,
+      maxPerRun: config.maxPerRun,
+      ...(!seedFromContent && { initialAttempts: 0 }),
+      prompt: config.prompt,
+      abortSignal: scope.abort.signal,
+      isClosed: () => scope.closed,
+      getContentParts: () => this.contentParts,
+      getStepIndex: (stepId) => this.stepMap?.get(stepId)?.index,
+      emitAttemptEvent: (event) =>
+        GenerationJobManager.emitChunk(
+          streamId,
+          {
+            event: ReasoningLabelEvents.ON_REASONING_LABEL_ATTEMPT,
+            data: {
+              ...event,
+              responseMessageId: this.responseMessageId,
+              conversationId: this.conversationId,
+            },
+          },
+          { durable: true, expectedCreatedAt: this.jobCreatedAt },
+        ),
+      emitLabelEvent: (event) =>
+        GenerationJobManager.emitChunk(
+          streamId,
+          {
+            event: ReasoningLabelEvents.ON_REASONING_LABEL,
+            data: {
+              ...event,
+              responseMessageId: this.responseMessageId,
+              conversationId: this.conversationId,
+            },
+          },
+          { durable: true, expectedCreatedAt: this.jobCreatedAt },
+        ),
+      trackPendingFill: (fillDone) => {
+        this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
+        this.pendingActivityLabelFills.push(fillDone);
+      },
+      generateLabel: (payload) => this.generateReasoningLabelViaRun(payload),
+    });
+    this.reasoningLabelWiring = wiring;
     return wiring;
   }
 
@@ -2875,10 +3158,14 @@ class AgentClient extends BaseClient {
 
         const activityLabel = this.buildActivityLabelWiring(streamId, abortController.signal);
         const activityPhase = this.buildActivityPhaseWiring(streamId, abortController.signal);
+        const reasoningLabel = this.buildReasoningLabelWiring(streamId, abortController.signal);
         const offsetHandlers = createSteerIndexOffsetHandlers(
           this.options.eventHandlers,
           this.steerOffsetState,
         );
+        const activityHandlers =
+          activityPhase?.handlers(offsetHandlers) ??
+          (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
         const createRunPromise = createRun({
           agents,
           messages,
@@ -2902,9 +3189,7 @@ class AgentClient extends BaseClient {
           signal: abortController.signal,
           /** The phase wrapper stays outermost: it claims and offsets the
            *  parent slot before the text step reaches the normal handlers. */
-          customHandlers:
-            activityPhase?.handlers(offsetHandlers) ??
-            (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers),
+          customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
           tenantId: this.options.req?.user?.tenantId,
@@ -2967,11 +3252,15 @@ class AgentClient extends BaseClient {
         if (this.activityLabelsMarkedPromise != null) {
           await this.activityLabelsMarkedPromise;
         }
-        await run.processStream({ messages }, config, {
-          callbacks: {
-            [Callback.TOOL_ERROR]: logToolError,
-          },
-        });
+        try {
+          await run.processStream({ messages }, config, {
+            callbacks: {
+              [Callback.TOOL_ERROR]: logToolError,
+            },
+          });
+        } finally {
+          reasoningLabel?.complete();
+        }
         this.completeActivityPhase(run, activityPhase);
 
         // HITL: if the run paused for tool approval, mark the job
@@ -3252,6 +3541,7 @@ class AgentClient extends BaseClient {
         abortController.signal,
         activityPhaseSnapshot,
       );
+      const reasoningLabel = this.buildReasoningLabelWiring(streamId, abortController.signal, true);
       const offsetHandlers = createSteerIndexOffsetHandlers(
         createContentIndexOffsetHandlers(
           this.options.eventHandlers,
@@ -3259,6 +3549,9 @@ class AgentClient extends BaseClient {
         ),
         this.steerOffsetState,
       );
+      const activityHandlers =
+        activityPhase?.handlers(offsetHandlers) ??
+        (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
       run = await createRun({
         agents,
         // State (messages, tool calls) is rehydrated from the checkpoint by
@@ -3291,9 +3584,7 @@ class AgentClient extends BaseClient {
         // type mismatch, is silently dropped against) the pre-pause content. The
         // steer wrapper composes on top: resumed indices shift by seed + any
         // steer parts spliced in while the resumed segment streams.
-        customHandlers:
-          activityPhase?.handlers(offsetHandlers) ??
-          (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers),
+        customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
         tenantId: this.options.req?.user?.tenantId,
@@ -3341,12 +3632,16 @@ class AgentClient extends BaseClient {
       if (this.activityLabelsMarkedPromise != null) {
         await this.activityLabelsMarkedPromise;
       }
-      await run.resume(
-        resumeValue,
-        config,
-        { callbacks: { [Callback.TOOL_ERROR]: logToolError } },
-        commandOptions,
-      );
+      try {
+        await run.resume(
+          resumeValue,
+          config,
+          { callbacks: { [Callback.TOOL_ERROR]: logToolError } },
+          commandOptions,
+        );
+      } finally {
+        reasoningLabel?.complete();
+      }
       this.completeActivityPhase(run, activityPhase);
 
       config.signal = null;

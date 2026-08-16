@@ -663,7 +663,22 @@ export type TMessageContentParts =
       text?: string | TextData;
       error?: string;
     } & ContentMetadata)
-  | ({ type: ContentTypes.THINK; think?: string | TextData } & ContentMetadata)
+  | ({
+      type: ContentTypes.THINK;
+      think?: string | TextData;
+      /** Generated orientation for this user-visible reasoning step. */
+      reasoning_label?: string;
+      /** Stable SDK run-step identity used to correlate live revisions. */
+      reasoning_label_step_id?: string;
+      /** Durable provider-call count used to enforce the per-run cost cap across resumes. */
+      reasoning_label_attempts?: number;
+      /** Visible reasoning length included in this step's latest provider call. */
+      reasoning_label_submitted_chars?: number;
+      /** Monotonic provider-call revision; gaps are allowed after unsuccessful attempts. */
+      reasoning_label_revision?: number;
+      /** Whether the reasoning step can still produce a newer label. */
+      reasoning_label_status?: 'streaming' | 'complete';
+    } & ContentMetadata)
   | (SteerContentPart & ContentMetadata)
   | ({
       type: ContentTypes.TEXT;

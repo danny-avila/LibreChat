@@ -12,6 +12,7 @@ import { cn } from '~/utils';
 type ReasoningProps = {
   reasoning: string;
   isLast: boolean;
+  reasoningLabel?: string;
 };
 
 /**
@@ -36,7 +37,8 @@ type ReasoningProps = {
  *
  * For legacy text-based messages, see Thinking.tsx component.
  */
-const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
+const Reasoning = memo((props: ReasoningProps) => {
+  const { reasoning, isLast, reasoningLabel } = props;
   const contentId = useId();
   const localize = useLocalize();
   const showThinking = useAtomValue(showThinkingAtom);
@@ -82,11 +84,15 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
 
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
-  const label = useMemo(
-    () =>
-      effectiveIsSubmitting && isLast ? localize('com_ui_thinking') : localize('com_ui_thoughts'),
-    [effectiveIsSubmitting, localize, isLast],
-  );
+  const label = useMemo(() => {
+    const generated = reasoningLabel?.trim();
+    if (generated) {
+      return generated;
+    }
+    return effectiveIsSubmitting && isLast
+      ? localize('com_ui_thinking')
+      : localize('com_ui_thoughts');
+  }, [effectiveIsSubmitting, isLast, localize, reasoningLabel]);
 
   if (!reasoningText) {
     return null;
@@ -109,6 +115,9 @@ const Reasoning = memo(({ reasoning, isLast }: ReasoningProps) => {
             label={label}
             content={reasoningText}
             contentId={contentId}
+            animateLabel={
+              smoothStreaming && effectiveIsSubmitting && Boolean(reasoningLabel?.trim())
+            }
           />
         </div>
         <div
