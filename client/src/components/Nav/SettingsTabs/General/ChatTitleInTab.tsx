@@ -1,7 +1,7 @@
 import { useRecoilCallback } from 'recoil';
 import { useMatch } from 'react-router-dom';
-import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import { Constants, QueryKeys } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import ToggleSwitch from '../ToggleSwitch';
 import { setDocumentTitle } from '~/utils';
@@ -27,7 +27,10 @@ export default function ChatTitleInTab() {
           cachedConversation ??
           (recoilConversation?.conversationId === conversationId ? recoilConversation : undefined);
 
-        setDocumentTitle(conversation?.title, value);
+        setDocumentTitle(
+          conversationId === Constants.NEW_CONVO ? undefined : conversation?.title,
+          value,
+        );
       },
     [conversationId, queryClient],
   );

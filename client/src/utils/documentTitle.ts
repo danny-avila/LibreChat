@@ -26,11 +26,11 @@ export const isChatTitleInTabEnabled = (): boolean => {
 
 /**
  * Sets the tab title to the conversation title, or to the app title when the
- * conversation title is empty, is a placeholder, or the user opted out.
+ * conversation title is empty or the user opted out.
  * Pass `enabled` when the atom's value is already known, since Recoil writes to
  * localStorage after the change handler runs.
  */
 export const setDocumentTitle = (title?: string | null, enabled?: boolean): void => {
   const showChatTitle = enabled ?? isChatTitleInTabEnabled();
-  document.title = showChatTitle && hasRealTitle(title) ? title : getAppTitle();
+  document.title = showChatTitle && title != null && title !== '' ? title : getAppTitle();
 };

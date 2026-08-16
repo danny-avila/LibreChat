@@ -1,5 +1,10 @@
 import { LocalStorageKeys } from 'librechat-data-provider';
-import { CHAT_TITLE_IN_TAB_KEY, isChatTitleInTabEnabled, setDocumentTitle } from '../documentTitle';
+import {
+  hasRealTitle,
+  setDocumentTitle,
+  CHAT_TITLE_IN_TAB_KEY,
+  isChatTitleInTabEnabled,
+} from '../documentTitle';
 
 describe('document title', () => {
   beforeEach(() => {
@@ -30,10 +35,14 @@ describe('document title', () => {
     expect(document.title).toBe('LibreChat');
   });
 
-  it('uses the app title when the conversation title is the new chat placeholder', () => {
+  it('uses a conversation deliberately titled New Chat when enabled', () => {
     setDocumentTitle('New Chat', true);
 
-    expect(document.title).toBe('LibreChat');
+    expect(document.title).toBe('New Chat');
+  });
+
+  it('keeps rejecting the generated new chat placeholder as a real title', () => {
+    expect(hasRealTitle('New Chat')).toBe(false);
   });
 
   it('uses the default app title when no app title is stored', () => {
