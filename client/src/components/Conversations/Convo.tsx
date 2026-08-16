@@ -1,16 +1,16 @@
 import React, { memo, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
+import { Link2, Pin } from 'lucide-react';
 import { useParams } from 'react-router-dom';
-import { Link2, Pin, Ellipsis } from 'lucide-react';
 import { Constants } from 'librechat-data-provider';
-import { Spinner, useToastContext, useMediaQuery, Button } from '@librechat/client';
+import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import { useGetStartupConfig, useUpdateConversationMutation } from '~/data-provider';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
 import ConversationEndpointIcon from './ConversationEndpointIcon';
 import { areConversationRenderPropsEqual } from './utils';
 import { NotificationSeverity } from '~/common';
-import { ConvoOptions } from './ConvoOptions';
+import ConvoActions from './ConvoActions';
 import RenameForm from './RenameForm';
 import { cn, logger } from '~/utils';
 import ConvoLink from './ConvoLink';
@@ -50,13 +50,6 @@ function Conversation({
   const [isPopoverActive, setIsPopoverActive] = useState(false);
   // Lazy-load ConvoOptions to avoid running heavy hooks for all conversations
   const [hasInteracted, setHasInteracted] = useState(false);
-  /**
-   * Touch swaps a lightweight trigger for the real menu on first use. Unmounting
-   * the menu again on dismissal would destroy Ariakit's own button mid-close and
-   * strand focus on the document, since the replacement is a different node.
-   * Rows the user never opened still pay nothing, which was the point.
-   */
-  const [hasOpenedMenu, setHasOpenedMenu] = useState(false);
 
   const previousTitle = useRef(title);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -143,15 +136,6 @@ function Conversation({
 
   const handlePopoverOpenChange = useCallback((open: boolean) => {
     setIsPopoverActive(open);
-    if (open) {
-      /**
-       * Every opening counts, not just the one routed through the touch
-       * trigger. The active row already renders the real menu, so a row opened
-       * while active and later demoted would otherwise swap its focused button
-       * for a new node and drop focus.
-       */
-      setHasOpenedMenu(true);
-    }
     if (!open) {
       requestAnimationFrame(() => {
         const container = containerRef.current;
@@ -195,7 +179,7 @@ function Conversation({
     conversationId,
     chatProjectId: conversation.chatProjectId,
     isPopoverActive,
-    setIsPopoverActive: handlePopoverOpenChange,
+    onOpenChange: handlePopoverOpenChange,
     isShiftHeld: isActiveConvo ? isShiftHeld : false,
   };
 
@@ -221,54 +205,11 @@ function Conversation({
     actionWidthClassName = isSmallScreen ? 'max-w-[36px]' : 'max-w-[28px]';
   }
 
-  /**
-   * `hasInteracted` is hover- and focus-driven, which is meaningful on a
-   * pointer device but not on touch, where focus lands mid-tap. Letting it
-   * decide here would swap the trigger for `ConvoOptions` while the finger is
-   * still down; the menu then has to be claimed before the gesture is even
-   * known to be a tap. Keyed to the menu's own state instead, there is no race
-   * to defend against and an ordinary click suffices.
-   */
-  const showConvoOptions =
-    !renaming &&
-    (isSmallScreen
-      ? isPopoverActive || isActiveConvo || hasOpenedMenu
-      : hasInteracted || isActiveConvo);
-
-  /**
-   * `ConvoOptions` carries six mutations and its own menu store, so mounting it
-   * for every overscanned row is wasteful. Touch gets a cheap trigger instead,
-   * and the first tap mounts the real menu already open.
-   */
-  const showOptionsTrigger = !renaming && !showConvoOptions && !isGenerating && isSmallScreen;
-
   let actionContent: React.ReactNode = null;
   if (isGenerating) {
     actionContent = generatingSpinner;
-  } else if (showConvoOptions) {
-    actionContent = <ConvoOptions {...convoOptionsProps} />;
-  } else if (showOptionsTrigger) {
-    actionContent = (
-      <Button
-        size="icon"
-        variant="ghost"
-        aria-label={localize('com_nav_convo_menu_options')}
-        data-testid="convo-options-trigger"
-        className="size-9 text-text-secondary"
-        /**
-         * A plain click: the browser already withholds it until a press
-         * resolves as a tap rather than a scroll, and synthesises it for
-         * keyboard and assistive-technology activation.
-         */
-        onClick={(event) => {
-          event.stopPropagation();
-          setHasOpenedMenu(true);
-          setIsPopoverActive(true);
-        }}
-      >
-        <Ellipsis className="icon-md" aria-hidden="true" />
-      </Button>
-    );
+  } else if (!renaming) {
+    actionContent = <ConvoActions {...convoOptionsProps} hasInteracted={hasInteracted} />;
   }
 
   return (
