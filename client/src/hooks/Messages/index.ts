@@ -11,6 +11,14 @@ export { default as useAttachments } from './useAttachments';
 export { default as useSubmitMessage } from './useSubmitMessage';
 export type { ContentMetadataResult } from './useContentMetadata';
 export { default as useExpandCollapse } from './useExpandCollapse';
+export { default as useLazyCollapseBody } from './useLazyCollapseBody';
+export {
+  RowMountProvider,
+  useRowMountWindow,
+  useProgressiveRowMount,
+  completeProgressiveRowMounts,
+} from './useProgressiveRowMount';
+export type { RowMountWindow } from './useProgressiveRowMount';
 export { default as useMessageActions } from './useMessageActions';
 export { useLatestMessage, useLatestMessageId } from './useLatestMessage';
 export { default as useMemoizedChatContext } from './useMemoizedChatContext';

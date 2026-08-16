@@ -3,8 +3,8 @@ import { useAtomValue } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent } from 'react';
 import { ThinkingContent, ThinkingButton, FloatingThinkingBar } from './Thinking';
+import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
-import { useLocalize, useExpandCollapse } from '~/hooks';
 import { showThinkingAtom } from '~/store/showThinking';
 import { useMessageContext } from '~/Providers';
 import { cn } from '~/utils';
@@ -47,6 +47,7 @@ const Reasoning = memo((props: ReasoningProps) => {
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
+  const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(isExpanded);
   const { isSubmitting, isLatestMessage, nextType } = useMessageContext();
 
   // Strip <think> tags from the reasoning content (modern format)
@@ -57,10 +58,14 @@ const Reasoning = memo((props: ReasoningProps) => {
       .trim();
   }, [reasoning]);
 
-  const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    setIsExpanded((prev) => !prev);
-  }, []);
+  const handleClick = useCallback(
+    (e: MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      mountBody();
+      setIsExpanded((prev) => !prev);
+    },
+    [mountBody],
+  );
 
   const handleFocus = useCallback(() => {
     setIsBarVisible(true);
@@ -127,20 +132,25 @@ const Reasoning = memo((props: ReasoningProps) => {
           aria-hidden={!isExpanded || undefined}
           className={cn(nextType !== ContentTypes.THINK && isExpanded && 'mb-4')}
           style={expandStyle}
+          onTransitionEnd={handleTransitionEnd}
         >
           <div className="relative overflow-hidden" ref={expandRef}>
-            <ThinkingContent
-              animate={smoothStreaming && effectiveIsSubmitting && isLast && isExpanded}
-            >
-              {reasoningText}
-            </ThinkingContent>
-            <FloatingThinkingBar
-              isVisible={isBarVisible && isExpanded}
-              isExpanded={isExpanded}
-              onClick={handleClick}
-              content={reasoningText}
-              contentId={contentId}
-            />
+            {shouldRenderBody && (
+              <>
+                <ThinkingContent
+                  animate={smoothStreaming && effectiveIsSubmitting && isLast && isExpanded}
+                >
+                  {reasoningText}
+                </ThinkingContent>
+                <FloatingThinkingBar
+                  isVisible={isBarVisible && isExpanded}
+                  isExpanded={isExpanded}
+                  onClick={handleClick}
+                  content={reasoningText}
+                  contentId={contentId}
+                />
+              </>
+            )}
           </div>
         </div>
       </div>

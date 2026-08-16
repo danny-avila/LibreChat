@@ -1422,6 +1422,41 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('getConvoOwnership', () => {
+    it('resolves only the owning user id, without the preset or message list', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        title: 'Test Conversation',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const result = await methods.getConvoOwnership(
+        'user123',
+        mockConversationData.conversationId,
+      );
+
+      expect(result?.user).toBe('user123');
+      expect(result).not.toHaveProperty('title');
+      expect(result).not.toHaveProperty('messages');
+      expect(result).not.toHaveProperty('endpoint');
+    });
+
+    it('returns null for another user or a missing conversation', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        title: 'Test Conversation',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      expect(
+        await methods.getConvoOwnership('someone-else', mockConversationData.conversationId),
+      ).toBeNull();
+      expect(await methods.getConvoOwnership('user123', 'non-existent-id')).toBeNull();
+    });
+  });
+
   describe('getConvoRetention', () => {
     it('should retrieve only retention fields for a user conversation', async () => {
       await Conversation.create({

@@ -6,6 +6,7 @@ import type { TMessageContentParts } from 'librechat-data-provider';
 import type { CSSProperties, ReactNode } from 'react';
 import {
   useExpandCollapse,
+  useLazyCollapseBody,
   scheduleMessageContentLayoutReconcile,
   EXPAND_TRANSITION,
 } from '~/hooks';
@@ -54,12 +55,14 @@ export default function ActivityPhaseGroup({
   hasContent,
   showCursor = false,
   animateEntrance = false,
+  hasPendingApproval = false,
 }: {
   labelPart: ActivityPhasePart;
   children: ReactNode;
   hasContent: boolean;
   showCursor?: boolean;
   animateEntrance?: boolean;
+  hasPendingApproval?: boolean;
 }) {
   const label = getActivityLabelText(labelPart);
   const hasFailure = labelPart.status === 'failed' || labelPart.status === 'partial';
@@ -85,6 +88,14 @@ export default function ActivityPhaseGroup({
   const previousIsExpandedRef = useRef(isExpanded);
   const userOverrideRef = useRef(false);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
+  /** A phase label can resolve while an approval card inside it is still
+   *  pending (see ApprovalContext), and ToolApproval owns unsent local
+   *  edit/respond/reason state — so a collapsed phase retains its body until
+   *  every nested approval resolves, exactly like ToolCallGroup. */
+  const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(
+    isExpanded,
+    hasPendingApproval,
+  );
 
   useEffect(() => {
     if (!foldsIn || userOverrideRef.current) {
@@ -124,9 +135,10 @@ export default function ActivityPhaseGroup({
     userOverrideRef.current = true;
     cancelEntranceRef.current?.();
     cancelEntranceRef.current = null;
+    mountBody();
     setIsSettled(true);
     setIsExpanded((expanded) => !expanded);
-  }, []);
+  }, [mountBody]);
 
   /** Only the folding entrance drives the header off its natural height.
    *  History and reduced-motion render the plain, unstyled row. */
@@ -211,24 +223,27 @@ export default function ActivityPhaseGroup({
       <div
         id={panelId}
         style={expandStyle}
+        onTransitionEnd={handleTransitionEnd}
         aria-hidden={!isExpanded}
         data-testid="activity-phase-panel"
       >
-        <div className="overflow-hidden" ref={expandRef}>
-          {/** Padding and the divider ride the same curve as the fold: the
-           *   children occupy the exact position they held before the marker
-           *   arrived and settle into the card as it materializes, instead of
-           *   stepping sideways by the card's inset on the first frame. */}
-          <div
-            className={cn(
-              'border-t transition-[border-color,padding]',
-              FOLD_EASING,
-              isSettled ? 'border-border-light px-3 py-2' : 'border-transparent px-0 py-0',
-            )}
-          >
-            {children}
+        {shouldRenderBody && (
+          <div className="overflow-hidden" ref={expandRef}>
+            {/** Padding and the divider ride the same curve as the fold: the
+             *   children occupy the exact position they held before the marker
+             *   arrived and settle into the card as it materializes, instead of
+             *   stepping sideways by the card's inset on the first frame. */}
+            <div
+              className={cn(
+                'border-t transition-[border-color,padding]',
+                FOLD_EASING,
+                isSettled ? 'border-border-light px-3 py-2' : 'border-transparent px-0 py-0',
+              )}
+            >
+              {children}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

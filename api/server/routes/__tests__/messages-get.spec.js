@@ -1,3 +1,4 @@
+const { CLIENT_MESSAGE_SELECT } = require('@librechat/data-schemas');
 const express = require('express');
 const request = require('supertest');
 
@@ -171,7 +172,7 @@ describe('message route conversation ownership filters', () => {
     expect(response.status).toBe(200);
     expect(getMessages).toHaveBeenCalledWith(
       { conversationId: 'convo-1', user: authenticatedUserId },
-      '-_id -__v -user',
+      CLIENT_MESSAGE_SELECT,
     );
   });
 
@@ -216,7 +217,7 @@ describe('message route conversation ownership filters', () => {
     expect(eventsBeforeValidation).toEqual(['messages-started']);
     expect(getMessages).toHaveBeenCalledWith(
       { conversationId: 'convo-1', user: authenticatedUserId },
-      '-_id -__v -user',
+      CLIENT_MESSAGE_SELECT,
     );
 
     expect(response.status).toBe(200);
@@ -242,7 +243,7 @@ describe('message route conversation ownership filters', () => {
 
     expect(getMessages).toHaveBeenCalledWith(
       { conversationId: 'convo-1', user: authenticatedUserId },
-      '-_id -__v -user',
+      CLIENT_MESSAGE_SELECT,
     );
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: 'Conversation not found' });
@@ -256,7 +257,7 @@ describe('message route conversation ownership filters', () => {
     expect(response.status).toBe(200);
     expect(getMessages).toHaveBeenCalledWith(
       { conversationId: 'convo-1', messageId: 'message-1', user: authenticatedUserId },
-      '-_id -__v -user',
+      CLIENT_MESSAGE_SELECT,
     );
   });
 });

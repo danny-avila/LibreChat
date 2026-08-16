@@ -80,6 +80,10 @@ export interface ConversationMethods {
     convoMap: Record<string, unknown>;
   }>;
   getConvo(user: string, conversationId: string): Promise<IConversation | null>;
+  getConvoOwnership(
+    user: string,
+    conversationId: string,
+  ): Promise<Pick<IConversation, 'user'> | null>;
   getConvoRetention(
     user: string,
     conversationId: string,
@@ -132,6 +136,23 @@ export function createConversationMethods(
     } catch (error) {
       logger.error('[getConvo] Error getting single conversation', error);
       throw new Error('Error getting single conversation');
+    }
+  }
+
+  /**
+   * Ownership probe for request validation: resolves only the owning user id
+   * instead of materializing the full conversation document (preset spread +
+   * message ObjectId array).
+   */
+  async function getConvoOwnership(user: string, conversationId: string) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOne({ user, conversationId }, 'user').lean<
+        Pick<IConversation, 'user'>
+      >();
+    } catch (error) {
+      logger.error('[getConvoOwnership] Error checking conversation ownership', error);
+      throw new Error('Error checking conversation ownership');
     }
   }
 
@@ -1083,6 +1104,7 @@ export function createConversationMethods(
     getConvosByCursor,
     getConvosQueried,
     getConvo,
+    getConvoOwnership,
     getConvoRetention,
     getConvoTitle,
     deleteConvos,

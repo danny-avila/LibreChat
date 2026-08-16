@@ -10,6 +10,7 @@ import {
 } from '~/utils/stripUIResourceMarkers';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { CLIENT_MESSAGE_SELECT } from './message';
 import logger from '~/config/winston';
 
 class ShareServiceError extends Error {
@@ -782,7 +783,7 @@ export function createShareMethods(mongoose: typeof import('mongoose')): {
       const share = (await query
         .populate({
           path: 'messages',
-          select: '-_id -__v -user',
+          select: CLIENT_MESSAGE_SELECT,
         })
         .select('-__v')
         .lean()) as (t.ISharedLink & { messages: t.IMessage[] }) | null;

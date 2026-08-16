@@ -3,8 +3,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { RetentionMode } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IMessage } from '..';
+import { createMessageMethods, CLIENT_MESSAGE_SELECT } from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
-import { createMessageMethods } from './message';
 import { createModels } from '../models';
 import logger from '~/config/winston';
 
@@ -484,6 +484,134 @@ describe('Message Operations', () => {
         conversationId: 'convo123',
       });
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('CLIENT_MESSAGE_SELECT projection', () => {
+    it('strips server-internal fields and dead SERP verticals, keeping rendered data', async () => {
+      const conversationId = uuidv4();
+      await Message.create({
+        messageId: 'projected-msg',
+        conversationId,
+        user: 'user123',
+        isCreatedByUser: false,
+        sender: 'Agent',
+        text: 'visible text',
+        content: [{ type: 'text', text: 'part text' }],
+        tokenCount: 42,
+        conversationSignature: 'sig',
+        clientId: 'client-1',
+        invocationId: 7,
+        summary: 'legacy summary',
+        summaryTokenCount: 11,
+        contextMeta: { anything: true },
+        langfuseSampled: true,
+        langfuseDestinationIds: ['lf-1'],
+        metadata: {
+          usage: { input: 10, output: 20 },
+          thoughtSignatures: { tool_1: 'opaque' },
+        },
+        attachments: [
+          {
+            type: 'web_search',
+            toolCallId: 'tool_1',
+            web_search: {
+              turn: 0,
+              organic: [
+                {
+                  title: 'Result',
+                  link: 'https://example.com',
+                  snippet: 'snippet',
+                  sitelinks: [{ title: 'sub', link: 'https://example.com/sub' }],
+                  highlights: ['raw scrape'],
+                },
+              ],
+              topStories: [{ title: 'Story', link: 'https://example.com/s', highlights: ['x'] }],
+              references: [{ link: 'https://example.com', title: 'Result', type: 'link' }],
+              images: [{ imageUrl: 'https://example.com/i.png' }],
+              answerBox: { answer: '42' },
+              knowledgeGraph: { title: 'KG' },
+              peopleAlsoAsk: [{ question: 'q' }],
+              relatedSearches: ['related'],
+              news: [{ title: 'n' }],
+              videos: [{ title: 'v' }],
+              places: [{ title: 'p' }],
+              shopping: [{ title: 's' }],
+            },
+          },
+        ],
+      });
+
+      const [message] = await getMessages(
+        { conversationId, user: 'user123' },
+        CLIENT_MESSAGE_SELECT,
+      );
+
+      expect(message.text).toBe('visible text');
+      expect(message.content).toHaveLength(1);
+      expect(message.tokenCount).toBe(42);
+      const metadata = message.metadata as Record<string, unknown>;
+      expect(metadata.usage).toBeDefined();
+      expect(metadata.thoughtSignatures).toBeUndefined();
+
+      const hidden = message as unknown as Record<string, unknown>;
+      for (const field of [
+        '_id',
+        'user',
+        'conversationSignature',
+        'clientId',
+        'invocationId',
+        'summary',
+        'summaryTokenCount',
+        'contextMeta',
+        'langfuseSampled',
+        'langfuseDestinationIds',
+      ]) {
+        expect(hidden[field]).toBeUndefined();
+      }
+
+      type ProjectedWebSearch = {
+        turn: number;
+        organic: Array<Record<string, unknown>>;
+        topStories: Array<Record<string, unknown>>;
+        references: unknown[];
+        images: unknown[];
+      } & Record<string, unknown>;
+      const webSearch = (message.attachments?.[0] as { web_search: ProjectedWebSearch }).web_search;
+      expect(webSearch.turn).toBe(0);
+      expect(webSearch.organic[0].title).toBe('Result');
+      expect(webSearch.organic[0].link).toBe('https://example.com');
+      expect(webSearch.organic[0].snippet).toBe('snippet');
+      expect(webSearch.organic[0].sitelinks).toBeUndefined();
+      expect(webSearch.organic[0].highlights).toBeUndefined();
+      expect(webSearch.topStories[0].title).toBe('Story');
+      expect(webSearch.topStories[0].highlights).toBeUndefined();
+      expect(webSearch.references).toHaveLength(1);
+      expect(webSearch.images).toHaveLength(1);
+      /** `videos` stays: `turn…video…` citation markers resolve against it
+       *  (the clipboard refTypeMap addresses it explicitly). */
+      expect(webSearch.videos).toHaveLength(1);
+      expect(webSearch.answerBox).toBeDefined();
+      for (const vertical of [
+        'knowledgeGraph',
+        'peopleAlsoAsk',
+        'relatedSearches',
+        'news',
+        'places',
+        'shopping',
+      ]) {
+        expect(webSearch[vertical]).toBeUndefined();
+      }
+    });
+  });
+
+  describe('conversation fetch index', () => {
+    it('declares the compound index that serves the conversation fetch and its sort', () => {
+      const indexes = Message.schema.indexes() as Array<[Record<string, number>, unknown]>;
+      expect(indexes).toContainEqual([
+        { conversationId: 1, user: 1, createdAt: 1 },
+        expect.anything(),
+      ]);
     });
   });
 

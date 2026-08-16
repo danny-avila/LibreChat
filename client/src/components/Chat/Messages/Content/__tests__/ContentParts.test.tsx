@@ -9,6 +9,7 @@ jest.mock('~/utils', () => ({
   mapAttachments: () => ({}),
   filterAttachmentsForPart: (attachments: unknown) => attachments,
   groupSequentialToolCalls: jest.fn(),
+  hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
 }));
 
 jest.mock('~/Providers', () => {

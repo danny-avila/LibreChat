@@ -10,7 +10,7 @@ import {
   splitToolCallName,
 } from 'librechat-data-provider';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
-import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
+import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { useToolCallIntent } from './Parts/intent';
@@ -54,6 +54,7 @@ export default function ToolCall({
   const hasOutput = (output?.length ?? 0) > 0;
   const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(showInfo);
+  const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(showInfo);
 
   useEffect(() => {
     if (autoExpand && hasOutput) {
@@ -194,6 +195,7 @@ export default function ToolCall({
   const showCancelled = cancelled || (errorState && !output);
 
   const handleToggleInfo = useCallback(() => {
+    mountBody();
     setShowInfo((prev) => {
       const next = !prev;
       if (next) {
@@ -201,7 +203,7 @@ export default function ToolCall({
       }
       return next;
     });
-  }, [onExpand]);
+  }, [mountBody, onExpand]);
 
   const subtitle = useMemo(() => {
     if (isMCPToolCall && mcpServerName) {
@@ -297,9 +299,13 @@ export default function ToolCall({
           error={showCancelled}
         />
       </div>
-      <div style={expandStyle} data-tool-call-output-id={toolCallId}>
+      <div
+        style={expandStyle}
+        onTransitionEnd={handleTransitionEnd}
+        data-tool-call-output-id={toolCallId}
+      >
         <div className="overflow-hidden" ref={expandRef}>
-          {hasInfo && (
+          {hasInfo && shouldRenderBody && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />
             </div>

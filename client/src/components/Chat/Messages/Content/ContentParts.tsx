@@ -15,6 +15,7 @@ import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
+import { hasPendingApprovalInPart } from '~/utils';
 import EditContentParts from './EditContentParts';
 import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
@@ -530,6 +531,9 @@ const ContentParts = memo(function ContentParts({
                 key={`activity-phase-${messageId}-${segment.labelIndex}`}
                 labelPart={segment.labelPart}
                 hasContent={segment.hasContent}
+                hasPendingApproval={segment.content.some(
+                  (part) => part != null && hasPendingApprovalInPart(part),
+                )}
                 animateEntrance={
                   previousPhaseIndices != null && !previousPhaseIndices.has(segment.labelIndex)
                 }

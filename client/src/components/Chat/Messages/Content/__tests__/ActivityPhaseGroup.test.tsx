@@ -13,8 +13,10 @@ jest.mock('~/hooks/Messages/useSmoothStreaming', () => ({
 
 jest.mock('~/hooks', () => {
   const expandCollapse = jest.requireActual('~/hooks/Messages/useExpandCollapse');
+  const lazyCollapseBody = jest.requireActual('~/hooks/Messages/useLazyCollapseBody');
   return {
     useExpandCollapse: expandCollapse.default,
+    useLazyCollapseBody: lazyCollapseBody.default,
     EXPAND_TRANSITION: expandCollapse.EXPAND_TRANSITION,
     scheduleMessageContentLayoutReconcile: (target: HTMLElement | null) =>
       mockScheduleLayoutReconcile(target),
@@ -191,5 +193,73 @@ describe('ActivityPhaseGroup', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(screen.getByText(LABEL)).toHaveClass('text-left');
     expect(pendingFrames()).toBe(0);
+  });
+
+  test('keeps a collapsed history phase body unmounted until expanded', () => {
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    expect(screen.queryByTestId('phase-content')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: LABEL }));
+    expect(screen.getByTestId('phase-content')).toBeInTheDocument();
+  });
+
+  test('releases the body only after the collapse transition completes', () => {
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    const trigger = screen.getByRole('button', { name: LABEL });
+    fireEvent.click(trigger);
+    expect(screen.getByTestId('phase-content')).toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    expect(screen.getByTestId('phase-content')).toBeInTheDocument();
+
+    fireEvent.transitionEnd(screen.getByTestId('activity-phase-panel'));
+    expect(screen.queryByTestId('phase-content')).not.toBeInTheDocument();
+  });
+
+  test('a pending approval retains the collapsed body until it resolves', () => {
+    const { rerender } = render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent hasPendingApproval>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    const trigger = screen.getByRole('button', { name: LABEL });
+    fireEvent.click(trigger);
+    fireEvent.click(trigger);
+    fireEvent.transitionEnd(screen.getByTestId('activity-phase-panel'));
+    expect(screen.getByTestId('phase-content')).toBeInTheDocument();
+
+    rerender(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent hasPendingApproval={false}>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+    expect(screen.queryByTestId('phase-content')).not.toBeInTheDocument();
+  });
+
+  test('the entrance fold keeps the body mounted, then releases it after settling', () => {
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent animateEntrance>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+
+    expect(screen.getByTestId('phase-content')).toBeInTheDocument();
+
+    flushFrames();
+    flushFrames();
+
+    fireEvent.transitionEnd(screen.getByTestId('activity-phase-panel'));
+    expect(screen.queryByTestId('phase-content')).not.toBeInTheDocument();
   });
 });
