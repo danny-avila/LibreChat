@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
+import type { Document, Filter, FindOneAndUpdateOptions, UpdateFilter } from 'mongodb';
 import type { IChatProject, IConversation } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -516,14 +517,20 @@ describe('Conversation Operations', () => {
         let writeCount = 0;
         const writeSpy = jest
           .spyOn(Conversation.collection, 'findOneAndUpdate')
-          .mockImplementation(async (filter, update, options) => {
-            writeCount += 1;
-            if (writeCount === 1) {
-              markArchiveWriteReached();
-              await archiveWriteBlocked;
-            }
-            return findOneAndUpdate(filter, update, options);
-          });
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              writeCount += 1;
+              if (writeCount === 1) {
+                markArchiveWriteReached();
+                await archiveWriteBlocked;
+              }
+              return findOneAndUpdate(filter, update, options ?? {});
+            },
+          );
 
         try {
           const archive = saveConvo(
