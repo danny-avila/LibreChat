@@ -157,7 +157,11 @@ describe('createBackgroundCodeResultHandler', () => {
     const result = await handler(baseParams);
 
     expect(updateToolCallResult).toHaveBeenCalledWith(
-      expect.objectContaining({ output: 'stdout:\nhello', attachments: [], markBackgrounded: true }),
+      expect.objectContaining({
+        output: 'stdout:\nhello',
+        attachments: [],
+        markBackgrounded: true,
+      }),
     );
     expect(result).toEqual({ attachments: [] });
   });
