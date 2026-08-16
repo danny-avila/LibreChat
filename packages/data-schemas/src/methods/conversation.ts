@@ -393,6 +393,18 @@ export function createConversationMethods(
         if (!conversationResult.value && canUpsert) {
           conversationResult = await runUpdate(baseFilter, buildOperation(stamped), true);
         }
+        if (!conversationResult.value) {
+          /** Alternating archive and unarchive requests can split every attempt, so
+           * exhausting the retries still proves nothing about whether the chat exists.
+           * Answer with its actual current state rather than reporting it missing. */
+          const current = await Conversation.findOne(baseFilter);
+          if (current) {
+            conversationResult = {
+              value: current as unknown as ConversationUpdateResult['value'],
+              lastErrorObject: { updatedExisting: true },
+            };
+          }
+        }
       } else {
         conversationResult = await runUpdate(
           baseFilter,

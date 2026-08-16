@@ -603,6 +603,60 @@ describe('Conversation Operations', () => {
         }
       });
 
+      /** Alternating requests can split every retry, and exhausting them still proves
+       * nothing about whether the chat exists, so it must not become a 404 either. */
+      it('does not report a missing chat when every archive retry is split', async () => {
+        const conversationId = uuidv4();
+        const original = new Date('2026-03-01T12:00:00.000Z');
+        await Conversation.collection.insertOne({
+          conversationId,
+          user: 'user123',
+          title: 'Perpetually split',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: null,
+          isArchived: true,
+          archivedAt: original,
+          createdAt: original,
+          updatedAt: original,
+        });
+
+        const findOneAndUpdate = Conversation.collection.findOneAndUpdate.bind(
+          Conversation.collection,
+        );
+        const writeSpy = jest
+          .spyOn(Conversation.collection, 'findOneAndUpdate')
+          .mockImplementation(
+            async (
+              filter: Filter<Document>,
+              update: UpdateFilter<Document> | Document[],
+              options?: FindOneAndUpdateOptions,
+            ) => {
+              const result = await findOneAndUpdate(filter, update, options ?? {});
+              /** Flip the flag after every write so no transition write and no
+               * already-archived write can ever match. */
+              const archived = await Conversation.collection.findOne({ conversationId });
+              await Conversation.collection.updateOne(
+                { conversationId },
+                { $set: { isArchived: archived?.isArchived !== true } },
+              );
+              return result;
+            },
+          );
+
+        try {
+          const archived = await saveConvo(
+            { userId: 'user123' },
+            { conversationId, isArchived: true },
+            { preserveUpdatedAt: true, noUpsert: true },
+          );
+
+          expect(archived).not.toBeNull();
+          expect(archived?.conversationId).toBe(conversationId);
+        } finally {
+          writeSpy.mockRestore();
+        }
+      });
+
       it('stamps again when unarchive lands before a pending repeated archive write', async () => {
         const conversationId = uuidv4();
         const original = new Date('2026-03-01T12:00:00.000Z');
