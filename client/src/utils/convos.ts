@@ -440,12 +440,15 @@ export function addConvoToAllQueries(queryClient: QueryClient, newConvo: TConver
       ) {
         return oldData;
       }
+      /** Removing the last loaded row leaves a cache with no pages at all, so the
+       * first page has to be recreated rather than spread from `undefined`. */
+      const firstPage = oldData.pages[0] ?? { conversations: [], nextCursor: null };
       return {
         ...oldData,
         pages: [
           {
-            ...oldData.pages[0],
-            conversations: [newConvo, ...oldData.pages[0].conversations],
+            ...firstPage,
+            conversations: [newConvo, ...firstPage.conversations],
           },
           ...oldData.pages.slice(1),
         ],

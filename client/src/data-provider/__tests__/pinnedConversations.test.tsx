@@ -166,6 +166,36 @@ describe('usePinnedConversationsQuery', () => {
     expect(result.current.data?.nextCursor).toBeNull();
   });
 
+  /** The drain rejects as a whole, so without publishing what it already has the
+   * section would fall back to an empty list for every pin past the first page. */
+  it('keeps the pages already drained when a later one fails', async () => {
+    listConversations
+      .mockResolvedValueOnce({ conversations: [pinnedConvo], nextCursor: 'cursor-2' })
+      .mockRejectedValueOnce(new Error('network'));
+    const queryClient = createQueryClient();
+
+    const { result } = renderHook(() => usePinnedConversationsQuery(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(readPinnedCache(queryClient)?.conversations).toEqual([pinnedConvo]);
+    expect(readPinnedCache(queryClient)?.nextCursor).toBe('cursor-2');
+    expect(result.current.data?.conversations).toEqual([pinnedConvo]);
+  });
+
+  it('reports the failure when the very first page fails', async () => {
+    listConversations.mockRejectedValueOnce(new Error('network'));
+    const queryClient = createQueryClient();
+
+    const { result } = renderHook(() => usePinnedConversationsQuery(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(readPinnedCache(queryClient)).toBeUndefined();
+  });
+
   /** The chats list beside it is filtered by the selected bookmarks; the pinned section
    * showed every pin regardless until the tags were threaded through. */
   it('applies the active bookmark filter and keys the cache by it', async () => {
@@ -461,6 +491,52 @@ describe('unpinning a pin that is not on a loaded chats page', () => {
       chats?.pages[0].conversations.map((conversation) => conversation.conversationId),
     ).toEqual(['convo-pinned', 'other-recent']);
     expect(chats?.pages[0].conversations[0].pinned).toBe(false);
+  });
+
+  /** Deleting the last loaded row drops every page, so the insert has to rebuild the
+   * first one instead of reading through an empty array. */
+  it('rebuilds the first page when the chats cache has been emptied', async () => {
+    const unpinned = { ...pinnedConvo, pinned: false } as TConversation;
+    pinConversation.mockResolvedValue(unpinned);
+    const queryClient = createQueryClient();
+    queryClient.setQueryData(
+      [QueryKeys.pinnedConversations, { tags: undefined }],
+      listResponse([pinnedConvo]),
+    );
+    queryClient.setQueryData([QueryKeys.allConversations], {
+      pages: [
+        {
+          conversations: [
+            { conversationId: 'only-chat', title: 'Only', endpoint: 'openAI' } as TConversation,
+          ],
+          nextCursor: null,
+        },
+      ],
+      pageParams: [undefined],
+    });
+    removeConvoFromAllQueries(queryClient, 'only-chat');
+    expect(
+      queryClient.getQueryData<{ pages: unknown[] }>([QueryKeys.allConversations])?.pages,
+    ).toEqual([]);
+
+    const { result } = renderHook(() => usePinConversationMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      result.current.mutate({
+        conversationId: pinnedConvo.conversationId as string,
+        pinned: false,
+      });
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const chats = queryClient.getQueryData<{
+      pages: { conversations: TConversation[] }[];
+    }>([QueryKeys.allConversations]);
+    expect(
+      chats?.pages[0].conversations.map((conversation) => conversation.conversationId),
+    ).toEqual(['convo-pinned']);
   });
 
   it('does not insert the unpinned chat into an unrelated bookmark cache', async () => {

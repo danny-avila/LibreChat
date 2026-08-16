@@ -126,20 +126,36 @@ export const usePinnedConversationsQuery = (
   config?: UseQueryOptions<ConversationListResponse>,
 ): QueryObserverResult<ConversationListResponse> => {
   const { tags } = params;
+  const queryClient = useQueryClient();
+  const queryKey = [QueryKeys.pinnedConversations, { tags }];
 
   return useQuery<ConversationListResponse>(
-    [QueryKeys.pinnedConversations, { tags }],
+    queryKey,
     async () => {
       const conversations: ConversationListResponse['conversations'] = [];
       let cursor: string | undefined;
 
       do {
-        const page = await dataService.listConversations({
-          pinned: true,
-          tags,
-          limit: pinnedConversationsPageSize,
-          cursor,
-        });
+        let page: ConversationListResponse;
+        try {
+          page = await dataService.listConversations({
+            pinned: true,
+            tags,
+            limit: pinnedConversationsPageSize,
+            cursor,
+          });
+        } catch (error) {
+          /** A page failing partway through the drain must not throw away the pins
+           * already loaded: publish them so the retry, which starts the drain over,
+           * renders against the partial set instead of an empty section. */
+          if (conversations.length > 0) {
+            queryClient.setQueryData<ConversationListResponse>(queryKey, {
+              conversations,
+              nextCursor: cursor ?? null,
+            });
+          }
+          throw error;
+        }
         conversations.push(...page.conversations);
         cursor = page.nextCursor ?? undefined;
       } while (cursor);
