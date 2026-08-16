@@ -88,6 +88,24 @@ export const modelSpecSubagentsSchema = z.object({
   agent_ids: z.array(z.string()).max(MAX_SUBAGENTS).optional(),
 });
 
+/**
+ * The endpoint a spec targets. Only the agents endpoint can serve a preset that
+ * names an `agent_id`, so an omitted `endpoint` is inferred rather than left
+ * undefined — otherwise the spec matches no endpoint at all, the client sends
+ * no endpoint when it is selected, and the request is rejected as a mismatch.
+ *
+ * Shared so the selector and the request pipeline resolve a spec identically.
+ */
+export function resolveModelSpecEndpoint(
+  modelSpec: Pick<TModelSpec, 'preset'> | undefined,
+): string | undefined {
+  const preset = modelSpec?.preset;
+  if (preset?.endpoint != null) {
+    return preset.endpoint;
+  }
+  return preset?.agent_id != null ? EModelEndpoint.agents : undefined;
+}
+
 export const tModelSpecSchema = z.object({
   name: z.string(),
   label: z.string(),

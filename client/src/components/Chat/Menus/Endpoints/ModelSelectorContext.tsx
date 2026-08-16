@@ -5,6 +5,7 @@ import {
   PermissionBits,
   isAgentsEndpoint,
   isAssistantsEndpoint,
+  resolveModelSpecEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
@@ -203,13 +204,14 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     (spec: t.TModelSpec) => {
       let model = spec.preset.model ?? null;
       onSelectSpec?.(spec);
-      if (isAgentsEndpoint(spec.preset.endpoint)) {
+      const endpoint = resolveModelSpecEndpoint(spec) ?? null;
+      if (isAgentsEndpoint(endpoint)) {
         model = spec.preset.agent_id ?? '';
-      } else if (isAssistantsEndpoint(spec.preset.endpoint)) {
+      } else if (isAssistantsEndpoint(endpoint)) {
         model = spec.preset.assistant_id ?? '';
       }
       setSelectedValues({
-        endpoint: spec.preset.endpoint,
+        endpoint,
         model,
         modelSpec: spec.name,
       });
