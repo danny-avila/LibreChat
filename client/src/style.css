@@ -600,7 +600,8 @@ pre {
   }
 
   .message-render:hover .message-timestamp,
-  .message-render:is(:focus-visible, :has(:focus-visible:not(:is(input, textarea, [contenteditable]))))
+  .message-render:focus-visible .message-timestamp,
+  .message-render:has(:focus-visible:not(:is(input, textarea, [contenteditable])))
     .message-timestamp {
     opacity: 1;
   }
