@@ -414,6 +414,45 @@ describe('useFileHandling', () => {
       }
     });
 
+    it('shares the total size limit across hook instances writing the same files', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 10, totalSizeLimit: 7 } },
+        });
+        const sharedState = {
+          files: new Map(),
+          setFiles: jest.fn(),
+          setFilesLoading: mockSetFilesLoading,
+          conversation: mockConversation,
+        };
+        const { useFileHandlingNoChatContext } = await import('../useFileHandling');
+        const menu = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
+        const composer = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
+
+        await act(async () => {
+          await Promise.all([
+            menu.result.current.handleFiles([makeSizedFile('one.txt', 'text/plain', 4 * megabyte)]),
+            composer.result.current.handleFiles([
+              makeSizedFile('two.txt', 'text/plain', 4 * megabyte),
+            ]),
+          ]);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'Total file size limit exceeded: 7 MB',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('shares the total size limit across concurrent upload batches', async () => {
       jest.useFakeTimers();
       try {

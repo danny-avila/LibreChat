@@ -62,26 +62,70 @@ type ProcessedUpload = {
 
 const noop = () => {};
 
+type UploadScope = {
+  queue: Promise<void>;
+  /** Accepted uploads that have not been observed in the shared file state yet */
+  recent: Map<string, ExtendedFile>;
+};
+
+/**
+ * Upload batches are validated against the file map they write to, so every hook instance
+ * sharing a setter (attachment menu, paste routing, SharePoint) must share one queue.
+ */
+const uploadScopes = new WeakMap<FileSetter, UploadScope>();
+
+const getUploadScope = (fileSetter: FileSetter): UploadScope => {
+  const scope = uploadScopes.get(fileSetter);
+  if (scope != null) {
+    return scope;
+  }
+
+  const created: UploadScope = { queue: Promise.resolve(), recent: new Map() };
+  uploadScopes.set(fileSetter, created);
+  return created;
+};
+
+const mergeRecentUploads = (
+  files: Map<string, ExtendedFile>,
+  recent: Map<string, ExtendedFile>,
+): Map<string, ExtendedFile> => {
+  if (recent.size === 0) {
+    return files;
+  }
+
+  const merged = new Map(files);
+  for (const [file_id, extendedFile] of recent) {
+    if (!merged.has(file_id)) {
+      merged.set(file_id, extendedFile);
+    }
+  }
+  return merged;
+};
+
 const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: FileHandlingState) => {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const fileProcessingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, conversation } = fileState;
   const filesRef = useRef(files);
   filesRef.current = files;
+  const fileSetter = params?.fileSetter ?? setFiles;
+  const uploadScope = getUploadScope(fileSetter);
+  for (const file_id of uploadScope.recent.keys()) {
+    if (files.has(file_id)) {
+      uploadScope.recent.delete(file_id);
+    }
+  }
   const setFilesLoading = fileState.setFilesLoading ?? noop;
   const setEphemeralAgent = useSetRecoilState(
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );
   const isTemporary = useRecoilValue(store.isTemporary);
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
-  const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(
-    params?.fileSetter ?? setFiles,
-  );
+  const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(fileSetter);
   const { isConfigPending, waitForConfig, resizeImageIfNeeded } = useClientResize();
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
@@ -313,7 +357,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       await waitForConfig();
     }
 
-    const existingFiles = filesRef.current;
+    const existingFiles = mergeRecentUploads(filesRef.current, uploadScope.recent);
     const currentFileConfig = fileConfigRef.current;
     const endpointFileConfig = getEndpointFileConfig({
       endpoint,
@@ -503,6 +547,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     const filesWithProcessedUploads = new Map(existingFiles);
     for (const { extendedFile } of processedUploads) {
       filesWithProcessedUploads.set(extendedFile.file_id, extendedFile);
+      uploadScope.recent.set(extendedFile.file_id, extendedFile);
     }
     filesRef.current = filesWithProcessedUploads;
 
@@ -532,9 +577,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
     /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
     const fileList = Array.from(_files);
-    const previousProcessing = fileProcessingQueueRef.current;
+    const previousProcessing = uploadScope.queue;
     let releaseProcessing: () => void = () => undefined;
-    fileProcessingQueueRef.current = new Promise<void>((resolve) => {
+    uploadScope.queue = new Promise<void>((resolve) => {
       releaseProcessing = resolve;
     });
 
