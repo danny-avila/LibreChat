@@ -1421,7 +1421,6 @@ export const interfaceSchema = z
     parameters: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
-    insights: z.boolean().optional(),
     memories: z.boolean().optional(),
     presets: z.boolean().optional(),
     prompts: z
@@ -1516,7 +1515,6 @@ export const interfaceSchema = z
     presets: true,
     multiConvo: true,
     bookmarks: true,
-    insights: false,
     memories: true,
     prompts: {
       use: true,
@@ -1617,6 +1615,7 @@ export type TStartupConfig = {
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
+  insightsEnabled?: boolean;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;

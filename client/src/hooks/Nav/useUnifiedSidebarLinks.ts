@@ -28,7 +28,7 @@ export default function useUnifiedSidebarLinks() {
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
   );
-  const insightsFeatureEnabled = interfaceConfig.insights === true;
+  const insightsFeatureEnabled = startupConfig?.insightsEnabled === true;
   const { data: insightsAccess } = useInsightsAccessQuery(user?.id, {
     enabled: user?.role === SystemRoles.ADMIN && insightsFeatureEnabled,
   });

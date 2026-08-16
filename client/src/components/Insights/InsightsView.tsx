@@ -533,7 +533,7 @@ export default function InsightsView() {
   const [page, setPage] = useState(1);
   const dateRangeSelectionTimeout = useRef<number>();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const insightsFeatureEnabled = startupConfig?.interface?.insights === true;
+  const insightsFeatureEnabled = startupConfig?.insightsEnabled === true;
   const shouldCheckAccess = user?.role === SystemRoles.ADMIN && insightsFeatureEnabled;
   const access = useInsightsAccessQuery(user?.id, {
     enabled: shouldCheckAccess,

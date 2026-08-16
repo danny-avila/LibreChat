@@ -20,8 +20,8 @@ const emptyInsights: TInsightsResponse = {
   latest: { conversations: [], page: 1, pageSize: 10, pages: 1 },
 };
 
-const enabledConfig = jest.fn().mockResolvedValue({ interfaceConfig: { insights: true } });
-const disabledConfig = jest.fn().mockResolvedValue({ interfaceConfig: { insights: false } });
+const insightsEnabled = jest.fn(() => true);
+const insightsDisabled = jest.fn(() => false);
 
 const createResponse = () => {
   const status = jest.fn();
@@ -45,18 +45,18 @@ describe('Insights handlers', () => {
     jest.clearAllMocks();
   });
 
-  it('returns access when Insights is enabled in the interface configuration', async () => {
-    const handler = createInsightsAccessHandler({ getAppConfig: enabledConfig });
+  it('returns access when Insights is enabled', async () => {
+    const handler = createInsightsAccessHandler({ isInsightsEnabled: insightsEnabled });
     const { response, json } = createResponse();
 
     await handler(createRequest(), response);
 
-    expect(enabledConfig).toHaveBeenCalledTimes(1);
+    expect(insightsEnabled).toHaveBeenCalledTimes(1);
     expect(json).toHaveBeenCalledWith({ access: true });
   });
 
   it('returns 404 from the access endpoint when Insights is disabled', async () => {
-    const handler = createInsightsAccessHandler({ getAppConfig: disabledConfig });
+    const handler = createInsightsAccessHandler({ isInsightsEnabled: insightsDisabled });
     const { response, status, json } = createResponse();
 
     await handler(createRequest(), response);
@@ -67,7 +67,7 @@ describe('Insights handlers', () => {
 
   it('returns 404 when Insights is disabled', async () => {
     const getInsights = jest.fn();
-    const handler = createInsightsHandler({ getAppConfig: disabledConfig, getInsights });
+    const handler = createInsightsHandler({ isInsightsEnabled: insightsDisabled, getInsights });
     const { response, status, json } = createResponse();
 
     await handler(createRequest(), response);
@@ -79,7 +79,7 @@ describe('Insights handlers', () => {
 
   it('loads a bounded page for the authenticated tenant', async () => {
     const getInsights = jest.fn().mockResolvedValue(emptyInsights);
-    const handler = createInsightsHandler({ getAppConfig: enabledConfig, getInsights });
+    const handler = createInsightsHandler({ isInsightsEnabled: insightsEnabled, getInsights });
     const { response, json } = createResponse();
 
     await handler(
@@ -102,7 +102,7 @@ describe('Insights handlers', () => {
 
   it('passes custom dates and a valid timezone to the data layer', async () => {
     const getInsights = jest.fn().mockResolvedValue(emptyInsights);
-    const handler = createInsightsHandler({ getAppConfig: enabledConfig, getInsights });
+    const handler = createInsightsHandler({ isInsightsEnabled: insightsEnabled, getInsights });
     const { response } = createResponse();
 
     await handler(
@@ -127,7 +127,7 @@ describe('Insights handlers', () => {
 
   it('uses pagination defaults and discards an invalid timezone', async () => {
     const getInsights = jest.fn().mockResolvedValue(emptyInsights);
-    const handler = createInsightsHandler({ getAppConfig: enabledConfig, getInsights });
+    const handler = createInsightsHandler({ isInsightsEnabled: insightsEnabled, getInsights });
     const { response } = createResponse();
 
     await handler(
@@ -142,7 +142,7 @@ describe('Insights handlers', () => {
 
   it('normalizes and bounds search input', async () => {
     const getInsights = jest.fn().mockResolvedValue(emptyInsights);
-    const handler = createInsightsHandler({ getAppConfig: enabledConfig, getInsights });
+    const handler = createInsightsHandler({ isInsightsEnabled: insightsEnabled, getInsights });
     const { response } = createResponse();
 
     await handler(createRequest({ search: `  ${'message'.repeat(40)}  ` }), response);
@@ -154,7 +154,7 @@ describe('Insights handlers', () => {
 
   it('does not run searches shorter than the minimum length', async () => {
     const getInsights = jest.fn().mockResolvedValue(emptyInsights);
-    const handler = createInsightsHandler({ getAppConfig: enabledConfig, getInsights });
+    const handler = createInsightsHandler({ isInsightsEnabled: insightsEnabled, getInsights });
     const { response } = createResponse();
 
     await handler(createRequest({ search: 'ab' }), response);

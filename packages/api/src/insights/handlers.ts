@@ -7,22 +7,13 @@ import {
 import type { InsightsMethods } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
-import { getAppConfigOptionsFromUser } from '~/app/service';
-
-type InsightsConfig = {
-  interfaceConfig?: {
-    insights?: boolean;
-  };
-};
 
 type InsightsHandlerDeps = {
-  getAppConfig: (
-    options: ReturnType<typeof getAppConfigOptionsFromUser>,
-  ) => Promise<InsightsConfig>;
+  isInsightsEnabled: () => boolean;
   getInsights: InsightsMethods['getInsights'];
 };
 
-type InsightsAccessHandlerDeps = Pick<InsightsHandlerDeps, 'getAppConfig'>;
+type InsightsAccessHandlerDeps = Pick<InsightsHandlerDeps, 'isInsightsEnabled'>;
 
 const firstQueryValue = (value: unknown): string | undefined => {
   if (Array.isArray(value)) {
@@ -61,18 +52,10 @@ const timeZoneValue = (value: unknown): string | undefined => {
   }
 };
 
-async function isInsightsEnabled(
-  req: ServerRequest,
-  getAppConfig: InsightsAccessHandlerDeps['getAppConfig'],
-): Promise<boolean> {
-  const appConfig = await getAppConfig(getAppConfigOptionsFromUser(req.user));
-  return appConfig.interfaceConfig?.insights === true;
-}
-
-export function createInsightsAccessHandler({ getAppConfig }: InsightsAccessHandlerDeps) {
-  return async (req: ServerRequest, res: Response): Promise<void> => {
+export function createInsightsAccessHandler({ isInsightsEnabled }: InsightsAccessHandlerDeps) {
+  return async (_req: ServerRequest, res: Response): Promise<void> => {
     try {
-      if (!(await isInsightsEnabled(req, getAppConfig))) {
+      if (!isInsightsEnabled()) {
         res.status(404).json({ message: 'Not found' });
         return;
       }
@@ -85,10 +68,10 @@ export function createInsightsAccessHandler({ getAppConfig }: InsightsAccessHand
   };
 }
 
-export function createInsightsHandler({ getAppConfig, getInsights }: InsightsHandlerDeps) {
+export function createInsightsHandler({ isInsightsEnabled, getInsights }: InsightsHandlerDeps) {
   return async (req: ServerRequest, res: Response): Promise<void> => {
     try {
-      if (!(await isInsightsEnabled(req, getAppConfig))) {
+      if (!isInsightsEnabled()) {
         res.status(404).json({ message: 'Not found' });
         return;
       }

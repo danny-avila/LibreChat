@@ -4,12 +4,12 @@ const request = require('supertest');
 const mockCreateInsightsAccessHandler = jest.fn(() => (_req, res) => res.json({ access: true }));
 const mockCreateInsightsHandler = jest.fn(() => (_req, res) => res.json({ summary: {} }));
 const mockGrantedCapabilities = new Set(['access:admin', 'read:insights']);
-const mockGetAppConfig = jest.fn();
 const mockGetInsights = jest.fn();
 
 jest.mock('@librechat/api', () => ({
   createInsightsAccessHandler: (...args) => mockCreateInsightsAccessHandler(...args),
   createInsightsHandler: (...args) => mockCreateInsightsHandler(...args),
+  isEnabled: (value) => value === 'true',
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -33,10 +33,6 @@ jest.mock('~/server/middleware/roles/capabilities', () => ({
     }
     next();
   },
-}));
-
-jest.mock('~/server/services/Config', () => ({
-  getAppConfig: (...args) => mockGetAppConfig(...args),
 }));
 
 jest.mock('~/models', () => ({
