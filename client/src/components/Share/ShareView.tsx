@@ -2,8 +2,8 @@ import { memo, useState, useCallback, useContext } from 'react';
 import Cookies from 'js-cookie';
 import { buildTree } from 'librechat-data-provider';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useRecoilState, useRecoilCallback } from 'recoil';
 import { CalendarDays, Settings, MessageSquarePlus } from 'lucide-react';
+import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import {
   Spinner,
@@ -117,8 +117,11 @@ function SharedView() {
   }, [shareId, forkSharedConvo, getActiveTargetIndex, data?.updatedAt]);
 
   // configure document title
+  const chatTitleInTab = useRecoilValue(store.chatTitleInTab);
   let docTitle = '';
-  if (config?.appTitle != null && data?.title != null) {
+  if (!chatTitleInTab) {
+    docTitle = config?.appTitle ?? document.title;
+  } else if (config?.appTitle != null && data?.title != null) {
     docTitle = `${data.title} | ${config.appTitle}`;
   } else {
     docTitle = data?.title ?? config?.appTitle ?? document.title;

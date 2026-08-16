@@ -27,6 +27,7 @@ import {
   logger,
   setDraft,
   scrollToEnd,
+  setDocumentTitle,
   requestChatFocus,
   getAllContentText,
   upsertConvoInAllQueries,
@@ -632,7 +633,7 @@ export default function useEventHandlers({
       markTitleGenerationProcessed(conversationId);
 
       if (location.pathname.includes(conversationId)) {
-        document.title = title;
+        setDocumentTitle(title);
       }
 
       if (setConversation && !isAddedRequest) {
