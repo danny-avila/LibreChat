@@ -194,16 +194,18 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
   const filtered: AnyObject = {};
 
   for (const [serverName, serverOverride] of Object.entries(value)) {
+    const currentServer = currentServers[serverName];
     if (
       serverOverride == null ||
       typeof serverOverride !== 'object' ||
       Array.isArray(serverOverride)
     ) {
-      filtered[serverName] = serverOverride;
+      if (!isProcessMCPServerConfig(currentServer)) {
+        filtered[serverName] = serverOverride;
+      }
       continue;
     }
 
-    const currentServer = currentServers[serverName];
     const baseServer =
       currentServer != null && typeof currentServer === 'object' && !Array.isArray(currentServer)
         ? (currentServer as AnyObject)
