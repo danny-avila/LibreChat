@@ -243,37 +243,42 @@ export default function useTextarea({
    * viable. `preferred` skips that prompt when the caller already knows the intent.
    */
   const routeClipboardFiles = useCallback(
-    (clipboardFiles: File[], preferred?: EToolResources) => {
+    async (clipboardFiles: File[], preferred?: EToolResources): Promise<boolean> => {
       setFilesLoading(true);
 
-      /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
-      if (isAssistantsEndpoint(conversation?.endpoint)) {
-        routeFiles(clipboardFiles);
-        return;
-      }
+      try {
+        /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
+        if (isAssistantsEndpoint(conversation?.endpoint)) {
+          return await routeFiles(clipboardFiles);
+        }
 
-      const options = getUploadOptions(clipboardFiles);
-      if (options.length === 0) {
-        showToast({ message: localize('com_error_files_unsupported'), status: 'error' });
-        setFilesLoading(false);
-        return;
-      }
+        const options = getUploadOptions(clipboardFiles);
+        if (options.length === 0) {
+          showToast({ message: localize('com_error_files_unsupported'), status: 'error' });
+          setFilesLoading(false);
+          return false;
+        }
 
-      const usePreferred = preferred != null && options.includes(preferred);
-      if (!usePreferred && options.length > 1) {
-        setFilesLoading(false);
-        openModal(clipboardFiles);
-        return;
-      }
+        const usePreferred = preferred != null && options.includes(preferred);
+        if (!usePreferred && options.length > 1) {
+          setFilesLoading(false);
+          openModal(clipboardFiles);
+          return false;
+        }
 
-      const destination = usePreferred ? preferred : options[0];
-      /** Held until the upload is accepted so a rejected file (a duplicate, an oversized one)
-       * reports only its own error instead of pairing it with a success message. */
-      void routeFiles(clipboardFiles, destination).then((accepted) => {
+        const destination = usePreferred ? preferred : options[0];
+        /** Held until the upload is accepted so a rejected file (a duplicate, an oversized one)
+         * reports only its own error instead of pairing it with a success message. */
+        const accepted = await routeFiles(clipboardFiles, destination);
         if (accepted && destination === EToolResources.context) {
           showToast({ message: localize('com_ui_file_attached_as_text'), status: 'info' });
         }
-      });
+        return accepted;
+      } catch (error) {
+        console.error('clipboard file routing error', error);
+        setFilesLoading(false);
+        return false;
+      }
     },
     [localize, showToast, openModal, routeFiles, conversation, setFilesLoading, getUploadOptions],
   );
@@ -304,11 +309,12 @@ export default function useTextarea({
           return;
         }
 
-        routeClipboardFiles(timestampedFiles);
+        void routeClipboardFiles(timestampedFiles);
         return;
       }
 
-      const attachment = resolvePastedTextFile(clipboardData.getData('text/plain'), {
+      const pastedText = clipboardData.getData('text/plain');
+      const attachment = resolvePastedTextFile(pastedText, {
         enabled: pasteLongTextAsFile,
         uploadsDisabled,
         isAssistants: isAssistantsEndpoint(conversation?.endpoint),
@@ -322,7 +328,15 @@ export default function useTextarea({
       }
 
       e.preventDefault();
-      routeClipboardFiles([attachment.file], attachment.toolResource);
+      const restorePaste = () => {
+        insertTextAtCursor(textArea, pastedText);
+        forceResize(textArea);
+      };
+      void routeClipboardFiles([attachment.file], attachment.toolResource).then((accepted) => {
+        if (!accepted) {
+          restorePaste();
+        }
+      });
     },
     [
       files,

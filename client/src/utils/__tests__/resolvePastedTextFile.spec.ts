@@ -99,12 +99,10 @@ describe('resolvePastedTextFile', () => {
     expect(resolvePastedTextFile(longText, baseCtx({ getOptions }))).toBeNull();
   });
 
-  it('falls back to the sole viable destination when context is unavailable', () => {
+  it('leaves the paste inline when context is unavailable even if file search is viable', () => {
     const getOptions = realOptions({ contextEnabled: false, fileSearchEnabled: true });
-    const attachment = resolvePastedTextFile(longText, baseCtx({ getOptions }));
 
-    expect(attachment?.file).toBeInstanceOf(File);
-    expect(attachment?.toolResource).toBe(EToolResources.file_search);
+    expect(resolvePastedTextFile(longText, baseCtx({ getOptions }))).toBeNull();
   });
 
   it('prefers context over file search rather than prompting', () => {

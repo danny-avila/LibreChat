@@ -521,14 +521,15 @@ const nextPastedTextFilename = (taken: Set<string>): string => {
 
 export type PastedTextAttachment = {
   file: File;
-  /** Left undefined for assistants, which resolve their own destination on upload. */
+  /** Context for non-assistant attachments; assistants resolve their destination on upload. */
   toolResource?: EToolResources;
 };
 
 /**
- * Turns a long plain-text paste into the text file to attach, keeping the composer readable
- * while the model still receives the paste in full. Returns `null` whenever the paste should
- * stay inline, so the caller can leave the browser's native paste untouched.
+ * Turns a long plain-text paste into a text attachment, keeping the composer readable while
+ * preserving the exact paste in the generated file. Context attachments follow the same
+ * configured token limits as other uploaded text files. Returns `null` whenever the paste
+ * should stay inline, so the caller can leave the browser's native paste untouched.
  */
 export const resolvePastedTextFile = (
   text: string,
@@ -544,17 +545,14 @@ export const resolvePastedTextFile = (
     return { file };
   }
 
-  /** `context` inlines the paste verbatim, so it wins whenever it is viable. Anything else is
-   * only taken when it is the sole destination: pasting text must never pop a picker. */
+  /** `context` is the only automatic non-assistant destination because retrieval-based routes
+   * can change what the model sees. Pasting text must never pop a destination picker. */
   const options = ctx.getOptions([file]);
-  if (options.includes(EToolResources.context)) {
-    return { file, toolResource: EToolResources.context };
-  }
-  if (options.length !== 1) {
+  if (!options.includes(EToolResources.context)) {
     return null;
   }
 
-  return { file, toolResource: options[0] };
+  return { file, toolResource: EToolResources.context };
 };
 
 export function sortPagesByRelevance(
