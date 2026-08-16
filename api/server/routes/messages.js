@@ -357,90 +357,114 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
   }
 });
 
-router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
-  try {
-    const { conversationId, messageId } = req.params;
-    const { text, index, model } = req.body;
+router.put(
+  '/:conversationId/:messageId',
+  validateMessageReq,
+  configMiddleware,
+  async (req, res) => {
+    try {
+      const { conversationId, messageId } = req.params;
+      const { text, index, model } = req.body;
+      const reqCtx = {
+        userId: req?.user?.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      };
+      const applyForcedRetention = async () => {
+        await db.saveMessage(
+          reqCtx,
+          { messageId, conversationId, user: req.user.id },
+          { context: 'PUT /api/messages/:conversationId/:messageId' },
+        );
+        await db.saveConvo(
+          reqCtx,
+          { conversationId },
+          { context: 'PUT /api/messages/:conversationId/:messageId' },
+        );
+      };
 
-    if (index === undefined) {
-      /** A user turn's persisted `quotes` are re-prepended into the prompt on
-       *  every send, but this edit only changes `text`. Count the merged
-       *  text+quotes so the stored `tokenCount` stays authoritative (matching the
-       *  send path); a plain text-only count under-reports by the quote block. */
-      const existing = (
-        await db.getMessages(
-          { conversationId, messageId, user: req.user.id },
-          'quotes isCreatedByUser',
-        )
+      if (index === undefined) {
+        /** A user turn's persisted `quotes` are re-prepended into the prompt on
+         *  every send, but this edit only changes `text`. Count the merged
+         *  text+quotes so the stored `tokenCount` stays authoritative (matching the
+         *  send path); a plain text-only count under-reports by the quote block. */
+        const existing = (
+          await db.getMessages(
+            { conversationId, messageId, user: req.user.id },
+            'quotes isCreatedByUser',
+          )
+        )?.[0];
+        const textToCount = mergeQuotedTextForCount(
+          text,
+          existing?.quotes,
+          existing?.isCreatedByUser === true,
+        );
+        const tokenCount = await countTokens(textToCount, model);
+        const result = await db.updateMessage(req?.user?.id, { messageId, text, tokenCount });
+        await applyForcedRetention();
+        return res.status(200).json(result);
+      }
+
+      if (typeof index !== 'number' || index < 0) {
+        return res.status(400).json({ error: 'Invalid index' });
+      }
+
+      const message = (
+        await db.getMessages({ conversationId, messageId, user: req.user.id }, 'content tokenCount')
       )?.[0];
-      const textToCount = mergeQuotedTextForCount(
-        text,
-        existing?.quotes,
-        existing?.isCreatedByUser === true,
-      );
-      const tokenCount = await countTokens(textToCount, model);
-      const result = await db.updateMessage(req?.user?.id, { messageId, text, tokenCount });
+      if (!message) {
+        return res.status(404).json({ error: 'Message not found' });
+      }
+
+      const existingContent = message.content;
+      if (!Array.isArray(existingContent) || index >= existingContent.length) {
+        return res.status(400).json({ error: 'Invalid index' });
+      }
+
+      const updatedContent = [...existingContent];
+      if (!updatedContent[index]) {
+        return res.status(400).json({ error: 'Content part not found' });
+      }
+
+      const currentPartType = updatedContent[index].type;
+      if (currentPartType !== ContentTypes.TEXT && currentPartType !== ContentTypes.THINK) {
+        return res.status(400).json({ error: 'Cannot update non-text content' });
+      }
+
+      /** A text part is `string | { value, annotations }`. The Assistants thread sync
+       *  persists the structured form with its file citations intact, and the editor
+       *  reads it through the same union, so an edit has to be written into `value`
+       *  rather than over the whole part. The same object is what gets counted below,
+       *  and the tokenizer measures `length`, which an object does not have. */
+      const currentPart = updatedContent[index];
+      const currentValue = currentPart[currentPartType];
+      const isStructuredValue = currentValue != null && typeof currentValue === 'object';
+      const oldText = isStructuredValue ? (currentValue.value ?? '') : currentValue;
+      updatedContent[index] = {
+        ...currentPart,
+        [currentPartType]: isStructuredValue ? { ...currentValue, value: text } : text,
+      };
+
+      let tokenCount = message.tokenCount;
+      if (tokenCount !== undefined) {
+        const oldTokenCount = await countTokens(oldText, model);
+        const newTokenCount = await countTokens(text, model);
+        tokenCount = Math.max(0, tokenCount - oldTokenCount) + newTokenCount;
+      }
+
+      const result = await db.updateMessage(req?.user?.id, {
+        messageId,
+        content: updatedContent,
+        tokenCount,
+      });
+      await applyForcedRetention();
       return res.status(200).json(result);
+    } catch (error) {
+      logger.error('Error updating message:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
-
-    if (typeof index !== 'number' || index < 0) {
-      return res.status(400).json({ error: 'Invalid index' });
-    }
-
-    const message = (
-      await db.getMessages({ conversationId, messageId, user: req.user.id }, 'content tokenCount')
-    )?.[0];
-    if (!message) {
-      return res.status(404).json({ error: 'Message not found' });
-    }
-
-    const existingContent = message.content;
-    if (!Array.isArray(existingContent) || index >= existingContent.length) {
-      return res.status(400).json({ error: 'Invalid index' });
-    }
-
-    const updatedContent = [...existingContent];
-    if (!updatedContent[index]) {
-      return res.status(400).json({ error: 'Content part not found' });
-    }
-
-    const currentPartType = updatedContent[index].type;
-    if (currentPartType !== ContentTypes.TEXT && currentPartType !== ContentTypes.THINK) {
-      return res.status(400).json({ error: 'Cannot update non-text content' });
-    }
-
-    /** A text part is `string | { value, annotations }`. The Assistants thread sync
-     *  persists the structured form with its file citations intact, and the editor
-     *  reads it through the same union, so an edit has to be written into `value`
-     *  rather than over the whole part. The same object is what gets counted below,
-     *  and the tokenizer measures `length`, which an object does not have. */
-    const currentPart = updatedContent[index];
-    const currentValue = currentPart[currentPartType];
-    const isStructuredValue = currentValue != null && typeof currentValue === 'object';
-    const oldText = isStructuredValue ? (currentValue.value ?? '') : currentValue;
-    updatedContent[index] = {
-      ...currentPart,
-      [currentPartType]: isStructuredValue ? { ...currentValue, value: text } : text,
-    };
-
-    let tokenCount = message.tokenCount;
-    if (tokenCount !== undefined) {
-      const oldTokenCount = await countTokens(oldText, model);
-      const newTokenCount = await countTokens(text, model);
-      tokenCount = Math.max(0, tokenCount - oldTokenCount) + newTokenCount;
-    }
-
-    const result = await db.updateMessage(req?.user?.id, {
-      messageId,
-      content: updatedContent,
-      tokenCount,
-    });
-    return res.status(200).json(result);
-  } catch (error) {
-    logger.error('Error updating message:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+  },
+);
 
 router.put(
   '/:conversationId/:messageId/feedback',
