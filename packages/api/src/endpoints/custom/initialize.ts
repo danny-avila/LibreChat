@@ -257,7 +257,11 @@ export async function initializeCustom({
   const hasTokenConfig = endpointConfig.tokenConfig != null;
   const tokenKey = getTokenConfigKey(endpointConfig, endpoint, userId, tenantId);
 
-  if (hasTokenConfig) {
+  if (endpointConfig.freeOfCharge === true) {
+    /** Free-of-charge endpoint: zero prompt/completion rates for all models.
+     *  Omit 'context' so per-model max-token limits still resolve normally. */
+    endpointTokenConfig = { '*': { prompt: 0, completion: 0 } };
+  } else if (hasTokenConfig) {
     /** A static override is authoritative — use it for the agent's billing
      *  and balance checks, not just the advertised UI token config. Mirror
      *  the admin-facing `cacheWrite`/`cacheRead` keys onto the `write`/`read`
