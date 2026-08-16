@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Constants, EToolResources } from 'librechat-data-provider';
 import type { UploadLifecycleCallbacks } from '~/hooks/Files/useFileHandling';
+import type { PasteAsFileContext } from '~/utils/files';
 import {
   getDraft,
   getFilesDraft,
@@ -740,5 +741,119 @@ describe('useTextarea long-paste fallback', () => {
     expect(consoleError).toHaveBeenCalledWith('clipboard file routing error', error);
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
     consoleError.mockRestore();
+  });
+
+  it('numbers a second paste made while the first is still queued', async () => {
+    mockResolvePastedTextFile.mockImplementation((text: string, ctx: PasteAsFileContext) => {
+      const name = ctx.attachedFilenames.has('pasted-text.txt')
+        ? 'pasted-text-2.txt'
+        : 'pasted-text.txt';
+      return {
+        file: new File([text], name, { type: 'text/plain' }),
+        toolResource: EToolResources.context,
+      };
+    });
+    let finishFirst!: (accepted: boolean) => void;
+    mockRouteFiles.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+
+    act(() =>
+      result.current.handlePaste(
+        createPasteEvent() as unknown as React.ClipboardEvent<HTMLTextAreaElement>,
+      ),
+    );
+    act(() =>
+      result.current.handlePaste(
+        createPasteEvent() as unknown as React.ClipboardEvent<HTMLTextAreaElement>,
+      ),
+    );
+
+    expect(mockRouteFiles.mock.calls[0][0][0].name).toBe('pasted-text.txt');
+    expect(mockRouteFiles.mock.calls[1][0][0].name).toBe('pasted-text-2.txt');
+
+    await act(async () => {
+      finishFirst(true);
+    });
+
+    mockRouteFiles.mockResolvedValueOnce(true);
+    act(() =>
+      result.current.handlePaste(
+        createPasteEvent() as unknown as React.ClipboardEvent<HTMLTextAreaElement>,
+      ),
+    );
+
+    expect(mockRouteFiles.mock.calls[2][0][0].name).toBe('pasted-text.txt');
+  });
+
+  it('abandons a queued paste upload once the composer moved to another conversation', async () => {
+    let finish!: (accepted: boolean) => void;
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
+    );
+    const { result, rerender } = renderTextareaHook();
+
+    act(() =>
+      result.current.handlePaste(
+        createPasteEvent() as unknown as React.ClipboardEvent<HTMLTextAreaElement>,
+      ),
+    );
+
+    expect(uploadLifecycle?.shouldCommit?.()).toBe(true);
+
+    mockConversation = { endpoint: 'openAI', conversationId: 'convo-2' };
+    rerender();
+
+    expect(uploadLifecycle?.shouldCommit?.()).toBe(false);
+
+    await act(async () => {
+      finish(false);
+    });
+
+    expect(getFilesDraft('convo-1').pendingPastes[uploadLifecycle?.fileId ?? '']?.text).toBe(
+      pastedText,
+    );
+  });
+
+  it('abandons a queued paste upload once the pane started another unsaved chat', async () => {
+    mockConversation = { endpoint: 'openAI', conversationId: Constants.NEW_CONVO as string };
+    let finish!: (accepted: boolean) => void;
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
+    );
+    const { result } = renderTextareaHook();
+
+    act(() =>
+      result.current.handlePaste(
+        createPasteEvent() as unknown as React.ClipboardEvent<HTMLTextAreaElement>,
+      ),
+    );
+
+    expect(uploadLifecycle?.shouldCommit?.()).toBe(true);
+
+    renewNewConversationDraftToken(0);
+
+    expect(uploadLifecycle?.shouldCommit?.()).toBe(false);
+
+    await act(async () => {
+      finish(false);
+    });
   });
 });

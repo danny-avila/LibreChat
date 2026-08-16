@@ -63,6 +63,10 @@ type ProcessedUpload = {
 export type UploadLifecycleCallbacks = {
   /** Preassigned id so callers can persist recovery before the shared upload queue waits. */
   fileId?: string;
+  /** Read once the queue and config waits are over, immediately before the batch is written into
+   * the shared file state. A `false` return abandons the batch so a delayed upload cannot land in
+   * a composer the user has since navigated away from. */
+  shouldCommit?: () => boolean;
   onStart?: (fileId: string) => void;
   onSuccess?: (fileId: string) => void;
   onError?: (fileId: string) => void;
@@ -654,6 +658,13 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     try {
       await previousProcessing;
       await configReady;
+      if (uploadLifecycle?.shouldCommit?.() === false) {
+        if (assignedFileId) {
+          takeUploadRecovery(assignedFileId);
+        }
+        setFilesLoading(false);
+        return false;
+      }
       const accepted = await processFiles(fileList, _toolResource, uploadLifecycle);
       if (!accepted && assignedFileId) {
         takeUploadRecovery(assignedFileId);

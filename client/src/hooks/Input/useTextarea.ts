@@ -82,6 +82,9 @@ export default function useTextarea({
   isSubmittingRef.current = isSubmitting;
   const answerModeActiveRef = useRef(answerModeActive);
   answerModeActiveRef.current = answerModeActive;
+  /** Names handed to pastes that are still waiting on the shared upload queue, so a second
+   * paste is numbered against them instead of colliding once the queue drains. */
+  const reservedPasteFilenames = useRef<Set<string>>(new Set());
   const latestMessage = useLatestMessageMeta(index);
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
@@ -338,14 +341,17 @@ export default function useTextarea({
         return;
       }
 
+      const attachedFilenames = new Set(reservedPasteFilenames.current);
+      for (const attached of files.values()) {
+        attachedFilenames.add(attached.file?.name ?? attached.filename ?? '');
+      }
+
       const pastedText = clipboardData.getData('text/plain');
       const attachment = resolvePastedTextFile(pastedText, {
         enabled: pasteLongTextAsFile,
         uploadsDisabled,
         isAssistants: isAssistantsEndpoint(conversation?.endpoint),
-        attachedFilenames: new Set(
-          Array.from(files.values(), (attached) => attached.file?.name ?? attached.filename ?? ''),
-        ),
+        attachedFilenames,
         getOptions: getUploadOptions,
       });
       if (!attachment) {
@@ -353,6 +359,8 @@ export default function useTextarea({
       }
 
       e.preventDefault();
+      const pastedFilename = attachment.file.name;
+      reservedPasteFilenames.current.add(pastedFilename);
       const conversationId = conversation?.conversationId;
       const draftId = getComposerDraftId(index, conversationId, isSubmitting);
       const draftToken = getNewConversationDraftToken(index);
@@ -390,13 +398,16 @@ export default function useTextarea({
         insertTextAtCursor(target, pastedText);
         forceResize(target);
       };
+      /** The composer that owns this paste: same conversation, same unsaved-chat identity. */
+      const isOriginatingComposer = (): boolean =>
+        conversationIdRef.current === conversationId &&
+        getNewConversationDraftToken(index) === draftToken;
       const restorePasteAfterUploadFailure = (): boolean => {
         const currentTextArea = textAreaRef.current;
         if (
           !currentTextArea ||
           answerModeActiveRef.current ||
-          conversationIdRef.current !== conversationId ||
-          getNewConversationDraftToken(index) !== draftToken ||
+          !isOriginatingComposer() ||
           currentTextArea.value !== composerValue
         ) {
           return false;
@@ -427,6 +438,7 @@ export default function useTextarea({
       };
       const uploadLifecycle: UploadLifecycleCallbacks = {
         fileId: pendingFileId,
+        shouldCommit: isOriginatingComposer,
         onStart: (fileId) => {
           if (!saveDrafts || fileId === pendingFileId) {
             return;
@@ -467,6 +479,8 @@ export default function useTextarea({
       };
       void routeClipboardFiles([attachment.file], attachment.toolResource, uploadLifecycle).then(
         (accepted) => {
+          /** The name is either attached now or was never taken, so stop reserving it. */
+          reservedPasteFilenames.current.delete(pastedFilename);
           if (!accepted) {
             const restored = restorePasteAfterUploadFailure();
             if (restored || getNewConversationDraftToken(index) !== draftToken) {

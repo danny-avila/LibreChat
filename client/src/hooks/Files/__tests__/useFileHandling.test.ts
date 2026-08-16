@@ -223,7 +223,7 @@ describe('useFileHandling', () => {
       const useFileHandling = await loadHook();
       const { result } = renderHook(() => useFileHandling());
       const imageFile = new File(['image'], 'photo.jpg', { type: 'image/jpeg' });
-      let handlingPromise: Promise<void> = Promise.resolve();
+      let handlingPromise: Promise<boolean> = Promise.resolve(false);
 
       await act(async () => {
         handlingPromise = result.current.handleFiles([imageFile]);
@@ -244,6 +244,45 @@ describe('useFileHandling', () => {
       expect(mockValidateFiles).toHaveBeenCalledTimes(1);
       expect(mockResizeImageIfNeeded).toHaveBeenCalledWith(imageFile);
       expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
+    it('abandons a waiting upload when its composer is gone', async () => {
+      let resolveConfig: () => void = () => undefined;
+      mockIsConfigPending = true;
+      mockWaitForConfig.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveConfig = resolve;
+          }),
+      );
+      const { default: useFileHandling, hasInFlightUpload } = await import('../useFileHandling');
+      const { result } = renderHook(() => useFileHandling());
+      const pastedFile = makeSizedFile('pasted-text.txt', 'text/plain', 4096);
+      let composerIsCurrent = true;
+      let handlingPromise: Promise<boolean> = Promise.resolve(false);
+
+      await act(async () => {
+        handlingPromise = result.current.handleFiles([pastedFile], undefined, {
+          fileId: 'paste-1',
+          shouldCommit: () => composerIsCurrent,
+        });
+        await Promise.resolve();
+      });
+
+      expect(hasInFlightUpload('paste-1')).toBe(true);
+      composerIsCurrent = false;
+      let accepted: boolean | undefined;
+
+      await act(async () => {
+        resolveConfig();
+        accepted = await handlingPromise;
+      });
+
+      expect(accepted).toBe(false);
+      expect(hasInFlightUpload('paste-1')).toBe(false);
+      expect(mockValidateFiles).not.toHaveBeenCalled();
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(mockSetFilesLoading).toHaveBeenCalledWith(false);
     });
 
     it('processes uploads when a resize config error has settled', async () => {
@@ -468,7 +507,7 @@ describe('useFileHandling', () => {
       const menu = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
       const composer = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
 
-      let uploads: Promise<void[]> = Promise.resolve([]);
+      let uploads: Promise<boolean[]> = Promise.resolve([]);
       await act(async () => {
         uploads = Promise.all([
           menu.result.current.handleFiles([makeSizedFile('one.txt', 'text/plain', 1024)]),

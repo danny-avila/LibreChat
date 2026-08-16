@@ -4,7 +4,6 @@ import { SSE } from 'sse.js';
 import { useSetRecoilState } from 'recoil';
 import {
   request,
-  Constants,
   UsageEvents,
   StepEvents,
   createPayload,
@@ -22,7 +21,7 @@ import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { clearComposerDrafts, applyPendingAction, findPendingActionMessageIndex } from '~/utils';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
-import { isInitialNewConversationSubmission } from './useEventHandlers';
+import { startedAsNewConversation } from './useEventHandlers';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import useUsageHandler from './useUsageHandler';
@@ -125,10 +124,7 @@ export default function useSSE(
          * land on top of the server-final write. */
         cancelPendingDeltaFlush();
         clearComposerDrafts(runIndex, submission.conversation?.conversationId, {
-          includeNewChatDraft:
-            !submission.conversation?.conversationId ||
-            submission.conversation.conversationId === Constants.NEW_CONVO ||
-            isInitialNewConversationSubmission(submission),
+          includeNewChatDraft: startedAsNewConversation(submission),
         });
         try {
           finalHandler(data, submission as EventSubmission);
