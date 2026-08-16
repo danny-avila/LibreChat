@@ -29,6 +29,7 @@ const {
   supportsBalanceCheck,
   isBedrockDocumentType,
   getEndpointFileConfig,
+  stripReasoningLabelMetadata,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -1330,7 +1331,7 @@ class BaseClient {
       };
     } else {
       mergedContent[lastIndex] = {
-        ...mergedContent[lastIndex],
+        ...stripReasoningLabelMetadata(mergedContent[lastIndex]),
         ...(adjustedCompletion[0].reasoning_label_step_id != null && {
           reasoning_label: adjustedCompletion[0].reasoning_label,
           reasoning_label_step_id: adjustedCompletion[0].reasoning_label_step_id,

@@ -476,6 +476,8 @@ endpoints:
   #   # generated orientation as sufficiently long top-level reasoning evolves.
   #   # Enabling this sends a bounded snapshot (up to 4,000 characters) of the
   #   # visible reasoning to the resolved label endpoint, which may be a different provider.
+  #   # With Langfuse tracing enabled, that snapshot is also recorded as generation input
+  #   # unless the active redaction policy suppresses the label call.
   #   # reasoningLabel: true
   #   # reasoningLabelModel: gpt-4.1-nano # falls back to activity/title/run model
   #   # reasoningLabelEndpoint: openAI    # falls back to activity/run endpoint
@@ -653,6 +655,8 @@ endpoints:
       # THINK heading in place and never create or shift message content parts.
       # Enabling this sends a bounded snapshot (up to 4,000 characters) of the
       # visible reasoning to the resolved label endpoint, which may be a different provider.
+      # With Langfuse tracing enabled, that snapshot is also recorded as generation input
+      # unless the active redaction policy suppresses the label call.
       # reasoningLabel: true
       # reasoningLabelModel: 'claude-3-5-haiku' # falls back to activity/title/run model
       # reasoningLabelEndpoint: 'anthropic'     # falls back to activity/run endpoint

@@ -586,6 +586,32 @@ describe('reasoning labels', () => {
     expect(resumedGenerate).not.toHaveBeenCalled();
   });
 
+  it('uses the highest committed revision as the legacy resume fallback', async () => {
+    const generate = jest.fn(async () => ({ label: 'Continued the resumed investigation' }));
+    const initialParts: LooseContentPart[] = [1, 2, 3, 4].map((revision) => ({
+      type: ContentTypes.THINK,
+      think: `prior reasoning ${revision}`,
+      reasoning_label: `Prior label ${revision}`,
+      reasoning_label_step_id: `prior-step-${revision}`,
+      reasoning_label_revision: revision,
+      reasoning_label_status: 'complete',
+    }));
+    const resumed = createHarness(generate, {
+      minChars: 5,
+      updateChars: 4,
+      updateIntervalMs: 0,
+      maxPerRun: 8,
+      initialParts,
+    });
+
+    await resumed.start('reasoning-after-resume', initialParts.length);
+    await resumed.append('abcde', 'reasoning-after-resume');
+    await resumed.settle();
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ revision: 5 }));
+  });
+
   it('starts a fresh call budget when retained edit content is historical', async () => {
     const generate = jest.fn(async () => ({ label: 'Tracing the edited direction' }));
     const harness = createHarness(generate, {

@@ -1,7 +1,12 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
-const { ContentTypes, feedbackSchema, isAssistantsEndpoint } = require('librechat-data-provider');
+const {
+  ContentTypes,
+  feedbackSchema,
+  isAssistantsEndpoint,
+  stripReasoningLabelMetadata,
+} = require('librechat-data-provider');
 const {
   unescapeLaTeX,
   countTokens,
@@ -418,10 +423,12 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     const currentValue = currentPart[currentPartType];
     const isStructuredValue = currentValue != null && typeof currentValue === 'object';
     const oldText = isStructuredValue ? (currentValue.value ?? '') : currentValue;
-    updatedContent[index] = {
+    const editedPart = {
       ...currentPart,
       [currentPartType]: isStructuredValue ? { ...currentValue, value: text } : text,
     };
+    updatedContent[index] =
+      currentPartType === ContentTypes.THINK ? stripReasoningLabelMetadata(editedPart) : editedPart;
 
     let tokenCount = message.tokenCount;
     if (tokenCount !== undefined) {

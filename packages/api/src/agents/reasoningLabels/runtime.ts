@@ -229,15 +229,15 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
     }
     return Math.max(highest, part.reasoning_label_attempts);
   }, 0);
-  const committedFallback = initialParts.reduce((count, part) => {
+  const committedFallback = initialParts.reduce((highest, part) => {
     if (
       part?.type !== ContentTypes.THINK ||
       typeof part.reasoning_label_revision !== 'number' ||
       part.reasoning_label_revision <= 0
     ) {
-      return count;
+      return highest;
     }
-    return count + part.reasoning_label_revision;
+    return Math.max(highest, part.reasoning_label_revision);
   }, 0);
   /** `reasoning_label_attempts` is a run-cumulative high-water mark, not a
    *  per-step counter. Taking the max lets a new reasoning step reuse the same
