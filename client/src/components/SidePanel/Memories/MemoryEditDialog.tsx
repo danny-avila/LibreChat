@@ -4,6 +4,7 @@ import {
   OGDialog,
   OGDialogTemplate,
   Button,
+  FieldMessage,
   Label,
   Input,
   Spinner,
@@ -15,7 +16,6 @@ import { getMemoryKeyError, getMemoryValueError, getMemoryApiErrorMessage } from
 import { useUpdateMemoryMutation, useMemoriesQuery } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
 import MemoryUsageBadge from './MemoryUsageBadge';
-import { FieldMessage } from '~/components/ui';
 
 interface MemoryEditDialogProps {
   memory: TUserMemory | null;

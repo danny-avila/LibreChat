@@ -13,6 +13,7 @@ export * from './Input';
 export * from './InputNumber';
 export * from './SecretInput';
 export * from './FilterInput';
+export * from './FieldMessage';
 export * from './Label';
 export * from './OriginalDialog';
 export * from './QuestionMark';

@@ -1,6 +1,7 @@
+import * as React from 'react';
 import { cn } from '~/utils';
 
-interface FieldMessageProps {
+export interface FieldMessageProps {
   id: string;
   /** Validation failure text; takes precedence over the hint */
   message?: string | null;
@@ -14,7 +15,7 @@ interface FieldMessageProps {
  * space, so swapping between the hint, an error, and nothing never shifts the
  * surrounding layout.
  */
-export default function FieldMessage({ id, message, hint, className }: FieldMessageProps) {
+function FieldMessage({ id, message, hint, className }: FieldMessageProps): React.JSX.Element {
   return (
     <p
       id={id}
@@ -29,3 +30,5 @@ export default function FieldMessage({ id, message, hint, className }: FieldMess
     </p>
   );
 }
+
+export { FieldMessage };

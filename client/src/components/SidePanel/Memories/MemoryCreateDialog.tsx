@@ -4,6 +4,7 @@ import {
   OGDialog,
   OGDialogTemplate,
   Button,
+  FieldMessage,
   Label,
   Input,
   Spinner,
@@ -13,7 +14,6 @@ import {
 import { getMemoryKeyError, getMemoryValueError, getMemoryApiErrorMessage } from '~/utils/memory';
 import { useCreateMemoryMutation, useMemoriesQuery } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
-import { FieldMessage } from '~/components/ui';
 
 interface MemoryCreateDialogProps {
   open: boolean;

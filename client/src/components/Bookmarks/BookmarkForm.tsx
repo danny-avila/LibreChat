@@ -2,11 +2,10 @@ import React from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { Controller, useForm } from 'react-hook-form';
 import { useQueryClient } from '@tanstack/react-query';
-import { Checkbox, Label, TextareaAutosize, Input } from '@librechat/client';
+import { Checkbox, FieldMessage, Label, TextareaAutosize, Input } from '@librechat/client';
 import type { TConversationTag, TConversationTagRequest } from 'librechat-data-provider';
 import { useBookmarkContext } from '~/Providers/BookmarkContext';
 import { useConversationTagMutation } from '~/data-provider';
-import { FieldMessage } from '~/components/ui';
 import { useLocalize } from '~/hooks';
 import { cn, logger } from '~/utils';
 

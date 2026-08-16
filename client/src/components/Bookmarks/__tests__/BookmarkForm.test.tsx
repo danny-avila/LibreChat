@@ -47,6 +47,20 @@ jest.mock('@librechat/client', () => {
       }),
     Label: ({ children, ...props }: { children: React.ReactNode }) =>
       ActualReact.createElement('label', props, children),
+    FieldMessage: ({
+      id,
+      message,
+      hint,
+    }: {
+      id: string;
+      message?: string | null;
+      hint?: string | null;
+    }) =>
+      ActualReact.createElement(
+        'p',
+        { id, role: message ? 'alert' : undefined },
+        message || hint || '',
+      ),
     TextareaAutosize: ActualReact.forwardRef<
       HTMLTextAreaElement,
       React.TextareaHTMLAttributes<HTMLTextAreaElement>
