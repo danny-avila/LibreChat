@@ -1850,7 +1850,7 @@
   "com_ui_select_search_provider": "Search provider by name",
   "com_ui_select_search_region": "Search region by name",
   "com_ui_select_var": "Select {{0}}",
-  "com_ui_selected_count": "{count} selected",
+  "com_ui_selected_count": "{{count}} selected",
   "com_ui_send_now": "Send now",
   "com_ui_set": "Set",
   "com_ui_settings_label_2fa": "Two-factor authentication",

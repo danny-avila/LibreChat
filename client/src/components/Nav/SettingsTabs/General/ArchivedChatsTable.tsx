@@ -211,8 +211,8 @@ export default function ArchivedChatsTable() {
                 description={localize('com_ui_unarchive_conversation')}
                 render={
                   <Button
-                    variant="ghost"
-                    className="h-8 w-8 rounded-lg p-0 hover:bg-surface-hover-alt"
+                    variant="row-action"
+                    size="icon-sm"
                     onClick={() =>
                       unarchiveConversation({
                         conversationId: conversation.conversationId ?? '',
@@ -230,8 +230,8 @@ export default function ArchivedChatsTable() {
                 description={localize('com_ui_delete_conversation_tooltip')}
                 render={
                   <Button
-                    variant="ghost"
-                    className="h-8 w-8 rounded-lg p-0 hover:bg-surface-hover-alt"
+                    variant="row-action"
+                    size="icon-sm"
                     onClick={() => {
                       setDeleteConversation(row.original);
                       setIsDeleteOpen(true);

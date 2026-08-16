@@ -42,4 +42,19 @@ describe('Button', () => {
     expect(themedSubtle).toContain('rounded-theme-control');
     expect(themedSubtle).not.toContain('rounded-xl');
   });
+
+  it('provides compact row actions with a distinct hover surface', () => {
+    render(
+      <Button variant="row-action" size="icon-sm">
+        Open
+      </Button>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Open' })).toHaveClass(
+      'size-8',
+      'p-0',
+      'rounded-lg',
+      'hover:bg-surface-hover-alt',
+    );
+  });
 });

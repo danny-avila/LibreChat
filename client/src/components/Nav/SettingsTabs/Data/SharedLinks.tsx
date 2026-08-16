@@ -237,11 +237,7 @@ export default function SharedLinks() {
             <TooltipAnchor
               description={localize('com_ui_open_source_chat_new_tab')}
               render={
-                <Button
-                  asChild
-                  variant="ghost"
-                  className="h-8 w-8 rounded-lg p-0 hover:bg-surface-hover-alt"
-                >
+                <Button asChild variant="row-action" size="icon-sm">
                   <a
                     href={`/c/${row.original.conversationId}`}
                     target="_blank"
@@ -259,8 +255,8 @@ export default function SharedLinks() {
               description={localize('com_ui_delete_shared_link_heading')}
               render={
                 <Button
-                  variant="ghost"
-                  className="h-8 w-8 rounded-lg p-0 hover:bg-surface-hover-alt"
+                  variant="row-action"
+                  size="icon-sm"
                   onClick={() => {
                     setDeleteRow(row.original);
                     setIsDeleteOpen(true);
