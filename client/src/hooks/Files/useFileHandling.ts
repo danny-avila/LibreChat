@@ -353,10 +353,6 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const processFiles = async (fileList: File[], _toolResource?: string) => {
     abortControllerRef.current = new AbortController();
 
-    if (isConfigPending) {
-      await waitForConfig();
-    }
-
     const existingFiles = mergeRecentUploads(filesRef.current, uploadScope.recent);
     const currentFileConfig = fileConfigRef.current;
     const endpointFileConfig = getEndpointFileConfig({
@@ -577,6 +573,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
     /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
     const fileList = Array.from(_files);
+    /** Started before queueing so every waiting batch shares one bounded config window */
+    const configReady = isConfigPending ? waitForConfig() : undefined;
     const previousProcessing = uploadScope.queue;
     let releaseProcessing: () => void = () => undefined;
     uploadScope.queue = new Promise<void>((resolve) => {
@@ -585,6 +583,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
 
     await previousProcessing;
     try {
+      await configReady;
       await processFiles(fileList, _toolResource);
     } finally {
       releaseProcessing();

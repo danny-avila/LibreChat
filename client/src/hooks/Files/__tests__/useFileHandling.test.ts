@@ -414,6 +414,42 @@ describe('useFileHandling', () => {
       }
     });
 
+    it('starts the config wait for queued batches without stacking the timeouts', async () => {
+      mockIsConfigPending = true;
+      let releaseConfig: () => void = () => undefined;
+      const configGate = new Promise<void>((resolve) => {
+        releaseConfig = resolve;
+      });
+      mockWaitForConfig.mockImplementation(() => configGate);
+      const sharedState = {
+        files: new Map(),
+        setFiles: jest.fn(),
+        setFilesLoading: mockSetFilesLoading,
+      };
+      const { useFileHandlingNoChatContext } = await import('../useFileHandling');
+      const menu = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
+      const composer = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
+
+      let uploads: Promise<void[]> = Promise.resolve([]);
+      await act(async () => {
+        uploads = Promise.all([
+          menu.result.current.handleFiles([makeSizedFile('one.txt', 'text/plain', 1024)]),
+          composer.result.current.handleFiles([makeSizedFile('two.txt', 'text/plain', 1024)]),
+        ]);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockWaitForConfig).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        releaseConfig();
+        await uploads;
+      });
+
+      expect(mockMutate).toHaveBeenCalledTimes(2);
+    });
+
     it('shares the total size limit across hook instances writing the same files', async () => {
       jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
       try {
