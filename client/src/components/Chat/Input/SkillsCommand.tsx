@@ -1,7 +1,7 @@
 import { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ScrollText } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
-import { useAtomValue, useSetAtom } from 'jotai';
+import { useSetAtom } from 'jotai';
 import { AutoSizer, List } from 'react-virtualized';
 import { Input, Spinner, useCombobox } from '@librechat/client';
 import { SkillsScope, resolveAgentSkillsScope } from 'librechat-data-provider';
@@ -14,7 +14,7 @@ import { showSkillsPopoverFamily } from './skillsState';
 import { useAgentsMapContext } from '~/Providers';
 import { ephemeralAgentByConvoId } from '~/store';
 import { isEphemeralAgent } from '~/common';
-import { uiScaleValueAtom } from '~/store/uiScale';
+import useRemScale from '~/hooks/useRemScale';
 import MentionItem from './MentionItem';
 import store from '~/store';
 
@@ -90,7 +90,7 @@ function SkillsCommandContent({
   agentId?: string | null;
 }) {
   const localize = useLocalize();
-  const uiScale = useAtomValue(uiScaleValueAtom);
+  const remScale = useRemScale();
   const setShowSkillsPopover = useSetAtom(showSkillsPopoverFamily(index));
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
   const setPendingManualSkills = useSetRecoilState(
@@ -360,11 +360,11 @@ function SkillsCommandContent({
                 <List
                   width={width}
                   overscanRowCount={5}
-                  rowHeight={ROW_HEIGHT * uiScale}
+                  rowHeight={ROW_HEIGHT * remScale}
                   rowCount={matches.length}
                   rowRenderer={rowRenderer}
                   scrollToIndex={activeIndex}
-                  height={Math.min(matches.length * ROW_HEIGHT, 160) * uiScale}
+                  height={Math.min(matches.length * ROW_HEIGHT, 160) * remScale}
                 />
               )}
             </AutoSizer>

@@ -1,5 +1,6 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
 import { useWatch } from 'react-hook-form';
+import useRemScale from '~/hooks/useRemScale';
 import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { Constants, isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
 import { composerSurfaceClasses, composerSurfaceShadow, TextareaAutosize } from '@librechat/client';
@@ -114,6 +115,8 @@ const focusOwningTargetSelector = [
   '[role="dialog"]',
   '[role="alertdialog"]',
 ].join(', ');
+/** Matches the composer's one-line height; scaled so it tracks its rem padding. */
+const INITIAL_TEXTAREA_HEIGHT = 44;
 
 const ChatForm = memo(function ChatForm({
   index,
@@ -136,6 +139,7 @@ const ChatForm = memo(function ChatForm({
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   useFocusChatEffect(textAreaRef);
   const localize = useLocalize();
+  const remScale = useRemScale();
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);
@@ -804,7 +808,7 @@ const ChatForm = memo(function ChatForm({
                       onBlur={handleTextareaBlur}
                       aria-label={localize('com_ui_message_input')}
                       onClick={handleFocusOrClick}
-                      style={{ height: 44, overflowY: 'auto' }}
+                      style={{ height: INITIAL_TEXTAREA_HEIGHT * remScale, overflowY: 'auto' }}
                       className={cn(
                         baseClasses,
                         removeFocusRings,
