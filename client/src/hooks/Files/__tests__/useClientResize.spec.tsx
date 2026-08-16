@@ -89,6 +89,16 @@ describe('useClientResize', () => {
       expect(result.current.config.maxWidth).toBe(1024);
       expect(result.current.config.quality).toBe(0.8);
     });
+
+    it.each(['maxWidth', 'maxHeight'] as const)(
+      'keeps resizing off when the admin config has a non-positive %s',
+      (dimension) => {
+        mockAdminConfig = { clientImageResize: { enabled: true, [dimension]: 0 } };
+        const { result } = renderHook(() => useClientResize(), { wrapper });
+
+        expect(result.current.isEnabled).toBe(false);
+      },
+    );
   });
 
   it('returns the original file untouched while disabled', async () => {

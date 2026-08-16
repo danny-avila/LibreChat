@@ -33,7 +33,17 @@ export const useClientResize = () => {
   const config = fileConfig?.clientImageResize ?? defaultConfig;
   const { maxWidth, maxHeight, quality } = config;
   const isEnforced = config.enforced === true;
-  const isEnabled = isFileConfigLoaded && (isEnforced ? config.enabled === true : userPreference);
+  const hasValidDimensions =
+    typeof maxWidth === 'number' &&
+    Number.isFinite(maxWidth) &&
+    maxWidth > 0 &&
+    typeof maxHeight === 'number' &&
+    Number.isFinite(maxHeight) &&
+    maxHeight > 0;
+  const isEnabled =
+    isFileConfigLoaded &&
+    hasValidDimensions &&
+    (isEnforced ? config.enabled === true : userPreference);
 
   /**
    * Resizes an image if client-side resizing is enabled and supported

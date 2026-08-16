@@ -41,6 +41,7 @@ const RESIZE_FORMAT_BY_MIME_TYPE: Partial<Record<string, ResizeFormat>> = {
 
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const;
 const WEBP_ANIMATION_FLAG = 0x02;
+const MAX_ANIMATION_SCAN_BYTES = 64 * 1024;
 
 const readBytes = (file: File, start: number, length: number): Promise<Uint8Array> =>
   new Promise((resolve, reject) => {
@@ -63,18 +64,14 @@ const hasSignature = (bytes: Uint8Array, signature: readonly number[]): boolean 
   bytes.length >= signature.length && signature.every((value, index) => bytes[index] === value);
 
 const isAnimatedPng = async (file: File): Promise<boolean> => {
-  const signature = await readBytes(file, 0, PNG_SIGNATURE.length);
-  if (!hasSignature(signature, PNG_SIGNATURE)) {
+  const bytes = await readBytes(file, 0, Math.min(file.size, MAX_ANIMATION_SCAN_BYTES));
+  if (!hasSignature(bytes, PNG_SIGNATURE)) {
     return false;
   }
 
   let offset: number = PNG_SIGNATURE.length;
-  while (offset + 12 <= file.size) {
-    const header = await readBytes(file, offset, 8);
-    if (header.length < 8) {
-      return false;
-    }
-
+  while (offset + 12 <= bytes.length) {
+    const header = bytes.subarray(offset, offset + 8);
     const chunkLength = new DataView(header.buffer, header.byteOffset, header.byteLength).getUint32(
       0,
     );
@@ -89,26 +86,25 @@ const isAnimatedPng = async (file: File): Promise<boolean> => {
     if (chunkType === 'IDAT' || chunkType === 'IEND') {
       return false;
     }
+    if (nextOffset > bytes.length) {
+      return nextOffset < file.size;
+    }
 
     offset = nextOffset;
   }
 
-  return false;
+  return bytes.length < file.size;
 };
 
 const isAnimatedWebP = async (file: File): Promise<boolean> => {
-  const signature = await readBytes(file, 0, 12);
-  if (readAscii(signature, 0, 4) !== 'RIFF' || readAscii(signature, 8, 4) !== 'WEBP') {
+  const bytes = await readBytes(file, 0, Math.min(file.size, MAX_ANIMATION_SCAN_BYTES));
+  if (readAscii(bytes, 0, 4) !== 'RIFF' || readAscii(bytes, 8, 4) !== 'WEBP') {
     return false;
   }
 
   let offset = 12;
-  while (offset + 8 <= file.size) {
-    const header = await readBytes(file, offset, 8);
-    if (header.length < 8) {
-      return false;
-    }
-
+  while (offset + 8 <= bytes.length) {
+    const header = bytes.subarray(offset, offset + 8);
     const chunkType = readAscii(header, 0, 4);
     const chunkSize = new DataView(header.buffer, header.byteOffset, header.byteLength).getUint32(
       4,
@@ -122,16 +118,23 @@ const isAnimatedWebP = async (file: File): Promise<boolean> => {
       return true;
     }
     if (chunkType === 'VP8X' && chunkSize > 0) {
-      const flags = await readBytes(file, offset + 8, 1);
-      if (flags.length === 1 && (flags[0] & WEBP_ANIMATION_FLAG) !== 0) {
+      const flags = bytes[offset + 8];
+      if (flags == null) {
+        return true;
+      }
+      if ((flags & WEBP_ANIMATION_FLAG) !== 0) {
         return true;
       }
     }
 
-    offset = dataEnd + (chunkSize % 2);
+    const nextOffset = dataEnd + (chunkSize % 2);
+    if (nextOffset > bytes.length) {
+      return nextOffset < file.size;
+    }
+    offset = nextOffset;
   }
 
-  return false;
+  return bytes.length < file.size;
 };
 
 /** Checks image containers whose animation would be flattened by canvas. */
@@ -227,6 +230,19 @@ export async function resizeImage(
       format: sourceFormat ?? DEFAULT_RESIZE_OPTIONS.format,
       ...options,
     };
+    const { maxWidth, maxHeight } = opts;
+    if (
+      maxWidth == null ||
+      maxHeight == null ||
+      !Number.isFinite(maxWidth) ||
+      !Number.isFinite(maxHeight) ||
+      maxWidth <= 0 ||
+      maxHeight <= 0
+    ) {
+      reject(new Error('Resize dimensions must be finite numbers greater than zero'));
+      return;
+    }
+    const requestedMimeType = `image/${opts.format}`;
     const reader = new FileReader();
 
     reader.onload = (event) => {
@@ -235,12 +251,7 @@ export async function resizeImage(
       img.onload = () => {
         try {
           const originalDimensions = { width: img.width, height: img.height };
-          const newDimensions = calculateDimensions(
-            img.width,
-            img.height,
-            opts.maxWidth!,
-            opts.maxHeight!,
-          );
+          const newDimensions = calculateDimensions(img.width, img.height, maxWidth, maxHeight);
 
           // If no resizing needed, return original file
           if (
@@ -292,13 +303,26 @@ export async function resizeImage(
                 return;
               }
 
+              const outputFormat = RESIZE_FORMAT_BY_MIME_TYPE[blob.type];
+              if (blob.type !== requestedMimeType || outputFormat == null) {
+                resolve({
+                  file,
+                  originalSize: file.size,
+                  newSize: file.size,
+                  originalDimensions,
+                  newDimensions: originalDimensions,
+                  compressionRatio: 1,
+                });
+                return;
+              }
+
               // Create new file with same name but potentially different extension
-              const extension = opts.format === 'jpeg' ? '.jpg' : `.${opts.format}`;
+              const extension = outputFormat === 'jpeg' ? '.jpg' : `.${outputFormat}`;
               const baseName = file.name.replace(/\.[^/.]+$/, '');
               const newFileName = `${baseName}${extension}`;
 
               const resizedFile = new File([blob], newFileName, {
-                type: `image/${opts.format}`,
+                type: blob.type,
                 lastModified: Date.now(),
               });
 
@@ -311,7 +335,7 @@ export async function resizeImage(
                 compressionRatio: resizedFile.size / file.size,
               });
             },
-            `image/${opts.format}`,
+            requestedMimeType,
             opts.quality,
           );
         } catch (error) {

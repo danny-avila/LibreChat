@@ -10,10 +10,10 @@ import {
 } from '../imageResize';
 
 const createChunk = (type: string, data: number[] = []): number[] => [
-  0,
-  0,
-  0,
-  data.length,
+  (data.length >>> 24) & 0xff,
+  (data.length >>> 16) & 0xff,
+  (data.length >>> 8) & 0xff,
+  data.length & 0xff,
   ...Array.from(type, (character) => character.charCodeAt(0)),
   ...data,
   0,
@@ -22,64 +22,56 @@ const createChunk = (type: string, data: number[] = []): number[] => [
   0,
 ];
 
-const createPng = (chunkType: 'acTL' | 'IDAT'): File =>
-  new File(
-    [
-      new Uint8Array([
-        137,
-        80,
-        78,
-        71,
-        13,
-        10,
-        26,
-        10,
-        ...createChunk(chunkType, chunkType === 'acTL' ? [0, 0, 0, 1, 0, 0, 0, 0] : []),
-      ]),
-    ],
-    'image.png',
-    { type: 'image/png' },
-  );
+const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
 
-const createWebP = (flags: number): File =>
-  new File(
+const createPngWithChunks = (chunks: number[][]): File =>
+  new File([new Uint8Array([...pngSignature, ...chunks.flat()])], 'image.png', {
+    type: 'image/png',
+  });
+
+const createPng = (chunkType: 'acTL' | 'IDAT'): File =>
+  createPngWithChunks([
+    createChunk(chunkType, chunkType === 'acTL' ? [0, 0, 0, 1, 0, 0, 0, 0] : []),
+  ]);
+
+const createWebPChunk = (type: string, data: number[] = []): number[] => [
+  ...Array.from(type, (character) => character.charCodeAt(0)),
+  data.length & 0xff,
+  (data.length >>> 8) & 0xff,
+  (data.length >>> 16) & 0xff,
+  (data.length >>> 24) & 0xff,
+  ...data,
+  ...(data.length % 2 === 1 ? [0] : []),
+];
+
+const createWebPWithChunks = (chunks: number[][]): File => {
+  const payload = chunks.flat();
+  const riffSize = 4 + payload.length;
+  return new File(
     [
       new Uint8Array([
         82,
         73,
         70,
         70,
-        22,
-        0,
-        0,
-        0,
+        riffSize & 0xff,
+        (riffSize >>> 8) & 0xff,
+        (riffSize >>> 16) & 0xff,
+        (riffSize >>> 24) & 0xff,
         87,
         69,
         66,
         80,
-        86,
-        80,
-        56,
-        88,
-        10,
-        0,
-        0,
-        0,
-        flags,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
+        ...payload,
       ]),
     ],
     'image.webp',
     { type: 'image/webp' },
   );
+};
+
+const createWebP = (flags: number): File =>
+  createWebPWithChunks([createWebPChunk('VP8X', [flags, 0, 0, 0, 0, 0, 0, 0, 0, 0])]);
 
 describe('imageResize utility', () => {
   describe('supportsClientResize', () => {
@@ -211,6 +203,64 @@ describe('imageResize utility', () => {
     it('allows static WebP content', async () => {
       await expect(isAnimatedImage(createWebP(0x00))).resolves.toBe(false);
     });
+
+    it.each([
+      ['ANIM', 6],
+      ['ANMF', 16],
+    ])('detects animated WebP content from a %s chunk', async (chunkType, dataLength) => {
+      const file = createWebPWithChunks([
+        createWebPChunk(chunkType, new Array<number>(dataLength).fill(0)),
+      ]);
+
+      await expect(isAnimatedImage(file)).resolves.toBe(true);
+    });
+
+    it('scans many PNG chunks with one FileReader operation', async () => {
+      const readAsArrayBuffer = jest.spyOn(FileReader.prototype, 'readAsArrayBuffer');
+      const ancillaryChunks = Array.from({ length: 1000 }, () => createChunk('tEXt'));
+      const file = createPngWithChunks([
+        ...ancillaryChunks,
+        createChunk('acTL', [0, 0, 0, 1, 0, 0, 0, 0]),
+      ]);
+
+      await expect(isAnimatedImage(file)).resolves.toBe(true);
+      expect(readAsArrayBuffer).toHaveBeenCalledTimes(1);
+      readAsArrayBuffer.mockRestore();
+    });
+
+    it('scans many WebP chunks with one FileReader operation', async () => {
+      const readAsArrayBuffer = jest.spyOn(FileReader.prototype, 'readAsArrayBuffer');
+      const ancillaryChunks = Array.from({ length: 1000 }, () => createWebPChunk('EXIF'));
+      const file = createWebPWithChunks([
+        ...ancillaryChunks,
+        createWebPChunk('ANIM', new Array<number>(6).fill(0)),
+      ]);
+
+      await expect(isAnimatedImage(file)).resolves.toBe(true);
+      expect(readAsArrayBuffer).toHaveBeenCalledTimes(1);
+      readAsArrayBuffer.mockRestore();
+    });
+
+    it('conservatively skips resizing when the PNG scan bound is exceeded', async () => {
+      const file = createPngWithChunks([
+        createChunk('tEXt', new Array<number>(64 * 1024).fill(0)),
+        createChunk('IDAT'),
+      ]);
+
+      await expect(isAnimatedImage(file)).resolves.toBe(true);
+    });
+
+    it('allows static image data that extends beyond the scan bound', async () => {
+      const largePng = createPngWithChunks([
+        createChunk('IDAT', new Array<number>(64 * 1024).fill(0)),
+      ]);
+      const largeWebP = createWebPWithChunks([
+        createWebPChunk('VP8 ', new Array<number>(64 * 1024).fill(0)),
+      ]);
+
+      await expect(isAnimatedImage(largePng)).resolves.toBe(false);
+      await expect(isAnimatedImage(largeWebP)).resolves.toBe(false);
+    });
   });
 
   describe('resizeImage', () => {
@@ -265,6 +315,11 @@ describe('imageResize utility', () => {
       }
     });
 
+    beforeEach(() => {
+      canvasToBlob.mockClear();
+      drawImage.mockClear();
+    });
+
     it('does not flatten an animated image', async () => {
       await expect(resizeImage(createPng('acTL'))).rejects.toThrow(
         'Animated images cannot be resized without losing animation',
@@ -284,6 +339,33 @@ describe('imageResize utility', () => {
       expect(result.file.name).toBe('photo.png');
       expect(result.file.type).toBe('image/png');
     });
+
+    it('keeps the original file when the canvas falls back to a different MIME type', async () => {
+      const file = new File(['source webp data'], 'photo.webp', { type: 'image/webp' });
+      canvasToBlob.mockImplementationOnce((callback: BlobCallback) => {
+        callback(new Blob(['x'], { type: 'image/png' }));
+      });
+
+      const result = await resizeImage(file);
+
+      expect(canvasToBlob).toHaveBeenCalledWith(expect.any(Function), 'image/webp', 0.92);
+      expect(result.file).toBe(file);
+      expect(result.file.name).toBe('photo.webp');
+      expect(result.file.type).toBe('image/webp');
+    });
+
+    it.each(['maxWidth', 'maxHeight'] as const)(
+      'rejects a non-positive %s before drawing',
+      async (dimension) => {
+        const file = new File(['source image data'], 'photo.jpg', { type: 'image/jpeg' });
+
+        await expect(resizeImage(file, { [dimension]: 0 })).rejects.toThrow(
+          'Resize dimensions must be finite numbers greater than zero',
+        );
+        expect(drawImage).not.toHaveBeenCalled();
+        expect(canvasToBlob).not.toHaveBeenCalled();
+      },
+    );
 
     it('keeps the original file when the resized blob is not smaller', async () => {
       const file = new File(['small'], 'photo.jpg', { type: 'image/jpeg' });

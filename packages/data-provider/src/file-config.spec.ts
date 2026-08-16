@@ -2,6 +2,7 @@ import type { MimeUploadCapability } from './file-config';
 import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
+  fileConfigSchema,
   isAnthropicTextDocumentType,
   getConfiguredMimeAccept,
   bedrockDocumentMimeTypes,
@@ -1723,5 +1724,15 @@ describe('mergeFileConfig clientImageResize', () => {
     expect(merged.clientImageResize?.maxHeight).toBe(1024);
     expect(merged.clientImageResize?.quality).toBe(0.8);
     expect(merged.clientImageResize?.enforced).toBe(false);
+  });
+});
+
+describe('fileConfigSchema clientImageResize', () => {
+  it.each(['maxWidth', 'maxHeight'] as const)('rejects a non-positive %s', (dimension) => {
+    const result = fileConfigSchema.safeParse({
+      clientImageResize: { [dimension]: 0 },
+    });
+
+    expect(result.success).toBe(false);
   });
 });

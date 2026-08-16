@@ -534,8 +534,8 @@ export const fileConfigSchema = z.object({
   clientImageResize: z
     .object({
       enabled: z.boolean().optional(),
-      maxWidth: z.number().min(0).optional(),
-      maxHeight: z.number().min(0).optional(),
+      maxWidth: z.number().min(1).optional(),
+      maxHeight: z.number().min(1).optional(),
       quality: z.number().min(0).max(1).optional(),
     })
     .optional(),
