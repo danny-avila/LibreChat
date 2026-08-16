@@ -122,10 +122,11 @@ const createPasteEvent = (files: File[] = []) => ({
   preventDefault: jest.fn(),
 });
 
-const renderTextareaHook = (answerModeActive = false) => {
+const renderTextareaHook = (initialAnswerModeActive = false) => {
   const textArea = document.createElement('textarea');
   const submitButton = document.createElement('button');
   const setIsScrollable = jest.fn();
+  let answerModeActive = initialAnswerModeActive;
   const hook = renderHook(() =>
     useTextarea({
       textAreaRef: { current: textArea },
@@ -134,8 +135,12 @@ const renderTextareaHook = (answerModeActive = false) => {
       answerModeActive,
     }),
   );
+  const rerender = (nextAnswerModeActive = answerModeActive) => {
+    answerModeActive = nextAnswerModeActive;
+    hook.rerender();
+  };
 
-  return { ...hook, textArea };
+  return { ...hook, rerender, textArea };
 };
 
 describe('useTextarea long-paste fallback', () => {
@@ -270,6 +275,30 @@ describe('useTextarea long-paste fallback', () => {
     await waitFor(() => expect(onUploadError).toBeDefined());
     mockConversation = { endpoint: 'openAI', conversationId: 'convo-2' };
     rerender();
+
+    act(() => onUploadError?.());
+
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockForceResize).not.toHaveBeenCalled();
+  });
+
+  it('skips upload-failure recovery when answer mode becomes active', async () => {
+    let onUploadError: (() => void) | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, callback?: () => void) => {
+        onUploadError = callback;
+        return Promise.resolve(true);
+      },
+    );
+    const { result, rerender } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(onUploadError).toBeDefined());
+    rerender(true);
 
     act(() => onUploadError?.());
 

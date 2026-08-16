@@ -70,6 +70,8 @@ export default function useTextarea({
   const { index, conversation, isSubmitting, files, setFilesLoading } = useChatContext();
   const conversationIdRef = useRef(conversation?.conversationId);
   conversationIdRef.current = conversation?.conversationId;
+  const answerModeActiveRef = useRef(answerModeActive);
+  answerModeActiveRef.current = answerModeActive;
   const latestMessage = useLatestMessageMeta(index);
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
@@ -359,6 +361,7 @@ export default function useTextarea({
         const currentTextArea = textAreaRef.current;
         if (
           !currentTextArea ||
+          answerModeActiveRef.current ||
           conversationIdRef.current !== conversationId ||
           currentTextArea.value !== composerValue
         ) {
