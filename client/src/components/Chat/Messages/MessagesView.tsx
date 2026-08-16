@@ -5,9 +5,10 @@ import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
 import { useScreenshot, useMessageScrolling, useScrollbarGutter, useLocalize } from '~/hooks';
+import { RowMountProvider, useProgressiveRowMount } from '~/hooks/Messages';
+import { MessagesViewProvider, useChatContext } from '~/Providers';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { steerOverlayHeightFamily } from '~/store/steer';
-import { MessagesViewProvider } from '~/Providers';
 import { fontSizeAtom } from '~/store/fontSize';
 import MultiMessage from './MultiMessage';
 import MessageNav from './MessageNav';
@@ -114,6 +115,17 @@ function MessagesViewContent({
 
   const { conversationId } = conversation ?? {};
 
+  const { index, latestMessageDepth } = useChatContext();
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const autoScroll = useRecoilValue(store.autoScroll);
+  const mountWindow = useProgressiveRowMount({
+    tailDepth: latestMessageDepth,
+    anchorBottom: autoScroll || isSubmitting,
+    isSubmitting,
+    conversationId,
+    scrollableRef,
+  });
+
   /** The in-flight steer overlay floats above the composer over the bottom of
    *  the thread (see `InFlightSteers`); reserve an equal band here so the
    *  newest message rests above it and older ones scroll behind. */
@@ -156,12 +168,14 @@ function MessagesViewContent({
               ) : (
                 <>
                   <div ref={screenshotTargetRef} data-testid="screenshot-target">
-                    <MultiMessage
-                      messagesTree={_messagesTree}
-                      messageId={conversationId ?? null}
-                      setCurrentEditId={setCurrentEditId}
-                      currentEditId={currentEditId ?? null}
-                    />
+                    <RowMountProvider mountWindow={mountWindow}>
+                      <MultiMessage
+                        messagesTree={_messagesTree}
+                        messageId={conversationId ?? null}
+                        setCurrentEditId={setCurrentEditId}
+                        currentEditId={currentEditId ?? null}
+                      />
+                    </RowMountProvider>
                   </div>
                 </>
               )}
