@@ -1078,6 +1078,7 @@ const initializeClient = async ({
 
   const sender = resolveSender({
     agent: primaryConfig,
+    specLabel: selectedModelSpec?.label,
     endpointOption: {
       ...endpointOption,
       model: endpointOption.model_parameters.model,

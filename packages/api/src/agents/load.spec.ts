@@ -1,4 +1,4 @@
-import { EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint, parseEphemeralAgentId } from 'librechat-data-provider';
 import type { LoadAgentDeps } from './load';
 import { loadEphemeralAgent } from './load';
 import { resolveSender } from './sender';
@@ -60,8 +60,8 @@ const customEndpointOption = {
   model: 'claude-opus-4',
 };
 
-describe('loadEphemeralAgent → resolveSender composition', () => {
-  test('the spec label encoded at load time round-trips into the persisted sender', async () => {
+describe('loadEphemeralAgent → resolveSender parity', () => {
+  test('the persisted sender matches the spec label encoded into the agent id', async () => {
     const agent = await loadEphemeralAgent(
       {
         req: baseReq,
@@ -72,12 +72,13 @@ describe('loadEphemeralAgent → resolveSender composition', () => {
       deps,
     );
     expect(agent?.id).toBeTruthy();
-    expect(
-      resolveSender({
-        agent: { id: agent?.id },
-        endpointOption: customEndpointOption,
-      }),
-    ).toBe('Spec Label');
+    const sender = resolveSender({
+      agent: { id: agent?.id },
+      specLabel: 'Spec Label',
+      endpointOption: customEndpointOption,
+    });
+    expect(sender).toBe('Spec Label');
+    expect(sender).toBe(parseEphemeralAgentId(agent?.id ?? '')?.sender);
   });
 
   test('a user modelLabel wins over the spec label in the persisted sender', async () => {
@@ -90,11 +91,12 @@ describe('loadEphemeralAgent → resolveSender composition', () => {
       },
       deps,
     );
-    expect(
-      resolveSender({
-        agent: { id: agent?.id },
-        endpointOption: customEndpointOption,
-      }),
-    ).toBe('My Opus');
+    const sender = resolveSender({
+      agent: { id: agent?.id },
+      specLabel: 'Spec Label',
+      endpointOption: { ...customEndpointOption, modelLabel: 'My Opus' },
+    });
+    expect(sender).toBe('My Opus');
+    expect(sender).toBe(parseEphemeralAgentId(agent?.id ?? '')?.sender);
   });
 });
