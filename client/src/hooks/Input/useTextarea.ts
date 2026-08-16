@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { v4 } from 'uuid';
 import debounce from 'lodash/debounce';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilState } from 'recoil';
@@ -365,9 +366,21 @@ export default function useTextarea({
         forceResize(textArea);
       }
       const composerValue = textArea.value;
+      const pendingFileId = v4();
       if (saveDrafts) {
         try {
           setDraft({ id: draftId, value: composerValue, persistExact: true });
+          setPendingTextAttachmentDraft({
+            id: draftId,
+            fileId: pendingFileId,
+            text: pastedText,
+            selectionStart,
+            selectionEnd,
+            replacedText,
+            replacedApplied: true,
+            anchorBefore: composerValue.slice(0, selectionStart),
+            anchorAfter: composerValue.slice(selectionStart),
+          });
         } catch {
           // Persistence must not prevent the generated attachment from uploading.
         }
@@ -399,6 +412,9 @@ export default function useTextarea({
         return true;
       };
       const clearPendingPasteDraft = (fileId: string, removeFile = false) => {
+        if (!saveDrafts) {
+          return;
+        }
         removePendingTextAttachmentDraft({ id: draftId, fileId, removeFile });
         const currentDraftId = getComposerDraftId(
           index,
@@ -409,14 +425,18 @@ export default function useTextarea({
           removePendingTextAttachmentDraft({ id: currentDraftId, fileId, removeFile });
         }
       };
-      let pendingFileId: string | undefined;
       const uploadLifecycle: UploadLifecycleCallbacks = {
+        fileId: pendingFileId,
         onStart: (fileId) => {
-          pendingFileId = fileId;
-          if (!saveDrafts) {
+          if (!saveDrafts || fileId === pendingFileId) {
             return;
           }
           try {
+            removePendingTextAttachmentDraft({
+              id: draftId,
+              fileId: pendingFileId,
+              removeFile: true,
+            });
             setPendingTextAttachmentDraft({
               id: draftId,
               fileId,
@@ -448,10 +468,10 @@ export default function useTextarea({
       void routeClipboardFiles([attachment.file], attachment.toolResource, uploadLifecycle).then(
         (accepted) => {
           if (!accepted) {
-            if (pendingFileId) {
+            const restored = restorePasteAfterUploadFailure();
+            if (restored || getNewConversationDraftToken(index) !== draftToken) {
               clearPendingPasteDraft(pendingFileId, true);
             }
-            restorePaste(textArea);
           }
         },
       );

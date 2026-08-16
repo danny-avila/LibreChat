@@ -213,6 +213,15 @@ export const applyPendingPastesToDraft = (
   return text;
 };
 
+const getLocalStorageItem = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    // Privacy-blocked storage must not abort paste/upload recovery.
+    return null;
+  }
+};
+
 const setLocalStorageItem = (key: string, value: string): void => {
   try {
     localStorage.setItem(key, value);
@@ -290,7 +299,7 @@ export const decodeBase64 = (base64String: string): string => {
 };
 
 export const getFilesDraft = (id: string): FilesDraft => {
-  const storedValue = localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${id}`);
+  const storedValue = getLocalStorageItem(`${LocalStorageKeys.FILES_DRAFT}${id}`);
   if (!storedValue) {
     return { fileIds: [], pendingPastes: {} };
   }
@@ -466,7 +475,7 @@ export const setDraft = ({
 };
 
 export const getDraft = (id?: string): string | null =>
-  decodeBase64((localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`) ?? '') || '');
+  decodeBase64((getLocalStorageItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`) ?? '') || '');
 
 /**
  * Draft-key prefix for a live `ask_user_question` answer phase. While the

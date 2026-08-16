@@ -6,6 +6,7 @@ import {
   resolvePendingPasteInsertStart,
   getComposerDraftId,
   getDraft,
+  getFilesDraft,
   getNewConversationDraftId,
   getNewConversationDraftToken,
   getPendingDraftId,
@@ -240,6 +241,21 @@ describe('setDraft persistExact', () => {
       setDraft({ id: 'convo-1', value: 'draft text', persistExact: true }),
     ).not.toThrow();
     setItem.mockRestore();
+  });
+
+  it('returns empty drafts when localStorage.getItem throws', () => {
+    setDraft({ id: 'convo-1', value: 'draft text', persistExact: true });
+    setFilesDraft('convo-1', {
+      fileIds: ['file-1'],
+      pendingPastes: { 'file-1': { text: 'paste', selectionStart: 0 } },
+    });
+    const getItem = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+
+    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getDraft('convo-1')).toBe('');
+    getItem.mockRestore();
   });
 });
 

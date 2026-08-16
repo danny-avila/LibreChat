@@ -946,6 +946,59 @@ describe('useFileHandling', () => {
       expect(mockMutate).toHaveBeenCalledTimes(1);
     });
 
+    it('uses a preassigned file id and marks it in flight before the config wait', async () => {
+      mockIsConfigPending = true;
+      let releaseConfig!: () => void;
+      mockWaitForConfig.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseConfig = resolve;
+          }),
+      );
+      const assignedFileId = 'preassigned-file';
+      const { default: useFileHandling, hasInFlightUpload } = await import('../useFileHandling');
+      const { result } = renderHook(() => useFileHandling());
+
+      let acceptedPromise!: Promise<boolean>;
+      act(() => {
+        acceptedPromise = result.current.handleFiles(
+          [new File(['hello'], 'notes.txt', { type: 'text/plain' })],
+          undefined,
+          { fileId: assignedFileId },
+        );
+      });
+
+      expect(hasInFlightUpload(assignedFileId)).toBe(true);
+
+      await act(async () => {
+        releaseConfig();
+        await acceptedPromise;
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      expect(uploadBody.get('file_id')).toBe(assignedFileId);
+    });
+
+    it('clears a preassigned file id when validation rejects the files', async () => {
+      mockValidateFiles.mockImplementationOnce(() => false);
+      const assignedFileId = 'rejected-preassigned-file';
+      const { default: useFileHandling, hasInFlightUpload } = await import('../useFileHandling');
+      const { result } = renderHook(() => useFileHandling());
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.handleFiles(
+          [new File(['hello'], 'notes.txt', { type: 'text/plain' })],
+          undefined,
+          { fileId: assignedFileId },
+        );
+      });
+
+      expect(accepted).toBe(false);
+      expect(hasInFlightUpload(assignedFileId)).toBe(false);
+      expect(mockMutate).not.toHaveBeenCalled();
+    });
+
     it('reports the temporary id at upload start and success', async () => {
       const onStart = jest.fn();
       const onSuccess = jest.fn();

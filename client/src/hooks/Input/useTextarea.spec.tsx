@@ -489,6 +489,92 @@ describe('useTextarea long-paste fallback', () => {
     expect(uploadLifecycle).toBeDefined();
   });
 
+  it('persists paste recovery before the upload route resolves', async () => {
+    let finish!: (accepted: boolean) => void;
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
+    );
+    const { result } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    expect(uploadLifecycle?.fileId).toEqual(expect.any(String));
+    expect(getFilesDraft('convo-1').pendingPastes[uploadLifecycle?.fileId ?? '']?.text).toBe(
+      pastedText,
+    );
+
+    await act(async () => {
+      finish(true);
+    });
+  });
+
+  it('does not restore a delayed rejection after the conversation changes', async () => {
+    let finish!: (accepted: boolean) => void;
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      },
+    );
+    const { result, rerender } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    const fileId = uploadLifecycle?.fileId ?? '';
+    expect(getFilesDraft('convo-1').pendingPastes[fileId]?.text).toBe(pastedText);
+    mockConversation = { endpoint: 'openAI', conversationId: 'convo-2' };
+    rerender();
+
+    await act(async () => {
+      finish(false);
+    });
+
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockForceResize).not.toHaveBeenCalled();
+    expect(getFilesDraft('convo-1').pendingPastes[fileId]?.text).toBe(pastedText);
+  });
+
+  it('does not restore a delayed rejection after the composer changes', async () => {
+    let finish!: (accepted: boolean) => void;
+    mockRouteFiles.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { result, textArea } = renderTextareaHook();
+    textArea.value = 'draft at paste time';
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    textArea.value = 'draft after more typing';
+
+    await act(async () => {
+      finish(false);
+    });
+
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockForceResize).not.toHaveBeenCalled();
+  });
+
   it('persists the replaced selection so reload recovery can drop stale draft text', async () => {
     let uploadLifecycle: UploadLifecycleCallbacks | undefined;
     mockRouteFiles.mockImplementationOnce(
@@ -591,6 +677,34 @@ describe('useTextarea long-paste fallback', () => {
       fileIds: ['successful-file'],
       pendingPastes: {},
     });
+  });
+
+  it('does not treat a successful upload as failed when draft storage reads throw', async () => {
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        return Promise.resolve(true);
+      },
+    );
+    const { result } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(uploadLifecycle?.fileId).toEqual(expect.any(String)));
+    const getItem = jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+
+    expect(() =>
+      act(() => {
+        uploadLifecycle?.onSuccess?.(uploadLifecycle?.fileId ?? 'missing-file');
+      }),
+    ).not.toThrow();
+    getItem.mockRestore();
   });
 
   it('restores the paste when attachment routing rejects unexpectedly', async () => {

@@ -61,6 +61,8 @@ type ProcessedUpload = {
 };
 
 export type UploadLifecycleCallbacks = {
+  /** Preassigned id so callers can persist recovery before the shared upload queue waits. */
+  fileId?: string;
   onStart?: (fileId: string) => void;
   onSuccess?: (fileId: string) => void;
   onError?: (fileId: string) => void;
@@ -439,8 +441,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
 
     /* Process files */
     const processedUploads: ProcessedUpload[] = [];
-    for (const originalFile of fileList) {
-      const file_id = v4();
+    for (const [fileIndex, originalFile] of fileList.entries()) {
+      const file_id =
+        fileIndex === 0 && uploadLifecycle?.fileId != null && uploadLifecycle.fileId !== ''
+          ? uploadLifecycle.fileId
+          : v4();
       try {
         // Create initial preview with original file
         const initialPreview = URL.createObjectURL(originalFile);
@@ -634,6 +639,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   ): Promise<boolean> => {
     /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
     const fileList = Array.from(_files);
+    const assignedFileId = uploadLifecycle?.fileId;
+    if (assignedFileId) {
+      uploadErrorCallbacks.set(assignedFileId, uploadLifecycle);
+    }
     /** Started before queueing so every waiting batch shares one bounded config window */
     const configReady = isConfigPending ? waitForConfig() : undefined;
     const previousProcessing = uploadScope.queue;
@@ -642,10 +651,19 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       releaseProcessing = resolve;
     });
 
-    await previousProcessing;
     try {
+      await previousProcessing;
       await configReady;
-      return await processFiles(fileList, _toolResource, uploadLifecycle);
+      const accepted = await processFiles(fileList, _toolResource, uploadLifecycle);
+      if (!accepted && assignedFileId) {
+        takeUploadRecovery(assignedFileId);
+      }
+      return accepted;
+    } catch (error) {
+      if (assignedFileId) {
+        takeUploadRecovery(assignedFileId);
+      }
+      throw error;
     } finally {
       releaseProcessing();
     }
