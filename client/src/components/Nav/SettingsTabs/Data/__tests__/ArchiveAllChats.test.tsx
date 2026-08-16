@@ -225,4 +225,32 @@ describe('ArchiveAllChats', () => {
     expect(mockGetConversationById).not.toHaveBeenCalled();
     expect(mockStartNewChat).not.toHaveBeenCalled();
   });
+
+  it('keeps a conversation opened while the archive-state lookup is in flight', async () => {
+    let resolveLookup: (value: { conversationId: string; isArchived: boolean }) => void = () => {
+      throw new Error('lookup resolver was not captured');
+    };
+    mockGetConversationById.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveLookup = resolve;
+        }),
+    );
+    render(<ArchiveAllChats />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_nav_archive_all_chats' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_archive' }));
+
+    const errorHandling = mockOnError?.();
+    mockGetConversation.mockReturnValue({
+      conversationId: 'conversation-2',
+      isTemporary: false,
+    });
+    resolveLookup({
+      conversationId: 'conversation-1',
+      isArchived: true,
+    });
+    await errorHandling;
+
+    expect(mockStartNewChat).not.toHaveBeenCalled();
+  });
 });

@@ -69,7 +69,10 @@ export const ArchiveAllChats = () => {
         const persistedConversation = await dataService.getConversationById(
           submittedConversation.conversationId,
         );
-        if (persistedConversation.isArchived === true) {
+        if (
+          persistedConversation.isArchived === true &&
+          isSubmittedChatStillActive(submittedConversation, getConversation())
+        ) {
           startNewChat();
         }
       } catch {
