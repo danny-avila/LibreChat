@@ -356,20 +356,9 @@ export async function resizeImage(
 }
 
 /**
- * Smallest file worth re-encoding. Below this the decode/encode round trip costs
- * more than it saves, and `resizeImage` already returns the original untouched
- * when the image fits within the configured dimensions.
+ * Determines if an image uses a format supported by the resize pipeline.
+ * Dimensions decide whether re-encoding is necessary after the image is decoded.
  */
-export const MIN_RESIZE_BYTES = 512 * 1024;
-
-/**
- * Determines if an image is a candidate for resizing
- */
-export function shouldResizeImage(file: File, minSizeBytes: number = MIN_RESIZE_BYTES): boolean {
-  // Don't resize if file is already small
-  if (file.size < minSizeBytes) {
-    return false;
-  }
-
+export function shouldResizeImage(file: File): boolean {
   return RESIZE_FORMAT_BY_MIME_TYPE[file.type] != null;
 }

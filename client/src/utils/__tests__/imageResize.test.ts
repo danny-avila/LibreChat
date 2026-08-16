@@ -93,58 +93,14 @@ describe('imageResize utility', () => {
   });
 
   describe('shouldResizeImage', () => {
-    it('should return true for large image files', () => {
-      const largeImageFile = new File([''], 'test.jpg', {
-        type: 'image/jpeg',
-        lastModified: Date.now(),
-      });
+    it.each([
+      ['image/jpeg', 'photo.jpg'],
+      ['image/png', 'photo.png'],
+      ['image/webp', 'photo.webp'],
+    ])('should return true for supported format %s regardless of file size', (type, name) => {
+      const smallImage = new File(['x'], name, { type });
 
-      // Mock large file size
-      Object.defineProperty(largeImageFile, 'size', {
-        value: 100 * 1024 * 1024, // 100MB
-        writable: false,
-      });
-
-      const result = shouldResizeImage(largeImageFile, 50 * 1024 * 1024); // 50MB minimum
-      expect(result).toBe(true);
-    });
-
-    it('should return false for small image files', () => {
-      const smallImageFile = new File([''], 'test.jpg', {
-        type: 'image/jpeg',
-        lastModified: Date.now(),
-      });
-
-      // Mock small file size
-      Object.defineProperty(smallImageFile, 'size', {
-        value: 1024, // 1KB
-        writable: false,
-      });
-
-      const result = shouldResizeImage(smallImageFile, 50 * 1024 * 1024); // 50MB minimum
-      expect(result).toBe(false);
-    });
-
-    it('should return true for an everyday photo using the default minimum', () => {
-      const photo = new File([''], 'photo.jpg', {
-        type: 'image/jpeg',
-        lastModified: Date.now(),
-      });
-
-      Object.defineProperty(photo, 'size', { value: 3 * 1024 * 1024, writable: false });
-
-      expect(shouldResizeImage(photo)).toBe(true);
-    });
-
-    it('should return false below the default minimum', () => {
-      const thumbnail = new File([''], 'thumb.jpg', {
-        type: 'image/jpeg',
-        lastModified: Date.now(),
-      });
-
-      Object.defineProperty(thumbnail, 'size', { value: 100 * 1024, writable: false });
-
-      expect(shouldResizeImage(thumbnail)).toBe(false);
+      expect(shouldResizeImage(smallImage)).toBe(true);
     });
 
     it('should return false for non-image files', () => {
@@ -394,6 +350,23 @@ describe('imageResize utility', () => {
 
       expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1, 1);
       expect(result.newDimensions).toEqual({ width: 1, height: 1 });
+    });
+
+    it('resizes a small encoded image when its dimensions exceed the configured bounds', async () => {
+      imageWidth = 4000;
+      imageHeight = 3000;
+      const file = new File([new ArrayBuffer(400 * 1024)], 'compressed.jpg', {
+        type: 'image/jpeg',
+      });
+      canvasToBlob.mockImplementationOnce((callback: BlobCallback, type?: string) => {
+        callback(new Blob(['smaller'], { type }));
+      });
+
+      const result = await resizeImage(file, { maxWidth: 1900, maxHeight: 1900 });
+
+      expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1900, 1425);
+      expect(result.newDimensions).toEqual({ width: 1900, height: 1425 });
+      expect(result.file).not.toBe(file);
     });
 
     it('keeps the original file when the resized blob is not smaller', async () => {

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
 import { mergeFileConfig } from 'librechat-data-provider';
 import type { FileConfig } from 'librechat-data-provider';
@@ -8,6 +8,7 @@ import { useGetFileConfig } from '~/data-provider';
 import store from '~/store';
 
 type ClientImageResizeConfig = NonNullable<FileConfig['clientImageResize']>;
+const FILE_CONFIG_WAIT_TIMEOUT_MS = 10_000;
 
 const defaultConfig: ClientImageResizeConfig = {
   enabled: false,
@@ -26,13 +27,20 @@ const defaultConfig: ClientImageResizeConfig = {
  */
 export const useClientResize = () => {
   const userPreference = useRecoilValue(store.clientImageResize);
-  const { data: fileConfig = null, isSuccess: isFileConfigLoaded } = useGetFileConfig({
+  const {
+    data: fileConfig = null,
+    isError: isFileConfigError,
+    isPaused: isFileConfigPaused,
+    isSuccess: isFileConfigLoaded,
+  } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
 
   const config = fileConfig?.clientImageResize ?? defaultConfig;
   const { maxWidth, maxHeight, quality } = config;
+  const isSupported = supportsClientResize();
   const isEnforced = config.enforced === true;
+  const isConfigPending = !isFileConfigLoaded && !isFileConfigError && !isFileConfigPaused;
   const hasValidDimensions =
     typeof maxWidth === 'number' &&
     Number.isFinite(maxWidth) &&
@@ -44,6 +52,56 @@ export const useClientResize = () => {
     isFileConfigLoaded &&
     hasValidDimensions &&
     (isEnforced ? config.enabled === true : userPreference);
+  const isConfigPendingRef = useRef(isConfigPending);
+  const configWaitTimedOutRef = useRef(false);
+  const configWaitersRef = useRef(new Set<() => void>());
+  const resizeStateRef = useRef({ isEnabled, isSupported, maxWidth, maxHeight, quality });
+
+  isConfigPendingRef.current = isConfigPending;
+  if (!isConfigPending) {
+    configWaitTimedOutRef.current = false;
+  }
+  resizeStateRef.current = { isEnabled, isSupported, maxWidth, maxHeight, quality };
+
+  const waitForConfig = useCallback((): Promise<void> => {
+    if (!isConfigPendingRef.current || configWaitTimedOutRef.current) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const finishWaiting = () => {
+        clearTimeout(timeoutId);
+        configWaitersRef.current.delete(finishWaiting);
+        resolve();
+      };
+      const timeoutId = setTimeout(() => {
+        configWaitTimedOutRef.current = true;
+        finishWaiting();
+      }, FILE_CONFIG_WAIT_TIMEOUT_MS);
+      configWaitersRef.current.add(finishWaiting);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isConfigPending) {
+      return;
+    }
+
+    for (const resolve of configWaitersRef.current) {
+      resolve();
+    }
+    configWaitersRef.current.clear();
+  }, [isConfigPending]);
+
+  useEffect(
+    () => () => {
+      for (const resolve of configWaitersRef.current) {
+        resolve();
+      }
+      configWaitersRef.current.clear();
+    },
+    [],
+  );
 
   /**
    * Resizes an image if client-side resizing is enabled and supported
@@ -56,13 +114,23 @@ export const useClientResize = () => {
       file: File,
       options?: Partial<ResizeOptions>,
     ): Promise<{ file: File; resized: boolean; result?: ResizeResult }> => {
+      await waitForConfig();
+
+      const {
+        isEnabled: isResizeEnabled,
+        isSupported: isResizeSupported,
+        maxWidth: currentMaxWidth,
+        maxHeight: currentMaxHeight,
+        quality: currentQuality,
+      } = resizeStateRef.current;
+
       // Return original file if resizing is disabled
-      if (!isEnabled) {
+      if (!isResizeEnabled) {
         return { file, resized: false };
       }
 
       // Return original file if browser doesn't support resizing
-      if (!supportsClientResize()) {
+      if (!isResizeSupported) {
         console.warn('Client-side image resizing not supported in this browser');
         return { file, resized: false };
       }
@@ -74,9 +142,9 @@ export const useClientResize = () => {
 
       try {
         const resizeOptions: Partial<ResizeOptions> = {
-          maxWidth,
-          maxHeight,
-          quality,
+          maxWidth: currentMaxWidth,
+          maxHeight: currentMaxHeight,
+          quality: currentQuality,
           ...options,
         };
 
@@ -87,14 +155,16 @@ export const useClientResize = () => {
         return { file, resized: false };
       }
     },
-    [isEnabled, maxWidth, maxHeight, quality],
+    [waitForConfig],
   );
 
   return {
     isEnabled,
     isEnforced,
-    isSupported: supportsClientResize(),
+    isSupported,
+    isConfigPending,
     config,
+    waitForConfig,
     resizeImageIfNeeded,
   };
 };

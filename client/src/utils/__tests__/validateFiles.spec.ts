@@ -1,7 +1,7 @@
 import { megabyte, fileConfig as defaultFileConfig } from 'librechat-data-provider';
 import type { EndpointFileConfig, FileConfig } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { validateFiles } from '../files';
+import { validateFiles, validateFileSizes } from '../files';
 
 const supportedMimeTypes = defaultFileConfig.endpoints.default.supportedMimeTypes;
 
@@ -131,6 +131,46 @@ describe('validateFiles', () => {
     expect(result).toBe(true);
   });
 
+  it('can defer size validation until after files are transformed', () => {
+    const limit = 5 * megabyte;
+    endpointFileConfig = makeEndpointConfig({ fileSizeLimit: limit });
+    const fileList = [makeFile('photo.jpg', 'image/jpeg', limit + 1)];
+
+    const metadataResult = validateFiles({
+      files,
+      fileList,
+      setError,
+      fileConfig,
+      endpointFileConfig,
+      skipSizeValidation: true,
+    });
+    const transformedResult = validateFileSizes({
+      files,
+      fileList: [makeFile('photo.jpg', 'image/jpeg', limit - 1)],
+      setError,
+      endpointFileConfig,
+    });
+
+    expect(metadataResult).toBe(true);
+    expect(transformedResult).toBe(true);
+    expect(setError).not.toHaveBeenCalled();
+  });
+
+  it('preserves the individual size error after transformation', () => {
+    const limit = 5 * megabyte;
+    endpointFileConfig = makeEndpointConfig({ fileSizeLimit: limit });
+
+    const result = validateFileSizes({
+      files,
+      fileList: [makeFile('photo.jpg', 'image/jpeg', limit)],
+      setError,
+      endpointFileConfig,
+    });
+
+    expect(result).toBe(false);
+    expect(setError).toHaveBeenCalledWith(`File size limit exceeded: ${limit / megabyte} MB`);
+  });
+
   it('rejects when totalSizeLimit would be exceeded', () => {
     const limit = 10 * megabyte;
     endpointFileConfig = makeEndpointConfig({ totalSizeLimit: limit });
@@ -148,6 +188,24 @@ describe('validateFiles', () => {
     const fileList = [makeFile('fits.pdf', 'application/pdf', 5 * megabyte)];
     const result = validateFiles({ files, fileList, setError, endpointFileConfig, fileConfig });
     expect(result).toBe(true);
+  });
+
+  it('checks the total size across the transformed batch', () => {
+    const limit = 10 * megabyte;
+    endpointFileConfig = makeEndpointConfig({ totalSizeLimit: limit });
+
+    const result = validateFileSizes({
+      files,
+      fileList: [
+        makeFile('one.jpg', 'image/jpeg', 6 * megabyte),
+        makeFile('two.jpg', 'image/jpeg', 5 * megabyte),
+      ],
+      setError,
+      endpointFileConfig,
+    });
+
+    expect(result).toBe(false);
+    expect(setError).toHaveBeenCalledWith(`Total file size limit exceeded: ${limit / megabyte} MB`);
   });
 
   it('rejects duplicate files', () => {

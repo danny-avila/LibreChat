@@ -236,6 +236,43 @@ export function formatBytes(bytes: number, decimals = 2) {
 
 const { checkType } = defaultFileConfig;
 
+type FileSizeValidationParams = {
+  fileList: File[];
+  files: Map<string, ExtendedFile>;
+  setError: (error: string) => void;
+  endpointFileConfig: EndpointFileConfig;
+};
+
+export const validateFileSizes = ({
+  files,
+  fileList,
+  setError,
+  endpointFileConfig,
+}: FileSizeValidationParams): boolean => {
+  const { fileSizeLimit, totalSizeLimit } = endpointFileConfig;
+
+  for (const file of fileList) {
+    if (fileSizeLimit && file.size >= fileSizeLimit) {
+      setError(`File size limit exceeded: ${fileSizeLimit / megabyte} MB`);
+      return false;
+    }
+  }
+
+  if (totalSizeLimit) {
+    const currentTotalSize = Array.from(files.values()).reduce(
+      (total, file) => total + file.size,
+      0,
+    );
+    const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
+    if (currentTotalSize + incomingTotalSize > totalSizeLimit) {
+      setError(`Total file size limit exceeded: ${totalSizeLimit / megabyte} MB`);
+      return false;
+    }
+  }
+
+  return true;
+};
+
 export const validateFiles = ({
   files,
   fileList,
@@ -243,6 +280,7 @@ export const validateFiles = ({
   endpointFileConfig,
   toolResource,
   fileConfig,
+  skipSizeValidation = false,
 }: {
   fileList: File[];
   files: Map<string, ExtendedFile>;
@@ -250,21 +288,19 @@ export const validateFiles = ({
   endpointFileConfig: EndpointFileConfig;
   toolResource?: string;
   fileConfig: FileConfig | null;
+  skipSizeValidation?: boolean;
 }) => {
-  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes, disabled } =
-    endpointFileConfig;
+  const { fileLimit, supportedMimeTypes, disabled } = endpointFileConfig;
   /** Block all uploads if the endpoint is explicitly disabled */
   if (disabled === true) {
     setError('com_ui_attach_error_disabled');
     return false;
   }
-  const existingFiles = Array.from(files.values());
   const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
   if (incomingTotalSize === 0) {
     setError('com_error_files_empty');
     return false;
   }
-  const currentTotalSize = existingFiles.reduce((total, file) => total + file.size, 0);
 
   if (fileLimit && fileList.length + files.size > fileLimit) {
     setError(`File limit reached: ${fileLimit} files`);
@@ -301,18 +337,16 @@ export const validateFiles = ({
       setError(`Unsupported file type: ${originalFile.type}`);
       return false;
     }
-
-    if (fileSizeLimit && originalFile.size >= fileSizeLimit) {
-      setError(`File size limit exceeded: ${fileSizeLimit / megabyte} MB`);
-      return false;
-    }
   }
 
-  if (totalSizeLimit && currentTotalSize + incomingTotalSize > totalSizeLimit) {
-    setError(`Total file size limit exceeded: ${totalSizeLimit / megabyte} MB`);
+  if (
+    !skipSizeValidation &&
+    !validateFileSizes({ files, fileList, setError, endpointFileConfig })
+  ) {
     return false;
   }
 
+  const existingFiles = Array.from(files.values());
   const combinedFilesInfo = [
     ...existingFiles.map(
       (file) =>

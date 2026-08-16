@@ -7,10 +7,14 @@ import useClientResize from '../useClientResize';
 
 let mockAdminConfig: FileConfigInput | undefined;
 let mockConfigIsSuccess = true;
+let mockConfigIsError = false;
+let mockConfigIsPaused = false;
 
 jest.mock('~/data-provider', () => ({
   useGetFileConfig: <T,>({ select }: { select: (data: unknown) => T }) => ({
     data: select(mockAdminConfig),
+    isError: mockConfigIsError,
+    isPaused: mockConfigIsPaused,
     isSuccess: mockConfigIsSuccess,
   }),
 }));
@@ -25,6 +29,8 @@ describe('useClientResize', () => {
     localStorage.clear();
     mockAdminConfig = undefined;
     mockConfigIsSuccess = true;
+    mockConfigIsError = false;
+    mockConfigIsPaused = false;
   });
 
   it('keeps resizing off until the file config resolves', () => {
@@ -34,6 +40,58 @@ describe('useClientResize', () => {
     const { result } = renderHook(() => useClientResize(), { wrapper });
 
     expect(result.current.isEnabled).toBe(false);
+    expect(result.current.isConfigPending).toBe(true);
+  });
+
+  it('releases uploads when the file config request errors', async () => {
+    mockConfigIsSuccess = false;
+    const { result, rerender } = renderHook(() => useClientResize(), { wrapper });
+    let waitFinished = false;
+    const pendingWait = result.current.waitForConfig().then(() => {
+      waitFinished = true;
+    });
+
+    await Promise.resolve();
+    expect(waitFinished).toBe(false);
+
+    mockConfigIsError = true;
+    rerender();
+    await pendingWait;
+
+    expect(result.current.isConfigPending).toBe(false);
+    expect(waitFinished).toBe(true);
+  });
+
+  it('does not block uploads when the file config request is paused offline', async () => {
+    mockConfigIsSuccess = false;
+    mockConfigIsPaused = true;
+    const { result } = renderHook(() => useClientResize(), { wrapper });
+
+    await expect(result.current.waitForConfig()).resolves.toBeUndefined();
+    expect(result.current.isConfigPending).toBe(false);
+  });
+
+  it('fails open after a bounded wait when the file config request never settles', async () => {
+    jest.useFakeTimers();
+    try {
+      mockConfigIsSuccess = false;
+      const { result } = renderHook(() => useClientResize(), { wrapper });
+      let waitFinished = false;
+      const pendingWait = result.current.waitForConfig().then(() => {
+        waitFinished = true;
+      });
+
+      await Promise.resolve();
+      expect(waitFinished).toBe(false);
+
+      jest.advanceTimersByTime(10_000);
+      await pendingWait;
+
+      expect(waitFinished).toBe(true);
+      await expect(result.current.waitForConfig()).resolves.toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   describe('without an admin-configured value', () => {
