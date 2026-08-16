@@ -19,6 +19,7 @@ const {
   math,
 } = require('@librechat/api');
 const { updateUser, findUser } = require('~/models');
+const { isTokenIssuedBeforeCredentialChange } = require('./credentials');
 const getLogStores = require('~/cache/getLogStores');
 
 const getOpenIdJwtAudience = () => {
@@ -172,6 +173,14 @@ const openIdJwtLogin = (openIdConfig) => {
         }
 
         if (user) {
+          if (isTokenIssuedBeforeCredentialChange(payload, user)) {
+            logger.warn(
+              '[openIdJwtLogin] openId JwtStrategy => token predates the last credential change: ' +
+                payload?.sub,
+            );
+            done(null, false);
+            return;
+          }
           user.id = user._id.toString();
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
           user.idOnTheSource ??= null;

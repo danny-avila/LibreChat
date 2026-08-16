@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { JSX } from 'react/jsx-runtime';
 import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
+import { useDialogDepth } from './OriginalDialog';
 import { cn } from '~/utils';
 
 const AlertDialog: React.FC<AlertDialogPrimitive.AlertDialogProps> = AlertDialogPrimitive.Root;
@@ -11,28 +12,42 @@ const AlertDialogTrigger: React.ForwardRefExoticComponent<
 
 type AlertPortalProps = AlertDialogPrimitive.AlertDialogPortalProps & { className?: string };
 
-const AlertDialogPortal = ({ className = '', children, ...props }: AlertPortalProps) => (
-  <AlertDialogPrimitive.Portal className={cn(className)} {...(props as AlertPortalProps)}>
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
-      {children}
-    </div>
-  </AlertDialogPrimitive.Portal>
-);
+const AlertDialogPortal = ({ className = '', children, ...props }: AlertPortalProps) => {
+  const dialogDepth = useDialogDepth();
+  const zIndex = dialogDepth > 0 ? 190 + (dialogDepth - 1) * 60 : 50;
+
+  return (
+    <AlertDialogPrimitive.Portal className={cn(className)} {...(props as AlertPortalProps)}>
+      <div
+        className="fixed inset-0 z-50 flex items-end justify-center sm:items-center"
+        style={{ zIndex }}
+      >
+        {children}
+      </div>
+    </AlertDialogPrimitive.Portal>
+  );
+};
 AlertDialogPortal.displayName = AlertDialogPrimitive.Portal.displayName;
 
 const AlertDialogOverlay = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Overlay>
->(({ className = '', ...props }, ref) => (
-  <AlertDialogPrimitive.Overlay
-    className={cn(
-      'fixed inset-0 z-50 bg-surface-overlay/90 transition-opacity animate-in fade-in',
-      className,
-    )}
-    {...props}
-    ref={ref}
-  />
-));
+>(({ className = '', style, ...props }, ref) => {
+  const dialogDepth = useDialogDepth();
+  const zIndex = dialogDepth > 0 ? 190 + (dialogDepth - 1) * 60 : 50;
+
+  return (
+    <AlertDialogPrimitive.Overlay
+      className={cn(
+        'fixed inset-0 z-50 bg-surface-overlay/90 transition-opacity animate-in fade-in',
+        className,
+      )}
+      style={{ ...style, zIndex }}
+      {...props}
+      ref={ref}
+    />
+  );
+});
 AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 
 const AlertDialogContent: React.ForwardRefExoticComponent<
@@ -41,19 +56,25 @@ const AlertDialogContent: React.ForwardRefExoticComponent<
 > = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className = '', ...props }, ref) => (
-  <AlertDialogPortal>
-    <AlertDialogOverlay />
-    <AlertDialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        'fixed z-50 grid w-full max-w-lg scale-100 gap-4 bg-surface-dialog p-6 opacity-100 animate-in fade-in-90 slide-in-from-bottom-10 sm:rounded-lg sm:zoom-in-90 sm:slide-in-from-bottom-0 md:w-full',
-        className,
-      )}
-      {...props}
-    />
-  </AlertDialogPortal>
-));
+>(({ className = '', style, ...props }, ref) => {
+  const dialogDepth = useDialogDepth();
+  const zIndex = dialogDepth > 0 ? 200 + (dialogDepth - 1) * 60 : 50;
+
+  return (
+    <AlertDialogPortal>
+      <AlertDialogOverlay />
+      <AlertDialogPrimitive.Content
+        ref={ref}
+        className={cn(
+          'fixed z-50 grid w-full max-w-lg scale-100 gap-4 bg-surface-dialog p-6 opacity-100 animate-in fade-in-90 slide-in-from-bottom-10 sm:rounded-lg sm:zoom-in-90 sm:slide-in-from-bottom-0 md:w-full',
+          className,
+        )}
+        style={{ ...style, zIndex }}
+        {...props}
+      />
+    </AlertDialogPortal>
+  );
+});
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName;
 
 const AlertDialogHeader: {

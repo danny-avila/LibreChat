@@ -31,6 +31,11 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   const useUsernameLogin = config?.ldap?.username;
   const validTheme = isDark(theme) ? 'dark' : 'light';
   const requireCaptcha = Boolean(startupConfig.turnstile?.siteKey);
+  /** The `webauthn` token lets the browser offer a passkey inline in this field's autofill. */
+  const baseAutoComplete = useUsernameLogin ? 'username' : 'email';
+  const emailAutoComplete = startupConfig.passkeyLoginEnabled
+    ? `${baseAutoComplete} webauthn`
+    : baseAutoComplete;
   const authInputClassName =
     'webkit-dark-styles transition-color peer h-auto w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 hover:border-border-light focus:border-accent-primary focus:outline-none focus-visible:border-accent-primary';
   const authSecretInputClassName = `${authInputClassName} pr-12`;
@@ -99,7 +104,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             <Input
               type="text"
               id="email"
-              autoComplete={useUsernameLogin ? 'username' : 'email'}
+              autoComplete={emailAutoComplete}
               aria-label={localize('com_auth_email')}
               {...register('email', {
                 required: localize('com_auth_email_required'),

@@ -1353,6 +1353,47 @@ export function verifyTwoFactorTemp(
   return request.post(endpoints.verifyTwoFactorTemp(), payload);
 }
 
+// Passkeys (WebAuthn)
+export function getPasskeys(): Promise<t.TPasskeysResponse> {
+  return request.get(endpoints.passkeys());
+}
+
+export function getPasskeyRegistrationOptions(
+  payload: t.TPasskeyRegistrationOptionsRequest,
+): Promise<t.TPasskeyCreationOptions> {
+  return request.post(endpoints.passkeyRegistrationOptions(), payload);
+}
+
+export function verifyPasskeyRegistration(
+  payload: t.TVerifyPasskeyRegistrationRequest,
+): Promise<t.TPasskeyResponse> {
+  return request.post(endpoints.passkeyRegistrationVerify(), payload);
+}
+
+export function getPasskeyLoginOptions(): Promise<t.TPasskeyAuthenticationOptionsResponse> {
+  return request.post(endpoints.passkeyLoginOptions(), {});
+}
+
+export function verifyPasskeyLogin(
+  payload: t.TVerifyPasskeyLoginRequest,
+): Promise<t.TLoginResponse> {
+  return request.post(endpoints.passkeyLoginVerify(), payload);
+}
+
+export function renamePasskey({
+  passkeyId,
+  name,
+}: t.TRenamePasskeyRequest): Promise<t.TPasskeyResponse> {
+  return request.patch(endpoints.passkey(passkeyId), { name });
+}
+
+export function deletePasskey({
+  passkeyId,
+  password,
+}: t.TDeletePasskeyRequest): Promise<{ message: string }> {
+  return request.deleteWithOptions(endpoints.passkey(passkeyId), { data: { password } });
+}
+
 /* Memories */
 export const getMemories = (): Promise<q.MemoriesResponse> => {
   return request.get(endpoints.memories());

@@ -11,6 +11,7 @@ const {
   sanitizeModelSpecs,
   excludeHiddenModelSpecs,
   isFileSnapshotEnabled,
+  isPasskeyEnabled,
 } = require('@librechat/api');
 const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
@@ -79,6 +80,7 @@ function buildPreLoginPayload() {
       !!process.env.APPLE_TEAM_ID &&
       !!process.env.APPLE_KEY_ID &&
       !!process.env.APPLE_PRIVATE_KEY_PATH,
+    passkeyLoginEnabled: isPasskeyEnabled(),
     openidLoginEnabled: isOpenIdEnabled,
     openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
     openidImageUrl: process.env.OPENID_IMAGE_URL,

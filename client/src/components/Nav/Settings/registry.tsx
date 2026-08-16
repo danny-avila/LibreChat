@@ -36,6 +36,7 @@ import { ClearChats } from '../SettingsTabs/Data/ClearChats';
 import { TokenCredits, AutoRefill } from './BillingControls';
 import AdminPanel from '../SettingsTabs/General/AdminPanel';
 import SharedLinks from '../SettingsTabs/Data/SharedLinks';
+import Passkeys from '../SettingsTabs/Account/Passkeys';
 import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
 import Avatar from '../SettingsTabs/Account/Avatar';
@@ -589,6 +590,15 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_settings_label_backup_codes',
     show: (ctx) => ctx.isLocalProvider && ctx.twoFactorEnabled,
     Component: BackupCodesItem,
+  },
+  {
+    id: 'passkeys',
+    tab: ACCOUNT,
+    section: 'security',
+    labelKey: 'com_ui_passkeys',
+    keywords: ['passkey', 'webauthn', 'fido', 'security key', 'passwordless'],
+    show: (ctx) => ctx.passkeyLoginEnabled,
+    Component: Passkeys,
   },
   // Account · Billing
   {

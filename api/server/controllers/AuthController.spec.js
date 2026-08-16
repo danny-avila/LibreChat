@@ -16,6 +16,7 @@ jest.mock('~/strategies', () => ({ getOpenIdConfig: jest.fn(), getOpenIdEmail: j
 jest.mock('openid-client', () => ({ refreshTokenGrant: jest.fn() }));
 jest.mock('~/models', () => ({
   deleteAllUserSessions: jest.fn(),
+  deletePasskeysByUser: jest.fn(),
   getUserById: jest.fn(),
   findSession: jest.fn(),
   updateUser: jest.fn(),
@@ -42,15 +43,26 @@ const openIdClient = require('openid-client');
 const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
 const { isEnabled, findOpenIDUser, buildOpenIDRefreshParams } = require('@librechat/api');
-const { graphTokenController, refreshController } = require('./AuthController');
+const {
+  graphTokenController,
+  refreshController,
+  resetPasswordController,
+} = require('./AuthController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const {
   setOpenIDAuthTokens,
   setCloudFrontAuthCookies,
   setAuthTokens,
+  resetPassword,
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
-const { getUserById, findSession, updateUser } = require('~/models');
+const {
+  getUserById,
+  findSession,
+  updateUser,
+  deleteAllUserSessions,
+  deletePasskeysByUser,
+} = require('~/models');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
@@ -838,5 +850,51 @@ describe('refreshController – LibreChat path', () => {
         email: 'local@example.com',
       },
     });
+  });
+});
+
+describe('resetPasswordController', () => {
+  let req, res;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    req = {
+      body: {
+        userId: 'user-123',
+        token: 'reset-token',
+        password: 'new-password',
+      },
+    };
+    res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+  });
+
+  it('revokes sessions and passkeys on successful password reset', async () => {
+    const serviceResult = { message: 'Password reset successful' };
+    resetPassword.mockResolvedValue(serviceResult);
+    deleteAllUserSessions.mockResolvedValue(undefined);
+    deletePasskeysByUser.mockResolvedValue(undefined);
+
+    await resetPasswordController(req, res);
+
+    expect(resetPassword).toHaveBeenCalledWith('user-123', 'reset-token', 'new-password');
+    expect(deleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user-123' });
+    expect(deletePasskeysByUser).toHaveBeenCalledWith('user-123');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(serviceResult);
+  });
+
+  it('does not revoke sessions or passkeys when reset fails', async () => {
+    const resetError = new Error('Invalid token');
+    resetPassword.mockResolvedValue(resetError);
+
+    await resetPasswordController(req, res);
+
+    expect(deleteAllUserSessions).not.toHaveBeenCalled();
+    expect(deletePasskeysByUser).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(resetError);
   });
 });

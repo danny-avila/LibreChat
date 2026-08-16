@@ -58,6 +58,7 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
       .mockResolvedValue({ deletedCount: 1, message: 'User was deleted successfully.' }),
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
+    deletePasskeysByUser: jest.fn().mockResolvedValue(0),
     ...overrides,
   };
 }
@@ -433,6 +434,7 @@ describe('createAdminUsersHandlers', () => {
         principalType: PrincipalType.USER,
         principalId: expect.any(Types.ObjectId),
       });
+      expect(deps.deletePasskeysByUser).toHaveBeenCalledWith(validUserId);
     });
 
     it('returns success even when cascade cleanup partially fails', async () => {

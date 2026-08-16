@@ -45,6 +45,7 @@ export interface SettingsContextValue {
   hasMultiConvo: boolean;
   hasPrompts: boolean;
   isLocalProvider: boolean;
+  passkeyLoginEnabled: boolean;
   twoFactorEnabled: boolean;
   allowAccountDeletion: boolean;
   aboutEnabled: boolean;

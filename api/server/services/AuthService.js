@@ -536,7 +536,8 @@ const resetPassword = async (userId, token, password) => {
   }
 
   const hash = bcrypt.hashSync(password, 10);
-  const user = await updateUser(userId, { password: hash });
+  /** Stamped with the new password so access tokens issued before the reset stop verifying */
+  const user = await updateUser(userId, { password: hash, credentialsChangedAt: new Date() });
 
   if (checkEmailConfig()) {
     await sendEmail({

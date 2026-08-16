@@ -19,6 +19,7 @@ const {
 } = require('~/server/services/AuthService');
 const {
   deleteAllUserSessions,
+  deletePasskeysByUser,
   getUserById,
   findSession,
   updateUser,
@@ -144,6 +145,7 @@ const resetPasswordController = async (req, res) => {
       return res.status(400).json(resetPasswordService);
     } else {
       await deleteAllUserSessions({ userId: req.body.userId });
+      await deletePasskeysByUser(req.body.userId);
       return res.status(200).json(resetPasswordService);
     }
   } catch (e) {
