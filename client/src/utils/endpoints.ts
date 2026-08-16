@@ -608,11 +608,37 @@ export function getSpecAgentAvatarURL(
  * needs filling in, so memoized consumers see no new identities.
  */
 export function normalizeModelSpecs(specs: t.TModelSpec[]): t.TModelSpec[] {
-  if (!specs.some((spec) => !spec.label)) {
-    return specs;
+  let normalized: t.TModelSpec[] | null = null;
+  for (let i = 0; i < specs.length; i++) {
+    const spec = specs[i];
+    if (spec.label) {
+      normalized?.push(spec);
+      continue;
+    }
+    /** Lazy copy: allocated only when the first incomplete spec is found. */
+    normalized ??= specs.slice(0, i);
+    normalized.push({ ...spec, label: spec.name });
   }
+  return normalized ?? specs;
+}
 
-  return specs.map((spec) => (spec.label ? spec : { ...spec, label: spec.name }));
+/**
+ * Applies `normalizeModelSpecs` to a fetched startup config, so normalization
+ * happens once at the query boundary and every consumer of
+ * `startupConfig.modelSpecs.list` — the selector, mentions, favorites,
+ * provider-key reachability — reads complete specs. Identity-preserving when
+ * nothing needs filling in.
+ */
+export function normalizeStartupConfigModelSpecs(config: t.TStartupConfig): t.TStartupConfig {
+  const modelSpecs = config?.modelSpecs;
+  if (!modelSpecs?.list?.length) {
+    return config;
+  }
+  const normalized = normalizeModelSpecs(modelSpecs.list);
+  if (normalized === modelSpecs.list) {
+    return config;
+  }
+  return { ...config, modelSpecs: { ...modelSpecs, list: normalized } };
 }
 
 /** Gets the default frontend-facing endpoint, dependent on iconURL definition.
