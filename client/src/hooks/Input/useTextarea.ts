@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import debounce from 'lodash/debounce';
 import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilState } from 'recoil';
-import { Constants, EToolResources, isAssistantsEndpoint } from 'librechat-data-provider';
+import { EToolResources, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TEndpointOption } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import type { UploadLifecycleCallbacks } from '~/hooks/Files/useFileHandling';
@@ -11,7 +11,7 @@ import {
   insertTextAtCursor,
   resolvePastedTextFile,
   getNewConversationDraftToken,
-  getPendingDraftId,
+  getComposerDraftId,
   setPendingTextAttachmentDraft,
   removePendingTextAttachmentDraft,
   setDraft,
@@ -353,18 +353,21 @@ export default function useTextarea({
 
       e.preventDefault();
       const conversationId = conversation?.conversationId;
-      const draftId = isSubmitting
-        ? getPendingDraftId(index)
-        : (conversationId ?? Constants.NEW_CONVO);
+      const draftId = getComposerDraftId(index, conversationId, isSubmitting);
       const draftToken = getNewConversationDraftToken(index);
       const selectionStart = textArea.selectionStart;
       const selectionEnd = textArea.selectionEnd;
+      const replacedText =
+        selectionStart === selectionEnd ? '' : textArea.value.slice(selectionStart, selectionEnd);
       if (selectionStart !== selectionEnd) {
         textArea.setRangeText('', selectionStart, selectionEnd, 'end');
         textArea.dispatchEvent(new Event('input', { bubbles: true }));
         forceResize(textArea);
       }
       const composerValue = textArea.value;
+      if (saveDrafts) {
+        setDraft({ id: draftId, value: composerValue });
+      }
       const restorePaste = (target: HTMLTextAreaElement) => {
         target.setSelectionRange(selectionStart, selectionStart);
         insertTextAtCursor(target, pastedText);
@@ -384,18 +387,20 @@ export default function useTextarea({
 
         restorePaste(currentTextArea);
         if (saveDrafts) {
-          const currentDraftId = isSubmittingRef.current
-            ? getPendingDraftId(index)
-            : (conversationIdRef.current ?? Constants.NEW_CONVO);
-          setDraft({ id: currentDraftId, value: currentTextArea.value });
+          setDraft({
+            id: getComposerDraftId(index, conversationIdRef.current, isSubmittingRef.current),
+            value: currentTextArea.value,
+          });
         }
         return true;
       };
       const clearPendingPasteDraft = (fileId: string, removeFile = false) => {
         removePendingTextAttachmentDraft({ id: draftId, fileId, removeFile });
-        const currentDraftId = isSubmittingRef.current
-          ? getPendingDraftId(index)
-          : (conversationIdRef.current ?? Constants.NEW_CONVO);
+        const currentDraftId = getComposerDraftId(
+          index,
+          conversationIdRef.current,
+          isSubmittingRef.current,
+        );
         if (currentDraftId !== draftId) {
           removePendingTextAttachmentDraft({ id: currentDraftId, fileId, removeFile });
         }
@@ -412,6 +417,8 @@ export default function useTextarea({
             fileId,
             text: pastedText,
             selectionStart,
+            selectionEnd,
+            replacedText,
           });
         },
         onSuccess: (fileId) => {

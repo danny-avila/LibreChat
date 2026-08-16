@@ -1,7 +1,13 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Constants, EToolResources } from 'librechat-data-provider';
 import type { UploadLifecycleCallbacks } from '~/hooks/Files/useFileHandling';
-import { getFilesDraft, getPendingDraftId, renewNewConversationDraftToken } from '~/utils/drafts';
+import {
+  getDraft,
+  getFilesDraft,
+  getNewConversationDraftId,
+  getPendingDraftId,
+  renewNewConversationDraftToken,
+} from '~/utils/drafts';
 
 const mockForceResize = jest.fn();
 const mockInsertTextAtCursor = jest.fn();
@@ -453,6 +459,64 @@ describe('useTextarea long-paste fallback', () => {
       ),
     );
     expect(getFilesDraft(Constants.PENDING_CONVO)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(uploadLifecycle).toBeDefined();
+  });
+
+  it('stores a pending paste under the idle unsaved pane draft key', async () => {
+    mockIndex = 1;
+    mockConversation = { endpoint: 'openAI', conversationId: Constants.NEW_CONVO as string };
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        lifecycle?.onStart?.('pane-1-new-file');
+        return Promise.resolve(true);
+      },
+    );
+    const { result } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() =>
+      expect(
+        getFilesDraft(getNewConversationDraftId(1)).pendingPastes['pane-1-new-file']?.text,
+      ).toBe(pastedText),
+    );
+    expect(getFilesDraft(Constants.NEW_CONVO)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(uploadLifecycle).toBeDefined();
+  });
+
+  it('persists the replaced selection so reload recovery can drop stale draft text', async () => {
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        lifecycle?.onStart?.('replaced-file');
+        return Promise.resolve(true);
+      },
+    );
+    const { result, textArea } = renderTextareaHook();
+    textArea.value = 'before selected after';
+    textArea.setSelectionRange(7, 15);
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() =>
+      expect(getFilesDraft('convo-1').pendingPastes['replaced-file']).toEqual({
+        text: pastedText,
+        selectionStart: 7,
+        selectionEnd: 15,
+        replacedText: 'selected',
+      }),
+    );
+    expect(getDraft('convo-1')).toBe('before  after');
+    expect(textArea.value).toBe('before  after');
     expect(uploadLifecycle).toBeDefined();
   });
 

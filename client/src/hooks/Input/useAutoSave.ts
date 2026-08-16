@@ -1,16 +1,19 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import debounce from 'lodash/debounce';
 import { SetterOrUpdater, useRecoilValue } from 'recoil';
-import { LocalStorageKeys } from 'librechat-data-provider';
+import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { PendingTextAttachmentDraft } from '~/utils';
 import type { ExtendedFile } from '~/common';
 import {
+  applyPendingPasteToDraft,
   clearDraft,
   getDraft,
   getFilesDraft,
+  getNewConversationDraftId,
   getPendingDraftId,
   isAskAnswerDraftId,
+  isNewConversationDraftId,
   setDraft,
   setFilesDraft,
 } from '~/utils';
@@ -45,7 +48,9 @@ export const useAutoSave = ({
   const { setValue } = useChatFormContext();
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
   const pendingDraftId = getPendingDraftId(index);
-  const conversationId = draftId ?? (isSubmitting ? pendingDraftId : _conversationId);
+  const conversationDraftId =
+    _conversationId === Constants.NEW_CONVO ? getNewConversationDraftId(index) : _conversationId;
+  const conversationId = draftId ?? (isSubmitting ? pendingDraftId : conversationDraftId);
 
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const fileIds = useMemo(() => Array.from(files.keys()), [files]);
@@ -122,8 +127,7 @@ export const useAutoSave = ({
         .sort((a, b) => b.selectionStart - a.selectionStart || b.index - a.index);
 
       for (const pendingPaste of orderedPastes) {
-        const insertionPoint = Math.min(pendingPaste.selectionStart, draftText.length);
-        draftText = `${draftText.slice(0, insertionPoint)}${pendingPaste.text}${draftText.slice(insertionPoint)}`;
+        draftText = applyPendingPasteToDraft(draftText, pendingPaste);
       }
 
       if (pendingPastes.length > 0) {
@@ -228,6 +232,7 @@ export const useAutoSave = ({
         prevConversationIdRef.current === pendingDraftId &&
         conversationId !== pendingDraftId &&
         !isAskAnswerDraftId(conversationId) &&
+        !isNewConversationDraftId(conversationId) &&
         conversationId.length > 3
       ) {
         const pendingDraft = localStorage.getItem(

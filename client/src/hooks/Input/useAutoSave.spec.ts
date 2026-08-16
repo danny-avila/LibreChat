@@ -145,6 +145,36 @@ describe('useAutoSave — conversation switching', () => {
     });
     expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
   });
+
+  it('replaces a stale selected range when recovering a pending paste after reload', () => {
+    mockGetDraft.mockReturnValue('before selected after');
+    setFilesDraft('convo-1', {
+      fileIds: ['pending-paste-file'],
+      pendingPastes: {
+        'pending-paste-file': {
+          text: 'recovered pasted text',
+          selectionStart: 7,
+          selectionEnd: 15,
+          replacedText: 'selected',
+        },
+      },
+    });
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'before recovered pasted text after');
+    expect(mockSetDraft).toHaveBeenCalledWith({
+      id: 'convo-1',
+      value: 'before recovered pasted text after',
+    });
+  });
 });
 
 describe('useAutoSave — ask-answer draft swap', () => {
@@ -355,5 +385,39 @@ describe('useAutoSave — side-by-side pending drafts', () => {
     expect(getFilesDraft(pane0PendingId).pendingPastes['pane-0-file']?.text).toBe('pane 0 paste');
     expect(getFilesDraft(pane1PendingId)).toEqual({ fileIds: [], pendingPastes: {} });
     expect(mockSetValue).toHaveBeenLastCalledWith('text', 'pane 1 paste');
+  });
+
+  it('restores only this pane idle unsaved file draft', () => {
+    mockGetDraft.mockImplementation((id: string) =>
+      id === `${Constants.NEW_CONVO}:1` ? 'pane 1 draft' : 'pane 0 draft',
+    );
+    setFilesDraft(Constants.NEW_CONVO, {
+      fileIds: ['pane-0-file'],
+      pendingPastes: {
+        'pane-0-file': { text: 'pane 0 paste', selectionStart: 0 },
+      },
+    });
+    setFilesDraft(`${Constants.NEW_CONVO}:1`, {
+      fileIds: ['pane-1-file'],
+      pendingPastes: {
+        'pane-1-file': { text: 'pane 1 paste', selectionStart: 12 },
+      },
+    });
+
+    renderHook(() =>
+      useAutoSave({
+        index: 1,
+        conversationId: Constants.NEW_CONVO,
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'pane 1 draftpane 1 paste');
+    expect(getFilesDraft(Constants.NEW_CONVO).pendingPastes['pane-0-file']?.text).toBe(
+      'pane 0 paste',
+    );
+    expect(getFilesDraft(`${Constants.NEW_CONVO}:1`)).toEqual({ fileIds: [], pendingPastes: {} });
   });
 });

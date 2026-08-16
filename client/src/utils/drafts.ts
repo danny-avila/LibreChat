@@ -4,6 +4,8 @@ import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 export type PendingTextAttachmentDraft = {
   text: string;
   selectionStart: number;
+  selectionEnd?: number;
+  replacedText?: string;
 };
 
 export type FilesDraft = {
@@ -14,6 +16,8 @@ export type FilesDraft = {
 type StoredPendingTextAttachmentDraft = {
   encodedText: string;
   selectionStart: number;
+  selectionEnd?: number;
+  encodedReplacedText?: string;
 };
 
 type StoredFilesDraft = {
@@ -41,6 +45,42 @@ export const renewNewConversationDraftToken = (index = 0): void => {
 /** Draft key used while a run is in flight. Extra panes get a suffix so one run cannot migrate another pane's attachments. */
 export const getPendingDraftId = (index = 0): string =>
   index === 0 ? Constants.PENDING_CONVO : `${Constants.PENDING_CONVO}:${index}`;
+
+/** Draft key for an idle unsaved chat. Extra panes get a suffix so two new composers do not share FILES_DRAFT. */
+export const getNewConversationDraftId = (index = 0): string =>
+  index === 0 ? Constants.NEW_CONVO : `${Constants.NEW_CONVO}:${index}`;
+
+export const isNewConversationDraftId = (id?: string | null): boolean =>
+  typeof id === 'string' &&
+  (id === Constants.NEW_CONVO || id.startsWith(`${Constants.NEW_CONVO}:`));
+
+export const getConversationDraftId = (index = 0, conversationId?: string | null): string =>
+  conversationId == null || conversationId === '' || conversationId === Constants.NEW_CONVO
+    ? getNewConversationDraftId(index)
+    : conversationId;
+
+export const getComposerDraftId = (
+  index = 0,
+  conversationId?: string | null,
+  isSubmitting = false,
+): string =>
+  isSubmitting ? getPendingDraftId(index) : getConversationDraftId(index, conversationId);
+
+export const applyPendingPasteToDraft = (
+  draftText: string,
+  pendingPaste: PendingTextAttachmentDraft,
+): string => {
+  const start = Math.min(pendingPaste.selectionStart, draftText.length);
+  const replacedText = pendingPaste.replacedText ?? '';
+  if (
+    replacedText.length > 0 &&
+    draftText.slice(start, start + replacedText.length) === replacedText
+  ) {
+    return `${draftText.slice(0, start)}${pendingPaste.text}${draftText.slice(start + replacedText.length)}`;
+  }
+
+  return `${draftText.slice(0, start)}${pendingPaste.text}${draftText.slice(start)}`;
+};
 
 export const clearDraft = debounce((id?: string | null) => {
   localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${id ?? ''}`);
@@ -94,6 +134,12 @@ export const getFilesDraft = (id: string): FilesDraft => {
           {
             text: decodeBase64(pendingPaste.encodedText),
             selectionStart: pendingPaste.selectionStart,
+            ...(pendingPaste.selectionEnd != null
+              ? { selectionEnd: pendingPaste.selectionEnd }
+              : {}),
+            ...(pendingPaste.encodedReplacedText
+              ? { replacedText: decodeBase64(pendingPaste.encodedReplacedText) }
+              : {}),
           },
         ],
       ),
@@ -128,6 +174,13 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
         {
           encodedText: encodeBase64(pendingPaste.text),
           selectionStart: pendingPaste.selectionStart,
+          ...(pendingPaste.selectionEnd != null &&
+          pendingPaste.selectionEnd !== pendingPaste.selectionStart
+            ? { selectionEnd: pendingPaste.selectionEnd }
+            : {}),
+          ...(pendingPaste.replacedText
+            ? { encodedReplacedText: encodeBase64(pendingPaste.replacedText) }
+            : {}),
         },
       ],
     ),
@@ -144,18 +197,27 @@ export const setPendingTextAttachmentDraft = ({
   fileId,
   text,
   selectionStart,
+  selectionEnd,
+  replacedText,
 }: {
   id: string;
   fileId: string;
   text: string;
   selectionStart: number;
+  selectionEnd?: number;
+  replacedText?: string;
 }): void => {
   const draft = getFilesDraft(id);
   setFilesDraft(id, {
     fileIds: draft.fileIds.includes(fileId) ? draft.fileIds : [...draft.fileIds, fileId],
     pendingPastes: {
       ...draft.pendingPastes,
-      [fileId]: { text, selectionStart },
+      [fileId]: {
+        text,
+        selectionStart,
+        ...(selectionEnd != null ? { selectionEnd } : {}),
+        ...(replacedText ? { replacedText } : {}),
+      },
     },
   });
 };
