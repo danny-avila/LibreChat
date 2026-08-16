@@ -5,6 +5,10 @@ import { DropdownPopup, TooltipAnchor } from '@librechat/client';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
 import type { FC } from 'react';
 import type * as t from '~/common';
+import {
+  sectionActionClassName,
+  sectionActionIconClassName,
+} from '~/components/Conversations/styles';
 import { useGetConversationTags } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -106,19 +110,14 @@ const BookmarkNav: FC<BookmarkNavProps> = ({ tags, setTags }: BookmarkNavProps) 
               id="bookmark-nav-menu-button"
               aria-label={buttonAriaLabel}
               aria-pressed={tags.length > 0}
-              className={cn(
-                'flex items-center justify-center',
-                'size-9 border-none text-text-primary hover:bg-surface-hover hover:text-text-primary',
-                'rounded-lg border-none p-2 hover:bg-surface-active-alt',
-                'outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
-                isMenuOpen ? 'bg-surface-hover' : '',
-              )}
+              /** Matches the Projects heading's actions — it sits beside a section heading too. */
+              className={cn(sectionActionClassName, isMenuOpen && 'bg-surface-active-alt')}
               data-testid="bookmark-menu"
             >
               {tags.length > 0 ? (
-                <BookmarkFilledIcon aria-hidden="true" className="icon-lg text-text-primary" />
+                <BookmarkFilledIcon aria-hidden="true" className={sectionActionIconClassName} />
               ) : (
-                <BookmarkIcon aria-hidden="true" className="icon-lg text-text-primary" />
+                <BookmarkIcon aria-hidden="true" className={sectionActionIconClassName} />
               )}
             </Ariakit.MenuButton>
           }

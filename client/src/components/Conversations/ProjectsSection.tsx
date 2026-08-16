@@ -39,6 +39,7 @@ import {
 } from '~/data-provider';
 import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
+import { sectionActionClassName } from './styles';
 import { clearMessagesCache, cn } from '~/utils';
 import { NotificationSeverity } from '~/common';
 import Convo from './Convo';
@@ -46,8 +47,7 @@ import store from '~/store';
 
 const INLINE_CHAT_LIMIT = 8;
 
-const iconButtonClassName =
-  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-secondary outline-none transition-colors hover:bg-surface-active-alt hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary';
+const iconButtonClassName = sectionActionClassName;
 
 function ProjectRenameDialog({
   open,
