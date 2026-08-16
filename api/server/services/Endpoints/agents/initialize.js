@@ -2,6 +2,7 @@ const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator, GraphNodeKeys } = require('@librechat/agents');
 const {
   checkAccess,
+  resolveSender,
   loadSkillStates,
   initializeAgent,
   isMemoryEnabled,
@@ -28,7 +29,6 @@ const {
   PermissionTypes,
   MAX_SUBAGENT_DEPTH,
   isAgentsEndpoint,
-  getResponseSender,
   AgentCapabilities,
   Tools,
   MAX_SUBAGENT_GRAPH_NODES,
@@ -1070,20 +1070,22 @@ const initializeClient = async ({
       });
     } catch (err) {
       logger.error(
-        '[api/server/controllers/agents/client.js #titleConvo] Error getting custom endpoint config',
+        '[/api/server/services/Endpoints/agents/initialize.js] Error getting custom endpoint config',
         err,
       );
     }
   }
 
-  const sender =
-    primaryAgent.name ??
-    getResponseSender({
+  const sender = resolveSender({
+    agent: primaryConfig,
+    specLabel: selectedModelSpec?.label,
+    endpointOption: {
       ...endpointOption,
       model: endpointOption.model_parameters.model,
       modelDisplayLabel: endpointConfig?.modelDisplayLabel,
       modelLabel: endpointOption.model_parameters.modelLabel,
-    });
+    },
+  });
 
   /** History priming uses the user's full ACL-accessible skill set (not
    *  per-agent scoped) because prior turns may reference skills no longer

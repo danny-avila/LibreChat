@@ -1,6 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import type { TMessage, TConversation } from 'librechat-data-provider';
+import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { LocalizeFunction, TMessageProps } from '~/common';
 import {
   clearMessagesCache,
@@ -12,6 +13,7 @@ import {
   areMessageFieldsEqual,
   areMessageRowPropsEqual,
   isSubmittableMessage,
+  createDualMessageContent,
 } from '../messages';
 
 const translations: Record<string, string> = {
@@ -367,5 +369,61 @@ describe('isSubmittableMessage', () => {
 
   it('accepts text alongside files', () => {
     expect(isSubmittableMessage('Translate this', 1)).toBe(true);
+  });
+});
+
+describe('createDualMessageContent', () => {
+  /** Custom endpoints carry their configured name (e.g. "Together AI") in
+   *  `endpoint` at runtime, which `TConversation` types as `EModelEndpoint`. */
+  const asConvo = (convo: Partial<Omit<TConversation, 'endpoint'>> & { endpoint: string }) =>
+    convo as unknown as TConversation;
+  const agentIds = (parts: ReturnType<typeof createDualMessageContent>) =>
+    parts.map((part) => (part as unknown as { agentId: string }).agentId);
+
+  it('encodes the model spec label into ephemeral agent ids', () => {
+    const parts = createDualMessageContent(
+      asConvo({ endpoint: 'Together AI', model: 'Qwen/Qwen2.5-72B-Instruct', spec: 'fast-qwen' }),
+      asConvo({ endpoint: 'openAI', model: 'gpt-4o', modelLabel: 'My GPT' }),
+      undefined,
+      [{ name: 'fast-qwen', label: 'Fast Qwen' }],
+    );
+    expect(agentIds(parts)).toEqual([
+      'Together AI__Qwen/Qwen2.5-72B-Instruct___Fast Qwen',
+      'openAI__gpt-4o___My GPT____1',
+    ]);
+  });
+
+  it('falls back to the endpoint modelDisplayLabel when no labels are set', () => {
+    const endpointsConfig = {
+      'Together AI': { modelDisplayLabel: 'Together' },
+    } as unknown as TEndpointsConfig;
+    const parts = createDualMessageContent(
+      asConvo({ endpoint: 'Together AI', model: 'mixtral-8x7b' }),
+      asConvo({ endpoint: 'Together AI', model: 'mixtral-8x7b' }),
+      endpointsConfig,
+    );
+    expect(agentIds(parts)).toEqual([
+      'Together AI__mixtral-8x7b___Together',
+      'Together AI__mixtral-8x7b___Together____1',
+    ]);
+  });
+
+  it('omits the sender segment entirely when no label resolves', () => {
+    const parts = createDualMessageContent(
+      asConvo({ endpoint: 'Together AI', model: 'mixtral-8x7b' }),
+      asConvo({ endpoint: 'Together AI', model: 'mixtral-8x7b' }),
+    );
+    expect(agentIds(parts)).toEqual([
+      'Together AI__mixtral-8x7b',
+      'Together AI__mixtral-8x7b____1',
+    ]);
+  });
+
+  it('passes real agent ids through, suffixing only the added agent', () => {
+    const parts = createDualMessageContent(
+      asConvo({ endpoint: 'agents', agent_id: 'agent_abc123' }),
+      asConvo({ endpoint: 'agents', agent_id: 'agent_abc123' }),
+    );
+    expect(agentIds(parts)).toEqual(['agent_abc123', 'agent_abc123____1']);
   });
 });
