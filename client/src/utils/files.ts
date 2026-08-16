@@ -273,6 +273,38 @@ export const validateFileSizes = ({
   return true;
 };
 
+type FileDuplicateValidationParams = {
+  fileList: File[];
+  files: Map<string, ExtendedFile>;
+  setError: (error: string) => void;
+};
+
+export const validateFileDuplicates = ({
+  files,
+  fileList,
+  setError,
+}: FileDuplicateValidationParams): boolean => {
+  const combinedFilesInfo = [
+    ...Array.from(files.values()).map(
+      (file) =>
+        `${file.file?.name ?? file.filename}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`,
+    ),
+    ...fileList.map(
+      (file: File | undefined) =>
+        `${file?.name}-${file?.size}-${file?.type.split('/')[0] ?? 'file'}`,
+    ),
+  ];
+
+  const uniqueFilesSet = new Set(combinedFilesInfo);
+
+  if (uniqueFilesSet.size !== combinedFilesInfo.length) {
+    setError('com_error_files_dupe');
+    return false;
+  }
+
+  return true;
+};
+
 export const validateFiles = ({
   files,
   fileList,
@@ -346,26 +378,7 @@ export const validateFiles = ({
     return false;
   }
 
-  const existingFiles = Array.from(files.values());
-  const combinedFilesInfo = [
-    ...existingFiles.map(
-      (file) =>
-        `${file.file?.name ?? file.filename}-${file.size}-${file.type?.split('/')[0] ?? 'file'}`,
-    ),
-    ...fileList.map(
-      (file: File | undefined) =>
-        `${file?.name}-${file?.size}-${file?.type.split('/')[0] ?? 'file'}`,
-    ),
-  ];
-
-  const uniqueFilesSet = new Set(combinedFilesInfo);
-
-  if (uniqueFilesSet.size !== combinedFilesInfo.length) {
-    setError('com_error_files_dupe');
-    return false;
-  }
-
-  return true;
+  return validateFileDuplicates({ files, fileList, setError });
 };
 
 export type UploadOptionContext = {

@@ -125,11 +125,12 @@ jest.mock('../useUpdateFiles', () => ({
 }));
 
 jest.mock('~/utils', () => {
-  const { validateFileSizes } = jest.requireActual('~/utils/files');
+  const { validateFileSizes, validateFileDuplicates } = jest.requireActual('~/utils/files');
   return {
     logger: { log: jest.fn() },
     validateFiles: jest.fn(() => true),
     validateFileSizes: jest.fn(validateFileSizes),
+    validateFileDuplicates: jest.fn(validateFileDuplicates),
     cachePreview: jest.fn(),
     getCachedPreview: jest.fn(() => undefined),
     removePreviewEntry: jest.fn(),
@@ -138,12 +139,16 @@ jest.mock('~/utils', () => {
 
 const mockValidateFiles = jest.requireMock('~/utils').validateFiles;
 const mockValidateFileSizes = jest.requireMock('~/utils').validateFileSizes;
+const mockValidateFileDuplicates = jest.requireMock('~/utils').validateFileDuplicates;
 
 describe('useFileHandling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockValidateFiles.mockImplementation(() => true);
     mockValidateFileSizes.mockImplementation(jest.requireActual('~/utils/files').validateFileSizes);
+    mockValidateFileDuplicates.mockImplementation(
+      jest.requireActual('~/utils/files').validateFileDuplicates,
+    );
     mockProcessFileForUpload.mockImplementation(async (file: File) => file);
     mockResizeImageIfNeeded.mockImplementation(async (file: File) => ({ file, resized: false }));
     mockWaitForConfig.mockResolvedValue(undefined);
@@ -332,6 +337,44 @@ describe('useFileHandling', () => {
         expect(mockMutate).not.toHaveBeenCalled();
         expect(mockShowToast).toHaveBeenCalledWith({
           message: 'Total file size limit exceeded: 7 MB',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('rejects a reattached image that resizing turns into a duplicate', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        const originalFile = makeSizedFile('photo.jpg', 'image/jpeg', 6 * megabyte);
+        mockResizeImageIfNeeded.mockImplementation(async () => ({
+          file: makeSizedFile('photo.jpg', 'image/jpeg', 4 * megabyte),
+          resized: true,
+        }));
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([originalFile]);
+          await Promise.resolve();
+        });
+
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          await result.current.handleFiles([originalFile]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockValidateFileDuplicates).toHaveBeenCalledTimes(2);
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_error_files_dupe',
           status: 'error',
           duration: 5000,
         });

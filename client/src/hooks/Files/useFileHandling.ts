@@ -23,6 +23,7 @@ import {
   validateFileSizes,
   getCachedPreview,
   removePreviewEntry,
+  validateFileDuplicates,
 } from '~/utils';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
@@ -471,14 +472,22 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       filesRef.current = existingFiles;
     };
 
-    let sizesAreValid: boolean;
+    const processedFileList = processedUploads.map(({ extendedFile }) => extendedFile.file as File);
+
+    let batchIsValid: boolean;
     try {
-      sizesAreValid = validateFileSizes({
-        files: existingFiles,
-        fileList: processedUploads.map(({ extendedFile }) => extendedFile.file as File),
-        setError,
-        endpointFileConfig,
-      });
+      batchIsValid =
+        validateFileDuplicates({
+          files: existingFiles,
+          fileList: processedFileList,
+          setError,
+        }) &&
+        validateFileSizes({
+          files: existingFiles,
+          fileList: processedFileList,
+          setError,
+          endpointFileConfig,
+        });
     } catch (error) {
       console.error('file validation error', error);
       setError('com_error_files_validation');
@@ -486,7 +495,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       setFilesLoading(false);
       return;
     }
-    if (!sizesAreValid) {
+    if (!batchIsValid) {
       discardProcessedUploads();
       setFilesLoading(false);
       return;
