@@ -177,7 +177,7 @@ describe('reasoning labels', () => {
 
     expect(generate).toHaveBeenCalledTimes(1);
     expect(generate).toHaveBeenCalledWith(
-      expect.objectContaining({ visibleReasoning: '12345', revision: 1 }),
+      expect.objectContaining({ visibleReasoning: '12345', revision: 2 }),
     );
   });
 
