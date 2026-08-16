@@ -24,9 +24,13 @@ export function getHeaderModelName(
 }
 
 /** Both names occupy one grid cell so the slot is sized by the longer of the
- *  two and neither reflows the header as they cross over. */
+ *  two and neither reflows the header as they cross over.
+ *
+ *  Timed off the same motion role as the timestamp and the footer actions, so a
+ *  keyboard focus that reveals all three lands them together instead of staggering
+ *  across the card-resize spring this used to borrow. */
 const labelSlot =
-  '[grid-area:1/1] truncate transition-[opacity,transform,filter] [transition-duration:var(--resize-dur)] [transition-timing-function:var(--resize-ease)] motion-reduce:transition-none motion-reduce:transform-none motion-reduce:blur-none';
+  '[grid-area:1/1] truncate transition-[opacity,transform,filter] duration-theme-normal ease-out motion-reduce:transition-none motion-reduce:transform-none motion-reduce:blur-none';
 
 /** Provider name that crossfades to the model name. A pointer swaps it on the
  *  label itself; keyboard focus landing anywhere in the message row swaps it

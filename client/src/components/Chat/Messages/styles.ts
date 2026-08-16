@@ -10,9 +10,14 @@ import { cn } from '~/utils';
  * expand toggle in the message body leaves focus parked there, and `:focus-within`
  * would hold the whole footer open with the pointer nowhere near the row. An action
  * that opens a surface keeps the toolbar up through `hover-button-active` instead.
+ *
+ * The transition names `color` and `background-color` alongside `opacity` rather than
+ * naming opacity alone: `cn` merges the whole `transition-*` group, so a bare
+ * `transition-opacity` here would replace the `transition-colors` a `Button` brings and
+ * the hover tint would snap instead of fading.
  */
 export const revealOnRowHoverClasses =
-  'group-has-[:focus-visible]:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0';
+  'transition-[opacity,color,background-color] duration-theme-normal ease-out group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 motion-reduce:transition-none [@media(hover:hover)]:opacity-0';
 
 /**
  * The message footer, holding the height of its action row.

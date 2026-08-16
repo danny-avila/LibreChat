@@ -14,6 +14,20 @@ describe('revealOnRowHoverClasses', () => {
   it('does not reveal on plain focus-within', () => {
     expect(revealOnRowHoverClasses).not.toContain('group-focus-within:');
   });
+
+  it('fades on the shared motion role rather than snapping', () => {
+    expect(revealOnRowHoverClasses).toContain('duration-theme-normal');
+    expect(revealOnRowHoverClasses).toContain('ease-out');
+    expect(revealOnRowHoverClasses).toContain('motion-reduce:transition-none');
+  });
+
+  /* `cn` merges the whole `transition-*` group, so a bare `transition-opacity`
+     would replace the `transition-colors` a `Button` contributes and the hover
+     tint would snap. The colour properties have to ride along explicitly. */
+  it('names the colour properties alongside opacity', () => {
+    expect(revealOnRowHoverClasses).toContain('transition-[opacity,color,background-color]');
+    expect(revealOnRowHoverClasses).not.toContain('transition-opacity');
+  });
 });
 
 describe('hoverButtonClasses', () => {
