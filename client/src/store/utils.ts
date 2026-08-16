@@ -12,6 +12,19 @@ export function atomWithLocalStorage<T>(
     effects_UNSTABLE: [
       ({ setSelf, onSet }) => {
         const savedValue = localStorage.getItem(key);
+        if (savedValue === null) {
+          /**
+           * The default is captured when the module is evaluated, which can be
+           * long before anything subscribes — a login screen resized before the
+           * app mounts, for instance. Normalizing it here too re-checks that
+           * assumption at initialization. A caller without a normalizer gets
+           * the identity function, so this is inert for them.
+           */
+          const normalizedDefault = normalizeSavedValue(defaultValue);
+          if (!Object.is(normalizedDefault, defaultValue)) {
+            setSelf(normalizedDefault);
+          }
+        }
         if (savedValue !== null) {
           try {
             const parsedValue = JSON.parse(savedValue) as T;

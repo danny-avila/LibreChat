@@ -62,6 +62,24 @@ describe('sidebarExpanded', () => {
     expect(await readInitialValue()).toBe(false);
   });
 
+  /**
+   * The default is captured when the module is evaluated, which on a login
+   * screen can be long before the app mounts. Without a persisted key there is
+   * no saved value to normalize, so a viewport that narrows in between would
+   * otherwise leave the drawer covering the first authenticated screen.
+   */
+  it('rechecks the viewport when no value was ever persisted', async () => {
+    setViewport(false);
+    const { snapshot_UNSTABLE } = await import('recoil');
+    const settings = await import('../settings');
+
+    setViewport(true);
+
+    expect(snapshot_UNSTABLE().getLoadable(settings.default.sidebarExpanded).valueOrThrow()).toBe(
+      false,
+    );
+  });
+
   it('starts open on a wide viewport with nothing persisted', async () => {
     setViewport(false);
 
