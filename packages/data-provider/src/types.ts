@@ -419,6 +419,10 @@ export type TArchiveConversationRequest = {
 
 export type TArchiveConversationResponse = TConversation;
 
+export type TArchiveAllConversationsResponse = {
+  archivedCount: number;
+};
+
 export type TPinConversationRequest = {
   conversationId: string;
   pinned: boolean;

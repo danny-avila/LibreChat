@@ -230,6 +230,21 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
   }
 });
 
+/**
+ * Archives every conversation currently visible to the user.
+ * @route POST /archive/all
+ * @returns {object} 200 - The number of conversations archived.
+ */
+router.post('/archive/all', async (req, res) => {
+  try {
+    const dbResponse = await db.archiveAllConvos(req.user.id);
+    res.status(200).json(dbResponse);
+  } catch (error) {
+    logger.error('Error archiving all conversations', error);
+    res.status(500).send('Error archiving all conversations');
+  }
+});
+
 router.post('/pin', validateConvoAccess, async (req, res) => {
   const { conversationId, pinned } = req.body?.arg ?? {};
 

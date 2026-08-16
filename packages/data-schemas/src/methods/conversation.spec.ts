@@ -83,6 +83,8 @@ const getConvoFiles = (...args: Parameters<ConversationMethods['getConvoFiles']>
   methods.getConvoFiles(...args);
 const deleteConvos = (...args: Parameters<ConversationMethods['deleteConvos']>) =>
   methods.deleteConvos(...args);
+const archiveAllConvos = (...args: Parameters<ConversationMethods['archiveAllConvos']>) =>
+  methods.archiveAllConvos(...args);
 const getConvosByCursor = (...args: Parameters<ConversationMethods['getConvosByCursor']>) =>
   methods.getConvosByCursor(...args);
 const getConvosQueried = (...args: Parameters<ConversationMethods['getConvosQueried']>) =>
@@ -1721,6 +1723,123 @@ describe('Conversation Operations', () => {
       expect(tag?.count).toBe(1);
       const convo = await Conversation.findOne({ conversationId: convoId });
       expect(convo).toBeNull();
+    });
+  });
+
+  describe('archiveAllConvos', () => {
+    it('archives every unarchived conversation for the user only', async () => {
+      const first = uuidv4();
+      const second = uuidv4();
+      const otherUsers = uuidv4();
+      await Conversation.create([
+        { conversationId: first, user: 'user123', endpoint: EModelEndpoint.openAI },
+        { conversationId: second, user: 'user123', endpoint: EModelEndpoint.openAI },
+        { conversationId: otherUsers, user: 'user456', endpoint: EModelEndpoint.openAI },
+      ]);
+
+      const result = await archiveAllConvos('user123');
+
+      expect(result.archivedCount).toBe(2);
+      const archived = await Conversation.find({ user: 'user123' }).lean<IConversation[]>();
+      expect(archived.every((convo) => convo.isArchived === true)).toBe(true);
+      const untouched = await Conversation.findOne({
+        conversationId: otherUsers,
+      }).lean<IConversation>();
+      expect(untouched?.isArchived).not.toBe(true);
+    });
+
+    it('leaves already-archived conversations untouched', async () => {
+      const alreadyArchived = uuidv4();
+      await Conversation.create({
+        conversationId: alreadyArchived,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        isArchived: true,
+      });
+
+      const result = await archiveAllConvos('user123');
+
+      expect(result.archivedCount).toBe(0);
+    });
+
+    it('skips temporary and retention-expired conversations', async () => {
+      const temporary = uuidv4();
+      const expired = uuidv4();
+      const visible = uuidv4();
+      await Conversation.create([
+        {
+          conversationId: temporary,
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          isTemporary: true,
+          expiredAt: new Date(Date.now() + 60 * 60 * 1000),
+        },
+        {
+          conversationId: expired,
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          expiredAt: new Date(Date.now() - 60 * 60 * 1000),
+        },
+        { conversationId: visible, user: 'user123', endpoint: EModelEndpoint.openAI },
+      ]);
+
+      const result = await archiveAllConvos('user123');
+
+      expect(result.archivedCount).toBe(1);
+      const temporaryConvo = await Conversation.findOne({
+        conversationId: temporary,
+      }).lean<IConversation>();
+      const expiredConvo = await Conversation.findOne({
+        conversationId: expired,
+      }).lean<IConversation>();
+      expect(temporaryConvo?.isArchived).not.toBe(true);
+      expect(expiredConvo?.isArchived).not.toBe(true);
+    });
+
+    it('preserves each conversation updatedAt so the archived view keeps its order', async () => {
+      const convoId = uuidv4();
+      const updatedAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      await Conversation.create({
+        conversationId: convoId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        createdAt: updatedAt,
+        updatedAt,
+      });
+
+      await archiveAllConvos('user123');
+
+      const archived = await Conversation.findOne({
+        conversationId: convoId,
+      }).lean<IConversation>();
+      expect(archived?.updatedAt?.toISOString()).toBe(updatedAt.toISOString());
+    });
+
+    it('refreshes stats for every project the archived conversations belonged to', async () => {
+      const project = await ChatProject.create({ user: 'user123', name: 'Project' });
+      const projectId = project._id!.toString();
+      const convoId = uuidv4();
+      await Conversation.create({
+        conversationId: convoId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectId,
+      });
+      await ChatProject.findByIdAndUpdate(project._id, {
+        conversationCount: 1,
+        lastConversationId: convoId,
+      });
+
+      await archiveAllConvos('user123');
+
+      const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
+    });
+
+    it('returns zero when the user has no conversations', async () => {
+      const result = await archiveAllConvos('user123');
+      expect(result.archivedCount).toBe(0);
     });
   });
 

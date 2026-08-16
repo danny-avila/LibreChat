@@ -93,6 +93,7 @@ export interface ConversationMethods {
     user: string,
     filter: FilterQuery<IConversation>,
   ): Promise<DeleteResult & { messages: DeleteResult; conversationIds: string[] }>;
+  archiveAllConvos(user: string): Promise<{ archivedCount: number }>;
 }
 
 export function createConversationMethods(
@@ -1094,6 +1095,61 @@ export function createConversationMethods(
     }
   }
 
+  /**
+   * Archives every conversation the user can currently see in one pass. Temporary and
+   * retention-expired conversations are left alone: they are already hidden from the
+   * chat list, so archiving them would only resurrect them in the archived view.
+   */
+  async function archiveAllConvos(user: string) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const filter = {
+        user,
+        $and: [
+          { $or: [{ isArchived: false }, { isArchived: { $exists: false } }] },
+          getVisibleConversationRetentionFilter(),
+        ],
+      } as FilterQuery<IConversation>;
+
+      const projectIds = (await Conversation.distinct('chatProjectId', filter)).filter(
+        (projectId): projectId is string => Boolean(projectId),
+      );
+
+      /**
+       * `timestamps: false` keeps each conversation's own `updatedAt`, so the archived
+       * view stays sorted by real activity instead of collapsing onto the archive time.
+       */
+      const result = await Conversation.updateMany(
+        filter,
+        { $set: { isArchived: true } },
+        { timestamps: false },
+      );
+
+      const archivedCount = result.modifiedCount ?? 0;
+
+      /**
+       * Best-effort, mirroring `deleteConvos`: the conversations are already archived, so
+       * a stats failure must not hide that from the caller.
+       */
+      if (archivedCount > 0 && projectIds.length > 0) {
+        try {
+          await Promise.all(
+            projectIds.map((projectId) =>
+              refreshChatProjectStatsForUser(mongoose, user, projectId),
+            ),
+          );
+        } catch (error) {
+          logger.error('[archiveAllConvos] Conversations archived but stats refresh failed', error);
+        }
+      }
+
+      return { archivedCount };
+    } catch (error) {
+      logger.error('[archiveAllConvos] Error archiving conversations', error);
+      throw error;
+    }
+  }
+
   return {
     getConvoFiles,
     searchConversation,
@@ -1108,5 +1164,6 @@ export function createConversationMethods(
     getConvoRetention,
     getConvoTitle,
     deleteConvos,
+    archiveAllConvos,
   };
 }

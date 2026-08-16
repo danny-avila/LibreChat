@@ -704,6 +704,35 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('POST /archive/all', () => {
+    const { archiveAllConvos } = require('~/models');
+
+    it('archives every conversation for the authenticated user', async () => {
+      archiveAllConvos.mockResolvedValue({ archivedCount: 4 });
+
+      const response = await request(app).post('/api/convos/archive/all');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ archivedCount: 4 });
+      expect(archiveAllConvos).toHaveBeenCalledWith('test-user-123');
+    });
+
+    it('should return 500 when archiveAllConvos fails', async () => {
+      archiveAllConvos.mockRejectedValue(new Error('Database error'));
+
+      const response = await request(app).post('/api/convos/archive/all');
+
+      expect(response.status).toBe(500);
+      expect(response.text).toBe('Error archiving all conversations');
+
+      const { logger } = require('@librechat/data-schemas');
+      expect(logger.error).toHaveBeenCalledWith(
+        'Error archiving all conversations',
+        expect.any(Error),
+      );
+    });
+  });
+
   describe('POST /convos/pin', () => {
     const mockConversationId = 'conv-123';
     const { setConvoPinned } = require('~/models');

@@ -892,6 +892,10 @@ export function archiveConversation(
   return request.post(endpoints.archiveConversation(), { arg: payload });
 }
 
+export function archiveAllConversations(): Promise<t.TArchiveAllConversationsResponse> {
+  return request.post(endpoints.archiveAllConversations(), {});
+}
+
 export function listProjects(params?: q.ProjectListParams): Promise<q.ProjectListResponse> {
   return request.get(endpoints.projects(params ?? {}));
 }
