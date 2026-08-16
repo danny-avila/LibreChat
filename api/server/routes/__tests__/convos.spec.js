@@ -2,6 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 const MOCKS = '../__test-utils__/convos-route-mocks';
+const { archiveAllHandler } = require(MOCKS);
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () => require(MOCKS).api());
@@ -707,29 +708,15 @@ describe('Convos Routes', () => {
   describe('POST /archive/all', () => {
     const { archiveAllConvos } = require('~/models');
 
-    it('archives every conversation for the authenticated user', async () => {
+    it('delegates archive-all requests through the package API handler', async () => {
       archiveAllConvos.mockResolvedValue({ archivedCount: 4 });
 
       const response = await request(app).post('/api/convos/archive/all');
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ archivedCount: 4 });
+      expect(archiveAllHandler).toHaveBeenCalledTimes(1);
       expect(archiveAllConvos).toHaveBeenCalledWith('test-user-123');
-    });
-
-    it('should return 500 when archiveAllConvos fails', async () => {
-      archiveAllConvos.mockRejectedValue(new Error('Database error'));
-
-      const response = await request(app).post('/api/convos/archive/all');
-
-      expect(response.status).toBe(500);
-      expect(response.text).toBe('Error archiving all conversations');
-
-      const { logger } = require('@librechat/data-schemas');
-      expect(logger.error).toHaveBeenCalledWith(
-        'Error archiving all conversations',
-        expect.any(Error),
-      );
     });
   });
 

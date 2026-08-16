@@ -70,8 +70,13 @@ type ProjectCursor = {
 };
 
 type ProjectLean = IChatProject & { _id: Types.ObjectId };
+type ProjectStatsSnapshot = Pick<
+  IChatProject,
+  'conversationCount' | 'lastConversationAt' | 'lastConversationId'
+>;
 
 const VALID_SORT_FIELDS = new Set<ChatProjectSortBy>(['name', 'createdAt', 'lastConversationAt']);
+const PROJECT_STATS_REFRESH_MAX_ATTEMPTS = 3;
 
 function normalizeSortBy(sortBy?: string): ChatProjectSortBy {
   return VALID_SORT_FIELDS.has(sortBy as ChatProjectSortBy)
@@ -194,6 +199,19 @@ function visibleProjectConversationFilter(
   } as FilterQuery<IConversation>;
 }
 
+function projectStatsSnapshotFilter(
+  snapshot: ProjectStatsSnapshot,
+): FilterQuery<IChatProjectDocument> {
+  return {
+    conversationCount:
+      snapshot.conversationCount === undefined ? { $exists: false } : snapshot.conversationCount,
+    lastConversationAt:
+      snapshot.lastConversationAt === undefined ? { $exists: false } : snapshot.lastConversationAt,
+    lastConversationId:
+      snapshot.lastConversationId === undefined ? { $exists: false } : snapshot.lastConversationId,
+  };
+}
+
 export async function refreshChatProjectStatsForUser(
   mongoose: typeof import('mongoose'),
   user: string,
@@ -208,25 +226,44 @@ export async function refreshChatProjectStatsForUser(
   const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), user };
   const conversationFilter = visibleProjectConversationFilter(user, projectId);
 
-  const [conversationCount, latestConversation] = await Promise.all([
-    Conversation.countDocuments(conversationFilter),
-    Conversation.findOne(conversationFilter)
-      .select('conversationId updatedAt createdAt')
-      .sort({ updatedAt: -1, _id: -1 })
-      .lean<IConversation>(),
-  ]);
+  for (let attempt = 0; attempt < PROJECT_STATS_REFRESH_MAX_ATTEMPTS; attempt++) {
+    const snapshot = await ChatProject.findOne(projectFilter)
+      .select('conversationCount lastConversationAt lastConversationId')
+      .lean<ProjectStatsSnapshot>();
+    if (!snapshot) {
+      return null;
+    }
 
-  return await ChatProject.findOneAndUpdate(
-    projectFilter,
-    {
-      $set: {
-        conversationCount,
-        lastConversationAt: latestConversation?.updatedAt ?? latestConversation?.createdAt ?? null,
-        lastConversationId: latestConversation?.conversationId ?? null,
+    const [conversationCount, latestConversation] = await Promise.all([
+      Conversation.countDocuments(conversationFilter),
+      Conversation.findOne(conversationFilter)
+        .select('conversationId updatedAt createdAt')
+        .sort({ updatedAt: -1, _id: -1 })
+        .lean<IConversation>(),
+    ]);
+
+    const updatedProject = await ChatProject.findOneAndUpdate(
+      { ...projectFilter, ...projectStatsSnapshotFilter(snapshot) },
+      {
+        $set: {
+          conversationCount,
+          lastConversationAt:
+            latestConversation?.updatedAt ?? latestConversation?.createdAt ?? null,
+          lastConversationId: latestConversation?.conversationId ?? null,
+        },
       },
-    },
-    { new: true },
-  ).lean<IChatProject>();
+      { new: true },
+    ).lean<IChatProject>();
+    if (updatedProject) {
+      return updatedProject;
+    }
+  }
+
+  logger.warn('[refreshChatProjectStatsForUser] Stats changed during every refresh attempt', {
+    user,
+    projectId,
+  });
+  return await ChatProject.findOne(projectFilter).lean<IChatProject>();
 }
 
 export async function updateChatProjectLastConversationForUser(
