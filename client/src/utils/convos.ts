@@ -228,7 +228,15 @@ export function collectPinnedConversations(
       byId.set(conversation.conversationId, conversation);
     }
   }
-  return [...byId.values()];
+  /** The server returns pins newest-first, so a row merged in from the chats cache
+   * has to take its place in that order: a chat pinned while the dedicated refetch
+   * is failing is the newest pin, and appending it would bury it below the fold. */
+  return [...byId.values()].sort((a, b) => pinnedSortTime(b) - pinnedSortTime(a));
+}
+
+function pinnedSortTime(conversation: TConversation): number {
+  const timestamp = Date.parse(conversation.updatedAt ?? conversation.createdAt ?? '');
+  return Number.isNaN(timestamp) ? 0 : timestamp;
 }
 
 /**

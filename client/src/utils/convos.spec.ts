@@ -236,6 +236,29 @@ describe('Conversation Utilities', () => {
       const merged = collectPinnedConversations(undefined, [newlyPinned]);
       expect(merged).toEqual([newlyPinned]);
     });
+
+    /** A chat pinned while the dedicated refetch is failing is the newest pin, so the
+     * server would return it first; appending it would bury it below the fold. */
+    it('orders a fallback row by its timestamp rather than after every dedicated pin', () => {
+      const older = {
+        conversationId: 'old-pin',
+        title: 'Old pin',
+        pinned: true,
+        updatedAt: '2026-03-01T12:00:00.000Z',
+      } as TConversation;
+      const newest = {
+        conversationId: 'new-pin',
+        title: 'Just pinned',
+        pinned: true,
+        updatedAt: '2026-08-16T12:00:00.000Z',
+      } as TConversation;
+
+      const merged = collectPinnedConversations([older], [newest]);
+      expect(merged.map((conversation) => conversation.conversationId)).toEqual([
+        'new-pin',
+        'old-pin',
+      ]);
+    });
   });
 
   describe('normalizeConversationData', () => {
