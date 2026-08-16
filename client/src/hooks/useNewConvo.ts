@@ -300,6 +300,7 @@ const useNewConvo = (index = 0) => {
       disableFocus,
       buildDefault = true,
       keepAddedConvos = false,
+      keepComposerState = false,
       disableParams,
     }: {
       template?: Partial<TConversation>;
@@ -308,13 +309,18 @@ const useNewConvo = (index = 0) => {
       buildDefault?: boolean;
       disableFocus?: boolean;
       keepAddedConvos?: boolean;
+      /** Set when the call re-renders a composer an earlier call already opened, such as agent
+       * metadata arriving late. The user never left that composer, so its draft identity and its
+       * in-flight attachments outlive the refresh. */
+      keepComposerState?: boolean;
       disableParams?: boolean;
     } = {}) {
       const nextConversationId = _template.conversationId ?? '';
       const keepsExistingDraft =
-        nextConversationId !== '' &&
-        nextConversationId !== Constants.NEW_CONVO &&
-        !nextConversationId.startsWith('_');
+        keepComposerState ||
+        (nextConversationId !== '' &&
+          nextConversationId !== Constants.NEW_CONVO &&
+          !nextConversationId.startsWith('_'));
       if (!keepsExistingDraft) {
         renewNewConversationDraftToken(index);
       }
@@ -364,7 +370,11 @@ const useNewConvo = (index = 0) => {
         prevSpecName: prevConversation?.spec,
       });
 
-      if (conversation.conversationId === Constants.NEW_CONVO && !modelsData) {
+      if (
+        conversation.conversationId === Constants.NEW_CONVO &&
+        !modelsData &&
+        !keepComposerState
+      ) {
         const filesToDelete = Array.from(files.entries()).flatMap(([fileId, file]) => {
           clearUploadRecovery(fileId);
           if (file.temp_file_id && file.temp_file_id !== fileId) {
