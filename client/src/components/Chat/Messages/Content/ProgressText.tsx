@@ -2,9 +2,9 @@ import { ChevronDown } from 'lucide-react';
 import { Button } from '@librechat/client';
 import * as Popover from '@radix-ui/react-popover';
 import { isReportableRunStepDuration } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
-import CancelledIcon from './CancelledIcon';
 import { cn, getRunStepDurationLabels } from '~/utils';
+import CancelledIcon from './CancelledIcon';
+import { useLocalize } from '~/hooks';
 
 const wrapperClass =
   'progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5';
