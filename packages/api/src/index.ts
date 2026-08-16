@@ -25,6 +25,7 @@ export * from './mcp/tools';
 export * from './mcp/catalog/store';
 export * from './mcp/assistants';
 export * from './mcp/request';
+export * from './mcp/images';
 /* Utilities */
 export * from './mcp/utils';
 export * from './mcp/context';

@@ -578,6 +578,7 @@ const loadTools = async ({
           continue;
         }
         const mcpParams = {
+          request: options.req,
           mcpPermissionContext,
           index,
           signal,
