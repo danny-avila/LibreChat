@@ -168,7 +168,7 @@ function ShareArtifactsPanel({ contextValue }: ShareArtifactsPanelProps) {
 function ShareArtifactsOverlay({ contextValue }: ShareArtifactsPanelProps) {
   return (
     <div
-      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-full sm:max-w-[420px]"
+      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-full sm:max-w-[26.25rem]"
       role="complementary"
       aria-label="Artifacts panel"
     >

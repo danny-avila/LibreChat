@@ -295,7 +295,7 @@ function Conversation({
     actionVisibilityClassName = 'pointer-events-auto scale-x-100 opacity-100';
     /** Shift over the active row swaps the menu for archive and delete. */
     if (!isPopoverActive && isActiveConvo && isShiftHeld) {
-      actionWidthClassName = 'w-[60px]';
+      actionWidthClassName = 'w-[3.75rem]';
     } else {
       actionWidthClassName = isSmallScreen ? 'w-9' : 'w-7';
     }

@@ -142,7 +142,7 @@ function FileContext({
       <div className="flex items-center justify-between gap-2">
         {showHeader ? (
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+            <span className="truncate text-[0.6875rem] font-medium uppercase tracking-wide text-text-secondary">
               {localize('com_agents_file_context_label')}
             </span>
             <TooltipAnchor
@@ -159,7 +159,7 @@ function FileContext({
               }
             />
             {fileCount > 0 && (
-              <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-surface-tertiary px-1.5 text-[10px] font-medium text-text-secondary">
+              <span className="inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-surface-tertiary px-1.5 text-[0.625rem] font-medium text-text-secondary">
                 {fileCount}
               </span>
             )}
@@ -179,7 +179,7 @@ function FileContext({
         />
       )}
       {!agent_id && (
-        <p className="text-[11px] leading-snug text-text-secondary">
+        <p className="text-[0.6875rem] leading-snug text-text-secondary">
           {localize('com_agents_file_context_disabled')}
         </p>
       )}

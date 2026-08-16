@@ -324,7 +324,7 @@ export default function SharedLinks() {
         <OGDialogTemplate
           showCloseButton={false}
           title={localize('com_ui_delete_shared_link_heading')}
-          className="max-w-[450px]"
+          className="max-w-[28.125rem]"
           main={
             <>
               <div

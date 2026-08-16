@@ -96,7 +96,7 @@ export default function AccessRolesPicker({
           </Ariakit.MenuButton>
         }
         items={dropdownItems}
-        className="w-[280px]"
+        className="w-[17.5rem]"
       />
     </div>
   );

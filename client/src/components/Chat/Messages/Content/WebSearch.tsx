@@ -83,7 +83,7 @@ function SourceFaviconStack({ sources }: { sources: ValidSource[] }) {
           key={source.link}
           className={cn(
             'relative flex items-center justify-center rounded-full border border-border-medium bg-surface-secondary',
-            'h-[22px] w-[22px]',
+            'h-[1.375rem] w-[1.375rem]',
             i > 0 && '-ml-2.5',
           )}
           style={{ zIndex: MAX_VISIBLE_FAVICONS - i }}
@@ -378,7 +378,7 @@ export default function WebSearch({
                 <div
                   className={cn(
                     toolPanelSpacingClassName,
-                    'mt-1.5 max-h-[280px] overflow-y-auto rounded-lg border border-border-light',
+                    'mt-1.5 max-h-[17.5rem] overflow-y-auto rounded-lg border border-border-light',
                   )}
                 >
                   {allSources.map((source, i) => {
@@ -418,6 +418,7 @@ export default function WebSearch({
                             </span>
                           )}
                         </span>
+
                       </a>
                     );
                   })}

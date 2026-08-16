@@ -26,7 +26,7 @@ export default function Sidebar({
   const tabs = TABS.filter((t) => !t.show || t.show(ctx));
 
   return (
-    <div className="flex w-full flex-col gap-3 md:w-[230px]">
+    <div className="flex w-full flex-col gap-3 md:w-[14.375rem]">
       <div className="relative">
         <Search
           className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-text-tertiary"

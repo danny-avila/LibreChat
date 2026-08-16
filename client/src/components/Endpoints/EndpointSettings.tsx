@@ -30,7 +30,7 @@ export default function Settings({
 
   if (OptionComponent) {
     return (
-      <div className={cn('h-[500px] overflow-y-auto md:mb-2 md:h-[350px]', className)}>
+      <div className={cn('h-[31.25rem] overflow-y-auto md:mb-2 md:h-[21.875rem]', className)}>
         <OptionComponent
           conversation={conversation}
           setOption={setOption}
@@ -48,7 +48,12 @@ export default function Settings({
   }
 
   return (
-    <div className={cn('hide-scrollbar h-[500px] overflow-y-auto md:mb-2 md:h-[350px]', className)}>
+    <div
+      className={cn(
+        'hide-scrollbar h-[31.25rem] overflow-y-auto md:mb-2 md:h-[21.875rem]',
+        className,
+      )}
+    >
       <MultiViewComponent conversation={conversation} models={models} isPreset={isPreset} />
     </div>
   );

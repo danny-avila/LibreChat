@@ -111,7 +111,7 @@ function DeleteButton({
       </OGDialogTrigger>
       <OGDialogTemplate
         title={localize('com_ui_delete_agent')}
-        className="max-w-[450px]"
+        className="max-w-[28.125rem]"
         main={
           <>
             <div className="flex w-full flex-col items-center gap-2">

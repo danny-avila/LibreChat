@@ -116,7 +116,12 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
                 className="size-8 min-w-0 gap-1 rounded-sm p-0 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-border-heavy focus-visible:ring-offset-0 sm:h-auto sm:w-auto sm:px-1 sm:py-0"
                 onClick={handleCopy}
               >
-                <MorphIcon icon={isCopied ? Check : Copy} size={18} />
+                <span
+                  className="relative flex size-[1.125rem] items-center justify-center"
+                  aria-hidden="true"
+                >
+                  <MorphIcon icon={isCopied ? Check : Copy} size={18} />
+                </span>
                 <span className="hidden sm:inline">{localize('com_ui_copy_code')}</span>
               </Button>
               <OGDialogClose className="rounded-sm p-1 text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy">
@@ -127,7 +132,7 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
           </OGDialogTitle>
           {showCode && (
             <div className="border-b border-border-light bg-surface-secondary p-4">
-              <pre className="max-h-[150px] overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
+              <pre className="max-h-[9.375rem] overflow-auto whitespace-pre-wrap text-xs text-text-secondary">
                 {codeContent}
               </pre>
             </div>

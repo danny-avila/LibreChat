@@ -17,7 +17,12 @@ export default function AlternativeSettings({
   }
 
   return (
-    <div className={cn('hide-scrollbar h-[500px] overflow-y-auto md:mb-2 md:h-[350px]', className)}>
+    <div
+      className={cn(
+        'hide-scrollbar h-[31.25rem] overflow-y-auto md:mb-2 md:h-[21.875rem]',
+        className,
+      )}
+    >
       <Advanced conversation={conversation} setOption={setOption} isPreset={isPreset} />
     </div>
   );

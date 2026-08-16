@@ -161,7 +161,7 @@ function AssistantToolsDialog({
         style={{ minHeight: '610px' }}
       >
         <div>
-          <div className="flex items-center justify-between border-b-[1px] border-border-medium px-4 pb-4 pt-5 sm:p-6">
+          <div className="flex items-center justify-between border-b-[0.0625rem] border-border-medium px-4 pb-4 pt-5 sm:p-6">
             <div className="flex items-center">
               <div className="text-center sm:text-left">
                 <OGDialogTitle className="text-lg font-medium leading-6 text-text-primary">

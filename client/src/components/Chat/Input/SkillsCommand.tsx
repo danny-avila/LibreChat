@@ -14,6 +14,7 @@ import { showSkillsPopoverFamily } from './skillsState';
 import { useAgentsMapContext } from '~/Providers';
 import { ephemeralAgentByConvoId } from '~/store';
 import { isEphemeralAgent } from '~/common';
+import { uiScaleValueAtom } from '~/store/uiScale';
 import MentionItem from './MentionItem';
 import store from '~/store';
 
@@ -89,6 +90,7 @@ function SkillsCommandContent({
   agentId?: string | null;
 }) {
   const localize = useLocalize();
+  const uiScale = useAtomValue(uiScaleValueAtom);
   const setShowSkillsPopover = useSetAtom(showSkillsPopoverFamily(index));
   const setEphemeralAgent = useSetRecoilState(ephemeralAgentByConvoId(conversationId));
   const setPendingManualSkills = useSetRecoilState(
@@ -358,11 +360,11 @@ function SkillsCommandContent({
                 <List
                   width={width}
                   overscanRowCount={5}
-                  rowHeight={ROW_HEIGHT}
+                  rowHeight={ROW_HEIGHT * uiScale}
                   rowCount={matches.length}
                   rowRenderer={rowRenderer}
                   scrollToIndex={activeIndex}
-                  height={Math.min(matches.length * ROW_HEIGHT, 160)}
+                  height={Math.min(matches.length * ROW_HEIGHT, 160) * uiScale}
                 />
               )}
             </AutoSizer>

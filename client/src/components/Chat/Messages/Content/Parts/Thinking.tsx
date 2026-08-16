@@ -63,7 +63,7 @@ export const ThinkingContent: FC<{
 
   return (
     <div className="relative rounded-lg border border-border-light bg-surface-secondary p-3 pb-8 text-text-secondary">
-      <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>{content}</p>
+      <p className={cn('whitespace-pre-wrap leading-[1.625rem]', fontSize)}>{content}</p>
     </div>
   );
 });
@@ -117,7 +117,7 @@ export const ThinkingButton = memo(
           aria-expanded={isExpanded}
           aria-controls={contentId}
           className={cn(
-            'group/button flex flex-1 items-center justify-start rounded-lg pr-10 leading-[18px]',
+            'group/button flex flex-1 items-center justify-start rounded-lg pr-10 leading-[1.125rem]',
             fontSize,
           )}
         >
@@ -199,7 +199,7 @@ export const ThinkingLabel = memo(({ label, title }: { label: string; title?: st
   return (
     <div className="mb-2 pb-2 pt-2">
       <div
-        className={cn('flex w-full items-center justify-start leading-[18px]', fontSize)}
+        className={cn('flex w-full items-center justify-start leading-[1.125rem]', fontSize)}
         title={title}
       >
         <span className={cn(ROW_GLYPH_SLOT, 'relative mr-2')}>
@@ -267,7 +267,7 @@ export const FloatingThinkingBar = memo(
             >
               <MorphIcon
                 icon={isExpanded ? ChevronUpNode : ChevronDownNode}
-                className="h-[18px] w-[18px]"
+                className="h-[1.125rem] w-[1.125rem]"
               />
             </Button>
           }

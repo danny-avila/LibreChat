@@ -99,7 +99,7 @@ export default function AgentConfig() {
       <div className="mb-3 grid grid-cols-2 gap-2">
         <div className="flex min-w-0 flex-col">
           <Label
-            className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+            className="mb-1 block text-[0.6875rem] font-medium uppercase tracking-wide text-text-secondary"
             htmlFor="provider"
           >
             {localize('com_ui_model')} <span className="text-text-destructive">*</span>
@@ -133,7 +133,7 @@ export default function AgentConfig() {
         </div>
         <div className="flex flex-col">
           <Label
-            className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+            className="mb-1 block text-[0.6875rem] font-medium uppercase tracking-wide text-text-secondary"
             htmlFor="category-selector"
           >
             {localize('com_ui_category')} <span className="text-text-destructive">*</span>
@@ -157,7 +157,7 @@ export default function AgentConfig() {
 
       {/* SUPPORT CONTACT */}
       <div className="mb-3 flex flex-col">
-        <Label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+        <Label className="mb-1 block text-[0.6875rem] font-medium uppercase tracking-wide text-text-secondary">
           {localize('com_ui_support_contact')}
         </Label>
         <div className="space-y-2">

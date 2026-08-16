@@ -84,7 +84,7 @@ const FileUpload: React.FC<FileUploadProps> = ({
         )}
         aria-label={statusText}
       >
-        <FileUp className="mr-1 flex w-[22px] items-center stroke-1" aria-hidden="true" />
+        <FileUp className="mr-1 flex w-[1.375rem] items-center stroke-1" aria-hidden="true" />
         <span className="flex text-xs">{statusText}</span>
       </Button>
       <input
