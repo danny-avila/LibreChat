@@ -1422,20 +1422,17 @@ export interface IEventTransport {
    * A delayed replacement can use the proof after the owner's listeners retire. */
   recordAbortAcknowledgement?(streamId: string, generationId: number): Promise<boolean>;
 
-  /** Awaited by the transport BEFORE it publishes/persists an abort acknowledgement
-   *  for an owned generation. The manager installs the owner-lifecycle lease here:
-   *  an acknowledgement is what lets the stopping side release ITS lease, so the
-   *  owner's lease must be durable first or a deletion quiesce can land in the gap
-   *  between the ACK and the owner's asynchronous abort-catch persistence.
-   *  A REJECTION suppresses the acknowledgement entirely (fail closed): the stopping
-   *  side stays retryable and its retention lease keeps the user fenced. */
-  beforeAbortAcknowledged?: (streamId: string, generationId: number) => Promise<void>;
-
-  /** Whether the durable owner acknowledgement proof exists for this exact
-   *  generation. Cross-process retention leases use it as their renewal predicate:
-   *  once the owner has acknowledged (and therefore holds its own lease), a remote
-   *  retainer stops renewing without clearing the shared owner field. */
+  /** Whether durable abort acknowledgement exists for this exact generation.
+   * Cross-process retainers accept this or the owner-settlement proof below. */
   hasAbortAcknowledgement?(streamId: string, generationId: number): Promise<boolean>;
+
+  /** Short-lived exact-generation proof that the owner finished every external
+   * persistence write. Failed-handoff retainers use it when a predecessor ends
+   * naturally and therefore never emits an abort acknowledgement. */
+  recordGenerationSettlement?(streamId: string, generationId: number): Promise<boolean>;
+
+  /** Whether exact-generation owner settlement proof is still available. */
+  hasGenerationSettlement?(streamId: string, generationId: number): Promise<boolean>;
 
   /** Publish a predecessor DONE only while the current job's opaque creation
    * attempt still carries that predecessor in its durable receipt chain. */
@@ -1456,8 +1453,9 @@ export interface IEventTransport {
    */
   onAbort?(
     streamId: string,
-    /** Return true only when this replica owns and stopped the tagged generation. */
-    callback: (generationId?: number) => void | boolean,
+    /** Resolve true only after this replica has durably fenced and stopped the
+     * tagged generation. A rejection suppresses the acknowledgement. */
+    callback: (generationId?: number) => void | boolean | Promise<void | boolean>,
   ): void | (() => void) | Promise<void | (() => void)>;
 
   /**

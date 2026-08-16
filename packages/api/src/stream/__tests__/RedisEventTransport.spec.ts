@@ -157,7 +157,7 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
-  it('publishes the abort acknowledgement only AFTER the pre-ACK fence resolves', async () => {
+  it('awaits the owner lease callback before stopping and acknowledging the generation', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -165,16 +165,20 @@ describe('RedisEventTransport', () => {
       mockSubscriber as unknown as Redis,
     );
     const streamId = 'abort-ack-fence';
-    // The stopping side releases its own lease the moment this ACK arrives; the
-    // owner's abort-catch persistence is still ahead. If the ACK can outrun the
-    // owner-lifecycle lease registration, a deletion quiesce lands in the gap.
-    let releaseFence!: () => void;
-    const fencePending = new Promise<void>((resolve) => {
-      releaseFence = resolve;
+    // The callback owns the provider trip, so it must first make the owner lease
+    // durable. Awaiting only a pre-ACK hook is too late: the controller can unwind
+    // and release while that hook is still registering the lease.
+    let releaseLease!: () => void;
+    const leasePending = new Promise<void>((resolve) => {
+      releaseLease = resolve;
     });
-    const fence = jest.fn(() => fencePending);
-    transport.beforeAbortAcknowledged = fence;
-    await transport.onAbort(streamId, () => true);
+    const provider = new AbortController();
+    const callback = jest.fn(async () => {
+      await leasePending;
+      provider.abort();
+      return true;
+    });
+    await transport.onAbort(streamId, callback);
     const messageHandler = getMessageHandler(mockSubscriber);
 
     messageHandler(
@@ -184,17 +188,19 @@ describe('RedisEventTransport', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(fence).toHaveBeenCalledWith(streamId, 7);
-    // Neither the durable ack proof nor the ack publication may precede the fence.
+    expect(callback).toHaveBeenCalledWith(7);
+    expect(provider.signal.aborted).toBe(false);
+    // Neither the provider trip nor its acknowledgement may precede the lease.
     expect(mockPublisher.set).not.toHaveBeenCalled();
     const ackPublishes = mockPublisher.publish.mock.calls.filter(([, payload]) =>
       String(payload).includes('abort_ack'),
     );
     expect(ackPublishes).toHaveLength(0);
 
-    releaseFence();
+    releaseLease();
     await new Promise((resolve) => setImmediate(resolve));
 
+    expect(provider.signal.aborted).toBe(true);
     expect(mockPublisher.set).toHaveBeenCalledWith(
       expect.stringContaining('abort-ack'),
       '1',
@@ -204,7 +210,7 @@ describe('RedisEventTransport', () => {
     transport.destroy();
   });
 
-  it('SUPPRESSES the abort acknowledgement when the pre-ACK fence rejects', async () => {
+  it('suppresses the abort acknowledgement when the owner lease callback rejects', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
     const transport = new RedisEventTransport(
@@ -215,10 +221,9 @@ describe('RedisEventTransport', () => {
     // FAIL CLOSED: an ACK without a durable owner lease lets the stopping side
     // release its lease into an unfenced gap. The stopping side stays retryable and
     // every resignal re-drives this handler until the fence holds.
-    transport.beforeAbortAcknowledged = jest.fn(async () => {
+    await transport.onAbort(streamId, async () => {
       throw new Error('owner lease unavailable');
     });
-    await transport.onAbort(streamId, () => true);
     const messageHandler = getMessageHandler(mockSubscriber);
 
     messageHandler(
@@ -885,7 +890,7 @@ describe('RedisEventTransport', () => {
     await manager.destroy();
   });
 
-  it('resubscribes a replacement after an unexposed registration loses initialization', async () => {
+  it('keeps one channel subscription across an unexposed replacement race', async () => {
     const mockPublisher = createMockPublisher();
     const mockSubscriber = createMockSubscriber();
     let signalSubscriptionStarted: (() => void) | undefined;
@@ -922,16 +927,19 @@ describe('RedisEventTransport', () => {
     );
     const replacement = await replacementCreation;
 
-    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(1);
-    expect(mockSubscriber.subscribe).toHaveBeenCalledTimes(2);
+    // The safely-aborted predecessor retains its registration until the
+    // successor's listener is active, so there is no unsubscribe/resubscribe gap.
+    expect(mockSubscriber.unsubscribe).not.toHaveBeenCalled();
+    expect(mockSubscriber.subscribe).toHaveBeenCalledTimes(1);
 
     getMessageHandler(mockSubscriber)(
       `stream:{${streamId}}:events`,
       JSON.stringify({ type: 'abort', generationId: replacement.createdAt }),
     );
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(replacement.abortController.signal.aborted).toBe(true);
-    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(2);
+    expect(mockSubscriber.unsubscribe).toHaveBeenCalledTimes(1);
 
     await manager.destroy();
   });
@@ -961,6 +969,7 @@ describe('RedisEventTransport', () => {
       `stream:{${streamId}}:events`,
       JSON.stringify({ type: 'abort' }),
     );
+    await new Promise((resolve) => setImmediate(resolve));
 
     expect(job.abortController.signal.aborted).toBe(true);
     expect(mockSubscriber.unsubscribe).toHaveBeenCalledWith(`stream:{${streamId}}:events`);
@@ -1223,6 +1232,28 @@ describe('RedisEventTransport', () => {
       transport.destroy();
       jest.useRealTimers();
     }
+  });
+
+  it('records short-lived exact-generation owner settlement proof', async () => {
+    const mockPublisher = createMockPublisher();
+    const mockSubscriber = createMockSubscriber();
+    const transport = new RedisEventTransport(
+      mockPublisher as unknown as Redis,
+      mockSubscriber as unknown as Redis,
+    );
+    const streamId = 'natural-owner-settlement-proof';
+
+    await expect(transport.recordGenerationSettlement(streamId, 4321)).resolves.toBe(true);
+    expect(mockPublisher.set).toHaveBeenCalledWith(
+      `stream:{${streamId}}:owner-settled:4321`,
+      '1',
+      'EX',
+      600,
+    );
+
+    mockPublisher.get.mockResolvedValueOnce('1');
+    await expect(transport.hasGenerationSettlement(streamId, 4321)).resolves.toBe(true);
+    transport.destroy();
   });
 
   it('waits for a delayed owner acknowledgement when cluster publish reports zero local receivers', async () => {

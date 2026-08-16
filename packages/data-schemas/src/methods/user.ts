@@ -16,6 +16,13 @@ import { signPayload } from '~/crypto';
  *  cannot see the abort fences must never conclude settlement. */
 export const UNREADABLE_ABORT_FENCE = '__unreadable__';
 
+const SAFE_FINALIZATION_FALLBACK_LEASE_KEY = /^[A-Za-z0-9_-]{1,128}$/;
+const RESERVED_FINALIZATION_FALLBACK_LEASE_KEYS = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
 
@@ -143,6 +150,13 @@ export function createUserMethods(
   addUserAbortFence: (userId: string, streamId: string) => Promise<void>;
   clearUserAbortFence: (userId: string, streamId: string) => Promise<void>;
   getUserAbortFences: (userId: string) => Promise<string[]>;
+  renewUserFinalizationFallbackLease: (
+    userId: string,
+    safeLeaseKey: string,
+    expiresAt: Date,
+  ) => Promise<void>;
+  clearUserFinalizationFallbackLease: (userId: string, safeLeaseKey: string) => Promise<void>;
+  countUserFinalizationFallbackLeases: (userId: string, asOf?: Date) => Promise<number>;
   updateUserPlugins: (
     userId: string,
     plugins: string[] | undefined,
@@ -509,6 +523,119 @@ export function createUserMethods(
     }
   }
 
+  function isSafeFinalizationFallbackLeaseKey(safeLeaseKey: string): boolean {
+    return (
+      SAFE_FINALIZATION_FALLBACK_LEASE_KEY.test(safeLeaseKey) &&
+      !RESERVED_FINALIZATION_FALLBACK_LEASE_KEYS.has(safeLeaseKey)
+    );
+  }
+
+  function assertSafeFinalizationFallbackLeaseKey(safeLeaseKey: string): void {
+    if (!isSafeFinalizationFallbackLeaseKey(safeLeaseKey)) {
+      throw new Error('Finalization fallback lease key must be a safe opaque key');
+    }
+  }
+
+  /** Renews one Mongo-backed fallback lease. This mutation throws if the user no
+   *  longer exists: a holder must never mistake a missing deletion barrier for a
+   *  successfully renewed lease. */
+  async function renewUserFinalizationFallbackLease(
+    userId: string,
+    safeLeaseKey: string,
+    expiresAt: Date,
+  ): Promise<void> {
+    assertSafeFinalizationFallbackLeaseKey(safeLeaseKey);
+    if (!(expiresAt instanceof Date) || !Number.isFinite(expiresAt.getTime())) {
+      throw new Error('Finalization fallback lease expiry must be a valid date');
+    }
+    const User = mongoose.models.User;
+    const result = await User.updateOne(
+      { _id: userId },
+      { $set: { [`finalizationFallbackLeases.${safeLeaseKey}`]: expiresAt } },
+      { timestamps: false },
+    );
+    if (result.matchedCount !== 1) {
+      throw new Error('Cannot renew finalization fallback lease for a missing user');
+    }
+    await invalidateAuthUserDocCache(userId);
+  }
+
+  /** Clears one fallback lease without disturbing contenders on the same user. */
+  async function clearUserFinalizationFallbackLease(
+    userId: string,
+    safeLeaseKey: string,
+  ): Promise<void> {
+    assertSafeFinalizationFallbackLeaseKey(safeLeaseKey);
+    const User = mongoose.models.User;
+    await User.updateOne(
+      { _id: userId },
+      { $unset: { [`finalizationFallbackLeases.${safeLeaseKey}`]: '' } },
+      { timestamps: false },
+    );
+    await invalidateAuthUserDocCache(userId);
+  }
+
+  /** Counts leases whose expiry is strictly after `asOf` and opportunistically
+   *  removes expired entries. Cleanup is fenced on every observed expiry so it can
+   *  never erase a lease renewed after this read. A malformed entry or read/cleanup
+   *  failure counts as live: deletion may defer unnecessarily, but can never treat
+   *  unreadable finalization work as settled. */
+  async function countUserFinalizationFallbackLeases(
+    userId: string,
+    asOf: Date = new Date(),
+  ): Promise<number> {
+    if (!(asOf instanceof Date) || !Number.isFinite(asOf.getTime())) {
+      return 1;
+    }
+    const User = mongoose.models.User;
+    try {
+      const user = await User.findById(userId)
+        .select('finalizationFallbackLeases')
+        .lean<Pick<IUser, 'finalizationFallbackLeases'>>();
+      const leases = user?.finalizationFallbackLeases;
+      if (leases == null) {
+        return 0;
+      }
+      const entries: Array<[string, Date]> =
+        leases instanceof Map ? [...leases.entries()] : Object.entries(leases);
+      const expiredEntries: Array<[string, Date]> = [];
+      let liveCount = 0;
+      for (const [safeLeaseKey, expiresAt] of entries) {
+        const timestamp = expiresAt instanceof Date ? expiresAt.getTime() : Number.NaN;
+        if (!Number.isFinite(timestamp) || timestamp > asOf.getTime()) {
+          liveCount += 1;
+          continue;
+        }
+        if (isSafeFinalizationFallbackLeaseKey(safeLeaseKey)) {
+          expiredEntries.push([safeLeaseKey, expiresAt]);
+        }
+      }
+      if (expiredEntries.length > 0) {
+        const expectedExpiries: Record<string, Date> = {};
+        const unsetExpiries: Record<string, ''> = {};
+        for (const [safeLeaseKey, expiresAt] of expiredEntries) {
+          const path = `finalizationFallbackLeases.${safeLeaseKey}`;
+          expectedExpiries[path] = expiresAt;
+          unsetExpiries[path] = '';
+        }
+        const cleanup = await User.updateOne(
+          { _id: userId, ...expectedExpiries },
+          { $unset: unsetExpiries },
+          { timestamps: false },
+        );
+        if (cleanup.modifiedCount === 0) {
+          // A concurrent renew/clear changed the snapshot. Defer once rather than
+          // return a stale zero that could hide the newly renewed lease.
+          return Math.max(liveCount, 1);
+        }
+        await invalidateAuthUserDocCache(userId);
+      }
+      return liveCount;
+    } catch {
+      return 1;
+    }
+  }
+
   /** Rotation stamp for the deferred-deletion sweep window. Bookkeeping only, but it
    *  still mutates user documents, so cached copies are dropped (best-effort — these
    *  users are already refused at authentication behind the barrier). */
@@ -862,6 +989,9 @@ export function createUserMethods(
     addUserAbortFence,
     clearUserAbortFence,
     getUserAbortFences,
+    renewUserFinalizationFallbackLease,
+    clearUserFinalizationFallbackLease,
+    countUserFinalizationFallbackLeases,
     updateUserPlugins,
     toggleUserMemories,
     updateUserStatefulCodeEnvironment,

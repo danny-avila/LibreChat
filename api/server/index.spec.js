@@ -169,15 +169,17 @@ describe('Startup readiness wiring', () => {
     // The clustered entrypoint could not reuse a private const in index.js (requiring
     // index.js boots a second listener), which is why its workers never configured the
     // stream services at all. Both entrypoints must call the shared initializer.
-    expect(source).toContain('configureSharedGenerationStreams()');
+    expect(source).toContain('configureSharedGenerationStreams(');
+    expect(source).toContain('createUserFinalizationFallbackStore({');
     const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
-    expect(experimental).toContain('configureGenerationStreams()');
+    expect(experimental).toContain('configureGenerationStreams(');
+    expect(experimental).toContain('createUserFinalizationFallbackStore({');
   });
 
-  it('does not run the scheduler in the clustered entrypoint (v1 is single-process)', () => {
+  it('does not run the scheduler in the legacy clustered entrypoint', () => {
     const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
-    // v1 scope: the clustered entrypoint must not arm the engine at all, and must refuse
-    // schedule writes rather than persist schedules nothing will ever fire.
+    // This legacy entrypoint must not arm the engine and must refuse schedule writes
+    // rather than persist schedules nothing will ever fire.
     expect(experimental).not.toContain('initializeScheduleEngine');
     expect(experimental).toContain('SCHEDULES_NOT_SUPPORTED');
   });

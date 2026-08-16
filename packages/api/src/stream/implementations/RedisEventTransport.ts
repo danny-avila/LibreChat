@@ -36,6 +36,9 @@ const KEYS = {
   /** Owner-issued proof that this exact generation processed an abort. */
   abortAck: (streamId: string, generationId: number) =>
     `stream:{${streamId}}:abort-ack:${generationId}`,
+  /** Short-lived proof that the exact generation owner finished all writes. */
+  generationSettlement: (streamId: string, generationId: number) =>
+    `stream:{${streamId}}:owner-settled:${generationId}`,
 };
 
 /**
@@ -98,7 +101,7 @@ interface ReorderBuffer {
 }
 
 interface AbortRegistration {
-  callback: (generationId?: number) => void | boolean;
+  callback: (generationId?: number) => void | boolean | Promise<void | boolean>;
 }
 
 interface AbortAckWaiter {
@@ -206,6 +209,9 @@ const MAX_BUFFER_SIZE = 100;
 const GENERATION_EPOCH_GRACE_TTL_SECONDS = 300;
 /** Durable owner proof outlives receipt retries and process-local subscriptions. */
 const ABORT_ACK_TTL_SECONDS = 86400;
+/** Retainers poll once per minute; ten minutes bounds per-generation proof keys
+ * while leaving ample room for scheduling jitter and transient Redis retries. */
+const GENERATION_SETTLEMENT_TTL_SECONDS = 600;
 
 /**
  * Subscriber state for a stream
@@ -254,8 +260,6 @@ interface StreamSubscribers {
  * ```
  */
 export class RedisEventTransport implements IEventTransport {
-  /** Awaited before an owned abort is acknowledged; see IEventTransport. */
-  beforeAbortAcknowledged?: (streamId: string, generationId: number) => Promise<void>;
   /** Redis client for publishing events */
   private publisher: Redis | Cluster;
   /** Redis client for subscribing to events (separate connection required) */
@@ -925,41 +929,7 @@ export class RedisEventTransport implements IEventTransport {
     }
 
     if (message.type === EventTypes.ABORT) {
-      let ownerAcknowledged = false;
-      for (const registration of streamState.abortCallbacks) {
-        try {
-          if (message.generationId == null) {
-            ownerAcknowledged = registration.callback() === true || ownerAcknowledged;
-          } else {
-            ownerAcknowledged =
-              registration.callback(message.generationId) === true || ownerAcknowledged;
-          }
-        } catch (err) {
-          logger.error(`[RedisEventTransport] Error in abort callback:`, err);
-        }
-      }
-      if (ownerAcknowledged && message.abortRequestId != null && message.generationId != null) {
-        const generationId = message.generationId;
-        const abortRequestId = message.abortRequestId;
-        void (async () => {
-          // The owner-lifecycle lease must be durable BEFORE the acknowledgement:
-          // the stopping side releases its own lease the moment this ACK arrives,
-          // and the owner's abort-catch persistence is still ahead. FAIL CLOSED — a
-          // rejected fence suppresses the acknowledgement entirely; the stopping
-          // side stays retryable and its retention lease keeps the user fenced,
-          // while every resignal re-drives this handler until the fence holds.
-          try {
-            await this.beforeAbortAcknowledged?.(streamId, generationId);
-          } catch (error) {
-            logger.error(
-              `[RedisEventTransport] Suppressing abort acknowledgement for ${streamId} — owner fence failed:`,
-              error,
-            );
-            return;
-          }
-          await this.publishAbortAcknowledgement(streamId, generationId, abortRequestId);
-        })();
-      }
+      void this.deliverAbortMessage(streamId, streamState, message);
     }
 
     if (message.type === EventTypes.PREEMPT && message.preempt != null) {
@@ -971,6 +941,41 @@ export class RedisEventTransport implements IEventTransport {
         }
       }
     }
+  }
+
+  /** The callback owns both the lifecycle-fence acquisition and the provider
+   * trip. Await it as one operation: a separate pre-ACK hook is too late because
+   * the controller can unwind and release its lease immediately after the trip. */
+  private async deliverAbortMessage(
+    streamId: string,
+    streamState: StreamSubscribers,
+    message: PubSubMessage,
+  ): Promise<void> {
+    let ownerAcknowledged = false;
+    for (const registration of [...streamState.abortCallbacks]) {
+      try {
+        const result =
+          message.generationId == null
+            ? await registration.callback()
+            : await registration.callback(message.generationId);
+        ownerAcknowledged = result === true || ownerAcknowledged;
+      } catch (error) {
+        logger.error(
+          `[RedisEventTransport] Suppressing abort acknowledgement for ${streamId} — owner callback failed:`,
+          error,
+        );
+      }
+    }
+    if (!ownerAcknowledged || message.abortRequestId == null || message.generationId == null) {
+      return;
+    }
+    await this.publishAbortAcknowledgement(
+      streamId,
+      message.generationId,
+      message.abortRequestId,
+    ).catch((error) => {
+      logger.error(`[RedisEventTransport] Failed to publish abort acknowledgement:`, error);
+    });
   }
 
   private detachStreamSubscribers(streamId: string, state: StreamSubscribers): void {
@@ -1292,6 +1297,25 @@ export class RedisEventTransport implements IEventTransport {
     }
   }
 
+  async hasGenerationSettlement(streamId: string, generationId: number): Promise<boolean> {
+    return (await this.publisher.get(KEYS.generationSettlement(streamId, generationId))) === '1';
+  }
+
+  async recordGenerationSettlement(streamId: string, generationId: number): Promise<boolean> {
+    try {
+      await this.publisher.set(
+        KEYS.generationSettlement(streamId, generationId),
+        '1',
+        'EX',
+        GENERATION_SETTLEMENT_TTL_SECONDS,
+      );
+      return true;
+    } catch (error) {
+      logger.error(`[RedisEventTransport] Failed to persist generation settlement proof:`, error);
+      return false;
+    }
+  }
+
   private async publishAbortAcknowledgement(
     streamId: string,
     generationId: number,
@@ -1369,7 +1393,7 @@ export class RedisEventTransport implements IEventTransport {
    */
   async onAbort(
     streamId: string,
-    callback: (generationId?: number) => void | boolean,
+    callback: (generationId?: number) => void | boolean | Promise<void | boolean>,
   ): Promise<() => void> {
     const channel = CHANNELS.events(streamId);
     const state = this.getOrCreateStreamState(streamId);

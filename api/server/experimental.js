@@ -51,9 +51,14 @@ const {
   markEraseAttempted,
   getActiveRunsForSchedule,
   recordRunOutcome,
+  renewUserFinalizationFallbackLease,
+  clearUserFinalizationFallbackLease,
+  addUserAbortFence,
+  clearUserAbortFence,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const { configureGenerationStreams } = require('@librechat/api');
+const { createUserFinalizationFallbackStore } = require('./services/UserFinalizationFallback');
 const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
@@ -406,7 +411,14 @@ if (cluster.isMaster) {
     // store even with USE_REDIS_STREAMS — making the multiworker scheduler private,
     // so cross-worker aborts and orphan recovery could not work. Shared with
     // api/server/index.js so both topologies initialize identically.
-    configureGenerationStreams();
+    configureGenerationStreams(
+      createUserFinalizationFallbackStore({
+        renewUserFinalizationFallbackLease,
+        clearUserFinalizationFallbackLease,
+        addUserAbortFence,
+        clearUserAbortFence,
+      }),
+    );
     // Same teardown discipline as api/server/index.js: stop active generations and
     // close their SSE streams while the HTTP server drains, then release stream
     // resources. Without this a killed worker leaves its Redis jobs `running` until

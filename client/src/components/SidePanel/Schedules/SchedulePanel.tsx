@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Plus } from 'lucide-react';
-import { Button, Spinner, TooltipAnchor } from '@librechat/client';
+import { Button, TooltipAnchor } from '@librechat/client';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
+import { PanelContent, PanelFooter } from '~/components/ui';
+import ScheduleCardSkeleton from './ScheduleCardSkeleton';
 import { useSchedulesQuery } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
 import ScheduleDialog from './ScheduleDialog';
@@ -17,38 +19,47 @@ export default function SchedulePanel() {
     permission: Permissions.CREATE,
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex h-full w-full items-center justify-center p-4">
-        <Spinner />
-      </div>
-    );
-  }
+  const schedules = data?.schedules ?? [];
+  const maxPerUser = data?.limits.maxPerUser;
+  const atLimit = maxPerUser !== undefined && schedules.length >= maxPerUser;
+  let panelContent: ReactNode;
 
-  // A failed query leaves `data` undefined, which the empty-state branch below would
-  // render as "no scheduled chats yet" — telling the user their schedules are gone when
-  // the request merely failed. `maxPerUser` is unknown too, so the create button would
-  // stay enabled and any create would 4xx against a limit we cannot see.
   if (isError) {
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4">
+    panelContent = (
+      <div className="flex min-h-40 flex-col items-center justify-center gap-2 p-4">
         <p className="text-center text-sm text-text-secondary">
           {localize('com_ui_schedules_error')}
         </p>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
+        <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
           {localize('com_ui_retry')}
         </Button>
       </div>
     );
+  } else if (schedules.length === 0) {
+    panelContent = (
+      <div className="rounded-lg border border-dashed border-border-light p-4 text-center">
+        <p className="text-sm text-text-secondary">{localize('com_ui_schedules_empty')}</p>
+      </div>
+    );
+  } else {
+    panelContent = (
+      <div className="space-y-2" role="list" aria-label={localize('com_ui_schedules')}>
+        {schedules.map((schedule) => (
+          <div key={schedule.id} role="listitem">
+            <ScheduleCard schedule={schedule} />
+          </div>
+        ))}
+      </div>
+    );
   }
 
-  const schedules = data?.schedules ?? [];
-  const maxPerUser = data?.limits.maxPerUser;
-  const atLimit = maxPerUser !== undefined && schedules.length >= maxPerUser;
-
   return (
-    <div className="flex h-auto w-full flex-col px-3 pb-3 pt-2">
-      <div role="region" aria-label={localize('com_ui_schedules')} className="space-y-2">
+    <div
+      role="region"
+      aria-label={localize('com_ui_schedules')}
+      className="flex h-full w-full flex-col overflow-hidden pt-2"
+    >
+      <div className="shrink-0 px-3 pb-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-medium text-text-primary">
             {localize('com_ui_schedules')}
@@ -63,7 +74,7 @@ export default function SchedulePanel() {
                   size="icon"
                   className="size-9 shrink-0 bg-transparent"
                   aria-label={localize('com_ui_schedule_new')}
-                  disabled={atLimit}
+                  disabled={atLimit || isError || isLoading}
                   onClick={() => setCreateOpen(true)}
                 >
                   <Plus className="size-4" aria-hidden="true" />
@@ -72,24 +83,23 @@ export default function SchedulePanel() {
             />
           )}
         </div>
-        {schedules.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border-light p-4 text-center">
-            <p className="text-sm text-text-secondary">{localize('com_ui_schedules_empty')}</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {schedules.map((schedule) => (
-              <ScheduleCard key={schedule.id} schedule={schedule} />
-            ))}
-          </div>
-        )}
-        {maxPerUser !== undefined && (
+      </div>
+
+      <PanelContent isLoading={isLoading} skeleton={<ScheduleCardSkeleton />} className="px-3 pb-3">
+        {/* A failed query must not masquerade as an empty list or enable creation
+            against limits that could not be loaded. */}
+        {panelContent}
+      </PanelContent>
+
+      {!isLoading && !isError && maxPerUser !== undefined && (
+        <PanelFooter className="justify-start">
           <p className="text-xs text-text-secondary">
             {localize('com_ui_schedules_used', { used: schedules.length, max: maxPerUser })}
           </p>
-        )}
-        {createOpen && <ScheduleDialog open={createOpen} onOpenChange={setCreateOpen} />}
-      </div>
+        </PanelFooter>
+      )}
+
+      {createOpen && <ScheduleDialog open={createOpen} onOpenChange={setCreateOpen} />}
     </div>
   );
 }

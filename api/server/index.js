@@ -50,6 +50,10 @@ const {
   sweepOrphanedPreviews,
   getRoleByName,
   seedDatabase,
+  renewUserFinalizationFallbackLease,
+  clearUserFinalizationFallbackLease,
+  addUserAbortFence,
+  clearUserAbortFence,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
@@ -57,6 +61,7 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeScheduleEngine } = require('./services/Schedules');
 const { startPendingDeletionSweep } = require('./controllers/UserController');
+const { createUserFinalizationFallbackStore } = require('./services/UserFinalizationFallback');
 const { configureGenerationStreams: configureSharedGenerationStreams } = require('@librechat/api');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
@@ -129,7 +134,14 @@ const rejectScheduleWritesUntilReady = (req, res, next) => {
 const configureGenerationStreams = () => {
   // Shared with the clustered entrypoint (experimental.js) so both topologies get the
   // same stream services; returns whether the resulting store is genuinely shared.
-  const isShared = configureSharedGenerationStreams();
+  const isShared = configureSharedGenerationStreams(
+    createUserFinalizationFallbackStore({
+      renewUserFinalizationFallbackLease,
+      clearUserFinalizationFallbackLease,
+      addUserAbortFence,
+      clearUserAbortFence,
+    }),
+  );
   // Stop active generations and close their SSE streams while the HTTP server drains.
   registerShutdownTask(
     'generation job manager prepare',

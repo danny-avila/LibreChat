@@ -507,6 +507,7 @@ describe('openIdJwtStrategy – auth user document cache', () => {
       mockAuthUserDocCacheStore,
       'auth-user-doc-key',
       expect.objectContaining({ id: 'tenant-b-user', tenantId: 'tenant-b' }),
+      expect.objectContaining({ readAt: expect.any(Number) }),
     );
   });
 

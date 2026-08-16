@@ -14,7 +14,10 @@ interface ControlComboboxProps {
   displayValue?: string;
   items: OptionWithIcon[];
   setValue: (value: string) => void;
+  onBlur?: React.FocusEventHandler<HTMLButtonElement>;
   ariaLabel: string;
+  ariaInvalid?: boolean;
+  ariaDescribedBy?: string;
   searchPlaceholder?: string;
   selectPlaceholder?: string;
   isCollapsed: boolean;
@@ -46,7 +49,10 @@ function ControlCombobox({
   displayValue,
   items,
   setValue,
+  onBlur,
   ariaLabel,
+  ariaInvalid,
+  ariaDescribedBy,
   searchPlaceholder,
   selectPlaceholder,
   containerClassName,
@@ -145,6 +151,9 @@ function ControlCombobox({
         store={select}
         id={selectId}
         disabled={disabled}
+        onBlur={onBlur}
+        aria-invalid={ariaInvalid || undefined}
+        aria-describedby={ariaDescribedBy}
         className={cn(
           'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
           'text-text-primary hover:bg-surface-tertiary',

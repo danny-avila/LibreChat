@@ -197,6 +197,13 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: [String],
       default: undefined,
     },
+    /** Expiring failover leases for persistence that remains live while its primary
+     *  finalization lease store is unavailable. Absent on unaffected users. */
+    finalizationFallbackLeases: {
+      type: Map,
+      of: Date,
+      default: undefined,
+    },
     /** Field for external source identification (for consistency with TPrincipal schema) */
     idOnTheSource: {
       type: String,

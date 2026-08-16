@@ -596,6 +596,10 @@ const quiesceInteractiveGenerations = async (user) => {
     user.id,
     user.tenantId,
   );
+  // A writer whose replica temporarily loses the primary lease store promotes its
+  // hold into Mongo before the primary TTL can expire. Read that fallback before the
+  // active scan for the same lease-to-job handoff ordering used above.
+  const earlyFallbackOwnerWork = await db.countUserFinalizationFallbackLeases(user.id);
   const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(user.id, user.tenantId);
   for (const streamId of activeJobIds ?? []) {
     // FENCE BEFORE THE CAS. An abort transitions the shared job to terminal, which
@@ -658,6 +662,16 @@ const quiesceInteractiveGenerations = async (user) => {
   if (pendingOwnerWork > 0) {
     logger.info(
       `[quiesceInteractiveGenerations] ${pendingOwnerWork} owner finalization(s) still landing for ${user.id}`,
+    );
+    return false;
+  }
+  const fallbackOwnerWork =
+    earlyFallbackOwnerWork > 0
+      ? earlyFallbackOwnerWork
+      : await db.countUserFinalizationFallbackLeases(user.id);
+  if (fallbackOwnerWork > 0) {
+    logger.info(
+      `[quiesceInteractiveGenerations] ${fallbackOwnerWork} fallback finalization(s) still landing for ${user.id}`,
     );
     return false;
   }
