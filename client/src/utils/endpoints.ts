@@ -543,14 +543,29 @@ export function mergeQuerySettingsWithSpec(
   };
 }
 
-/** Gets the model spec iconURL by explicit icon, preset icon, then preset endpoint. */
+/**
+ * Config authored through a form stores an untouched icon field as an empty
+ * string rather than omitting it, so `??` would stop on it and suppress every
+ * later candidate. `applyModelSpecPreset` already treats an empty `iconURL` as
+ * unset; `showIconInMenu` is the explicit way to render no icon.
+ */
+function firstPresentIcon(...candidates: Array<string | null | undefined>): string {
+  for (const candidate of candidates) {
+    if (candidate != null && candidate !== '') {
+      return candidate;
+    }
+  }
+
+  return '';
+}
+
+/** Gets the model spec iconURL by explicit icon, preset icon, agent avatar, then preset endpoint. */
 export function getModelSpecIconURL(modelSpec: t.TModelSpec, agentAvatarURL?: string) {
-  return (
-    modelSpec.iconURL ??
-    modelSpec.preset?.iconURL ??
-    agentAvatarURL ??
-    modelSpec.preset?.endpoint ??
-    ''
+  return firstPresentIcon(
+    modelSpec.iconURL,
+    modelSpec.preset?.iconURL,
+    agentAvatarURL,
+    modelSpec.preset?.endpoint,
   );
 }
 
