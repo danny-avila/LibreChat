@@ -771,7 +771,10 @@ describe('GenerationJobManager start-generation claim', () => {
         event: 'on_message_delta',
         data: { delta: 'stale provider output' },
       });
-      await Promise.resolve();
+      // The stale append continuation now awaits durable owner-lease acquisition
+      // before it may trip the provider. Flush that async handoff without advancing
+      // the later reconnect-grace timers.
+      await jest.advanceTimersByTimeAsync(0);
 
       expect(predecessor.abortController.signal.aborted).toBe(true);
       expect(onError).not.toHaveBeenCalled();
@@ -819,8 +822,7 @@ describe('GenerationJobManager start-generation claim', () => {
         event: 'on_message_delta',
         data: { delta: 'uncoordinated provider output' },
       });
-      await Promise.resolve();
-      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(0);
 
       expect(job.abortController.signal.aborted).toBe(true);
       expect(onError).not.toHaveBeenCalled();

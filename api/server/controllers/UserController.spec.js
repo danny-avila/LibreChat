@@ -32,6 +32,7 @@ jest.mock('~/models', () => {
     addUserAbortFence: jest.fn().mockResolvedValue(undefined),
     clearUserAbortFence: jest.fn().mockResolvedValue(undefined),
     getUserAbortFences: jest.fn().mockResolvedValue([]),
+    countUserFinalizationFallbackLeases: jest.fn().mockResolvedValue(0),
     deleteAllUserSessions: jest.fn().mockResolvedValue(undefined),
     deleteAllSharedLinks: jest.fn().mockResolvedValue(undefined),
     deleteAllAgentApiKeys: jest.fn().mockResolvedValue(undefined),

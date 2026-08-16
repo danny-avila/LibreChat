@@ -2025,6 +2025,7 @@ describe('ResumableAgentController resume metadata', () => {
         error: 'Attached resources could not be restored',
       }),
       1000,
+      { preserveForReconcile: false },
     );
   });
 

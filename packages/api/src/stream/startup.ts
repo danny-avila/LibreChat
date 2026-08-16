@@ -2,6 +2,26 @@ import { GenerationJobManager } from './GenerationJobManager';
 import { createStreamServices } from './createStreamServices';
 import { isEnabled } from '../utils/common';
 
+export interface UserFinalizationFallbackStore {
+  renew(
+    userId: string,
+    tenantId: string | undefined,
+    safeLeaseKey: string,
+    expiresAt: Date,
+  ): Promise<void>;
+  clear(userId: string, tenantId: string | undefined, safeLeaseKey: string): Promise<void>;
+  retainAbortDelivery?(
+    userId: string,
+    tenantId: string | undefined,
+    streamId: string,
+  ): Promise<void>;
+  clearAbortDelivery?(
+    userId: string,
+    tenantId: string | undefined,
+    streamId: string,
+  ): Promise<void>;
+}
+
 /**
  * Configures and initializes the generation stream services, and reports whether the
  * resulting job store is SHARED across processes.
@@ -22,11 +42,14 @@ import { isEnabled } from '../utils/common';
  * processes. Callers in a clustered topology MUST fail closed when this is false
  * rather than assume sharing.
  */
-export function configureGenerationStreams(): boolean {
+export function configureGenerationStreams(
+  userFinalizationFallback?: UserFinalizationFallbackStore,
+): boolean {
   const streamServices = createStreamServices();
   GenerationJobManager.configure({
     ...streamServices,
     cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
+    userFinalizationFallback,
   });
   GenerationJobManager.initialize();
   // Read AFTER configure/initialize so this reflects the store actually in use,

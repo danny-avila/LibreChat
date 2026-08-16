@@ -1337,7 +1337,9 @@ describe('GenerationJobManager startup telemetry', () => {
 
       expect(job.abortController.signal.aborted).toBe(true);
       expect(manager.getRuntimeStats().runtimeStateSize).toBe(1);
-      expect(jest.getTimerCount()).toBe(timerCountBeforeFence + 1);
+      // The fenced-retirement grace and its owner-side persistence lease each
+      // carry one timer while the controller catch is still outstanding.
+      expect(jest.getTimerCount()).toBe(timerCountBeforeFence + 2);
 
       await jest.advanceTimersByTimeAsync(REDIS_ABORT_TERMINAL_GRACE_MS);
       await lookupStarted;
@@ -1355,7 +1357,9 @@ describe('GenerationJobManager startup telemetry', () => {
       expect(getJob).toHaveBeenCalledTimes(1);
       expect(onError).not.toHaveBeenCalled();
       expect(onAllSubscribersLeft).not.toHaveBeenCalled();
-      expect(jest.getTimerCount()).toBe(timerCountBeforeFence);
+      // Subscriber detachment cancels only the retirement timer. The owner
+      // heartbeat remains until controller settlement or manager destruction.
+      expect(jest.getTimerCount()).toBe(timerCountBeforeFence + 1);
 
       releaseLookup?.();
       await jest.advanceTimersByTimeAsync(0);
@@ -3699,6 +3703,138 @@ describe('GenerationJobManager startup telemetry', () => {
     await destroying;
     expect(destroySettled).toBe(true);
     subscription?.unsubscribe();
+  });
+
+  it('does not hang shutdown or clear evidence behind a stalled primary renewal', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
+    const clearPrimary = jest.spyOn(jobStore, 'clearUserFinalization');
+    const fallback = {
+      renew: jest.fn(
+        async (
+          _userId: string,
+          _tenantId: string | undefined,
+          _leaseKey: string,
+          _expiresAt: Date,
+        ) => undefined,
+      ),
+      clear: jest.fn(
+        async (_userId: string, _tenantId: string | undefined, _leaseKey: string) => undefined,
+      ),
+    };
+    const manager = new GenerationJobManagerClass();
+    manager.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: true,
+      userFinalizationFallback: fallback,
+    });
+    manager.initialize();
+
+    jest.useFakeTimers({ now: Date.now() });
+    try {
+      await manager.holdUserFinalization(
+        'user-stalled-shutdown',
+        'stream-stalled-shutdown',
+        undefined,
+        123,
+        'held',
+      );
+      const neverSettles = new Promise<void>(() => undefined);
+      jest.spyOn(jobStore, 'registerUserFinalization').mockImplementationOnce(() => neverSettles);
+
+      // The first renewal never replies. Its five-second deadline promotes the
+      // holder to fallback storage while retaining the ambiguous primary command.
+      jest.advanceTimersByTime(60_000);
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(fallback.renew).toHaveBeenCalledTimes(1);
+
+      let destroySettled = false;
+      const destroying = manager.destroy().then(() => {
+        destroySettled = true;
+      });
+      await jest.advanceTimersByTimeAsync(1);
+
+      // Teardown cannot serialize behind a command that may never reply. It also
+      // cannot clear either copy: the late primary command could otherwise recreate
+      // its marker after shutdown, and detached persistence may still be landing.
+      expect(destroySettled).toBe(true);
+      await destroying;
+      expect(clearPrimary).not.toHaveBeenCalled();
+      expect(fallback.clear).not.toHaveBeenCalled();
+      await expect(jobStore.countUserFinalizations('user-stalled-shutdown')).resolves.toBe(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not clear a shared owner marker when only its failed-handoff retainer shuts down', async () => {
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 60_000 });
+    jest.spyOn(jobStore, 'destroy').mockResolvedValue();
+    const owner = new GenerationJobManagerClass();
+    owner.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: false,
+    });
+    owner.initialize();
+    const retainerTransport = Object.assign(new InMemoryEventTransport(), {
+      hasAbortAcknowledgement: jest.fn(async () => false),
+      hasGenerationSettlement: jest.fn(async () => false),
+    });
+    const retainer = new GenerationJobManagerClass();
+    retainer.configure({ jobStore, eventTransport: retainerTransport, isRedis: true });
+    retainer.initialize();
+    const generationId = 456;
+    const ownerInternals = owner as unknown as {
+      acquireOwnerLease: (
+        userId: string,
+        streamId: string,
+        tenantId: string | undefined,
+        createdAt: number,
+      ) => Promise<void>;
+    };
+    const retainerInternals = retainer as unknown as {
+      retainPredecessorOwnerLease: (
+        userId: string,
+        streamId: string,
+        tenantId: string | undefined,
+        createdAt: number,
+      ) => Promise<void>;
+    };
+
+    await ownerInternals.acquireOwnerLease(
+      'user-shared-owner',
+      'stream-shared-owner',
+      undefined,
+      generationId,
+    );
+    await retainerInternals.retainPredecessorOwnerLease(
+      'user-shared-owner',
+      'stream-shared-owner',
+      undefined,
+      generationId,
+    );
+    await expect(jobStore.countUserFinalizations('user-shared-owner')).resolves.toBe(1);
+    const clearOwnerMarker = jest.spyOn(jobStore, 'clearUserFinalization');
+
+    await retainer.destroy();
+
+    // Both replicas renew the same deterministic `owner` field. The retainer owns
+    // only its local heartbeat; shutdown must leave the shared marker for the real
+    // owner whose persistence may still be in flight.
+    expect(clearOwnerMarker).not.toHaveBeenCalled();
+    await expect(jobStore.countUserFinalizations('user-shared-owner')).resolves.toBe(1);
+
+    await owner.releaseOwnerLease(
+      'user-shared-owner',
+      'stream-shared-owner',
+      undefined,
+      generationId,
+    );
+    await expect(jobStore.countUserFinalizations('user-shared-owner')).resolves.toBe(0);
+    await owner.destroy();
   });
 
   it('drains replaced services without destroying the newly configured services', async () => {

@@ -1472,6 +1472,14 @@ export interface IEventTransport {
    *  retainer stops renewing without clearing the shared owner field. */
   hasAbortAcknowledgement?(streamId: string, generationId: number): Promise<boolean>;
 
+  /** Short-lived exact-generation proof that the owner finished every external
+   * persistence write. Failed-handoff retainers use it when a predecessor ends
+   * naturally and therefore never emits an abort acknowledgement. */
+  recordGenerationSettlement?(streamId: string, generationId: number): Promise<boolean>;
+
+  /** Whether exact-generation owner settlement proof is still available. */
+  hasGenerationSettlement?(streamId: string, generationId: number): Promise<boolean>;
+
   /** Publish a predecessor DONE only while the current job's opaque creation
    * attempt still carries that predecessor in its durable receipt chain. */
   emitReplacedDoneConfirmed?(
@@ -1491,8 +1499,9 @@ export interface IEventTransport {
    */
   onAbort?(
     streamId: string,
-    /** Return true only when this replica owns and stopped the tagged generation. */
-    callback: (generationId?: number) => void | boolean,
+    /** Resolve true only after this replica has durably fenced and stopped the
+     * tagged generation. A rejection suppresses the acknowledgement. */
+    callback: (generationId?: number) => void | boolean | Promise<void | boolean>,
   ): void | (() => void) | Promise<void | (() => void)>;
 
   /**

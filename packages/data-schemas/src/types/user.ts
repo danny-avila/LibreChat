@@ -71,6 +71,9 @@ export interface IUser extends Document {
   /** Stream ids whose deletion-side abort has not been acknowledged; durable and
    *  TTL-free so a publication outage can never be mistaken for settlement. */
   deletionAbortFences?: string[];
+  /** Expiring Mongo-backed leases used when the primary finalization lease store
+   *  cannot be renewed. Keys are pre-sanitized opaque lease identities. */
+  finalizationFallbackLeases?: Map<string, Date> | Record<string, Date>;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
   tenantId?: string;

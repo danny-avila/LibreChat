@@ -6,6 +6,7 @@ import { Play, Trash, Pencil, Ellipsis } from 'lucide-react';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import {
   Label,
+  Chip,
   Switch,
   Spinner,
   OGDialog,
@@ -22,8 +23,8 @@ import {
   useRunScheduleNowMutation,
 } from '~/data-provider';
 import { useLocalize, useHasAccess } from '~/hooks';
-import { getMessageTimestamp, cn } from '~/utils';
 import { useAgentsMapContext } from '~/Providers';
+import { getMessageTimestamp } from '~/utils';
 import ScheduleDialog from './ScheduleDialog';
 import { describeCadence } from './cadence';
 
@@ -31,20 +32,16 @@ interface ScheduleCardProps {
   schedule: TSchedule;
 }
 
-const CHIP_BASE = 'rounded-full px-2 py-0.5 text-xs font-medium';
-const GREEN_CHIP = 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300';
-const RED_CHIP = 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300';
-const AMBER_CHIP = 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300';
-const NEUTRAL_CHIP = 'bg-surface-tertiary text-text-secondary';
+type StatusTone = 'neutral' | 'success' | 'warning' | 'error';
 
-const STATUS_CHIPS: Record<ScheduleRunStatus, { label: TranslationKeys; className: string }> = {
-  success: { label: 'com_ui_schedule_last_run', className: GREEN_CHIP },
-  error: { label: 'com_ui_schedule_last_run_failed', className: RED_CHIP },
-  interrupted: { label: 'com_ui_schedule_last_run_failed', className: RED_CHIP },
-  requires_action: { label: 'com_ui_schedule_needs_approval', className: AMBER_CHIP },
-  started: { label: 'com_ui_schedule_run_started', className: NEUTRAL_CHIP },
-  skipped_overlap: { label: 'com_ui_schedule_run_skipped', className: NEUTRAL_CHIP },
-  skipped_balance: { label: 'com_ui_schedule_run_skipped', className: NEUTRAL_CHIP },
+const STATUS_CHIPS: Record<ScheduleRunStatus, { label: TranslationKeys; tone: StatusTone }> = {
+  success: { label: 'com_ui_schedule_last_run', tone: 'success' },
+  error: { label: 'com_ui_schedule_last_run_failed', tone: 'error' },
+  interrupted: { label: 'com_ui_schedule_last_run_failed', tone: 'error' },
+  requires_action: { label: 'com_ui_schedule_needs_approval', tone: 'warning' },
+  started: { label: 'com_ui_schedule_run_started', tone: 'neutral' },
+  skipped_overlap: { label: 'com_ui_schedule_run_skipped', tone: 'neutral' },
+  skipped_balance: { label: 'com_ui_schedule_run_skipped', tone: 'neutral' },
 };
 
 const DISABLED_REASON_LABELS: Record<ScheduleDisabledReason, TranslationKeys> = {
@@ -139,6 +136,7 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
         label: localize('com_ui_schedule_run_now'),
         onClick: handleRunNow,
         hideOnClick: false,
+        disabled: runSchedule.isLoading,
         icon: runSchedule.isLoading ? (
           <Spinner className="size-4" />
         ) : (
@@ -173,7 +171,7 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
   return (
     <div
       data-testid="schedule-card"
-      className="rounded-lg border border-border-light bg-transparent px-3 py-2.5 hover:bg-surface-secondary"
+      className="rounded-lg border border-border-light bg-transparent px-3 py-2.5 transition-colors duration-theme-fast hover:bg-surface-secondary"
     >
       <div className="flex items-center gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
@@ -185,7 +183,7 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
               checked={schedule.enabled}
               onCheckedChange={handleToggle}
               disabled={updateSchedule.isLoading}
-              aria-label={localize('com_ui_schedule_enabled')}
+              aria-label={`${localize('com_ui_schedule_enabled')}: ${schedule.name}`}
               className="shrink-0"
             />
             <DropdownPopup
@@ -199,7 +197,7 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
               trigger={
                 <Ariakit.MenuButton
                   id={`schedule-menu-${schedule.id}`}
-                  aria-label={localize('com_ui_schedule_options')}
+                  aria-label={`${localize('com_ui_schedule_options')}: ${schedule.name}`}
                   className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
                 >
                   <Ellipsis className="size-4" aria-hidden={true} />
@@ -221,20 +219,16 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
             (lastRunConvoId != null && lastRunConvoId !== '' ? (
               <button
                 type="button"
-                className={cn(CHIP_BASE, statusChip.className, 'hover:underline')}
+                className="rounded-full hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
                 onClick={() => navigate(`/c/${lastRunConvoId}`)}
               >
-                {localize(statusChip.label)}
+                <Chip tone={statusChip.tone}>{localize(statusChip.label)}</Chip>
               </button>
             ) : (
-              <span className={cn(CHIP_BASE, statusChip.className)}>
-                {localize(statusChip.label)}
-              </span>
+              <Chip tone={statusChip.tone}>{localize(statusChip.label)}</Chip>
             ))}
           {schedule.disabledReason != null && (
-            <span className={cn(CHIP_BASE, RED_CHIP)}>
-              {localize(DISABLED_REASON_LABELS[schedule.disabledReason])}
-            </span>
+            <Chip tone="error">{localize(DISABLED_REASON_LABELS[schedule.disabledReason])}</Chip>
           )}
         </div>
       )}
@@ -267,7 +261,7 @@ export default function ScheduleCard({ schedule }: ScheduleCardProps) {
           selection={{
             selectHandler: confirmDelete,
             selectClasses:
-              'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 text-white',
+              'bg-surface-destructive text-text-on-status hover:bg-surface-destructive-hover',
             selectText: localize('com_ui_delete'),
           }}
         />

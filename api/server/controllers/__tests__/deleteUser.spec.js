@@ -97,6 +97,7 @@ jest.mock('~/models', () => ({
   addUserAbortFence: jest.fn().mockResolvedValue(undefined),
   clearUserAbortFence: jest.fn().mockResolvedValue(undefined),
   getUserAbortFences: jest.fn().mockResolvedValue([]),
+  countUserFinalizationFallbackLeases: jest.fn().mockResolvedValue(0),
   deleteTransactions: jest.fn(),
   deleteBalances: jest.fn(),
   deleteAllAgentApiKeys: jest.fn(),
@@ -423,6 +424,20 @@ describe('deleteUserController - interactive generation quiesce', () => {
     expect(mockDeleteUserById).not.toHaveBeenCalled();
   });
 
+  it('defers while a Mongo fallback finalization lease is still live', async () => {
+    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
+    const res = createRes();
+    const db = require('~/models');
+    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    db.countUserFinalizationFallbackLeases.mockResolvedValueOnce(1);
+
+    await deleteUserController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(mockDeleteMessages).not.toHaveBeenCalled();
+    expect(mockDeleteUserById).not.toHaveBeenCalled();
+  });
+
   it('fences an abort whose signal never left this replica and re-signals it', async () => {
     const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
     const res = createRes();
@@ -556,6 +571,10 @@ describe('deleteUserController - interactive generation quiesce', () => {
     await deleteUserController(req, res);
 
     expect(GenerationJobManager.countUserFinalizations.mock.invocationCallOrder[0]).toBeLessThan(
+      GenerationJobManager.getActiveJobIdsForUser.mock.invocationCallOrder[0],
+    );
+    const db = require('~/models');
+    expect(db.countUserFinalizationFallbackLeases.mock.invocationCallOrder[0]).toBeLessThan(
       GenerationJobManager.getActiveJobIdsForUser.mock.invocationCallOrder[0],
     );
   });

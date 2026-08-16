@@ -7,7 +7,9 @@ import {
   Input,
   Label,
   Button,
+  FieldMessage,
   Spinner,
+  Textarea,
   Dropdown,
   OGDialog,
   ControlCombobox,
@@ -123,9 +125,10 @@ export default function ScheduleDialog({
     register,
     watch,
     handleSubmit,
-    formState: { dirtyFields },
+    formState: { dirtyFields, errors },
   } = useForm<ScheduleFormValues>({
     defaultValues: getDefaultValues(schedule),
+    mode: 'onChange',
   });
   /** The revision the form defaults were built from, captured at the same instant.
    *  The `schedule` prop keeps refreshing while the dialog is open (the schedules
@@ -133,9 +136,6 @@ export default function ScheduleDialog({
    *  refreshed revision onto a cadence rebuilt from this stale snapshot — exactly
    *  the overwrite the fence exists to refuse. */
   const openedConfigRevision = useRef(schedule?.configRevision);
-  const name = watch('name');
-  const prompt = watch('prompt');
-  const agentId = watch('agent_id');
   const frequency = watch('frequency');
   const hour12 = watch('hour12');
   const minute = watch('minute');
@@ -316,7 +316,6 @@ export default function ScheduleDialog({
     resolvePreservedWeeklyDays(frequency),
   );
   const summary = `${describeCadence(summaryCadence, localize, locale)} · ${timezone}`;
-  const canSubmit = name.trim().length > 0 && prompt.trim().length > 0 && agentId.length > 0;
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange} triggerRef={triggerRef}>
@@ -333,28 +332,34 @@ export default function ScheduleDialog({
               <Input
                 id="schedule-name"
                 className="w-full"
-                {...register('name', { required: true })}
+                aria-invalid={errors.name != null}
+                aria-describedby="schedule-name-message"
+                {...register('name', { required: localize('com_ui_field_required') })}
               />
+              <FieldMessage id="schedule-name-message" message={errors.name?.message} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="schedule-prompt" className="text-sm font-medium text-text-primary">
                 {localize('com_ui_prompt')}
               </Label>
-              <textarea
+              <Textarea
                 id="schedule-prompt"
                 rows={4}
-                className="min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy"
-                {...register('prompt', { required: true })}
+                className="min-h-[100px] w-full resize-none"
+                aria-invalid={errors.prompt != null}
+                aria-describedby="schedule-prompt-message"
+                {...register('prompt', { required: localize('com_ui_field_required') })}
               />
+              <FieldMessage id="schedule-prompt-message" message={errors.prompt?.message} />
             </div>
             <div className="space-y-2">
-              <Label className="text-sm font-medium text-text-primary">
+              <Label htmlFor="schedule-agent" className="text-sm font-medium text-text-primary">
                 {localize('com_ui_agent')}
               </Label>
               <Controller
                 name="agent_id"
                 control={control}
-                rules={{ required: true }}
+                rules={{ required: localize('com_ui_field_required') }}
                 render={({ field }) => (
                   <ControlCombobox
                     selectedValue={field.value}
@@ -364,8 +369,12 @@ export default function ScheduleDialog({
                     selectPlaceholder={localize('com_ui_select_agent')}
                     searchPlaceholder={localize('com_agents_search_name')}
                     setValue={field.onChange}
+                    onBlur={field.onBlur}
                     items={agentItems}
                     ariaLabel={localize('com_ui_agent')}
+                    ariaInvalid={errors.agent_id != null}
+                    ariaDescribedBy="schedule-agent-message"
+                    selectId="schedule-agent"
                     isCollapsed={false}
                     showCarat={true}
                     containerClassName="px-0"
@@ -373,6 +382,7 @@ export default function ScheduleDialog({
                   />
                 )}
               />
+              <FieldMessage id="schedule-agent-message" message={errors.agent_id?.message} />
               <p className="text-xs text-text-secondary">
                 {localize('com_ui_schedule_target_new_chat')}
               </p>
@@ -386,7 +396,7 @@ export default function ScheduleDialog({
                 control={control}
                 render={({ field }) => (
                   <div
-                    className="flex gap-1"
+                    className="grid grid-cols-2 gap-1 sm:grid-cols-4"
                     role="group"
                     aria-label={localize('com_ui_schedule_frequency')}
                   >
@@ -437,7 +447,12 @@ export default function ScheduleDialog({
               <Label className="text-sm font-medium text-text-primary">
                 {localize('com_ui_schedule_time')}
               </Label>
-              <div className="flex gap-2">
+              <div
+                className={cn(
+                  'grid gap-2',
+                  frequency === 'hourly' ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3',
+                )}
+              >
                 {frequency !== 'hourly' && (
                   <Controller
                     name="hour12"
@@ -447,7 +462,7 @@ export default function ScheduleDialog({
                         value={String(field.value)}
                         onChange={(value) => field.onChange(Number(value))}
                         options={hourOptions}
-                        className="flex-1"
+                        className="w-full"
                         ariaLabel={localize('com_ui_schedule_hour')}
                         testId="schedule-hour-select"
                       />
@@ -462,7 +477,7 @@ export default function ScheduleDialog({
                       value={String(field.value)}
                       onChange={(value) => field.onChange(Number(value))}
                       options={minuteOptions}
-                      className="flex-1"
+                      className="w-full"
                       ariaLabel={localize('com_ui_schedule_minute')}
                       testId="schedule-minute-select"
                     />
@@ -477,7 +492,7 @@ export default function ScheduleDialog({
                         value={field.value}
                         onChange={field.onChange}
                         options={meridiemOptions}
-                        className="flex-1"
+                        className="w-full"
                         ariaLabel={localize('com_ui_schedule_meridiem')}
                         testId="schedule-meridiem-select"
                       />
@@ -486,7 +501,7 @@ export default function ScheduleDialog({
                 )}
               </div>
             </div>
-            <p className="text-sm text-text-secondary">{summary}</p>
+            <p className="break-words text-sm text-text-secondary">{summary}</p>
           </div>
         }
         buttons={
@@ -494,8 +509,7 @@ export default function ScheduleDialog({
             type="button"
             variant="submit"
             onClick={handleSubmit(onSubmit)}
-            disabled={isLoading || !canSubmit}
-            className="text-white"
+            disabled={isLoading}
             aria-label={localize(schedule ? 'com_ui_save' : 'com_ui_create')}
           >
             {isLoading ? (
