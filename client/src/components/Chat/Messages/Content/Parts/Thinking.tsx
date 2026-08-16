@@ -41,6 +41,7 @@ export const ThinkingButton = memo(
     content,
     contentId,
     showCopyButton = true,
+    animateLabel = false,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
@@ -48,6 +49,7 @@ export const ThinkingButton = memo(
     content?: string;
     contentId: string;
     showCopyButton?: boolean;
+    animateLabel?: boolean;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
@@ -91,7 +93,16 @@ export const ThinkingButton = memo(
               aria-hidden="true"
             />
           </span>
-          {label}
+          <span
+            key={label}
+            className={cn(
+              'min-w-0 truncate text-left',
+              animateLabel &&
+                'duration-300 ease-out animate-in fade-in-0 slide-in-from-bottom-1 motion-reduce:animate-none',
+            )}
+          >
+            {label}
+          </span>
         </button>
         {content && showCopyButton && (
           <Button

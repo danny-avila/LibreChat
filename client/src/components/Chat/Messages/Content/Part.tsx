@@ -144,7 +144,13 @@ const Part = memo(function Part({
     if (typeof reasoning !== 'string') {
       return null;
     }
-    return <Reasoning reasoning={reasoning} isLast={isLast ?? false} />;
+    return (
+      <Reasoning
+        reasoning={reasoning}
+        isLast={isLast ?? false}
+        reasoningLabel={part.reasoning_label}
+      />
+    );
   } else if (part.type === ContentTypes.SUMMARY) {
     return (
       <Summary

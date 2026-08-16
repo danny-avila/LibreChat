@@ -693,6 +693,22 @@ export const baseEndpointSchema = z.object({
   activityPhasePrompt: z.string().optional(),
   /** Cost cap: maximum phase summaries generated per run. Default 5. */
   activityPhaseMaxPerRun: z.number().int().positive().optional(),
+  /** Generates a live orientation label for sufficiently long top-level response reasoning. */
+  reasoningLabel: z.boolean().optional(),
+  /** Model used for reasoning labels. Defaults to activityModel, titleModel, then run model. */
+  reasoningLabelModel: z.string().optional(),
+  /** Endpoint receiving the bounded visible-reasoning snapshot. Defaults to activityEndpoint. */
+  reasoningLabelEndpoint: z.string().optional(),
+  /** Overrides the dedicated reasoning-label system prompt. */
+  reasoningLabelPrompt: z.string().optional(),
+  /** Characters required before the first reasoning label. Default 500. */
+  reasoningLabelMinChars: z.number().int().positive().optional(),
+  /** New characters required between streaming revisions. Default 400. */
+  reasoningLabelUpdateChars: z.number().int().positive().optional(),
+  /** Minimum milliseconds between streaming revisions. Default 3000. */
+  reasoningLabelUpdateIntervalMs: z.number().int().nonnegative().optional(),
+  /** Cost cap: maximum reasoning-label provider calls attempted per run. Default 8. */
+  reasoningLabelMaxPerRun: z.number().int().positive().optional(),
   /** Maximum characters allowed in a single tool result before truncation. */
   maxToolResultChars: z.number().positive().optional(),
 });
@@ -1143,6 +1159,14 @@ export const azureEndpointSchema = z
         activityPhaseEndpoint: true,
         activityPhasePrompt: true,
         activityPhaseMaxPerRun: true,
+        reasoningLabel: true,
+        reasoningLabelModel: true,
+        reasoningLabelEndpoint: true,
+        reasoningLabelPrompt: true,
+        reasoningLabelMinChars: true,
+        reasoningLabelUpdateChars: true,
+        reasoningLabelUpdateIntervalMs: true,
+        reasoningLabelMaxPerRun: true,
       })
       .partial(),
   );
