@@ -177,8 +177,9 @@ export const useArchiveAllConversationsMutation = (
       });
       queryClient.invalidateQueries([QueryKeys.projectConversations]);
       queryClient.invalidateQueries([QueryKeys.projects]);
-      queryClient.invalidateQueries({ queryKey: [QueryKeys.project], refetchType: 'all' });
-      queryClient.invalidateQueries({ queryKey: [QueryKeys.conversation], refetchType: 'all' });
+      queryClient.invalidateQueries([QueryKeys.project]);
+      queryClient.removeQueries([QueryKeys.project], { type: 'inactive' });
+      queryClient.removeQueries({ queryKey: [QueryKeys.conversation] });
       onSuccess?.(data, vars, context);
     },
     ..._options,

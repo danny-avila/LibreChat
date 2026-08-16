@@ -1,7 +1,7 @@
 import React from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useArchiveAllConversationsMutation } from '../mutations';
 
@@ -24,7 +24,11 @@ const createWrapper = (queryClient: QueryClient) =>
   };
 
 describe('archive-all mutation cache refresh', () => {
-  it('refetches inactive archived, project, and conversation detail queries', async () => {
+  beforeEach(() => {
+    mockArchiveAllConversations.mockReset();
+  });
+
+  it('refetches archived queries and removes inactive detail caches', async () => {
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -32,17 +36,18 @@ describe('archive-all mutation cache refresh', () => {
       },
     });
     const archivedQuery = jest.fn().mockResolvedValue({ pages: [], pageParams: [] });
-    const projectQuery = jest.fn().mockResolvedValue({ _id: 'project-1', conversationCount: 1 });
-    const conversationQuery = jest
-      .fn()
-      .mockResolvedValue({ conversationId: 'conversation-1', isArchived: false });
+    const projectKey = [QueryKeys.project, 'project-1'];
+    const conversationKey = [QueryKeys.conversation, 'conversation-1'];
 
     await queryClient.fetchQuery(
       [QueryKeys.archivedConversations, { isArchived: true }],
       archivedQuery,
     );
-    await queryClient.fetchQuery([QueryKeys.project, 'project-1'], projectQuery);
-    await queryClient.fetchQuery([QueryKeys.conversation, 'conversation-1'], conversationQuery);
+    queryClient.setQueryData(projectKey, { _id: 'project-1', conversationCount: 1 });
+    queryClient.setQueryData(conversationKey, {
+      conversationId: 'conversation-1',
+      isArchived: false,
+    });
 
     mockArchiveAllConversations.mockResolvedValue({ archivedCount: 1 });
     const { result } = renderHook(() => useArchiveAllConversationsMutation(), {
@@ -55,8 +60,42 @@ describe('archive-all mutation cache refresh', () => {
 
     await waitFor(() => {
       expect(archivedQuery).toHaveBeenCalledTimes(2);
+    });
+    expect(queryClient.getQueryData(projectKey)).toBeUndefined();
+    expect(queryClient.getQueryData(conversationKey)).toBeUndefined();
+
+    queryClient.clear();
+  });
+
+  it('refetches active project detail queries', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const projectQuery = jest.fn().mockResolvedValue({ _id: 'project-1', conversationCount: 1 });
+
+    mockArchiveAllConversations.mockResolvedValue({ archivedCount: 1 });
+    const { result } = renderHook(
+      () => ({
+        archiveAll: useArchiveAllConversationsMutation(),
+        project: useQuery([QueryKeys.project, 'project-1'], projectQuery),
+      }),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await waitFor(() => {
+      expect(result.current.project.isSuccess).toBe(true);
+      expect(projectQuery).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      await result.current.archiveAll.mutateAsync();
+    });
+
+    await waitFor(() => {
       expect(projectQuery).toHaveBeenCalledTimes(2);
-      expect(conversationQuery).toHaveBeenCalledTimes(2);
     });
 
     queryClient.clear();
