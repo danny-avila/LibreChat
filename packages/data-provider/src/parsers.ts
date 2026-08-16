@@ -260,7 +260,7 @@ export const getResponseSender = (endpointOption: Partial<t.TEndpointOption>): s
       const gptVersion = extractGPTVersion(model);
       return gptVersion || 'GPT';
     }
-    return (alternateName[endpoint] as string | undefined) ?? 'AI';
+    return (alternateName[endpoint] as string | undefined) ?? (model || 'AI');
   }
 
   if (endpoint === EModelEndpoint.anthropic) {
@@ -304,7 +304,7 @@ export const getResponseSender = (endpointOption: Partial<t.TEndpointOption>): s
       return modelDisplayLabel;
     }
 
-    return 'AI';
+    return model || 'AI';
   }
 
   return '';
