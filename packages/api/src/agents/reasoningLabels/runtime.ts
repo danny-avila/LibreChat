@@ -178,34 +178,25 @@ export function synthesizeReasoningLabelGapEvents(
       continue;
     }
     const snapshot = snapshotContent[i];
-    const snapshotHasLabel =
-      snapshot?.type === ContentTypes.THINK &&
-      typeof snapshot.reasoning_label === 'string' &&
-      snapshot.reasoning_label.trim().length > 0 &&
-      typeof snapshot.reasoning_label_step_id === 'string';
+    const snapshotStepId =
+      snapshot?.type === ContentTypes.THINK && typeof snapshot.reasoning_label_step_id === 'string'
+        ? snapshot.reasoning_label_step_id
+        : undefined;
+    const freshStepId =
+      typeof part.reasoning_label_step_id === 'string' ? part.reasoning_label_step_id : undefined;
     const freshHasLabel =
       typeof part.reasoning_label === 'string' &&
       part.reasoning_label.trim().length > 0 &&
       typeof part.reasoning_label_revision === 'number' &&
-      typeof part.reasoning_label_step_id === 'string';
-    if (!freshHasLabel) {
-      const stepId = part.reasoning_label_step_id;
-      const previousStepId = snapshot?.reasoning_label_step_id;
-      if (
-        !snapshotHasLabel ||
-        typeof stepId !== 'string' ||
-        typeof previousStepId !== 'string' ||
-        stepId === previousStepId
-      ) {
-        continue;
-      }
+      freshStepId != null;
+    if (snapshotStepId != null && freshStepId != null && snapshotStepId !== freshStepId) {
       events.push({
         event: 'on_reasoning_label',
         data: {
           index: i,
-          stepId,
+          stepId: freshStepId,
           reset: true,
-          previousStepId,
+          previousStepId: snapshotStepId,
           ...(typeof part.reasoning_label_attempts === 'number' && {
             attempts: part.reasoning_label_attempts,
           }),
@@ -213,6 +204,8 @@ export function synthesizeReasoningLabelGapEvents(
           ...(meta.responseMessageId != null && { responseMessageId: meta.responseMessageId }),
         },
       });
+    }
+    if (!freshHasLabel) {
       continue;
     }
     if (

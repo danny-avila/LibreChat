@@ -781,7 +781,7 @@ describe('reasoning labels', () => {
     ]);
   });
 
-  it('synthesizes a same-title revision when a new step reused the gap slot', () => {
+  it('resets step ownership before synthesizing a reused slot revision', () => {
     const snapshot = [
       {
         type: ContentTypes.THINK,
@@ -806,6 +806,17 @@ describe('reasoning labels', () => {
         responseMessageId: 'response-1',
       }),
     ).toEqual([
+      {
+        event: 'on_reasoning_label',
+        data: {
+          index: 0,
+          stepId: 'step-new',
+          reset: true,
+          previousStepId: 'step-old',
+          conversationId: 'conversation-1',
+          responseMessageId: 'response-1',
+        },
+      },
       {
         event: 'on_reasoning_label',
         data: {

@@ -123,6 +123,34 @@ describe('reasoning label utilities', () => {
     ).toBe(newer);
   });
 
+  it('applies an ownership reset before a replacement-step label', () => {
+    const oldStep = applyReasoningLabel(response(), {
+      ...baseEvent,
+      stepId: 'old-step',
+      label: 'Inspecting the old direction',
+    });
+    const reset = applyReasoningLabel(oldStep, {
+      index: 0,
+      stepId: 'new-step',
+      reset: true,
+      previousStepId: 'old-step',
+      attempts: 2,
+    });
+    const updated = applyReasoningLabel(reset, {
+      ...baseEvent,
+      stepId: 'new-step',
+      revision: 2,
+      label: 'Inspecting the new direction',
+    });
+
+    expect(updated.content?.[0]).toMatchObject({
+      reasoning_label: 'Inspecting the new direction',
+      reasoning_label_step_id: 'new-step',
+      reasoning_label_revision: 2,
+      reasoning_label_attempts: 2,
+    });
+  });
+
   it('does not overwrite another reasoning step at the raw index', () => {
     const oldStep = applyReasoningLabel(response(), {
       ...baseEvent,
