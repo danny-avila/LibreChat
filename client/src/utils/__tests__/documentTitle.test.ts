@@ -30,6 +30,12 @@ describe('document title', () => {
     expect(document.title).toBe('LibreChat');
   });
 
+  it('uses the app title when the conversation title is the new chat placeholder', () => {
+    setDocumentTitle('New Chat', true);
+
+    expect(document.title).toBe('LibreChat');
+  });
+
   it('uses the default app title when no app title is stored', () => {
     localStorage.removeItem(LocalStorageKeys.APP_TITLE);
 

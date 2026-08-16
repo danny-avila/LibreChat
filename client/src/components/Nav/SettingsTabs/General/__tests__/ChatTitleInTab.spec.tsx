@@ -4,10 +4,10 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryKeys, LocalStorageKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
-import ChatTitleInTab from './ChatTitleInTab';
+import ChatTitleInTab from '../ChatTitleInTab';
 import store from '~/store';
 
-jest.mock('../ToggleSwitch', () => ({
+jest.mock('../../ToggleSwitch', () => ({
   __esModule: true,
   default: ({ onCheckedChange }: { onCheckedChange?: (value: boolean) => void }) => (
     <>
@@ -81,6 +81,19 @@ describe('ChatTitleInTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'true' }));
 
     expect(document.title).toBe('Cached sidebar title');
+  });
+
+  it('keeps the app title when enabling titles for a new chat', () => {
+    localStorage.setItem(LocalStorageKeys.APP_TITLE, 'Custom LibreChat');
+    document.title = 'Custom LibreChat';
+    renderToggle({
+      route: '/c/new',
+      recoilConversation: createConversation('new', 'New Chat'),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'true' }));
+
+    expect(document.title).toBe('Custom LibreChat');
   });
 
   it('preserves page-specific titles outside chat routes', () => {

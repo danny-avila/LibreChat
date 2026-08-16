@@ -27,6 +27,7 @@ import {
   logger,
   setDraft,
   scrollToEnd,
+  hasRealTitle,
   setDocumentTitle,
   requestChatFocus,
   getAllContentText,
@@ -67,9 +68,6 @@ type TTitleEvent = {
     title?: string;
   };
 };
-
-const hasRealTitle = (title?: string | null): title is string =>
-  title != null && title !== '' && title !== 'New Chat';
 
 /** Skill caches refreshed when a chat turn authors a skill via `create_file`/`edit_file`. */
 const SKILL_QUERY_KEYS = [
