@@ -543,8 +543,27 @@ export function mergeQuerySettingsWithSpec(
 }
 
 /** Gets the model spec iconURL by explicit icon, preset icon, then preset endpoint. */
-export function getModelSpecIconURL(modelSpec: t.TModelSpec) {
-  return modelSpec.iconURL ?? modelSpec.preset?.iconURL ?? modelSpec.preset?.endpoint ?? '';
+export function getModelSpecIconURL(modelSpec: t.TModelSpec, agentAvatarURL?: string) {
+  return (
+    modelSpec.iconURL ??
+    modelSpec.preset?.iconURL ??
+    agentAvatarURL ??
+    modelSpec.preset?.endpoint ??
+    ''
+  );
+}
+
+/**
+ * Resolves the avatar of the agent a spec targets. Returns a primitive so callers
+ * can hand it to memoized icon components without widening their comparison to
+ * the identity of the whole agents map.
+ */
+export function getSpecAgentAvatarURL(
+  modelSpec: t.TModelSpec,
+  agentsMap?: t.TAgentsMap,
+): string | undefined {
+  const agentId = modelSpec.preset?.agent_id;
+  return agentId != null ? agentsMap?.[agentId]?.avatar?.filepath : undefined;
 }
 
 /** Gets the default frontend-facing endpoint, dependent on iconURL definition.

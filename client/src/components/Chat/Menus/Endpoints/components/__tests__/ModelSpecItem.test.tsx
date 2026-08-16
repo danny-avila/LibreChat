@@ -122,4 +122,26 @@ describe('ModelSpecItem', () => {
       expect(screen.getByRole('button', { name: 'com_ui_pin' })).toHaveAttribute('tabindex', '0');
     });
   });
+
+  describe('display name', () => {
+    it('renders the label when present', () => {
+      render(<ModelSpecItem spec={baseSpec} isSelected={false} />);
+      expect(screen.getByText('My Spec')).toBeInTheDocument();
+    });
+
+    /**
+     * A spec persisted without a label would otherwise render a blank row, even
+     * though the selector's header falls back to the name for the same spec.
+     */
+    it('falls back to the name when the label is missing', () => {
+      const spec = { ...baseSpec, label: undefined } as unknown as TModelSpec;
+      render(<ModelSpecItem spec={spec} isSelected={false} />);
+      expect(screen.getByText('my-spec')).toBeInTheDocument();
+    });
+
+    it('falls back to the name when the label is an empty string', () => {
+      render(<ModelSpecItem spec={{ ...baseSpec, label: '' }} isSelected={false} />);
+      expect(screen.getByText('my-spec')).toBeInTheDocument();
+    });
+  });
 });
