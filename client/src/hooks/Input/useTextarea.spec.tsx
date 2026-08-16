@@ -122,7 +122,7 @@ const createPasteEvent = (files: File[] = []) => ({
   preventDefault: jest.fn(),
 });
 
-const renderTextareaHook = () => {
+const renderTextareaHook = (answerModeActive = false) => {
   const textArea = document.createElement('textarea');
   const submitButton = document.createElement('button');
   const setIsScrollable = jest.fn();
@@ -131,6 +131,7 @@ const renderTextareaHook = () => {
       textAreaRef: { current: textArea },
       submitButtonRef: { current: submitButton },
       setIsScrollable,
+      answerModeActive,
     }),
   );
 
@@ -148,9 +149,27 @@ describe('useTextarea long-paste fallback', () => {
     }));
   });
 
+  it('keeps long pasted text inline while the composer is the answer box', () => {
+    const { result } = renderTextareaHook(true);
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(mockResolvePastedTextFile).not.toHaveBeenCalled();
+    expect(mockRouteFiles).not.toHaveBeenCalled();
+  });
+
   it('restores the paste when attachment validation rejects the file', async () => {
     mockRouteFiles.mockResolvedValueOnce(false);
     const { result, textArea } = renderTextareaHook();
+    textArea.value = 'before selected after';
+    textArea.setSelectionRange(7, 15);
+    mockInsertTextAtCursor.mockImplementationOnce((element: HTMLTextAreaElement, text: string) => {
+      element.setRangeText(text, element.selectionStart, element.selectionEnd, 'end');
+    });
     const event = createPasteEvent();
 
     act(() =>
@@ -160,6 +179,7 @@ describe('useTextarea long-paste fallback', () => {
     expect(event.preventDefault).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(mockInsertTextAtCursor).toHaveBeenCalledTimes(1));
     expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
+    expect(textArea.value).toBe(`before ${pastedText} after`);
     expect(mockForceResize).toHaveBeenCalledWith(textArea);
   });
 
@@ -183,6 +203,28 @@ describe('useTextarea long-paste fallback', () => {
     expect(mockForceResize).not.toHaveBeenCalled();
   });
 
+  it('replaces selected draft text when the attachment is accepted', async () => {
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result, textArea } = renderTextareaHook();
+    const inputListener = jest.fn();
+    textArea.value = 'before selected after';
+    textArea.setSelectionRange(7, 15);
+    textArea.addEventListener('input', inputListener);
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(textArea.value).toBe('before  after');
+    expect(textArea.selectionStart).toBe(7);
+    expect(textArea.selectionEnd).toBe(7);
+    expect(inputListener).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalledTimes(1));
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+  });
+
   it('restores the paste after an upload failure when the composer is unchanged', async () => {
     let onUploadError: (() => void) | undefined;
     mockRouteFiles.mockImplementationOnce(
@@ -192,7 +234,8 @@ describe('useTextarea long-paste fallback', () => {
       },
     );
     const { result, textArea } = renderTextareaHook();
-    textArea.value = 'unchanged draft';
+    textArea.value = 'before selected after';
+    textArea.setSelectionRange(7, 15);
     const event = createPasteEvent();
 
     act(() =>
@@ -200,6 +243,7 @@ describe('useTextarea long-paste fallback', () => {
     );
 
     await waitFor(() => expect(onUploadError).toBeDefined());
+    expect(textArea.value).toBe('before  after');
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
 
     act(() => onUploadError?.());

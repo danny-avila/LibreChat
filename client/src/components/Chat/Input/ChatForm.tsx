@@ -396,6 +396,7 @@ const ChatForm = memo(function ChatForm({
     // Enter stays live during a run when it can steer/queue instead of send.
     allowSubmitWhileGenerating: steering.duringRunActive,
     onDuringRunModifier: steering.duringRunActive ? handleDuringRunModifier : undefined,
+    answerModeActive: answerMode.active && !answerMode.batchMode,
   });
 
   useQueryParams({ textAreaRef });

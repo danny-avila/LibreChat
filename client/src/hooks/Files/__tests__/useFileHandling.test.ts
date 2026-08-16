@@ -935,6 +935,27 @@ describe('useFileHandling', () => {
       expect(mockMutate).toHaveBeenCalledTimes(1);
     });
 
+    it('resolves false when every file fails preprocessing', async () => {
+      const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      mockProcessFileForUpload.mockRejectedValue(new Error('HEIC conversion failed'));
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.handleFiles([
+          new File(['first'], 'first.heic', { type: 'image/heic' }),
+          new File(['second'], 'second.heic', { type: 'image/heic' }),
+        ]);
+      });
+
+      expect(accepted).toBe(false);
+      expect(mockProcessFileForUpload).toHaveBeenCalledTimes(2);
+      expect(mockMutate).not.toHaveBeenCalled();
+      consoleLog.mockRestore();
+    });
+
     it('runs the matching recovery when the first of two concurrent uploads fails', async () => {
       const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
       const firstRecovery = jest.fn();

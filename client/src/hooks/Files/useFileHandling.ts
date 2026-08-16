@@ -594,7 +594,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       await startUpload(extendedFile, onUploadError);
     }
 
-    return true;
+    return processedUploads.length > 0;
   };
 
   const handleFiles = async (
