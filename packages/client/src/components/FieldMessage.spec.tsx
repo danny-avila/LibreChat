@@ -29,4 +29,16 @@ describe('FieldMessage', () => {
     expect(line).not.toHaveTextContent('Helpful hint');
     expect(line).toHaveClass('text-text-destructive');
   });
+
+  it('reserves the requested number of helper lines', () => {
+    const { container, rerender } = render(
+      <FieldMessage id="field-message" hint="Helpful hint" lines={2} />,
+    );
+
+    expect(container.querySelector('#field-message')).toHaveClass('min-h-8');
+
+    rerender(<FieldMessage id="field-message" message="Validation failed" lines={2} />);
+
+    expect(container.querySelector('#field-message')).toHaveClass('min-h-8');
+  });
 });

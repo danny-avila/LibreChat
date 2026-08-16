@@ -121,6 +121,7 @@ export default function MemoryCreateDialog({
                 id="memory-key-message"
                 message={showKeyError && keyError ? localize(keyError) : null}
                 hint={localize('com_ui_memory_key_hint')}
+                lines={2}
               />
             </div>
             <div className="space-y-2">
