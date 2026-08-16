@@ -183,6 +183,47 @@ describe('modelSpecs helpers', () => {
     expect(isModelSpecEndpointMatch(modelSpec, EModelEndpoint.google)).toBe(false);
   });
 
+  /**
+   * A preset naming an `agent_id` can only be served by the agents endpoint, so
+   * omitting `endpoint` previously left the spec matching nothing at all.
+   */
+  it('should infer the agents endpoint when a preset omits it but names an agent', () => {
+    const modelSpec: TModelSpec = {
+      name: 'agent-spec',
+      label: 'Agent Spec',
+      preset: {
+        agent_id: 'agent_abc',
+      },
+    } as TModelSpec;
+
+    expect(isModelSpecEndpointMatch(modelSpec, EModelEndpoint.agents)).toBe(true);
+    expect(isModelSpecEndpointMatch(modelSpec, EModelEndpoint.openAI)).toBe(false);
+  });
+
+  it('should keep an explicit endpoint over the inferred one', () => {
+    const modelSpec: TModelSpec = {
+      name: 'explicit-spec',
+      label: 'Explicit Spec',
+      preset: {
+        endpoint: EModelEndpoint.openAI,
+        agent_id: 'agent_abc',
+      },
+    } as TModelSpec;
+
+    expect(isModelSpecEndpointMatch(modelSpec, EModelEndpoint.openAI)).toBe(true);
+    expect(isModelSpecEndpointMatch(modelSpec, EModelEndpoint.agents)).toBe(false);
+  });
+
+  it('should not infer an endpoint for presets without an agent', () => {
+    const modelSpec: TModelSpec = {
+      name: 'bare-spec',
+      label: 'Bare Spec',
+      preset: {},
+    } as TModelSpec;
+
+    expect(isModelSpecEndpointMatch(modelSpec, EModelEndpoint.agents)).toBe(false);
+  });
+
   it('should resolve special variables in model spec prompt prefixes', () => {
     expect(
       resolveModelSpecPromptPrefixVariables({ promptPrefix: 'Help {{current_user}}.' }, {

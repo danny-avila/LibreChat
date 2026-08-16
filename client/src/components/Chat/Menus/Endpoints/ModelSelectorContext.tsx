@@ -204,13 +204,15 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     (spec: t.TModelSpec) => {
       let model = spec.preset.model ?? null;
       onSelectSpec?.(spec);
-      if (isAgentsEndpoint(spec.preset.endpoint)) {
+      /** Specs arrive with `preset.endpoint` materialized at config load. */
+      const endpoint = spec.preset.endpoint ?? null;
+      if (isAgentsEndpoint(endpoint)) {
         model = spec.preset.agent_id ?? '';
-      } else if (isAssistantsEndpoint(spec.preset.endpoint)) {
+      } else if (isAssistantsEndpoint(endpoint)) {
         model = spec.preset.assistant_id ?? '';
       }
       setSelectedValues({
-        endpoint: spec.preset.endpoint,
+        endpoint,
         model,
         modelSpec: spec.name,
       });

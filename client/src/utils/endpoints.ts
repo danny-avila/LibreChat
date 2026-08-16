@@ -8,6 +8,7 @@ import {
   isAgentsEndpoint,
   isEphemeralAgentId,
   isAssistantsEndpoint,
+  resolveModelSpecEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
 import type { LocalizeFunction, IconsRecord } from '~/common';
@@ -514,6 +515,12 @@ export function getModelSpecPreset(modelSpec?: t.TModelSpec) {
   }
   return {
     ...modelSpec.preset,
+    /**
+     * Specs are materialized at config load, but a preset flowing into
+     * `TPreset` contexts must carry an endpoint decision either way — resolve
+     * here so startup and URL flows never receive an endpoint-less preset.
+     */
+    endpoint: resolveModelSpecEndpoint(modelSpec) ?? null,
     spec: modelSpec.name,
     iconURL: getModelSpecIconURL(modelSpec),
   };

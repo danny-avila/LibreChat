@@ -1,6 +1,7 @@
 import {
   parseCompactConvo,
   replaceSpecialVars,
+  resolveModelSpecEndpoint,
   type EModelEndpoint,
   type TConversation,
   type TModelSpec,
@@ -130,7 +131,7 @@ export function isModelSpecEndpointMatch(
   modelSpec: Pick<TModelSpec, 'preset'> | undefined,
   endpoint: string | null | undefined,
 ): boolean {
-  return Boolean(modelSpec && endpoint === modelSpec.preset?.endpoint);
+  return Boolean(modelSpec && endpoint === resolveModelSpecEndpoint(modelSpec));
 }
 
 export function applyModelSpecPreset({
