@@ -45,9 +45,10 @@ export function applyReasoningLabel(message: TMessage, event: TReasoningLabelEve
     if (alreadyReset) {
       return message;
     }
+    const resetPart = stripReasoningLabelMetadata(existing) as typeof existing;
     const nextContent = [...content] as TMessageContentParts[];
     nextContent[event.index] = {
-      ...stripReasoningLabelMetadata(existing),
+      ...resetPart,
       reasoning_label_step_id: event.stepId,
       ...(attempts != null && { reasoning_label_attempts: attempts }),
     };
