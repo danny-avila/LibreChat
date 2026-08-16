@@ -1,7 +1,14 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useId, useMemo, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { useRecoilState } from 'recoil';
-import { OGDialog, OGDialogContent, OGDialogTitle, OGDialogClose } from '@librechat/client';
+import {
+  Label,
+  Switch,
+  OGDialog,
+  OGDialogClose,
+  OGDialogTitle,
+  OGDialogContent,
+} from '@librechat/client';
 import type { ShortcutActionId, ShortcutBindingInfo } from '~/hooks/useKeyboardShortcuts';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { ShortcutBinding } from '~/utils/shortcuts';
@@ -266,7 +273,9 @@ function KeyboardShortcutsDialog() {
   const localize = useLocalize();
   const { bindings, bindingMap, setBinding, resetBinding, resetAll } = useShortcutBindings();
   const [open, setOpen] = useRecoilState(store.showShortcutsDialog);
+  const [disabled, setDisabled] = useRecoilState(store.shortcutsDisabled);
   const [editingId, setEditingId] = useState<ShortcutActionId | null>(null);
+  const disableSwitchId = useId();
 
   const grouped = useMemo<GroupedBindings>(() => {
     const groups: GroupedBindings = {};
@@ -334,6 +343,26 @@ function KeyboardShortcutsDialog() {
             <span className="sr-only">{localize('com_ui_close')}</span>
           </OGDialogClose>
         </header>
+
+        <div className="mx-5 mt-4 flex items-center justify-between gap-4 rounded-xl border border-border-light bg-surface-secondary px-4 py-3">
+          <div className="min-w-0">
+            <Label
+              htmlFor={disableSwitchId}
+              className="cursor-pointer select-none text-[13px] font-medium text-text-primary"
+            >
+              {localize('com_shortcut_disable_all')}
+            </Label>
+            <p className="mt-0.5 text-[11.5px] text-text-secondary">
+              {localize('com_shortcut_disable_all_hint')}
+            </p>
+          </div>
+          <Switch
+            id={disableSwitchId}
+            checked={disabled}
+            onCheckedChange={(value) => setDisabled(value === true)}
+            aria-label={localize('com_shortcut_disable_all')}
+          />
+        </div>
 
         <div className="flex-1 overflow-y-auto">
           <div className="grid grid-cols-1 gap-x-10 px-5 pb-2 pt-5 md:grid-cols-2">

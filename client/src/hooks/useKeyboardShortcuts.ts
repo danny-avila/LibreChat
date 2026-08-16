@@ -897,20 +897,22 @@ export function useShortcutActions(): ShortcutAction[] {
 
 export function useShortcutDisplay(actionId?: ShortcutActionId): string {
   const overrides = useRecoilValue(store.customShortcuts);
+  const disabled = useRecoilValue(store.shortcutsDisabled);
   return useMemo(() => {
-    if (!actionId) return '';
+    if (!actionId || disabled) return '';
     const binding = resolveShortcutBindings(overrides).get(actionId) ?? null;
     return binding ? bindingDisplayString(binding, isMac) : '';
-  }, [actionId, overrides]);
+  }, [actionId, overrides, disabled]);
 }
 
 export function useShortcutAriaKey(actionId?: ShortcutActionId): string | undefined {
   const overrides = useRecoilValue(store.customShortcuts);
+  const disabled = useRecoilValue(store.shortcutsDisabled);
   return useMemo(() => {
-    if (!actionId) return undefined;
+    if (!actionId || disabled) return undefined;
     const binding = resolveShortcutBindings(overrides).get(actionId) ?? null;
     return binding ? (bindingToString(binding) ?? undefined) : undefined;
-  }, [actionId, overrides]);
+  }, [actionId, overrides, disabled]);
 }
 
 export function useShortcutHint(actionId: ShortcutActionId | undefined, label: string): string {
@@ -1010,6 +1012,7 @@ export default function useKeyboardShortcuts() {
   const actions = useShortcutActions();
   const overrides = useRecoilValue(store.customShortcuts);
   const shortcutsDialogOpen = useRecoilValue(store.showShortcutsDialog);
+  const shortcutsDisabled = useRecoilValue(store.shortcutsDisabled);
 
   const actionMap = useMemo(() => new Map(actions.map((action) => [action.id, action])), [actions]);
 
@@ -1028,6 +1031,10 @@ export default function useKeyboardShortcuts() {
 
   const handler = useCallback(
     (e: KeyboardEvent) => {
+      if (shortcutsDisabled) {
+        return;
+      }
+
       if (e.repeat) {
         return;
       }
@@ -1079,7 +1086,7 @@ export default function useKeyboardShortcuts() {
         e.preventDefault();
       }
     },
-    [actionMap, bindingMap, shortcutsDialogOpen],
+    [actionMap, bindingMap, shortcutsDialogOpen, shortcutsDisabled],
   );
 
   useEffect(() => {
