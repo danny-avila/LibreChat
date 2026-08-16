@@ -28,6 +28,12 @@
       }
     </style>
     <script>
+      /* Applied before first paint so the app does not flash at the wrong scale. */
+      const uiScale = parseFloat(localStorage.getItem('uiScale'));
+      if (uiScale >= 0.5 && uiScale <= 1.5) {
+        document.documentElement.style.setProperty('--ui-scale', String(uiScale));
+      }
+
       const theme = localStorage.getItem('color-theme');
       const loadingContainerStyle = document.createElement('style');
       let backgroundColor;

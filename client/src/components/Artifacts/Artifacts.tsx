@@ -348,8 +348,8 @@ export default function Artifacts() {
             'flex w-full flex-col bg-surface-primary text-xl text-text-primary motion-reduce:transition-none',
             isMobile
               ? cn(
-                  'fixed z-[100] shadow-[0_-10px_60px_rgba(0,0,0,0.35)]',
-                  isFullscreen ? 'inset-0 rounded-none' : 'inset-x-0 bottom-0 rounded-t-[20px]',
+                  'fixed z-[100] shadow-[0_-0.625rem_3.75rem_rgba(0,0,0,0.35)]',
+                  isFullscreen ? 'inset-0 rounded-none' : 'inset-x-0 bottom-0 rounded-t-[1.25rem]',
                   isVisible && !isClosing
                     ? 'translate-y-0 opacity-100'
                     : 'duration-250 translate-y-full opacity-0 transition-all',
@@ -389,7 +389,7 @@ export default function Artifacts() {
           {/* Header */}
           <div
             className={cn(
-              'flex h-[52px] flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt p-2 transition-all duration-300 motion-reduce:transition-none',
+              'flex h-[3.25rem] flex-shrink-0 items-center justify-between gap-2 border-b border-border-light bg-surface-primary-alt p-2 transition-all duration-300 motion-reduce:transition-none',
               isMobile ? 'justify-center' : 'overflow-hidden',
             )}
           >

@@ -37,7 +37,7 @@ const DropdownVariableCard = ({ parsed }: { parsed: ParsedVariable }) => {
 
   return (
     <div
-      className="bg-surface-secondary/50 rounded-lg border border-border-medium p-2.5 hover:bg-surface-secondary"
+      className="rounded-lg border border-border-medium bg-surface-secondary/50 p-2.5 hover:bg-surface-secondary"
       role="listitem"
       aria-label={localize('com_ui_variable_with_options', {
         name: parsed.name,
@@ -49,7 +49,7 @@ const DropdownVariableCard = ({ parsed }: { parsed: ParsedVariable }) => {
           <ChevronRight className="size-3.5 text-text-secondary" aria-hidden="true" />
         </div>
         <span className="text-sm font-medium text-text-primary">{parsed.name}</span>
-        <span className="rounded-full bg-surface-tertiary px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">
+        <span className="rounded-full bg-surface-tertiary px-1.5 py-0.5 text-[0.625rem] font-medium text-text-secondary">
           {parsed.options.length} {localize('com_ui_options')}
         </span>
       </div>
@@ -91,7 +91,9 @@ const SpecialVariableChip = ({ parsed }: { parsed: ParsedVariable }) => {
       </div>
       <div className="min-w-0 flex-1">
         <span className="text-xs font-medium text-text-primary">{displayLabel}</span>
-        {description && <p className="mt-0.5 text-[11px] text-text-secondary">{description}</p>}
+        {description && (
+          <p className="mt-0.5 text-[0.6875rem] text-text-secondary">{description}</p>
+        )}
       </div>
     </div>
   );
@@ -99,7 +101,7 @@ const SpecialVariableChip = ({ parsed }: { parsed: ParsedVariable }) => {
 
 const SimpleVariableChip = ({ parsed }: { parsed: ParsedVariable }) => (
   <span
-    className="bg-surface-secondary/50 inline-flex items-center gap-1.5 rounded-lg border border-border-medium px-2.5 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-tertiary"
+    className="inline-flex items-center gap-1.5 rounded-lg border border-border-medium bg-surface-secondary/50 px-2.5 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-tertiary"
     role="listitem"
   >
     <Variable className="size-3 text-text-secondary" aria-hidden="true" />
@@ -158,7 +160,7 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
       >
         {specialVars.length > 0 && (
           <section aria-label={localize('com_ui_special_variables')}>
-            <h5 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+            <h5 className="mb-2 text-[0.6875rem] font-medium uppercase tracking-wide text-text-secondary">
               {localize('com_ui_special_variables')}
             </h5>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -171,7 +173,7 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
 
         {dropdownVariables.length > 0 && (
           <section aria-label={localize('com_ui_dropdown_variables')}>
-            <h5 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+            <h5 className="mb-2 text-[0.6875rem] font-medium uppercase tracking-wide text-text-secondary">
               {localize('com_ui_dropdown_variables')}
             </h5>
             <div className="flex flex-col gap-2">
@@ -184,7 +186,7 @@ const PromptVariables = ({ promptText }: { promptText: string }) => {
 
         {simpleVariables.length > 0 && (
           <section aria-label={localize('com_ui_text_variables')}>
-            <h5 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+            <h5 className="mb-2 text-[0.6875rem] font-medium uppercase tracking-wide text-text-secondary">
               {localize('com_ui_text_variables')}
             </h5>
             <div className="flex flex-wrap gap-2">

@@ -12,6 +12,7 @@ import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
 import LanguageSync from '~/components/System/LanguageSync';
 import { getThemeFromEnv } from './utils/getThemeFromEnv';
 import { initializeFontSize } from '~/store/fontSize';
+import { initializeUiScale } from '~/store/uiScale';
 import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
 
@@ -41,6 +42,7 @@ const App = () => {
 
   useEffect(() => {
     initializeFontSize();
+    initializeUiScale();
   }, []);
 
   // Load theme from environment variables if available

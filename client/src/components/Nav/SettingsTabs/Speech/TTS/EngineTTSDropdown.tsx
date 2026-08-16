@@ -33,7 +33,7 @@ const EngineTTSDropdown: React.FC<EngineTTSDropdownProps> = ({ external }) => {
         value={engineTTS}
         onChange={handleSelect}
         options={endpointOptions}
-        sizeClasses="z-50 w-[180px]"
+        sizeClasses="z-50 w-[11.25rem]"
         testId="EngineTTSDropdown"
         className="z-50"
         aria-labelledby={labelId}

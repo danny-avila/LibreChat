@@ -97,6 +97,6 @@ describe('messageFooterClasses', () => {
   /** A hover button is a 19px icon with p-1.5 either side, so the row it forms is
    *  31px. The footer holds that height even while it has nothing to show. */
   it('reserves the height of the action row', () => {
-    expect(messageFooterClasses).toContain('min-h-[31px]');
+    expect(messageFooterClasses).toContain('min-h-[1.9375rem]');
   });
 });

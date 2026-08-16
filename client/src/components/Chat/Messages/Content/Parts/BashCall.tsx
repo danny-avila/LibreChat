@@ -175,7 +175,7 @@ export default function BashCall({
                 <div
                   ref={commandPaneRef}
                   onScroll={onCommandPaneScroll}
-                  className="max-h-[300px] overflow-auto"
+                  className="max-h-[18.75rem] overflow-auto"
                 >
                   <pre className="whitespace-pre-wrap break-words px-3 py-2.5 pr-10 font-mono text-xs">
                     <span className="select-none text-text-tertiary" aria-hidden="true">
@@ -195,7 +195,7 @@ export default function BashCall({
               <div className={cn(command && 'border-t border-border-light')}>
                 <pre
                   className={cn(
-                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
+                    'max-h-[18.75rem] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
                     outputHasError ? 'text-status-error' : 'text-text-primary',
                   )}
                 >

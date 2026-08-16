@@ -99,7 +99,7 @@ export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsPro
         <OGDialogTemplate
           showCloseButton={false}
           title={localize('com_ui_bookmarks_delete')}
-          className="max-w-[450px]"
+          className="max-w-[28.125rem]"
           main={
             <p className="text-left text-sm text-text-secondary">
               {localize('com_ui_bookmark_delete_confirm')} <strong>{bookmark.tag}</strong>

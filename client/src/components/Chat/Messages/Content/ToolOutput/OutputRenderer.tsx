@@ -117,7 +117,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
     <div>
       <div className="relative pr-10">
         {isJson ? (
-          <pre className="max-h-[300px] overflow-auto rounded text-xs">
+          <pre className="max-h-[18.75rem] overflow-auto rounded text-xs">
             <code className="hljs language-json !whitespace-pre-wrap !break-words">
               {visibleText}
             </code>
@@ -125,7 +125,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
         ) : (
           <pre
             className={cn(
-              'max-h-[300px] overflow-auto whitespace-pre-wrap break-words text-xs',
+              'max-h-[18.75rem] overflow-auto whitespace-pre-wrap break-words text-xs',
               error && 'font-mono text-status-error',
               !error && structured && 'font-mono text-text-secondary',
               !error && !structured && 'font-sans text-sm text-text-primary',
@@ -164,7 +164,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
         </Button>
       )}
       {showErrorDetails && rawError && (
-        <pre className="mt-2 max-h-[200px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-status-error">
+        <pre className="mt-2 max-h-[12.5rem] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-status-error">
           {rawError}
         </pre>
       )}

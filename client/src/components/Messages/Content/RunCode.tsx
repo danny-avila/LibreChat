@@ -128,7 +128,10 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
             : 'ml-auto gap-2 rounded-lg p-1.5 md:rounded-md md:px-2 md:py-1',
         )}
       >
-        <span className="relative flex size-[18px] items-center justify-center" aria-hidden="true">
+        <span
+          className="relative flex size-[1.125rem] items-center justify-center"
+          aria-hidden="true"
+        >
           <MorphIcon
             icon={stateIcon}
             size={18}

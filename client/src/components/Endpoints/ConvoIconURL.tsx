@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { ProviderIcon } from '@librechat/client';
+import { pxToRem, ProviderIcon } from '@librechat/client';
 import type { ProviderId } from 'librechat-data-provider';
 import { URLIcon } from '~/components/Endpoints/URLIcon';
 import { isImageURL } from '~/utils/icons';
@@ -22,7 +22,7 @@ const classMap = {
 };
 
 const styleMap = {
-  'menu-item': { width: '20px', height: '20px' },
+  'menu-item': { width: pxToRem(20), height: pxToRem(20) },
   default: { width: '100%', height: '100%' },
 };
 

@@ -37,7 +37,7 @@ export default function SkillFilePreview({ skillId, nodeId, fileName }: SkillFil
           )}
           <span className="truncate text-sm font-medium text-text-primary">{fileName}</span>
           {ext && (
-            <span className="rounded bg-surface-tertiary px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-text-tertiary">
+            <span className="rounded bg-surface-tertiary px-1.5 py-0.5 text-[0.6875rem] font-medium uppercase tracking-wide text-text-tertiary">
               {ext}
             </span>
           )}
@@ -65,7 +65,7 @@ export default function SkillFilePreview({ skillId, nodeId, fileName }: SkillFil
         className={cn(
           'flex flex-1 items-center justify-center overflow-auto p-8',
           isImage &&
-            'bg-[repeating-conic-gradient(rgb(var(--surface-tertiary))_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]',
+            'bg-[repeating-conic-gradient(rgb(var(--surface-tertiary))_0%_25%,transparent_0%_50%)] bg-[length:1rem_1rem]',
         )}
       >
         {isImage && downloadUrl ? (
