@@ -10,8 +10,10 @@ import {
   useToastContext,
   OGDialogTemplate,
 } from '@librechat/client';
+import type { TConversation } from 'librechat-data-provider';
 import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import { useArchiveAllConversationsMutation } from '~/data-provider';
+import { isTemporaryConversation } from '~/utils';
 import useNewChat from '~/hooks/Chat/useNewChat';
 import { NotificationSeverity } from '~/common';
 import { useLocalize } from '~/hooks';
@@ -19,10 +21,10 @@ import { useLocalize } from '~/hooks';
 export const ArchiveAllChats = () => {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
-  const submittedConversationRef = useRef<{
-    conversationId: string;
-    isTemporary?: boolean;
-  } | null>(null);
+  const submittedConversationRef = useRef<Pick<
+    TConversation,
+    'conversationId' | 'isTemporary' | 'expiredAt'
+  > | null>(null);
   const getConversation = useGetConversation();
   const { startNewChat } = useNewChat();
   const { showToast } = useToastContext();
@@ -35,9 +37,9 @@ export const ArchiveAllChats = () => {
       if (
         submittedConversation != null &&
         submittedConversation.conversationId !== Constants.NEW_CONVO &&
-        submittedConversation.isTemporary !== true &&
+        !isTemporaryConversation(submittedConversation) &&
         currentConversation?.conversationId === submittedConversation.conversationId &&
-        currentConversation?.isTemporary !== true
+        !isTemporaryConversation(currentConversation)
       ) {
         startNewChat();
       }
@@ -62,6 +64,7 @@ export const ArchiveAllChats = () => {
       ? {
           conversationId: conversation.conversationId,
           isTemporary: conversation.isTemporary,
+          expiredAt: conversation.expiredAt,
         }
       : null;
     archiveAllMutation.mutate();

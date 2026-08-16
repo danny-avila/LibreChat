@@ -1727,6 +1727,12 @@ describe('Conversation Operations', () => {
   });
 
   describe('archiveAllConvos', () => {
+    it('defines an index for the tenant-scoped ObjectId batch scan', () => {
+      const indexFields = Conversation.schema.indexes().map(([fields]) => fields);
+
+      expect(indexFields).toContainEqual({ user: 1, tenantId: 1, _id: 1 });
+    });
+
     it('archives every unarchived conversation for the user only', async () => {
       const first = uuidv4();
       const second = uuidv4();

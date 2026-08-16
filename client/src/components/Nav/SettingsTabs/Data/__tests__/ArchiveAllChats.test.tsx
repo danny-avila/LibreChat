@@ -117,6 +117,24 @@ describe('ArchiveAllChats', () => {
     expect(mockStartNewChat).not.toHaveBeenCalled();
   });
 
+  it('keeps a legacy temporary conversation that the backend did not archive', () => {
+    mockGetConversation.mockReturnValue({
+      conversationId: 'legacy-temporary-conversation',
+      expiredAt: '2026-08-16T12:00:00.000Z',
+    });
+    render(<ArchiveAllChats />);
+    fireEvent.click(screen.getByRole('button', { name: 'com_nav_archive_all_chats' }));
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_archive' }));
+    mockGetConversation.mockReturnValue({
+      conversationId: 'legacy-temporary-conversation',
+      isTemporary: false,
+    });
+
+    mockOnSuccess?.();
+
+    expect(mockStartNewChat).not.toHaveBeenCalled();
+  });
+
   it('keeps a new chat that has no persisted conversation id', () => {
     mockGetConversation.mockReturnValue(null);
     render(<ArchiveAllChats />);
