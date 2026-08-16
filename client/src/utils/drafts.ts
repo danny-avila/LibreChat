@@ -85,6 +85,44 @@ const getReplacedLength = (pendingPaste: PendingTextAttachmentDraft): number => 
   return 0;
 };
 
+const findAnchoredInsertStart = (
+  draftText: string,
+  before: string,
+  after: string,
+): number | null => {
+  if (before && after) {
+    let insertStart: number | null = null;
+    let searchFrom = 0;
+    while (searchFrom <= draftText.length) {
+      const beforeIndex = draftText.indexOf(before, searchFrom);
+      if (beforeIndex < 0) {
+        break;
+      }
+      const candidate = beforeIndex + before.length;
+      if (draftText.indexOf(after, candidate) >= 0) {
+        insertStart = candidate;
+      }
+      searchFrom = beforeIndex + 1;
+    }
+    if (insertStart != null) {
+      return insertStart;
+    }
+  }
+  if (before) {
+    const beforeIndex = draftText.lastIndexOf(before);
+    if (beforeIndex >= 0) {
+      return beforeIndex + before.length;
+    }
+  }
+  if (after) {
+    const afterIndex = draftText.indexOf(after);
+    if (afterIndex >= 0) {
+      return afterIndex;
+    }
+  }
+  return null;
+};
+
 export const resolvePendingPasteInsertStart = (
   draftText: string,
   pendingPaste: PendingTextAttachmentDraft,
@@ -108,7 +146,10 @@ export const resolvePendingPasteInsertStart = (
   if (after === '' && before && draftText.endsWith(before)) {
     return draftText.length;
   }
-  return Math.min(pendingPaste.selectionStart, draftText.length);
+  return (
+    findAnchoredInsertStart(draftText, before, after) ??
+    Math.min(pendingPaste.selectionStart, draftText.length)
+  );
 };
 
 export const applyPendingPasteToDraft = (

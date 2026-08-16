@@ -144,6 +144,18 @@ describe('applyPendingPastesToDraft', () => {
     ).toBe('XhelloPASTE');
   });
 
+  it('rebases an insert when both sides of the original caret were edited', () => {
+    expect(
+      applyPendingPasteToDraft('XhelloWORLDY', {
+        text: 'PASTE',
+        selectionStart: 5,
+        replacedApplied: true,
+        anchorBefore: 'hello',
+        anchorAfter: 'WORLD',
+      }),
+    ).toBe('XhelloPASTEWORLDY');
+  });
+
   it('keeps a later replacement anchored after an earlier middle removal', () => {
     expect(
       applyPendingPastesToDraft('0123456789', [
@@ -203,6 +215,17 @@ describe('resolvePendingPasteInsertStart', () => {
         selectionStart: 5,
         anchorBefore: 'hello',
         anchorAfter: '',
+      }),
+    ).toBe(6);
+  });
+
+  it('finds the original junction when both sides of the caret were edited', () => {
+    expect(
+      resolvePendingPasteInsertStart('XhelloWORLDY', {
+        text: 'PASTE',
+        selectionStart: 5,
+        anchorBefore: 'hello',
+        anchorAfter: 'WORLD',
       }),
     ).toBe(6);
   });
