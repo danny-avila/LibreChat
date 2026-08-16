@@ -38,11 +38,28 @@ describe('HeaderLabel', () => {
 
   /* A pointer swap alone would strand a sighted keyboard user, who reaches the
      row by focus. `.message-render` carries the `group` this keys off. */
-  it('also swaps the model in when the message row takes focus', () => {
+  it('also swaps the model in when the message row takes keyboard focus', () => {
     render(<HeaderLabel label="Ollama" hoverLabel="gemma4:12b-it-qat" />);
 
-    expect(screen.getByText('Ollama')).toHaveClass('group-focus-within:opacity-0');
-    expect(screen.getByText('gemma4:12b-it-qat')).toHaveClass('group-focus-within:opacity-100');
+    const self = 'group-focus-visible';
+    const descendant = 'group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]';
+
+    const provider = screen.getByText('Ollama').className;
+    const model = screen.getByText('gemma4:12b-it-qat').className;
+
+    expect(provider).toContain(`${self}:opacity-0`);
+    expect(provider).toContain(`${descendant}:opacity-0`);
+    expect(model).toContain(`${self}:opacity-100`);
+    expect(model).toContain(`${descendant}:opacity-100`);
+  });
+
+  /* Clicking a tool card inside the row leaves focus on it. `:focus-within`
+     would hold the model in place with the pointer nowhere near the row. */
+  it('does not key the swap off plain focus-within', () => {
+    render(<HeaderLabel label="Ollama" hoverLabel="gemma4:12b-it-qat" />);
+
+    expect(screen.getByText('Ollama').className).not.toContain('group-focus-within:');
+    expect(screen.getByText('gemma4:12b-it-qat').className).not.toContain('group-focus-within:');
   });
 
   /* Screen readers never move the visual focus, so the model also has to reach
