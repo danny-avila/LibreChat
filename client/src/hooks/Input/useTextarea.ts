@@ -65,6 +65,8 @@ export default function useTextarea({
   const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
 
   const { index, conversation, isSubmitting, files, setFilesLoading } = useChatContext();
+  const conversationIdRef = useRef(conversation?.conversationId);
+  conversationIdRef.current = conversation?.conversationId;
   const latestMessage = useLatestMessageMeta(index);
   const [activePrompt, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
 
@@ -332,17 +334,34 @@ export default function useTextarea({
       }
 
       e.preventDefault();
+      const conversationId = conversation?.conversationId;
+      const composerValue = textArea.value;
       const restorePaste = () => {
         insertTextAtCursor(textArea, pastedText);
         forceResize(textArea);
       };
-      void routeClipboardFiles([attachment.file], attachment.toolResource, restorePaste).then(
-        (accepted) => {
-          if (!accepted) {
-            restorePaste();
-          }
-        },
-      );
+      const restorePasteAfterUploadFailure = () => {
+        const currentTextArea = textAreaRef.current;
+        if (
+          !currentTextArea ||
+          conversationIdRef.current !== conversationId ||
+          currentTextArea.value !== composerValue
+        ) {
+          return;
+        }
+
+        insertTextAtCursor(currentTextArea, pastedText);
+        forceResize(currentTextArea);
+      };
+      void routeClipboardFiles(
+        [attachment.file],
+        attachment.toolResource,
+        restorePasteAfterUploadFailure,
+      ).then((accepted) => {
+        if (!accepted) {
+          restorePaste();
+        }
+      });
     },
     [
       files,

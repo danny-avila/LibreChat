@@ -13,7 +13,10 @@ const mockLocalize = jest.fn((key: string) => key);
 const mockSetActivePrompt = jest.fn();
 
 let useTextarea: typeof import('./useTextarea').default;
-let mockConversation = { endpoint: 'openAI' };
+let mockConversation: { endpoint: string; conversationId?: string } = {
+  endpoint: 'openAI',
+  conversationId: 'convo-1',
+};
 
 jest.mock('~/utils', () => ({
   forceResize: mockForceResize,
@@ -137,7 +140,7 @@ const renderTextareaHook = () => {
 describe('useTextarea long-paste fallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockConversation = { endpoint: 'openAI' };
+    mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
     mockGetUploadOptions.mockReturnValue([EToolResources.context]);
     mockResolvePastedTextFile.mockImplementation((text: string) => ({
       file: new File([text], 'pasted-text.txt', { type: 'text/plain' }),
@@ -180,7 +183,7 @@ describe('useTextarea long-paste fallback', () => {
     expect(mockForceResize).not.toHaveBeenCalled();
   });
 
-  it('restores the paste when the accepted attachment later fails to upload', async () => {
+  it('restores the paste after an upload failure when the composer is unchanged', async () => {
     let onUploadError: (() => void) | undefined;
     mockRouteFiles.mockImplementationOnce(
       (_files: File[], _toolResource: EToolResources, callback?: () => void) => {
@@ -189,6 +192,7 @@ describe('useTextarea long-paste fallback', () => {
       },
     );
     const { result, textArea } = renderTextareaHook();
+    textArea.value = 'unchanged draft';
     const event = createPasteEvent();
 
     act(() =>
@@ -202,6 +206,56 @@ describe('useTextarea long-paste fallback', () => {
 
     expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
     expect(mockForceResize).toHaveBeenCalledWith(textArea);
+  });
+
+  it('skips upload-failure recovery when the conversation changed', async () => {
+    let onUploadError: (() => void) | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, callback?: () => void) => {
+        onUploadError = callback;
+        return Promise.resolve(true);
+      },
+    );
+    const { result, rerender } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(onUploadError).toBeDefined());
+    mockConversation = { endpoint: 'openAI', conversationId: 'convo-2' };
+    rerender();
+
+    act(() => onUploadError?.());
+
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockForceResize).not.toHaveBeenCalled();
+  });
+
+  it('skips upload-failure recovery when the composer content changed', async () => {
+    let onUploadError: (() => void) | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, callback?: () => void) => {
+        onUploadError = callback;
+        return Promise.resolve(true);
+      },
+    );
+    const { result, textArea } = renderTextareaHook();
+    textArea.value = 'draft at paste time';
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(onUploadError).toBeDefined());
+    textArea.value = 'draft after more typing';
+
+    act(() => onUploadError?.());
+
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockForceResize).not.toHaveBeenCalled();
   });
 
   it('forwards upload recovery through the assistants route', async () => {
