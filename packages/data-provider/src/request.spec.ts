@@ -2,6 +2,7 @@
  * @jest-environment jsdom
  */
 import { readTwoFactorSetupToken, clearTwoFactorSetupToken } from './twoFactor';
+import { getTokenHeader, setTokenHeader } from './headers-helpers';
 import { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } from './config';
 import request from './request';
 
@@ -33,6 +34,7 @@ describe('two-factor enrollment responses outside the interceptors', () => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     clearTwoFactorSetupToken();
+    setTokenHeader(undefined);
     delete (window as AuthRecoveryWindow).__librechatAuthRecovery;
     window.history.pushState(null, '', '/c/new');
     pushState = jest.spyOn(window.history, 'pushState');
@@ -126,5 +128,22 @@ describe('two-factor enrollment responses outside the interceptors', () => {
 
     setItem.mockRestore();
     expect(pushState).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Another tab writes the shared navigation marker first. This tab still has to keep its own
+   * setup token and drop the retired bearer; skipping those leaves it on the app with failing
+   * requests until the marker expires.
+   */
+  it('persists the setup token when another tab already started a redirect', () => {
+    window.localStorage.setItem('librechat.auth.redirect.startedAt', String(Date.now()));
+    setTokenHeader('retired-bearer');
+
+    expect(request.redirectIfTwoFactorSetupPayload(enrollmentBody)).toBe(true);
+
+    expect(readTwoFactorSetupToken()).toBe('setup-token');
+    expect(getTokenHeader()).toBeUndefined();
+    expect(pushState).not.toHaveBeenCalled();
+    expect(redirectEvents).toHaveLength(0);
   });
 });

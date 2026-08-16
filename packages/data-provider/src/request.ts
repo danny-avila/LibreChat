@@ -223,6 +223,13 @@ const getTwoFactorSetupToken = (payload: unknown): string | null => {
 };
 
 const redirectToTwoFactorSetupOnce = (tempToken: string) => {
+  /**
+   * The setup token lives in tab-scoped session storage. A sibling tab can already have
+   * written the shared localStorage navigation marker, so persist and drop this tab's
+   * retired bearer before that marker can skip the rest of the hand-off.
+   */
+  const isDurable = persistTwoFactorSetupToken(tempToken);
+  setTokenHeader(undefined);
   if (isAuthRedirectInProgress()) {
     return;
   }
@@ -236,8 +243,6 @@ const redirectToTwoFactorSetupOnce = (tempToken: string) => {
   const query = searchParams.toString();
 
   const href = `${endpoints.apiBaseUrl()}/login/2fa/setup${query ? `?${query}` : ''}`;
-  const isDurable = persistTwoFactorSetupToken(tempToken);
-  setTokenHeader(undefined);
   setAuthRedirectStartedAt();
   window.dispatchEvent(
     new CustomEvent(AUTH_REDIRECT_EVENT, { detail: { href, inDocument: !isDurable } }),
