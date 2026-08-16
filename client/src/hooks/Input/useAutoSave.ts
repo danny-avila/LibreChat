@@ -6,7 +6,7 @@ import type { TFile } from 'librechat-data-provider';
 import type { PendingTextAttachmentDraft } from '~/utils';
 import type { ExtendedFile } from '~/common';
 import {
-  applyPendingPasteToDraft,
+  applyPendingPastesToDraft,
   clearDraft,
   getDraft,
   getFilesDraft,
@@ -121,14 +121,7 @@ export const useAutoSave = ({
 
   const restoreText = useCallback(
     (id: string, pendingPastes: PendingTextAttachmentDraft[] = []) => {
-      let draftText = getDraft(id) ?? '';
-      const orderedPastes = pendingPastes
-        .map((pendingPaste, index) => ({ ...pendingPaste, index }))
-        .sort((a, b) => b.selectionStart - a.selectionStart || b.index - a.index);
-
-      for (const pendingPaste of orderedPastes) {
-        draftText = applyPendingPasteToDraft(draftText, pendingPaste);
-      }
+      const draftText = applyPendingPastesToDraft(getDraft(id) ?? '', pendingPastes);
 
       if (pendingPastes.length > 0) {
         setDraft({ id, value: draftText });

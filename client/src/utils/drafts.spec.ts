@@ -1,12 +1,17 @@
-import { Constants } from 'librechat-data-provider';
+import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import {
   applyPendingPasteToDraft,
+  applyPendingPastesToDraft,
+  clearComposerDrafts,
   getComposerDraftId,
+  getDraft,
   getNewConversationDraftId,
   getNewConversationDraftToken,
   getPendingDraftId,
   isNewConversationDraftId,
   renewNewConversationDraftToken,
+  setDraft,
+  setFilesDraft,
 } from './drafts';
 
 describe('new-conversation draft tokens', () => {
@@ -87,5 +92,81 @@ describe('applyPendingPasteToDraft', () => {
         selectionStart: 7,
       }),
     ).toBe('before pasted after');
+  });
+});
+
+describe('applyPendingPastesToDraft', () => {
+  it('rebases an earlier end replacement after a later start replacement', () => {
+    const pastes = [
+      {
+        text: 'END',
+        selectionStart: 10,
+        selectionEnd: 14,
+        replacedText: 'CCCC',
+        sequence: 1,
+      },
+      {
+        text: 'START',
+        selectionStart: 0,
+        selectionEnd: 4,
+        replacedText: 'AAAA',
+        sequence: 2,
+      },
+    ];
+
+    expect(applyPendingPastesToDraft('AAAA BBBB CCCC', pastes)).toBe('START BBBB END');
+    expect(applyPendingPastesToDraft(' BBBB ', pastes)).toBe('START BBBB END');
+  });
+
+  it('keeps a later replacement anchored after an earlier middle removal', () => {
+    expect(
+      applyPendingPastesToDraft('0123456789', [
+        {
+          text: 'MID',
+          selectionStart: 2,
+          replacedText: '234',
+          sequence: 1,
+        },
+        {
+          text: 'TAIL',
+          selectionStart: 5,
+          replacedText: '89',
+          sequence: 2,
+        },
+      ]),
+    ).toBe('01MID567TAIL');
+  });
+});
+
+describe('clearComposerDrafts', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('clears pane-scoped pending and new-chat keys without touching another pane', () => {
+    setDraft({ id: Constants.NEW_CONVO, value: 'pane 0 new' });
+    setDraft({ id: `${Constants.NEW_CONVO}:1`, value: 'pane 1 new' });
+    setDraft({ id: Constants.PENDING_CONVO, value: 'pane 0 pending' });
+    setDraft({ id: `${Constants.PENDING_CONVO}:1`, value: 'pane 1 pending' });
+    setFilesDraft(`${Constants.PENDING_CONVO}:1`, {
+      fileIds: ['pane-1-file'],
+      pendingPastes: {
+        'pane-1-file': { text: 'paste', selectionStart: 0 },
+      },
+    });
+
+    clearComposerDrafts(1, Constants.NEW_CONVO);
+
+    expect(getDraft(Constants.NEW_CONVO)).toBe('pane 0 new');
+    expect(getDraft(Constants.PENDING_CONVO)).toBe('pane 0 pending');
+    expect(
+      localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}:1`),
+    ).toBeNull();
+    expect(
+      localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}:1`),
+    ).toBeNull();
+    expect(
+      localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}:1`),
+    ).toBeNull();
   });
 });

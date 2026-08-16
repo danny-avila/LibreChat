@@ -6,6 +6,7 @@ export type PendingTextAttachmentDraft = {
   selectionStart: number;
   selectionEnd?: number;
   replacedText?: string;
+  sequence?: number;
 };
 
 export type FilesDraft = {
@@ -18,6 +19,7 @@ type StoredPendingTextAttachmentDraft = {
   selectionStart: number;
   selectionEnd?: number;
   encodedReplacedText?: string;
+  sequence?: number;
 };
 
 type StoredFilesDraft = {
@@ -66,20 +68,65 @@ export const getComposerDraftId = (
 ): string =>
   isSubmitting ? getPendingDraftId(index) : getConversationDraftId(index, conversationId);
 
+const getReplacedLength = (pendingPaste: PendingTextAttachmentDraft): number => {
+  if (pendingPaste.replacedText != null && pendingPaste.replacedText.length > 0) {
+    return pendingPaste.replacedText.length;
+  }
+  if (pendingPaste.selectionEnd != null) {
+    return Math.max(0, pendingPaste.selectionEnd - pendingPaste.selectionStart);
+  }
+  return 0;
+};
+
 export const applyPendingPasteToDraft = (
   draftText: string,
   pendingPaste: PendingTextAttachmentDraft,
+): string => applyPendingPastesToDraft(draftText, [pendingPaste]);
+
+/** Replay deletions in capture order, then insert paste text at offsets rebased onto that final snapshot. */
+export const applyPendingPastesToDraft = (
+  draftText: string,
+  pendingPastes: PendingTextAttachmentDraft[],
 ): string => {
-  const start = Math.min(pendingPaste.selectionStart, draftText.length);
-  const replacedText = pendingPaste.replacedText ?? '';
-  if (
-    replacedText.length > 0 &&
-    draftText.slice(start, start + replacedText.length) === replacedText
-  ) {
-    return `${draftText.slice(0, start)}${pendingPaste.text}${draftText.slice(start + replacedText.length)}`;
+  if (pendingPastes.length === 0) {
+    return draftText;
   }
 
-  return `${draftText.slice(0, start)}${pendingPaste.text}${draftText.slice(start)}`;
+  const ordered = pendingPastes.map((pendingPaste, index) => ({ pendingPaste, index }));
+  ordered.sort(
+    (a, b) =>
+      (a.pendingPaste.sequence ?? a.index) - (b.pendingPaste.sequence ?? b.index) ||
+      a.index - b.index,
+  );
+
+  let text = draftText;
+  for (const { pendingPaste } of ordered) {
+    const replacedText = pendingPaste.replacedText ?? '';
+    const start = Math.min(pendingPaste.selectionStart, text.length);
+    if (
+      replacedText.length > 0 &&
+      text.slice(start, start + replacedText.length) === replacedText
+    ) {
+      text = `${text.slice(0, start)}${text.slice(start + replacedText.length)}`;
+    }
+  }
+
+  const insertions = ordered.map(({ pendingPaste }, index) => {
+    let start = pendingPaste.selectionStart;
+    for (const later of ordered.slice(index + 1)) {
+      if (later.pendingPaste.selectionStart < start) {
+        start -= getReplacedLength(later.pendingPaste);
+      }
+    }
+    return { text: pendingPaste.text, start: Math.max(0, start), index };
+  });
+  insertions.sort((a, b) => b.start - a.start || b.index - a.index);
+
+  for (const insertion of insertions) {
+    const start = Math.min(insertion.start, text.length);
+    text = `${text.slice(0, start)}${insertion.text}${text.slice(start)}`;
+  }
+  return text;
 };
 
 export const clearDraft = debounce((id?: string | null) => {
@@ -91,6 +138,20 @@ export const clearAllDrafts = (conversationId?: string | null) => {
   const key = conversationId || Constants.NEW_CONVO;
   localStorage.removeItem(`${LocalStorageKeys.TEXT_DRAFT}${key}`);
   localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${key}`);
+};
+
+/** Clears this pane's pending and new-chat keys plus a concrete conversation draft, without touching another pane's unsuffixed `new` key. */
+export const clearComposerDrafts = (index = 0, conversationId?: string | null): void => {
+  const keys = new Set<string>([getPendingDraftId(index), getNewConversationDraftId(index)]);
+  if (conversationId != null && conversationId !== '') {
+    keys.add(getConversationDraftId(index, conversationId));
+    if (conversationId !== Constants.NEW_CONVO && conversationId !== Constants.PENDING_CONVO) {
+      keys.add(conversationId);
+    }
+  }
+  for (const key of keys) {
+    clearAllDrafts(key);
+  }
 };
 
 export const encodeBase64 = (plainText: string): string => {
@@ -140,6 +201,7 @@ export const getFilesDraft = (id: string): FilesDraft => {
             ...(pendingPaste.encodedReplacedText
               ? { replacedText: decodeBase64(pendingPaste.encodedReplacedText) }
               : {}),
+            ...(pendingPaste.sequence != null ? { sequence: pendingPaste.sequence } : {}),
           },
         ],
       ),
@@ -181,6 +243,7 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
           ...(pendingPaste.replacedText
             ? { encodedReplacedText: encodeBase64(pendingPaste.replacedText) }
             : {}),
+          ...(pendingPaste.sequence != null ? { sequence: pendingPaste.sequence } : {}),
         },
       ],
     ),
@@ -208,6 +271,10 @@ export const setPendingTextAttachmentDraft = ({
   replacedText?: string;
 }): void => {
   const draft = getFilesDraft(id);
+  const existing = draft.pendingPastes[fileId];
+  const sequence =
+    existing?.sequence ??
+    Math.max(0, ...Object.values(draft.pendingPastes).map((paste) => paste.sequence ?? 0)) + 1;
   setFilesDraft(id, {
     fileIds: draft.fileIds.includes(fileId) ? draft.fileIds : [...draft.fileIds, fileId],
     pendingPastes: {
@@ -215,6 +282,7 @@ export const setPendingTextAttachmentDraft = ({
       [fileId]: {
         text,
         selectionStart,
+        sequence,
         ...(selectionEnd != null ? { selectionEnd } : {}),
         ...(replacedText ? { replacedText } : {}),
       },

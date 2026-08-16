@@ -38,7 +38,7 @@ import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import {
   logger,
-  clearAllDrafts,
+  clearComposerDrafts,
   applySteerPart,
   applyPendingAction,
   carriedSteerContext,
@@ -1503,10 +1503,7 @@ export default function useResumableSSE(
               conversationId: data.conversation?.conversationId,
               hasResponseMessage: !!data.responseMessage,
             });
-            clearAllDrafts(currentSubmission.conversation?.conversationId);
-            if (optimisticStreamIdsRef.current.has(currentStreamId)) {
-              clearAllDrafts(Constants.NEW_CONVO);
-            }
+            clearComposerDrafts(runIndex, currentSubmission.conversation?.conversationId);
             // A steer-applied event may still be waiting for its next-frame
             // message target when FINAL arrives. Reconcile directly from the
             // authoritative final message before converting leftovers so a
@@ -2377,7 +2374,7 @@ export default function useResumableSSE(
         resetLive({ ...currentSubmission, userMessage });
         removeActiveJob(currentStreamId);
         clearAttachedGenerationCreatedAt();
-        clearAllDrafts(reconciliationConvoId);
+        clearComposerDrafts(runIndex, reconciliationConvoId);
         setIsSubmitting(false);
         setShowStopButton(false);
         if (event.reconcileReason === 'abort_persistence_failed') {
@@ -2458,10 +2455,7 @@ export default function useResumableSSE(
           /** Terminal: drop any in-flight live estimate so the gauge doesn't
            *  keep counting stale streamed output after the stream ends */
           resetLive({ ...currentSubmission, userMessage });
-          clearAllDrafts(convoId);
-          if (optimisticStreamIdsRef.current.has(currentStreamId)) {
-            clearAllDrafts(Constants.NEW_CONVO);
-          }
+          clearComposerDrafts(runIndex, convoId);
           clearStepMaps();
           let persistedMessages: TMessage[] | undefined;
           if (convoId) {
@@ -3159,6 +3153,7 @@ export default function useResumableSSE(
       }
     },
     [
+      runIndex,
       token,
       setAbortScroll,
       setActiveRunId,

@@ -175,6 +175,38 @@ describe('useAutoSave — conversation switching', () => {
       value: 'before recovered pasted text after',
     });
   });
+
+  it('rebases two pending replacements so the earlier paste is not restored stale', () => {
+    mockGetDraft.mockReturnValue('AAAA BBBB CCCC');
+    setFilesDraft('convo-1', {
+      fileIds: ['end-file', 'start-file'],
+      pendingPastes: {
+        'end-file': {
+          text: 'END',
+          selectionStart: 10,
+          replacedText: 'CCCC',
+          sequence: 1,
+        },
+        'start-file': {
+          text: 'START',
+          selectionStart: 0,
+          replacedText: 'AAAA',
+          sequence: 2,
+        },
+      },
+    });
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'START BBBB END');
+  });
 });
 
 describe('useAutoSave — ask-answer draft swap', () => {
