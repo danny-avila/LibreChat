@@ -56,6 +56,26 @@ async function discoverCommittedBatchProjectIds(
   throw lastError;
 }
 
+async function recoverCommittedBatchProjectIds(
+  Conversation: Model<IConversation>,
+  conversationIds: Types.ObjectId[],
+  user: string,
+): Promise<string[]> {
+  const recoveredProjectIds = new Set<string>();
+  for (let index = 0; index < conversationIds.length; index += ARCHIVE_CONVERSATION_BATCH_SIZE) {
+    const batch = conversationIds.slice(index, index + ARCHIVE_CONVERSATION_BATCH_SIZE);
+    try {
+      const batchProjectIds = await discoverCommittedBatchProjectIds(Conversation, batch, user);
+      for (const projectId of batchProjectIds) {
+        recoveredProjectIds.add(projectId);
+      }
+    } catch (error) {
+      logger.error('[archiveAllConvos] Conversations archived but project recovery failed', error);
+    }
+  }
+  return [...recoveredProjectIds];
+}
+
 async function refreshChatProjectStatsInBatches(
   mongoose: typeof import('mongoose'),
   user: string,
@@ -1228,20 +1248,13 @@ export function createConversationMethods(
        * and a retry cannot see those already-archived chats.
        */
       if (committedConversationIds.length > 0) {
-        try {
-          const recoveredProjectIds = await discoverCommittedBatchProjectIds(
-            Conversation,
-            committedConversationIds,
-            user,
-          );
-          for (const projectId of recoveredProjectIds) {
-            projectIds.add(projectId);
-          }
-        } catch (error) {
-          logger.error(
-            '[archiveAllConvos] Conversations archived but project recovery failed',
-            error,
-          );
+        const recoveredProjectIds = await recoverCommittedBatchProjectIds(
+          Conversation,
+          committedConversationIds,
+          user,
+        );
+        for (const projectId of recoveredProjectIds) {
+          projectIds.add(projectId);
         }
       }
       if (archivedCount > 0 && projectIds.size > 0) {

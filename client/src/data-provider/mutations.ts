@@ -181,17 +181,21 @@ export const useArchiveAllConversationsMutation = (
     queryClient.removeQueries({ queryKey: [QueryKeys.conversation] });
   };
 
-  return useMutation(() => dataService.archiveAllConversations(), {
-    onSuccess: (data, vars, context) => {
-      reconcileCaches();
-      onSuccess?.(data, vars, context);
+  return useMutation(
+    [MutationKeys.archiveAllConversations],
+    () => dataService.archiveAllConversations(),
+    {
+      onSuccess: (data, vars, context) => {
+        reconcileCaches();
+        onSuccess?.(data, vars, context);
+      },
+      onError: (error, vars, context) => {
+        reconcileCaches();
+        onError?.(error, vars, context);
+      },
+      ..._options,
     },
-    onError: (error, vars, context) => {
-      reconcileCaches();
-      onError?.(error, vars, context);
-    },
-    ..._options,
-  });
+  );
 };
 
 export const usePinConversationMutation = (

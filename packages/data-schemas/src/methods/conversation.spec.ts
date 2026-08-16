@@ -1778,6 +1778,38 @@ describe('Conversation Operations', () => {
       expect(unarchivedCount).toBe(0);
     });
 
+    it('recovers destination projects in bounded batches after a large archive', async () => {
+      const conversations = Array.from({ length: 501 }, (_, index) => ({
+        conversationId: `archive-recovery-batch-${index}`,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      }));
+      await Conversation.insertMany(conversations);
+
+      const distinct = Conversation.distinct.bind(Conversation);
+      const distinctInSizes: number[] = [];
+      const distinctSpy = jest.spyOn(Conversation, 'distinct').mockImplementation(((
+        field,
+        filter,
+      ) => {
+        const ids = (filter as { _id?: { $in?: unknown[] } } | undefined)?._id?.$in;
+        if (Array.isArray(ids)) {
+          distinctInSizes.push(ids.length);
+        }
+        return distinct(field, filter);
+      }) as typeof Conversation.distinct);
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(conversations.length);
+      } finally {
+        distinctSpy.mockRestore();
+      }
+
+      expect(distinctInSizes.length).toBeGreaterThan(0);
+      expect(Math.max(...distinctInSizes)).toBeLessThanOrEqual(500);
+    });
+
     it('continues refreshing later project batches after an individual refresh fails', async () => {
       const projects = await ChatProject.insertMany(
         Array.from({ length: 11 }, (_, index) => ({

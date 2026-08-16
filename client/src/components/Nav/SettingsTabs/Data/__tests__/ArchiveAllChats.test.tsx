@@ -8,6 +8,7 @@ const mockStartNewChat = jest.fn();
 const mockGetConversation = jest.fn();
 const mockGetConversationById = jest.fn();
 let mockIsLoading = false;
+let mockPendingArchives = 0;
 let mockOnSuccess: (() => void) | undefined;
 let mockOnError: (() => void | Promise<void>) | undefined;
 
@@ -58,9 +59,18 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
+jest.mock('@tanstack/react-query', () => {
+  const actual = jest.requireActual('@tanstack/react-query');
+  return {
+    ...actual,
+    useIsMutating: () => mockPendingArchives,
+  };
+});
+
 describe('ArchiveAllChats', () => {
   beforeEach(() => {
     mockIsLoading = false;
+    mockPendingArchives = 0;
     mockOnSuccess = undefined;
     mockOnError = undefined;
     jest.clearAllMocks();
@@ -95,6 +105,17 @@ describe('ArchiveAllChats', () => {
     expect(submit).toBeDisabled();
     expect(submit).toHaveAttribute('aria-busy', 'true');
     expect(submit.querySelector('svg.spinner')).toBeInTheDocument();
+  });
+
+  it('stays disabled when another archive-all mutation is already pending', () => {
+    mockPendingArchives = 1;
+    render(<ArchiveAllChats />);
+
+    const trigger = screen.getByRole('button', { name: 'com_nav_archive_all_chats' });
+    expect(trigger).toBeDisabled();
+
+    fireEvent.click(trigger);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('starts a new chat when the archived conversation is still active', () => {

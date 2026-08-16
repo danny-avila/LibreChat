@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { Constants, dataService } from 'librechat-data-provider';
+import { useIsMutating } from '@tanstack/react-query';
+import { Constants, MutationKeys, dataService } from 'librechat-data-provider';
 import {
   Label,
   Button,
@@ -43,6 +44,9 @@ export const ArchiveAllChats = () => {
   const getConversation = useGetConversation();
   const { startNewChat } = useNewChat();
   const { showToast } = useToastContext();
+  const pendingArchives = useIsMutating({
+    mutationKey: [MutationKeys.archiveAllConversations],
+  });
 
   const archiveAllMutation = useArchiveAllConversationsMutation({
     onSuccess: () => {
@@ -99,6 +103,8 @@ export const ArchiveAllChats = () => {
     archiveAllMutation.mutate();
   };
 
+  const isArchivePending = archiveAllMutation.isLoading || pendingArchives > 0;
+
   return (
     <div className="flex items-center justify-between">
       <Label id="archive-all-chats-label">{localize('com_nav_archive_all_chats')}</Label>
@@ -107,7 +113,7 @@ export const ArchiveAllChats = () => {
           <Button
             aria-labelledby="archive-all-chats-label"
             variant="outline"
-            disabled={archiveAllMutation.isLoading}
+            disabled={isArchivePending}
             onClick={() => setOpen(true)}
           >
             {localize('com_ui_archive')}
@@ -124,13 +130,13 @@ export const ArchiveAllChats = () => {
             <OGDialogClose asChild>
               <Button
                 aria-label={localize('com_ui_archive')}
-                aria-busy={archiveAllMutation.isLoading}
-                disabled={archiveAllMutation.isLoading}
+                aria-busy={isArchivePending}
+                disabled={isArchivePending}
                 variant="submit"
                 className="border-none font-normal max-sm:order-first max-sm:w-full sm:order-none"
                 onClick={archiveAllChats}
               >
-                {archiveAllMutation.isLoading ? <Spinner /> : localize('com_ui_archive')}
+                {isArchivePending ? <Spinner /> : localize('com_ui_archive')}
               </Button>
             </OGDialogClose>
           }
