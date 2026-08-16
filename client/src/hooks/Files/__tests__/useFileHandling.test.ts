@@ -1,5 +1,11 @@
 import { renderHook, act } from '@testing-library/react';
-import { Constants, EModelEndpoint, getEndpointFileConfig } from 'librechat-data-provider';
+import {
+  megabyte,
+  Constants,
+  mergeFileConfig,
+  EModelEndpoint,
+  getEndpointFileConfig,
+} from 'librechat-data-provider';
 
 beforeAll(() => {
   global.URL.createObjectURL = jest.fn(() => 'blob:mock-url');
@@ -24,9 +30,19 @@ const mockMutate = jest.fn();
 const mockProcessFileForUpload = jest.fn(
   async (_file: File, _quality?: number, _onProgress?: (progress: number) => void) => _file,
 );
+const mockResizeImageIfNeeded = jest.fn(async (file: File) => ({ file, resized: false }));
+const mockWaitForConfig = jest.fn((): Promise<void> => Promise.resolve());
 const mockLocalize = jest.fn((key: string) => key);
 
+const makeSizedFile = (name: string, type: string, size: number): File => {
+  const file = new File(['content'], name, { type });
+  Object.defineProperty(file, 'size', { value: size });
+  return file;
+};
+
 let mockConversation: Record<string, string | null | undefined> = {};
+let mockFileConfig: ReturnType<typeof mergeFileConfig> | null = null;
+let mockIsConfigPending = false;
 let mockIsTemporary = false;
 
 jest.mock('~/Providers/ChatContext', () => ({
@@ -64,7 +80,7 @@ jest.mock('@tanstack/react-query', () => ({
 }));
 
 jest.mock('~/data-provider', () => ({
-  useGetFileConfig: jest.fn(() => ({ data: null })),
+  useGetFileConfig: jest.fn(() => ({ data: mockFileConfig })),
   useUploadFileMutation: jest.fn((_opts: Record<string, unknown>) => ({
     mutate: mockMutate,
   })),
@@ -92,7 +108,9 @@ jest.mock('~/utils/heicConverter', () => ({
 jest.mock('../useClientResize', () => ({
   __esModule: true,
   default: jest.fn(() => ({
-    resizeImageIfNeeded: jest.fn(async (file: File) => ({ file, resized: false })),
+    isConfigPending: mockIsConfigPending,
+    waitForConfig: mockWaitForConfig,
+    resizeImageIfNeeded: mockResizeImageIfNeeded,
   })),
 }));
 
@@ -106,20 +124,37 @@ jest.mock('../useUpdateFiles', () => ({
   })),
 }));
 
-jest.mock('~/utils', () => ({
-  logger: { log: jest.fn() },
-  validateFiles: jest.fn(() => true),
-  cachePreview: jest.fn(),
-  getCachedPreview: jest.fn(() => undefined),
-}));
+jest.mock('~/utils', () => {
+  const { validateFileSizes, validateFileDuplicates } = jest.requireActual('~/utils/files');
+  return {
+    logger: { log: jest.fn() },
+    validateFiles: jest.fn(() => true),
+    validateFileSizes: jest.fn(validateFileSizes),
+    validateFileDuplicates: jest.fn(validateFileDuplicates),
+    cachePreview: jest.fn(),
+    getCachedPreview: jest.fn(() => undefined),
+    removePreviewEntry: jest.fn(),
+  };
+});
 
 const mockValidateFiles = jest.requireMock('~/utils').validateFiles;
+const mockValidateFileSizes = jest.requireMock('~/utils').validateFileSizes;
+const mockValidateFileDuplicates = jest.requireMock('~/utils').validateFileDuplicates;
 
 describe('useFileHandling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockValidateFiles.mockImplementation(() => true);
+    mockValidateFileSizes.mockImplementation(jest.requireActual('~/utils/files').validateFileSizes);
+    mockValidateFileDuplicates.mockImplementation(
+      jest.requireActual('~/utils/files').validateFileDuplicates,
+    );
     mockProcessFileForUpload.mockImplementation(async (file: File) => file);
+    mockResizeImageIfNeeded.mockImplementation(async (file: File) => ({ file, resized: false }));
+    mockWaitForConfig.mockResolvedValue(undefined);
     mockConversation = {};
+    mockFileConfig = null;
+    mockIsConfigPending = false;
     mockIsTemporary = false;
   });
 
@@ -156,6 +191,391 @@ describe('useFileHandling', () => {
 
       expect(mockProcessFileForUpload).not.toHaveBeenCalled();
       expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits for a pending resize config before processing an upload', async () => {
+      let resolveConfig: () => void = () => undefined;
+      mockIsConfigPending = true;
+      mockWaitForConfig.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveConfig = resolve;
+          }),
+      );
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+      const imageFile = new File(['image'], 'photo.jpg', { type: 'image/jpeg' });
+      let handlingPromise: Promise<void> = Promise.resolve();
+
+      await act(async () => {
+        handlingPromise = result.current.handleFiles([imageFile]);
+        await Promise.resolve();
+      });
+
+      expect(mockWaitForConfig).toHaveBeenCalledTimes(1);
+      expect(mockValidateFiles).not.toHaveBeenCalled();
+      expect(mockResizeImageIfNeeded).not.toHaveBeenCalled();
+      expect(mockMutate).not.toHaveBeenCalled();
+
+      await act(async () => {
+        resolveConfig();
+        await handlingPromise;
+        await Promise.resolve();
+      });
+
+      expect(mockValidateFiles).toHaveBeenCalledTimes(1);
+      expect(mockResizeImageIfNeeded).toHaveBeenCalledWith(imageFile);
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
+    it('processes uploads when a resize config error has settled', async () => {
+      mockIsConfigPending = false;
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+      const imageFile = new File(['image'], 'photo.jpg', { type: 'image/jpeg' });
+
+      await act(async () => {
+        await result.current.handleFiles([imageFile]);
+        await Promise.resolve();
+      });
+
+      expect(mockWaitForConfig).not.toHaveBeenCalled();
+      expect(mockResizeImageIfNeeded).toHaveBeenCalledWith(imageFile);
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts an image that resizing brings under the individual size limit', async () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: { default: { fileSizeLimit: 5 } },
+      });
+      const originalFile = makeSizedFile('photo.jpg', 'image/jpeg', 6 * megabyte);
+      const resizedFile = makeSizedFile('photo.jpg', 'image/jpeg', 4 * megabyte);
+      mockResizeImageIfNeeded.mockResolvedValueOnce({ file: resizedFile, resized: true });
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([originalFile]);
+        await Promise.resolve();
+      });
+
+      expect(mockValidateFiles).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileList: [originalFile],
+          skipSizeValidation: true,
+        }),
+      );
+      expect(mockValidateFileSizes).toHaveBeenCalledWith(
+        expect.objectContaining({ fileList: [resizedFile] }),
+      );
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects an image still at the individual size limit after resizing', async () => {
+      jest.useFakeTimers();
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 5 } },
+        });
+        const originalFile = makeSizedFile('photo.jpg', 'image/jpeg', 6 * megabyte);
+        const resizedFile = makeSizedFile('photo.jpg', 'image/jpeg', 5 * megabyte);
+        mockResizeImageIfNeeded.mockResolvedValueOnce({ file: resizedFile, resized: true });
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([originalFile]);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockValidateFileSizes).toHaveBeenCalledWith(
+          expect.objectContaining({ fileList: [resizedFile] }),
+        );
+        expect(mockMutate).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'File size limit exceeded: 5 MB',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('applies the total size limit to the complete transformed batch', async () => {
+      jest.useFakeTimers();
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 10, totalSizeLimit: 7 } },
+        });
+        const originals = [
+          makeSizedFile('one.jpg', 'image/jpeg', 6 * megabyte),
+          makeSizedFile('two.jpg', 'image/jpeg', 6 * megabyte),
+        ];
+        const resizedFiles = [
+          makeSizedFile('one.jpg', 'image/jpeg', 4 * megabyte),
+          makeSizedFile('two.jpg', 'image/jpeg', 4 * megabyte),
+        ];
+        mockResizeImageIfNeeded
+          .mockResolvedValueOnce({ file: resizedFiles[0], resized: true })
+          .mockResolvedValueOnce({ file: resizedFiles[1], resized: true });
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles(originals);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockValidateFileSizes).toHaveBeenCalledWith(
+          expect.objectContaining({ fileList: resizedFiles }),
+        );
+        expect(mockMutate).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'Total file size limit exceeded: 7 MB',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('uploads the selected file when the input is reset before processing starts', async () => {
+      const selectedFile = makeSizedFile('notes.txt', 'text/plain', 1024);
+      /** Mirrors the live `FileList` an input clears in place when its value is reset */
+      const liveFiles = [selectedFile];
+      const target = {
+        files: liveFiles as unknown as FileList,
+        get value() {
+          return '';
+        },
+        set value(_next: string) {
+          liveFiles.length = 0;
+        },
+      };
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        result.current.handleFileChange({
+          stopPropagation: jest.fn(),
+          target,
+        } as unknown as React.ChangeEvent<HTMLInputElement>);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      expect(target.files).toHaveLength(0);
+      expect(mockValidateFiles).toHaveBeenCalledWith(
+        expect.objectContaining({ fileList: [selectedFile] }),
+      );
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a reattached image that resizing turns into a duplicate', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        const originalFile = makeSizedFile('photo.jpg', 'image/jpeg', 6 * megabyte);
+        mockResizeImageIfNeeded.mockImplementation(async () => ({
+          file: makeSizedFile('photo.jpg', 'image/jpeg', 4 * megabyte),
+          resized: true,
+        }));
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([originalFile]);
+          await Promise.resolve();
+        });
+
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          await result.current.handleFiles([originalFile]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockValidateFileDuplicates).toHaveBeenCalledTimes(2);
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_error_files_dupe',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('does not retain reservations when uploads target a custom file setter', async () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: { default: { fileSizeLimit: 10, totalSizeLimit: 7 } },
+      });
+      const customSetter = jest.fn();
+      const useFileHandling = await loadHook();
+      const { result, rerender } = renderHook(() => useFileHandling({ fileSetter: customSetter }));
+
+      await act(async () => {
+        await result.current.handleFiles([makeSizedFile('one.txt', 'text/plain', 4 * megabyte)]);
+      });
+      /** The custom setter owns the uploads, so a rerender restores the observable chat state */
+      rerender();
+      await act(async () => {
+        await result.current.handleFiles([makeSizedFile('two.txt', 'text/plain', 4 * megabyte)]);
+      });
+
+      expect(mockMutate).toHaveBeenCalledTimes(2);
+    });
+
+    it('starts the config wait for queued batches without stacking the timeouts', async () => {
+      mockIsConfigPending = true;
+      let releaseConfig: () => void = () => undefined;
+      const configGate = new Promise<void>((resolve) => {
+        releaseConfig = resolve;
+      });
+      mockWaitForConfig.mockImplementation(() => configGate);
+      const sharedState = {
+        files: new Map(),
+        setFiles: jest.fn(),
+        setFilesLoading: mockSetFilesLoading,
+      };
+      const { useFileHandlingNoChatContext } = await import('../useFileHandling');
+      const menu = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
+      const composer = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
+
+      let uploads: Promise<void[]> = Promise.resolve([]);
+      await act(async () => {
+        uploads = Promise.all([
+          menu.result.current.handleFiles([makeSizedFile('one.txt', 'text/plain', 1024)]),
+          composer.result.current.handleFiles([makeSizedFile('two.txt', 'text/plain', 1024)]),
+        ]);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockWaitForConfig).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        releaseConfig();
+        await uploads;
+      });
+
+      expect(mockMutate).toHaveBeenCalledTimes(2);
+    });
+
+    it('shares the total size limit across hook instances writing the same files', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 10, totalSizeLimit: 7 } },
+        });
+        const sharedState = {
+          files: new Map(),
+          setFiles: jest.fn(),
+          setFilesLoading: mockSetFilesLoading,
+        };
+        const { useFileHandlingNoChatContext } = await import('../useFileHandling');
+        const menu = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
+        const composer = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
+
+        await act(async () => {
+          await Promise.all([
+            menu.result.current.handleFiles([makeSizedFile('one.txt', 'text/plain', 4 * megabyte)]),
+            composer.result.current.handleFiles([
+              makeSizedFile('two.txt', 'text/plain', 4 * megabyte),
+            ]),
+          ]);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'Total file size limit exceeded: 7 MB',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('shares the total size limit across concurrent upload batches', async () => {
+      jest.useFakeTimers();
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 10, totalSizeLimit: 7 } },
+        });
+        const firstFile = makeSizedFile('one.jpg', 'image/jpeg', 4 * megabyte);
+        const secondFile = makeSizedFile('two.jpg', 'image/jpeg', 4 * megabyte);
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await Promise.all([
+            result.current.handleFiles([firstFile]),
+            result.current.handleFiles([secondFile]),
+          ]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockValidateFileSizes).toHaveBeenCalledTimes(2);
+        expect(mockValidateFileSizes.mock.calls[1][0].files.size).toBe(1);
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'Total file size limit exceeded: 7 MB',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('localizes the image resize success toast with size details', async () => {
+      const originalFile = new File(['original'], 'photo.jpg', { type: 'image/jpeg' });
+      const resizedFile = new File(['resized'], 'photo.jpg', { type: 'image/jpeg' });
+      mockResizeImageIfNeeded.mockImplementationOnce(async () => ({
+        file: resizedFile,
+        resized: true,
+        result: {
+          file: resizedFile,
+          originalSize: 2 * 1024 * 1024,
+          newSize: 1024 * 1024,
+          originalDimensions: { width: 2400, height: 1600 },
+          newDimensions: { width: 1200, height: 800 },
+          compressionRatio: 0.5,
+        },
+      }));
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([originalFile]);
+      });
+
+      expect(mockLocalize).toHaveBeenCalledWith('com_info_image_resized', {
+        0: '2.0',
+        1: '1.0',
+        2: 50,
+      });
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: 'com_info_image_resized',
+        status: 'success',
+        duration: 3000,
+      });
     });
 
     it('uses conversation endpoint when no override is provided', async () => {

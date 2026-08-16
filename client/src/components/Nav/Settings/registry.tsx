@@ -38,6 +38,7 @@ import { ClearChats } from '../SettingsTabs/Data/ClearChats';
 import { TokenCredits, AutoRefill } from './BillingControls';
 import AdminPanel from '../SettingsTabs/General/AdminPanel';
 import SharedLinks from '../SettingsTabs/Data/SharedLinks';
+import ImageResize from '../SettingsTabs/Chat/ImageResize';
 import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
 import Avatar from '../SettingsTabs/Account/Avatar';
@@ -194,6 +195,14 @@ export const registry: SettingEntry[] = [
       switchId: 'saveDrafts',
       hoverCardText: 'com_nav_info_save_draft',
     }),
+  },
+  {
+    id: 'clientImageResize',
+    tab: CHAT,
+    section: 'sending',
+    labelKey: 'com_nav_client_image_resize',
+    keywords: ['image', 'resize', 'compress', 'upload', 'attachment', 'photo'],
+    Component: ImageResize,
   },
   {
     id: 'saveBadgesState',
