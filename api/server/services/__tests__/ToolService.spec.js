@@ -1,3 +1,4 @@
+const { createHash } = require('node:crypto');
 const { Constants: AgentConstants } = require('@librechat/agents');
 const {
   Tools,
@@ -16,6 +17,40 @@ const mockGetMCPServerTools = jest.fn();
 const mockGetCachedTools = jest.fn();
 const mockSendEvent = jest.fn();
 const mockEmitChunk = jest.fn();
+const mockResolveCodeExecutionContext = jest.fn(
+  ({ statefulSessions, environment, userId, agentId, conversationId }) => {
+    if (!statefulSessions) {
+      return {
+        baseUrl: (process.env.LIBRECHAT_CODE_BASEURL ?? 'https://api.librechat.ai').replace(
+          /\/$/,
+          '',
+        ),
+        codeSessionKey: 'execute_code',
+        executionProfile: 'default',
+        statefulSessions: false,
+      };
+    }
+    const baseUrl = process.env.LIBRECHAT_CODE_BASEURL_STATEFUL?.replace(/\/$/, '');
+    if (!baseUrl) {
+      throw new Error('LIBRECHAT_CODE_BASEURL_STATEFUL is not configured');
+    }
+    const fingerprint = (...parts) =>
+      createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 32);
+    let runtimeSessionHint = `v2:user:${fingerprint(userId)}`;
+    if (environment === 'agent-user') {
+      runtimeSessionHint = `v2:agent-user:${fingerprint(userId, agentId)}`;
+    } else if (environment === 'conversation') {
+      runtimeSessionHint = `v2:conversation:${fingerprint(userId, conversationId)}`;
+    }
+    return {
+      baseUrl,
+      codeSessionKey: `execute_code:stateful:${runtimeSessionHint}`,
+      executionProfile: 'stateful',
+      runtimeSessionHint,
+      statefulSessions: true,
+    };
+  },
+);
 jest.mock('~/server/services/Config', () => ({
   getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
   getMCPServerTools: (...args) => mockGetMCPServerTools(...args),
@@ -35,6 +70,7 @@ jest.mock('@librechat/api', () => ({
   GenerationJobManager: {
     emitChunk: (...args) => mockEmitChunk(...args),
   },
+  resolveCodeExecutionContext: (...args) => mockResolveCodeExecutionContext(...args),
 }));
 
 const mockLoadToolsUtil = jest.fn();
@@ -267,7 +303,43 @@ describe('ToolService - Action Capability Gating', () => {
         agentResourceType: ResourceType.REMOTE_AGENT,
       };
       expect(primeSearchFiles).toHaveBeenCalledWith(expectedParams);
-      expect(primeCodeFiles).toHaveBeenCalledWith(expectedParams);
+      expect(primeCodeFiles).toHaveBeenCalledWith({
+        ...expectedParams,
+        codeApiBaseUrl: 'https://api.librechat.ai',
+        executionProfile: 'default',
+      });
+    });
+
+    it('primes code files through the initializer-selected stateful route', async () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.execute_code];
+      const req = createMockReq(capabilities);
+      const tool_resources = { execute_code: { file_ids: ['stateful-file'] } };
+      const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+
+      await loadAgentTools({
+        req,
+        res: {},
+        agent: { id: 'stateful-agent', tools: [Tools.execute_code] },
+        tool_resources,
+        definitionsOnly: true,
+        codeExecutionContext: {
+          baseUrl: 'https://stateful-code.example.com',
+          codeSessionKey: 'execute_code:stateful:v2:user:abc',
+          executionProfile: 'stateful',
+          runtimeSessionHint: 'v2:user:abc',
+          statefulSessions: true,
+        },
+      });
+
+      expect(primeCodeFiles).toHaveBeenCalledWith({
+        req,
+        tool_resources,
+        agentId: 'stateful-agent',
+        agentResourceType: undefined,
+        codeApiBaseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+      });
     });
 
     it('propagates a typed CodeAPI resource recovery failure before model invocation', async () => {
@@ -1400,6 +1472,127 @@ describe('ToolService - Action Capability Gating', () => {
 
       expect(result.loadedTools.map((tool) => tool.name)).toEqual([]);
       expect(mockLoadToolsUtil).not.toHaveBeenCalled();
+    });
+
+    it('keeps stateless and stateful agents on isolated execution profiles in one run', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.stateful_code_sessions,
+      ];
+      const req = createMockReq(capabilities);
+      req.body = { conversationId: 'conversation-1' };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      process.env.LIBRECHAT_CODE_BASEURL = 'http://code-default.test/v1';
+      process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
+
+      try {
+        const stateless = await loadToolsForExecution({
+          req,
+          res: {},
+          agent: { id: 'stateless-agent', tools: [Tools.execute_code] },
+          toolNames: [],
+        });
+        const stateful = await loadToolsForExecution({
+          req,
+          res: {},
+          agent: {
+            id: 'stateful-agent',
+            tools: [Tools.execute_code],
+            stateful_code_sessions: true,
+            stateful_code_environment: 'agent-user',
+          },
+          toolNames: [],
+        });
+
+        expect(stateless.configurable.codeExecutionContext).toEqual({
+          baseUrl: 'http://code-default.test/v1',
+          codeSessionKey: 'execute_code',
+          executionProfile: 'default',
+          statefulSessions: false,
+        });
+        expect(stateful.configurable.codeExecutionContext).toEqual({
+          baseUrl: 'http://code-stateful.test/v1',
+          codeSessionKey: 'execute_code:stateful:v2:agent-user:7c684f0773d9642c122f67aa30e9e0f4',
+          executionProfile: 'stateful',
+          runtimeSessionHint: 'v2:agent-user:7c684f0773d9642c122f67aa30e9e0f4',
+          statefulSessions: true,
+        });
+      } finally {
+        delete process.env.LIBRECHAT_CODE_BASEURL;
+        delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+      }
+    });
+
+    it('resolves stateful routing for host file tools with the controller conversation ID', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.stateful_code_sessions,
+      ];
+      const req = createMockReq(capabilities);
+      req.body = {};
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
+
+      try {
+        const result = await loadToolsForExecution({
+          req,
+          res: {},
+          conversationId: 'resolved-api-conversation',
+          agent: {
+            id: 'stateful-agent',
+            tools: [Tools.execute_code],
+            stateful_code_sessions: true,
+            stateful_code_environment: 'conversation',
+          },
+          toolNames: [AgentConstants.READ_FILE],
+          actionsEnabled: false,
+        });
+
+        expect(result.configurable.codeExecutionContext.executionProfile).toBe('stateful');
+        expect(mockResolveCodeExecutionContext).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            statefulSessions: true,
+            conversationId: 'resolved-api-conversation',
+          }),
+        );
+      } finally {
+        delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+      }
+    });
+
+    it('resolves stateful routing when handle_skill is the only requested tool', async () => {
+      const capabilities = [
+        AgentCapabilities.tools,
+        AgentCapabilities.execute_code,
+        AgentCapabilities.stateful_code_sessions,
+      ];
+      const req = createMockReq(capabilities);
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'http://code-stateful.test/v1';
+
+      try {
+        const result = await loadToolsForExecution({
+          req,
+          res: {},
+          agent: {
+            id: 'stateful-agent',
+            tools: [Tools.execute_code],
+            stateful_code_sessions: true,
+            stateful_code_environment: 'agent-user',
+          },
+          toolNames: [AgentConstants.SKILL_TOOL],
+          actionsEnabled: false,
+        });
+
+        expect(result.configurable.codeExecutionContext.executionProfile).toBe('stateful');
+        expect(mockResolveCodeExecutionContext).toHaveBeenLastCalledWith(
+          expect.objectContaining({ statefulSessions: true, environment: 'agent-user' }),
+        );
+      } finally {
+        delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+      }
     });
 
     it('loads bash PTC under the legacy programmatic tool name when code capabilities are enabled', async () => {

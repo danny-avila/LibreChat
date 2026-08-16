@@ -301,6 +301,8 @@ export type Agent = {
   hide_sequential_outputs?: boolean;
   /** Per-agent opt-in for stateful code sessions (requires the app-level capability). */
   stateful_code_sessions?: boolean;
+  /** Stateful workspace sharing scope. Defaults to one workspace per user. */
+  stateful_code_environment?: StatefulCodeEnvironment;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
@@ -353,6 +355,7 @@ export type AgentCreateParams = {
   | 'end_after_tools'
   | 'hide_sequential_outputs'
   | 'stateful_code_sessions'
+  | 'stateful_code_environment'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -382,6 +385,7 @@ export type AgentUpdateParams = {
   | 'end_after_tools'
   | 'hide_sequential_outputs'
   | 'stateful_code_sessions'
+  | 'stateful_code_environment'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -533,6 +537,8 @@ export enum AnnotationTypes {
   FILE_CITATION = 'file_citation',
   FILE_PATH = 'file_path',
 }
+
+export type StatefulCodeEnvironment = 'user' | 'agent-user' | 'conversation';
 
 export enum StepStatus {
   IN_PROGRESS = 'in_progress',

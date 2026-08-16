@@ -11,6 +11,7 @@ export * from './discovery';
 export * from './edges';
 export * from './errors';
 export * from './envelope';
+export * from './execution';
 export * from './handlers';
 export * from './harvest';
 export * from './initialize';

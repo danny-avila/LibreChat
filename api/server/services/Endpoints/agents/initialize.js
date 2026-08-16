@@ -1,11 +1,11 @@
 const { logger } = require('@librechat/data-schemas');
-const { createContentAggregator } = require('@librechat/agents');
+const { createContentAggregator, GraphNodeKeys } = require('@librechat/agents');
 const {
   checkAccess,
   loadSkillStates,
   initializeAgent,
   isMemoryEnabled,
-  primeInvokedSkills,
+  primeInvokedSkillsForProfiles,
   validateAgentModel,
   extractManualSkills,
   GenerationJobManager,
@@ -17,6 +17,7 @@ const {
   resolveModelSpecSkillIds,
   getAgentStartupTelemetry,
   buildAgentContextAttachmentsByAgentId,
+  collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
 } = require('@librechat/api');
 const {
@@ -97,6 +98,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
     provider,
     tool_options,
     tool_resources,
+    codeExecutionContext,
     accessibleMcpServerNames,
   }) {
     const agent = { id: agentId, tools, provider, model, tool_options };
@@ -109,6 +111,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
         streamId,
         jobCreatedAt,
         tool_resources,
+        codeExecutionContext,
         definitionsOnly,
         accessibleMcpServerNames,
       });
@@ -167,7 +170,7 @@ const initializeClient = async ({
   /** @type {Map<string, import('@librechat/api').ToolInputValidationError>} */
   const toolInputValidationErrors = new Map();
   const { contentParts, aggregateContent, stepMap } = createContentAggregator();
-  const toolEndCallback = createToolEndCallback({
+  const artifactToolEndCallback = createToolEndCallback({
     req,
     res,
     artifactPromises,
@@ -279,6 +282,30 @@ const initializeClient = async ({
    * }>}
    */
   const agentToolContexts = new Map();
+  /** Attach only the host-resolved route for the actually executing agent.
+   * Runnable metadata is transport data and may contain caller-controlled
+   * keys, so discard any incoming route context before resolving from the
+   * server-owned per-agent map. This covers both traditional TOOL_END events
+   * and event-driven ON_TOOL_EXECUTE callbacks. */
+  const toolEndCallback = async (data, metadata = {}) => {
+    const node = typeof metadata.langgraph_node === 'string' ? metadata.langgraph_node : '';
+    const nodeAgentId = node.startsWith(GraphNodeKeys.TOOLS)
+      ? node.slice(GraphNodeKeys.TOOLS.length)
+      : undefined;
+    const executingAgentId =
+      metadata.executingAgentId ?? metadata.agentId ?? metadata.agent_id ?? nodeAgentId;
+    const soleContext =
+      agentToolContexts.size === 1 ? agentToolContexts.values().next().value : null;
+    const trustedContext =
+      (typeof executingAgentId === 'string' ? agentToolContexts.get(executingAgentId) : null) ??
+      soleContext;
+    const callbackMetadata = { ...metadata };
+    delete callbackMetadata.codeExecutionContext;
+    if (trustedContext?.codeExecutionContext) {
+      callbackMetadata.codeExecutionContext = trustedContext.codeExecutionContext;
+    }
+    return artifactToolEndCallback(data, callbackMetadata);
+  };
   /** @type {Map<string, import('@librechat/api').EndpointTokenConfig | undefined>} */
   const endpointTokenConfigByAgentId = new Map();
 
@@ -293,6 +320,7 @@ const initializeClient = async ({
         res,
         signal,
         streamId,
+        conversationId,
         toolNames,
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,
@@ -796,6 +824,7 @@ const initializeClient = async ({
       codeEnvAvailable === true &&
       agent.stateful_code_sessions === true &&
       agent.tools?.includes(Tools.execute_code) === true,
+    statefulCodeEnvironment: agent.stateful_code_environment,
     includeReasoningHistory: getIncludeReasoningHistory(agent),
   });
 
@@ -977,6 +1006,7 @@ const initializeClient = async ({
         configId: metadata.configId,
         codeEnvAvailable: metadata.codeEnvAvailable,
         statefulCodeSessions: metadata.statefulCodeSessions,
+        statefulCodeEnvironment: metadata.statefulCodeEnvironment,
         includeReasoningHistory: metadata.includeReasoningHistory,
         lazySubagentConfigs: lazyChildren,
         subagentAgentConfigs: eagerChildren,
@@ -1057,16 +1087,23 @@ const initializeClient = async ({
 
   /** History priming uses the user's full ACL-accessible skill set (not
    *  per-agent scoped) because prior turns may reference skills no longer
-   *  in any active agent's scope; the ACL check is the security gate.
-   *  `codeEnvAvailable` comes from `primaryConfig` — @see
-   *  `InitializedAgent.codeEnvAvailable` for the per-agent narrowing. */
+   *  in any active agent's scope; the ACL check is the security gate. Each
+   *  selected Code API deployment receives its own upload, and only session
+   *  partitions routed to that deployment receive those storage pointers. */
+  const codeExecutionProfiles = collectCodeExecutionProfileRoutes(
+    [primaryConfig, ...agentConfigs.values()],
+    {
+      userId: req.user.id,
+      conversationId,
+    },
+  );
   const handlePrimeInvokedSkills = skillsCapabilityEnabled
     ? (payload) =>
-        primeInvokedSkills({
+        primeInvokedSkillsForProfiles({
           req,
           payload,
           accessibleSkillIds,
-          codeEnvAvailable: primaryConfig.codeEnvAvailable === true,
+          executionProfiles: codeExecutionProfiles,
           ...getSkillToolDeps(),
         })
     : undefined;

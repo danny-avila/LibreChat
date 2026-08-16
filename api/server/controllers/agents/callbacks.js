@@ -964,6 +964,8 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
              * ids.
              */
             session_id: file.storage_session_id ?? output.artifact.session_id,
+            codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
+            executionProfile: metadata.codeExecutionContext?.executionProfile,
           });
           const fileMetadata = result?.file ?? null;
           const finalize = result?.finalize;
@@ -1286,6 +1288,8 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
              * ids.
              */
             session_id: file.storage_session_id ?? output.artifact.session_id,
+            codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
+            executionProfile: metadata.codeExecutionContext?.executionProfile,
           });
           const fileMetadata = result?.file ?? null;
           const finalize = result?.finalize;

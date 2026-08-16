@@ -471,11 +471,9 @@ export async function createAgentChatCompletion(
         ? ((agentsConfig as { capabilities?: string[] }).capabilities ?? []).includes(capability)
         : undefined;
     const codeEnvAvailable = capabilityEnabled(AgentCapabilities.execute_code);
-    /** Mirror `codeEnvAvailable` for the stateful-session gate so an agent with
-     *  `execute_code`, the app `stateful_code_sessions` capability, and its own
-     *  builder opt-in resolves stateful sessions on this route too — otherwise
-     *  `statefulCodeSessions` stays false and `createRun` never sends
-     *  `toolExecution.sandbox`. */
+    /** Mirror `codeEnvAvailable` for the stateful-session gate so this route
+     *  also carries each agent's trusted stateful endpoint/profile selection
+     *  into tool loading and prewarming. */
     const statefulSessionsAvailable = capabilityEnabled(AgentCapabilities.stateful_code_sessions);
     /** Same gate as the in-repo controllers: without it, agents that opted
      *  tools in via tool_options.run_in_background silently lose the

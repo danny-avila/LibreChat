@@ -1444,6 +1444,7 @@ class BaseClient {
       if (
         file.embedded === true ||
         file.metadata?.codeEnvRef != null ||
+        file.metadata?.codeEnvRefs != null ||
         file.metadata?.fileIdentifier != null
       ) {
         allFiles.push(file);

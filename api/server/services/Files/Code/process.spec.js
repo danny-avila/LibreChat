@@ -63,6 +63,10 @@ jest.mock('@librechat/api', () => {
     flattenArtifactPath: jest.fn((name) => name.replace(/\//g, '__')),
     createAxiosInstance: jest.fn(() => mockAxios),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    getCodeExecutionBaseUrl: jest.fn((profile) =>
+      profile === 'stateful' ? 'https://code-stateful.example.com' : 'https://code-api.example.com',
+    ),
+    CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
     withTimeout: (...args) => passthroughWithTimeout(...args),
     hasOfficeHtmlPath: (...args) => mockHasOfficeHtmlPath(...args),
     /**
@@ -821,6 +825,24 @@ describe('Code Process', () => {
     });
 
     describe('fallback behavior', () => {
+      it('preserves the stateful route in generated downloads and fallbacks', async () => {
+        mockAxios.mockRejectedValue(new Error('Network error'));
+
+        const { file: result } = await processCodeOutput({
+          ...baseParams,
+          codeApiBaseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
+        });
+
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            url: expect.stringContaining('https://code-stateful.example.com/download/'),
+            headers: expect.objectContaining({ 'X-CodeAPI-Expected-Profile': 'stateful' }),
+          }),
+        );
+        expect(result.filepath).toContain('execution_profile=stateful');
+      });
+
       it('should fallback to download URL when saveBuffer is not available', async () => {
         const smallBuffer = Buffer.alloc(100);
         mockAxios.mockResolvedValue({ data: smallBuffer });
@@ -901,9 +923,31 @@ describe('Code Process', () => {
             id: 'user-123',
             storage_session_id: 'session-123',
             file_id: 'file-id-123',
+            executionProfile: 'default',
+          },
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'user-123',
+              storage_session_id: 'session-123',
+              file_id: 'file-id-123',
+              executionProfile: 'default',
+            },
           },
           sourceDispatchedAt: expect.any(Number),
         });
+      });
+
+      it('persists the originating profile on a stateful artifact ref', async () => {
+        mockAxios.mockResolvedValue({ data: Buffer.alloc(100) });
+
+        const { file: result } = await processCodeOutput({
+          ...baseParams,
+          codeApiBaseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
+        });
+
+        expect(result.metadata.codeEnvRef.executionProfile).toBe('stateful');
       });
 
       /* Phase C lock-in: outputs are ALWAYS user-scoped, never skill-scoped.
@@ -935,12 +979,14 @@ describe('Code Process', () => {
           id: 'user-A',
           storage_session_id: 'session-123',
           file_id: 'file-id-123',
+          executionProfile: 'default',
         });
         expect(outputB.metadata.codeEnvRef).toEqual({
           kind: 'user',
           id: 'user-B',
           storage_session_id: 'session-123',
           file_id: 'file-id-123',
+          executionProfile: 'default',
         });
 
         // No skill identity leaks into the output ref under any property.
@@ -1204,6 +1250,35 @@ describe('Code Process', () => {
             headers: expect.objectContaining({
               Authorization: 'Bearer freshness-token',
               'User-Agent': 'LibreChat/1.0',
+            }),
+          }),
+        );
+      });
+
+      it('checks freshness against the trusted stateful endpoint and profile', async () => {
+        mockAxios.mockResolvedValue({
+          data: { lastModified: '2026-08-15T00:00:00Z' },
+        });
+
+        await getSessionInfo(
+          {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'session-123',
+            file_id: 'file-123',
+          },
+          mockReq,
+          {
+            baseUrl: 'https://stateful-code.example.com',
+            executionProfile: 'stateful',
+          },
+        );
+
+        expect(mockAxios).toHaveBeenCalledWith(
+          expect.objectContaining({
+            url: expect.stringMatching(/^https:\/\/stateful-code\.example\.com\/sessions\//),
+            headers: expect.objectContaining({
+              'X-CodeAPI-Expected-Profile': 'stateful',
             }),
           }),
         );
@@ -1608,6 +1683,22 @@ describe('Code Process', () => {
         expect(call.method).toBe('post');
         expect(call.url).toBe('https://code-api.example.com/exec');
         expect(call.data.lang).toBe('bash');
+      });
+
+      it('routes to the selected profile endpoint and asserts the expected profile', async () => {
+        mockAxios.mockResolvedValueOnce({ data: { stdout: 'ok', stderr: '' } });
+
+        await readSandboxFile({
+          file_path: '/mnt/data/x.txt',
+          codeApiBaseUrl: 'https://stateful-code.example.com',
+          executionProfile: 'stateful',
+          runtime_session_hint: 'v1:user',
+        });
+
+        const call = mockAxios.mock.calls[0][0];
+        expect(call.url).toBe('https://stateful-code.example.com/exec');
+        expect(call.headers['X-CodeAPI-Expected-Profile']).toBe('stateful');
+        expect(call.data.runtime_session_hint).toBe('v1:user');
       });
 
       it('omits session_id and files when not provided', async () => {
@@ -2118,6 +2209,83 @@ describe('Code Process', () => {
       expect(uploadArgs.version).toBe(4);
     });
 
+    it('reuploads instead of reusing a ref from the other execution profile', async () => {
+      const dbFile = {
+        file_id: 'librechat-file-id',
+        filename: 'sentinel.txt',
+        filepath: '/uploads/sentinel.txt',
+        source: 'local',
+        context: 'execute_code',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'DEFAULT_SESSION',
+            file_id: 'DEFAULT_ID',
+            executionProfile: 'default',
+          },
+        },
+      };
+      getFiles.mockResolvedValue([dbFile]);
+      const { handleFileUpload } = setupReuploadMocks({
+        storage_session_id: 'STATEFUL_SESSION',
+        file_id: 'STATEFUL_ID',
+      });
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: { file_ids: ['librechat-file-id'], files: [] },
+        },
+        agentId: 'agent-id',
+        codeApiBaseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+      });
+
+      expect(mockAxios).not.toHaveBeenCalled();
+      expect(handleFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          codeApiBaseUrl: 'https://stateful-code.example.com',
+          executionProfile: 'stateful',
+        }),
+      );
+      expect(updateFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          'metadata.codeEnvRef': expect.objectContaining({ executionProfile: 'default' }),
+          'metadata.codeEnvRefs.stateful': expect.objectContaining({
+            executionProfile: 'stateful',
+          }),
+        }),
+      );
+
+      const persistedMetadata = {
+        ...dbFile.metadata,
+        codeEnvRef: updateFile.mock.calls[0][0]['metadata.codeEnvRef'],
+        codeEnvRefs: {
+          default: dbFile.metadata.codeEnvRef,
+          stateful: updateFile.mock.calls[0][0]['metadata.codeEnvRefs.stateful'],
+        },
+      };
+      getFiles.mockResolvedValue([{ ...dbFile, metadata: persistedMetadata }]);
+      mockAxios.mockResolvedValue({ data: { lastModified: new Date().toISOString() } });
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: {
+          execute_code: { file_ids: ['librechat-file-id'], files: [] },
+        },
+        agentId: 'agent-id',
+        executionProfile: 'default',
+      });
+
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
+      expect(mockAxios).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: expect.stringContaining('/sessions/DEFAULT_SESSION/objects/DEFAULT_ID'),
+        }),
+      );
+    });
+
     it('persists fresh codeEnvRef (kind/id preserved) on the DB record after reupload', async () => {
       const dbFile = {
         file_id: 'librechat-file-id',
@@ -2149,14 +2317,20 @@ describe('Code Process', () => {
       expect(updateFile).toHaveBeenCalledWith(
         expect.objectContaining({
           file_id: 'librechat-file-id',
-          metadata: expect.objectContaining({
-            codeEnvRef: {
-              kind: 'user',
-              id: 'user-123',
-              storage_session_id: 'NEW_SESSION',
-              file_id: 'NEW_ID',
-            },
-          }),
+          'metadata.codeEnvRef': {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'NEW_SESSION',
+            file_id: 'NEW_ID',
+            executionProfile: 'default',
+          },
+          'metadata.codeEnvRefs.default': {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'NEW_SESSION',
+            file_id: 'NEW_ID',
+            executionProfile: 'default',
+          },
         }),
       );
     });

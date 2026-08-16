@@ -86,6 +86,7 @@ function AgentSelect({
         avatar_file: null,
         avatar_preview: fullAgent.avatar?.filepath ?? '',
         avatar_action: null,
+        stateful_code_environment: fullAgent.stateful_code_environment ?? 'user',
       };
 
       Object.entries(fullAgent).forEach(([name, value]) => {

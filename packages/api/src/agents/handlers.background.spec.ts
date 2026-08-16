@@ -597,7 +597,14 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         emitted.push(attachment);
       },
     });
-    const configurable = buildConfig(['execute_code']);
+    const codeExecutionContext = {
+      baseUrl: 'https://code-stateful.example.com',
+      codeSessionKey: 'execute_code:stateful:convo-hint',
+      executionProfile: 'stateful' as const,
+      runtimeSessionHint: 'convo-hint',
+      statefulSessions: true,
+    };
+    const configurable = { ...buildConfig(['execute_code']), codeExecutionContext };
     const metadata = { thread_id: 'exec_convo_code', run_id: 'msg-dispatch' };
 
     const dispatch = await runBatch(handler, {
@@ -636,6 +643,7 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
         dispatchedAt: expect.any(Number),
         output: 'stdout:\nhello',
         artifact: CODE_ARTIFACT,
+        codeExecutionContext,
       }),
     );
     // nothing rode the finalized dispatch turn's callback

@@ -94,6 +94,27 @@ describe('composeAgentUpdatePayload', () => {
 
     expect(payload.stateful_code_sessions).toBe(true);
   });
+
+  it('defaults stateful environments to the scalable user scope', () => {
+    const form = createForm();
+    form.execute_code = true;
+    form.stateful_code_sessions = true;
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.stateful_code_environment).toBe('user');
+  });
+
+  it('preserves an explicit stateful environment scope', () => {
+    const form = createForm();
+    form.execute_code = true;
+    form.stateful_code_sessions = true;
+    form.stateful_code_environment = 'agent-user';
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.stateful_code_environment).toBe('agent-user');
+  });
 });
 
 describe('persistAvatarChanges', () => {
