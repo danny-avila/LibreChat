@@ -1772,6 +1772,40 @@ describe('Conversation Operations', () => {
       expect(unarchivedCount).toBe(0);
     });
 
+    it('continues refreshing later project batches after an individual refresh fails', async () => {
+      const projects = await ChatProject.insertMany(
+        Array.from({ length: 11 }, (_, index) => ({
+          user: 'user123',
+          name: `Project ${index}`,
+          conversationCount: 1,
+          lastConversationId: `project-conversation-${index}`,
+        })),
+      );
+      await Conversation.insertMany(
+        projects.map((project, index) => ({
+          conversationId: `project-conversation-${index}`,
+          user: 'user123',
+          endpoint: EModelEndpoint.openAI,
+          chatProjectId: project._id!.toString(),
+        })),
+      );
+      const countDocumentsSpy = jest
+        .spyOn(Conversation, 'countDocuments')
+        .mockRejectedValueOnce(new Error('transient project refresh failure'));
+
+      try {
+        const result = await archiveAllConvos('user123');
+        expect(result.archivedCount).toBe(projects.length);
+        expect(countDocumentsSpy).toHaveBeenCalledTimes(projects.length);
+      } finally {
+        countDocumentsSpy.mockRestore();
+      }
+
+      const laterProject = await ChatProject.findById(projects[10]._id).lean<IChatProject>();
+      expect(laterProject?.conversationCount).toBe(0);
+      expect(laterProject?.lastConversationId).toBeNull();
+    });
+
     it('leaves already-archived conversations untouched', async () => {
       const alreadyArchived = uuidv4();
       await Conversation.create({

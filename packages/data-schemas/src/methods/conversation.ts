@@ -42,9 +42,18 @@ async function refreshChatProjectStatsInBatches(
   const ids = [...projectIds];
   for (let index = 0; index < ids.length; index += PROJECT_STATS_REFRESH_CONCURRENCY) {
     const batch = ids.slice(index, index + PROJECT_STATS_REFRESH_CONCURRENCY);
-    await Promise.all(
+    const results = await Promise.allSettled(
       batch.map((projectId) => refreshChatProjectStatsForUser(mongoose, user, projectId)),
     );
+    for (let resultIndex = 0; resultIndex < results.length; resultIndex++) {
+      const result = results[resultIndex];
+      if (result.status === 'rejected') {
+        logger.error(
+          `[refreshChatProjectStatsInBatches] Failed to refresh project ${batch[resultIndex]}`,
+          result.reason,
+        );
+      }
+    }
   }
 }
 

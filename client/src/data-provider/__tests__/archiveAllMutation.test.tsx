@@ -100,4 +100,43 @@ describe('archive-all mutation cache refresh', () => {
 
     queryClient.clear();
   });
+
+  it('reconciles caches when the request fails after a partial archive', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const archivedQuery = jest.fn().mockResolvedValue({ pages: [], pageParams: [] });
+    const projectKey = [QueryKeys.project, 'project-1'];
+    const conversationKey = [QueryKeys.conversation, 'conversation-1'];
+
+    await queryClient.fetchQuery(
+      [QueryKeys.archivedConversations, { isArchived: true }],
+      archivedQuery,
+    );
+    queryClient.setQueryData(projectKey, { _id: 'project-1', conversationCount: 1 });
+    queryClient.setQueryData(conversationKey, {
+      conversationId: 'conversation-1',
+      isArchived: false,
+    });
+
+    mockArchiveAllConversations.mockRejectedValue(new Error('later archive batch failed'));
+    const { result } = renderHook(() => useArchiveAllConversationsMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync()).rejects.toThrow('later archive batch failed');
+    });
+
+    await waitFor(() => {
+      expect(archivedQuery).toHaveBeenCalledTimes(2);
+    });
+    expect(queryClient.getQueryData(projectKey)).toBeUndefined();
+    expect(queryClient.getQueryData(conversationKey)).toBeUndefined();
+
+    queryClient.clear();
+  });
 });

@@ -166,21 +166,29 @@ export const useArchiveAllConversationsMutation = (
   options?: t.ArchiveAllConversationsOptions,
 ): UseMutationResult<t.TArchiveAllConversationsResponse, unknown, void, unknown> => {
   const queryClient = useQueryClient();
-  const { onSuccess, ..._options } = options || {};
+  const { onSuccess, onError, ..._options } = options || {};
+
+  const reconcileCaches = () => {
+    queryClient.invalidateQueries([QueryKeys.allConversations]);
+    queryClient.invalidateQueries({
+      queryKey: [QueryKeys.archivedConversations],
+      refetchType: 'all',
+    });
+    queryClient.invalidateQueries([QueryKeys.projectConversations]);
+    queryClient.invalidateQueries([QueryKeys.projects]);
+    queryClient.invalidateQueries([QueryKeys.project]);
+    queryClient.removeQueries([QueryKeys.project], { type: 'inactive' });
+    queryClient.removeQueries({ queryKey: [QueryKeys.conversation] });
+  };
 
   return useMutation(() => dataService.archiveAllConversations(), {
     onSuccess: (data, vars, context) => {
-      queryClient.invalidateQueries([QueryKeys.allConversations]);
-      queryClient.invalidateQueries({
-        queryKey: [QueryKeys.archivedConversations],
-        refetchType: 'all',
-      });
-      queryClient.invalidateQueries([QueryKeys.projectConversations]);
-      queryClient.invalidateQueries([QueryKeys.projects]);
-      queryClient.invalidateQueries([QueryKeys.project]);
-      queryClient.removeQueries([QueryKeys.project], { type: 'inactive' });
-      queryClient.removeQueries({ queryKey: [QueryKeys.conversation] });
+      reconcileCaches();
       onSuccess?.(data, vars, context);
+    },
+    onError: (error, vars, context) => {
+      reconcileCaches();
+      onError?.(error, vars, context);
     },
     ..._options,
   });
