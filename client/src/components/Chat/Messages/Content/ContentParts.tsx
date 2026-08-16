@@ -11,17 +11,27 @@ import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
 import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
+import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { MessageContext, SearchContext } from '~/Providers';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import EditContentParts from './EditContentParts';
 import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
-import MemoryArtifacts from './MemoryArtifacts';
 import Sources from '~/components/Web/Sources';
 import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
+
+/** An empty TEXT part — the placeholder some endpoints seed in
+ * `initialResponse.content` before the model produces anything. */
+const isEmptyTextPart = (part: TMessageContentParts | undefined): boolean => {
+  if (part == null || part.type !== ContentTypes.TEXT) {
+    return false;
+  }
+  const text = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+  return text.length === 0;
+};
 
 const getToolCallId = (part: TMessageContentParts): string =>
   (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
@@ -296,17 +306,7 @@ const ContentParts = memo(function ContentParts({
    * the transition before the model has actually produced anything.
    */
   const hasRealContent = useMemo(
-    () =>
-      (content ?? []).some((part) => {
-        if (part == null) {
-          return false;
-        }
-        if (part.type !== ContentTypes.TEXT) {
-          return true;
-        }
-        const text = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
-        return text.length > 0;
-      }),
+    () => (content ?? []).some((part) => part != null && !isEmptyTextPart(part)),
     [content],
   );
 
@@ -561,7 +561,13 @@ const ContentParts = memo(function ContentParts({
   }
 
   const safeContent = content ?? [];
-  const showEmptyCursor = safeContent.length === 0 && effectiveIsSubmitting;
+  /** A solitary seeded empty TEXT part (useChatFunctions' assistant-side
+   *  placeholder) is the same waiting state as no content at all — route it
+   *  through EmptyText instead of Markdown's flush initializing dot so both
+   *  flows share the gated header-axis nudge. Never solitary mid-stream, so
+   *  empty TEXT after real parts keeps its flush in-flow cursor. */
+  const solitaryEmptyText = safeContent.length === 1 && isEmptyTextPart(safeContent[0]);
+  const showEmptyCursor = (safeContent.length === 0 || solitaryEmptyText) && effectiveIsSubmitting;
   /** Skips trailing BLANK label reservations — they render nothing, and
    *  counting one as last would strip the streaming cursor from the last
    *  VISIBLE part until the next delta. */
@@ -604,45 +610,52 @@ const ContentParts = memo(function ContentParts({
       {!nestedActivityPhase && renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
-          <EmptyText />
+          {/** Nudge only when the dot is truly first under the header — leading
+           * memory/skill rows and nested phases keep it flush. */}
+          <EmptyText
+            underHeaderIcon={
+              !nestedActivityPhase && !hasPendingSkills && !hasMemoryArtifacts(attachments)
+            }
+          />
         </Container>
       )}
-      {groupedParts.flatMap((group) => {
-        const firstIdx = group.type === 'single' ? group.part.idx : (group.parts[0]?.idx ?? -1);
-        const nodes: ReactElement[] = [];
-        const attribution = renderResumeAttribution(firstIdx);
-        if (attribution != null) {
-          nodes.push(attribution);
-        }
-        if (group.type === 'single') {
-          const { part, idx } = group.part;
-          nodes.push(renderPart(part, idx, idx === lastContentIdx));
+      {!showEmptyCursor &&
+        groupedParts.flatMap((group) => {
+          const firstIdx = group.type === 'single' ? group.part.idx : (group.parts[0]?.idx ?? -1);
+          const nodes: ReactElement[] = [];
+          const attribution = renderResumeAttribution(firstIdx);
+          if (attribution != null) {
+            nodes.push(attribution);
+          }
+          if (group.type === 'single') {
+            const { part, idx } = group.part;
+            nodes.push(renderPart(part, idx, idx === lastContentIdx));
+            return nodes;
+          }
+          const { groupId } = group;
+          nodes.push(
+            <ToolCallGroup
+              key={`tool-group-${groupId}`}
+              parts={group.parts}
+              isSubmitting={effectiveIsSubmitting}
+              /** The label part is CONSUMED into the header, not listed in
+               *  `parts` — a filled label at the content tail must still
+               *  mark its group as last or nothing holds the streaming
+               *  cursor until the next delta. */
+              isLast={
+                group.parts.some((p) => p.idx === lastContentIdx) ||
+                group.labelPart?.idx === lastContentIdx
+              }
+              renderPart={renderGroupedPart}
+              lastContentIdx={lastContentIdx}
+              groupAttachments={group.groupAttachments}
+              initialExpansionState={expansionState.get(groupId)}
+              onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
+              labelPart={group.labelPart}
+            />,
+          );
           return nodes;
-        }
-        const { groupId } = group;
-        nodes.push(
-          <ToolCallGroup
-            key={`tool-group-${groupId}`}
-            parts={group.parts}
-            isSubmitting={effectiveIsSubmitting}
-            /** The label part is CONSUMED into the header, not listed in
-             *  `parts` — a filled label at the content tail must still
-             *  mark its group as last or nothing holds the streaming
-             *  cursor until the next delta. */
-            isLast={
-              group.parts.some((p) => p.idx === lastContentIdx) ||
-              group.labelPart?.idx === lastContentIdx
-            }
-            renderPart={renderGroupedPart}
-            lastContentIdx={lastContentIdx}
-            groupAttachments={group.groupAttachments}
-            initialExpansionState={expansionState.get(groupId)}
-            onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
-            labelPart={group.labelPart}
-          />,
-        );
-        return nodes;
-      })}
+        })}
     </SearchContext.Provider>
   );
   if (nestedActivityPhase) {
