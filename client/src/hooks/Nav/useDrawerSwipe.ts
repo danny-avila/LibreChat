@@ -36,10 +36,15 @@ export function findHorizontalScrollBlocker(
   let node: Element | null = start;
   while (node != null) {
     if (node instanceof HTMLElement && node.scrollWidth > node.clientWidth + 1) {
-      const { overflowX } = window.getComputedStyle(node);
-      if (overflowX === 'auto' || overflowX === 'scroll') {
-        const remaining =
-          direction === 1 ? node.scrollLeft : node.scrollWidth - node.clientWidth - node.scrollLeft;
+      const style = window.getComputedStyle(node);
+      if (style.overflowX === 'auto' || style.overflowX === 'scroll') {
+        const maxScroll = node.scrollWidth - node.clientWidth;
+        /** RTL scrollers report `scrollLeft` in [-max, 0] with 0 at the right
+         * edge; normalize to visual distance-from-left-edge so the finger
+         * direction maps the same way in both document directions. */
+        const fromLeftEdge =
+          style.direction === 'rtl' ? node.scrollLeft + maxScroll : node.scrollLeft;
+        const remaining = direction === 1 ? fromLeftEdge : maxScroll - fromLeftEdge;
         if (remaining > 1) {
           return node;
         }
@@ -80,6 +85,18 @@ type Gesture = {
   rafScheduled: boolean;
 };
 
+/** Returns every transient inline property to what React/classes render:
+ * the drawer's transform is class-driven and the pane's is a React style
+ * whose committed value React re-asserts whenever `open` changes. */
+const releaseInlineStyles = (drawer: HTMLElement, pane: HTMLElement) => {
+  drawer.style.transform = '';
+  drawer.style.willChange = '';
+  drawer.style.transition = SIDEBAR_TRANSITION;
+  pane.style.transform = '';
+  pane.style.willChange = '';
+  pane.style.transition = SIDEBAR_TRANSITION;
+};
+
 const dragTransforms = (gesture: Gesture): { drawer: string; pane: string } => {
   const progress = gesture.opening
     ? Math.min(Math.max(gesture.dx, 0), gesture.width)
@@ -113,7 +130,7 @@ export default function useDrawerSwipe({
   onOpenChange,
 }: DrawerSwipeOptions) {
   const gestureRef = useRef<Gesture | null>(null);
-  const settleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settleRef = useRef<{ id: ReturnType<typeof setTimeout>; target: boolean } | null>(null);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
 
@@ -128,6 +145,17 @@ export default function useDrawerSwipe({
     }
     const opening = !open;
     const surface = opening ? pane : drawer;
+
+    /** A settle whose target the world has since contradicted (drawer closed
+     * via a button inside its 380ms window) must not fire — its stale write
+     * would strand the pane offscreen with React believing nothing changed.
+     * A settle that AGREES with `open` keeps running so its animation and
+     * handoff finish undisturbed. */
+    if (settleRef.current != null && settleRef.current.target !== open) {
+      clearTimeout(settleRef.current.id);
+      settleRef.current = null;
+      releaseInlineStyles(drawer, pane);
+    }
 
     const clearDrag = (gesture: Gesture) => {
       if (gesture.raf != null) {
@@ -154,7 +182,7 @@ export default function useDrawerSwipe({
       if (next !== open) {
         onOpenChangeRef.current(next);
       }
-      settleRef.current = setTimeout(() => {
+      const id = setTimeout(() => {
         settleRef.current = null;
         drawerEl.style.transform = '';
         drawerEl.style.willChange = '';
@@ -163,6 +191,7 @@ export default function useDrawerSwipe({
         paneEl.style.willChange = '';
         paneEl.style.transition = SIDEBAR_TRANSITION;
       }, TRANSITION_MS + SETTLE_BUFFER_MS);
+      settleRef.current = { id, target: next };
     };
 
     const onTouchStart = (event: TouchEvent) => {
@@ -258,9 +287,14 @@ export default function useDrawerSwipe({
       scheduleDragFrame(gesture);
     };
 
-    const onTouchEnd = () => {
+    const onTouchEnd = (event: TouchEvent) => {
       const gesture = gestureRef.current;
       if (gesture == null) {
+        return;
+      }
+      /** A second finger lifting is not a release — settle only once the
+       * surface is empty, or a lingering finger commits half a gesture. */
+      if (event.touches.length > 0) {
         return;
       }
       if (gesture.phase !== 'claimed') {
@@ -300,6 +334,12 @@ export default function useDrawerSwipe({
       surface.removeEventListener('touchcancel', onTouchCancel);
       const gesture = gestureRef.current;
       if (gesture != null) {
+        /** An external open-change (keyboard toggle) mid-drag tears down these
+         * listeners with the finger still down; the drag's inline transform
+         * and `transition: none` must not outlive the gesture. */
+        if (gesture.phase === 'claimed' && !gesture.reducedMotion) {
+          releaseInlineStyles(drawer, pane);
+        }
         clearDrag(gesture);
       }
     };
@@ -308,7 +348,7 @@ export default function useDrawerSwipe({
   useEffect(
     () => () => {
       if (settleRef.current != null) {
-        clearTimeout(settleRef.current);
+        clearTimeout(settleRef.current.id);
       }
     },
     [],

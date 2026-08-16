@@ -54,14 +54,17 @@ export default function Root() {
     },
     [setSidebarExpanded],
   );
+  const { isAuthenticated, logout } = useAuthContext();
+
   useDrawerSwipe({
     paneRef,
-    enabled: isSmallScreen,
+    /** Auth gates the whole tree below (`return null`), so the swipe surfaces
+     * only exist once authenticated — enabling earlier would attach to
+     * nothing and never re-run when they mount. */
+    enabled: isSmallScreen && isAuthenticated,
     open: sidebarExpanded,
     onOpenChange: handleDrawerOpenChange,
   });
-
-  const { isAuthenticated, logout } = useAuthContext();
 
   useHealthCheck(isAuthenticated);
 

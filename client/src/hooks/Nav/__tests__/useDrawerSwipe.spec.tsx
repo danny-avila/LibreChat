@@ -22,6 +22,7 @@ type Harness = {
     points: Array<{ x: number; y: number; t: number; target?: Element }>,
     end?: boolean,
   ) => TouchEvent[];
+  rerender: (props: { open: boolean; enabled: boolean }) => void;
   unmount: () => void;
 };
 
@@ -45,8 +46,11 @@ const setup = (open: boolean, reducedMotion = false): Harness => {
     });
 
   const onOpenChange = jest.fn();
-  const { unmount } = renderHook(() =>
-    useDrawerSwipe({ paneRef: { current: pane }, enabled: true, open, onOpenChange }),
+  const paneRef = { current: pane };
+  const { unmount, rerender } = renderHook(
+    (props: { open: boolean; enabled: boolean }) =>
+      useDrawerSwipe({ paneRef, enabled: props.enabled, open: props.open, onOpenChange }),
+    { initialProps: { open, enabled: true } },
   );
 
   const swipe: Harness['swipe'] = (surface, points, end = true) => {
@@ -68,6 +72,7 @@ const setup = (open: boolean, reducedMotion = false): Harness => {
     drawer,
     onOpenChange,
     swipe,
+    rerender,
     unmount: () => {
       unmount();
       pane.remove();
@@ -258,6 +263,104 @@ describe('useDrawerSwipe — closing from the drawer', () => {
   });
 });
 
+describe('useDrawerSwipe — interruptions and re-arming', () => {
+  it('cancels a stale settle when a button closes the drawer inside its window', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    harness.swipe(harness.pane, [
+      { x: 20, y: 100, t: 0 },
+      { x: 220, y: 100, t: 50 },
+    ]);
+    expect(harness.onOpenChange).toHaveBeenCalledWith(true);
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
+
+    harness.rerender({ open: true, enabled: true });
+    harness.rerender({ open: false, enabled: true });
+    expect(harness.pane.style.transform).toBe('');
+    expect(harness.drawer.style.transform).toBe('');
+
+    jest.runAllTimers();
+    expect(harness.pane.style.transform).toBe('');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('keeps a settle that agrees with the state change it caused', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    harness.swipe(harness.pane, [
+      { x: 20, y: 100, t: 0 },
+      { x: 220, y: 100, t: 50 },
+    ]);
+
+    harness.rerender({ open: true, enabled: true });
+    expect(harness.drawer.style.transform).toBe('translate3d(0, 0, 0)');
+
+    jest.runAllTimers();
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.drawer.style.transform).toBe('');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('ignores a second finger lifting mid-drag and settles only on full release', () => {
+    const harness = setup(false);
+    harness.swipe(
+      harness.pane,
+      [
+        { x: 20, y: 100, t: 0 },
+        { x: 220, y: 100, t: 50 },
+      ],
+      false,
+    );
+
+    harness.pane.dispatchEvent(touchEvent('touchend', [createTouch(220, 100)], 80));
+    expect(harness.onOpenChange).not.toHaveBeenCalled();
+    expect(harness.pane.style.transform).toBe('translate3d(200px, 0, 0)');
+
+    harness.pane.dispatchEvent(touchEvent('touchend', [], 100));
+    expect(harness.onOpenChange).toHaveBeenCalledWith(true);
+    harness.unmount();
+  });
+
+  it('releases drag styles when an external toggle interrupts a held drag', () => {
+    const harness = setup(false);
+    harness.swipe(
+      harness.pane,
+      [
+        { x: 20, y: 100, t: 0 },
+        { x: 220, y: 100, t: 50 },
+      ],
+      false,
+    );
+    expect(harness.drawer.style.transition).toBe('none');
+
+    harness.rerender({ open: true, enabled: true });
+    expect(harness.drawer.style.transform).toBe('');
+    expect(harness.drawer.style.transition).not.toBe('none');
+    expect(harness.pane.style.transform).toBe('');
+    harness.unmount();
+  });
+
+  it('arms itself when enabled flips true after the surfaces exist', () => {
+    const harness = setup(false);
+    harness.rerender({ open: false, enabled: false });
+    harness.swipe(harness.pane, [
+      { x: 20, y: 100, t: 0 },
+      { x: 220, y: 100, t: 50 },
+    ]);
+    expect(harness.onOpenChange).not.toHaveBeenCalled();
+
+    harness.rerender({ open: false, enabled: true });
+    harness.swipe(harness.pane, [
+      { x: 20, y: 100, t: 200 },
+      { x: 220, y: 100, t: 250 },
+    ]);
+    expect(harness.onOpenChange).toHaveBeenCalledWith(true);
+    harness.unmount();
+  });
+});
+
 describe('findHorizontalScrollBlocker', () => {
   const scroller = (scrollLeft: number) => {
     const el = document.createElement('div');
@@ -285,6 +388,22 @@ describe('findHorizontalScrollBlocker', () => {
 
     expect(findHorizontalScrollBlocker(endChild, boundary, 1)).toBe(atEnd);
     expect(findHorizontalScrollBlocker(endChild, boundary, -1)).toBeNull();
+  });
+
+  it('normalizes RTL scroll offsets before deciding', () => {
+    const boundary = document.createElement('div');
+    const rtl = scroller(0);
+    rtl.style.direction = 'rtl';
+    const child = document.createElement('span');
+    rtl.append(child);
+    boundary.append(rtl);
+
+    expect(findHorizontalScrollBlocker(child, boundary, 1)).toBe(rtl);
+    expect(findHorizontalScrollBlocker(child, boundary, -1)).toBeNull();
+
+    rtl.scrollLeft = -300;
+    expect(findHorizontalScrollBlocker(child, boundary, 1)).toBeNull();
+    expect(findHorizontalScrollBlocker(child, boundary, -1)).toBe(rtl);
   });
 
   it('stops searching at the boundary element', () => {
