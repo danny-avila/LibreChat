@@ -253,7 +253,7 @@ export default function useTextarea({
       try {
         /** Assistants use their own upload path; bypass option resolution like drag-and-drop does */
         if (isAssistantsEndpoint(conversation?.endpoint)) {
-          return await routeFiles(clipboardFiles);
+          return await routeFiles(clipboardFiles, undefined, onUploadError);
         }
 
         const options = getUploadOptions(clipboardFiles);

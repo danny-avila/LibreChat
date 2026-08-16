@@ -108,6 +108,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const { showToast } = useToastContext();
   const [errors, setErrors] = useState<string[]>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const uploadErrorCallbacksRef = useRef(new Map<string, () => void>());
   const { startUploadTimer, clearUploadTimer } = useDelayedUploadToast();
   const { files, setFiles, conversation } = fileState;
   const filesRef = useRef(files);
@@ -189,6 +190,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const uploadFile = useUploadFileMutation(
     {
       onSuccess: (data) => {
+        uploadErrorCallbacksRef.current.delete(data.temp_file_id);
         clearUploadTimer(data.temp_file_id);
         console.log('upload success', data);
         if (agent_id) {
@@ -231,7 +233,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       onError: (_error, body) => {
         const error = _error as TError | undefined;
         console.log('upload error', error);
-        const file_id = body.get('file_id');
+        const file_id = body.get('file_id') as string;
+        const onUploadError = uploadErrorCallbacksRef.current.get(file_id);
+        uploadErrorCallbacksRef.current.delete(file_id);
         const tool_resource = body.get('tool_resource');
         if (tool_resource === EToolResources.execute_code) {
           setEphemeralAgent((prev) => ({
@@ -239,8 +243,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
             [EToolResources.execute_code]: false,
           }));
         }
-        clearUploadTimer(file_id as string);
-        deleteFileById(file_id as string);
+        clearUploadTimer(file_id);
+        deleteFileById(file_id);
 
         let errorMessage = 'com_error_files_upload';
 
@@ -250,10 +254,18 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           errorMessage = error.response.data.message;
         }
         setError(errorMessage);
+        onUploadError?.();
       },
     },
     abortControllerRef.current?.signal,
   );
+
+  const uploadWithRecovery = (formData: FormData, file_id: string, onUploadError?: () => void) => {
+    if (onUploadError) {
+      uploadErrorCallbacksRef.current.set(file_id, onUploadError);
+    }
+    uploadFile.mutate(formData);
+  };
 
   const startUpload = async (extendedFile: ExtendedFile, onUploadError?: () => void) => {
     const filename = extendedFile.file?.name ?? 'File';
@@ -305,7 +317,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         formData.append('agent_id', conversation.agent_id);
       }
 
-      uploadFile.mutate(formData, onUploadError ? { onError: onUploadError } : undefined);
+      uploadWithRecovery(formData, extendedFile.file_id, onUploadError);
       return;
     }
 
@@ -335,7 +347,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       formData.append('model', convoModel);
     }
 
-    uploadFile.mutate(formData, onUploadError ? { onError: onUploadError } : undefined);
+    uploadWithRecovery(formData, extendedFile.file_id, onUploadError);
   };
 
   const loadImage = (extendedFile: ExtendedFile, preview: string, onUploadError?: () => void) => {
@@ -625,6 +637,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       abortControllerRef.current.abort('User aborted upload');
       abortControllerRef.current = null;
     }
+    uploadErrorCallbacksRef.current.clear();
   };
 
   return {

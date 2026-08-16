@@ -13,6 +13,7 @@ const mockLocalize = jest.fn((key: string) => key);
 const mockSetActivePrompt = jest.fn();
 
 let useTextarea: typeof import('./useTextarea').default;
+let mockConversation = { endpoint: 'openAI' };
 
 jest.mock('~/utils', () => ({
   forceResize: mockForceResize,
@@ -83,7 +84,7 @@ jest.mock('~/data-provider', () => ({
 jest.mock('~/Providers/ChatContext', () => ({
   useChatContext: jest.fn(() => ({
     index: 0,
-    conversation: { endpoint: 'openAI' },
+    conversation: mockConversation,
     isSubmitting: false,
     files: new Map(),
     setFilesLoading: mockSetFilesLoading,
@@ -136,6 +137,7 @@ const renderTextareaHook = () => {
 describe('useTextarea long-paste fallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockConversation = { endpoint: 'openAI' };
     mockGetUploadOptions.mockReturnValue([EToolResources.context]);
     mockResolvePastedTextFile.mockImplementation((text: string) => ({
       file: new File([text], 'pasted-text.txt', { type: 'text/plain' }),
@@ -195,6 +197,31 @@ describe('useTextarea long-paste fallback', () => {
 
     await waitFor(() => expect(onUploadError).toBeDefined());
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+
+    act(() => onUploadError?.());
+
+    expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
+    expect(mockForceResize).toHaveBeenCalledWith(textArea);
+  });
+
+  it('forwards upload recovery through the assistants route', async () => {
+    mockConversation = { endpoint: 'assistants' };
+    let onUploadError: (() => void) | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources | undefined, callback?: () => void) => {
+        onUploadError = callback;
+        return Promise.resolve(true);
+      },
+    );
+    const { result, textArea } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(onUploadError).toBeDefined());
+    expect(mockRouteFiles).toHaveBeenCalledWith(expect.any(Array), undefined, onUploadError);
 
     act(() => onUploadError?.());
 
