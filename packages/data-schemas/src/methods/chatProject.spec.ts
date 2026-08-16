@@ -324,6 +324,79 @@ describe('ChatProject methods', () => {
     expect(persisted?.lastConversationAt?.toISOString()).toBe(newerDate.toISOString());
   });
 
+  it('keeps reconciling after the first three optimistic attempts lose the race', async () => {
+    const project = await methods.createChatProject(user, { name: 'Exhausted Then Succeeds' });
+    const chatProjectId = project._id!.toString();
+    await ChatProject.findByIdAndUpdate(project._id, {
+      conversationCount: 4,
+      lastConversationId: 'stale-convo',
+    });
+
+    let casAttempts = 0;
+    const findOneAndUpdate = ChatProject.findOneAndUpdate.bind(ChatProject);
+    const updateSpy = jest
+      .spyOn(ChatProject, 'findOneAndUpdate')
+      .mockImplementation((filter, update, options) => {
+        const query = findOneAndUpdate(filter, update, options);
+        const exec = query.exec.bind(query);
+        jest.spyOn(query, 'exec').mockImplementation(async () => {
+          casAttempts += 1;
+          if (casAttempts <= 3) {
+            await ChatProject.updateOne(
+              { _id: project._id },
+              {
+                lastConversationAt: new Date(`2026-03-0${casAttempts}T00:00:00.000Z`),
+                lastConversationId: `concurrent-${casAttempts}`,
+              },
+            );
+          }
+          return await exec();
+        });
+        return query;
+      });
+
+    try {
+      const refreshed = await methods.refreshChatProjectStats(user, chatProjectId);
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
+      expect(casAttempts).toBeGreaterThan(3);
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    const persisted = await ChatProject.findById(project._id).lean<IChatProject>();
+    expect(persisted?.conversationCount).toBe(0);
+    expect(persisted?.lastConversationId).toBeNull();
+  });
+
+  it('throws instead of returning stale stats when every optimistic write loses', async () => {
+    const project = await methods.createChatProject(user, { name: 'Never Settles' });
+    const chatProjectId = project._id!.toString();
+    await ChatProject.findByIdAndUpdate(project._id, {
+      conversationCount: 4,
+      lastConversationId: 'stale-convo',
+    });
+
+    const updateSpy = jest.spyOn(ChatProject, 'findOneAndUpdate').mockImplementation(
+      () =>
+        ({
+          lean: async () => null,
+        }) as unknown as ReturnType<typeof ChatProject.findOneAndUpdate>,
+    );
+
+    try {
+      await expect(methods.refreshChatProjectStats(user, chatProjectId)).rejects.toThrow(
+        /refresh chat project stats/i,
+      );
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    const persisted = await ChatProject.findById(project._id).lean<IChatProject>();
+    expect(persisted?.conversationCount).toBe(4);
+    expect(persisted?.lastConversationId).toBe('stale-convo');
+  });
+
   it('enforces one project per chat when moving conversations', async () => {
     const firstProject = await methods.createChatProject(user, { name: 'First' });
     const secondProject = await methods.createChatProject(user, { name: 'Second' });

@@ -76,7 +76,7 @@ type ProjectStatsSnapshot = Pick<
 >;
 
 const VALID_SORT_FIELDS = new Set<ChatProjectSortBy>(['name', 'createdAt', 'lastConversationAt']);
-const PROJECT_STATS_REFRESH_MAX_ATTEMPTS = 3;
+const PROJECT_STATS_REFRESH_MAX_ATTEMPTS = 8;
 
 function normalizeSortBy(sortBy?: string): ChatProjectSortBy {
   return VALID_SORT_FIELDS.has(sortBy as ChatProjectSortBy)
@@ -263,7 +263,7 @@ export async function refreshChatProjectStatsForUser(
     user,
     projectId,
   });
-  return await ChatProject.findOne(projectFilter).lean<IChatProject>();
+  throw new Error('Failed to refresh chat project stats after concurrent updates');
 }
 
 export async function updateChatProjectLastConversationForUser(

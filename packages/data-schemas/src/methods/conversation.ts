@@ -33,6 +33,28 @@ type ConversationUpdateResult = {
 
 const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
 const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
+const PROJECT_DISCOVERY_MAX_ATTEMPTS = 3;
+
+async function discoverCommittedBatchProjectIds(
+  Conversation: Model<IConversation>,
+  conversationIds: Types.ObjectId[],
+  user: string,
+): Promise<string[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < PROJECT_DISCOVERY_MAX_ATTEMPTS; attempt++) {
+    try {
+      const currentProjectIds = await Conversation.distinct('chatProjectId', {
+        _id: { $in: conversationIds },
+        user,
+      });
+      return currentProjectIds.filter((projectId): projectId is string => Boolean(projectId));
+    } catch (error) {
+      lastError = error;
+      logger.error('[archiveAllConvos] Conversations archived but project discovery failed', error);
+    }
+  }
+  throw lastError;
+}
 
 async function refreshChatProjectStatsInBatches(
   mongoose: typeof import('mongoose'),
@@ -1180,21 +1202,13 @@ export function createConversationMethods(
         archivedCount += batchArchivedCount;
 
         if (batchArchivedCount > 0) {
-          try {
-            const currentProjectIds = await Conversation.distinct('chatProjectId', {
-              _id: { $in: conversationIds },
-              user,
-            });
-            for (const projectId of currentProjectIds) {
-              if (projectId) {
-                projectIds.add(projectId);
-              }
-            }
-          } catch (error) {
-            logger.error(
-              '[archiveAllConvos] Conversations archived but project discovery failed',
-              error,
-            );
+          const currentProjectIds = await discoverCommittedBatchProjectIds(
+            Conversation,
+            conversationIds,
+            user,
+          );
+          for (const projectId of currentProjectIds) {
+            projectIds.add(projectId);
           }
         }
       }
