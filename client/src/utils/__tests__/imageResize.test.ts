@@ -65,7 +65,7 @@ describe('imageResize utility', () => {
         writable: false,
       });
 
-      const result = shouldResizeImage(largeImageFile, 50 * 1024 * 1024); // 50MB limit
+      const result = shouldResizeImage(largeImageFile, 50 * 1024 * 1024); // 50MB minimum
       expect(result).toBe(true);
     });
 
@@ -81,8 +81,30 @@ describe('imageResize utility', () => {
         writable: false,
       });
 
-      const result = shouldResizeImage(smallImageFile, 50 * 1024 * 1024); // 50MB limit
+      const result = shouldResizeImage(smallImageFile, 50 * 1024 * 1024); // 50MB minimum
       expect(result).toBe(false);
+    });
+
+    it('should return true for an everyday photo using the default minimum', () => {
+      const photo = new File([''], 'photo.jpg', {
+        type: 'image/jpeg',
+        lastModified: Date.now(),
+      });
+
+      Object.defineProperty(photo, 'size', { value: 3 * 1024 * 1024, writable: false });
+
+      expect(shouldResizeImage(photo)).toBe(true);
+    });
+
+    it('should return false below the default minimum', () => {
+      const thumbnail = new File([''], 'thumb.jpg', {
+        type: 'image/jpeg',
+        lastModified: Date.now(),
+      });
+
+      Object.defineProperty(thumbnail, 'size', { value: 100 * 1024, writable: false });
+
+      expect(shouldResizeImage(thumbnail)).toBe(false);
     });
 
     it('should return false for non-image files', () => {

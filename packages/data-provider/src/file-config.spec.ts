@@ -1690,3 +1690,38 @@ describe('setFileConfigRegexCompiler (MIME pattern compiler seam)', () => {
     expect(compiled[0].test('anything')).toBe(false);
   });
 });
+
+describe('mergeFileConfig clientImageResize', () => {
+  it('leaves the user in control when no dynamic config is provided', () => {
+    const merged = mergeFileConfig(undefined);
+    expect(merged.clientImageResize?.enabled).toBe(false);
+    expect(merged.clientImageResize?.enforced).toBe(false);
+  });
+
+  it('leaves the user in control when the admin config omits clientImageResize', () => {
+    const merged = mergeFileConfig({ serverFileSizeLimit: 100 });
+    expect(merged.clientImageResize?.enforced).toBe(false);
+  });
+
+  it('enforces an admin-enabled value', () => {
+    const merged = mergeFileConfig({ clientImageResize: { enabled: true } });
+    expect(merged.clientImageResize?.enabled).toBe(true);
+    expect(merged.clientImageResize?.enforced).toBe(true);
+  });
+
+  it('enforces an admin-disabled value', () => {
+    const merged = mergeFileConfig({ clientImageResize: { enabled: false } });
+    expect(merged.clientImageResize?.enabled).toBe(false);
+    expect(merged.clientImageResize?.enforced).toBe(true);
+  });
+
+  it('applies admin resize parameters without enforcing the toggle', () => {
+    const merged = mergeFileConfig({
+      clientImageResize: { maxWidth: 1024, maxHeight: 1024, quality: 0.8 },
+    });
+    expect(merged.clientImageResize?.maxWidth).toBe(1024);
+    expect(merged.clientImageResize?.maxHeight).toBe(1024);
+    expect(merged.clientImageResize?.quality).toBe(0.8);
+    expect(merged.clientImageResize?.enforced).toBe(false);
+  });
+});

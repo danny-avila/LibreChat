@@ -65,6 +65,8 @@ export type FileConfig = {
     maxWidth?: number;
     maxHeight?: number;
     quality?: number;
+    /** Set when `enabled` came from the admin config, in which case it wins over the user's setting */
+    enforced?: boolean;
   };
   ocr?: {
     supportedMimeTypes?: RegexLike[];

@@ -890,6 +890,8 @@ endpoints:
 #     percentage: 100
 #     px: 1024
 #   # Client-side image resizing to prevent upload errors
+#   # Users can toggle this in Settings > Chat. Setting `enabled` here overrides
+#   # that choice for everyone and locks the toggle; omit it to leave users in control.
 #   clientImageResize:
 #     enabled: false  # Enable/disable client-side image resizing (default: false)
 #     maxWidth: 1900  # Maximum width for resized images (default: 1900)

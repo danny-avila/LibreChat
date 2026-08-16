@@ -1,32 +1,39 @@
-import { mergeFileConfig } from 'librechat-data-provider';
 import { useCallback } from 'react';
+import { useRecoilValue } from 'recoil';
+import { mergeFileConfig } from 'librechat-data-provider';
+import type { FileConfig } from 'librechat-data-provider';
+import type { ResizeOptions, ResizeResult } from '~/utils/imageResize';
+import { resizeImage, shouldResizeImage, supportsClientResize } from '~/utils/imageResize';
 import { useGetFileConfig } from '~/data-provider';
-import {
-  resizeImage,
-  shouldResizeImage,
-  supportsClientResize,
-  type ResizeOptions,
-  type ResizeResult,
-} from '~/utils/imageResize';
+import store from '~/store';
+
+type ClientImageResizeConfig = NonNullable<FileConfig['clientImageResize']>;
+
+const defaultConfig: ClientImageResizeConfig = {
+  enabled: false,
+  maxWidth: 1900,
+  maxHeight: 1900,
+  quality: 0.92,
+  enforced: false,
+};
 
 /**
  * Hook for client-side image resizing functionality
- * Integrates with LibreChat's file configuration system
+ *
+ * Resolution order is admin config, then user setting, then off: when
+ * `clientImageResize.enabled` is set in `librechat.yaml` it is reported as
+ * `enforced` and the user's setting is ignored.
  */
 export const useClientResize = () => {
+  const userPreference = useRecoilValue(store.clientImageResize);
   const { data: fileConfig = null } = useGetFileConfig({
     select: (data) => mergeFileConfig(data),
   });
 
-  // Safe access to clientImageResize config with fallbacks
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const config = (fileConfig as any)?.clientImageResize ?? {
-    enabled: false,
-    maxWidth: 1900,
-    maxHeight: 1900,
-    quality: 0.92,
-  };
-  const isEnabled = config?.enabled ?? false;
+  const config = fileConfig?.clientImageResize ?? defaultConfig;
+  const { maxWidth, maxHeight, quality } = config;
+  const isEnforced = config.enforced === true;
+  const isEnabled = isEnforced ? config.enabled === true : userPreference;
 
   /**
    * Resizes an image if client-side resizing is enabled and supported
@@ -57,9 +64,9 @@ export const useClientResize = () => {
 
       try {
         const resizeOptions: Partial<ResizeOptions> = {
-          maxWidth: config?.maxWidth,
-          maxHeight: config?.maxHeight,
-          quality: config?.quality,
+          maxWidth,
+          maxHeight,
+          quality,
           ...options,
         };
 
@@ -70,11 +77,12 @@ export const useClientResize = () => {
         return { file, resized: false };
       }
     },
-    [isEnabled, config],
+    [isEnabled, maxWidth, maxHeight, quality],
   );
 
   return {
     isEnabled,
+    isEnforced,
     isSupported: supportsClientResize(),
     config,
     resizeImageIfNeeded,
