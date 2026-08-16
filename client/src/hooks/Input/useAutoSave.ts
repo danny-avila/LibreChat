@@ -17,6 +17,7 @@ import {
   setDraft,
   setFilesDraft,
 } from '~/utils';
+import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
 import store from '~/store';
@@ -104,7 +105,7 @@ export const useAutoSave = ({
         }
 
         const pendingPaste = pendingPastes[fileId];
-        if (pendingPaste && !activeFileIds.has(fileId)) {
+        if (pendingPaste && !activeFileIds.has(fileId) && !hasInFlightUpload(fileId)) {
           pastesToRecover.push(pendingPaste);
           delete pendingPastes[fileId];
           return;

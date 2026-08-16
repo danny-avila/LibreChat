@@ -514,6 +514,9 @@ describe('useTextarea long-paste fallback', () => {
         selectionEnd: 15,
         replacedText: 'selected',
         sequence: 1,
+        replacedApplied: true,
+        anchorBefore: 'before ',
+        anchorAfter: ' after',
       }),
     );
     expect(getDraft('convo-1')).toBe('before  after');

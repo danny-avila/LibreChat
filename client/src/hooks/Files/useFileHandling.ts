@@ -80,6 +80,8 @@ export const clearUploadRecovery = (fileId: string) => {
   takeUploadRecovery(fileId)?.onAbort?.(fileId);
 };
 
+export const hasInFlightUpload = (fileId: string): boolean => uploadErrorCallbacks.has(fileId);
+
 type UploadScope = {
   queue: Promise<void>;
   /** Accepted uploads that have not been observed in the shared file state yet */

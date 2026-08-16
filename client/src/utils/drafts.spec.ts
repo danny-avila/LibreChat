@@ -3,6 +3,7 @@ import {
   applyPendingPasteToDraft,
   applyPendingPastesToDraft,
   clearComposerDrafts,
+  resolvePendingPasteInsertStart,
   getComposerDraftId,
   getDraft,
   getNewConversationDraftId,
@@ -93,6 +94,19 @@ describe('applyPendingPasteToDraft', () => {
       }),
     ).toBe('before pasted after');
   });
+
+  it('does not delete remaining identical text after a post-replacement snapshot', () => {
+    expect(
+      applyPendingPasteToDraft('abc', {
+        text: 'PASTE',
+        selectionStart: 0,
+        replacedText: 'abc',
+        replacedApplied: true,
+        anchorBefore: '',
+        anchorAfter: 'abc',
+      }),
+    ).toBe('PASTEabc');
+  });
 });
 
 describe('applyPendingPastesToDraft', () => {
@@ -116,6 +130,18 @@ describe('applyPendingPastesToDraft', () => {
 
     expect(applyPendingPastesToDraft('AAAA BBBB CCCC', pastes)).toBe('START BBBB END');
     expect(applyPendingPastesToDraft(' BBBB ', pastes)).toBe('START BBBB END');
+  });
+
+  it('rebases an insert after the user edits text before the original caret', () => {
+    expect(
+      applyPendingPasteToDraft('Xhello', {
+        text: 'PASTE',
+        selectionStart: 5,
+        replacedApplied: true,
+        anchorBefore: 'hello',
+        anchorAfter: '',
+      }),
+    ).toBe('XhelloPASTE');
   });
 
   it('keeps a later replacement anchored after an earlier middle removal', () => {
@@ -162,11 +188,22 @@ describe('clearComposerDrafts', () => {
     expect(
       localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.NEW_CONVO}:1`),
     ).toBeNull();
-    expect(
-      localStorage.getItem(`${LocalStorageKeys.TEXT_DRAFT}${Constants.PENDING_CONVO}:1`),
-    ).toBeNull();
+    expect(getDraft(`${Constants.PENDING_CONVO}:1`)).toBe('pane 1 pending');
     expect(
       localStorage.getItem(`${LocalStorageKeys.FILES_DRAFT}${Constants.PENDING_CONVO}:1`),
-    ).toBeNull();
+    ).not.toBeNull();
+  });
+});
+
+describe('resolvePendingPasteInsertStart', () => {
+  it('moves the caret when text is prepended before the original snapshot', () => {
+    expect(
+      resolvePendingPasteInsertStart('Xhello', {
+        text: 'PASTE',
+        selectionStart: 5,
+        anchorBefore: 'hello',
+        anchorAfter: '',
+      }),
+    ).toBe(6);
   });
 });

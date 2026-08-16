@@ -15,6 +15,10 @@ jest.mock('~/data-provider', () => ({
   useGetFiles: jest.fn(),
 }));
 
+jest.mock('~/hooks/Files/useFileHandling', () => ({
+  hasInFlightUpload: jest.fn(() => false),
+}));
+
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils'),
   getDraft: jest.fn(),
@@ -29,6 +33,7 @@ import { useRecoilValue } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
+import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
 import {
   encodeBase64,
   getAskAnswerDraftId,
@@ -57,6 +62,7 @@ beforeEach(() => {
   });
   (useChatFormContext as jest.Mock).mockReturnValue({ setValue: mockSetValue });
   (useGetFiles as jest.Mock).mockReturnValue({ data: [] });
+  (hasInFlightUpload as jest.Mock).mockReturnValue(false);
   mockGetDraft.mockReturnValue('');
 });
 
@@ -144,6 +150,34 @@ describe('useAutoSave — conversation switching', () => {
       value: 'before recovered pasted text after',
     });
     expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+  });
+
+  it('does not recover a paste whose upload is still in flight', () => {
+    (hasInFlightUpload as jest.Mock).mockReturnValue(true);
+    mockGetDraft.mockReturnValue('before  after');
+    setFilesDraft('convo-1', {
+      fileIds: ['pending-paste-file'],
+      pendingPastes: {
+        'pending-paste-file': {
+          text: 'recovered pasted text',
+          selectionStart: 7,
+        },
+      },
+    });
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'before  after');
+    expect(getFilesDraft('convo-1').pendingPastes['pending-paste-file']?.text).toBe(
+      'recovered pasted text',
+    );
   });
 
   it('replaces a stale selected range when recovering a pending paste after reload', () => {

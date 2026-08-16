@@ -419,6 +419,9 @@ export default function useTextarea({
             selectionStart,
             selectionEnd,
             replacedText,
+            replacedApplied: true,
+            anchorBefore: composerValue.slice(0, selectionStart),
+            anchorAfter: composerValue.slice(selectionStart),
           });
         },
         onSuccess: (fileId) => {

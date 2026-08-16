@@ -7,6 +7,10 @@ export type PendingTextAttachmentDraft = {
   selectionEnd?: number;
   replacedText?: string;
   sequence?: number;
+  /** True when TEXT_DRAFT was written after the selection was already removed. */
+  replacedApplied?: boolean;
+  anchorBefore?: string;
+  anchorAfter?: string;
 };
 
 export type FilesDraft = {
@@ -20,6 +24,9 @@ type StoredPendingTextAttachmentDraft = {
   selectionEnd?: number;
   encodedReplacedText?: string;
   sequence?: number;
+  replacedApplied?: boolean;
+  encodedAnchorBefore?: string;
+  encodedAnchorAfter?: string;
 };
 
 type StoredFilesDraft = {
@@ -78,12 +85,38 @@ const getReplacedLength = (pendingPaste: PendingTextAttachmentDraft): number => 
   return 0;
 };
 
+export const resolvePendingPasteInsertStart = (
+  draftText: string,
+  pendingPaste: PendingTextAttachmentDraft,
+): number => {
+  const prefix = pendingPaste.anchorBefore;
+  const suffix = pendingPaste.anchorAfter;
+  if (prefix == null && suffix == null) {
+    return Math.min(pendingPaste.selectionStart, draftText.length);
+  }
+  const before = prefix ?? '';
+  const after = suffix ?? '';
+  if (draftText === `${before}${after}`) {
+    return before.length;
+  }
+  if (before && draftText.startsWith(before)) {
+    return before.length;
+  }
+  if (after !== '' && draftText.endsWith(after)) {
+    return draftText.length - after.length;
+  }
+  if (after === '' && before && draftText.endsWith(before)) {
+    return draftText.length;
+  }
+  return Math.min(pendingPaste.selectionStart, draftText.length);
+};
+
 export const applyPendingPasteToDraft = (
   draftText: string,
   pendingPaste: PendingTextAttachmentDraft,
 ): string => applyPendingPastesToDraft(draftText, [pendingPaste]);
 
-/** Replay deletions in capture order, then insert paste text at offsets rebased onto that final snapshot. */
+/** Replay leftover pre-deletion ranges, then insert paste text at rebased or anchored offsets. */
 export const applyPendingPastesToDraft = (
   draftText: string,
   pendingPastes: PendingTextAttachmentDraft[],
@@ -101,6 +134,9 @@ export const applyPendingPastesToDraft = (
 
   let text = draftText;
   for (const { pendingPaste } of ordered) {
+    if (pendingPaste.replacedApplied) {
+      continue;
+    }
     const replacedText = pendingPaste.replacedText ?? '';
     const start = Math.min(pendingPaste.selectionStart, text.length);
     if (
@@ -112,6 +148,13 @@ export const applyPendingPastesToDraft = (
   }
 
   const insertions = ordered.map(({ pendingPaste }, index) => {
+    if (pendingPaste.replacedApplied) {
+      return {
+        text: pendingPaste.text,
+        start: resolvePendingPasteInsertStart(draftText, pendingPaste),
+        index,
+      };
+    }
     let start = pendingPaste.selectionStart;
     for (const later of ordered.slice(index + 1)) {
       if (later.pendingPaste.selectionStart < start) {
@@ -140,9 +183,9 @@ export const clearAllDrafts = (conversationId?: string | null) => {
   localStorage.removeItem(`${LocalStorageKeys.FILES_DRAFT}${key}`);
 };
 
-/** Clears this pane's pending and new-chat keys plus a concrete conversation draft, without touching another pane's unsuffixed `new` key. */
+/** Clears this pane's idle new-chat key and a concrete conversation draft. Leaves the in-flight PENDING key so unsent during-run attachments can migrate. */
 export const clearComposerDrafts = (index = 0, conversationId?: string | null): void => {
-  const keys = new Set<string>([getPendingDraftId(index), getNewConversationDraftId(index)]);
+  const keys = new Set<string>([getNewConversationDraftId(index)]);
   if (conversationId != null && conversationId !== '') {
     keys.add(getConversationDraftId(index, conversationId));
     if (conversationId !== Constants.NEW_CONVO && conversationId !== Constants.PENDING_CONVO) {
@@ -202,6 +245,13 @@ export const getFilesDraft = (id: string): FilesDraft => {
               ? { replacedText: decodeBase64(pendingPaste.encodedReplacedText) }
               : {}),
             ...(pendingPaste.sequence != null ? { sequence: pendingPaste.sequence } : {}),
+            ...(pendingPaste.replacedApplied ? { replacedApplied: true } : {}),
+            ...(pendingPaste.encodedAnchorBefore != null
+              ? { anchorBefore: decodeBase64(pendingPaste.encodedAnchorBefore) }
+              : {}),
+            ...(pendingPaste.encodedAnchorAfter != null
+              ? { anchorAfter: decodeBase64(pendingPaste.encodedAnchorAfter) }
+              : {}),
           },
         ],
       ),
@@ -244,6 +294,13 @@ export const setFilesDraft = (id: string, draft: FilesDraft): void => {
             ? { encodedReplacedText: encodeBase64(pendingPaste.replacedText) }
             : {}),
           ...(pendingPaste.sequence != null ? { sequence: pendingPaste.sequence } : {}),
+          ...(pendingPaste.replacedApplied ? { replacedApplied: true } : {}),
+          ...(pendingPaste.anchorBefore != null
+            ? { encodedAnchorBefore: encodeBase64(pendingPaste.anchorBefore) }
+            : {}),
+          ...(pendingPaste.anchorAfter != null
+            ? { encodedAnchorAfter: encodeBase64(pendingPaste.anchorAfter) }
+            : {}),
         },
       ],
     ),
@@ -262,6 +319,9 @@ export const setPendingTextAttachmentDraft = ({
   selectionStart,
   selectionEnd,
   replacedText,
+  replacedApplied,
+  anchorBefore,
+  anchorAfter,
 }: {
   id: string;
   fileId: string;
@@ -269,6 +329,9 @@ export const setPendingTextAttachmentDraft = ({
   selectionStart: number;
   selectionEnd?: number;
   replacedText?: string;
+  replacedApplied?: boolean;
+  anchorBefore?: string;
+  anchorAfter?: string;
 }): void => {
   const draft = getFilesDraft(id);
   const existing = draft.pendingPastes[fileId];
@@ -285,6 +348,9 @@ export const setPendingTextAttachmentDraft = ({
         sequence,
         ...(selectionEnd != null ? { selectionEnd } : {}),
         ...(replacedText ? { replacedText } : {}),
+        ...(replacedApplied ? { replacedApplied: true } : {}),
+        ...(anchorBefore != null ? { anchorBefore } : {}),
+        ...(anchorAfter != null ? { anchorAfter } : {}),
       },
     },
   });

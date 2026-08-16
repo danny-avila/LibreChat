@@ -310,7 +310,14 @@ const useNewConvo = (index = 0) => {
       keepAddedConvos?: boolean;
       disableParams?: boolean;
     } = {}) {
-      renewNewConversationDraftToken(index);
+      const nextConversationId = _template.conversationId ?? '';
+      const keepsExistingDraft =
+        nextConversationId !== '' &&
+        nextConversationId !== Constants.NEW_CONVO &&
+        !nextConversationId.startsWith('_');
+      if (!keepsExistingDraft) {
+        renewNewConversationDraftToken(index);
+      }
       pauseGlobalAudio();
       if (!saveBadgesState) {
         resetBadges();
