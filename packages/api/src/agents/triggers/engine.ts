@@ -203,6 +203,14 @@ function retryAt(
   return new Date(now.getTime() + Math.floor(delay / 2 + random() * (delay / 2)));
 }
 
+function isAccountDeletionDeferral(error: unknown): boolean {
+  return (
+    error instanceof AgentTriggerExecutionError &&
+    error.code === 'ACCOUNT_DELETION_IN_PROGRESS' &&
+    error.status === 409
+  );
+}
+
 /** Durable, lease-fenced delivery runner shared by every trusted event source. */
 export function createAgentTriggerDeliveryEngine(
   deps: AgentTriggerDeliveryEngineDeps,
@@ -317,7 +325,12 @@ export function createAgentTriggerDeliveryEngine(
       } catch (error) {
         const attemptedAt = now();
         const deletionCancelled = controller.signal.aborted && cancelledUsers.has(userId);
-        if (error instanceof AgentTriggerDeliveryDeferredError || deletionCancelled) {
+        const deletionRejected = isAccountDeletionDeferral(error);
+        if (
+          error instanceof AgentTriggerDeliveryDeferredError ||
+          deletionCancelled ||
+          deletionRejected
+        ) {
           const delayMs =
             error instanceof AgentTriggerDeliveryDeferredError ? error.delayMs : DEFAULT_DEFER_MS;
           const availableAt = new Date(attemptedAt.getTime() + delayMs);
@@ -331,7 +344,7 @@ export function createAgentTriggerDeliveryEngine(
           if (deferred) {
             logger.info('[agent-triggers] delivery deferred without consuming an attempt', {
               deliveryKey: delivery.deliveryKey,
-              reason: deletionCancelled ? 'account_deletion' : 'pre_dispatch',
+              reason: deletionCancelled || deletionRejected ? 'account_deletion' : 'pre_dispatch',
               availableAt: availableAt.toISOString(),
             });
           }

@@ -212,6 +212,40 @@ describe('createAgentTriggerDeliveryEngine', () => {
     expect(store.dead).not.toHaveBeenCalled();
   });
 
+  it('defers a cross-replica account-deletion rejection without consuming its attempt', async () => {
+    const store = storeWith();
+    const engine = createAgentTriggerDeliveryEngine(
+      {
+        store,
+        dispatch: async () =>
+          Promise.reject(
+            new AgentTriggerExecutionError('account deletion is in progress', {
+              mode: 'fire',
+              certainty: 'definite',
+              retryable: false,
+              code: 'ACCOUNT_DELETION_IN_PROGRESS',
+              status: 409,
+            }),
+          ),
+        now: () => START,
+        workerId: 'worker-1',
+      },
+      { concurrency: 1, maxAttempts: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.defer).toHaveBeenCalledWith({
+      id: 'delivery-row-1',
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: 1,
+      availableAt: new Date(START.getTime() + 5_000),
+    });
+    expect(store.retry).not.toHaveBeenCalled();
+    expect(store.dead).not.toHaveBeenCalled();
+  });
+
   it('does not shorten Retry-After to the exponential backoff cap', async () => {
     const store = storeWith();
     const error = new AgentTriggerExecutionError('maintenance', {
