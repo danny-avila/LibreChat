@@ -1,5 +1,6 @@
+import type { AgentTriggerEnvelope } from './envelope';
+import { AgentTriggerDispatchError, dispatchAgentTrigger } from './dispatch';
 import { createAgentTriggerEnvelope } from './envelope';
-import { dispatchAgentTrigger } from './dispatch';
 
 describe('dispatchAgentTrigger', () => {
   const createFireInput = () => ({
@@ -64,6 +65,22 @@ describe('dispatchAgentTrigger', () => {
 
     await expect(dispatchAgentTrigger(fireEnvelope(), { fire, steer })).rejects.toBe(error);
     expect(fire).toHaveBeenCalledTimes(1);
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('rejects unknown modes before deriving identity or calling a handler', () => {
+    const fire = jest.fn(async () => 'fire');
+    const steer = jest.fn(async () => 'steer');
+    const envelope = {
+      ...fireEnvelope(),
+      mode: 'resume',
+      target: undefined,
+    } as unknown as AgentTriggerEnvelope;
+
+    expect(() => dispatchAgentTrigger(envelope, { fire, steer })).toThrow(
+      new AgentTriggerDispatchError('Unsupported agent trigger mode: resume'),
+    );
+    expect(fire).not.toHaveBeenCalled();
     expect(steer).not.toHaveBeenCalled();
   });
 });

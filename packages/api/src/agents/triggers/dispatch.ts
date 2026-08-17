@@ -10,6 +10,13 @@ export interface AgentTriggerDispatchContext {
   signal?: AbortSignal;
 }
 
+export class AgentTriggerDispatchError extends TypeError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AgentTriggerDispatchError';
+  }
+}
+
 /**
  * Host-owned execution adapters. Each handler must enforce current authorization,
  * limits, persistence, and the supplied idempotency identity before accepting work.
@@ -31,6 +38,10 @@ export function dispatchAgentTrigger<FireResult, SteerResult>(
   handlers: AgentTriggerDispatchHandlers<FireResult, SteerResult>,
   options?: { signal?: AbortSignal },
 ): Promise<FireResult | SteerResult> {
+  const receivedMode: unknown = (envelope as { mode?: unknown }).mode;
+  if (receivedMode !== 'fire' && receivedMode !== 'steer') {
+    throw new AgentTriggerDispatchError(`Unsupported agent trigger mode: ${String(receivedMode)}`);
+  }
   const context: AgentTriggerDispatchContext = {
     idempotencyKey: getAgentTriggerIdempotencyKey(envelope),
     ...(options?.signal != null && { signal: options.signal }),
