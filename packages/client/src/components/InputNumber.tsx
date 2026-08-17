@@ -5,7 +5,7 @@ import * as React from 'react';
 import RCInputNumber from 'rc-input-number';
 import * as InputNumberPrimitive from 'rc-input-number';
 import { cn } from '~/utils';
-import { ValueType } from '@rc-component/mini-decimal';
+import type { ValueType } from '@rc-component/mini-decimal';
 
 // TODO help needed
 // React.ElementRef<typeof LabelPrimitive.Root>,
