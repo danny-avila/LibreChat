@@ -44,6 +44,12 @@ import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type * as t from '~/types';
 import {
+  resolveToolApprovalPolicy,
+  healToolApprovalPolicy,
+  collectMCPToolPolicyAliases,
+  exemptAskUserQuestionFromApproval,
+} from '~/agents/hitl/policy';
+import {
   CHECK_BACKGROUND_TASK_NAME,
   registerBackgroundTaskTool,
   stripBackgroundFromToolRegistry,
@@ -53,7 +59,6 @@ import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
-import { resolveToolApprovalPolicy, exemptAskUserQuestionFromApproval } from '~/agents/hitl/policy';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
@@ -1693,8 +1698,17 @@ export async function createRun({
     ? buildHITLRunWiring(
         // The ask tool is exempt from the approval prompt (unless explicitly
         // listed by the admin) — approving the right to ask a question is a
-        // pure double-pause; the tool has no side effects to gate.
-        exemptAskUserQuestionFromApproval(toolApprovalPolicy, ASK_USER_QUESTION_TOOL_NAME),
+        // pure double-pause; the tool has no side effects to gate. Pattern
+        // lists are healed against pre-strip tool spellings first, so admin
+        // globs written for prefixed upstream names keep applying (a
+        // non-matching deny would fail OPEN).
+        exemptAskUserQuestionFromApproval(
+          healToolApprovalPolicy(
+            toolApprovalPolicy,
+            collectMCPToolPolicyAliases(agents.flatMap((agent) => agent.tools ?? [])),
+          ),
+          ASK_USER_QUESTION_TOOL_NAME,
+        ),
         {
           userId: user?.id,
           conversationId: requestBody?.conversationId,

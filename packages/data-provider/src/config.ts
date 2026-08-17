@@ -11,6 +11,7 @@ import {
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { isActionTool } from './types/assistants';
 import { REFILL_INTERVAL_UNITS } from './balance';
 import { fileConfigSchema } from './file-config';
 import { apiBaseUrl } from './api-endpoints';
@@ -3115,20 +3116,44 @@ export function stripServerNamePrefix(toolName: string, normalizedServerName: st
     return toolName;
   }
   const stripped = toolName.slice(prefixLength);
-  /** A remainder equal to a synthetic marker would turn a real upstream tool
-   *  into the server-wide wildcard, the UI pin placeholder, or a synthetic
-   *  OAuth call — the client stream handlers reserve the ENTIRE
-   *  `oauth${mcp_delimiter}` prefix, not just the exact name, so any
-   *  remainder inside that namespace stays raw. */
-  if (
-    stripped === Constants.mcp_all ||
-    stripped === Constants.mcp_server ||
-    stripped === 'oauth' ||
-    stripped.startsWith(`oauth${Constants.mcp_delimiter}`)
-  ) {
+  if (isReservedMCPToolName(stripped)) {
+    return toolName;
+  }
+  /** `isActionTool` classifies keys by the RELATIVE position of `_action_`
+   *  and `_mcp_`; stripping moves the first `_mcp_` earlier, so a server
+   *  whose normalized name contains `_action_` could see a real MCP tool
+   *  reclassified as an OpenAPI action (bypassing MCP authorization). Never
+   *  produce a key whose classification differs from the raw key's. */
+  const keySuffix = `${Constants.mcp_delimiter}${normalizedServerName}`;
+  if (isActionTool(`${stripped}${keySuffix}`) !== isActionTool(`${toolName}${keySuffix}`)) {
     return toolName;
   }
   return stripped;
+}
+
+/**
+ * Synthetic markers consumed by prefix (`isMCPAllPlaceholder`, the server-pin
+ * skip, the client's OAuth stream classification), so each reserves BOTH its
+ * exact name and its `${marker}${mcp_delimiter}` namespace: a stripped
+ * remainder inside any of them would turn a real upstream tool into the
+ * server-wide wildcard, the UI pin placeholder, or a synthetic OAuth call.
+ */
+const RESERVED_MCP_TOOL_MARKERS: readonly string[] = [
+  `${Constants.mcp_all}`,
+  `${Constants.mcp_server}`,
+  'oauth',
+];
+
+function isReservedMCPToolName(toolName: string): boolean {
+  /** `mcp_` opens the server-scoped pluginKey namespace (`mcp_${serverName}`),
+   *  which pre-strip tool keys could never enter — they always began with the
+   *  server name itself. */
+  if (toolName.startsWith(`${Constants.mcp_prefix}`)) {
+    return true;
+  }
+  return RESERVED_MCP_TOOL_MARKERS.some(
+    (marker) => toolName === marker || toolName.startsWith(`${marker}${Constants.mcp_delimiter}`),
+  );
 }
 
 /**

@@ -299,10 +299,34 @@ describe('stripServerNamePrefixes', () => {
       `acme_${Constants.mcp_server}`,
     );
     expect(stripServerNamePrefix('acme_oauth', 'acme')).toBe('acme_oauth');
-    /** The client reserves the WHOLE `oauth${mcp_delimiter}` prefix, so any
-     *  remainder inside that namespace stays raw too. */
+    /** Each marker is consumed by PREFIX (`isMCPAllPlaceholder`, the
+     *  server-pin skip, the client's OAuth classification), so the whole
+     *  `${marker}${mcp_delimiter}` namespace stays raw, not just the exact
+     *  name. */
     expect(stripServerNamePrefix(`acme_oauth${Constants.mcp_delimiter}reset`, 'acme')).toBe(
       `acme_oauth${Constants.mcp_delimiter}reset`,
     );
+    expect(
+      stripServerNamePrefix(`acme_${Constants.mcp_all}${Constants.mcp_delimiter}reset`, 'acme'),
+    ).toBe(`acme_${Constants.mcp_all}${Constants.mcp_delimiter}reset`);
+    expect(
+      stripServerNamePrefix(`acme_${Constants.mcp_server}${Constants.mcp_delimiter}reset`, 'acme'),
+    ).toBe(`acme_${Constants.mcp_server}${Constants.mcp_delimiter}reset`);
+    /** `mcp_` opens the server-scoped pluginKey namespace, which pre-strip
+     *  tool keys could never enter. */
+    expect(stripServerNamePrefix('acme_mcp_status', 'acme')).toBe('acme_mcp_status');
+  });
+
+  it('never flips isActionTool classification for the produced key', () => {
+    /** `isActionTool` compares the FIRST `_action_` and `_mcp_` positions;
+     *  stripping moves `_mcp_` earlier, so a server whose normalized name
+     *  contains `_action_` (e.g. "svc action v1") would see a real MCP tool
+     *  reclassified as an OpenAPI action and bypass MCP authorization. */
+    expect(stripServerNamePrefix('svc_action_v1_report', 'svc_action_v1')).toBe(
+      'svc_action_v1_report',
+    );
+    /** A remainder containing `_action_` in the tool half does not flip and
+     *  still strips. */
+    expect(stripServerNamePrefix('acme_do_action_thing', 'acme')).toBe('do_action_thing');
   });
 });

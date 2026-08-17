@@ -2,6 +2,8 @@ import type { Agents, TToolApprovalPolicy } from 'librechat-data-provider';
 import {
   resolveToolApprovalPolicy,
   isHITLEnabled,
+  healToolApprovalPolicy,
+  collectMCPToolPolicyAliases,
   mapToolApprovalPolicy,
   buildToolApprovalPayload,
   buildAskUserQuestionPayload,
@@ -771,5 +773,81 @@ describe('exemptAskUserQuestionFromApproval', () => {
   });
   it('passes undefined through', () => {
     expect(exemptAskUserQuestionFromApproval(undefined, NAME)).toBeUndefined();
+  });
+});
+
+describe('healToolApprovalPolicy', () => {
+  const aliases = [
+    { name: 'delete_thing_mcp_acme', legacyName: 'acme_delete_thing_mcp_acme' },
+    { name: 'search_mcp_acme', legacyName: 'acme_search_mcp_acme' },
+  ];
+
+  it('appends current names to lists whose patterns match only the legacy spelling', () => {
+    /** Admin YAML written against upstream naming must keep applying — a
+     *  non-matching deny fails OPEN. */
+    const healed = healToolApprovalPolicy(
+      { enabled: true, deny: ['acme_delete_*'], ask: ['acme_search_mcp_acme'] },
+      aliases,
+    );
+
+    expect(healed?.deny).toEqual(['acme_delete_*', 'delete_thing_mcp_acme']);
+    expect(healed?.ask).toEqual(['acme_search_mcp_acme', 'search_mcp_acme']);
+  });
+
+  it('heals list-level so allow semantics are preserved, not tightened', () => {
+    const healed = healToolApprovalPolicy({ enabled: true, allow: ['acme_search_*'] }, aliases);
+
+    expect(healed?.allow).toEqual(['acme_search_*', 'search_mcp_acme']);
+  });
+
+  it('skips names the list already matches and leaves non-matching lists untouched', () => {
+    const healed = healToolApprovalPolicy(
+      { enabled: true, deny: ['*_mcp_acme'], allow: ['unrelated_tool'] },
+      aliases,
+    );
+
+    expect(healed?.deny).toEqual(['*_mcp_acme']);
+    expect(healed?.allow).toEqual(['unrelated_tool']);
+  });
+
+  it('passes through without aliases or policy', () => {
+    expect(healToolApprovalPolicy(undefined, aliases)).toBeUndefined();
+    const policy: TToolApprovalPolicy = { enabled: true, deny: ['x'] };
+    expect(healToolApprovalPolicy(policy, [])).toBe(policy);
+  });
+});
+
+describe('collectMCPToolPolicyAliases', () => {
+  it('collects identity aliases from stripped MCP instances only', () => {
+    const tools = [
+      {
+        name: 'search_mcp_acme',
+        mcp: true,
+        mcpServerToolName: 'acme_search',
+        mcpRawServerName: 'acme',
+      },
+      { name: 'plain_mcp_acme', mcp: true, mcpRawServerName: 'acme' },
+      { name: 'web_search' },
+      undefined,
+    ];
+
+    expect(collectMCPToolPolicyAliases(tools)).toEqual([
+      { name: 'search_mcp_acme', legacyName: 'acme_search_mcp_acme' },
+    ]);
+  });
+
+  it('reconstructs the legacy spelling with the normalized server name', () => {
+    const tools = [
+      {
+        name: 'search_mcp_My_Server',
+        mcp: true,
+        mcpServerToolName: 'my_server_search',
+        mcpRawServerName: 'My Server',
+      },
+    ];
+
+    expect(collectMCPToolPolicyAliases(tools)).toEqual([
+      { name: 'search_mcp_My_Server', legacyName: 'my_server_search_mcp_My_Server' },
+    ]);
   });
 });
