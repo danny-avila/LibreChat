@@ -471,7 +471,10 @@ describe('openIdJwtStrategy – auth user document cache', () => {
 
     expect(result).toEqual({
       user: false,
-      info: { message: 'Account deletion is in progress' },
+      info: {
+        message: 'Account deletion is in progress',
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      },
     });
     expect(findOpenIDUser).not.toHaveBeenCalled();
     expect(mockRunAsSystem).toHaveBeenCalledWith(expect.any(Function));

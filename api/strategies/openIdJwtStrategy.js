@@ -174,7 +174,10 @@ const openIdJwtLogin = (openIdConfig) => {
         if (user) {
           user.id = user._id.toString();
           if (!(await runAsSystem(() => isAgentTriggerPrincipalActive(user.id)))) {
-            done(null, false, { message: 'Account deletion is in progress' });
+            done(null, false, {
+              message: 'Account deletion is in progress',
+              code: 'ACCOUNT_DELETION_IN_PROGRESS',
+            });
             return;
           }
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */

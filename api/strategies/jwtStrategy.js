@@ -41,7 +41,10 @@ const jwtLogin = () =>
           ),
         );
         if (user?.agentTriggerDeletionStartedAt != null) {
-          done(null, false, { message: 'Account deletion is in progress' });
+          done(null, false, {
+            message: 'Account deletion is in progress',
+            code: 'ACCOUNT_DELETION_IN_PROGRESS',
+          });
           return;
         }
         if (user) {

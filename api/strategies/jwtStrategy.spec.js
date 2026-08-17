@@ -166,11 +166,17 @@ describe('jwtStrategy', () => {
 
     expect(ordinary).toEqual({
       user: false,
-      info: { message: 'Account deletion is in progress' },
+      info: {
+        message: 'Account deletion is in progress',
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      },
     });
     expect(trigger).toEqual({
       user: false,
-      info: { message: 'Account deletion is in progress' },
+      info: {
+        message: 'Account deletion is in progress',
+        code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      },
     });
     expect(getUserById).toHaveBeenCalledWith(
       'user-3',

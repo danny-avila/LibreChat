@@ -207,7 +207,7 @@ function isAccountDeletionDeferral(error: unknown): boolean {
   return (
     error instanceof AgentTriggerExecutionError &&
     error.code === 'ACCOUNT_DELETION_IN_PROGRESS' &&
-    error.status === 409
+    (error.status === 401 || error.status === 409)
   );
 }
 

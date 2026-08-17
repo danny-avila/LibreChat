@@ -19,7 +19,7 @@ const mockDeleteToolCalls = jest.fn();
 const mockDeleteUserAgents = jest.fn();
 const mockDeleteUserPrompts = jest.fn();
 const mockDeleteUserSkills = jest.fn();
-const mockGetActiveJobIdsForUser = jest.fn();
+const mockGetCleanupBlockingJobIdsForUser = jest.fn();
 const mockAbortJob = jest.fn();
 const mockDrainAgentTriggerDeliveriesForUser = jest.fn();
 const mockPrepareAgentTriggerUserPurge = jest.fn();
@@ -49,7 +49,7 @@ jest.mock('@librechat/api', () => ({
   getNewS3URL: jest.fn(),
   deleteAllSharedLinksWithCleanup: (...args) => mockDeleteAllSharedLinksWithCleanup(...args),
   GenerationJobManager: {
-    getActiveJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
+    getCleanupBlockingJobIdsForUser: (...args) => mockGetCleanupBlockingJobIdsForUser(...args),
     abortJob: (...args) => mockAbortJob(...args),
   },
 }));
@@ -157,7 +157,7 @@ function stubDeletionMocks() {
   mockDeleteUserAgents.mockResolvedValue();
   mockDeleteUserPrompts.mockResolvedValue();
   mockDeleteUserSkills.mockResolvedValue(0);
-  mockGetActiveJobIdsForUser.mockResolvedValue([]);
+  mockGetCleanupBlockingJobIdsForUser.mockResolvedValue([]);
   mockAbortJob.mockResolvedValue({ success: true });
   mockDrainAgentTriggerDeliveriesForUser.mockResolvedValue();
   mockPrepareAgentTriggerUserPurge.mockResolvedValue();
@@ -210,12 +210,12 @@ describe('deleteUserController - 2FA enforcement', () => {
     };
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
-    mockGetActiveJobIdsForUser.mockResolvedValueOnce(['stream-1']);
+    mockGetCleanupBlockingJobIdsForUser.mockResolvedValueOnce(['stream-1']);
 
     await deleteUserController(req, res);
 
-    expect(mockGetActiveJobIdsForUser).toHaveBeenCalledWith('user1', 'tenant-1');
-    expect(mockAbortJob).toHaveBeenCalledWith('stream-1');
+    expect(mockGetCleanupBlockingJobIdsForUser).toHaveBeenCalledWith('user1', 'tenant-1');
+    expect(mockAbortJob).toHaveBeenCalledWith('stream-1', { awaitProviderDrain: true });
     expect(mockAbortJob.mock.invocationCallOrder[0]).toBeLessThan(
       mockDeleteMessages.mock.invocationCallOrder[0],
     );

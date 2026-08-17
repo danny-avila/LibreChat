@@ -209,6 +209,7 @@ describe('agent trigger delivery methods', () => {
       status: 'staging',
       attempts: 0,
       requeueCount: 0,
+      stagingRecoveryAt: START,
     });
 
     await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(1);
@@ -217,6 +218,24 @@ describe('agent trigger delivery methods', () => {
       laneSequence: 1,
     });
     await expect(LaneSequence.findById(orderingKey).lean()).resolves.toMatchObject({ value: 1 });
+  });
+
+  it('backfills and recovers a staging row created before the fairness cursor existed', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'legacy-maintenance-staging';
+    const staged = await Delivery.create({
+      ...enqueueInput({ user, orderingKey }),
+      laneSequence: 0,
+      status: 'staging',
+      attempts: 0,
+      requeueCount: 0,
+    });
+
+    await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(1);
+    await expect(Delivery.findById(staged._id).lean()).resolves.toMatchObject({
+      status: 'pending',
+      laneSequence: 1,
+    });
   });
 
   it('leaves staging unpublished while its durable user purge marker exists', async () => {
@@ -229,6 +248,7 @@ describe('agent trigger delivery methods', () => {
       status: 'staging',
       attempts: 0,
       requeueCount: 0,
+      stagingRecoveryAt: START,
     });
 
     await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(0);
@@ -270,6 +290,60 @@ describe('agent trigger delivery methods', () => {
     });
   });
 
+  it('rotates purge-fenced staging rows so later recovery work is not starved', async () => {
+    const users = Array.from({ length: 3 }, () => new mongoose.Types.ObjectId());
+    for (let index = 0; index < users.length; index += 1) {
+      if (index < 2) {
+        await UserPurge.create({ _id: users[index], fenceStartedAt: START });
+      }
+      await Delivery.create({
+        ...enqueueInput({ user: users[index], orderingKey: `staging-rotation-${index}` }),
+        laneSequence: 0,
+        status: 'staging',
+        attempts: 0,
+        requeueCount: 0,
+        stagingRecoveryAt: new Date(START.getTime() + index),
+      });
+    }
+
+    await expect(methods.recoverAgentTriggerLanePublications(2)).resolves.toBe(0);
+    await expect(methods.recoverAgentTriggerLanePublications(2)).resolves.toBe(1);
+    await expect(
+      Delivery.findOne({ orderingKey: 'staging-rotation-2' }).lean(),
+    ).resolves.toMatchObject({ status: 'pending', laneSequence: 1 });
+  });
+
+  it('rotates purge-fenced publishers so later recovery work is not starved', async () => {
+    const users = Array.from({ length: 3 }, () => new mongoose.Types.ObjectId());
+    for (let index = 0; index < users.length; index += 1) {
+      if (index < 2) {
+        await UserPurge.create({ _id: users[index], fenceStartedAt: START });
+      }
+      const orderingKey = `publisher-rotation-${index}`;
+      const staged = await Delivery.create({
+        ...enqueueInput({ user: users[index], orderingKey }),
+        laneSequence: 0,
+        status: 'staging',
+        attempts: 0,
+        requeueCount: 0,
+        stagingRecoveryAt: START,
+      });
+      await LaneSequence.create({
+        _id: orderingKey,
+        value: 1,
+        user: users[index],
+        publisherDeliveryId: staged._id,
+        publisherStartedAt: new Date(START.getTime() + index),
+      });
+    }
+
+    await expect(methods.recoverAgentTriggerLanePublications(2)).resolves.toBe(0);
+    await expect(methods.recoverAgentTriggerLanePublications(2)).resolves.toBe(1);
+    await expect(
+      Delivery.findOne({ orderingKey: 'publisher-rotation-2' }).lean(),
+    ).resolves.toMatchObject({ status: 'pending', laneSequence: 1 });
+  });
+
   it('abandons a lane acquired concurrently with a new purge marker', async () => {
     const user = new mongoose.Types.ObjectId();
     const orderingKey = 'purge-race-staging';
@@ -298,11 +372,20 @@ describe('agent trigger delivery methods', () => {
   });
 
   it('builds a sparse index for the periodic publisher recovery scan', async () => {
-    const indexes = await LaneSequence.collection.indexes();
+    const [laneIndexes, deliveryIndexes] = await Promise.all([
+      LaneSequence.collection.indexes(),
+      Delivery.collection.indexes(),
+    ]);
 
-    expect(indexes).toEqual(
+    expect(laneIndexes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ key: { publisherStartedAt: 1 }, sparse: true }),
+      ]),
+    );
+    expect(deliveryIndexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: { stagingRecoveryAt: 1 }, sparse: true }),
+        expect.objectContaining({ key: { laneCleanupPendingAt: 1 }, sparse: true }),
       ]),
     );
   });
@@ -567,6 +650,51 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toBe(true);
 
     expect(await LaneSequence.countDocuments({ _id: orderingKey })).toBe(0);
+  });
+
+  it('rediscovers lane cleanup when success commits before its cleanup marker', async () => {
+    const orderingKey = 'crashed-lane-cleanup';
+    const queued = await methods.enqueueAgentTriggerDelivery(enqueueInput({ orderingKey }));
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claimed!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+    const laneUpdate = jest
+      .spyOn(LaneSequence, 'updateOne')
+      .mockRejectedValueOnce(new Error('down'));
+
+    try {
+      await expect(
+        methods.completeAgentTriggerDelivery({
+          id: claimed!.id,
+          workerId: 'worker-1',
+          claimToken: 'claim-1',
+          attempt: attempt!,
+          result: { ok: true },
+          settledAt: START,
+        }),
+      ).resolves.toBe(true);
+    } finally {
+      laneUpdate.mockRestore();
+    }
+    await expect(Delivery.findById(queued.delivery.id).lean()).resolves.toMatchObject({
+      status: 'succeeded',
+      laneCleanupPendingAt: START,
+    });
+
+    await expect(methods.reclaimInactiveAgentTriggerLanes(1)).resolves.toBe(1);
+    await expect(LaneSequence.findById(orderingKey)).resolves.toBeNull();
+    expect(
+      (await Delivery.findById(queued.delivery.id).lean())?.laneCleanupPendingAt,
+    ).toBeUndefined();
   });
 
   it('restores the retry budget when dispatch is deferred before execution', async () => {

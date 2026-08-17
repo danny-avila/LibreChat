@@ -1,3 +1,4 @@
+const { randomUUID } = require('crypto');
 const { logger } = require('@librechat/data-schemas');
 const { Constants, EModelEndpoint } = require('librechat-data-provider');
 const {
@@ -729,6 +730,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // the user when they retry the still-paused approval. Release the slot on that path too.
   let claimed;
   let checkpointGeneration;
+  const providerExecutionId = randomUUID();
   try {
     checkpointGeneration = await checkpointGenerationPromise;
     /** The CAS that reopens steering must also publish THIS owner's seal
@@ -739,6 +741,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       pendingAction.actionId,
       {
         preemptCapable: isSteerPreemptSupported(),
+        providerExecutionId,
+        providerDrained: true,
         ...(resolvedAskUserQuestion && { resolvedAskUserQuestions }),
       },
       job.createdAt,
@@ -902,6 +906,17 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   let pausePersistenceFailed = false;
   let pausePersistenceFailureFinalized = false;
   try {
+    if (
+      !(await GenerationJobManager.beginProviderExecution(
+        streamId,
+        job.createdAt,
+        providerExecutionId,
+      ))
+    ) {
+      throw Object.assign(new Error('Generation stopped before provider resume'), {
+        code: 'RUN_REPLACED',
+      });
+    }
     const result = await initializeClient({
       req,
       res,
@@ -1091,17 +1106,27 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       }
     }
   } finally {
-    // Tear down the MCP request-context store seeded before the ACK (parity with
-    // request.js's finishResumableRequest). No-op if it was never seeded.
-    await cleanupMCPRequestContextForReq(req);
-    // Release the concurrency slot taken above — UNLESS handleRunInterrupt already
-    // released it on a re-pause (so a fast /resume isn't 429'd). On a normal finish or
-    // error it didn't, so release here. A re-pause re-acquires its own slot next resume.
-    if (!client?.pendingRequestReleased) {
-      await decrementPendingRequest(userId);
-    }
-    if (client) {
-      disposeClient(client);
+    try {
+      // Tear down the MCP request-context store seeded before the ACK (parity with
+      // request.js's finishResumableRequest). No-op if it was never seeded.
+      await cleanupMCPRequestContextForReq(req);
+      // Release the concurrency slot taken above — UNLESS handleRunInterrupt already
+      // released it on a re-pause (so a fast /resume isn't 429'd). On a normal finish or
+      // error it didn't, so release here. A re-pause re-acquires its own slot next resume.
+      if (!client?.pendingRequestReleased) {
+        await decrementPendingRequest(userId);
+      }
+      if (client) {
+        disposeClient(client);
+      }
+    } finally {
+      await GenerationJobManager.markProviderExecutionDrained?.(
+        streamId,
+        job.createdAt,
+        providerExecutionId,
+      ).catch((drainError) => {
+        logger.warn('[ResumeAgentController] Failed to record provider drain', drainError);
+      });
     }
   }
 };

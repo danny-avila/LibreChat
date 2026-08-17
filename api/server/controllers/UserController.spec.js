@@ -83,7 +83,7 @@ jest.mock('@librechat/api', () => ({
   needsRefresh: jest.fn(),
   getNewS3URL: jest.fn(),
   GenerationJobManager: {
-    getActiveJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
+    getCleanupBlockingJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
     abortJob: (...args) => mockAbortJob(...args),
   },
 }));
@@ -390,11 +390,35 @@ describe('deleteUserController', () => {
     await deleteUserController(req, mockRes);
 
     expect(mockGetActiveJobIdsForUser).toHaveBeenCalledWith(userId.toString(), 'tenant-1');
-    expect(mockAbortJob).toHaveBeenCalledWith('stream-1');
-    expect(mockAbortJob).toHaveBeenCalledWith('stream-2');
+    expect(mockAbortJob).toHaveBeenCalledWith('stream-1', { awaitProviderDrain: true });
+    expect(mockAbortJob).toHaveBeenCalledWith('stream-2', { awaitProviderDrain: true });
     expect(mockAbortJob.mock.invocationCallOrder[1]).toBeLessThan(
       deleteMessages.mock.invocationCallOrder[0],
     );
+  });
+
+  it('fails closed and releases deletion fences when a provider cannot confirm drain', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const userIdString = userId.toString();
+    mockGetActiveJobIdsForUser.mockResolvedValueOnce(['stream-still-writing']);
+    mockAbortJob.mockRejectedValueOnce(new Error('provider drain timed out'));
+    const req = {
+      user: {
+        id: userIdString,
+        _id: userId,
+        email: 'active@test.com',
+        tenantId: 'tenant-1',
+      },
+    };
+
+    await deleteUserController(req, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(500);
+    expect(deleteMessages).not.toHaveBeenCalled();
+    const deletionFence = beginAgentTriggerUserDeletion.mock.calls[0][1];
+    expect(mockCancelAgentTriggerUserPurge).toHaveBeenCalledWith(userIdString, deletionFence);
+    expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(userIdString, deletionFence);
+    expect(deleteUserById).not.toHaveBeenCalled();
   });
 
   it('should remove the user from all groups via $pullAll', async () => {

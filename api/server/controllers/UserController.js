@@ -393,11 +393,15 @@ const deleteUserController = async (req, res) => {
       await prepareAgentTriggerUserPurge(user.id, triggerDeletionFence, user.tenantId);
     }
     await drainAgentTriggerDeliveriesForUser(user.id);
-    const activeAgentRuns = await GenerationJobManager.getActiveJobIdsForUser(
+    const activeAgentRuns = await GenerationJobManager.getCleanupBlockingJobIdsForUser(
       user.id,
       user.tenantId,
     );
-    await Promise.all(activeAgentRuns.map((streamId) => GenerationJobManager.abortJob(streamId)));
+    await Promise.all(
+      activeAgentRuns.map((streamId) =>
+        GenerationJobManager.abortJob(streamId, { awaitProviderDrain: true }),
+      ),
+    );
 
     await db.deleteMessages({ user: user.id });
     await db.deleteAllUserSessions({ userId: user.id });

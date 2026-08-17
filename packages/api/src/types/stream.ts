@@ -41,6 +41,10 @@ export interface GenerationJobMetadata {
   activityPhaseSnapshot?: ActivityPhaseSnapshot;
   /** See `SerializableJobData.preemptCapable`. */
   preemptCapable?: boolean;
+  /** Exact provider segment whose completion gates destructive user cleanup. */
+  providerExecutionId?: string;
+  /** False only while that exact provider segment can still mutate user data. */
+  providerDrained?: boolean;
   /** Terminal close has atomically stopped new steer acceptance, even if the
    * final status CAS has not yet run. */
   steersClosed?: boolean;

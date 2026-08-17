@@ -42,6 +42,10 @@ export interface IAgentTriggerDelivery {
   settledAt?: Date;
   expiresAt?: Date;
   requeueCount?: number;
+  /** Fairness cursor for bounded recovery of rows stranded before lane publication. */
+  stagingRecoveryAt?: Date;
+  /** Durable proof that successful settlement still owes lane cleanup publication. */
+  laneCleanupPendingAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }

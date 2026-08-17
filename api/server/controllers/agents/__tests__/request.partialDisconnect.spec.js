@@ -25,6 +25,8 @@ const mockGenerationJobManager = {
   createJob: jest.fn(),
   emitError: jest.fn(),
   completeJob: jest.fn(),
+  beginProviderExecution: jest.fn(),
+  markProviderExecutionDrained: jest.fn(),
   getResumeState: jest.fn(),
   updateMetadata: jest.fn(),
   claimGeneration: jest.fn(),
@@ -118,6 +120,8 @@ describe('ResumableAgentController tenant context', () => {
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitError.mockResolvedValue(undefined);
     mockGenerationJobManager.completeJob.mockResolvedValue(undefined);
+    mockGenerationJobManager.beginProviderExecution.mockResolvedValue(true);
+    mockGenerationJobManager.markProviderExecutionDrained.mockResolvedValue(true);
     mockGenerationJobManager.claimGeneration.mockResolvedValue({ claimed: true });
     mockGenerationJobManager.releaseGeneration.mockResolvedValue(undefined);
     mockGenerationJobManager.hasJob.mockResolvedValue(true);
@@ -133,6 +137,10 @@ describe('ResumableAgentController tenant context', () => {
     let allSubscribersLeftHandler;
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 1000,
+      metadata: {
+        providerExecutionId: 'provider-segment-1',
+        providerDrained: true,
+      },
       readyPromise: Promise.resolve(),
       abortController: new AbortController(),
       emitter: {

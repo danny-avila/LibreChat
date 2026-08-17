@@ -51,6 +51,8 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     settledAt: { type: Date },
     expiresAt: { type: Date },
     requeueCount: { type: Number, default: 0, min: 0 },
+    stagingRecoveryAt: { type: Date },
+    laneCleanupPendingAt: { type: Date },
   },
   { timestamps: true },
 );
@@ -60,6 +62,8 @@ triggerDeliverySchema.index({ status: 1, availableAt: 1, createdAt: 1 });
 triggerDeliverySchema.index({ status: 1, leaseUntil: 1, createdAt: 1 });
 triggerDeliverySchema.index({ orderingKey: 1, status: 1, laneSequence: 1 });
 triggerDeliverySchema.index({ status: 1, updatedAt: -1 });
+triggerDeliverySchema.index({ stagingRecoveryAt: 1 }, { sparse: true });
+triggerDeliverySchema.index({ laneCleanupPendingAt: 1 }, { sparse: true });
 // Only successful rows receive expiresAt. Dead letters remain available until
 // an operator explicitly requeues or removes them.
 triggerDeliverySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });

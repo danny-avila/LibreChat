@@ -226,7 +226,10 @@ export function createAgentTriggerDeliveryMethods(
 
     const published = await Delivery().updateOne(
       { _id: publisherDeliveryId, orderingKey: lane._id, status: 'staging' },
-      { $set: { status: 'pending', laneSequence: lane.value } },
+      {
+        $set: { status: 'pending', laneSequence: lane.value },
+        $unset: { stagingRecoveryAt: 1 },
+      },
     );
     let publicationCommitted = published.modifiedCount === 1;
     if (published.modifiedCount === 0) {
@@ -361,6 +364,7 @@ export function createAgentTriggerDeliveryMethods(
         status: 'staging',
         attempts: 0,
         requeueCount: 0,
+        stagingRecoveryAt: new Date(),
       });
       staged = created.toObject();
     } catch (error) {
@@ -400,12 +404,25 @@ export function createAgentTriggerDeliveryMethods(
         publisherDeliveryId: { $exists: true },
         publisherStartedAt: { $exists: true },
       })
-      .sort({ publisherStartedAt: 1 })
+      .sort({ publisherStartedAt: 1, _id: 1 })
       .limit(boundedLimit)
       .lean<IAgentTriggerLaneSequence[]>();
     let recovered = 0;
+    const recoveryCursor = new Date();
     for (const lane of lanes) {
       if ((await UserPurge().exists({ _id: lane.user })) != null) {
+        if (lane.publisherDeliveryId != null && lane.publisherStartedAt != null) {
+          await LaneSequence().updateOne(
+            {
+              _id: lane._id,
+              value: lane.value,
+              publisherDeliveryId: lane.publisherDeliveryId,
+              publisherStartedAt: lane.publisherStartedAt,
+            },
+            { $set: { publisherStartedAt: recoveryCursor } },
+            { timestamps: false },
+          );
+        }
         continue;
       }
       if (await recoverLanePublisher(lane)) {
@@ -413,20 +430,69 @@ export function createAgentTriggerDeliveryMethods(
       }
     }
 
-    const remaining = boundedLimit - recovered;
+    let remaining = boundedLimit - recovered;
     if (remaining <= 0) {
       return recovered;
     }
-    const staged = await Delivery()
-      .find({ status: 'staging' })
+    /** Pre-cursor replicas can leave staging rows outside the sparse recovery
+     * index. Backfill them in bounded batches before using the indexed scan. */
+    const legacyStaged = await Delivery()
+      .find({ status: 'staging', stagingRecoveryAt: { $exists: false } })
       .sort({ updatedAt: 1, _id: 1 })
       .limit(remaining)
       .lean<IAgentTriggerDelivery[]>();
+    const legacyCursor = new Date();
+    for (const delivery of legacyStaged) {
+      if (delivery._id != null) {
+        await Delivery().updateOne(
+          { _id: delivery._id, status: 'staging', stagingRecoveryAt: { $exists: false } },
+          { $set: { stagingRecoveryAt: legacyCursor } },
+          { timestamps: false },
+        );
+      }
+    }
+    remaining -= legacyStaged.length;
+    const legacyIds = legacyStaged.flatMap((delivery) =>
+      delivery._id != null ? [delivery._id] : [],
+    );
+    const indexedStaged =
+      remaining > 0
+        ? await Delivery()
+            .find({
+              status: 'staging',
+              stagingRecoveryAt: { $exists: true },
+              ...(legacyIds.length > 0 && { _id: { $nin: legacyIds } }),
+            })
+            .sort({ stagingRecoveryAt: 1, _id: 1 })
+            .limit(remaining)
+            .lean<IAgentTriggerDelivery[]>()
+        : [];
+    const staged = [
+      ...legacyStaged.map((delivery) => ({ ...delivery, stagingRecoveryAt: legacyCursor })),
+      ...indexedStaged,
+    ];
+    const stagingRecoveryCursor = new Date();
+    const rotateStagingRecovery = async (delivery: IAgentTriggerDelivery): Promise<void> => {
+      if (delivery._id == null || delivery.stagingRecoveryAt == null) {
+        return;
+      }
+      await Delivery().updateOne(
+        {
+          _id: delivery._id,
+          status: 'staging',
+          stagingRecoveryAt: delivery.stagingRecoveryAt,
+        },
+        { $set: { stagingRecoveryAt: stagingRecoveryCursor } },
+        { timestamps: false },
+      );
+    };
     for (const delivery of staged) {
       try {
         const published = await publishStagedDelivery(delivery);
         if (published.status !== 'staging') {
           recovered += 1;
+        } else {
+          await rotateStagingRecovery(delivery);
         }
       } catch (error) {
         // Account deletion can remove a staged row while a replica is helping
@@ -435,6 +501,7 @@ export function createAgentTriggerDeliveryMethods(
         if (delivery._id != null && (await Delivery().exists({ _id: delivery._id })) == null) {
           continue;
         }
+        await rotateStagingRecovery(delivery);
         throw error;
       }
     }
@@ -468,6 +535,28 @@ export function createAgentTriggerDeliveryMethods(
     return deleted.deletedCount === 1;
   }
 
+  async function fulfillLaneCleanupRequest(
+    delivery: Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'laneCleanupPendingAt'>,
+  ): Promise<boolean> {
+    if (delivery._id == null || delivery.laneCleanupPendingAt == null) {
+      return false;
+    }
+    await LaneSequence().updateOne(
+      { _id: delivery.orderingKey },
+      { $set: { cleanupRequestedAt: delivery.laneCleanupPendingAt } },
+    );
+    await Delivery().updateOne(
+      {
+        _id: delivery._id,
+        status: 'succeeded',
+        laneCleanupPendingAt: delivery.laneCleanupPendingAt,
+      },
+      { $unset: { laneCleanupPendingAt: 1 } },
+      { timestamps: false },
+    );
+    return reclaimLaneIfInactive(delivery.orderingKey);
+  }
+
   /** Bounds high-cardinality ordering metadata after the final retained job settles. */
   async function reclaimInactiveAgentTriggerLanes(
     limit = DEFAULT_PURGE_RECOVERY_LIMIT,
@@ -475,13 +564,30 @@ export function createAgentTriggerDeliveryMethods(
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger lane reclamation limit must be a positive integer');
     }
+    const boundedLimit = Math.min(limit, MAX_PURGE_RECOVERY_LIMIT);
+    const pendingCleanup = await Delivery()
+      .find({ status: 'succeeded', laneCleanupPendingAt: { $exists: true } })
+      .sort({ laneCleanupPendingAt: 1, _id: 1 })
+      .limit(boundedLimit)
+      .select('_id orderingKey laneCleanupPendingAt')
+      .lean<Array<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'laneCleanupPendingAt'>>>();
+    let reclaimed = 0;
+    for (const delivery of pendingCleanup) {
+      if (await fulfillLaneCleanupRequest(delivery)) {
+        reclaimed += 1;
+      }
+    }
+
+    const remaining = boundedLimit - pendingCleanup.length;
+    if (remaining <= 0) {
+      return reclaimed;
+    }
     const lanes = await LaneSequence()
       .find({ cleanupRequestedAt: { $exists: true } })
       .sort({ cleanupRequestedAt: 1, _id: 1 })
-      .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
+      .limit(remaining)
       .select('_id')
       .lean<Array<Pick<IAgentTriggerLaneSequence, '_id'>>>();
-    let reclaimed = 0;
     for (const lane of lanes) {
       if (await reclaimLaneIfInactive(lane._id)) {
         reclaimed += 1;
@@ -606,6 +712,7 @@ export function createAgentTriggerDeliveryMethods(
             result: input.result,
             settledAt: input.settledAt,
             expiresAt: new Date(input.settledAt.getTime() + SUCCESS_RETENTION_MS),
+            laneCleanupPendingAt: input.settledAt,
           },
           $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, lastError: 1 },
           $push: {
@@ -624,18 +731,14 @@ export function createAgentTriggerDeliveryMethods(
         },
         { new: true },
       )
-      .select('_id orderingKey')
-      .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey'>>();
+      .select('_id orderingKey laneCleanupPendingAt')
+      .lean<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'laneCleanupPendingAt'>>();
     if (completed?._id == null) {
       return false;
     }
 
     try {
-      await LaneSequence().updateOne(
-        { _id: completed.orderingKey },
-        { $set: { cleanupRequestedAt: input.settledAt } },
-      );
-      await reclaimLaneIfInactive(completed.orderingKey);
+      await fulfillLaneCleanupRequest(completed);
     } catch (error) {
       // Delivery success is authoritative; counter reclamation is safe to retry later.
       logger.warn('[agent-triggers] failed to reclaim an inactive ordering lane', {
@@ -732,7 +835,13 @@ export function createAgentTriggerDeliveryMethods(
       .findOneAndUpdate(
         { _id: id, status: 'dead' },
         {
-          $set: { status: 'staging', laneSequence: 0, attempts: 0, availableAt },
+          $set: {
+            status: 'staging',
+            laneSequence: 0,
+            attempts: 0,
+            availableAt,
+            stagingRecoveryAt: new Date(),
+          },
           $unset: {
             leaseBy: 1,
             leaseUntil: 1,
@@ -741,6 +850,7 @@ export function createAgentTriggerDeliveryMethods(
             result: 1,
             settledAt: 1,
             expiresAt: 1,
+            laneCleanupPendingAt: 1,
           },
           $inc: { requeueCount: 1 },
         },
