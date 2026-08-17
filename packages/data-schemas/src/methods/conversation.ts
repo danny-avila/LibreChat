@@ -1150,6 +1150,11 @@ export function createConversationMethods(
      * per conversation in memory. */
     const archivedAt = new Date();
     let archivedCount = 0;
+    /** A write whose result never came back may still have committed, so reconciliation
+     * keys off the attempt rather than off `archivedCount`: a stepdown between commit and
+     * acknowledgement would otherwise strand those chats with stale project counts, and no
+     * retry can find them again because they no longer match the sweep filter. */
+    let attemptedArchiveWrite = false;
     try {
       const filter = {
         user,
@@ -1198,6 +1203,7 @@ export function createConversationMethods(
          * cannot move an existing stamp, and leaving it unset would drop the whole sweep
          * into the legacy group the archived table sorts and dates by `createdAt`.
          */
+        attemptedArchiveWrite = true;
         const result = await Conversation.updateMany(
           { ...filter, _id: { $in: conversationIds } },
           { $set: { isArchived: true, archivedAt } },
@@ -1230,7 +1236,7 @@ export function createConversationMethods(
        * costs one indexed query rather than a per-conversation id list: history size
        * changes how much this reads, never how much it holds.
        */
-      if (archivedCount > 0) {
+      if (attemptedArchiveWrite) {
         try {
           const recoveredProjectIds = await discoverProjectIds(Conversation, {
             user,
@@ -1247,7 +1253,7 @@ export function createConversationMethods(
           );
         }
       }
-      if (archivedCount > 0 && projectIds.size > 0) {
+      if (attemptedArchiveWrite && projectIds.size > 0) {
         try {
           await refreshChatProjectStatsInBatches(mongoose, user, projectIds);
         } catch (error) {

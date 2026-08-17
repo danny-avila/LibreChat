@@ -2,7 +2,13 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { EModelEndpoint, RetentionMode } from 'librechat-data-provider';
-import type { Document, Filter, FindOneAndUpdateOptions, UpdateFilter } from 'mongodb';
+import type {
+  Document,
+  Filter,
+  FindOneAndUpdateOptions,
+  UpdateFilter,
+  UpdateResult,
+} from 'mongodb';
 import type { IChatProject, IConversation } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -2292,6 +2298,53 @@ describe('Conversation Operations', () => {
       const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
       expect(refreshed?.conversationCount).toBe(1);
       expect(refreshed?.lastConversationId).toBe(remaining?.conversationId);
+    });
+
+    it('reconciles projects when an archive write commits but its result is lost', async () => {
+      const destinationProject = await ChatProject.create({ user: 'user123', name: 'Destination' });
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      /** The chat carries no project when the sweep captures it and the write never
+       * reports a modified count, so the marker is the only thing left that knows the
+       * archive happened at all. */
+      const updateMany = Conversation.updateMany.bind(Conversation);
+      const updateManySpy = jest.spyOn(Conversation, 'updateMany').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+        /** Annotated because a mock that only ever throws infers `Promise<never>`, which
+         * the cast back to the real signature rejects. */
+      ): Promise<UpdateResult> => {
+        await updateMany(filter, update, options);
+        await Conversation.updateOne(
+          { conversationId },
+          { $set: { chatProjectId: destinationProject._id!.toString() } },
+        );
+        await ChatProject.findByIdAndUpdate(destinationProject._id, {
+          conversationCount: 1,
+          lastConversationId: conversationId,
+        });
+        throw new Error('connection reset before the write acknowledged');
+      }) as typeof Conversation.updateMany);
+
+      try {
+        await expect(archiveAllConvos('user123')).rejects.toThrow(
+          'connection reset before the write acknowledged',
+        );
+      } finally {
+        updateManySpy.mockRestore();
+      }
+
+      const archived = await Conversation.findOne({ conversationId }).lean<IConversation>();
+      expect(archived?.isArchived).toBe(true);
+      const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
     });
 
     it('returns zero when the user has no conversations', async () => {
