@@ -69,6 +69,7 @@ function deliveryMethods(
     findEarlierAgentTriggerDelivery: jest.fn(async () => null),
     releaseAgentTriggerDelivery: jest.fn(async () => true),
     beginAgentTriggerDeliveryAttempt: jest.fn(async () => 1),
+    deferAgentTriggerDeliveryAttempt: jest.fn(async () => true),
     completeAgentTriggerDelivery: jest.fn(async () => true),
     retryAgentTriggerDelivery: jest.fn(async () => true),
     deadLetterAgentTriggerDelivery: jest.fn(async () => true),
@@ -76,6 +77,9 @@ function deliveryMethods(
     getAgentTriggerDeadLetters: jest.fn(async () => []),
     requeueAgentTriggerDelivery: jest.fn(async () => null),
     countActiveAgentTriggerDeliveriesByUser: jest.fn(async () => 0),
+    prepareAgentTriggerUserPurge: jest.fn(async () => undefined),
+    cancelAgentTriggerUserPurge: jest.fn(async () => true),
+    recoverAgentTriggerUserPurges: jest.fn(async () => 0),
     deleteAgentTriggerDeliveriesByUser: jest.fn(async () => undefined),
     ...overrides,
   };
@@ -223,6 +227,58 @@ describe('durable agent trigger service', () => {
     await service.purgeUser('507f1f77bcf86cd799439011');
 
     expect(deleteAgentTriggerDeliveriesByUser).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
+  });
+
+  it('arms and disarms post-commit purge recovery in system context', async () => {
+    const prepareAgentTriggerUserPurge = jest.fn(async () => {
+      expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
+    });
+    const cancelAgentTriggerUserPurge = jest.fn(async () => {
+      expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
+      return true;
+    });
+    const methods = deliveryMethods({
+      prepareAgentTriggerUserPurge,
+      cancelAgentTriggerUserPurge,
+    });
+    const service = createAgentTriggerService({
+      methods,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+    const fence = new Date(START);
+
+    await service.prepareUserPurge('507f1f77bcf86cd799439011', fence, 'tenant-1');
+    await expect(service.cancelUserPurge('507f1f77bcf86cd799439011', fence)).resolves.toBe(true);
+
+    expect(prepareAgentTriggerUserPurge).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439011',
+      fence,
+      'tenant-1',
+    );
+    await service.stop();
+  });
+
+  it('retries recoverable post-commit purges after a transient sweep failure', async () => {
+    const recoverAgentTriggerUserPurges = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('mongo unavailable'))
+      .mockResolvedValue(1);
+    const service = createAgentTriggerService({
+      methods: deliveryMethods({ recoverAgentTriggerUserPurges }),
+      purgeRecoveryIntervalMs: 5,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(recoverAgentTriggerUserPurges.mock.calls.length).toBeGreaterThanOrEqual(2);
+    await service.stop();
   });
 
   it('keeps trusted operational reads and requeue in system tenant context', async () => {

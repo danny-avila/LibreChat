@@ -1,6 +1,6 @@
 import type { AgentTriggerDeliveryRecord, AgentTriggerDeliveryStore } from './engine';
 import type { AgentTriggerExecutionResult } from './host';
-import { createAgentTriggerDeliveryEngine } from './engine';
+import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
 import { AgentTriggerDispatchError } from './dispatch';
 import { AgentTriggerExecutionError } from './host';
 
@@ -46,6 +46,7 @@ function storeWith(overrides: Partial<AgentTriggerDeliveryStore> = {}): AgentTri
     findEarlierUnsettled: jest.fn(async () => null),
     release: jest.fn(async () => true),
     beginAttempt: jest.fn(async () => 1),
+    defer: jest.fn(async () => true),
     complete: jest.fn(async () => true),
     retry: jest.fn(async () => true),
     dead: jest.fn(async () => true),
@@ -180,6 +181,32 @@ describe('createAgentTriggerDeliveryEngine', () => {
         }),
       }),
     );
+    expect(store.dead).not.toHaveBeenCalled();
+  });
+
+  it('defers a fenced principal without consuming its delivery attempt', async () => {
+    const store = storeWith();
+    const engine = createAgentTriggerDeliveryEngine(
+      {
+        store,
+        dispatch: async () =>
+          Promise.reject(new AgentTriggerDeliveryDeferredError('principal fenced')),
+        now: () => START,
+        workerId: 'worker-1',
+      },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.defer).toHaveBeenCalledWith({
+      id: 'delivery-row-1',
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: 1,
+      availableAt: new Date(START.getTime() + 5_000),
+    });
+    expect(store.retry).not.toHaveBeenCalled();
     expect(store.dead).not.toHaveBeenCalled();
   });
 

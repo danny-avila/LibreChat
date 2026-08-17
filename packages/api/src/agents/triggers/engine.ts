@@ -11,7 +11,19 @@ const DEFAULT_RETRY_BASE_MS = 1_000;
 const DEFAULT_RETRY_CAP_MS = 5 * 60_000;
 const DEFAULT_TICK_MS = 1_000;
 const ORDERING_RECHECK_MS = 250;
+const DEFAULT_DEFER_MS = 5_000;
 const MAX_RETRY_AFTER_MS = 24 * 60 * 60_000;
+
+/** A pre-dispatch condition that must not consume the delivery's retry budget. */
+export class AgentTriggerDeliveryDeferredError extends Error {
+  readonly delayMs: number;
+
+  constructor(message: string, delayMs: number = DEFAULT_DEFER_MS) {
+    super(message);
+    this.name = 'AgentTriggerDeliveryDeferredError';
+    this.delayMs = positiveInteger(delayMs, DEFAULT_DEFER_MS, 'delayMs');
+  }
+}
 
 export type AgentTriggerDeliveryStatus = 'pending' | 'leased' | 'succeeded' | 'dead';
 
@@ -69,6 +81,13 @@ export interface AgentTriggerDeliveryStore {
     claimToken: string;
     now: Date;
   }) => Promise<number | null>;
+  defer: (input: {
+    id: string;
+    workerId: string;
+    claimToken: string;
+    attempt: number;
+    availableAt: Date;
+  }) => Promise<boolean>;
   complete: (input: {
     id: string;
     workerId: string;
@@ -297,6 +316,23 @@ export function createAgentTriggerDeliveryEngine(
         result = await deps.dispatch(delivery.envelope, { signal: controller.signal });
       } catch (error) {
         const attemptedAt = now();
+        if (error instanceof AgentTriggerDeliveryDeferredError) {
+          const availableAt = new Date(attemptedAt.getTime() + error.delayMs);
+          const deferred = await deps.store.defer({
+            id: delivery.id,
+            workerId,
+            claimToken: delivery.claimToken,
+            attempt,
+            availableAt,
+          });
+          if (deferred) {
+            logger.info('[agent-triggers] delivery deferred without consuming an attempt', {
+              deliveryKey: delivery.deliveryKey,
+              availableAt: availableAt.toISOString(),
+            });
+          }
+          return;
+        }
         const recorded = failure(error, attemptedAt);
         if (!recorded.retryable || attempt >= maxAttempts) {
           const deadLettered = await deps.store.dead({

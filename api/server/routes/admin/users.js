@@ -5,6 +5,8 @@ const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
 const {
   drainAgentTriggerDeliveriesForUser,
+  prepareAgentTriggerUserPurge,
+  cancelAgentTriggerUserPurge,
   purgeAgentTriggerDeliveriesForUser,
 } = require('~/server/services/Agents/triggers');
 const db = require('~/models');
@@ -21,6 +23,8 @@ const handlers = createAdminUsersHandlers({
   beginAgentTriggerUserDeletion: db.beginAgentTriggerUserDeletion,
   cancelAgentTriggerUserDeletion: db.cancelAgentTriggerUserDeletion,
   drainAgentTriggerDeliveriesForUser,
+  prepareAgentTriggerUserPurge,
+  cancelAgentTriggerUserPurge,
   purgeAgentTriggerDeliveriesForUser,
   deleteUserById: db.deleteUserById,
   deleteConfig: db.deleteConfig,

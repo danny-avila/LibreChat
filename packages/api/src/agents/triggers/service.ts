@@ -15,7 +15,7 @@ import type { AgentTriggerEnqueueOptions, PreparedAgentTriggerDelivery } from '.
 import type { BoundAddress } from '../../app/origin';
 import { isShutdownInProgress, registerShutdownTask } from '../../app/shutdown';
 import { generateAgentTriggerToken } from '../../crypto/jwt';
-import { createAgentTriggerDeliveryEngine } from './engine';
+import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
 import { selfOriginFromAddress } from '../../app/origin';
 import { prepareAgentTriggerDelivery } from './delivery';
 import { createAgentTriggerExecutionHost } from './host';
@@ -24,6 +24,8 @@ import { parseAgentTriggerEnvelope } from './envelope';
 export const AGENT_TRIGGER_TOKEN_TTL = '60s';
 const DEFAULT_USER_DRAIN_TIMEOUT_MS = 35_000;
 const DEFAULT_USER_DRAIN_POLL_MS = 100;
+const DEFAULT_PURGE_RECOVERY_INTERVAL_MS = 30_000;
+const DEFAULT_PURGE_RECOVERY_LIMIT = 25;
 
 export interface AgentTriggerServiceOptions {
   address?: BoundAddress | string | null;
@@ -39,6 +41,8 @@ export interface AgentTriggerServiceDeps {
   isPrincipalActive?: (userId: string) => boolean | Promise<boolean>;
   userDrainTimeoutMs?: number;
   userDrainPollMs?: number;
+  purgeRecoveryIntervalMs?: number;
+  purgeRecoveryLimit?: number;
 }
 
 export interface AgentTriggerDeliveryReceipt {
@@ -49,7 +53,7 @@ export interface AgentTriggerDeliveryReceipt {
   replayed: boolean;
 }
 
-export class AgentTriggerServiceUnavailableError extends Error {
+export class AgentTriggerServiceUnavailableError extends AgentTriggerDeliveryDeferredError {
   constructor(message: string) {
     super(message);
     this.name = 'AgentTriggerServiceUnavailableError';
@@ -84,6 +88,7 @@ export interface AgentTriggerDeliveryPersistence {
   findEarlierAgentTriggerDelivery: AgentTriggerDeliveryStore['findEarlierUnsettled'];
   releaseAgentTriggerDelivery: AgentTriggerDeliveryStore['release'];
   beginAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['beginAttempt'];
+  deferAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['defer'];
   completeAgentTriggerDelivery: AgentTriggerDeliveryStore['complete'];
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
   deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
@@ -94,6 +99,13 @@ export interface AgentTriggerDeliveryPersistence {
     availableAt: Date,
   ) => Promise<AgentTriggerStoredRecord | null>;
   countActiveAgentTriggerDeliveriesByUser: (userId: string, now: Date) => Promise<number>;
+  prepareAgentTriggerUserPurge: (
+    userId: string,
+    fenceStartedAt: Date,
+    tenantId?: string,
+  ) => Promise<void>;
+  cancelAgentTriggerUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
+  recoverAgentTriggerUserPurges: (limit?: number) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (userId: string) => Promise<void>;
 }
 
@@ -112,6 +124,8 @@ export interface AgentTriggerService {
   getDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeue: (id: string, availableAt?: Date) => Promise<AgentTriggerStoredRecord | null>;
   drainUser: (userId: string) => Promise<void>;
+  prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
+  cancelUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
   purgeUser: (userId: string) => Promise<void>;
 }
 
@@ -121,6 +135,7 @@ function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTri
     findEarlierUnsettled: methods.findEarlierAgentTriggerDelivery,
     release: methods.releaseAgentTriggerDelivery,
     beginAttempt: methods.beginAgentTriggerDeliveryAttempt,
+    defer: methods.deferAgentTriggerDeliveryAttempt,
     complete: methods.completeAgentTriggerDelivery,
     retry: methods.retryAgentTriggerDelivery,
     dead: methods.deadLetterAgentTriggerDelivery,
@@ -148,15 +163,26 @@ function requireDeliveryOrigin(boundOrigin: string | undefined): void {
 export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): AgentTriggerService {
   const userDrainTimeoutMs = deps.userDrainTimeoutMs ?? DEFAULT_USER_DRAIN_TIMEOUT_MS;
   const userDrainPollMs = deps.userDrainPollMs ?? DEFAULT_USER_DRAIN_POLL_MS;
+  const purgeRecoveryIntervalMs =
+    deps.purgeRecoveryIntervalMs ?? DEFAULT_PURGE_RECOVERY_INTERVAL_MS;
+  const purgeRecoveryLimit = deps.purgeRecoveryLimit ?? DEFAULT_PURGE_RECOVERY_LIMIT;
   if (!Number.isSafeInteger(userDrainTimeoutMs) || userDrainTimeoutMs <= 0) {
     throw new TypeError('userDrainTimeoutMs must be a positive integer');
   }
   if (!Number.isSafeInteger(userDrainPollMs) || userDrainPollMs <= 0) {
     throw new TypeError('userDrainPollMs must be a positive integer');
   }
+  if (!Number.isSafeInteger(purgeRecoveryIntervalMs) || purgeRecoveryIntervalMs <= 0) {
+    throw new TypeError('purgeRecoveryIntervalMs must be a positive integer');
+  }
+  if (!Number.isSafeInteger(purgeRecoveryLimit) || purgeRecoveryLimit <= 0) {
+    throw new TypeError('purgeRecoveryLimit must be a positive integer');
+  }
   let boundOrigin: string | undefined;
   let deliveryEngine: AgentTriggerDeliveryEngine | undefined;
   let initializePromise: Promise<void> | undefined;
+  let purgeRecoveryPromise: Promise<void> | undefined;
+  let purgeRecoveryTimer: NodeJS.Timeout | undefined;
   let deliveryReady = false;
   let stopping = false;
   const isPrincipalActive = deps.isPrincipalActive;
@@ -234,11 +260,51 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     }
   };
 
+  const recoverPurges = (): Promise<void> => {
+    if (deps.methods == null || stopping) {
+      return Promise.resolve();
+    }
+    if (purgeRecoveryPromise != null) {
+      return purgeRecoveryPromise;
+    }
+    const methods = deps.methods;
+    const current = runAsSystem(async () => {
+      const recovered = await methods.recoverAgentTriggerUserPurges(purgeRecoveryLimit);
+      if (recovered > 0) {
+        logger.info('[agent-triggers] recovered deleted-user payload purges', { recovered });
+      }
+    })
+      .catch((error) => {
+        logger.error('[agent-triggers] deleted-user purge recovery failed:', error);
+      })
+      .finally(() => {
+        if (purgeRecoveryPromise === current) {
+          purgeRecoveryPromise = undefined;
+        }
+      });
+    purgeRecoveryPromise = current;
+    return current;
+  };
+
+  const startPurgeRecovery = (): void => {
+    if (purgeRecoveryTimer != null) {
+      return;
+    }
+    void recoverPurges();
+    purgeRecoveryTimer = setInterval(() => void recoverPurges(), purgeRecoveryIntervalMs);
+    purgeRecoveryTimer.unref();
+  };
+
   const stop = async (): Promise<void> => {
     stopping = true;
     deliveryReady = false;
+    if (purgeRecoveryTimer != null) {
+      clearInterval(purgeRecoveryTimer);
+      purgeRecoveryTimer = undefined;
+    }
     await initializePromise?.catch(() => undefined);
     await deliveryEngine?.stop();
+    await purgeRecoveryPromise?.catch(() => undefined);
   };
 
   if (deps.methods != null) {
@@ -282,6 +348,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         );
         deliveryReady = true;
         deliveryEngine.start();
+        startPurgeRecovery();
         logger.info('[agent-triggers] durable delivery engine started');
       }).finally(() => {
         initializePromise = undefined;
@@ -317,6 +384,14 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     requeue: (id, availableAt = new Date()) =>
       runAsSystem(async () => requireMethods().requeueAgentTriggerDelivery(id, availableAt)),
     drainUser,
+    prepareUserPurge: (userId, fenceStartedAt, tenantId) =>
+      runAsSystem(async () =>
+        requireCleanupMethods().prepareAgentTriggerUserPurge(userId, fenceStartedAt, tenantId),
+      ),
+    cancelUserPurge: (userId, fenceStartedAt) =>
+      runAsSystem(async () =>
+        requireCleanupMethods().cancelAgentTriggerUserPurge(userId, fenceStartedAt),
+      ),
     // Account deletion may reach this post-commit cleanup after graceful
     // shutdown has begun. Persistence remains usable even though admissions
     // and the delivery engine are deliberately no longer ready.

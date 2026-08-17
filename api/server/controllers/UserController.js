@@ -27,6 +27,8 @@ const { invalidateCachedTools } = require('~/server/services/Config/getCachedToo
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const {
   drainAgentTriggerDeliveriesForUser,
+  prepareAgentTriggerUserPurge,
+  cancelAgentTriggerUserPurge,
   purgeAgentTriggerDeliveriesForUser,
 } = require('~/server/services/Agents/triggers');
 const { getAppConfig } = require('~/server/services/Config');
@@ -387,6 +389,9 @@ const deleteUserController = async (req, res) => {
     if (fenceState === 'missing') {
       triggerDeletionFence = undefined;
     }
+    if (triggerDeletionFence != null) {
+      await prepareAgentTriggerUserPurge(user.id, triggerDeletionFence, user.tenantId);
+    }
     await drainAgentTriggerDeliveriesForUser(user.id);
     const activeAgentRuns = await GenerationJobManager.getActiveJobIdsForUser(
       user.id,
@@ -445,6 +450,14 @@ const deleteUserController = async (req, res) => {
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
     if (triggerDeletionFence != null && !userDeleted) {
+      try {
+        await cancelAgentTriggerUserPurge(user.id, triggerDeletionFence);
+      } catch (purgeFenceError) {
+        logger.error(
+          '[deleteUserController] Failed to disarm trigger purge recovery',
+          purgeFenceError,
+        );
+      }
       try {
         await db.cancelAgentTriggerUserDeletion(user.id, triggerDeletionFence);
       } catch (fenceError) {

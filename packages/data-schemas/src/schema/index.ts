@@ -34,3 +34,4 @@ export { default as auditLogSchema } from './auditLog';
 export { default as configSchema } from './config';
 export { default as triggerDeliverySchema } from './triggerDelivery';
 export { default as triggerLaneSequenceSchema } from './triggerLaneSequence';
+export { default as triggerUserPurgeSchema } from './triggerUserPurge';

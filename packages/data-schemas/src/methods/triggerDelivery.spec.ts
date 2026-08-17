@@ -5,14 +5,18 @@ import type {
   AgentTriggerDeliveryFailure,
   IAgentTriggerDeliveryDocument,
   IAgentTriggerLaneSequenceDocument,
+  IAgentTriggerUserPurgeDocument,
 } from '~/types/triggerDelivery';
+import type { IUser } from '~/types/user';
 import {
   AgentTriggerDeliveryConflictError,
   createAgentTriggerDeliveryMethods,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
 import { createAgentTriggerLaneSequenceModel } from '../models/triggerLaneSequence';
+import { createAgentTriggerUserPurgeModel } from '../models/triggerUserPurge';
 import { createAgentTriggerDeliveryModel } from '../models/triggerDelivery';
+import { createUserModel } from '../models/user';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -26,6 +30,8 @@ const START = new Date('2026-08-17T12:00:00.000Z');
 let mongoServer: MongoMemoryServer;
 let Delivery: Model<IAgentTriggerDeliveryDocument>;
 let LaneSequence: Model<IAgentTriggerLaneSequenceDocument>;
+let UserPurge: Model<IAgentTriggerUserPurgeDocument>;
+let User: Model<IUser>;
 let methods: AgentTriggerDeliveryMethods;
 let counter = 0;
 
@@ -34,7 +40,9 @@ beforeAll(async () => {
   await mongoose.connect(mongoServer.getUri());
   Delivery = createAgentTriggerDeliveryModel(mongoose);
   LaneSequence = createAgentTriggerLaneSequenceModel(mongoose);
-  await Promise.all([Delivery.init(), LaneSequence.init()]);
+  UserPurge = createAgentTriggerUserPurgeModel(mongoose);
+  User = createUserModel(mongoose);
+  await Promise.all([Delivery.init(), LaneSequence.init(), UserPurge.init(), User.init()]);
   methods = createAgentTriggerDeliveryMethods(mongoose);
 }, DB_SETUP_TIMEOUT_MS);
 
@@ -44,7 +52,12 @@ afterAll(async () => {
 }, DB_SETUP_TIMEOUT_MS);
 
 beforeEach(async () => {
-  await Promise.all([Delivery.deleteMany({}), LaneSequence.deleteMany({})]);
+  await Promise.all([
+    Delivery.deleteMany({}),
+    LaneSequence.deleteMany({}),
+    UserPurge.deleteMany({}),
+    User.deleteMany({}),
+  ]);
 });
 
 function enqueueInput(
@@ -305,6 +318,40 @@ describe('agent trigger delivery methods', () => {
     );
   });
 
+  it('restores the retry budget when dispatch is deferred before execution', async () => {
+    const queued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+    });
+
+    await expect(
+      methods.deferAgentTriggerDeliveryAttempt({
+        id: claim!.id,
+        workerId: 'worker-1',
+        claimToken: 'claim-1',
+        attempt: attempt!,
+        availableAt: new Date(START.getTime() + 5_000),
+      }),
+    ).resolves.toBe(true);
+
+    await expect(
+      methods.getAgentTriggerDelivery(queued.delivery.deliveryKey),
+    ).resolves.toMatchObject({
+      status: 'pending',
+      attempts: 0,
+      availableAt: new Date(START.getTime() + 5_000),
+    });
+  });
+
   it('retains dead letters, truncates failure text, and supports explicit requeue', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
     const claim = await methods.claimNextAgentTriggerDelivery({
@@ -373,9 +420,18 @@ describe('agent trigger delivery methods', () => {
 
   it('deletes all queued payloads for an erased user', async () => {
     const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    await User.create({
+      _id: user,
+      email: 'immediate-purge@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
     await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
     await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
     await methods.enqueueAgentTriggerDelivery(enqueueInput({ orderingKey: 'ordering-other' }));
+    await methods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.deleteOne({ _id: user });
 
     await methods.deleteAgentTriggerDeliveriesByUser(user);
 
@@ -383,5 +439,80 @@ describe('agent trigger delivery methods', () => {
     expect(await Delivery.countDocuments()).toBe(1);
     expect(await LaneSequence.countDocuments({ user })).toBe(0);
     expect(await LaneSequence.countDocuments()).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+  });
+
+  it('recovers an armed purge after the user deletion commits', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    await User.create({
+      _id: user,
+      email: 'purge@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await methods.prepareAgentTriggerUserPurge(user, fenceStartedAt, 'tenant-1');
+
+    await expect(methods.recoverAgentTriggerUserPurges()).resolves.toBe(0);
+    expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(1);
+
+    await User.deleteOne({ _id: user });
+    await expect(methods.recoverAgentTriggerUserPurges()).resolves.toBe(1);
+    expect(await Delivery.countDocuments({ user })).toBe(0);
+    expect(await LaneSequence.countDocuments({ user })).toBe(0);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+  });
+
+  it('disarms a stale purge marker without touching an active user delivery', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    await User.create({
+      _id: user,
+      email: 'rollback@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await methods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.updateOne({ _id: user }, { $unset: { agentTriggerDeletionStartedAt: 1 } });
+
+    await expect(methods.recoverAgentTriggerUserPurges()).resolves.toBe(0);
+    expect(await Delivery.countDocuments({ user })).toBe(1);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+  });
+
+  it('lets only the exact deletion owner cancel a prepared purge', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    await User.create({
+      _id: user,
+      email: 'owner@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await methods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+
+    await expect(
+      methods.cancelAgentTriggerUserPurge(user, new Date(START.getTime() + 1)),
+    ).resolves.toBe(false);
+    await expect(methods.cancelAgentTriggerUserPurge(user, fenceStartedAt)).resolves.toBe(true);
+  });
+
+  it('cannot disarm purge recovery after the user commit', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const fenceStartedAt = new Date(START);
+    await User.create({
+      _id: user,
+      email: 'committed@example.com',
+      provider: 'local',
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    await methods.prepareAgentTriggerUserPurge(user, fenceStartedAt);
+    await User.deleteOne({ _id: user });
+
+    await expect(methods.cancelAgentTriggerUserPurge(user, fenceStartedAt)).resolves.toBe(false);
+    expect(await UserPurge.countDocuments({ _id: user })).toBe(1);
   });
 });

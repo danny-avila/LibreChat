@@ -56,6 +56,8 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     beginAgentTriggerUserDeletion: jest.fn().mockResolvedValue('acquired'),
     cancelAgentTriggerUserDeletion: jest.fn().mockResolvedValue(true),
     drainAgentTriggerDeliveriesForUser: jest.fn().mockResolvedValue(undefined),
+    prepareAgentTriggerUserPurge: jest.fn().mockResolvedValue(undefined),
+    cancelAgentTriggerUserPurge: jest.fn().mockResolvedValue(true),
     purgeAgentTriggerDeliveriesForUser: jest.fn().mockResolvedValue(undefined),
     deleteUserById: jest
       .fn()
@@ -349,7 +351,13 @@ describe('createAdminUsersHandlers', () => {
         expect.any(Date),
       );
       expect(deps.drainAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(validUserId);
+      expect(deps.prepareAgentTriggerUserPurge).toHaveBeenCalledWith(
+        validUserId,
+        expect.any(Date),
+        undefined,
+      );
       expect(deps.purgeAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(validUserId);
+      expect(deps.cancelAgentTriggerUserPurge).not.toHaveBeenCalled();
       expect(deps.cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
     });
 
@@ -480,6 +488,7 @@ describe('createAdminUsersHandlers', () => {
         validUserId,
         expect.any(Date),
       );
+      expect(deps.cancelAgentTriggerUserPurge).toHaveBeenCalledWith(validUserId, expect.any(Date));
     });
 
     it('returns 400 for invalid ObjectId', async () => {
@@ -520,6 +529,7 @@ describe('createAdminUsersHandlers', () => {
         validUserId,
         expect.any(Date),
       );
+      expect(deps.cancelAgentTriggerUserPurge).toHaveBeenCalledWith(validUserId, expect.any(Date));
       expect(deps.purgeAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
     });
 
@@ -564,17 +574,21 @@ describe('createAdminUsersHandlers', () => {
 
       const beginOrder = (deps.beginAgentTriggerUserDeletion as jest.Mock).mock
         .invocationCallOrder[0];
+      const prepareOrder = (deps.prepareAgentTriggerUserPurge as jest.Mock).mock
+        .invocationCallOrder[0];
       const drainOrder = (deps.drainAgentTriggerDeliveriesForUser as jest.Mock).mock
         .invocationCallOrder[0];
       const deleteOrder = (deps.deleteUserById as jest.Mock).mock.invocationCallOrder[0];
       const purgeOrder = (deps.purgeAgentTriggerDeliveriesForUser as jest.Mock).mock
         .invocationCallOrder[0];
       expect(beginOrder).toBeLessThan(drainOrder);
+      expect(beginOrder).toBeLessThan(prepareOrder);
+      expect(prepareOrder).toBeLessThan(drainOrder);
       expect(drainOrder).toBeLessThan(deleteOrder);
       expect(deleteOrder).toBeLessThan(purgeOrder);
     });
 
-    it('keeps the fence after commit when trigger purge fails', async () => {
+    it('leaves durable purge recovery armed when immediate post-commit cleanup fails', async () => {
       const deps = createDeps({
         purgeAgentTriggerDeliveriesForUser: jest.fn().mockRejectedValue(new Error('db down')),
       });
@@ -586,6 +600,8 @@ describe('createAdminUsersHandlers', () => {
       expect(status).toHaveBeenCalledWith(500);
       expect(json).toHaveBeenCalledWith({ error: 'Failed to delete user' });
       expect(deps.deleteUserById).toHaveBeenCalledWith(validUserId);
+      expect(deps.prepareAgentTriggerUserPurge).toHaveBeenCalled();
+      expect(deps.cancelAgentTriggerUserPurge).not.toHaveBeenCalled();
       expect(deps.cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
     });
   });

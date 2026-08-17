@@ -4,6 +4,8 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const mockGetActiveJobIdsForUser = jest.fn().mockResolvedValue([]);
 const mockAbortJob = jest.fn().mockResolvedValue({ success: true });
 const mockDrainAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undefined);
+const mockPrepareAgentTriggerUserPurge = jest.fn().mockResolvedValue(undefined);
+const mockCancelAgentTriggerUserPurge = jest.fn().mockResolvedValue(true);
 const mockPurgeAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('@librechat/data-schemas', () => {
@@ -88,6 +90,8 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/server/services/Agents/triggers', () => ({
   drainAgentTriggerDeliveriesForUser: (...args) => mockDrainAgentTriggerDeliveriesForUser(...args),
+  prepareAgentTriggerUserPurge: (...args) => mockPrepareAgentTriggerUserPurge(...args),
+  cancelAgentTriggerUserPurge: (...args) => mockCancelAgentTriggerUserPurge(...args),
   purgeAgentTriggerDeliveriesForUser: (...args) => mockPurgeAgentTriggerDeliveriesForUser(...args),
 }));
 
@@ -345,8 +349,16 @@ describe('deleteUserController', () => {
     expect(mockRes.status).toHaveBeenCalledWith(200);
     expect(mockRes.send).toHaveBeenCalledWith({ message: 'User deleted' });
     expect(beginAgentTriggerUserDeletion).toHaveBeenCalledWith(userId.toString(), expect.any(Date));
+    expect(mockPrepareAgentTriggerUserPurge).toHaveBeenCalledWith(
+      userId.toString(),
+      expect.any(Date),
+      undefined,
+    );
     expect(mockDrainAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(userId.toString());
     expect(beginAgentTriggerUserDeletion.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPrepareAgentTriggerUserPurge.mock.invocationCallOrder[0],
+    );
+    expect(mockPrepareAgentTriggerUserPurge.mock.invocationCallOrder[0]).toBeLessThan(
       mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0],
     );
     expect(mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0]).toBeLessThan(
@@ -360,6 +372,7 @@ describe('deleteUserController', () => {
     );
     expect(mockPurgeAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(userId.toString());
     expect(cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
+    expect(mockCancelAgentTriggerUserPurge).not.toHaveBeenCalled();
   });
 
   it('aborts generations admitted before the deletion fence before erasing messages', async () => {
@@ -458,6 +471,10 @@ describe('deleteUserController', () => {
       userId.toString(),
       expect.any(Date),
     );
+    expect(mockCancelAgentTriggerUserPurge).toHaveBeenCalledWith(
+      userId.toString(),
+      expect.any(Date),
+    );
     expect(deleteUserById).not.toHaveBeenCalled();
   });
 
@@ -468,6 +485,7 @@ describe('deleteUserController', () => {
     await deleteUserController({ user: { id: String(userId), _id: userId } }, mockRes);
 
     expect(mockPurgeAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
+    expect(mockCancelAgentTriggerUserPurge).toHaveBeenCalledWith(String(userId), expect.any(Date));
     expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(String(userId), expect.any(Date));
   });
 
@@ -478,6 +496,7 @@ describe('deleteUserController', () => {
     await deleteUserController({ user: { id: String(userId), _id: userId } }, mockRes);
 
     expect(mockPurgeAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
+    expect(mockCancelAgentTriggerUserPurge).toHaveBeenCalledWith(String(userId), expect.any(Date));
     expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(String(userId), expect.any(Date));
     expect(mockRes.status).toHaveBeenCalledWith(500);
   });

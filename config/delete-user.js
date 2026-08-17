@@ -147,6 +147,9 @@ async function gracefulExit(code = 0) {
     }
 
     if (deletionFence != null) {
+      await runAsSystem(() =>
+        methods.prepareAgentTriggerUserPurge(uid, deletionFence, user.tenantId),
+      );
       if (hasSharedGenerationStore) {
         const deadline = Date.now() + TRIGGER_DRAIN_TIMEOUT_MS;
         while (
@@ -209,6 +212,9 @@ async function gracefulExit(code = 0) {
     await runAsSystem(() => methods.deleteAgentTriggerDeliveriesByUser(uid));
   } finally {
     if (deletionFence != null && !userDeleted) {
+      await runAsSystem(() => methods.cancelAgentTriggerUserPurge(uid, deletionFence)).catch(
+        (error) => console.error('Failed to disarm trigger purge recovery:', error),
+      );
       await runAsSystem(() => methods.cancelAgentTriggerUserDeletion(uid, deletionFence)).catch(
         (error) => console.error('Failed to release account-deletion fence:', error),
       );

@@ -69,6 +69,19 @@ export interface IAgentTriggerLaneSequenceDocument
   extends Omit<IAgentTriggerLaneSequence, '_id'>,
     Document<string> {}
 
+/** Durable proof that trigger payload cleanup must survive the deleting process. */
+export interface IAgentTriggerUserPurge {
+  _id: Types.ObjectId;
+  fenceStartedAt: Date;
+  tenantId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface IAgentTriggerUserPurgeDocument
+  extends Omit<IAgentTriggerUserPurge, '_id'>,
+    Document {}
+
 export interface AgentTriggerDeliveryClaim extends AgentTriggerDeliveryRecord {
   claimToken: string;
   leaseBy: string;

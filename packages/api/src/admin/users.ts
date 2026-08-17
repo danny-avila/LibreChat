@@ -30,6 +30,12 @@ export interface AdminUsersDeps {
   ) => Promise<'acquired' | 'in_progress' | 'missing'>;
   cancelAgentTriggerUserDeletion: (userId: string, startedAt: Date) => Promise<boolean>;
   drainAgentTriggerDeliveriesForUser: (userId: string) => Promise<void>;
+  prepareAgentTriggerUserPurge: (
+    userId: string,
+    fenceStartedAt: Date,
+    tenantId?: string,
+  ) => Promise<void>;
+  cancelAgentTriggerUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
   purgeAgentTriggerDeliveriesForUser: (userId: string) => Promise<void>;
   /**
    * Thin data-layer delete — removes the User document only.
@@ -61,6 +67,8 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
     beginAgentTriggerUserDeletion,
     cancelAgentTriggerUserDeletion,
     drainAgentTriggerDeliveriesForUser,
+    prepareAgentTriggerUserPurge,
+    cancelAgentTriggerUserPurge,
     purgeAgentTriggerDeliveriesForUser,
     deleteUserById,
     deleteConfig,
@@ -161,7 +169,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         return res.status(403).json({ error: 'Cannot delete your own account' });
       }
 
-      const [targetUser] = await findUsers({ _id: id }, 'role', { limit: 1 });
+      const [targetUser] = await findUsers({ _id: id }, 'role tenantId', { limit: 1 });
       if (targetUser?.role === SystemRoles.ADMIN) {
         const adminCount = await countUsers({ role: SystemRoles.ADMIN });
         if (adminCount <= 1) {
@@ -179,11 +187,13 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         triggerDeletionFence = undefined;
         return res.status(404).json({ error: 'User not found' });
       }
+      await prepareAgentTriggerUserPurge(id, triggerDeletionFence, targetUser?.tenantId);
       await drainAgentTriggerDeliveriesForUser(id);
 
       const result = await deleteUserById(id);
 
       if (result.deletedCount === 0) {
+        await cancelAgentTriggerUserPurge(id, triggerDeletionFence);
         await cancelAgentTriggerUserDeletion(id, triggerDeletionFence);
         triggerDeletionFence = undefined;
         return res.status(404).json({ error: 'User not found' });
@@ -215,6 +225,11 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
       return res.status(200).json({ message: result.message || 'User deleted successfully' });
     } catch (error) {
       if (targetUserId != null && triggerDeletionFence != null && !userDeleted) {
+        try {
+          await cancelAgentTriggerUserPurge(targetUserId, triggerDeletionFence);
+        } catch (purgeFenceError) {
+          logger.error('[adminUsers] failed to disarm trigger purge recovery:', purgeFenceError);
+        }
         try {
           await cancelAgentTriggerUserDeletion(targetUserId, triggerDeletionFence);
         } catch (fenceError) {

@@ -8,6 +8,8 @@ import type {
   IAgentTriggerDeliveryDocument,
   IAgentTriggerLaneSequence,
   IAgentTriggerLaneSequenceDocument,
+  IAgentTriggerUserPurge,
+  IAgentTriggerUserPurgeDocument,
 } from '~/types/triggerDelivery';
 import { createIndexesWithRetry } from '~/utils/retry';
 
@@ -17,6 +19,8 @@ const SUCCESS_RETENTION_MS = 90 * 24 * 60 * 60_000;
 const MAX_ERROR_CODE_LENGTH = 128;
 const MAX_ERROR_MESSAGE_LENGTH = 2048;
 const MAX_DEAD_LETTER_LIMIT = 200;
+const DEFAULT_PURGE_RECOVERY_LIMIT = 25;
+const MAX_PURGE_RECOVERY_LIMIT = 200;
 const HISTORY_LIMIT = 64;
 
 type DuplicateKeyError = { code?: number };
@@ -64,6 +68,9 @@ export interface AgentTriggerDeliveryMethods {
   beginAgentTriggerDeliveryAttempt: (
     input: AgentTriggerDeliveryFence & { now: Date },
   ) => Promise<number | null>;
+  deferAgentTriggerDeliveryAttempt: (
+    input: AgentTriggerDeliveryFence & { attempt: number; availableAt: Date },
+  ) => Promise<boolean>;
   completeAgentTriggerDelivery: (
     input: AgentTriggerDeliveryFence & {
       attempt: number;
@@ -95,6 +102,16 @@ export interface AgentTriggerDeliveryMethods {
     user: string | Types.ObjectId,
     now: Date,
   ) => Promise<number>;
+  prepareAgentTriggerUserPurge: (
+    user: string | Types.ObjectId,
+    fenceStartedAt: Date,
+    tenantId?: string,
+  ) => Promise<void>;
+  cancelAgentTriggerUserPurge: (
+    user: string | Types.ObjectId,
+    fenceStartedAt: Date,
+  ) => Promise<boolean>;
+  recoverAgentTriggerUserPurges: (limit?: number) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (user: string | Types.ObjectId) => Promise<void>;
 }
 
@@ -159,9 +176,15 @@ export function createAgentTriggerDeliveryMethods(
     mongoose.models.AgentTriggerDelivery as Model<IAgentTriggerDeliveryDocument>;
   const LaneSequence = () =>
     mongoose.models.AgentTriggerLaneSequence as Model<IAgentTriggerLaneSequenceDocument>;
+  const UserPurge = () =>
+    mongoose.models.AgentTriggerUserPurge as Model<IAgentTriggerUserPurgeDocument>;
 
   async function ensureAgentTriggerDeliveryIndexes(): Promise<void> {
-    await Promise.all([createIndexesWithRetry(Delivery()), createIndexesWithRetry(LaneSequence())]);
+    await Promise.all([
+      createIndexesWithRetry(Delivery()),
+      createIndexesWithRetry(LaneSequence()),
+      createIndexesWithRetry(UserPurge()),
+    ]);
   }
 
   async function nextLaneSequence(input: EnqueueAgentTriggerDeliveryInput): Promise<number> {
@@ -294,6 +317,24 @@ export function createAgentTriggerDeliveryMethods(
       .select('attempts')
       .lean<Pick<IAgentTriggerDelivery, 'attempts'>>();
     return updated?.attempts ?? null;
+  }
+
+  /** Releases a pre-dispatch deferral and restores the attempt consumed by beginAttempt. */
+  async function deferAgentTriggerDeliveryAttempt(
+    input: AgentTriggerDeliveryFence & { attempt: number; availableAt: Date },
+  ): Promise<boolean> {
+    if (!Number.isSafeInteger(input.attempt) || input.attempt <= 0) {
+      throw new TypeError('attempt must be a positive integer');
+    }
+    const result = await Delivery().updateOne(
+      { ...fence(input), attempts: input.attempt },
+      {
+        $inc: { attempts: -1 },
+        $set: { status: 'pending', availableAt: input.availableAt },
+        $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1 },
+      },
+    );
+    return result.modifiedCount === 1;
   }
 
   async function completeAgentTriggerDelivery(
@@ -439,8 +480,95 @@ export function createAgentTriggerDeliveryMethods(
     return Delivery().countDocuments({ user, status: 'leased', leaseUntil: { $gt: now } });
   }
 
+  function requireValidFence(fenceStartedAt: Date): void {
+    if (!(fenceStartedAt instanceof Date) || !Number.isFinite(fenceStartedAt.getTime())) {
+      throw new TypeError('fenceStartedAt must be a valid Date');
+    }
+  }
+
+  /** Arms independently retryable cleanup before the user deletion can commit. */
+  async function prepareAgentTriggerUserPurge(
+    user: string | Types.ObjectId,
+    fenceStartedAt: Date,
+    tenantId?: string,
+  ): Promise<void> {
+    requireValidFence(fenceStartedAt);
+    const ownsFence = await mongoose.models.User.exists({
+      _id: user,
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    if (ownsFence == null) {
+      throw new Error('Cannot prepare trigger purge without owning the user deletion fence');
+    }
+    await UserPurge().updateOne(
+      { _id: user },
+      {
+        $set: {
+          fenceStartedAt,
+          ...(tenantId != null && { tenantId }),
+        },
+      },
+      { upsert: true },
+    );
+  }
+
+  /** Disarms only the pre-commit deletion attempt that owns this marker. */
+  async function cancelAgentTriggerUserPurge(
+    user: string | Types.ObjectId,
+    fenceStartedAt: Date,
+  ): Promise<boolean> {
+    requireValidFence(fenceStartedAt);
+    const ownsLiveFence = await mongoose.models.User.exists({
+      _id: user,
+      agentTriggerDeletionStartedAt: fenceStartedAt,
+    });
+    if (ownsLiveFence == null) {
+      return false;
+    }
+    const result = await UserPurge().deleteOne({ _id: user, fenceStartedAt });
+    return result.deletedCount === 1;
+  }
+
+  /** Recovers cleanup markers whose users are gone; active-user markers are never destructive. */
+  async function recoverAgentTriggerUserPurges(
+    limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+  ): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit <= 0) {
+      throw new TypeError('Agent trigger purge recovery limit must be a positive integer');
+    }
+    const markers = await UserPurge()
+      .find({})
+      .sort({ updatedAt: 1, _id: 1 })
+      .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
+      .lean<IAgentTriggerUserPurge[]>();
+    let recovered = 0;
+    for (const marker of markers) {
+      const user = await mongoose.models.User.findById(marker._id)
+        .select('agentTriggerDeletionStartedAt')
+        .lean<{ agentTriggerDeletionStartedAt?: Date }>();
+      if (user != null) {
+        if (user.agentTriggerDeletionStartedAt?.getTime() === marker.fenceStartedAt.getTime()) {
+          continue;
+        }
+        await UserPurge().deleteOne({ _id: marker._id, fenceStartedAt: marker.fenceStartedAt });
+        continue;
+      }
+      await Promise.all([
+        Delivery().deleteMany({ user: marker._id }),
+        LaneSequence().deleteMany({ user: marker._id }),
+      ]);
+      const result = await UserPurge().deleteOne({
+        _id: marker._id,
+        fenceStartedAt: marker.fenceStartedAt,
+      });
+      recovered += result.deletedCount;
+    }
+    return recovered;
+  }
+
   async function deleteAgentTriggerDeliveriesByUser(user: string | Types.ObjectId): Promise<void> {
     await Promise.all([Delivery().deleteMany({ user }), LaneSequence().deleteMany({ user })]);
+    await UserPurge().deleteOne({ _id: user });
   }
 
   return {
@@ -450,6 +578,7 @@ export function createAgentTriggerDeliveryMethods(
     findEarlierAgentTriggerDelivery,
     releaseAgentTriggerDelivery,
     beginAgentTriggerDeliveryAttempt,
+    deferAgentTriggerDeliveryAttempt,
     completeAgentTriggerDelivery,
     retryAgentTriggerDelivery,
     deadLetterAgentTriggerDelivery,
@@ -457,6 +586,9 @@ export function createAgentTriggerDeliveryMethods(
     getAgentTriggerDeadLetters,
     requeueAgentTriggerDelivery,
     countActiveAgentTriggerDeliveriesByUser,
+    prepareAgentTriggerUserPurge,
+    cancelAgentTriggerUserPurge,
+    recoverAgentTriggerUserPurges,
     deleteAgentTriggerDeliveriesByUser,
   };
 }
