@@ -2,6 +2,7 @@ const { SystemRoles } = require('librechat-data-provider');
 
 let capturedVerifyCallback;
 let capturedStrategyOptions;
+const mockRunAsSystem = jest.fn((callback) => callback());
 jest.mock('passport-jwt', () => ({
   Strategy: jest.fn((opts, verifyCallback) => {
     capturedStrategyOptions = opts;
@@ -15,6 +16,7 @@ jest.mock('passport-jwt', () => ({
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+  runAsSystem: mockRunAsSystem,
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -67,6 +69,22 @@ describe('jwtStrategy', () => {
     expect(user.id).toBe('user-1');
     expect(user.idOnTheSource).toBeNull();
     expect(capturedStrategyOptions.passReqToCallback).toBe(true);
+  });
+
+  it('runs globally scoped authentication reads and writes in system context', async () => {
+    getUserById.mockResolvedValue({
+      _id: { toString: () => 'user-system' },
+    });
+
+    const { user } = await invokeVerify({ id: 'user-system' });
+
+    expect(user).toMatchObject({ id: 'user-system', role: SystemRoles.USER });
+    expect(mockRunAsSystem).toHaveBeenCalledTimes(2);
+    expect(getUserById).toHaveBeenCalledWith(
+      'user-system',
+      '-password -__v -totpSecret -backupCodes +agentTriggerDeletionStartedAt',
+    );
+    expect(updateUser).toHaveBeenCalledWith('user-system', { role: SystemRoles.USER });
   });
 
   it('preserves a stored idOnTheSource for federated users', async () => {

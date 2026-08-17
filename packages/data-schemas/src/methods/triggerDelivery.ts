@@ -200,53 +200,86 @@ export function createAgentTriggerDeliveryMethods(
     }
 
     const published = await Delivery().updateOne(
-      { _id: publisherDeliveryId, status: 'staging' },
+      { _id: publisherDeliveryId, orderingKey: lane._id, status: 'staging' },
       { $set: { status: 'pending', laneSequence: lane.value } },
     );
+    let publicationCommitted = published.modifiedCount === 1;
     if (published.modifiedCount === 0) {
       const current = await Delivery()
         .findById(publisherDeliveryId)
-        .select('status')
-        .lean<Pick<IAgentTriggerDelivery, 'status'>>();
-      if (current?.status === 'staging') {
+        .select('orderingKey laneSequence status')
+        .lean<Pick<IAgentTriggerDelivery, 'orderingKey' | 'laneSequence' | 'status'>>();
+      publicationCommitted =
+        current != null &&
+        current.orderingKey === lane._id &&
+        current.status !== 'staging' &&
+        current.laneSequence === lane.value;
+      if (current?.orderingKey === lane._id && current.status === 'staging') {
         throw new Error('Failed to publish the reserved agent trigger delivery');
       }
     }
 
-    const released = await LaneSequence().updateOne(
-      {
-        _id: lane._id,
-        value: lane.value,
-        publisherDeliveryId,
-      },
-      { $unset: { publisherDeliveryId: 1, publisherStartedAt: 1 } },
-    );
-    return published.modifiedCount === 1 || released.modifiedCount === 1;
+    const publisherFence = {
+      _id: lane._id,
+      value: lane.value,
+      publisherDeliveryId,
+    };
+    if (publicationCommitted) {
+      const released = await LaneSequence().updateOne(publisherFence, {
+        $set: { tailDeliveryId: publisherDeliveryId },
+        $unset: { publisherDeliveryId: 1, publisherStartedAt: 1 },
+      });
+      return published.modifiedCount === 1 || released.modifiedCount === 1;
+    }
+
+    // The selected row was published by a competing replica before this
+    // reservation was acquired (or was removed by account cleanup). No later
+    // reservation can exist while this fence is held, so the unused sequence
+    // can be rolled back without creating a gap or regressing the lane tail.
+    if (lane.value === 1) {
+      const deleted = await LaneSequence().deleteOne(publisherFence);
+      return deleted.deletedCount === 1;
+    }
+    const released = await LaneSequence().updateOne(publisherFence, {
+      $inc: { value: -1 },
+      $set: { cleanupRequestedAt: new Date() },
+      $unset: { publisherDeliveryId: 1, publisherStartedAt: 1 },
+    });
+    return released.modifiedCount === 1;
   }
 
   async function publishStagedDelivery(
     delivery: IAgentTriggerDelivery,
-    input: EnqueueAgentTriggerDeliveryInput,
   ): Promise<IAgentTriggerDelivery> {
     if (delivery._id == null) {
       throw new Error('Staged agent trigger delivery is missing its identity');
     }
     const deliveryId = delivery._id;
+    const orderingKey = delivery.orderingKey;
 
     for (;;) {
-      const lane = await LaneSequence()
-        .findById(input.orderingKey)
-        .lean<IAgentTriggerLaneSequence>();
+      const current = await Delivery().findById(deliveryId).lean<IAgentTriggerDelivery>();
+      if (current == null) {
+        throw new Error('Staged agent trigger delivery disappeared before publication');
+      }
+      if (current.status !== 'staging') {
+        return current;
+      }
+
+      const lane = await LaneSequence().findById(orderingKey).lean<IAgentTriggerLaneSequence>();
       if (lane?.publisherDeliveryId != null) {
-        const ownsPublication = String(lane.publisherDeliveryId) === String(deliveryId);
         await recoverLanePublisher(lane);
-        if (ownsPublication) {
-          const current = await Delivery().findById(deliveryId).lean<IAgentTriggerDelivery>();
-          if (current == null || current.status === 'staging') {
-            throw new Error('Failed to recover the staged agent trigger delivery');
-          }
-          return current;
-        }
+        continue;
+      }
+
+      // The durable staging row exists before sequence allocation. Publishing
+      // the oldest visible row first lets any replica repair a writer that
+      // stopped in that gap without allowing a later enqueue to overtake it.
+      const next = await Delivery()
+        .findOne({ orderingKey, status: 'staging' })
+        .sort({ createdAt: 1, _id: 1 })
+        .lean<IAgentTriggerDelivery>();
+      if (next?._id == null) {
         continue;
       }
 
@@ -254,18 +287,17 @@ export function createAgentTriggerDeliveryMethods(
       try {
         acquired = await LaneSequence()
           .findOneAndUpdate(
-            { _id: input.orderingKey, publisherDeliveryId: { $exists: false } },
+            { _id: orderingKey, publisherDeliveryId: { $exists: false } },
             {
               $inc: { value: 1 },
               $set: {
-                tailDeliveryId: deliveryId,
-                publisherDeliveryId: deliveryId,
+                publisherDeliveryId: next._id,
                 publisherStartedAt: new Date(),
               },
               $unset: { cleanupRequestedAt: 1 },
               $setOnInsert: {
-                user: input.user,
-                ...(input.tenantId != null && { tenantId: input.tenantId }),
+                user: next.user,
+                ...(next.tenantId != null && { tenantId: next.tenantId }),
               },
             },
             { new: true, upsert: true, setDefaultsOnInsert: true },
@@ -281,11 +313,6 @@ export function createAgentTriggerDeliveryMethods(
       }
 
       await recoverLanePublisher(acquired);
-      const current = await Delivery().findById(deliveryId).lean<IAgentTriggerDelivery>();
-      if (current == null || current.status === 'staging') {
-        throw new Error('Failed to publish the staged agent trigger delivery');
-      }
-      return current;
     }
   }
 
@@ -323,26 +350,51 @@ export function createAgentTriggerDeliveryMethods(
       replayed = true;
     }
 
-    const published = await publishStagedDelivery(staged, input);
+    const published = await publishStagedDelivery(staged);
     return { delivery: toRecord(published), replayed };
   }
 
-  /** Publishes rows left between sequence reservation and queue visibility by a crashed writer. */
+  /** Repairs abandoned reservations and staging rows left by crashed writers. */
   async function recoverAgentTriggerLanePublications(
     limit = DEFAULT_PURGE_RECOVERY_LIMIT,
   ): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger lane recovery limit must be a positive integer');
     }
+    const boundedLimit = Math.min(limit, MAX_PURGE_RECOVERY_LIMIT);
     const lanes = await LaneSequence()
       .find({ publisherDeliveryId: { $exists: true } })
       .sort({ publisherStartedAt: 1, _id: 1 })
-      .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
+      .limit(boundedLimit)
       .lean<IAgentTriggerLaneSequence[]>();
     let recovered = 0;
     for (const lane of lanes) {
       if (await recoverLanePublisher(lane)) {
         recovered += 1;
+      }
+    }
+
+    const remaining = boundedLimit - recovered;
+    if (remaining <= 0) {
+      return recovered;
+    }
+    const staged = await Delivery()
+      .find({ status: 'staging' })
+      .sort({ createdAt: 1, _id: 1 })
+      .limit(remaining)
+      .lean<IAgentTriggerDelivery[]>();
+    for (const delivery of staged) {
+      try {
+        await publishStagedDelivery(delivery);
+        recovered += 1;
+      } catch (error) {
+        // Account deletion can remove a staged row while a replica is helping
+        // it. Suppress only that confirmed race; operational failures remain
+        // visible to the maintenance loop.
+        if (delivery._id != null && (await Delivery().exists({ _id: delivery._id })) == null) {
+          continue;
+        }
+        throw error;
       }
     }
     return recovered;

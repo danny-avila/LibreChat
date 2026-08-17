@@ -1,5 +1,5 @@
 const { AGENT_TRIGGER_SCOPE } = require('@librechat/api');
-const { logger } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { getUserById, updateUser } = require('~/models');
@@ -34,9 +34,11 @@ const jwtLogin = () =>
           done(null, false, { message: 'Agent trigger token is not valid for this endpoint' });
           return;
         }
-        const user = await getUserById(
-          payload?.id,
-          '-password -__v -totpSecret -backupCodes +agentTriggerDeletionStartedAt',
+        const user = await runAsSystem(() =>
+          getUserById(
+            payload?.id,
+            '-password -__v -totpSecret -backupCodes +agentTriggerDeletionStartedAt',
+          ),
         );
         if (user?.agentTriggerDeletionStartedAt != null) {
           done(null, false, { message: 'Account deletion is in progress' });
@@ -48,7 +50,7 @@ const jwtLogin = () =>
           user.idOnTheSource ??= null;
           if (!user.role) {
             user.role = SystemRoles.USER;
-            await updateUser(user.id, { role: user.role });
+            await runAsSystem(() => updateUser(user.id, { role: user.role }));
           }
           done(null, user);
         } else {

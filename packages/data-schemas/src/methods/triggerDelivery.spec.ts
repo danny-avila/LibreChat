@@ -174,6 +174,77 @@ describe('agent trigger delivery methods', () => {
     expect((await LaneSequence.findById(orderingKey).lean())?.publisherDeliveryId).toBeUndefined();
   });
 
+  it('publishes an orphaned staging row before a later delivery in the lane', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'orphaned-staging';
+    const firstInput = enqueueInput({ user, orderingKey, availableAt: START });
+    const first = await Delivery.create({
+      ...firstInput,
+      laneSequence: 0,
+      status: 'staging',
+      attempts: 0,
+      requeueCount: 0,
+    });
+
+    const second = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ user, orderingKey, availableAt: START }),
+    );
+
+    await expect(Delivery.findById(first._id).lean()).resolves.toMatchObject({
+      status: 'pending',
+      laneSequence: 1,
+    });
+    expect(second.delivery).toMatchObject({ status: 'pending', laneSequence: 2 });
+    await expect(methods.findEarlierAgentTriggerDelivery(second.delivery)).resolves.toEqual({
+      availableAt: START,
+    });
+  });
+
+  it('discovers an orphaned staging row during maintenance recovery', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'maintenance-staging';
+    const staged = await Delivery.create({
+      ...enqueueInput({ user, orderingKey }),
+      laneSequence: 0,
+      status: 'staging',
+      attempts: 0,
+      requeueCount: 0,
+    });
+
+    await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(1);
+    await expect(Delivery.findById(staged._id).lean()).resolves.toMatchObject({
+      status: 'pending',
+      laneSequence: 1,
+    });
+    await expect(LaneSequence.findById(orderingKey).lean()).resolves.toMatchObject({ value: 1 });
+  });
+
+  it('publishes an idempotent replay on its persisted ordering lane', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const input = enqueueInput({ user, orderingKey: 'original-lane' });
+    await Delivery.create({
+      ...input,
+      laneSequence: 0,
+      status: 'staging',
+      attempts: 0,
+      requeueCount: 0,
+    });
+
+    const replay = await methods.enqueueAgentTriggerDelivery({
+      ...input,
+      orderingKey: 'changed-lane',
+    });
+
+    expect(replay).toMatchObject({
+      replayed: true,
+      delivery: { orderingKey: 'original-lane', laneSequence: 1, status: 'pending' },
+    });
+    await expect(LaneSequence.findById('original-lane').lean()).resolves.toMatchObject({
+      value: 1,
+    });
+    await expect(LaneSequence.findById('changed-lane').lean()).resolves.toBeNull();
+  });
+
   it('resumes its own abandoned publication without allocating a second sequence', async () => {
     const user = new mongoose.Types.ObjectId();
     const orderingKey = 'publication-replay';
