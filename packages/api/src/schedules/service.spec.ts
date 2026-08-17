@@ -85,6 +85,54 @@ describe('shutdown wiring', () => {
   });
 });
 
+describe('manual Run Now lease cleanup', () => {
+  it('releases the old holder when an owner edit fences cleanup after a preflight throw', async () => {
+    const service = makeService(jest.fn(async (_userId: string) => []));
+    const leased = {
+      id: 's1',
+      user: 'user-1',
+      tenantId: 't1',
+      name: 'Digest',
+      prompt: 'Summarize',
+      agent_id: 'agent-1',
+      cadence: { frequency: 'daily', hour: 8, minute: 0 },
+      timezone: 'America/New_York',
+      target: 'new',
+      enabled: true,
+      claimToken: 'manual-token',
+      leaseBy: 'manual-holder',
+      runCount: 0,
+      failureCount: 0,
+      balanceSkipCount: 0,
+    } as never;
+    const methods = service.engineDeps.methods as unknown as {
+      acquireManualRunLease: jest.Mock;
+      releaseLease: jest.Mock;
+      releaseLeaseByHolder: jest.Mock;
+    };
+    methods.acquireManualRunLease = jest.fn(async () => leased);
+    // Simulates an edit rotating claimToken while deliberately preserving leaseBy.
+    methods.releaseLease = jest.fn(async () => false);
+    methods.releaseLeaseByHolder = jest.fn(async () => undefined);
+    service.engineDeps.getUserContext = jest.fn(async () => {
+      throw new Error('user lookup failed');
+    });
+
+    await expect(
+      service.fireScheduleNow(leased, {
+        enabled: true,
+        maxPerUser: 10,
+        minIntervalMinutes: 60,
+        autoDisableAfterFailures: 5,
+        fireConcurrency: 5,
+      }),
+    ).rejects.toThrow('user lookup failed');
+
+    expect(methods.releaseLease).toHaveBeenCalledWith('s1', 'manual-token');
+    expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('s1', 'manual-holder');
+  });
+});
+
 describe('balance initialization', () => {
   const balanceConfig = {
     interfaceConfig: {},

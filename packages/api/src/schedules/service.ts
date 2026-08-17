@@ -652,8 +652,15 @@ export function createSchedulesService(
       // window in between is reflected, so a stale prompt/agent is never dispatched.
       return await fireSchedule(engineDeps, leased, limits, new Date(), { manual: true });
     } catch (err) {
-      if (claimToken != null) {
-        await methods.releaseLease(schedule.id, claimToken).catch(() => undefined);
+      const released =
+        claimToken != null
+          ? await methods.releaseLease(schedule.id, claimToken).catch(() => false)
+          : false;
+      if (!released && leased.leaseBy != null) {
+        // An owner edit during the failed preflight rotates the token while preserving
+        // this unique holder. Clear only that holder; a takeover has a different value
+        // and is therefore never stripped by this exception safety net.
+        await methods.releaseLeaseByHolder(schedule.id, leased.leaseBy).catch(() => undefined);
       }
       throw err;
     }
