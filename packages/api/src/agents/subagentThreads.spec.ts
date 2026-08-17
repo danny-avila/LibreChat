@@ -63,6 +63,13 @@ async function waitForSettled(
   throw new Error('Timed out waiting for the subagent task.');
 }
 
+function requireThreadId(started: SubagentTaskStartResult): string {
+  if (!started.accepted || !started.task.threadId) {
+    throw new Error('Expected the accepted task to expose its durable thread id.');
+  }
+  return started.task.threadId;
+}
+
 async function saveParent(
   userId: string,
   conversationId: string,
@@ -116,12 +123,13 @@ describe('SubagentThreadTaskStore', () => {
     const started = store.start(taskRequest(config.scopeId));
     expect(started.accepted).toBe(true);
     if (!started.accepted) return;
-    expect(started.task.threadId).not.toBe(started.task.taskId);
+    const threadId = requireThreadId(started);
+    expect(threadId).not.toBe(started.task.taskId);
     await waitForSettled(store, config.scopeId, started);
 
-    const conversation = await methods.getConvo(userId, started.task.threadId);
+    const conversation = await methods.getConvo(userId, threadId);
     expect(conversation).toMatchObject({
-      conversationId: started.task.threadId,
+      conversationId: threadId,
       endpoint: EModelEndpoint.agents,
       agent_id: 'researcher-agent',
       subagentThread: {
@@ -134,7 +142,7 @@ describe('SubagentThreadTaskStore', () => {
       },
     });
     const messages = await methods.getMessages(
-      { user: userId, conversationId: started.task.threadId },
+      { user: userId, conversationId: threadId },
       '+subagentTranscript',
     );
     expect(messages.map((message) => message.text)).toEqual([
@@ -186,10 +194,11 @@ describe('SubagentThreadTaskStore', () => {
     );
     await waitForSettled(store, config.scopeId, started);
     if (!started.accepted) return;
+    const threadId = requireThreadId(started);
 
-    const conversation = await methods.getConvo(userId, started.task.threadId);
+    const conversation = await methods.getConvo(userId, threadId);
     expect(conversation).toMatchObject({
-      conversationId: started.task.threadId,
+      conversationId: threadId,
       endpoint: EModelEndpoint.agents,
       subagentThread: {
         parentConversationId,
@@ -217,7 +226,7 @@ describe('SubagentThreadTaskStore', () => {
       const started = store.start(taskRequest(config.scopeId));
       await waitForSettled(store, config.scopeId, started);
       if (!started.accepted) return;
-      threadId = started.task.threadId;
+      threadId = requireThreadId(started);
       expect(await methods.getConvo(userId, threadId)).toMatchObject({ tenantId: 'tenant-a' });
     });
 
@@ -588,15 +597,15 @@ describe('SubagentThreadTaskStore', () => {
     );
     await waitForSettled(store, config.scopeId, started);
     if (!started.accepted) return;
+    const threadId = requireThreadId(started);
 
     const messages = await methods.getMessages({
       user: userId,
-      conversationId: started.task.threadId,
+      conversationId: threadId,
     });
-    expect(messages.at(-1)?.text).toBe(
-      'Subagent task failed: The child run could not be completed.',
-    );
-    expect(messages.at(-1)?.text).not.toContain('provider-secret');
+    const lastMessage = messages[messages.length - 1];
+    expect(lastMessage?.text).toBe('Subagent task failed: The child run could not be completed.');
+    expect(lastMessage?.text).not.toContain('provider-secret');
     const claim = store.claim(config.scopeId, started.task.taskId);
     expect(claim).toMatchObject({
       status: 'error',
@@ -631,6 +640,6 @@ describe('SubagentThreadTaskStore', () => {
     expect(run).not.toHaveBeenCalled();
     if (!started.accepted) return;
     expect(store.claim(config.scopeId, started.task.taskId)).toMatchObject({ status: 'error' });
-    expect(await methods.getConvo(userId, started.task.threadId)).toBeNull();
+    expect(await methods.getConvo(userId, requireThreadId(started))).toBeNull();
   });
 });
