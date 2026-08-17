@@ -15,6 +15,7 @@ import type {
   TInsightsParams,
   TInsightsUser,
 } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks';
 import { useGetStartupConfig, useInsightsAccessQuery, useInsightsQuery } from '~/data-provider';
 import { useAuthContext, useDocumentTitle, useLocalize } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
@@ -34,10 +35,10 @@ type KpiCardData = {
   sparkline: SparklinePoint[];
 };
 
-const ranges: Array<{ value: ShortcutRange; label: string; days: number }> = [
-  { value: '24h', label: '24h', days: 1 },
-  { value: '7d', label: '7d', days: 7 },
-  { value: '30d', label: '30d', days: 30 },
+const ranges: Array<{ value: ShortcutRange; labelKey: TranslationKeys; days: number }> = [
+  { value: '24h', labelKey: 'com_insights_range_24_hours', days: 1 },
+  { value: '7d', labelKey: 'com_insights_range_7_days', days: 7 },
+  { value: '30d', labelKey: 'com_insights_range_30_days', days: 30 },
 ];
 const dateRangeSelectionDelayMs = 350;
 const searchDelayMs = 350;
@@ -676,7 +677,7 @@ export default function InsightsView() {
                   setPage(1);
                 }}
               >
-                {item.label}
+                {localize(item.labelKey)}
               </Button>
             ))}
           </div>
