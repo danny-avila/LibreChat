@@ -47,10 +47,10 @@ function makeMethods(schedule: FireableSchedule) {
     claimDueSchedule: jest.fn(async () => (claims++ === 0 ? schedule : null)),
     countActiveRuns: jest.fn(async () => 0),
     advanceSchedule: jest.fn(
-      async (_id: string, _next: Date | null, _from?: Date, _token?: string) => undefined,
+      async (_id: string, _next: Date | null, _from?: Date, _token?: string) => true,
     ),
     disableSchedule: jest.fn(async (_id: string, _reason: string, _token?: string) => undefined),
-    releaseLease: jest.fn(async () => undefined),
+    releaseLease: jest.fn(async () => true),
     holdsLease: jest.fn(async () => true),
     scheduleExists: jest.fn(async () => true),
     deleteScheduleRun: jest.fn(async () => undefined),

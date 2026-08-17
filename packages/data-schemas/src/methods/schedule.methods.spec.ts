@@ -1124,6 +1124,37 @@ describe('acquireManualRunLease / releaseLease', () => {
   });
 });
 
+describe('scheduled resume lease fencing', () => {
+  it('atomically consumes the same live config generation and releases its lease', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    const fence = await methods.acquireResumeLease(schedule.id, 0, true, 60_000);
+
+    expect(fence?.claimToken).toBeTruthy();
+    expect(fence?.leaseBy).toMatch(/^resume:/);
+    await expect(
+      methods.consumeResumeLease(schedule.id, fence!.claimToken!, fence!.leaseBy!, true, 0),
+    ).resolves.toBe(true);
+    const consumed = await getSchedule(schedule.id);
+    expect(consumed.leaseUntil).toBeUndefined();
+    expect(consumed.leaseBy).toBeUndefined();
+  });
+
+  it('rejects an owner edit that wins before the final resume handoff', async () => {
+    const schedule = await methods.createSchedule(scheduleData({ name: 'before' }));
+    const fence = await methods.acquireResumeLease(schedule.id, 0, true, 60_000);
+    await methods.updateScheduleById(schedule.id, schedule.user, { name: 'after' });
+
+    await expect(
+      methods.consumeResumeLease(schedule.id, fence!.claimToken!, fence!.leaseBy!, true, 0),
+    ).resolves.toBe(false);
+    // Owner edits intentionally leave the in-flight holder fields intact. The stale
+    // resume can release only its unique holder without touching any newer takeover.
+    expect((await getSchedule(schedule.id)).leaseBy).toBe(fence!.leaseBy);
+    await methods.releaseLeaseByHolder(schedule.id, fence!.leaseBy!);
+    expect((await getSchedule(schedule.id)).leaseBy).toBeUndefined();
+  });
+});
+
 describe('claim-token fencing (stale worker cannot mutate an edited/deleted schedule)', () => {
   it('an owner edit rotates the token so a stale disable/advance no-ops and revalidate fails', async () => {
     const schedule = await methods.createSchedule(scheduleData());

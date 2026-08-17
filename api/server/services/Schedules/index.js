@@ -76,6 +76,8 @@ module.exports = {
   recordScheduleOutcome: invoke('recordScheduleOutcome'),
   claimScheduleResume: invoke('claimScheduleResume'),
   releaseScheduleResumeClaim: invoke('releaseScheduleResumeClaim'),
+  finalizeScheduleResumeClaim: invoke('finalizeScheduleResumeClaim'),
+  releaseScheduleResumeFence: invoke('releaseScheduleResumeFence'),
   isScheduleLive: invoke('isScheduleLive'),
   deleteScheduleForOwner: invoke('deleteScheduleForOwner'),
   quiesceUserSchedules: invoke('quiesceUserSchedules'),

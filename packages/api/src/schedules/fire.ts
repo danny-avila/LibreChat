@@ -128,13 +128,6 @@ export async function fireSchedule(
   // worker (lease expired + re-claimed, or the schedule edited/re-enabled/deleted
   // — all of which rotate the token) cannot clobber the newer authoritative state.
   const claimToken = schedule.claimToken;
-  // A manual run-now must never reschedule the next automatic occurrence; it
-  // only releases the lease it acquired for serialization.
-  const advance = options?.manual
-    ? () => methods.releaseLease(schedule.id, claimToken)
-    : // Predicate the advance on the claimed occurrence AND the claim token so a
-      // concurrent owner edit or a lease-expiry re-claim isn't clobbered.
-      () => methods.advanceSchedule(schedule.id, nextRunAt, scheduledFor, claimToken);
 
   /**
    * Rolls back the `started` row this fire reserved. Fenced on the conversation id it
@@ -161,6 +154,21 @@ export async function fireSchedule(
     if (schedule.leaseBy != null) {
       await methods.releaseLeaseByHolder(schedule.id, schedule.leaseBy);
     }
+  };
+
+  // A manual run-now must never reschedule the next automatic occurrence; it only
+  // releases its serialization lease. Both writes are token-fenced, so an owner edit
+  // racing after durable enqueue can make them miss while deliberately preserving the
+  // old holder fields. Release by the unique OLD holder on a miss: an edit is unwedged
+  // immediately, while a takeover changed leaseBy and remains untouched.
+  const advance = async () => {
+    const advanced = options?.manual
+      ? await methods.releaseLease(schedule.id, claimToken)
+      : await methods.advanceSchedule(schedule.id, nextRunAt, scheduledFor, claimToken);
+    if (!advanced) {
+      await releaseSupersededLease();
+    }
+    return advanced;
   };
 
   /**

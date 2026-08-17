@@ -50,6 +50,9 @@ const QUIESCE_SETTLE_ERRORS: Partial<Record<ScheduleRunOutcomeStatus, string>> =
   error: 'Run ended in error',
 };
 
+/** Short schedule-document fence spanning capacity admission -> approval CAS. */
+const SCHEDULE_RESUME_LEASE_MS = 60_000;
+
 /**
  * Whether this process may arm the scheduler at all.
  *
@@ -93,7 +96,7 @@ export interface RecordScheduleOutcomeInput {
 }
 
 export type ScheduleResumeClaimResult =
-  | { capacitySlot: number }
+  | { capacitySlot: number; claimToken: string; leaseBy: string }
   | { conflict: 'capacity' | 'overlap' | 'not-paused' | 'inactive' };
 
 /**
@@ -172,6 +175,16 @@ export interface SchedulesService {
     scheduledFor: string | Date,
     capacitySlot: number,
   ) => Promise<boolean>;
+  /** Atomically validates the live schedule generation after the approval CAS and
+   * releases its short-lived document fence. This is the resume linearization point. */
+  finalizeScheduleResumeClaim: (
+    scheduleId: string,
+    claimToken: string,
+    leaseBy: string,
+    options?: { expectedConfigRevision?: number; automatic?: boolean },
+  ) => Promise<boolean>;
+  /** Releases only the schedule-document fence after an unconsumed/ambiguous approval CAS. */
+  releaseScheduleResumeFence: (scheduleId: string, leaseBy: string) => Promise<void>;
   /**
    * Whether a schedule is still live (exists and not soft-deleted). The loopback
    * chat controller calls this right after creating the generation job to re-fence
@@ -850,32 +863,57 @@ export function createSchedulesService(
       if (!ownerLimits.enabled || globallyDisabled || !hasAccess) {
         return { conflict: 'inactive' };
       }
-      const allocation = await engineDeps.withGlobalCapacitySlot(
-        Math.min(ownerLimits.fireConcurrency, deploymentLimits.fireConcurrency),
-        async (capacitySlot) => {
-          const attempt = await methods.markRunResumeClaimed(
-            scheduleId,
-            new Date(scheduledFor),
-            capacitySlot,
-          );
-          return 'conflict' in attempt && attempt.conflict === 'slot-taken'
-            ? 'slot-taken'
-            : { claimed: attempt };
-        },
+      // FINAL schedule-side admission fence. Everything above is asynchronous and an
+      // owner edit/disable can land while it runs. Claim the schedule document under
+      // the expected config generation now, carry this lease through the approval CAS,
+      // and atomically consume it before provider execution begins.
+      const resumeLease = await methods.acquireResumeLease(
+        scheduleId,
+        options?.expectedConfigRevision,
+        options?.automatic !== false,
+        SCHEDULE_RESUME_LEASE_MS,
       );
-      if (allocation === 'capacity') {
-        return { conflict: 'capacity' };
+      if (resumeLease?.claimToken == null || resumeLease.leaseBy == null) {
+        return { conflict: 'inactive' };
       }
-      const claimed = allocation.claimed;
-      if ('conflict' in claimed) {
-        // withCapacitySlot consumes this internal collision sentinel by retrying the
-        // next free slot. Normalize defensively at the public boundary as well so a
-        // custom/test allocator can never leak an implementation-only conflict.
+      let retainResumeLease = false;
+      try {
+        const allocation = await engineDeps.withGlobalCapacitySlot(
+          Math.min(ownerLimits.fireConcurrency, deploymentLimits.fireConcurrency),
+          async (capacitySlot) => {
+            const attempt = await methods.markRunResumeClaimed(
+              scheduleId,
+              new Date(scheduledFor),
+              capacitySlot,
+            );
+            return 'conflict' in attempt && attempt.conflict === 'slot-taken'
+              ? 'slot-taken'
+              : { claimed: attempt };
+          },
+        );
+        if (allocation === 'capacity') {
+          return { conflict: 'capacity' };
+        }
+        const claimed = allocation.claimed;
+        if ('conflict' in claimed) {
+          // withCapacitySlot consumes this internal collision sentinel by retrying the
+          // next free slot. Normalize defensively at the public boundary as well so a
+          // custom/test allocator can never leak an implementation-only conflict.
+          return {
+            conflict: claimed.conflict === 'slot-taken' ? 'capacity' : claimed.conflict,
+          };
+        }
+        retainResumeLease = true;
         return {
-          conflict: claimed.conflict === 'slot-taken' ? 'capacity' : claimed.conflict,
+          capacitySlot: claimed.capacitySlot,
+          claimToken: resumeLease.claimToken,
+          leaseBy: resumeLease.leaseBy,
         };
+      } finally {
+        if (!retainResumeLease) {
+          await methods.releaseLeaseByHolder(scheduleId, resumeLease.leaseBy);
+        }
       }
-      return { capacitySlot: claimed.capacitySlot };
     });
   }
 
@@ -885,6 +923,32 @@ export function createSchedulesService(
     capacitySlot: number,
   ): Promise<boolean> {
     return methods.releaseRunResumeClaim(scheduleId, new Date(scheduledFor), capacitySlot);
+  }
+
+  async function finalizeScheduleResumeClaim(
+    scheduleId: string,
+    claimToken: string,
+    leaseBy: string,
+    options?: { expectedConfigRevision?: number; automatic?: boolean },
+  ): Promise<boolean> {
+    const consumed = await methods.consumeResumeLease(
+      scheduleId,
+      claimToken,
+      leaseBy,
+      options?.automatic !== false,
+      options?.expectedConfigRevision,
+    );
+    if (!consumed) {
+      // An owner edit rotates claimToken but deliberately leaves the old holder's
+      // lease in place. Clear only that holder so the edited schedule is immediately
+      // usable; a takeover changed leaseBy and is therefore untouched.
+      await methods.releaseLeaseByHolder(scheduleId, leaseBy);
+    }
+    return consumed;
+  }
+
+  function releaseScheduleResumeFence(scheduleId: string, leaseBy: string): Promise<void> {
+    return methods.releaseLeaseByHolder(scheduleId, leaseBy);
   }
 
   /** Aborts an active run's loopback job (identity-guarded). Returns whether the
@@ -1319,6 +1383,8 @@ export function createSchedulesService(
     recordScheduleOutcome,
     claimScheduleResume,
     releaseScheduleResumeClaim,
+    finalizeScheduleResumeClaim,
+    releaseScheduleResumeFence,
     isScheduleLive,
     deleteScheduleForOwner,
     quiesceUserSchedules,

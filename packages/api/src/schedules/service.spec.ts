@@ -911,6 +911,13 @@ describe('scheduled resume capacity', () => {
       })),
       getRoleByName: jest.fn(async () => ({ permissions: { SCHEDULES: { USE: true } } })),
       getCapacityOccupancy: jest.fn(async () => occupancy),
+      acquireResumeLease: jest.fn(async () => ({
+        id: 's1',
+        claimToken: 'resume-token',
+        leaseBy: 'resume:resume-token',
+      })),
+      consumeResumeLease: jest.fn(async () => true),
+      releaseLeaseByHolder: jest.fn(async () => undefined),
       markRunResumeClaimed: jest.fn(async (_id, _scheduledFor, capacitySlot) => ({
         capacitySlot,
       })),
@@ -945,8 +952,24 @@ describe('scheduled resume capacity', () => {
 
     await expect(service.claimScheduleResume('s1', scheduledFor)).resolves.toEqual({
       capacitySlot: 0,
+      claimToken: 'resume-token',
+      leaseBy: 'resume:resume-token',
     });
+    expect(methods.acquireResumeLease).toHaveBeenCalledWith('s1', undefined, true, 60_000);
     expect(methods.markRunResumeClaimed).toHaveBeenCalledWith('s1', new Date(scheduledFor), 0);
+    await expect(
+      service.finalizeScheduleResumeClaim('s1', 'resume-token', 'resume:resume-token', {
+        expectedConfigRevision: 3,
+        automatic: true,
+      }),
+    ).resolves.toBe(true);
+    expect(methods.consumeResumeLease).toHaveBeenCalledWith(
+      's1',
+      'resume-token',
+      'resume:resume-token',
+      true,
+      3,
+    );
     await expect(service.releaseScheduleResumeClaim('s1', scheduledFor, 0)).resolves.toBe(true);
     expect(methods.releaseRunResumeClaim).toHaveBeenCalledWith('s1', new Date(scheduledFor), 0);
   });
@@ -958,6 +981,7 @@ describe('scheduled resume capacity', () => {
       conflict: 'capacity',
     });
     expect(methods.markRunResumeClaimed).not.toHaveBeenCalled();
+    expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('s1', 'resume:resume-token');
   });
 
   it('normalizes an exhausted slot-collision retry to public capacity conflict', async () => {
@@ -981,6 +1005,33 @@ describe('scheduled resume capacity', () => {
     expect(methods.markRunResumeClaimed).not.toHaveBeenCalled();
   });
 
+  it('refuses an edit that wins during async policy checks at the final schedule CAS', async () => {
+    const { service, methods } = makeResumeService({ takenSlots: [], unslotted: 0 });
+    methods.acquireResumeLease.mockResolvedValue(null as never);
+
+    await expect(
+      service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z', {
+        expectedConfigRevision: 3,
+        automatic: true,
+      }),
+    ).resolves.toEqual({ conflict: 'inactive' });
+    expect(methods.acquireResumeLease).toHaveBeenCalledWith('s1', 3, true, 60_000);
+    expect(methods.markRunResumeClaimed).not.toHaveBeenCalled();
+  });
+
+  it('releases the old holder when the post-approval schedule handoff loses', async () => {
+    const { service, methods } = makeResumeService({ takenSlots: [], unslotted: 0 });
+    methods.consumeResumeLease.mockResolvedValue(false);
+
+    await expect(
+      service.finalizeScheduleResumeClaim('s1', 'resume-token', 'resume:resume-token', {
+        expectedConfigRevision: 3,
+        automatic: true,
+      }),
+    ).resolves.toBe(false);
+    expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('s1', 'resume:resume-token');
+  });
+
   it('refuses a disabled automatic resume but preserves explicit Run Now semantics', async () => {
     const { service, methods } = makeResumeService({ takenSlots: [], unslotted: 0 });
     methods.getScheduleById.mockResolvedValue({
@@ -1001,7 +1052,11 @@ describe('scheduled resume capacity', () => {
         expectedConfigRevision: 3,
         automatic: false,
       }),
-    ).resolves.toEqual({ capacitySlot: 0 });
+    ).resolves.toEqual({
+      capacitySlot: 0,
+      claimToken: 'resume-token',
+      leaseBy: 'resume:resume-token',
+    });
   });
 
   it('refuses a resume when the owner lost schedule access before the capacity handoff', async () => {

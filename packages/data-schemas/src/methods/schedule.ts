@@ -168,7 +168,20 @@ export type ScheduleMethods = {
     userId: string | Types.ObjectId,
     leaseMs: number,
   ) => Promise<ISchedule | null>;
-  releaseLease: (id: string, expectedClaimToken?: string) => Promise<void>;
+  acquireResumeLease: (
+    id: string,
+    expectedConfigRevision: number | undefined,
+    requireEnabled: boolean,
+    leaseMs: number,
+  ) => Promise<ISchedule | null>;
+  consumeResumeLease: (
+    id: string,
+    expectedClaimToken: string,
+    expectedLeaseBy: string,
+    requireEnabled: boolean,
+    expectedConfigRevision?: number,
+  ) => Promise<boolean>;
+  releaseLease: (id: string, expectedClaimToken?: string) => Promise<boolean>;
   releaseLeaseByHolder: (id: string, leaseBy: string) => Promise<void>;
   revalidateClaim: (id: string, claimToken: string, requireEnabled?: boolean) => Promise<boolean>;
   advanceSchedule: (
@@ -176,7 +189,7 @@ export type ScheduleMethods = {
     nextRunAt: Date | null,
     expectedNextRunAt?: Date | null,
     expectedClaimToken?: string,
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   disableSchedule: (
     id: string,
     reason: ScheduleDisabledReason,
@@ -541,16 +554,89 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
   }
 
   /**
+   * Takes a short-lived schedule-document fence for a paused run's resume. The
+   * approval and its ScheduleRun row live in different stores, so this claim is
+   * carried through the approval CAS and atomically consumed immediately after it.
+   * An owner edit rotates claimToken; a policy disable clears the lease/enabled bit.
+   * Either therefore makes consumeResumeLease fail before provider execution starts.
+   */
+  async function acquireResumeLease(
+    id: string,
+    expectedConfigRevision: number | undefined,
+    requireEnabled: boolean,
+    leaseMs: number,
+  ): Promise<ISchedule | null> {
+    const claimToken = randomUUID();
+    const leaseBy = `resume:${claimToken}`;
+    const now = new Date();
+    const takeoverCutoff = new Date(now.getTime() - LEASE_SKEW_MARGIN_MS);
+    return Schedule()
+      .findOneAndUpdate(
+        {
+          id,
+          deleting: { $ne: true },
+          ...(requireEnabled ? { enabled: true } : {}),
+          ...(expectedConfigRevision !== undefined
+            ? { configRevision: expectedConfigRevision }
+            : {}),
+          $or: [
+            { leaseUntil: { $exists: false } },
+            { leaseUntil: null },
+            { leaseUntil: { $lt: takeoverCutoff } },
+          ],
+        },
+        {
+          $set: {
+            leaseUntil: new Date(now.getTime() + leaseMs),
+            leaseBy,
+            claimToken,
+          },
+        },
+        { new: true },
+      )
+      .lean<ISchedule>();
+  }
+
+  /**
+   * Atomically linearizes a scheduled resume against owner edits, deletion, policy
+   * disable, lease expiry, and takeover, then releases the short-lived fence. A
+   * successful match means the approval was consumed under the same live schedule
+   * generation that acquired the fence; a miss must stop before provider execution.
+   */
+  async function consumeResumeLease(
+    id: string,
+    expectedClaimToken: string,
+    expectedLeaseBy: string,
+    requireEnabled: boolean,
+    expectedConfigRevision?: number,
+  ): Promise<boolean> {
+    const result = await Schedule().updateOne(
+      {
+        id,
+        claimToken: expectedClaimToken,
+        leaseBy: expectedLeaseBy,
+        deleting: { $ne: true },
+        leaseUntil: { $gt: new Date() },
+        ...(requireEnabled ? { enabled: true } : {}),
+        ...(expectedConfigRevision !== undefined ? { configRevision: expectedConfigRevision } : {}),
+      },
+      { $unset: { leaseUntil: 1, leaseBy: 1 } },
+    );
+    return (result.matchedCount ?? 0) > 0;
+  }
+
+  /**
    * Releases a lease WITHOUT advancing nextRunAt (manual runs never reschedule).
    * Fenced on the claim token when provided so a stale worker cannot strip a lease
    * a different claimer now holds.
    */
-  async function releaseLease(id: string, expectedClaimToken?: string): Promise<void> {
+  async function releaseLease(id: string, expectedClaimToken?: string): Promise<boolean> {
     const filter: Record<string, unknown> = { id };
     if (expectedClaimToken !== undefined) {
       filter.claimToken = expectedClaimToken;
     }
-    await Schedule().updateOne(filter, { $unset: { leaseUntil: 1, leaseBy: 1 } });
+    const result = await Schedule().updateOne(filter, { $unset: { leaseUntil: 1, leaseBy: 1 } });
+    return (result.matchedCount ?? 0) > 0;
   }
 
   /**
@@ -607,7 +693,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     nextRunAt: Date | null,
     expectedNextRunAt?: Date | null,
     expectedClaimToken?: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const filter: Record<string, unknown> = { id };
     if (expectedNextRunAt !== undefined) {
       filter.nextRunAt = expectedNextRunAt;
@@ -615,10 +701,11 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     if (expectedClaimToken !== undefined) {
       filter.claimToken = expectedClaimToken;
     }
-    await Schedule().updateOne(filter, {
+    const result = await Schedule().updateOne(filter, {
       $set: { ...(nextRunAt ? { nextRunAt } : {}) },
       $unset: { leaseUntil: 1, leaseBy: 1, ...(nextRunAt ? {} : { nextRunAt: 1 }) },
     });
+    return (result.matchedCount ?? 0) > 0;
   }
 
   /**
@@ -1745,6 +1832,8 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     countSchedulesByUser,
     claimDueSchedule,
     acquireManualRunLease,
+    acquireResumeLease,
+    consumeResumeLease,
     releaseLease,
     releaseLeaseByHolder,
     revalidateClaim,

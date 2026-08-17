@@ -53,9 +53,11 @@ function makeMethods() {
   const methods = {
     releaseLease: jest.fn(async () => {
       calls.releaseLease += 1;
+      return true;
     }),
     advanceSchedule: jest.fn(async () => {
       calls.advance += 1;
+      return true;
     }),
     disableSchedule: jest.fn(async (_id: string, reason: string) => {
       calls.disable.push(reason);
@@ -263,6 +265,23 @@ describe('fireSchedule', () => {
     expect([...runs.values()][0].conversationId).toBe(result.conversationId);
     expect(methods.setRunFireDetails).toHaveBeenCalledTimes(1);
     expect([...runs.values()][0].status).toBe('started');
+  });
+
+  it('releases the old holder when a post-enqueue owner edit fences the advance', async () => {
+    const { methods } = makeMethods();
+    const enqueueTrigger = jest.fn(async () => undefined);
+    methods.advanceSchedule.mockResolvedValueOnce(false);
+
+    const result = await fireSchedule(
+      makeDeps(methods, { enqueueTrigger }),
+      makeSchedule({ leaseBy: 'claim-holder-1' }),
+      LIMITS,
+      dueAt(),
+    );
+
+    expect(result.fired).toBe(true);
+    expect(enqueueTrigger).toHaveBeenCalledTimes(1);
+    expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('sched-1', 'claim-holder-1');
   });
 
   it('marks a Run Now trigger as manual for downstream limiter policy', async () => {
