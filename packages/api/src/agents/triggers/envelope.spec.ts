@@ -1,10 +1,10 @@
+import type { CreateAgentTriggerEnvelopeInput } from './envelope';
 import {
   AGENT_TRIGGER_ENVELOPE_VERSION,
   AgentTriggerEnvelopeError,
   createAgentTriggerEnvelope,
   getAgentTriggerIdempotencyKey,
 } from './envelope';
-import type { CreateAgentTriggerEnvelopeInput } from './envelope';
 
 describe('createAgentTriggerEnvelope', () => {
   const createFireInput = (): CreateAgentTriggerEnvelopeInput => ({
