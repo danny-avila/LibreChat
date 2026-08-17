@@ -43,14 +43,31 @@ let drawerAnimator: ((next: boolean) => void) | null = null;
  * immediately and React animates the layout as before.
  */
 export function kickDrawerAnimation(next: boolean, applyState: () => void): void {
-  if (drawerAnimator == null) {
+  const animator = drawerAnimator;
+  if (animator == null) {
     applyState();
     return;
   }
-  drawerAnimator(next);
+  animator(next);
+  /** Reduced motion snaps — there are no slide frames to protect, and
+   * deferring would let a slow-frame device outrun the 80ms window that
+   * restores transitions, turning the snap back into a full slide. The
+   * urgent commit runs inside this same task, which the restore timer
+   * cannot preempt. */
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    applyState();
+    return;
+  }
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
+        /** A teardown or re-register during the deferral — breakpoint
+         * cross, logout, route change — makes the captured intent stale:
+         * the new world owns the state, and a straggler flip could toggle
+         * the DESKTOP sidebar or persist drawer state past logout. */
+        if (drawerAnimator !== animator) {
+          return;
+        }
         applyState();
       });
     });

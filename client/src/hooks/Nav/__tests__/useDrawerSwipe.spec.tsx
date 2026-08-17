@@ -551,6 +551,61 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     jest.useRealTimers();
     harness.unmount();
   });
+
+  /** Deferring past the 80ms transition-restore window would let the state
+   *  flip animate at full duration on a slow-frame device — for exactly the
+   *  users who opted out of motion. */
+  it('applies state synchronously under reduced motion, without frame deferral', () => {
+    const harness = setup(false, true);
+    (window.requestAnimationFrame as jest.Mock).mockImplementation(() => 0);
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+
+    expect(applyState).toHaveBeenCalledTimes(1);
+    harness.unmount();
+  });
+
+  it('drops a deferred state flip when the animator is torn down mid-deferral', () => {
+    const harness = setup(false);
+    const queued: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as jest.Mock).mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+    harness.rerender({ open: false, enabled: false });
+    while (queued.length) {
+      queued.shift()?.(0);
+    }
+
+    expect(applyState).not.toHaveBeenCalled();
+    expect(harness.drawer.style.transform).toBe('');
+    harness.unmount();
+  });
+
+  it('applies the deferred state flip when the animator is still live', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    const queued: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as jest.Mock).mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+    while (queued.length) {
+      queued.shift()?.(0);
+    }
+
+    expect(applyState).toHaveBeenCalledTimes(1);
+    jest.runAllTimers();
+    jest.useRealTimers();
+    harness.unmount();
+  });
 });
 
 describe('findHorizontalScrollBlocker', () => {
