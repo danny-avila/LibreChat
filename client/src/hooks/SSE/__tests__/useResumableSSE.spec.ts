@@ -3916,12 +3916,16 @@ describe('useResumableSSE - sync response identity', () => {
     mockSetIsSubmitting.mockClear();
   });
 
-  const emitSync = async (sse: MockSSEInstance, aggregatedContent: TMessage['content']) => {
+  const emitSync = async (
+    sse: MockSSEInstance,
+    aggregatedContent: TMessage['content'],
+    responseMessageId?: string,
+  ) => {
     await act(async () => {
       sse._emit('message', {
         data: JSON.stringify({
           sync: true,
-          resumeState: { aggregatedContent },
+          resumeState: { aggregatedContent, responseMessageId },
         }),
       });
     });
@@ -4023,6 +4027,52 @@ describe('useResumableSSE - sync response identity', () => {
     ]);
     expect(updatedMessages.find((message) => message.messageId === 'active-response-id')).toEqual({
       ...activeResponse,
+      content: aggregatedContent,
+    });
+    unmount();
+  });
+
+  it('replaces the current-run placeholder when sync assigns the response ID', async () => {
+    const userMessage = {
+      messageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const preliminaryResponse = {
+      messageId: 'server-user-id_',
+      parentMessageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: '',
+      content: [],
+      sender: 'Assistant',
+      isCreatedByUser: false,
+    } as TMessage;
+    const submission = {
+      ...buildSubmission({ userMessage, initialResponse: preliminaryResponse }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([userMessage, preliminaryResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const aggregatedContent: TMessage['content'] = [
+      { type: ContentTypes.TEXT, text: { value: 'Recovered answer' } },
+    ];
+    await emitSync(getLastSSE(), aggregatedContent, 'assigned-response-id');
+
+    const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
+    expect(updatedMessages.map((message) => message.messageId)).toEqual([
+      'server-user-id',
+      'assigned-response-id',
+    ]);
+    expect(updatedMessages[1]).toEqual({
+      ...preliminaryResponse,
+      messageId: 'assigned-response-id',
       content: aggregatedContent,
     });
     unmount();

@@ -578,8 +578,28 @@ const mergeResumeMessages = (
   messages: TMessage[],
   userMessage: TMessage,
   responseMessage: TMessage,
+  preliminaryResponseMessageId?: string,
 ): TMessage[] => {
   const nextMessages = [...messages];
+  const preliminaryResponseIndex =
+    preliminaryResponseMessageId && preliminaryResponseMessageId !== responseMessage.messageId
+      ? nextMessages.findIndex((message) => message.messageId === preliminaryResponseMessageId)
+      : -1;
+  const assignedResponseIndex = nextMessages.findIndex(
+    (message) => message.messageId === responseMessage.messageId,
+  );
+
+  if (preliminaryResponseIndex >= 0) {
+    if (assignedResponseIndex >= 0) {
+      nextMessages.splice(preliminaryResponseIndex, 1);
+    } else {
+      nextMessages[preliminaryResponseIndex] = {
+        ...nextMessages[preliminaryResponseIndex],
+        ...responseMessage,
+      };
+    }
+  }
+
   const userIndex = nextMessages.findIndex(
     (message) => message.messageId === userMessage.messageId,
   );
@@ -1763,6 +1783,9 @@ export default function useResumableSSE(
 
             const runId = v4();
             setActiveRunId(runId);
+            /** Keep the current run's preliminary id long enough to replace that optimistic
+             *  row in place if this snapshot assigns its durable response id. */
+            const preliminaryResponseMessageId = currentSubmission.initialResponse?.messageId;
             const resumeSubmission = buildResumeEventSubmission(
               currentSubmission,
               userMessage,
@@ -1852,7 +1875,12 @@ export default function useResumableSSE(
                   ),
                   model: preferDefinedString(messages[responseIdx]?.model, data.resumeState.model),
                 } as TMessage;
-                const updated = mergeResumeMessages(messages, userMessage, responseMessage);
+                const updated = mergeResumeMessages(
+                  messages,
+                  userMessage,
+                  responseMessage,
+                  preliminaryResponseMessageId,
+                );
                 logger.log('ResumableSSE', 'SYNC updating message', {
                   messageId: responseMessage.messageId,
                   oldContentLength: Array.isArray(oldContent) ? oldContent.length : 0,
@@ -1878,7 +1906,14 @@ export default function useResumableSSE(
                   content: data.resumeState.aggregatedContent,
                   isCreatedByUser: false,
                 } as TMessage;
-                setMessages(mergeResumeMessages(messages, userMessage, newMessage));
+                setMessages(
+                  mergeResumeMessages(
+                    messages,
+                    userMessage,
+                    newMessage,
+                    preliminaryResponseMessageId,
+                  ),
+                );
                 resetContentHandler();
                 syncStepMessage(newMessage);
               }
