@@ -81,6 +81,14 @@ function expectExecutionError(error: unknown, expected: Partial<AgentTriggerExec
 }
 
 describe('createAgentTriggerExecutionHost fire adapter', () => {
+  it('rejects malformed serialized envelopes through its promise contract', async () => {
+    const host = createAgentTriggerExecutionHost(deps(fetchMock(async () => response({}))));
+    const malformed = { ...createFireEnvelope() };
+    Reflect.deleteProperty(malformed, 'requestId');
+
+    await expect(host.dispatch(malformed)).rejects.toThrow('requestId must be a non-empty string');
+  });
+
   it('starts a new run with stable identity, principal context, and no source coupling', async () => {
     const envelope = createFireEnvelope();
     const idempotencyKey = getAgentTriggerIdempotencyKey(envelope);

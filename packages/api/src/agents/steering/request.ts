@@ -386,6 +386,9 @@ async function handleSteerRequestInternal(
   ) {
     return { status: 400, body: { code: 'INVALID_CLIENT_STEER_ID' } };
   }
+  if (deps.requireIdempotentDelivery === true && typeof clientSteerId !== 'string') {
+    return { status: 400, body: { code: 'CLIENT_STEER_ID_REQUIRED' } };
+  }
 
   const { files, error: filesError } = sanitizeSteerFiles(body.files);
   if (filesError) {

@@ -600,15 +600,17 @@ export function createAgentTriggerExecutionHost(
   const timeoutMs = requireTimeout(deps.timeoutMs);
   return {
     dispatch: (envelope, options) =>
-      dispatchAgentTrigger(
-        envelope,
-        {
-          fire: (normalized, context) =>
-            runAsPrincipal(normalized, context, () => fire(normalized, context, deps, timeoutMs)),
-          steer: (normalized, context) =>
-            runAsPrincipal(normalized, context, () => steer(normalized, context, deps)),
-        },
-        options,
+      Promise.resolve().then(() =>
+        dispatchAgentTrigger(
+          envelope,
+          {
+            fire: (normalized, context) =>
+              runAsPrincipal(normalized, context, () => fire(normalized, context, deps, timeoutMs)),
+            steer: (normalized, context) =>
+              runAsPrincipal(normalized, context, () => steer(normalized, context, deps)),
+          },
+          options,
+        ),
       ),
   };
 }

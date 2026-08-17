@@ -66,6 +66,19 @@ describe('handleSteerRequest (real in-memory job manager)', () => {
     expect(result.body.code).toBe('INVALID_CLIENT_STEER_ID');
   });
 
+  it('requires a client correlation id when idempotent delivery is mandatory', async () => {
+    const result = await handleSteerRequest(
+      user,
+      { conversationId: 'c1', text: 'valid text' },
+      { requireIdempotentDelivery: true },
+    );
+
+    expect(result).toEqual({
+      status: 400,
+      body: { code: 'CLIENT_STEER_ID_REQUIRED' },
+    });
+  });
+
   it('400s an invalid generation identity', async () => {
     const result = await handleSteerRequest(user, {
       conversationId: 'c1',
