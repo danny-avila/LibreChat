@@ -35,6 +35,7 @@ const {
   actionDelimiter,
   AgentCapabilities,
   EModelEndpoint,
+  resolveAllowedStatefulCodeEnvironments,
   removeNullishValues,
 } = require('librechat-data-provider');
 const {
@@ -199,6 +200,28 @@ const isSubagentsCapabilityEnabled = (req) => {
   const capabilities = req.config?.endpoints?.[EModelEndpoint.agents]?.capabilities;
   if (!Array.isArray(capabilities)) return false;
   return capabilities.includes(AgentCapabilities.subagents);
+};
+
+/** Reject a newly selected stateful workspace scope that the deployment owner
+ * has excluded. Disabled sessions and unrelated edits remain saveable so an
+ * allowlist tightening never silently rewrites or strands an existing agent. */
+const validateStatefulCodeEnvironment = (req, res, enabled, environment) => {
+  if (enabled !== true) {
+    return true;
+  }
+
+  const allowedEnvironments = resolveAllowedStatefulCodeEnvironments(
+    req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.allowedEnvironments,
+  );
+  const resolvedEnvironment = environment ?? 'user';
+  if (allowedEnvironments.includes(resolvedEnvironment)) {
+    return true;
+  }
+
+  res.status(403).json({
+    error: `Stateful code environment is not allowed by this deployment: ${resolvedEnvironment}`,
+  });
+  return false;
 };
 
 /**
@@ -399,6 +422,17 @@ const createAgentHandler = async (req, res) => {
   try {
     const validatedData = agentCreateSchema.parse(req.body);
     const { tools = [], ...agentData } = removeNullishValues(validatedData);
+
+    if (
+      !validateStatefulCodeEnvironment(
+        req,
+        res,
+        agentData.stateful_code_sessions,
+        agentData.stateful_code_environment,
+      )
+    ) {
+      return;
+    }
 
     if (agentData.model_parameters && typeof agentData.model_parameters === 'object') {
       agentData.model_parameters = removeNullishValues(
@@ -678,6 +712,32 @@ const updateAgentHandler = async (req, res) => {
     // Preserve explicit null for avatar to allow resetting the avatar
     const { avatar: avatarField, _id, ...rest } = validatedData;
     const updateData = removeNullishValues(rest);
+    let existingAgent;
+
+    const changesStatefulConfiguration =
+      updateData.stateful_code_sessions !== undefined ||
+      updateData.stateful_code_environment !== undefined;
+    if (changesStatefulConfiguration) {
+      existingAgent = await db.getAgent({ id });
+      if (!existingAgent) {
+        return res.status(404).json({ error: 'Agent not found' });
+      }
+
+      const effectiveStatefulSessions =
+        updateData.stateful_code_sessions ?? existingAgent.stateful_code_sessions;
+      const effectiveStatefulEnvironment =
+        updateData.stateful_code_environment ?? existingAgent.stateful_code_environment;
+      if (
+        !validateStatefulCodeEnvironment(
+          req,
+          res,
+          effectiveStatefulSessions,
+          effectiveStatefulEnvironment,
+        )
+      ) {
+        return;
+      }
+    }
 
     if (updateData.model_parameters && typeof updateData.model_parameters === 'object') {
       updateData.model_parameters = removeNullishValues(
@@ -750,7 +810,7 @@ const updateAgentHandler = async (req, res) => {
     // Convert OCR to context in incoming updateData
     convertOcrToContextInPlace(updateData);
 
-    const existingAgent = await db.getAgent({ id });
+    existingAgent ??= await db.getAgent({ id });
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -964,6 +1024,16 @@ const duplicateAgentHandler = async (req, res) => {
       id: newAgentId,
       author: userId,
     });
+    if (
+      !validateStatefulCodeEnvironment(
+        req,
+        res,
+        newAgentData.stateful_code_sessions,
+        newAgentData.stateful_code_environment,
+      )
+    ) {
+      return;
+    }
     newAgentData.edges = replaceEdgeSourceId(newAgentData.edges, id, newAgentId);
     newAgentData.edges = replaceEdgeSourceId(newAgentData.edges, '', newAgentId);
 
@@ -1498,6 +1568,17 @@ const revertAgentVersionHandler = async (req, res) => {
     }
 
     const revertVersion = existingAgent.versions?.[version_index];
+    if (
+      revertVersion &&
+      !validateStatefulCodeEnvironment(
+        req,
+        res,
+        revertVersion.stateful_code_sessions,
+        revertVersion.stateful_code_environment,
+      )
+    ) {
+      return;
+    }
     const storedRevertEdges = Array.isArray(revertVersion?.edges) ? revertVersion.edges : [];
     const revertEdges = replaceEdgeSourceId(storedRevertEdges, '', id);
     const hasLegacyEdgeSource = storedRevertEdges.some((edge) =>

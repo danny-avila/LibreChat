@@ -28,7 +28,7 @@ const updateUserPreferences = createUserPreferencesHandler({
 
 router.use('/settings', settings);
 router.get('/', requireJwtAuth, getUserController);
-router.patch('/preferences', requireJwtAuth, updateUserPreferences);
+router.patch('/preferences', requireJwtAuth, configMiddleware, updateUserPreferences);
 router.get('/terms', requireJwtAuth, getTermsStatusController);
 router.post('/terms/accept', requireJwtAuth, acceptTermsController);
 router.post('/plugins', requireJwtAuth, updateUserPluginsController);

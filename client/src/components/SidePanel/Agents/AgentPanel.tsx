@@ -11,6 +11,7 @@ import {
   ResourceType,
   EModelEndpoint,
   PermissionBits,
+  resolveStatefulCodeEnvironment,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
 import type { Agent, AgentUpdateParams } from 'librechat-data-provider';
@@ -286,7 +287,11 @@ export default function AgentPanel() {
     setCurrentAgentId,
     agent_id: current_agent_id,
   } = useAgentPanelContext();
-  const defaultStatefulCodeEnvironment = user?.personalization?.statefulCodeEnvironment ?? 'user';
+  const defaultStatefulCodeEnvironment =
+    resolveStatefulCodeEnvironment(
+      user?.personalization?.statefulCodeEnvironment ?? 'user',
+      agentsConfig?.statefulCodeSessions?.allowedEnvironments,
+    ) ?? 'user';
 
   const { onSelect: onSelectAgent } = useSelectAgent();
 

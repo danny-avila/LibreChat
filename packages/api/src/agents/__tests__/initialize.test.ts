@@ -1782,6 +1782,38 @@ describe('initializeAgent — execute_code capability expansion', () => {
     }
   });
 
+  it('rejects a stateful environment excluded by deployment policy', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'conversation';
+    req.config = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: { allowedEnvironments: ['user'] },
+        },
+      },
+    } as NonNullable<typeof req.config>;
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      ),
+    ).rejects.toThrow('Stateful code environment is not allowed by this deployment: conversation');
+    expect(loadTools).not.toHaveBeenCalled();
+  });
+
   it('upgrades read_file to the skill-aware description when active skills are in scope', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.tools = ['execute_code'];

@@ -9,6 +9,7 @@ import {
   paramEndpoints,
   isAgentsEndpoint,
   AgentCapabilities,
+  resolveAllowedStatefulCodeEnvironments,
   replaceSpecialVars,
   providerEndpointMap,
 } from 'librechat-data-provider';
@@ -723,6 +724,16 @@ export async function initializeAgent(
     params.statefulSessionsAvailable === true &&
     agent.stateful_code_sessions === true;
   const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(agent.stateful_code_environment);
+  if (effectiveStatefulSessions) {
+    const allowedStatefulCodeEnvironments = resolveAllowedStatefulCodeEnvironments(
+      req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.allowedEnvironments,
+    );
+    if (!allowedStatefulCodeEnvironments.includes(statefulCodeEnvironment)) {
+      throw new Error(
+        `Stateful code environment is not allowed by this deployment: ${statefulCodeEnvironment}`,
+      );
+    }
+  }
   const codeExecutionContext = resolveCodeExecutionContext({
     statefulSessions: effectiveStatefulSessions,
     environment: statefulCodeEnvironment,

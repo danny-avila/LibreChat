@@ -405,6 +405,27 @@ describe('endpointSchema addParams validation', () => {
 });
 
 describe('agentsEndpointSchema', () => {
+  it('accepts a non-empty stateful code environment allowlist', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects empty or unknown stateful code environment allowlists', () => {
+    expect(
+      agentsEndpointSchema.safeParse({
+        statefulCodeSessions: { allowedEnvironments: [] },
+      }).success,
+    ).toBe(false);
+    expect(
+      agentsEndpointSchema.safeParse({
+        statefulCodeSessions: { allowedEnvironments: ['agent'] },
+      }).success,
+    ).toBe(false);
+  });
+
   it('does not accept baseURL', () => {
     const result = agentsEndpointSchema.safeParse({
       baseURL: 'https://example.com',
