@@ -120,10 +120,7 @@ export const LangSelector = ({
         <Dropdown
           value={langcode}
           onChange={onChange}
-          sizeClasses={cn(
-            'z-50 [--anchor-max-height:256px] max-h-[60vh] w-[220px]',
-            popoverClassName,
-          )}
+          sizeClasses={cn('z-50 w-[220px]', popoverClassName)}
           options={languageOptions}
           aria-labelledby={labelId}
           portal={portal}
