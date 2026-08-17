@@ -3,6 +3,7 @@ const { logger, getTenantId, webSearchKeys } = require('@librechat/data-schemas'
 const {
   getNewS3URL,
   needsRefresh,
+  GenerationJobManager,
   MCPOAuthHandler,
   MCPTokenStorage,
   getAppConfigOptionsFromUser,
@@ -24,6 +25,7 @@ const { verifyEmail, resendVerificationEmail } = require('~/server/services/Auth
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { processDeleteRequest } = require('~/server/services/Files/process');
+const { drainAgentTriggerDeliveriesForUser } = require('~/server/services/Agents/triggers');
 const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -351,6 +353,8 @@ const updateUserPluginsController = async (req, res) => {
 
 const deleteUserController = async (req, res) => {
   const { user } = req;
+  let triggerDeletionFence;
+  let userDeleted = false;
 
   try {
     const existingUser = await db.getUserById(
@@ -368,6 +372,24 @@ const deleteUserController = async (req, res) => {
         return res.status(result.status ?? 400).json({ message: msg });
       }
     }
+
+    // Block new trigger admissions across replicas while preserving the user
+    // principal so a transient cleanup failure remains retryable.
+    triggerDeletionFence = new Date();
+    const fenceState = await db.beginAgentTriggerUserDeletion(user.id, triggerDeletionFence);
+    if (fenceState === 'in_progress') {
+      triggerDeletionFence = undefined;
+      throw new Error('Agent trigger account deletion is already in progress');
+    }
+    if (fenceState === 'missing') {
+      triggerDeletionFence = undefined;
+    }
+    await drainAgentTriggerDeliveriesForUser(user.id);
+    const activeAgentRuns = await GenerationJobManager.getActiveJobIdsForUser(
+      user.id,
+      user.tenantId,
+    );
+    await Promise.all(activeAgentRuns.map((streamId) => GenerationJobManager.abortJob(streamId)));
 
     await db.deleteMessages({ user: user.id });
     await db.deleteAllUserSessions({ userId: user.id });
@@ -394,8 +416,6 @@ const deleteUserController = async (req, res) => {
       logger.error('[deleteUserController] Error deleting user convos, likely no convos', error);
     }
     await deleteUserPluginAuth(user.id, null, true);
-    await db.deleteAgentTriggerDeliveriesByUser(user.id);
-    await db.deleteUserById(user.id);
     await deleteAllSharedLinksWithCleanup(user.id);
     await deleteUserFiles(req);
     await db.deleteFiles(null, user.id);
@@ -412,9 +432,18 @@ const deleteUserController = async (req, res) => {
     await db.deleteTokens({ userId: user.id });
     await db.removeUserFromAllGroups(user.id);
     await db.deleteAclEntries({ principalId: user._id });
+    await db.deleteUserById(user.id);
+    userDeleted = true;
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
+    if (triggerDeletionFence != null && !userDeleted) {
+      try {
+        await db.cancelAgentTriggerUserDeletion(user.id, triggerDeletionFence);
+      } catch (fenceError) {
+        logger.error('[deleteUserController] Failed to release trigger deletion fence', fenceError);
+      }
+    }
     logger.error('[deleteUserController]', err);
     return res.status(500).json({ message: 'Something went wrong.' });
   }

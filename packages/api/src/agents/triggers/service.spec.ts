@@ -2,8 +2,8 @@ import jwt from 'jsonwebtoken';
 import type { AgentTriggerFetch } from './host';
 import { createAgentTriggerEnvelope } from './envelope';
 import { AGENT_TRIGGER_SCOPE } from '../../crypto/jwt';
-import { AgentTriggerExecutionError } from './host';
 import { createAgentTriggerService } from './service';
+import { AgentTriggerExecutionError } from './host';
 
 const envelope = () =>
   createAgentTriggerEnvelope({

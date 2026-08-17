@@ -1,7 +1,10 @@
 const { createAgentTriggerService } = require('@librechat/api');
 const methods = require('~/models');
 
-const service = createAgentTriggerService({ methods });
+const service = createAgentTriggerService({
+  methods,
+  isPrincipalActive: methods.isAgentTriggerPrincipalActive,
+});
 
 module.exports = {
   initializeAgentTriggerService: service.initialize,
@@ -11,4 +14,5 @@ module.exports = {
   getAgentTriggerDelivery: service.getDelivery,
   getAgentTriggerDeadLetters: service.getDeadLetters,
   requeueAgentTrigger: service.requeue,
+  drainAgentTriggerDeliveriesForUser: service.drainUser,
 };

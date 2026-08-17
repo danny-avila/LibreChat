@@ -15,6 +15,10 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
 }));
 
+jest.mock('@librechat/api', () => ({
+  AGENT_TRIGGER_SCOPE: 'agent_trigger',
+}));
+
 jest.mock('~/models', () => ({
   getUserById: jest.fn(),
   updateUser: jest.fn(),
@@ -71,5 +75,22 @@ describe('jwtStrategy', () => {
     const { user } = await invokeVerify({ id: 'missing' });
 
     expect(user).toBe(false);
+  });
+
+  it('rejects a scoped trigger token while account deletion is fenced', async () => {
+    getUserById.mockResolvedValue({
+      _id: { toString: () => 'user-3' },
+      role: SystemRoles.USER,
+      agentTriggerDeletionStartedAt: new Date('2026-08-17T12:00:00.000Z'),
+    });
+
+    const { user, info } = await invokeVerify({ id: 'user-3', scope: 'agent_trigger' });
+
+    expect(user).toBe(false);
+    expect(info).toEqual({ message: 'Agent trigger principal is being deleted' });
+    expect(getUserById).toHaveBeenCalledWith(
+      'user-3',
+      '-password -__v -totpSecret -backupCodes +agentTriggerDeletionStartedAt',
+    );
   });
 });

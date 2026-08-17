@@ -1,5 +1,5 @@
-import { createAgentTriggerDeliveryModel } from './triggerDelivery';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
+import { createAgentTriggerDeliveryModel } from './triggerDelivery';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createAgentCategoryModel } from './agentCategory';

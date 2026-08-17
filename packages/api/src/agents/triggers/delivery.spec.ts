@@ -1,9 +1,9 @@
-import { createAgentTriggerEnvelope } from './envelope';
 import {
   AgentTriggerDeliveryError,
   MAX_AGENT_TRIGGER_ENVELOPE_BYTES,
   prepareAgentTriggerDelivery,
 } from './delivery';
+import { createAgentTriggerEnvelope } from './envelope';
 
 const envelope = (overrides: Record<string, unknown> = {}) =>
   createAgentTriggerEnvelope({

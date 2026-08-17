@@ -26,6 +26,7 @@ export interface AgentTriggerDeliveryFailure {
 
 export interface AgentTriggerDeliveryRecord {
   id: string;
+  user: string;
   claimToken: string;
   deliveryKey: string;
   fingerprint: string;
@@ -116,6 +117,8 @@ export interface AgentTriggerDeliveryEngineDeps {
 export interface AgentTriggerDeliveryEngine {
   start: () => void;
   stop: () => Promise<void>;
+  cancelUser: (userId: string) => Promise<void>;
+  releaseUserCancellation: (userId: string) => void;
   wake: () => void;
   runTick: () => Promise<number>;
 }
@@ -194,8 +197,10 @@ export function createAgentTriggerDeliveryEngine(
   const now = deps.now ?? (() => new Date());
   const random = deps.random ?? Math.random;
   const workerId = deps.workerId ?? `${process.pid}-${randomUUID()}`;
-  const controllers = new Set<AbortController>();
+  const controllers = new Map<AbortController, string>();
   const processing = new Set<Promise<void>>();
+  const processingByUser = new Map<string, Set<Promise<void>>>();
+  const cancelledUsers = new Set<string>();
   let stopped = false;
   let started = false;
   let repumpRequested = false;
@@ -203,6 +208,17 @@ export function createAgentTriggerDeliveryEngine(
   let activeClaim: Promise<{ count: number; processing: Promise<void>[] }> | undefined;
 
   const processDelivery = async (delivery: AgentTriggerDeliveryRecord): Promise<void> => {
+    const userId = String(delivery.user);
+    if (cancelledUsers.has(userId)) {
+      await deps.store.release({
+        id: delivery.id,
+        workerId,
+        claimToken: delivery.claimToken,
+        availableAt: now(),
+      });
+      return;
+    }
+
     const block = await deps.store.findEarlierUnsettled(delivery);
     if (block != null) {
       const recheckAt = now().getTime() + ORDERING_RECHECK_MS;
@@ -249,6 +265,16 @@ export function createAgentTriggerDeliveryEngine(
       return;
     }
 
+    if (cancelledUsers.has(userId)) {
+      await deps.store.release({
+        id: delivery.id,
+        workerId,
+        claimToken: delivery.claimToken,
+        availableAt: now(),
+      });
+      return;
+    }
+
     const attempt = await deps.store.beginAttempt({
       id: delivery.id,
       workerId,
@@ -260,8 +286,8 @@ export function createAgentTriggerDeliveryEngine(
     }
 
     const controller = new AbortController();
-    controllers.add(controller);
-    if (stopped) {
+    controllers.set(controller, userId);
+    if (stopped || cancelledUsers.has(userId)) {
       controller.abort(new Error('Agent trigger delivery engine is stopping'));
     }
     try {
@@ -400,16 +426,25 @@ export function createAgentTriggerDeliveryEngine(
 
     const batch: Promise<void>[] = [];
     for (const delivery of deliveries) {
+      const userId = String(delivery.user);
       const task = runAsSystem(() => processDelivery(delivery)).catch((error) => {
         logger.error('[agent-triggers] delivery processing failed:', error);
       });
       const tracked = task.finally(() => {
         processing.delete(tracked);
+        const userProcessing = processingByUser.get(userId);
+        userProcessing?.delete(tracked);
+        if (userProcessing?.size === 0) {
+          processingByUser.delete(userId);
+        }
         if (started && !stopped) {
           queueMicrotask(wake);
         }
       });
       processing.add(tracked);
+      const userProcessing = processingByUser.get(userId) ?? new Set<Promise<void>>();
+      userProcessing.add(tracked);
+      processingByUser.set(userId, userProcessing);
       batch.push(tracked);
     }
     return { count: deliveries.length, processing: batch };
@@ -473,11 +508,27 @@ export function createAgentTriggerDeliveryEngine(
       if (timer != null) {
         clearTimeout(timer);
       }
-      for (const controller of controllers) {
+      for (const controller of controllers.keys()) {
         controller.abort();
       }
       await activeClaim?.catch(() => undefined);
       await Promise.allSettled([...processing]);
+    },
+    cancelUser: async (userId) => {
+      cancelledUsers.add(userId);
+      for (const [controller, activeUserId] of controllers) {
+        if (activeUserId === userId) {
+          controller.abort(new Error('Agent trigger delivery cancelled for account deletion'));
+        }
+      }
+      await activeClaim?.catch(() => undefined);
+      const userProcessing = processingByUser.get(userId);
+      if (userProcessing != null) {
+        await Promise.allSettled([...userProcessing]);
+      }
+    },
+    releaseUserCancellation: (userId) => {
+      cancelledUsers.delete(userId);
     },
     wake,
     runTick,

@@ -1,3 +1,4 @@
+const { AGENT_TRIGGER_SCOPE } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
@@ -12,7 +13,14 @@ const jwtLogin = () =>
     },
     async (payload, done) => {
       try {
-        const user = await getUserById(payload?.id, '-password -__v -totpSecret -backupCodes');
+        const user = await getUserById(
+          payload?.id,
+          '-password -__v -totpSecret -backupCodes +agentTriggerDeletionStartedAt',
+        );
+        if (payload?.scope === AGENT_TRIGGER_SCOPE && user?.agentTriggerDeletionStartedAt != null) {
+          done(null, false, { message: 'Agent trigger principal is being deleted' });
+          return;
+        }
         if (user) {
           user.id = user._id.toString();
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */

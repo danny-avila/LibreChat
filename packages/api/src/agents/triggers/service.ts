@@ -1,10 +1,4 @@
 import { logger, runAsSystem } from '@librechat/data-schemas';
-import type { BoundAddress } from '../../app/origin';
-import type {
-  AgentTriggerExecutionHost,
-  AgentTriggerExecutionHostDeps,
-  AgentTriggerExecutionResult,
-} from './host';
 import type {
   AgentTriggerDeliveryFailure,
   AgentTriggerDeliveryEngine,
@@ -12,15 +6,23 @@ import type {
   AgentTriggerDeliveryRecord,
   AgentTriggerDeliveryStore,
 } from './engine';
+import type {
+  AgentTriggerExecutionHost,
+  AgentTriggerExecutionHostDeps,
+  AgentTriggerExecutionResult,
+} from './host';
 import type { AgentTriggerEnqueueOptions, PreparedAgentTriggerDelivery } from './delivery';
+import type { BoundAddress } from '../../app/origin';
 import { isShutdownInProgress, registerShutdownTask } from '../../app/shutdown';
 import { generateAgentTriggerToken } from '../../crypto/jwt';
+import { createAgentTriggerDeliveryEngine } from './engine';
 import { selfOriginFromAddress } from '../../app/origin';
 import { prepareAgentTriggerDelivery } from './delivery';
-import { createAgentTriggerDeliveryEngine } from './engine';
 import { createAgentTriggerExecutionHost } from './host';
 
 export const AGENT_TRIGGER_TOKEN_TTL = '60s';
+const DEFAULT_USER_DRAIN_TIMEOUT_MS = 35_000;
+const DEFAULT_USER_DRAIN_POLL_MS = 100;
 
 export interface AgentTriggerServiceOptions {
   address?: BoundAddress | string | null;
@@ -33,6 +35,9 @@ export interface AgentTriggerServiceDeps {
   timeoutMs?: number;
   methods?: AgentTriggerDeliveryPersistence;
   deliveryOptions?: AgentTriggerDeliveryEngineOptions;
+  isPrincipalActive?: (userId: string) => boolean | Promise<boolean>;
+  userDrainTimeoutMs?: number;
+  userDrainPollMs?: number;
 }
 
 export interface AgentTriggerDeliveryReceipt {
@@ -87,6 +92,9 @@ export interface AgentTriggerDeliveryPersistence {
     id: string,
     availableAt: Date,
   ) => Promise<AgentTriggerStoredRecord | null>;
+  fenceAgentTriggerDeliveriesByUser: (userId: string, settledAt: Date) => Promise<void>;
+  countActiveAgentTriggerDeliveriesByUser: (userId: string, now: Date) => Promise<number>;
+  deleteAgentTriggerDeliveriesByUser: (userId: string) => Promise<void>;
 }
 
 export interface AgentTriggerService {
@@ -103,6 +111,7 @@ export interface AgentTriggerService {
   getDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
   getDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeue: (id: string, availableAt?: Date) => Promise<AgentTriggerStoredRecord | null>;
+  drainUser: (userId: string) => Promise<void>;
 }
 
 function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTriggerDeliveryStore {
@@ -136,11 +145,20 @@ function requireDeliveryOrigin(boundOrigin: string | undefined): void {
 
 /** Production composition for trusted, in-process trigger producers. */
 export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): AgentTriggerService {
+  const userDrainTimeoutMs = deps.userDrainTimeoutMs ?? DEFAULT_USER_DRAIN_TIMEOUT_MS;
+  const userDrainPollMs = deps.userDrainPollMs ?? DEFAULT_USER_DRAIN_POLL_MS;
+  if (!Number.isSafeInteger(userDrainTimeoutMs) || userDrainTimeoutMs <= 0) {
+    throw new TypeError('userDrainTimeoutMs must be a positive integer');
+  }
+  if (!Number.isSafeInteger(userDrainPollMs) || userDrainPollMs <= 0) {
+    throw new TypeError('userDrainPollMs must be a positive integer');
+  }
   let boundOrigin: string | undefined;
   let deliveryEngine: AgentTriggerDeliveryEngine | undefined;
   let initializePromise: Promise<void> | undefined;
   let deliveryReady = false;
   let stopping = false;
+  const isPrincipalActive = deps.isPrincipalActive;
   const host: AgentTriggerExecutionHost = createAgentTriggerExecutionHost({
     getBaseUrl: () => {
       const origin = process.env.AGENT_TRIGGERS_SELF_URL ?? boundOrigin;
@@ -164,6 +182,41 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       );
     }
     return deps.methods;
+  };
+
+  const requireActivePrincipal = async (userId: string): Promise<void> => {
+    if (isPrincipalActive != null && !(await runAsSystem(async () => isPrincipalActive(userId)))) {
+      throw new AgentTriggerServiceUnavailableError(
+        'Agent trigger delivery principal is no longer active',
+      );
+    }
+  };
+
+  const drainUser = async (userId: string): Promise<void> => {
+    const methods = requireMethods();
+    const startedAt = new Date();
+    await runAsSystem(async () => methods.fenceAgentTriggerDeliveriesByUser(userId, startedAt));
+    await deliveryEngine?.cancelUser(userId);
+
+    try {
+      const deadline = Date.now() + userDrainTimeoutMs;
+      while (
+        (await runAsSystem(async () =>
+          methods.countActiveAgentTriggerDeliveriesByUser(userId, new Date()),
+        )) > 0
+      ) {
+        if (Date.now() >= deadline) {
+          throw new AgentTriggerServiceUnavailableError(
+            `Timed out draining active agent trigger deliveries for user ${userId}`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, userDrainPollMs));
+      }
+
+      await runAsSystem(async () => methods.deleteAgentTriggerDeliveriesByUser(userId));
+    } finally {
+      deliveryEngine?.releaseUserCancellation(userId);
+    }
   };
 
   const stop = async (): Promise<void> => {
@@ -225,7 +278,14 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     enqueue: async (envelope, options) => {
       const methods = requireMethods();
       const prepared = prepareAgentTriggerDelivery(envelope, options);
+      await requireActivePrincipal(String(prepared.user));
       const queued = await runAsSystem(async () => methods.enqueueAgentTriggerDelivery(prepared));
+      try {
+        await requireActivePrincipal(String(prepared.user));
+      } catch (error) {
+        await drainUser(String(prepared.user));
+        throw error;
+      }
       deliveryEngine?.wake();
       return {
         id: queued.delivery.id,
@@ -241,5 +301,6 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       runAsSystem(async () => requireMethods().getAgentTriggerDeadLetters(limit)),
     requeue: (id, availableAt = new Date()) =>
       runAsSystem(async () => requireMethods().requeueAgentTriggerDelivery(id, availableAt)),
+    drainUser,
   };
 }

@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createMethods, createModels } from '@librechat/data-schemas';
-import type { AgentTriggerFetch } from './host';
 import type { AgentTriggerDeliveryPersistence, AgentTriggerService } from './service';
+import type { AgentTriggerFetch } from './host';
 import { __resetShutdownStateForTests } from '../../app/shutdown';
 import { createAgentTriggerEnvelope } from './envelope';
 import { createAgentTriggerService } from './service';
@@ -13,7 +13,7 @@ let service: AgentTriggerService | undefined;
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
-  await mongoose.connect(mongoServer.getUri());
+  await mongoose.connect(mongoServer.getUri(), { autoIndex: false });
   createModels(mongoose);
 }, DB_SETUP_TIMEOUT_MS);
 

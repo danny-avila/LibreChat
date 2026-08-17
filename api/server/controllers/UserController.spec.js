@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
+const mockGetActiveJobIdsForUser = jest.fn().mockResolvedValue([]);
+const mockAbortJob = jest.fn().mockResolvedValue({ success: true });
+const mockDrainAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undefined);
+
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
   return {
@@ -27,9 +31,10 @@ jest.mock('~/models', () => {
     updateUserPlugins: jest.fn(),
     deleteAssistants: jest.fn().mockResolvedValue(undefined),
     deleteUserById: jest.fn().mockResolvedValue(undefined),
+    beginAgentTriggerUserDeletion: jest.fn().mockResolvedValue('acquired'),
+    cancelAgentTriggerUserDeletion: jest.fn().mockResolvedValue(true),
     deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
     deleteUserSkills: jest.fn().mockResolvedValue(undefined),
-    deleteAgentTriggerDeliveriesByUser: jest.fn().mockResolvedValue(undefined),
     deleteMessages: jest.fn().mockResolvedValue(undefined),
     deleteBalances: jest.fn().mockResolvedValue(undefined),
     deleteActions: jest.fn().mockResolvedValue(undefined),
@@ -74,6 +79,14 @@ jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   needsRefresh: jest.fn(),
   getNewS3URL: jest.fn(),
+  GenerationJobManager: {
+    getActiveJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
+    abortJob: (...args) => mockAbortJob(...args),
+  },
+}));
+
+jest.mock('~/server/services/Agents/triggers', () => ({
+  drainAgentTriggerDeliveriesForUser: (...args) => mockDrainAgentTriggerDeliveriesForUser(...args),
 }));
 
 jest.mock('~/server/services/Files/process', () => ({
@@ -118,7 +131,14 @@ const {
   verifyEmailController,
 } = require('./UserController');
 const { Group } = require('~/db/models');
-const { deleteConvos, acceptTerms, deleteAgentTriggerDeliveriesByUser } = require('~/models');
+const {
+  deleteConvos,
+  acceptTerms,
+  deleteUserById,
+  deleteMessages,
+  beginAgentTriggerUserDeletion,
+  cancelAgentTriggerUserDeletion,
+} = require('~/models');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
 
 describe('verifyEmailController', () => {
@@ -322,7 +342,40 @@ describe('deleteUserController', () => {
 
     expect(mockRes.status).toHaveBeenCalledWith(200);
     expect(mockRes.send).toHaveBeenCalledWith({ message: 'User deleted' });
-    expect(deleteAgentTriggerDeliveriesByUser).toHaveBeenCalledWith(userId.toString());
+    expect(beginAgentTriggerUserDeletion).toHaveBeenCalledWith(userId.toString(), expect.any(Date));
+    expect(mockDrainAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(userId.toString());
+    expect(beginAgentTriggerUserDeletion.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0],
+    );
+    expect(mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteMessages.mock.invocationCallOrder[0],
+    );
+    expect(deleteMessages.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteUserById.mock.invocationCallOrder[0],
+    );
+    expect(cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
+  });
+
+  it('aborts generations admitted before the deletion fence before erasing messages', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    mockGetActiveJobIdsForUser.mockResolvedValueOnce(['stream-1', 'stream-2']);
+    const req = {
+      user: {
+        id: userId.toString(),
+        _id: userId,
+        email: 'active@test.com',
+        tenantId: 'tenant-1',
+      },
+    };
+
+    await deleteUserController(req, mockRes);
+
+    expect(mockGetActiveJobIdsForUser).toHaveBeenCalledWith(userId.toString(), 'tenant-1');
+    expect(mockAbortJob).toHaveBeenCalledWith('stream-1');
+    expect(mockAbortJob).toHaveBeenCalledWith('stream-2');
+    expect(mockAbortJob.mock.invocationCallOrder[1]).toBeLessThan(
+      deleteMessages.mock.invocationCallOrder[0],
+    );
   });
 
   it('should remove the user from all groups via $pullAll', async () => {
@@ -395,6 +448,11 @@ describe('deleteUserController', () => {
 
     expect(mockRes.status).toHaveBeenCalledWith(500);
     expect(mockRes.json).toHaveBeenCalledWith({ message: 'Something went wrong.' });
+    expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(
+      userId.toString(),
+      expect.any(Date),
+    );
+    expect(deleteUserById).not.toHaveBeenCalled();
   });
 
   it('should use string user.id (not ObjectId user._id) for memberIds removal', async () => {

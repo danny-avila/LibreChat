@@ -1,8 +1,8 @@
-import type { AgentTriggerExecutionResult } from './host';
 import type { AgentTriggerDeliveryRecord, AgentTriggerDeliveryStore } from './engine';
+import type { AgentTriggerExecutionResult } from './host';
+import { createAgentTriggerDeliveryEngine } from './engine';
 import { AgentTriggerDispatchError } from './dispatch';
 import { AgentTriggerExecutionError } from './host';
-import { createAgentTriggerDeliveryEngine } from './engine';
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -23,6 +23,7 @@ const successResult = (): AgentTriggerExecutionResult => ({
 function delivery(overrides: Partial<AgentTriggerDeliveryRecord> = {}): AgentTriggerDeliveryRecord {
   return {
     id: 'delivery-row-1',
+    user: 'user-1',
     claimToken: 'claim-1',
     deliveryKey: 'trigger_1',
     fingerprint: 'fingerprint-1',
@@ -77,6 +78,76 @@ describe('createAgentTriggerDeliveryEngine', () => {
       result: successResult(),
       settledAt: START,
     });
+  });
+
+  it('cancels and drains an in-flight delivery for one user', async () => {
+    const store = storeWith();
+    let dispatchStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      dispatchStarted = resolve;
+    });
+    const dispatch = jest.fn(
+      async (_envelope: unknown, options?: { signal?: AbortSignal }) =>
+        new Promise<AgentTriggerExecutionResult>((_resolve, reject) => {
+          dispatchStarted?.();
+          options?.signal?.addEventListener(
+            'abort',
+            () =>
+              reject(
+                new AgentTriggerExecutionError('cancelled', {
+                  mode: 'fire',
+                  certainty: 'ambiguous',
+                  retryable: true,
+                  code: 'ABORTED',
+                }),
+              ),
+            { once: true },
+          );
+        }),
+    );
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch, now: () => START, workerId: 'worker-1' },
+      { concurrency: 1 },
+    );
+
+    const tick = engine.runTick();
+    await started;
+    await engine.cancelUser('user-1');
+    await tick;
+
+    expect(store.retry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'delivery-row-1',
+        claimToken: 'claim-1',
+        error: expect.objectContaining({ code: 'ABORTED' }),
+      }),
+    );
+    expect(store.complete).not.toHaveBeenCalled();
+  });
+
+  it('releases a claimed delivery without dispatch after its user is fenced', async () => {
+    const store = storeWith();
+    const dispatch = jest.fn(async () => successResult());
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch, now: () => START, workerId: 'worker-1' },
+      { concurrency: 1 },
+    );
+
+    await engine.cancelUser('user-1');
+    await expect(engine.runTick()).resolves.toBe(1);
+
+    expect(store.release).toHaveBeenCalledWith({
+      id: 'delivery-row-1',
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      availableAt: START,
+    });
+    expect(store.beginAttempt).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+
+    engine.releaseUserCancellation('user-1');
+    await engine.runTick();
+    expect(dispatch).toHaveBeenCalledTimes(1);
   });
 
   it('honors Retry-After for a retryable admission rejection', async () => {

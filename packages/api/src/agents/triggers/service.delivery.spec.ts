@@ -1,8 +1,8 @@
-import type { AgentTriggerDeliveryPersistence, AgentTriggerStoredRecord } from './service';
 import { getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import type { AgentTriggerDeliveryPersistence, AgentTriggerStoredRecord } from './service';
+import { AgentTriggerServiceUnavailableError, createAgentTriggerService } from './service';
 import { __resetShutdownStateForTests } from '../../app/shutdown';
 import { createAgentTriggerEnvelope } from './envelope';
-import { AgentTriggerServiceUnavailableError, createAgentTriggerService } from './service';
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -34,6 +34,7 @@ const envelope = () =>
 function deliveryRecord(overrides: Partial<AgentTriggerStoredRecord> = {}) {
   return {
     id: 'delivery-row-1',
+    user: '507f1f77bcf86cd799439011',
     deliveryKey: 'trigger_1',
     fingerprint: 'fingerprint-1',
     orderingKey: 'ordering-1',
@@ -72,6 +73,9 @@ function deliveryMethods(
     getAgentTriggerDelivery: jest.fn(async () => null),
     getAgentTriggerDeadLetters: jest.fn(async () => []),
     requeueAgentTriggerDelivery: jest.fn(async () => null),
+    fenceAgentTriggerDeliveriesByUser: jest.fn(async () => undefined),
+    countActiveAgentTriggerDeliveriesByUser: jest.fn(async () => 0),
+    deleteAgentTriggerDeliveriesByUser: jest.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -147,6 +151,85 @@ describe('durable agent trigger service', () => {
       replayed: false,
       availableAt: START,
     });
+    await service.stop();
+  });
+
+  it('rejects enqueue before persistence when the principal was deleted', async () => {
+    const methods = deliveryMethods();
+    const service = createAgentTriggerService({
+      methods,
+      isPrincipalActive: async () => false,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    await expect(service.enqueue(envelope())).rejects.toThrow(
+      'Agent trigger delivery principal is no longer active',
+    );
+    expect(methods.enqueueAgentTriggerDelivery).not.toHaveBeenCalled();
+    await service.stop();
+  });
+
+  it('drains a just-enqueued row when deletion wins the admission race', async () => {
+    const methods = deliveryMethods();
+    const isPrincipalActive = jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const service = createAgentTriggerService({
+      methods,
+      isPrincipalActive,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    await expect(service.enqueue(envelope())).rejects.toThrow(
+      'Agent trigger delivery principal is no longer active',
+    );
+    expect(methods.fenceAgentTriggerDeliveriesByUser).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439011',
+      expect.any(Date),
+    );
+    expect(methods.deleteAgentTriggerDeliveriesByUser).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439011',
+    );
+    await service.stop();
+  });
+
+  it("fences, drains, and removes one user's durable deliveries in system context", async () => {
+    const fenceAgentTriggerDeliveriesByUser = jest.fn(async () => {
+      expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
+    });
+    const countActiveAgentTriggerDeliveriesByUser = jest
+      .fn()
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0);
+    const deleteAgentTriggerDeliveriesByUser = jest.fn(async () => {
+      expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
+    });
+    const methods = deliveryMethods({
+      fenceAgentTriggerDeliveriesByUser,
+      countActiveAgentTriggerDeliveriesByUser,
+      deleteAgentTriggerDeliveriesByUser,
+    });
+    const service = createAgentTriggerService({
+      methods,
+      userDrainPollMs: 1,
+      deliveryOptions: { concurrency: 1, tickMs: 60_000 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+
+    await service.drainUser('507f1f77bcf86cd799439011');
+
+    expect(fenceAgentTriggerDeliveriesByUser).toHaveBeenCalledWith(
+      '507f1f77bcf86cd799439011',
+      expect.any(Date),
+    );
+    expect(countActiveAgentTriggerDeliveriesByUser).toHaveBeenCalledTimes(2);
+    expect(deleteAgentTriggerDeliveriesByUser).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
     await service.stop();
   });
 

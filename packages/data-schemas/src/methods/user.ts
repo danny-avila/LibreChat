@@ -117,6 +117,12 @@ export function createUserMethods(
   >;
   getUserById: (userId: string, fieldsToSelect?: string | string[] | null) => Promise<IUser | null>;
   generateToken: (user: IUser, expiresIn?: number) => Promise<string>;
+  beginAgentTriggerUserDeletion: (
+    userId: string,
+    startedAt: Date,
+  ) => Promise<'acquired' | 'in_progress' | 'missing'>;
+  cancelAgentTriggerUserDeletion: (userId: string, startedAt: Date) => Promise<boolean>;
+  isAgentTriggerPrincipalActive: (userId: string) => Promise<boolean>;
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
   updateUserPlugins: (
     userId: string,
@@ -376,6 +382,45 @@ export function createUserMethods(
     }
   }
 
+  /** Establishes the durable admission fence used while account deletion drains triggers. */
+  async function beginAgentTriggerUserDeletion(
+    userId: string,
+    startedAt: Date,
+  ): Promise<'acquired' | 'in_progress' | 'missing'> {
+    const User = mongoose.models.User;
+    const result = await User.updateOne(
+      { _id: userId, agentTriggerDeletionStartedAt: { $exists: false } },
+      { $set: { agentTriggerDeletionStartedAt: startedAt } },
+    );
+    if (result.modifiedCount === 1) {
+      await invalidateAuthUserDocCache(userId);
+      return 'acquired';
+    }
+    return (await User.exists({ _id: userId })) == null ? 'missing' : 'in_progress';
+  }
+
+  /** Releases only the account-deletion attempt that owns this exact fence. */
+  async function cancelAgentTriggerUserDeletion(userId: string, startedAt: Date): Promise<boolean> {
+    const User = mongoose.models.User;
+    const result = await User.updateOne(
+      { _id: userId, agentTriggerDeletionStartedAt: startedAt },
+      { $unset: { agentTriggerDeletionStartedAt: 1 } },
+    );
+    if (result.modifiedCount === 1) {
+      await invalidateAuthUserDocCache(userId);
+      return true;
+    }
+    return false;
+  }
+
+  async function isAgentTriggerPrincipalActive(userId: string): Promise<boolean> {
+    const User = mongoose.models.User;
+    return (
+      (await User.exists({ _id: userId, agentTriggerDeletionStartedAt: { $exists: false } })) !=
+      null
+    );
+  }
+
   /**
    * Generates a JWT token for a given user.
    * @param user - The user object
@@ -627,6 +672,9 @@ export function createUserMethods(
     searchUsers,
     getUserById,
     generateToken,
+    beginAgentTriggerUserDeletion,
+    cancelAgentTriggerUserDeletion,
+    isAgentTriggerPrincipalActive,
     deleteUserById,
     updateUserPlugins,
     toggleUserMemories,

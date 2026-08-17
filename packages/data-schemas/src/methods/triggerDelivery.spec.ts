@@ -291,6 +291,51 @@ describe('agent trigger delivery methods', () => {
     );
   });
 
+  it('fences queued user deliveries while preserving an active lease for draining', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const active = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    const pending = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+
+    await methods.fenceAgentTriggerDeliveriesByUser(user, START);
+
+    expect(await methods.countActiveAgentTriggerDeliveriesByUser(user, START)).toBe(1);
+    expect(await Delivery.findById(active.delivery.id).lean()).toMatchObject({
+      status: 'leased',
+      claimToken: 'claim-1',
+    });
+    expect(await Delivery.findById(pending.delivery.id).lean()).toMatchObject({
+      status: 'dead',
+      lastError: { code: 'USER_DELETED', retryable: false },
+      settledAt: START,
+    });
+    expect(await Delivery.countDocuments()).toBe(3);
+  });
+
+  it('fences expired leases', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const expired = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: START,
+      leaseUntil: new Date(START.getTime() - 1),
+    });
+
+    await methods.fenceAgentTriggerDeliveriesByUser(user, START);
+    expect(await methods.countActiveAgentTriggerDeliveriesByUser(user, START)).toBe(0);
+    expect(await Delivery.findById(expired.delivery.id).lean()).toMatchObject({
+      status: 'dead',
+      lastError: { code: 'USER_DELETED' },
+    });
+  });
+
   it('deletes all queued payloads for an erased user', async () => {
     const user = new mongoose.Types.ObjectId();
     await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));

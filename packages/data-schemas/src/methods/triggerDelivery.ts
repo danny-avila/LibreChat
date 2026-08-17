@@ -89,6 +89,14 @@ export interface AgentTriggerDeliveryMethods {
     id: string,
     availableAt: Date,
   ) => Promise<AgentTriggerDeliveryRecord | null>;
+  fenceAgentTriggerDeliveriesByUser: (
+    user: string | Types.ObjectId,
+    settledAt: Date,
+  ) => Promise<void>;
+  countActiveAgentTriggerDeliveriesByUser: (
+    user: string | Types.ObjectId,
+    now: Date,
+  ) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (user: string | Types.ObjectId) => Promise<void>;
 }
 
@@ -407,6 +415,36 @@ export function createAgentTriggerDeliveryMethods(
     return delivery == null ? null : toRecord(delivery);
   }
 
+  async function fenceAgentTriggerDeliveriesByUser(
+    user: string | Types.ObjectId,
+    settledAt: Date,
+  ): Promise<void> {
+    const error = normalizeFailure({
+      code: 'USER_DELETED',
+      message: 'Delivery cancelled because its user account is being deleted',
+      certainty: 'definite',
+      retryable: false,
+      attemptedAt: settledAt,
+    });
+    await Delivery().updateMany(
+      {
+        user,
+        $or: [{ status: 'pending' }, { status: 'leased', leaseUntil: { $lte: settledAt } }],
+      },
+      {
+        $set: { status: 'dead', settledAt, lastError: error },
+        $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, result: 1, expiresAt: 1 },
+      },
+    );
+  }
+
+  async function countActiveAgentTriggerDeliveriesByUser(
+    user: string | Types.ObjectId,
+    now: Date,
+  ): Promise<number> {
+    return Delivery().countDocuments({ user, status: 'leased', leaseUntil: { $gt: now } });
+  }
+
   async function deleteAgentTriggerDeliveriesByUser(user: string | Types.ObjectId): Promise<void> {
     await Delivery().deleteMany({ user });
   }
@@ -424,6 +462,8 @@ export function createAgentTriggerDeliveryMethods(
     getAgentTriggerDelivery,
     getAgentTriggerDeadLetters,
     requeueAgentTriggerDelivery,
+    fenceAgentTriggerDeliveriesByUser,
+    countActiveAgentTriggerDeliveriesByUser,
     deleteAgentTriggerDeliveriesByUser,
   };
 }

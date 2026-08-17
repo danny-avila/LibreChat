@@ -628,6 +628,41 @@ describe('User Methods - Database Tests', () => {
     });
   });
 
+  describe('agent trigger account-deletion fence', () => {
+    test('blocks trigger admission until the owning deletion attempt releases it', async () => {
+      const user = await User.create({
+        name: 'Trigger Fence',
+        email: 'trigger-fence@example.com',
+        provider: 'local',
+      });
+      const userId = user._id.toString();
+      const startedAt = new Date('2026-08-17T12:00:00.000Z');
+
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+      await expect(methods.beginAgentTriggerUserDeletion(userId, startedAt)).resolves.toBe(
+        'acquired',
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+      await expect(
+        methods.beginAgentTriggerUserDeletion(userId, new Date(startedAt.getTime() + 1)),
+      ).resolves.toBe('in_progress');
+      await expect(
+        methods.cancelAgentTriggerUserDeletion(userId, new Date(startedAt.getTime() + 1)),
+      ).resolves.toBe(false);
+      await expect(methods.cancelAgentTriggerUserDeletion(userId, startedAt)).resolves.toBe(true);
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(true);
+    });
+
+    test('reports a missing principal without creating a deletion fence', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+
+      await expect(methods.beginAgentTriggerUserDeletion(userId, new Date())).resolves.toBe(
+        'missing',
+      );
+      await expect(methods.isAgentTriggerPrincipalActive(userId)).resolves.toBe(false);
+    });
+  });
+
   describe('countUsers', () => {
     test('should count all users', async () => {
       await User.create([

@@ -19,6 +19,11 @@ const mockDeleteToolCalls = jest.fn();
 const mockDeleteUserAgents = jest.fn();
 const mockDeleteUserPrompts = jest.fn();
 const mockDeleteUserSkills = jest.fn();
+const mockGetActiveJobIdsForUser = jest.fn();
+const mockAbortJob = jest.fn();
+const mockDrainAgentTriggerDeliveriesForUser = jest.fn();
+const mockBeginAgentTriggerUserDeletion = jest.fn();
+const mockCancelAgentTriggerUserDeletion = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), info: jest.fn() },
@@ -40,6 +45,10 @@ jest.mock('@librechat/api', () => ({
   needsRefresh: jest.fn(),
   getNewS3URL: jest.fn(),
   deleteAllSharedLinksWithCleanup: (...args) => mockDeleteAllSharedLinksWithCleanup(...args),
+  GenerationJobManager: {
+    getActiveJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
+    abortJob: (...args) => mockAbortJob(...args),
+  },
 }));
 
 jest.mock('~/models', () => ({
@@ -47,6 +56,8 @@ jest.mock('~/models', () => ({
   deleteAllSharedLinks: (...args) => mockDeleteAllSharedLinks(...args),
   updateUserPlugins: (...args) => mockUpdateUserPlugins(...args),
   deleteUserById: (...args) => mockDeleteUserById(...args),
+  beginAgentTriggerUserDeletion: (...args) => mockBeginAgentTriggerUserDeletion(...args),
+  cancelAgentTriggerUserDeletion: (...args) => mockCancelAgentTriggerUserDeletion(...args),
   deleteMessages: (...args) => mockDeleteMessages(...args),
   deletePresets: (...args) => mockDeletePresets(...args),
   deleteUserKey: (...args) => mockDeleteUserKey(...args),
@@ -60,7 +71,6 @@ jest.mock('~/models', () => ({
   deleteUserAgents: (...args) => mockDeleteUserAgents(...args),
   deleteUserPrompts: (...args) => mockDeleteUserPrompts(...args),
   deleteUserSkills: (...args) => mockDeleteUserSkills(...args),
-  deleteAgentTriggerDeliveriesByUser: jest.fn().mockResolvedValue(undefined),
   deleteTransactions: jest.fn(),
   deleteBalances: jest.fn(),
   deleteAllAgentApiKeys: jest.fn(),
@@ -102,6 +112,10 @@ jest.mock('~/server/services/Files/process', () => ({
   processDeleteRequest: (...args) => mockProcessDeleteRequest(...args),
 }));
 
+jest.mock('~/server/services/Agents/triggers', () => ({
+  drainAgentTriggerDeliveriesForUser: (...args) => mockDrainAgentTriggerDeliveriesForUser(...args),
+}));
+
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
 }));
@@ -137,6 +151,11 @@ function stubDeletionMocks() {
   mockDeleteUserAgents.mockResolvedValue();
   mockDeleteUserPrompts.mockResolvedValue();
   mockDeleteUserSkills.mockResolvedValue(0);
+  mockGetActiveJobIdsForUser.mockResolvedValue([]);
+  mockAbortJob.mockResolvedValue({ success: true });
+  mockDrainAgentTriggerDeliveriesForUser.mockResolvedValue();
+  mockBeginAgentTriggerUserDeletion.mockResolvedValue('acquired');
+  mockCancelAgentTriggerUserDeletion.mockResolvedValue(true);
 }
 
 beforeEach(() => {
@@ -159,12 +178,41 @@ describe('deleteUserController - 2FA enforcement', () => {
     expect(mockDeleteUserPrompts).toHaveBeenCalledWith('user1');
     expect(mockDeleteUserSkills).toHaveBeenCalledWith('user1');
     expect(mockVerifyOTPOrBackupCode).not.toHaveBeenCalled();
+    expect(mockBeginAgentTriggerUserDeletion.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0],
+    );
+    expect(mockDrainAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeleteMessages.mock.invocationCallOrder[0],
+    );
+    expect(mockDeleteMessages.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeleteUserById.mock.invocationCallOrder[0],
+    );
+    expect(mockCancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
+  });
+
+  it('aborts active generation jobs before deleting account-owned records', async () => {
+    const req = {
+      user: { id: 'user1', _id: 'user1', email: 'a@b.com', tenantId: 'tenant-1' },
+      body: {},
+    };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    mockGetActiveJobIdsForUser.mockResolvedValueOnce(['stream-1']);
+
+    await deleteUserController(req, res);
+
+    expect(mockGetActiveJobIdsForUser).toHaveBeenCalledWith('user1', 'tenant-1');
+    expect(mockAbortJob).toHaveBeenCalledWith('stream-1');
+    expect(mockAbortJob.mock.invocationCallOrder[0]).toBeLessThan(
+      mockDeleteMessages.mock.invocationCallOrder[0],
+    );
   });
 
   it('proceeds with deletion when user has no 2FA record', async () => {
     const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
     const res = createRes();
     mockGetUserById.mockResolvedValue(null);
+    mockBeginAgentTriggerUserDeletion.mockResolvedValueOnce('missing');
 
     await deleteUserController(req, res);
 
