@@ -31,6 +31,7 @@ export interface AgentTriggerDeliveryRecord {
   deliveryKey: string;
   fingerprint: string;
   orderingKey: string;
+  laneSequence: number;
   envelope: unknown;
   status: AgentTriggerDeliveryStatus;
   attempts: number;

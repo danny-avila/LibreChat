@@ -22,6 +22,7 @@ const mockDeleteUserSkills = jest.fn();
 const mockGetActiveJobIdsForUser = jest.fn();
 const mockAbortJob = jest.fn();
 const mockDrainAgentTriggerDeliveriesForUser = jest.fn();
+const mockPurgeAgentTriggerDeliveriesForUser = jest.fn();
 const mockBeginAgentTriggerUserDeletion = jest.fn();
 const mockCancelAgentTriggerUserDeletion = jest.fn();
 
@@ -114,6 +115,7 @@ jest.mock('~/server/services/Files/process', () => ({
 
 jest.mock('~/server/services/Agents/triggers', () => ({
   drainAgentTriggerDeliveriesForUser: (...args) => mockDrainAgentTriggerDeliveriesForUser(...args),
+  purgeAgentTriggerDeliveriesForUser: (...args) => mockPurgeAgentTriggerDeliveriesForUser(...args),
 }));
 
 jest.mock('~/server/services/Config', () => ({
@@ -141,7 +143,7 @@ function stubDeletionMocks() {
   mockDeletePresets.mockResolvedValue();
   mockDeleteConvos.mockResolvedValue();
   mockDeleteUserPluginAuth.mockResolvedValue();
-  mockDeleteUserById.mockResolvedValue();
+  mockDeleteUserById.mockResolvedValue({ deletedCount: 1 });
   mockDeleteAllSharedLinks.mockResolvedValue();
   mockDeleteAllSharedLinksWithCleanup.mockResolvedValue({ deletedCount: 0 });
   mockGetFiles.mockResolvedValue([]);
@@ -154,6 +156,7 @@ function stubDeletionMocks() {
   mockGetActiveJobIdsForUser.mockResolvedValue([]);
   mockAbortJob.mockResolvedValue({ success: true });
   mockDrainAgentTriggerDeliveriesForUser.mockResolvedValue();
+  mockPurgeAgentTriggerDeliveriesForUser.mockResolvedValue();
   mockBeginAgentTriggerUserDeletion.mockResolvedValue('acquired');
   mockCancelAgentTriggerUserDeletion.mockResolvedValue(true);
 }

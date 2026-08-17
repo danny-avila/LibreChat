@@ -1,3 +1,4 @@
+import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
 import { createAgentTriggerDeliveryModel } from './triggerDelivery';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
@@ -80,6 +81,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   Group: ReturnType<typeof createGroupModel>;
   Config: ReturnType<typeof createConfigModel>;
   AgentTriggerDelivery: ReturnType<typeof createAgentTriggerDeliveryModel>;
+  AgentTriggerLaneSequence: ReturnType<typeof createAgentTriggerLaneSequenceModel>;
 } {
   const models = {
     User: createUserModel(mongoose),
@@ -120,6 +122,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     Group: createGroupModel(mongoose),
     Config: createConfigModel(mongoose),
     AgentTriggerDelivery: createAgentTriggerDeliveryModel(mongoose),
+    AgentTriggerLaneSequence: createAgentTriggerLaneSequenceModel(mongoose),
   };
   /**
    * Background index builds fail silently unless an 'index' listener is

@@ -38,6 +38,7 @@ function deliveryRecord(overrides: Partial<AgentTriggerStoredRecord> = {}) {
     deliveryKey: 'trigger_1',
     fingerprint: 'fingerprint-1',
     orderingKey: 'ordering-1',
+    laneSequence: 1,
     envelope: envelope(),
     tenantId: 'tenant-1',
     status: 'pending' as const,
@@ -58,6 +59,7 @@ function deliveryMethods(
         deliveryKey: input.deliveryKey,
         fingerprint: input.fingerprint,
         orderingKey: input.orderingKey,
+        laneSequence: 1,
         envelope: input.envelope,
         availableAt: input.availableAt,
       }),
@@ -73,7 +75,6 @@ function deliveryMethods(
     getAgentTriggerDelivery: jest.fn(async () => null),
     getAgentTriggerDeadLetters: jest.fn(async () => []),
     requeueAgentTriggerDelivery: jest.fn(async () => null),
-    fenceAgentTriggerDeliveriesByUser: jest.fn(async () => undefined),
     countActiveAgentTriggerDeliveriesByUser: jest.fn(async () => 0),
     deleteAgentTriggerDeliveriesByUser: jest.fn(async () => undefined),
     ...overrides,
@@ -172,7 +173,7 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
-  it('drains a just-enqueued row when deletion wins the admission race', async () => {
+  it('preserves a just-enqueued row when deletion wins the admission race', async () => {
     const methods = deliveryMethods();
     const isPrincipalActive = jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     const service = createAgentTriggerService({
@@ -187,20 +188,12 @@ describe('durable agent trigger service', () => {
     await expect(service.enqueue(envelope())).rejects.toThrow(
       'Agent trigger delivery principal is no longer active',
     );
-    expect(methods.fenceAgentTriggerDeliveriesByUser).toHaveBeenCalledWith(
-      '507f1f77bcf86cd799439011',
-      expect.any(Date),
-    );
-    expect(methods.deleteAgentTriggerDeliveriesByUser).toHaveBeenCalledWith(
-      '507f1f77bcf86cd799439011',
-    );
+    expect(methods.countActiveAgentTriggerDeliveriesByUser).toHaveBeenCalled();
+    expect(methods.deleteAgentTriggerDeliveriesByUser).not.toHaveBeenCalled();
     await service.stop();
   });
 
-  it("fences, drains, and removes one user's durable deliveries in system context", async () => {
-    const fenceAgentTriggerDeliveriesByUser = jest.fn(async () => {
-      expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
-    });
+  it("drains without data loss, then purges one user's deliveries after commit", async () => {
     const countActiveAgentTriggerDeliveriesByUser = jest
       .fn()
       .mockResolvedValueOnce(1)
@@ -209,7 +202,6 @@ describe('durable agent trigger service', () => {
       expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
     });
     const methods = deliveryMethods({
-      fenceAgentTriggerDeliveriesByUser,
       countActiveAgentTriggerDeliveriesByUser,
       deleteAgentTriggerDeliveriesByUser,
     });
@@ -224,13 +216,13 @@ describe('durable agent trigger service', () => {
 
     await service.drainUser('507f1f77bcf86cd799439011');
 
-    expect(fenceAgentTriggerDeliveriesByUser).toHaveBeenCalledWith(
-      '507f1f77bcf86cd799439011',
-      expect.any(Date),
-    );
     expect(countActiveAgentTriggerDeliveriesByUser).toHaveBeenCalledTimes(2);
-    expect(deleteAgentTriggerDeliveriesByUser).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
+    expect(deleteAgentTriggerDeliveriesByUser).not.toHaveBeenCalled();
+
     await service.stop();
+    await service.purgeUser('507f1f77bcf86cd799439011');
+
+    expect(deleteAgentTriggerDeliveriesByUser).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
   });
 
   it('keeps trusted operational reads and requeue in system tenant context', async () => {

@@ -29,6 +29,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     deliveryKey: { type: String, required: true, maxlength: 128 },
     fingerprint: { type: String, required: true, maxlength: 128 },
     orderingKey: { type: String, required: true, maxlength: 128 },
+    laneSequence: { type: Number, required: true, min: 1 },
     envelope: { type: Schema.Types.Mixed, required: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     tenantId: { type: String, index: true },
@@ -56,7 +57,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
 triggerDeliverySchema.index({ deliveryKey: 1 }, { unique: true });
 triggerDeliverySchema.index({ status: 1, availableAt: 1, createdAt: 1 });
 triggerDeliverySchema.index({ status: 1, leaseUntil: 1, createdAt: 1 });
-triggerDeliverySchema.index({ orderingKey: 1, status: 1, createdAt: 1, _id: 1 });
+triggerDeliverySchema.index({ orderingKey: 1, status: 1, laneSequence: 1 });
 triggerDeliverySchema.index({ status: 1, updatedAt: -1 });
 // Only successful rows receive expiresAt. Dead letters remain available until
 // an operator explicitly requeues or removes them.

@@ -19,6 +19,7 @@ import { createAgentTriggerDeliveryEngine } from './engine';
 import { selfOriginFromAddress } from '../../app/origin';
 import { prepareAgentTriggerDelivery } from './delivery';
 import { createAgentTriggerExecutionHost } from './host';
+import { parseAgentTriggerEnvelope } from './envelope';
 
 export const AGENT_TRIGGER_TOKEN_TTL = '60s';
 const DEFAULT_USER_DRAIN_TIMEOUT_MS = 35_000;
@@ -92,7 +93,6 @@ export interface AgentTriggerDeliveryPersistence {
     id: string,
     availableAt: Date,
   ) => Promise<AgentTriggerStoredRecord | null>;
-  fenceAgentTriggerDeliveriesByUser: (userId: string, settledAt: Date) => Promise<void>;
   countActiveAgentTriggerDeliveriesByUser: (userId: string, now: Date) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (userId: string) => Promise<void>;
 }
@@ -112,6 +112,7 @@ export interface AgentTriggerService {
   getDeadLetters: (limit?: number) => Promise<AgentTriggerStoredRecord[]>;
   requeue: (id: string, availableAt?: Date) => Promise<AgentTriggerStoredRecord | null>;
   drainUser: (userId: string) => Promise<void>;
+  purgeUser: (userId: string) => Promise<void>;
 }
 
 function createDeliveryStore(methods: AgentTriggerDeliveryPersistence): AgentTriggerDeliveryStore {
@@ -184,6 +185,15 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     return deps.methods;
   };
 
+  const requireCleanupMethods = (): AgentTriggerDeliveryPersistence => {
+    if (deps.methods == null) {
+      throw new AgentTriggerServiceUnavailableError(
+        'Durable agent trigger delivery is not configured on this server',
+      );
+    }
+    return deps.methods;
+  };
+
   const requireActivePrincipal = async (userId: string): Promise<void> => {
     if (isPrincipalActive != null && !(await runAsSystem(async () => isPrincipalActive(userId)))) {
       throw new AgentTriggerServiceUnavailableError(
@@ -192,10 +202,17 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     }
   };
 
+  const dispatchForActivePrincipal = async (
+    envelope: unknown,
+    options?: { signal?: AbortSignal },
+  ): Promise<AgentTriggerExecutionResult> => {
+    const parsed = parseAgentTriggerEnvelope(envelope);
+    await requireActivePrincipal(parsed.principal.userId);
+    return host.dispatch(parsed, options);
+  };
+
   const drainUser = async (userId: string): Promise<void> => {
     const methods = requireMethods();
-    const startedAt = new Date();
-    await runAsSystem(async () => methods.fenceAgentTriggerDeliveriesByUser(userId, startedAt));
     await deliveryEngine?.cancelUser(userId);
 
     try {
@@ -212,8 +229,6 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         }
         await new Promise((resolve) => setTimeout(resolve, userDrainPollMs));
       }
-
-      await runAsSystem(async () => methods.deleteAgentTriggerDeliveriesByUser(userId));
     } finally {
       deliveryEngine?.releaseUserCancellation(userId);
     }
@@ -261,7 +276,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         deliveryEngine = createAgentTriggerDeliveryEngine(
           {
             store: createDeliveryStore(methods),
-            dispatch: (envelope, dispatchOptions) => host.dispatch(envelope, dispatchOptions),
+            dispatch: dispatchForActivePrincipal,
           },
           deps.deliveryOptions,
         );
@@ -274,7 +289,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       return initializePromise;
     },
     stop,
-    dispatch: (envelope, options) => host.dispatch(envelope, options),
+    dispatch: dispatchForActivePrincipal,
     enqueue: async (envelope, options) => {
       const methods = requireMethods();
       const prepared = prepareAgentTriggerDelivery(envelope, options);
@@ -302,5 +317,10 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     requeue: (id, availableAt = new Date()) =>
       runAsSystem(async () => requireMethods().requeueAgentTriggerDelivery(id, availableAt)),
     drainUser,
+    // Account deletion may reach this post-commit cleanup after graceful
+    // shutdown has begun. Persistence remains usable even though admissions
+    // and the delivery engine are deliberately no longer ready.
+    purgeUser: (userId) =>
+      runAsSystem(async () => requireCleanupMethods().deleteAgentTriggerDeliveriesByUser(userId)),
   };
 }

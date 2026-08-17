@@ -4,12 +4,14 @@ import type { Model } from 'mongoose';
 import type {
   AgentTriggerDeliveryFailure,
   IAgentTriggerDeliveryDocument,
+  IAgentTriggerLaneSequenceDocument,
 } from '~/types/triggerDelivery';
 import {
   AgentTriggerDeliveryConflictError,
   createAgentTriggerDeliveryMethods,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
+import { createAgentTriggerLaneSequenceModel } from '../models/triggerLaneSequence';
 import { createAgentTriggerDeliveryModel } from '../models/triggerDelivery';
 
 jest.mock('~/config/winston', () => ({
@@ -23,6 +25,7 @@ const DB_SETUP_TIMEOUT_MS = 60_000;
 const START = new Date('2026-08-17T12:00:00.000Z');
 let mongoServer: MongoMemoryServer;
 let Delivery: Model<IAgentTriggerDeliveryDocument>;
+let LaneSequence: Model<IAgentTriggerLaneSequenceDocument>;
 let methods: AgentTriggerDeliveryMethods;
 let counter = 0;
 
@@ -30,7 +33,8 @@ beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
   Delivery = createAgentTriggerDeliveryModel(mongoose);
-  await Delivery.init();
+  LaneSequence = createAgentTriggerLaneSequenceModel(mongoose);
+  await Promise.all([Delivery.init(), LaneSequence.init()]);
   methods = createAgentTriggerDeliveryMethods(mongoose);
 }, DB_SETUP_TIMEOUT_MS);
 
@@ -40,7 +44,7 @@ afterAll(async () => {
 }, DB_SETUP_TIMEOUT_MS);
 
 beforeEach(async () => {
-  await Delivery.deleteMany({});
+  await Promise.all([Delivery.deleteMany({}), LaneSequence.deleteMany({})]);
 });
 
 function enqueueInput(
@@ -100,6 +104,62 @@ describe('agent trigger delivery methods', () => {
     );
 
     expect(claims.filter((claim) => claim != null)).toHaveLength(1);
+  });
+
+  it('allocates a replica-stable monotonic sequence within an ordering lane', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const replicas = [
+      createAgentTriggerDeliveryMethods(mongoose),
+      createAgentTriggerDeliveryMethods(mongoose),
+    ];
+    const enqueued = await Promise.all(
+      Array.from({ length: 12 }, (_, index) =>
+        replicas[index % replicas.length].enqueueAgentTriggerDelivery(
+          enqueueInput({ user, orderingKey: 'shared-lane' }),
+        ),
+      ),
+    );
+
+    expect(enqueued.map(({ delivery }) => delivery.laneSequence).sort((a, b) => a - b)).toEqual(
+      Array.from({ length: 12 }, (_, index) => index + 1),
+    );
+  });
+
+  it('orders a lane by its atomic sequence instead of tied timestamps or process ObjectIds', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const common = {
+      orderingKey: 'tied-lane',
+      envelope: { version: 1 },
+      user,
+      status: 'pending' as const,
+      attempts: 0,
+      availableAt: START,
+      createdAt: START,
+      updatedAt: START,
+    };
+    await Delivery.create([
+      {
+        ...common,
+        _id: new mongoose.Types.ObjectId('ffffffffffffffffffffffff'),
+        deliveryKey: 'first-by-sequence',
+        fingerprint: 'first',
+        laneSequence: 1,
+      },
+      {
+        ...common,
+        _id: new mongoose.Types.ObjectId('000000000000000000000001'),
+        deliveryKey: 'second-by-sequence',
+        fingerprint: 'second',
+        laneSequence: 2,
+      },
+    ]);
+
+    await expect(
+      methods.findEarlierAgentTriggerDelivery({
+        orderingKey: 'tied-lane',
+        laneSequence: 2,
+      }),
+    ).resolves.toEqual({ availableAt: START });
   });
 
   it('honors the lease skew margin before takeover', async () => {
@@ -291,11 +351,10 @@ describe('agent trigger delivery methods', () => {
     );
   });
 
-  it('fences queued user deliveries while preserving an active lease for draining', async () => {
+  it('counts only live leases while an account deletion drains', async () => {
     const user = new mongoose.Types.ObjectId();
-    const active = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
-    const pending = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
-    await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
+    await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
     await methods.claimNextAgentTriggerDelivery({
       workerId: 'worker-1',
       claimToken: 'claim-1',
@@ -303,48 +362,26 @@ describe('agent trigger delivery methods', () => {
       leaseUntil: new Date(START.getTime() + 60_000),
     });
 
-    await methods.fenceAgentTriggerDeliveriesByUser(user, START);
-
     expect(await methods.countActiveAgentTriggerDeliveriesByUser(user, START)).toBe(1);
-    expect(await Delivery.findById(active.delivery.id).lean()).toMatchObject({
-      status: 'leased',
-      claimToken: 'claim-1',
-    });
-    expect(await Delivery.findById(pending.delivery.id).lean()).toMatchObject({
-      status: 'dead',
-      lastError: { code: 'USER_DELETED', retryable: false },
-      settledAt: START,
-    });
-    expect(await Delivery.countDocuments()).toBe(3);
-  });
-
-  it('fences expired leases', async () => {
-    const user = new mongoose.Types.ObjectId();
-    const expired = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
-    await methods.claimNextAgentTriggerDelivery({
-      workerId: 'worker-1',
-      claimToken: 'claim-1',
-      now: START,
-      leaseUntil: new Date(START.getTime() - 1),
-    });
-
-    await methods.fenceAgentTriggerDeliveriesByUser(user, START);
-    expect(await methods.countActiveAgentTriggerDeliveriesByUser(user, START)).toBe(0);
-    expect(await Delivery.findById(expired.delivery.id).lean()).toMatchObject({
-      status: 'dead',
-      lastError: { code: 'USER_DELETED' },
-    });
+    expect(
+      await methods.countActiveAgentTriggerDeliveriesByUser(
+        user,
+        new Date(START.getTime() + 60_001),
+      ),
+    ).toBe(0);
   });
 
   it('deletes all queued payloads for an erased user', async () => {
     const user = new mongoose.Types.ObjectId();
     await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
     await methods.enqueueAgentTriggerDelivery(enqueueInput({ user }));
-    await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    await methods.enqueueAgentTriggerDelivery(enqueueInput({ orderingKey: 'ordering-other' }));
 
     await methods.deleteAgentTriggerDeliveriesByUser(user);
 
     expect(await Delivery.countDocuments({ user })).toBe(0);
     expect(await Delivery.countDocuments()).toBe(1);
+    expect(await LaneSequence.countDocuments({ user })).toBe(0);
+    expect(await LaneSequence.countDocuments()).toBe(1);
   });
 });

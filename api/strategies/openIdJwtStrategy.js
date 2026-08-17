@@ -18,7 +18,7 @@ const {
   getHttpsProxyAgent,
   math,
 } = require('@librechat/api');
-const { updateUser, findUser } = require('~/models');
+const { updateUser, findUser, isAgentTriggerPrincipalActive } = require('~/models');
 const getLogStores = require('~/cache/getLogStores');
 
 const getOpenIdJwtAudience = () => {
@@ -173,6 +173,10 @@ const openIdJwtLogin = (openIdConfig) => {
 
         if (user) {
           user.id = user._id.toString();
+          if (!(await isAgentTriggerPrincipalActive(user.id))) {
+            done(null, false, { message: 'Account deletion is in progress' });
+            return;
+          }
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
           user.idOnTheSource ??= null;
 

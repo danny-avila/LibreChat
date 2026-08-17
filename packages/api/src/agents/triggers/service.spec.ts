@@ -91,6 +91,21 @@ describe('createAgentTriggerService', () => {
     );
   });
 
+  it('rechecks the durable principal before dispatching queued or direct work', async () => {
+    process.env.AGENT_TRIGGERS_SELF_URL = 'https://triggers.internal';
+    const fetcher = jest.fn(async () => accepted());
+    const service = createAgentTriggerService({
+      fetch: fetcher,
+      mintToken: () => 'token',
+      isPrincipalActive: async () => false,
+    });
+
+    await expect(service.dispatch(envelope())).rejects.toThrow(
+      'Agent trigger delivery principal is no longer active',
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it('fails safely when dispatch starts before a listener or override exists', async () => {
     expect.hasAssertions();
     const service = createAgentTriggerService({

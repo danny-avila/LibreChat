@@ -6,6 +6,8 @@ import type {
   AgentTriggerOrderingBlock,
   IAgentTriggerDelivery,
   IAgentTriggerDeliveryDocument,
+  IAgentTriggerLaneSequence,
+  IAgentTriggerLaneSequenceDocument,
 } from '~/types/triggerDelivery';
 import { createIndexesWithRetry } from '~/utils/retry';
 
@@ -54,7 +56,7 @@ export interface AgentTriggerDeliveryMethods {
     leaseUntil: Date;
   }) => Promise<AgentTriggerDeliveryClaim | null>;
   findEarlierAgentTriggerDelivery: (
-    delivery: Pick<AgentTriggerDeliveryRecord, 'id' | 'orderingKey' | 'createdAt'>,
+    delivery: Pick<AgentTriggerDeliveryRecord, 'orderingKey' | 'laneSequence'>,
   ) => Promise<AgentTriggerOrderingBlock | null>;
   releaseAgentTriggerDelivery: (
     input: AgentTriggerDeliveryFence & { availableAt: Date },
@@ -89,10 +91,6 @@ export interface AgentTriggerDeliveryMethods {
     id: string,
     availableAt: Date,
   ) => Promise<AgentTriggerDeliveryRecord | null>;
-  fenceAgentTriggerDeliveriesByUser: (
-    user: string | Types.ObjectId,
-    settledAt: Date,
-  ) => Promise<void>;
   countActiveAgentTriggerDeliveriesByUser: (
     user: string | Types.ObjectId,
     now: Date,
@@ -117,6 +115,7 @@ function toRecord(delivery: IAgentTriggerDelivery): AgentTriggerDeliveryRecord {
     deliveryKey: delivery.deliveryKey,
     fingerprint: delivery.fingerprint,
     orderingKey: delivery.orderingKey,
+    laneSequence: delivery.laneSequence,
     envelope: delivery.envelope,
     user: delivery.user,
     status: delivery.status,
@@ -158,17 +157,41 @@ export function createAgentTriggerDeliveryMethods(
 ): AgentTriggerDeliveryMethods {
   const Delivery = () =>
     mongoose.models.AgentTriggerDelivery as Model<IAgentTriggerDeliveryDocument>;
+  const LaneSequence = () =>
+    mongoose.models.AgentTriggerLaneSequence as Model<IAgentTriggerLaneSequenceDocument>;
 
   async function ensureAgentTriggerDeliveryIndexes(): Promise<void> {
-    await createIndexesWithRetry(Delivery());
+    await Promise.all([createIndexesWithRetry(Delivery()), createIndexesWithRetry(LaneSequence())]);
+  }
+
+  async function nextLaneSequence(input: EnqueueAgentTriggerDeliveryInput): Promise<number> {
+    const sequence = await LaneSequence()
+      .findOneAndUpdate(
+        { _id: input.orderingKey },
+        {
+          $inc: { value: 1 },
+          $setOnInsert: {
+            user: input.user,
+            ...(input.tenantId != null && { tenantId: input.tenantId }),
+          },
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      )
+      .lean<IAgentTriggerLaneSequence>();
+    if (sequence == null || !Number.isSafeInteger(sequence.value) || sequence.value <= 0) {
+      throw new Error('Failed to allocate an agent trigger ordering sequence');
+    }
+    return sequence.value;
   }
 
   async function enqueueAgentTriggerDelivery(
     input: EnqueueAgentTriggerDeliveryInput,
   ): Promise<{ delivery: AgentTriggerDeliveryRecord; replayed: boolean }> {
     try {
+      const laneSequence = await nextLaneSequence(input);
       const created = await Delivery().create({
         ...input,
+        laneSequence,
         status: 'pending',
         attempts: 0,
         requeueCount: 0,
@@ -222,21 +245,15 @@ export function createAgentTriggerDeliveryMethods(
   }
 
   async function findEarlierAgentTriggerDelivery(
-    delivery: Pick<AgentTriggerDeliveryRecord, 'id' | 'orderingKey' | 'createdAt'>,
+    delivery: Pick<AgentTriggerDeliveryRecord, 'orderingKey' | 'laneSequence'>,
   ): Promise<AgentTriggerOrderingBlock | null> {
     const earlier = await Delivery()
       .findOne({
         orderingKey: delivery.orderingKey,
         status: { $in: ['pending', 'leased'] },
-        $or: [
-          { createdAt: { $lt: delivery.createdAt } },
-          {
-            createdAt: delivery.createdAt,
-            _id: { $lt: new mongoose.Types.ObjectId(delivery.id) },
-          },
-        ],
+        laneSequence: { $lt: delivery.laneSequence },
       })
-      .sort({ createdAt: 1, _id: 1 })
+      .sort({ laneSequence: 1 })
       .select('availableAt leaseUntil')
       .lean<Pick<IAgentTriggerDelivery, 'availableAt' | 'leaseUntil'>>();
     if (earlier == null) {
@@ -415,29 +432,6 @@ export function createAgentTriggerDeliveryMethods(
     return delivery == null ? null : toRecord(delivery);
   }
 
-  async function fenceAgentTriggerDeliveriesByUser(
-    user: string | Types.ObjectId,
-    settledAt: Date,
-  ): Promise<void> {
-    const error = normalizeFailure({
-      code: 'USER_DELETED',
-      message: 'Delivery cancelled because its user account is being deleted',
-      certainty: 'definite',
-      retryable: false,
-      attemptedAt: settledAt,
-    });
-    await Delivery().updateMany(
-      {
-        user,
-        $or: [{ status: 'pending' }, { status: 'leased', leaseUntil: { $lte: settledAt } }],
-      },
-      {
-        $set: { status: 'dead', settledAt, lastError: error },
-        $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, result: 1, expiresAt: 1 },
-      },
-    );
-  }
-
   async function countActiveAgentTriggerDeliveriesByUser(
     user: string | Types.ObjectId,
     now: Date,
@@ -446,7 +440,7 @@ export function createAgentTriggerDeliveryMethods(
   }
 
   async function deleteAgentTriggerDeliveriesByUser(user: string | Types.ObjectId): Promise<void> {
-    await Delivery().deleteMany({ user });
+    await Promise.all([Delivery().deleteMany({ user }), LaneSequence().deleteMany({ user })]);
   }
 
   return {
@@ -462,7 +456,6 @@ export function createAgentTriggerDeliveryMethods(
     getAgentTriggerDelivery,
     getAgentTriggerDeadLetters,
     requeueAgentTriggerDelivery,
-    fenceAgentTriggerDeliveriesByUser,
     countActiveAgentTriggerDeliveriesByUser,
     deleteAgentTriggerDeliveriesByUser,
   };

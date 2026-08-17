@@ -25,6 +25,7 @@ const {
   preAuthTenantMiddleware,
   requestContextMiddleware,
   configureServerTimeouts,
+  setupGracefulShutdown,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
 } = require('@librechat/api');
@@ -160,6 +161,8 @@ if (cluster.isMaster) {
   const listeningWorkers = new Set();
   let retentionSweepWorkerId = null;
   const startTime = Date.now();
+  let shuttingDown = false;
+  let remainingShutdownWorkers = 0;
 
   const assignRetentionSweepWorker = () => {
     if (retentionSweepWorkerId && cluster.workers[retentionSweepWorkerId]) {
@@ -230,15 +233,32 @@ if (cluster.isMaster) {
     logger.error(
       `Worker ${worker.process.pid} died (${activeWorkers}/${workers}). Code: ${code}, Signal: ${signal}`,
     );
+    if (shuttingDown) {
+      remainingShutdownWorkers = Math.max(0, remainingShutdownWorkers - 1);
+      if (remainingShutdownWorkers === 0) {
+        process.exit(0);
+      }
+      return;
+    }
     logger.info('Starting a new worker to replace it...');
     cluster.fork();
   });
 
   /** Graceful shutdown on SIGTERM/SIGINT */
   const shutdown = () => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
     logger.info('Master received shutdown signal, terminating workers...');
-    for (const id in cluster.workers) {
-      cluster.workers[id].kill();
+    const liveWorkers = Object.values(cluster.workers).filter(Boolean);
+    remainingShutdownWorkers = liveWorkers.length;
+    if (remainingShutdownWorkers === 0) {
+      process.exit(0);
+      return;
+    }
+    for (const worker of liveWorkers) {
+      worker.kill();
     }
     setTimeout(() => {
       logger.info('Forcing shutdown after timeout');
@@ -514,6 +534,7 @@ if (cluster.isMaster) {
       headersTimeout: server.headersTimeout,
       requestTimeout: server.requestTimeout,
     });
+    setupGracefulShutdown(server);
   };
 
   startServer().catch((err) => {

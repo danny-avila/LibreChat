@@ -4,6 +4,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const mockGetActiveJobIdsForUser = jest.fn().mockResolvedValue([]);
 const mockAbortJob = jest.fn().mockResolvedValue({ success: true });
 const mockDrainAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undefined);
+const mockPurgeAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -30,7 +31,7 @@ jest.mock('~/models', () => {
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
     updateUserPlugins: jest.fn(),
     deleteAssistants: jest.fn().mockResolvedValue(undefined),
-    deleteUserById: jest.fn().mockResolvedValue(undefined),
+    deleteUserById: jest.fn().mockResolvedValue({ deletedCount: 1 }),
     beginAgentTriggerUserDeletion: jest.fn().mockResolvedValue('acquired'),
     cancelAgentTriggerUserDeletion: jest.fn().mockResolvedValue(true),
     deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
@@ -87,6 +88,7 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/server/services/Agents/triggers', () => ({
   drainAgentTriggerDeliveriesForUser: (...args) => mockDrainAgentTriggerDeliveriesForUser(...args),
+  purgeAgentTriggerDeliveriesForUser: (...args) => mockPurgeAgentTriggerDeliveriesForUser(...args),
 }));
 
 jest.mock('~/server/services/Files/process', () => ({
@@ -353,6 +355,10 @@ describe('deleteUserController', () => {
     expect(deleteMessages.mock.invocationCallOrder[0]).toBeLessThan(
       deleteUserById.mock.invocationCallOrder[0],
     );
+    expect(deleteUserById.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPurgeAgentTriggerDeliveriesForUser.mock.invocationCallOrder[0],
+    );
+    expect(mockPurgeAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(userId.toString());
     expect(cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
   });
 
@@ -453,6 +459,27 @@ describe('deleteUserController', () => {
       expect.any(Date),
     );
     expect(deleteUserById).not.toHaveBeenCalled();
+  });
+
+  it('preserves queued trigger payloads when deletion fails before the user commit', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    deleteMessages.mockRejectedValueOnce(new Error('db down'));
+
+    await deleteUserController({ user: { id: String(userId), _id: userId } }, mockRes);
+
+    expect(mockPurgeAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
+    expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(String(userId), expect.any(Date));
+  });
+
+  it('does not purge trigger payloads when the user deletion did not commit', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    deleteUserById.mockResolvedValueOnce({ deletedCount: 0 });
+
+    await deleteUserController({ user: { id: String(userId), _id: userId } }, mockRes);
+
+    expect(mockPurgeAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
+    expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(String(userId), expect.any(Date));
+    expect(mockRes.status).toHaveBeenCalledWith(500);
   });
 
   it('should use string user.id (not ObjectId user._id) for memberIds removal', async () => {

@@ -124,8 +124,6 @@ async function gracefulExit(code = 0) {
     }
 
     if (deletionFence != null) {
-      const settledAt = new Date();
-      await runAsSystem(() => methods.fenceAgentTriggerDeliveriesByUser(uid, settledAt));
       if (hasSharedGenerationStore) {
         const deadline = Date.now() + TRIGGER_DRAIN_TIMEOUT_MS;
         while (
@@ -145,8 +143,6 @@ async function gracefulExit(code = 0) {
       const activeAgentRuns = await GenerationJobManager.getActiveJobIdsForUser(uid, user.tenantId);
       await Promise.all(activeAgentRuns.map((streamId) => GenerationJobManager.abortJob(streamId)));
     }
-
-    await runAsSystem(() => methods.deleteAgentTriggerDeliveriesByUser(uid));
 
     // 5) Build and run deletion tasks
     const tasks = [
@@ -182,8 +178,12 @@ async function gracefulExit(code = 0) {
     await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });
 
     // 7) Finally delete the user document itself
-    await User.deleteOne({ _id: uid });
+    const deletedUser = await User.deleteOne({ _id: uid });
+    if (deletedUser.deletedCount !== 1) {
+      throw new Error('User disappeared before account deletion could commit');
+    }
     userDeleted = true;
+    await runAsSystem(() => methods.deleteAgentTriggerDeliveriesByUser(uid));
   } finally {
     if (deletionFence != null && !userDeleted) {
       await runAsSystem(() => methods.cancelAgentTriggerUserDeletion(uid, deletionFence)).catch(

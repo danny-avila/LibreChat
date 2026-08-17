@@ -47,10 +47,11 @@ await enqueueAgentTrigger(
   identity, so ambiguous retries do not duplicate accepted work.
 - Retryable failures use bounded exponential backoff and honor `Retry-After`. Invalid envelopes,
   permanent authorization failures, and exhausted retries become durable dead letters.
-- Matching ordering lanes never overtake an earlier pending or leased delivery. Dead letters are
-  terminal and do not block later work.
+- Matching ordering lanes use a Mongo-atomic per-lane sequence, so replicas cannot reorder events
+  whose timestamps tie. Dead letters are terminal and do not block later work.
 - Successful records expire after 90 days. Dead letters remain until explicitly requeued or
-  removed, and account deletion erases every queued payload for that user.
+  removed. Account deletion first fences admission and drains active leases without destroying
+  queued work; payloads are purged only after the user deletion commits.
 
 `getAgentTriggerDeadLetters` and `requeueAgentTrigger` are intentionally trusted in-process
 operations. Exposing them through an admin API requires a separate authorization and audit layer.

@@ -25,7 +25,10 @@ const { verifyEmail, resendVerificationEmail } = require('~/server/services/Auth
 const { getMCPManager, getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { processDeleteRequest } = require('~/server/services/Files/process');
-const { drainAgentTriggerDeliveriesForUser } = require('~/server/services/Agents/triggers');
+const {
+  drainAgentTriggerDeliveriesForUser,
+  purgeAgentTriggerDeliveriesForUser,
+} = require('~/server/services/Agents/triggers');
 const { getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
@@ -432,8 +435,12 @@ const deleteUserController = async (req, res) => {
     await db.deleteTokens({ userId: user.id });
     await db.removeUserFromAllGroups(user.id);
     await db.deleteAclEntries({ principalId: user._id });
-    await db.deleteUserById(user.id);
+    const deleteResult = await db.deleteUserById(user.id);
+    if (deleteResult.deletedCount !== 1) {
+      throw new Error('User disappeared before account deletion could commit');
+    }
     userDeleted = true;
+    await purgeAgentTriggerDeliveriesForUser(user.id);
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {

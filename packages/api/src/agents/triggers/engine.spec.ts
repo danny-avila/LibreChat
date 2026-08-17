@@ -28,6 +28,7 @@ function delivery(overrides: Partial<AgentTriggerDeliveryRecord> = {}): AgentTri
     deliveryKey: 'trigger_1',
     fingerprint: 'fingerprint-1',
     orderingKey: 'ordering-1',
+    laneSequence: 1,
     envelope: { version: 1 },
     status: 'leased',
     attempts: 0,

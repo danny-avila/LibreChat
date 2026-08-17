@@ -92,6 +92,7 @@ jest.mock('~/server/services/Files/process', () => ({
 
 jest.mock('~/server/services/Agents/triggers', () => ({
   drainAgentTriggerDeliveriesForUser: jest.fn(),
+  purgeAgentTriggerDeliveriesForUser: jest.fn(),
 }));
 
 jest.mock('~/server/services/Config', () => ({

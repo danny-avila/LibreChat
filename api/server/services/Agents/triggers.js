@@ -15,4 +15,5 @@ module.exports = {
   getAgentTriggerDeadLetters: service.getDeadLetters,
   requeueAgentTrigger: service.requeue,
   drainAgentTriggerDeliveriesForUser: service.drainUser,
+  purgeAgentTriggerDeliveriesForUser: service.purgeUser,
 };

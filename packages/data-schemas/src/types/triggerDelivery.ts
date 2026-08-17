@@ -25,6 +25,8 @@ export interface IAgentTriggerDelivery {
   deliveryKey: string;
   fingerprint: string;
   orderingKey: string;
+  /** Monotonic sequence allocated atomically within one ordering lane. */
+  laneSequence: number;
   envelope: unknown;
   user: Types.ObjectId;
   tenantId?: string;
@@ -52,6 +54,21 @@ export interface AgentTriggerDeliveryRecord
   extends Omit<IAgentTriggerDelivery, '_id' | 'createdAt'> {
   id: string;
   createdAt: Date;
+}
+
+export interface IAgentTriggerLaneSequence {
+  _id: string;
+  value: number;
+  user: Types.ObjectId;
+  tenantId?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface IAgentTriggerLaneSequenceDocument
+  extends Omit<IAgentTriggerLaneSequence, '_id'>,
+    Document {
+  _id: string;
 }
 
 export interface AgentTriggerDeliveryClaim extends AgentTriggerDeliveryRecord {
