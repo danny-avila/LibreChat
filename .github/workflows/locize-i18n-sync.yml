@@ -74,12 +74,12 @@ jobs:
           project-id: ${{ secrets.LOCIZE_PROJECT_ID }}
           path: "client/src/locales"
           version: latest
-          cdn-type: pro
 
       - name: Validate Downloaded Translations
-        run: node scripts/validate-locize-download.mjs \
-          --base-dir "$RUNNER_TEMP/locize-locale-baseline" \
-          --current-dir client/src/locales
+        run: |
+          node scripts/validate-locize-download.mjs \
+            --base-dir "$RUNNER_TEMP/locize-locale-baseline" \
+            --current-dir client/src/locales
 
       # 3. Create a Pull Request using a dedicated fine-grained PAT so this
       # workflow does not depend on the global GITHUB_TOKEN PR-creation setting.
