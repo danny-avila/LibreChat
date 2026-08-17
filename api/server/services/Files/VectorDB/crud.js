@@ -3,26 +3,37 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
-const { logAxiosError, generateShortLivedToken } = require('@librechat/api');
+const { RagScopes, logAxiosError, generateShortLivedToken } = require('@librechat/api');
 
 /**
  * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
  * verifies the path's validity before deleting the file. If the path is invalid, an error is thrown.
  *
  * @param {ServerRequest} req - The request object from Express.
- * @param {MongoFile} file - The file object to be deleted. It should have a `filepath` property that is
- *                           a string representing the path of the file relative to the publicPath.
+ * @param {MongoFile & { entity_id?: string }} file - The file object to be deleted. It should have a
+ *                           `filepath` property that is a string representing the path of the file
+ *                           relative to the publicPath. `entity_id` names the agent whose knowledge
+ *                           base holds the file, when its chunks are owned by that agent rather than
+ *                           by the user.
  *
  * @returns {Promise<void>}
- *          A promise that resolves when the file has been successfully deleted, or throws an error if the
- *          file path is invalid or if there is an error in deletion.
+ *          A promise that resolves only once the chunks are gone — a 404 counts, since the file
+ *          the caller is about to forget about is already absent. Every other failure throws,
+ *          including one raised before the request is even sent (an unmintable token), so the
+ *          caller keeps the file's metadata instead of reporting a delete that left its chunks
+ *          behind with nothing left to reference them.
  */
 const deleteVectors = async (req, file) => {
   if (!file.embedded || !process.env.RAG_API_URL) {
     return;
   }
   try {
-    const jwtToken = generateShortLivedToken(req.user.id);
+    const jwtToken = generateShortLivedToken({
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+      entityIds: file.entity_id ? [file.entity_id] : [],
+      scopes: [RagScopes.documents],
+    });
 
     return await axios.delete(`${process.env.RAG_API_URL}/documents`, {
       headers: {
@@ -30,6 +41,7 @@ const deleteVectors = async (req, file) => {
         'Content-Type': 'application/json',
         accept: 'application/json',
       },
+      params: file.entity_id ? { entity_id: file.entity_id } : undefined,
       data: [file.file_id],
     });
   } catch (error) {
@@ -37,14 +49,11 @@ const deleteVectors = async (req, file) => {
       error,
       message: 'Error deleting vectors',
     });
-    if (
-      error.response &&
-      error.response.status !== 404 &&
-      (error.response.status < 200 || error.response.status >= 300)
-    ) {
-      logger.warn('Error deleting vectors, file will not be deleted');
-      throw new Error(error.message || 'An error occurred during file deletion.');
+    if (error.response?.status === 404) {
+      return;
     }
+    logger.warn('Error deleting vectors, file will not be deleted');
+    throw new Error(error.message || 'An error occurred during file deletion.');
   }
 };
 
@@ -70,7 +79,12 @@ async function uploadVectors({ req, file, file_id, entity_id, storageMetadata })
   }
 
   try {
-    const jwtToken = generateShortLivedToken(req.user.id);
+    const jwtToken = generateShortLivedToken({
+      userId: req.user.id,
+      tenantId: req.user.tenantId,
+      entityIds: entity_id ? [entity_id] : [],
+      scopes: [RagScopes.embed],
+    });
     const formData = new FormData();
     formData.append('file_id', file_id);
     formData.append('file', fs.createReadStream(file.path));

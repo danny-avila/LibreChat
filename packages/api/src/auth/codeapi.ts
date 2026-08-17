@@ -2,6 +2,8 @@ import { getTenantId } from '@librechat/data-schemas';
 import { createHash, createPrivateKey, randomUUID, sign as cryptoSign } from 'crypto';
 import type { KeyObject, JsonWebKey } from 'crypto';
 import type { ServerRequest } from '~/types';
+import { createTokenMintCache } from '~/crypto/cache';
+import { normalizePem } from '~/crypto/keys';
 import { isEnabled } from '~/utils';
 
 type CodeApiJwtAlg = 'EdDSA' | 'RS256';
@@ -52,12 +54,6 @@ interface SigningConfig {
   rawKey: string;
 }
 
-interface CachedToken {
-  token: string;
-  expiresAt: number;
-  cachedUntil: number;
-}
-
 const DEFAULT_ISSUER = 'librechat';
 const DEFAULT_AUDIENCE = 'codeapi';
 const DEFAULT_KID = 'lc-codeapi-2026-05';
@@ -66,19 +62,12 @@ const DEFAULT_TTL_SECONDS = 300;
 const DEFAULT_CACHE_SECONDS = 30;
 const MAX_TTL_SECONDS = 300;
 const MAX_CACHE_SECONDS = 30;
-const TOKEN_REUSE_SAFETY_WINDOW_SECONDS = 30;
-const TOKEN_CACHE_PRUNE_INTERVAL_SECONDS = 30;
 
 let signingConfigCache: SigningConfig | null = null;
-const tokenCache = new Map<string, CachedToken>();
-let tokenCacheLastPrunedAt = 0;
+const tokenCache = createTokenMintCache();
 
 function base64Url(value: Buffer | string): string {
   return Buffer.from(value).toString('base64url');
-}
-
-function normalizePem(value: string): string {
-  return value.replace(/\\n/g, '\n').trim();
 }
 
 function getPrivateKeyRaw(): string {
@@ -163,7 +152,6 @@ function getSigningConfig(): SigningConfig {
     key: createSigningKey(rawKey),
   };
   tokenCache.clear();
-  tokenCacheLastPrunedAt = 0;
   return signingConfigCache;
 }
 
@@ -308,8 +296,12 @@ function signJwt(config: SigningConfig, claims: CodeApiClaims): string {
   return `${signingInput}.${base64Url(signature)}`;
 }
 
+/**
+ * Structured rather than delimiter-joined so that a value containing the
+ * separator cannot make two different claim sets share a cache entry.
+ */
 function cacheKey(config: SigningConfig, claims: CodeApiClaims): string {
-  return [
+  return JSON.stringify([
     config.alg,
     config.kid,
     claims.sub,
@@ -321,23 +313,7 @@ function cacheKey(config: SigningConfig, claims: CodeApiClaims): string {
     claims.chc_user_id ?? '',
     claims.plan_id ?? '',
     claims.auth_context_hash,
-  ].join(':');
-}
-
-function pruneTokenCache(now: number): void {
-  if (tokenCache.size === 0) {
-    return;
-  }
-  if (now - tokenCacheLastPrunedAt < TOKEN_CACHE_PRUNE_INTERVAL_SECONDS) {
-    return;
-  }
-
-  tokenCacheLastPrunedAt = now;
-  for (const [key, cached] of tokenCache) {
-    if (cached.cachedUntil <= now || cached.expiresAt <= now + TOKEN_REUSE_SAFETY_WINDOW_SECONDS) {
-      tokenCache.delete(key);
-    }
-  }
+  ]);
 }
 
 export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
@@ -347,27 +323,15 @@ export async function mintCodeApiToken(req: ServerRequest): Promise<string> {
 
   const config = getSigningConfig();
   const now = Math.floor(Date.now() / 1000);
-  pruneTokenCache(now);
   const claims = buildClaims(req, config, now);
   const key = cacheKey(config, claims);
-  const cached = tokenCache.get(key);
-  if (
-    cached &&
-    cached.cachedUntil > now &&
-    cached.expiresAt > now + TOKEN_REUSE_SAFETY_WINDOW_SECONDS
-  ) {
-    return cached.token;
+  const cached = tokenCache.get(key, now);
+  if (cached) {
+    return cached;
   }
 
   const token = signJwt(config, claims);
-  tokenCache.set(key, {
-    token,
-    expiresAt: claims.exp,
-    cachedUntil: Math.min(
-      now + config.cacheSeconds,
-      claims.exp - TOKEN_REUSE_SAFETY_WINDOW_SECONDS,
-    ),
-  });
+  tokenCache.set(key, token, claims.exp, now, config.cacheSeconds);
   return token;
 }
 

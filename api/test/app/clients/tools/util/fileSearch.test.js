@@ -2,10 +2,21 @@ const axios = require('axios');
 const { ResourceType } = require('librechat-data-provider');
 
 jest.mock('axios');
-jest.mock('@librechat/api', () => ({
-  generateShortLivedToken: jest.fn(),
-  logAxiosError: jest.fn(),
-}));
+jest.mock('@librechat/api', () => {
+  const NO_EMBEDDING_ENTITY = '__NONE__';
+  const hasRecordedEmbeddingEntity = (file) =>
+    file.embedding_entity_id != null && file.embedding_entity_id !== '';
+  return {
+    RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank', documents: 'rag:documents' },
+    generateShortLivedToken: jest.fn(),
+    logAxiosError: jest.fn(),
+    hasRecordedEmbeddingEntity,
+    getRecordedEmbeddingEntityId: (file) =>
+      hasRecordedEmbeddingEntity(file) && file.embedding_entity_id !== NO_EMBEDDING_ENTITY
+        ? file.embedding_entity_id
+        : undefined,
+  };
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -46,6 +57,57 @@ describe('fileSearch.js - agent file authorization', () => {
       role: 'USER',
       agentId: 'agent-123',
       resourceType: ResourceType.REMOTE_AGENT,
+    });
+  });
+
+  /* A query scoped to an agent that never embedded the file finds nothing, so
+   * the entity recorded at upload decides — not the agent's current listing. */
+  describe("which files count as the agent's own", () => {
+    const primeFor = async (file) => {
+      const { getFiles } = require('~/models');
+      getFiles.mockResolvedValueOnce([file]);
+      const { files } = await primeFiles({
+        req: { user: { id: 'user-1', role: 'USER' } },
+        agentId: 'agent-123',
+        tool_resources: { file_search: { file_ids: [file.file_id] } },
+      });
+      return files[0];
+    };
+
+    it('excludes a message attachment the agent merely references', async () => {
+      const primed = await primeFor({
+        file_id: 'attached',
+        filename: 'attached.pdf',
+        embedding_entity_id: '__NONE__',
+      });
+
+      expect(primed.fromAgent).toBe(false);
+    });
+
+    it('excludes a file embedded under a different agent', async () => {
+      const primed = await primeFor({
+        file_id: 'borrowed',
+        filename: 'borrowed.pdf',
+        embedding_entity_id: 'agent-999',
+      });
+
+      expect(primed.fromAgent).toBe(false);
+    });
+
+    it('includes a file embedded under this agent', async () => {
+      const primed = await primeFor({
+        file_id: 'own',
+        filename: 'own.pdf',
+        embedding_entity_id: 'agent-123',
+      });
+
+      expect(primed.fromAgent).toBe(true);
+    });
+
+    it('falls back to the association for a file predating the record', async () => {
+      const primed = await primeFor({ file_id: 'legacy', filename: 'legacy.pdf' });
+
+      expect(primed.fromAgent).toBe(true);
     });
   });
 });
@@ -314,5 +376,64 @@ describe('entity_id scoping by file origin', () => {
     });
     await tool.func({ query: 'q' });
     expect(bodiesSent()[0].entity_id).toBeUndefined();
+  });
+
+  it('names the agent in the token when a knowledge-base file is searched', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      tenantId: 'tenant-a',
+      files: [{ file_id: 'kb-1', filename: 'kb.pdf', fromAgent: true }],
+    });
+    await tool.func({ query: 'q' });
+
+    expect(generateShortLivedToken).toHaveBeenCalledWith({
+      userId: 'user1',
+      tenantId: 'tenant-a',
+      entityIds: ['agent_123'],
+      scopes: ['rag:embed'],
+    });
+  });
+
+  it('omits the entity from the token when only user attachments are searched', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      entity_id: 'agent_123',
+      files: [{ file_id: 'user-1', filename: 'attachment.txt', fromAgent: false }],
+    });
+    await tool.func({ query: 'q' });
+
+    expect(generateShortLivedToken).toHaveBeenCalledWith({
+      userId: 'user1',
+      tenantId: undefined,
+      entityIds: [],
+      scopes: ['rag:embed'],
+    });
+  });
+
+  it('never requests the rerank scope for a search', async () => {
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      files: [{ file_id: 'f1', filename: 'a.txt' }],
+    });
+    await tool.func({ query: 'q' });
+
+    const { scopes } = generateShortLivedToken.mock.calls[0][0];
+    expect(scopes).not.toContain('rag:rerank');
+  });
+
+  it('reports an authentication error instead of querying when minting fails', async () => {
+    generateShortLivedToken.mockImplementationOnce(() => {
+      throw new Error('RAG_AUTH_ACCEPT_LEGACY=false requires RAG_JWT_SECRET');
+    });
+    const tool = await createFileSearchTool({
+      userId: 'user1',
+      files: [{ file_id: 'f1', filename: 'a.txt' }],
+    });
+
+    const [message] = await tool.func({ query: 'q' });
+
+    expect(message).toBe('There was an error authenticating the file search request.');
+    expect(axios.post).not.toHaveBeenCalled();
   });
 });

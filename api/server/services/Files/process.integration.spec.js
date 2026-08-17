@@ -33,6 +33,7 @@ jest.mock('@librechat/api', () => ({
   sanitizeFilename: jest.fn((n) => n),
   parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
   processAudioFile: jest.fn(),
+  resolveEmbeddingEntityIds: jest.fn().mockResolvedValue({}),
 }));
 
 jest.mock('~/server/controllers/assistants/v2', () => ({

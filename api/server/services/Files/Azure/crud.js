@@ -121,7 +121,7 @@ async function getAzureURL({ fileName, basePath = defaultBasePath, userId, conta
  * @param {MongoFile} params.file - The file object.
  */
 async function deleteFileFromAzure(req, file) {
-  await deleteRagFile({ userId: req.user.id, file });
+  await deleteRagFile({ userId: req.user.id, file, tenantId: req.user.tenantId });
 
   try {
     const containerClient = await getAzureContainerClient(AZURE_CONTAINER_NAME);

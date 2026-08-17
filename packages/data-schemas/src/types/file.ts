@@ -55,6 +55,14 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   storageRegion?: string;
   object: 'file';
   embedded?: boolean;
+  /**
+   * The entity the file's vector chunks were written under, recorded at embed
+   * time rather than inferred later: the agent id for a knowledge-base upload,
+   * `NO_EMBEDDING_ENTITY` for one scoped to the uploading user alone. Absent on
+   * records written before the field existed and on files that were never
+   * embedded.
+   */
+  embedding_entity_id?: string;
   type: string;
   context?: string;
   usage: number;

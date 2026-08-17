@@ -1,7 +1,13 @@
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { tool } = require('@librechat/agents/langchain/tools');
-const { generateShortLivedToken, logAxiosError } = require('@librechat/api');
+const {
+  RagScopes,
+  logAxiosError,
+  generateShortLivedToken,
+  hasRecordedEmbeddingEntity,
+  getRecordedEmbeddingEntityId,
+} = require('@librechat/api');
 const { Tools, EToolResources } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getFiles } = require('~/models');
@@ -57,6 +63,21 @@ const primeFiles = async (options) => {
 
   let toolContext = `- Note: Semantic search is available through the ${Tools.file_search} tool but no files are currently loaded. Request the user to upload documents to search through.`;
 
+  /**
+   * Whether this agent's id is the one the file's chunks were written under.
+   * Being listed in its knowledge base does not settle that — an already-owned
+   * file id can be added to any agent's `tool_resources`, and a message
+   * attachment is embedded with no entity — so the recorded value decides
+   * wherever there is one. Files predating that record fall back to the
+   * association, which is all they ever had.
+   *
+   * @param {MongoFile} file
+   */
+  const isEmbeddedUnderAgent = (file) =>
+    hasRecordedEmbeddingEntity(file)
+      ? getRecordedEmbeddingEntityId(file) === agentId
+      : agentResourceIds.has(file.file_id);
+
   const files = [];
   for (let i = 0; i < dbFiles.length; i++) {
     const file = dbFiles[i];
@@ -72,7 +93,7 @@ const primeFiles = async (options) => {
     files.push({
       file_id: file.file_id,
       filename: file.filename,
-      fromAgent: agentResourceIds.has(file.file_id),
+      fromAgent: isEmbeddedUnderAgent(file),
     });
   }
 
@@ -85,16 +106,37 @@ const primeFiles = async (options) => {
  * @param {string} options.userId
  * @param {Array<{ file_id: string; filename: string; fromAgent?: boolean }>} options.files
  * @param {string} [options.entity_id]
+ * @param {string} [options.tenantId]
  * @param {boolean} [options.fileCitations=false] - Whether to include citation instructions
  * @returns
  */
-const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = false }) => {
+const createFileSearchTool = async ({
+  userId,
+  files,
+  entity_id,
+  tenantId,
+  fileCitations = false,
+}) => {
   return tool(
     async ({ query }) => {
       if (files.length === 0) {
         return ['No files to search. Instruct the user to add files for the search.', undefined];
       }
-      const jwtToken = generateShortLivedToken(userId);
+      /** Only knowledge-base files are owned by the agent; the token names the
+       * entity only when at least one of them is in play. */
+      const searchesAgentFiles = entity_id != null && files.some((file) => file.fromAgent === true);
+      let jwtToken;
+      try {
+        jwtToken = generateShortLivedToken({
+          userId,
+          tenantId,
+          entityIds: searchesAgentFiles ? [entity_id] : [],
+          scopes: [RagScopes.embed],
+        });
+      } catch (error) {
+        logger.error(`[${Tools.file_search}] Unable to mint a RAG API token`, error);
+        return ['There was an error authenticating the file search request.', undefined];
+      }
       if (!jwtToken) {
         return ['There was an error authenticating the file search request.', undefined];
       }

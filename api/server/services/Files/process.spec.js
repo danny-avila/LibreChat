@@ -4,6 +4,7 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn(), info: jest.fn() },
   runAsSystem: jest.fn((fn) => fn()),
   createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
+  NO_EMBEDDING_ENTITY: '__NONE__',
 }));
 
 jest.mock('@librechat/agents', () => ({
@@ -64,6 +65,9 @@ jest.mock('@librechat/api', () => {
     }),
     sweepExpiredFiles: jest.fn().mockResolvedValue({ scanned: 0, deleted: 0, failed: 0 }),
     startExpiredFileSweep: jest.fn().mockReturnValue('sweep-interval'),
+    /* Resolution is covered for real in process.ragEntity.spec.js and
+     * packages/api/src/files/embedding.spec.ts; this suite is about upload. */
+    resolveEmbeddingEntityIds: jest.fn().mockResolvedValue({}),
   };
 });
 
@@ -87,6 +91,7 @@ jest.mock('~/server/services/Tools/credentials', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  getAgentIdsByFileIds: jest.fn().mockResolvedValue({}),
   createFile: jest.fn().mockResolvedValue({ file_id: 'created-file-id' }),
   updateFileUsage: jest.fn(),
   deleteFiles: jest.fn(),
@@ -138,6 +143,7 @@ const {
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
+const { NO_EMBEDDING_ENTITY } = require('@librechat/data-schemas');
 const {
   EToolResources,
   FileSources,
@@ -720,6 +726,52 @@ describe('processAgentFileUpload', () => {
           tool_resource: EToolResources.file_search,
         }),
       );
+    });
+  });
+
+  /* The entity the chunks were written under is only knowable here. Once the
+   * upload returns, the file's agent associations can change freely, so a
+   * later delete that reads them back can name an agent whose namespace never
+   * held the chunks — and a delete that misses leaves them orphaned. */
+  describe('embedding entity persistence', () => {
+    const uploadForSearch = async (metadata) => {
+      setupStoredFileUpload();
+      await processAgentFileUpload({
+        req: makeReq({ mimetype: 'text/plain', ocrConfig: null }),
+        res: mockRes,
+        metadata: { ...makeMetadata(), tool_resource: EToolResources.file_search, ...metadata },
+      });
+      return db.createFile.mock.calls[0][0];
+    };
+
+    test('records the agent a knowledge-base file was embedded under', async () => {
+      const persisted = await uploadForSearch({ agent_id: 'agent-abc' });
+
+      expect(uploadVectors).toHaveBeenCalledWith(
+        expect.objectContaining({ entity_id: 'agent-abc' }),
+      );
+      expect(persisted.embedding_entity_id).toBe('agent-abc');
+    });
+
+    test('records an explicit none for a user-scoped message attachment', async () => {
+      const persisted = await uploadForSearch({ message_file: true });
+
+      expect(uploadVectors).toHaveBeenCalledWith(expect.objectContaining({ entity_id: undefined }));
+      expect(persisted.embedding_entity_id).toBe(NO_EMBEDDING_ENTITY);
+      expect(persisted.context).toBe(FileContext.message_attachment);
+    });
+
+    test('records nothing when the file never made it into the vector store', async () => {
+      uploadVectors.mockResolvedValueOnce({
+        bytes: 42,
+        filename: 'upload.bin',
+        filepath: 'vectordb',
+        embedded: false,
+      });
+
+      const persisted = await uploadForSearch({ agent_id: 'agent-abc' });
+
+      expect(persisted).not.toHaveProperty('embedding_entity_id');
     });
   });
 

@@ -20,13 +20,14 @@ const {
   documentParserMimeTypes,
   isPermissiveMimeConfig,
 } = require('librechat-data-provider');
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { logger, runAsSystem, NO_EMBEDDING_ENTITY } = require('@librechat/data-schemas');
 const {
   sanitizeFilename,
   parseText,
   processAudioFile,
   sendUploadSuccess,
   getStorageMetadata,
+  resolveEmbeddingEntityIds,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -150,6 +151,22 @@ function enqueueDeleteOperation({
   }
 }
 
+/**
+ * Resolves, for the embedded files in a delete batch, the entity their vector
+ * chunks are stored under.
+ *
+ * Knowledge-base files are embedded under the agent's id rather than the
+ * uploader's, so a delete that names only the user matches nothing and leaves
+ * the chunks behind. The entity is read from what the upload recorded; only
+ * files predating that record need the agent lookup, and one call covers them
+ * all.
+ *
+ * @param {MongoFile[]} files - The files being deleted.
+ * @returns {Promise<Record<string, string>>} File id to owning entity id.
+ */
+const resolveVectorEntityIds = (files) =>
+  resolveEmbeddingEntityIds({ files, lookupLegacyEntityIds: db.getAgentIdsByFileIds });
+
 const getDeleteMethod = ({ source, deletionMethods }) => {
   if (deletionMethods[source]) {
     return deletionMethods[source];
@@ -244,6 +261,8 @@ const processDeleteRequest = async ({ req, files }) => {
 
   const agentFiles = [];
 
+  const entityIdByFileId = await resolveVectorEntityIds(files);
+
   for (const file of files) {
     const source = file.source ?? FileSources.local;
     if (req.body.agent_id && req.body.tool_resource) {
@@ -279,9 +298,10 @@ const processDeleteRequest = async ({ req, files }) => {
     }
 
     const deleteFile = getDeleteMethod({ source, deletionMethods });
+    const entity_id = entityIdByFileId[file.file_id];
     enqueueDeleteOperation({
       req,
-      file,
+      file: entity_id ? { ...file, entity_id } : file,
       deleteFile: createDeleteFileWithSecondaryStorage({ source, deleteFile, deletionMethods }),
       promises,
       resolvedFileIds,
@@ -1028,6 +1048,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       metadata: fileInfoMetadata,
       type: file.mimetype,
       embedded,
+      /* Stamped from the value the vectors were actually written under, so a
+       * later delete or query names the same entity instead of inferring one
+       * from whichever agent happens to reference the file by then. */
+      embedding_entity_id: embedded ? (entity_id ?? NO_EMBEDDING_ENTITY) : undefined,
       source,
       height,
       width,

@@ -1,5 +1,11 @@
 const axios = require('axios');
-const { isEnabled, generateShortLivedToken, logAxiosError } = require('@librechat/api');
+const {
+  RagScopes,
+  isEnabled,
+  logAxiosError,
+  generateShortLivedToken,
+  getRecordedEmbeddingEntityId,
+} = require('@librechat/api');
 
 const footer = `Use the context as your learned knowledge to better answer the user.
 
@@ -17,15 +23,38 @@ function createContextHandlers(req, userMessageContent) {
   const queryPromises = [];
   const processedFiles = [];
   const processedIds = new Set();
-  const jwtToken = generateShortLivedToken(req.user.id);
   const useFullContext = isEnabled(process.env.RAG_USE_FULL_CONTEXT);
 
+  /**
+   * Chunks of a knowledge-base file are owned by the agent it was embedded
+   * under, so both the token and the request have to name that entity. Message
+   * attachments carry none, and stay scoped to the user alone. The file record
+   * says which of the two it was; a file that predates that record has nothing
+   * to name and stays user-scoped, exactly as it always has.
+   *
+   * The two branches reach different planes of the RAG service and so mint
+   * different scopes: reading a file's stored context needs document access and
+   * no inference, while a retrieval query embeds the user's message and needs
+   * exactly the reverse.
+   *
+   * @param {MongoFile} file
+   */
   const query = async (file) => {
+    const entity_id = getRecordedEmbeddingEntityId(file);
+    const mintToken = (scope) =>
+      generateShortLivedToken({
+        userId: req.user.id,
+        tenantId: req.user.tenantId,
+        entityIds: entity_id ? [entity_id] : [],
+        scopes: [scope],
+      });
+
     if (useFullContext) {
       return axios.get(`${process.env.RAG_API_URL}/documents/${file.file_id}/context`, {
         headers: {
-          Authorization: `Bearer ${jwtToken}`,
+          Authorization: `Bearer ${mintToken(RagScopes.documents)}`,
         },
+        params: entity_id ? { entity_id } : undefined,
       });
     }
 
@@ -35,10 +64,11 @@ function createContextHandlers(req, userMessageContent) {
         file_id: file.file_id,
         query: userMessageContent,
         k: 4,
+        ...(entity_id ? { entity_id } : {}),
       },
       {
         headers: {
-          Authorization: `Bearer ${jwtToken}`,
+          Authorization: `Bearer ${mintToken(RagScopes.embed)}`,
           'Content-Type': 'application/json',
         },
       },

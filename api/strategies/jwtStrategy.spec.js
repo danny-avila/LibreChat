@@ -72,4 +72,50 @@ describe('jwtStrategy', () => {
 
     expect(user).toBe(false);
   });
+
+  describe('RAG service tokens', () => {
+    const originalAudience = process.env.RAG_JWT_AUDIENCE;
+
+    afterEach(() => {
+      if (originalAudience === undefined) {
+        delete process.env.RAG_JWT_AUDIENCE;
+      } else {
+        process.env.RAG_JWT_AUDIENCE = originalAudience;
+      }
+    });
+
+    it('refuses a token minted for the RAG service without looking up a user', async () => {
+      const { user } = await invokeVerify({ id: 'user-1', sub: 'user-1', aud: 'rag_api' });
+
+      expect(user).toBe(false);
+      expect(getUserById).not.toHaveBeenCalled();
+    });
+
+    it('refuses a RAG token whose audience is a list', async () => {
+      const { user } = await invokeVerify({ id: 'user-1', aud: ['other', 'rag_api'] });
+
+      expect(user).toBe(false);
+      expect(getUserById).not.toHaveBeenCalled();
+    });
+
+    it('refuses a token carrying a configured RAG audience', async () => {
+      process.env.RAG_JWT_AUDIENCE = 'rag-eu';
+
+      const { user } = await invokeVerify({ id: 'user-1', aud: 'rag-eu' });
+
+      expect(user).toBe(false);
+      expect(getUserById).not.toHaveBeenCalled();
+    });
+
+    it('still accepts an application session token', async () => {
+      getUserById.mockResolvedValue({
+        _id: { toString: () => 'user-1' },
+        role: SystemRoles.USER,
+      });
+
+      const { user } = await invokeVerify({ id: 'user-1' });
+
+      expect(user.id).toBe('user-1');
+    });
+  });
 });

@@ -15,6 +15,7 @@ jest.mock('fs', () => ({
 }));
 
 jest.mock('../crypto/jwt', () => ({
+  RagScopes: { embed: 'rag:embed', rerank: 'rag:rerank', documents: 'rag:documents' },
   generateShortLivedToken: jest.fn(),
 }));
 
@@ -367,6 +368,26 @@ describe('text', () => {
         expect.any(Object),
         expect.objectContaining({ timeout: 300000 }),
       );
+    });
+
+    it('requests only the document scope and no entity for text extraction', async () => {
+      process.env.RAG_API_URL = 'http://rag-api.test';
+
+      mockedAxios.get.mockResolvedValue({ status: 200, statusText: 'OK' });
+      mockedAxios.post.mockResolvedValue({ data: { text: 'plain text content' } });
+
+      await parseText({
+        req: mockReq,
+        file: mockFile,
+        file_id: mockFileId,
+      });
+
+      expect(mockedGenerateShortLivedToken).toHaveBeenCalledWith({
+        userId: 'user123',
+        tenantId: undefined,
+        entityIds: [],
+        scopes: ['rag:documents'],
+      });
     });
 
     describe('allowNativeFallback: false', () => {

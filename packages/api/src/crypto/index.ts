@@ -8,4 +8,6 @@ export {
   hashBackupCode,
   getRandomValues,
 } from '@librechat/data-schemas';
+export * from './cache';
 export * from './jwt';
+export * from './keys';
