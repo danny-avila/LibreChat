@@ -201,6 +201,50 @@ describe('SubagentThreadTaskStore', () => {
     });
   });
 
+  it('keeps a completed child writable when the optional sidebar refresh fails', async () => {
+    const userId = 'user-refresh-failure';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    let runnableRefreshes = 0;
+    const flakyMethods = {
+      ...methods,
+      saveConvo: jest.fn(async (...args: Parameters<AllMethods['saveConvo']>) => {
+        const lineage = args[1].subagentThread;
+        if (
+          lineage != null &&
+          typeof lineage === 'object' &&
+          'userRunnable' in lineage &&
+          lineage.userRunnable === true
+        ) {
+          runnableRefreshes += 1;
+          if (runnableRefreshes === 2) {
+            throw new Error('sidebar refresh failed');
+          }
+        }
+        return methods.saveConvo(...args);
+      }),
+    };
+    const store = new SubagentThreadTaskStore(flakyMethods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(taskRequest(config.scopeId));
+    await waitForSettled(store, config.scopeId, started);
+    if (!started.accepted) return;
+    const threadId = requireThreadId(started);
+
+    expect(runnableRefreshes).toBe(2);
+    expect(store.claim(config.scopeId, started.task.taskId)).toMatchObject({
+      status: 'completed',
+    });
+    expect(await methods.getConvo(userId, threadId)).toMatchObject({
+      subagentThread: { userRunnable: true },
+    });
+    expect(
+      (await methods.getMessages({ user: userId, conversationId: threadId })).map(
+        (message) => message.text,
+      ),
+    ).toContain('Completed the investigation.');
+  });
+
   it('bills detached usage independently and persists its rollup on the child result', async () => {
     const userId = 'user-detached-usage';
     const parentConversationId = randomUUID();

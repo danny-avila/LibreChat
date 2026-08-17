@@ -703,11 +703,17 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       prepared.forceTranscriptReplacement,
     );
     const usage = this.aggregateDetachedUsage(detachedUsage);
+    /** Restoring ordinary-child writability is part of the successful commit,
+     * not part of the best-effort sidebar refresh below. Commit it before the
+     * result so a completed task can never leave the child permanently locked. */
+    const settledConversation = prepared.userRunnableAfterSettlement
+      ? await this.refreshConversation(scope.userId, prepared.conversation, true)
+      : prepared.conversation;
     const savedAssistantMessage = await this.methods.saveMessage(
       { userId: scope.userId },
       {
         messageId: `${taskId}:assistant`,
-        conversationId: prepared.conversation.conversationId,
+        conversationId: settledConversation.conversationId,
         parentMessageId: prepared.userMessageId,
         sender: request.subagentType,
         text: result.content,
@@ -716,7 +722,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         unfinished: false,
         ...(subagentTranscript == null ? {} : { subagentTranscript }),
         ...(usage == null ? {} : { metadata: { usage } }),
-        ...retentionFields(prepared.conversation),
+        ...retentionFields(settledConversation),
       },
       { context: 'SubagentThreadTaskStore.persistResult' },
     );
@@ -725,12 +731,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
     await this.refreshConversation(
       scope.userId,
-      prepared.conversation,
+      settledConversation,
       prepared.userRunnableAfterSettlement,
     ).catch((error) => {
-      /** The message is already durable and queryable by conversation id. A
-       * stale sidebar timestamp/message-id cache is preferable to rewriting a
-       * successful child result as a task failure. */
+      /** The permission transition is already durable and the result is
+       * queryable by conversation id. A stale sidebar timestamp/message-id
+       * cache is preferable to rewriting a successful result as a failure. */
       logger.error('[subagentThreads] Failed to refresh completed child thread', error);
     });
   }
