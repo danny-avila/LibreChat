@@ -107,6 +107,7 @@ export default function ExportModal({
                   value={type}
                   onChange={handleTypeChange}
                   options={TYPE_OPTIONS}
+                  sizeClasses="z-50"
                   className="z-50"
                   portal={false}
                 />
