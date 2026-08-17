@@ -489,6 +489,7 @@ export const fileConfig = {
     maxWidth: 1900,
     maxHeight: 1900,
     quality: 0.92,
+    enforced: false,
   },
   ocr: {
     supportedMimeTypes: defaultOCRMimeTypes,
@@ -533,8 +534,8 @@ export const fileConfigSchema = z.object({
   clientImageResize: z
     .object({
       enabled: z.boolean().optional(),
-      maxWidth: z.number().min(0).optional(),
-      maxHeight: z.number().min(0).optional(),
+      maxWidth: z.number().min(1).optional(),
+      maxHeight: z.number().min(1).optional(),
       quality: z.number().min(0).max(1).optional(),
     })
     .optional(),
@@ -1020,11 +1021,12 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     };
   }
 
-  // Merge clientImageResize configuration
+  // Merge clientImageResize configuration; an admin-provided `enabled` overrides the user's setting
   if (dynamic.clientImageResize !== undefined) {
     mergedConfig.clientImageResize = {
       ...mergedConfig.clientImageResize,
       ...dynamic.clientImageResize,
+      enforced: dynamic.clientImageResize.enabled !== undefined,
     };
   }
 

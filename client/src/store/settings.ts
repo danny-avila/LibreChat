@@ -1,6 +1,7 @@
 import { atom } from 'recoil';
 import { SettingsViews, LocalStorageKeys } from 'librechat-data-provider';
 import type { TOptionSettings } from '~/common';
+import { CHAT_TITLE_IN_TAB_KEY } from '~/utils/documentTitle';
 import { atomWithLocalStorage } from '~/store/utils';
 import { STTEndpoints } from '~/common';
 
@@ -33,12 +34,24 @@ const staticAtoms = {
   speechSettingsInitialized: atom<boolean>({ key: 'speechSettingsInitialized', default: false }),
 };
 
+/** Read synchronously: `useMediaQuery` only resolves after the first paint. */
+function isSmallViewport(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches;
+}
+
 const localStorageAtoms = {
   // General settings
   autoScroll: atomWithLocalStorage('autoScroll', false),
   sidebarExpanded: atomWithLocalStorage(
     'unifiedSidebarExpanded',
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches ? false : true,
+    !isSmallViewport(),
+    /**
+     * The mobile drawer covers the viewport, so a persisted open state would
+     * launch the app into the navigation instead of the conversation.
+     * Normalized during atom initialization so the closed state reaches the
+     * first paint rather than animating shut after it.
+     */
+    (saved) => (isSmallViewport() ? false : saved),
   ),
   enableUserMsgMarkdown: atomWithLocalStorage<boolean>(
     LocalStorageKeys.ENABLE_USER_MSG_MARKDOWN,
@@ -46,6 +59,7 @@ const localStorageAtoms = {
   ),
   keepScreenAwake: atomWithLocalStorage('keepScreenAwake', true),
   newChatSwitchToHistory: atomWithLocalStorage('newChatSwitchToHistory', true),
+  chatTitleInTab: atomWithLocalStorage(CHAT_TITLE_IN_TAB_KEY, true),
 
   // Chat settings
   enterToSend: atomWithLocalStorage('enterToSend', true),
@@ -66,11 +80,18 @@ const localStorageAtoms = {
   chatDirection: atomWithLocalStorage('chatDirection', 'LTR'),
   autoExpandTools: atomWithLocalStorage(LocalStorageKeys.AUTO_EXPAND_TOOLS, false),
   saveDrafts: atomWithLocalStorage('saveDrafts', true),
+  /**
+   * Whether pasting a large block of text attaches it as a `.txt` file instead of
+   * flooding the composer. The text still reaches the model in full.
+   */
+  pasteLongTextAsFile: atomWithLocalStorage('pasteLongTextAsFile', true),
   showScrollButton: atomWithLocalStorage('showScrollButton', true),
   forkSetting: atomWithLocalStorage('forkSetting', ''),
   splitAtTarget: atomWithLocalStorage('splitAtTarget', false),
   rememberDefaultFork: atomWithLocalStorage(LocalStorageKeys.REMEMBER_FORK_OPTION, false),
   saveBadgesState: atomWithLocalStorage('saveBadgesState', false),
+  /** User preference for downscaling images before upload; ignored when the admin config sets it */
+  clientImageResize: atomWithLocalStorage('clientImageResize', false),
 
   // Beta features settings
   modularChat: atomWithLocalStorage('modularChat', true),

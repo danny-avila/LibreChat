@@ -13,9 +13,7 @@ const {
   encodeAndFormatVideos,
   getTransactionsConfig,
   encodeAndFormatDocuments,
-  getLangfuseTraceDestinationIds,
-  isLangfuseTraceSampled,
-  traceIdForMessage,
+  getLangfuseTraceMessageFields,
 } = require('@librechat/api');
 const {
   Constants,
@@ -31,6 +29,7 @@ const {
   supportsBalanceCheck,
   isBedrockDocumentType,
   getEndpointFileConfig,
+  stripReasoningLabelMetadata,
 } = require('librechat-data-provider');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { logViolation } = require('~/cache');
@@ -597,6 +596,12 @@ class BaseClient {
             const contentPart = latestMessage.content[index];
             if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
               contentPart[ContentTypes.THINK] = text;
+              delete contentPart.reasoning_label;
+              delete contentPart.reasoning_label_step_id;
+              delete contentPart.reasoning_label_attempts;
+              delete contentPart.reasoning_label_submitted_chars;
+              delete contentPart.reasoning_label_revision;
+              delete contentPart.reasoning_label_status;
             } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
               contentPart[ContentTypes.TEXT] = text;
             }
@@ -726,10 +731,11 @@ class BaseClient {
       this.abortController.requestCompleted = true;
     }
 
-    const isAgentResponse = isAgentsEndpoint(this.options.endpoint);
-    const langfuseTraceId = isAgentResponse ? traceIdForMessage(responseMessageId) : undefined;
-    const langfuseSampled =
-      langfuseTraceId != null ? isLangfuseTraceSampled(langfuseTraceId) : undefined;
+    const isAgentResponse =
+      this.clientName === EModelEndpoint.agents || isAgentsEndpoint(this.options.endpoint);
+    const langfuseTraceFields = isAgentResponse
+      ? await getLangfuseTraceMessageFields(appConfig, responseMessageId)
+      : undefined;
 
     /** @type {TMessage} */
     const responseMessage = {
@@ -737,14 +743,7 @@ class BaseClient {
       conversationId,
       parentMessageId: userMessage.messageId,
       isCreatedByUser: false,
-      ...(isAgentResponse && {
-        langfuseSampled,
-        langfuseDestinationIds: await getLangfuseTraceDestinationIds(
-          appConfig,
-          langfuseTraceId,
-          langfuseSampled,
-        ),
-      }),
+      ...(langfuseTraceFields ?? {}),
       isEdited,
       model: this.getResponseModel(),
       sender: this.sender,
@@ -1332,7 +1331,15 @@ class BaseClient {
       };
     } else {
       mergedContent[lastIndex] = {
-        ...mergedContent[lastIndex],
+        ...stripReasoningLabelMetadata(mergedContent[lastIndex]),
+        ...(adjustedCompletion[0].reasoning_label_step_id != null && {
+          reasoning_label: adjustedCompletion[0].reasoning_label,
+          reasoning_label_step_id: adjustedCompletion[0].reasoning_label_step_id,
+          reasoning_label_attempts: adjustedCompletion[0].reasoning_label_attempts,
+          reasoning_label_submitted_chars: adjustedCompletion[0].reasoning_label_submitted_chars,
+          reasoning_label_revision: adjustedCompletion[0].reasoning_label_revision,
+          reasoning_label_status: adjustedCompletion[0].reasoning_label_status,
+        }),
         [ContentTypes.THINK]:
           (mergedContent[lastIndex][ContentTypes.THINK] || '') +
           (adjustedCompletion[0][ContentTypes.THINK] || ''),
@@ -1452,6 +1459,7 @@ class BaseClient {
       if (
         file.embedded === true ||
         file.metadata?.codeEnvRef != null ||
+        file.metadata?.codeEnvRefs != null ||
         file.metadata?.fileIdentifier != null
       ) {
         allFiles.push(file);

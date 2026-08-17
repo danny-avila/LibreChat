@@ -1,13 +1,14 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { SquareTerminal } from 'lucide-react';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import { sandboxStartingByToolCallId } from '~/store';
 import useLazyHighlight from './useLazyHighlight';
 import useToolCallState from './useToolCallState';
 import CodeWindowHeader from './CodeWindowHeader';
+import useFollowScroll from './useFollowScroll';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
@@ -56,6 +57,9 @@ export const ERROR_PATTERNS = /^(Traceback|Error:|Exception:|.*Error:)/m;
 
 export default function ExecuteCode({
   isSubmitting,
+  runStepStatus,
+  runStepDurationMs,
+  backgrounded,
   initialProgress = 0.1,
   args,
   output = '',
@@ -66,6 +70,9 @@ export default function ExecuteCode({
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
+  backgrounded?: PartMetadata['backgrounded'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -81,9 +88,14 @@ export default function ExecuteCode({
   const sandboxStarting = useRecoilValue(sandboxStartingByToolCallId(toolCallId ?? ''));
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
-    useToolCallState(initialProgress, isSubmitting, output, !!code, onExpand);
+    useToolCallState(initialProgress, isSubmitting, output, !!code, onExpand, runStepStatus);
 
   const highlighted = useLazyHighlight(code, lang);
+  const { ref: codePaneRef, onScroll: onCodePaneScroll } = useFollowScroll<HTMLPreElement>(
+    highlighted ?? code ?? '',
+    progress < 1 && !cancelled,
+    showCode,
+  );
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
   /** A backgrounded call's persisted output stays the dispatch handle until
    *  the detached run settles and patches it; render a background state
@@ -118,6 +130,15 @@ export default function ExecuteCode({
               ? localize('com_ui_cancelled')
               : (backgroundFinishedText ?? intent ?? localize('com_ui_analyzing_finished'))
           }
+          /** A backgrounded call's run step closes when dispatch returns the
+           *  handle, so its duration is the dispatch time — showing it would
+           *  misstate a detached task's runtime as seconds. The handle check
+           *  covers the live card; the persisted `backgrounded` marker covers
+           *  the card after harvest replaces the handle with real stdout
+           *  (and after any reload), when no transient signal survives. */
+          durationMs={
+            backgroundHandle == null && backgrounded !== true ? runStepDurationMs : undefined
+          }
           errorSuffix={
             (hasError && !cancelled) || backgroundFailed
               ? localize('com_ui_tool_failed')
@@ -142,7 +163,11 @@ export default function ExecuteCode({
           <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
             {code && <CodeWindowHeader language={lang} code={code} />}
             {code && (
-              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
+              <pre
+                ref={codePaneRef}
+                onScroll={onCodePaneScroll}
+                className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
+              >
                 <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
               </pre>
             )}

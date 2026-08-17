@@ -15,6 +15,7 @@ import type { StructuredToolInterface } from '@librechat/agents/langchain/tools'
 import type { ValidationIssue } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
+import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
 import {
   backgroundTaskRegistry,
@@ -101,6 +102,7 @@ export interface ToolExecuteOptions {
     dispatchedAt?: number;
     output?: string;
     artifact?: unknown;
+    codeExecutionContext?: CodeExecutionContext;
     attachments?: unknown[];
     reapply?: boolean;
   }) => Promise<{ attachments?: unknown[] } | null>;
@@ -233,12 +235,21 @@ export interface ToolExecuteOptions {
     id: string;
     version?: number;
     read_only?: boolean;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
   }) => Promise<{
     storage_session_id: string;
     files: Array<{ fileId: string; filename: string }>;
   }>;
   /** Checks if a code env file is still active. Returns lastModified or null. */
-  getSessionInfo?: (ref: CodeEnvRef, req?: ServerRequest) => Promise<string | null>;
+  getSessionInfo?: (
+    ref: CodeEnvRef,
+    req?: ServerRequest,
+    route?: {
+      baseUrl?: string;
+      executionProfile?: CodeExecutionContext['executionProfile'];
+    },
+  ) => Promise<string | null>;
   /** 23-hour freshness check */
   checkIfActive?: (dateString: string) => boolean;
   /** Persists `codeEnvRef` on skill files after upload */
@@ -285,6 +296,8 @@ export interface ToolExecuteOptions {
      *  host file op that is the first sandbox call joins the same runtime session
      *  as bash_tool instead of the Code API's default session. */
     runtime_session_hint?: string;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
     req?: ServerRequest;
   }) => Promise<{ content: string } | null>;
   /**
@@ -303,6 +316,8 @@ export interface ToolExecuteOptions {
     files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
     /** @see readSandboxFile.runtime_session_hint */
     runtime_session_hint?: string;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
     /** In-sandbox size cap; files larger than this return `tooLarge` without transferring bytes. */
     maxBytes?: number;
     req?: ServerRequest;
@@ -320,6 +335,8 @@ export interface ToolExecuteOptions {
     files?: Array<{ id: string; name: string; session_id?: string; storage_session_id?: string }>;
     /** @see readSandboxFile.runtime_session_hint */
     runtime_session_hint?: string;
+    codeApiBaseUrl?: string;
+    executionProfile?: CodeExecutionContext['executionProfile'];
     req?: ServerRequest;
   }) => Promise<{
     stdout?: string;
@@ -355,6 +372,40 @@ const MAX_SKILL_WARNING_CODE_CHARS = 64;
 const MAX_SKILL_WARNING_MESSAGE_CHARS = 300;
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+
+function getCodeExecutionContext(
+  configurable: Record<string, unknown>,
+): CodeExecutionContext | undefined {
+  const context = configurable.codeExecutionContext;
+  if (context == null || typeof context !== 'object') {
+    return undefined;
+  }
+  const candidate = context as Partial<CodeExecutionContext>;
+  if (
+    typeof candidate.baseUrl !== 'string' ||
+    typeof candidate.codeSessionKey !== 'string' ||
+    (candidate.executionProfile !== 'default' && candidate.executionProfile !== 'stateful') ||
+    typeof candidate.statefulSessions !== 'boolean'
+  ) {
+    return undefined;
+  }
+  return candidate as CodeExecutionContext;
+}
+
+function codeExecutionRequestParams(context?: CodeExecutionContext): {
+  codeApiBaseUrl?: string;
+  executionProfile?: CodeExecutionContext['executionProfile'];
+  runtime_session_hint?: string;
+} {
+  if (!context) {
+    return {};
+  }
+  return {
+    codeApiBaseUrl: context.baseUrl,
+    executionProfile: context.executionProfile,
+    ...(context.runtimeSessionHint ? { runtime_session_hint: context.runtimeSessionHint } : {}),
+  };
+}
 
 type ToolInputSchemaKind = {
   object: boolean;
@@ -1452,6 +1503,8 @@ async function handleSandboxImageRead(
   ext: string,
   options: ToolExecuteOptions,
   req?: ServerRequest,
+  codeExecutionContext?: CodeExecutionContext,
+  onSuccess?: () => void,
 ): Promise<ToolExecuteResult> {
   const { readSandboxImage } = options;
   const binaryHint = (): ToolExecuteResult => ({
@@ -1472,7 +1525,7 @@ async function handleSandboxImageRead(
       session_id: ctx?.session_id,
       files: ctx?.files,
       maxBytes: MAX_SANDBOX_INLINE_IMAGE_BYTES,
-      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
+      ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
   } catch (error) {
@@ -1485,6 +1538,7 @@ async function handleSandboxImageRead(
     return binaryHint();
   }
   if ('tooLarge' in read) {
+    onSuccess?.();
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -1508,6 +1562,7 @@ async function handleSandboxImageRead(
   if (!mimeType || !isCompleteImage(buffer, mimeType)) {
     return binaryHint();
   }
+  onSuccess?.();
   return buildImageArtifactResult(tc.id, filePath, mimeType, buffer.length, read.base64);
 }
 
@@ -1536,10 +1591,12 @@ async function handleSandboxFileFallback(
   filePath: string,
   options: ToolExecuteOptions,
   req?: ServerRequest,
+  codeExecutionContext?: CodeExecutionContext,
+  onSuccess?: () => void,
 ): Promise<ToolExecuteResult> {
   const ext = lowercaseExtension(filePath);
   if (SANDBOX_IMAGE_EXTENSIONS.has(ext)) {
-    return handleSandboxImageRead(tc, filePath, ext, options, req);
+    return handleSandboxImageRead(tc, filePath, ext, options, req, codeExecutionContext, onSuccess);
   }
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
     return {
@@ -1566,7 +1623,7 @@ async function handleSandboxFileFallback(
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
-      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
+      ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
@@ -1604,6 +1661,7 @@ async function handleSandboxFileFallback(
     if (truncated) {
       numbered += `\n\n[truncated at ${MAX_READABLE_BYTES} bytes — use \`bash_tool\` (e.g. \`head -c\` / \`tail\`) to read the rest of "${filePath}"]`;
     }
+    onSuccess?.();
     return {
       toolCallId: tc.id,
       status: 'success',
@@ -1711,12 +1769,14 @@ async function loadSandboxTextForAuthoring({
   options,
   req,
   sandboxContext,
+  codeExecutionContext,
 }: {
   filePath: string;
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
   req?: ServerRequest;
   sandboxContext?: SandboxSessionContext;
+  codeExecutionContext?: CodeExecutionContext;
 }): Promise<LoadedSandboxText> {
   const ext = lowercaseExtension(filePath);
   if (BINARY_EXTENSIONS_NEVER_READABLE.has(ext)) {
@@ -1735,7 +1795,7 @@ async function loadSandboxTextForAuthoring({
       file_path: filePath,
       session_id: ctx?.session_id,
       files: ctx?.files,
-      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
+      ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
     if (!result || result.content == null) {
@@ -1786,6 +1846,7 @@ async function writeSandboxTextForAuthoring({
   oldContent,
   created,
   sandboxContext,
+  codeExecutionContext,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -1795,6 +1856,7 @@ async function writeSandboxTextForAuthoring({
   oldContent?: string;
   created: boolean;
   sandboxContext?: SandboxSessionContext;
+  codeExecutionContext?: CodeExecutionContext;
 }): AuthoringResult {
   if (!options.writeSandboxFile) {
     return errorResult(
@@ -1810,7 +1872,7 @@ async function writeSandboxTextForAuthoring({
       content,
       session_id: ctx?.session_id,
       files: ctx?.files,
-      ...(tc.runtimeSessionHint ? { runtime_session_hint: tc.runtimeSessionHint } : {}),
+      ...codeExecutionRequestParams(codeExecutionContext),
       ...(req ? { req } : {}),
     });
   } catch (error) {
@@ -2583,6 +2645,7 @@ async function handleSandboxCreateFileCall({
   content,
   overwrite,
   sandboxContext,
+  codeExecutionContext,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -2591,6 +2654,7 @@ async function handleSandboxCreateFileCall({
   content: string;
   overwrite: boolean;
   sandboxContext?: SandboxSessionContext;
+  codeExecutionContext?: CodeExecutionContext;
 }): AuthoringResult {
   const pathError = invalidSandboxAuthoringPath(filePath);
   if (pathError) {
@@ -2603,6 +2667,7 @@ async function handleSandboxCreateFileCall({
     options,
     req,
     sandboxContext,
+    codeExecutionContext,
   });
   if (current.status === 'error') {
     return errorResult(tc, current.message);
@@ -2620,6 +2685,7 @@ async function handleSandboxCreateFileCall({
     oldContent: current.status === 'loaded' ? current.content : undefined,
     created: current.status === 'missing',
     sandboxContext,
+    codeExecutionContext,
   });
 }
 
@@ -2630,6 +2696,7 @@ async function handleSandboxEditFileCall({
   filePath,
   edits,
   sandboxContext,
+  codeExecutionContext,
 }: {
   tc: ToolCallRequest;
   options: ToolExecuteOptions;
@@ -2637,6 +2704,7 @@ async function handleSandboxEditFileCall({
   filePath: string;
   edits: TextEdit[];
   sandboxContext?: SandboxSessionContext;
+  codeExecutionContext?: CodeExecutionContext;
 }): AuthoringResult {
   const pathError = invalidSandboxAuthoringPath(filePath);
   if (pathError) {
@@ -2649,6 +2717,7 @@ async function handleSandboxEditFileCall({
     options,
     req,
     sandboxContext,
+    codeExecutionContext,
   });
   if (current.status === 'missing') {
     return errorResult(tc, `File not found: "${filePath}"`);
@@ -2676,6 +2745,7 @@ async function handleSandboxEditFileCall({
     oldContent: current.content,
     created: false,
     sandboxContext,
+    codeExecutionContext,
   });
   if (result.status === 'success') {
     result.artifact = {
@@ -2728,6 +2798,7 @@ async function handleCreateFileCall(
       content: args.content,
       overwrite,
       sandboxContext,
+      codeExecutionContext: getCodeExecutionContext(mergedConfigurable),
     });
   }
 
@@ -2837,6 +2908,7 @@ async function handleEditFileCall(
       filePath: args.path,
       edits,
       sandboxContext,
+      codeExecutionContext: getCodeExecutionContext(mergedConfigurable),
     });
   }
 
@@ -2939,6 +3011,7 @@ async function handleReadFileCall(
   mergedConfigurable: Record<string, unknown>,
   options: ToolExecuteOptions,
   req?: ServerRequest,
+  onSandboxReadSuccess?: () => void,
 ): Promise<ToolExecuteResult> {
   const { getSkillByName, getSkillFileByPath, getStrategyFunctions, updateSkillFileContent } =
     options;
@@ -2953,6 +3026,7 @@ async function handleReadFileCall(
   }
 
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
+  const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
   let accessibleIds = (mergedConfigurable?.accessibleSkillIds as Types.ObjectId[]) ?? [];
 
   /**
@@ -2962,7 +3036,14 @@ async function handleReadFileCall(
    */
   if (args.path.startsWith('/mnt/data/')) {
     if (codeEnvAvailable) {
-      return handleSandboxFileFallback(tc, args.path, options, req);
+      return handleSandboxFileFallback(
+        tc,
+        args.path,
+        options,
+        req,
+        codeExecutionContext,
+        onSandboxReadSuccess,
+      );
     }
     return {
       toolCallId: tc.id,
@@ -2991,7 +3072,14 @@ async function handleReadFileCall(
     const slashIdx = args.path.indexOf('/');
     if (slashIdx < 1) {
       if (codeEnvAvailable) {
-        return handleSandboxFileFallback(tc, args.path, options, req);
+        return handleSandboxFileFallback(
+          tc,
+          args.path,
+          options,
+          req,
+          codeExecutionContext,
+          onSandboxReadSuccess,
+        );
       }
       return {
         toolCallId: tc.id,
@@ -3011,7 +3099,14 @@ async function handleReadFileCall(
        * dead-ending with a skill-centric error message.
        */
       if (codeEnvAvailable) {
-        return handleSandboxFileFallback(tc, args.path, options, req);
+        return handleSandboxFileFallback(
+          tc,
+          args.path,
+          options,
+          req,
+          codeExecutionContext,
+          onSandboxReadSuccess,
+        );
       }
       return {
         toolCallId: tc.id,
@@ -3073,7 +3168,14 @@ async function handleReadFileCall(
    */
   if (!skillsEffectivelyEnabled) {
     if (codeEnvAvailable && !explicitSkillNamespace) {
-      return handleSandboxFileFallback(tc, args.path, options, req);
+      return handleSandboxFileFallback(
+        tc,
+        args.path,
+        options,
+        req,
+        codeExecutionContext,
+        onSandboxReadSuccess,
+      );
     }
     return {
       toolCallId: tc.id,
@@ -3112,7 +3214,14 @@ async function handleReadFileCall(
     const recovered = await recoverAuthorSkill();
     if (!recovered) {
       if (codeEnvAvailable && !explicitSkillNamespace) {
-        return handleSandboxFileFallback(tc, args.path, options, req);
+        return handleSandboxFileFallback(
+          tc,
+          args.path,
+          options,
+          req,
+          codeExecutionContext,
+          onSandboxReadSuccess,
+        );
       }
       return {
         toolCallId: tc.id,
@@ -3495,6 +3604,7 @@ async function handleSkillToolCall(
   // is enabled for this run. The flag is threaded via configurable upstream
   // so this gate cannot be bypassed.
   const codeEnvAvailable = mergedConfigurable?.codeEnvAvailable === true;
+  const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
   if (
     codeEnvAvailable &&
     skill.fileCount > 0 &&
@@ -3515,6 +3625,7 @@ async function handleSkillToolCall(
         getSessionInfo,
         checkIfActive,
         updateSkillFileCodeEnvIds,
+        codeExecutionContext,
       });
       if (primeResult) {
         /* `session_id` at the top of the artifact is the (representative)
@@ -3744,6 +3855,24 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
               sourceConfigurable,
               loadedConfigurable,
             );
+            const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
+            const runtimeSessionHint = codeExecutionContext?.runtimeSessionHint;
+            const sandboxConversationId =
+              ((metadata as Record<string, unknown>)?.thread_id as string | undefined) ??
+              (mergedConfigurable?.thread_id as string | undefined) ??
+              (
+                (mergedConfigurable?.req as ServerRequest | undefined)?.body as
+                  | { conversationId?: string }
+                  | undefined
+              )?.conversationId;
+            const markCodeSandboxWarm = (): void => {
+              if (runtimeSessionHint) {
+                void markSandboxReady(runtimeSessionHint);
+              }
+              if (sandboxConversationId) {
+                void markSandboxReady(sandboxConversationId);
+              }
+            };
             const authoringQueues = new Map<string, Promise<void>>();
             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
 
@@ -3854,6 +3983,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                          *  after a newer run wrote the same filename must not
                          *  overwrite it. */
                         dispatchedAt: task.createdAt,
+                        codeExecutionContext,
                         ...params,
                       });
                       if (persisted == null) {
@@ -3903,8 +4033,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       configurable: mergedConfigurable,
                       metadata,
                     } as Record<string, unknown>)) as { content?: unknown; artifact?: unknown };
-                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
-                      void markSandboxReady(tc.runtimeSessionHint);
+                    if (isCodeCall) {
+                      markCodeSandboxWarm();
                     }
                     const content =
                       isCodeCall && typeof result.content === 'string'
@@ -3997,7 +4127,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                               artifact: pending.artifact,
                             },
                           },
-                          (metadata ?? {}) as ToolEndCallbackMetadata,
+                          {
+                            ...(metadata ?? {}),
+                            executingAgentId: agentId,
+                          } as ToolEndCallbackMetadata,
                         );
                       } catch (callbackError) {
                         /** Only synchronous callback throws land here (e.g. a
@@ -4135,6 +4268,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     isFileAuthoringCall &&
                     typeof (tc.args as { path?: unknown }).path === 'string' &&
                     !(tc.args as { path: string }).path.startsWith(SKILL_FILE_PREFIX);
+                  let sandboxReadSucceeded = false;
                   if (
                     tc.name === Constants.SKILL_TOOL ||
                     tc.name === Constants.READ_FILE ||
@@ -4156,6 +4290,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           mergedConfigurable,
                           options,
                           req,
+                          () => {
+                            sandboxReadSucceeded = true;
+                          },
                         );
                       } else if (tc.name === CREATE_FILE_TOOL_NAME && isFileAuthoringCall) {
                         handlerResult = await handleCreateFileCall(
@@ -4217,23 +4354,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                             | string
                             | undefined,
                           ...metadata,
+                          executingAgentId: agentId,
+                          codeExecutionContext,
                         },
                       );
                     }
 
-                    /* Sandbox-routed create_file/edit_file return before the
+                    /* Sandbox-routed host file tools return before the
                      * generic invoke path's marker below, so refresh the warm
-                     * window here. Gated on `isSandboxFileAuthoringCall`:
-                     * skill-path writes and skill/read_file calls on this
-                     * branch may resolve without touching the Code API, and
-                     * under-marking only costs a redundant cold-boot label. */
+                     * window here. `sandboxReadSucceeded` is set only after an
+                     * actual Code API read succeeds, so skill reads never mark
+                     * the sandbox warm. */
                     if (
-                      isSandboxFileAuthoringCall &&
+                      (isSandboxFileAuthoringCall || sandboxReadSucceeded) &&
                       handlerResult.status === 'success' &&
-                      tc.runtimeSessionHint != null &&
-                      tc.runtimeSessionHint !== ''
+                      (runtimeSessionHint || sandboxConversationId)
                     ) {
-                      void markSandboxReady(tc.runtimeSessionHint);
+                      markCodeSandboxWarm();
                     }
 
                     return handlerResult;
@@ -4321,8 +4458,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     /* Only sandbox-bound calls carry a runtime session hint, so
                      * this refreshes the prewarm module's warm window without
                      * inspecting tool names. */
-                    if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
-                      void markSandboxReady(tc.runtimeSessionHint);
+                    if (isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
+                      markCodeSandboxWarm();
                     }
 
                     // Code-execution tools emit per-call boilerplate
@@ -4356,6 +4493,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                             | string
                             | undefined,
                           ...metadata,
+                          executingAgentId: agentId,
+                          codeExecutionContext,
                         },
                       );
                     }

@@ -248,7 +248,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
           conversationId,
           context: FileContext.execute_code,
           file_id: { $in: threadFileIds },
-          'metadata.codeEnvRef': { $exists: true },
+          $or: [
+            { 'metadata.codeEnvRef': { $exists: true } },
+            { 'metadata.codeEnvRefs': { $exists: true } },
+          ],
         },
         ownerScope,
       );
@@ -285,7 +288,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         {
           file_id: { $in: fileIds },
           context: { $ne: FileContext.execute_code },
-          'metadata.codeEnvRef': { $exists: true },
+          $or: [
+            { 'metadata.codeEnvRef': { $exists: true } },
+            { 'metadata.codeEnvRefs': { $exists: true } },
+          ],
         },
         ownerScope,
       );

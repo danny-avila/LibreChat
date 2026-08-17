@@ -5,6 +5,7 @@ import {
   getExistingConversationAbortMessages,
   isInitialNewConversationSubmission,
   mergeRegenerateFinalMessages,
+  startedAsNewConversation,
 } from '~/hooks/SSE/useEventHandlers';
 
 describe('buildCreatedInitialResponse', () => {
@@ -75,6 +76,62 @@ describe('isInitialNewConversationSubmission', () => {
           messageId: 'user-2',
           parentMessageId: 'assistant-1',
         } as TMessage,
+      } as EventSubmission),
+    ).toBe(false);
+  });
+});
+
+describe('startedAsNewConversation', () => {
+  const rootUserMessage = {
+    messageId: 'user-1',
+    parentMessageId: Constants.NO_PARENT,
+  } as TMessage;
+
+  it('treats an unsaved conversation as a new chat', () => {
+    for (const conversationId of [undefined, Constants.NEW_CONVO, Constants.PENDING_CONVO]) {
+      expect(
+        startedAsNewConversation({
+          conversation: { conversationId },
+          userMessage: rootUserMessage,
+        } as EventSubmission),
+      ).toBe(true);
+    }
+  });
+
+  it('treats a first turn without a saved id as a new chat', () => {
+    expect(
+      startedAsNewConversation({
+        conversation: {},
+        userMessage: rootUserMessage,
+      } as EventSubmission),
+    ).toBe(true);
+  });
+
+  it('does not treat a regenerated first reply of a saved conversation as a new chat', () => {
+    expect(
+      startedAsNewConversation({
+        conversation: { conversationId: 'conversation-1' },
+        userMessage: rootUserMessage,
+        isRegenerate: true,
+      } as EventSubmission),
+    ).toBe(false);
+  });
+
+  it('does not treat a resubmitted first message of a saved conversation as a new chat', () => {
+    expect(
+      startedAsNewConversation({
+        conversation: { conversationId: 'conversation-1' },
+        userMessage: rootUserMessage,
+        isEdited: true,
+      } as EventSubmission),
+    ).toBe(false);
+  });
+
+  it('does not treat a follow-up turn of a saved conversation as a new chat', () => {
+    expect(
+      startedAsNewConversation({
+        conversation: { conversationId: 'conversation-1' },
+        userMessage: { messageId: 'user-2', parentMessageId: 'assistant-1' } as TMessage,
       } as EventSubmission),
     ).toBe(false);
   });

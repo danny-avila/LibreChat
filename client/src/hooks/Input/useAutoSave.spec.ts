@@ -15,6 +15,10 @@ jest.mock('~/data-provider', () => ({
   useGetFiles: jest.fn(),
 }));
 
+jest.mock('~/hooks/Files/useFileHandling', () => ({
+  hasInFlightUpload: jest.fn(() => false),
+}));
+
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils'),
   getDraft: jest.fn(),
@@ -29,7 +33,15 @@ import { useRecoilValue } from 'recoil';
 import { Constants, LocalStorageKeys } from 'librechat-data-provider';
 import { useChatFormContext } from '~/Providers';
 import { useGetFiles } from '~/data-provider';
-import { encodeBase64, getAskAnswerDraftId, getDraft, setDraft } from '~/utils';
+import { hasInFlightUpload } from '~/hooks/Files/useFileHandling';
+import {
+  encodeBase64,
+  getAskAnswerDraftId,
+  getDraft,
+  getFilesDraft,
+  setDraft,
+  setFilesDraft,
+} from '~/utils';
 import store from '~/store';
 import { useAutoSave } from '~/hooks';
 
@@ -43,12 +55,14 @@ const makeTextAreaRef = (value = '') =>
   }) as unknown as React.RefObject<HTMLTextAreaElement>;
 
 beforeEach(() => {
+  localStorage.clear();
   (useRecoilValue as jest.Mock).mockImplementation((atom) => {
     if (atom === store.saveDrafts) return true;
     return undefined;
   });
   (useChatFormContext as jest.Mock).mockReturnValue({ setValue: mockSetValue });
   (useGetFiles as jest.Mock).mockReturnValue({ data: [] });
+  (hasInFlightUpload as jest.Mock).mockReturnValue(false);
   mockGetDraft.mockReturnValue('');
 });
 
@@ -107,6 +121,125 @@ describe('useAutoSave — conversation switching', () => {
     });
 
     expect(mockSetDraft).toHaveBeenCalledWith({ id: 'convo-1', value: 'draft in progress' });
+  });
+
+  it('restores an incomplete pasted-text upload into the composer after reload', () => {
+    mockGetDraft.mockReturnValue('before  after');
+    setFilesDraft('convo-1', {
+      fileIds: ['pending-paste-file'],
+      pendingPastes: {
+        'pending-paste-file': {
+          text: 'recovered pasted text',
+          selectionStart: 7,
+        },
+      },
+    });
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'before recovered pasted text after');
+    expect(mockSetDraft).toHaveBeenCalledWith({
+      id: 'convo-1',
+      value: 'before recovered pasted text after',
+    });
+    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+  });
+
+  it('does not recover a paste whose upload is still in flight', () => {
+    (hasInFlightUpload as jest.Mock).mockReturnValue(true);
+    mockGetDraft.mockReturnValue('before  after');
+    setFilesDraft('convo-1', {
+      fileIds: ['pending-paste-file'],
+      pendingPastes: {
+        'pending-paste-file': {
+          text: 'recovered pasted text',
+          selectionStart: 7,
+        },
+      },
+    });
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'before  after');
+    expect(getFilesDraft('convo-1').pendingPastes['pending-paste-file']?.text).toBe(
+      'recovered pasted text',
+    );
+  });
+
+  it('replaces a stale selected range when recovering a pending paste after reload', () => {
+    mockGetDraft.mockReturnValue('before selected after');
+    setFilesDraft('convo-1', {
+      fileIds: ['pending-paste-file'],
+      pendingPastes: {
+        'pending-paste-file': {
+          text: 'recovered pasted text',
+          selectionStart: 7,
+          selectionEnd: 15,
+          replacedText: 'selected',
+        },
+      },
+    });
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'before recovered pasted text after');
+    expect(mockSetDraft).toHaveBeenCalledWith({
+      id: 'convo-1',
+      value: 'before recovered pasted text after',
+    });
+  });
+
+  it('rebases two pending replacements so the earlier paste is not restored stale', () => {
+    mockGetDraft.mockReturnValue('AAAA BBBB CCCC');
+    setFilesDraft('convo-1', {
+      fileIds: ['end-file', 'start-file'],
+      pendingPastes: {
+        'end-file': {
+          text: 'END',
+          selectionStart: 10,
+          replacedText: 'CCCC',
+          sequence: 1,
+        },
+        'start-file': {
+          text: 'START',
+          selectionStart: 0,
+          replacedText: 'AAAA',
+          sequence: 2,
+        },
+      },
+    });
+
+    renderHook(() =>
+      useAutoSave({
+        conversationId: 'convo-1',
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'START BBBB END');
   });
 });
 
@@ -277,5 +410,122 @@ describe('useAutoSave — debounced autosave', () => {
     });
 
     expect(mockSetDraft).toHaveBeenLastCalledWith({ id: 'convo-1', value: 'still typing' });
+  });
+});
+
+describe('useAutoSave — side-by-side pending drafts', () => {
+  const pane0PendingId = Constants.PENDING_CONVO;
+  const pane1PendingId = `${Constants.PENDING_CONVO}:1`;
+
+  it('migrates only this pane pending file draft when a run finishes', () => {
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          index: 1,
+          isSubmitting,
+          conversationId: 'convo-side',
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    setFilesDraft(pane0PendingId, {
+      fileIds: ['pane-0-file'],
+      pendingPastes: {
+        'pane-0-file': { text: 'pane 0 paste', selectionStart: 0 },
+      },
+    });
+    setFilesDraft(pane1PendingId, {
+      fileIds: ['pane-1-file'],
+      pendingPastes: {
+        'pane-1-file': { text: 'pane 1 paste', selectionStart: 0 },
+      },
+    });
+
+    act(() => {
+      rerender({ isSubmitting: false });
+    });
+
+    expect(getFilesDraft(pane0PendingId).pendingPastes['pane-0-file']?.text).toBe('pane 0 paste');
+    expect(getFilesDraft(pane1PendingId)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'pane 1 paste');
+  });
+
+  it('recovers a pending paste the destination key has no room for', () => {
+    const { rerender } = renderHook(
+      ({ isSubmitting }: { isSubmitting: boolean }) =>
+        useAutoSave({
+          index: 1,
+          isSubmitting,
+          conversationId: 'convo-side',
+          textAreaRef: makeTextAreaRef(),
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      { initialProps: { isSubmitting: true } },
+    );
+
+    setFilesDraft(pane1PendingId, {
+      fileIds: ['pane-1-file'],
+      pendingPastes: {
+        'pane-1-file': { text: 'pane 1 paste', selectionStart: 0 },
+      },
+    });
+
+    const realSetItem = Storage.prototype.setItem;
+    const setItem = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      if (key === `${LocalStorageKeys.FILES_DRAFT}convo-side`) {
+        throw new Error('quota exceeded');
+      }
+      realSetItem.call(this, key, value);
+    });
+
+    act(() => {
+      rerender({ isSubmitting: false });
+    });
+
+    setItem.mockRestore();
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'pane 1 paste');
+    expect(getFilesDraft(pane1PendingId)).toEqual({ fileIds: [], pendingPastes: {} });
+  });
+
+  it('restores only this pane idle unsaved file draft', () => {
+    mockGetDraft.mockImplementation((id: string) =>
+      id === `${Constants.NEW_CONVO}:1` ? 'pane 1 draft' : 'pane 0 draft',
+    );
+    setFilesDraft(Constants.NEW_CONVO, {
+      fileIds: ['pane-0-file'],
+      pendingPastes: {
+        'pane-0-file': { text: 'pane 0 paste', selectionStart: 0 },
+      },
+    });
+    setFilesDraft(`${Constants.NEW_CONVO}:1`, {
+      fileIds: ['pane-1-file'],
+      pendingPastes: {
+        'pane-1-file': { text: 'pane 1 paste', selectionStart: 12 },
+      },
+    });
+
+    renderHook(() =>
+      useAutoSave({
+        index: 1,
+        conversationId: Constants.NEW_CONVO as string,
+        textAreaRef: makeTextAreaRef(),
+        files: new Map(),
+        setFiles: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenLastCalledWith('text', 'pane 1 draftpane 1 paste');
+    expect(getFilesDraft(Constants.NEW_CONVO).pendingPastes['pane-0-file']?.text).toBe(
+      'pane 0 paste',
+    );
+    expect(getFilesDraft(`${Constants.NEW_CONVO}:1`)).toEqual({ fileIds: [], pendingPastes: {} });
   });
 });

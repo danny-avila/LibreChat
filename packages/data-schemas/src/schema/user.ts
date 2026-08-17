@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { SystemRoles } from 'librechat-data-provider';
+import { SystemRoles, STATEFUL_CODE_ENVIRONMENTS } from 'librechat-data-provider';
 import { IUser } from '~/types';
 
 // Session sub-schema
@@ -136,6 +136,11 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
         memories: {
           type: Boolean,
           default: true,
+        },
+        statefulCodeEnvironment: {
+          type: String,
+          enum: STATEFUL_CODE_ENVIRONMENTS,
+          default: 'user',
         },
       },
       default: {},

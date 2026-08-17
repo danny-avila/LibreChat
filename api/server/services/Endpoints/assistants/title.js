@@ -1,4 +1,4 @@
-const { isEnabled, sanitizeTitle } = require('@librechat/api');
+const { isEnabled, sanitizeTitle, getAttachmentTitleText } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('~/cache/getLogStores');
@@ -78,7 +78,18 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
     );
   } catch (error) {
     logger.error('[addTitle] Error generating title:', error);
-    const fallbackTitle = text.length > 40 ? text.substring(0, 37) + '...' : text;
+    /**
+     * An attachment-only turn has no text to fall back on, and saving the
+     * empty string would replace the conversation's default title with a
+     * blank sidebar entry. Use the filenames, then the response, and leave
+     * the default in place when neither says anything.
+     */
+    const fallbackSource = text || getAttachmentTitleText(req?.body?.files) || responseText || '';
+    if (!fallbackSource) {
+      return;
+    }
+    const fallbackTitle =
+      fallbackSource.length > 40 ? fallbackSource.substring(0, 37) + '...' : fallbackSource;
     await titleCache.set(key, fallbackTitle, 120000);
     await saveConvo(
       {

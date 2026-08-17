@@ -1203,4 +1203,85 @@ describe('Langfuse feedback scores', () => {
 
     expect(getFetchMock()).not.toHaveBeenCalled();
   });
+  it('captures no destinations when central export is suppressed without a fanout route', async () => {
+    delete process.env.LANGFUSE_PUBLIC_KEY;
+    delete process.env.LANGFUSE_SECRET_KEY;
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
+    await loadFeedback();
+    const { getLangfuseTraceDestinationIds } = await import('./destinations');
+
+    /** `resolveLangfuseExportPlan` reports `disabled` for this shape — no fanout
+     *  route to fall back on — so capturing the configured connection would let
+     *  later feedback reach a project the trace never went to. */
+    await expect(
+      getLangfuseTraceDestinationIds(
+        appConfigWithLangfuse({
+          publicKey: 'tenant-public-key',
+          secretKey: encryptedTenantSecret(),
+          destination: 'eu',
+        }),
+        'trace-id',
+        true,
+        { centralTraceExportEnabled: false },
+      ),
+    ).resolves.toEqual([]);
+  });
+
+  it('records no restriction when a suppressed-central trace has no identifiable destination', async () => {
+    enableTenantFanout();
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
+    await loadFeedback();
+    const { getLangfuseTraceDestinationIds } = await import('./destinations');
+
+    /** Tenant `projectId` is optional, so this eligible destination carries no
+     *  stable id. An empty list would reject it at feedback time and drop the
+     *  rating; the opt-out is re-asserted through `sendFeedbackScore` instead. */
+    await expect(
+      getLangfuseTraceDestinationIds(
+        appConfigWithLangfuse({
+          publicKey: 'tenant-public-key',
+          secretKey: encryptedTenantSecret(),
+          destination: 'eu',
+          projectId: undefined,
+        }),
+        'trace-id',
+        true,
+        { centralTraceExportEnabled: false },
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('sends unrestricted suppressed-central feedback to the tenant only', async () => {
+    enableTenantFanout();
+    process.env.LANGFUSE_BASE_URL = 'http://central-langfuse:3000';
+    process.env.LANGFUSE_FANOUT_TENANT_DESTINATIONS = 'eu=http://tenant-langfuse:3000';
+    const { sendFeedbackScore } = await loadFeedback();
+
+    /** The trace reached the tenant through its fanout route while central export
+     *  was suppressed, and left no destination ids to filter on. The rating has to
+     *  follow the same policy: tenant receives it, central stays excluded. */
+    await sendFeedbackScore({
+      traceId: 'trace-id',
+      feedback: { rating: 'thumbsUp' },
+      destinationIds: undefined,
+      centralTraceExportEnabled: false,
+      appConfig: appConfigWithLangfuse({
+        publicKey: 'tenant-public-key',
+        secretKey: encryptedTenantSecret(),
+        destination: 'eu',
+        projectId: undefined,
+      }),
+    });
+
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+    expect(getFetchMock()).toHaveBeenCalledWith(
+      'http://tenant-langfuse:3000/api/public/scores',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: getTenantAuthorization(),
+        }),
+      }),
+    );
+  });
 });

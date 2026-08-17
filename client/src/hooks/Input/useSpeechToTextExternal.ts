@@ -4,6 +4,36 @@ import { useToastContext } from '@librechat/client';
 import { useSpeechToTextMutation } from '~/data-provider';
 import store from '~/store';
 
+export const getBestSupportedMimeType = (
+  isTypeSupported: (type: string) => boolean = (type) =>
+    typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type),
+  userAgent: string = typeof navigator !== 'undefined' ? navigator.userAgent : '',
+) => {
+  const types = [
+    'audio/ogg;codecs=opus',
+    'audio/ogg',
+    'audio/wav',
+    'audio/webm',
+    'audio/webm;codecs=opus',
+    'audio/mp4',
+  ];
+
+  for (const type of types) {
+    if (isTypeSupported(type)) {
+      return type;
+    }
+  }
+
+  const ua = userAgent.toLowerCase();
+  if (ua.indexOf('safari') !== -1 && ua.indexOf('chrome') === -1) {
+    return 'audio/mp4';
+  } else if (ua.indexOf('firefox') !== -1) {
+    return 'audio/ogg';
+  }
+
+  return 'audio/webm';
+};
+
 const useSpeechToTextExternal = (
   setText: (text: string) => void,
   onTranscriptionComplete: (text: string) => void,
@@ -45,34 +75,6 @@ const useSpeechToTextExternal = (
       setIsRequestBeingMade(false);
     },
   });
-
-  function getBestSupportedMimeType() {
-    const types = [
-      'audio/webm',
-      'audio/webm;codecs=opus',
-      'audio/mp4',
-      'audio/ogg;codecs=opus',
-      'audio/ogg',
-      'audio/wav',
-    ];
-
-    for (const type of types) {
-      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) {
-        return type;
-      }
-    }
-
-    if (typeof navigator !== 'undefined') {
-      const ua = navigator.userAgent.toLowerCase();
-      if (ua.indexOf('safari') !== -1 && ua.indexOf('chrome') === -1) {
-        return 'audio/mp4';
-      } else if (ua.indexOf('firefox') !== -1) {
-        return 'audio/ogg';
-      }
-    }
-
-    return 'audio/webm';
-  }
 
   const getFileExtension = (mimeType: string) => {
     if (mimeType.includes('mp4')) {

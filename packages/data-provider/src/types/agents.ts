@@ -204,6 +204,36 @@ export namespace Agents {
     stepDetails: StepDetails;
     summary?: SummaryContentPart;
     usage: null | object;
+    /** Epoch ms the step was opened. Emitted by `@librechat/agents` >= 3.4.6. */
+    created_at?: number;
+    status?: RunStepStatus;
+  };
+
+  /** Lifecycle status of a run step. `in_progress` until a terminal close. */
+  export type RunStepStatus = 'in_progress' | 'completed' | 'cancelled' | 'failed';
+
+  /** Terminal status a run step can close with. */
+  export type RunStepClosedStatus = Exclude<RunStepStatus, 'in_progress'>;
+
+  /**
+   * Payload of {@link StepEvents.ON_RUN_STEP_CLOSED}. Emitted once per step
+   * when it reaches a terminal state, including steps swept at end-of-run
+   * because the caller aborted — which is the only signal that distinguishes
+   * a stopped step from one still in flight.
+   */
+  export type RunStepClosedEvent = {
+    id: string;
+    index: number;
+    type: StepTypes;
+    status: RunStepClosedStatus;
+    /** Epoch ms the step was opened, when the emitter knows it. */
+    created_at?: number;
+    /** Epoch ms the step reached its terminal state. */
+    closed_at: number;
+    runId?: string;
+    agentId?: string;
+    groupId?: number;
+    stepIndex?: number;
   };
 
   /** Content part for aggregated message content */

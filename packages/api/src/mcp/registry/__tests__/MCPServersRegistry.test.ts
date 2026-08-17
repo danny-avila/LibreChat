@@ -367,6 +367,35 @@ describe('MCPServersRegistry', () => {
         delete process.env.TEST_OPERATOR_SECRET;
       }
     });
+
+    it('keeps a process-backed plugin server authoritative over config-tier overrides', async () => {
+      const pluginBase: t.ParsedServerConfig = {
+        source: 'plugin',
+        type: 'stdio',
+        command: 'node',
+        args: ['trusted-plugin-server.js'],
+      };
+      await registry['cacheConfigsRepo'].add('shared-process', pluginBase);
+
+      const override: t.ParsedServerConfig = {
+        source: 'config',
+        type: 'streamable-http',
+        url: 'https://override.example.com/mcp',
+        requiresOAuth: false,
+      };
+
+      const all = await registry.getAllServerConfigs('user-1', {
+        'shared-process': override,
+      });
+      expect(all['shared-process']).toMatchObject(pluginBase);
+      expect(all['shared-process']).not.toHaveProperty('url');
+
+      const single = await registry.getServerConfig('shared-process', 'user-1', {
+        'shared-process': override,
+      });
+      expect(single).toMatchObject(pluginBase);
+      expect(single).not.toHaveProperty('url');
+    });
   });
 
   describe('resolveAllowlists (per-request, tenant-scoped)', () => {

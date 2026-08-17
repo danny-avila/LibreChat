@@ -30,6 +30,7 @@ import {
   logger,
   requestChatFocus,
   hasStreamStartFailed,
+  isSubmittableMessage,
   createDualMessageContent,
   getRouteChatProjectId,
 } from '~/utils';
@@ -292,7 +293,18 @@ export default function useChatFunctions({
     } = {},
   ) => {
     text = text.trim();
-    if (!!isSubmitting || text === '') {
+    /**
+     * Attached files make an otherwise empty draft submittable, e.g. replying
+     * to an agent that asked for a document upload. Replayed turns (regenerate,
+     * or save-and-submit carrying `overrideFiles`) reuse stored attachments that
+     * aren't in the compose `files` map, so count those too and never re-block a
+     * regenerate of an already-validated file-only turn.
+     */
+    const replayFileCount = overrideFiles?.length ?? 0;
+    if (
+      !!isSubmitting ||
+      (!isRegenerate && !isSubmittableMessage(text, (files?.size ?? 0) + replayFileCount))
+    ) {
       return false;
     }
 
@@ -548,6 +560,7 @@ export default function useChatFunctions({
       currentMsg.files = Array.from(files.values()).map((file) => ({
         file_id: file.file_id,
         filepath: file.filepath,
+        filename: file.filename,
         type: file.type ?? '', // Ensure type is not undefined
         height: file.height,
         width: file.width,
@@ -622,6 +635,12 @@ export default function useChatFunctions({
           const contentPart = initialResponse.content[index];
           if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
             contentPart[ContentTypes.THINK] = part[ContentTypes.THINK];
+            delete contentPart.reasoning_label;
+            delete contentPart.reasoning_label_step_id;
+            delete contentPart.reasoning_label_attempts;
+            delete contentPart.reasoning_label_submitted_chars;
+            delete contentPart.reasoning_label_revision;
+            delete contentPart.reasoning_label_status;
           } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
             contentPart[ContentTypes.TEXT] = part[ContentTypes.TEXT];
           }

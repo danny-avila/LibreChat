@@ -10,7 +10,13 @@ import type {
   FunctionToolCall,
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
-import { cn, getToolDisplayLabel, getBatchActivityLabelPart, getActivityLabelText } from '~/utils';
+import {
+  cn,
+  getToolDisplayLabel,
+  hasPendingApprovalInPart,
+  getBatchActivityLabelPart,
+  getActivityLabelText,
+} from '~/utils';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { isBashProgrammaticToolCall } from './routing';
@@ -23,27 +29,6 @@ interface ToolMeta {
   name: string;
   iconName: string;
   hasOutput: boolean;
-}
-
-type ToolCallWithNestedContent = Agents.ToolCall & {
-  subagent_content?: TMessageContentParts[];
-};
-
-function hasPendingApprovalInPart(part: TMessageContentParts): boolean {
-  if (part.type !== ContentTypes.TOOL_CALL) {
-    return false;
-  }
-  const toolCall = part[ContentTypes.TOOL_CALL] as ToolCallWithNestedContent | undefined;
-  if (!toolCall) {
-    return false;
-  }
-  if (toolCall.approval != null && (toolCall.output?.length ?? 0) === 0) {
-    return true;
-  }
-  return (
-    Array.isArray(toolCall.subagent_content) &&
-    toolCall.subagent_content.some(hasPendingApprovalInPart)
-  );
 }
 
 function getToolMeta(part: TMessageContentParts): ToolMeta | null {
@@ -379,7 +364,7 @@ export default function ToolCallGroup({
         <span
           className={cn(
             'tool-status-text min-w-0 truncate font-medium',
-            activityFailed && 'text-amber-600 dark:text-amber-400',
+            activityFailed && 'text-text-warning',
           )}
           role="status"
           title={groupLabel}

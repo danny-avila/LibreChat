@@ -7,6 +7,8 @@ on:
       - '!**.md'
       - '!.github/workflows/**'
       - '.github/workflows/playwright-mock.yml'
+  schedule:
+    - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       reason:
@@ -27,8 +29,9 @@ env:
 
 jobs:
   e2e_shards:
-    name: e2e (${{ matrix.stream_store }}, shard ${{ matrix.shard }}/2)
+    name: e2e (${{ matrix.name }})
     if: >-
+      github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
       github.event.pull_request != null &&
@@ -37,12 +40,15 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        stream_store: [memory, redis]
-        shard: [1, 2]
+      matrix: >-
+        ${{
+          github.event_name == 'pull_request' &&
+          fromJSON('{"include":[{"name":"memory, shard 1/3","stream_store":"memory","redis_image":"","suite":"full","shard":"1/3","artifact":"memory-1-of-3"},{"name":"memory, shard 2/3","stream_store":"memory","redis_image":"","suite":"full","shard":"2/3","artifact":"memory-2-of-3"},{"name":"memory, shard 3/3","stream_store":"memory","redis_image":"","suite":"full","shard":"3/3","artifact":"memory-3-of-3"},{"name":"redis transport","stream_store":"redis","redis_image":"redis:7-alpine","suite":"transport","shard":"","artifact":"redis-transport"}]}') ||
+          fromJSON('{"include":[{"name":"memory, shard 1/2","stream_store":"memory","redis_image":"","suite":"full","shard":"1/2","artifact":"memory-1-of-2"},{"name":"memory, shard 2/2","stream_store":"memory","redis_image":"","suite":"full","shard":"2/2","artifact":"memory-2-of-2"},{"name":"redis, shard 1/2","stream_store":"redis","redis_image":"redis:7-alpine","suite":"full","shard":"1/2","artifact":"redis-1-of-2"},{"name":"redis, shard 2/2","stream_store":"redis","redis_image":"redis:7-alpine","suite":"full","shard":"2/2","artifact":"redis-2-of-2"}]}')
+        }}
     services:
       redis:
-        image: redis:7-alpine
+        image: ${{ matrix.redis_image }}
         ports:
           - 6379:6379
         options: >-
@@ -135,14 +141,38 @@ jobs:
         if: steps.cache-client-app.outputs.cache-hit != 'true'
         run: npm run build:client
 
-      - name: Install Playwright runtime dependencies
-        timeout-minutes: 5
-        run: |
-          google-chrome --version
-          npx playwright install-deps chrome
+      - name: Verify Chrome is present
+        run: google-chrome --version
 
-      - name: Run mock-LLM Tier-1 e2e
-        run: npx playwright test --config=e2e/playwright.config.mock.ts --shard=${{ matrix.shard }}/2
+      # `video: 'on-first-retry'` needs ffmpeg; without it the first retry dies in
+      # browserContext.newPage before the test body runs, so a flaky test loses the
+      # retry that would have recovered it. The CLI can hang after the download
+      # finishes on these runners, so bound it and keep it non-fatal — worst case is
+      # today's behaviour of retrying without video.
+      - name: Install Playwright ffmpeg (best effort)
+        timeout-minutes: 3
+        continue-on-error: true
+        run: timeout -k 10 90 npx playwright install ffmpeg
+
+      # The runner's Chrome is an apt package, so its real library dependencies are
+      # already satisfied; all `install-deps` adds here are optional CJK/Thai/Cyrillic
+      # font packages (~21MB from azure.archive.ubuntu.com). Nothing in CI asserts on
+      # them — visual baselines are opt-in via E2E_VISUAL_SNAPSHOTS — so a stalled
+      # Ubuntu mirror must never be able to fail the suite.
+      - name: Install optional Playwright font dependencies (best effort)
+        timeout-minutes: 4
+        continue-on-error: true
+        run: .github/scripts/install-playwright-fonts.sh
+
+      - name: Run full mock-LLM Tier-1 e2e
+        if: matrix.suite == 'full'
+        run: npx playwright test --config=e2e/playwright.config.mock.ts --shard=${{ matrix.shard }}
+        env:
+          CI: 'true'
+
+      - name: Run Redis stream transport e2e
+        if: matrix.suite == 'transport'
+        run: npx playwright test --config=e2e/playwright.config.redis.ts
         env:
           CI: 'true'
 
@@ -150,7 +180,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
         with:
-          name: playwright-report-${{ matrix.stream_store }}-${{ matrix.shard }}
+          name: playwright-report-${{ matrix.artifact }}
           path: e2e/playwright-report/**
           retention-days: 7
           if-no-files-found: ignore
@@ -159,7 +189,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: playwright-test-results-${{ matrix.stream_store }}-${{ matrix.shard }}
+          name: playwright-test-results-${{ matrix.artifact }}
           path: e2e/specs/.test-results/**
           retention-days: 7
           if-no-files-found: ignore
@@ -167,6 +197,7 @@ jobs:
   mcp_tool_list_changed:
     name: MCP list_changed (replica count ${{ matrix.replicas }})
     if: >-
+      github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
       github.event.pull_request != null &&
@@ -211,11 +242,25 @@ jobs:
       - name: Build e2e dependencies
         run: npm run e2e:prepare
 
-      - name: Install Playwright and Redis runtime dependencies
+      - name: Verify Chrome is present
+        run: google-chrome --version
+
+      # ffmpeg for retry video — see the note in the e2e_shards job.
+      - name: Install Playwright ffmpeg (best effort)
+        timeout-minutes: 3
+        continue-on-error: true
+        run: timeout -k 10 90 npx playwright install ffmpeg
+
+      # Optional fonts only — see the note in the e2e_shards job.
+      - name: Install optional Playwright font dependencies (best effort)
+        timeout-minutes: 4
+        continue-on-error: true
+        run: .github/scripts/install-playwright-fonts.sh
+
+      # Redis is a hard requirement for this job, so this step stays fatal.
+      - name: Install Redis runtime dependencies
         timeout-minutes: 5
         run: |
-          google-chrome --version
-          npx playwright install-deps chrome
           sudo apt-get update
           sudo apt-get install -y redis-server redis-tools
 
@@ -278,7 +323,8 @@ jobs:
     name: e2e
     if: >-
       always() &&
-      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
       github.event.pull_request != null &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)))

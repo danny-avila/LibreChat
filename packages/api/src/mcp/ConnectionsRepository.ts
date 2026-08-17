@@ -162,18 +162,30 @@ export class ConnectionsRepository {
 
     this.connections.set(serverName, connection);
     if (this.ownerId === undefined && options.refreshTools !== false) {
+      /** The snapshot carries ordering reserved before its own `tools/list`, so this
+       * first-connect publication is ordered against concurrent replicas exactly as a
+       * list_changed refresh is. An app-level write that cannot be ordered is dropped, which
+       * left agents with a permanently empty catalog when this path populated it (#14857). */
       if (connection.client.getServerCapabilities()?.tools == null) {
+        const ordering = await connection.reserveToolsPublicationRevision();
+        /** The refresh path reserves again under backoff. Publishing unordered instead would be
+         * dropped in silence, leaving whatever this server last advertised in place. */
+        if (ordering.orderingUnavailable) {
+          await connection.refreshToolList();
+          return connection;
+        }
         await notifyMCPToolsChanged({
           tools: [],
           serverName,
           serverConfig,
           publicationGeneration,
+          publicationRevision: ordering.publicationRevision,
         });
         return connection;
       }
       const initialGeneration = toolsChangedGeneration;
       const snapshot = await connection.fetchToolsSnapshot();
-      if (snapshot.complete) {
+      if (snapshot.complete && !snapshot.orderingUnavailable) {
         if (toolsChangedGeneration !== initialGeneration) {
           await latestToolsChangedPublication;
         } else {
@@ -182,6 +194,7 @@ export class ConnectionsRepository {
             serverName,
             serverConfig,
             publicationGeneration,
+            publicationRevision: snapshot.publicationRevision,
           });
         }
       } else {

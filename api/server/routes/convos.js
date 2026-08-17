@@ -4,6 +4,7 @@ const { sleep } = require('@librechat/agents');
 const {
   isEnabled,
   deleteAgentCheckpoints,
+  createArchiveAllHandler,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
   deleteAllSharedLinksWithCleanup,
@@ -30,6 +31,7 @@ const assistantClients = {
 };
 
 const router = express.Router();
+const archiveAllHandler = createArchiveAllHandler({ archiveAllConvos: db.archiveAllConvos });
 router.use(requireJwtAuth);
 
 const isValidProjectFilter = (projectId) =>
@@ -39,6 +41,7 @@ router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 25;
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
+  const pinned = isEnabled(req.query.pinned);
   const search =
     typeof req.query.search === 'string' ? req.query.search.trim() || undefined : undefined;
   const sortBy = req.query.sortBy || 'updatedAt';
@@ -61,6 +64,7 @@ router.get('/', async (req, res) => {
       cursor,
       limit,
       isArchived,
+      pinned,
       tags,
       search,
       sortBy,
@@ -206,14 +210,34 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
         interfaceConfig: req?.config?.interfaceConfig,
       },
       { conversationId, isArchived },
-      { context: `POST /api/convos/archive ${conversationId}` },
+      {
+        context: `POST /api/convos/archive ${conversationId}`,
+        /** Filing a chat away is not activity: `updatedAt` stays the chat's own last
+         * activity so unarchiving restores it to its real place in the date groups.
+         * When it was archived is recorded separately, on `archivedAt`. */
+        preserveUpdatedAt: true,
+        /** Without timestamps, an upsert would insert a conversation that has none. */
+        noUpsert: true,
+      },
     );
+
+    if (!dbResponse) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
     res.status(200).json(dbResponse);
   } catch (error) {
     logger.error('Error archiving conversation', error);
     res.status(500).send('Error archiving conversation');
   }
 });
+
+/**
+ * Archives every conversation currently visible to the user.
+ * @route POST /archive/all
+ * @returns {object} 200 - The number of conversations archived.
+ */
+router.post('/archive/all', archiveAllHandler);
 
 router.post('/pin', validateConvoAccess, async (req, res) => {
   const { conversationId, pinned } = req.body?.arg ?? {};
@@ -231,11 +255,12 @@ router.post('/pin', validateConvoAccess, async (req, res) => {
   }
 
   try {
-    const dbResponse = await db.saveConvo(
-      { userId: req.user.id },
-      { conversationId, pinned },
-      { context: `POST /api/convos/pin ${conversationId}` },
-    );
+    const dbResponse = await db.setConvoPinned(req.user.id, conversationId, pinned);
+
+    if (!dbResponse) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
     res.status(200).json(dbResponse);
   } catch (error) {
     logger.error('Error pinning conversation', error);

@@ -21,6 +21,10 @@ jest.mock('~/store', () => {
     key: 'mock-customShortcuts',
     default: {},
   });
+  const shortcutsEnabledAtom = atom({
+    key: 'mock-shortcutsEnabled',
+    default: true,
+  });
   return {
     __esModule: true,
     default: {
@@ -30,6 +34,7 @@ jest.mock('~/store', () => {
         atom({ key: `mock-conversationIdByIndex-${counter++}`, default: null }),
       newChatSwitchToHistory: switchAtom,
       customShortcuts: customShortcutsAtom,
+      shortcutsEnabled: shortcutsEnabledAtom,
     },
   };
 });
@@ -37,6 +42,31 @@ jest.mock('~/store', () => {
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useNewConvo: () => ({ newConversation: mockNewConversation }),
+}));
+
+/**
+ * Stands in for the real hook, which reaches `useNewConvo` by deep path and so
+ * escapes the `~/hooks` mock above. Mirrors its contract closely enough that
+ * the panel-switch assertions still exercise the `onNewChat` wiring.
+ */
+jest.mock('~/hooks/Chat/useNewChat', () => ({
+  __esModule: true,
+  default: ({ onNewChat }: { onNewChat?: () => void } = {}) => ({
+    newConversation: mockNewConversation,
+    startNewChat: () => {
+      mockNewConversation();
+      onNewChat?.();
+    },
+    handleNewChatClick: (event: React.MouseEvent<HTMLElement>) => {
+      if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) {
+        return;
+      }
+      event.preventDefault();
+      mockClearMessagesCache();
+      mockNewConversation();
+      onNewChat?.();
+    },
+  }),
 }));
 
 jest.mock('~/utils', () => ({

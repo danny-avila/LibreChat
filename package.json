@@ -67,6 +67,7 @@
     "e2e:ci": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.ts",
     "e2e:mock": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.mock.ts",
     "e2e:mock:redis": "npm run e2e:prepare && cross-env E2E_STREAM_STORE=redis playwright test --config=e2e/playwright.config.mock.ts",
+    "e2e:mock:redis:transport": "npm run e2e:prepare && cross-env E2E_STREAM_STORE=redis playwright test --config=e2e/playwright.config.redis.ts",
     "e2e:benchmark:agents": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.benchmark.ts agent-startup.latency.spec.ts",
     "e2e:bombadil": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.bombadil.ts",
     "e2e:bombadil:run": "playwright test --config=e2e/playwright.config.bombadil.ts",

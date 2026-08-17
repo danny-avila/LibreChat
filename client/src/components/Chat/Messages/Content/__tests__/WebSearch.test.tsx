@@ -1,7 +1,7 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { Tools } from 'librechat-data-provider';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { TAttachment, SearchResultData, ValidSource } from 'librechat-data-provider';
 import { SearchContext } from '~/Providers';
 import WebSearch from '../WebSearch';
@@ -19,6 +19,7 @@ jest.mock('~/hooks', () => ({
     };
     return translations[key] || key;
   },
+  useLazyCollapseBody: jest.requireActual('~/hooks/Messages/useLazyCollapseBody').default,
   useExpandCollapse: (isExpanded: boolean) => ({
     style: {
       display: 'grid',
@@ -129,6 +130,7 @@ describe('WebSearch', () => {
       const attachments = [makeAttachment(0, searchResults['0'])];
 
       renderWebSearch({ searchResults, attachments });
+      fireEvent.click(screen.getByRole('button', { name: /Searched the web/ }));
 
       const links = screen.getAllByRole('link');
       const hrefs = links.map((l) => l.getAttribute('href'));
@@ -143,6 +145,7 @@ describe('WebSearch', () => {
       const attachments = [makeAttachment(1, searchResults['1'])];
 
       renderWebSearch({ searchResults, attachments });
+      fireEvent.click(screen.getByRole('button', { name: /Searched the web/ }));
 
       const links = screen.getAllByRole('link');
       const hrefs = links.map((l) => l.getAttribute('href'));
@@ -178,6 +181,9 @@ describe('WebSearch', () => {
         </RecoilRoot>,
       );
 
+      fireEvent.click(container0.querySelector('button[aria-expanded]') as HTMLElement);
+      fireEvent.click(container1.querySelector('button[aria-expanded]') as HTMLElement);
+
       const links0 = Array.from(container0.querySelectorAll('a[href]')).map((a) =>
         a.getAttribute('href'),
       );
@@ -195,6 +201,7 @@ describe('WebSearch', () => {
 
     it('falls back to searchResults[ownTurn] when attachments is undefined', () => {
       renderWebSearch({ searchResults });
+      fireEvent.click(screen.getByRole('button', { name: /Searched the web/ }));
 
       const links = screen.getAllByRole('link');
       const hrefs = links.map((l) => l.getAttribute('href'));

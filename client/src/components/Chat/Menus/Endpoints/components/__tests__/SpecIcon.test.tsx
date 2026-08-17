@@ -87,4 +87,73 @@ describe('SpecIcon', () => {
 
     expect(screen.getByTestId('endpoint-icon')).toHaveAttribute('data-icon-key', 'unknown');
   });
+
+  it("renders the agent's avatar when the spec defines no icon of its own", () => {
+    const currentSpec = {
+      name: 'agent-spec',
+      label: 'Agent Spec',
+      preset: { endpoint: EModelEndpoint.agents, agent_id: 'agent_abc' },
+    } as TModelSpec;
+
+    render(
+      <SpecIcon
+        currentSpec={currentSpec}
+        endpointsConfig={endpointsConfig}
+        agentAvatarURL="/images/agent-avatar.png"
+      />,
+    );
+
+    expect(screen.getByTestId('url-icon')).toHaveAttribute(
+      'data-icon-url',
+      '/images/agent-avatar.png',
+    );
+  });
+
+  /**
+   * Form-authored specs persist untouched icon fields as empty strings, which
+   * must not suppress the avatar the way a real icon would.
+   */
+  it('treats empty icon fields as unset and still uses the agent avatar', () => {
+    const currentSpec = {
+      name: 'agent-spec',
+      label: 'Agent Spec',
+      iconURL: '',
+      preset: { endpoint: EModelEndpoint.agents, agent_id: 'agent_abc', iconURL: '' },
+    } as unknown as TModelSpec;
+
+    render(
+      <SpecIcon
+        currentSpec={currentSpec}
+        endpointsConfig={endpointsConfig}
+        agentAvatarURL="/images/agent-avatar.png"
+      />,
+    );
+
+    expect(screen.getByTestId('url-icon')).toHaveAttribute(
+      'data-icon-url',
+      '/images/agent-avatar.png',
+    );
+  });
+
+  it('prefers an explicit spec icon over the agent avatar', () => {
+    const currentSpec = {
+      name: 'agent-spec',
+      label: 'Agent Spec',
+      iconURL: '/assets/explicit-logo.svg',
+      preset: { endpoint: EModelEndpoint.agents, agent_id: 'agent_abc' },
+    } as TModelSpec;
+
+    render(
+      <SpecIcon
+        currentSpec={currentSpec}
+        endpointsConfig={endpointsConfig}
+        agentAvatarURL="/images/agent-avatar.png"
+      />,
+    );
+
+    expect(screen.getByTestId('url-icon')).toHaveAttribute(
+      'data-icon-url',
+      '/assets/explicit-logo.svg',
+    );
+  });
 });

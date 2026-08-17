@@ -444,6 +444,7 @@ describe('createToolEndCallback', () => {
       name,
       toolName = 'execute_code',
       hostFileAuthoring = false,
+      codeExecutionContext,
     }) {
       return {
         output: {
@@ -455,7 +456,7 @@ describe('createToolEndCallback', () => {
             files: [{ id: fileId, name, session_id: 'sess-1' }],
           },
         },
-        metadata: { run_id: runId, thread_id: threadId },
+        metadata: { run_id: runId, thread_id: threadId, codeExecutionContext },
       };
     }
 
@@ -679,6 +680,10 @@ describe('createToolEndCallback', () => {
         name: 'created.txt',
         toolName: 'create_file',
         hostFileAuthoring: true,
+        codeExecutionContext: {
+          baseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
+        },
       });
       await toolEndCallback({ output: event.output }, event.metadata);
       await Promise.all(artifactPromises);
@@ -690,6 +695,8 @@ describe('createToolEndCallback', () => {
           messageId: 'run-create',
           toolCallId: 'tool-create',
           conversationId: 'thread789',
+          codeApiBaseUrl: 'https://code-stateful.example.com',
+          executionProfile: 'stateful',
         }),
       );
       expect(res.write).toHaveBeenCalledTimes(1);

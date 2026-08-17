@@ -45,8 +45,9 @@ jest.mock('@librechat/api', () => ({
  *  the tool context (agent, tool_resources, skill ACLs) was preserved. */
 let capturedToolExecuteOptions;
 let capturedDefaultHandlerOptions;
+const mockArtifactToolEndCallback = jest.fn();
 jest.mock('~/server/controllers/agents/callbacks', () => ({
-  createToolEndCallback: jest.fn(() => jest.fn()),
+  createToolEndCallback: jest.fn(() => mockArtifactToolEndCallback),
   createAttachmentEmitter: jest.fn(() => jest.fn()),
   createBackgroundCodeResultHandler: jest.fn(() => jest.fn()),
   getDefaultHandlers: jest.fn((opts) => {
@@ -61,7 +62,11 @@ jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn(),
   loadToolsForExecution: (...args) => mockLoadToolsForExecution(...args),
   isFatalAgentInitializationError: (error) =>
-    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
+    [
+      'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
+      'resource_recovery_required',
+      'stateful_code_environment_not_allowed',
+    ].includes(error?.code),
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({
@@ -158,6 +163,42 @@ describe('initializeClient — processAgent ACL gate', () => {
     tool_resources: {},
     resendFiles: true,
     maxContextTokens: 4096,
+    codeExecutionContext: {
+      baseUrl: 'https://code-default.example.com',
+      codeSessionKey: 'execute_code',
+      executionProfile: 'default',
+      statefulSessions: false,
+    },
+  });
+
+  it('replaces untrusted artifact route metadata with the executing agent context', async () => {
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig([]));
+
+    await initializeClient({
+      req: makeReq(),
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    const data = { output: { name: 'execute_code', artifact: { files: [] } } };
+    await capturedDefaultHandlerOptions.toolEndCallback(data, {
+      langgraph_node: `tools=${PRIMARY_ID}`,
+      codeExecutionContext: {
+        baseUrl: 'https://attacker.invalid',
+        executionProfile: 'stateful',
+      },
+    });
+
+    expect(mockArtifactToolEndCallback).toHaveBeenLastCalledWith(
+      data,
+      expect.objectContaining({
+        codeExecutionContext: expect.objectContaining({
+          baseUrl: 'https://code-default.example.com',
+          executionProfile: 'default',
+        }),
+      }),
+    );
   });
 
   it('threads the owning job epoch into resumable event handlers', async () => {
@@ -766,6 +807,7 @@ describe('initializeClient — subagent loading', () => {
       model: 'gpt-4',
       author: new mongoose.Types.ObjectId(),
       tools: ['web'],
+      stateful_code_environment: 'agent-user',
     });
     await grantView(subAgent);
 
@@ -795,7 +837,11 @@ describe('initializeClient — subagent loading', () => {
     expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
     expect(agentClientArgs.agent.lazySubagentConfigs).toHaveLength(1);
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).toEqual(
-      expect.objectContaining({ id: SUBAGENT_ID, configId: expect.any(String) }),
+      expect.objectContaining({
+        id: SUBAGENT_ID,
+        configId: expect.any(String),
+        statefulCodeEnvironment: 'agent-user',
+      }),
     );
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('tools');
     expect(agentClientArgs.agent.lazySubagentConfigs[0]).not.toHaveProperty('tool_resources');
@@ -815,6 +861,42 @@ describe('initializeClient — subagent loading', () => {
      *  graph would treat them as a parallel/handoff node. */
     expect(agentClientArgs.agentConfigs).toBeDefined();
     expect(agentClientArgs.agentConfigs.has(SUBAGENT_ID)).toBe(false);
+  });
+
+  it('rejects a disallowed lazy subagent scope before exposing it for prewarm', async () => {
+    const subAgent = await createAgent({
+      id: SUBAGENT_ID,
+      name: 'Disallowed Stateful Subagent',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      tools: ['execute_code'],
+      stateful_code_sessions: true,
+      stateful_code_environment: 'conversation',
+    });
+    await grantView(subAgent);
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: false, agent_ids: [SUBAGENT_ID] },
+      }),
+    );
+    const req = makeSubagentReq();
+    req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
+    req.config.endpoints.agents.statefulCodeSessions = { allowedEnvironments: ['user'] };
+
+    await expect(
+      initializeClient({
+        req,
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+    });
+
+    expect(agentClientArgs).toBeUndefined();
+    expect(mockInitializeAgent).toHaveBeenCalledTimes(1);
   });
 
   it('omits a descriptor when its metadata lookup fails without aborting the primary run', async () => {

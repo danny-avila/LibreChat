@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Button, Clipboard, CheckMark, TooltipAnchor } from '@librechat/client';
 import type { TMessage, SearchResultData } from 'librechat-data-provider';
-import { useLocalize, useCopyToClipboard } from '~/hooks';
+import { useLocalize, useCopyToClipboard, hasCopyableText } from '~/hooks';
+import { revealOnRowHoverClasses } from './styles';
+import { cn } from '~/utils';
 
 type THoverButtons = {
   message: TMessage;
@@ -16,6 +18,10 @@ export default function MinimalHoverButtons({ message, searchResults }: THoverBu
     content: message.content,
     searchResults,
   });
+  const canCopy = useMemo(
+    () => hasCopyableText({ text: message.text, content: message.content, searchResults }),
+    [message.text, message.content, searchResults],
+  );
 
   return (
     <div className="visible mt-1 flex justify-center gap-1 self-end text-text-tertiary lg:justify-start">
@@ -32,7 +38,13 @@ export default function MinimalHoverButtons({ message, searchResults }: THoverBu
                 ? localize('com_ui_copied_to_clipboard')
                 : localize('com_ui_copy_to_clipboard')
             }
-            className="ml-0 flex size-auto items-center gap-1.5 rounded-lg p-1.5 text-xs text-text-secondary-alt transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
+            className={cn(
+              'ml-0 flex size-auto items-center gap-1.5 rounded-lg p-1.5 text-xs text-text-secondary-alt',
+              'hover:bg-surface-hover hover:text-text-primary',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
+              revealOnRowHoverClasses,
+            )}
+            disabled={!canCopy}
             onClick={() => copyToClipboard(setIsCopied)}
           >
             {isCopied ? (

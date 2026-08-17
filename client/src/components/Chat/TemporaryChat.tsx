@@ -1,37 +1,17 @@
-import React from 'react';
-import { useRecoilValue } from 'recoil';
 import { TooltipAnchor } from '@librechat/client';
 import { MessageCircleDashed } from 'lucide-react';
-import { Constants } from 'librechat-data-provider';
-import { useRecoilState, useRecoilCallback } from 'recoil';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
+import useTemporaryChat from '~/hooks/Chat/useTemporaryChat';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
-import store from '~/store';
 
 export function TemporaryChat() {
   const localize = useLocalize();
-  const [isTemporary, setIsTemporary] = useRecoilState(store.isTemporary);
-  const conversation = useRecoilValue(store.conversationByIndex(0));
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
+  const { show, isTemporary, toggle } = useTemporaryChat();
   const tooltipDescription = useShortcutHint('toggleTemporaryChat', localize('com_ui_temporary'));
   const ariaKey = useShortcutAriaKey('toggleTemporaryChat');
 
-  const handleBadgeToggle = useRecoilCallback(
-    () => () => {
-      setIsTemporary(!isTemporary);
-    },
-    [isTemporary],
-  );
-
-  const conversationId = conversation?.conversationId;
-  const hasStarted = conversationId != null && conversationId !== Constants.NEW_CONVO;
-
-  if (
-    hasStarted ||
-    (Array.isArray(conversation?.messages) && conversation.messages.length >= 1) ||
-    isSubmitting
-  ) {
+  if (!show) {
     return null;
   }
 
@@ -41,7 +21,7 @@ export function TemporaryChat() {
         description={tooltipDescription}
         render={
           <button
-            onClick={handleBadgeToggle}
+            onClick={toggle}
             aria-label={localize('com_ui_temporary')}
             aria-pressed={isTemporary}
             aria-keyshortcuts={ariaKey}

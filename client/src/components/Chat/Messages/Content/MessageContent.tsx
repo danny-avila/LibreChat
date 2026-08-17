@@ -6,6 +6,7 @@ import type { TMessageContentProps, TDisplayProps } from '~/common';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import Error from '~/components/Messages/Content/Error';
 import { useMessageContext } from '~/Providers';
+import EmptyText from './Parts/EmptyText';
 import MarkdownLite from './MarkdownLite';
 import EditMessage from './EditMessage';
 import Thinking from './Parts/Thinking';
@@ -28,14 +29,8 @@ const parseThinkingContent = (text: string) => {
 };
 
 const LoadingFallback = () => (
-  <div className="text-message mb-[0.625rem] flex min-h-[20px] flex-col items-start gap-3 overflow-visible">
-    <div className="markdown prose dark:prose-invert light w-full break-words">
-      <div className="absolute">
-        <p className="submitting relative">
-          <span className="result-thinking" />
-        </p>
-      </div>
-    </div>
+  <div className="mb-[0.625rem]">
+    <EmptyText underHeaderIcon />
   </div>
 );
 

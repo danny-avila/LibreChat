@@ -3,7 +3,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { render, screen } from '@testing-library/react';
 import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { EModelEndpoint, type TConversation, type TMessage } from 'librechat-data-provider';
+import {
+  ContentTypes,
+  EModelEndpoint,
+  type TConversation,
+  type TMessage,
+} from 'librechat-data-provider';
+import { hasCopyableText } from '~/hooks/Messages/useCopyToClipboard';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import store from '~/store';
 
@@ -26,11 +32,13 @@ function renderHoverButtons({
   message = userMessage,
   isLast = false,
   latestMessageId = 'assistant-1',
+  getCanCopy = () => hasCopyableText({ text: message.text, content: message.content }),
 }: {
   isSubmitting: boolean;
   message?: TMessage;
   isLast?: boolean;
   latestMessageId?: string;
+  getCanCopy?: () => boolean;
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -53,6 +61,7 @@ function renderHoverButtons({
             regenerate={jest.fn()}
             handleContinue={jest.fn()}
             copyToClipboard={jest.fn()}
+            getCanCopy={getCanCopy}
             latestMessageId={latestMessageId}
           />
         </MemoryRouter>
@@ -122,5 +131,46 @@ describe('HoverButtons edit affordance', () => {
     });
 
     expect(screen.getByTestId('copy-response-button')).toBeEnabled();
+  });
+
+  it('disables copy when the response serializes to nothing', () => {
+    const errorPartMessage = {
+      ...userMessage,
+      messageId: 'assistant-error-part',
+      isCreatedByUser: false,
+      error: true,
+      text: '',
+      content: [{ type: ContentTypes.ERROR, error: 'Deployment lookup failed' }],
+    } as TMessage;
+
+    renderHoverButtons({
+      isSubmitting: false,
+      message: errorPartMessage,
+      isLast: true,
+      latestMessageId: errorPartMessage.messageId,
+    });
+
+    expect(screen.getByTestId('copy-response-button')).toBeDisabled();
+  });
+
+  it('never inspects a response that is still streaming', () => {
+    const streamingMessage = {
+      ...userMessage,
+      messageId: 'assistant-1',
+      isCreatedByUser: false,
+      text: 'partial resp',
+    } as TMessage;
+    const getCanCopy = jest.fn(() => true);
+
+    renderHoverButtons({
+      isSubmitting: true,
+      message: streamingMessage,
+      isLast: true,
+      latestMessageId: streamingMessage.messageId,
+      getCanCopy,
+    });
+
+    expect(screen.queryByTestId('copy-response-button')).toBeNull();
+    expect(getCanCopy).not.toHaveBeenCalled();
   });
 });

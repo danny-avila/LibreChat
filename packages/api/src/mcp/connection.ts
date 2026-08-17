@@ -1002,6 +1002,11 @@ type MCPListToolsResult = Awaited<ReturnType<Client['listTools']>>;
 export interface MCPToolsSnapshot {
   tools: MCPListToolsResult['tools'];
   complete: boolean;
+  /** Ordering ticket reserved before this snapshot's `tools/list`; app scope only. */
+  publicationRevision?: string;
+  /** Set when reserving that ticket failed, which is retryable — unlike a scope that simply
+   * has no ordering to reserve, where the ticket is absent because none was ever needed. */
+  orderingUnavailable?: boolean;
 }
 
 export class MCPConnection extends EventEmitter {
@@ -1042,6 +1047,7 @@ export class MCPConnection extends EventEmitter {
     epoch: number;
     generation: number;
     tools: MCPListToolsResult['tools'];
+    publicationRevision?: string;
   } | null = null;
 
   private hasConnected = false;
@@ -1853,25 +1859,9 @@ export class MCPConnection extends EventEmitter {
     const refreshEpoch = this.toolListRefreshEpoch;
     while (this.handledToolListChangeGeneration < this.toolListChangeGeneration) {
       const targetGeneration = this.toolListChangeGeneration;
-      let publicationRevision: string | undefined;
-      try {
-        publicationRevision = await reserveMCPToolsChangedRevision({
-          serverName: this.serverName,
-          serverConfig: this.options,
-          userId: this.userId,
-        });
-      } catch (error) {
-        this.toolListRefreshFailures++;
-        logger.error(
-          `${this.getLogPrefix()} Failed to reserve tool-list publication order:`,
-          error,
-        );
-        this.scheduleToolListRefreshRetry();
-        return;
-      }
-      const snapshot =
+      const snapshot: MCPToolsSnapshot =
         this.client.getServerCapabilities()?.tools == null
-          ? { tools: [], complete: true }
+          ? { tools: [], complete: true, ...(await this.reserveToolsPublicationRevision()) }
           : await this.fetchToolsSnapshot();
       if (
         this.toolListRefreshEpoch !== refreshEpoch ||
@@ -1880,7 +1870,8 @@ export class MCPConnection extends EventEmitter {
       ) {
         return;
       }
-      if (!snapshot.complete) {
+      /** Publishing unordered would drop this catalog silently; retry until it can be ordered. */
+      if (!snapshot.complete || snapshot.orderingUnavailable) {
         this.toolListRefreshFailures++;
         this.scheduleToolListRefreshRetry();
         return;
@@ -1892,8 +1883,9 @@ export class MCPConnection extends EventEmitter {
         epoch: refreshEpoch,
         generation: targetGeneration,
         tools: snapshot.tools,
+        publicationRevision: snapshot.publicationRevision,
       };
-      this.dispatchToolsChanged(snapshot.tools, publicationRevision);
+      this.dispatchToolsChanged(snapshot.tools, snapshot.publicationRevision);
     }
   }
 
@@ -2390,11 +2382,20 @@ export class MCPConnection extends EventEmitter {
     const maxPages = mcpConfig.TOOLS_LIST_MAX_PAGES;
     const maxTools = mcpConfig.TOOLS_LIST_MAX_TOOLS;
     const maxBytes = mcpConfig.TOOLS_LIST_MAX_BYTES;
+    /** Reserved before the first page so the resulting catalog can never outrank one published
+     * from a `tools/list` that started later. Every app-level publisher reads its ordering off
+     * the snapshot it received, which is the only way to know when the data was actually read. */
+    const ordering = await this.reserveToolsPublicationRevision();
     const deadline = Date.now() + mcpConfig.TOOLS_LIST_TIMEOUT_MS;
     const allTools: MCPListToolsResult['tools'] = [];
     const seenCursors = new Set<string>();
     let cursor: string | undefined;
     let totalBytes = 0;
+    const snapshot = (complete: boolean): MCPToolsSnapshot => ({
+      tools: allTools,
+      complete,
+      ...ordering,
+    });
 
     for (let page = 1; page <= maxPages; page++) {
       const exhaustedBudget = getToolsListBudgetExceededReason(
@@ -2405,31 +2406,31 @@ export class MCPConnection extends EventEmitter {
       );
       if (exhaustedBudget != null) {
         this.warnToolsListBudgetExceeded(exhaustedBudget, allTools.length);
-        return { tools: allTools, complete: true };
+        return snapshot(true);
       }
 
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) {
         this.warnToolsListBudgetExceeded('time', allTools.length);
-        return { tools: allTools, complete: false };
+        return snapshot(false);
       }
 
       const result = await this.listToolsPage(cursor, remainingMs);
       if (result == null) {
         /** Request failed mid-pagination: return the pages already fetched instead of discarding them. */
-        return { tools: allTools, complete: false };
+        return snapshot(false);
       }
 
       for (const tool of result.tools) {
         if (allTools.length >= maxTools) {
           this.warnToolsListBudgetExceeded('tool count', allTools.length);
-          return { tools: allTools, complete: true };
+          return snapshot(true);
         }
 
         const toolBytes = getApproximateToolBytes(tool);
         if (totalBytes + toolBytes > maxBytes) {
           this.warnToolsListBudgetExceeded('size', allTools.length);
-          return { tools: allTools, complete: true };
+          return snapshot(true);
         }
 
         allTools.push(tool);
@@ -2438,7 +2439,7 @@ export class MCPConnection extends EventEmitter {
 
       const { nextCursor } = result;
       if (nextCursor == null) {
-        return { tools: allTools, complete: true };
+        return snapshot(true);
       }
 
       const nextPageBudget = getToolsListBudgetExceededReason(
@@ -2449,14 +2450,14 @@ export class MCPConnection extends EventEmitter {
       );
       if (nextPageBudget != null) {
         this.warnToolsListBudgetExceeded(nextPageBudget, allTools.length);
-        return { tools: allTools, complete: true };
+        return snapshot(true);
       }
 
       if (seenCursors.has(nextCursor)) {
         logger.warn(
           `${this.getLogPrefix()} MCP server returned a repeated tools/list cursor; stopping pagination after ${page} page(s).`,
         );
-        return { tools: allTools, complete: false };
+        return snapshot(false);
       }
 
       seenCursors.add(nextCursor);
@@ -2466,7 +2467,29 @@ export class MCPConnection extends EventEmitter {
     logger.warn(
       `${this.getLogPrefix()} Reached the tools/list pagination limit of ${maxPages} page(s); some tools may be omitted. Set MCP_TOOLS_LIST_MAX_PAGES higher if this server legitimately exposes more.`,
     );
-    return { tools: allTools, complete: true };
+    return snapshot(true);
+  }
+
+  /**
+   * Allocates app-catalog ordering. A reservation failure must not fail the request that asked
+   * for the tools, so it is reported on the snapshot for publishers to retry on instead.
+   */
+  public async reserveToolsPublicationRevision(): Promise<{
+    publicationRevision?: string;
+    orderingUnavailable?: boolean;
+  }> {
+    try {
+      return {
+        publicationRevision: await reserveMCPToolsChangedRevision({
+          serverName: this.serverName,
+          serverConfig: this.options,
+          userId: this.userId,
+        }),
+      };
+    } catch (error) {
+      logger.warn(`${this.getLogPrefix()} Failed to reserve tool-list publication order:`, error);
+      return { orderingUnavailable: true };
+    }
   }
 
   /**
@@ -2507,7 +2530,13 @@ export class MCPConnection extends EventEmitter {
       published.generation === this.toolListChangeGeneration &&
       this.handledToolListChangeGeneration === this.toolListChangeGeneration
     ) {
-      return { tools: published.tools, complete: true };
+      /** Ordering travels with the data: this is the refresh's catalog, so it must publish under
+       * the refresh's revision rather than the one reserved for the superseded fetch above. */
+      return {
+        tools: published.tools,
+        complete: true,
+        publicationRevision: published.publicationRevision,
+      };
     }
 
     return { tools: [], complete: false };
