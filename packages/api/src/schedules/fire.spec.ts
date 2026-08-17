@@ -415,7 +415,10 @@ describe('fireSchedule', () => {
   });
 
   it('releases the lease on a manual run-now when file resolution fails', async () => {
-    const { methods, runs, calls } = makeMethods();
+    const { methods, runs } = makeMethods();
+    // An owner edit can rotate the token while the file lookup is in flight while
+    // deliberately preserving this fire's unique lease holder.
+    methods.releaseLease.mockResolvedValueOnce(false);
     mockFetch(async () => okResponse());
     const deps = makeDeps(methods, {
       resolveFiles: async () => {
@@ -428,7 +431,8 @@ describe('fireSchedule', () => {
     expect(result.fired).toBe(false);
     expect(runs.size).toBe(0);
     // Run-now releases so the user can retry immediately (no misleading lease-held 409).
-    expect(calls.releaseLease).toBe(1);
+    expect(methods.releaseLease).toHaveBeenCalledWith('sched-1', 'ct-1');
+    expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('sched-1', 'inst-1');
     expect(global.fetch).not.toHaveBeenCalled();
   });
 

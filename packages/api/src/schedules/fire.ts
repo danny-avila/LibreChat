@@ -156,15 +156,35 @@ export async function fireSchedule(
     }
   };
 
+  /**
+   * Releases a manual run's lease without leaving its old holder behind when an owner
+   * edit rotates the claim token during an asynchronous preflight. The token fence is
+   * authoritative when it still matches; the unique holder fallback can only clear this
+   * fire's lease and safely no-ops if another worker has taken it over.
+   */
+  const releaseManualLease = async () => {
+    const released = await methods.releaseLease(schedule.id, claimToken);
+    if (!released) {
+      await releaseSupersededLease();
+    }
+    return released;
+  };
+
   // A manual run-now must never reschedule the next automatic occurrence; it only
   // releases its serialization lease. Both writes are token-fenced, so an owner edit
   // racing after durable enqueue can make them miss while deliberately preserving the
   // old holder fields. Release by the unique OLD holder on a miss: an edit is unwedged
   // immediately, while a takeover changed leaseBy and remains untouched.
   const advance = async () => {
-    const advanced = options?.manual
-      ? await methods.releaseLease(schedule.id, claimToken)
-      : await methods.advanceSchedule(schedule.id, nextRunAt, scheduledFor, claimToken);
+    if (options?.manual) {
+      return releaseManualLease();
+    }
+    const advanced = await methods.advanceSchedule(
+      schedule.id,
+      nextRunAt,
+      scheduledFor,
+      claimToken,
+    );
     if (!advanced) {
       await releaseSupersededLease();
     }
@@ -183,9 +203,10 @@ export async function fireSchedule(
    * so a repeat click isn't met with a stale "already in progress".
    */
   const stepAsideSuperseded = async () => {
-    await releaseSupersededLease();
     if (options?.manual) {
-      await methods.releaseLease(schedule.id, claimToken);
+      await releaseManualLease();
+    } else {
+      await releaseSupersededLease();
     }
     return { fired: false, skipped: 'superseded' as const };
   };
@@ -311,7 +332,7 @@ export async function fireSchedule(
       // re-pick this failing row every tick and starve others / hammer the file
       // lookup); manual run-now releases so the user can retry immediately.
       if (options?.manual) {
-        await methods.releaseLease(schedule.id, claimToken);
+        await releaseManualLease();
       }
       return { fired: false, error: 'File resolution failed' };
     }
@@ -390,7 +411,7 @@ export async function fireSchedule(
       // MUST release its lease, or repeated Run-now clicks hit a misleading "already
       // in progress" 409 for the full manual-lease TTL even after capacity frees.
       if (options?.manual) {
-        await methods.releaseLease(schedule.id, claimToken);
+        await releaseManualLease();
       }
       return { fired: false, skipped: 'capacity' as const };
     }
@@ -443,7 +464,7 @@ export async function fireSchedule(
       // Manual run-now still releases its lease so repeated clicks aren't met with a
       // stale "already in progress".
       if (options?.manual) {
-        await methods.releaseLease(schedule.id, claimToken);
+        await releaseManualLease();
       }
       return { fired: false, skipped: 'duplicate' as const };
     }
