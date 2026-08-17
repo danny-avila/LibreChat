@@ -74,7 +74,9 @@ export function readScheduleFireContext(
  * Captures the verified trigger classification once, then projects the minimum
  * schedule fields expected by the existing generation lifecycle hooks.
  */
-export function captureScheduleFireContext(req: ScheduleTriggerRequest): ScheduleFireContext | undefined {
+export function captureScheduleFireContext(
+  req: ScheduleTriggerRequest,
+): ScheduleFireContext | undefined {
   const context = readScheduleFireContext(req);
   req._isScheduledFire = context != null;
   req._isManualScheduledFire = context?.manual === true;

@@ -66,14 +66,19 @@ describe('schedule trigger context', () => {
 
   it.each([
     { event: { type: 'schedule.occurrence', occurredAt: 1, source: { id: 's', type: 'webhook' } } },
-    { event: { type: 'schedule.occurrence', occurredAt: -1, source: { id: 's', type: 'schedule' } } },
+    {
+      event: { type: 'schedule.occurrence', occurredAt: -1, source: { id: 's', type: 'schedule' } },
+    },
     {
       event: { type: 'schedule.occurrence', occurredAt: 1, source: { id: 's', type: 'schedule' } },
       metadata: { manual: 'yes' },
     },
   ])('fails closed for malformed schedule trigger metadata', (agentTrigger) => {
     expect(
-      readScheduleFireContext({ _isAgentTrigger: true, body: { agentTrigger: { version: 1, ...agentTrigger } } }),
+      readScheduleFireContext({
+        _isAgentTrigger: true,
+        body: { agentTrigger: { version: 1, ...agentTrigger } },
+      }),
     ).toBeUndefined();
   });
 });
