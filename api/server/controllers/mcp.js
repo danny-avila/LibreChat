@@ -219,13 +219,17 @@ const getMCPTools = async (req, res) => {
 
       let serverTools;
       let publicationGeneration;
+      let publicationRevision;
       try {
-        ({ tools: serverTools, publicationGeneration } =
-          await mcpManager.getServerToolFunctionsSnapshot(
-            userId,
-            serverName,
-            mcpConfig[serverName],
-          ));
+        ({
+          tools: serverTools,
+          publicationGeneration,
+          publicationRevision,
+        } = await mcpManager.getServerToolFunctionsSnapshot(
+          userId,
+          serverName,
+          mcpConfig[serverName],
+        ));
       } catch (error) {
         logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
         continue;
@@ -243,6 +247,7 @@ const getMCPTools = async (req, res) => {
         serverTools,
         serverConfig: mcpConfig[serverName],
         publicationGeneration,
+        publicationRevision,
       }).catch((err) =>
         logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
       );

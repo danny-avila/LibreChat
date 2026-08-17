@@ -26,6 +26,8 @@ jest.mock('@librechat/api', () => {
     flattenArtifactPath: mockFlattenArtifactPath,
     createAxiosInstance: jest.fn(() => mockAxios),
     getCodeApiAuthHeaders: jest.fn(async () => ({})),
+    getCodeExecutionBaseUrl: jest.fn(() => 'http://localhost:8000'),
+    CODE_API_EXPECTED_PROFILE_HEADER: 'X-CodeAPI-Expected-Profile',
     classifyCodeArtifact: jest.fn(() => 'other'),
     extractCodeArtifactText: jest.fn(async () => null),
     /* `processCodeOutput` calls this to derive the trust flag persisted

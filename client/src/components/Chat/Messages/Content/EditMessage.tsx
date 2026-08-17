@@ -185,7 +185,9 @@ const EditMessage = ({
   );
 
   const { ref, ...registerProps } = register('text', {
-    required: true,
+    /** Retained attachments make an otherwise empty edit submittable, matching
+     *  the composer; `ask` replays them through `overrideFiles`. */
+    required: (message.files?.length ?? 0) === 0,
     onChange: (e) => {
       setValue('text', e.target.value, { shouldDirty: true, shouldValidate: true });
     },

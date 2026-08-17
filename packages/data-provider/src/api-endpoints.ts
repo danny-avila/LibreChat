@@ -42,6 +42,7 @@ const buildQuery = (params: Record<string, unknown>): string => {
 
 export const health = () => `${BASE_URL}/health`;
 export const user = () => `${BASE_URL}/api/user`;
+export const userPreferences = () => `${user()}/preferences`;
 
 export const balance = () => `${BASE_URL}/api/balance`;
 
@@ -121,6 +122,7 @@ export const genTitle = (conversationId: string) =>
 export const updateConversation = () => `${conversationsRoot}/update`;
 
 export const archiveConversation = () => `${conversationsRoot}/archive`;
+export const archiveAllConversations = () => `${conversationsRoot}/archive/all`;
 export const pinConversation = () => `${conversationsRoot}/pin`;
 
 export const deleteConversation = () => `${conversationsRoot}`;

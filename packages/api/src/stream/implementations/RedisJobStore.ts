@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import { createContentAggregator } from '@librechat/agents';
+import { ContentTypes, getRunStepDurationMs } from 'librechat-data-provider';
 import type { StandardGraph } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import type { Redis, Cluster } from 'ioredis';
@@ -43,6 +44,28 @@ import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 import { RecoveredSteerPayloadMismatchError } from '~/stream/SteerRecovery';
 
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
+
+type ReasoningLabelOverlay = {
+  stepId: string;
+  revision: number;
+  label: string;
+  status: 'streaming' | 'complete';
+};
+
+type ReasoningAttemptOverlay = {
+  stepId: string;
+  attempts: number;
+  submittedChars?: number;
+};
+
+type ReasoningContentPart = Agents.MessageContentComplex & {
+  reasoning_label?: string;
+  reasoning_label_step_id?: string;
+  reasoning_label_attempts?: number;
+  reasoning_label_submitted_chars?: number;
+  reasoning_label_revision?: number;
+  reasoning_label_status?: 'streaming' | 'complete';
+};
 
 function assertCreateIdempotencyArguments(
   claimKey?: string,
@@ -2905,8 +2928,27 @@ export class RedisJobStore implements IJobStoreV2 {
     }
     const steers: Array<{ index: number; part: Agents.MessageContentComplex }> = [];
     const labelsByIndex = new Map<number, Agents.MessageContentComplex>();
+    const reasoningStepsByIndex = new Map<number, string>();
+    const reasoningAttemptsByIndex = new Map<number, ReasoningAttemptOverlay>();
+    const reasoningLabelsByIndex = new Map<number, ReasoningLabelOverlay>();
+    let reasoningAttemptHighWater = 0;
     for (const chunk of chunks) {
       const event = chunk as { event?: string; data?: unknown };
+      if (event.event === 'on_run_step') {
+        const step = event.data as {
+          id?: string;
+          index?: number;
+          stepDetails?: { message_creation?: { content_type?: string } };
+        };
+        if (
+          typeof step.id === 'string' &&
+          typeof step.index === 'number' &&
+          step.stepDetails?.message_creation?.content_type === ContentTypes.THINK
+        ) {
+          reasoningStepsByIndex.set(step.index, step.id);
+        }
+        continue;
+      }
       if (event.event === 'on_steer_applied') {
         const steerData = event.data as { index?: number; part?: Agents.MessageContentComplex };
         if (typeof steerData.index === 'number' && steerData.part != null) {
@@ -2919,9 +2961,62 @@ export class RedisJobStore implements IJobStoreV2 {
         if (typeof labelData.index === 'number' && labelData.part != null) {
           labelsByIndex.set(labelData.index, labelData.part);
         }
+        continue;
+      }
+      if (event.event === 'on_reasoning_label_attempt') {
+        const attempt = event.data as {
+          index?: number;
+          stepId?: string;
+          attempts?: number;
+          submittedChars?: number;
+        };
+        if (
+          typeof attempt.index === 'number' &&
+          typeof attempt.stepId === 'string' &&
+          typeof attempt.attempts === 'number'
+        ) {
+          reasoningAttemptsByIndex.set(attempt.index, {
+            stepId: attempt.stepId,
+            attempts: attempt.attempts,
+            ...(typeof attempt.submittedChars === 'number' && {
+              submittedChars: attempt.submittedChars,
+            }),
+          });
+          reasoningAttemptHighWater = Math.max(reasoningAttemptHighWater, attempt.attempts);
+        }
+        continue;
+      }
+      if (event.event === 'on_reasoning_label') {
+        const labelData = event.data as {
+          index?: number;
+          stepId?: string;
+          revision?: number;
+          label?: string;
+          status?: 'streaming' | 'complete';
+        };
+        if (
+          typeof labelData.index === 'number' &&
+          typeof labelData.stepId === 'string' &&
+          typeof labelData.revision === 'number' &&
+          typeof labelData.label === 'string'
+        ) {
+          reasoningLabelsByIndex.set(labelData.index, {
+            stepId: labelData.stepId,
+            revision: labelData.revision,
+            label: labelData.label,
+            status: labelData.status === 'complete' ? 'complete' : 'streaming',
+          });
+        }
+        continue;
       }
     }
-    if (steers.length === 0 && labelsByIndex.size === 0) {
+    if (
+      steers.length === 0 &&
+      labelsByIndex.size === 0 &&
+      reasoningStepsByIndex.size === 0 &&
+      reasoningAttemptHighWater === 0 &&
+      reasoningLabelsByIndex.size === 0
+    ) {
       return parts;
     }
     const inserts = [
@@ -2932,6 +3027,46 @@ export class RedisJobStore implements IJobStoreV2 {
     const merged = [...parts];
     for (const insert of inserts) {
       merged.splice(Math.min(insert.index, merged.length), 0, insert.part);
+    }
+    const reasoningIndices = new Set([
+      ...reasoningStepsByIndex.keys(),
+      ...reasoningAttemptsByIndex.keys(),
+      ...reasoningLabelsByIndex.keys(),
+    ]);
+    for (const index of reasoningIndices) {
+      const part = merged[index] as ReasoningContentPart | undefined;
+      if (part?.type !== ContentTypes.THINK) {
+        continue;
+      }
+      const attempt = reasoningAttemptsByIndex.get(index);
+      const label = reasoningLabelsByIndex.get(index);
+      const stepId = reasoningStepsByIndex.get(index) ?? attempt?.stepId ?? label?.stepId;
+      if (stepId == null) {
+        continue;
+      }
+      const updated: ReasoningContentPart = { ...part };
+      if (updated.reasoning_label_step_id != null && updated.reasoning_label_step_id !== stepId) {
+        delete updated.reasoning_label;
+        delete updated.reasoning_label_revision;
+        delete updated.reasoning_label_status;
+        delete updated.reasoning_label_submitted_chars;
+      }
+      updated.reasoning_label_step_id = stepId;
+      if (reasoningAttemptHighWater > 0) {
+        updated.reasoning_label_attempts = Math.max(
+          updated.reasoning_label_attempts ?? 0,
+          reasoningAttemptHighWater,
+        );
+      }
+      if (attempt?.stepId === stepId && attempt.submittedChars != null) {
+        updated.reasoning_label_submitted_chars = attempt.submittedChars;
+      }
+      if (label?.stepId === stepId) {
+        updated.reasoning_label = label.label;
+        updated.reasoning_label_revision = label.revision;
+        updated.reasoning_label_status = label.status;
+      }
+      merged[index] = updated;
     }
     return merged;
   }
@@ -3069,6 +3204,18 @@ export class RedisJobStore implements IJobStoreV2 {
     // Use the same content aggregator as live streaming
     const { contentParts, aggregateContent } = createContentAggregator();
 
+    // Step ID -> content index, rebuilt from the replayed `on_run_step`
+    // payloads. Those carry the index the offset wrappers shifted, whereas a
+    // closure event was stored unshifted (the wrappers clone only
+    // `ON_RUN_STEP`/`ON_AGENT_UPDATE`), so a closure must be resolved by ID
+    // rather than by its own index — otherwise a run containing a steer or
+    // HITL resume stamps the status onto the wrong slot.
+    const replayedStepIndices = new Map<string, number>();
+    const reasoningStepsByIndex = new Map<number, string>();
+    const reasoningAttemptsByIndex = new Map<number, ReasoningAttemptOverlay>();
+    const reasoningLabelsByIndex = new Map<number, ReasoningLabelOverlay>();
+    let reasoningAttemptHighWater = 0;
+
     // Valid event types for content aggregation
     const validEvents = new Set([
       'on_run_step',
@@ -3108,13 +3255,146 @@ export class RedisJobStore implements IJobStoreV2 {
         continue;
       }
 
+      // Attempt reservations are durable but intentionally non-rendering.
+      // Overlay their run-cumulative high-water mark after replay so later
+      // deltas cannot erase the cost cap before a HITL resume.
+      if (event.event === 'on_reasoning_label_attempt') {
+        const attempt = event.data as {
+          index?: number;
+          stepId?: string;
+          attempts?: number;
+          submittedChars?: number;
+        };
+        if (
+          typeof attempt.index === 'number' &&
+          typeof attempt.stepId === 'string' &&
+          typeof attempt.attempts === 'number'
+        ) {
+          reasoningAttemptsByIndex.set(attempt.index, {
+            stepId: attempt.stepId,
+            attempts: attempt.attempts,
+            ...(typeof attempt.submittedChars === 'number' && {
+              submittedChars: attempt.submittedChars,
+            }),
+          });
+          reasoningAttemptHighWater = Math.max(reasoningAttemptHighWater, attempt.attempts);
+        }
+        continue;
+      }
+
+      // Reasoning labels patch an existing THINK part and never shift indices.
+      // Retain the latest update until replay is complete: a later reasoning
+      // delta rebuilds the THINK object and would otherwise erase metadata
+      // from an earlier label event.
+      if (event.event === 'on_reasoning_label') {
+        const labelData = event.data as {
+          index?: number;
+          stepId?: string;
+          revision?: number;
+          label?: string;
+          status?: 'streaming' | 'complete';
+        };
+        if (
+          typeof labelData.index === 'number' &&
+          typeof labelData.stepId === 'string' &&
+          typeof labelData.revision === 'number' &&
+          typeof labelData.label === 'string'
+        ) {
+          reasoningLabelsByIndex.set(labelData.index, {
+            stepId: labelData.stepId,
+            revision: labelData.revision,
+            label: labelData.label,
+            status: labelData.status === 'complete' ? 'complete' : 'streaming',
+          });
+        }
+        continue;
+      }
+
+      // Step closures are host-authored like steers and labels: the SDK
+      // aggregator has no notion of the event, so the terminal status is
+      // stamped onto the part the replayed steps already rebuilt. Resolved by
+      // step ID against the replayed indices, never by the closure's own
+      // index — see `replayedStepIndices`. Chronology guarantees the step's
+      // `on_run_step` was replayed first.
+      if (event.event === 'on_run_step_closed') {
+        const closed = event.data as {
+          id?: string;
+          status?: Agents.RunStepClosedStatus;
+          created_at?: number;
+          closed_at?: number;
+        };
+        const index = closed.id != null ? replayedStepIndices.get(closed.id) : undefined;
+        const part = index != null ? contentParts[index] : undefined;
+        if (closed.status && part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
+          part.tool_call.runStepStatus = closed.status;
+          const durationMs = getRunStepDurationMs(closed);
+          if (durationMs != null) {
+            part.tool_call.runStepDurationMs = durationMs;
+          }
+        }
+        continue;
+      }
+
       if (!validEvents.has(event.event)) {
         continue;
+      }
+
+      if (event.event === 'on_run_step') {
+        const step = event.data as {
+          id?: string;
+          index?: number;
+          stepDetails?: { message_creation?: { content_type?: string } };
+        };
+        if (step.id != null && typeof step.index === 'number') {
+          replayedStepIndices.set(step.id, step.index);
+          if (step.stepDetails?.message_creation?.content_type === ContentTypes.THINK) {
+            reasoningStepsByIndex.set(step.index, step.id);
+          }
+        }
       }
 
       // Pass event string directly - GraphEvents values are lowercase strings
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       aggregateContent({ event: event.event as any, data: event.data as any });
+    }
+
+    const reasoningIndices = new Set([
+      ...reasoningStepsByIndex.keys(),
+      ...reasoningAttemptsByIndex.keys(),
+      ...reasoningLabelsByIndex.keys(),
+    ]);
+    for (const index of reasoningIndices) {
+      const part = contentParts[index] as ReasoningContentPart | undefined;
+      if (part?.type !== ContentTypes.THINK) {
+        continue;
+      }
+      const attempt = reasoningAttemptsByIndex.get(index);
+      const label = reasoningLabelsByIndex.get(index);
+      const stepId = reasoningStepsByIndex.get(index) ?? attempt?.stepId ?? label?.stepId;
+      if (stepId == null) {
+        continue;
+      }
+      if (part.reasoning_label_step_id != null && part.reasoning_label_step_id !== stepId) {
+        delete part.reasoning_label;
+        delete part.reasoning_label_revision;
+        delete part.reasoning_label_status;
+        delete part.reasoning_label_submitted_chars;
+      }
+      part.reasoning_label_step_id = stepId;
+      if (reasoningAttemptHighWater > 0) {
+        part.reasoning_label_attempts = Math.max(
+          part.reasoning_label_attempts ?? 0,
+          reasoningAttemptHighWater,
+        );
+      }
+      if (attempt?.stepId === stepId && attempt.submittedChars != null) {
+        part.reasoning_label_submitted_chars = attempt.submittedChars;
+      }
+      if (label?.stepId === stepId) {
+        part.reasoning_label = label.label;
+        part.reasoning_label_revision = label.revision;
+        part.reasoning_label_status = label.status;
+      }
     }
 
     // Filter out undefined entries

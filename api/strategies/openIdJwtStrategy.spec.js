@@ -9,6 +9,7 @@ const mockAuthUserDocCacheStore = {
   delete: jest.fn(),
 };
 const mockGetLogStores = jest.fn(() => mockAuthUserDocCacheStore);
+const mockGetTenantId = jest.fn();
 jest.mock('passport-jwt', () => ({
   Strategy: jest.fn((opts, verifyCallback) => {
     capturedStrategyOptions = opts;
@@ -27,6 +28,7 @@ jest.mock('https-proxy-agent', () => ({
 }));
 jest.mock('@librechat/data-schemas', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
+  getTenantId: mockGetTenantId,
 }));
 jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(() => false),
@@ -37,6 +39,7 @@ jest.mock('@librechat/api', () => ({
   buildAuthUserDocCacheKey: jest.fn(() => 'auth-user-doc-key'),
   getAuthUserDocCacheMode: jest.fn(() => 'off'),
   getCachedAuthUserDoc: jest.fn(),
+  getValidOpenIdReuseUserId: jest.fn(),
   invalidateCachedAuthUserDoc: jest.fn(),
   setCachedAuthUserDoc: jest.fn(),
   getHttpsProxyAgent: jest.fn(() => undefined),
@@ -61,6 +64,7 @@ const {
   findOpenIDUser,
   getAuthUserDocCacheMode,
   getCachedAuthUserDoc,
+  getValidOpenIdReuseUserId,
   invalidateCachedAuthUserDoc,
   setCachedAuthUserDoc,
 } = require('@librechat/api');
@@ -68,6 +72,7 @@ const openIdJwtLogin = require('./openIdJwtStrategy');
 const { findUser, updateUser } = require('~/models');
 
 function resetAuthUserDocCacheMocks() {
+  mockGetTenantId.mockReturnValue(undefined);
   mockAuthUserDocCacheStore.get.mockResolvedValue(undefined);
   mockAuthUserDocCacheStore.set.mockResolvedValue(undefined);
   mockAuthUserDocCacheStore.delete.mockResolvedValue(undefined);
@@ -75,6 +80,7 @@ function resetAuthUserDocCacheMocks() {
   buildAuthUserDocCacheKey.mockReturnValue('auth-user-doc-key');
   getAuthUserDocCacheMode.mockReturnValue('off');
   getCachedAuthUserDoc.mockResolvedValue(undefined);
+  getValidOpenIdReuseUserId.mockReturnValue(null);
   invalidateCachedAuthUserDoc.mockResolvedValue(undefined);
   setCachedAuthUserDoc.mockResolvedValue(undefined);
 }
@@ -416,11 +422,13 @@ describe('openIdJwtStrategy – auth user document cache', () => {
   });
 
   it('uses the cached user document in on mode without a database lookup', async () => {
+    mockGetTenantId.mockReturnValue('tenant-a');
     const cachedUser = {
       _id: 'cached-user',
       role: SystemRoles.USER,
       provider: 'openid',
       email: 'cached@example.com',
+      tenantId: 'tenant-a',
     };
     getAuthUserDocCacheMode.mockReturnValue('on');
     getCachedAuthUserDoc.mockResolvedValue(cachedUser);
@@ -431,6 +439,7 @@ describe('openIdJwtStrategy – auth user document cache', () => {
       strategy: 'openid-jwt',
       subject: payload.sub,
       issuer: 'https://issuer.example.com',
+      tenantId: 'tenant-a',
     });
     expect(findOpenIDUser).not.toHaveBeenCalled();
     expect(user).toMatchObject({
@@ -456,6 +465,88 @@ describe('openIdJwtStrategy – auth user document cache', () => {
       expect.objectContaining({ id: 'user-abc' }),
     );
     expect(invalidateCachedAuthUserDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cached user document from another tenant', async () => {
+    mockGetTenantId.mockReturnValue('tenant-b');
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getCachedAuthUserDoc.mockResolvedValue({
+      _id: 'tenant-a-user',
+      role: SystemRoles.ADMIN,
+      provider: 'openid',
+      email: 'cached@example.com',
+      tenantId: 'tenant-a',
+    });
+    findOpenIDUser.mockResolvedValue({
+      user: { ...baseUser, _id: { toString: () => 'tenant-b-user' }, tenantId: 'tenant-b' },
+      error: null,
+      migration: false,
+    });
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(buildAuthUserDocCacheKey).toHaveBeenCalledWith({
+      strategy: 'openid-jwt',
+      subject: payload.sub,
+      issuer: 'https://issuer.example.com',
+      tenantId: 'tenant-b',
+    });
+    expect(findOpenIDUser).toHaveBeenCalled();
+    expect(user).toMatchObject({ id: 'tenant-b-user', tenantId: 'tenant-b' });
+    expect(setCachedAuthUserDoc).toHaveBeenCalledWith(
+      mockAuthUserDocCacheStore,
+      'auth-user-doc-key',
+      expect.objectContaining({ id: 'tenant-b-user', tenantId: 'tenant-b' }),
+    );
+  });
+
+  it('uses the signed OpenID user id as cache scope before tenant context is available', async () => {
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getValidOpenIdReuseUserId.mockReturnValue('tenant-a-user');
+    getCachedAuthUserDoc.mockResolvedValue({
+      _id: 'tenant-a-user',
+      role: SystemRoles.USER,
+      provider: 'openid',
+      email: 'cached@example.com',
+      tenantId: 'tenant-a',
+    });
+
+    const { user } = await invokeVerify(
+      {
+        headers: {
+          authorization: 'Bearer tok',
+          cookie: 'openid_user_id=signed-user-id',
+        },
+        session: {},
+      },
+      payload,
+    );
+
+    expect(getValidOpenIdReuseUserId).toHaveBeenCalledWith('signed-user-id');
+    expect(buildAuthUserDocCacheKey).toHaveBeenCalledWith({
+      strategy: 'openid-jwt',
+      subject: payload.sub,
+      issuer: 'https://issuer.example.com',
+      userId: 'tenant-a-user',
+    });
+    expect(findOpenIDUser).not.toHaveBeenCalled();
+    expect(user).toMatchObject({ id: 'tenant-a-user', tenantId: 'tenant-a' });
+  });
+
+  it('does not cache a lookup result outside the active tenant scope', async () => {
+    mockGetTenantId.mockReturnValue('tenant-b');
+    getAuthUserDocCacheMode.mockReturnValue('on');
+    getCachedAuthUserDoc.mockResolvedValue(undefined);
+    findOpenIDUser.mockResolvedValue({
+      user: { ...baseUser, tenantId: 'tenant-a' },
+      error: null,
+      migration: false,
+    });
+
+    await invokeVerify(req, payload);
+
+    expect(findOpenIDUser).toHaveBeenCalled();
+    expect(setCachedAuthUserDoc).not.toHaveBeenCalled();
   });
 
   it('invalidates instead of populating when login mutates the user', async () => {

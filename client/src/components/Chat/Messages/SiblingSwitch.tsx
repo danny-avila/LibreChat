@@ -33,7 +33,7 @@ export default function SiblingSwitch({
   const buttonStyle = cn(
     'hover-button h-auto rounded-lg p-1.5 text-text-secondary-alt',
     'hover:text-text-primary hover:bg-surface-hover',
-    'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
+    'group-hover:visible group-focus-visible:visible group-has-[:focus-visible:not(:is(input,textarea,[contenteditable]))]:visible group-[.final-completion]:visible',
     'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',
   );
 

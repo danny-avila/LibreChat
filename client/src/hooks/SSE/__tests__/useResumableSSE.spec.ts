@@ -49,7 +49,7 @@ const mockGetQueryData = jest.fn();
 const mockFetchQuery = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockRemoveQueries = jest.fn();
-const mockFindAll = jest.fn((): Array<{ queryKey: unknown[] }> => []);
+const mockFindAll = jest.fn((_queryKey?: unknown): Array<{ queryKey: unknown[] }> => []);
 const mockQueryClient = {
   setQueryData: mockSetQueryData,
   getQueryData: mockGetQueryData,
@@ -482,7 +482,11 @@ describe('useResumableSSE', () => {
   });
 
   it('invalidates the stream conversation id on 404 for a new conversation', async () => {
-    mockFindAll.mockReturnValue([{ queryKey: [QueryKeys.allConversations] }]);
+    /* Key-aware: the conversation cache helpers now run a second, pinned-keyed pass,
+       and a fixed return value would attribute those writes to allConversations. */
+    mockFindAll.mockImplementation((queryKey?: unknown) => [
+      { queryKey: [(queryKey as unknown[])[0]] },
+    ]);
     const submission = buildSubmission({
       conversation: {},
       userMessage: {
@@ -545,7 +549,11 @@ describe('useResumableSSE', () => {
   });
 
   it('reconciles conversations via refetch instead of removing them on a resume 404', async () => {
-    mockFindAll.mockReturnValue([{ queryKey: [QueryKeys.allConversations] }]);
+    /* Key-aware: the conversation cache helpers now run a second, pinned-keyed pass,
+       and a fixed return value would attribute those writes to allConversations. */
+    mockFindAll.mockImplementation((queryKey?: unknown) => [
+      { queryKey: [(queryKey as unknown[])[0]] },
+    ]);
     // A deduped start returns status: 'resumed', so the client subscribes with resume=true.
     (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-123', status: 'resumed' });
     const submission = buildSubmission({
@@ -584,6 +592,9 @@ describe('useResumableSSE', () => {
     // asserting the invalidate proves the immediate removal did not run.
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.allConversations],
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.pinnedConversations],
     });
     unmount();
   });
@@ -1523,6 +1534,9 @@ describe('useResumableSSE', () => {
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.allConversations],
     });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.pinnedConversations],
+    });
     /** The settled response carries no epoch, so it cannot authorize clearing
      * whichever conversation/generation may now own this pane's arm. */
     expect(mockSetDrainAfterAbort).not.toHaveBeenCalled();
@@ -2167,6 +2181,12 @@ describe('useResumableSSE', () => {
       queryKey: [QueryKeys.messages, CONV_ID],
       refetchType: 'none',
     });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.allConversations],
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.pinnedConversations],
+    });
     expect(mockSettleAppliedSteerParts).toHaveBeenCalledWith(CONV_ID, persisted);
     expect(mockSetRunEnd).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: CONV_ID, outcome: 'completed' }),
@@ -2638,6 +2658,12 @@ describe('useResumableSSE', () => {
       queryKey: [QueryKeys.messages, CONV_ID],
       refetchType: 'all',
     });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.allConversations],
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.pinnedConversations],
+    });
     expect(mockErrorHandler).not.toHaveBeenCalled();
     expect(mockSetRunEnd).not.toHaveBeenCalled();
     expect(mockSetIsSubmitting).not.toHaveBeenCalledWith(false);
@@ -2687,6 +2713,12 @@ describe('useResumableSSE', () => {
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: [QueryKeys.messages, CONV_ID],
       refetchType: 'all',
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.allConversations],
+    });
+    expect(mockInvalidateQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.pinnedConversations],
     });
     expect(mockErrorHandler).not.toHaveBeenCalled();
     expect(mockSetRunEnd).not.toHaveBeenCalled();
@@ -3792,7 +3824,11 @@ describe('useResumableSSE', () => {
   });
 
   it('removes the optimistic sidebar row when a new conversation errors before created', async () => {
-    mockFindAll.mockReturnValue([{ queryKey: [QueryKeys.allConversations] }]);
+    /* Key-aware: the conversation cache helpers now run a second, pinned-keyed pass,
+       and a fixed return value would attribute those writes to allConversations. */
+    mockFindAll.mockImplementation((queryKey?: unknown) => [
+      { queryKey: [(queryKey as unknown[])[0]] },
+    ]);
     const submission = buildSubmission({
       conversation: {},
       userMessage: {

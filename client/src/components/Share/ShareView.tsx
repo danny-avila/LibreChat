@@ -2,8 +2,8 @@ import { memo, useState, useCallback, useContext } from 'react';
 import Cookies from 'js-cookie';
 import { buildTree } from 'librechat-data-provider';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useRecoilState, useRecoilCallback } from 'recoil';
 import { CalendarDays, Settings, MessageSquarePlus } from 'lucide-react';
+import { useRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
 import { useGetSharedMessages } from 'librechat-data-provider/react-query';
 import {
   Spinner,
@@ -19,7 +19,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/Selectors';
-import { cn, getResponseStatus, selectActiveBranchTail } from '~/utils';
+import { cn, DEFAULT_APP_TITLE, getResponseStatus, selectActiveBranchTail } from '~/utils';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
 import { useForkSharedConvoMutation } from '~/data-provider';
 import { useGetSharedStartupConfig } from '~/data-provider';
@@ -117,8 +117,11 @@ function SharedView() {
   }, [shareId, forkSharedConvo, getActiveTargetIndex, data?.updatedAt]);
 
   // configure document title
+  const chatTitleInTab = useRecoilValue(store.chatTitleInTab);
   let docTitle = '';
-  if (config?.appTitle != null && data?.title != null) {
+  if (!chatTitleInTab) {
+    docTitle = config?.appTitle || DEFAULT_APP_TITLE;
+  } else if (config?.appTitle != null && data?.title != null) {
     docTitle = `${data.title} | ${config.appTitle}`;
   } else {
     docTitle = data?.title ?? config?.appTitle ?? document.title;

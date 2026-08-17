@@ -72,9 +72,9 @@ function makeAgent(overrides?: Record<string, unknown>) {
   };
 }
 
-async function captureRunConfig(): Promise<Record<string, unknown>> {
+async function captureRunConfig(agent = makeAgent()): Promise<Record<string, unknown>> {
   await createRun({
-    agents: [makeAgent()] as never,
+    agents: [agent] as never,
     signal: new AbortController().signal,
     streaming: true,
     streamUsage: true,
@@ -104,5 +104,13 @@ describe('createRun code-tool eager/session wiring', () => {
     expect(runConfig.codeSessionToolNames).toEqual(
       expect.arrayContaining(['create_file', 'edit_file', 'read_file']),
     );
+  });
+
+  it('passes the trusted per-agent code-session partition to the SDK', async () => {
+    const codeSessionKey = 'execute_code:stateful:v1:user';
+    const runConfig = await captureRunConfig(makeAgent({ codeSessionKey }));
+    const [agentInput] = (runConfig.graphConfig as { agents: Array<Record<string, unknown>> })
+      .agents;
+    expect(agentInput.codeSessionKey).toBe(codeSessionKey);
   });
 });

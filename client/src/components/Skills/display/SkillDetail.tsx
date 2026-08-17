@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { format } from 'date-fns';
 import { Button, TooltipAnchor } from '@librechat/client';
-import { Eye, Code, User, Calendar, EarthIcon, ScrollText } from 'lucide-react';
+import { Eye, Code, User, Pencil, Calendar, EarthIcon } from 'lucide-react';
 import type { TSkill } from 'librechat-data-provider';
 import { useLocalize, useAuthContext, useSkillPermissions, useSkillActiveState } from '~/hooks';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
@@ -90,63 +90,59 @@ export default function SkillDetail({ skill, onEdit, onDelete }: SkillDetailProp
       aria-label={skill.name}
     >
       {/* Header row */}
-      <div className="flex flex-col gap-3 pb-1 sm:flex-row sm:items-center sm:gap-4">
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-secondary">
-              <ScrollText className="size-6 text-text-secondary" aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 items-center gap-2">
-                <h2 className="truncate text-xl font-bold text-text-primary" title={skill.name}>
-                  {skill.name}
-                </h2>
-                {isPublic && (
-                  <TooltipAnchor
-                    description={localize('com_ui_skill_sr_public')}
-                    side="top"
-                    render={
-                      <EarthIcon
-                        className="size-5 shrink-0 text-accent-primary"
-                        aria-label={localize('com_ui_skill_sr_public')}
-                      />
-                    }
+      <div className="flex flex-col gap-3 pb-1 sm:flex-row sm:items-start sm:gap-4">
+        <div className="min-w-0 flex-1 overflow-hidden sm:pt-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="truncate text-xl font-bold text-text-primary" title={skill.name}>
+              {skill.name}
+            </h2>
+            {isPublic && (
+              <TooltipAnchor
+                description={localize('com_ui_skill_sr_public')}
+                side="top"
+                render={
+                  <EarthIcon
+                    className="size-5 shrink-0 text-accent-primary"
+                    aria-label={localize('com_ui_skill_sr_public')}
                   />
-                )}
-              </div>
-              <div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-text-secondary">
-                <span className="flex items-center gap-1">
-                  <User className="size-3" aria-hidden="true" />
-                  {addedBy}
-                </span>
-                {updatedDate && (
-                  <span className="flex items-center gap-1">
-                    <Calendar className="size-3" aria-hidden="true" />
-                    {updatedDate}
-                  </span>
-                )}
-              </div>
-            </div>
+                }
+              />
+            )}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-text-secondary">
+            <span className="flex items-center gap-1">
+              <User className="size-3" aria-hidden="true" />
+              {addedBy}
+            </span>
+            {updatedDate && (
+              <span className="flex items-center gap-1">
+                <Calendar className="size-3" aria-hidden="true" />
+                {updatedDate}
+              </span>
+            )}
           </div>
         </div>
 
         {/* Actions */}
-        <div className="flex shrink-0 items-center gap-2">
-          <SkillToggle
-            enabled={skillEnabled}
-            onChange={() => toggle(skill)}
-            ariaLabel={localize('com_ui_skill_toggle_active')}
-          />
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pt-1">
+          <SkillToggle enabled={skillEnabled} onChange={() => toggle(skill)} />
           <ShareSkill skill={skill} />
           {permissions.canEdit && onEdit && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={onEdit}
-              className="h-9 rounded-md border-border-medium px-3 text-xs font-semibold"
-            >
-              {localize('com_ui_edit')}
-            </Button>
+            <TooltipAnchor
+              description={localize('com_ui_edit')}
+              side="bottom"
+              render={
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-9 border-border-medium"
+                  aria-label={localize('com_ui_edit')}
+                  onClick={onEdit}
+                >
+                  <Pencil className="size-5" aria-hidden="true" />
+                </Button>
+              }
+            />
           )}
           {permissions.canDelete && onDelete && (
             <DeleteSkill skillId={skill._id} skillName={skill.name} onDelete={onDelete} />

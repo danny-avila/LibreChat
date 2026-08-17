@@ -2,6 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 const MOCKS = '../__test-utils__/convos-route-mocks';
+const { archiveAllHandler } = require(MOCKS);
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () => require(MOCKS).api());
@@ -487,6 +488,36 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('GET / pinned filter', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    it('forwards pinned=true so the sidebar section can fetch pins on their own', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query({ pinned: 'true', limit: '100' });
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ pinned: true, limit: 100 }),
+      );
+    });
+
+    it('leaves the list unfiltered when pinned is absent', async () => {
+      const response = await request(app).get('/api/convos');
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ pinned: false }),
+      );
+    });
+  });
+
   describe('POST /archive', () => {
     it('should archive a conversation successfully', async () => {
       const mockConversationId = 'conv-123';
@@ -512,8 +543,15 @@ describe('Convos Routes', () => {
       expect(response.body).toEqual(mockArchivedConvo);
       expect(saveConvo).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'test-user-123' }),
-        { conversationId: mockConversationId, isArchived: true },
-        { context: `POST /api/convos/archive ${mockConversationId}` },
+        {
+          conversationId: mockConversationId,
+          isArchived: true,
+        },
+        {
+          context: `POST /api/convos/archive ${mockConversationId}`,
+          preserveUpdatedAt: true,
+          noUpsert: true,
+        },
       );
     });
 
@@ -542,7 +580,55 @@ describe('Convos Routes', () => {
       expect(saveConvo).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'test-user-123' }),
         { conversationId: mockConversationId, isArchived: false },
-        { context: `POST /api/convos/archive ${mockConversationId}` },
+        {
+          context: `POST /api/convos/archive ${mockConversationId}`,
+          preserveUpdatedAt: true,
+          noUpsert: true,
+        },
+      );
+    });
+
+    it('leaves archivedAt to saveConvo so a redundant archive cannot restamp it', async () => {
+      saveConvo.mockResolvedValue({ conversationId: 'conv-789', isArchived: true });
+
+      await request(app)
+        .post('/api/convos/archive')
+        .send({ arg: { conversationId: 'conv-789', isArchived: true } });
+
+      const [, data] = saveConvo.mock.calls[0];
+      expect(data).not.toHaveProperty('archivedAt');
+      expect(data.isArchived).toBe(true);
+    });
+
+    /** `updatedAt` stays the chat's own activity so unarchiving restores its real place
+     * in the date groups; when it was filed away is recorded on `archivedAt` instead. */
+    it('does not let archiving count as activity in the sidebar ordering', async () => {
+      saveConvo.mockResolvedValue({ conversationId: 'conv-789', isArchived: true });
+
+      await request(app)
+        .post('/api/convos/archive')
+        .send({ arg: { conversationId: 'conv-789', isArchived: true } });
+
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ preserveUpdatedAt: true }),
+      );
+    });
+
+    it('should return 404 when the conversation does not exist', async () => {
+      saveConvo.mockResolvedValue(null);
+
+      const response = await request(app)
+        .post('/api/convos/archive')
+        .send({ arg: { conversationId: 'missing-convo', isArchived: true } });
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: 'Conversation not found' });
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({ noUpsert: true }),
       );
     });
 
@@ -619,37 +705,69 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('POST /archive/all', () => {
+    const { archiveAllConvos } = require('~/models');
+
+    it('delegates archive-all requests through the package API handler', async () => {
+      archiveAllConvos.mockResolvedValue({ archivedCount: 4 });
+
+      const response = await request(app).post('/api/convos/archive/all');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ archivedCount: 4 });
+      expect(archiveAllHandler).toHaveBeenCalledTimes(1);
+      expect(archiveAllConvos).toHaveBeenCalledWith('test-user-123');
+    });
+  });
+
   describe('POST /convos/pin', () => {
     const mockConversationId = 'conv-123';
+    const { setConvoPinned } = require('~/models');
 
     it('should pin a conversation', async () => {
       const mockPinnedConvo = { conversationId: mockConversationId, pinned: true };
-      saveConvo.mockResolvedValue(mockPinnedConvo);
+      setConvoPinned.mockResolvedValue(mockPinnedConvo);
 
       const response = await request(app).post('/api/convos/pin').send({ arg: mockPinnedConvo });
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockPinnedConvo);
-      expect(saveConvo).toHaveBeenCalledWith(
-        { userId: 'test-user-123' },
-        { conversationId: mockConversationId, pinned: true },
-        { context: `POST /api/convos/pin ${mockConversationId}` },
-      );
+      expect(setConvoPinned).toHaveBeenCalledWith('test-user-123', mockConversationId, true);
     });
 
     it('should unpin a conversation', async () => {
       const mockUnpinnedConvo = { conversationId: mockConversationId, pinned: false };
-      saveConvo.mockResolvedValue(mockUnpinnedConvo);
+      setConvoPinned.mockResolvedValue(mockUnpinnedConvo);
 
       const response = await request(app).post('/api/convos/pin').send({ arg: mockUnpinnedConvo });
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual(mockUnpinnedConvo);
-      expect(saveConvo).toHaveBeenCalledWith(
-        { userId: 'test-user-123' },
-        { conversationId: mockConversationId, pinned: false },
-        { context: `POST /api/convos/pin ${mockConversationId}` },
-      );
+      expect(setConvoPinned).toHaveBeenCalledWith('test-user-123', mockConversationId, false);
+    });
+
+    /** A pin is one boolean: it must not drag in `saveConvo`'s message-id refresh
+     * and project-stats recompute, which cost an extra read and a large write. */
+    it('does not route a pin through the full conversation save', async () => {
+      setConvoPinned.mockResolvedValue({ conversationId: mockConversationId, pinned: true });
+
+      await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: mockConversationId, pinned: true } });
+
+      expect(setConvoPinned).toHaveBeenCalledTimes(1);
+      expect(saveConvo).not.toHaveBeenCalled();
+    });
+
+    it('should return 404 when the conversation does not exist', async () => {
+      setConvoPinned.mockResolvedValue(null);
+
+      const response = await request(app)
+        .post('/api/convos/pin')
+        .send({ arg: { conversationId: 'missing-convo', pinned: true } });
+
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: 'Conversation not found' });
     });
 
     it('should return 400 when conversationId is missing', async () => {
@@ -659,7 +777,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'conversationId is required' });
-      expect(saveConvo).not.toHaveBeenCalled();
+      expect(setConvoPinned).not.toHaveBeenCalled();
     });
 
     it('should return 400 when pinned is not a boolean', async () => {
@@ -669,7 +787,7 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'pinned must be a boolean' });
-      expect(saveConvo).not.toHaveBeenCalled();
+      expect(setConvoPinned).not.toHaveBeenCalled();
     });
 
     it('should return 400 when pinned is missing', async () => {
@@ -679,11 +797,11 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'pinned is required' });
-      expect(saveConvo).not.toHaveBeenCalled();
+      expect(setConvoPinned).not.toHaveBeenCalled();
     });
 
-    it('should return 500 when saveConvo fails', async () => {
-      saveConvo.mockRejectedValue(new Error('Database error'));
+    it('should return 500 when the pin update fails', async () => {
+      setConvoPinned.mockRejectedValue(new Error('Database error'));
 
       const response = await request(app)
         .post('/api/convos/pin')

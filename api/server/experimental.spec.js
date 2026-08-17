@@ -19,4 +19,13 @@ describe('Experimental server configuration', () => {
       /await runAsSystem\(async \(\) => \{\s+await performStartupChecks\(appConfig\);\s+await updateInterfacePerms/,
     );
   });
+
+  it('matches the standard server pre-authentication tenant routes', () => {
+    expect(source).toContain("app.use('/oauth', preAuthTenantMiddleware, routes.oauth);");
+    expect(source).toContain("app.use('/api/auth', preAuthTenantMiddleware, routes.auth);");
+    expect(source).toContain(
+      "app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);",
+    );
+    expect(source).toContain("app.use('/api/share', preAuthTenantMiddleware, routes.share);");
+  });
 });

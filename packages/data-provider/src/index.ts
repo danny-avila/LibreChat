@@ -6,6 +6,8 @@ export * from './config';
 export * from './file-config';
 /* messages  */
 export * from './messages';
+/* run steps */
+export * from './runSteps';
 /* artifacts  */
 export * from './artifacts';
 /* schema helpers  */

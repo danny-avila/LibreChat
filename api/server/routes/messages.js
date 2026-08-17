@@ -1,7 +1,12 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { logger } = require('@librechat/data-schemas');
-const { ContentTypes, feedbackSchema, isAssistantsEndpoint } = require('librechat-data-provider');
+const { logger, CLIENT_MESSAGE_SELECT } = require('@librechat/data-schemas');
+const {
+  ContentTypes,
+  feedbackSchema,
+  isAssistantsEndpoint,
+  stripReasoningLabelMetadata,
+} = require('librechat-data-provider');
 const {
   unescapeLaTeX,
   countTokens,
@@ -284,7 +289,7 @@ router.get('/:conversationId', prepareMessageRequestValidation, async (req, res)
     // This intentionally starts a user-scoped read before validation resolves;
     // the response remains gated on validation success below.
     const messagesPromise = validation.shouldFetchMessages
-      ? db.getMessages({ conversationId, user: req.user.id }, '-_id -__v -user').then(
+      ? db.getMessages({ conversationId, user: req.user.id }, CLIENT_MESSAGE_SELECT).then(
           (messages) => ({ messages }),
           (error) => ({ error }),
         )
@@ -345,7 +350,7 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     const { conversationId, messageId } = req.params;
     const message = await db.getMessages(
       { conversationId, messageId, user: req.user.id },
-      '-_id -__v -user',
+      CLIENT_MESSAGE_SELECT,
     );
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
@@ -418,10 +423,12 @@ router.put('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     const currentValue = currentPart[currentPartType];
     const isStructuredValue = currentValue != null && typeof currentValue === 'object';
     const oldText = isStructuredValue ? (currentValue.value ?? '') : currentValue;
-    updatedContent[index] = {
+    const editedPart = {
       ...currentPart,
       [currentPartType]: isStructuredValue ? { ...currentValue, value: text } : text,
     };
+    updatedContent[index] =
+      currentPartType === ContentTypes.THINK ? stripReasoningLabelMetadata(editedPart) : editedPart;
 
     let tokenCount = message.tokenCount;
     if (tokenCount !== undefined) {

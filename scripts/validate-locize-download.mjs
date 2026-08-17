@@ -55,21 +55,16 @@ function placeholders(value) {
   return (value.match(placeholderPattern) ?? []).sort().join('\u0000');
 }
 
+function boundaryWhitespace(value) {
+  return [value.match(/^\s*/u)?.[0] ?? '', value.match(/\s*$/u)?.[0] ?? ''].join('\u0000');
+}
+
 function compareFile(relative, base, current) {
   const baseValues = flatten(base);
   const currentValues = flatten(current);
-  for (const [key, baseValue] of baseValues) {
+  for (const [key] of baseValues) {
     if (!currentValues.has(key)) {
       errors.push(`${relative}: deleted key ${key}`);
-      continue;
-    }
-    const currentValue = currentValues.get(key);
-    if (typeof baseValue !== 'string' || typeof currentValue !== 'string') continue;
-    if (placeholders(baseValue) !== placeholders(currentValue)) {
-      errors.push(`${relative}: changed placeholders for ${key}`);
-    }
-    if (currentValue !== baseValue && currentValue !== currentValue.trim()) {
-      errors.push(`${relative}: introduced leading/trailing whitespace for ${key}`);
     }
   }
 }
@@ -106,8 +101,13 @@ if (currentSet.has(englishRelative)) {
         const source = englishValues.get(key);
         const baseline = baselineValuesByFile.get(relative)?.get(key);
         const changedSinceBaseline = baseline === undefined || baseline !== value;
-        if (changedSinceBaseline && typeof source === 'string' && typeof value === 'string' && placeholders(source) !== placeholders(value)) {
-          errors.push(`${relative}: placeholder mismatch with English for ${key}`);
+        if (changedSinceBaseline && typeof source === 'string' && typeof value === 'string') {
+          if (placeholders(source) !== placeholders(value)) {
+            errors.push(`${relative}: placeholder mismatch with English for ${key}`);
+          }
+          if (value !== value.trim() && boundaryWhitespace(source) !== boundaryWhitespace(value)) {
+            errors.push(`${relative}: introduced leading/trailing whitespace for ${key}`);
+          }
         }
       }
     }

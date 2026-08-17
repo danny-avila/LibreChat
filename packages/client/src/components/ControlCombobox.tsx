@@ -27,6 +27,16 @@ interface ControlComboboxProps {
   iconSide?: 'left' | 'right';
   selectId?: string;
   placement?: Ariakit.SelectStoreProps['placement'];
+  popoverClassName?: string;
+  matchTriggerWidth?: boolean;
+  gutter?: number;
+  /**
+   * Radix dialogs trap focus, so a portaled popover rendered outside the dialog
+   * cannot receive typing in its search field. Pass `false` from inside a dialog
+   * to keep the list in the dialog, and give that dialog `overflow-visible` so
+   * the popover is not clipped.
+   */
+  portal?: boolean;
 }
 
 const ROW_HEIGHT = 36;
@@ -49,6 +59,10 @@ function ControlCombobox({
   iconSide = 'left',
   selectId,
   placement,
+  popoverClassName,
+  matchTriggerWidth = true,
+  gutter = 4,
+  portal = true,
 }: ControlComboboxProps): JSX.Element {
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -161,12 +175,18 @@ function ControlCombobox({
       </Ariakit.Select>
       <Ariakit.SelectPopover
         store={select}
-        gutter={4}
-        portal
+        gutter={gutter}
+        portal={portal}
         className={cn(
-          'animate-popover overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+          'overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+          popoverClassName ?? 'animate-popover',
         )}
-        style={{ zIndex: popoverZIndex, width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }}
+        style={{
+          zIndex: popoverZIndex,
+          ...(matchTriggerWidth
+            ? { width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }
+            : { minWidth: '16rem' }),
+        }}
       >
         <div className="py-1.5">
           <div className="relative">

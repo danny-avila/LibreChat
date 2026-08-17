@@ -144,4 +144,55 @@ describe('buildTree', () => {
     expect(tree).toHaveLength(1);
     expect(tree?.[0].files?.[0]).toBe(file);
   });
+
+  describe('memoization', () => {
+    const chain = () => [
+      msg('u1', '00000000-0000-0000-0000-000000000000', { isCreatedByUser: true }),
+      msg('a1', 'u1'),
+    ];
+
+    it('returns the identical tree for the same messages array', () => {
+      const messages = chain();
+      expect(buildTree({ messages })).toBe(buildTree({ messages }));
+    });
+
+    it('keeps one cached tree per fileMap identity', () => {
+      const messages = chain();
+      const fileMap = { f1: { file_id: 'f1' } as TFile };
+
+      const bare = buildTree({ messages });
+      const hydrated = buildTree({ messages, fileMap });
+
+      expect(hydrated).not.toBe(bare);
+      expect(buildTree({ messages })).toBe(bare);
+      expect(buildTree({ messages, fileMap })).toBe(hydrated);
+    });
+
+    it('rebuilds for a new messages array identity', () => {
+      const first = chain();
+      const second = chain();
+      expect(buildTree({ messages: first })).not.toBe(buildTree({ messages: second }));
+    });
+
+    it('rebuilds when the fileMap identity changes', () => {
+      const messages = chain();
+      const treeA = buildTree({ messages, fileMap: {} });
+      const treeB = buildTree({ messages, fileMap: {} });
+      expect(treeB).not.toBe(treeA);
+    });
+
+    it('keeps only the latest hydrated tree, leaving the bare slot intact', () => {
+      const messages = chain();
+      const bare = buildTree({ messages });
+      const fileMapA = { f1: { file_id: 'f1' } as TFile };
+      const fileMapB = { f1: { file_id: 'f1' } as TFile };
+
+      const treeA = buildTree({ messages, fileMap: fileMapA });
+      const treeB = buildTree({ messages, fileMap: fileMapB });
+
+      expect(buildTree({ messages, fileMap: fileMapB })).toBe(treeB);
+      expect(buildTree({ messages, fileMap: fileMapA })).not.toBe(treeA);
+      expect(buildTree({ messages })).toBe(bare);
+    });
+  });
 });

@@ -88,6 +88,17 @@ export const defaultTheme: IThemeRGB = {
   // Brand colors
   'rgb-brand-purple': '126 34 206', // #7e22ce (purple-700)
 
+  /** Categorical series scale. Steps clear 3:1 against BOTH the popover surface
+   *  and the #ececec meter track, with worst adjacent CVD ΔE 12.4 and worst
+   *  adjacent normal-vision ΔE 19.0. Slot order is the CVD-safety mechanism. */
+  'rgb-series-1': '5 110 189', // #056ebd (cerulean)
+  'rgb-series-2': '233 86 13', // #e9560d (orange)
+  'rgb-series-3': '0 148 142', // #00948e (aqua)
+  'rgb-series-4': '182 123 5', // #b67b05 (amber)
+  'rgb-series-5': '216 90 142', // #d85a8e (magenta)
+  'rgb-series-6': '126 35 205', // #7e23cd (violet)
+  'rgb-series-7': '1 131 1', // #018301 (green)
+
   // Presentation
   'rgb-presentation': '255 255 255', // #fff (white)
 };

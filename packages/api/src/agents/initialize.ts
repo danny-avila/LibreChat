@@ -9,6 +9,7 @@ import {
   paramEndpoints,
   isAgentsEndpoint,
   AgentCapabilities,
+  resolveAllowedStatefulCodeEnvironments,
   replaceSpecialVars,
   providerEndpointMap,
 } from 'librechat-data-provider';
@@ -20,6 +21,7 @@ import type {
   TFile,
   Agent,
   TUser,
+  StatefulCodeEnvironment,
 } from 'librechat-data-provider';
 import type { GenericTool, LCToolRegistry, ToolMap, LCTool } from '@librechat/agents';
 import type { IMongoFile, FileOwnerScope } from '@librechat/data-schemas';
@@ -52,6 +54,11 @@ import {
   normalizeAgentToolKeys,
 } from '~/mcp/utils';
 import {
+  normalizeStatefulCodeEnvironment,
+  resolveCodeExecutionContext,
+  type CodeExecutionContext,
+} from './execution';
+import {
   optionalChainWithEmptyCheck,
   extractLibreChatParams,
   getModelMaxTokens,
@@ -62,9 +69,12 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
+import {
+  createStatefulCodeEnvironmentPolicyError,
+  isFatalAgentInitializationError,
+} from './errors';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
-import { isFatalAgentInitializationError } from './errors';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -325,10 +335,16 @@ export type InitializedAgent = Agent & {
    * Whether stateful code sessions are active *for this agent*: the admin
    * `stateful_code_sessions` capability AND the agent's builder opt-in
    * (`agent.stateful_code_sessions`) AND `codeEnvAvailable`. Resolved once
-   * here; `createRun` walks this per-agent value to gate the run-level
-   * `toolExecution.sandbox` config.
+   * here and carried with the agent so execution routing never needs a
+   * graph-global stateful flag.
    */
   statefulCodeSessions: boolean;
+  /** Sharing scope for this agent's stateful code environment. */
+  statefulCodeEnvironment: Agent['stateful_code_environment'];
+  /** Trusted partition for transient code session ids and file references. */
+  codeSessionKey: string;
+  /** Trusted endpoint/profile context for artifact processing and runtime tools. */
+  codeExecutionContext: CodeExecutionContext;
   /** Whether host-side skill file authoring is available for this agent/run. */
   skillAuthoringAvailable: boolean;
   /** Host-side file authoring tool names registered for this run. */
@@ -410,6 +426,8 @@ export interface InitializeAgentParams {
     model: string | null;
     tool_options: AgentToolOptions | undefined;
     tool_resources: AgentToolResources | undefined;
+    /** Trusted endpoint/profile resolved for this agent before any code-file priming. */
+    codeExecutionContext: CodeExecutionContext;
     /** Full accessible MCP server names (operator + user DB) when the heal
      *  already fetched them — lets execution-side collision guards see
      *  cross-tier shadowing without another registry round-trip. */
@@ -465,6 +483,8 @@ export interface InitializeAgentParams {
   toolIntentsAvailable?: boolean;
   /** Whether stateful code sessions are available (stateful_code_sessions capability enabled) */
   statefulSessionsAvailable?: boolean;
+  /** Explicit deployment allowlist for request types that do not carry LibreChat config on req. */
+  allowedStatefulCodeEnvironments?: readonly StatefulCodeEnvironment[];
   /** Whether inline memory tools are available (memory capability enabled, memory
    *  configured, and the user permitted). When true and the agent lists the `memory`
    *  capability, `set_memory` + `delete_memory` are registered for the LLM. */
@@ -699,6 +719,33 @@ export async function initializeAgent(
 
   const provider = agent.provider;
   agent.endpoint = provider;
+
+  /** Resolve the per-agent Code API route before resource/tool priming. A
+   * stateful agent must perform freshness checks and recovery uploads against
+   * the same isolated deployment its eventual `/exec` request will use. */
+  const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
+  const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
+  const effectiveStatefulSessions =
+    effectiveCodeEnvAvailable &&
+    params.statefulSessionsAvailable === true &&
+    agent.stateful_code_sessions === true;
+  const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(agent.stateful_code_environment);
+  if (effectiveStatefulSessions) {
+    const allowedStatefulCodeEnvironments = resolveAllowedStatefulCodeEnvironments(
+      params.allowedStatefulCodeEnvironments ??
+        req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.allowedEnvironments,
+    );
+    if (!allowedStatefulCodeEnvironments.includes(statefulCodeEnvironment)) {
+      throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
+    }
+  }
+  const codeExecutionContext = resolveCodeExecutionContext({
+    statefulSessions: effectiveStatefulSessions,
+    environment: statefulCodeEnvironment,
+    userId: requestFileOwnerId,
+    agentId: agent.id,
+    conversationId,
+  });
 
   /**
    * Load conversation files for ALL agents, not just the initial agent.
@@ -1017,6 +1064,7 @@ export async function initializeAgent(
       model: agent.model,
       tool_options: agent.tool_options,
       tool_resources,
+      codeExecutionContext,
       accessibleMcpServerNames: resolvedAuditNames,
     });
 
@@ -1181,8 +1229,6 @@ export async function initializeAgent(
    * code-only description to the skill-aware description without adding a
    * duplicate — exactly one copy of each tool reaches the LLM.
    */
-  const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
-  const effectiveCodeEnvAvailable = params.codeEnvAvailable === true && agentRequestsCodeExec;
   /**
    * Capability marker → definition names its registration produced this run,
    * reported by the registrars themselves. `tool_options` entries keyed by a
@@ -1199,14 +1245,6 @@ export async function initializeAgent(
     const existing = capabilityToolNames.get(capability);
     capabilityToolNames.set(capability, existing ? [...existing, ...toolNames] : toolNames);
   };
-  /** Per-agent stateful-session truth: the admin capability AND the agent's
-   *  own builder opt-in AND a working code env. Resolved once here so the
-   *  registered bash description, the tool factories, and `createRun`'s
-   *  `toolExecution.sandbox` gate all agree for this agent. */
-  const effectiveStatefulSessions =
-    effectiveCodeEnvAvailable &&
-    params.statefulSessionsAvailable === true &&
-    agent.stateful_code_sessions === true;
   if (effectiveCodeEnvAvailable) {
     const codeExecResult = registerCodeExecutionTools({
       toolRegistry,
@@ -1527,6 +1565,9 @@ export async function initializeAgent(
     memoryToolsRegistered: inlineMemoryRegistered,
     codeEnvAvailable: effectiveCodeEnvAvailable,
     statefulCodeSessions: effectiveStatefulSessions,
+    statefulCodeEnvironment,
+    codeSessionKey: codeExecutionContext.codeSessionKey,
+    codeExecutionContext,
     reasoningKey: customEndpointConfig?.customParams?.reasoningKey,
     includeReasoningHistory: customEndpointConfig?.customParams?.includeReasoningHistory,
     skillAuthoringAvailable,

@@ -8,6 +8,11 @@ interface:
   # Exercises the cost row in the context usage gauge (off by default).
   # Mock models price at the default rate, so synthetic usage yields a value.
   contextCost: true
+  # Grants MULTI_CONVO.USE so the composer's `+` command opens the added-model
+  # popover. agent-skills-added.spec.ts drives that flow; without an explicit
+  # value the permission falls through to the seeded role default and
+  # `handlePlusCommand` returns before opening the popover.
+  multiConvo: true
 
 # Enables the memory feature so the MEMORIES.USE permission is granted and the
 # ephemeral memory badge (inline set_memory/delete_memory tools) is available.

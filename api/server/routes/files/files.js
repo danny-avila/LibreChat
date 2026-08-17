@@ -10,6 +10,7 @@ const {
   startUploadSseStream,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
+  getCodeExecutionBaseUrl,
 } = require('@librechat/api');
 const {
   Time,
@@ -329,6 +330,18 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       return res.status(400).send('Bad request');
     }
 
+    const requestedProfile = req.query.execution_profile;
+    if (
+      requestedProfile != null &&
+      requestedProfile !== 'default' &&
+      requestedProfile !== 'stateful'
+    ) {
+      logger.debug(`${logPrefix} invalid execution_profile`);
+      return res.status(400).send('Bad request');
+    }
+    const executionProfile = requestedProfile ?? 'default';
+    const baseUrl = getCodeExecutionBaseUrl(executionProfile);
+
     const { getDownloadStream } = getStrategyFunctions(FileSources.execute_code);
     if (!getDownloadStream) {
       logger.warn(
@@ -352,6 +365,7 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
         id: req.user.id,
       },
       req,
+      { baseUrl, executionProfile },
     );
     res.set(response.headers);
     response.data.pipe(res);

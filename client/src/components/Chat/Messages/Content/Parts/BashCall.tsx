@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
-import type { TAttachment } from 'librechat-data-provider';
+import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import parseJsonField, { areToolCallArgsComplete } from './parseJsonField';
@@ -10,6 +10,7 @@ import LangIcon from '~/components/Messages/Content/LangIcon';
 import { sandboxStartingByToolCallId } from '~/store';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
+import useFollowScroll from './useFollowScroll';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
@@ -18,6 +19,9 @@ import { cn } from '~/utils';
 
 export default function BashCall({
   isSubmitting,
+  runStepStatus,
+  runStepDurationMs,
+  backgrounded,
   initialProgress = 0.1,
   args,
   output = '',
@@ -29,6 +33,9 @@ export default function BashCall({
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
+  backgrounded?: PartMetadata['backgrounded'];
   args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
@@ -43,9 +50,14 @@ export default function BashCall({
   const sandboxStarting = useRecoilValue(sandboxStartingByToolCallId(toolCallId ?? ''));
 
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
-    useToolCallState(initialProgress, isSubmitting, output, !!command, onExpand);
+    useToolCallState(initialProgress, isSubmitting, output, !!command, onExpand, runStepStatus);
 
   const highlighted = useLazyHighlight(command || undefined, 'bash');
+  const { ref: commandPaneRef, onScroll: onCommandPaneScroll } = useFollowScroll<HTMLDivElement>(
+    highlighted ?? command,
+    progress < 1 && !cancelled,
+    showCode,
+  );
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
   /** A backgrounded call's persisted output stays the dispatch handle until
    *  the detached run settles and patches it; render a background state
@@ -106,6 +118,15 @@ export default function BashCall({
               ? localize('com_ui_cancelled')
               : (backgroundFinishedText ?? intent ?? localize('com_ui_command_finished'))
           }
+          /** A backgrounded call's run step closes when dispatch returns the
+           *  handle, so its duration is the dispatch time — showing it would
+           *  misstate a detached task's runtime as seconds. The handle check
+           *  covers the live card; the persisted `backgrounded` marker covers
+           *  the card after harvest replaces the handle with real stdout
+           *  (and after any reload), when no transient signal survives. */
+          durationMs={
+            backgroundHandle == null && backgrounded !== true ? runStepDurationMs : undefined
+          }
           errorSuffix={
             (hasError && !cancelled) || backgroundFailed
               ? localize('com_ui_tool_failed')
@@ -129,7 +150,11 @@ export default function BashCall({
         <div className="overflow-hidden" ref={expandRef}>
           <div className="my-2 overflow-hidden rounded-lg border border-border-light">
             {command && (
-              <div className="relative max-h-[300px] overflow-auto bg-surface-tertiary dark:bg-gray-950">
+              <div
+                ref={commandPaneRef}
+                onScroll={onCommandPaneScroll}
+                className="relative max-h-[300px] overflow-auto bg-surface-tertiary dark:bg-gray-950"
+              >
                 <CopyButton
                   iconOnly
                   isCopied={isCopied}

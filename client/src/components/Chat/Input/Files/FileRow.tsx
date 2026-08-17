@@ -31,7 +31,7 @@ export default function FileRow({
   Wrapper,
 }: {
   files: Map<string, ExtendedFile> | undefined;
-  abortUpload?: () => void;
+  abortUpload?: (fileId?: string) => void;
   setFiles: React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;
   setFilesLoading?: React.Dispatch<React.SetStateAction<boolean>>;
   fileFilter?: (file: ExtendedFile) => boolean;
@@ -122,7 +122,7 @@ export default function FileRow({
           .uniqueFiles.map((file: ExtendedFile, index: number) => {
             const handleDelete = () => {
               if (abortUpload && file.progress < 1) {
-                abortUpload();
+                abortUpload(file.file_id);
               }
               if (file.progress >= 1 && !file.attached) {
                 showToast({

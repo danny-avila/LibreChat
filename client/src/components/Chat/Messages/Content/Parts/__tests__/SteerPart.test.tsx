@@ -142,6 +142,13 @@ describe('SteerPart presentation', () => {
     expect(part).toHaveClass('steer-render');
   });
 
+  it('stays on the message content edge instead of outdenting', () => {
+    renderPart();
+    const part = screen.getByTestId('steer-part');
+    expect(part).toHaveClass('w-full');
+    expect(part).not.toHaveClass('md:-ml-9', '-ml-9');
+  });
+
   it('renders steer attachments', () => {
     renderPart([
       { file_id: 'f1', filename: 'notes.pdf', type: 'application/pdf' },

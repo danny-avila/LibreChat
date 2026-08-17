@@ -208,6 +208,15 @@ messageSchema.index({
   _id: -1,
 });
 
+/**
+ * Serves the conversation fetch ({conversationId, user} filter + createdAt
+ * sort) from the index alone; without it Mongo fetches every full document in
+ * the conversation and sorts them in memory. tenantId is deliberately not in
+ * the middle: untenanted deployments issue no tenantId predicate, and a gap in
+ * the prefix would push the sort back into memory for them.
+ */
+messageSchema.index({ conversationId: 1, user: 1, createdAt: 1 });
+
 // index for MeiliSearch sync operations
 messageSchema.index({ _meiliIndex: 1, isTemporary: 1, expiredAt: 1 });
 

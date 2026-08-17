@@ -59,6 +59,111 @@ jest.mock('@librechat/api', () => ({
   maybePrewarmCodeSandbox: jest.fn(),
 }));
 
+describe('AgentClient - label settlement', () => {
+  it('drains a trailing fill enqueued by an in-flight reasoning revision', async () => {
+    const client = Object.create(AgentClient.prototype);
+    const first = deferred();
+    const trailing = deferred();
+    const scope = { closed: false, abort: new AbortController(), detach: jest.fn() };
+    client.activityLabelScopes = [scope];
+    client.pendingActivityLabelFills = [
+      first.promise.finally(() => {
+        client.pendingActivityLabelFills.push(trailing.promise);
+      }),
+    ];
+
+    let settled = false;
+    const settlement = client.settleActivityLabels(1_000).then(() => {
+      settled = true;
+    });
+    first.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(settled).toBe(false);
+    trailing.resolve();
+    await settlement;
+
+    expect(scope.closed).toBe(false);
+    expect(scope.detach).toHaveBeenCalledTimes(1);
+    expect(client.pendingActivityLabelFills).toEqual([]);
+  });
+});
+
+describe('AgentClient - reasoning label accounting', () => {
+  function createReasoningLabelClient(generateReasoningLabel) {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { user: { id: 'user-123' } } };
+    client.conversationId = 'conversation-123';
+    client.parentMessageId = 'parent-123';
+    client.responseMessageId = 'response-123';
+    client.run = { generateReasoningLabel };
+    client.resolveReasoningLabelLLM = jest.fn(async () => ({
+      provider: Providers.OPENAI,
+      clientOptions: { model: 'reasoning-label-model' },
+      endpointTokenConfig: { input: 1, output: 2 },
+      sameEndpoint: false,
+    }));
+    client.recordActivityLabelUsage = jest.fn(async () => undefined);
+    return client;
+  }
+
+  it('estimates output tokens from the raw model completion before title normalization', async () => {
+    const rawCompletion = 'Inspecting the cache race\nThis extra explanation also consumed tokens.';
+    const client = createReasoningLabelClient(
+      jest.fn(async ({ chainOptions }) => {
+        const callback = chainOptions.callbacks[0];
+        callback.handleChatModelStart(undefined, [[{ content: 'captured SDK prompt' }]]);
+        callback.handleLLMEnd({
+          generations: [
+            [
+              {
+                text: rawCompletion,
+                message: { content: [{ type: 'text', text: rawCompletion }] },
+              },
+            ],
+          ],
+        });
+        return { label: 'Inspecting the cache race' };
+      }),
+    );
+
+    const generated = await client.generateReasoningLabelViaRun({
+      visibleReasoning: 'x'.repeat(500),
+      reasoningStepId: 'reasoning-1',
+      revision: 1,
+      status: 'streaming',
+      signal: new AbortController().signal,
+    });
+    await generated.collectUsage(generated.label);
+
+    const usageCall = client.recordActivityLabelUsage.mock.calls[0];
+    expect(usageCall[6]()).toEqual({
+      promptText: 'captured SDK prompt',
+      completionText: rawCompletion,
+    });
+    expect(usageCall[7]).toBe('reasoning-label');
+  });
+
+  it('falls back to the returned label when no raw completion callback is available', async () => {
+    const client = createReasoningLabelClient(
+      jest.fn(async () => ({ label: 'Inspecting the cache race' })),
+    );
+
+    const generated = await client.generateReasoningLabelViaRun({
+      visibleReasoning: 'x'.repeat(500),
+      reasoningStepId: 'reasoning-1',
+      revision: 1,
+      status: 'streaming',
+      signal: new AbortController().signal,
+    });
+    await generated.collectUsage(generated.label);
+
+    expect(client.recordActivityLabelUsage.mock.calls[0][6]()).toMatchObject({
+      completionText: 'Inspecting the cache race',
+    });
+  });
+});
+
 describe('AgentClient - interrupt discovery persistence', () => {
   beforeEach(async () => {
     await GenerationJobManager.destroy();

@@ -14,8 +14,12 @@ jest.mock('./run', () => ({
 
 import { Readable } from 'stream';
 import { Types } from 'mongoose';
-import { primeInvokedSkills, primeSkillFiles } from './skillFiles';
-import type { PrimeInvokedSkillsDeps, PrimeSkillFilesParams } from './skillFiles';
+import { primeInvokedSkills, primeInvokedSkillsForProfiles, primeSkillFiles } from './skillFiles';
+import type {
+  PrimeInvokedSkillsDeps,
+  PrimeInvokedSkillsForProfilesDeps,
+  PrimeSkillFilesParams,
+} from './skillFiles';
 
 const SKILL_ID = new Types.ObjectId();
 const SKILL_VERSION = 7;
@@ -93,6 +97,10 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
       listSkillFiles,
       getStrategyFunctions,
       batchUploadCodeEnvFiles,
+      codeExecutionContext: {
+        baseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+      },
     });
 
     await primeInvokedSkills(deps);
@@ -110,6 +118,8 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
     expect(uploadArgs.kind).toBe('skill');
     expect(uploadArgs.id).toBe(SKILL_ID.toString());
     expect(uploadArgs.version).toBe(SKILL_VERSION);
+    expect(uploadArgs.codeApiBaseUrl).toBe('https://stateful-code.example.com');
+    expect(uploadArgs.executionProfile).toBe('stateful');
     expect(uploadArgs.files).toHaveLength(fileRecords.length + 1);
     expect(uploadArgs.files.map((f: { filename: string }) => f.filename)).toEqual(
       expect.arrayContaining([
@@ -249,6 +259,7 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
           storage_session_id: 'session-42',
           file_id: 'file-1',
           version: SKILL_VERSION,
+          executionProfile: 'default',
         },
       },
     ]);
@@ -298,6 +309,7 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
         version: SKILL_VERSION,
       },
       deps.req,
+      undefined,
     );
     const codeSession = result.initialSessions?.get('execute_code');
     expect(codeSession?.files).toEqual([
@@ -312,6 +324,95 @@ describe('primeInvokedSkills — execute_code capability gate', () => {
         version: SKILL_VERSION,
       },
     ]);
+  });
+});
+
+describe('primeInvokedSkillsForProfiles', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockExtract.mockReturnValue(new Set(['brand-guidelines']));
+  });
+
+  it('uploads and seeds historical skill files separately for default and stateful profiles', async () => {
+    const listSkillFiles = jest.fn().mockResolvedValue([
+      {
+        relativePath: 'references/style.md',
+        filename: 'style.md',
+        filepath: '/storage/brand-guidelines/references/style.md',
+        source: 's3',
+        bytes: 256,
+      },
+    ]);
+    const getStrategyFunctions = jest.fn().mockReturnValue({
+      getDownloadStream: jest.fn().mockResolvedValue(Readable.from(Buffer.from('style'))),
+    });
+    const batchUploadCodeEnvFiles = jest.fn().mockImplementation(({ executionProfile }) => ({
+      storage_session_id: `${executionProfile}-session`,
+      files: [
+        {
+          fileId: `${executionProfile}-file`,
+          filename: 'skills/brand-guidelines/references/style.md',
+        },
+      ],
+    }));
+    const updateSkillFileCodeEnvIds = jest.fn().mockResolvedValue({
+      matchedCount: 1,
+      modifiedCount: 1,
+    });
+    const {
+      codeEnvAvailable: _codeEnvAvailable,
+      codeExecutionContext: _codeExecutionContext,
+      ...baseDeps
+    } = makeDeps({
+      listSkillFiles,
+      getStrategyFunctions,
+      batchUploadCodeEnvFiles,
+      updateSkillFileCodeEnvIds,
+    });
+    const statefulKey = 'execute_code:stateful:v2:user:abc';
+    const deps: PrimeInvokedSkillsForProfilesDeps = {
+      ...baseDeps,
+      executionProfiles: [
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com/v1',
+            codeSessionKey: 'execute_code',
+            executionProfile: 'default',
+            statefulSessions: false,
+          },
+          codeSessionKeys: ['execute_code'],
+        },
+        {
+          codeExecutionContext: {
+            baseUrl: 'https://stateful.example.com/v1',
+            codeSessionKey: statefulKey,
+            executionProfile: 'stateful',
+            runtimeSessionHint: 'v2:user:abc',
+            statefulSessions: true,
+          },
+          codeSessionKeys: [statefulKey],
+        },
+      ],
+    };
+
+    const result = await primeInvokedSkillsForProfiles(deps);
+
+    expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(2);
+    expect(
+      batchUploadCodeEnvFiles.mock.calls.map(([args]) => args.executionProfile).sort(),
+    ).toEqual(['default', 'stateful']);
+    expect(result.initialSessions?.get('execute_code')?.files?.map((file) => file.id)).toEqual([
+      'default-file',
+    ]);
+    expect(result.initialSessions?.get(statefulKey)?.files?.map((file) => file.id)).toEqual([
+      'stateful-file',
+    ]);
+    expect(updateSkillFileCodeEnvIds).toHaveBeenCalledTimes(2);
+    expect(
+      updateSkillFileCodeEnvIds.mock.calls
+        .map(([updates]) => updates[0].codeEnvRef.executionProfile)
+        .sort(),
+    ).toEqual(['default', 'stateful']);
   });
 });
 
@@ -384,6 +485,7 @@ describe('primeSkillFiles — resource identity propagation', () => {
       storage_session_id: 'session-cached',
       file_id: 'file-cached',
       version: SKILL_VERSION,
+      executionProfile: 'stateful' as const,
     };
     const batchUploadCodeEnvFiles = jest.fn();
     const deps = makeSkillFilesDeps({
@@ -400,11 +502,19 @@ describe('primeSkillFiles — resource identity propagation', () => {
       batchUploadCodeEnvFiles,
       getSessionInfo: jest.fn().mockResolvedValue('2026-05-06T00:00:00Z'),
       checkIfActive: jest.fn().mockReturnValue(true),
+      codeExecutionContext: {
+        baseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+      },
     });
 
     const result = await primeSkillFiles(deps);
 
     expect(batchUploadCodeEnvFiles).not.toHaveBeenCalled();
+    expect(deps.getSessionInfo).toHaveBeenCalledWith(cachedRef, deps.req, {
+      baseUrl: 'https://stateful-code.example.com',
+      executionProfile: 'stateful',
+    });
     expect(result?.files).toEqual([
       {
         id: 'file-cached',
@@ -415,6 +525,54 @@ describe('primeSkillFiles — resource identity propagation', () => {
         version: SKILL_VERSION,
       },
     ]);
+  });
+
+  it('reuploads a cached ref that belongs to the other execution profile', async () => {
+    const batchUploadCodeEnvFiles = jest.fn().mockResolvedValue({
+      storage_session_id: 'stateful-session',
+      files: [
+        {
+          fileId: 'stateful-file',
+          filename: 'skills/brand-guidelines/references/style.md',
+        },
+        { fileId: 'skill-md', filename: 'skills/brand-guidelines/SKILL.md' },
+      ],
+    });
+    const getSessionInfo = jest.fn().mockResolvedValue('2026-05-06T00:00:00Z');
+    const deps = makeSkillFilesDeps({
+      skillFiles: [
+        {
+          relativePath: 'references/style.md',
+          filename: 'style.md',
+          filepath: '/storage/brand-guidelines/references/style.md',
+          source: 's3',
+          bytes: 256,
+          codeEnvRef: {
+            kind: 'skill',
+            id: SKILL_ID.toString(),
+            storage_session_id: 'default-session',
+            file_id: 'default-file',
+            version: SKILL_VERSION,
+            executionProfile: 'default',
+          },
+        },
+      ],
+      batchUploadCodeEnvFiles,
+      getSessionInfo,
+      checkIfActive: jest.fn().mockReturnValue(true),
+      codeExecutionContext: {
+        baseUrl: 'https://stateful-code.example.com',
+        executionProfile: 'stateful',
+      },
+    });
+
+    const result = await primeSkillFiles(deps);
+
+    expect(getSessionInfo).not.toHaveBeenCalled();
+    expect(batchUploadCodeEnvFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ executionProfile: 'stateful' }),
+    );
+    expect(result?.files[0].id).toBe('stateful-file');
   });
 });
 

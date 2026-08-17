@@ -4,6 +4,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
 import MinimalHoverButtons from '~/components/Chat/Messages/MinimalHoverButtons';
+import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
 import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import Icon from '~/components/Chat/Messages/MessageIcon';
@@ -110,11 +111,12 @@ function SearchMessage({ message }: Pick<TMessageProps, 'message'>) {
 
   return (
     <div className="w-full bg-transparent text-text-primary">
-      <div className="m-auto px-4 py-3 md:px-6">
+      <div className="m-auto px-4 py-3 sm:px-0">
         <MessageRow
           id={message.messageId}
           icon={<Icon iconData={iconData} />}
           label={messageLabel}
+          hoverLabel={getHeaderModelName(message.model)}
           timestamp={message.createdAt ?? message.clientTimestamp}
           ariaLabel={getMessageAriaLabel(message, localize)}
           headerPrefix={getHeaderPrefixForScreenReader(message, localize)}

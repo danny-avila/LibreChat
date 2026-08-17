@@ -232,6 +232,11 @@ export type ArchiveConvoOptions = MutationOptions<
   types.TArchiveConversationRequest
 >;
 
+export type ArchiveAllConversationsOptions = MutationOptions<
+  types.TArchiveAllConversationsResponse,
+  void
+>;
+
 export type DeleteSharedLinkContext = { previousQueries?: Map<string, TDeleteSharedLinkResponse> };
 export type DeleteSharedLinkOptions = MutationOptions<
   TDeleteSharedLinkResponse,

@@ -1817,6 +1817,43 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
+  it('preserves a stateful scope policy denial in the durable initialization error', async () => {
+    const policyError = Object.assign(
+      new Error('Stateful code environment is not allowed by this deployment: conversation'),
+      {
+        code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+        status: 403,
+        statusCode: 403,
+      },
+    );
+    const initializeClient = jest.fn().mockRejectedValue(policyError);
+    const req = {
+      user: { id: 'user-123' },
+      body: {
+        text: 'Run code.',
+        messageId: 'user-msg',
+        clientRequestId: 'req-abc',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+      'conversation-123',
+      JSON.stringify({
+        status: 403,
+        code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+        error: 'Stateful code environment is not allowed by this deployment: conversation',
+      }),
+      1000,
+    );
+  });
+
   it('returns a recovery conflict when the atomic store rejects changed source content', async () => {
     const mismatch = new Error('recovery mismatch');
     mismatch.code = 'RECOVERY_PAYLOAD_MISMATCH';
