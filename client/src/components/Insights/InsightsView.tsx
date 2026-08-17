@@ -500,7 +500,7 @@ function LatestConversations({
           <Button
             variant="outline"
             size="sm"
-            disabled={page <= 1}
+            disabled={isFetching || page <= 1}
             onClick={() => setPage((value) => Math.max(1, value - 1))}
           >
             {localize('com_ui_prev')}
@@ -508,7 +508,7 @@ function LatestConversations({
           <Button
             variant="outline"
             size="sm"
-            disabled={page >= pages}
+            disabled={isFetching || page >= pages}
             onClick={() => setPage((value) => value + 1)}
           >
             {localize('com_ui_next')}
