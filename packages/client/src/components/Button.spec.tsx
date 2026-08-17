@@ -18,6 +18,18 @@ describe('Button', () => {
     );
   });
 
+  it('renders the header-action toggle from semantic tokens', () => {
+    render(<Button variant="header-action">Toggle</Button>);
+
+    expect(screen.getByRole('button', { name: 'Toggle' })).toHaveClass(
+      'bg-presentation',
+      'border-border-light',
+      'rounded-xl',
+      'duration-0',
+      'hover:bg-surface-active-alt',
+    );
+  });
+
   it('preserves variant geometry until a shape is explicitly selected', () => {
     const { rerender } = render(<Button variant="subtle">Subtle</Button>);
     const button = screen.getByRole('button', { name: 'Subtle' });

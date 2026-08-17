@@ -1,11 +1,10 @@
 import { memo, lazy, Suspense } from 'react';
 import { Button, Sidebar, Skeleton } from '@librechat/client';
 import type { NavLink } from '~/common';
-import { CLOSE_SIDEBAR_ID, SIDEBAR_TOGGLE_CLASSES } from '~/components/Chat/Menus/OpenSidebar';
+import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
 import { useShortcutAriaKey } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import Switcher from './Switcher';
-import { cn } from '~/utils';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
 
@@ -41,14 +40,14 @@ function Header({
         id={expanded ? CLOSE_SIDEBAR_ID : undefined}
         data-testid={expanded ? 'close-sidebar-button' : undefined}
         size="icon"
-        variant="outline"
+        variant="header-action"
         aria-label={localize('com_nav_close_sidebar')}
         aria-expanded={expanded}
         aria-controls="chat-history-nav"
         /** The only close control while open, so its binding must be discoverable here. */
         aria-keyshortcuts={toggleSidebarAriaKey}
         tabIndex={expanded ? 0 : -1}
-        className={cn('flex-shrink-0', SIDEBAR_TOGGLE_CLASSES)}
+        className="flex-shrink-0"
         onClick={onClose}
       >
         <Sidebar className="icon-md" aria-hidden="true" />
