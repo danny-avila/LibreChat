@@ -1627,12 +1627,12 @@ export async function createRun({
       agentInput.subagentConfigs = subagentConfigs;
       /** Seed the SDK countdown that bounds nested delegation across isolated child graphs. */
       agentInput.maxSubagentDepth = MAX_SUBAGENT_DEPTH;
-      if (subagentTasks != null) {
-        agentInput.toolDefinitions = registerBackgroundTaskTool({
-          toolRegistry: agentInput.toolRegistry,
-          toolDefinitions: agentInput.toolDefinitions,
-        }).toolDefinitions;
-      }
+    }
+    if (subagentTasks != null) {
+      agentInput.toolDefinitions = registerBackgroundTaskTool({
+        toolRegistry: agentInput.toolRegistry,
+        toolDefinitions: agentInput.toolDefinitions,
+      }).toolDefinitions;
     }
     agentInputs.push(agentInput);
   }

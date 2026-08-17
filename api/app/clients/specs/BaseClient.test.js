@@ -1055,6 +1055,16 @@ describe('BaseClient', () => {
         anotherExistingField: 'anotherValue',
         temperature: 0.7,
         modelLabel: 'GPT-3.5',
+        subagentThread: {
+          rootConversationId: 'root-conversation',
+          parentConversationId: 'parent-conversation',
+          parentMessageId: 'parent-message',
+          parentToolCallId: 'parent-tool-call',
+          subagentType: 'researcher',
+          subagentKind: 'agent',
+          depth: 1,
+          userRunnable: true,
+        },
       };
 
       getConvo.mockResolvedValue(existingConvo);
@@ -1089,6 +1099,7 @@ describe('BaseClient', () => {
 
       // Only check that someExistingField is in unsetFields
       expect(saveOptions.unsetFields).toHaveProperty('someExistingField', 1);
+      expect(saveOptions.unsetFields).not.toHaveProperty('subagentThread');
 
       // Mock saveConvo to return the expected fields
       saveConvo.mockImplementation((req, fields) => {

@@ -13,6 +13,7 @@ import type { AllMethods, IConversation, IMessage } from '@librechat/data-schema
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
+import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
 import { createSubagentUsageSink } from './usage';
 
 let mongod: MongoMemoryServer;
@@ -431,6 +432,46 @@ describe('SubagentThreadTaskStore', () => {
     expect(messages[3].subagentTranscript?.mode).toBe('append');
   });
 
+  it('keeps a runnable child writable when continuation setup fails before input persistence', async () => {
+    const userId = 'user-setup-failure';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const initialStore = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(initialStore, { userId, parentConversationId });
+    const first = initialStore.start(taskRequest(config.scopeId));
+    await waitForSettled(initialStore, config.scopeId, first);
+    if (!first.accepted) return;
+    const threadId = requireThreadId(first);
+    expect(await methods.getConvo(userId, threadId)).toMatchObject({
+      subagentThread: { userRunnable: true },
+    });
+
+    const failingStore = new SubagentThreadTaskStore({
+      ...methods,
+      getMessages: jest.fn().mockRejectedValue(new Error('transcript read failed')),
+    });
+    const failedConfig = buildSubagentThreadTaskConfig(failingStore, {
+      userId,
+      parentConversationId,
+    });
+    const failed = failingStore.start(
+      taskRequest(failedConfig.scopeId, {
+        threadId,
+        input: 'This continuation cannot be prepared.',
+      }),
+    );
+    await waitForSettled(failingStore, failedConfig.scopeId, failed);
+
+    expect(await methods.getConvo(userId, threadId)).toMatchObject({
+      subagentThread: { userRunnable: true },
+    });
+    expect(failingStore.isThreadActive(failedConfig.scopeId, threadId)).toBe(false);
+    if (!failed.accepted) return;
+    expect(failingStore.claim(failedConfig.scopeId, failed.task.taskId)).toMatchObject({
+      status: 'error',
+    });
+  });
+
   it('folds ordinary child-chat turns into the next parent-driven continuation', async () => {
     const userId = 'user-manual';
     const parentConversationId = randomUUID();
@@ -443,6 +484,7 @@ describe('SubagentThreadTaskStore', () => {
 
     const manualUserId = randomUUID();
     const manualAssistantId = randomUUID();
+    const manualAttachmentId = randomUUID();
     await methods.saveMessage(
       { userId },
       {
@@ -450,7 +492,12 @@ describe('SubagentThreadTaskStore', () => {
         conversationId: first.task.threadId,
         parentMessageId: `${first.task.taskId}:assistant`,
         sender: 'User',
-        text: 'A human continued this child chat.',
+        text: '',
+        content: [
+          { type: 'text', text: 'A human continued this child chat.' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+        ],
+        quotes: ['Quoted child context.'],
         endpoint: EModelEndpoint.agents,
         isCreatedByUser: true,
       },
@@ -465,6 +512,20 @@ describe('SubagentThreadTaskStore', () => {
         text: 'The child answered the human.',
         endpoint: EModelEndpoint.agents,
         isCreatedByUser: false,
+      },
+    );
+    await methods.saveMessage(
+      { userId },
+      {
+        messageId: manualAttachmentId,
+        conversationId: first.task.threadId,
+        parentMessageId: manualAssistantId,
+        sender: 'User',
+        text: '',
+        files: [{ file_id: 'manual-file', filename: 'brief.pdf' }],
+        attachments: [{ conversationId: first.task.threadId, filename: 'brief.pdf' }],
+        endpoint: EModelEndpoint.agents,
+        isCreatedByUser: true,
       },
     );
 
@@ -489,12 +550,20 @@ describe('SubagentThreadTaskStore', () => {
     await waitForSettled(store, config.scopeId, continued);
     if (!continued.accepted) return;
 
-    expect(restored.map((message) => message.content)).toEqual([
+    expect(restored).toHaveLength(5);
+    expect(restored.slice(0, 2).map((message) => message.content)).toEqual([
       'Investigate the issue.',
       'Completed the investigation.',
-      'A human continued this child chat.',
-      'The child answered the human.',
     ]);
+    expect(restored[2].content).toEqual([
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('Quoted child context.'),
+      }),
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+    ]);
+    expect(restored[3].content).toBe('The child answered the human.');
+    expect(restored[4].content).toBe(ATTACHMENT_ONLY_TEXT);
 
     const afterFirstContinuation = await methods.getMessages(
       { user: userId, conversationId: first.task.threadId },
@@ -524,11 +593,11 @@ describe('SubagentThreadTaskStore', () => {
     );
     await waitForSettled(store, config.scopeId, continuedAgain);
 
-    expect(restoredAgain.map((message) => message.content)).toEqual([
-      'Investigate the issue.',
-      'Completed the investigation.',
-      'A human continued this child chat.',
+    expect(restoredAgain).toHaveLength(7);
+    expect(restoredAgain[2].content).toEqual(restored[2].content);
+    expect(restoredAgain.map((message) => message.content).slice(3)).toEqual([
       'The child answered the human.',
+      ATTACHMENT_ONLY_TEXT,
       'Return to the parent task.',
       'Returned.',
     ]);
@@ -668,6 +737,63 @@ describe('SubagentThreadTaskStore', () => {
     );
     expect(messages.map((message) => message.text)).toContain('Subagent task was cancelled.');
     expect(messages.some((message) => message.error === true)).toBe(false);
+  });
+
+  it('lets durable settlement win once a successful commit has started', async () => {
+    const userId = 'user-commit-race';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    let markCommitStarted = (): void => undefined;
+    let releaseCommit = (): void => undefined;
+    const commitStarted = new Promise<void>((resolve) => {
+      markCommitStarted = resolve;
+    });
+    const commitRelease = new Promise<void>((resolve) => {
+      releaseCommit = resolve;
+    });
+    const blockingMethods = {
+      ...methods,
+      saveMessage: jest.fn(async (...args: Parameters<AllMethods['saveMessage']>) => {
+        const message = args[1];
+        if (message.text === 'Committed result.') {
+          markCommitStarted();
+          await commitRelease;
+        }
+        return methods.saveMessage(...args);
+      }),
+    };
+    const store = new SubagentThreadTaskStore(blockingMethods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => ({
+          content: 'Committed result.',
+          messages: [
+            new HumanMessage('Investigate the issue.'),
+            new AIMessage('Committed result.'),
+          ],
+        }),
+      }),
+    );
+    if (!started.accepted) return;
+    await commitStarted;
+
+    expect(store.control(config.scopeId, started.task.taskId, { action: 'cancel' })).toMatchObject({
+      status: 'not_running',
+    });
+    releaseCommit();
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(store.claim(config.scopeId, started.task.taskId)).toMatchObject({
+      status: 'completed',
+      result: 'Committed result.',
+    });
+    const messages = await methods.getMessages({
+      user: userId,
+      conversationId: requireThreadId(started),
+    });
+    expect(messages.map((message) => message.text)).toContain('Committed result.');
+    expect(messages.map((message) => message.text)).not.toContain('Subagent task was cancelled.');
   });
 
   it('fails closed for unknown and cross-parent continuation selectors', async () => {

@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
-import { InMemorySubagentTaskStore } from '@librechat/agents';
-import { EModelEndpoint, Constants, isEphemeralAgentId } from 'librechat-data-provider';
+import { InMemorySubagentTaskStore, formatAgentMessages } from '@librechat/agents';
+import {
+  EModelEndpoint,
+  Constants,
+  ContentTypes,
+  isEphemeralAgentId,
+} from 'librechat-data-provider';
 import {
   AIMessage,
   HumanMessage,
@@ -16,6 +21,7 @@ import type {
   SubagentTaskRuntime,
   SubagentTaskStartRequest,
   SubagentTaskStartResult,
+  MessageContentComplex,
 } from '@librechat/agents';
 import type {
   AllMethods,
@@ -25,15 +31,18 @@ import type {
   ConversationMethods,
 } from '@librechat/data-schemas';
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
+import type { TMessage } from 'librechat-data-provider';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import { runWithDetachedSubagentUsage } from './subagentTaskContext';
+import { formatQuotesAsMarkdown, mergeQuotedText } from '~/utils';
+import { ATTACHMENT_ONLY_TEXT } from '~/files/context';
 import { aggregateEmittedUsage } from './usage';
 
 const SCOPE_VERSION = 1;
 const DEFAULT_MAX_THREAD_DEPTH = 1;
 const MAX_TRANSCRIPT_BYTES = 12 * 1024 * 1024;
 const TRANSCRIPT_SELECT =
-  'messageId parentMessageId text isCreatedByUser error createdAt +subagentTranscript';
+  'messageId parentMessageId text content files attachments quotes isCreatedByUser error createdAt +subagentTranscript';
 
 class SubagentThreadPublicError extends Error {}
 
@@ -72,12 +81,18 @@ type ThreadMessage = Pick<
   | 'error'
   | 'createdAt'
   | 'subagentTranscript'
->;
+> & {
+  content?: TMessage['content'];
+  files?: TMessage['files'];
+  attachments?: TMessage['attachments'];
+  quotes?: TMessage['quotes'];
+};
 
 interface ActiveThreadLease {
   idempotencyKey: string;
   taskId: string;
   running: boolean;
+  settling: boolean;
 }
 
 export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStoreOptions {
@@ -157,6 +172,96 @@ function parseStoredMessages(value: string): StoredMessage[] {
   return parsed as StoredMessage[];
 }
 
+function normalizeVisibleContent(
+  content: NonNullable<TMessage['content']>,
+): MessageContentComplex[] {
+  return content.map((part) => {
+    const normalized = { ...part };
+    if (
+      'text' in normalized &&
+      normalized.text != null &&
+      typeof normalized.text === 'object' &&
+      typeof normalized.text.value === 'string'
+    ) {
+      normalized.text = normalized.text.value;
+    }
+    return normalized as MessageContentComplex;
+  });
+}
+
+function isVisibleTextPart(
+  part: MessageContentComplex,
+): part is MessageContentComplex & { text: string } {
+  const candidate = part as { type?: unknown; text?: unknown };
+  return candidate.type === ContentTypes.TEXT && typeof candidate.text === 'string';
+}
+
+function prependVisibleQuotes(
+  content: string | MessageContentComplex[],
+  quotes: string[] | undefined,
+): string | MessageContentComplex[] {
+  if (quotes == null || quotes.length === 0) {
+    return content;
+  }
+  if (typeof content === 'string') {
+    return mergeQuotedText(content, quotes);
+  }
+  const quoteBlock = formatQuotesAsMarkdown(quotes);
+  if (quoteBlock === '') {
+    return content;
+  }
+  const textIndex = content.findIndex(isVisibleTextPart);
+  if (textIndex < 0) {
+    return [{ type: ContentTypes.TEXT, text: quoteBlock }, ...content];
+  }
+  return content.map((part, index) =>
+    index === textIndex && isVisibleTextPart(part)
+      ? { ...part, text: mergeQuotedText(part.text, quotes) }
+      : part,
+  );
+}
+
+function restoreVisibleMessage(message: ThreadMessage): BaseMessage[] {
+  const role = message.isCreatedByUser ? 'user' : 'assistant';
+  let content: string | MessageContentComplex[] =
+    message.content != null && message.content.length > 0
+      ? normalizeVisibleContent(message.content)
+      : (message.text ?? '');
+  content = prependVisibleQuotes(content, message.quotes);
+  if (
+    role === 'user' &&
+    content === '' &&
+    ((message.files?.length ?? 0) > 0 || (message.attachments?.length ?? 0) > 0)
+  ) {
+    content = ATTACHMENT_ONLY_TEXT;
+  }
+  if (content === '' || (Array.isArray(content) && content.length === 0)) {
+    return [];
+  }
+  if (typeof content === 'string') {
+    return message.isCreatedByUser
+      ? [new HumanMessage(content)]
+      : [
+          new AIMessage({
+            content,
+            ...(message.error === true ? { additional_kwargs: { error: true } } : {}),
+          }),
+        ];
+  }
+  const restored = formatAgentMessages([{ role, content }]).messages;
+  if (message.error === true) {
+    for (const restoredMessage of restored) {
+      if (restoredMessage instanceof AIMessage) {
+        restoredMessage.additional_kwargs = {
+          ...restoredMessage.additional_kwargs,
+          error: true,
+        };
+      }
+    }
+  }
+  return restored;
+}
+
 function restoreThreadMessages(branch: ThreadMessage[]): RestoredThreadMessages {
   let storedMessages: StoredMessage[] = [];
   let lastTranscriptIndex = -1;
@@ -166,26 +271,23 @@ function restoreThreadMessages(branch: ThreadMessage[]): RestoredThreadMessages 
       continue;
     }
     const segment = parseStoredMessages(transcript.messagesJson);
-    storedMessages = transcript.mode === 'replace' ? segment : [...storedMessages, ...segment];
+    if (transcript.mode === 'replace') {
+      storedMessages = segment;
+    } else {
+      storedMessages.push(...segment);
+    }
     lastTranscriptIndex = index;
   }
 
   const restored = mapStoredMessagesToChatMessages(storedMessages);
   let hasVisibleTail = false;
   for (let index = lastTranscriptIndex + 1; index < branch.length; index += 1) {
-    const message = branch[index];
-    if (message.text == null || message.text === '') {
+    const restoredMessages = restoreVisibleMessage(branch[index]);
+    if (restoredMessages.length === 0) {
       continue;
     }
     hasVisibleTail = true;
-    restored.push(
-      message.isCreatedByUser
-        ? new HumanMessage(message.text)
-        : new AIMessage({
-            content: message.text,
-            ...(message.error === true ? { additional_kwargs: { error: true } } : {}),
-          }),
-    );
+    restored.push(...restoredMessages);
   }
   return { messages: restored, hasVisibleTail };
 }
@@ -308,7 +410,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     /** Install a provisional lease before delegating to the in-memory store.
      * Its executor may enter synchronously up to the first await, so setting
      * the lock only after `super.start` returns leaves a cancellation race. */
-    const lease: ActiveThreadLease = active ?? { idempotencyKey, taskId: '', running: false };
+    const lease: ActiveThreadLease = active ?? {
+      idempotencyKey,
+      taskId: '',
+      running: false,
+      settling: false,
+    };
     const ownsLease = active == null;
     if (ownsLease) {
       this.activeThreads.set(lockKey, lease);
@@ -343,6 +450,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
             }
+            lease.settling = true;
             await this.persistResult(
               scope,
               request,
@@ -414,18 +522,21 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     command: SubagentTaskControlCommand,
   ): SubagentTaskControlResult {
     const snapshot = this.get(scopeId, taskId);
+    const lockKey = snapshot?.threadId == null ? undefined : `${scopeId}\u0000${snapshot.threadId}`;
+    const lease = lockKey == null ? undefined : this.activeThreads.get(lockKey);
+    if (lease?.taskId === taskId && lease.settling) {
+      return { status: 'not_running', task: snapshot };
+    }
     const result = super.control(scopeId, taskId, command);
     if (
       command.action === 'cancel' &&
       result.status === 'cancelled' &&
       snapshot?.threadId != null
     ) {
-      const lockKey = `${scopeId}\u0000${snapshot.threadId}`;
-      const lease = this.activeThreads.get(lockKey);
       /** A task cancelled before its executor ever entered has no `finally`
        * path to release the provisional lease. Once running, retain the lock
        * until the executor actually exits—even if it ignores AbortSignal. */
-      if (lease?.taskId === taskId && !lease.running) {
+      if (lockKey != null && lease?.taskId === taskId && !lease.running) {
         this.activeThreads.delete(lockKey);
       }
     }
@@ -505,9 +616,6 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
 
     this.assertContinuation(scope, request, conversation);
     const userRunnableAfterSettlement = isUserRunnableChild(request, childAgentId(request));
-    if (conversation.subagentThread?.userRunnable === true) {
-      conversation = await this.refreshConversation(scope.userId, conversation, false);
-    }
     const allMessages = (await this.methods.getMessages(
       { conversationId: threadId, user: scope.userId },
       TRANSCRIPT_SELECT,
@@ -534,6 +642,12 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     );
     if (savedUserMessage == null) {
       throw new Error('Unable to persist the child-thread input.');
+    }
+    /** The process-local active lease rejects concurrent ordinary writes while
+     * setup reads history. Flip the durable UI flag only after the new input is
+     * committed, so a setup failure cannot strand an already-runnable child. */
+    if (conversation.subagentThread?.userRunnable === true) {
+      conversation = await this.refreshConversation(scope.userId, conversation, false);
     }
     return {
       conversation,

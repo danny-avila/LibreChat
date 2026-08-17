@@ -55,6 +55,7 @@ export const defaultRetrievalModels = [
 
 export const excludedKeys = new Set([
   'conversationId',
+  'subagentThread',
   'title',
   'iconURL',
   'greeting',

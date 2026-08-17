@@ -741,6 +741,51 @@ describe('initializeClient — subagent loading', () => {
     });
   });
 
+  it('keeps an existing detached task controllable after subagent config is disabled', async () => {
+    mockInitializeAgent.mockResolvedValue(
+      makePrimaryConfig({
+        subagents: { enabled: true, allowSelf: true, agent_ids: [] },
+      }),
+    );
+    const initialReq = makeSubagentReq();
+    initialReq.config.endpoints.agents.capabilities.push('run_in_background');
+    await initializeClient({
+      req: initialReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+    const existingConfig = agentClientArgs.subagentTasks;
+    const listSpy = jest.spyOn(existingConfig.store, 'list').mockReturnValueOnce([
+      {
+        taskId: 'existing-task',
+        threadId: 'existing-thread',
+        subagentType: 'researcher',
+        status: 'running',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        resultAvailable: false,
+        resultClaimed: false,
+        pendingControls: 0,
+      },
+    ]);
+    mockInitializeAgent.mockResolvedValue(makePrimaryConfig({}));
+    const changedReq = makeSubagentReq();
+    changedReq.config.endpoints.agents.capabilities.push('run_in_background');
+
+    await initializeClient({
+      req: changedReq,
+      res: {},
+      signal: new AbortController().signal,
+      endpointOption: makeEndpointOption(),
+    });
+
+    expect(agentClientArgs.subagentTasks).toEqual(existingConfig);
+    expect(capturedToolExecuteOptions.subagentTasks).toEqual(existingConfig);
+    expect(agentClientArgs.agent.subagents).toBeUndefined();
+    listSpy.mockRestore();
+  });
+
   it('disables every nested subagent path at the durable child-thread depth limit', async () => {
     const primaryConfig = makePrimaryConfig({
       subagents: { enabled: true, allowSelf: true, agent_ids: [] },
