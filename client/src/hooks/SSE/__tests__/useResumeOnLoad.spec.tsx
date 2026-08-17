@@ -593,6 +593,9 @@ describe('useResumeOnLoad', () => {
       parentMessageId: rootUser.messageId,
       conversationId: CONVERSATION_ID,
       text: 'Older response',
+      sender: 'Agent One',
+      model: 'gpt-5',
+      iconURL: 'https://example.com/agent-one.png',
       isCreatedByUser: false,
     } as TMessage;
     const newerResponse = {
@@ -643,6 +646,13 @@ describe('useResumeOnLoad', () => {
     expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(0);
     const submission = observedSubmissions[observedSubmissions.length - 1];
     expect(submission?.initialResponse?.messageId).toBe(`${olderResponse.messageId}_`);
+    expect(submission?.initialResponse).toEqual(
+      expect.objectContaining({
+        sender: olderResponse.sender,
+        model: olderResponse.model,
+        iconURL: olderResponse.iconURL,
+      }),
+    );
     expect((submission?.messages ?? []).map((message) => message.messageId)).toEqual([
       newerResponse.messageId,
       olderResponse.messageId,

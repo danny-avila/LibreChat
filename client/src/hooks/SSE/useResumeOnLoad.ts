@@ -121,6 +121,13 @@ function buildSubmissionFromResumeState(
   const existingResponseMessage = messages.find(
     (m) => !m.isCreatedByUser && m.messageId === responseMessageId,
   );
+  // The persisted row may seed display metadata, but never identity or deduplication.
+  const unpaddedResponseMessageId = responseMessageId.replace(/_+$/, '');
+  const responseMetadataMessage =
+    existingResponseMessage ??
+    (unpaddedResponseMessageId !== responseMessageId
+      ? messages.find((m) => !m.isCreatedByUser && m.messageId === unpaddedResponseMessageId)
+      : undefined);
 
   // Create or use existing user message
   const userMessage: TMessage =
@@ -153,9 +160,9 @@ function buildSubmissionFromResumeState(
     content: (resumeState.aggregatedContent as TMessage['content']) ?? [],
     isCreatedByUser: false,
     role: 'assistant',
-    sender: existingResponseMessage?.sender ?? resumeState.sender,
-    model: preferDefinedString(existingResponseMessage?.model, resumeState.model),
-    iconURL: preferDefinedString(existingResponseMessage?.iconURL, resumeState.iconURL),
+    sender: responseMetadataMessage?.sender ?? resumeState.sender,
+    model: preferDefinedString(responseMetadataMessage?.model, resumeState.model),
+    iconURL: preferDefinedString(responseMetadataMessage?.iconURL, resumeState.iconURL),
   } as TMessage;
 
   // Re-paused turn: seed the approval / ask-user controls straight onto the
