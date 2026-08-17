@@ -440,6 +440,27 @@ const initializeClient = async ({
       { status: 409 },
     );
   }
+  if (
+    requestConversation?.subagentThread != null &&
+    typeof conversationId === 'string' &&
+    conversationId !== ''
+  ) {
+    const activeThreadConfig = buildSubagentThreadTaskConfig(subagentThreadTaskStore, {
+      userId: req.user.id,
+      parentConversationId: requestConversation.subagentThread.parentConversationId,
+      ...(typeof req.user?.tenantId === 'string' && req.user.tenantId !== ''
+        ? { tenantId: req.user.tenantId }
+        : {}),
+    });
+    if (subagentThreadTaskStore.isThreadActive(activeThreadConfig.scopeId, conversationId)) {
+      throw Object.assign(
+        new Error(
+          'This child thread is still running. Wait for it to settle before starting a user turn.',
+        ),
+        { status: 409 },
+      );
+    }
+  }
 
   const agentConfigs = new Map();
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);

@@ -27,6 +27,7 @@ import {
   bulkWriteTransactions,
   prepareTokenSpend,
 } from './transactions';
+import { collectDetachedSubagentUsage } from './subagentTaskContext';
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
 type SpendStructuredTokensFn = (
@@ -698,15 +699,17 @@ export type SubagentUsageEvent = AgentsSubagentUsageEvent;
  * graphs execute outside the run's `streamEvents` loop, so their model calls
  * never reach the `CHAT_MODEL_END` handler (`ModelEndHandler`) — the SDK
  * reports them through this sink instead. Each event is tagged
- * `usage_type: 'subagent'` with the child's model/provider and pushed onto
- * the same `collectedUsage` array the handler fills, so
- * {@link recordCollectedUsage} bills child calls (transactions + balance)
- * alongside the parent's.
+ * `usage_type: 'subagent'` with the child's model/provider. Foreground child
+ * calls join the parent `collectedUsage` batch. Detached calls are recognized
+ * through their task-local context, billed immediately through
+ * `recordDetachedUsage`, and persisted with the durable child result instead
+ * of depending on a parent turn that may already have closed.
  */
 export function createSubagentUsageSink(
   collectedUsage: UsageMetadata[],
-  onUsage?: (usage: UsageMetadata) => void,
-): (event: SubagentUsageEvent) => void {
+  onUsage?: (usage: UsageMetadata) => void | Promise<void>,
+  recordDetachedUsage?: (usage: UsageMetadata) => void | Promise<void>,
+): (event: SubagentUsageEvent) => void | Promise<void> {
   return (event) => {
     if (event?.usage == null) {
       return;
@@ -727,6 +730,17 @@ export function createSubagentUsageSink(
         : event.subagentAgentId;
     if (billingAgentId != null && billingAgentId !== '') {
       usage.agentId = billingAgentId;
+    }
+    /** A detached task can finish after its parent turn's one-time billing
+     * flush. Its AsyncLocalStorage context therefore owns the usage: persist
+     * it with the child transcript and bill it immediately. Foreground child
+     * calls retain the existing parent-turn batch path. */
+    if (recordDetachedUsage != null && collectDetachedSubagentUsage(usage)) {
+      /** Emission is already retained/flushed by the host and must not add
+       * transport latency to the child model loop. Billing is the durable
+       * side effect the SDK needs to await. */
+      onUsage?.(usage);
+      return Promise.resolve(recordDetachedUsage(usage)).then(() => undefined);
     }
     collectedUsage.push(usage);
     /** Lets the host stream the billed child usage to the client (tagged

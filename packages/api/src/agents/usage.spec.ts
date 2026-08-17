@@ -13,6 +13,7 @@ import {
   computeSummaryUsedTokens,
   priorRunOutputTokens,
 } from './usage';
+import { runWithDetachedSubagentUsage } from './subagentTaskContext';
 
 describe('recordCollectedUsage', () => {
   let mockSpendTokens: jest.Mock;
@@ -1472,7 +1473,9 @@ describe('createSubagentUsageSink', () => {
   it('tags the child agent id so the host can price with the subagent endpoint config', () => {
     const collectedUsage: UsageMetadata[] = [];
     const emitted: UsageMetadata[] = [];
-    const sink = createSubagentUsageSink(collectedUsage, (u) => emitted.push(u));
+    const sink = createSubagentUsageSink(collectedUsage, (u) => {
+      emitted.push(u);
+    });
 
     sink(makeEvent({ subagentAgentId: 'agent_xyz' }));
 
@@ -1546,6 +1549,34 @@ describe('createSubagentUsageSink', () => {
     sink(makeEvent({ usage: undefined as unknown as SubagentUsageEvent['usage'] }));
 
     expect(collectedUsage).toEqual([]);
+  });
+
+  it('routes detached usage to its awaited billing and durable child collectors', async () => {
+    const collectedUsage: UsageMetadata[] = [];
+    const detachedUsage: UsageMetadata[] = [];
+    const emitted: UsageMetadata[] = [];
+    const recordDetachedUsage = jest.fn().mockResolvedValue(undefined);
+    const sink = createSubagentUsageSink(
+      collectedUsage,
+      (usage) => {
+        emitted.push(usage);
+      },
+      recordDetachedUsage,
+    );
+
+    await runWithDetachedSubagentUsage(detachedUsage, async () => {
+      await sink(makeEvent());
+    });
+
+    expect(collectedUsage).toEqual([]);
+    expect(detachedUsage).toHaveLength(1);
+    expect(emitted[0]).toBe(detachedUsage[0]);
+    expect(recordDetachedUsage).toHaveBeenCalledWith(detachedUsage[0]);
+
+    /** The same sink still batches ordinary foreground subagents with the parent. */
+    await sink(makeEvent({ subagentRunId: 'foreground-child' }));
+    expect(collectedUsage).toHaveLength(1);
+    expect(recordDetachedUsage).toHaveBeenCalledTimes(1);
   });
 
   it('round-trips into recordCollectedUsage as billed subagent transactions', async () => {

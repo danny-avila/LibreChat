@@ -11,7 +11,9 @@ import type {
 } from '@librechat/agents';
 import type { AllMethods, IConversation, IMessage } from '@librechat/data-schemas';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import { buildSubagentThreadTaskConfig, SubagentThreadTaskStore } from './subagentThreads';
+import { createSubagentUsageSink } from './usage';
 
 let mongod: MongoMemoryServer;
 let methods: AllMethods;
@@ -153,6 +155,103 @@ describe('SubagentThreadTaskStore', () => {
     expect(messages[1].subagentTranscript).toMatchObject({
       taskId: started.task.taskId,
       mode: 'append',
+    });
+  });
+
+  it('keeps a saved-agent child read-only for exactly the active execution lease', async () => {
+    const userId = 'user-active-lease';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    let release = (_value: { content: string; messages: BaseMessage[] }): void => undefined;
+    let markEntered = (): void => undefined;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const result = new Promise<{ content: string; messages: BaseMessage[] }>((resolve) => {
+      release = resolve;
+    });
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => {
+          markEntered();
+          return result;
+        },
+      }),
+    );
+    if (!started.accepted) return;
+    const threadId = requireThreadId(started);
+    expect(store.isThreadActive(config.scopeId, threadId)).toBe(true);
+    await entered;
+    expect(await methods.getConvo(userId, threadId)).toMatchObject({
+      subagentThread: { userRunnable: false },
+    });
+
+    release({
+      content: 'Lease completed.',
+      messages: [new HumanMessage('Investigate the issue.'), new AIMessage('Lease completed.')],
+    });
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(store.isThreadActive(config.scopeId, threadId)).toBe(false);
+    expect(await methods.getConvo(userId, threadId)).toMatchObject({
+      subagentThread: { userRunnable: true },
+    });
+  });
+
+  it('bills detached usage independently and persists its rollup on the child result', async () => {
+    const userId = 'user-detached-usage';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const store = new SubagentThreadTaskStore(methods);
+    const config = buildSubagentThreadTaskConfig(store, { userId, parentConversationId });
+    const parentUsage: UsageMetadata[] = [];
+    const recordDetachedUsage = jest.fn().mockResolvedValue(undefined);
+    const sink = createSubagentUsageSink(
+      parentUsage,
+      (usage) => {
+        usage.cost = 0.25;
+      },
+      recordDetachedUsage,
+    );
+    const started = store.start(
+      taskRequest(config.scopeId, {
+        run: async () => {
+          await sink({
+            usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120 },
+            model: 'gpt-5-mini',
+            provider: 'openAI',
+            subagentType: 'researcher-agent',
+            subagentRunId: 'child-run',
+            subagentAgentId: 'researcher-agent',
+            runId: 'parent-run',
+          });
+          return {
+            content: 'Usage recorded.',
+            messages: [
+              new HumanMessage('Investigate the issue.'),
+              new AIMessage('Usage recorded.'),
+            ],
+          };
+        },
+      }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+    if (!started.accepted) return;
+
+    expect(parentUsage).toEqual([]);
+    expect(recordDetachedUsage).toHaveBeenCalledTimes(1);
+    const messages = await methods.getMessages({
+      user: userId,
+      conversationId: requireThreadId(started),
+    });
+    expect(messages[messages.length - 1]?.metadata?.usage).toEqual({
+      input: 100,
+      output: 20,
+      cacheWrite: 0,
+      cacheRead: 0,
+      cost: 0.25,
     });
   });
 
@@ -567,6 +666,8 @@ describe('SubagentThreadTaskStore', () => {
     expect(messages.map((message) => message.text)).not.toContain(
       'Late success must be discarded.',
     );
+    expect(messages.map((message) => message.text)).toContain('Subagent task was cancelled.');
+    expect(messages.some((message) => message.error === true)).toBe(false);
   });
 
   it('fails closed for unknown and cross-parent continuation selectors', async () => {

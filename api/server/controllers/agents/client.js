@@ -225,6 +225,11 @@ class AgentClient extends BaseClient {
      *  these before returning — otherwise job cleanup can race the persist.
      *  @type {Promise<void>[]} */
     this.pendingSubagentEmits = [];
+    /** Stable per-generation sequence for subagent usage events. Detached
+     * usage is billed outside `collectedUsage`, so array length is no longer
+     * a valid sequence source. @type {number} */
+    this.subagentUsageSeq =
+      usageEmitSink?.filter((event) => event?.usage_type === 'subagent').length ?? 0;
     /** @type {AgentClientOptions} */
     this.options = Object.assign({ endpoint: options.endpoint }, clientOptions);
     /** @type {string} */
@@ -2438,6 +2443,7 @@ class AgentClient extends BaseClient {
     }
     const includeCost = appConfig?.interfaceConfig?.contextCost === true;
     return (usage) => {
+      this.subagentUsageSeq += 1;
       const data = {
         input_tokens: usage.input_tokens,
         output_tokens: usage.output_tokens,
@@ -2446,9 +2452,12 @@ class AgentClient extends BaseClient {
         model: usage.model,
         provider: usage.provider,
         usage_type: 'subagent',
-        runId: this.responseMessageId,
-        /** Unique per collected entry (post-push length) for resume dedupe */
-        seq: this.collectedUsage.length,
+        runId:
+          this.jobCreatedAt != null
+            ? `${this.responseMessageId}:${this.jobCreatedAt}`
+            : this.responseMessageId,
+        /** Unique per child call for reconnect/resume dedupe. */
+        seq: this.subagentUsageSeq,
         /** Price with the SUBAGENT's own endpoint token config (its endpoint may
          *  differ from the parent's); `usage.agentId` is tagged by the sink. */
         cost: includeCost
@@ -2459,6 +2468,11 @@ class AgentClient extends BaseClient {
             )
           : undefined,
       };
+      if (data.cost != null) {
+        /** The detached task collector persists this same usage object on the
+         * child message after the emitter has attached authoritative cost. */
+        usage.cost = data.cost;
+      }
       /** Fold into the response's usage rollup (synchronously, regardless of
        *  emit success) so the persisted total matches the live session, which
        *  also folds subagent usage into its cost/totals. */
@@ -2489,6 +2503,30 @@ class AgentClient extends BaseClient {
       })();
       this.pendingSubagentEmits.push(emit);
       return emit;
+    };
+  }
+
+  /**
+   * Detached children may outlive the parent turn's one-time billing flush.
+   * Bill each detached model call on the SDK's awaited usage path; foreground
+   * children continue to batch with the parent turn.
+   * @param {AppConfig['balance']} balance
+   * @param {AppConfig['transactions']} transactions
+   * @returns {(usage: UsageMetadata) => Promise<void>}
+   */
+  buildDetachedSubagentUsageRecorder(balance, transactions) {
+    return async (usage) => {
+      try {
+        await this.recordCollectedUsage({
+          collectedUsage: [usage],
+          context: 'subagent',
+          balance,
+          transactions,
+          updateStreamUsage: false,
+        });
+      } catch (err) {
+        logger.error('[AgentClient] Failed to record detached subagent usage', err);
+      }
     };
   }
 
@@ -3170,16 +3208,16 @@ class AgentClient extends BaseClient {
           summarizationConfig: appConfig?.summarization,
           appConfig,
           tokenCounter,
-          /** Bills subagent child-run model calls — child graphs execute
-           *  outside the streamEvents loop, so ModelEndHandler never sees
-           *  them. Entries land in collectedUsage tagged
-           *  `usage_type: 'subagent'` and are spent by recordCollectedUsage.
+          /** Bills subagent child-run model calls — foreground usage joins
+           *  the parent batch, while detached usage is recorded per call and
+           *  persisted with its child result because it may outlive this turn.
            *  The sink also streams each as an `on_token_usage` event so the
            *  gauge's session cost/totals include billed subagent usage (the
            *  `subagent` tag keeps it out of the live context meter). */
           subagentUsageSink: createSubagentUsageSink(
             this.collectedUsage,
             this.buildSubagentUsageEmitter(appConfig),
+            this.buildDetachedSubagentUsageRecorder(balanceConfig, transactionsConfig),
           ),
           subagentTasks: this.options.subagentTasks,
         }).then((createdRun) => {
@@ -3569,6 +3607,7 @@ class AgentClient extends BaseClient {
         subagentUsageSink: createSubagentUsageSink(
           this.collectedUsage,
           this.buildSubagentUsageEmitter(appConfig),
+          this.buildDetachedSubagentUsageRecorder(balanceConfig, transactionsConfig),
         ),
         subagentTasks: this.options.subagentTasks,
       });

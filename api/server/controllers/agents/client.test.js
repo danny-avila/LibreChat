@@ -59,6 +59,31 @@ jest.mock('@librechat/api', () => ({
   maybePrewarmCodeSandbox: jest.fn(),
 }));
 
+describe('AgentClient - detached subagent usage', () => {
+  it('records each detached call without overwriting the parent stream usage', async () => {
+    const client = Object.create(AgentClient.prototype);
+    client.recordCollectedUsage = jest.fn().mockResolvedValue(undefined);
+    const balance = { enabled: true };
+    const transactions = { enabled: true };
+    const usage = {
+      usage_type: 'subagent',
+      input_tokens: 100,
+      output_tokens: 20,
+      agentId: 'agent-child',
+    };
+
+    await client.buildDetachedSubagentUsageRecorder(balance, transactions)(usage);
+
+    expect(client.recordCollectedUsage).toHaveBeenCalledWith({
+      collectedUsage: [usage],
+      context: 'subagent',
+      balance,
+      transactions,
+      updateStreamUsage: false,
+    });
+  });
+});
+
 describe('AgentClient - label settlement', () => {
   it('drains a trailing fill enqueued by an in-flight reasoning revision', async () => {
     const client = Object.create(AgentClient.prototype);

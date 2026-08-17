@@ -25,6 +25,9 @@ import type {
   ConversationMethods,
 } from '@librechat/data-schemas';
 import type { BaseMessage, StoredMessage } from '@librechat/agents/langchain/messages';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
+import { runWithDetachedSubagentUsage } from './subagentTaskContext';
+import { aggregateEmittedUsage } from './usage';
 
 const SCOPE_VERSION = 1;
 const DEFAULT_MAX_THREAD_DEPTH = 1;
@@ -51,6 +54,7 @@ interface PreparedThread {
   initialMessages: BaseMessage[];
   initialStoredMessages: StoredMessage[];
   forceTranscriptReplacement: boolean;
+  userRunnableAfterSettlement: boolean;
   userMessageId: string;
 }
 
@@ -318,6 +322,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         run: async (runtime: SubagentTaskRuntime) => {
           lease.taskId = runtime.taskId;
           lease.running = true;
+          const detachedUsage: UsageMetadata[] = [];
           try {
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
@@ -332,25 +337,54 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
             }
-            const result = await request.run(runtime, prepared.initialMessages);
+            const result = await runWithDetachedSubagentUsage(detachedUsage, () =>
+              request.run(runtime, prepared.initialMessages),
+            );
             if (runtime.signal.aborted) {
               throw runtime.signal.reason ?? new Error('Subagent task was cancelled.');
             }
-            await this.persistResult(scope, request, runtime.taskId, prepared, result);
+            await this.persistResult(
+              scope,
+              request,
+              runtime.taskId,
+              prepared,
+              result,
+              detachedUsage,
+            );
             return result;
           } catch (error) {
+            if (runtime.signal.aborted) {
+              await this.persistCancellation(
+                scope,
+                threadId,
+                request,
+                runtime.taskId,
+                detachedUsage,
+              ).catch((persistError) => {
+                logger.error(
+                  '[subagentThreads] Failed to persist child-thread cancellation',
+                  persistError,
+                );
+              });
+              throw error;
+            }
             logger.error(
               '[subagentThreads] Child-thread execution failed',
               publicFailureDetail(error),
             );
-            await this.persistFailure(scope, threadId, request, runtime.taskId, error).catch(
-              (persistError) => {
-                logger.error(
-                  '[subagentThreads] Failed to persist child-thread failure',
-                  persistError,
-                );
-              },
-            );
+            await this.persistFailure(
+              scope,
+              threadId,
+              request,
+              runtime.taskId,
+              error,
+              detachedUsage,
+            ).catch((persistError) => {
+              logger.error(
+                '[subagentThreads] Failed to persist child-thread failure',
+                persistError,
+              );
+            });
             throw new Error(publicFailureDetail(error));
           } finally {
             if (this.activeThreads.get(lockKey) === lease) {
@@ -396,6 +430,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       }
     }
     return result;
+  }
+
+  /** Process-local guard for ordinary user turns racing an active child lease. */
+  isThreadActive(scopeId: string, threadId: string): boolean {
+    return this.activeThreads.has(`${scopeId}\u0000${threadId}`);
   }
 
   private async prepareThread(
@@ -444,7 +483,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
             subagentType: request.subagentType,
             subagentKind: request.subagentKind,
             depth,
-            userRunnable: isUserRunnableChild(request, agentId),
+            /** Remain read-only until the detached execution lease settles. */
+            userRunnable: false,
           },
         },
         { context: 'SubagentThreadTaskStore.prepareThread' },
@@ -456,6 +496,10 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     }
 
     this.assertContinuation(scope, request, conversation);
+    const userRunnableAfterSettlement = isUserRunnableChild(request, childAgentId(request));
+    if (conversation.subagentThread?.userRunnable === true) {
+      conversation = await this.refreshConversation(scope.userId, conversation, false);
+    }
     const allMessages = (await this.methods.getMessages(
       { conversationId: threadId, user: scope.userId },
       TRANSCRIPT_SELECT,
@@ -488,6 +532,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       initialMessages,
       initialStoredMessages: mapChatMessagesToStoredMessages(initialMessages),
       forceTranscriptReplacement: restored.hasVisibleTail,
+      userRunnableAfterSettlement,
       userMessageId,
     };
   }
@@ -527,6 +572,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     taskId: string,
     prepared: PreparedThread,
     result: { content: string; messages?: BaseMessage[] },
+    detachedUsage: UsageMetadata[],
   ): Promise<void> {
     const subagentTranscript = serializeTranscript(
       taskId,
@@ -534,6 +580,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       result.messages,
       prepared.forceTranscriptReplacement,
     );
+    const usage = this.aggregateDetachedUsage(detachedUsage);
     const savedAssistantMessage = await this.methods.saveMessage(
       { userId: scope.userId },
       {
@@ -546,6 +593,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         isCreatedByUser: false,
         unfinished: false,
         ...(subagentTranscript == null ? {} : { subagentTranscript }),
+        ...(usage == null ? {} : { metadata: { usage } }),
         ...retentionFields(prepared.conversation),
       },
       { context: 'SubagentThreadTaskStore.persistResult' },
@@ -553,7 +601,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (savedAssistantMessage == null) {
       throw new Error('Unable to persist the child-thread result.');
     }
-    await this.refreshConversation(scope.userId, prepared.conversation).catch((error) => {
+    await this.refreshConversation(
+      scope.userId,
+      prepared.conversation,
+      prepared.userRunnableAfterSettlement,
+    ).catch((error) => {
       /** The message is already durable and queryable by conversation id. A
        * stale sidebar timestamp/message-id cache is preferable to rewriting a
        * successful child result as a task failure. */
@@ -567,6 +619,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     request: SubagentTaskStartRequest,
     taskId: string,
     error: unknown,
+    detachedUsage: UsageMetadata[],
   ): Promise<void> {
     const conversation = await this.methods.getConvo(scope.userId, threadId);
     if (conversation == null || !this.isContinuationAllowed(scope, request, conversation)) {
@@ -580,6 +633,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (userMessage.length === 0) {
       return;
     }
+    const usage = this.aggregateDetachedUsage(detachedUsage);
     const savedFailure = await this.methods.saveMessage(
       { userId: scope.userId },
       {
@@ -592,6 +646,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         isCreatedByUser: false,
         unfinished: false,
         error: true,
+        ...(usage == null ? {} : { metadata: { usage } }),
         ...retentionFields(conversation),
       },
       { context: 'SubagentThreadTaskStore.persistFailure' },
@@ -599,10 +654,68 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (savedFailure == null) {
       throw new Error('Unable to persist the child-thread failure.');
     }
-    await this.refreshConversation(scope.userId, conversation);
+    await this.refreshConversation(
+      scope.userId,
+      conversation,
+      isUserRunnableChild(request, childAgentId(request)),
+    );
   }
 
-  private async refreshConversation(userId: string, conversation: IConversation): Promise<void> {
+  private async persistCancellation(
+    scope: SubagentThreadScope,
+    threadId: string,
+    request: SubagentTaskStartRequest,
+    taskId: string,
+    detachedUsage: UsageMetadata[],
+  ): Promise<void> {
+    const conversation = await this.methods.getConvo(scope.userId, threadId);
+    if (conversation == null || !this.isContinuationAllowed(scope, request, conversation)) {
+      return;
+    }
+    const userMessage = await this.methods.getMessages(
+      { conversationId: threadId, user: scope.userId, messageId: `${taskId}:user` },
+      'messageId',
+      { limit: 1 },
+    );
+    if (userMessage.length === 0) {
+      return;
+    }
+    const usage = this.aggregateDetachedUsage(detachedUsage);
+    const savedCancellation = await this.methods.saveMessage(
+      { userId: scope.userId },
+      {
+        messageId: `${taskId}:assistant`,
+        conversationId: threadId,
+        parentMessageId: `${taskId}:user`,
+        sender: request.subagentType,
+        text: 'Subagent task was cancelled.',
+        endpoint: EModelEndpoint.agents,
+        isCreatedByUser: false,
+        unfinished: false,
+        ...(usage == null ? {} : { metadata: { usage } }),
+        ...retentionFields(conversation),
+      },
+      { context: 'SubagentThreadTaskStore.persistCancellation' },
+    );
+    if (savedCancellation == null) {
+      throw new Error('Unable to persist the child-thread cancellation.');
+    }
+    await this.refreshConversation(
+      scope.userId,
+      conversation,
+      isUserRunnableChild(request, childAgentId(request)),
+    );
+  }
+
+  private async refreshConversation(
+    userId: string,
+    conversation: IConversation,
+    userRunnable = conversation.subagentThread?.userRunnable,
+  ): Promise<IConversation> {
+    const subagentThread =
+      conversation.subagentThread == null
+        ? undefined
+        : { ...conversation.subagentThread, userRunnable: userRunnable === true };
     const saved = await this.methods.saveConvo(
       { userId },
       {
@@ -610,9 +723,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         endpoint: conversation.endpoint,
         title: conversation.title,
         ...(conversation.agent_id == null ? {} : { agent_id: conversation.agent_id }),
-        ...(conversation.subagentThread == null
-          ? {}
-          : { subagentThread: conversation.subagentThread }),
+        ...(subagentThread == null ? {} : { subagentThread }),
         ...retentionFields(conversation),
       },
       { context: 'SubagentThreadTaskStore.refreshConversation' },
@@ -620,6 +731,13 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     if (saved == null || 'message' in saved) {
       throw new Error('Unable to refresh the child thread.');
     }
+    return saved;
+  }
+
+  private aggregateDetachedUsage(detachedUsage: UsageMetadata[]) {
+    return aggregateEmittedUsage(
+      detachedUsage.map((entry) => ({ ...entry, usage_type: 'subagent' as const })),
+    );
   }
 }
 

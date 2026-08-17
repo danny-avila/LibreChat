@@ -960,7 +960,7 @@ export const subagentThreadLineageSchema = z.object({
   subagentType: z.string().min(1),
   subagentKind: z.enum(['agent', 'graph']),
   depth: z.number().int().positive(),
-  /** Whether this child has a standalone saved-agent identity that the UI may execute. */
+  /** Whether an ordinary user turn may execute now (standalone identity and no active lease). */
   userRunnable: z.boolean().default(false),
 });
 

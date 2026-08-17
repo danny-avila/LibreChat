@@ -121,10 +121,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
       ? chatHelpers.conversation?.subagentThread
       : undefined;
   const parentConversationId = activeSubagentThread?.parentConversationId;
-  /** Only saved-agent children have enough standalone identity for an ordinary
-   * user turn. Graph and ephemeral/self children remain navigable, while their
-   * parent agent continues them through the durable thread id. Missing flags
-   * fail closed for any pre-release child records. */
+  /** Only settled saved-agent children have enough standalone identity for an
+   * ordinary user turn. Active leases, graph children, and ephemeral/self
+   * children remain navigable while their parent owns continuation. Missing
+   * flags fail closed for any pre-release child records. */
   const isSubagentThreadReadOnly =
     activeSubagentThread != null && activeSubagentThread.userRunnable !== true;
 
