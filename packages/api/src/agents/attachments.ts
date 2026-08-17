@@ -18,7 +18,10 @@ export type AgentContextAttachmentCarrier<TFile extends FileWithId = IMongoFile>
 };
 
 export type AgentContextAttachmentsByAgentId<TFile extends FileWithId = IMongoFile> =
-  Map<string, TFile[]> | Record<string, TFile[] | undefined> | null | undefined;
+  | Map<string, TFile[]>
+  | Record<string, TFile[] | undefined>
+  | null
+  | undefined;
 
 export function collectFileIds<TFile extends FileWithId>(
   files?: Array<TFile | null | undefined> | null,
