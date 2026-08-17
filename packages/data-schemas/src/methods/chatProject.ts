@@ -277,6 +277,24 @@ export async function updateChatProjectLastConversationForUser(
     return;
   }
 
+  /**
+   * The chat can stop being visible between the write that persisted it and this pointer
+   * update: an archive-all sweep, a single archive from another tab, or a retention flip
+   * all land in that window, and each has already run its own stats refresh by the time
+   * this resumes. Writing the pointer then would leave the project advertising activity
+   * on a chat its workspace hides, so recompute the project instead of restoring it.
+   * The read is a point lookup on the unique `conversationId, user` index.
+   */
+  const Conversation = mongoose.models.Conversation as Model<IConversation>;
+  const stillVisible = await Conversation.exists({
+    ...visibleProjectConversationFilter(user, projectId),
+    conversationId: conversation.conversationId,
+  });
+  if (!stillVisible) {
+    await refreshChatProjectStatsForUser(mongoose, user, projectId);
+    return;
+  }
+
   const lastConversationAt = conversation.updatedAt ?? conversation.createdAt ?? new Date();
   const lastConversationFields = {
     lastConversationAt,

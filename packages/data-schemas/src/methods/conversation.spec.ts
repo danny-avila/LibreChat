@@ -1881,7 +1881,7 @@ describe('Conversation Operations', () => {
       expect(refreshed?.conversationCount).toBe(1);
     });
 
-    it('continues refreshing later project batches after an individual refresh fails', async () => {
+    it('replays a failed project refresh without abandoning the rest of the run', async () => {
       const projects = await ChatProject.insertMany(
         Array.from({ length: 11 }, (_, index) => ({
           user: 'user123',
@@ -1905,14 +1905,19 @@ describe('Conversation Operations', () => {
       try {
         const result = await archiveAllConvos('user123');
         expect(result.archivedCount).toBe(projects.length);
-        expect(countDocumentsSpy).toHaveBeenCalledTimes(projects.length);
+        /** Ten in the first batch and one in the second, then a replay of the one that
+         * failed: nothing else in the run is still competing with it by then. */
+        expect(countDocumentsSpy).toHaveBeenCalledTimes(projects.length + 1);
       } finally {
         countDocumentsSpy.mockRestore();
       }
 
-      const laterProject = await ChatProject.findById(projects[10]._id).lean<IChatProject>();
-      expect(laterProject?.conversationCount).toBe(0);
-      expect(laterProject?.lastConversationId).toBeNull();
+      const refreshed = await ChatProject.find({ user: 'user123' }).lean<IChatProject[]>();
+      expect(refreshed).toHaveLength(projects.length);
+      for (const project of refreshed) {
+        expect(project.conversationCount).toBe(0);
+        expect(project.lastConversationId).toBeNull();
+      }
     });
 
     it('leaves already-archived conversations untouched', async () => {
@@ -2345,6 +2350,59 @@ describe('Conversation Operations', () => {
       const refreshed = await ChatProject.findById(destinationProject._id).lean<IChatProject>();
       expect(refreshed?.conversationCount).toBe(0);
       expect(refreshed?.lastConversationId).toBeNull();
+    });
+
+    it('does not let a save in flight restore the project pointer it just cleared', async () => {
+      const project = await ChatProject.create({ user: 'user123', name: 'Project' });
+      const projectId = project._id!.toString();
+      const conversationId = uuidv4();
+      const anchor = new Date('2026-01-01T00:00:00.000Z');
+      await Conversation.collection.insertOne({
+        conversationId,
+        user: 'user123',
+        title: 'legacy chat with no isTemporary',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectId,
+        expiredAt: null,
+        isArchived: false,
+        createdAt: anchor,
+        updatedAt: anchor,
+      });
+      await ChatProject.findByIdAndUpdate(project._id, {
+        conversationCount: 1,
+        lastConversationAt: anchor,
+        lastConversationId: conversationId,
+      });
+
+      /** The sweep lands after the save's own write has returned, so the save carries a
+       * document that still says the chat is visible. Re-sending the unchanged
+       * `chatProjectId`, as a client saving into an open project chat does, is what puts
+       * the tail on the pointer branch instead of the recompute one. */
+      const findOneAndUpdate = Conversation.findOneAndUpdate.bind(Conversation);
+      const findOneAndUpdateSpy = jest
+        .spyOn(Conversation, 'findOneAndUpdate')
+        .mockImplementationOnce((async (filter, update, options) => {
+          const result = await findOneAndUpdate(filter, update, options);
+          await archiveAllConvos('user123');
+          return result;
+        }) as typeof Conversation.findOneAndUpdate);
+
+      try {
+        await saveConvo(
+          { userId: 'user123' },
+          { conversationId, chatProjectId: projectId, title: 'Renamed while the sweep ran' },
+          { noUpsert: true },
+        );
+      } finally {
+        findOneAndUpdateSpy.mockRestore();
+      }
+
+      const archived = await Conversation.findOne({ conversationId }).lean<IConversation>();
+      expect(archived?.isArchived).toBe(true);
+      const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshed?.lastConversationId).toBeNull();
+      expect(refreshed?.lastConversationAt).toBeNull();
+      expect(refreshed?.conversationCount).toBe(0);
     });
 
     it('returns zero when the user has no conversations', async () => {
