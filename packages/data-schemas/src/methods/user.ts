@@ -5,12 +5,18 @@ import {
   type RefillIntervalUnit,
 } from 'librechat-data-provider';
 import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
+import type { TwoFactorEnrollmentGuard, TwoFactorEnrollmentUpdate } from '~/types';
 import type { CacheStore } from '~/types';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
+
+/** Providers whose credentials LibreChat owns, and therefore the only ones it can enroll in 2FA. */
+const TWO_FACTOR_ENROLLMENT_PROVIDERS = [null, 'local', 'ldap'];
+const TWO_FACTOR_ENROLLMENT_PROJECTION =
+  '+totpSecret +backupCodes +pendingTotpSecret +pendingBackupCodes +twoFactorAcknowledgementNonceHash +twoFactorFinalizationNonceHash';
 
 interface UserMethodDeps {
   getCache?: (key: string) => CacheStore | undefined;
@@ -42,6 +48,11 @@ export function createUserMethods(
     returnUser?: boolean,
   ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
   updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  updateTwoFactorEnrollment: (
+    userId: string,
+    guard: TwoFactorEnrollmentGuard,
+    updateData: TwoFactorEnrollmentUpdate,
+  ) => Promise<IUser | null>;
   acceptTerms: (userId: string) => Promise<IUser | null>;
   searchUsers: ({
     searchPattern,
@@ -86,6 +97,8 @@ export function createUserMethods(
         used: boolean;
         usedAt?: Date | null;
       }>;
+      twoFactorAcknowledgementNonceHash?: string | null;
+      twoFactorFinalizationNonceHash?: string | null;
       refreshToken?: Array<{
         refreshToken: string;
       }>;
@@ -272,6 +285,36 @@ export function createUserMethods(
     return updated;
   }
 
+  /**
+   * Single compare-and-swap for every step of required two-factor enrollment. The filter always
+   * pins the user to an unenrolled, policy-eligible provider, and `guard` adds the exact pending
+   * secret, pending backup-code snapshot, or one-time nonce hash the caller observed. A step whose
+   * predicate has moved returns `null` instead of writing.
+   */
+  async function updateTwoFactorEnrollment(
+    userId: string,
+    guard: TwoFactorEnrollmentGuard,
+    updateData: TwoFactorEnrollmentUpdate,
+  ): Promise<IUser | null> {
+    const User = mongoose.models.User;
+    const updated = await User.findOneAndUpdate(
+      {
+        _id: userId,
+        twoFactorEnabled: { $ne: true },
+        provider: { $in: TWO_FACTOR_ENROLLMENT_PROVIDERS },
+        ...guard,
+      },
+      { $set: updateData, $unset: { expiresAt: '' } },
+      { new: true, runValidators: true },
+    )
+      .select(TWO_FACTOR_ENROLLMENT_PROJECTION)
+      .lean<IUser>();
+    if (updated) {
+      await invalidateAuthUserDocCache(userId);
+    }
+    return updated;
+  }
+
   async function invalidateAuthUserDocCache(userId: string): Promise<void> {
     if (!isAuthUserDocCacheEnabled()) {
       return;
@@ -388,6 +431,9 @@ export function createUserMethods(
         username: user.username,
         provider: user.provider,
         email: user.email,
+        /** `iat` is whole seconds, too coarse to order this token against a password reset that
+         * lands in the same second. `isTokenRetired` reads this claim to settle that exactly. */
+        issuedAtMs: Date.now(),
       },
       secret: process.env.JWT_SECRET,
       expirationTime: expires / 1000,
@@ -477,6 +523,8 @@ export function createUserMethods(
         used: boolean;
         usedAt?: Date | null;
       }>;
+      twoFactorAcknowledgementNonceHash?: string | null;
+      twoFactorFinalizationNonceHash?: string | null;
       refreshToken?: Array<{
         refreshToken: string;
       }>;
@@ -600,6 +648,7 @@ export function createUserMethods(
     countUsers,
     createUser,
     updateUser,
+    updateTwoFactorEnrollment,
     acceptTerms,
     searchUsers,
     getUserById,

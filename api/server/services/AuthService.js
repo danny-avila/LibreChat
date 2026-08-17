@@ -536,7 +536,21 @@ const resetPassword = async (userId, token, password) => {
   }
 
   const hash = bcrypt.hashSync(password, 10);
-  const user = await updateUser(userId, { password: hash });
+  /**
+   * Recovery has to evict whoever prompted it. `deleteAllUserSessions` in the controller drops the
+   * refresh sessions, but bearer tokens are stateless, so `passwordResetAt` is the cutoff that
+   * retires every one minted for the credential this reset just revoked. Clearing the staged
+   * enrollment in the same write strands an in-flight required setup, so a holder of the old
+   * credential cannot promote a second factor of their own choosing over the account.
+   */
+  const user = await updateUser(userId, {
+    password: hash,
+    passwordResetAt: new Date(),
+    pendingTotpSecret: null,
+    pendingBackupCodes: [],
+    twoFactorAcknowledgementNonceHash: null,
+    twoFactorFinalizationNonceHash: null,
+  });
 
   if (checkEmailConfig()) {
     await sendEmail({
@@ -826,9 +840,11 @@ const setOpenIDAuthTokens = (
     });
     if (userId && isEnabled(process.env.OPENID_REUSE_TOKENS)) {
       /** JWT-signed user ID cookie for image path validation when OPENID_REUSE_TOKENS is enabled */
-      const signedUserId = jwt.sign({ id: userId }, process.env.JWT_REFRESH_SECRET, {
-        expiresIn: expiryInMilliseconds / 1000,
-      });
+      const signedUserId = jwt.sign(
+        { id: userId, issuedAtMs: Date.now() },
+        process.env.JWT_REFRESH_SECRET,
+        { expiresIn: expiryInMilliseconds / 1000 },
+      );
       res.cookie('openid_user_id', signedUserId, {
         expires: expirationDate,
         httpOnly: true,

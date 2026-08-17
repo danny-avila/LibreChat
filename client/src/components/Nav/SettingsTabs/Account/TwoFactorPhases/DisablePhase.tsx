@@ -31,14 +31,17 @@ export const DisablePhase: React.FC<DisablePhaseProps> = ({ onDisable, isDisabli
   const [useBackup, setUseBackup] = useState(false);
 
   return (
-    <motion.div {...fadeAnimation} className="space-y-8">
+    <motion.div {...fadeAnimation} className="space-y-8 text-text-primary">
       <div className="flex justify-center">
         <InputOTP
+          aria-label={localize(
+            useBackup ? 'com_ui_use_backup_code' : 'com_ui_2fa_verification_required',
+          )}
           value={token}
           onChange={setToken}
           maxLength={useBackup ? 8 : 6}
           pattern={useBackup ? REGEXP_ONLY_DIGITS_AND_CHARS : REGEXP_ONLY_DIGITS}
-          className="gap-2"
+          className="gap-2 text-text-primary"
         >
           {useBackup ? (
             <InputOTPGroup>

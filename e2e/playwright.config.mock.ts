@@ -43,6 +43,7 @@ const vanillaOverrides = {
   OPENID_AUTO_REDIRECT: 'false',
   ALLOW_SOCIAL_LOGIN: 'false',
   ALLOW_SOCIAL_REGISTRATION: 'false',
+  ENFORCE_TWO_FACTOR_AUTHENTICATION: 'false',
   STREAM_KEEP_COMPLETED_JOBS: 'true',
   /** A local `.env` may enable balance enforcement, which `neutralizeCredentialEnv`
    *  does not blank (not credential-shaped); the fresh e2e user has no balance

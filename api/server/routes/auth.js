@@ -1,5 +1,12 @@
 const express = require('express');
-const { createSetBalanceConfig, forceRefreshCloudFrontAuthCookies } = require('@librechat/api');
+const {
+  createSetBalanceConfig,
+  requireTwoFactorSetupToken,
+  requireTwoFactorSetupAcknowledgementToken,
+  requireTwoFactorSetupFinalizationToken,
+  forceRefreshCloudFrontAuthCookies,
+  blockTwoFactorDisableWhenRequired,
+} = require('@librechat/api');
 const {
   resetPasswordRequestController,
   resetPasswordController,
@@ -14,7 +21,12 @@ const {
   enable2FA,
   verify2FA,
 } = require('~/server/controllers/TwoFactorController');
-const { verify2FAWithTempToken } = require('~/server/controllers/auth/TwoFactorAuthController');
+const {
+  verify2FAWithTempToken,
+  confirm2FASetupWithTempToken,
+  acknowledge2FASetup,
+  finalize2FASetup,
+} = require('~/server/controllers/auth/TwoFactorAuthController');
 const { logoutController } = require('~/server/controllers/auth/LogoutController');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
@@ -90,6 +102,40 @@ router.post(
 router.post('/2fa/enable', middleware.requireJwtAuth, enable2FA);
 router.post('/2fa/verify', middleware.requireJwtAuth, verify2FA);
 router.post(
+  '/2fa/setup',
+  middleware.setTwoFactorTempUser,
+  middleware.twoFactorSetupLimiter,
+  middleware.checkBan,
+  requireTwoFactorSetupToken,
+  middleware.blockRetiredSetupToken,
+  enable2FA,
+);
+router.post(
+  '/2fa/setup/confirm',
+  middleware.setTwoFactorTempUser,
+  middleware.twoFactorTempLimiter,
+  middleware.checkBan,
+  requireTwoFactorSetupToken,
+  middleware.blockRetiredSetupToken,
+  confirm2FASetupWithTempToken,
+);
+router.post(
+  '/2fa/setup/acknowledge',
+  middleware.setTwoFactorAcknowledgementTempUser,
+  middleware.twoFactorSetupLimiter,
+  middleware.checkBan,
+  requireTwoFactorSetupAcknowledgementToken,
+  acknowledge2FASetup,
+);
+router.post(
+  '/2fa/setup/finalize',
+  middleware.setTwoFactorFinalizationTempUser,
+  middleware.twoFactorSetupLimiter,
+  middleware.checkBan,
+  requireTwoFactorSetupFinalizationToken,
+  finalize2FASetup,
+);
+router.post(
   '/2fa/verify-temp',
   middleware.setTwoFactorTempUser,
   middleware.twoFactorTempLimiter,
@@ -97,7 +143,12 @@ router.post(
   verify2FAWithTempToken,
 );
 router.post('/2fa/confirm', middleware.requireJwtAuth, confirm2FA);
-router.post('/2fa/disable', middleware.requireJwtAuth, disable2FA);
+router.post(
+  '/2fa/disable',
+  middleware.requireJwtAuth,
+  blockTwoFactorDisableWhenRequired,
+  disable2FA,
+);
 router.post('/2fa/backup/regenerate', middleware.requireJwtAuth, regenerateBackupCodes);
 
 router.get('/graph-token', middleware.requireJwtAuth, graphTokenController);

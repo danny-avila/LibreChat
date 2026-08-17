@@ -7,7 +7,13 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(),
 }));
 
+jest.mock('~/models', () => ({
+  getUserById: jest.fn(),
+}));
+
 const { isEnabled } = require('@librechat/api');
+const { getTenantId, SYSTEM_TENANT_ID } = require('@librechat/data-schemas');
+const { getUserById } = require('~/models');
 
 describe('validateImageRequest middleware', () => {
   let req, res, next, validateImageRequest;
@@ -30,6 +36,13 @@ describe('validateImageRequest middleware', () => {
 
     // Default: OpenID token reuse disabled
     isEnabled.mockReturnValue(false);
+
+    // Default: an enrolled account, so neither two-factor gate blocks the request
+    getUserById.mockResolvedValue({
+      provider: 'local',
+      twoFactorEnabled: true,
+      twoFactorEnrolledAt: null,
+    });
   });
 
   afterEach(() => {
@@ -469,6 +482,171 @@ describe('validateImageRequest middleware', () => {
 
       await validateImageRequest(req, res, next);
       expect(next).toHaveBeenCalled();
+    });
+  });
+
+  describe('Two-factor enforcement', () => {
+    const signTokenIssuedAt = (issuedAtSeconds) =>
+      jwt.sign(
+        {
+          id: validObjectId,
+          iat: issuedAtSeconds,
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        },
+        process.env.JWT_REFRESH_SECRET,
+      );
+
+    beforeEach(() => {
+      validateImageRequest = createValidateImageRequest(true);
+      req.originalUrl = `/images/${validObjectId}/example.jpg`;
+    });
+
+    afterEach(() => {
+      delete process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION;
+    });
+
+    /**
+     * This route authenticates from the cookie alone, so it never runs `requireJwtAuth` and never
+     * establishes a tenant. Without a system context the tenant-isolated `User` query throws under
+     * strict isolation, and the catch upstream turns that into a 500 for every image.
+     */
+    test('resolves the user in a system tenant context', async () => {
+      let tenantDuringLookup = 'never ran';
+      getUserById.mockImplementation(async () => {
+        tenantDuringLookup = getTenantId();
+        return { provider: 'local', twoFactorEnabled: true, twoFactorEnrolledAt: null };
+      });
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(Math.floor(Date.now() / 1000))}`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(tenantDuringLookup).toBe(SYSTEM_TENANT_ID);
+      expect(next).toHaveBeenCalled();
+    });
+
+    test('refuses a cookie minted before two-factor enrollment', async () => {
+      const enrolledAt = new Date();
+      getUserById.mockResolvedValue({
+        provider: 'local',
+        twoFactorEnabled: true,
+        twoFactorEnrolledAt: enrolledAt,
+      });
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(
+        Math.floor(enrolledAt.getTime() / 1000) - 60,
+      )}`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.send).toHaveBeenCalledWith('Access Denied');
+    });
+
+    test('accepts a cookie minted after two-factor enrollment', async () => {
+      const enrolledAt = new Date();
+      getUserById.mockResolvedValue({
+        provider: 'local',
+        twoFactorEnabled: true,
+        twoFactorEnrolledAt: enrolledAt,
+      });
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(
+        Math.floor(enrolledAt.getTime() / 1000) + 60,
+      )}`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    test('refuses a cookie minted before a password reset', async () => {
+      const resetAt = new Date();
+      getUserById.mockResolvedValue({
+        provider: 'local',
+        twoFactorEnabled: true,
+        twoFactorEnrolledAt: null,
+        passwordResetAt: resetAt,
+      });
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(
+        Math.floor(resetAt.getTime() / 1000) - 60,
+      )}`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.send).toHaveBeenCalledWith('Access Denied');
+    });
+
+    test('accepts a cookie minted after a password reset', async () => {
+      const resetAt = new Date();
+      getUserById.mockResolvedValue({
+        provider: 'local',
+        twoFactorEnabled: true,
+        twoFactorEnrolledAt: null,
+        passwordResetAt: resetAt,
+      });
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(
+        Math.floor(resetAt.getTime() / 1000) + 60,
+      )}`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    test('refuses an account that still owes required enrollment', async () => {
+      process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+      getUserById.mockResolvedValue({
+        provider: 'local',
+        twoFactorEnabled: false,
+        twoFactorEnrolledAt: null,
+      });
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(Math.floor(Date.now() / 1000))}`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.send).toHaveBeenCalledWith('Access Denied');
+    });
+
+    test('refuses a cookie whose user no longer exists', async () => {
+      getUserById.mockResolvedValue(null);
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(Math.floor(Date.now() / 1000))}`;
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.send).toHaveBeenCalledWith('Access Denied');
+    });
+
+    test('applies the gates to agent avatar requests too', async () => {
+      process.env.ENFORCE_TWO_FACTOR_AUTHENTICATION = 'true';
+      getUserById.mockResolvedValue({
+        provider: 'local',
+        twoFactorEnabled: false,
+        twoFactorEnrolledAt: null,
+      });
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(Math.floor(Date.now() / 1000))}`;
+      req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/agent-avatar-12345.png';
+
+      await validateImageRequest(req, res, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(403);
+    });
+
+    test('never reads the user when the path itself is refused', async () => {
+      req.headers.cookie = `refreshToken=${signTokenIssuedAt(Math.floor(Date.now() / 1000))}`;
+      req.originalUrl = '/images/65cfb246f7ecadb8b1e8036c/example.jpg';
+
+      await validateImageRequest(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(getUserById).not.toHaveBeenCalled();
     });
   });
 });

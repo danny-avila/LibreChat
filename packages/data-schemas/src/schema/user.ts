@@ -52,6 +52,10 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       maxlength: 128,
       select: false,
     },
+    passwordResetAt: {
+      type: Date,
+      default: null,
+    },
     avatar: {
       type: String,
       required: false,
@@ -99,6 +103,10 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    twoFactorEnrolledAt: {
+      type: Date,
+      default: null,
+    },
     totpSecret: {
       type: String,
       select: false,
@@ -115,6 +123,16 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: [BackupCodeSchema],
       select: false,
       default: undefined,
+    },
+    twoFactorAcknowledgementNonceHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
+    twoFactorFinalizationNonceHash: {
+      type: String,
+      select: false,
+      default: null,
     },
     refreshToken: {
       type: [SessionSchema],

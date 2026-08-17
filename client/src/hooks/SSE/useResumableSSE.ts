@@ -2509,6 +2509,15 @@ export default function useResumableSSE(
 
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
 
+        /**
+         * Enrollment enforcement cannot clear itself, so the reconnect ladder below would spend
+         * every attempt re-issuing a request the server is bound to refuse. Leave for setup on the
+         * first 403 instead; this transport bypasses the interceptor that handles it elsewhere.
+         */
+        if (responseCode === 403 && request.redirectIfTwoFactorSetupPayload(e.data)) {
+          return;
+        }
+
         if (responseCode === 409) {
           const replacementConvoId =
             currentSubmission.conversation?.conversationId ?? currentStreamId;
@@ -2766,6 +2775,15 @@ export default function useResumableSSE(
         if (responseCode === 401) {
           try {
             const refreshResponse = await request.refreshToken();
+            /**
+             * An access token that expired first turns enforcement into a 401 the stream cannot
+             * read, so enrollment surfaces on the refresh instead: it succeeds carrying a setup
+             * credential and no token. Leave before the staleness bail, because a subscription that
+             * has since been replaced would otherwise swallow the only notice the client gets.
+             */
+            if (request.redirectIfTwoFactorSetupPayload(refreshResponse)) {
+              return;
+            }
             if (!isCurrentSubscription()) {
               return;
             }

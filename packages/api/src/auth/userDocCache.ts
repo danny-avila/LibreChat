@@ -127,6 +127,8 @@ function sanitizeUserForCache(user: Partial<IUser>): CachedAuthUser {
   delete sanitized.pendingTotpSecret;
   delete sanitized.backupCodes;
   delete sanitized.pendingBackupCodes;
+  delete sanitized.twoFactorAcknowledgementNonceHash;
+  delete sanitized.twoFactorFinalizationNonceHash;
   delete sanitized.federatedTokens;
   delete sanitized.openidTokens;
 

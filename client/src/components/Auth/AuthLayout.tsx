@@ -27,6 +27,7 @@ function AuthLayout({
   const localize = useLocalize();
 
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
+  const isTwoFactorSetup = pathname === '/login/2fa/setup';
   const DisplayError = () => {
     if (hasStartupConfigError) {
       return (
@@ -77,7 +78,11 @@ function AuthLayout({
       </div>
 
       <main className="flex flex-grow items-center justify-center">
-        <div className="w-authPageWidth overflow-hidden bg-surface-primary px-6 py-4 sm:max-w-md sm:rounded-lg">
+        <div
+          className={`overflow-hidden bg-surface-primary px-6 py-4 sm:rounded-lg ${
+            isTwoFactorSetup ? 'w-11/12 max-w-lg' : 'w-authPageWidth sm:max-w-md'
+          }`}
+        >
           {!hasStartupConfigError && !isFetching && header && (
             <h1
               className="mb-4 text-center text-3xl font-semibold text-text-primary"

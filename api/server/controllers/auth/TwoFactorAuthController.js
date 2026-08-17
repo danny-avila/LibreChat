@@ -1,12 +1,56 @@
-const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
+const { TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE } = require('librechat-data-provider');
+const {
+  isTokenRetired,
+  clearCloudFrontCookies,
+  confirmTwoFactorSetup,
+  finalizeTwoFactorSetup,
+  TOKEN_RETIREMENT_FIELDS,
+  acknowledgeTwoFactorSetup,
+  sanitizeUserForResponse,
+  verifyTwoFactorLoginChallengeToken,
+  isEnrollmentSupersededByRecovery,
+  isCredentialLoginBlockedByTwoFactorPolicy,
+  generateTwoFactorSetupAcknowledgementToken,
+  generateTwoFactorSetupFinalizationToken,
+} = require('@librechat/api');
 const {
   verifyTOTP,
   getTOTPSecret,
   verifyBackupCode,
+  generateBackupCodes,
 } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { getUserById } = require('~/models');
+const { getUserById, updateTwoFactorEnrollment, deleteAllUserSessions } = require('~/models');
+
+const sanitizeUser = (user) => ({
+  ...sanitizeUserForResponse(user),
+  id: user._id.toString(),
+});
+
+/**
+ * Undoes a session hand-off this request had already started, leaving any promoted enrollment in
+ * place. The refresh session is dropped server side, so the cookie this response still carries buys
+ * nothing, and the access token is simply never handed back.
+ */
+const revokeMintedSession = async (res, user, userId) => {
+  await deleteAllUserSessions({ userId });
+  res.clearCookie('refreshToken');
+  res.clearCookie('token_provider');
+  clearCloudFrontCookies(res, {
+    userId,
+    tenantId: user.tenantId ?? user.orgId,
+    storageRegion: user.storageRegion,
+  });
+};
+
+const enrollmentDependencies = {
+  getUserById,
+  getTOTPSecret,
+  verifyTOTP,
+  generateBackupCodes,
+  updateTwoFactorEnrollment,
+};
 
 /**
  * Verifies the 2FA code during login using a temporary token.
@@ -18,17 +62,42 @@ const verify2FAWithTempToken = async (req, res) => {
       return res.status(400).json({ message: 'Missing temporary token' });
     }
 
-    let payload;
-    try {
-      payload = jwt.verify(tempToken, process.env.JWT_SECRET);
-    } catch (err) {
-      logger.error('Failed to verify temporary token:', err);
+    const credential = verifyTwoFactorLoginChallengeToken(tempToken, process.env.JWT_SECRET);
+    if (!credential) {
       return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
 
-    const user = await getUserById(payload.userId, '+totpSecret +backupCodes');
+    const user = await getUserById(credential.userId, '+totpSecret +backupCodes');
     if (!user || !user.twoFactorEnabled) {
       return res.status(400).json({ message: '2FA is not enabled for this user' });
+    }
+
+    /**
+     * Login used to issue this challenge before the federated-provider guard ran. Re-check here so
+     * an already-minted token cannot finish the identity-provider-only path with a local password
+     * and TOTP.
+     */
+    if (isCredentialLoginBlockedByTwoFactorPolicy(user)) {
+      logger.warn(
+        `[verify2FAWithTempToken] Refused a password challenge for a federated record under required 2FA [provider: ${user.provider}]`,
+      );
+      return res.status(403).json({
+        code: TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE,
+        message: 'Sign in with your identity provider to continue.',
+      });
+    }
+
+    /**
+     * The challenge is redeemable for a full session without presenting the password again, so
+     * recovery has to reach it too. A holder who cleared the password step beforehand would
+     * otherwise redeem it afterwards and mint a session that outlives the credential that bought
+     * it, undoing the `deleteAllUserSessions` recovery performs.
+     */
+    if (isTokenRetired(credential, user)) {
+      logger.warn(
+        `[verify2FAWithTempToken] Challenge predates enrollment or password reset: userId=${credential.userId}`,
+      );
+      return res.status(401).json({ message: 'Invalid or expired temporary token' });
     }
 
     const secret = await getTOTPSecret(user.totpSecret);
@@ -43,14 +112,26 @@ const verify2FAWithTempToken = async (req, res) => {
       return res.status(401).json({ message: 'Invalid 2FA code or backup code' });
     }
 
-    const userData = user.toObject ? user.toObject() : { ...user };
-    delete userData.__v;
-    delete userData.password;
-    delete userData.totpSecret;
-    delete userData.backupCodes;
-    userData.id = user._id.toString();
+    const userData = sanitizeUser(user);
 
     const authToken = await setAuthTokens(user._id, res, null, req);
+
+    /**
+     * Verifying the second factor takes a decrypt and a comparison, and recovery landing in that
+     * window is not caught by the check above: the session just minted postdates `passwordResetAt`,
+     * so no downstream gate would retire it, and it was created after recovery swept the sessions
+     * away. Re-reading the cutoff orders the two, exactly as the finalization flow does, and the
+     * challenge that bought this session is what gets dated against it.
+     */
+    const retirement = await getUserById(credential.userId, TOKEN_RETIREMENT_FIELDS);
+    if (isTokenRetired(credential, retirement)) {
+      logger.warn(
+        `[verify2FAWithTempToken] Password was reset while the challenge was being verified: userId=${credential.userId}`,
+      );
+      await revokeMintedSession(res, user, credential.userId);
+      return res.status(401).json({ message: 'Invalid or expired temporary token' });
+    }
+
     return res.status(200).json({ token: authToken, user: userData });
   } catch (err) {
     logger.error('[verify2FAWithTempToken]', err);
@@ -58,4 +139,121 @@ const verify2FAWithTempToken = async (req, res) => {
   }
 };
 
-module.exports = { verify2FAWithTempToken };
+/**
+ * Stages required 2FA enrollment after a setup token has been validated. Returns the deliverable
+ * backup codes and an acknowledgement credential; 2FA is not enabled and no session is created.
+ */
+const confirm2FASetupWithTempToken = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Invalid or expired two-factor setup token' });
+    }
+
+    const result = await confirmTwoFactorSetup(userId, req.body?.token, enrollmentDependencies);
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+
+    const acknowledgementToken = generateTwoFactorSetupAcknowledgementToken(
+      userId,
+      result.acknowledgementNonce,
+      process.env.JWT_SECRET,
+    );
+    return res.status(200).json({ backupCodes: result.plainCodes, acknowledgementToken });
+  } catch (err) {
+    logger.error('[confirm2FASetupWithTempToken]', err);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+};
+
+/**
+ * Consumes the one-time acknowledgement nonce and issues a finalization credential.
+ */
+const acknowledge2FASetup = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ message: 'Invalid or expired two-factor acknowledgement token' });
+    }
+
+    const result = await acknowledgeTwoFactorSetup(
+      userId,
+      req.twoFactorEnrollmentNonce,
+      enrollmentDependencies,
+    );
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+
+    const finalizationToken = generateTwoFactorSetupFinalizationToken(
+      userId,
+      result.finalizationNonce,
+      process.env.JWT_SECRET,
+    );
+    return res.status(200).json({ finalizationToken });
+  } catch (err) {
+    logger.error('[acknowledge2FASetup]', err);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+};
+
+/**
+ * Promotes the pending enrollment and only then creates the authenticated session.
+ */
+const finalize2FASetup = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Invalid or expired two-factor finalization token' });
+    }
+
+    const result = await finalizeTwoFactorSetup(
+      userId,
+      req.twoFactorEnrollmentNonce,
+      enrollmentDependencies,
+    );
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+
+    const userData = sanitizeUser(result.user);
+    /**
+     * Sessions opened before enrollment were only held back by `twoFactorEnabled` being false.
+     * Promotion lifts that block, so drop them before minting the enrolled session; otherwise a
+     * pre-enrollment refresh token could be exchanged for access without ever presenting a code.
+     */
+    await deleteAllUserSessions({ userId: result.user._id.toString() });
+    const authToken = await setAuthTokens(result.user._id, res, null, req);
+
+    /**
+     * Recovery clears the staged enrollment, so a reset that lands before the promotion above loses
+     * its compare-and-swap. One that lands in the gap between the promotion and this line does not,
+     * and the session just minted postdates `passwordResetAt`, so no downstream gate would retire
+     * it. Re-read the cutoff and withdraw the hand-off when recovery won that gap.
+     */
+    const retirement = await getUserById(userId, TOKEN_RETIREMENT_FIELDS);
+    if (
+      isEnrollmentSupersededByRecovery(result.user.twoFactorEnrolledAt, retirement?.passwordResetAt)
+    ) {
+      await revokeMintedSession(res, result.user, userId);
+      return res
+        .status(401)
+        .json({ message: 'Password was reset during setup, please sign in again' });
+    }
+
+    return res.status(200).json({ token: authToken, user: userData });
+  } catch (err) {
+    logger.error('[finalize2FASetup]', err);
+    return res.status(500).json({ message: 'Something went wrong' });
+  }
+};
+
+module.exports = {
+  verify2FAWithTempToken,
+  confirm2FASetupWithTempToken,
+  acknowledge2FASetup,
+  finalize2FASetup,
+};

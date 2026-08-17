@@ -1,6 +1,7 @@
 const { logger } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
+const { isTokenRetired } = require('@librechat/api');
 const { getUserById, updateUser } = require('~/models');
 
 // JWT strategy
@@ -14,6 +15,13 @@ const jwtLogin = () =>
       try {
         const user = await getUserById(payload?.id, '-password -__v -totpSecret -backupCodes');
         if (user) {
+          if (isTokenRetired({ issuedAt: payload?.iat, issuedAtMs: payload?.issuedAtMs }, user)) {
+            logger.warn(
+              '[jwtLogin] JwtStrategy => token predates enrollment or password reset: ' +
+                payload?.id,
+            );
+            return done(null, false);
+          }
           user.id = user._id.toString();
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
           user.idOnTheSource ??= null;

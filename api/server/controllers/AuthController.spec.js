@@ -16,6 +16,7 @@ jest.mock('~/strategies', () => ({ getOpenIdConfig: jest.fn(), getOpenIdEmail: j
 jest.mock('openid-client', () => ({ refreshTokenGrant: jest.fn() }));
 jest.mock('~/models', () => ({
   deleteAllUserSessions: jest.fn(),
+  deleteSession: jest.fn(),
   getUserById: jest.fn(),
   findSession: jest.fn(),
   updateUser: jest.fn(),
@@ -36,12 +37,25 @@ jest.mock('@librechat/api', () => ({
     }
     return params;
   }),
+  clearCloudFrontCookies: jest.fn(),
+  generateTwoFactorSetupToken: jest.fn(() => 'setup-token'),
+  isTwoFactorEnrollmentRequired: jest.fn(() => false),
+  /** The retirement cutoff is the assertion under test, so it runs for real rather than stubbed. */
+  isTokenRetired: jest.requireActual('@librechat/api').isTokenRetired,
+  TOKEN_RETIREMENT_FIELDS: jest.requireActual('@librechat/api').TOKEN_RETIREMENT_FIELDS,
 }));
 
 const openIdClient = require('openid-client');
 const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
-const { isEnabled, findOpenIDUser, buildOpenIDRefreshParams } = require('@librechat/api');
+const {
+  isEnabled,
+  clearCloudFrontCookies,
+  findOpenIDUser,
+  buildOpenIDRefreshParams,
+  generateTwoFactorSetupToken,
+  isTwoFactorEnrollmentRequired,
+} = require('@librechat/api');
 const { graphTokenController, refreshController } = require('./AuthController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const {
@@ -50,7 +64,13 @@ const {
   setAuthTokens,
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
-const { getUserById, findSession, updateUser } = require('~/models');
+const {
+  deleteAllUserSessions,
+  deleteSession,
+  getUserById,
+  findSession,
+  updateUser,
+} = require('~/models');
 
 const ORIGINAL_OPENID_SCOPE = process.env.OPENID_SCOPE;
 const ORIGINAL_OPENID_REFRESH_AUDIENCE = process.env.OPENID_REFRESH_AUDIENCE;
@@ -214,6 +234,10 @@ describe('refreshController – OpenID path', () => {
 
   const makeSignedUserId = (id = 'user-db-id', options = { expiresIn: '1h' }) =>
     jwt.sign({ id }, process.env.JWT_REFRESH_SECRET, options);
+
+  /** `setOpenIDAuthTokens` stamps this cookie to the millisecond, so the cutoffs can date it */
+  const makeSignedReuseCookie = (issuedAtMs, id = 'user-db-id') =>
+    jwt.sign({ id, issuedAtMs }, process.env.JWT_REFRESH_SECRET, { expiresIn: '1h' });
 
   const setOpenIDReuseCookies = (signedUserId = makeSignedUserId()) => {
     req.headers.cookie = [
@@ -451,6 +475,60 @@ describe('refreshController – OpenID path', () => {
     );
     expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
     expectOpenIDRefreshGrant();
+  });
+
+  /** Arms the reuse shortcut so only the cookie's mint time decides whether it is taken. */
+  const armOpenIDReuse = (issuedAtMs) => {
+    setOpenIDReuseCookies(makeSignedReuseCookie(issuedAtMs));
+    req.session = {
+      openidTokens: {
+        accessToken: 'session-access-token',
+        idToken: makeSessionToken(),
+        refreshToken: 'stored-refresh',
+        lastRefreshedAt: Date.now(),
+      },
+    };
+  };
+
+  it('declines the reuse shortcut for a cookie minted before enrollment', async () => {
+    const twoFactorEnrolledAt = new Date();
+    armOpenIDReuse(twoFactorEnrolledAt.getTime() - 1);
+    getUserById.mockResolvedValue({ ...defaultUser, twoFactorEnrolledAt });
+
+    await refreshController(req, res);
+
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[refreshController] OpenID reuse cookie predates enrollment or password reset: userId=user-db-id',
+    );
+    expectOpenIDRefreshGrant();
+  });
+
+  it('declines the reuse shortcut for a cookie minted in the resetting millisecond', async () => {
+    const passwordResetAt = new Date();
+    armOpenIDReuse(passwordResetAt.getTime());
+    getUserById.mockResolvedValue({ ...defaultUser, passwordResetAt });
+
+    await refreshController(req, res);
+
+    expect(setCloudFrontAuthCookies).not.toHaveBeenCalled();
+    expectOpenIDRefreshGrant();
+  });
+
+  it('keeps the reuse shortcut for a cookie minted after both cutoffs', async () => {
+    const twoFactorEnrolledAt = new Date();
+    armOpenIDReuse(twoFactorEnrolledAt.getTime() + 1);
+    getUserById.mockResolvedValue({
+      ...defaultUser,
+      twoFactorEnrolledAt,
+      passwordResetAt: new Date(twoFactorEnrolledAt.getTime() - 60_000),
+    });
+
+    await refreshController(req, res);
+
+    expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+    expect(setCloudFrontAuthCookies).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
   });
 
   it('falls through to full OpenID refresh when session tokens are stale', async () => {
@@ -750,7 +828,8 @@ describe('refreshController – LibreChat path', () => {
     process.env.JWT_REFRESH_SECRET = refreshSecret;
     process.env.NODE_ENV = 'test';
     setAuthTokens.mockResolvedValue('local-app-token');
-    findSession.mockResolvedValue({ expiration: new Date(Date.now() + 60_000) });
+    findSession.mockResolvedValue({ _id: 'session-id', expiration: new Date(Date.now() + 60_000) });
+    isTwoFactorEnrollmentRequired.mockReturnValue(false);
 
     const refreshToken = jwt.sign({ id: 'local-user-id' }, refreshSecret, {
       expiresIn: '1h',
@@ -764,6 +843,7 @@ describe('refreshController – LibreChat path', () => {
       status: jest.fn().mockReturnThis(),
       send: jest.fn().mockReturnThis(),
       redirect: jest.fn(),
+      clearCookie: jest.fn(),
     };
   });
 
@@ -800,7 +880,7 @@ describe('refreshController – LibreChat path', () => {
     expect(setAuthTokens).toHaveBeenCalledWith(
       'local-user-id',
       res,
-      { expiration: expect.any(Date) },
+      expect.objectContaining({ expiration: expect.any(Date) }),
       req,
     );
     expect(sentPayload).toEqual({
@@ -810,6 +890,228 @@ describe('refreshController – LibreChat path', () => {
         email: 'local@example.com',
       },
     });
+  });
+
+  it('requires enrollment before issuing tokens from an existing local refresh session', async () => {
+    const user = {
+      _id: 'local-user-id',
+      provider: 'local',
+      twoFactorEnabled: false,
+      email: 'local@example.com',
+    };
+    getUserById.mockResolvedValue(user);
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+
+    await refreshController(req, res);
+
+    expect(generateTwoFactorSetupToken).toHaveBeenCalledWith(
+      'local-user-id',
+      process.env.JWT_SECRET,
+    );
+    expect(res.send).toHaveBeenCalledWith({
+      code: 'TWO_FACTOR_ENROLLMENT_REQUIRED',
+      twoFAPending: true,
+      twoFASetupRequired: true,
+      tempToken: 'setup-token',
+    });
+    expect(findSession).toHaveBeenCalledWith(
+      {
+        userId: 'local-user-id',
+        refreshToken: expect.any(String),
+      },
+      { lean: false },
+    );
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(deleteSession).toHaveBeenCalledWith({ sessionId: 'session-id' });
+    expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+    expect(clearCloudFrontCookies).toHaveBeenCalledWith(res, {
+      userId: 'local-user-id',
+      tenantId: undefined,
+      storageRegion: undefined,
+    });
+
+    findSession.mockResolvedValue(null);
+    jest.clearAllMocks();
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+
+    await refreshController(req, res);
+
+    expect(generateTwoFactorSetupToken).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  /**
+   * `findSession` resolves before anything is minted, so recovery landing in that gap is caught by
+   * neither gate: the token handed back postdates `passwordResetAt`, and `setAuthTokens` re-saves
+   * the very session document recovery had already deleted.
+   */
+  describe('a password reset landing after the session lookup', () => {
+    const racingRead = (user) => {
+      getUserById
+        .mockResolvedValueOnce(user)
+        .mockResolvedValueOnce({ passwordResetAt: new Date(Date.now() + 60_000) });
+    };
+
+    it('withdraws the session it had already minted', async () => {
+      racingRead({ _id: 'local-user-id', provider: 'local', twoFactorEnabled: true });
+
+      await refreshController(req, res);
+
+      expect(setAuthTokens).toHaveBeenCalled();
+      expect(deleteAllUserSessions).toHaveBeenCalledWith({ userId: 'local-user-id' });
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.send).toHaveBeenCalledWith('Refresh token expired or not found for this user');
+      expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+      expect(res.clearCookie).toHaveBeenCalledWith('token_provider');
+    });
+
+    it('withholds the enrollment token it had already minted', async () => {
+      isTwoFactorEnrollmentRequired.mockReturnValue(true);
+      racingRead({ _id: 'local-user-id', provider: 'local', twoFactorEnabled: false });
+
+      await refreshController(req, res);
+
+      expect(generateTwoFactorSetupToken).toHaveBeenCalled();
+      expect(deleteAllUserSessions).toHaveBeenCalledWith({ userId: 'local-user-id' });
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(res.send).not.toHaveBeenCalledWith(
+        expect.objectContaining({ tempToken: 'setup-token' }),
+      );
+    });
+
+    it('reads the cutoff again only once the credential exists', async () => {
+      const order = [];
+      getUserById
+        .mockResolvedValueOnce({ _id: 'local-user-id', provider: 'local', twoFactorEnabled: true })
+        .mockImplementationOnce(async () => {
+          order.push('recheck');
+          return {};
+        });
+      setAuthTokens.mockImplementationOnce(async () => {
+        order.push('mint');
+        return 'local-app-token';
+      });
+
+      await refreshController(req, res);
+
+      expect(order).toEqual(['mint', 'recheck']);
+      expect(getUserById).toHaveBeenLastCalledWith(
+        'local-user-id',
+        'twoFactorEnrolledAt passwordResetAt',
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+  });
+
+  it('refuses a refresh credential that predates required enrollment', async () => {
+    getUserById.mockResolvedValue({
+      _id: 'local-user-id',
+      provider: 'local',
+      twoFactorEnabled: true,
+      twoFactorEnrolledAt: new Date(Date.now() + 60_000),
+    });
+
+    await refreshController(req, res);
+
+    /** Promotion lands before revocation, so the cutoff is what denies the older cookie. */
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+  });
+
+  it('refuses a stale refresh credential even on the CI shortcut', async () => {
+    process.env.NODE_ENV = 'CI';
+    getUserById.mockResolvedValue({
+      _id: 'local-user-id',
+      provider: 'local',
+      twoFactorEnabled: true,
+      twoFactorEnrolledAt: new Date(Date.now() + 60_000),
+    });
+
+    await refreshController(req, res);
+
+    process.env.NODE_ENV = 'test';
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('accepts a refresh credential minted after enrollment', async () => {
+    getUserById.mockResolvedValue({
+      _id: 'local-user-id',
+      email: 'local@example.com',
+      provider: 'local',
+      twoFactorEnabled: true,
+      twoFactorEnrolledAt: new Date(Date.now() - 60_000),
+    });
+
+    await refreshController(req, res);
+
+    expect(setAuthTokens).toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledWith(expect.objectContaining({ token: 'local-app-token' }));
+  });
+
+  it('leaves refresh alone for accounts that never enrolled through the policy', async () => {
+    getUserById.mockResolvedValue({
+      _id: 'local-user-id',
+      email: 'local@example.com',
+      provider: 'local',
+      twoFactorEnabled: true,
+      twoFactorEnrolledAt: null,
+    });
+
+    await refreshController(req, res);
+
+    expect(setAuthTokens).toHaveBeenCalled();
+  });
+
+  it('does not issue an enrollment token for a revoked local refresh session', async () => {
+    getUserById.mockResolvedValue({
+      _id: 'local-user-id',
+      provider: 'local',
+      twoFactorEnabled: false,
+    });
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+    findSession.mockResolvedValue(null);
+
+    await refreshController(req, res);
+
+    expect(generateTwoFactorSetupToken).not.toHaveBeenCalled();
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.send).toHaveBeenCalledWith('Refresh token expired or not found for this user');
+  });
+
+  it('does not issue an enrollment token for an expired local refresh session', async () => {
+    getUserById.mockResolvedValue({
+      _id: 'local-user-id',
+      provider: 'local',
+      twoFactorEnabled: false,
+    });
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+    findSession.mockResolvedValue({ expiration: new Date(Date.now() - 60_000) });
+
+    await refreshController(req, res);
+
+    expect(generateTwoFactorSetupToken).not.toHaveBeenCalled();
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.send).toHaveBeenCalledWith('Refresh token expired or not found for this user');
+  });
+
+  it('preserves CI refresh compatibility without session lookup', async () => {
+    process.env.NODE_ENV = 'CI';
+    getUserById.mockResolvedValue({
+      _id: 'local-user-id',
+      provider: 'local',
+      twoFactorEnabled: false,
+    });
+    isTwoFactorEnrollmentRequired.mockReturnValue(true);
+
+    await refreshController(req, res);
+
+    expect(findSession).not.toHaveBeenCalled();
+    expect(generateTwoFactorSetupToken).not.toHaveBeenCalled();
+    expect(setAuthTokens).toHaveBeenCalledWith('local-user-id', res, null, req);
   });
 
   it('sanitizes user documents before returning CI refresh responses', async () => {

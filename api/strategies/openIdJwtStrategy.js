@@ -5,6 +5,7 @@ const { CacheKeys, SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const {
   isEnabled,
+  isTokenRetired,
   findOpenIDUser,
   getOpenIdEmail,
   getOpenIdIssuer,
@@ -172,6 +173,23 @@ const openIdJwtLogin = (openIdConfig) => {
         }
 
         if (user) {
+          /**
+           * The federated bearer answers for the same account the local one does, so the events
+           * that retire a token retire this one too. Only `iat` can date it: the identity provider
+           * mints it, so it never carries the `issuedAtMs` claim this deployment stamps, and the
+           * comparison falls back to whole seconds. A provider that omits `iat` altogether leaves
+           * the token undatable and it is refused once either cutoff is set, which is the same way
+           * every other entry point resolves a credential it cannot place in time.
+           */
+          if (isTokenRetired({ issuedAt: payload?.iat }, user)) {
+            logger.warn(
+              '[openIdJwtLogin] openId JwtStrategy => token predates enrollment or password reset: ' +
+                payload?.sub,
+            );
+            done(null, false, { message: 'Token predates enrollment or password reset' });
+            return;
+          }
+
           user.id = user._id.toString();
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
           user.idOnTheSource ??= null;
