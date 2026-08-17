@@ -284,6 +284,82 @@ describe('abort signal honesty across replicas', () => {
     await owner.destroy();
   });
 
+  it('does not let a predecessor owner release clear the current generation Stop fence', async () => {
+    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 0 });
+    const retainAbortDelivery = jest.fn(async () => undefined);
+    const clearAbortDelivery = jest.fn(async () => undefined);
+    const fallback = {
+      renew: jest.fn(async () => undefined),
+      clear: jest.fn(async () => undefined),
+      retainAbortDelivery,
+      clearAbortDelivery,
+    };
+    const owner = new GenerationJobManagerClass();
+    owner.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: true,
+      userFinalizationFallback: fallback,
+    });
+    owner.initialize();
+    const peerTransport = Object.assign(new InMemoryEventTransport(), {
+      emitAbortConfirmed: jest.fn(async () => false),
+    });
+    const peer = new GenerationJobManagerClass();
+    peer.configure({
+      jobStore,
+      eventTransport: peerTransport,
+      isRedis: true,
+      userFinalizationFallback: fallback,
+    });
+    peer.initialize();
+
+    try {
+      const predecessor = await owner.createJob(
+        'conv-generation-fence',
+        'user-1',
+        'conv-generation-fence',
+      );
+      const predecessorAbort = await owner.abortJob('conv-generation-fence');
+      expect(predecessorAbort.signalDelivered).toBe(true);
+
+      const current = await owner.createJob(
+        'conv-generation-fence',
+        'user-1',
+        'conv-generation-fence',
+      );
+      expect(current.createdAt).toBeGreaterThan(predecessor.createdAt);
+      const currentAbort = await peer.abortJob('conv-generation-fence');
+      expect(currentAbort).toMatchObject({
+        success: true,
+        signalDelivered: false,
+        signalPublished: false,
+      });
+      expect(retainAbortDelivery).toHaveBeenLastCalledWith(
+        'user-1',
+        undefined,
+        'conv-generation-fence',
+      );
+      clearAbortDelivery.mockClear();
+
+      // Generation A still has its local owner hold while generation B's failed
+      // Stop owns the stream-level durable recovery fence. A's late catch must not
+      // clear B's evidence merely because A has a hold for the same stream.
+      await owner.releaseOwnerLease(
+        'user-1',
+        'conv-generation-fence',
+        undefined,
+        predecessor.createdAt,
+      );
+      expect(clearAbortDelivery).not.toHaveBeenCalled();
+    } finally {
+      await Promise.allSettled([peer.destroy(), owner.destroy()]);
+    }
+  });
+
   it('heartbeats the abort contender while required persistence exceeds the lease TTL', async () => {
     const { owner, jobStore } = await makeManagers();
     await owner.createJob('conv-slow-stop-persistence', 'user-1', 'conv-slow-stop-persistence');
