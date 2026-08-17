@@ -2,6 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 const MOCKS = '../__test-utils__/convos-route-mocks';
+const { archiveAllHandler } = require(MOCKS);
 
 jest.mock('@librechat/agents', () => require(MOCKS).agents());
 jest.mock('@librechat/api', () => require(MOCKS).api());
@@ -701,6 +702,21 @@ describe('Convos Routes', () => {
 
       expect(response.status).toBe(400);
       expect(response.body).toEqual({ error: 'conversationId is required' });
+    });
+  });
+
+  describe('POST /archive/all', () => {
+    const { archiveAllConvos } = require('~/models');
+
+    it('delegates archive-all requests through the package API handler', async () => {
+      archiveAllConvos.mockResolvedValue({ archivedCount: 4 });
+
+      const response = await request(app).post('/api/convos/archive/all');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ archivedCount: 4 });
+      expect(archiveAllHandler).toHaveBeenCalledTimes(1);
+      expect(archiveAllConvos).toHaveBeenCalledWith('test-user-123');
     });
   });
 

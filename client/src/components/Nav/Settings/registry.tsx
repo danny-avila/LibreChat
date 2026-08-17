@@ -20,6 +20,7 @@ import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitc
 import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
 import LangfuseConnection from '../SettingsTabs/Integrations/LangfuseConnection';
 import ImportConversations from '../SettingsTabs/Data/ImportConversations';
+import { ArchiveAllChats } from '../SettingsTabs/Data/ArchiveAllChats';
 import { toggleControl, ThemeSetting, LangSetting } from './controls';
 import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
 import { EngineSTTSetting, EngineTTSSetting } from './SpeechControls';
@@ -553,6 +554,14 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_settings_label_manage_files',
     keywords: ['file', 'files', 'upload', 'uploads', 'storage', 'attachments'],
     Component: ManageFiles,
+  },
+  {
+    id: 'archiveAllChats',
+    tab: DATA,
+    section: 'data',
+    labelKey: 'com_ui_settings_label_archive_all_chats',
+    keywords: ['archive', 'chats', 'conversations', 'bulk'],
+    Component: ArchiveAllChats,
   },
   // Data controls · API keys
   {

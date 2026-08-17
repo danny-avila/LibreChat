@@ -15,6 +15,7 @@ import {
   findConversationInInfinite,
   updateConvoInAllQueries,
   removeConvoFromAllQueries,
+  clearArchivedConversationMessagesCache,
   clearDeletedConversationMessagesCache,
 } from '~/utils';
 import useUpdateTagsInConvo from '~/hooks/Conversations/useUpdateTagsInConvo';
@@ -131,6 +132,9 @@ export const useArchiveConvoMutation = (
           [QueryKeys.conversation, vars.conversationId],
           isArchived ? null : _data,
         );
+        if (isArchived) {
+          clearArchivedConversationMessagesCache(queryClient, vars.conversationId);
+        }
         if (_data.chatProjectId) {
           queryClient.invalidateQueries([QueryKeys.project, _data.chatProjectId]);
         }
@@ -152,6 +156,45 @@ export const useArchiveConvoMutation = (
         queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
         queryClient.invalidateQueries([QueryKeys.projectConversations]);
         queryClient.invalidateQueries([QueryKeys.projects]);
+      },
+      ..._options,
+    },
+  );
+};
+
+export const useArchiveAllConversationsMutation = (
+  options?: t.ArchiveAllConversationsOptions,
+): UseMutationResult<t.TArchiveAllConversationsResponse, unknown, void, unknown> => {
+  const queryClient = useQueryClient();
+  const { onSuccess, onError, ..._options } = options || {};
+
+  const reconcileCaches = () => {
+    queryClient.invalidateQueries([QueryKeys.allConversations]);
+    queryClient.invalidateQueries({
+      queryKey: [QueryKeys.archivedConversations],
+      refetchType: 'all',
+    });
+    /** The pinned section fetches on its own key with a five-minute stale time, so an
+     * archived pin would keep rendering in the sidebar without this. */
+    queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
+    queryClient.invalidateQueries([QueryKeys.projectConversations]);
+    queryClient.invalidateQueries([QueryKeys.projects]);
+    queryClient.invalidateQueries([QueryKeys.project]);
+    queryClient.removeQueries([QueryKeys.project], { type: 'inactive' });
+    queryClient.removeQueries({ queryKey: [QueryKeys.conversation] });
+  };
+
+  return useMutation(
+    [MutationKeys.archiveAllConversations],
+    () => dataService.archiveAllConversations(),
+    {
+      onSuccess: (data, vars, context) => {
+        reconcileCaches();
+        onSuccess?.(data, vars, context);
+      },
+      onError: (error, vars, context) => {
+        reconcileCaches();
+        onError?.(error, vars, context);
       },
       ..._options,
     },

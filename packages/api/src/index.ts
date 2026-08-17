@@ -55,6 +55,8 @@ export * from './actions';
 export * from './prompts';
 /* Projects */
 export * from './projects';
+/* Conversations */
+export * from './conversations';
 /* Skills */
 export * from './skills';
 export * from './favorites';

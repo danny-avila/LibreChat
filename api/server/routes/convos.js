@@ -4,6 +4,7 @@ const { sleep } = require('@librechat/agents');
 const {
   isEnabled,
   deleteAgentCheckpoints,
+  createArchiveAllHandler,
   resolveImportMaxFileSize,
   restoreTenantContextFromReq,
   deleteAllSharedLinksWithCleanup,
@@ -30,6 +31,7 @@ const assistantClients = {
 };
 
 const router = express.Router();
+const archiveAllHandler = createArchiveAllHandler({ archiveAllConvos: db.archiveAllConvos });
 router.use(requireJwtAuth);
 
 const isValidProjectFilter = (projectId) =>
@@ -229,6 +231,13 @@ router.post('/archive', validateConvoAccess, async (req, res) => {
     res.status(500).send('Error archiving conversation');
   }
 });
+
+/**
+ * Archives every conversation currently visible to the user.
+ * @route POST /archive/all
+ * @returns {object} 200 - The number of conversations archived.
+ */
+router.post('/archive/all', archiveAllHandler);
 
 router.post('/pin', validateConvoAccess, async (req, res) => {
   const { conversationId, pinned } = req.body?.arg ?? {};

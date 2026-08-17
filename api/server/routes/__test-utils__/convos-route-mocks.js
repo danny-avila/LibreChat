@@ -1,4 +1,8 @@
+const archiveAllHandler = jest.fn();
+
 module.exports = {
+  archiveAllHandler,
+
   agents: () => ({ sleep: jest.fn() }),
 
   api: (overrides = {}) => ({
@@ -21,6 +25,13 @@ module.exports = {
     })),
     logAxiosError: jest.fn(),
     restoreTenantContextFromReq: jest.fn((req, res, next) => next()),
+    createArchiveAllHandler: jest.fn(({ archiveAllConvos }) => {
+      archiveAllHandler.mockImplementation(async (req, res) => {
+        const result = await archiveAllConvos(req.user.id);
+        return res.status(200).json(result);
+      });
+      return archiveAllHandler;
+    }),
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
     deleteAgentCheckpoints: jest.fn(),
@@ -64,6 +75,7 @@ module.exports = {
     getConvosByCursor: jest.fn(),
     getConvo: jest.fn(),
     deleteConvos: jest.fn(),
+    archiveAllConvos: jest.fn(),
     saveConvo: jest.fn(),
     setConvoPinned: jest.fn(),
     deleteAllSharedLinks: jest.fn(),

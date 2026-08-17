@@ -1,5 +1,5 @@
 import { RetentionMode } from 'librechat-data-provider';
-import type { FilterQuery, Model, SortOrder } from 'mongoose';
+import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { DeleteResult } from 'mongoose';
 import type { AppConfig, IChatProjectDocument, IConversation, ISharedLink } from '~/types';
 import type { MessageMethods } from './message';
@@ -30,6 +30,69 @@ type ConversationUpdateResult = {
     updatedExisting?: boolean;
   };
 };
+
+const ARCHIVE_CONVERSATION_BATCH_SIZE = 500;
+const PROJECT_STATS_REFRESH_CONCURRENCY = 10;
+const PROJECT_STATS_REFRESH_MAX_PASSES = 2;
+const PROJECT_DISCOVERY_MAX_ATTEMPTS = 3;
+
+async function discoverProjectIds(
+  Conversation: Model<IConversation>,
+  filter: FilterQuery<IConversation>,
+): Promise<string[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < PROJECT_DISCOVERY_MAX_ATTEMPTS; attempt++) {
+    try {
+      const currentProjectIds = await Conversation.distinct('chatProjectId', filter);
+      return currentProjectIds.filter((projectId): projectId is string => Boolean(projectId));
+    } catch (error) {
+      lastError = error;
+      logger.error('[archiveAllConvos] Conversations archived but project discovery failed', error);
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * A project dropped here stays wrong forever: its chats are archived, so no retry of
+ * archive-all can find them again to recompute against. The likeliest rejection is also
+ * the most recoverable one, `refreshChatProjectStatsForUser` giving up after the project
+ * changed under every compare-and-set attempt, so failures are collected and replayed
+ * once the rest of the run has stopped competing with them.
+ */
+async function refreshChatProjectStatsInBatches(
+  mongoose: typeof import('mongoose'),
+  user: string,
+  projectIds: Iterable<string>,
+): Promise<void> {
+  let pending = [...projectIds];
+  for (let pass = 0; pass < PROJECT_STATS_REFRESH_MAX_PASSES && pending.length > 0; pass++) {
+    const failed: string[] = [];
+    for (let index = 0; index < pending.length; index += PROJECT_STATS_REFRESH_CONCURRENCY) {
+      const batch = pending.slice(index, index + PROJECT_STATS_REFRESH_CONCURRENCY);
+      const results = await Promise.allSettled(
+        batch.map((projectId) => refreshChatProjectStatsForUser(mongoose, user, projectId)),
+      );
+      for (let resultIndex = 0; resultIndex < results.length; resultIndex++) {
+        const result = results[resultIndex];
+        if (result.status === 'rejected') {
+          failed.push(batch[resultIndex]);
+          logger.error(
+            `[refreshChatProjectStatsInBatches] Failed to refresh project ${batch[resultIndex]}`,
+            result.reason,
+          );
+        }
+      }
+    }
+    pending = failed;
+  }
+
+  if (pending.length > 0) {
+    logger.error(
+      `[refreshChatProjectStatsInBatches] Left ${pending.length} project(s) unreconciled: ${pending.join(', ')}`,
+    );
+  }
+}
 
 export interface ConversationMethods {
   getConvoFiles(conversationId: string): Promise<string[]>;
@@ -93,6 +156,7 @@ export interface ConversationMethods {
     user: string,
     filter: FilterQuery<IConversation>,
   ): Promise<DeleteResult & { messages: DeleteResult; conversationIds: string[] }>;
+  archiveAllConvos(user: string): Promise<{ archivedCount: number }>;
 }
 
 export function createConversationMethods(
@@ -491,8 +555,10 @@ export function createConversationMethods(
          * refresh: the incremental path only bumps the count for brand-new inserts,
          * so a pre-existing chat joining the project would otherwise be uncounted.
          */
+        const isNewConversation = conversationResult.lastErrorObject?.updatedExisting === false;
         const shouldRefreshProjectStats =
           projectMembershipChanged ||
+          isNewConversation ||
           typeof update.isArchived === 'boolean' ||
           Object.prototype.hasOwnProperty.call(unsetFields, 'isArchived') ||
           isRetentionVisibilityUpdate ||
@@ -506,7 +572,6 @@ export function createConversationMethods(
             userId,
             conversation.chatProjectId,
             conversation,
-            conversationResult.lastErrorObject?.updatedExisting === false,
           );
         }
       }
@@ -1074,11 +1139,7 @@ export function createConversationMethods(
        */
       if (deleted && projectIds.size > 0) {
         try {
-          await Promise.all(
-            [...projectIds].map((projectId) =>
-              refreshChatProjectStatsForUser(mongoose, user, projectId),
-            ),
-          );
+          await refreshChatProjectStatsInBatches(mongoose, user, projectIds);
         } catch (error) {
           logger.error('[deleteConvos] Conversations deleted but stats refresh failed', error);
         }
@@ -1091,6 +1152,133 @@ export function createConversationMethods(
     } catch (error) {
       logger.error('[deleteConvos] Error deleting conversations and messages', error);
       throw error;
+    }
+  }
+
+  /**
+   * Archives every conversation the user can currently see in one pass. Temporary and
+   * retention-expired conversations are left alone: they are already hidden from the
+   * chat list, so archiving them would only resurrect them in the archived view.
+   */
+  async function archiveAllConvos(user: string) {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const projectIds = new Set<string>();
+    /** One stamp for the whole sweep so the archived view groups the run together
+     * instead of fanning it out across however long the batching took, and so the
+     * recovery below can find everything this call committed without holding an id
+     * per conversation in memory. */
+    const archivedAt = new Date();
+    let archivedCount = 0;
+    /** A write whose result never came back may still have committed, so reconciliation
+     * keys off the attempt rather than off `archivedCount`: a stepdown between commit and
+     * acknowledgement would otherwise strand those chats with stale project counts, and no
+     * retry can find them again because they no longer match the sweep filter. */
+    let attemptedArchiveWrite = false;
+    try {
+      const filter = {
+        user,
+        $and: [
+          { $or: [{ isArchived: false }, { isArchived: { $exists: false } }] },
+          getVisibleConversationRetentionFilter(),
+        ],
+      } as FilterQuery<IConversation>;
+
+      const snapshotBoundary = await Conversation.findOne(filter)
+        .select('_id')
+        .sort({ _id: -1 })
+        .lean<Pick<IConversation, '_id'>>();
+      if (!snapshotBoundary) {
+        return { archivedCount: 0 };
+      }
+
+      let lastConversationId: Types.ObjectId | null = null;
+
+      while (true) {
+        const idRange = lastConversationId
+          ? { $gt: lastConversationId, $lte: snapshotBoundary._id }
+          : { $lte: snapshotBoundary._id };
+        const conversations = await Conversation.find({ ...filter, _id: idRange })
+          .select('_id chatProjectId')
+          .sort({ _id: 1 })
+          .limit(ARCHIVE_CONVERSATION_BATCH_SIZE)
+          .lean<Array<Pick<IConversation, '_id' | 'chatProjectId'>>>();
+        if (conversations.length === 0) {
+          break;
+        }
+
+        const conversationIds: Types.ObjectId[] = [];
+        for (const conversation of conversations) {
+          conversationIds.push(conversation._id);
+          if (conversation.chatProjectId) {
+            projectIds.add(conversation.chatProjectId);
+          }
+        }
+        lastConversationId = conversationIds[conversationIds.length - 1];
+
+        /**
+         * `timestamps: false` keeps each conversation's own `updatedAt`, so the archived
+         * view stays sorted by real activity instead of collapsing onto the archive time.
+         * `archivedAt` is still stamped: the filter only matches unarchived chats, so this
+         * cannot move an existing stamp, and leaving it unset would drop the whole sweep
+         * into the legacy group the archived table sorts and dates by `createdAt`.
+         */
+        attemptedArchiveWrite = true;
+        const result = await Conversation.updateMany(
+          { ...filter, _id: { $in: conversationIds } },
+          { $set: { isArchived: true, archivedAt } },
+          { timestamps: false },
+        );
+        const batchArchivedCount = result.modifiedCount ?? 0;
+        archivedCount += batchArchivedCount;
+
+        if (batchArchivedCount > 0) {
+          const currentProjectIds = await discoverProjectIds(Conversation, {
+            _id: { $in: conversationIds },
+            user,
+          });
+          for (const projectId of currentProjectIds) {
+            projectIds.add(projectId);
+          }
+        }
+      }
+
+      return { archivedCount };
+    } catch (error) {
+      logger.error('[archiveAllConvos] Error archiving conversations', error);
+      throw error;
+    } finally {
+      /**
+       * Best-effort, mirroring `deleteConvos`: committed batches are already archived, so
+       * a stats failure must not hide that from the caller. Recover destination projects
+       * first, because in-loop discovery can throw after a move and a retry cannot see
+       * those already-archived chats. The sweep marker is what identifies them, so this
+       * costs one indexed query rather than a per-conversation id list: history size
+       * changes how much this reads, never how much it holds.
+       */
+      if (attemptedArchiveWrite) {
+        try {
+          const recoveredProjectIds = await discoverProjectIds(Conversation, {
+            user,
+            isArchived: true,
+            archivedAt,
+          });
+          for (const projectId of recoveredProjectIds) {
+            projectIds.add(projectId);
+          }
+        } catch (error) {
+          logger.error(
+            '[archiveAllConvos] Conversations archived but project recovery failed',
+            error,
+          );
+        }
+      }
+      if (attemptedArchiveWrite && projectIds.size > 0) {
+        try {
+          await refreshChatProjectStatsInBatches(mongoose, user, projectIds);
+        } catch (error) {
+          logger.error('[archiveAllConvos] Conversations archived but stats refresh failed', error);
+        }
+      }
     }
   }
 
@@ -1108,5 +1296,6 @@ export function createConversationMethods(
     getConvoRetention,
     getConvoTitle,
     deleteConvos,
+    archiveAllConvos,
   };
 }

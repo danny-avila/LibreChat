@@ -5,6 +5,7 @@ import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { LocalizeFunction, TMessageProps } from '~/common';
 import {
   clearMessagesCache,
+  clearArchivedConversationMessagesCache,
   clearDeletedConversationMessagesCache,
   isValidTimestamp,
   getMessageAriaLabel,
@@ -101,6 +102,66 @@ describe('clearDeletedConversationMessagesCache', () => {
     clearDeletedConversationMessagesCache(queryClient, conversationId);
 
     expect(queryClient.getQueryData([QueryKeys.messages, conversationId])).toBeUndefined();
+    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual(
+      newConversationMessages,
+    );
+  });
+});
+
+describe('clearArchivedConversationMessagesCache', () => {
+  it('clears the new-conversation cache that still shows the archived chat', () => {
+    const queryClient = new QueryClient();
+    const conversationId = 'conversation-1';
+    const messages = [makeMessage({ conversationId })];
+    queryClient.setQueryData([QueryKeys.messages, conversationId], messages);
+    queryClient.setQueryData(
+      [QueryKeys.messages, Constants.NEW_CONVO],
+      messages.map((message) => ({ ...message })),
+    );
+
+    clearArchivedConversationMessagesCache(queryClient, conversationId);
+
+    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
+  });
+
+  it('clears a shared new-conversation cache before its message IDs are hydrated', () => {
+    const queryClient = new QueryClient();
+    const conversationId = 'conversation-1';
+    const messages = [makeMessage({ conversationId: Constants.NEW_CONVO as string })];
+    queryClient.setQueryData([QueryKeys.messages, conversationId], messages);
+    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], messages);
+
+    clearArchivedConversationMessagesCache(queryClient, conversationId);
+
+    expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual([]);
+  });
+
+  it('keeps the archived conversation history so reopening it from the archive is instant', () => {
+    const queryClient = new QueryClient();
+    const conversationId = 'conversation-1';
+    const messages = [makeMessage({ conversationId })];
+    queryClient.setQueryData([QueryKeys.messages, conversationId], messages);
+    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], messages);
+
+    clearArchivedConversationMessagesCache(queryClient, conversationId);
+
+    expect(queryClient.getQueryData([QueryKeys.messages, conversationId])).toEqual(messages);
+  });
+
+  it('preserves an unrelated new-conversation message cache', () => {
+    const queryClient = new QueryClient();
+    const conversationId = 'conversation-1';
+    const newConversationMessages = [
+      makeMessage({ messageId: 'new-message', conversationId: Constants.NEW_CONVO as string }),
+    ];
+    queryClient.setQueryData(
+      [QueryKeys.messages, conversationId],
+      [makeMessage({ conversationId })],
+    );
+    queryClient.setQueryData([QueryKeys.messages, Constants.NEW_CONVO], newConversationMessages);
+
+    clearArchivedConversationMessagesCache(queryClient, conversationId);
+
     expect(queryClient.getQueryData([QueryKeys.messages, Constants.NEW_CONVO])).toEqual(
       newConversationMessages,
     );

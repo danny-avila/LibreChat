@@ -321,12 +321,13 @@ export const clearMessagesCache = (
   queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
 };
 
-/** Removes a deleted conversation's message cache and any matching new-chat cache alias. */
-export const clearDeletedConversationMessagesCache = (
-  queryClient: QueryClient,
-  conversationId: string,
-): void => {
-  const deletedMessages = queryClient.getQueryData<TMessage[]>([
+/**
+ * True while the new-chat cache still holds the given conversation's messages: a chat's first
+ * turn writes the same array under both keys, so the alias survives until it is reset. The
+ * reference check covers the window before the messages carry their conversation ID.
+ */
+const newConversationCacheAliases = (queryClient: QueryClient, conversationId: string): boolean => {
+  const conversationMessages = queryClient.getQueryData<TMessage[]>([
     QueryKeys.messages,
     conversationId,
   ]);
@@ -334,14 +335,40 @@ export const clearDeletedConversationMessagesCache = (
     QueryKeys.messages,
     Constants.NEW_CONVO,
   ]);
-  const newConversationAliasesDeleted =
+
+  return (
     newConversationMessages != null &&
-    (newConversationMessages === deletedMessages ||
-      newConversationMessages.some((message) => message.conversationId === conversationId));
+    (newConversationMessages === conversationMessages ||
+      newConversationMessages.some((message) => message.conversationId === conversationId))
+  );
+};
+
+/** Removes a deleted conversation's message cache and any matching new-chat cache alias. */
+export const clearDeletedConversationMessagesCache = (
+  queryClient: QueryClient,
+  conversationId: string,
+): void => {
+  const newConversationAliasesDeleted = newConversationCacheAliases(queryClient, conversationId);
 
   queryClient.removeQueries([QueryKeys.messages, conversationId], { exact: true });
 
   if (!newConversationAliasesDeleted) {
+    return;
+  }
+
+  queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
+};
+
+/**
+ * Drops the new-chat alias of a conversation that was just archived, so returning to a new chat
+ * does not keep rendering it. Its own history stays cached: unlike a deleted chat, an archived
+ * one can still be reopened from the archive.
+ */
+export const clearArchivedConversationMessagesCache = (
+  queryClient: QueryClient,
+  conversationId: string,
+): void => {
+  if (!newConversationCacheAliases(queryClient, conversationId)) {
     return;
   }
 
