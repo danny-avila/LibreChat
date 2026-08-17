@@ -661,6 +661,46 @@ describe('mergeConfigOverrides', () => {
     });
   });
 
+  it.each(['mcpServers.operator', 'mcpServers.operator.command'])(
+    'does not let the %s tombstone alter an operator-owned stdio server',
+    (tombstone) => {
+      const base = {
+        mcpConfig: {
+          operator: { type: 'stdio', command: 'node', args: ['trusted-server.js'] },
+        },
+      } as unknown as AppConfig;
+
+      const result = mergeConfigOverrides(base, [
+        fakeConfig({}, 10, [tombstone]),
+      ]) as unknown as Record<string, unknown>;
+      const mcpConfig = result.mcpConfig as Record<string, unknown>;
+
+      expect(mcpConfig.operator).toEqual({
+        type: 'stdio',
+        command: 'node',
+        args: ['trusted-server.js'],
+      });
+    },
+  );
+
+  it('preserves operator-owned stdio servers when the MCP section is tombstoned', () => {
+    const base = {
+      mcpConfig: {
+        operator: { type: 'stdio', command: 'node', args: ['trusted-server.js'] },
+        remote: { type: 'streamable-http', url: 'https://mcp.example.com' },
+      },
+    } as unknown as AppConfig;
+
+    const result = mergeConfigOverrides(base, [
+      fakeConfig({}, 10, ['mcpServers']),
+    ]) as unknown as Record<string, unknown>;
+    const mcpConfig = result.mcpConfig as Record<string, unknown>;
+
+    expect(mcpConfig).toEqual({
+      operator: { type: 'stdio', command: 'node', args: ['trusted-server.js'] },
+    });
+  });
+
   it('lets a higher-priority override recreate a lower-priority tombstoned path', () => {
     const base = {
       mcpConfig: {

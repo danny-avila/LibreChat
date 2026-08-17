@@ -89,6 +89,32 @@ function deletePath<T extends AnyObject>(target: T, path: string): T {
   return result as T;
 }
 
+function deleteConfigPath<T extends AnyObject>(target: T, path: string): T {
+  const [section, serverName] = path.split('.');
+  if (section !== 'mcpConfig') {
+    return deletePath(target, path);
+  }
+
+  const mcpConfig = target.mcpConfig;
+  if (mcpConfig == null || typeof mcpConfig !== 'object' || Array.isArray(mcpConfig)) {
+    return deletePath(target, path);
+  }
+
+  const servers = mcpConfig as AnyObject;
+  if (serverName != null) {
+    return isProcessMCPServerConfig(servers[serverName]) ? target : deletePath(target, path);
+  }
+
+  const processServers = Object.fromEntries(
+    Object.entries(servers).filter(([, serverConfig]) => isProcessMCPServerConfig(serverConfig)),
+  );
+  if (Object.keys(processServers).length === 0) {
+    return deletePath(target, path);
+  }
+
+  return { ...target, mcpConfig: processServers } as T;
+}
+
 function mergeArrayByKey(
   target: AnyObject[],
   source: AnyObject[],
@@ -241,7 +267,7 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
           typeof path === 'string' &&
           (isBasePrincipal || !BASE_PRINCIPAL_OVERRIDE_SECTIONS.has(path.split('.')[0]))
         ) {
-          merged = deletePath(merged, remapOverridePath(path));
+          merged = deleteConfigPath(merged, remapOverridePath(path));
         }
       }
     }
