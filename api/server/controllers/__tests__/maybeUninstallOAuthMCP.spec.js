@@ -101,6 +101,10 @@ jest.mock('~/server/services/Files/process', () => ({
   processDeleteRequest: jest.fn().mockResolvedValue({ deletedFileIds: [], failedFileIds: [] }),
 }));
 
+jest.mock('~/server/services/Agents/triggers', () => ({
+  drainAgentTriggerDeliveriesForUser: jest.fn(),
+}));
+
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: jest.fn(),
 }));
