@@ -295,10 +295,20 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
     ) {
       const [, parsedServerName] = splitMCPToolKey(tool, boundaryNames);
       let rawServerName;
-      if (parsedServerName != null) {
-        rawServerName = rawServerNames.includes(parsedServerName)
-          ? parsedServerName
-          : serverNameAliases.get(parsedServerName);
+      if (parsedServerName != null && rawServerNames.includes(parsedServerName)) {
+        rawServerName = parsedServerName;
+      } else if (parsedServerName != null) {
+        const aliased = serverNameAliases.get(parsedServerName);
+        /** A normalized spelling on a CONTESTED slot is ambiguous between the
+         *  tie-break winner and its shadowed rivals — rewriting persisted
+         *  data must fail closed here, mirroring the raw-spelling shadow
+         *  guard, rather than bind the reference to the winner. */
+        const contested =
+          aliased != null &&
+          rawServerNames.some(
+            (name) => name !== aliased && normalizeServerName(name) === parsedServerName,
+          );
+        rawServerName = contested ? undefined : aliased;
       }
       if (rawServerName != null && !shadowed.has(rawServerName)) {
         const healed = normalizeMCPToolKey(tool, rawServerNames);

@@ -575,6 +575,40 @@ describe('definitions.ts', () => {
         expect(getItemDef?.description).toBe('Get a specific item');
       });
 
+      it('resolves a pre-strip persisted key against the stripped catalog, keeping the persisted name', async () => {
+        /** Catalog keys drop a redundant leading server-name prefix; an agent
+         *  saved before that must still resolve, and the definition keeps the
+         *  persisted spelling so it matches the runtime instance name. */
+        const mockServerTools = {
+          search_mcp_acme: {
+            function: {
+              name: 'search_mcp_acme',
+              description: 'Search things',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        };
+
+        mockGetOrFetchMCPServerTools.mockResolvedValue(mockServerTools);
+
+        const params: LoadToolDefinitionsParams = {
+          userId: 'user-123',
+          agentId: 'agent-123',
+          tools: ['acme_search_mcp_acme'],
+        };
+
+        const deps: LoadToolDefinitionsDeps = {
+          getOrFetchMCPServerTools: mockGetOrFetchMCPServerTools,
+          isBuiltInTool: mockIsBuiltInTool,
+        };
+
+        const result = await loadToolDefinitions(params, deps);
+
+        expect(result.toolDefinitions).toHaveLength(1);
+        expect(result.toolDefinitions[0]?.name).toBe('acme_search_mcp_acme');
+        expect(result.toolDefinitions[0]?.description).toBe('Search things');
+      });
+
       it('union-flattens MCP tool schemas for Google, but preserves unions otherwise', async () => {
         const mockServerTools = {
           issue_write_mcp_github: {

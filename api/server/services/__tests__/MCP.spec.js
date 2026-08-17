@@ -436,6 +436,21 @@ describe('healMcpToolNames', () => {
     expect(healed).toEqual([strippedKey]);
   });
 
+  it('fails closed on a normalized-suffix key whose slot is CONTESTED', async () => {
+    /** `My Server` and `My_Server!` both normalize to `My_Server`, so a
+     *  normalized-suffix reference is ambiguous between them — rewriting
+     *  persisted data must not bind it to the tie-break winner. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { 'My Server': {}, 'My_Server!': {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ 'My Server': {}, 'My_Server!': {} });
+    const legacyKey = `my_server_search${Constants.mcp_delimiter}My_Server`;
+    const toolDefinitions = { [`search${Constants.mcp_delimiter}My_Server`]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({ req, tools: [legacyKey], toolDefinitions });
+
+    expect(healed).toEqual([legacyKey]);
+  });
+
   it('keeps a prefixed key whose stripped spelling is not in the loaded definitions', async () => {
     /** When the catalog kept the raw name (bare-sibling collision), the
      *  prefixed key IS canonical and must not be rewritten into a key owned

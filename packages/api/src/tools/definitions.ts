@@ -10,6 +10,8 @@ import {
   Constants,
   isActionTool,
   splitMCPToolKey,
+  normalizeServerName,
+  stripServerNamePrefix,
   buildServerNameAliases,
 } from 'librechat-data-provider';
 import type { LCToolRegistry, JsonSchemaType, LCTool, GenericTool } from '@librechat/agents';
@@ -247,9 +249,28 @@ export async function loadToolDefinitions(
       continue;
     }
 
+    /** Catalog keys are built after redundant server-name-prefix stripping —
+     *  a pre-strip persisted key (`acme_search_mcp_acme`) must also try its
+     *  stripped spelling or the agent fails initialization with its expected
+     *  tools "unavailable". The definition keeps the PERSISTED name so it
+     *  matches the runtime instance `createMCPTool` builds for the same key. */
+    const findToolDef = (tools: Record<string, MCPServerTool>): MCPServerTool | undefined => {
+      const direct = tools[toolName];
+      if (direct?.function) {
+        return direct;
+      }
+      const keyServerName = normalizeServerName(serverName);
+      const [toolPart] = splitMCPToolKey(toolName, [parsed]);
+      const strippedPart = stripServerNamePrefix(toolPart, keyServerName);
+      if (strippedPart === toolPart) {
+        return undefined;
+      }
+      return tools[`${strippedPart}${Constants.mcp_delimiter}${keyServerName}`];
+    };
+
     const selectedToolMissing = isMCPAllPlaceholder(toolName)
       ? Object.keys(serverTools).length === 0
-      : !serverTools[toolName]?.function;
+      : !findToolDef(serverTools)?.function;
     if (selectedToolMissing && refreshMCPServerTools && !refreshedServerNames.has(serverName)) {
       refreshedServerNames.add(serverName);
       const refreshedTools = await refreshMCPServerTools(userId, serverName);
@@ -274,7 +295,7 @@ export async function loadToolDefinitions(
       continue;
     }
 
-    const toolDef = serverTools[toolName];
+    const toolDef = findToolDef(serverTools);
     if (toolDef?.function) {
       mcpToolDefs.push({
         name: toolName,
