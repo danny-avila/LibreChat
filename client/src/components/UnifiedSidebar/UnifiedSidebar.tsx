@@ -1,4 +1,5 @@
 import { useCallback, useState, useEffect, useRef, memo } from 'react';
+import { pxToRem, useRemScale } from '@librechat/client';
 import { useForm } from 'react-hook-form';
 import { useLocation, useNavigate } from 'react-router-dom';
 import type { ReactNode } from 'react';
@@ -50,6 +51,7 @@ function UnifiedSidebar() {
   const { isSmallScreen, expanded } = useSidebarState();
   const { setSidebarOpen } = useSidebarToggle();
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
+  const remScale = useRemScale();
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
 
@@ -82,7 +84,9 @@ function UnifiedSidebar() {
   const handleResizeStart = useCallback(() => {
     setIsResizing(true);
     document.body.style.userSelect = 'none';
-    const maxWidth = window.innerWidth * 0.4;
+    const maxWidth = (window.innerWidth * 0.4) / remScale;
+    /** The scaled minimum can exceed the viewport cap, so it yields to the cap. */
+    const minWidth = Math.min(EXPANDED_MIN, maxWidth);
     let rafId: number | null = null;
 
     const move = (e: MouseEvent) => {
@@ -91,7 +95,7 @@ function UnifiedSidebar() {
       }
       rafId = requestAnimationFrame(() => {
         rafId = null;
-        const next = Math.max(EXPANDED_MIN, Math.min(e.clientX, maxWidth));
+        const next = Math.max(minWidth, Math.min(e.clientX / remScale, maxWidth));
         setSidebarWidth(next);
       });
     };
@@ -115,18 +119,25 @@ function UnifiedSidebar() {
     resizeHandlers.current = { move, up };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
-  }, []);
+  }, [remScale]);
 
-  const handleResizeKeyboard = useCallback((direction: 'shrink' | 'grow') => {
-    setSidebarWidth((w) => {
-      const next =
-        direction === 'shrink'
-          ? Math.max(w - 20, EXPANDED_MIN)
-          : Math.min(w + 20, window.innerWidth * 0.4);
-      localStorage.setItem('side:width', String(Math.round(next)));
-      return next;
-    });
-  }, []);
+  const handleResizeKeyboard = useCallback(
+    (direction: 'shrink' | 'grow') => {
+      setSidebarWidth((w) => {
+        const maxWidth = (window.innerWidth * 0.4) / remScale;
+        /** A width stored at a lower scale can exceed the current maximum, so it
+         *  is brought into range before stepping rather than crawling down by 20. */
+        const current = Math.min(w, maxWidth);
+        const next =
+          direction === 'shrink'
+            ? Math.max(current - 20, Math.min(EXPANDED_MIN, maxWidth))
+            : Math.min(current + 20, maxWidth);
+        localStorage.setItem('side:width', String(Math.round(next)));
+        return next;
+      });
+    },
+    [remScale],
+  );
 
   useEffect(() => {
     return () => {
@@ -210,9 +221,11 @@ function UnifiedSidebar() {
         <aside
           className="relative flex h-full flex-shrink-0 overflow-hidden"
           style={{
-            width: panelExpanded ? sidebarWidth : COLLAPSED_WIDTH,
-            minWidth: panelExpanded ? EXPANDED_MIN : COLLAPSED_WIDTH,
-            maxWidth: panelExpanded ? '40%' : COLLAPSED_WIDTH,
+            width: pxToRem(panelExpanded ? sidebarWidth : COLLAPSED_WIDTH),
+            minWidth: panelExpanded
+              ? `min(${pxToRem(EXPANDED_MIN)}, 40%)`
+              : pxToRem(COLLAPSED_WIDTH),
+            maxWidth: panelExpanded ? '40%' : pxToRem(COLLAPSED_WIDTH),
             transition: isResizing
               ? 'none'
               : `width ${TRANSITION_MS}ms ${EASING}, min-width ${TRANSITION_MS}ms ${EASING}, max-width ${TRANSITION_MS}ms ${EASING}`,

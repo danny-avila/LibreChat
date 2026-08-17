@@ -57,7 +57,7 @@ export default function OptionsPopover({
           <div
             className={cn(
               cardStyle,
-              'flex w-full flex-col overflow-hidden rounded-none border-s-0 border-t bg-surface-secondary px-0 pb-[0.625rem] md:rounded-md md:border lg:w-[46rem]',
+              'flex w-full flex-col overflow-hidden rounded-none border-s-0 border-t bg-surface-secondary px-0 pb-[0.625rem] md:rounded-md md:border lg:w-[46rem] lg:max-w-[calc(100vw-2rem)]',
             )}
           >
             <div className="flex w-full items-center bg-surface-tertiary px-2 py-2">
