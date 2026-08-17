@@ -123,11 +123,12 @@ function buildSubmissionFromResumeState(
   );
   // The persisted row may seed display metadata, but never identity or deduplication.
   const unpaddedResponseMessageId = responseMessageId.replace(/_+$/, '');
-  const responseMetadataMessage =
-    existingResponseMessage ??
-    (unpaddedResponseMessageId !== responseMessageId
+  const persistedRegenerationResponse =
+    unpaddedResponseMessageId !== responseMessageId
       ? messages.find((m) => !m.isCreatedByUser && m.messageId === unpaddedResponseMessageId)
-      : undefined);
+      : undefined;
+  const responseMetadataMessage = existingResponseMessage ?? persistedRegenerationResponse;
+  const isRegenerateResume = persistedRegenerationResponse != null;
 
   // Create or use existing user message
   const userMessage: TMessage =
@@ -177,13 +178,13 @@ function buildSubmissionFromResumeState(
     endpoint: null,
   } as TConversation;
 
-  // On reload, `messages` is the full DB array, which already holds the paused user
-  // row and the partial (unfinished) assistant row under the same ids that
-  // `userMessage` / `initialResponse` (and the resume final event's request/response
-  // messages) re-supply. Strip them so createdHandler/finalHandler — which build
-  // `[...messages, requestMessage, responseMessage]` — don't append a duplicate pair.
+  // Non-regenerate resumes strip the persisted request/response pair before handlers
+  // re-supply it. A padded regeneration keeps the original user/response branch for
+  // early-abort rollback and removes only an exact active placeholder.
   const dedupedMessages = messages.filter(
-    (m) => m.messageId !== userMessage.messageId && m.messageId !== initialResponse.messageId,
+    (m) =>
+      m.messageId !== initialResponse.messageId &&
+      (isRegenerateResume || m.messageId !== userMessage.messageId),
   );
 
   return {
@@ -191,7 +192,8 @@ function buildSubmissionFromResumeState(
     userMessage,
     initialResponse,
     conversation,
-    isRegenerate: false,
+    isRegenerate: isRegenerateResume,
+    ...(isRegenerateResume && { regenerateMessages: [...dedupedMessages] }),
     isTemporary: false,
     endpointOption: {},
     // Signal to useResumableSSE to subscribe to existing stream instead of starting new

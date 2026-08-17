@@ -653,7 +653,14 @@ describe('useResumeOnLoad', () => {
         iconURL: olderResponse.iconURL,
       }),
     );
+    expect(submission?.isRegenerate).toBe(true);
     expect((submission?.messages ?? []).map((message) => message.messageId)).toEqual([
+      rootUser.messageId,
+      newerResponse.messageId,
+      olderResponse.messageId,
+    ]);
+    expect((submission?.regenerateMessages ?? []).map((message) => message.messageId)).toEqual([
+      rootUser.messageId,
       newerResponse.messageId,
       olderResponse.messageId,
     ]);
