@@ -6,10 +6,10 @@ import { PermissionBits, scheduleFrequencies } from 'librechat-data-provider';
 import {
   Input,
   Label,
+  Radio,
   Button,
   FieldMessage,
   Spinner,
-  Textarea,
   Dropdown,
   OGDialog,
   ControlCombobox,
@@ -30,6 +30,7 @@ import {
   useUpdateScheduleMutation,
 } from '~/data-provider';
 import { to12Hour, to24Hour, describeCadence, formatScheduleDay } from './cadence';
+import { VariableEditor } from '~/components/Variables';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -59,6 +60,11 @@ const FREQUENCY_LABELS: Record<ScheduleFrequency, TranslationKeys> = {
 };
 
 const BASE_MINUTES = [0, 15, 30, 45];
+
+const FORM_ID = 'schedule-form';
+
+/** Matches the Input primitive so every control in the form reads as one field set. */
+const FIELD_CLASS = 'h-10 w-full rounded-lg border border-border-light bg-transparent';
 
 const getDefaultValues = (schedule?: TSchedule): ScheduleFormValues => {
   if (!schedule) {
@@ -150,6 +156,15 @@ export default function ScheduleDialog({
   const agentItems = useMemo(
     () => (agents ?? []).map((agent) => ({ label: agent.name || agent.id, value: agent.id })),
     [agents],
+  );
+
+  const frequencyOptions = useMemo(
+    () =>
+      scheduleFrequencies.map((value) => ({
+        value,
+        label: localize(FREQUENCY_LABELS[value]),
+      })),
+    [localize],
   );
 
   const hourOptions = useMemo(
@@ -322,193 +337,235 @@ export default function ScheduleDialog({
       <OGDialogTemplate
         title={localize(schedule ? 'com_ui_schedule_edit' : 'com_ui_schedule_new')}
         showCloseButton={false}
-        className="w-11/12 md:max-w-lg"
+        // The agent and time popovers cannot portal out of a focus-trapping dialog
+        // (see below), so `overflow-visible` keeps them from being clipped. Only from
+        // `md` up: the two-column layout fits well inside 90vh there, while narrow
+        // viewports keep the template's scrolling so the footer stays reachable.
+        className="w-11/12 md:max-w-3xl md:overflow-visible"
         main={
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="schedule-name" className="text-sm font-medium text-text-primary">
-                {localize('com_ui_name')}
-              </Label>
-              <Input
-                id="schedule-name"
-                className="w-full"
-                aria-invalid={errors.name != null}
-                aria-describedby="schedule-name-message"
-                {...register('name', { required: localize('com_ui_field_required') })}
-              />
-              <FieldMessage id="schedule-name-message" message={errors.name?.message} />
+          <form id={FORM_ID} onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="schedule-name" className="text-sm font-medium text-text-primary">
+                  {localize('com_ui_name')}
+                </Label>
+                <Input
+                  id="schedule-name"
+                  className="w-full"
+                  placeholder={localize('com_ui_schedule_name_placeholder')}
+                  aria-invalid={errors.name != null}
+                  aria-describedby="schedule-name-message"
+                  {...register('name', { required: localize('com_ui_field_required') })}
+                />
+                <FieldMessage id="schedule-name-message" message={errors.name?.message} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="schedule-agent" className="text-sm font-medium text-text-primary">
+                  {localize('com_ui_agent')}
+                </Label>
+                <Controller
+                  name="agent_id"
+                  control={control}
+                  rules={{ required: localize('com_ui_field_required') }}
+                  render={({ field }) => (
+                    <ControlCombobox
+                      selectedValue={field.value}
+                      displayValue={
+                        agentItems.find((item) => item.value === field.value)?.label ?? ''
+                      }
+                      selectPlaceholder={localize('com_ui_select_agent')}
+                      searchPlaceholder={localize('com_agents_search_name')}
+                      setValue={field.onChange}
+                      onBlur={field.onBlur}
+                      items={agentItems}
+                      ariaLabel={localize('com_ui_agent')}
+                      ariaInvalid={errors.agent_id != null}
+                      ariaDescribedBy="schedule-agent-message"
+                      selectId="schedule-agent"
+                      isCollapsed={false}
+                      showCarat={true}
+                      placement="bottom-start"
+                      // Radix traps focus inside the dialog, so a popover portaled to
+                      // the body cannot be clicked, tabbed into, or typed in — and the
+                      // trap fighting Ariakit for focus locks the page up.
+                      portal={false}
+                      matchTriggerWidth={true}
+                      containerClassName="w-full px-0"
+                      className={cn(
+                        FIELD_CLASS,
+                        'justify-start px-3 text-sm hover:bg-surface-hover',
+                      )}
+                    />
+                  )}
+                />
+                <FieldMessage id="schedule-agent-message" message={errors.agent_id?.message} />
+                <p className="text-xs text-text-secondary">
+                  {localize('com_ui_schedule_target_new_chat')}
+                </p>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="schedule-prompt" className="text-sm font-medium text-text-primary">
-                {localize('com_ui_prompt')}
-              </Label>
-              <Textarea
-                id="schedule-prompt"
-                rows={4}
-                className="min-h-[100px] w-full resize-none"
-                aria-invalid={errors.prompt != null}
-                aria-describedby="schedule-prompt-message"
-                {...register('prompt', { required: localize('com_ui_field_required') })}
-              />
-              <FieldMessage id="schedule-prompt-message" message={errors.prompt?.message} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="schedule-agent" className="text-sm font-medium text-text-primary">
-                {localize('com_ui_agent')}
-              </Label>
-              <Controller
-                name="agent_id"
-                control={control}
-                rules={{ required: localize('com_ui_field_required') }}
-                render={({ field }) => (
-                  <ControlCombobox
-                    selectedValue={field.value}
-                    displayValue={
-                      agentItems.find((item) => item.value === field.value)?.label ?? ''
-                    }
-                    selectPlaceholder={localize('com_ui_select_agent')}
-                    searchPlaceholder={localize('com_agents_search_name')}
-                    setValue={field.onChange}
+
+            <Controller
+              name="prompt"
+              control={control}
+              rules={{ required: localize('com_ui_field_required') }}
+              render={({ field }) => (
+                <div className="space-y-2">
+                  <VariableEditor
+                    id="schedule-prompt"
+                    label={localize('com_ui_prompt')}
+                    value={field.value}
+                    onChange={field.onChange}
                     onBlur={field.onBlur}
-                    items={agentItems}
-                    ariaLabel={localize('com_ui_agent')}
-                    ariaInvalid={errors.agent_id != null}
-                    ariaDescribedBy="schedule-agent-message"
-                    selectId="schedule-agent"
-                    isCollapsed={false}
-                    showCarat={true}
-                    containerClassName="px-0"
-                    className="h-9 w-full rounded-md border border-border-light bg-transparent"
+                    inputRef={field.ref}
+                    placeholder={localize('com_ui_schedule_prompt_placeholder')}
+                    className="min-h-[120px] resize-none bg-transparent"
+                    labelClassName="text-sm font-medium text-text-primary"
+                    rows={4}
+                    required={true}
+                    invalid={errors.prompt != null}
+                    describedBy="schedule-prompt-message"
+                    portal={false}
                   />
-                )}
-              />
-              <FieldMessage id="schedule-agent-message" message={errors.agent_id?.message} />
-              <p className="text-xs text-text-secondary">
-                {localize('com_ui_schedule_target_new_chat')}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-text-primary">
-                {localize('com_ui_schedule_frequency')}
-              </Label>
+                  <FieldMessage id="schedule-prompt-message" message={errors.prompt?.message} />
+                </div>
+              )}
+            />
+
+            <fieldset className="space-y-2">
+              <legend>
+                <Label
+                  id="schedule-frequency-label"
+                  className="text-sm font-medium text-text-primary"
+                >
+                  {localize('com_ui_schedule_frequency')}
+                </Label>
+              </legend>
               <Controller
                 name="frequency"
                 control={control}
                 render={({ field }) => (
-                  <div
-                    className="grid grid-cols-2 gap-1 sm:grid-cols-4"
-                    role="group"
-                    aria-label={localize('com_ui_schedule_frequency')}
-                  >
-                    {scheduleFrequencies.map((frequency) => (
-                      <Button
-                        key={frequency}
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        aria-pressed={field.value === frequency}
-                        className={cn(
-                          'flex-1',
-                          field.value === frequency
-                            ? 'bg-surface-hover hover:bg-surface-hover'
-                            : 'bg-transparent',
-                        )}
-                        onClick={() => field.onChange(frequency)}
-                      >
-                        {localize(FREQUENCY_LABELS[frequency])}
-                      </Button>
-                    ))}
-                  </div>
+                  <Radio
+                    options={frequencyOptions}
+                    value={field.value}
+                    onChange={(value) => field.onChange(value as ScheduleFrequency)}
+                    fullWidth
+                    aria-labelledby="schedule-frequency-label"
+                  />
                 )}
               />
-            </div>
-            {frequency === 'weekly' && (
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-text-primary">
-                  {localize('com_ui_schedule_day')}
-                </Label>
-                <Controller
-                  name="dayOfWeek"
-                  control={control}
-                  render={({ field }) => (
-                    <Dropdown
-                      value={String(field.value)}
-                      onChange={(value) => field.onChange(Number(value))}
-                      options={dayOptions}
-                      className="w-full"
-                      ariaLabel={localize('com_ui_schedule_day')}
-                      testId="schedule-day-select"
-                    />
-                  )}
-                />
-              </div>
-            )}
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-text-primary">
-                {localize('com_ui_schedule_time')}
-              </Label>
-              <div
-                className={cn(
-                  'grid gap-2',
-                  frequency === 'hourly' ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3',
-                )}
-              >
-                {frequency !== 'hourly' && (
+            </fieldset>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {frequency === 'weekly' && (
+                <fieldset className="space-y-2">
+                  <legend>
+                    <Label
+                      id="schedule-day-label"
+                      className="text-sm font-medium text-text-primary"
+                    >
+                      {localize('com_ui_schedule_day')}
+                    </Label>
+                  </legend>
                   <Controller
-                    name="hour12"
+                    name="dayOfWeek"
                     control={control}
                     render={({ field }) => (
                       <Dropdown
                         value={String(field.value)}
                         onChange={(value) => field.onChange(Number(value))}
-                        options={hourOptions}
-                        className="w-full"
-                        ariaLabel={localize('com_ui_schedule_hour')}
-                        testId="schedule-hour-select"
+                        options={dayOptions}
+                        className={FIELD_CLASS}
+                        portal={false}
+                        aria-labelledby="schedule-day-label"
+                        testId="schedule-day-select"
                       />
                     )}
                   />
-                )}
-                <Controller
-                  name="minute"
-                  control={control}
-                  render={({ field }) => (
-                    <Dropdown
-                      value={String(field.value)}
-                      onChange={(value) => field.onChange(Number(value))}
-                      options={minuteOptions}
-                      className="w-full"
-                      ariaLabel={localize('com_ui_schedule_minute')}
-                      testId="schedule-minute-select"
+                </fieldset>
+              )}
+              <fieldset className="space-y-2">
+                <legend>
+                  <Label id="schedule-time-label" className="text-sm font-medium text-text-primary">
+                    {localize(
+                      frequency === 'hourly'
+                        ? 'com_ui_schedule_minutes_past_hour'
+                        : 'com_ui_schedule_time',
+                    )}
+                  </Label>
+                </legend>
+                <div
+                  className={cn(
+                    'grid gap-2',
+                    frequency === 'hourly' ? 'max-w-[8rem] grid-cols-1' : 'grid-cols-3',
+                  )}
+                >
+                  {frequency !== 'hourly' && (
+                    <Controller
+                      name="hour12"
+                      control={control}
+                      render={({ field }) => (
+                        <Dropdown
+                          value={String(field.value)}
+                          onChange={(value) => field.onChange(Number(value))}
+                          options={hourOptions}
+                          className={FIELD_CLASS}
+                          portal={false}
+                          ariaLabel={localize('com_ui_schedule_hour')}
+                          testId="schedule-hour-select"
+                        />
+                      )}
                     />
                   )}
-                />
-                {frequency !== 'hourly' && (
                   <Controller
-                    name="meridiem"
+                    name="minute"
                     control={control}
                     render={({ field }) => (
                       <Dropdown
-                        value={field.value}
-                        onChange={field.onChange}
-                        options={meridiemOptions}
-                        className="w-full"
-                        ariaLabel={localize('com_ui_schedule_meridiem')}
-                        testId="schedule-meridiem-select"
+                        value={String(field.value)}
+                        onChange={(value) => field.onChange(Number(value))}
+                        options={minuteOptions}
+                        className={FIELD_CLASS}
+                        portal={false}
+                        ariaLabel={localize('com_ui_schedule_minute')}
+                        testId="schedule-minute-select"
                       />
                     )}
                   />
-                )}
-              </div>
+                  {frequency !== 'hourly' && (
+                    <Controller
+                      name="meridiem"
+                      control={control}
+                      render={({ field }) => (
+                        <Dropdown
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={meridiemOptions}
+                          className={FIELD_CLASS}
+                          portal={false}
+                          ariaLabel={localize('com_ui_schedule_meridiem')}
+                          testId="schedule-meridiem-select"
+                        />
+                      )}
+                    />
+                  )}
+                </div>
+              </fieldset>
             </div>
-            <p className="break-words text-sm text-text-secondary">{summary}</p>
-          </div>
+
+            <p
+              className="break-words rounded-lg bg-surface-secondary px-3 py-2 text-sm text-text-secondary"
+              data-testid="schedule-summary"
+            >
+              {summary}
+            </p>
+          </form>
         }
         buttons={
           <Button
-            type="button"
+            type="submit"
+            form={FORM_ID}
             variant="submit"
-            onClick={handleSubmit(onSubmit)}
             disabled={isLoading}
             aria-label={localize(schedule ? 'com_ui_save' : 'com_ui_create')}
           >

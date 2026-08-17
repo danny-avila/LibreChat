@@ -225,7 +225,7 @@ test.describe('scheduled chat execution', () => {
     const editDialog = page.getByRole('dialog');
     const renamed = `${name} edited`;
     await editDialog.locator('#schedule-name').fill(renamed);
-    await editDialog.getByRole('group', { name: 'Frequency' }).getByText('Daily').click();
+    await editDialog.getByRole('radio', { name: 'Daily' }).click();
     await editDialog.getByRole('button', { name: 'Save' }).click();
 
     await page.reload();

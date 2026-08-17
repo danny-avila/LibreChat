@@ -146,26 +146,6 @@ export default function useSideNavLinks({
       });
     }
 
-    if (hasAccessToPrompts) {
-      links.push({
-        title: 'com_ui_prompts',
-        label: '',
-        icon: NotebookPen,
-        id: 'prompts',
-        Component: PromptsAccordion,
-      });
-    }
-
-    if (hasAccessToMemories && hasAccessToReadMemories) {
-      links.push({
-        title: 'com_ui_memories',
-        label: '',
-        icon: Brain,
-        id: 'memories',
-        Component: MemoryPanel,
-      });
-    }
-
     // Scheduled chats are EXPERIMENTAL and default-OFF: the server enables them only
     // when an admin opts in explicitly, so ABSENT config means disabled here too.
     // Mirrors getLimits exactly — absent/null/`false` are all off, `true` is on, and the
@@ -183,6 +163,26 @@ export default function useSideNavLinks({
         icon: CalendarClock,
         id: 'schedules',
         Component: SchedulePanel,
+      });
+    }
+
+    if (hasAccessToPrompts) {
+      links.push({
+        title: 'com_ui_prompts',
+        label: '',
+        icon: NotebookPen,
+        id: 'prompts',
+        Component: PromptsAccordion,
+      });
+    }
+
+    if (hasAccessToMemories && hasAccessToReadMemories) {
+      links.push({
+        title: 'com_ui_memories',
+        label: '',
+        icon: Brain,
+        id: 'memories',
+        Component: MemoryPanel,
       });
     }
 
