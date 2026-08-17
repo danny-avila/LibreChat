@@ -3921,12 +3921,13 @@ describe('useResumableSSE - sync response identity', () => {
     aggregatedContent: TMessage['content'],
     responseMessageId?: string,
     sender?: string,
+    userMessage?: Partial<TMessage>,
   ) => {
     await act(async () => {
       sse._emit('message', {
         data: JSON.stringify({
           sync: true,
-          resumeState: { aggregatedContent, responseMessageId, sender },
+          resumeState: { aggregatedContent, responseMessageId, sender, userMessage },
         }),
       });
     });
@@ -4109,6 +4110,49 @@ describe('useResumableSSE - sync response identity', () => {
       ...preliminaryResponse,
       messageId: 'assigned-response-id',
     });
+    unmount();
+  });
+
+  it('replaces the current-run user when sync assigns both durable IDs', async () => {
+    const preliminaryUser = {
+      messageId: 'client-user-id',
+      parentMessageId: 'previous-response-id',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const preliminaryResponse = {
+      messageId: 'client-user-id_',
+      parentMessageId: preliminaryUser.messageId,
+      conversationId: CONV_ID,
+      text: '',
+      content: [],
+      isCreatedByUser: false,
+    } as TMessage;
+    const submission = {
+      ...buildSubmission({ userMessage: preliminaryUser, initialResponse: preliminaryResponse }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([preliminaryUser, preliminaryResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const assignedUser = {
+      ...preliminaryUser,
+      messageId: 'assigned-user-id',
+    };
+    await emitSync(getLastSSE(), [], 'assigned-response-id', undefined, assignedUser);
+
+    const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
+    expect(updatedMessages.map((message) => message.messageId)).toEqual([
+      'assigned-user-id',
+      'assigned-response-id',
+    ]);
+    expect(updatedMessages[1]?.parentMessageId).toBe('assigned-user-id');
     unmount();
   });
 });

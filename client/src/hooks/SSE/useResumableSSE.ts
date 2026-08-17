@@ -577,6 +577,7 @@ const buildResumeEventSubmission = (
 type ResumeMessageIndexes = {
   userIndex: number;
   responseIndex: number;
+  preliminaryUserIndex: number;
   preliminaryResponseIndex: number;
 };
 
@@ -584,14 +585,20 @@ const getResumeMessageIndexes = (
   messages: TMessage[],
   userMessageId: string,
   responseMessageId: string,
+  preliminaryUserMessageId?: string,
   preliminaryResponseMessageId?: string,
 ): ResumeMessageIndexes => {
   let userIndex = -1;
   let responseIndex = -1;
+  let preliminaryUserIndex = -1;
   let preliminaryResponseIndex = -1;
+  const hasPreliminaryResponse = preliminaryResponseMessageId?.endsWith('_') === true;
+  const eligiblePreliminaryUserId =
+    hasPreliminaryResponse && preliminaryUserMessageId && preliminaryUserMessageId !== userMessageId
+      ? preliminaryUserMessageId
+      : undefined;
   const eligiblePreliminaryResponseId =
-    preliminaryResponseMessageId?.endsWith('_') &&
-    preliminaryResponseMessageId !== responseMessageId
+    hasPreliminaryResponse && preliminaryResponseMessageId !== responseMessageId
       ? preliminaryResponseMessageId
       : undefined;
 
@@ -604,6 +611,13 @@ const getResumeMessageIndexes = (
       responseIndex = index;
     }
     if (
+      preliminaryUserIndex < 0 &&
+      eligiblePreliminaryUserId &&
+      messageId === eligiblePreliminaryUserId
+    ) {
+      preliminaryUserIndex = index;
+    }
+    if (
       preliminaryResponseIndex < 0 &&
       eligiblePreliminaryResponseId &&
       messageId === eligiblePreliminaryResponseId
@@ -612,7 +626,7 @@ const getResumeMessageIndexes = (
     }
   }
 
-  return { userIndex, responseIndex, preliminaryResponseIndex };
+  return { userIndex, responseIndex, preliminaryUserIndex, preliminaryResponseIndex };
 };
 
 const mergeResumeMessages = (
@@ -622,8 +636,29 @@ const mergeResumeMessages = (
   indexes: ResumeMessageIndexes,
 ): TMessage[] => {
   const nextMessages = [...messages];
-  let { userIndex, responseIndex } = indexes;
-  const { preliminaryResponseIndex } = indexes;
+  let { userIndex, responseIndex, preliminaryResponseIndex } = indexes;
+  const { preliminaryUserIndex } = indexes;
+
+  if (preliminaryUserIndex >= 0) {
+    if (userIndex >= 0) {
+      nextMessages.splice(preliminaryUserIndex, 1);
+      if (userIndex > preliminaryUserIndex) {
+        userIndex -= 1;
+      }
+      if (responseIndex > preliminaryUserIndex) {
+        responseIndex -= 1;
+      }
+      if (preliminaryResponseIndex > preliminaryUserIndex) {
+        preliminaryResponseIndex -= 1;
+      }
+    } else {
+      nextMessages[preliminaryUserIndex] = {
+        ...nextMessages[preliminaryUserIndex],
+        ...userMessage,
+      };
+      userIndex = preliminaryUserIndex;
+    }
+  }
 
   if (preliminaryResponseIndex >= 0) {
     if (responseIndex >= 0) {
@@ -1822,6 +1857,13 @@ export default function useResumableSSE(
             /** Keep the current run's preliminary id long enough to replace that optimistic
              *  row in place if this snapshot assigns its durable response id. */
             const preliminaryResponseMessageId = currentSubmission.initialResponse?.messageId;
+            const currentUserMessageId = currentSubmission.userMessage?.messageId;
+            const preliminaryUserMessageId =
+              currentUserMessageId &&
+              (currentSubmission.initialResponse?.parentMessageId === currentUserMessageId ||
+                preliminaryResponseMessageId === `${currentUserMessageId}_`)
+                ? currentUserMessageId
+                : undefined;
             const resumeSubmission = buildResumeEventSubmission(
               currentSubmission,
               userMessage,
@@ -1874,6 +1916,7 @@ export default function useResumableSSE(
                 messages,
                 userMsgId,
                 responseId,
+                preliminaryUserMessageId,
                 preliminaryResponseMessageId,
               );
               const responseIdx =
@@ -1915,6 +1958,7 @@ export default function useResumableSSE(
                   ...resumeSubmission.initialResponse,
                   ...messages[responseIdx],
                   messageId: responseId,
+                  parentMessageId: userMsgId,
                   content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
                   sender: messages[responseIdx]?.sender ?? resumeSubmission.initialResponse.sender,
                   iconURL: preferDefinedString(
