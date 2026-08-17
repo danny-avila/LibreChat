@@ -2,7 +2,7 @@ import IoRedis from 'ioredis';
 import calculateSlot from 'cluster-key-slot';
 import { logger } from '@librechat/data-schemas';
 import { createClient, createCluster } from '@keyv/redis';
-import type { ScanCommandOptions } from '@redis/client/dist/lib/commands/SCAN';
+import type { ScanOptions } from '@redis/client/dist/lib/commands/SCAN';
 import type { RedisClientType, RedisClusterType } from '@redis/client';
 import type { Redis, Cluster } from 'ioredis';
 import { cacheConfig } from './cacheConfig';
@@ -215,13 +215,13 @@ if (cacheConfig.USE_REDIS) {
   if (!('scanIterator' in keyvRedisClient)) {
     const clusterClient = keyvRedisClient as RedisClusterType;
     (keyvRedisClient as unknown as RedisClientType).scanIterator = async function* (
-      options?: ScanCommandOptions,
+      options?: ScanOptions,
     ) {
       const masters = clusterClient.masters;
       for (const master of masters) {
         const nodeClient = await clusterClient.nodeClient(master);
-        for await (const key of nodeClient.scanIterator(options)) {
-          yield key;
+        for await (const page of nodeClient.scanIterator(options)) {
+          yield page;
         }
       }
     };
