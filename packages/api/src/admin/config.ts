@@ -36,6 +36,19 @@ const BASE_ONLY_OVERRIDE_SECTIONS = new Set<string>(BASE_ONLY_CONFIG_SECTIONS);
 const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_SECTIONS);
 const PROCESS_MCP_CONFIG_ERROR =
   'Process-backed MCP servers can only be configured in librechat.yaml';
+const LANGFUSE_HEADERS_CONFIG_ERROR =
+  'Langfuse request headers can only be configured in librechat.yaml';
+
+/**
+ * Langfuse export headers carry proxy/gateway credentials, but they are a map
+ * of values rather than one scalar path, so the config secret registry cannot
+ * encrypt them at rest or mask them on read. Keeping them out of stored
+ * overrides is what makes them deployment-level: an admin-written map would sit
+ * in Mongo in plaintext and come back in plaintext, unlike `langfuse.secretKey`.
+ */
+function isLangfuseHeadersFieldPath(fieldPath: string): boolean {
+  return fieldPath === 'langfuse.headers' || fieldPath.startsWith('langfuse.headers.');
+}
 
 export function isValidFieldPath(path: string): boolean {
   return (
@@ -527,6 +540,16 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
       }
 
+      const rawLangfuse = rawOverrides.langfuse;
+      if (
+        rawLangfuse != null &&
+        typeof rawLangfuse === 'object' &&
+        !Array.isArray(rawLangfuse) &&
+        'headers' in rawLangfuse
+      ) {
+        return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
+      }
+
       if (priority != null && (typeof priority !== 'number' || priority < 0)) {
         return res.status(400).json({ error: 'priority must be a non-negative number' });
       }
@@ -730,6 +753,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         }
         if (isProcessMCPServerFieldPath(entry.fieldPath, entry.value)) {
           return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
+        }
+        if (isLangfuseHeadersFieldPath(entry.fieldPath)) {
+          return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
         }
         if (isConfigSecretDescendantPath(entry.fieldPath)) {
           return res

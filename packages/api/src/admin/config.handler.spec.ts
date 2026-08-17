@@ -436,6 +436,27 @@ describe('createAdminConfigHandlers', () => {
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
 
+    it('rejects Langfuse header overrides, which cannot be encrypted at rest', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'user', principalId: 'u1' },
+        body: {
+          overrides: {
+            langfuse: { enabled: true, headers: { 'X-Proxy-Token': 'leaked' } },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Langfuse request headers can only be configured in librechat.yaml',
+      });
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
     it('rejects process-backed MCP servers supplied through the runtime config alias', async () => {
       const { handlers, deps } = createHandlers();
       const req = mockReq({
@@ -1039,6 +1060,27 @@ describe('createAdminConfigHandlers', () => {
       expect(res.body).toEqual({
         error: 'Process-backed MCP servers can only be configured in librechat.yaml',
       });
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('rejects Langfuse header field patches, including a single header path', async () => {
+      const { handlers, deps } = createHandlers();
+
+      for (const fieldPath of ['langfuse.headers', 'langfuse.headers.X-Proxy-Token']) {
+        const res = mockRes();
+        await handlers.patchConfigField(
+          mockReq({
+            params: { principalType: 'user', principalId: 'u1' },
+            body: { entries: [{ fieldPath, value: 'leaked' }] },
+          }),
+          res,
+        );
+
+        expect(res.statusCode).toBe(400);
+        expect(res.body).toEqual({
+          error: 'Langfuse request headers can only be configured in librechat.yaml',
+        });
+      }
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
