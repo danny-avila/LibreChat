@@ -582,7 +582,8 @@ const mergeResumeMessages = (
 ): TMessage[] => {
   const nextMessages = [...messages];
   const preliminaryResponseIndex =
-    preliminaryResponseMessageId && preliminaryResponseMessageId !== responseMessage.messageId
+    preliminaryResponseMessageId?.endsWith('_') &&
+    preliminaryResponseMessageId !== responseMessage.messageId
       ? nextMessages.findIndex((message) => message.messageId === preliminaryResponseMessageId)
       : -1;
   const assignedResponseIndex = nextMessages.findIndex(
@@ -1839,7 +1840,7 @@ export default function useResumableSSE(
               );
               const preliminaryResponseIdx =
                 assignedResponseIdx < 0 &&
-                preliminaryResponseMessageId &&
+                preliminaryResponseMessageId?.endsWith('_') &&
                 preliminaryResponseMessageId !== responseId
                   ? messages.findIndex(
                       (message) => message.messageId === preliminaryResponseMessageId,
