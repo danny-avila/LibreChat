@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { AgentTriggerEnvelope } from './envelope';
 import { getAgentTriggerIdempotencyKey, parseAgentTriggerEnvelope } from './envelope';
 
-export const MAX_AGENT_TRIGGER_ENVELOPE_BYTES = 1024 * 1024;
+export const MAX_AGENT_TRIGGER_ENVELOPE_BYTES: number = 1024 * 1024;
 
 export interface AgentTriggerEnqueueOptions {
   /** Trusted lane override. Matching lanes dispatch strictly in enqueue order. */
