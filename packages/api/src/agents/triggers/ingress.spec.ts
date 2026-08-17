@@ -1,8 +1,8 @@
 import express from 'express';
 import request from 'supertest';
 import type { Application } from 'express';
-import type { AgentTriggerStoredRecord } from './service';
 import type { AgentTriggerIngressDependencies } from './ingress';
+import type { AgentTriggerStoredRecord } from './service';
 import { AgentTriggerServiceUnavailableError } from './service';
 import { createAgentTriggerIngressHandlers } from './ingress';
 

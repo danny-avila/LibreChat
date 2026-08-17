@@ -1,17 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Response } from 'express';
-import type { AgentTriggerEnqueueOptions } from './delivery';
 import type {
   AgentFireTarget,
   AgentSteerTarget,
   AgentTriggerEvent,
   AgentTriggerMode,
 } from './envelope';
+import type { AgentTriggerEnqueueOptions } from './delivery';
 import type { AgentTriggerService } from './service';
+import { AgentTriggerEnvelopeError, createAgentTriggerEnvelope } from './envelope';
 import { AgentTriggerServiceUnavailableError } from './service';
 import { AgentTriggerDeliveryError } from './delivery';
-import { AgentTriggerEnvelopeError, createAgentTriggerEnvelope } from './envelope';
 
 const IDEMPOTENCY_HEADER = 'idempotency-key';
 const MAX_IDEMPOTENCY_KEY_LENGTH = 256;
