@@ -4032,7 +4032,7 @@ describe('useResumableSSE - sync response identity', () => {
     unmount();
   });
 
-  it('replaces the current-run placeholder when sync assigns the response ID', async () => {
+  it('replaces the current-run placeholder without erasing its loaded content', async () => {
     const userMessage = {
       messageId: 'server-user-id',
       conversationId: CONV_ID,
@@ -4044,7 +4044,7 @@ describe('useResumableSSE - sync response identity', () => {
       parentMessageId: 'server-user-id',
       conversationId: CONV_ID,
       text: '',
-      content: [],
+      content: [{ type: ContentTypes.TEXT, text: { value: 'Already streaming' } }],
       sender: 'Assistant',
       isCreatedByUser: false,
     } as TMessage;
@@ -4060,10 +4060,7 @@ describe('useResumableSSE - sync response identity', () => {
       await Promise.resolve();
     });
 
-    const aggregatedContent: TMessage['content'] = [
-      { type: ContentTypes.TEXT, text: { value: 'Recovered answer' } },
-    ];
-    await emitSync(getLastSSE(), aggregatedContent, 'assigned-response-id');
+    await emitSync(getLastSSE(), [], 'assigned-response-id');
 
     const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
     expect(updatedMessages.map((message) => message.messageId)).toEqual([
@@ -4073,7 +4070,6 @@ describe('useResumableSSE - sync response identity', () => {
     expect(updatedMessages[1]).toEqual({
       ...preliminaryResponse,
       messageId: 'assigned-response-id',
-      content: aggregatedContent,
     });
     unmount();
   });

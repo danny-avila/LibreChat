@@ -1834,7 +1834,19 @@ export default function useResumableSSE(
               const serverResponseId = data.resumeState.responseMessageId;
               const hasResumedContent = data.resumeState.aggregatedContent.length > 0;
               const responseId = resumeSubmission.initialResponse.messageId;
-              const responseIdx = messages.findIndex((message) => message.messageId === responseId);
+              const assignedResponseIdx = messages.findIndex(
+                (message) => message.messageId === responseId,
+              );
+              const preliminaryResponseIdx =
+                assignedResponseIdx < 0 &&
+                preliminaryResponseMessageId &&
+                preliminaryResponseMessageId !== responseId
+                  ? messages.findIndex(
+                      (message) => message.messageId === preliminaryResponseMessageId,
+                    )
+                  : -1;
+              const responseIdx =
+                assignedResponseIdx >= 0 ? assignedResponseIdx : preliminaryResponseIdx;
 
               logger.log('ResumableSSE', 'SYNC update', {
                 userMsgId,
@@ -1868,6 +1880,7 @@ export default function useResumableSSE(
                 }
                 const responseMessage = {
                   ...messages[responseIdx],
+                  messageId: responseId,
                   content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
                   iconURL: preferDefinedString(
                     messages[responseIdx]?.iconURL,
