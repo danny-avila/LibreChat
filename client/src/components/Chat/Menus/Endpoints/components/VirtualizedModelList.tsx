@@ -8,6 +8,8 @@ import { EndpointModelItem } from './EndpointModelItem';
 
 /** Matches the rendered height of a `CustomMenuItem` row (px-2 py-1 around a py-1 body). */
 const ROW_HEIGHT = 36;
+/** react-virtualized sizes each rendered row from this, so it follows the scale. */
+const LIST_WIDTH = 360;
 const MAX_LIST_HEIGHT = 320;
 const OVERSCAN = 8;
 
@@ -141,7 +143,7 @@ export default function VirtualizedModelList({
     <div ref={containerRef} data-endpoint-models={`${endpoint.value}${indexSuffix}`}>
       <List
         ref={listRef}
-        width={360}
+        width={LIST_WIDTH * remScale}
         height={height}
         rowCount={rowCount}
         rowHeight={rowHeight}
