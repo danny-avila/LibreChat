@@ -189,4 +189,4 @@ jobs:
 
       - name: Done
         if: always()
-        run: echo "codegraph-votes: complete"
+        run: 'echo "codegraph-votes: complete"'
