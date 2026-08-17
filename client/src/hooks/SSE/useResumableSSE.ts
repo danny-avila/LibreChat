@@ -574,39 +574,74 @@ const buildResumeEventSubmission = (
   } as EventSubmission;
 };
 
+type ResumeMessageIndexes = {
+  userIndex: number;
+  responseIndex: number;
+  preliminaryResponseIndex: number;
+};
+
+const getResumeMessageIndexes = (
+  messages: TMessage[],
+  userMessageId: string,
+  responseMessageId: string,
+  preliminaryResponseMessageId?: string,
+): ResumeMessageIndexes => {
+  let userIndex = -1;
+  let responseIndex = -1;
+  let preliminaryResponseIndex = -1;
+  const eligiblePreliminaryResponseId =
+    preliminaryResponseMessageId?.endsWith('_') &&
+    preliminaryResponseMessageId !== responseMessageId
+      ? preliminaryResponseMessageId
+      : undefined;
+
+  for (let index = 0; index < messages.length; index++) {
+    const messageId = messages[index]?.messageId;
+    if (userIndex < 0 && messageId === userMessageId) {
+      userIndex = index;
+    }
+    if (responseIndex < 0 && messageId === responseMessageId) {
+      responseIndex = index;
+    }
+    if (
+      preliminaryResponseIndex < 0 &&
+      eligiblePreliminaryResponseId &&
+      messageId === eligiblePreliminaryResponseId
+    ) {
+      preliminaryResponseIndex = index;
+    }
+  }
+
+  return { userIndex, responseIndex, preliminaryResponseIndex };
+};
+
 const mergeResumeMessages = (
   messages: TMessage[],
   userMessage: TMessage,
   responseMessage: TMessage,
-  preliminaryResponseMessageId?: string,
+  indexes: ResumeMessageIndexes,
 ): TMessage[] => {
   const nextMessages = [...messages];
-  const preliminaryResponseIndex =
-    preliminaryResponseMessageId?.endsWith('_') &&
-    preliminaryResponseMessageId !== responseMessage.messageId
-      ? nextMessages.findIndex((message) => message.messageId === preliminaryResponseMessageId)
-      : -1;
-  const assignedResponseIndex = nextMessages.findIndex(
-    (message) => message.messageId === responseMessage.messageId,
-  );
+  let { userIndex, responseIndex } = indexes;
+  const { preliminaryResponseIndex } = indexes;
 
   if (preliminaryResponseIndex >= 0) {
-    if (assignedResponseIndex >= 0) {
+    if (responseIndex >= 0) {
       nextMessages.splice(preliminaryResponseIndex, 1);
+      if (userIndex > preliminaryResponseIndex) {
+        userIndex -= 1;
+      }
+      if (responseIndex > preliminaryResponseIndex) {
+        responseIndex -= 1;
+      }
     } else {
       nextMessages[preliminaryResponseIndex] = {
         ...nextMessages[preliminaryResponseIndex],
         ...responseMessage,
       };
+      responseIndex = preliminaryResponseIndex;
     }
   }
-
-  const userIndex = nextMessages.findIndex(
-    (message) => message.messageId === userMessage.messageId,
-  );
-  const responseIndex = nextMessages.findIndex(
-    (message) => message.messageId === responseMessage.messageId,
-  );
 
   if (userIndex >= 0) {
     nextMessages[userIndex] = { ...nextMessages[userIndex], ...userMessage };
@@ -1835,19 +1870,16 @@ export default function useResumableSSE(
               const serverResponseId = data.resumeState.responseMessageId;
               const hasResumedContent = data.resumeState.aggregatedContent.length > 0;
               const responseId = resumeSubmission.initialResponse.messageId;
-              const assignedResponseIdx = messages.findIndex(
-                (message) => message.messageId === responseId,
+              const messageIndexes = getResumeMessageIndexes(
+                messages,
+                userMsgId,
+                responseId,
+                preliminaryResponseMessageId,
               );
-              const preliminaryResponseIdx =
-                assignedResponseIdx < 0 &&
-                preliminaryResponseMessageId?.endsWith('_') &&
-                preliminaryResponseMessageId !== responseId
-                  ? messages.findIndex(
-                      (message) => message.messageId === preliminaryResponseMessageId,
-                    )
-                  : -1;
               const responseIdx =
-                assignedResponseIdx >= 0 ? assignedResponseIdx : preliminaryResponseIdx;
+                messageIndexes.responseIndex >= 0
+                  ? messageIndexes.responseIndex
+                  : messageIndexes.preliminaryResponseIndex;
 
               logger.log('ResumableSSE', 'SYNC update', {
                 userMsgId,
@@ -1880,20 +1912,25 @@ export default function useResumableSSE(
                   editPrefixClearedRef.current = true;
                 }
                 const responseMessage = {
+                  ...resumeSubmission.initialResponse,
                   ...messages[responseIdx],
                   messageId: responseId,
                   content: preserveLoadedContent ? oldContent : data.resumeState.aggregatedContent,
+                  sender: messages[responseIdx]?.sender ?? resumeSubmission.initialResponse.sender,
                   iconURL: preferDefinedString(
                     messages[responseIdx]?.iconURL,
-                    data.resumeState.iconURL,
+                    resumeSubmission.initialResponse.iconURL ?? data.resumeState.iconURL,
                   ),
-                  model: preferDefinedString(messages[responseIdx]?.model, data.resumeState.model),
+                  model: preferDefinedString(
+                    messages[responseIdx]?.model,
+                    resumeSubmission.initialResponse.model ?? data.resumeState.model,
+                  ),
                 } as TMessage;
                 const updated = mergeResumeMessages(
                   messages,
                   userMessage,
                   responseMessage,
-                  preliminaryResponseMessageId,
+                  messageIndexes,
                 );
                 logger.log('ResumableSSE', 'SYNC updating message', {
                   messageId: responseMessage.messageId,
@@ -1920,14 +1957,7 @@ export default function useResumableSSE(
                   content: data.resumeState.aggregatedContent,
                   isCreatedByUser: false,
                 } as TMessage;
-                setMessages(
-                  mergeResumeMessages(
-                    messages,
-                    userMessage,
-                    newMessage,
-                    preliminaryResponseMessageId,
-                  ),
-                );
+                setMessages(mergeResumeMessages(messages, userMessage, newMessage, messageIndexes));
                 resetContentHandler();
                 syncStepMessage(newMessage);
               }

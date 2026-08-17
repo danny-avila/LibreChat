@@ -3920,12 +3920,13 @@ describe('useResumableSSE - sync response identity', () => {
     sse: MockSSEInstance,
     aggregatedContent: TMessage['content'],
     responseMessageId?: string,
+    sender?: string,
   ) => {
     await act(async () => {
       sse._emit('message', {
         data: JSON.stringify({
           sync: true,
-          resumeState: { aggregatedContent, responseMessageId },
+          resumeState: { aggregatedContent, responseMessageId, sender },
         }),
       });
     });
@@ -3972,6 +3973,43 @@ describe('useResumableSSE - sync response identity', () => {
     expect(
       updatedMessages.find((message) => message.messageId === 'server-user-id_'),
     ).toBeUndefined();
+    unmount();
+  });
+
+  it('adds resumed sender metadata to an exact persisted response', async () => {
+    const userMessage = {
+      messageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: 'Hello',
+      isCreatedByUser: true,
+    } as TMessage;
+    const activeResponse = {
+      messageId: 'server-response-id',
+      parentMessageId: 'server-user-id',
+      conversationId: CONV_ID,
+      text: '',
+      content: [],
+      isCreatedByUser: false,
+    } as TMessage;
+    const submission = {
+      ...buildSubmission({ userMessage, initialResponse: activeResponse }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([userMessage, activeResponse]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    await emitSync(getLastSSE(), [], activeResponse.messageId, 'Restored Assistant');
+
+    const updatedMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
+    expect(updatedMessages[1]).toEqual({
+      ...activeResponse,
+      sender: 'Restored Assistant',
+    });
     unmount();
   });
 
