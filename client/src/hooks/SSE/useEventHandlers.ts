@@ -26,6 +26,7 @@ import type { ConversationCursorData } from '~/utils';
 import {
   logger,
   setDraft,
+  getConversationDraftId,
   scrollToEnd,
   hasRealTitle,
   setDocumentTitle,
@@ -101,6 +102,36 @@ export const isInitialNewConversationSubmission = ({
 }: Pick<EventSubmission, 'userMessage'>): boolean =>
   userMessage?.parentMessageId === Constants.NO_PARENT;
 
+/**
+ * Whether the run was sent from the unsaved-chat composer, which is the only case where
+ * finishing it may drop the pane's new-chat draft. Regenerating or resubmitting the first turn
+ * of a saved conversation keeps the root parent id, so the root parent alone cannot decide it.
+ */
+export const startedAsNewConversation = ({
+  conversation,
+  userMessage,
+  isEdited,
+  isRegenerate,
+}: Pick<
+  EventSubmission,
+  'conversation' | 'userMessage' | 'isEdited' | 'isRegenerate'
+>): boolean => {
+  const conversationId = conversation?.conversationId;
+  if (
+    !conversationId ||
+    conversationId === Constants.NEW_CONVO ||
+    conversationId === Constants.PENDING_CONVO
+  ) {
+    return true;
+  }
+
+  return (
+    isEdited !== true &&
+    isRegenerate !== true &&
+    isInitialNewConversationSubmission({ userMessage })
+  );
+};
+
 export const mergeRegenerateFinalMessages = ({
   messages,
   responseMessage,
@@ -156,6 +187,7 @@ export const getExistingConversationAbortMessages = ({
 
 export type EventHandlerParams = {
   isAddedRequest?: boolean;
+  runIndex?: number;
   setCompleted: React.Dispatch<React.SetStateAction<Set<unknown>>>;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
@@ -271,6 +303,7 @@ export default function useEventHandlers({
   getMessages,
   setCompleted,
   isAddedRequest = false,
+  runIndex = 0,
   setConversation,
   setIsSubmitting,
   newConversation,
@@ -699,7 +732,10 @@ export default function useEventHandlers({
           }
           setMessages([]);
           queryClient.setQueryData<TMessage[]>([QueryKeys.messages, Constants.NEW_CONVO], []);
-          setDraft({ id: String(Constants.NEW_CONVO), value: requestMessage?.text });
+          setDraft({
+            id: getConversationDraftId(runIndex, Constants.NEW_CONVO),
+            value: requestMessage?.text,
+          });
           restorePendingQuotes(String(Constants.NEW_CONVO), requestMessage?.quotes);
           if (location.pathname !== `/c/${Constants.NEW_CONVO}`) {
             navigate(`/c/${Constants.NEW_CONVO}`, { replace: true });
@@ -764,7 +800,10 @@ export default function useEventHandlers({
             currentConvoId === Constants.NEW_CONVO;
 
           setFinalMessages(currentConvoId, isNewChat ? [] : [...messages]);
-          setDraft({ id: currentConvoId, value: requestMessage?.text });
+          setDraft({
+            id: getConversationDraftId(runIndex, currentConvoId),
+            value: requestMessage?.text,
+          });
           restorePendingQuotes(currentConvoId, requestMessage?.quotes);
           if (isNewChat) {
             requestChatFocus();
@@ -889,6 +928,7 @@ export default function useEventHandlers({
       setMessages,
       queryClient,
       setCompleted,
+      runIndex,
       isAddedRequest,
       announcePolite,
       setConversation,

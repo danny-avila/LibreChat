@@ -60,7 +60,33 @@ type ProcessedUpload = {
   };
 };
 
+export type UploadLifecycleCallbacks = {
+  /** Preassigned id so callers can persist recovery before the shared upload queue waits. */
+  fileId?: string;
+  /** Read once the queue and config waits are over, immediately before the batch is written into
+   * the shared file state. A `false` return abandons the batch so a delayed upload cannot land in
+   * a composer the user has since navigated away from. */
+  shouldCommit?: () => boolean;
+  onStart?: (fileId: string) => void;
+  onSuccess?: (fileId: string) => void;
+  onError?: (fileId: string) => void;
+  onAbort?: (fileId: string) => void;
+};
+
 const noop = () => {};
+const uploadErrorCallbacks = new Map<string, UploadLifecycleCallbacks>();
+
+const takeUploadRecovery = (fileId: string): UploadLifecycleCallbacks | undefined => {
+  const callbacks = uploadErrorCallbacks.get(fileId);
+  uploadErrorCallbacks.delete(fileId);
+  return callbacks;
+};
+
+export const clearUploadRecovery = (fileId: string) => {
+  takeUploadRecovery(fileId)?.onAbort?.(fileId);
+};
+
+export const hasInFlightUpload = (fileId: string): boolean => uploadErrorCallbacks.has(fileId);
 
 type UploadScope = {
   queue: Promise<void>;
@@ -189,6 +215,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const uploadFile = useUploadFileMutation(
     {
       onSuccess: (data) => {
+        takeUploadRecovery(data.temp_file_id)?.onSuccess?.(data.temp_file_id);
         clearUploadTimer(data.temp_file_id);
         console.log('upload success', data);
         if (agent_id) {
@@ -231,7 +258,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       onError: (_error, body) => {
         const error = _error as TError | undefined;
         console.log('upload error', error);
-        const file_id = body.get('file_id');
+        const file_id = body.get('file_id') as string;
+        const uploadLifecycle = takeUploadRecovery(file_id);
         const tool_resource = body.get('tool_resource');
         if (tool_resource === EToolResources.execute_code) {
           setEphemeralAgent((prev) => ({
@@ -239,8 +267,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
             [EToolResources.execute_code]: false,
           }));
         }
-        clearUploadTimer(file_id as string);
-        deleteFileById(file_id as string);
+        clearUploadTimer(file_id);
+        deleteFileById(file_id);
 
         let errorMessage = 'com_error_files_upload';
 
@@ -250,12 +278,28 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           errorMessage = error.response.data.message;
         }
         setError(errorMessage);
+        uploadLifecycle?.onError?.(file_id);
       },
     },
     abortControllerRef.current?.signal,
   );
 
-  const startUpload = async (extendedFile: ExtendedFile) => {
+  const uploadWithRecovery = (
+    formData: FormData,
+    file_id: string,
+    uploadLifecycle?: UploadLifecycleCallbacks,
+  ) => {
+    if (uploadLifecycle) {
+      uploadErrorCallbacks.set(file_id, uploadLifecycle);
+      uploadLifecycle.onStart?.(file_id);
+    }
+    uploadFile.mutate(formData);
+  };
+
+  const startUpload = async (
+    extendedFile: ExtendedFile,
+    uploadLifecycle?: UploadLifecycleCallbacks,
+  ) => {
     const filename = extendedFile.file?.name ?? 'File';
     startUploadTimer(extendedFile.file_id, filename, extendedFile.size);
 
@@ -305,7 +349,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         formData.append('agent_id', conversation.agent_id);
       }
 
-      uploadFile.mutate(formData);
+      uploadWithRecovery(formData, extendedFile.file_id, uploadLifecycle);
       return;
     }
 
@@ -335,10 +379,14 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       formData.append('model', convoModel);
     }
 
-    uploadFile.mutate(formData);
+    uploadWithRecovery(formData, extendedFile.file_id, uploadLifecycle);
   };
 
-  const loadImage = (extendedFile: ExtendedFile, preview: string) => {
+  const loadImage = (
+    extendedFile: ExtendedFile,
+    preview: string,
+    uploadLifecycle?: UploadLifecycleCallbacks,
+  ) => {
     const img = new Image();
     img.onload = async () => {
       extendedFile.width = img.width;
@@ -349,12 +397,17 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       };
       replaceFile(extendedFile);
 
-      await startUpload(extendedFile);
+      await startUpload(extendedFile, uploadLifecycle);
     };
     img.src = preview;
   };
 
-  const processFiles = async (fileList: File[], _toolResource?: string) => {
+  /** Resolves to whether the files passed validation and were accepted for upload. */
+  const processFiles = async (
+    fileList: File[],
+    _toolResource?: string,
+    uploadLifecycle?: UploadLifecycleCallbacks,
+  ): Promise<boolean> => {
     abortControllerRef.current = new AbortController();
 
     const existingFiles = tracksReservations
@@ -383,17 +436,20 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       console.error('file validation error', error);
       setError('com_error_files_validation');
       setFilesLoading(false);
-      return;
+      return false;
     }
     if (!filesAreValid) {
       setFilesLoading(false);
-      return;
+      return false;
     }
 
     /* Process files */
     const processedUploads: ProcessedUpload[] = [];
-    for (const originalFile of fileList) {
-      const file_id = v4();
+    for (const [fileIndex, originalFile] of fileList.entries()) {
+      const file_id =
+        fileIndex === 0 && uploadLifecycle?.fileId != null && uploadLifecycle.fileId !== ''
+          ? uploadLifecycle.fileId
+          : v4();
       try {
         // Create initial preview with original file
         const initialPreview = URL.createObjectURL(originalFile);
@@ -538,12 +594,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       setError('com_error_files_validation');
       discardProcessedUploads();
       setFilesLoading(false);
-      return;
+      return false;
     }
     if (!batchIsValid) {
       discardProcessedUploads();
       setFilesLoading(false);
-      return;
+      return false;
     }
 
     const filesWithProcessedUploads = new Map(existingFiles);
@@ -570,17 +626,27 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       }
 
       if (extendedFile.file?.type.startsWith('image/') === true) {
-        loadImage(extendedFile, preview);
+        loadImage(extendedFile, preview, uploadLifecycle);
         continue;
       }
 
-      await startUpload(extendedFile);
+      await startUpload(extendedFile, uploadLifecycle);
     }
+
+    return processedUploads.length > 0;
   };
 
-  const handleFiles = async (_files: FileList | File[], _toolResource?: string) => {
+  const handleFiles = async (
+    _files: FileList | File[],
+    _toolResource?: string,
+    uploadLifecycle?: UploadLifecycleCallbacks,
+  ): Promise<boolean> => {
     /** `FileList` is live: copy it before yielding, as callers reset the input synchronously */
     const fileList = Array.from(_files);
+    const assignedFileId = uploadLifecycle?.fileId;
+    if (assignedFileId) {
+      uploadErrorCallbacks.set(assignedFileId, uploadLifecycle);
+    }
     /** Started before queueing so every waiting batch shares one bounded config window */
     const configReady = isConfigPending ? waitForConfig() : undefined;
     const previousProcessing = uploadScope.queue;
@@ -589,10 +655,26 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       releaseProcessing = resolve;
     });
 
-    await previousProcessing;
     try {
+      await previousProcessing;
       await configReady;
-      await processFiles(fileList, _toolResource);
+      if (uploadLifecycle?.shouldCommit?.() === false) {
+        if (assignedFileId) {
+          takeUploadRecovery(assignedFileId);
+        }
+        setFilesLoading(false);
+        return false;
+      }
+      const accepted = await processFiles(fileList, _toolResource, uploadLifecycle);
+      if (!accepted && assignedFileId) {
+        takeUploadRecovery(assignedFileId);
+      }
+      return accepted;
+    } catch (error) {
+      if (assignedFileId) {
+        takeUploadRecovery(assignedFileId);
+      }
+      throw error;
     } finally {
       releaseProcessing();
     }
@@ -608,11 +690,18 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     }
   };
 
-  const abortUpload = () => {
+  const abortUpload = (fileId?: string) => {
     if (abortControllerRef.current) {
       logger.log('files', 'Aborting upload');
       abortControllerRef.current.abort('User aborted upload');
       abortControllerRef.current = null;
+    }
+    if (fileId) {
+      clearUploadRecovery(fileId);
+      return;
+    }
+    for (const uploadId of Array.from(uploadErrorCallbacks.keys())) {
+      clearUploadRecovery(uploadId);
     }
   };
 

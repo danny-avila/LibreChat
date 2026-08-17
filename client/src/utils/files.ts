@@ -486,6 +486,81 @@ export const getViableUploadOptions = (
   return options;
 };
 
+/**
+ * Character count past which a plain-text paste is attached as a file rather than inserted
+ * into the composer. Roughly a screenful of prose, so ordinary pastes are untouched.
+ */
+export const PASTE_AS_FILE_MIN_LENGTH = 2500;
+
+export const PASTED_TEXT_FILENAME = 'pasted-text.txt';
+
+export type PasteAsFileContext = {
+  /** The user's `pasteLongTextAsFile` preference. */
+  enabled: boolean;
+  uploadsDisabled: boolean;
+  isAssistants: boolean;
+  /** Names already attached to the composer, used to keep successive pastes distinct. */
+  attachedFilenames: Set<string>;
+  /** The file config the destination check reads has not arrived yet. */
+  configPending: boolean;
+  getOptions: (files: File[]) => (EToolResources | undefined)[];
+};
+
+/**
+ * Uploads are deduped on name + size + type, so a fixed name would collapse that key to size
+ * alone for pastes and reject a second, different paste that merely matched the first one's
+ * length. Numbering keeps every paste attachable while staying readable in the UI.
+ */
+const nextPastedTextFilename = (taken: Set<string>): string => {
+  let candidate = PASTED_TEXT_FILENAME;
+  let suffix = 1;
+  while (taken.has(candidate)) {
+    suffix += 1;
+    candidate = `pasted-text-${suffix}.txt`;
+  }
+  return candidate;
+};
+
+export type PastedTextAttachment = {
+  file: File;
+  /** Context for non-assistant attachments; assistants resolve their destination on upload. */
+  toolResource?: EToolResources;
+};
+
+/**
+ * Turns a long plain-text paste into a text attachment, keeping the composer readable while
+ * preserving the exact paste in the generated file. Context attachments follow the same
+ * configured token limits as other uploaded text files. Returns `null` whenever the paste
+ * should stay inline, so the caller can leave the browser's native paste untouched.
+ */
+export const resolvePastedTextFile = (
+  text: string,
+  ctx: PasteAsFileContext,
+): PastedTextAttachment | null => {
+  if (!ctx.enabled || ctx.uploadsDisabled || text.length <= PASTE_AS_FILE_MIN_LENGTH) {
+    return null;
+  }
+
+  const name = nextPastedTextFilename(ctx.attachedFilenames);
+  const file = new File([text], name, { type: 'text/plain' });
+  if (ctx.isAssistants) {
+    return { file };
+  }
+
+  /** `context` is the only automatic non-assistant destination because retrieval-based routes
+   * can change what the model sees. Pasting text must never pop a destination picker.
+   *
+   * That check reads MIME lists that arrive with the file config, so declining while the config
+   * is still in flight would quietly ignore the setting on a slow first load. Routing the paste
+   * instead hands the decision to the upload, which waits for the same config and restores the
+   * text inline if it turns out the destination is unavailable. */
+  if (!ctx.configPending && !ctx.getOptions([file]).includes(EToolResources.context)) {
+    return null;
+  }
+
+  return { file, toolResource: EToolResources.context };
+};
+
 export function sortPagesByRelevance(
   pages: number[],
   pageRelevance: Record<number, number>,

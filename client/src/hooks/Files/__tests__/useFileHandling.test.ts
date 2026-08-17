@@ -7,6 +7,21 @@ import {
   getEndpointFileConfig,
 } from 'librechat-data-provider';
 
+type MockUploadMutationOptions = {
+  onSuccess?: (data: {
+    temp_file_id: string;
+    file_id: string;
+    filepath: string;
+    type: string;
+    filename: string;
+    source: string;
+    embedded: boolean;
+    height?: number;
+    width?: number;
+  }) => void;
+  onError?: (error: unknown, body: FormData) => void;
+};
+
 beforeAll(() => {
   global.URL.createObjectURL = jest.fn(() => 'blob:mock-url');
   global.URL.revokeObjectURL = jest.fn();
@@ -44,6 +59,7 @@ let mockConversation: Record<string, string | null | undefined> = {};
 let mockFileConfig: ReturnType<typeof mergeFileConfig> | null = null;
 let mockIsConfigPending = false;
 let mockIsTemporary = false;
+let mockUploadOptions: MockUploadMutationOptions = {};
 
 jest.mock('~/Providers/ChatContext', () => ({
   useChatContext: jest.fn(() => ({
@@ -81,9 +97,10 @@ jest.mock('@tanstack/react-query', () => ({
 
 jest.mock('~/data-provider', () => ({
   useGetFileConfig: jest.fn(() => ({ data: mockFileConfig })),
-  useUploadFileMutation: jest.fn((_opts: Record<string, unknown>) => ({
-    mutate: mockMutate,
-  })),
+  useUploadFileMutation: jest.fn((opts: MockUploadMutationOptions) => {
+    mockUploadOptions = opts;
+    return { mutate: mockMutate };
+  }),
 }));
 
 jest.mock('~/hooks/useLocalize', () => {
@@ -156,6 +173,7 @@ describe('useFileHandling', () => {
     mockFileConfig = null;
     mockIsConfigPending = false;
     mockIsTemporary = false;
+    mockUploadOptions = {};
   });
 
   const loadHook = async () => (await import('../useFileHandling')).default;
@@ -205,7 +223,7 @@ describe('useFileHandling', () => {
       const useFileHandling = await loadHook();
       const { result } = renderHook(() => useFileHandling());
       const imageFile = new File(['image'], 'photo.jpg', { type: 'image/jpeg' });
-      let handlingPromise: Promise<void> = Promise.resolve();
+      let handlingPromise: Promise<boolean> = Promise.resolve(false);
 
       await act(async () => {
         handlingPromise = result.current.handleFiles([imageFile]);
@@ -226,6 +244,45 @@ describe('useFileHandling', () => {
       expect(mockValidateFiles).toHaveBeenCalledTimes(1);
       expect(mockResizeImageIfNeeded).toHaveBeenCalledWith(imageFile);
       expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
+    it('abandons a waiting upload when its composer is gone', async () => {
+      let resolveConfig: () => void = () => undefined;
+      mockIsConfigPending = true;
+      mockWaitForConfig.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveConfig = resolve;
+          }),
+      );
+      const { default: useFileHandling, hasInFlightUpload } = await import('../useFileHandling');
+      const { result } = renderHook(() => useFileHandling());
+      const pastedFile = makeSizedFile('pasted-text.txt', 'text/plain', 4096);
+      let composerIsCurrent = true;
+      let handlingPromise: Promise<boolean> = Promise.resolve(false);
+
+      await act(async () => {
+        handlingPromise = result.current.handleFiles([pastedFile], undefined, {
+          fileId: 'paste-1',
+          shouldCommit: () => composerIsCurrent,
+        });
+        await Promise.resolve();
+      });
+
+      expect(hasInFlightUpload('paste-1')).toBe(true);
+      composerIsCurrent = false;
+      let accepted: boolean | undefined;
+
+      await act(async () => {
+        resolveConfig();
+        accepted = await handlingPromise;
+      });
+
+      expect(accepted).toBe(false);
+      expect(hasInFlightUpload('paste-1')).toBe(false);
+      expect(mockValidateFiles).not.toHaveBeenCalled();
+      expect(mockMutate).not.toHaveBeenCalled();
+      expect(mockSetFilesLoading).toHaveBeenCalledWith(false);
     });
 
     it('processes uploads when a resize config error has settled', async () => {
@@ -450,7 +507,7 @@ describe('useFileHandling', () => {
       const menu = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
       const composer = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
 
-      let uploads: Promise<void[]> = Promise.resolve([]);
+      let uploads: Promise<boolean[]> = Promise.resolve([]);
       await act(async () => {
         uploads = Promise.all([
           menu.result.current.handleFiles([makeSizedFile('one.txt', 'text/plain', 1024)]),
@@ -871,6 +928,236 @@ describe('useFileHandling', () => {
       const uploadedFile = formData.get('file') as File;
       expect(uploadedFile.name).toBe('photo.jpg');
       expect(uploadedFile.type).toBe('image/jpeg');
+    });
+  });
+
+  /** Callers gate success messaging on this result, so a rejected upload must not report true */
+  describe('acceptance result', () => {
+    it('resolves false when validation rejects the files', async () => {
+      mockValidateFiles.mockImplementationOnce(() => false);
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.handleFiles([
+          new File(['hello'], 'dupe.txt', { type: 'text/plain' }),
+        ]);
+      });
+
+      expect(accepted).toBe(false);
+      expect(mockMutate).not.toHaveBeenCalled();
+    });
+
+    it('resolves false when validation throws', async () => {
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      mockValidateFiles.mockImplementationOnce(() => {
+        throw new Error('invalid file config');
+      });
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.handleFiles([
+          new File(['hello'], 'test.txt', { type: 'text/plain' }),
+        ]);
+      });
+
+      expect(accepted).toBe(false);
+      consoleError.mockRestore();
+    });
+
+    it('resolves true when the files are accepted', async () => {
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.handleFiles([
+          new File(['hello'], 'notes.txt', { type: 'text/plain' }),
+        ]);
+      });
+
+      expect(accepted).toBe(true);
+      expect(mockMutate).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses a preassigned file id and marks it in flight before the config wait', async () => {
+      mockIsConfigPending = true;
+      let releaseConfig!: () => void;
+      mockWaitForConfig.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseConfig = resolve;
+          }),
+      );
+      const assignedFileId = 'preassigned-file';
+      const { default: useFileHandling, hasInFlightUpload } = await import('../useFileHandling');
+      const { result } = renderHook(() => useFileHandling());
+
+      let acceptedPromise!: Promise<boolean>;
+      act(() => {
+        acceptedPromise = result.current.handleFiles(
+          [new File(['hello'], 'notes.txt', { type: 'text/plain' })],
+          undefined,
+          { fileId: assignedFileId },
+        );
+      });
+
+      expect(hasInFlightUpload(assignedFileId)).toBe(true);
+
+      await act(async () => {
+        releaseConfig();
+        await acceptedPromise;
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      expect(uploadBody.get('file_id')).toBe(assignedFileId);
+    });
+
+    it('clears a preassigned file id when validation rejects the files', async () => {
+      mockValidateFiles.mockImplementationOnce(() => false);
+      const assignedFileId = 'rejected-preassigned-file';
+      const { default: useFileHandling, hasInFlightUpload } = await import('../useFileHandling');
+      const { result } = renderHook(() => useFileHandling());
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.handleFiles(
+          [new File(['hello'], 'notes.txt', { type: 'text/plain' })],
+          undefined,
+          { fileId: assignedFileId },
+        );
+      });
+
+      expect(accepted).toBe(false);
+      expect(hasInFlightUpload(assignedFileId)).toBe(false);
+      expect(mockMutate).not.toHaveBeenCalled();
+    });
+
+    it('reports the temporary id at upload start and success', async () => {
+      const onStart = jest.fn();
+      const onSuccess = jest.fn();
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles(
+          [new File(['hello'], 'notes.txt', { type: 'text/plain' })],
+          undefined,
+          { onStart, onSuccess },
+        );
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      const fileId = uploadBody.get('file_id') as string;
+      expect(onStart).toHaveBeenCalledWith(fileId);
+
+      act(() => {
+        mockUploadOptions.onSuccess?.({
+          temp_file_id: fileId,
+          file_id: 'saved-file-id',
+          filepath: '/files/notes.txt',
+          type: 'text/plain',
+          filename: 'notes.txt',
+          source: 'local',
+          embedded: false,
+        });
+      });
+
+      expect(onSuccess).toHaveBeenCalledWith(fileId);
+    });
+
+    it('resolves false when every file fails preprocessing', async () => {
+      const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      mockProcessFileForUpload.mockRejectedValue(new Error('HEIC conversion failed'));
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      let accepted: boolean | undefined;
+      await act(async () => {
+        accepted = await result.current.handleFiles([
+          new File(['first'], 'first.heic', { type: 'image/heic' }),
+          new File(['second'], 'second.heic', { type: 'image/heic' }),
+        ]);
+      });
+
+      expect(accepted).toBe(false);
+      expect(mockProcessFileForUpload).toHaveBeenCalledTimes(2);
+      expect(mockMutate).not.toHaveBeenCalled();
+      consoleLog.mockRestore();
+    });
+
+    it('runs the matching recovery when the first of two concurrent uploads fails', async () => {
+      const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      const firstRecovery = jest.fn();
+      const secondRecovery = jest.fn();
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles(
+          [new File(['first'], 'pasted-text.txt', { type: 'text/plain' })],
+          undefined,
+          { onError: firstRecovery },
+        );
+        await result.current.handleFiles(
+          [new File(['second'], 'pasted-text-2.txt', { type: 'text/plain' })],
+          undefined,
+          { onError: secondRecovery },
+        );
+      });
+
+      expect(mockMutate).toHaveBeenCalledTimes(2);
+      const firstUploadBody = mockMutate.mock.calls[0][0] as FormData;
+
+      act(() => mockUploadOptions.onError?.(new Error('first upload failed'), firstUploadBody));
+
+      expect(firstRecovery).toHaveBeenCalledTimes(1);
+      expect(secondRecovery).not.toHaveBeenCalled();
+
+      act(() => mockUploadOptions.onError?.(new Error('first upload failed'), firstUploadBody));
+      expect(firstRecovery).toHaveBeenCalledTimes(1);
+      consoleLog.mockRestore();
+    });
+
+    it('does not recover pasted text after a separate file form removes the pending attachment', async () => {
+      const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      const recovery = jest.fn();
+      const { default: useFileHandling, useFileHandlingNoChatContext } = await import(
+        '../useFileHandling'
+      );
+      const { result: uploadResult } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await uploadResult.current.handleFiles(
+          [new File(['pasted text'], 'pasted-text.txt', { type: 'text/plain' })],
+          undefined,
+          { onError: recovery },
+        );
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      const uploadOptions = mockUploadOptions;
+      const fileId = uploadBody.get('file_id') as string;
+      const { result: removalResult } = renderHook(() =>
+        useFileHandlingNoChatContext(undefined, {
+          files: new Map(),
+          setFiles: jest.fn(),
+        }),
+      );
+
+      act(() => {
+        removalResult.current.abortUpload(fileId);
+      });
+      act(() => uploadOptions.onError?.(new Error('upload failed after removal'), uploadBody));
+
+      expect(recovery).not.toHaveBeenCalled();
+      consoleLog.mockRestore();
     });
   });
 });
