@@ -25,6 +25,8 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  saveConvo: jest.fn(),
+  saveMessage: jest.fn(),
   getMessages: jest.fn(),
   updateMessage: jest.fn(),
 }));
@@ -44,7 +46,7 @@ jest.mock('~/server/middleware', () => ({
 
 describe('PUT /:conversationId/:messageId content edit', () => {
   let app;
-  const { getMessages, updateMessage } = require('~/models');
+  const { getMessages, saveConvo, saveMessage, updateMessage } = require('~/models');
 
   beforeAll(() => {
     const messagesRouter = require('../messages');
@@ -60,6 +62,8 @@ describe('PUT /:conversationId/:messageId content edit', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     updateMessage.mockResolvedValue({ messageId: 'message-1' });
+    saveMessage.mockResolvedValue({ messageId: 'message-1', conversationId: 'conversation-1' });
+    saveConvo.mockResolvedValue({ conversationId: 'conversation-1' });
   });
 
   it('preserves content-part metadata when editing its text', async () => {

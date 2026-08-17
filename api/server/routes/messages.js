@@ -27,6 +27,14 @@ const db = require('~/models');
 const router = express.Router();
 router.use(requireJwtAuth);
 
+/** Forced retention is stamped at write time, so editing a message inside a
+ *  pre-existing permanent chat has to re-stamp its parent too; otherwise the
+ *  message expires while the conversation holding it stays visible forever.
+ *  Never upserts: a message whose conversation is already gone must not
+ *  resurrect it. */
+const applyParentRetention = (reqCtx, conversationId, context) =>
+  db.saveConvo(reqCtx, { conversationId }, { context, noUpsert: true });
+
 router.get('/', async (req, res) => {
   try {
     const user = req.user.id ?? '';
@@ -255,12 +263,14 @@ router.post('/artifact/:messageId', configMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Original content not found in target artifact' });
     }
 
+    const reqCtx = {
+      userId: req?.user?.id,
+      isTemporary: req?.body?.isTemporary,
+      interfaceConfig: req?.config?.interfaceConfig,
+    };
+    const context = 'POST /api/messages/artifact/:messageId';
     const savedMessage = await db.saveMessage(
-      {
-        userId: req?.user?.id,
-        isTemporary: req?.body?.isTemporary,
-        interfaceConfig: req?.config?.interfaceConfig,
-      },
+      reqCtx,
       {
         messageId,
         conversationId: message.conversationId,
@@ -268,8 +278,9 @@ router.post('/artifact/:messageId', configMiddleware, async (req, res) => {
         content: message.content,
         user: req.user.id,
       },
-      { context: 'POST /api/messages/artifact/:messageId' },
+      { context },
     );
+    await applyParentRetention(reqCtx, message.conversationId, context);
 
     res.status(200).json({
       conversationId: savedMessage.conversationId,
@@ -375,17 +386,10 @@ router.put(
         isTemporary: req?.body?.isTemporary,
         interfaceConfig: req?.config?.interfaceConfig,
       };
+      const context = 'PUT /api/messages/:conversationId/:messageId';
       const applyForcedRetention = async () => {
-        await db.saveMessage(
-          reqCtx,
-          { messageId, conversationId, user: req.user.id },
-          { context: 'PUT /api/messages/:conversationId/:messageId' },
-        );
-        await db.saveConvo(
-          reqCtx,
-          { conversationId },
-          { context: 'PUT /api/messages/:conversationId/:messageId' },
-        );
+        await db.saveMessage(reqCtx, { messageId, conversationId, user: req.user.id }, { context });
+        await applyParentRetention(reqCtx, conversationId, context);
       };
 
       if (index === undefined) {
@@ -399,6 +403,12 @@ router.put(
             'quotes isCreatedByUser',
           )
         )?.[0];
+        /** `updateMessage` matches on `{ messageId, user }` alone, so without this
+         *  the route's `conversationId` could be paired with a message from another
+         *  of the caller's chats and the retention re-stamp below would move it there. */
+        if (!existing) {
+          return res.status(404).json({ error: 'Message not found' });
+        }
         const textToCount = mergeQuotedTextForCount(
           text,
           existing?.quotes,

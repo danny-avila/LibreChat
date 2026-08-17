@@ -133,7 +133,7 @@ describe('PUT /:conversationId/:messageId', () => {
     expect(saveConvo).toHaveBeenCalledWith(
       expect.objectContaining(expectedReqCtx),
       { conversationId },
-      { context: 'PUT /api/messages/:conversationId/:messageId' },
+      { context: 'PUT /api/messages/:conversationId/:messageId', noUpsert: true },
     );
   });
 
@@ -168,8 +168,21 @@ describe('PUT /:conversationId/:messageId', () => {
     expect(saveConvo).toHaveBeenCalledWith(
       expect.objectContaining(expectedReqCtx),
       { conversationId },
-      { context: 'PUT /api/messages/:conversationId/:messageId' },
+      { context: 'PUT /api/messages/:conversationId/:messageId', noUpsert: true },
     );
+  });
+
+  it('rejects a message that belongs to another conversation', async () => {
+    getMessages.mockResolvedValue([]);
+
+    const response = await request(app)
+      .put(`/api/messages/${conversationId}/${messageId}`)
+      .send({ text: 'edited text', model: 'gpt-5' });
+
+    expect(response.status).toBe(404);
+    expect(updateMessage).not.toHaveBeenCalled();
+    expect(saveMessage).not.toHaveBeenCalled();
+    expect(saveConvo).not.toHaveBeenCalled();
   });
 
   it('does not apply retention when the message update fails', async () => {
