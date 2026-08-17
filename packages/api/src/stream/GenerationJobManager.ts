@@ -20,6 +20,7 @@ import type { StandardGraph } from '@librechat/agents';
 import type {
   SerializableJobData,
   CreatedJobData,
+  ReplacedGeneration,
   IEventTransport,
   UsageMetadata,
   AbortResult,
@@ -711,6 +712,14 @@ interface PreparedSubscription {
   runtime: RuntimeJobState;
   jobData: SerializableJobData | null;
   deferDeliveryUntilActivated: boolean;
+}
+
+interface CommittedCreateRecovery {
+  job: CreatedJobData;
+  /** Transaction receipts already delivered during ambiguous-create recovery.
+   * They may be absent from the repaired job after their fenced ACK, but the
+   * caller still needs them to classify its stale pre-create snapshot. */
+  handledPredecessors: readonly ReplacedGeneration[];
 }
 
 type DeferredDelivery =
@@ -1889,7 +1898,7 @@ class GenerationJobManagerClass {
     tenantId: string | undefined,
     options: CreateGenerationJobOptions,
     creationAttemptId: string,
-  ): Promise<CreatedJobData | null> {
+  ): Promise<CommittedCreateRecovery | null> {
     const clientRequestId = options.idempotencyClientRequestId;
     const claimToken = options.idempotencyClaimToken;
     const expectedConversationId = conversationId ?? streamId;
@@ -1903,6 +1912,7 @@ class GenerationJobManagerClass {
       (job.idempotencyClientRequestId ?? undefined) === clientRequestId;
 
     let committedJob = (await this.jobStore.getJob(streamId)) as CreatedJobData | null;
+    let handledPredecessors: readonly ReplacedGeneration[] = [];
     if (
       committedJob != null &&
       committedJob.userId === userId &&
@@ -1912,6 +1922,9 @@ class GenerationJobManagerClass {
       // mutable because later recovery may refresh it, so TypeScript cannot
       // safely retain a narrowing on that outer binding across the await.
       const currentCommittedJob = committedJob;
+      handledPredecessors =
+        currentCommittedJob.replacedJobs ??
+        (currentCommittedJob.replacedJob != null ? [currentCommittedJob.replacedJob] : []);
       const ownsCommittedCreate = matchesCommittedCreate(currentCommittedJob);
       const predecessorsDelivered = await this.processDurableReplacementReceipts(
         streamId,
@@ -2027,7 +2040,7 @@ class GenerationJobManagerClass {
         if (repaired) {
           const confirmed = await this.jobStore.getJob(streamId);
           if (matchesCommittedCreate(confirmed)) {
-            return confirmed;
+            return { job: confirmed, handledPredecessors };
           }
           return null;
         }
@@ -2171,6 +2184,7 @@ class GenerationJobManagerClass {
     // so replacement must explicitly close/handoff that old attachment.
     const observedPredecessorJob = await this.jobStore.getJob(streamId);
     let jobData: CreatedJobData;
+    let recoveredPredecessors: readonly ReplacedGeneration[] = [];
     try {
       jobData = await this.jobStore.createJob(
         streamId,
@@ -2211,7 +2225,7 @@ class GenerationJobManagerClass {
         throw error;
       }
 
-      let recovered: CreatedJobData | null = null;
+      let recovered: CommittedCreateRecovery | null = null;
       try {
         recovered = await this.recoverCommittedCreate(
           streamId,
@@ -2230,7 +2244,8 @@ class GenerationJobManagerClass {
       if (recovered == null) {
         throw error;
       }
-      jobData = recovered;
+      jobData = recovered.job;
+      recoveredPredecessors = recovered.handledPredecessors;
     }
 
     if (options.idempotencyClientRequestId != null && options.idempotencyClaimToken != null) {
@@ -2327,14 +2342,23 @@ class GenerationJobManagerClass {
     }
 
     const replacementEpochs = new Map<number, string | undefined>();
-    const exactPredecessors =
+    const durableExactPredecessors =
       jobData.replacedJobs ?? (jobData.replacedJob != null ? [jobData.replacedJob] : []);
     const exactPredecessorsByEpoch = new Map(
-      exactPredecessors.map((predecessor) => [predecessor.createdAt, predecessor]),
+      [...recoveredPredecessors, ...durableExactPredecessors].map((predecessor) => [
+        predecessor.createdAt,
+        predecessor,
+      ]),
     );
+    const exactPredecessors = [...exactPredecessorsByEpoch.values()];
     const observedPredecessorReceipt = observedPredecessorJob
       ? exactPredecessorsByEpoch.get(observedPredecessorJob.createdAt)
       : undefined;
+    const observedPredecessorCoveredByLaterReceipt =
+      observedPredecessorJob != null &&
+      exactPredecessors.some(
+        (predecessor) => predecessor.createdAt > observedPredecessorJob.createdAt,
+      );
     if (
       observedPredecessorJob &&
       observedPredecessorJob.createdAt !== jobData.createdAt &&
@@ -2343,7 +2367,12 @@ class GenerationJobManagerClass {
       // The transaction-time predecessor is authoritative for the same
       // epoch. A pre-read may say running even though it terminalized before
       // replacement; do not publish a contradictory replaced/abort pair.
-      observedPredecessorReceipt == null
+      observedPredecessorReceipt == null &&
+      // A newer transaction-time receipt also proves this pre-read was already
+      // superseded before our create committed. If its earlier handoff were
+      // still unconfirmed, Redis would have inherited that epoch in the same
+      // retained receipt chain; its absence is the predecessor's fenced ACK.
+      !observedPredecessorCoveredByLaterReceipt
     ) {
       replacementEpochs.set(
         observedPredecessorJob.createdAt,
@@ -8352,32 +8381,11 @@ class GenerationJobManagerClass {
     // settlement proof. A failed-handoff retainer can then stop when its predecessor
     // completes naturally, not only when it receives the abort signal.
     const settlementProofRecorded = await this.recordOwnerSettlementProof(streamId, createdAt);
-    let observedJob: SerializableJobData | null | undefined;
-    try {
-      observedJob = await this.jobStore.getJob(streamId);
-    } catch {
-      observedJob = undefined;
-    }
-    let durableAbortFenceCleared = true;
-    // Avoid a Mongo User mutation/cache invalidation on every normal completion.
-    // Only an exact aborted generation can own durable Stop-delivery evidence.
-    if (
-      (hold != null ||
-        (observedJob?.createdAt === createdAt && observedJob.status === 'aborted')) &&
-      this.userFinalizationFallback?.clearAbortDelivery != null
-    ) {
-      durableAbortFenceCleared = await this.userFinalizationFallback
-        .clearAbortDelivery(userId, tenantId, streamId)
-        .then(() => true)
-        .catch((error) => {
-          logger.error(
-            `[GenerationJobManager] Failed to clear durable abort delivery fence for ${streamId}:`,
-            error,
-          );
-          return false;
-        });
-    }
-    if (!settlementProofRecorded || !durableAbortFenceCleared) {
+    // Durable abort-delivery evidence is stream-keyed in the user document, so an
+    // owner release cannot safely clear it: a predecessor may settle after a
+    // same-stream replacement has installed its own fence. The generation-fenced
+    // abort/resignal paths (and deletion sweep) own that clear instead.
+    if (!settlementProofRecorded) {
       // Keep (or create) a heartbeat while exact settlement proof is retried. The
       // owner writes are finished, so this is conservative availability fencing.
       if (hold == null) {
@@ -8437,7 +8445,7 @@ class GenerationJobManagerClass {
     const runtime = this.runtimeState.get(streamId);
     if (runtime?.createdAt === createdAt && runtime.abortController.signal.aborted) {
       try {
-        const job = observedJob === undefined ? await this.jobStore.getJob(streamId) : observedJob;
+        const job = await this.jobStore.getJob(streamId);
         if (
           job?.createdAt !== createdAt ||
           (job.status !== 'running' && job.status !== 'requires_action')

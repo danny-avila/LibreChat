@@ -53,9 +53,12 @@ export const useDeleteScheduleMutation = (
     (id: string) => dataService.deleteSchedule(id),
     {
       ...options,
-      onSuccess: (...args) => {
+      // An `unconfirmed` 503 is still a server-side mutation: the schedule has
+      // already been disabled, marked deleting, and hidden from list reads.
+      // Refresh on either outcome so the card cannot remain actionable in cache.
+      onSettled: (...args) => {
         queryClient.invalidateQueries([QueryKeys.schedules]);
-        options?.onSuccess?.(...args);
+        options?.onSettled?.(...args);
       },
     },
   );
