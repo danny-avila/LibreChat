@@ -401,6 +401,10 @@ actions:
 #   everything:
 #     # type: sse # type can optionally be omitted
 #     url: http://localhost:3001/sse
+#     # Forward only explicitly referenced current-request image placeholders as
+#     # data URLs. Disabled by default; enabling shares those image bytes with
+#     # this MCP server and increases downstream JSON request size.
+#     forwardUploadedImages: true
 #     # proxy: "${MCP_PROXY_URL}"  # optional outbound proxy (http/https/socks/socks5)
 #     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
 #   puppeteer:

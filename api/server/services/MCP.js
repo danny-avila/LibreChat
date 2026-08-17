@@ -63,7 +63,7 @@ const {
   cacheMCPServerTools,
 } = require('./Config');
 const { getLogStores } = require('~/cache');
-const { resolveImageToolArguments } = require('./MCP/images');
+const { resolveUploadedImageArguments } = require('./MCP/images');
 
 const MAX_CACHE_SIZE = 1000;
 const lastReconnectAttempts = new Map();
@@ -1069,13 +1069,6 @@ function createToolInstance({
       const flowManager = getFlowStateManager(flowsCache);
       const derivedSignal = config?.signal ? AbortSignal.any([config.signal]) : undefined;
       const mcpManager = getMCPManager(userId);
-      const resolvedToolArguments = await resolveImageToolArguments({
-        serverName,
-        toolName,
-        toolArguments,
-        request: capturedRequest,
-        user: effectiveUser,
-      });
 
       const { args: _args, stepId, ...toolCall } = config.toolCall ?? {};
       const flowId = `${serverName}:oauth_login:${config.metadata.thread_id}:${config.metadata.run_id}`;
@@ -1101,6 +1094,16 @@ function createToolInstance({
 
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
+
+      const resolvedToolArguments =
+        capturedServerConfig?.forwardUploadedImages === true
+          ? await resolveUploadedImageArguments({
+              forwardUploadedImages: true,
+              toolArguments,
+              request: capturedRequest,
+              user: effectiveUser,
+            })
+          : toolArguments;
 
       const result = await mcpManager.callTool({
         serverName,
