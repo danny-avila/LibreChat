@@ -855,7 +855,12 @@ export function createSchedulesService(
       }
       const claimed = allocation.claimed;
       if ('conflict' in claimed) {
-        return { conflict: claimed.conflict };
+        // withCapacitySlot consumes this internal collision sentinel by retrying the
+        // next free slot. Normalize defensively at the public boundary as well so a
+        // custom/test allocator can never leak an implementation-only conflict.
+        return {
+          conflict: claimed.conflict === 'slot-taken' ? 'capacity' : claimed.conflict,
+        };
       }
       return { capacitySlot: claimed.capacitySlot };
     });
