@@ -1,6 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import { getScoreDestinations, type LangfuseScoreDestination } from './destinations';
+import { mergeHeaders } from '~/utils/headers';
 
 export type LangfuseFeedback = {
   rating?: 'thumbsUp' | 'thumbsDown';
@@ -61,7 +62,7 @@ async function deleteScore(destination: LangfuseScoreDestination, scoreId: strin
     `${destination.baseUrl}/api/public/scores/${encodeURIComponent(scoreId)}`,
     {
       method: 'DELETE',
-      headers: { ...destination.headers, Authorization: destination.authorization },
+      headers: mergeHeaders(destination.headers, { Authorization: destination.authorization }),
     },
   );
   if (!res.ok && res.status !== 404) {
@@ -75,11 +76,10 @@ async function createScore(
 ): Promise<void> {
   const res = await fetch(`${destination.baseUrl}/api/public/scores`, {
     method: 'POST',
-    headers: {
-      ...destination.headers,
+    headers: mergeHeaders(destination.headers, {
       Authorization: destination.authorization,
       'Content-Type': 'application/json',
-    },
+    }),
     body: JSON.stringify(payload),
   });
   if (!res.ok) {

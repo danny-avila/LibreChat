@@ -15,6 +15,7 @@ import {
   toBasicAuthorization,
 } from './utils';
 import { resolveLangfuseTenantDestination } from './tenantDestinations';
+import { mergeHeaders } from '~/utils/headers';
 import { normalizeString } from '~/utils/text';
 import { traceIdForMessage } from './trace';
 
@@ -90,7 +91,9 @@ async function resolveCentralProjectId(
     cached.lookup = (async () => {
       try {
         const response = await fetch(`${baseUrl}/api/public/projects`, {
-          headers: { ...headers, Authorization: toBasicAuthorization(publicKey, secretKey) },
+          headers: mergeHeaders(headers, {
+            Authorization: toBasicAuthorization(publicKey, secretKey),
+          }),
           signal: AbortSignal.timeout(PROJECT_LOOKUP_TIMEOUT_MS),
         });
         if (!response.ok) {

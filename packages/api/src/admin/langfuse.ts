@@ -22,6 +22,7 @@ import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
 import { getLangfuseDestinationId } from '~/langfuse/destinations';
 import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
 import { resolveLangfuseHeaders } from '~/langfuse/utils';
+import { mergeHeaders } from '~/utils/headers';
 
 const DEFAULT_PRIORITY = 10;
 const ENCRYPTED_PREFIX = 'v3:';
@@ -145,7 +146,7 @@ async function verifyLangfuseCredentials(
     const auth = Buffer.from(`${publicKey}:${secretKey}`).toString('base64');
     const signal = AbortSignal.timeout(LANGFUSE_VERIFICATION_TIMEOUT_MS);
     const secretResponse = await fetch(`${destination.baseUrl}/api/public/projects`, {
-      headers: { ...headers, Authorization: `Basic ${auth}` },
+      headers: mergeHeaders(headers, { Authorization: `Basic ${auth}` }),
       signal,
     });
     if (!secretResponse.ok) {
@@ -185,12 +186,11 @@ async function verifyLangfuseCredentials(
 
     const publicResponse = await fetch(`${destination.baseUrl}/api/public/ingestion`, {
       method: 'POST',
-      headers: {
-        ...headers,
+      headers: mergeHeaders(headers, {
         Authorization: `Bearer ${publicKey}`,
         'X-Langfuse-Public-Key': publicKey,
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ batch: [] }),
       signal,
     });

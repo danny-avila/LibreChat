@@ -983,24 +983,34 @@ describe('createAdminLangfuseHandlers', () => {
       expect(ingestionInit.headers.Authorization).toBe('Bearer pk');
     });
 
-    it('keeps the Langfuse authorization when a deployment header collides', async () => {
-      global.fetch = jest
-        .fn()
-        .mockResolvedValueOnce(projectResponse())
-        .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
-      const { handlers } = createHandlers();
-      const res = mockRes();
+    it.each(['Authorization', 'authorization'])(
+      'keeps the Langfuse authorization when a deployment %s header collides',
+      async (headerName) => {
+        global.fetch = jest
+          .fn()
+          .mockResolvedValueOnce(projectResponse())
+          .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
+        const { handlers } = createHandlers();
+        const res = mockRes();
 
-      await handlers.testConnection(
-        mockReq({
-          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
-          config: { langfuse: { headers: { Authorization: 'Bearer proxy-token' } } },
-        }),
-        res,
-      );
+        await handlers.testConnection(
+          mockReq({
+            body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+            config: { langfuse: { headers: { [headerName]: 'Bearer proxy-token' } } },
+          }),
+          res,
+        );
 
-      const [, projectsInit] = (global.fetch as unknown as jest.Mock).mock.calls[0];
-      expect(projectsInit.headers.Authorization).toMatch(/^Basic /);
-    });
+        const [, projectsInit] = (global.fetch as unknown as jest.Mock).mock.calls[0];
+        const headers = projectsInit.headers as Record<string, string>;
+        /** A surviving case variant would be appended by fetch rather than
+         *  replaced, sending both credentials in one combined value. */
+        expect(
+          Object.keys(headers).filter((key) => key.toLowerCase() === 'authorization'),
+        ).toHaveLength(1);
+        expect(Object.values(headers)).not.toContain('Bearer proxy-token');
+        expect(Object.values(headers).some((value) => value.startsWith('Basic '))).toBe(true);
+      },
+    );
   });
 });

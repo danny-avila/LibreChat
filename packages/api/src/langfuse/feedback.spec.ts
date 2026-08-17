@@ -1332,24 +1332,30 @@ describe('Langfuse feedback scores', () => {
     );
   });
 
-  it('never lets a configured header displace the Langfuse authorization', async () => {
-    const { sendFeedbackScore } = await loadFeedback();
+  it.each(['Authorization', 'authorization', 'AUTHORIZATION'])(
+    'never lets a configured %s header displace the Langfuse authorization',
+    async (headerName) => {
+      const { sendFeedbackScore } = await loadFeedback();
 
-    await sendFeedbackScore({
-      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
-      feedback: { rating: 'thumbsUp' },
-      appConfig: appConfigWithLangfuse({
-        headers: { Authorization: 'Bearer proxy-token' },
-      }),
-    });
+      await sendFeedbackScore({
+        traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+        feedback: { rating: 'thumbsUp' },
+        appConfig: appConfigWithLangfuse({
+          headers: { [headerName]: 'Bearer proxy-token' },
+        }),
+      });
 
-    expect(getFetchMock()).toHaveBeenCalledWith(
-      'https://cloud.langfuse.com/api/public/scores',
-      expect.objectContaining({
-        headers: expect.objectContaining({ Authorization: getCentralAuthorization() }),
-      }),
-    );
-  });
+      const [, init] = getFetchMock().mock.calls[0] as [string, RequestInit];
+      const headers = init.headers as Record<string, string>;
+      /** A surviving case variant would be *appended* by fetch, sending a
+       *  combined "Bearer proxy-token, Basic ..." value rather than ours. */
+      expect(
+        Object.keys(headers).filter((key) => key.toLowerCase() === 'authorization'),
+      ).toHaveLength(1);
+      expect(Object.values(headers)).toContain(getCentralAuthorization());
+      expect(Object.values(headers)).not.toContain('Bearer proxy-token');
+    },
+  );
 
   it('sends configured headers with the central project identity lookup', async () => {
     delete process.env.LANGFUSE_PROJECT_ID;
