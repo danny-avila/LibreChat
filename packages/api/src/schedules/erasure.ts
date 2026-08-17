@@ -33,6 +33,9 @@ export interface ScheduleErasureDeps {
   >;
   /** Job state at a run's conversationId; null = confirmed absent, throw = unknown. */
   getJobStatus: (conversationId: string) => Promise<JobState | null>;
+  /** Whether absence in this process's job store proves absence deployment-wide.
+   * False for the process-local fallback whose scheduler refused unsafe topology. */
+  canInferOwnerDeathFromMissingJob: boolean;
 }
 
 /** Whether the observed job still carries THIS occurrence's scheduled identity. */
@@ -82,8 +85,18 @@ async function settleAbandonedRuns(deps: ScheduleErasureDeps, scheduleId: string
           continue;
         }
       }
+      const settledPause =
+        identity && job.state!.status === 'requires_action' && run.status === 'requires_action';
       const retained = identity ? TERMINAL_JOB_OUTCOMES[job.state!.status] : undefined;
       if (retained == null) {
+        // In the unsafe-topology fallback, a peer-owned live job is indistinguishable
+        // from an absent one. Never turn that local absence (or identity mismatch) into
+        // owner-death evidence and free its globally visible run/capacity slot.
+        // An identity-matched, durably paused row is positive local evidence, so it
+        // remains eligible for the existing age-based deleting-schedule cleanup.
+        if (!settledPause && !deps.canInferOwnerDeathFromMissingJob) {
+          continue;
+        }
         // No terminal evidence: only presume the owner dead past the cutoff.
         const age = now - (run.firedAt?.getTime() ?? 0);
         if (age < ABANDONED_RUN_AGE_MS) {

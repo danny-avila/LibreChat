@@ -301,6 +301,54 @@ describe('reserveStartedRun (single-active overlap guard)', () => {
   });
 });
 
+describe('markRunResumeClaimed (paused resume capacity)', () => {
+  const when = new Date('2026-07-20T12:00:00Z');
+
+  it('atomically promotes a paused run and claims a global capacity slot', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await ScheduleRun.create(runData(schedule, { scheduledFor: when, status: 'requires_action' }));
+
+    await expect(methods.markRunResumeClaimed(schedule.id, when, 0)).resolves.toEqual({
+      capacitySlot: 0,
+    });
+    await expect(getRun(schedule.id, when)).resolves.toMatchObject({
+      status: 'started',
+      capacitySlot: 0,
+      resumeClaimedAt: expect.any(Date),
+    });
+  });
+
+  it('reports global-slot and same-schedule overlap conflicts without changing the pause', async () => {
+    const first = await methods.createSchedule(scheduleData());
+    const second = await methods.createSchedule(scheduleData());
+    await ScheduleRun.create(runData(first, { capacitySlot: 0 }));
+    await ScheduleRun.create(runData(second, { scheduledFor: when, status: 'requires_action' }));
+
+    await expect(methods.markRunResumeClaimed(second.id, when, 0)).resolves.toEqual({
+      conflict: 'slot-taken',
+    });
+
+    const later = new Date('2026-07-21T12:00:00Z');
+    await ScheduleRun.create(runData(first, { scheduledFor: later, status: 'requires_action' }));
+    await expect(methods.markRunResumeClaimed(first.id, later, 1)).resolves.toEqual({
+      conflict: 'overlap',
+    });
+    await expect(getRun(second.id, when)).resolves.toMatchObject({ status: 'requires_action' });
+    await expect(getRun(first.id, later)).resolves.toMatchObject({ status: 'requires_action' });
+  });
+
+  it('rolls back only the exact resume reservation', async () => {
+    const schedule = await methods.createSchedule(scheduleData());
+    await ScheduleRun.create(runData(schedule, { scheduledFor: when, status: 'requires_action' }));
+    await methods.markRunResumeClaimed(schedule.id, when, 2);
+
+    await expect(methods.releaseRunResumeClaim(schedule.id, when, 1)).resolves.toBe(false);
+    await expect(methods.releaseRunResumeClaim(schedule.id, when, 2)).resolves.toBe(true);
+    await expect(getRun(schedule.id, when)).resolves.toMatchObject({ status: 'requires_action' });
+    expect((await getRun(schedule.id, when)).capacitySlot).toBeUndefined();
+  });
+});
+
 describe('createScheduleWithSlot (atomic per-user cap)', () => {
   it('allows exactly maxPerUser and reports limit under concurrency', async () => {
     const user = new mongoose.Types.ObjectId();

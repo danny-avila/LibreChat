@@ -2671,6 +2671,17 @@ export class RedisJobStore implements IJobStoreV2 {
     return jobs;
   }
 
+  async getRequiresActionJobs(): Promise<SerializableJobData[]> {
+    const streamIds = await this.redis.smembers(KEYS.requiresActionJobs);
+    if (streamIds.length === 0) {
+      return [];
+    }
+    const jobs = await Promise.all(streamIds.map((streamId) => this.getJob(streamId)));
+    return jobs.filter(
+      (job): job is SerializableJobData => job != null && job.status === 'requires_action',
+    );
+  }
+
   async cleanup(): Promise<number> {
     const now = Date.now();
     const streamIds = await this.redis.smembers(KEYS.runningJobs);

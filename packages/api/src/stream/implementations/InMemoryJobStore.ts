@@ -1008,6 +1008,16 @@ export class InMemoryJobStore implements IJobStoreV2 {
     return running;
   }
 
+  async getRequiresActionJobs(): Promise<SerializableJobData[]> {
+    const paused: SerializableJobData[] = [];
+    for (const job of this.jobs.values()) {
+      if (job.status === 'requires_action') {
+        paused.push(job);
+      }
+    }
+    return paused;
+  }
+
   async cleanup(): Promise<number> {
     const now = Date.now();
     const toDelete: Array<{ streamId: string; createdAt: number }> = [];

@@ -398,6 +398,53 @@ describe('reconciliation abort fence', () => {
   });
 });
 
+describe('reconciliation resume hand-off fence', () => {
+  const scheduledFor = new Date(0);
+  const resumedRun = (claimAgeMs: number) => ({
+    scheduleId: 'sched-1',
+    scheduledFor,
+    user: 'u1',
+    status: 'started',
+    conversationId: 'c1',
+    firedAt: new Date(Date.now() - 60 * 60_000),
+    resumeClaimedAt: new Date(Date.now() - claimAgeMs),
+  });
+  const pausedJob = async () => ({
+    status: 'requires_action',
+    scheduleId: 'sched-1',
+    scheduledFor: scheduledFor.toISOString(),
+  });
+
+  it('does not release freshly reacquired capacity while approval claiming is in flight', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue([resumedRun(60_000)]);
+
+    await reconcileOnce(makeDeps(methods, { getJobStatus: pausedJob }));
+
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a temporarily missing hand-off job as an orphan', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue([resumedRun(60_000)]);
+
+    await reconcileOnce(makeDeps(methods, { getJobStatus: async () => null }));
+
+    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
+  });
+
+  it('re-pauses a crashed resume after the hand-off fence expires', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue([resumedRun(11 * 60_000)]);
+
+    await reconcileOnce(makeDeps(methods, { getJobStatus: pausedJob }));
+
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ scheduleId: 'sched-1', status: 'requires_action' }),
+    );
+  });
+});
+
 describe('reconciliation preserves the intended outcome', () => {
   const scheduledFor = new Date(0);
   /** A run whose inline outcome write never landed: old enough to reconcile, still
@@ -440,6 +487,24 @@ describe('reconciliation preserves the intended outcome', () => {
       expect.objectContaining({ scheduleId: 'sched-1', status: 'skipped_balance' }),
     );
     expect(clearReconciledJob).toHaveBeenCalled();
+  });
+
+  it('preserves an interrupted owner outcome instead of converting it to success', async () => {
+    const methods = makeMethods(makeClaimedSchedule());
+    (methods.getRunsForReconciliation as jest.Mock).mockResolvedValue([unsettledRun()]);
+    await tickOnce(
+      makeDeps(methods, {
+        getJobStatus: retainedComplete({
+          scheduleOutcome: 'interrupted',
+          scheduleOutcomeError: 'Stopped by owner',
+        }),
+        clearReconciledJob: jest.fn(async () => undefined),
+      }),
+    );
+
+    expect(methods.recordRunOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'interrupted', error: 'Stopped by owner' }),
+    );
   });
 
   it('recovers a balance refusal that claimed an ERROR terminal as skipped_balance', async () => {

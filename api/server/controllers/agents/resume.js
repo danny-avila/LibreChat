@@ -30,7 +30,12 @@ const {
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
 const { saveMessage, getConvo, getMessages } = require('~/models');
-const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
+const {
+  recordScheduleOutcome,
+  claimScheduleResume,
+  releaseScheduleResumeClaim,
+  isScheduleLive,
+} = require('~/server/services/Schedules');
 const {
   GENERATION_PROTOCOL_HEADER,
   negotiateNewGenerationProtocol,
@@ -791,6 +796,90 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     );
   }
 
+  // Finish the legacy checkpoint snapshot before claiming scheduled capacity.
+  // It is independent of the approval claim, and holding a deployment-wide slot
+  // while an indexed saver read stalls would unnecessarily block other schedules
+  // and lengthen the Mongo-claim -> approval-CAS hand-off window below.
+  const checkpointGeneration = await checkpointGenerationPromise;
+
+  // A pause frees its scheduled-run capacity slot. Before consuming the approval,
+  // atomically promote the run row back to `started` and claim a fresh global slot.
+  // The database's partial unique indexes arbitrate both deployment capacity and a
+  // concurrent active occurrence of the same schedule.
+  let scheduleCapacitySlot;
+  if (scheduleId) {
+    let scheduleClaim;
+    try {
+      scheduleClaim = await claimScheduleResume(scheduleId, scheduledFor);
+    } catch (err) {
+      await decrementPendingRequest(userId);
+      logger.error('[ResumeAgentController] Failed to claim scheduled resume capacity', err);
+      return sendGenerationJson(
+        res,
+        500,
+        { error: 'Failed to reserve scheduled-run capacity' },
+        generationProtocolVersion,
+      );
+    }
+    if ('conflict' in scheduleClaim) {
+      await decrementPendingRequest(userId);
+      if (scheduleClaim.conflict === 'capacity' || scheduleClaim.conflict === 'overlap') {
+        res.set('Retry-After', '1');
+        return sendGenerationJson(
+          res,
+          429,
+          {
+            code:
+              scheduleClaim.conflict === 'capacity'
+                ? 'SCHEDULE_CAPACITY'
+                : 'SCHEDULE_OCCURRENCE_ACTIVE',
+            error:
+              scheduleClaim.conflict === 'capacity'
+                ? 'Scheduled-run capacity is currently full. Please retry.'
+                : 'Another occurrence of this schedule is still running. Please retry.',
+          },
+          generationProtocolVersion,
+        );
+      }
+      return sendGenerationJson(
+        res,
+        409,
+        {
+          code:
+            scheduleClaim.conflict === 'inactive'
+              ? 'SCHEDULE_NO_LONGER_ACTIVE'
+              : 'SCHEDULE_RUN_NOT_PAUSED',
+          error: 'This scheduled run can no longer be resumed',
+        },
+        generationProtocolVersion,
+      );
+    }
+    scheduleCapacitySlot = scheduleClaim.capacitySlot;
+  }
+
+  /** Release only when the exact generation demonstrably remains paused. If the
+   * approval CAS reply is ambiguous and the job cannot be read, retaining the slot
+   * until reconciliation is the safe direction: releasing it could exceed the cap
+   * while a committed continuation is already running. */
+  const rollbackUnconsumedScheduleClaim = async (currentJob) => {
+    if (
+      scheduleId == null ||
+      scheduleCapacitySlot == null ||
+      currentJob?.createdAt !== job.createdAt ||
+      currentJob?.status !== 'requires_action'
+    ) {
+      return;
+    }
+    try {
+      await releaseScheduleResumeClaim(scheduleId, scheduledFor, scheduleCapacitySlot);
+    } catch (rollbackError) {
+      logger.warn(
+        '[ResumeAgentController] Failed to release unconsumed scheduled resume capacity',
+        rollbackError,
+      );
+    }
+  };
+
   // Atomically claim the resume. The single winner drives the run; a racing second
   // submit (double-click, two tabs) gets false and must not re-drive — that would
   // re-execute tools and double-bill.
@@ -800,10 +889,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   // would leak the concurrency slot until the counter TTL expires — spuriously 429'ing
   // the user when they retry the still-paused approval. Release the slot on that path too.
   let claimed;
-  let checkpointGeneration;
   const providerExecutionId = randomUUID();
   try {
-    checkpointGeneration = await checkpointGenerationPromise;
     /** The CAS that reopens steering must also publish THIS owner's seal
      *  capability. A separate write after status=`running` leaves a window in
      *  which steer/arm requests read the previous replica's capability. */
@@ -819,6 +906,8 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       job.createdAt,
     );
   } catch (err) {
+    const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+    await rollbackUnconsumedScheduleClaim(currentJob);
     await decrementPendingRequest(userId);
     logger.error('[ResumeAgentController] Failed to claim resume', err);
     return sendGenerationJson(res, 500, { error: 'Failed to resume' }, generationProtocolVersion);
@@ -826,6 +915,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   if (!claimed) {
     await decrementPendingRequest(userId);
     const currentJob = await GenerationJobManager.getJob(streamId).catch(() => null);
+    await rollbackUnconsumedScheduleClaim(currentJob);
     if (currentJob != null && currentJob.createdAt !== job.createdAt) {
       return sendGenerationJson(res, 409, { code: 'RUN_REPLACED' }, generationProtocolVersion);
     }
@@ -1108,12 +1198,15 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
     }
 
     // If the user aborted mid-resume, the abort route already emitted the terminal
-    // event and finalized the job — don't double-save / double-finalize here.
+    // event and finalized the job — don't double-save / double-finalize here. This
+    // continuation is nevertheless the scheduled-run owner, so it must settle the
+    // run row after observing its own abort; the generic Stop route deliberately
+    // delegates a running generation's settlement to that generation owner.
     if (job.abortController.signal.aborted) {
       logger.debug(
         `[ResumeAgentController] Aborted during resume; abort route finalizes: ${streamId}`,
       );
-      if (scheduleId && pausePersistenceFailureFinalized) {
+      if (scheduleId) {
         await recordScheduleOutcome({
           scheduleId,
           scheduledFor,

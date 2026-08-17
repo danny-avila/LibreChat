@@ -678,6 +678,9 @@ export interface IJobStore {
   deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean>;
   hasJob(streamId: string): Promise<boolean>;
   getRunningJobs(): Promise<SerializableJobData[]>;
+  /** Optional durable paused-job enumeration. Built-in stores implement it so
+   * the manager can own approval expiry even after the original runtime died. */
+  getRequiresActionJobs?(): Promise<SerializableJobData[]>;
   cleanup(): Promise<number>;
   recordActivity?(streamId: string, expectedCreatedAt?: number): void;
   getJobCount(): Promise<number>;
@@ -917,6 +920,9 @@ export interface IJobStoreV2 extends IJobStore {
 
   /** Get all running jobs (for cleanup) */
   getRunningJobs(): Promise<SerializableJobData[]>;
+
+  /** Get durable paused jobs so approval expiry is not process-runtime-dependent. */
+  getRequiresActionJobs?(): Promise<SerializableJobData[]>;
 
   /** Cleanup expired jobs */
   cleanup(): Promise<number>;

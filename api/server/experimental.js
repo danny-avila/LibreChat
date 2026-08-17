@@ -28,6 +28,7 @@ const {
   setupGracefulShutdown,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
+  GenerationJobManager,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -36,6 +37,7 @@ const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const { recordExpiredScheduleApproval } = require('./services/Schedules');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { updateInterfacePermissions: updateInterfacePerms } = require('@librechat/api');
 const {
@@ -274,6 +276,10 @@ if (cluster.isMaster) {
    * Each worker runs a full Express server instance
    */
   const app = express();
+  // The clustered entrypoint deliberately does not arm the v1 schedule engine,
+  // but an already-fired scheduled generation can still reach HITL here. Settle
+  // its durable run when the generic approval runtime expires it.
+  GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
   /**
    * The master may assign the sweep worker before or after this worker has
    * loaded app config. These flags join the IPC assignment with config

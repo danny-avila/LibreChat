@@ -132,6 +132,13 @@ export type StartedRunReservation =
       existingStatus?: ScheduleRunStatus;
     };
 
+/** Outcome of promoting a paused occurrence back into the capacity-consuming
+ * `started` set. Both conflicts are database-arbitrated by the same partial
+ * unique indexes used for a first fire. */
+export type ResumedRunReservation =
+  | { capacitySlot: number }
+  | { conflict: 'not-paused' | 'overlap' | 'slot-taken' };
+
 export type ScheduleMethods = {
   ensureScheduleIndexes: () => Promise<void>;
   createSchedule: (data: Partial<ISchedule>) => Promise<ISchedule>;
@@ -194,7 +201,16 @@ export type ScheduleMethods = {
     IScheduleRun,
     'status' | 'abortRequestedAt' | 'abortSource' | 'abortPersistedAt'
   > | null>;
-  markRunResumeClaimed: (scheduleId: string, scheduledFor: Date) => Promise<void>;
+  markRunResumeClaimed: (
+    scheduleId: string,
+    scheduledFor: Date,
+    capacitySlot: number,
+  ) => Promise<ResumedRunReservation>;
+  releaseRunResumeClaim: (
+    scheduleId: string,
+    scheduledFor: Date,
+    capacitySlot: number,
+  ) => Promise<boolean>;
   markRunAbortPersisted: (scheduleId: string, scheduledFor: Date) => Promise<void>;
   setRunFireDetails: (
     scheduleId: string,
@@ -805,9 +821,6 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
       > | null>();
   }
 
-  /** Stamped by the interactive Stop route once ALL its writes (checkpoint prune,
-   *  partial-response save) have landed; releases the generation owner's settlement
-   *  barrier. Bookkeeping only: never touches `updatedAt`. */
   /**
    * Stamps a paused run as RESUME-CLAIMED: its approval was consumed and a
    * continuation is running. While fresh, a re-paused job's state is a hand-off in
@@ -815,14 +828,58 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
    * record ($unset below) is the completion signal; a crash leaves the stamp to
    * age out on the caller's staleness bound.
    */
-  async function markRunResumeClaimed(scheduleId: string, scheduledFor: Date): Promise<void> {
-    await ScheduleRun().updateOne(
-      { scheduleId, scheduledFor, status: 'requires_action' },
-      { $set: { resumeClaimedAt: new Date() } },
-      { timestamps: false },
-    );
+  async function markRunResumeClaimed(
+    scheduleId: string,
+    scheduledFor: Date,
+    capacitySlot: number,
+  ): Promise<ResumedRunReservation> {
+    try {
+      const claimed = await ScheduleRun().findOneAndUpdate(
+        { scheduleId, scheduledFor, status: 'requires_action' },
+        {
+          $set: {
+            status: 'started',
+            capacitySlot,
+            resumeClaimedAt: new Date(),
+          },
+        },
+        { new: true, timestamps: false },
+      );
+      return claimed == null ? { conflict: 'not-paused' } : { capacitySlot };
+    } catch (error) {
+      if (isCapacitySlotConflict(error)) {
+        return { conflict: 'slot-taken' };
+      }
+      if (isActiveRunConflict(error)) {
+        return { conflict: 'overlap' };
+      }
+      throw error;
+    }
   }
 
+  /** Roll back a resume reservation only while the exact slot this caller claimed
+   * still belongs to this occurrence. The approval job is checked separately by the
+   * controller before crossing this seam, so a committed/racing resume never has its
+   * capacity released by a losing request. */
+  async function releaseRunResumeClaim(
+    scheduleId: string,
+    scheduledFor: Date,
+    capacitySlot: number,
+  ): Promise<boolean> {
+    const released = await ScheduleRun().updateOne(
+      { scheduleId, scheduledFor, status: 'started', capacitySlot },
+      {
+        $set: { status: 'requires_action' },
+        $unset: { capacitySlot: 1, resumeClaimedAt: 1 },
+      },
+      { timestamps: false },
+    );
+    return (released.modifiedCount ?? 0) > 0;
+  }
+
+  /** Stamped by the interactive Stop route once ALL its writes (checkpoint prune,
+   *  partial-response save) have landed; releases the generation owner's settlement
+   *  barrier. Bookkeeping only: never touches `updatedAt`. */
   async function markRunAbortPersisted(scheduleId: string, scheduledFor: Date): Promise<void> {
     await ScheduleRun().updateOne(
       { scheduleId, scheduledFor },
@@ -1699,6 +1756,7 @@ export function createScheduleMethods(mongoose: typeof import('mongoose')): Sche
     requestRunAbort,
     getScheduleRunAbortState,
     markRunResumeClaimed,
+    releaseRunResumeClaim,
     markRunAbortPersisted,
     setRunFireDetails,
     countActiveRuns,

@@ -746,7 +746,8 @@ describe('quiesceUserSchedules drain wait', () => {
 
   it('does not terminalize a paused row whose resumed generation is still running', async () => {
     jest.useFakeTimers();
-    // The resume promotes only the JOB to `running`; the row stays `requires_action`.
+    // Backward-compatibility case from a pre-capacity resume (or rolling deploy):
+    // the job is running while the durable row still reads paused.
     mockJobStore = {
       getJob: jest.fn(async () => ({
         status: 'running',
@@ -893,6 +894,61 @@ describe('global kill switch', () => {
     })) as unknown as SchedulesServiceDeps['getAppConfig'];
     const service = makeService(noRuns(), getAppConfig);
     expect(await service.engineDeps.isGloballyDisabled()).toBe(false);
+  });
+});
+
+describe('scheduled resume capacity', () => {
+  function makeResumeService(occupancy: { takenSlots: number[]; unslotted: number }) {
+    const methods = {
+      getScheduleById: jest.fn(async () => ({ id: 's1', user: 'user-1' })),
+      getCapacityOccupancy: jest.fn(async () => occupancy),
+      markRunResumeClaimed: jest.fn(async (_id, _scheduledFor, capacitySlot) => ({
+        capacitySlot,
+      })),
+      releaseRunResumeClaim: jest.fn(async () => true),
+    };
+    const service = createSchedulesService({
+      methods: methods as unknown as SchedulesServiceDeps['methods'],
+      getAppConfig: jest.fn(async () => ({
+        interfaceConfig: {
+          schedules: {
+            use: true,
+            maxPerUser: 10,
+            minIntervalMinutes: 60,
+            autoDisableAfterFailures: 5,
+            fireConcurrency: 1,
+          },
+        },
+      })),
+      findUserById: jest.fn(async () => ({ _id: 'user-1', role: 'USER' })),
+      findBalance: jest.fn(async () => null),
+      upsertBalance: jest.fn(async () => null),
+      resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
+      isUserDeleting: jest.fn(async () => false),
+      enqueueAgentTrigger: jest.fn(async () => undefined),
+    } as unknown as SchedulesServiceDeps);
+    return { service, methods };
+  }
+
+  it('promotes a pause through the global slot allocator and releases by exact slot', async () => {
+    const { service, methods } = makeResumeService({ takenSlots: [], unslotted: 0 });
+    const scheduledFor = '2026-08-17T12:00:00.000Z';
+
+    await expect(service.claimScheduleResume('s1', scheduledFor)).resolves.toEqual({
+      capacitySlot: 0,
+    });
+    expect(methods.markRunResumeClaimed).toHaveBeenCalledWith('s1', new Date(scheduledFor), 0);
+    await expect(service.releaseScheduleResumeClaim('s1', scheduledFor, 0)).resolves.toBe(true);
+    expect(methods.releaseRunResumeClaim).toHaveBeenCalledWith('s1', new Date(scheduledFor), 0);
+  });
+
+  it('leaves the paused row untouched when deployment capacity is full', async () => {
+    const { service, methods } = makeResumeService({ takenSlots: [0], unslotted: 0 });
+
+    await expect(service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z')).resolves.toEqual({
+      conflict: 'capacity',
+    });
+    expect(methods.markRunResumeClaimed).not.toHaveBeenCalled();
   });
 });
 

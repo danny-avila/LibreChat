@@ -85,6 +85,8 @@ const mockGetMCPRequestContext = jest.fn();
 const mockCleanupMCPRequestContextForReq = jest.fn();
 const mockRecordScheduleOutcome = jest.fn();
 const mockIsScheduleLive = jest.fn();
+const mockClaimScheduleResume = jest.fn();
+const mockReleaseScheduleResumeClaim = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -109,6 +111,8 @@ jest.mock('~/models', () => ({
 
 jest.mock('~/server/services/Schedules', () => ({
   recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
+  claimScheduleResume: (...args) => mockClaimScheduleResume(...args),
+  releaseScheduleResumeClaim: (...args) => mockReleaseScheduleResumeClaim(...args),
   isScheduleLive: (...args) => mockIsScheduleLive(...args),
 }));
 
@@ -265,6 +269,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
     mockGenerationJobManager.approvals.finishPausePersistence.mockResolvedValue(true);
     mockRecordScheduleOutcome.mockResolvedValue(true);
     mockIsScheduleLive.mockResolvedValue(true);
+    mockClaimScheduleResume.mockResolvedValue({ capacitySlot: 0 });
+    mockReleaseScheduleResumeClaim.mockResolvedValue(true);
 
     // `decrementPendingRequest` runs in the controller's `finally` on every
     // post-ACK path, so resolving on it signals the async continuation is done.
@@ -383,6 +389,8 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(res.status).toBe(200);
       await settled;
 
+      expect(mockClaimScheduleResume).toHaveBeenCalledWith('schedule-1', scheduledFor);
+
       expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
         scheduleId: 'schedule-1',
         scheduledFor,
@@ -394,6 +402,54 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockRecordScheduleOutcome.mock.invocationCallOrder[0]).toBeLessThan(
         mockGenerationJobManager.publishTerminalClaim.mock.invocationCallOrder[0],
       );
+    });
+
+    it('keeps the approval paused when global scheduled-run capacity is full', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeScheduledJob());
+      mockClaimScheduleResume.mockResolvedValue({ conflict: 'capacity' });
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(429);
+      expect(res.headers['retry-after']).toBe('1');
+      expect(res.body).toMatchObject({ code: 'SCHEDULE_CAPACITY' });
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+      expect(mockDecrementPendingRequest).toHaveBeenCalledWith(USER_ID);
+    });
+
+    it('rolls back scheduled capacity when the approval CAS does not consume the action', async () => {
+      const job = makeScheduledJob();
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockGenerationJobManager.approvals.resolve.mockResolvedValue(false);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(409);
+      expect(mockReleaseScheduleResumeClaim).toHaveBeenCalledWith('schedule-1', scheduledFor, 0);
+    });
+
+    it('settles a scheduled continuation stopped during its resumed segment', async () => {
+      const job = makeScheduledJob();
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+      mockInitializeClient.mockImplementation(async () => {
+        job.abortController.abort();
+        return { client: makeClient(), userMCPAuthMap: {} };
+      });
+
+      const res = await post(approveBody());
+      expect(res.status).toBe(200);
+      await settled;
+      await flush();
+
+      expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+        scheduleId: 'schedule-1',
+        scheduledFor,
+        streamId: CONVO_ID,
+        jobCreatedAt: 1000,
+        status: 'interrupted',
+        conversationId: CONVO_ID,
+        error: 'Scheduled run was stopped',
+      });
     });
 
     it('does not overwrite the terminal winner when failed-resume finalization loses its CAS', async () => {

@@ -782,6 +782,56 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
   });
 
   describe('expireApproval notification', () => {
+    test('delivers the exact expired generation to the host lifecycle hook', async () => {
+      const streamId = 'stream-expire-host-hook';
+      const job = await manager.createJob(streamId, 'user-1');
+      await manager.updateMetadata(streamId, {
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      });
+      await manager.approvals.pause(streamId, buildAction(streamId));
+      const onApprovalExpired = jest.fn(async () => undefined);
+      manager.setApprovalExpiredHandler(onApprovalExpired);
+
+      expect(await manager.expireApproval(streamId)).toBe(true);
+
+      expect(onApprovalExpired).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({
+          createdAt: job.createdAt,
+          status: 'requires_action',
+          scheduleId: 'schedule-1',
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+        }),
+      );
+    });
+
+    test('expires a durable paused job even when no process-local runtime survived', async () => {
+      const streamId = 'stream-expire-ownerless-host-hook';
+      const job = await jobStore.createJob(streamId, 'user-1', streamId, undefined, {
+        scheduleId: 'schedule-ownerless',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+      });
+      const lifecycle = new ApprovalLifecycle(jobStore);
+      await lifecycle.pause(streamId, buildAction(streamId, { expiresAt: Date.now() - 1 }));
+      const onApprovalExpired = jest.fn(async () => undefined);
+      manager.setApprovalExpiredHandler(onApprovalExpired);
+
+      await (
+        manager as unknown as { expireStaleApprovals: () => Promise<void> }
+      ).expireStaleApprovals();
+
+      expect(onApprovalExpired).toHaveBeenCalledWith(
+        streamId,
+        expect.objectContaining({
+          createdAt: job.createdAt,
+          scheduleId: 'schedule-ownerless',
+          status: 'requires_action',
+        }),
+      );
+      await expect(jobStore.getJob(streamId)).resolves.toMatchObject({ status: 'aborted' });
+    });
+
     test('does not expire a replacement paused on the same action id', async () => {
       const streamId = 'stream-expire-epoch-fence';
       const now = jest.spyOn(Date, 'now').mockReturnValue(1000);

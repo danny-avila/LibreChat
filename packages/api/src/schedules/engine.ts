@@ -3,8 +3,8 @@ import type { IScheduleRun } from '@librechat/data-schemas';
 import type { ScheduleEngineDeps, JobState } from './types';
 import { isShutdownInProgress, registerShutdownTask } from '~/app/shutdown';
 import { fireSchedule, BALANCE_SKIP_DISABLE_THRESHOLD } from './fire';
+import { hasAbortInFlight, hasResumeHandoffInFlight } from './types';
 import { computeNextRunAt } from './cadence';
-import { hasAbortInFlight } from './types';
 
 const TICK_MS = 30_000;
 const TICK_JITTER_MS = 2_000;
@@ -43,12 +43,15 @@ function retainedOutcome(
   jobState: JobState | null,
   fallback: 'success' | 'error',
 ): {
-  status: 'success' | 'error' | 'skipped_balance';
+  status: 'success' | 'error' | 'interrupted' | 'skipped_balance';
   error?: string;
 } {
   const stamped = jobState?.scheduleOutcome;
   if (stamped === 'skipped_balance') {
     return { status: 'skipped_balance' };
+  }
+  if (stamped === 'interrupted') {
+    return { status: 'interrupted', error: jobState?.scheduleOutcomeError };
   }
   if (stamped === 'error' || fallback === 'error') {
     return { status: 'error', error: jobState?.scheduleOutcomeError ?? 'Run ended in error' };
@@ -161,6 +164,14 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               (run.status === 'started' || run.status === 'requires_action') &&
               jobStatus === 'requires_action'
             ) {
+              // A resumed run claims capacity in Mongo BEFORE the approval CAS flips
+              // the job back to `running`. During that short hand-off, the old paused
+              // job is expected and must not re-pause the run (which would release the
+              // newly claimed capacity slot while the continuation is about to run).
+              // A stale stamp still falls through so a crashed resume can recover.
+              if (run.status === 'started' && hasResumeHandoffInFlight(run, Date.now())) {
+                continue;
+              }
               await finalize('requires_action');
               continue;
             }
@@ -217,7 +228,8 @@ export function startScheduleEngine(deps: ScheduleEngineDeps): ScheduleEngine {
               run.status === 'started' &&
               jobStatus == null &&
               ageMs > ORPHAN_RUN_AGE_MS &&
-              !hasAbortInFlight(run, Date.now())
+              !hasAbortInFlight(run, Date.now()) &&
+              !hasResumeHandoffInFlight(run, Date.now())
             ) {
               await finalize('interrupted');
               continue;

@@ -92,6 +92,10 @@ export interface RecordScheduleOutcomeInput {
   error?: string;
 }
 
+export type ScheduleResumeClaimResult =
+  | { capacitySlot: number }
+  | { conflict: 'capacity' | 'overlap' | 'not-paused' | 'inactive' };
+
 /**
  * Api-side dependencies the schedules service needs injected: model methods,
  * config/balance access, and the owner-scoped agent access check. Everything
@@ -155,6 +159,18 @@ export interface SchedulesService {
     limits: ScheduleLimits,
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
+  /** Re-enters a paused occurrence into the DB-enforced global/same-schedule
+   * capacity set before its approval job is allowed to resume. */
+  claimScheduleResume: (
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ) => Promise<ScheduleResumeClaimResult>;
+  /** Guarded rollback when the approval CAS did not consume the paused action. */
+  releaseScheduleResumeClaim: (
+    scheduleId: string,
+    scheduledFor: string | Date,
+    capacitySlot: number,
+  ) => Promise<boolean>;
   /**
    * Whether a schedule is still live (exists and not soft-deleted). The loopback
    * chat controller calls this right after creating the generation job to re-fence
@@ -528,7 +544,14 @@ export function createSchedulesService(
     if (erasureSweep != null || engine != null) {
       return;
     }
-    erasureSweep = startScheduleErasureSweep({ methods, getJobStatus: engineDeps.getJobStatus });
+    erasureSweep = startScheduleErasureSweep({
+      methods,
+      getJobStatus: engineDeps.getJobStatus,
+      // If topology itself prevented arming, this process's missing job says
+      // nothing about peer liveness. If only index creation failed, the topology
+      // proof still holds and the existing owner-death backstop remains valid.
+      canInferOwnerDeathFromMissingJob: isTopologySafeToArm(),
+    });
   }
 
   async function initializeScheduleEngine(): Promise<
@@ -791,6 +814,59 @@ export function createSchedulesService(
       }
     }
     return true;
+  }
+
+  async function claimScheduleResume(
+    scheduleId: string,
+    scheduledFor: string | Date,
+  ): Promise<ScheduleResumeClaimResult> {
+    const schedule = await methods.getScheduleById(scheduleId);
+    if (schedule == null) {
+      return { conflict: 'inactive' };
+    }
+    const owner = await engineDeps.getUserContext(schedule.user);
+    if (owner == null) {
+      return { conflict: 'inactive' };
+    }
+    return engineDeps.runInTenantContext(owner, async () => {
+      const [ownerLimits, deploymentLimits, globallyDisabled] = await Promise.all([
+        getLimits(owner),
+        getLimits(),
+        engineDeps.isGloballyDisabled(),
+      ]);
+      if (!ownerLimits.enabled || globallyDisabled) {
+        return { conflict: 'inactive' };
+      }
+      const allocation = await engineDeps.withGlobalCapacitySlot(
+        Math.min(ownerLimits.fireConcurrency, deploymentLimits.fireConcurrency),
+        async (capacitySlot) => {
+          const attempt = await methods.markRunResumeClaimed(
+            scheduleId,
+            new Date(scheduledFor),
+            capacitySlot,
+          );
+          return 'conflict' in attempt && attempt.conflict === 'slot-taken'
+            ? 'slot-taken'
+            : { claimed: attempt };
+        },
+      );
+      if (allocation === 'capacity') {
+        return { conflict: 'capacity' };
+      }
+      const claimed = allocation.claimed;
+      if ('conflict' in claimed) {
+        return { conflict: claimed.conflict };
+      }
+      return { capacitySlot: claimed.capacitySlot };
+    });
+  }
+
+  function releaseScheduleResumeClaim(
+    scheduleId: string,
+    scheduledFor: string | Date,
+    capacitySlot: number,
+  ): Promise<boolean> {
+    return methods.releaseRunResumeClaim(scheduleId, new Date(scheduledFor), capacitySlot);
   }
 
   /** Aborts an active run's loopback job (identity-guarded). Returns whether the
@@ -1076,12 +1152,11 @@ export function createSchedulesService(
     const active = await methods.getActiveRunsForUser(userId);
     const unconfirmed: string[] = [];
     for (const run of active) {
-      // A RESUMED run's row is still `requires_action`: the resume controller promotes
-      // only the job-store record to `running` and the row is not terminalized until the
-      // resumed generation finishes. So the row status alone cannot tell a genuinely
-      // paused run from one actively generating, and the shortcut below would skip
-      // waiting for a live generation that can still persist messages. Read the live job
-      // BEFORE aborting, which settles or deletes it and would erase this evidence.
+      // Current resumes promote the row back to `started` with a capacity slot, but a
+      // rolling deploy or crash-era row may still be `requires_action` while its job is
+      // already `running`. So the row status alone cannot prove a genuine pause. Read
+      // the live job BEFORE aborting, which settles or deletes it and would erase this
+      // evidence.
       // UNKNOWN is not ABSENT. A lookup that THREW is evidence of nothing, while one
       // that succeeded and returned null is positive evidence that no generation holds
       // this conversation. Collapsing the two (a bare `.catch(() => null)`) would let a
@@ -1221,6 +1296,8 @@ export function createSchedulesService(
     engineDeps,
     fireScheduleNow,
     recordScheduleOutcome,
+    claimScheduleResume,
+    releaseScheduleResumeClaim,
     isScheduleLive,
     deleteScheduleForOwner,
     quiesceUserSchedules,

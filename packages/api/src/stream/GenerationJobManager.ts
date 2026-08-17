@@ -449,6 +449,13 @@ export interface GenerationJobManagerOptions {
   cleanupOnComplete?: boolean;
 }
 
+/** Host-owned lifecycle seam for durable work layered on agent generations.
+ * Delivery is at-least-once: implementations must be idempotent by generation. */
+export type ApprovalExpiredHandler = (
+  streamId: string,
+  job: SerializableJobData,
+) => void | Promise<void>;
+
 export interface CreateGenerationJobOptions {
   startupTelemetry?: AgentStartupTelemetry;
   initialMetadata?: Partial<t.GenerationJobMetadata>;
@@ -692,6 +699,10 @@ class GenerationJobManagerClass {
   /** Whether to cleanup event transport immediately on job completion */
   private _cleanupOnComplete = true;
 
+  /** Optional host hook; the generic stream runtime does not know what external
+   * durable work (scheduled chats, webhooks, etc.) a generation represents. */
+  private approvalExpiredHandler: ApprovalExpiredHandler | undefined;
+
   constructor(options?: GenerationJobManagerOptions) {
     const jobStore =
       options?.jobStore ?? new InMemoryJobStore({ ttlAfterComplete: 0, maxJobs: 1000 });
@@ -818,6 +829,12 @@ class GenerationJobManagerClass {
    */
   get isRedis(): boolean {
     return this._isRedis;
+  }
+
+  /** Installs the application-owned approval-expiry hook without coupling the
+   * stream package to any particular trigger/scheduler implementation. */
+  setApprovalExpiredHandler(handler?: ApprovalExpiredHandler): void {
+    this.approvalExpiredHandler = handler;
   }
 
   private get storeLabel(): GenerationJobStore {
@@ -7003,17 +7020,32 @@ class GenerationJobManagerClass {
         );
       }
     }
-    const expiredCreatedAt = await this._approvals.expireWithIdentity(
+    const expiredJob = await this._approvals.expireWithIdentity(
       streamId,
       actionId,
       expectedCreatedAt ?? observedJob?.createdAt,
     );
-    if (expiredCreatedAt == null) {
+    if (expiredJob == null) {
       return false;
     }
 
-    await this.notifyApprovalExpiredRuntime(streamId, expiredCreatedAt, observedRuntime);
+    await this.runApprovalExpiredHandler(streamId, expiredJob);
+    await this.notifyApprovalExpiredRuntime(streamId, expiredJob.createdAt, observedRuntime);
     return true;
+  }
+
+  private async runApprovalExpiredHandler(
+    streamId: string,
+    job: SerializableJobData,
+  ): Promise<void> {
+    try {
+      await this.approvalExpiredHandler?.(streamId, job);
+    } catch (err) {
+      // Expiry itself already won its exact CAS. Keep terminal notification moving;
+      // replica relays may deliver this idempotent hook again, and host-owned durable
+      // evidence remains available to that host's own recovery path.
+      logger.error(`[GenerationJobManager] Approval-expiry host hook failed: ${streamId}`, err);
+    }
   }
 
   private async notifyApprovalExpiredRuntime(
@@ -7057,10 +7089,24 @@ class GenerationJobManagerClass {
 
   private async expireStaleApprovals(): Promise<void> {
     let changed = false;
-    for (const streamId of this.runtimeState.keys()) {
+    // Scan durable pauses as well as local runtimes. A process can restart while an
+    // approval waits; if expiry were limited to runtimeState, store cleanup would
+    // terminalize that ownerless job without crossing the host lifecycle hook.
+    const candidates = new Map<string, SerializableJobData>();
+    if (this.jobStore.getRequiresActionJobs) {
+      try {
+        for (const job of await this.jobStore.getRequiresActionJobs()) {
+          candidates.set(job.streamId, job);
+        }
+      } catch (err) {
+        logger.error('[GenerationJobManager] Failed to enumerate pending approvals', err);
+      }
+    }
+    const streamIds = new Set([...this.runtimeState.keys(), ...candidates.keys()]);
+    for (const streamId of streamIds) {
       let job: SerializableJobData | null;
       try {
-        job = await this.jobStore.getJob(streamId);
+        job = candidates.get(streamId) ?? (await this.jobStore.getJob(streamId));
       } catch (err) {
         logger.error(
           `[GenerationJobManager] Failed to read job during approval expiry sweep: ${streamId}`,
@@ -7077,6 +7123,7 @@ class GenerationJobManagerClass {
       // The `errorEvent` flag (set by emitError) keeps this idempotent vs the win path.
       const runtime = this.runtimeState.get(streamId);
       if (job?.status === 'aborted' && job.error === APPROVAL_EXPIRED_ERROR) {
+        await this.runApprovalExpiredHandler(streamId, job);
         await this.notifyApprovalExpiredRuntime(streamId, job.createdAt, runtime);
         changed = this.releaseJobOwnership(streamId, job.createdAt) || changed;
         continue;
