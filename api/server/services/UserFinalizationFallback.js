@@ -30,10 +30,10 @@ const createUserFinalizationFallbackStore = ({
     runForUserTenant(userId, tenantId, () =>
       clearUserFinalizationFallbackLease(userId, safeLeaseKey),
     ),
-  retainAbortDelivery: (userId, tenantId, streamId) =>
-    runForUserTenant(userId, tenantId, () => addUserAbortFence(userId, streamId)),
-  clearAbortDelivery: (userId, tenantId, streamId) =>
-    runForUserTenant(userId, tenantId, () => clearUserAbortFence(userId, streamId)),
+  retainAbortDelivery: (userId, tenantId, streamId, createdAt) =>
+    runForUserTenant(userId, tenantId, () => addUserAbortFence(userId, streamId, createdAt)),
+  clearAbortDelivery: (userId, tenantId, streamId, createdAt) =>
+    runForUserTenant(userId, tenantId, () => clearUserAbortFence(userId, streamId, createdAt)),
 });
 
 module.exports = { createUserFinalizationFallbackStore };

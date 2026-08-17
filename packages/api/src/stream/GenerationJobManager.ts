@@ -489,11 +489,13 @@ export interface UserFinalizationFallbackStore {
     userId: string,
     tenantId: string | undefined,
     streamId: string,
+    createdAt: number,
   ): Promise<void>;
   clearAbortDelivery?(
     userId: string,
     tenantId: string | undefined,
     streamId: string,
+    createdAt: number,
   ): Promise<void>;
 }
 
@@ -4069,7 +4071,7 @@ class GenerationJobManagerClass {
       if (handedOff) {
         await this.releaseStopLease(jobData.userId, streamId, jobData.tenantId, jobData.createdAt);
         await this.userFinalizationFallback
-          ?.clearAbortDelivery?.(jobData.userId, jobData.tenantId, streamId)
+          ?.clearAbortDelivery?.(jobData.userId, jobData.tenantId, streamId, jobData.createdAt)
           .catch(() => undefined);
       }
     }
@@ -4268,6 +4270,7 @@ class GenerationJobManagerClass {
           abortUserId,
           abortTenantId,
           streamId,
+          abortCreatedAt,
         );
       }
     } catch (fenceError) {

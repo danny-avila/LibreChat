@@ -34,6 +34,33 @@ async function makeManagers() {
   };
 }
 
+function makeAbortFenceTracker() {
+  const fences = new Set<string>();
+  const fenceKey = (streamId: string, createdAt: number) => `${streamId}@${createdAt}`;
+  const retainAbortDelivery = jest.fn(
+    async (_userId: string, _tenantId: string | undefined, streamId: string, createdAt: number) => {
+      fences.add(fenceKey(streamId, createdAt));
+    },
+  );
+  const clearAbortDelivery = jest.fn(
+    async (_userId: string, _tenantId: string | undefined, streamId: string, createdAt: number) => {
+      fences.delete(fenceKey(streamId, createdAt));
+    },
+  );
+  return {
+    fences,
+    fenceKey,
+    retainAbortDelivery,
+    clearAbortDelivery,
+    fallback: {
+      renew: jest.fn(async () => undefined),
+      clear: jest.fn(async () => undefined),
+      retainAbortDelivery,
+      clearAbortDelivery,
+    },
+  };
+}
+
 describe('abort signal honesty across replicas', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -238,7 +265,11 @@ describe('abort signal honesty across replicas', () => {
       isRedis: false,
     });
     owner.initialize();
-    await owner.createJob('conv-durable-stop-recovery', 'user-1', 'conv-durable-stop-recovery');
+    const generation = await owner.createJob(
+      'conv-durable-stop-recovery',
+      'user-1',
+      'conv-durable-stop-recovery',
+    );
 
     const retainAbortDelivery = jest.fn(async () => undefined);
     const clearAbortDelivery = jest.fn(async () => undefined);
@@ -271,6 +302,7 @@ describe('abort signal honesty across replicas', () => {
       'user-1',
       undefined,
       'conv-durable-stop-recovery',
+      generation.createdAt,
     );
     expect(retainAbortDelivery.mock.invocationCallOrder[0]).toBeLessThan(
       transition.mock.invocationCallOrder[0],
@@ -342,6 +374,7 @@ describe('abort signal honesty across replicas', () => {
         'user-1',
         undefined,
         'conv-generation-fence',
+        current.createdAt,
       );
       clearAbortDelivery.mockClear();
 
@@ -357,6 +390,173 @@ describe('abort signal honesty across replicas', () => {
       expect(clearAbortDelivery).not.toHaveBeenCalled();
     } finally {
       await Promise.allSettled([peer.destroy(), owner.destroy()]);
+    }
+  });
+
+  it('does not let generation A successful abort cleanup erase generation B Stop evidence', async () => {
+    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 0 });
+    const { fences, fenceKey, fallback, clearAbortDelivery } = makeAbortFenceTracker();
+    const owner = new GenerationJobManagerClass();
+    owner.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: true,
+      userFinalizationFallback: fallback,
+    });
+    owner.initialize();
+    const peer = new GenerationJobManagerClass();
+    peer.configure({
+      jobStore,
+      eventTransport: Object.assign(new InMemoryEventTransport(), {
+        emitAbortConfirmed: jest.fn(async () => false),
+      }),
+      isRedis: true,
+      userFinalizationFallback: fallback,
+    });
+    peer.initialize();
+
+    let releasePredecessorPersistence!: () => void;
+    const predecessorPersistence = new Promise<void>((resolve) => {
+      releasePredecessorPersistence = resolve;
+    });
+    let predecessorEnteredPersistence!: () => void;
+    const predecessorPersistenceStarted = new Promise<void>((resolve) => {
+      predecessorEnteredPersistence = resolve;
+    });
+
+    try {
+      const predecessor = await owner.createJob(
+        'conv-success-cleanup-fence',
+        'user-1',
+        'conv-success-cleanup-fence',
+      );
+      const abortingPredecessor = owner.abortJob('conv-success-cleanup-fence', {
+        beforePublish: async () => {
+          predecessorEnteredPersistence();
+          await predecessorPersistence;
+        },
+      });
+      await predecessorPersistenceStarted;
+
+      const current = await owner.createJob(
+        'conv-success-cleanup-fence',
+        'user-1',
+        'conv-success-cleanup-fence',
+      );
+      expect(current.createdAt).toBeGreaterThan(predecessor.createdAt);
+      await expect(peer.abortJob('conv-success-cleanup-fence')).resolves.toMatchObject({
+        success: true,
+        signalDelivered: false,
+        signalPublished: false,
+      });
+      expect(fences).toContain(fenceKey('conv-success-cleanup-fence', current.createdAt));
+
+      releasePredecessorPersistence();
+      await expect(abortingPredecessor).resolves.toMatchObject({ success: true });
+
+      expect(fences).not.toContain(fenceKey('conv-success-cleanup-fence', predecessor.createdAt));
+      expect(fences).toContain(fenceKey('conv-success-cleanup-fence', current.createdAt));
+      expect(clearAbortDelivery).toHaveBeenCalledWith(
+        'user-1',
+        undefined,
+        'conv-success-cleanup-fence',
+        predecessor.createdAt,
+      );
+    } finally {
+      releasePredecessorPersistence();
+      await Promise.allSettled([peer.destroy(), owner.destroy()]);
+    }
+  });
+
+  it('does not let generation A resignal cleanup erase generation B Stop evidence', async () => {
+    const { GenerationJobManagerClass } = await import('../GenerationJobManager');
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const { InMemoryEventTransport } = await import('../implementations/InMemoryEventTransport');
+    const jobStore = new InMemoryJobStore({ ttlAfterComplete: 0 });
+    const { fences, fenceKey, fallback } = makeAbortFenceTracker();
+    const owner = new GenerationJobManagerClass();
+    owner.configure({
+      jobStore,
+      eventTransport: new InMemoryEventTransport(),
+      isRedis: true,
+      userFinalizationFallback: fallback,
+    });
+    owner.initialize();
+    const failingPeer = new GenerationJobManagerClass();
+    failingPeer.configure({
+      jobStore,
+      eventTransport: Object.assign(new InMemoryEventTransport(), {
+        emitAbortConfirmed: jest.fn(async () => false),
+      }),
+      isRedis: true,
+      userFinalizationFallback: fallback,
+    });
+    failingPeer.initialize();
+
+    let acknowledgePredecessor!: (acknowledged: boolean) => void;
+    const predecessorAcknowledgement = new Promise<boolean>((resolve) => {
+      acknowledgePredecessor = resolve;
+    });
+    let resignalStarted!: () => void;
+    const resignalInFlight = new Promise<void>((resolve) => {
+      resignalStarted = resolve;
+    });
+    const resignaler = new GenerationJobManagerClass();
+    resignaler.configure({
+      jobStore,
+      eventTransport: Object.assign(new InMemoryEventTransport(), {
+        emitAbort: jest.fn(() => undefined),
+        emitAbortConfirmed: jest.fn(async () => {
+          resignalStarted();
+          return predecessorAcknowledgement;
+        }),
+      }),
+      isRedis: true,
+      userFinalizationFallback: fallback,
+    });
+    resignaler.initialize();
+
+    try {
+      const predecessor = await owner.createJob(
+        'conv-resignal-cleanup-fence',
+        'user-1',
+        'conv-resignal-cleanup-fence',
+      );
+      await expect(failingPeer.abortJob('conv-resignal-cleanup-fence')).resolves.toMatchObject({
+        success: true,
+        signalDelivered: false,
+        signalPublished: false,
+      });
+      const resignal = resignaler.resignalAbort(
+        'conv-resignal-cleanup-fence',
+        predecessor.createdAt,
+      );
+      await resignalInFlight;
+
+      const current = await owner.createJob(
+        'conv-resignal-cleanup-fence',
+        'user-1',
+        'conv-resignal-cleanup-fence',
+      );
+      expect(current.createdAt).toBeGreaterThan(predecessor.createdAt);
+      await expect(failingPeer.abortJob('conv-resignal-cleanup-fence')).resolves.toMatchObject({
+        success: true,
+        signalDelivered: false,
+        signalPublished: false,
+      });
+      expect(fences).toContain(fenceKey('conv-resignal-cleanup-fence', current.createdAt));
+
+      acknowledgePredecessor(true);
+      await expect(resignal).resolves.toEqual({ delivered: false, published: true });
+
+      expect(fences).not.toContain(fenceKey('conv-resignal-cleanup-fence', predecessor.createdAt));
+      expect(fences).toContain(fenceKey('conv-resignal-cleanup-fence', current.createdAt));
+    } finally {
+      acknowledgePredecessor(false);
+      await Promise.allSettled([resignaler.destroy(), failingPeer.destroy(), owner.destroy()]);
     }
   });
 

@@ -23,6 +23,14 @@ const BackupCodeSchema = new Schema(
   { _id: false },
 );
 
+const UserAbortFenceSchema = new Schema(
+  {
+    streamId: { type: String, required: true },
+    createdAt: { type: Number, required: true },
+  },
+  { _id: false },
+);
+
 const userSchema: Schema<IUser> = new Schema<IUser>(
   {
     name: {
@@ -189,7 +197,8 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: Date,
     },
     /**
-     * Stream ids whose deletion-side abort has NOT been acknowledged: the shared job
+     * Exact stream generations whose deletion-side abort has NOT been acknowledged:
+     * the shared job
      * went terminal at the abort CAS, but the signal provably never left the aborting
      * replica, so a peer owner may still be generating. Durable and TTL-free ON
      * PURPOSE — the fence has to outlive any publication outage, and expiry must
@@ -198,7 +207,7 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
      * leaves the replica or the job is gone.
      */
     deletionAbortFences: {
-      type: [String],
+      type: [UserAbortFenceSchema],
       default: undefined,
     },
     /** Expiring failover leases for persistence that remains live while its primary
