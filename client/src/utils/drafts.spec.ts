@@ -157,6 +157,18 @@ describe('applyPendingPastesToDraft', () => {
     ).toBe('aaPASTEbc');
   });
 
+  it('keeps a leading insert ahead of a suffix the user duplicated', () => {
+    expect(
+      applyPendingPasteToDraft('abcabc', {
+        text: 'PASTE',
+        selectionStart: 0,
+        replacedApplied: true,
+        anchorBefore: '',
+        anchorAfter: 'abc',
+      }),
+    ).toBe('PASTEabcabc');
+  });
+
   it('rebases an insert when both sides of the original caret were edited', () => {
     expect(
       applyPendingPasteToDraft('XhelloWORLDY', {
@@ -325,5 +337,38 @@ describe('resolvePendingPasteInsertStart', () => {
         anchorAfter: '',
       }),
     ).toBe(5);
+  });
+
+  it('holds the captured caret when the suffix is appended to itself', () => {
+    expect(
+      resolvePendingPasteInsertStart('abcabc', {
+        text: 'PASTE',
+        selectionStart: 0,
+        anchorBefore: '',
+        anchorAfter: 'abc',
+      }),
+    ).toBe(0);
+  });
+
+  it('still trails a suffix the user edited out of recognition', () => {
+    expect(
+      resolvePendingPasteInsertStart('ZZWORLD', {
+        text: 'PASTE',
+        selectionStart: 5,
+        anchorBefore: 'hello',
+        anchorAfter: 'WORLD',
+      }),
+    ).toBe(2);
+  });
+
+  it('falls back to the captured caret when both anchors were empty', () => {
+    expect(
+      resolvePendingPasteInsertStart('typed since', {
+        text: 'PASTE',
+        selectionStart: 0,
+        anchorBefore: '',
+        anchorAfter: '',
+      }),
+    ).toBe(0);
   });
 });

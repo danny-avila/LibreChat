@@ -124,26 +124,28 @@ const findAnchoredInsertStart = (
 };
 
 /**
- * Offsets where both captured anchors survived the edit intact and still meet. Stops at the
- * second hit because only a single such offset identifies the original caret: an edit that
- * duplicates an anchor leaves the junction ambiguous, and the heuristics below settle those.
+ * The offset closest to the original caret where both captured anchors survived the edit intact
+ * and still meet. A repeated anchor leaves several such offsets, and the caret is the only
+ * evidence left of which one the paste belongs to; the scan opens there, so the first hit is it.
  */
-const findIntactAnchorJunctions = (draftText: string, before: string, after: string): number[] => {
-  const junctions: number[] = [];
+const findIntactAnchorJunction = (
+  draftText: string,
+  before: string,
+  after: string,
+): number | null => {
+  if (before === '' && after === '') {
+    return null;
+  }
   const lastJunction = draftText.length - after.length;
   for (let start = before.length; start <= lastJunction; start++) {
     if (!draftText.startsWith(before, start - before.length)) {
       continue;
     }
-    if (!draftText.startsWith(after, start)) {
-      continue;
-    }
-    junctions.push(start);
-    if (junctions.length > 1) {
-      return junctions;
+    if (draftText.startsWith(after, start)) {
+      return start;
     }
   }
-  return junctions;
+  return null;
 };
 
 export const resolvePendingPasteInsertStart = (
@@ -160,9 +162,9 @@ export const resolvePendingPasteInsertStart = (
   if (draftText === `${before}${after}`) {
     return before.length;
   }
-  const intactJunctions = findIntactAnchorJunctions(draftText, before, after);
-  if (intactJunctions.length === 1) {
-    return intactJunctions[0];
+  const intactJunction = findIntactAnchorJunction(draftText, before, after);
+  if (intactJunction != null) {
+    return intactJunction;
   }
   if (before && draftText.startsWith(before)) {
     return before.length;
