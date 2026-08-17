@@ -240,25 +240,25 @@ async function readResponseBody(response: Response): Promise<BoundedResponseBody
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let size = 0;
-  let text = '';
+  const parts: string[] = [];
   try {
     while (true) {
       const chunk = await reader.read();
       if (chunk.done) {
-        text += decoder.decode();
-        return { text, truncated: false };
+        parts.push(decoder.decode());
+        return { text: parts.join(''), truncated: false };
       }
       const remaining = MAX_RESPONSE_BODY_BYTES - size;
       if (chunk.value.byteLength > remaining) {
         if (remaining > 0) {
-          text += decoder.decode(chunk.value.subarray(0, remaining), { stream: true });
+          parts.push(decoder.decode(chunk.value.subarray(0, remaining), { stream: true }));
         }
-        text += decoder.decode();
+        parts.push(decoder.decode());
         await reader.cancel().catch(() => undefined);
-        return { text, truncated: true };
+        return { text: parts.join(''), truncated: true };
       }
       size += chunk.value.byteLength;
-      text += decoder.decode(chunk.value, { stream: true });
+      parts.push(decoder.decode(chunk.value, { stream: true }));
     }
   } finally {
     reader.releaseLock();

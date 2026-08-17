@@ -110,6 +110,7 @@ const runSteerController = async (req, res, requireIdempotentDelivery) => {
       abortController.abort();
     }
   };
+  req.once('aborted', abort);
   res.once('close', abort);
   try {
     const generationProtocolVersion = getHostGenerationProtocol(req);
@@ -129,11 +130,18 @@ const runSteerController = async (req, res, requireIdempotentDelivery) => {
             (await checkAgentAccess(run))
         : checkAgentAccess,
     });
+    if (res.destroyed || res.writableEnded) {
+      return;
+    }
     return sendProtocolResult(res, status, body);
   } catch (error) {
     logger.error('[SteerController] Failed to queue steer', error);
+    if (res.destroyed || res.headersSent) {
+      return;
+    }
     return sendProtocolFailure(res, 500, 'STEER_FAILED');
   } finally {
+    req.off('aborted', abort);
     res.off('close', abort);
   }
 };
