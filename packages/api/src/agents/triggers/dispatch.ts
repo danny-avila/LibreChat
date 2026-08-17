@@ -3,7 +3,7 @@ import type {
   AgentSteerTriggerEnvelope,
   AgentTriggerEnvelope,
 } from './envelope';
-import { AGENT_TRIGGER_ENVELOPE_VERSION, getAgentTriggerIdempotencyKey } from './envelope';
+import { getAgentTriggerIdempotencyKey, parseAgentTriggerEnvelope } from './envelope';
 
 export interface AgentTriggerDispatchContext {
   idempotencyKey: string;
@@ -38,22 +38,18 @@ export function dispatchAgentTrigger<FireResult, SteerResult>(
   handlers: AgentTriggerDispatchHandlers<FireResult, SteerResult>,
   options?: { signal?: AbortSignal },
 ): Promise<FireResult | SteerResult> {
-  const receivedVersion: unknown = (envelope as { version?: unknown }).version;
-  if (receivedVersion !== AGENT_TRIGGER_ENVELOPE_VERSION) {
-    throw new AgentTriggerDispatchError(
-      `Unsupported agent trigger envelope version: ${String(receivedVersion)}`,
-    );
-  }
-  const receivedMode: unknown = (envelope as { mode?: unknown }).mode;
-  if (receivedMode !== 'fire' && receivedMode !== 'steer') {
-    throw new AgentTriggerDispatchError(`Unsupported agent trigger mode: ${String(receivedMode)}`);
+  let normalized: AgentTriggerEnvelope;
+  try {
+    normalized = parseAgentTriggerEnvelope(envelope);
+  } catch (error) {
+    throw new AgentTriggerDispatchError(error instanceof Error ? error.message : String(error));
   }
   const context: AgentTriggerDispatchContext = {
-    idempotencyKey: getAgentTriggerIdempotencyKey(envelope),
+    idempotencyKey: getAgentTriggerIdempotencyKey(normalized),
     ...(options?.signal != null && { signal: options.signal }),
   };
-  if (envelope.mode === 'fire') {
-    return handlers.fire(envelope, context);
+  if (normalized.mode === 'fire') {
+    return handlers.fire(normalized, context);
   }
-  return handlers.steer(envelope, context);
+  return handlers.steer(normalized, context);
 }

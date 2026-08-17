@@ -4,6 +4,7 @@ import {
   AgentTriggerEnvelopeError,
   createAgentTriggerEnvelope,
   getAgentTriggerIdempotencyKey,
+  parseAgentTriggerEnvelope,
 } from './envelope';
 
 describe('createAgentTriggerEnvelope', () => {
@@ -59,6 +60,16 @@ describe('createAgentTriggerEnvelope', () => {
     });
     expect(JSON.parse(JSON.stringify(envelope))).toEqual(envelope);
     expect(JSON.stringify(envelope)).not.toContain('must-not-cross');
+  });
+
+  it('parses and detaches a serialized envelope', () => {
+    const created = createAgentTriggerEnvelope(createFireInput());
+    const serialized = JSON.parse(JSON.stringify(created)) as unknown;
+    const parsed = parseAgentTriggerEnvelope(serialized);
+
+    expect(parsed).toEqual(created);
+    expect(parsed).not.toBe(serialized);
+    expect(parsed.event).not.toBe((serialized as { event: object }).event);
   });
 
   it('requires a generation fence for steer deliveries', () => {

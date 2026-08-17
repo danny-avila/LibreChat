@@ -114,6 +114,13 @@ function requireTimestamp(value: unknown, path: string): number {
   return value;
 }
 
+function requireRecord(value: unknown, path: string): Record<string, unknown> {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    throw error(`${path} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
 function createPrincipal(input: AgentRunPrincipalInput | null | undefined): AgentRunPrincipal {
   const principal: AgentRunPrincipal = {
     userId: requireString(input?.id, 'principal.id'),
@@ -185,6 +192,82 @@ export function createAgentTriggerEnvelope(
   }
 
   throw error(`Unsupported agent trigger mode: ${receivedMode}`);
+}
+
+/**
+ * Validates and detaches an envelope received from a queue or another process.
+ * Unknown versions, modes, and malformed v1 fields fail closed before dispatch.
+ */
+export function parseAgentTriggerEnvelope(input: unknown): AgentTriggerEnvelope {
+  const envelope = requireRecord(cloneJsonValue(input, 'envelope', error), 'envelope');
+  if (envelope.version !== AGENT_TRIGGER_ENVELOPE_VERSION) {
+    throw error(`Unsupported agent trigger envelope version: ${String(envelope.version)}`);
+  }
+
+  const mode = envelope.mode;
+  if (mode !== 'fire' && mode !== 'steer') {
+    throw error(`Unsupported agent trigger mode: ${String(mode)}`);
+  }
+
+  const principalInput = requireRecord(envelope.principal, 'principal');
+  const principal: AgentRunPrincipal = {
+    userId: requireString(principalInput.userId, 'principal.userId'),
+  };
+  if (principalInput.role != null) {
+    principal.role = requireString(principalInput.role, 'principal.role');
+  }
+  if (principalInput.tenantId != null) {
+    principal.tenantId = requireString(principalInput.tenantId, 'principal.tenantId');
+  }
+
+  const eventInput = requireRecord(envelope.event, 'event');
+  const sourceInput = requireRecord(eventInput.source, 'event.source');
+  const event: AgentTriggerEvent = {
+    id: requireString(eventInput.id, 'event.id'),
+    type: requireString(eventInput.type, 'event.type'),
+    occurredAt: requireTimestamp(eventInput.occurredAt, 'event.occurredAt'),
+    source: {
+      id: requireString(sourceInput.id, 'event.source.id'),
+      type: requireString(sourceInput.type, 'event.source.type'),
+    },
+    ...(eventInput.payload !== undefined && { payload: eventInput.payload as JsonValue }),
+  };
+
+  const base: AgentTriggerEnvelopeBase = {
+    version: AGENT_TRIGGER_ENVELOPE_VERSION,
+    requestId: requireString(envelope.requestId, 'requestId'),
+    deliveryId: requireString(envelope.deliveryId, 'deliveryId'),
+    receivedAt: requireTimestamp(envelope.receivedAt, 'receivedAt'),
+    principal,
+    event,
+    input: requireString(envelope.input, 'input'),
+  };
+  const target = requireRecord(envelope.target, 'target');
+
+  if (mode === 'fire') {
+    return {
+      ...base,
+      mode,
+      target: { agentId: requireString(target.agentId, 'target.agentId') },
+    };
+  }
+
+  if (target.preempt != null && typeof target.preempt !== 'boolean') {
+    throw error('target.preempt must be a boolean');
+  }
+  return {
+    ...base,
+    mode,
+    target: {
+      agentId: requireString(target.agentId, 'target.agentId'),
+      conversationId: requireString(target.conversationId, 'target.conversationId'),
+      generationCreatedAt: requireTimestamp(
+        target.generationCreatedAt,
+        'target.generationCreatedAt',
+      ),
+      ...(target.preempt != null && { preempt: target.preempt }),
+    },
+  };
 }
 
 /**

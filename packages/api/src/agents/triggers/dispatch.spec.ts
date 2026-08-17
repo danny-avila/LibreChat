@@ -74,7 +74,6 @@ describe('dispatchAgentTrigger', () => {
     const envelope = {
       ...fireEnvelope(),
       mode: 'resume',
-      target: undefined,
     } as unknown as AgentTriggerEnvelope;
 
     expect(() => dispatchAgentTrigger(envelope, { fire, steer })).toThrow(
@@ -90,11 +89,24 @@ describe('dispatchAgentTrigger', () => {
     const envelope = {
       ...fireEnvelope(),
       version: 2,
-      target: undefined,
     } as unknown as AgentTriggerEnvelope;
 
     expect(() => dispatchAgentTrigger(envelope, { fire, steer })).toThrow(
       new AgentTriggerDispatchError('Unsupported agent trigger envelope version: 2'),
+    );
+    expect(fire).not.toHaveBeenCalled();
+    expect(steer).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed v1 envelopes before deriving identity or calling a handler', () => {
+    const fire = jest.fn(async () => 'fire');
+    const steer = jest.fn(async () => 'steer');
+    const malformed = { ...fireEnvelope() };
+    Reflect.deleteProperty(malformed, 'target');
+    const envelope = malformed as unknown as AgentTriggerEnvelope;
+
+    expect(() => dispatchAgentTrigger(envelope, { fire, steer })).toThrow(
+      new AgentTriggerDispatchError('target must be an object'),
     );
     expect(fire).not.toHaveBeenCalled();
     expect(steer).not.toHaveBeenCalled();
