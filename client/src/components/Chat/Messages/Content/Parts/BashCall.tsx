@@ -52,12 +52,12 @@ export default function BashCall({
   const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
     useToolCallState(initialProgress, isSubmitting, output, !!command, onExpand, runStepStatus);
 
-  const { ref: commandPaneRef, onScroll: onCommandPaneScroll } = useFollowScroll<HTMLDivElement>(
-    command,
-    progress < 1 && !cancelled,
-  );
-
   const highlighted = useLazyHighlight(command || undefined, 'bash');
+  const { ref: commandPaneRef, onScroll: onCommandPaneScroll } = useFollowScroll<HTMLDivElement>(
+    highlighted ?? command,
+    progress < 1 && !cancelled,
+    showCode,
+  );
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
   /** A backgrounded call's persisted output stays the dispatch handle until
    *  the detached run settles and patches it; render a background state

@@ -47,10 +47,20 @@ jest.mock('../Attachment', () => ({
   AttachmentGroup: () => <div data-testid="attachment-group" />,
 }));
 
-jest.mock('../useLazyHighlight', () => ({
-  __esModule: true,
-  default: () => null,
-}));
+jest.mock('../useLazyHighlight', () => {
+  const { useState, useEffect } = jest.requireActual<typeof import('react')>('react');
+  /** Mirrors the real hook's two-phase contract: the render that changed
+   *  `code` still shows the previous highlight (or null), and the new
+   *  nodes commit in a later passive effect. */
+  const useMockLazyHighlight = (code?: string) => {
+    const [highlighted, setHighlighted] = useState<string[] | null>(null);
+    useEffect(() => {
+      setHighlighted(code == null ? null : [code]);
+    }, [code]);
+    return highlighted;
+  };
+  return { __esModule: true, default: useMockLazyHighlight };
+});
 
 jest.mock('../useToolCallState', () => ({
   __esModule: true,
@@ -282,12 +292,22 @@ describe('FileAuthoringCall', () => {
 
 /**
  * jsdom has no layout, so the capped pane's scroll geometry is stubbed:
- * `scrollHeight` reads from mutable state (grown by the test as args
- * stream) and every `scrollTop` write the component makes is recorded.
+ * `clientHeight` is fixed, `scrollHeight` either reads from mutable state
+ * or derives from the pane's rendered text (so the async highlight commit
+ * measurably changes it), and every `scrollTop` write the component makes
+ * is recorded.
  */
-const mockScrollMetrics = (el: HTMLElement, clientHeight: number) => {
+const mockScrollMetrics = (
+  el: HTMLElement,
+  clientHeight: number,
+  opts: { deriveHeightFromText?: boolean } = {},
+) => {
   const state = { scrollHeight: 0, scrollTop: 0, writes: [] as number[] };
-  Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => state.scrollHeight });
+  Object.defineProperty(el, 'scrollHeight', {
+    configurable: true,
+    get: () =>
+      opts.deriveHeightFromText === true ? (el.textContent?.length ?? 0) * 10 : state.scrollHeight,
+  });
   Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => clientHeight });
   Object.defineProperty(el, 'scrollTop', {
     configurable: true,
@@ -311,15 +331,15 @@ describe('FileAuthoringCall streaming follow-scroll', () => {
     />
   );
 
-  it('pins the streaming create_file preview to the newest authored content', () => {
+  it('pins the preview to the authored content as rendered, including the highlight commit', () => {
     const { container, rerender } = render(streamingCreate('# Demo\\nline one'));
     const pane = container.querySelector('.overflow-auto') as HTMLElement;
-    const state = mockScrollMetrics(pane, 300);
-    state.scrollHeight = 1200;
+    const state = mockScrollMetrics(pane, 300, { deriveHeightFromText: true });
 
     rerender(streamingCreate('# Demo\\nline one\\nline two of the streamed body'));
 
-    expect(state.scrollTop).toBe(1200);
+    expect(pane.textContent).toContain('line two of the streamed body');
+    expect(state.scrollTop).toBe((pane.textContent?.length ?? 0) * 10);
   });
 
   it('leaves a finished create_file preview alone', () => {

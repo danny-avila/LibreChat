@@ -162,12 +162,12 @@ export default function FileAuthoringCall({
       runStepStatus,
     );
 
-  const { ref: previewPaneRef, onScroll: onPreviewPaneScroll } = useFollowScroll<HTMLPreElement>(
-    preview,
-    progress < 1 && !cancelled,
-  );
-
   const highlighted = useLazyHighlight(preview || undefined, previewLang);
+  const { ref: previewPaneRef, onScroll: onPreviewPaneScroll } = useFollowScroll<HTMLPreElement>(
+    highlighted ?? preview,
+    progress < 1 && !cancelled,
+    showCode,
+  );
   const Icon = isCreate && !overwrote ? FilePlus2 : FilePenLine;
   let finishedKey: 'com_ui_created_file' | 'com_ui_updated_file' | 'com_ui_edited_file' =
     'com_ui_edited_file';
