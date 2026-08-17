@@ -292,6 +292,7 @@ function ShareHeader({
   onLangChange,
 }: ShareHeaderProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsContent, setSettingsContent] = useState<HTMLDivElement | null>(null);
   const isMobile = useMediaQuery('(max-width: 767px)');
 
   const handleDialogOutside = useCallback((event: Event) => {
@@ -349,6 +350,7 @@ function ShareHeader({
                 </Button>
               </OGDialogTrigger>
               <OGDialogContent
+                ref={setSettingsContent}
                 className="w-11/12 max-w-lg overflow-y-visible"
                 showCloseButton={true}
                 onPointerDownOutside={handleDialogOutside}
@@ -357,18 +359,18 @@ function ShareHeader({
                 <OGDialogHeader className="text-left">
                   <OGDialogTitle>{settingsLabel}</OGDialogTitle>
                 </OGDialogHeader>
-                <div className="flex flex-col gap-4 pt-2 text-sm">
+                <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pt-2 text-sm">
                   <ThemeSelector
                     theme={theme}
                     onChange={onThemeChange}
-                    portal={false}
+                    portalElement={settingsContent}
                     popoverClassName="z-[150]"
                   />
                   <Separator orientation="horizontal" className="bg-border-medium/60" />
                   <LangSelector
                     langcode={langcode}
                     onChange={onLangChange}
-                    portal={false}
+                    portalElement={settingsContent}
                     popoverClassName="z-[150]"
                   />
                 </div>
