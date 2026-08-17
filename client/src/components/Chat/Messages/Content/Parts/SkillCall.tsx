@@ -35,35 +35,39 @@ export default function SkillCall({
   const skillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
   const intent = useToolCallIntent(args);
 
-  const { showCode, toggleCode, expandStyle, expandRef, progress, cancelled, hasError, hasOutput } =
-    useToolCallState(initialProgress, isSubmitting, output, !!skillName, onExpand, runStepStatus);
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
+    initialProgress,
+    isSubmitting,
+    output,
+    hasInput: !!skillName,
+    onExpand,
+    runStepStatus,
+  });
 
   return (
     <>
       <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
-          progress={progress}
+          phase={phase}
           onClick={toggleCode}
           inProgressText={intent ?? localize('com_ui_skill_running', { 0: skillName })}
           finishedText={
-            cancelled
+            phase === 'cancelled'
               ? localize('com_ui_cancelled')
               : (intent ?? localize('com_ui_skill_finished', { 0: skillName }))
           }
           durationMs={runStepDurationMs}
-          errorSuffix={hasError && !cancelled ? localize('com_ui_tool_failed') : undefined}
           icon={
             <ScrollText
               className={cn(
                 'size-4 shrink-0 text-text-secondary',
-                progress < 1 && !cancelled && !hasError && 'animate-pulse',
+                phase === 'running' && 'animate-pulse',
               )}
               aria-hidden="true"
             />
           }
           hasInput={!!skillName || hasOutput}
           isExpanded={showCode}
-          error={cancelled}
         />
       </div>
       <div style={expandStyle}>

@@ -33,20 +33,20 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/components/Chat/Messages/Content/ProgressText', () => ({
   __esModule: true,
+  /** Mirrors the real component's contract: one `phase` drives both the
+   *  label and the failure suffix. */
   default: ({
-    progress,
+    phase,
     inProgressText,
     finishedText,
-    errorSuffix,
   }: {
-    progress: number;
+    phase: 'running' | 'completed' | 'cancelled' | 'failed';
     inProgressText: string;
     finishedText: string;
-    errorSuffix?: string;
   }) => (
     <div data-testid="progress-text">
-      {progress < 1 ? inProgressText : finishedText}
-      {errorSuffix != null ? ` — ${errorSuffix}` : ''}
+      {phase === 'running' ? inProgressText : finishedText}
+      {phase === 'failed' ? ' — tool failed' : ''}
     </div>
   ),
 }));
