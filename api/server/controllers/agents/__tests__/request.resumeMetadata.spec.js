@@ -2063,6 +2063,7 @@ describe('ResumableAgentController resume metadata', () => {
         error: 'Stateful code environment is not allowed by this deployment: conversation',
       }),
       1000,
+      { preserveForReconcile: false },
     );
   });
 
