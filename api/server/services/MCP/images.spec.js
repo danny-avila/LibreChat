@@ -29,10 +29,22 @@ describe('MCP uploaded-image encoding', () => {
   });
 
   it.each([
+    ['with zero-byte metadata', 0, 20, 1],
     ['under the configured limit', 20 * mib, 21, 1],
     ['at the configured limit', 20 * mib, 20, 1],
     ['over the configured limit', 21 * mib, 20, 0],
     ['over the default limit without configuration', 512 * mib + 1, undefined, 0],
+    ['with negative byte metadata', -1, 20, 0],
+    ['with fractional byte metadata', 1.5, 20, 0],
+    [
+      'with unsafe integer byte metadata',
+      Number.MAX_SAFE_INTEGER + 1,
+      Number.MAX_SAFE_INTEGER + 2,
+      0,
+    ],
+    ['without byte metadata', undefined, 20, 0],
+    ['with NaN byte metadata', Number.NaN, 20, 0],
+    ['with infinite byte metadata', Number.POSITIVE_INFINITY, 20, 0],
   ])('encodes images only when %s', async (_name, bytes, fileSizeLimit, expectedEncodeCalls) => {
     const file = { file_id: 'image', bytes, type: 'image/png' };
     mockGetFiles.mockResolvedValue([file]);

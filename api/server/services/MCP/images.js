@@ -16,7 +16,9 @@ function getDependencies() {
     encodeImages: async (request, files) => {
       const imageSizeLimit = getMcpImageSizeLimit(request);
       const imageFiles = files.filter(
-        (file) => Number.isFinite(file.bytes) && file.bytes <= imageSizeLimit,
+        // Zero remains eligible; encoding validates whether the persisted file is a usable image.
+        (file) =>
+          Number.isSafeInteger(file.bytes) && file.bytes >= 0 && file.bytes <= imageSizeLimit,
       );
       if (imageFiles.length === 0) {
         return { image_urls: [] };

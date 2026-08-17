@@ -103,6 +103,37 @@ describe('resolveUploadedImageArguments', () => {
     expect(dependencies.encodeImages).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    [
+      ['/mnt/data/0.jpg', '/mnt/data/0.png'],
+      ['/mnt/data/0.jpg', imageUrls.first],
+    ],
+    [
+      ['/mnt/data/0.png', '/mnt/data/0.jpg'],
+      [imageUrls.first, '/mnt/data/0.jpg'],
+    ],
+  ])(
+    'does not cross-rewrite conflicting extensions for the same index: %p',
+    async (values, expected) => {
+      const dependencies = createDependencies({
+        findFiles: jest.fn().mockResolvedValue([first]),
+        encodeImages: jest.fn().mockResolvedValue({
+          image_urls: [{ file_id: first.file_id, image_url: { url: imageUrls.first } }],
+        }),
+      });
+
+      await expect(
+        resolveUploadedImageArguments({
+          forwardUploadedImages: true,
+          toolArguments: { values },
+          request,
+          user: { id: 'user-1' },
+          dependencies,
+        }),
+      ).resolves.toEqual({ values: expected });
+    },
+  );
+
   it('queries only referenced current-request image IDs and preserves foreign or sparse placeholders', async () => {
     const owned = { file_id: 'owned', filepath: '/images/user-1/owned.png', type: 'image/png' };
     const dependencies = createDependencies({
@@ -224,6 +255,30 @@ describe('resolveUploadedImageArguments', () => {
     ['/mnt/data/0.png', 'image/png', 'image/jpeg', imageUrls.first, '/mnt/data/0.png'],
     ['/mnt/data/0.png', 'image/png', 'image/png', imageUrls.second, '/mnt/data/0.png'],
     ['/mnt/data/0.png', 'image/png', 'image/png', imageUrls.third, '/mnt/data/0.png'],
+    [
+      '/mnt/data/0.png',
+      'image/png',
+      'image/png',
+      'data:image/png;base64,Zg==',
+      'data:image/png;base64,Zg==',
+    ],
+    ['/mnt/data/0.png', 'image/png', 'image/png', 'data:image/png;base64,Zh==', '/mnt/data/0.png'],
+    [
+      '/mnt/data/0.png',
+      'image/png',
+      'image/png',
+      'data:image/png;base64,Zm8=',
+      'data:image/png;base64,Zm8=',
+    ],
+    ['/mnt/data/0.png', 'image/png', 'image/png', 'data:image/png;base64,Zm9=', '/mnt/data/0.png'],
+    [
+      '/mnt/data/0.png',
+      'image/png',
+      'image/png',
+      'data:image/png;base64,Zg==\n',
+      '/mnt/data/0.png',
+    ],
+    ['/mnt/data/0.png', 'image/png', 'image/png', 'data:image/png;base64,Zg--', '/mnt/data/0.png'],
     ['/mnt/data/0.png', 'image/png', 'image/png', 'data:image/png;base64,', '/mnt/data/0.png'],
     [
       '/mnt/data/0.png',

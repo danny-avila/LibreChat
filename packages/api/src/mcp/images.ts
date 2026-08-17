@@ -1,7 +1,10 @@
 const UPLOAD_PLACEHOLDER = /^\/mnt\/data\/(\d+)\.(png|jpe?g|webp)$/;
-const BASE64_PAYLOAD = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const BASE64_PAYLOAD = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$(?![\s\S])/;
+const DATA_URL = /^data:(image\/[^;,]+);base64,([\s\S]*)$(?![\s\S])/i;
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 type SupportedImageMime = 'image/png' | 'image/jpeg' | 'image/webp';
+type UploadPlaceholder = { index: number; mimeType: SupportedImageMime };
 
 type ToolArgumentValue =
   | string
@@ -84,9 +87,7 @@ function normalizeImageMimeType(value: unknown): SupportedImageMime | undefined 
   }
 }
 
-function getUploadPlaceholder(
-  value: ToolArgumentValue,
-): { index: number; mimeType: SupportedImageMime } | undefined {
+function getUploadPlaceholder(value: ToolArgumentValue): UploadPlaceholder | undefined {
   if (typeof value !== 'string') {
     return undefined;
   }
@@ -101,6 +102,10 @@ function getUploadPlaceholder(
   return Number.isSafeInteger(index) && mimeType ? { index, mimeType } : undefined;
 }
 
+function getUploadPlaceholderKey({ index, mimeType }: UploadPlaceholder): string {
+  return `${index}:${mimeType}`;
+}
+
 function getRequestImageFiles(request?: ImageToolRequest): Array<ImageToolRequestFile | undefined> {
   return (request?.body?.files ?? []).map((file) =>
     typeof file.file_id === 'string' && normalizeImageMimeType(file.type) ? file : undefined,
@@ -109,11 +114,11 @@ function getRequestImageFiles(request?: ImageToolRequest): Array<ImageToolReques
 
 function collectReferencedPlaceholders(
   value: ToolArgumentValue,
-  placeholders: Map<number, SupportedImageMime>,
+  placeholders: Map<string, UploadPlaceholder>,
 ): void {
   const placeholder = getUploadPlaceholder(value);
   if (placeholder) {
-    placeholders.set(placeholder.index, placeholder.mimeType);
+    placeholders.set(getUploadPlaceholderKey(placeholder), placeholder);
     return;
   }
 
@@ -128,14 +133,31 @@ function collectReferencedPlaceholders(
   }
 }
 
+function isCanonicalBase64Payload(payload: string): boolean {
+  if (!BASE64_PAYLOAD.test(payload)) {
+    return false;
+  }
+
+  if (payload.endsWith('==')) {
+    const trailingSextet = BASE64_ALPHABET.indexOf(payload.charAt(payload.length - 3));
+    return (trailingSextet & 0b1111) === 0;
+  }
+
+  if (payload.endsWith('=')) {
+    const trailingSextet = BASE64_ALPHABET.indexOf(payload.charAt(payload.length - 2));
+    return (trailingSextet & 0b11) === 0;
+  }
+
+  return true;
+}
+
 function parseImageDataUrl(
   value: unknown,
 ): { mimeType: SupportedImageMime; url: string } | undefined {
-  const match =
-    typeof value === 'string' ? /^data:(image\/[^;,]+);base64,(.*)$/i.exec(value) : null;
+  const match = typeof value === 'string' ? DATA_URL.exec(value) : null;
   const mimeType = normalizeImageMimeType(match?.[1]);
   const payload = match?.[2];
-  if (!mimeType || !payload || !BASE64_PAYLOAD.test(payload)) {
+  if (!mimeType || !payload || !isCanonicalBase64Payload(payload)) {
     return undefined;
   }
 
@@ -144,18 +166,18 @@ function parseImageDataUrl(
 
 function replaceReferencedPlaceholders(
   value: ToolArgumentValue,
-  imageUrlsByIndex: ReadonlyMap<number, string>,
+  imageUrlsByPlaceholder: ReadonlyMap<string, string>,
 ): ToolArgumentValue {
   const placeholder = getUploadPlaceholder(value);
   if (placeholder) {
-    return imageUrlsByIndex.get(placeholder.index) ?? value;
+    return imageUrlsByPlaceholder.get(getUploadPlaceholderKey(placeholder)) ?? value;
   }
 
   if (Array.isArray(value)) {
     let replacement: ToolArgumentValue[] | undefined;
     for (let index = 0; index < value.length; index++) {
       const current = value[index];
-      const resolved = replaceReferencedPlaceholders(current, imageUrlsByIndex);
+      const resolved = replaceReferencedPlaceholders(current, imageUrlsByPlaceholder);
       if (resolved !== current) {
         replacement ??= value.slice();
         replacement[index] = resolved;
@@ -167,7 +189,7 @@ function replaceReferencedPlaceholders(
   if (isPlainObject(value)) {
     let replacement: Record<string, ToolArgumentValue> | undefined;
     for (const [key, current] of Object.entries(value)) {
-      const resolved = replaceReferencedPlaceholders(current, imageUrlsByIndex);
+      const resolved = replaceReferencedPlaceholders(current, imageUrlsByPlaceholder);
       if (resolved !== current) {
         replacement ??= { ...value };
         replacement[key] = resolved;
@@ -190,7 +212,7 @@ export async function resolveUploadedImageArguments({
     return toolArguments;
   }
 
-  const referencedPlaceholders = new Map<number, SupportedImageMime>();
+  const referencedPlaceholders = new Map<string, UploadPlaceholder>();
   collectReferencedPlaceholders(toolArguments, referencedPlaceholders);
   if (referencedPlaceholders.size === 0) {
     return toolArguments;
@@ -203,9 +225,9 @@ export async function resolveUploadedImageArguments({
 
   const referencedFileIds = [
     ...new Set(
-      [...referencedPlaceholders.keys()]
-        .sort((left, right) => left - right)
-        .flatMap((index) => {
+      [...referencedPlaceholders.values()]
+        .sort((left, right) => left.index - right.index)
+        .flatMap(({ index }) => {
           const fileId = requestImageFiles[index]?.file_id;
           return fileId ? [fileId] : [];
         }),
@@ -234,8 +256,9 @@ export async function resolveUploadedImageArguments({
       return dataUrl ? [[image.file_id, dataUrl] as const] : [];
     }),
   );
-  const imageUrlsByIndex = new Map(
-    [...referencedPlaceholders].flatMap(([index, placeholderMimeType]) => {
+  const imageUrlsByPlaceholder = new Map(
+    [...referencedPlaceholders.values()].flatMap((placeholder) => {
+      const { index, mimeType: placeholderMimeType } = placeholder;
       const requestFile = requestImageFiles[index];
       const fileId = requestFile?.file_id;
       const file = fileId ? filesById.get(fileId) : undefined;
@@ -244,10 +267,10 @@ export async function resolveUploadedImageArguments({
       return requestMimeType === placeholderMimeType &&
         normalizeImageMimeType(file?.type) === placeholderMimeType &&
         dataUrl?.mimeType === placeholderMimeType
-        ? [[index, dataUrl.url] as const]
+        ? [[getUploadPlaceholderKey(placeholder), dataUrl.url] as const]
         : [];
     }),
   );
 
-  return replaceReferencedPlaceholders(toolArguments, imageUrlsByIndex);
+  return replaceReferencedPlaceholders(toolArguments, imageUrlsByPlaceholder);
 }
