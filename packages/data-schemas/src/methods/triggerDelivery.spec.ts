@@ -516,7 +516,9 @@ describe('agent trigger delivery methods', () => {
   });
 
   it('retains dead letters, truncates failure text, and supports explicit requeue', async () => {
-    const queued = await methods.enqueueAgentTriggerDelivery(enqueueInput());
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'dead-letter-requeue';
+    const queued = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user, orderingKey }));
     const claim = await methods.claimNextAgentTriggerDelivery({
       workerId: 'worker-1',
       claimToken: 'claim-1',
@@ -548,13 +550,43 @@ describe('agent trigger delivery methods', () => {
     expect(dead.lastError?.message).toHaveLength(2048);
     expect(dead.expiresAt).toBeUndefined();
 
+    const later = await methods.enqueueAgentTriggerDelivery(enqueueInput({ user, orderingKey }));
+    const laterClaim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-2',
+      claimToken: 'claim-2',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
+    expect(laterClaim?.id).toBe(later.delivery.id);
+
+    const stagedAhead = await Delivery.create({
+      ...enqueueInput({ user, orderingKey }),
+      laneSequence: 0,
+      status: 'staging',
+      attempts: 0,
+      requeueCount: 0,
+    });
+    await Delivery.collection.updateOne(
+      { _id: stagedAhead._id },
+      { $set: { updatedAt: new Date(0) } },
+    );
+
     const requeued = await methods.requeueAgentTriggerDelivery(dead.id, START);
     expect(requeued).toMatchObject({
       status: 'pending',
       attempts: 0,
       requeueCount: 1,
+      laneSequence: 4,
+    });
+    await expect(Delivery.findById(stagedAhead._id).lean()).resolves.toMatchObject({
+      status: 'pending',
+      laneSequence: 3,
     });
     expect(requeued?.lastError).toBeUndefined();
+    await expect(methods.findEarlierAgentTriggerDelivery(requeued!)).resolves.toEqual({
+      availableAt: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+    });
     expect(await methods.getAgentTriggerDeadLetters()).toEqual([]);
     await expect(methods.getAgentTriggerDeadLetters(Number.NaN)).rejects.toThrow(
       'Agent trigger dead-letter limit must be a positive integer',
@@ -626,6 +658,33 @@ describe('agent trigger delivery methods', () => {
     expect(await Delivery.countDocuments({ user })).toBe(0);
     expect(await LaneSequence.countDocuments({ user })).toBe(0);
     expect(await UserPurge.countDocuments({ _id: user })).toBe(0);
+  });
+
+  it('rotates active purge markers so a later committed purge is recovered', async () => {
+    const users = Array.from({ length: 3 }, () => new mongoose.Types.ObjectId());
+    for (const [index, user] of users.entries()) {
+      await User.create({
+        _id: user,
+        email: `purge-rotation-${index}@example.com`,
+        provider: 'local',
+        agentTriggerDeletionStartedAt: START,
+      });
+      await methods.prepareAgentTriggerUserPurge(user, START);
+    }
+    await Delivery.create({
+      ...enqueueInput({ user: users[2], orderingKey: 'committed-purge-lane' }),
+      laneSequence: 1,
+      status: 'pending',
+      attempts: 0,
+      requeueCount: 0,
+    });
+    await User.deleteOne({ _id: users[2] });
+
+    await expect(methods.recoverAgentTriggerUserPurges(2)).resolves.toBe(0);
+    await expect(methods.recoverAgentTriggerUserPurges(2)).resolves.toBe(1);
+    expect(await UserPurge.countDocuments({ _id: users[2] })).toBe(0);
+    expect(await Delivery.countDocuments({ user: users[2] })).toBe(0);
+    expect(await UserPurge.countDocuments({ _id: { $in: users.slice(0, 2) } })).toBe(2);
   });
 
   it('disarms a stale purge marker without touching an active user delivery', async () => {

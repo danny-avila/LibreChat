@@ -277,7 +277,10 @@ export function createAgentTriggerDeliveryMethods(
       // stopped in that gap without allowing a later enqueue to overtake it.
       const next = await Delivery()
         .findOne({ orderingKey, status: 'staging' })
-        .sort({ createdAt: 1, _id: 1 })
+        // updatedAt is the current staging admission time: initial enqueue
+        // sets it on insert, while explicit requeue refreshes it so an old
+        // dead letter is admitted behind staging work that already exists.
+        .sort({ updatedAt: 1, _id: 1 })
         .lean<IAgentTriggerDelivery>();
       if (next?._id == null) {
         continue;
@@ -380,7 +383,7 @@ export function createAgentTriggerDeliveryMethods(
     }
     const staged = await Delivery()
       .find({ status: 'staging' })
-      .sort({ createdAt: 1, _id: 1 })
+      .sort({ updatedAt: 1, _id: 1 })
       .limit(remaining)
       .lean<IAgentTriggerDelivery[]>();
     for (const delivery of staged) {
@@ -687,11 +690,11 @@ export function createAgentTriggerDeliveryMethods(
     id: string,
     availableAt: Date,
   ): Promise<AgentTriggerDeliveryRecord | null> {
-    const delivery = await Delivery()
+    const staged = await Delivery()
       .findOneAndUpdate(
         { _id: id, status: 'dead' },
         {
-          $set: { status: 'pending', attempts: 0, availableAt },
+          $set: { status: 'staging', laneSequence: 0, attempts: 0, availableAt },
           $unset: {
             leaseBy: 1,
             leaseUntil: 1,
@@ -706,7 +709,13 @@ export function createAgentTriggerDeliveryMethods(
         { new: true },
       )
       .lean<IAgentTriggerDelivery>();
-    return delivery == null ? null : toRecord(delivery);
+    if (staged == null) {
+      return null;
+    }
+
+    // Requeue is a new lane admission. Retaining the dead letter's original
+    // sequence could let it overlap a newer delivery that is already running.
+    return toRecord(await publishStagedDelivery(staged));
   }
 
   async function countActiveAgentTriggerDeliveriesByUser(
@@ -784,6 +793,12 @@ export function createAgentTriggerDeliveryMethods(
         .lean<{ agentTriggerDeletionStartedAt?: Date }>();
       if (user != null) {
         if (user.agentTriggerDeletionStartedAt?.getTime() === marker.fenceStartedAt.getTime()) {
+          // Move a still-owned pre-commit marker behind this bounded scan so
+          // it cannot starve later markers whose users are already gone.
+          await UserPurge().updateOne(
+            { _id: marker._id, fenceStartedAt: marker.fenceStartedAt },
+            { $currentDate: { updatedAt: true } },
+          );
           continue;
         }
         await UserPurge().deleteOne({ _id: marker._id, fenceStartedAt: marker.fenceStartedAt });

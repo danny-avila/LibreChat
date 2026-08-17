@@ -50,8 +50,10 @@ await enqueueAgentTrigger(
 - Matching ordering lanes serialize sequence allocation and queue publication behind a
   Mongo-fenced publisher. A staging row is durable before taking that fence, and any replica can
   finish an abandoned publication before allocating the next sequence, so a later delivery can
-  never overtake the invisible gap. Dead letters are terminal and do not block later work;
-  inactive lane counters are reclaimed once no staging, queued, leased, or dead delivery remains.
+  never overtake the invisible gap. Dead letters are terminal and do not block later work; an
+  explicit requeue admits the dead letter as a new lane tail so it cannot overlap newer in-flight
+  work. Inactive lane counters are reclaimed once no staging, queued, leased, or dead delivery
+  remains.
 - Successful records expire after 90 days. Dead letters remain until explicitly requeued or
   removed. Account deletion first fences admission and drains active leases without destroying
   queued work. A delivery deferred by that fence releases its lease and restores the attempt it

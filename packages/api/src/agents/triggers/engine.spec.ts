@@ -109,7 +109,7 @@ describe('createAgentTriggerDeliveryEngine', () => {
     );
     const engine = createAgentTriggerDeliveryEngine(
       { store, dispatch, now: () => START, workerId: 'worker-1' },
-      { concurrency: 1 },
+      { concurrency: 1, maxAttempts: 1 },
     );
 
     const tick = engine.runTick();
@@ -117,13 +117,15 @@ describe('createAgentTriggerDeliveryEngine', () => {
     await engine.cancelUser('user-1');
     await tick;
 
-    expect(store.retry).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'delivery-row-1',
-        claimToken: 'claim-1',
-        error: expect.objectContaining({ code: 'ABORTED' }),
-      }),
-    );
+    expect(store.defer).toHaveBeenCalledWith({
+      id: 'delivery-row-1',
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: 1,
+      availableAt: new Date(START.getTime() + 5_000),
+    });
+    expect(store.retry).not.toHaveBeenCalled();
+    expect(store.dead).not.toHaveBeenCalled();
     expect(store.complete).not.toHaveBeenCalled();
   });
 

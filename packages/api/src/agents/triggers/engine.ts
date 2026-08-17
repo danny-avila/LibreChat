@@ -316,8 +316,11 @@ export function createAgentTriggerDeliveryEngine(
         result = await deps.dispatch(delivery.envelope, { signal: controller.signal });
       } catch (error) {
         const attemptedAt = now();
-        if (error instanceof AgentTriggerDeliveryDeferredError) {
-          const availableAt = new Date(attemptedAt.getTime() + error.delayMs);
+        const deletionCancelled = controller.signal.aborted && cancelledUsers.has(userId);
+        if (error instanceof AgentTriggerDeliveryDeferredError || deletionCancelled) {
+          const delayMs =
+            error instanceof AgentTriggerDeliveryDeferredError ? error.delayMs : DEFAULT_DEFER_MS;
+          const availableAt = new Date(attemptedAt.getTime() + delayMs);
           const deferred = await deps.store.defer({
             id: delivery.id,
             workerId,
@@ -328,6 +331,7 @@ export function createAgentTriggerDeliveryEngine(
           if (deferred) {
             logger.info('[agent-triggers] delivery deferred without consuming an attempt', {
               deliveryKey: delivery.deliveryKey,
+              reason: deletionCancelled ? 'account_deletion' : 'pre_dispatch',
               availableAt: availableAt.toISOString(),
             });
           }
