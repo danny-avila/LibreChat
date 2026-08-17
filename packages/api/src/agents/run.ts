@@ -1185,7 +1185,19 @@ function buildSubagentConfigs(
         (member) =>
           prebuiltGraphInputs?.get(member.id) ?? buildIsolatedAgentInputs(member, toInput),
       ),
-      edges: definition.edges,
+      /**
+       * The persisted API accepts `excludeResults: false` as the explicit
+       * form of the default. The SDK reserves this field for prompted edges
+       * and rejects any defined value when no prompt exists, so erase the
+       * no-op false value at the host boundary.
+       */
+      edges: definition.edges.map((edge) => {
+        if (edge.excludeResults !== false) {
+          return edge;
+        }
+        const { excludeResults: _excludeResults, ...normalizedEdge } = edge;
+        return normalizedEdge;
+      }),
       entryAgentId: definition.entry_agent_id,
       resultAgentId: definition.result_agent_id,
       maxTurns,

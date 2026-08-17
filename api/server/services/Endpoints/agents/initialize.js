@@ -1,12 +1,10 @@
 const { logger } = require('@librechat/data-schemas');
 const { createContentAggregator, GraphNodeKeys } = require('@librechat/agents');
 const {
-  checkAccess,
   resolveSender,
   createConcurrencyLimiter,
   loadSkillStates,
   initializeAgent,
-  isMemoryEnabled,
   primeInvokedSkillsForProfiles,
   validateAgentModel,
   extractManualSkills,
@@ -515,6 +513,7 @@ const initializeClient = async ({
       backgroundToolsAvailable,
       toolIntentsAvailable,
       statefulSessionsAvailable,
+      allowedStatefulCodeEnvironments,
       memoryAvailable,
       skillStates,
       defaultActiveOnShare,
@@ -595,6 +594,7 @@ const initializeClient = async ({
       backgroundToolsAvailable,
       toolIntentsAvailable,
       statefulSessionsAvailable,
+      allowedStatefulCodeEnvironments,
       memoryAvailable,
     },
     {
@@ -957,6 +957,7 @@ const initializeClient = async ({
           backgroundToolsAvailable,
           toolIntentsAvailable,
           statefulSessionsAvailable,
+          allowedStatefulCodeEnvironments,
           memoryAvailable,
           skillStates,
           defaultActiveOnShare,

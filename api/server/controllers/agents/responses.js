@@ -375,11 +375,10 @@ const executeResponse = async (envelope, { req, res }) => {
 
     const conversationId = request.previous_response_id ?? uuidv4();
     const parentMessageId = null;
+    const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
 
     // Build allowed providers set
-    const allowedProviders = new Set(
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders,
-    );
+    const allowedProviders = new Set(agentsEConfig?.allowedProviders);
 
     // Create tool loader
     const loadTools = createToolLoader(abortController.signal);
@@ -408,9 +407,7 @@ const executeResponse = async (envelope, { req, res }) => {
       getSkillByName: skillDbMethods.getSkillByName,
     };
 
-    const enabledCapabilities = new Set(
-      appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities,
-    );
+    const enabledCapabilities = new Set(agentsEConfig?.capabilities);
     const memoryAvailable = await resolveMemoryAvailability({
       enabledCapabilities,
       memoryConfig: appConfig?.memory,
@@ -489,6 +486,7 @@ const executeResponse = async (envelope, { req, res }) => {
         statefulSessionsAvailable: enabledCapabilities.has(
           AgentCapabilities.stateful_code_sessions,
         ),
+        allowedStatefulCodeEnvironments: agentsEConfig?.statefulCodeSessions?.allowedEnvironments,
         memoryAvailable,
         skillStates,
         defaultActiveOnShare,
@@ -566,6 +564,7 @@ const executeResponse = async (envelope, { req, res }) => {
         statefulSessionsAvailable: enabledCapabilities.has(
           AgentCapabilities.stateful_code_sessions,
         ),
+        allowedStatefulCodeEnvironments: agentsEConfig?.statefulCodeSessions?.allowedEnvironments,
         memoryAvailable,
       };
       const discoveryDeps = {

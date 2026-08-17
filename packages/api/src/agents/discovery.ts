@@ -105,6 +105,8 @@ export interface DiscoverConnectedAgentsParams {
   codeEnvAvailable?: InitializeAgentParams['codeEnvAvailable'];
   /** Sibling of `codeEnvAvailable` — the `stateful_code_sessions` capability flag, forwarded to every handoff `initializeAgent`. */
   statefulSessionsAvailable?: InitializeAgentParams['statefulSessionsAvailable'];
+  /** Deployment policy for stateful workspace scopes, forwarded unchanged to every referenced agent. */
+  allowedStatefulCodeEnvironments?: InitializeAgentParams['allowedStatefulCodeEnvironments'];
   /**
    * Run-level inline memory availability gate. Forwarded verbatim to every
    * handoff agent so sub-agents that list the `memory` capability expand the
@@ -241,6 +243,7 @@ async function initializeReferencedAgent(
       backgroundToolsAvailable: params.backgroundToolsAvailable,
       toolIntentsAvailable: params.toolIntentsAvailable,
       statefulSessionsAvailable: params.statefulSessionsAvailable,
+      allowedStatefulCodeEnvironments: params.allowedStatefulCodeEnvironments,
       memoryAvailable: params.memoryAvailable,
     },
     deps.db,

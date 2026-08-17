@@ -533,6 +533,38 @@ describe('collectCodeExecutionProfileRoutes', () => {
     ]);
   });
 
+  it('includes execution routes used only by graph-subagent members', () => {
+    const graphKey = 'execute_code:stateful:v2:user:graph-member';
+    const graphContext = {
+      baseUrl: 'https://stateful.example.com/v1',
+      codeSessionKey: graphKey,
+      executionProfile: 'stateful' as const,
+      runtimeSessionHint: 'v2:user:graph-member',
+      statefulSessions: true,
+    };
+
+    const routes = collectCodeExecutionProfileRoutes([
+      {
+        id: 'parent',
+        codeEnvAvailable: false,
+        subagentGraphConfigs: [
+          {
+            memberConfigs: [
+              {
+                id: 'graph-member',
+                codeEnvAvailable: true,
+                codeExecutionContext: graphContext,
+                codeSessionKey: graphKey,
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    expect(routes).toEqual([{ codeExecutionContext: graphContext, codeSessionKeys: [graphKey] }]);
+  });
+
   it('derives and includes the trusted profile for a lazy subagent descriptor', () => {
     process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://stateful.example.com/v1';
     const routes = collectCodeExecutionProfileRoutes(

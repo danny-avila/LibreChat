@@ -258,16 +258,7 @@ export function buildInitialToolSessions(params: {
     if (agent.primedCodeFiles && agent.primedCodeFiles.length > 0) {
       sessions = seedCodeFilesIntoSessions(agent.primedCodeFiles, sessions, sessionKey);
     }
-    if (agent.subagentAgentConfigs && agent.subagentAgentConfigs.length > 0) {
-      for (const child of agent.subagentAgentConfigs) {
-        if (child && !visited.has(child)) queue.push(child);
-      }
-    }
-    for (const graph of agent.subagentGraphConfigs ?? []) {
-      for (const member of graph.memberConfigs) {
-        if (member && !visited.has(member)) queue.push(member);
-      }
-    }
+    enqueueCodeFilesChildren(agent, queue, visited);
   }
   return sessions;
 }

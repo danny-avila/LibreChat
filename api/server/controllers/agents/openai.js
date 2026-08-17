@@ -365,6 +365,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         statefulSessionsAvailable: enabledCapabilities.has(
           AgentCapabilities.stateful_code_sessions,
         ),
+        allowedStatefulCodeEnvironments: agentsEConfig?.statefulCodeSessions?.allowedEnvironments,
         memoryAvailable,
         skillStates,
         defaultActiveOnShare,
@@ -442,6 +443,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         statefulSessionsAvailable: enabledCapabilities.has(
           AgentCapabilities.stateful_code_sessions,
         ),
+        allowedStatefulCodeEnvironments: agentsEConfig?.statefulCodeSessions?.allowedEnvironments,
         memoryAvailable,
       };
       const discoveryDeps = {

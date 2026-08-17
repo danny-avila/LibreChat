@@ -1342,6 +1342,40 @@ describe('subagentConfigs', () => {
     ]);
   });
 
+  it('normalizes an explicit false excludeResults value before SDK validation', async () => {
+    const researcher = makeAgent({ id: 'agent_researcher' });
+    const writer = makeAgent({ id: 'agent_writer' });
+    const definition = {
+      type: 'default_results_team',
+      name: 'Default results team',
+      description: 'Uses the default edge result behavior',
+      agent_ids: ['agent_researcher', 'agent_writer'],
+      edges: [
+        {
+          from: 'agent_researcher',
+          to: 'agent_writer',
+          edgeType: 'direct' as const,
+          excludeResults: false,
+        },
+      ],
+      entry_agent_id: 'agent_researcher',
+      result_agent_id: 'agent_writer',
+    };
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, graphs: [definition] },
+          subagentGraphConfigs: [{ definition, memberConfigs: [researcher, writer] }],
+        }),
+      ],
+    });
+
+    const [config] = agents[0].subagentConfigs as Array<Record<string, unknown>>;
+    expect(config.edges).toEqual([
+      { from: 'agent_researcher', to: 'agent_writer', edgeType: 'direct' },
+    ]);
+  });
+
   it("adds each graph member's always-apply skills to its isolated context", async () => {
     const member = makeAgent({
       id: 'agent_skilled_member',
@@ -2253,7 +2287,7 @@ describe('toolOutputReferences gating', () => {
     expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
   });
 
-  it('enables code runtime gates from a lazy graph member metadata descriptor', async () => {
+  it('enables tool output references from a lazy graph member metadata descriptor', async () => {
     const signal = new AbortController().signal;
     const graphMember = makeAgent({
       id: 'agent_lazy_graph_member',
@@ -2283,7 +2317,11 @@ describe('toolOutputReferences gating', () => {
     const createMock = Run.create as jest.Mock;
     const callArgs = createMock.mock.calls[0][0] as Record<string, unknown>;
     expect(callArgs.toolOutputReferences).toEqual({ enabled: true });
-    expect(callArgs.toolExecution).toEqual({ sandbox: { statefulSessions: true } });
+    /**
+     * Stateful routing is intentionally agent-scoped. A lazy graph member must
+     * not promote its execution profile into run-global SDK configuration.
+     */
+    expect(callArgs.toolExecution).toBeUndefined();
     expect(lazyChild.resolve).not.toHaveBeenCalled();
   });
 

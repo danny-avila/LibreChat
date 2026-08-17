@@ -1177,6 +1177,8 @@ describe('resolveSubagentGraphs', () => {
         modelsConfig: { openai: ['gpt-4o'] },
         loadTools: jest.fn(),
         resourceType: 'remote_agent',
+        statefulSessionsAvailable: true,
+        allowedStatefulCodeEnvironments: ['user'],
       },
       {
         getAgent,
@@ -1189,6 +1191,13 @@ describe('resolveSubagentGraphs', () => {
 
     expect(getAgent).toHaveBeenCalledTimes(1);
     expect(getAgent).toHaveBeenCalledWith({ id: 'B' });
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statefulSessionsAvailable: true,
+        allowedStatefulCodeEnvironments: ['user'],
+      }),
+      expect.anything(),
+    );
     expect(onAgentInitialized).toHaveBeenCalledWith('B', expect.anything(), expect.anything());
     expect(primaryConfig.subagentGraphConfigs).toEqual([
       expect.objectContaining({
