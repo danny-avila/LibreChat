@@ -1,6 +1,6 @@
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
-import { createAgentTriggerUserPurgeModel } from './triggerUserPurge';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
+import { createAgentTriggerUserPurgeModel } from './triggerUserPurge';
 import { createAgentTriggerDeliveryModel } from './triggerDelivery';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';

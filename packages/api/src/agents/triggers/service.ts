@@ -13,9 +13,9 @@ import type {
 } from './host';
 import type { AgentTriggerEnqueueOptions, PreparedAgentTriggerDelivery } from './delivery';
 import type { BoundAddress } from '../../app/origin';
+import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
 import { isShutdownInProgress, registerShutdownTask } from '../../app/shutdown';
 import { generateAgentTriggerToken } from '../../crypto/jwt';
-import { AgentTriggerDeliveryDeferredError, createAgentTriggerDeliveryEngine } from './engine';
 import { selfOriginFromAddress } from '../../app/origin';
 import { prepareAgentTriggerDelivery } from './delivery';
 import { createAgentTriggerExecutionHost } from './host';
