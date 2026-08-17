@@ -27,6 +27,7 @@ type PersistedContentPart = {
   activity_label?: string;
   activity_label_type?: string;
   activity_start_index?: number;
+  activity_end_index?: number;
   activity_count?: number;
   pending?: boolean;
   tool_call?: { id?: string };
@@ -146,9 +147,76 @@ test.describe('parent activity phases', () => {
     const run = await sendMessage(page, `E2E_ACTIVITY_PHASE_REPLY:${label}`);
     expect(run.ok()).toBeTruthy();
 
-    const parent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);
-    await expect(parent).toBeVisible({ timeout: 60000 });
-    await expect(messagesView(page).getByText(finalText)).toBeVisible({ timeout: 60000 });
+    /**
+     * A parent phase only exists once the turn completes, the phase closes, and
+     * its summary round-trips to the phase-label model. Gate on the durable
+     * projection first: the DOM cannot show a `summary` before the server has
+     * written one, so asserting the DOM up front races that whole pipeline and
+     * leaves retries as the only thing hiding it. Waiting for the persisted
+     * phase also keeps failures attributable — a phase the server never wrote
+     * fails on the content assertions below rather than as a bare "not visible".
+     */
+    const conversationId = await getConversationId(page);
+    const token = await getAccessToken(page);
+    let assistant: PersistedMessage | undefined;
+    await expect
+      .poll(
+        async () => {
+          const messages = await fetchJson<PersistedMessage[]>(
+            page,
+            `/api/messages/${encodeURIComponent(conversationId)}`,
+            token,
+          );
+          assistant = messages.find(
+            (message) =>
+              message.isCreatedByUser === false && messageText(message).includes(finalText),
+          );
+          if (assistant?.unfinished !== false) {
+            return false;
+          }
+          return (assistant.content ?? []).some(
+            (part) => part?.type === 'activity_label' && part.activity_label_type === 'phase',
+          );
+        },
+        { timeout: 60000 },
+      )
+      .toBe(true);
+
+    expect(assistant).toBeDefined();
+    expect(assistant?.error).not.toBe(true);
+    const content = assistant?.content ?? [];
+    expect(content.some((part) => part?.type === 'error')).toBe(false);
+    const phaseIndex = content.findIndex(
+      (part) => part?.type === 'activity_label' && part.activity_label_type === 'phase',
+    );
+    expect(phaseIndex).toBeGreaterThanOrEqual(0);
+    const phasePart = content[phaseIndex];
+    expect(phasePart).toMatchObject({
+      type: 'activity_label',
+      activity_label: PARENT_LABEL,
+      activity_label_type: 'phase',
+      activity_count: 2,
+      pending: false,
+    });
+    expect(phasePart?.activity_start_index).toBeGreaterThanOrEqual(0);
+    expect(phasePart?.activity_end_index).toBeGreaterThan(phasePart?.activity_start_index ?? -1);
+    expect(phasePart?.activity_end_index).toBeLessThanOrEqual(phaseIndex);
+    const phaseChildren = content.slice(
+      phasePart?.activity_start_index ?? phaseIndex,
+      phasePart?.activity_end_index ?? phaseIndex,
+    );
+    expect(phaseChildren.map((part) => part?.tool_call?.id).filter(Boolean)).toEqual(
+      expect.arrayContaining([firstToolCallId, secondToolCallId]),
+    );
+    expect(phaseChildren.map(contentPartText)).toEqual(
+      expect.arrayContaining([childLabels.first, childLabels.second]),
+    );
+    const finalTextIndex = content.findIndex((part) => contentPartText(part).includes(finalText));
+    expect(finalTextIndex).toBe(phasePart?.activity_end_index);
+
+    const parent = messagesView(page).getByRole('button', { name: PARENT_LABEL, exact: true });
+    await expect(parent).toBeVisible({ timeout: 30000 });
+    await expect(messagesView(page).getByText(finalText)).toBeVisible({ timeout: 30000 });
     await parent.click();
     await expect(messagesView(page).getByRole('button', { name: childLabels.first })).toBeVisible();
     await expect(
@@ -172,57 +240,11 @@ test.describe('parent activity phases', () => {
       childRequests.some((entry) => entry.prompt.includes(`activity phase beta ${label}`)),
     ).toBe(true);
 
-    const conversationId = await getConversationId(page);
-    const token = await getAccessToken(page);
-    let assistant: PersistedMessage | undefined;
-    await expect
-      .poll(
-        async () => {
-          const messages = await fetchJson<PersistedMessage[]>(
-            page,
-            `/api/messages/${encodeURIComponent(conversationId)}`,
-            token,
-          );
-          assistant = messages.find(
-            (message) =>
-              message.isCreatedByUser === false && messageText(message).includes(finalText),
-          );
-          return assistant?.unfinished;
-        },
-        { timeout: 30000 },
-      )
-      .toBe(false);
-
-    expect(assistant).toBeDefined();
-    expect(assistant?.error).not.toBe(true);
-    const content = assistant?.content ?? [];
-    expect(content.some((part) => part?.type === 'error')).toBe(false);
-    const phaseIndex = content.findIndex(
-      (part) => part?.type === 'activity_label' && part.activity_label_type === 'phase',
-    );
-    expect(phaseIndex).toBeGreaterThanOrEqual(0);
-    const phasePart = content[phaseIndex];
-    expect(phasePart).toMatchObject({
-      type: 'activity_label',
-      activity_label: PARENT_LABEL,
-      activity_label_type: 'phase',
-      activity_count: 2,
-      pending: false,
-    });
-    expect(phasePart?.activity_start_index).toBeGreaterThanOrEqual(0);
-    expect(phasePart?.activity_start_index).toBeLessThan(phaseIndex);
-    const phaseChildren = content.slice(phasePart?.activity_start_index ?? phaseIndex, phaseIndex);
-    expect(phaseChildren.map((part) => part?.tool_call?.id).filter(Boolean)).toEqual(
-      expect.arrayContaining([firstToolCallId, secondToolCallId]),
-    );
-    expect(phaseChildren.map(contentPartText)).toEqual(
-      expect.arrayContaining([childLabels.first, childLabels.second]),
-    );
-    const finalTextIndex = content.findIndex((part) => contentPartText(part).includes(finalText));
-    expect(finalTextIndex).toBeGreaterThan(phaseIndex);
-
     await page.reload();
-    const reloadedParent = messagesView(page).locator(`summary[aria-label="${PARENT_LABEL}"]`);
+    const reloadedParent = messagesView(page).getByRole('button', {
+      name: PARENT_LABEL,
+      exact: true,
+    });
     await expect(reloadedParent).toBeVisible({ timeout: 30000 });
     await expect(messagesView(page).getByText(finalText)).toBeVisible();
     await reloadedParent.click();

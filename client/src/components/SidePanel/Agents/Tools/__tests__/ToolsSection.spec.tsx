@@ -5,6 +5,7 @@ import type { AgentItem } from '../items/types';
 import ToolsSection from '../ToolsSection';
 
 let mockSelected: AgentItem[] = [];
+let mockAgentTools: string[] = [];
 let mockFileEntries: {
   contextFiles: unknown[];
   knowledgeFiles: unknown[];
@@ -47,7 +48,7 @@ jest.mock('~/hooks/MCP', () => ({
 }));
 
 jest.mock('../hooks', () => ({
-  useAgentItems: () => ({ catalog: [], selected: mockSelected, tools: [] }),
+  useAgentItems: () => ({ catalog: [], selected: mockSelected, tools: mockAgentTools }),
   useResolvedSkills: (skills?: unknown[]) => skills,
   useAgentFileEntries: () => mockFileEntries,
   useUninstallToolCredentials: () => jest.fn(),
@@ -58,6 +59,7 @@ jest.mock('../ToolRow', () => ({
   default: ({ item, onRemove }: { item: AgentItem; onRemove: (item: AgentItem) => void }) => (
     <button type="button" aria-label={`remove-${item.id}`} onClick={() => onRemove(item)}>
       {item.id}
+      {item.kind === 'mcp' ? <span>{item.toolCount}</span> : null}
     </button>
   ),
 }));
@@ -123,6 +125,7 @@ const fileSearchItem: AgentItem = {
 
 beforeEach(() => {
   mockSelected = [];
+  mockAgentTools = [];
   mockFileEntries = { contextFiles: [], knowledgeFiles: [], codeFiles: [] };
   mockFormValues = {};
   mockSetValue.mockClear();
@@ -151,6 +154,31 @@ describe('ToolsSection', () => {
     render(<ToolsSection agentId="a" />);
     expect(screen.getByText('com_ui_tools_empty')).toBeInTheDocument();
     expect(screen.getByText('com_ui_skills_empty')).toBeInTheDocument();
+  });
+
+  test('counts every enumerable MCP tool when the server is attached by wildcard', () => {
+    mockAgentTools = ['sys__all__sys_mcp_runtime'];
+    mockSelected = [
+      {
+        kind: 'mcp',
+        id: 'runtime',
+        name: 'runtime',
+        description: '',
+        iconKey: 'mcp',
+        toolCount: 0,
+        server: {
+          serverName: 'runtime',
+          tools: [{ tool_id: 'search_mcp_runtime' }, { tool_id: 'read_mcp_runtime' }],
+          isConfigured: true,
+          isConnected: true,
+          metadata: { name: 'runtime', pluginKey: 'runtime', description: '' },
+        } as never,
+      },
+    ];
+
+    render(<ToolsSection agentId="a" />);
+
+    expect(screen.getByRole('button', { name: 'remove-runtime' })).toHaveTextContent('2');
   });
 
   test('opens the config dialog instead of toggling when a file-backed built-in holds files', () => {

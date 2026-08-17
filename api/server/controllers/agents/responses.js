@@ -48,6 +48,7 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
+  getLangfuseTraceMessageFields,
   stripActivityLabelParts,
 } = require('@librechat/api');
 const {
@@ -100,6 +101,7 @@ function createToolLoader(signal, definitionsOnly = true) {
     provider,
     tool_options,
     tool_resources,
+    codeExecutionContext,
     accessibleMcpServerNames,
   }) {
     const agent = { id: agentId, tools, provider, model, tool_options };
@@ -110,6 +112,7 @@ function createToolLoader(signal, definitionsOnly = true) {
         agent,
         signal,
         tool_resources,
+        codeExecutionContext,
         agentResourceType: ResourceType.REMOTE_AGENT,
         definitionsOnly,
         accessibleMcpServerNames,
@@ -223,6 +226,8 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
     }
   }
 
+  const langfuseTraceFields = await getLangfuseTraceMessageFields(req.config, responseId);
+
   // Save the assistant message
   await db.saveMessage(
     req,
@@ -231,6 +236,7 @@ async function saveResponseOutput(req, conversationId, responseId, response, age
       conversationId,
       parentMessageId: null,
       isCreatedByUser: false,
+      ...langfuseTraceFields,
       text: responseText,
       sender: 'Agent',
       endpoint: EModelEndpoint.agents,
@@ -731,6 +737,7 @@ const executeResponse = async (envelope, { req, res }) => {
             req,
             res,
             agentResourceType: ResourceType.REMOTE_AGENT,
+            conversationId,
             toolNames,
             agent: ctx.agent ?? agent,
             signal: abortController.signal,
@@ -915,6 +922,7 @@ const executeResponse = async (envelope, { req, res }) => {
             req,
             res,
             agentResourceType: ResourceType.REMOTE_AGENT,
+            conversationId,
             toolNames,
             agent: ctx.agent ?? agent,
             signal: abortController.signal,

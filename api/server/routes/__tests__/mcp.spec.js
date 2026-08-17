@@ -936,7 +936,7 @@ describe('MCP Routes', () => {
         expect(response.headers.location).toContain(`${basePath}/oauth/success`);
       });
 
-      it('should forward the merged server config so the tool cache gate sees request-scoped servers', async () => {
+      it('should use the merged server config to defer request-scoped post-OAuth reconnect', async () => {
         const flowId = 'test-user-id:test-server';
         const mockFlowManager = {
           getFlowState: jest.fn().mockResolvedValue({
@@ -959,8 +959,6 @@ describe('MCP Routes', () => {
           url: 'https://override.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
           source: 'config',
         };
-        const fetchedTools = [{ name: 'search', inputSchema: { type: 'object' } }];
-
         getLogStores.mockReturnValue({});
         require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
         MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
@@ -973,12 +971,15 @@ describe('MCP Routes', () => {
 
         const fetchOrderedToolsSnapshot = jest
           .fn()
-          .mockResolvedValue({ tools: fetchedTools, complete: true });
+          .mockResolvedValue({ tools: [{ name: 'search' }], complete: true });
         const mockMcpManager = createLeasedMcpManager({ fetchOrderedToolsSnapshot });
         require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
-        require('~/config').getOAuthReconnectionManager.mockReturnValue({
+        const mockOAuthReconnectionManager = {
           clearReconnection: jest.fn(),
-        });
+        };
+        require('~/config').getOAuthReconnectionManager.mockReturnValue(
+          mockOAuthReconnectionManager,
+        );
         const { updateMCPServerTools } = require('~/server/services/Config/mcp');
         updateMCPServerTools.mockResolvedValue();
 
@@ -988,17 +989,13 @@ describe('MCP Routes', () => {
 
         expect(response.status).toBe(302);
         expect(mockResolveAllMcpConfigs).toHaveBeenCalledWith('test-user-id');
-        expect(fetchOrderedToolsSnapshot).toHaveBeenCalledTimes(1);
-        expect(mockMcpManager.withUserConnectionLease).toHaveBeenCalledWith(
-          expect.objectContaining({ serverConfig: mergedServerConfig }),
-          expect.any(Function),
+        expect(fetchOrderedToolsSnapshot).not.toHaveBeenCalled();
+        expect(mockMcpManager.withUserConnectionLease).not.toHaveBeenCalled();
+        expect(mockOAuthReconnectionManager.clearReconnection).toHaveBeenCalledWith(
+          'test-user-id',
+          'test-server',
         );
-        expect(updateMCPServerTools).toHaveBeenCalledWith({
-          userId: 'test-user-id',
-          serverName: 'test-server',
-          tools: fetchedTools,
-          serverConfig: mergedServerConfig,
-        });
+        expect(updateMCPServerTools).not.toHaveBeenCalled();
       });
 
       it('should resolve and forward customUserVars so header templates are substituted on first post-callback connection', async () => {
@@ -1657,6 +1654,81 @@ describe('MCP Routes', () => {
       expect(response.headers.location).toBe(`${basePath}/oauth/success?serverName=test-server`);
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalled();
       expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith(flowId, 'mcp_get_tokens');
+    });
+
+    it('defers request-scoped post-OAuth reconnect while completing the waiting tool flow', async () => {
+      const { logger } = require('@librechat/data-schemas');
+      const { updateMCPServerTools } = require('~/server/services/Config/mcp');
+      const mockFlowManager = {
+        getFlowState: jest.fn().mockResolvedValue({ status: 'PENDING', createdAt: Date.now() }),
+        completeFlow: jest.fn().mockResolvedValue(true),
+        deleteFlow: jest.fn().mockResolvedValue(true),
+      };
+      const mockFlowState = {
+        state: 'test-user-id:test-server',
+        serverName: 'test-server',
+        userId: 'test-user-id',
+        metadata: { toolFlowId: 'tool-flow-request-scoped' },
+        clientInfo: {},
+        codeVerifier: 'test-verifier',
+      };
+      const mockTokens = {
+        access_token: 'test-access-token',
+        refresh_token: 'test-refresh-token',
+      };
+      const mockMcpManager = {
+        withUserConnectionLease: jest.fn(),
+      };
+      const mockOAuthReconnectionManager = {
+        clearReconnection: jest.fn(),
+      };
+
+      MCPOAuthHandler.getFlowState.mockResolvedValue(mockFlowState);
+      mockOAuthCompletion(mockTokens);
+      MCPTokenStorage.storeTokens.mockResolvedValue(mockTokens);
+      mockResolveAllMcpConfigs.mockResolvedValue({
+        'test-server': {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/mcp',
+          source: 'yaml',
+          headers: {
+            'X-Conversation-ID': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
+          },
+          requiresOAuth: true,
+        },
+      });
+      getLogStores.mockReturnValue({});
+      require('~/config').getFlowStateManager.mockReturnValue(mockFlowManager);
+      require('~/config').getMCPManager.mockReturnValue(mockMcpManager);
+      require('~/config').getOAuthReconnectionManager.mockReturnValue(mockOAuthReconnectionManager);
+
+      const flowId = 'test-user-id:test-server';
+      const csrfToken = generateTestCsrfToken(flowId);
+      const response = await request(app)
+        .get('/api/mcp/test-server/oauth/callback')
+        .set('Cookie', [`oauth_csrf=${csrfToken}`])
+        .query({ code: 'test-auth-code', state: flowId });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.location).toBe(
+        `${getBasePath()}/oauth/success?serverName=test-server`,
+      );
+      expect(MCPTokenStorage.storeTokens).toHaveBeenCalled();
+      expect(mockMcpManager.withUserConnectionLease).not.toHaveBeenCalled();
+      expect(updateMCPServerTools).not.toHaveBeenCalled();
+      expect(mockOAuthReconnectionManager.clearReconnection).toHaveBeenCalledWith(
+        'test-user-id',
+        'test-server',
+      );
+      expect(mockFlowManager.completeFlow).toHaveBeenCalledWith(
+        'tool-flow-request-scoped',
+        'mcp_oauth',
+        mockTokens,
+      );
+      expect(logger.warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('Failed to reconnect test-server after OAuth'),
+        expect.anything(),
+      );
     });
 
     it('should redirect to error page if token storage fails', async () => {
@@ -3316,6 +3388,10 @@ describe('MCP Routes', () => {
         name: 'second-server',
         tools: [],
       });
+      expect(logger.debug).toHaveBeenCalledTimes(1);
+      expect(logger.debug).toHaveBeenCalledWith(
+        '[getMCPTools] No tools (2): first-server, second-server',
+      );
       expect(logger.error).toHaveBeenCalledTimes(2);
       expect(mockGetServerToolFunctionsSnapshot).toHaveBeenCalledTimes(2);
     });

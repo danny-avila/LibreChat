@@ -1,4 +1,4 @@
-import type { CodeEnvRef } from '../codeEnvRef';
+import type { CodeEnvRef, CodeEnvRefMap } from '../codeEnvRef';
 import { EToolResources } from './assistants';
 
 export enum FileSources {
@@ -65,6 +65,8 @@ export type FileConfig = {
     maxWidth?: number;
     maxHeight?: number;
     quality?: number;
+    /** Set when `enabled` came from the admin config, in which case it wins over the user's setting */
+    enforced?: boolean;
   };
   ocr?: {
     supportedMimeTypes?: RegexLike[];
@@ -162,6 +164,7 @@ export type TFile = {
      * resolve via `resolveCodeEnvRef`.
      */
     codeEnvRef?: CodeEnvRef;
+    codeEnvRefs?: CodeEnvRefMap;
   };
   createdAt?: string | Date;
   updatedAt?: string | Date;

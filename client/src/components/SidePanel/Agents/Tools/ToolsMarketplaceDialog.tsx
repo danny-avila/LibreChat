@@ -11,7 +11,13 @@ import {
 } from '@librechat/client';
 import type { AgentItem, AgentItemKind, ItemFilter } from './items/types';
 import type { AgentForm } from '~/common';
-import { itemKey, mcpServerToken, matchesMcpServer, mcpServerIds } from './items/selectors';
+import {
+  itemKey,
+  mcpAllToken,
+  mcpServerToken,
+  matchesMcpServer,
+  mcpServerIds,
+} from './items/selectors';
 import { useAgentItems, useUninstallToolCredentials } from './hooks';
 import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
 import { computeToggleAction } from './items/mutations';
@@ -121,7 +127,9 @@ export default function ToolsMarketplaceDialog({
         }
         case 'mcp-add': {
           if (item.kind !== 'mcp') break;
-          const toolIds = (item.server.tools ?? []).map((t) => t.tool_id);
+          const toolIds = item.server.requestScoped
+            ? [mcpAllToken(item.id)]
+            : (item.server.tools ?? []).map((t) => t.tool_id);
           const current = (getValues('tools') ?? []) as string[];
           setValue(
             'tools',
@@ -160,13 +168,19 @@ export default function ToolsMarketplaceDialog({
         setDetailItem(item);
         return;
       }
-      /** An MCP server with no exposed tools yet can't be enabled in place — open
-       * its dialog so it can be connected/configured first. */
-      if (item.kind === 'mcp' && item.toolCount === 0) {
+      const wasSelected = selectedIds.has(itemKey(item));
+      /** An unselected, toolless MCP server normally needs its setup dialog.
+       *  A connected request-scoped server is already ready and attaches via
+       *  its runtime wildcard; a selected toolless server must remain removable. */
+      if (
+        item.kind === 'mcp' &&
+        item.toolCount === 0 &&
+        !wasSelected &&
+        !(item.server.requestScoped === true && item.server.isConnected === true)
+      ) {
         setDetailItem(item);
         return;
       }
-      const wasSelected = selectedIds.has(itemKey(item));
       if (!wasSelected && item.status === 'needs_setup') {
         setDetailItem(item);
         return;

@@ -197,6 +197,7 @@ const getMCPTools = async (req, res) => {
     const mcpServers = {};
 
     const serverToolsMap = new Map();
+    const serversWithoutTools = [];
     const cacheResults = await Promise.all(
       configuredServers.map(async (serverName) => {
         try {
@@ -218,19 +219,23 @@ const getMCPTools = async (req, res) => {
 
       let serverTools;
       let publicationGeneration;
+      let publicationRevision;
       try {
-        ({ tools: serverTools, publicationGeneration } =
-          await mcpManager.getServerToolFunctionsSnapshot(
-            userId,
-            serverName,
-            mcpConfig[serverName],
-          ));
+        ({
+          tools: serverTools,
+          publicationGeneration,
+          publicationRevision,
+        } = await mcpManager.getServerToolFunctionsSnapshot(
+          userId,
+          serverName,
+          mcpConfig[serverName],
+        ));
       } catch (error) {
         logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
         continue;
       }
       if (!serverTools) {
-        logger.debug(`[getMCPTools] No tools found for server ${serverName}`);
+        serversWithoutTools.push(serverName);
         continue;
       }
       serverToolsMap.set(serverName, serverTools);
@@ -242,8 +247,14 @@ const getMCPTools = async (req, res) => {
         serverTools,
         serverConfig: mcpConfig[serverName],
         publicationGeneration,
+        publicationRevision,
       }).catch((err) =>
         logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
+      );
+    }
+    if (serversWithoutTools.length > 0) {
+      logger.debug(
+        `[getMCPTools] No tools (${serversWithoutTools.length}): ${serversWithoutTools.join(', ')}`,
       );
     }
 

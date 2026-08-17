@@ -4,10 +4,11 @@ import { useRecoilValue } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import { CSSTransition } from 'react-transition-group';
 import type { TMessage } from 'librechat-data-provider';
-import { useScreenshot, useMessageScrolling, useLocalize } from '~/hooks';
+import { useScreenshot, useMessageScrolling, useScrollbarGutter, useLocalize } from '~/hooks';
+import { RowMountProvider, useProgressiveRowMount } from '~/hooks/Messages';
+import { MessagesViewProvider, useChatContext } from '~/Providers';
 import ScrollToBottom from '~/components/Messages/ScrollToBottom';
 import { steerOverlayHeightFamily } from '~/store/steer';
-import { MessagesViewProvider } from '~/Providers';
 import { fontSizeAtom } from '~/store/fontSize';
 import MultiMessage from './MultiMessage';
 import MessageNav from './MessageNav';
@@ -28,14 +29,17 @@ const ScrollButton = memo(function ScrollButton({
   messagesEndRef,
   scrollHandler,
   onNearBottomChange,
+  overlayHeight,
 }: {
   scrollableRef: React.RefObject<HTMLDivElement | null>;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   scrollHandler: (event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void;
   onNearBottomChange: (isNearBottom: boolean) => void;
+  overlayHeight: number;
 }) {
   const scrollButtonPreference = useRecoilValue(store.showScrollButton);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isSettled, setIsSettled] = useState(false);
   const scrollToBottomRef = useRef<HTMLDivElement>(null);
   const timeoutIdRef = useRef<NodeJS.Timeout>();
 
@@ -68,14 +72,21 @@ const ScrollButton = memo(function ScrollButton({
       in={showScrollButton && scrollButtonPreference}
       timeout={{
         enter: 300,
-        exit: 250,
+        exit: 180,
       }}
       classNames="scroll-animation"
       unmountOnExit={true}
       appear={true}
       nodeRef={scrollToBottomRef}
+      onEntered={() => setIsSettled(true)}
+      onExit={() => setIsSettled(false)}
     >
-      <ScrollToBottom ref={scrollToBottomRef} scrollHandler={scrollHandler} />
+      <ScrollToBottom
+        ref={scrollToBottomRef}
+        scrollHandler={scrollHandler}
+        overlayHeight={overlayHeight}
+        interactive={isSettled}
+      />
     </CSSTransition>
   );
 });
@@ -100,7 +111,25 @@ function MessagesViewContent({
     handleNearBottomChange,
   } = useMessageScrolling(_messagesTree);
 
+  useScrollbarGutter(scrollableRef);
+
   const { conversationId } = conversation ?? {};
+
+  const { index, latestMessageDepth } = useChatContext();
+  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const autoScroll = useRecoilValue(store.autoScroll);
+  /** Re-arm from the conversation that owns the RENDERED tree: the Recoil
+   *  conversation id lags the route during warm-cache navigation, and keying
+   *  off it would first mount the new tree unwindowed, then narrow it after
+   *  the fact — visibly unmounting rows the user is already reading. */
+  const treeConversationId = _messagesTree?.[0]?.conversationId ?? conversationId;
+  const mountWindow = useProgressiveRowMount({
+    tailDepth: latestMessageDepth,
+    anchorBottom: autoScroll || isSubmitting,
+    isSubmitting,
+    conversationId: treeConversationId,
+    scrollableRef,
+  });
 
   /** The in-flight steer overlay floats above the composer over the bottom of
    *  the thread (see `InFlightSteers`); reserve an equal band here so the
@@ -121,6 +150,10 @@ function MessagesViewContent({
               height: '100%',
               overflowY: 'auto',
               width: '100%',
+              /** The mount hook pins the anchor row itself (document-space
+               *  measurement); native scroll anchoring reacting to the same
+               *  insertions would double-correct. */
+              overflowAnchor: mountWindow != null ? 'none' : undefined,
             }}
           >
             <div
@@ -144,12 +177,14 @@ function MessagesViewContent({
               ) : (
                 <>
                   <div ref={screenshotTargetRef} data-testid="screenshot-target">
-                    <MultiMessage
-                      messagesTree={_messagesTree}
-                      messageId={conversationId ?? null}
-                      setCurrentEditId={setCurrentEditId}
-                      currentEditId={currentEditId ?? null}
-                    />
+                    <RowMountProvider mountWindow={mountWindow}>
+                      <MultiMessage
+                        messagesTree={_messagesTree}
+                        messageId={conversationId ?? null}
+                        setCurrentEditId={setCurrentEditId}
+                        currentEditId={currentEditId ?? null}
+                      />
+                    </RowMountProvider>
                   </div>
                 </>
               )}
@@ -166,6 +201,7 @@ function MessagesViewContent({
             messagesEndRef={messagesEndRef}
             scrollHandler={handleSmoothToRef}
             onNearBottomChange={handleNearBottomChange}
+            overlayHeight={steerOverlayHeight}
           />
 
           <MessageNav scrollableRef={scrollableRef} />

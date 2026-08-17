@@ -1,22 +1,25 @@
-import { useCallback, useState, useEffect, useRef, memo, startTransition } from 'react';
-import type { ReactNode } from 'react';
-import { useRecoilState } from 'recoil';
+import { useCallback, useState, useEffect, useRef, memo } from 'react';
 import { useForm } from 'react-hook-form';
-import { useMediaQuery } from '@librechat/client';
+import type { ReactNode } from 'react';
 import type { ChatFormValues } from '~/common';
+import {
+  COLLAPSED_WIDTH,
+  EXPANDED_MIN,
+  TRANSITION_MS,
+  EASING,
+  SIDEBAR_TRANSITION,
+  DRAWER_Z_INDEX,
+  MOBILE_DRAWER_ID,
+} from './constants';
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
+import { MobileHeader, MobileBottomBar, MobileShortcutTargets } from './mobile';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
+import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
+import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { useChatHelpers, useLocalize } from '~/hooks';
 import SidePanelNav from '~/components/SidePanel/Nav';
-import ExpandedPanel from './ExpandedPanel';
 import Sidebar from './Sidebar';
 import { cn } from '~/utils';
-import store from '~/store';
-
-const COLLAPSED_WIDTH = 52;
-const EXPANDED_MIN = 360;
-const TRANSITION_MS = 300;
-const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 
 function getInitialWidth(): number {
   const saved = localStorage.getItem('side:width');
@@ -41,25 +44,24 @@ function SidebarChatProvider({ children }: { children: ReactNode }) {
 
 function UnifiedSidebar() {
   const localize = useLocalize();
-  const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const [expanded, setExpanded] = useRecoilState(store.sidebarExpanded);
+  const { isSmallScreen, expanded } = useSidebarState();
+  const { setSidebarOpen } = useSidebarToggle();
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
 
   const links = useUnifiedSidebarLinks();
 
-  const handleCollapse = useCallback(() => {
-    startTransition(() => {
-      setExpanded(false);
-    });
-  }, [setExpanded]);
+  const handleCollapse = useCallback(
+    (afterSlide?: () => void) => {
+      setSidebarOpen(false, afterSlide);
+    },
+    [setSidebarOpen],
+  );
 
   const handleExpand = useCallback(() => {
-    startTransition(() => {
-      setExpanded(true);
-    });
-  }, [setExpanded]);
+    setSidebarOpen(true);
+  }, [setSidebarOpen]);
 
   const handleResizeStart = useCallback(() => {
     setIsResizing(true);
@@ -124,9 +126,22 @@ function UnifiedSidebar() {
       return;
     }
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        handleCollapse();
+      if (e.key !== 'Escape') {
+        return;
       }
+      /**
+       * Menus opened from the drawer portal out of it, so their Escape still
+       * reaches this listener. Dismissing the whole drawer would skip the level
+       * the user meant to leave.
+       *
+       * Presence alone is not the signal: not every menu unmounts when closed —
+       * the account menu stays mounted and merely `hidden` — so matching those
+       * too would suppress Escape for the drawer permanently.
+       */
+      if (document.querySelector('[role="menu"]:not([hidden])') != null) {
+        return;
+      }
+      handleCollapse();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
@@ -134,43 +149,32 @@ function UnifiedSidebar() {
 
   if (isSmallScreen) {
     return (
-      <>
-        <div
-          className={cn(
-            'fixed left-0 top-0 z-[110] flex h-full bg-surface-primary-alt',
-            expanded ? 'translate-x-0' : '-translate-x-full',
-          )}
-          style={{
-            width: 'min(85vw, 380px)',
-            transition: `transform ${TRANSITION_MS}ms ${EASING}`,
-          }}
-          inert={!expanded ? '' : undefined}
-        >
-          <SidebarChatProvider>
-            <ActivePanelProvider>
-              <ExpandedPanel links={links} onCollapse={handleCollapse} />
-              <nav className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt">
-                <SidePanelNav links={links} />
-              </nav>
-            </ActivePanelProvider>
-          </SidebarChatProvider>
-        </div>
-        <div
-          className={cn(
-            'fixed inset-0 z-[109] bg-black/50',
-            expanded ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
-          )}
-          style={{ transition: `opacity ${TRANSITION_MS}ms ${EASING}` }}
-          role="presentation"
-        >
-          <button
-            className="h-full w-full"
-            onClick={handleCollapse}
-            aria-label={localize('com_nav_close_sidebar')}
-            tabIndex={expanded ? 0 : -1}
-          />
-        </div>
-      </>
+      <div
+        id={MOBILE_DRAWER_ID}
+        className={cn(
+          /** The close swipe reads horizontal touches here (the drawer holds no
+           * horizontal scrollers), while pinch-zoom stays with the browser —
+           * this full-viewport surface must not disable zooming entirely. */
+          'fixed inset-y-0 left-0 flex w-full touch-pan-y touch-pinch-zoom flex-col bg-surface-primary-alt',
+          expanded ? 'translate-x-0' : '-translate-x-full',
+        )}
+        style={{ transition: SIDEBAR_TRANSITION, zIndex: DRAWER_Z_INDEX }}
+        inert={!expanded ? '' : undefined}
+      >
+        <SidebarChatProvider>
+          <ActivePanelProvider>
+            <MobileHeader links={links} expanded={expanded} onClose={handleCollapse} />
+            <nav
+              id="chat-history-nav"
+              className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt"
+            >
+              <SidePanelNav links={links} />
+            </nav>
+            <MobileShortcutTargets links={links} />
+            <MobileBottomBar links={links} onNewChat={handleCollapse} />
+          </ActivePanelProvider>
+        </SidebarChatProvider>
+      </div>
     );
   }
 

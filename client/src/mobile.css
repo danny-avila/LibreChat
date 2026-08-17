@@ -81,6 +81,20 @@
   scrollbar-gutter: stable;
 }
 
+/* Reserves the same band a `scrollbar-gutter: stable` container holds back, so
+   a centered column lines up with the scrolling message column. Use this, not
+   the gutter itself, wherever the column has content painted outside its box:
+   `scrollbar-gutter` only applies to scroll containers, and a scroll container
+   clips (the composer's in-flight steer overlay, a button's focus ring).
+
+   `useScrollbarGutter` measures the band the message column really reserves and
+   publishes it here. The token is only the fallback for before that first
+   measurement: it matches the `::-webkit-scrollbar` width, which Firefox
+   ignores and an overlay scrollbar drops to nothing. */
+.scrollbar-gutter-spacer {
+  padding-inline-end: var(--message-scrollbar-gutter, var(--scrollbar-size));
+}
+
 /* Base wrapper for both preview and editor */
 .sp-wrapper {
   @apply flex h-full w-full grow flex-col;

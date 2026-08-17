@@ -1,8 +1,21 @@
+const archiveAllHandler = jest.fn();
+
 module.exports = {
+  archiveAllHandler,
+
   agents: () => ({ sleep: jest.fn() }),
 
   api: (overrides = {}) => ({
-    isEnabled: jest.fn(),
+    /** Mirrors the real helper so query-flag parsing (`isArchived`, `pinned`) is exercised. */
+    isEnabled: jest.fn((value) => {
+      if (typeof value === 'boolean') {
+        return value;
+      }
+      if (typeof value === 'string') {
+        return value.toLowerCase().trim() === 'true';
+      }
+      return false;
+    }),
     resolveImportMaxFileSize: jest.fn(() => 262144000),
     createAxiosInstance: jest.fn(() => ({
       get: jest.fn(),
@@ -12,6 +25,13 @@ module.exports = {
     })),
     logAxiosError: jest.fn(),
     restoreTenantContextFromReq: jest.fn((req, res, next) => next()),
+    createArchiveAllHandler: jest.fn(({ archiveAllConvos }) => {
+      archiveAllHandler.mockImplementation(async (req, res) => {
+        const result = await archiveAllConvos(req.user.id);
+        return res.status(200).json(result);
+      });
+      return archiveAllHandler;
+    }),
     deleteConvoSharedLinksWithCleanup: jest.fn(),
     deleteAllSharedLinksWithCleanup: jest.fn(),
     deleteAgentCheckpoints: jest.fn(),
@@ -55,7 +75,9 @@ module.exports = {
     getConvosByCursor: jest.fn(),
     getConvo: jest.fn(),
     deleteConvos: jest.fn(),
+    archiveAllConvos: jest.fn(),
     saveConvo: jest.fn(),
+    setConvoPinned: jest.fn(),
     deleteAllSharedLinks: jest.fn(),
     deleteConvoSharedLink: jest.fn(),
     deleteToolCalls: jest.fn(),

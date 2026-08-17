@@ -110,6 +110,7 @@ jest.mock('../resources', () => ({
 }));
 
 import { initializeAgent } from '../initialize';
+import { isFatalAgentInitializationError } from '../errors';
 
 const realUtils = jest.requireActual<typeof import('~/utils')>('~/utils');
 
@@ -1737,6 +1738,117 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(createFile?.description).not.toContain('skills/');
     expect(result.skillAuthoringAvailable).toBe(false);
     expect(result.fileAuthoringToolNames).toEqual(new Set(['create_file', 'edit_file']));
+  });
+
+  it('routes code-file priming through the stateful profile before tools load', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'agent-user';
+    process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://stateful-code.example.com/v1/';
+
+    try {
+      const result = await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      );
+
+      expect(loadTools).toHaveBeenCalledWith(
+        expect.objectContaining({
+          codeExecutionContext: expect.objectContaining({
+            baseUrl: 'https://stateful-code.example.com/v1',
+            executionProfile: 'stateful',
+            statefulSessions: true,
+          }),
+        }),
+      );
+      expect(result.codeExecutionContext).toEqual(
+        expect.objectContaining({
+          baseUrl: 'https://stateful-code.example.com/v1',
+          executionProfile: 'stateful',
+        }),
+      );
+    } finally {
+      delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+    }
+  });
+
+  it('rejects a stateful environment excluded by deployment policy', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'conversation';
+    req.config = {
+      endpoints: {
+        [EModelEndpoint.agents]: {
+          statefulCodeSessions: { allowedEnvironments: ['user'] },
+        },
+      },
+    } as NonNullable<typeof req.config>;
+
+    let error;
+    try {
+      await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+        },
+        db,
+      );
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+      message: 'Stateful code environment is not allowed by this deployment: conversation',
+    });
+    expect(isFatalAgentInitializationError(error)).toBe(true);
+    expect(loadTools).not.toHaveBeenCalled();
+  });
+
+  it('uses an explicit stateful environment allowlist when req.config is unavailable', async () => {
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = ['execute_code'];
+    agent.stateful_code_sessions = true;
+    agent.stateful_code_environment = 'conversation';
+    req.config = undefined;
+
+    await expect(
+      initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+          codeEnvAvailable: true,
+          statefulSessionsAvailable: true,
+          allowedStatefulCodeEnvironments: ['user'],
+        },
+        db,
+      ),
+    ).rejects.toMatchObject({ code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED });
+    expect(loadTools).not.toHaveBeenCalled();
   });
 
   it('upgrades read_file to the skill-aware description when active skills are in scope', async () => {

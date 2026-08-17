@@ -189,7 +189,7 @@ function AskUserQuestionSingle({
         minRows={2}
         maxRows={12}
         placeholder={otherLabel ?? localize('com_ui_your_answer')}
-        className="w-full resize-none rounded-md border border-border-light bg-surface-primary p-2 text-sm"
+        className="w-full resize-none rounded-md border border-border-light bg-surface-primary p-2 text-sm text-text-primary"
         aria-label={localize('com_ui_your_answer')}
       />
 

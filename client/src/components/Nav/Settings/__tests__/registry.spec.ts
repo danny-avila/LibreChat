@@ -11,6 +11,7 @@ const settingsContext: SettingsContextValue = {
   balanceEnabled: false,
   hasAnyPersonalizationFeature: false,
   hasMemoryOptOut: false,
+  hasStatefulCodeSessions: false,
   hasRemoteAgents: false,
   hasUserProvidedEndpoints: false,
   hasMultiConvo: false,
@@ -85,6 +86,18 @@ describe('settings registry', () => {
           langfuseConnectionAccess: true,
         }),
       ).toBe(true);
+    });
+  });
+
+  describe('stateful workspace default visibility', () => {
+    const entry = registry.find((setting) => setting.id === 'defaultStatefulWorkspace');
+
+    it('shows the setting when stateful code sessions are available', () => {
+      expect(entry?.show?.({ ...settingsContext, hasStatefulCodeSessions: true })).toBe(true);
+    });
+
+    it('hides the setting when stateful code sessions are unavailable', () => {
+      expect(entry?.show?.({ ...settingsContext, hasStatefulCodeSessions: false })).toBe(false);
     });
   });
 });

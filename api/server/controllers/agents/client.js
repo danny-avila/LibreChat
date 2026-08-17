@@ -58,13 +58,18 @@ const {
   stampSteerPartMedia,
   createActivityLabelWiring,
   createActivityPhaseWiring,
+  createReasoningLabelHostWiring,
+  generateReasoningLabelRevision,
+  getLabelUsageSequenceSeed,
   createAssistantPhaseStampingHandlers,
   resolveActivityConfig,
   resolveActivityPhaseConfig,
+  resolveReasoningLabelConfig,
   getCustomEndpointConfig,
   mapCollectedMetadataToUsage,
   resolveActivityLabelModel,
   resolveActivityPhaseLabelModel,
+  resolveReasoningLabelModel,
   traceIdForMessage,
   settlePendingLabelFills,
   stripActivityLabelParts,
@@ -78,6 +83,7 @@ const {
   countFormattedMessageTokens,
   prependFileContext,
   prependQuotes,
+  applyAttachmentOnlyText,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   collectFreshSkillPrimeNames,
@@ -447,6 +453,35 @@ class AgentClient extends BaseClient {
         throw error;
       });
     return this.activityPhaseLabelLLMPromise;
+  }
+
+  /** Reasoning-label resolution is independently configurable and memoized per response. */
+  async resolveReasoningLabelLLM() {
+    this.reasoningLabelLLMPromise =
+      this.reasoningLabelLLMPromise ??
+      resolveReasoningLabelModel({
+        req: this.options.req,
+        agent: this.options.agent,
+        publicEndpoint: this.options.endpoint,
+        ids: {
+          messageId: this.responseMessageId,
+          conversationId: this.conversationId,
+          parentMessageId: this.parentMessageId,
+        },
+        db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+      }).catch((error) => {
+        this.reasoningLabelLLMPromise = null;
+        throw error;
+      });
+    return this.reasoningLabelLLMPromise;
+  }
+
+  /** Seeds the shared negative usage sequence from durable label-call state. */
+  seedActivityLabelUsageSequence() {
+    this.activityLabelUsageSeq = getLabelUsageSequenceSeed(
+      this.contentParts ?? [],
+      this.activityLabelUsageSeq,
+    );
   }
 
   /**
@@ -856,6 +891,61 @@ class AgentClient extends BaseClient {
     };
   }
 
+  /** SDK bridge for one revision of a live reasoning-step title. */
+  async generateReasoningLabelViaRun({
+    visibleReasoning,
+    reasoningStepId,
+    revision,
+    status,
+    previousLabel,
+    agentId,
+    charLimit,
+    prompt,
+    signal,
+  }) {
+    return generateReasoningLabelRevision({
+      payload: {
+        visibleReasoning,
+        reasoningStepId,
+        revision,
+        status,
+        ...(previousLabel != null && { previousLabel }),
+        ...(agentId != null && { agentId }),
+        charLimit,
+        ...(prompt != null && { prompt }),
+        signal,
+      },
+      run: this.run,
+      resolveModel: () => this.resolveReasoningLabelLLM(),
+      sourceRunId: this.responseMessageId,
+      sourceTraceId: traceIdForMessage(this.responseMessageId),
+      responseId: this.responseMessageId,
+      sessionId: this.conversationId,
+      userId: this.user ?? this.options.req?.user?.id,
+      parentMessageId: this.parentMessageId,
+      recordUsage: ({
+        collectedMetadata,
+        model,
+        endpointTokenConfig,
+        sameEndpoint,
+        provider,
+        promptText,
+        completionText,
+      }) =>
+        this.recordActivityLabelUsage(
+          collectedMetadata,
+          model,
+          endpointTokenConfig,
+          sameEndpoint,
+          undefined,
+          provider,
+          () => ({ promptText, completionText }),
+          'reasoning-label',
+        ),
+      onError: (error) => logger.warn('[AgentClient] Reasoning label generation failed', error),
+    });
+  }
+
   /** Bounded settle for in-flight label fills before finalization. On
    *  timeout the label scope is closed and its abort controller fired, so a
    *  straggler cannot mutate the saved response or emit into a dead job. */
@@ -870,20 +960,34 @@ class AgentClient extends BaseClient {
         scope.detach?.();
       }
     };
-    const pending = this.pendingActivityLabelFills;
-    if (!pending || pending.length === 0) {
-      detachScopeListeners();
-      return;
-    }
-    this.pendingActivityLabelFills = [];
-    await settlePendingLabelFills(pending, timeoutMs, () => {
+    const closeScopes = () => {
       /** Close EVERY generation's scope: a pre-pause wiring's straggler must
        *  stay closed even though a resume built a newer one. */
       for (const scope of this.activityLabelScopes ?? []) {
         scope.closed = true;
         scope.abort.abort();
       }
-    });
+    };
+    const deadline = Date.now() + timeoutMs;
+    while ((this.pendingActivityLabelFills?.length ?? 0) > 0) {
+      const pending = this.pendingActivityLabelFills;
+      this.pendingActivityLabelFills = [];
+      const remainingMs = Math.max(0, deadline - Date.now());
+      let timedOut = remainingMs === 0;
+      if (!timedOut) {
+        await settlePendingLabelFills(pending, remainingMs, () => {
+          timedOut = true;
+          closeScopes();
+        });
+      }
+      if (timedOut) {
+        closeScopes();
+        break;
+      }
+      /** A reasoning revision can synchronously enqueue its trailing final
+       *  revision from the settled task's `finally`; drain it under the same
+       *  deadline before any content reshaping can invalidate its index. */
+    }
     detachScopeListeners();
   }
 
@@ -974,9 +1078,7 @@ class AgentClient extends BaseClient {
      *  the client's `runId:seq` deduper would discard the post-approval
      *  label's usage as already counted. Each label generation is a single
      *  non-streaming invoke, so one existing label part == one consumed seq. */
-    this.activityLabelUsageSeq =
-      this.activityLabelUsageSeq ??
-      (this.contentParts ?? []).filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length;
+    this.seedActivityLabelUsageSequence();
     this.activityLabelAbort = labelScope.abort;
     /** An abort CLOSES the scope, not just cancels the call. The rejected
      *  generation still runs its catch and calls `fill(null)`; with the scope
@@ -1123,9 +1225,7 @@ class AgentClient extends BaseClient {
         scope.detach = () => abortSignal.removeEventListener('abort', closeOnAbort);
       }
     }
-    this.activityLabelUsageSeq =
-      this.activityLabelUsageSeq ??
-      (this.contentParts ?? []).filter((part) => part?.type === ContentTypes.ACTIVITY_LABEL).length;
+    this.seedActivityLabelUsageSequence();
 
     const wiring = createActivityPhaseWiring({
       maxPerRun: phaseConfig.maxPerRun,
@@ -1160,6 +1260,72 @@ class AgentClient extends BaseClient {
       generatePhase: (payload) => this.generateActivityPhaseViaRun(payload),
     });
     this.activityPhaseWiring = wiring;
+    return wiring;
+  }
+
+  /** Builds the independently opt-in live reasoning-label controller. */
+  buildReasoningLabelWiring(streamId, abortSignal, seedFromContent = false) {
+    if (!streamId || typeof Run?.prototype?.generateReasoningLabel !== 'function') {
+      return undefined;
+    }
+    const agentEndpoint = this.options.agent?.endpoint ?? '';
+    const appConfig = this.options.req?.config;
+    let customEndpointConfig;
+    try {
+      customEndpointConfig = getCustomEndpointConfig({ endpoint: agentEndpoint, appConfig });
+    } catch {
+      customEndpointConfig = undefined;
+    }
+    const config = resolveReasoningLabelConfig(
+      appConfig,
+      agentEndpoint,
+      customEndpointConfig,
+      this.options.endpoint,
+    );
+    if (!config.enabled) {
+      return undefined;
+    }
+
+    const shouldMarkResumable = this.activityLabelsMarkedPromise == null;
+    const { wiring, scope, markedPromise } = createReasoningLabelHostWiring({
+      config,
+      seedFromContent,
+      abortSignal,
+      ...(shouldMarkResumable && {
+        markResumable: () => GenerationJobManager.markActivityLabels(streamId, this.jobCreatedAt),
+        onMarkFailure: () =>
+          logger.warn(
+            `[AgentClient] Could not flag reasoning labels for ${streamId}; an update resolving during a resume gap may not be reconciled.`,
+          ),
+      }),
+      getContentParts: () => this.contentParts,
+      getStepIndex: (stepId) => this.stepMap?.get(stepId)?.index,
+      emitEvent: (event, data) =>
+        GenerationJobManager.emitChunk(
+          streamId,
+          {
+            event,
+            data: {
+              ...data,
+              responseMessageId: this.responseMessageId,
+              conversationId: this.conversationId,
+            },
+          },
+          { durable: true, expectedCreatedAt: this.jobCreatedAt },
+        ),
+      trackPendingFill: (fillDone) => {
+        this.pendingActivityLabelFills = this.pendingActivityLabelFills ?? [];
+        this.pendingActivityLabelFills.push(fillDone);
+      },
+      generateLabel: (payload) => this.generateReasoningLabelViaRun(payload),
+    });
+    if (markedPromise != null) {
+      this.activityLabelsMarkedPromise = markedPromise;
+    }
+    this.activityLabelScopes = this.activityLabelScopes ?? [];
+    this.activityLabelScopes.push(scope);
+    this.seedActivityLabelUsageSequence();
+    this.reasoningLabelWiring = wiring;
     return wiring;
   }
 
@@ -1368,6 +1534,19 @@ class AgentClient extends BaseClient {
         prependQuotes(memoryFormattedMessage, message.quotes);
       }
 
+      /**
+       * An attachment-only turn whose files reach the model out-of-band (file
+       * search, code environment) leaves nothing in the content itself, and
+       * providers such as Anthropic reject an empty user message outright.
+       * Applied after the context and quote merges so a turn that already
+       * gained inline content keeps it. The current turn is not carrying
+       * `files` yet (BaseClient assigns them after this returns), so the
+       * resolved attachments come from `message_file_map`.
+       */
+      const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
+      applyAttachmentOnlyText(formattedMessage, turnFiles);
+      applyAttachmentOnlyText(memoryFormattedMessage, turnFiles);
+
       memoryPayload.push(memoryFormattedMessage);
 
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
@@ -1401,7 +1580,7 @@ class AgentClient extends BaseClient {
             this.contextHandlers?.processFile(file);
             continue;
           }
-          if (file.metadata?.codeEnvRef) {
+          if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
             continue;
           }
         }
@@ -2248,17 +2427,25 @@ class AgentClient extends BaseClient {
    */
   /**
    * @deprecated Agent Chain — strip hidden intermediate sequential-agent content
-   * before persistence, keeping only the last part + tool_call parts. Mirrors the
-   * chat path so a HITL resume doesn't persist/emit intermediate outputs the
-   * agent's `hide_sequential_outputs` setting is meant to hide.
+   * before persistence, keeping only the last non-label part + tool_call parts.
+   * Parent activity markers can be appended after the final answer, so physical
+   * array order alone cannot identify the response output that must survive.
    */
   applyHideSequentialOutputsFilter() {
     if (!this.options.agent?.hide_sequential_outputs || !Array.isArray(this.contentParts)) {
       return;
     }
+    let lastOutputIndex = -1;
+    for (let index = this.contentParts.length - 1; index >= 0; index -= 1) {
+      const part = this.contentParts[index];
+      if (part != null && part.type !== ContentTypes.ACTIVITY_LABEL) {
+        lastOutputIndex = index;
+        break;
+      }
+    }
     this.contentParts = this.contentParts.filter(
       (part, index) =>
-        index >= this.contentParts.length - 1 ||
+        index === lastOutputIndex ||
         part.type === ContentTypes.TOOL_CALL ||
         // Steer parts are user speech, not intermediate agent output — dropping
         // one would erase the user's words from the persisted turn.
@@ -2292,26 +2479,39 @@ class AgentClient extends BaseClient {
      *  SDK event lands after the phase closes; scanning retained identities
      *  in an unchanged array would skip that hole and move the bound past the
      *  delayed tool before it arrives. */
+    const previousDefinedIndexes = Object.keys(previousParts)
+      .map(Number)
+      .filter((index) => previousParts[index] != null);
+    const currentDefinedIndexes = Object.keys(this.contentParts)
+      .map(Number)
+      .filter((index) => this.contentParts[index] != null);
     if (previousParts.length === this.contentParts.length) {
-      let unchanged = true;
-      for (let index = 0; index < previousParts.length; index += 1) {
-        if (previousParts[index] !== this.contentParts[index]) {
-          unchanged = false;
-          break;
-        }
-      }
+      const unchanged =
+        previousDefinedIndexes.length === currentDefinedIndexes.length &&
+        previousDefinedIndexes.every(
+          (index, position) =>
+            index === currentDefinedIndexes[position] &&
+            previousParts[index] === this.contentParts[index],
+        );
       if (unchanged) {
         return;
       }
     }
     const retainedIndexes = new Map();
-    for (let index = 0; index < this.contentParts.length; index += 1) {
+    for (const index of currentDefinedIndexes) {
       const part = this.contentParts[index];
       if (part != null) {
         retainedIndexes.set(part, index);
       }
     }
-    for (let markerIndex = 0; markerIndex < this.contentParts.length; markerIndex += 1) {
+    const previousIndexesByPart = new Map();
+    for (const index of previousDefinedIndexes) {
+      const part = previousParts[index];
+      if (part != null) {
+        previousIndexesByPart.set(part, index);
+      }
+    }
+    for (const markerIndex of currentDefinedIndexes) {
       const marker = this.contentParts[markerIndex];
       if (
         marker?.type !== ContentTypes.ACTIVITY_LABEL ||
@@ -2320,24 +2520,63 @@ class AgentClient extends BaseClient {
       ) {
         continue;
       }
-      const previousMarkerIndex = previousParts.indexOf(marker);
-      if (previousMarkerIndex < 0) {
+      const previousMarkerIndex = previousIndexesByPart.get(marker);
+      if (previousMarkerIndex == null) {
         continue;
       }
       const previousStartIndex = Math.min(
         previousMarkerIndex,
         Math.max(0, marker.activity_start_index),
       );
+      const hasExplicitEnd = typeof marker.activity_end_index === 'number';
+      const previousEndIndex = hasExplicitEnd
+        ? Math.max(previousStartIndex, Math.min(previousMarkerIndex, marker.activity_end_index))
+        : previousMarkerIndex;
       let nextStartIndex = markerIndex;
-      for (let index = previousStartIndex; index < previousMarkerIndex; index += 1) {
+      let nextEndIndex = markerIndex;
+      let foundRetainedPart = false;
+      for (const index of previousDefinedIndexes) {
+        if (index < previousStartIndex || index >= previousEndIndex) {
+          continue;
+        }
         const retainedIndex = retainedIndexes.get(previousParts[index]);
         if (retainedIndex != null && retainedIndex < markerIndex) {
-          nextStartIndex = retainedIndex;
-          break;
+          if (!foundRetainedPart) {
+            nextStartIndex = retainedIndex;
+            nextEndIndex = retainedIndex + 1;
+            foundRetainedPart = true;
+          } else {
+            nextStartIndex = Math.min(nextStartIndex, retainedIndex);
+            nextEndIndex = Math.min(markerIndex, Math.max(nextEndIndex, retainedIndex + 1));
+          }
+        }
+      }
+      if (!foundRetainedPart && hasExplicitEnd) {
+        for (const index of previousDefinedIndexes) {
+          if (index < previousEndIndex || index >= previousMarkerIndex) {
+            continue;
+          }
+          const retainedIndex = retainedIndexes.get(previousParts[index]);
+          if (retainedIndex != null && retainedIndex < markerIndex) {
+            nextStartIndex = retainedIndex;
+            nextEndIndex = retainedIndex;
+            break;
+          }
         }
       }
       marker.activity_start_index = nextStartIndex;
+      if (hasExplicitEnd) {
+        marker.activity_end_index = Math.max(nextStartIndex, nextEndIndex);
+      }
     }
+  }
+
+  /** Finalize only a completed root run; HITL interruptions retain their snapshot for resume. */
+  completeActivityPhase(run, activityPhase) {
+    if (typeof run?.getInterrupt === 'function' && run.getInterrupt()?.payload) {
+      return;
+    }
+    activityPhase?.complete?.();
   }
 
   /**
@@ -2511,7 +2750,7 @@ class AgentClient extends BaseClient {
         abortController = new AbortController();
       }
 
-      /** Fire-and-forget: boot the per-conversation stateful sandbox in
+      /** Fire-and-forget: boot each selected stateful environment in
        *  parallel with generation so the first execute_code/bash call lands
        *  on a warm VM. No-op unless a reachable agent resolved
        *  `statefulCodeSessions`. */
@@ -2557,13 +2796,7 @@ class AgentClient extends BaseClient {
         ? await this.options.primeInvokedSkills(payload)
         : undefined;
 
-      /**
-       * Seed `Graph.sessions` with code-env files primed across every
-       * reachable agent (primary, handoff/addedConvo, and nested
-       * subagents) plus skill-priming output. The merge logic and its
-       * run-wide semantics live in `buildInitialToolSessions`; see that
-       * helper's doc for why this is intentionally NOT per-agent.
-       */
+      /** Seed each reachable agent's trusted code-session partition. */
       const initialSessions = buildInitialToolSessions({
         skillSessions: skillPrimeResult?.initialSessions,
         agents: [this.options.agent, ...(this.agentConfigs ? this.agentConfigs.values() : [])],
@@ -2807,10 +3040,14 @@ class AgentClient extends BaseClient {
 
         const activityLabel = this.buildActivityLabelWiring(streamId, abortController.signal);
         const activityPhase = this.buildActivityPhaseWiring(streamId, abortController.signal);
+        const reasoningLabel = this.buildReasoningLabelWiring(streamId, abortController.signal);
         const offsetHandlers = createSteerIndexOffsetHandlers(
           this.options.eventHandlers,
           this.steerOffsetState,
         );
+        const activityHandlers =
+          activityPhase?.handlers(offsetHandlers) ??
+          (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
         const createRunPromise = createRun({
           agents,
           messages,
@@ -2834,9 +3071,7 @@ class AgentClient extends BaseClient {
           signal: abortController.signal,
           /** The phase wrapper stays outermost: it claims and offsets the
            *  parent slot before the text step reaches the normal handlers. */
-          customHandlers:
-            activityPhase?.handlers(offsetHandlers) ??
-            (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers),
+          customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
           tenantId: this.options.req?.user?.tenantId,
@@ -2899,11 +3134,16 @@ class AgentClient extends BaseClient {
         if (this.activityLabelsMarkedPromise != null) {
           await this.activityLabelsMarkedPromise;
         }
-        await run.processStream({ messages }, config, {
-          callbacks: {
-            [Callback.TOOL_ERROR]: logToolError,
-          },
-        });
+        try {
+          await run.processStream({ messages }, config, {
+            callbacks: {
+              [Callback.TOOL_ERROR]: logToolError,
+            },
+          });
+        } finally {
+          reasoningLabel?.complete();
+        }
+        this.completeActivityPhase(run, activityPhase);
 
         // HITL: if the run paused for tool approval, mark the job
         // `requires_action` + emit the prompt and leave the turn unfinalized
@@ -3183,6 +3423,7 @@ class AgentClient extends BaseClient {
         abortController.signal,
         activityPhaseSnapshot,
       );
+      const reasoningLabel = this.buildReasoningLabelWiring(streamId, abortController.signal, true);
       const offsetHandlers = createSteerIndexOffsetHandlers(
         createContentIndexOffsetHandlers(
           this.options.eventHandlers,
@@ -3190,6 +3431,9 @@ class AgentClient extends BaseClient {
         ),
         this.steerOffsetState,
       );
+      const activityHandlers =
+        activityPhase?.handlers(offsetHandlers) ??
+        (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
       run = await createRun({
         agents,
         // State (messages, tool calls) is rehydrated from the checkpoint by
@@ -3222,9 +3466,7 @@ class AgentClient extends BaseClient {
         // type mismatch, is silently dropped against) the pre-pause content. The
         // steer wrapper composes on top: resumed indices shift by seed + any
         // steer parts spliced in while the resumed segment streams.
-        customHandlers:
-          activityPhase?.handlers(offsetHandlers) ??
-          (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers),
+        customHandlers: reasoningLabel?.handlers(activityHandlers) ?? activityHandlers,
         requestBody: config.configurable.requestBody,
         user: createSafeUser(this.options.req?.user),
         tenantId: this.options.req?.user?.tenantId,
@@ -3272,12 +3514,17 @@ class AgentClient extends BaseClient {
       if (this.activityLabelsMarkedPromise != null) {
         await this.activityLabelsMarkedPromise;
       }
-      await run.resume(
-        resumeValue,
-        config,
-        { callbacks: { [Callback.TOOL_ERROR]: logToolError } },
-        commandOptions,
-      );
+      try {
+        await run.resume(
+          resumeValue,
+          config,
+          { callbacks: { [Callback.TOOL_ERROR]: logToolError } },
+          commandOptions,
+        );
+      } finally {
+        reasoningLabel?.complete();
+      }
+      this.completeActivityPhase(run, activityPhase);
 
       config.signal = null;
 
@@ -3636,6 +3883,7 @@ class AgentClient extends BaseClient {
    * @param {string} [params.model]
    * @param {OpenAIUsageMetadata} [params.usage]
    * @param {AppConfig['balance']} [params.balance]
+   * @param {AppConfig['transactions']} [params.transactions]
    * @param {string} [params.context='message']
    * @returns {Promise<void>}
    */
@@ -3643,6 +3891,7 @@ class AgentClient extends BaseClient {
     model,
     usage,
     balance,
+    transactions,
     promptTokens,
     completionTokens,
     context = 'message',
@@ -3653,6 +3902,7 @@ class AgentClient extends BaseClient {
           model,
           context,
           balance,
+          transactions,
           messageId: this.responseMessageId,
           conversationId: this.conversationId,
           user: this.user ?? this.options.req.user?.id,
@@ -3671,6 +3921,7 @@ class AgentClient extends BaseClient {
           {
             model,
             balance,
+            transactions,
             context: 'reasoning',
             messageId: this.responseMessageId,
             conversationId: this.conversationId,

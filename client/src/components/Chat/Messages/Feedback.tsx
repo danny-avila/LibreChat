@@ -21,6 +21,7 @@ import {
   ThumbUpIcon,
   ThumbDownIcon,
 } from '@librechat/client';
+import { hoverButtonClasses } from './styles';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -218,17 +219,8 @@ function FeedbackButtons({
   );
 }
 
-function buttonClasses(isActive: boolean, isLast: boolean) {
-  return cn(
-    'hover-button size-auto rounded-lg p-1.5 text-text-secondary-alt',
-    'hover:text-text-primary hover:bg-surface-hover',
-    'group-hover:visible group-focus-within:visible group-[.final-completion]:visible',
-    !isLast &&
-      'group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:hover)]:opacity-0',
-    'focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:outline-none',
-    isActive && 'active text-text-primary bg-surface-hover',
-  );
-}
+const buttonClasses = (isActive: boolean, isLast: boolean) =>
+  hoverButtonClasses({ isActive, isLast });
 
 export default function Feedback({
   isLast = false,

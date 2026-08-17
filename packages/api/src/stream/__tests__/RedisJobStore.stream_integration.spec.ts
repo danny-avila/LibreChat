@@ -3740,6 +3740,172 @@ describe('RedisJobStore Integration Tests', () => {
 
       await store.destroy();
     });
+
+    test('getContentParts patches the latest reasoning label onto its THINK part', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `reasoning-label-recon-${Date.now()}`;
+      await store.createJob(streamId, 'reasoning-label-user', streamId);
+      const chunks = [
+        {
+          event: 'on_run_step',
+          data: {
+            id: 'reasoning-step-1',
+            index: 0,
+            stepDetails: {
+              type: 'message_creation',
+              message_creation: { content_type: 'think' },
+            },
+          },
+        },
+        {
+          event: 'on_reasoning_delta',
+          data: {
+            id: 'reasoning-step-1',
+            delta: { content: { type: 'think', think: 'Inspecting the resume path.' } },
+          },
+        },
+        {
+          event: 'on_reasoning_label_attempt',
+          data: {
+            index: 0,
+            stepId: 'reasoning-step-1',
+            attempts: 1,
+            submittedChars: 27,
+          },
+        },
+        {
+          event: 'on_reasoning_label',
+          data: {
+            index: 0,
+            stepId: 'reasoning-step-1',
+            revision: 1,
+            label: 'Inspecting the resume path',
+            status: 'streaming',
+          },
+        },
+        {
+          event: 'on_reasoning_label_attempt',
+          data: {
+            index: 0,
+            stepId: 'reasoning-step-1',
+            attempts: 2,
+            submittedChars: 27,
+          },
+        },
+        {
+          event: 'on_reasoning_label',
+          data: {
+            index: 0,
+            stepId: 'reasoning-step-1',
+            revision: 2,
+            label: 'Resolved the resume race',
+            status: 'complete',
+          },
+        },
+        {
+          event: 'on_reasoning_delta',
+          data: {
+            id: 'reasoning-step-1',
+            delta: { content: { type: 'think', think: ' More detail followed.' } },
+          },
+        },
+      ];
+      for (const chunk of chunks) {
+        await store.appendChunk(streamId, chunk);
+      }
+
+      const result = await store.getContentParts(streamId);
+      expect(result?.content).toHaveLength(1);
+      expect(result?.content[0]).toMatchObject({
+        type: 'think',
+        think: 'Inspecting the resume path. More detail followed.',
+        reasoning_label: 'Resolved the resume race',
+        reasoning_label_step_id: 'reasoning-step-1',
+        reasoning_label_attempts: 2,
+        reasoning_label_submitted_chars: 27,
+        reasoning_label_revision: 2,
+        reasoning_label_status: 'complete',
+      });
+
+      await store.destroy();
+    });
+
+    test('getContentParts preserves the attempt cap when a sparse THINK slot is reused', async () => {
+      if (!ioredisClient) {
+        return;
+      }
+
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const store = new RedisJobStore(ioredisClient);
+      await store.initialize();
+
+      const streamId = `reasoning-label-sparse-${Date.now()}`;
+      await store.createJob(streamId, 'reasoning-label-user', streamId);
+      await store.appendChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'reasoning-step-sparse',
+          index: 2,
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { content_type: 'think' },
+          },
+        },
+      });
+      await store.appendChunk(streamId, {
+        event: 'on_reasoning_delta',
+        data: {
+          id: 'reasoning-step-sparse',
+          delta: { content: { type: 'think', think: 'Inspecting a compacted stream.' } },
+        },
+      });
+      await store.appendChunk(streamId, {
+        event: 'on_reasoning_label_attempt',
+        data: {
+          index: 2,
+          stepId: 'reasoning-step-sparse',
+          attempts: 2,
+          submittedChars: 31,
+        },
+      });
+      await store.appendChunk(streamId, {
+        event: 'on_run_step',
+        data: {
+          id: 'reasoning-step-after-pause',
+          index: 2,
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { content_type: 'think' },
+          },
+        },
+      });
+      await store.appendChunk(streamId, {
+        event: 'on_reasoning_delta',
+        data: {
+          id: 'reasoning-step-after-pause',
+          delta: { content: { type: 'think', think: 'Continuing after the pause.' } },
+        },
+      });
+
+      const result = await store.getContentParts(streamId);
+      expect(result?.content).toHaveLength(1);
+      expect(result?.content[0]).toMatchObject({
+        type: 'think',
+        think: 'Inspecting a compacted stream.Continuing after the pause.',
+        reasoning_label_step_id: 'reasoning-step-after-pause',
+        reasoning_label_attempts: 2,
+      });
+      expect(result?.content[0]).not.toHaveProperty('reasoning_label_submitted_chars');
+
+      await store.destroy();
+    });
   });
 
   describe('Idempotency claims (#14339 duplicate-billing guard)', () => {

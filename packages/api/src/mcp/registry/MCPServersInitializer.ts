@@ -2,8 +2,8 @@ import { createHash } from 'crypto';
 import { logger } from '@librechat/data-schemas';
 import type * as t from '~/mcp/types';
 import { registryStatusCache as statusCache } from './cache/RegistryStatusCache';
+import { resolveServerInstructions, sanitizeUrlForLogging } from '~/mcp/utils';
 import { MCPServersRegistry } from './MCPServersRegistry';
-import { sanitizeUrlForLogging } from '~/mcp/utils';
 import { withTimeout } from '~/utils';
 import { isLeader } from '~/cluster';
 
@@ -20,9 +20,11 @@ const DEFAULT_FOLLOWER_RETRY_MS = 3000;
  * Without it, a rolling restart on a Redis-backed cluster leaves the persisted
  * `INITIALIZED_CONFIG_HASH` matching the unchanged config, so replacement
  * followers short-circuit on the stale status and never re-tag entries written
- * by the previous version. Bumped to 2 for plugin-provenance preservation.
+ * by the previous version. Bumped to 3 so cached entries whose `serverInstructions` still holds
+ * inspector-fetched text are rewritten with the declaration preserved and the text moved to
+ * `resolvedInstructions`.
  */
-const REGISTRY_STORAGE_SCHEMA_VERSION = 2;
+const REGISTRY_STORAGE_SCHEMA_VERSION = 3;
 
 const parseDurationMs = (
   value: string | undefined,
@@ -175,20 +177,16 @@ export class MCPServersInitializer {
     logger.info(`${prefix} Tools: ${config.tools}`);
     logger.info(
       `${prefix} Server Instructions: ${MCPServersInitializer.formatInstructionsForLogging(
-        config.serverInstructions,
+        resolveServerInstructions(config),
       )}`,
     );
     logger.info(`${prefix} Initialized in: ${config.initDuration ?? 'N/A'}ms`);
     logger.info(`${prefix} -------------------------------------------------┘`);
   }
 
-  private static formatInstructionsForLogging(instructions?: string | boolean): string {
+  private static formatInstructionsForLogging(instructions?: string): string {
     if (!instructions) {
       return 'N/A';
-    }
-
-    if (typeof instructions !== 'string') {
-      return 'configured';
     }
 
     return `configured (${instructions.length} chars)`;

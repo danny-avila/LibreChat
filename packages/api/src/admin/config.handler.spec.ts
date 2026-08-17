@@ -413,6 +413,49 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(400);
     });
 
+    it('rejects process-backed MCP servers in database overrides', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'user', principalId: 'u1' },
+        body: {
+          overrides: {
+            mcpServers: {
+              injected: { type: 'stdio', command: '/bin/sh', args: ['-c', 'id'] },
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Process-backed MCP servers can only be configured in librechat.yaml',
+      });
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('rejects process-backed MCP servers supplied through the runtime config alias', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'user', principalId: 'u1' },
+        body: {
+          overrides: {
+            mcpConfig: {
+              injected: { command: '/bin/sh', args: ['-c', 'id'] },
+            },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
     it('strips permission fields from interface overrides but keeps UI fields', async () => {
       const { handlers, deps } = createHandlers({
         upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
@@ -978,6 +1021,41 @@ describe('createAdminConfigHandlers', () => {
       const patchedFields = deps.patchConfigFields.mock.calls[0][3];
       expect(patchedFields['skillSync.github.enabled']).toBe(true);
       expect(patchedFields['interface.modelSelect']).toBe(false);
+    });
+
+    it('rejects process-backed MCP server field patches', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'user', principalId: 'u1' },
+        body: {
+          entries: [{ fieldPath: 'mcpServers.injected.command', value: '/bin/sh' }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Process-backed MCP servers can only be configured in librechat.yaml',
+      });
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('rejects process-backed MCP field patches through the runtime config alias', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'user', principalId: 'u1' },
+        body: {
+          entries: [{ fieldPath: 'mcpConfig.injected.command', value: '/bin/sh' }],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
     it('rejects array-valued Langfuse secret ancestors', async () => {
@@ -1728,7 +1806,7 @@ describe('createAdminConfigHandlers', () => {
     });
   });
 
-  describe('scope-lifecycle: __base__ short-circuit', () => {
+  describe('invariant: __base__ requires broad manage:configs', () => {
     it('upsert against __base__ returns 403 for assign-only caller', async () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
@@ -1793,6 +1871,70 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(201);
       expect(deps.upsertConfig).toHaveBeenCalled();
+    });
+
+    it('patch against __base__ returns 403 for a section-scoped manager', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { entries: [{ fieldPath: 'memory.context', value: 'updated' }] },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('tombstone against __base__ returns 403 for a section-scoped manager', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { fieldPath: 'memory.context' },
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+    });
+
+    it('field delete against __base__ returns 403 for a section-scoped manager', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        query: { fieldPath: 'memory.context' },
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(req, res);
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.unsetConfigField).not.toHaveBeenCalled();
+    });
+
+    it('patch against __base__ succeeds for a broad-manage caller', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn().mockResolvedValue(true),
+      });
+      const req = mockReq({
+        params: { principalType: 'role', principalId: '__base__' },
+        body: { entries: [{ fieldPath: 'memory.context', value: 'updated' }] },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.patchConfigFields).toHaveBeenCalled();
     });
   });
 

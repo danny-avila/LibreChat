@@ -1,7 +1,6 @@
 import { useRecoilCallback } from 'recoil';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { dataService, QueryKeys } from 'librechat-data-provider';
-import type { UseMutationResult } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
   TChatProject,
   TConversation,
@@ -11,6 +10,7 @@ import type {
   TAssignConversationToProjectRequest,
   TAssignConversationToProjectResponse,
 } from 'librechat-data-provider';
+import type { UseMutationResult } from '@tanstack/react-query';
 import store from '~/store';
 
 export const useCreateProjectMutation = (): UseMutationResult<
@@ -74,6 +74,8 @@ export const useDeleteProjectMutation = (): UseMutationResult<
       queryClient.removeQueries([QueryKeys.project, projectId], { type: 'inactive' });
       queryClient.invalidateQueries([QueryKeys.projects]);
       queryClient.invalidateQueries([QueryKeys.allConversations]);
+      /** Deleting a project unsets chatProjectId on its chats, pinned ones included. */
+      queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
     },
   });
 };
@@ -116,6 +118,8 @@ export const useAssignConversationToProjectMutation = (): UseMutationResult<
         });
         queryClient.invalidateQueries([QueryKeys.projects]);
         queryClient.invalidateQueries([QueryKeys.allConversations]);
+        /** The pinned row carries `chatProjectId` for its options menu. */
+        queryClient.invalidateQueries([QueryKeys.pinnedConversations]);
         queryClient.invalidateQueries([QueryKeys.projectConversations]);
       },
     },

@@ -18,6 +18,7 @@ import {
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
   requiresUserScopedConnection,
+  resolveServerInstructions,
 } from './utils';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
@@ -421,6 +422,7 @@ export class MCPManager extends UserConnectionManager {
   ): Promise<{
     tools: t.LCAvailableTools | null;
     publicationGeneration?: string;
+    publicationRevision?: string;
   }> {
     try {
       const registry = MCPServersRegistry.getInstance();
@@ -433,9 +435,7 @@ export class MCPManager extends UserConnectionManager {
         ? await this.appConnections?.get(serverName)
         : null;
       if (existingAppConnection != null) {
-        return {
-          tools: await MCPServerInspector.getToolFunctions(serverName, existingAppConnection),
-        };
+        return MCPServerInspector.getToolCatalog(serverName, existingAppConnection);
       }
 
       let awaitedRecovery: Promise<void> | undefined;
@@ -481,7 +481,7 @@ export class MCPManager extends UserConnectionManager {
         }
 
         try {
-          const tools = await MCPServerInspector.getToolFunctions(serverName, connection);
+          const { tools } = await MCPServerInspector.getToolCatalog(serverName, connection);
           const generationAfterFetch = await getMCPToolsChangedGeneration({ userId, serverName });
           if (
             publicationGeneration != null &&
@@ -528,8 +528,9 @@ export class MCPManager extends UserConnectionManager {
       configServers,
     );
     for (const [serverName, config] of Object.entries(configs)) {
-      if (config.serverInstructions != null) {
-        instructions[serverName] = config.serverInstructions as string;
+      const resolved = resolveServerInstructions(config);
+      if (resolved != null) {
+        instructions[serverName] = resolved;
       }
     }
     if (!serverNames) return instructions;

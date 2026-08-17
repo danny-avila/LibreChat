@@ -260,13 +260,13 @@ const renderOfficeHtml = async (
  * rendering. Returns `null` for binary, oversized, or unsupported files; the
  * caller should fall back to the standard download UI in that case.
  *
- * Office types (docx, xlsx/xls/ods, csv, pptx) are rendered as sanitized
+ * Office types (docx, xlsx/xls/ods, csv, pptx/potx) are rendered as sanitized
  * HTML by the producers in `~/files/documents/html`. The frontend feeds the
  * HTML into the Sandpack `static` template via `index.html`. CSV is special-
  * cased here — its category is `utf8-text` (raw CSV is text), but we want
  * the styled-table preview when the file extension says CSV.
  *
- * - office (docx/xlsx/xls/ods/csv/pptx): sanitized HTML preview
+ * - office (docx/xlsx/xls/ods/csv/pptx/potx): sanitized HTML preview
  * - utf8-text: decodes the buffer (with a binary safety net)
  * - document: dispatches to the existing PDF/ODT parser
  * - other: returns null (binary file, no inline preview)
@@ -318,8 +318,8 @@ export async function extractCodeArtifactText(
        * the markdown viewer with proper escaping). Plain text is safe. */
       return await extractDocument(buffer, name, mimeType);
     }
-    /* category === 'pptx' that didn't go through the office HTML path
-     * (shouldn't happen — pptx ext is in OFFICE_HTML_EXTENSIONS — but
+    /* category === 'presentation' that didn't go through the office HTML path
+     * (shouldn't happen — presentation extensions use the office HTML path — but
      * defended in depth). */
     return null;
   } catch (error) {

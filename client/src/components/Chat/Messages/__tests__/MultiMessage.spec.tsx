@@ -193,3 +193,46 @@ describe('MultiMessage sibling selection', () => {
     expect(displayed()).toBe('a1');
   });
 });
+
+describe('MultiMessage row mount window', () => {
+  const { RowMountProvider } =
+    jest.requireActual<typeof import('~/hooks/Messages')>('~/hooks/Messages');
+
+  const chain = (): TMessage => {
+    const leaf = { ...msg('m2'), parentMessageId: 'm1', depth: 2 } as TMessage;
+    const mid = { ...msg('m1'), parentMessageId: 'm0', depth: 1, children: [leaf] } as TMessage;
+    return { ...msg('m0'), depth: 0, children: [mid] } as TMessage;
+  };
+
+  const windowedTree = (mountWindow: { start: number; end: number } | null) => (
+    <RecoilRoot>
+      <RowMountProvider mountWindow={mountWindow}>
+        <MultiMessage
+          messageId="parent-1"
+          messagesTree={[chain()]}
+          currentEditId={null}
+          setCurrentEditId={jest.fn()}
+        />
+      </RowMountProvider>
+    </RecoilRoot>
+  );
+
+  it('renders every row without a window', () => {
+    render(windowedTree(null));
+    expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m0', 'm1', 'm2']);
+  });
+
+  it('gates rows outside the window while the recursion continues below them', () => {
+    render(windowedTree({ start: 2, end: 2 }));
+    expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m2']);
+  });
+
+  it('mounts newly windowed rows above without disturbing deeper rows', () => {
+    const view = render(windowedTree({ start: 2, end: 2 }));
+    view.rerender(windowedTree({ start: 1, end: 2 }));
+    expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m1', 'm2']);
+
+    view.rerender(windowedTree(null));
+    expect(screen.getAllByTestId('row').map((r) => r.textContent)).toEqual(['m0', 'm1', 'm2']);
+  });
+});

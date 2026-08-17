@@ -1502,6 +1502,146 @@ describe('useStepHandler', () => {
       );
     });
 
+    it('preserves a live reasoning label across later deltas', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+        result.current.syncStepMessage({
+          ...responseMessage,
+          content: [
+            {
+              type: ContentTypes.THINK,
+              think: 'First ',
+              reasoning_label: 'Tracing the streaming path',
+              reasoning_label_step_id: 'step-1',
+              reasoning_label_attempts: 1,
+              reasoning_label_submitted_chars: 6,
+              reasoning_label_revision: 1,
+              reasoning_label_status: 'streaming',
+            },
+          ],
+        });
+        result.current.stepHandler(
+          { event: StepEvents.ON_REASONING_DELTA, data: createReasoningDelta('step-1', 'thought') },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const responseMsg = lastCall[lastCall.length - 1];
+      expect(responseMsg.content).toContainEqual(
+        expect.objectContaining({
+          type: ContentTypes.THINK,
+          think: 'First thought',
+          reasoning_label: 'Tracing the streaming path',
+          reasoning_label_attempts: 1,
+          reasoning_label_submitted_chars: 6,
+          reasoning_label_revision: 1,
+          reasoning_label_status: 'streaming',
+        }),
+      );
+    });
+
+    it('clears a retained label when a new reasoning step folds into the same part', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+        result.current.syncStepMessage({
+          ...responseMessage,
+          content: [
+            {
+              type: ContentTypes.THINK,
+              think: 'Retained ',
+              reasoning_label: 'Inspecting the old path',
+              reasoning_label_step_id: 'old-step',
+              reasoning_label_attempts: 3,
+              reasoning_label_submitted_chars: 9,
+              reasoning_label_revision: 3,
+              reasoning_label_status: 'complete',
+            },
+          ],
+        });
+        result.current.stepHandler(
+          { event: StepEvents.ON_REASONING_DELTA, data: createReasoningDelta('step-1', 'thought') },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const part = lastCall.at(-1)?.content?.[0];
+      expect(part).toMatchObject({
+        type: ContentTypes.THINK,
+        think: 'Retained thought',
+        reasoning_label_step_id: 'step-1',
+      });
+      expect(part).not.toHaveProperty('reasoning_label');
+      expect(part).not.toHaveProperty('reasoning_label_attempts');
+      expect(part).not.toHaveProperty('reasoning_label_submitted_chars');
+      expect(part).not.toHaveProperty('reasoning_label_revision');
+    });
+
+    it('clears a retained label when THINK arrives through a message delta', () => {
+      const responseMessage = createResponseMessage();
+      mockGetMessages.mockReturnValue([responseMessage]);
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      const runStep = createRunStep();
+      const submission = createSubmission();
+
+      act(() => {
+        result.current.stepHandler({ event: StepEvents.ON_RUN_STEP, data: runStep }, submission);
+        result.current.syncStepMessage({
+          ...responseMessage,
+          content: [
+            {
+              type: ContentTypes.THINK,
+              think: 'Retained ',
+              reasoning_label: 'Inspecting the old path',
+              reasoning_label_step_id: 'old-step',
+              reasoning_label_attempts: 3,
+              reasoning_label_submitted_chars: 9,
+              reasoning_label_revision: 3,
+              reasoning_label_status: 'complete',
+            },
+          ],
+        });
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_MESSAGE_DELTA,
+            data: {
+              id: 'step-1',
+              delta: { content: [{ type: ContentTypes.THINK, think: 'thought' }] },
+            },
+          },
+          submission,
+        );
+      });
+
+      const lastCall = mockSetMessages.mock.calls[mockSetMessages.mock.calls.length - 1][0];
+      const part = lastCall.at(-1)?.content?.[0];
+      expect(part).toMatchObject({
+        type: ContentTypes.THINK,
+        think: 'Retained thought',
+        reasoning_label_step_id: 'step-1',
+      });
+      expect(part).not.toHaveProperty('reasoning_label');
+      expect(part).not.toHaveProperty('reasoning_label_attempts');
+      expect(part).not.toHaveProperty('reasoning_label_submitted_chars');
+      expect(part).not.toHaveProperty('reasoning_label_revision');
+    });
+
     it('applies every entry of a multi-part reasoning delta in order', () => {
       const responseMessage = createResponseMessage();
       mockGetMessages.mockReturnValue([responseMessage]);
@@ -3413,6 +3553,42 @@ describe('useStepHandler', () => {
       const response = currentMessages.find((m) => !m.isCreatedByUser);
       expect(response?.content?.[2]).toMatchObject({ [ContentTypes.TEXT]: 'streamed' });
       expect(response?.content?.[0]).toMatchObject({ [ContentTypes.TEXT]: 'kept a' });
+      expect(
+        (submission as { editPrefixFirstPartFolded?: boolean }).editPrefixFirstPartFolded,
+      ).toBeUndefined();
+    });
+
+    it('records when the first completion part actually folds into the retained tail', () => {
+      const submission = createSubmission({
+        editedContent: { index: 0, type: ContentTypes.TEXT },
+        initialResponse: createResponseMessage({ content: [textPart('kept'), textPart('tail')] }),
+      } as never);
+      (submission as { editPrefixLength?: number }).editPrefixLength = 2;
+      const responseMessage = submission.initialResponse as TMessage;
+      let currentMessages: TMessage[] = [responseMessage];
+      mockGetMessages.mockImplementation(() => currentMessages);
+      mockSetMessages.mockImplementation((messages: TMessage[]) => {
+        currentMessages = messages;
+      });
+
+      const { result } = renderHook(() => useStepHandler(createHookParams()));
+      act(() => {
+        result.current.stepHandler(
+          {
+            event: StepEvents.ON_RUN_STEP,
+            data: createRunStep({ index: 0, runId: responseMessage.messageId }),
+          },
+          submission,
+        );
+        result.current.stepHandler(
+          { event: StepEvents.ON_MESSAGE_DELTA, data: createMessageDelta('step-1', ' continued') },
+          submission,
+        );
+      });
+
+      expect(
+        (submission as { editPrefixFirstPartFolded?: boolean }).editPrefixFirstPartFolded,
+      ).toBe(true);
     });
 
     it('does not merge final-answer text into a retained commentary phase', () => {

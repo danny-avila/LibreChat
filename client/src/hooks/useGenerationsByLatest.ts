@@ -40,6 +40,7 @@ export default function useGenerationsByLatest({
     finish_reason &&
     finish_reason !== 'stop' &&
     !isEditing &&
+    !isSubmitting &&
     !searchResult &&
     isEditableEndpoint;
 
@@ -58,8 +59,11 @@ export default function useGenerationsByLatest({
   const regenerateEnabled =
     !isCreatedByUser && !searchResult && !isEditing && !isSubmitting && branchingSupported;
 
+  const isActiveStreamingMessage =
+    isSubmitting && (latestMessageId == null || messageId === latestMessageId);
+
   const hideEditButton =
-    isSubmitting ||
+    isActiveStreamingMessage ||
     error ||
     searchResult ||
     !branchingSupported ||
@@ -71,6 +75,7 @@ export default function useGenerationsByLatest({
     forkingSupported,
     continueSupported,
     regenerateEnabled,
+    isActiveStreamingMessage,
     isEditableEndpoint,
     hideEditButton,
   };

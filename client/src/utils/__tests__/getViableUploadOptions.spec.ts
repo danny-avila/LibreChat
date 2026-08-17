@@ -3,6 +3,7 @@ import type { FileConfig } from 'librechat-data-provider';
 import { getViableUploadOptions, type UploadOptionContext } from '../files';
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const POTX = 'application/vnd.openxmlformats-officedocument.presentationml.template';
 
 /** context accepts plain text + csv (text), pdf + xlsx (ocr); nothing else */
 const fileConfig = {
@@ -46,6 +47,13 @@ describe('getViableUploadOptions', () => {
       expect(getViableUploadOptions([file(XLSX, 'report.xlsx')], baseCtx())).toEqual([
         EToolResources.execute_code,
         EToolResources.context,
+      ]);
+    });
+
+    it('routes a PowerPoint template to file search and code, not the provider', () => {
+      expect(getViableUploadOptions([file(POTX, 'brand-template.potx')], baseCtx())).toEqual([
+        EToolResources.file_search,
+        EToolResources.execute_code,
       ]);
     });
 

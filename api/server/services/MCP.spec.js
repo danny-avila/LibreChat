@@ -847,7 +847,7 @@ describe('tests for the new helper functions used by the MCP connection status e
       const config = {
         ...mockConfig,
         source: 'yaml',
-        url: 'https://mcp.example.com/{{LIBRECHAT_BODY_TENANT}}/mcp',
+        url: 'https://mcp.example.com/{{LIBRECHAT_BODY_CONVERSATIONID}}/mcp',
       };
       mockGetOAuthReconnectionManager.mockReturnValue({ isReconnecting: jest.fn(() => false) });
       mockGetFlowStateManager.mockReturnValue({

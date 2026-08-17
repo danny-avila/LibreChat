@@ -177,8 +177,15 @@ test.describe('conversation export', () => {
     });
 
     const target = page.getByTestId('screenshot-target');
-    const area = await target.evaluate((node) => node.scrollWidth * node.scrollHeight);
-    expect(area).toBeGreaterThan(ABORT_CSS_AREA * 1.15);
+    /** Long threads mount progressively from the scroll anchor, so the full
+     *  area lands a few frames after first paint — poll until it converges.
+     *  (The capture path itself force-completes the mount; this precondition
+     *  samples the DOM directly and must wait on its own.) */
+    await expect
+      .poll(() => target.evaluate((node) => node.scrollWidth * node.scrollHeight), {
+        timeout: 60_000,
+      })
+      .toBeGreaterThan(ABORT_CSS_AREA * 1.15);
 
     const dialog = await openExportModal(page);
     await selectExportType(page, dialog, 'screenshot (.png)');

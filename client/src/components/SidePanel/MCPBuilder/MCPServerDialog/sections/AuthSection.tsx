@@ -323,8 +323,8 @@ export default function AuthSection({ isEditMode, serverName }: AuthSectionProps
                   type="button"
                   onClick={() => {
                     if (isCopying) return;
+                    if (!copyLink(setIsCopying)) return;
                     showToast({ message: localize('com_ui_copied_to_clipboard') });
-                    copyLink(setIsCopying);
                   }}
                   className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-light text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
                   aria-label={localize('com_ui_copy_link')}

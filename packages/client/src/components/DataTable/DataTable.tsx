@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { JSX } from 'react/jsx-runtime';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ArrowUp, ArrowDown, ArrowDownUp } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowDownUp, Inbox, SearchX } from 'lucide-react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -62,7 +62,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     virtualization: {
       overscan = 10,
       minRows = 50,
-      rowHeight = 56,
+      rowHeight = 40,
       fastOverscanMultiplier = 4,
     } = {},
   } = config || {};
@@ -290,12 +290,22 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     onRowSelectionChange: setOptimizedRowSelection,
   });
 
+  /* The virtualizer rebuilds its measurement options whenever one of them changes
+     identity, and that notify re-renders this component. Both options below are
+     read during render, so defining them inline would notify on every render and
+     loop until React aborts with "Too many re-renders". */
+  const getItemKey = useCallback(
+    (index: number) => getRowId(data[index] as TData, index),
+    [data, getRowId],
+  );
+  const estimateSize = useCallback(() => rowHeight, [rowHeight]);
+
   const rowVirtualizer = useVirtualizer({
     enabled: virtualizationActive,
     count: data.length,
     getScrollElement: () => tableContainerRef.current,
-    getItemKey: (index) => getRowId(data[index] as TData, index),
-    estimateSize: useCallback(() => rowHeight, [rowHeight]),
+    getItemKey,
+    estimateSize,
     overscan: dynamicOverscan,
   });
 
@@ -312,6 +322,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   const showSkeletons = isLoading || (isFetching && !isFetchingNextPage);
   const shouldShowSearch = enableSearch && onFilterChange;
+  const showToolbar = Boolean(shouldShowSearch || customActionsRenderer);
 
   // Render table body based on loading state and virtualization
   let tableBodyContent: React.ReactNode;
@@ -319,6 +330,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     tableBodyContent = (
       <SkeletonRows
         count={skeletonCount}
+        rowHeight={rowHeight}
         columns={tableColumns as ColumnDef<Record<string, unknown>>[]}
       />
     );
@@ -548,26 +560,27 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
   return (
     <div
-      className={cn(
-        'relative flex w-full flex-col overflow-hidden rounded-lg border border-border-light bg-surface-primary',
-        'h-[calc(100vh-8rem)] max-h-[80vh]',
-        className,
-      )}
+      /* Transparent so the rows read as a list on whatever surface hosts them, and
+         the height follows the rows up to the cap so a short list doesn't leave a
+         tall empty box below it. */
+      className={cn('relative flex w-full flex-col overflow-hidden', 'max-h-[80vh]', className)}
       role="region"
       aria-label={localize('com_ui_data_table')}
     >
-      <div className="flex w-full shrink-0 items-center gap-2 border-b border-border-light md:gap-3">
-        {shouldShowSearch && <DataTableSearch value={searchTerm} onChange={setSearchTerm} />}
-        {customActionsRenderer &&
-          customActionsRenderer({
-            selectedCount,
-            selectedRows,
-            table: table as unknown as TTable<ProcessedDataRow<TData>>,
-          })}
-      </div>
+      {showToolbar && (
+        <div className="flex w-full shrink-0 items-center gap-2 border-b border-border-light pr-2 md:gap-3">
+          {shouldShowSearch && <DataTableSearch value={searchTerm} onChange={setSearchTerm} />}
+          {customActionsRenderer &&
+            customActionsRenderer({
+              selectedCount,
+              selectedRows,
+              table: table as unknown as TTable<ProcessedDataRow<TData>>,
+            })}
+        </div>
+      )}
       <div
         ref={tableContainerRef}
-        className="overflow-anchor-none relative min-h-0 flex-1 overflow-auto will-change-scroll"
+        className="overflow-anchor-none relative flex min-h-0 flex-1 flex-col overflow-auto will-change-scroll"
         style={
           {
             WebkitOverflowScrolling: 'touch',
@@ -582,12 +595,14 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
           role="table"
           aria-label={localize('com_ui_data_table')}
           aria-rowcount={data.length}
-          className="table-auto"
+          /* Separated borders let the row cells carry a rounded hover highlight;
+             collapsed borders drop `border-radius` on table cells entirely. */
+          className="shrink-0 table-auto border-separate border-spacing-0"
           unwrapped={true}
         >
-          <TableHeader className="sticky top-0 z-10 bg-surface-secondary">
+          <TableHeader>
             {headerGroups.map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
+              <TableRow key={headerGroup.id} className="border-0 hover:bg-transparent">
                 {headerGroup.headers.map((header) => {
                   const isDesktopOnly =
                     (header.column.columnDef.meta as { desktopOnly?: boolean } | undefined)
@@ -635,22 +650,28 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                       <Button
                         type="button"
                         variant="ghost"
-                        className="h-auto w-full justify-start gap-1 px-0 py-0 font-medium hover:bg-transparent md:gap-2"
+                        className="group h-auto w-full justify-start gap-1 px-0 py-0 text-xs font-medium uppercase tracking-wide text-text-secondary hover:bg-transparent hover:text-text-primary md:gap-1.5"
                         onClick={header.column.getToggleSortingHandler()}
                       >
                         {renderedHeader}
-                        <span className="text-text-primary" aria-hidden="true">
+                        <span aria-hidden="true">
                           {{
-                            asc: <ArrowUp className="size-4 text-text-primary" />,
-                            desc: <ArrowDown className="size-4 text-text-primary" />,
+                            asc: <ArrowUp className="size-3.5" />,
+                            desc: <ArrowDown className="size-3.5" />,
                           }[header.column.getIsSorted() as string] ?? (
-                            <ArrowDownUp className="size-4 text-text-primary" />
+                            /* The neutral marker is noise on every unsorted column, so it
+                               only surfaces once the header is a pointer or keyboard target. */
+                            <ArrowDownUp className="size-3.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
                           )}
                         </span>
                       </Button>
                     );
                   } else {
-                    headerContent = <div className="flex items-center">{renderedHeader}</div>;
+                    headerContent = (
+                      <div className="flex items-center text-xs font-medium uppercase tracking-wide text-text-secondary">
+                        {renderedHeader}
+                      </div>
+                    );
                   }
 
                   return (
@@ -658,9 +679,12 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                       key={header.id}
                       scope="col"
                       className={cn(
-                        'border-b border-border-light px-2 py-2 md:px-3 md:py-2',
+                        /* Stuck per cell rather than on <thead>, which does not stay
+                           put once the table uses separated borders. The fill has to
+                           be opaque or virtualized rows show through it. */
+                        'sticky top-0 z-10 h-9 border-b border-border-light bg-surface-dialog px-3 py-2 md:px-4',
                         isSelectHeader && 'px-0 text-center',
-                        canSort && 'cursor-pointer hover:bg-surface-tertiary',
+                        canSort && 'cursor-pointer',
                         meta?.className,
                         header.column.getIsResizing() && 'bg-surface-tertiary/60',
                         isDesktopOnly && 'hidden md:table-cell',
@@ -699,11 +723,18 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
 
         {!isLoading && !showSkeletons && rows.length === 0 && (
           <div
-            className="flex flex-col items-center justify-center py-12"
+            className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12"
             role="status"
             aria-live="polite"
           >
-            <Label className="text-center text-text-secondary">
+            <span className="flex size-11 items-center justify-center rounded-full bg-surface-tertiary text-text-tertiary">
+              {searchTerm ? (
+                <SearchX className="size-5" aria-hidden="true" />
+              ) : (
+                <Inbox className="size-5" aria-hidden="true" />
+              )}
+            </span>
+            <Label className="text-center text-sm text-text-secondary">
               {searchTerm ? localize('com_ui_no_search_results') : localize('com_ui_no_data')}
             </Label>
           </div>

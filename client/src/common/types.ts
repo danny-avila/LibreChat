@@ -211,6 +211,8 @@ export interface MCPServerInfo {
   tools: t.AgentToolType[];
   isConfigured: boolean;
   isConnected: boolean;
+  /** True when tools can only be discovered with live chat request fields. */
+  requestScoped?: boolean;
   consumeOnly?: boolean;
   metadata: t.TPlugin;
 }
@@ -350,7 +352,7 @@ export type TOptions = {
   isContinued?: boolean;
   isEdited?: boolean;
   overrideMessages?: t.TMessage[];
-  /** This value is only true when the user submits a message with "Save & Submit" for a user-created message */
+  /** This value is only true when the user submits a message with "Update & rerun" for a user-created message */
   isResubmission?: boolean;
   /** Currently only utilized when `isResubmission === true`, uses that message's currently attached files */
   overrideFiles?: t.TMessage['files'];

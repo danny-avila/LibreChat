@@ -10,7 +10,7 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
-import type { Agent, EToolResources } from './types/assistants';
+import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
@@ -201,6 +201,8 @@ export type TSubmission = {
    * resumes for run steps and activity labels alike.
    */
   editPrefixLength?: number;
+  /** True once server index 0 text/reasoning actually merged into the retained tail. */
+  editPrefixFirstPartFolded?: boolean;
   /**
    * Set once a resume SYNC has replaced the response's retained prefix with
    * the server's completion-local snapshot. From that point the prefix is
@@ -291,9 +293,19 @@ export type TUser = {
   backupCodes?: TBackupCode[];
   personalization?: {
     memories?: boolean;
+    statefulCodeEnvironment?: StatefulCodeEnvironment;
   };
   createdAt: string;
   updatedAt: string;
+};
+
+export type TUpdateUserPreferencesRequest = {
+  statefulCodeEnvironment: StatefulCodeEnvironment;
+};
+
+export type TUpdateUserPreferencesResponse = {
+  updated: boolean;
+  preferences: TUpdateUserPreferencesRequest;
 };
 
 export type TGetConversationsResponse = {
@@ -417,6 +429,10 @@ export type TArchiveConversationRequest = {
 
 export type TArchiveConversationResponse = TConversation;
 
+export type TArchiveAllConversationsResponse = {
+  archivedCount: number;
+};
+
 export type TPinConversationRequest = {
   conversationId: string;
   pinned: boolean;
@@ -528,6 +544,9 @@ export type TConfig = {
   disableBuilder?: boolean;
   retrievalModels?: string[];
   capabilities?: string[];
+  statefulCodeSessions?: {
+    allowedEnvironments: StatefulCodeEnvironment[];
+  };
   customParams?: {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;
@@ -940,3 +959,7 @@ export type TLangfuseConnectionTestErrorCode =
 export type TLangfuseConnectionTestResponse =
   | { success: true }
   | { success: false; errorCode: TLangfuseConnectionTestErrorCode };
+
+export type TLangfuseSessionLinkResponse = {
+  url: string | null;
+};

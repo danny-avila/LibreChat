@@ -4,9 +4,11 @@ const {
   Tools,
   StepTypes,
   StepEvents,
+  ContentTypes,
   FileContext,
   ErrorTypes,
   UsageEvents,
+  getRunStepDurationMs,
 } = require('librechat-data-provider');
 const {
   GraphEvents,
@@ -425,6 +427,54 @@ function getDefaultHandlers({
             },
           });
         }
+      },
+    },
+    [GraphEvents.ON_RUN_STEP_CLOSED]: {
+      /**
+       * Handle ON_RUN_STEP_CLOSED event — the terminal signal for a run step.
+       *
+       * Stamped onto the aggregated part before it is forwarded. The SDK's
+       * `aggregateContent` has no notion of this event, so without stamping
+       * here the status would exist only on the live client message: a reload
+       * or a resumable reconnect would drop it and fall back to inferring
+       * "stopped" from `isSubmitting`, which is the behavior this fixes.
+       *
+       * Forwarded unconditionally, without the visibility gating the other
+       * step events apply — a step whose `on_run_step` reached the client must
+       * get its closure, or the client is left inferring again.
+       *
+       * @param {string} event - The event name.
+       * @param {RunStepClosedEvent} data - The event data.
+       */
+      handle: async (event, data) => {
+        const stepId = data?.id;
+        if (typeof stepId === 'string' && contentParts) {
+          /**
+           * Resolved through `stepMap` only. The event's own `index` is the
+           * SDK's, and the steer/HITL offset wrappers shift `ON_RUN_STEP` but
+           * pass closures through untouched — so falling back to it would
+           * stamp an unrelated part in any run containing an injection.
+           * Skipping is the safe failure here; a missing status degrades to
+           * the old heuristic, a misplaced one mislabels the wrong card.
+           */
+          const index = stepMap?.get(stepId)?.index;
+          const part = typeof index === 'number' ? contentParts[index] : undefined;
+          if (part?.type === ContentTypes.TOOL_CALL && part.tool_call) {
+            part.tool_call.runStepStatus = data.status;
+            /**
+             * The raw derivable duration, left unset rather than zeroed when
+             * the event cannot support a trustworthy one — no `created_at`,
+             * or clocks that disagree. Whether it is *worth showing* is the
+             * renderer's call; persisting the fact unfiltered keeps that
+             * threshold adjustable without data loss.
+             */
+            const durationMs = getRunStepDurationMs(data);
+            if (durationMs != null) {
+              part.tool_call.runStepDurationMs = durationMs;
+            }
+          }
+        }
+        await emitForJob({ event, data });
       },
     },
     [GraphEvents.ON_RUN_STEP_DELTA]: {
@@ -926,6 +976,8 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
              * ids.
              */
             session_id: file.storage_session_id ?? output.artifact.session_id,
+            codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
+            executionProfile: metadata.codeExecutionContext?.executionProfile,
           });
           const fileMetadata = result?.file ?? null;
           const finalize = result?.finalize;
@@ -1248,6 +1300,8 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
              * ids.
              */
             session_id: file.storage_session_id ?? output.artifact.session_id,
+            codeApiBaseUrl: metadata.codeExecutionContext?.baseUrl,
+            executionProfile: metadata.codeExecutionContext?.executionProfile,
           });
           const fileMetadata = result?.file ?? null;
           const finalize = result?.finalize;

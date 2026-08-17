@@ -288,6 +288,17 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
           userId == null
             ? (publicationGeneration ?? configGeneration)
             : (configGeneration ?? publicationGeneration);
+        /** Only the shared catalog write needs ordering. These tools were just read from the
+         * server, so the caller should still serve them; discarding a correct tool list because
+         * its write could not be ordered is what makes a cache failure look to the user like a
+         * server with no tools at all (#14857). A superseded write is different — another
+         * replica holds something newer — and still discards below. */
+        if (!publicationRevision) {
+          logger.warn(
+            `[MCP Cache] Serving ${tools.length} unpublished tools for ${serverName}: this snapshot reserved no revision, so every request re-fetches them`,
+          );
+          return serverTools;
+        }
         const replaced = await replaceAppServerTools({
           serverName,
           serverTools,
@@ -368,12 +379,23 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         const config = await resolveCacheConfig(undefined, serverName);
         configGeneration = config ? getMCPAppToolsPublicationGeneration(config) : undefined;
       }
+      /** Discarding a publication is warned, not debugged: #14857 was invisible for a release
+       * because the only trace of a dropped app catalog was a debug line no deployment runs.
+       * A drop here means this server's tools are missing for every agent that needs them. */
       if (!configGeneration) {
-        logger.debug(`[MCP Cache] Skipped unaddressed app-level publication for ${serverName}`);
+        logger.warn(
+          `[MCP Cache] Skipped unaddressed app-level publication for ${serverName}; its tools stay unavailable to agents`,
+        );
         return false;
       }
+      /** Ordering is reserved before the `tools/list` that produced these tools and travels with
+       * the snapshot, so a publisher that lost it fetched at an unknown time and cannot be
+       * ordered against concurrent replicas. Allocating one here instead would let a slow fetch
+       * of an old catalog outrank a newer one that reserved after it started. */
       if (!publicationRevision) {
-        logger.debug(`[MCP Cache] Skipped unordered app-level publication for ${serverName}`);
+        logger.warn(
+          `[MCP Cache] Skipped unordered app-level publication for ${serverName}: its snapshot carried no reserved revision, so its tools stay unavailable to agents`,
+        );
         return false;
       }
       const replaced = await setCachedAppServerTools(
@@ -382,9 +404,10 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
         serverTools,
         publicationRevision,
       );
+      /** Expected whenever replicas publish concurrently: the winner already holds newer tools. */
       if (replaced === false) {
         logger.debug(
-          `[MCP Cache] Ignored superseded app-level tools for ${serverName} at revision ${publicationRevision ?? '0'}`,
+          `[MCP Cache] Ignored superseded app-level tools for ${serverName} at revision ${publicationRevision}`,
         );
         return false;
       }

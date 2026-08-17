@@ -1,26 +1,20 @@
 import { memo, useMemo, useState, useCallback } from 'react';
-import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { InfoHoverCard, ESide, UserIcon } from '@librechat/client';
+import { InfoHoverCard, ESide } from '@librechat/client';
 import type { TFile, TMessage } from 'librechat-data-provider';
-import type { TMessageIcon } from '~/common';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
-import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { fontSizeAtom } from '~/store/fontSize';
 import { useShareContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const USER_ICON: TMessageIcon = { isCreatedByUser: true };
-
 /**
  * A mid-run steering message rendered as a standard user message inside the
- * assistant response — same icon, author header, and text presentation as any
+ * assistant response, with the same compact surface and text presentation as any
  * user turn, placed where the words enter the run so the visible order equals
  * what the next turn replays (`ContentTypes.STEER` splits back into a
  * HumanMessage server-side). Only the server-applied part renders here, at its
@@ -43,7 +37,6 @@ const SteerPart = memo(function SteerPart({
   /** Read the atom rather than the auth context: AuthContextProvider mirrors the
    *  user into it, and the public share route mounts outside that provider. */
   const user = useRecoilValue(store.user);
-  const fontSize = useAtomValue(fontSizeAtom);
   const { isSharedConvo } = useShareContext();
   const usernameDisplay = useRecoilValue<boolean>(store.UsernameDisplay);
   const enableUserMsgMarkdown = useRecoilValue<boolean>(store.enableUserMsgMarkdown);
@@ -82,51 +75,12 @@ const SteerPart = memo(function SteerPart({
   return (
     <div
       id={steerId ? `steer-${steerId}` : undefined}
-      className={cn(
-        /* Outdented past the response's icon column so the steer sits flush
-         * with top-level message rows — it reads as a regular user message. */
-        'steer-render group relative my-4 -ml-9 flex w-[calc(100%+2.25rem)] gap-3',
-      )}
+      className="steer-render group relative my-5 flex w-full justify-end"
       data-testid="steer-part"
     >
-      <div className="relative flex flex-shrink-0 flex-col items-center">
-        <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full">
-          {isSharedConvo === true ? (
-            /** The atom still holds the viewer's identity when a signed-in user opens
-             *  a share link, so rendering the identity-bearing avatar here would put
-             *  the viewer's face on the sharer's steer. Mirrors Share/MessageIcon. */
-            <div
-              style={{
-                backgroundColor: 'rgb(121, 137, 255)',
-                width: '20px',
-                height: '20px',
-                boxShadow: 'rgba(240, 246, 252, 0.1) 0px 0px 0px 1px',
-              }}
-              className="relative flex h-9 w-9 items-center justify-center rounded-sm p-1 text-white"
-            >
-              <UserIcon />
-            </div>
-          ) : (
-            <MessageIcon iconData={USER_ICON} />
-          )}
-        </div>
-      </div>
-      <div className="user-turn relative flex w-11/12 flex-col">
-        <h2 className={cn('flex select-none items-center gap-1.5 font-semibold', fontSize)}>
-          {label}
-          {/* Subtle "?" explaining why a user message appears inside the
-           *  response. Like the message hover buttons, it's revealed on
-           *  hover/focus on hover-capable pointers, but stays visible on
-           *  touch (no hover to reveal it) via [@media(hover:hover)]:opacity-0. */}
-          <span
-            data-testid="steer-info-affordance"
-            className="transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0"
-          >
-            <InfoHoverCard side={ESide.Top} text={localize('com_ui_steered_info')} />
-          </span>
-          <MessageTimestamp value={timestamp} />
-        </h2>
-        <div className="flex flex-col items-start gap-2">
+      <div className="user-turn relative flex w-fit max-w-[90%] flex-col items-end sm:max-w-[85%]">
+        <h2 className="sr-only">{label}</h2>
+        <div className="flex max-w-full flex-col items-start gap-2 rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5">
           {(imageFiles.length > 0 || otherFiles.length > 0) && (
             <div className="flex flex-wrap gap-2">
               {otherFiles.map((file) => (
@@ -151,11 +105,20 @@ const SteerPart = memo(function SteerPart({
             className={cn(
               'markdown prose message-content dark:prose-invert light w-full break-words',
               !enableUserMsgMarkdown && 'whitespace-pre-wrap',
-              'dark:text-gray-20',
+              'text-text-primary',
             )}
           >
             {enableUserMsgMarkdown ? <MarkdownLite content={steer} /> : steer}
           </div>
+        </div>
+        <div className="mt-1 flex min-h-8 items-center justify-end text-text-secondary">
+          <span
+            data-testid="steer-info-affordance"
+            className="transition-opacity duration-theme-normal focus-within:opacity-100 group-hover:opacity-100 motion-reduce:transition-none [@media(hover:hover)]:opacity-0"
+          >
+            <InfoHoverCard side={ESide.Top} text={localize('com_ui_steered_info')} />
+          </span>
+          <MessageTimestamp value={timestamp} />
         </div>
       </div>
       {otherFiles.length > 0 && (

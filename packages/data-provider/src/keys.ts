@@ -5,10 +5,12 @@ export enum QueryKeys {
   sharedLinks = 'sharedLinks',
   allConversations = 'allConversations',
   archivedConversations = 'archivedConversations',
+  pinnedConversations = 'pinnedConversations',
   searchConversations = 'searchConversations',
   conversation = 'conversation',
   searchEnabled = 'searchEnabled',
   langfuseConnection = 'langfuseConnection',
+  langfuseSessionLink = 'langfuseSessionLink',
   user = 'user',
   name = 'name', // user key name
   models = 'models',
@@ -117,6 +119,7 @@ export enum MutationKeys {
   deleteAgentAction = 'deleteAgentAction',
   revertAgentVersion = 'revertAgentVersion',
   deleteUser = 'deleteUser',
+  updateUserPreferences = 'updateUserPreferences',
   updateRole = 'updateRole',
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
@@ -132,4 +135,5 @@ export enum MutationKeys {
   deleteSkillNode = 'deleteSkillNode',
   updateSkillNodeContent = 'updateSkillNodeContent',
   convoPin = 'convoPin',
+  archiveAllConversations = 'archiveAllConversations',
 }

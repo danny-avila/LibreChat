@@ -37,10 +37,13 @@ jest.mock('~/mcp/oauth', () => ({
   resolveOboToken: jest.fn(),
 }));
 
+/** Only `processMCPEnv` is a deliberate seam — the cases below drive it to hand
+ *  the manager a specific processed config. Everything else stays real:
+ *  `~/mcp/utils` reads `ALLOWED_BODY_FIELDS` from here at module scope, so a
+ *  replacing factory breaks the suite at import time. */
 jest.mock('~/utils/env', () => ({
+  ...jest.requireActual('~/utils/env'),
   processMCPEnv: jest.fn((params) => params.options),
-  MCP_PLUGIN_SOURCE: 'plugin',
-  isPluginSourced: jest.fn((config) => config?.source === 'plugin'),
 }));
 
 jest.mock('~/auth/domain', () => ({
@@ -529,7 +532,7 @@ describe('MCPManager', () => {
 
   describe('getServerToolFunctions', () => {
     it('should catch and handle errors gracefully', async () => {
-      (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn(() => {
+      (MCPServerInspector.getToolCatalog as jest.Mock) = jest.fn(() => {
         throw new Error('Connection failed');
       });
 
@@ -549,7 +552,7 @@ describe('MCPManager', () => {
     });
 
     it('should catch synchronous errors from getUserConnections', async () => {
-      (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn().mockResolvedValue({});
+      (MCPServerInspector.getToolCatalog as jest.Mock) = jest.fn().mockResolvedValue({ tools: {} });
 
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
@@ -583,9 +586,9 @@ describe('MCPManager', () => {
         },
       };
 
-      (MCPServerInspector.getToolFunctions as jest.Mock) = jest
+      (MCPServerInspector.getToolCatalog as jest.Mock) = jest
         .fn()
-        .mockResolvedValue(expectedTools);
+        .mockResolvedValue({ tools: expectedTools });
 
       mockAppConnections({
         has: jest.fn().mockResolvedValue(true),
@@ -605,7 +608,9 @@ describe('MCPManager', () => {
         finishInspection = resolve;
       });
       const connection = {} as MCPConnection;
-      (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn().mockReturnValue(inspection);
+      (MCPServerInspector.getToolCatalog as jest.Mock) = jest
+        .fn()
+        .mockReturnValue(inspection.then((tools) => ({ tools })));
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
       });
@@ -640,7 +645,7 @@ describe('MCPManager', () => {
       const recovery = new Promise<void>((resolve) => {
         resolveRecovery = resolve;
       });
-      (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn().mockResolvedValue({});
+      (MCPServerInspector.getToolCatalog as jest.Mock) = jest.fn().mockResolvedValue({ tools: {} });
       mockAppConnections({
         get: jest.fn().mockResolvedValue(null),
       });
@@ -662,14 +667,14 @@ describe('MCPManager', () => {
       const toolsPromise = manager.getServerToolFunctions(userId, serverName);
       await new Promise((resolve) => setImmediate(resolve));
 
-      expect(MCPServerInspector.getToolFunctions).not.toHaveBeenCalled();
+      expect(MCPServerInspector.getToolCatalog).not.toHaveBeenCalled();
 
       internals.userConnections.set(userId, new Map([[serverName, recoveredConnection]]));
       internals.oauthRecoveries.delete(staleConnection);
       resolveRecovery?.();
 
       await expect(toolsPromise).resolves.toEqual({});
-      expect(MCPServerInspector.getToolFunctions).toHaveBeenCalledWith(
+      expect(MCPServerInspector.getToolCatalog).toHaveBeenCalledWith(
         serverName,
         recoveredConnection,
       );
@@ -678,7 +683,7 @@ describe('MCPManager', () => {
     it('should include specific server name in error messages', async () => {
       const specificServerName = 'github_mcp_server';
 
-      (MCPServerInspector.getToolFunctions as jest.Mock) = jest.fn(() => {
+      (MCPServerInspector.getToolCatalog as jest.Mock) = jest.fn(() => {
         throw new Error('Server specific error');
       });
 
@@ -718,7 +723,7 @@ describe('MCPManager', () => {
       const appGet = jest.fn().mockResolvedValue({} as MCPConnection);
       mockAppConnections({ get: appGet });
       (mockRegistryInstance.isAppServerConfig as jest.Mock).mockResolvedValue(false);
-      (MCPServerInspector.getToolFunctions as jest.Mock).mockResolvedValue(expectedTools);
+      (MCPServerInspector.getToolCatalog as jest.Mock).mockResolvedValue({ tools: expectedTools });
 
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       const internals = manager as unknown as {
@@ -730,10 +735,7 @@ describe('MCPManager', () => {
         manager.getServerToolFunctionsSnapshot(userId, serverName, overlayConfig),
       ).resolves.toEqual({ tools: expectedTools, publicationGeneration: undefined });
       expect(appGet).not.toHaveBeenCalled();
-      expect(MCPServerInspector.getToolFunctions).toHaveBeenCalledWith(
-        serverName,
-        overlayConnection,
-      );
+      expect(MCPServerInspector.getToolCatalog).toHaveBeenCalledWith(serverName, overlayConnection);
     });
   });
 
@@ -3465,7 +3467,9 @@ describe('MCPManager', () => {
           },
         },
       };
-      (MCPServerInspector.getToolFunctions as jest.Mock).mockResolvedValue(expectedToolFunctions);
+      (MCPServerInspector.getToolCatalog as jest.Mock).mockResolvedValue({
+        tools: expectedToolFunctions,
+      });
 
       try {
         const manager = await MCPManager.createInstance(newMCPServersConfig());
@@ -3525,7 +3529,7 @@ describe('MCPManager', () => {
         await expect(
           manager.getServerToolFunctionsSnapshot(userId, serverName, serverConfig),
         ).resolves.toEqual({ tools: null });
-        expect(MCPServerInspector.getToolFunctions).not.toHaveBeenCalled();
+        expect(MCPServerInspector.getToolCatalog).not.toHaveBeenCalled();
         expect(connection.dispose).toHaveBeenCalledTimes(1);
       } finally {
         generationSpy.mockRestore();
@@ -3565,7 +3569,7 @@ describe('MCPManager', () => {
         await expect(
           manager.getServerToolFunctionsSnapshot(userId, serverName, committedConfig),
         ).resolves.toEqual({ tools: null });
-        expect(MCPServerInspector.getToolFunctions).not.toHaveBeenCalled();
+        expect(MCPServerInspector.getToolCatalog).not.toHaveBeenCalled();
         expect(connection.dispose).toHaveBeenCalledTimes(1);
       } finally {
         generationSpy.mockRestore();
@@ -3602,7 +3606,7 @@ describe('MCPManager', () => {
         await expect(manager.getServerToolFunctionsSnapshot(userId, serverName)).resolves.toEqual({
           tools: null,
         });
-        expect(MCPServerInspector.getToolFunctions).not.toHaveBeenCalled();
+        expect(MCPServerInspector.getToolCatalog).not.toHaveBeenCalled();
         expect(connection.dispose).toHaveBeenCalledTimes(1);
       } finally {
         generationSpy.mockRestore();

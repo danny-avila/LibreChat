@@ -17,6 +17,7 @@ import {
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useSelectMention from '~/hooks/Input/useSelectMention';
+import { getSpecAgentAvatarURL } from '~/utils';
 import FavoriteItem from './FavoriteItem';
 import store from '~/store';
 
@@ -458,6 +459,7 @@ function FavoritesList({
                       onSelectSpec={onSelectSpec}
                       onRemoveFocus={handleRemoveFocus}
                       endpointsConfig={endpointsConfig}
+                      agentAvatarURL={getSpecAgentAvatarURL(spec, agentsMap)}
                     />
                   </DraggableFavoriteItem>
                 );

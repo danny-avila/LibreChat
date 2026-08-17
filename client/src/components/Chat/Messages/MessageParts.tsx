@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { TMessageProps, TMessageIcon } from '~/common';
@@ -11,10 +10,11 @@ import {
 } from '~/utils';
 import { useMessageHelpers, useLocalize, useAttachments, useContentMetadata } from '~/hooks';
 import AuthorHeader from '~/components/Chat/Messages/Content/Parts/AuthorHeader';
-import MessageTimestamp from '~/components/Chat/Messages/ui/MessageTimestamp';
+import { getHeaderModelName } from '~/components/Chat/Messages/ui/HeaderLabel';
+import { revealOnRowHoverClasses, messageFooterClasses } from './styles';
+import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
 import ContentParts from './Content/ContentParts';
-import { fontSizeAtom } from '~/store/fontSize';
 import SiblingSwitch from './SiblingSwitch';
 import HoverButtons from './HoverButtons';
 import SubRow from './SubRow';
@@ -40,10 +40,10 @@ function MessageParts(props: TMessageProps) {
     latestMessageId,
     handleContinue,
     copyToClipboard,
+    getCanCopy,
     regenerateMessage,
   } = useMessageHelpers(props);
 
-  const fontSize = useAtomValue(fontSizeAtom);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const { messageId = null, isCreatedByUser } = message ?? {};
 
@@ -97,112 +97,80 @@ function MessageParts(props: TMessageProps) {
     return null;
   }
 
-  const getChatWidthClass = () => {
-    if (maximizeChatSpace) {
-      return 'w-full max-w-full md:px-5 lg:px-1 xl:px-5';
-    }
-    if (hasParallelContent) {
-      return 'md:max-w-[58rem] xl:max-w-[70rem]';
-    }
-    return 'md:max-w-[47rem] xl:max-w-[55rem]';
-  };
-
-  const baseClasses = {
-    common: 'group mx-auto flex flex-1 gap-3 transition-all duration-300 transform-gpu',
-    chat: getChatWidthClass(),
-  };
-
   return (
-    <>
-      <div
-        className="w-full border-0 bg-transparent"
-        onWheel={handleScroll}
-        onTouchMove={handleScroll}
-      >
-        <div className="m-auto justify-center p-4 py-2 md:gap-6">
-          <div
-            id={messageId ?? ''}
-            aria-label={getMessageAriaLabel(message, localize)}
-            className={cn(
-              baseClasses.common,
-              baseClasses.chat,
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
-              'message-render',
-            )}
-          >
-            {!hasParallelContent && (
-              <div className="relative flex flex-shrink-0 flex-col items-center">
-                <div className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full pt-0.5">
-                  <MessageIcon iconData={iconData} assistant={assistant} agent={agent} />
-                </div>
-              </div>
-            )}
-            <div
-              className={cn(
-                'relative flex flex-col',
-                hasParallelContent ? 'w-full' : 'w-11/12',
-                isCreatedByUser ? 'user-turn' : 'agent-turn',
-              )}
-            >
-              {!hasParallelContent && (
-                <h2 className={cn('select-none font-semibold text-text-primary', fontSize)}>
-                  <span className="sr-only">
-                    {getHeaderPrefixForScreenReader(message, localize)}
-                  </span>
-                  {name}
-                  <MessageTimestamp value={message.createdAt ?? message.clientTimestamp} />
-                </h2>
-              )}
-              <div className="flex flex-col gap-1">
-                <div className="flex min-h-[20px] max-w-full flex-grow flex-col gap-0">
-                  <ContentParts
-                    edit={edit}
-                    isLast={isLast}
-                    enterEdit={enterEdit}
-                    siblingIdx={siblingIdx}
-                    attachments={attachments}
-                    isSubmitting={isSubmitting}
-                    searchResults={searchResults}
-                    manualSkills={message.manualSkills}
-                    messageId={message.messageId}
-                    authorHeader={authorHeader}
-                    setSiblingIdx={setSiblingIdx}
-                    isCreatedByUser={message.isCreatedByUser}
-                    conversationId={conversation?.conversationId}
-                    isLatestMessage={messageId === latestMessageId}
-                    content={message.content as Array<TMessageContentParts | undefined>}
-                  />
-                </div>
-                {isLast && isSubmitting ? (
-                  <div className="mt-1 h-[31px] bg-transparent" />
-                ) : (
-                  <SubRow classes="text-xs">
-                    <SiblingSwitch
-                      siblingIdx={siblingIdx}
-                      siblingCount={siblingCount}
-                      setSiblingIdx={setSiblingIdx}
-                    />
-                    <HoverButtons
-                      index={index}
-                      isEditing={edit}
-                      message={message}
-                      enterEdit={enterEdit}
-                      isSubmitting={isSubmitting}
-                      conversation={conversation ?? null}
-                      regenerate={() => regenerateMessage()}
-                      copyToClipboard={copyToClipboard}
-                      handleContinue={handleContinue}
-                      latestMessageId={latestMessageId}
-                      isLast={isLast}
-                    />
-                  </SubRow>
+    <div
+      className="w-full border-0 bg-transparent"
+      onWheel={handleScroll}
+      onTouchMove={handleScroll}
+    >
+      <div className="m-auto justify-center px-4 py-3 sm:px-0">
+        <MessageRow
+          id={messageId ?? ''}
+          icon={<MessageIcon iconData={iconData} assistant={assistant} agent={agent} />}
+          label={name}
+          hoverLabel={getHeaderModelName(
+            agent?.model,
+            assistant?.model,
+            message.model,
+            conversation?.model,
+          )}
+          timestamp={message.createdAt ?? message.clientTimestamp}
+          ariaLabel={getMessageAriaLabel(message, localize)}
+          headerPrefix={getHeaderPrefixForScreenReader(message, localize)}
+          isCreatedByUser={isCreatedByUser === true}
+          hasParallelContent={hasParallelContent}
+          fullWidth={maximizeChatSpace}
+          isEditing={edit}
+          footer={
+            <SubRow classes={cn(messageFooterClasses, isCreatedByUser && 'justify-end')}>
+              {/* While the answer is generating every other action is withheld, which
+                  would otherwise leave this counter sitting alone under a half-written
+                  response. It reveals on hover there, like the actions it sits with. */}
+              <SiblingSwitch
+                siblingIdx={siblingIdx}
+                siblingCount={siblingCount}
+                setSiblingIdx={setSiblingIdx}
+                className={cn(
+                  isSubmitting && messageId === latestMessageId && revealOnRowHoverClasses,
                 )}
-              </div>
-            </div>
-          </div>
-        </div>
+              />
+              <HoverButtons
+                index={index}
+                isEditing={edit}
+                message={message}
+                enterEdit={enterEdit}
+                isSubmitting={isSubmitting}
+                conversation={conversation ?? null}
+                regenerate={() => regenerateMessage()}
+                copyToClipboard={copyToClipboard}
+                getCanCopy={getCanCopy}
+                handleContinue={handleContinue}
+                latestMessageId={latestMessageId}
+                isLast={isLast}
+              />
+            </SubRow>
+          }
+        >
+          <ContentParts
+            edit={edit}
+            isLast={isLast}
+            enterEdit={enterEdit}
+            siblingIdx={siblingIdx}
+            attachments={attachments}
+            isSubmitting={isSubmitting}
+            searchResults={searchResults}
+            manualSkills={message.manualSkills}
+            messageId={message.messageId}
+            authorHeader={authorHeader}
+            setSiblingIdx={setSiblingIdx}
+            isCreatedByUser={message.isCreatedByUser}
+            conversationId={conversation?.conversationId}
+            isLatestMessage={messageId === latestMessageId}
+            content={message.content as Array<TMessageContentParts | undefined>}
+          />
+        </MessageRow>
       </div>
-    </>
+    </div>
   );
 }
 

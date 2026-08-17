@@ -1,7 +1,6 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import SteerPart from '../SteerPart';
 import store from '~/store';
@@ -46,9 +45,8 @@ jest.mock('~/components/Chat/Messages/Content/Image', () => ({
   default: ({ altText }: { altText: string }) => <img alt={altText} data-testid="steer-image" />,
 }));
 
-/** Seeds the user atom rather than mocking `useAuthContext`, and renders the real
- *  MessageIcon tree — mocking either one hid a crash on the share route, where
- *  neither an auth context nor a user exists. */
+/** Seeds the user atom rather than mocking `useAuthContext`, matching the share
+ * route where neither an auth context nor a user exists. */
 const SEEDED_USER = { name: 'Danny', username: 'danny' };
 
 function renderPart(
@@ -58,11 +56,9 @@ function renderPart(
   user: { name: string; username: string } | null = SEEDED_USER,
 ) {
   return render(
-    <QueryClientProvider client={new QueryClient()}>
-      <RecoilRoot initializeState={({ set }) => user && set(store.user, user as never)}>
-        <SteerPart steer="steered words" steerId="s1" createdAt={1} files={files} />
-      </RecoilRoot>
-    </QueryClientProvider>,
+    <RecoilRoot initializeState={({ set }) => user && set(store.user, user as never)}>
+      <SteerPart steer="steered words" steerId="s1" createdAt={1} files={files} />
+    </RecoilRoot>,
   );
 }
 
@@ -89,10 +85,10 @@ describe('SteerPart author label', () => {
     expect(screen.getByText('com_user_message')).toBeInTheDocument();
   });
 
-  it('never renders the viewer identity on a shared steer avatar', () => {
+  it('never renders the viewer identity on a shared steer bubble', () => {
     /** The user atom is app-wide and survives navigation, so a signed-in viewer
      *  opening a share link still has an identity in state. The shared steer must
-     *  show the generic avatar regardless. */
+     *  keep generic attribution regardless. */
     mockShareContext = { isSharedConvo: true, shareId: 'share-1' };
     renderPart(undefined, SEEDED_USER);
 
@@ -130,12 +126,13 @@ describe('SteerPart presentation', () => {
     mockShareContext = {};
   });
 
-  it('presents the steer as a user message with an icon', () => {
+  it('presents the steer as a compact user bubble with accessible attribution', () => {
     renderPart();
-    /** Asserts the real avatar rather than a stubbed one — the previous mock was
-     *  what hid the auth-context crash inside this icon tree. */
-    expect(screen.getByTitle('Danny')).toBeInTheDocument();
-    expect(screen.getByText('steered words')).toBeInTheDocument();
+    const message = screen.getByText('steered words');
+
+    expect(message.closest('.bg-surface-tertiary')).toHaveClass('rounded-theme-surface');
+    expect(screen.getByRole('heading', { name: 'Danny' })).toHaveClass('sr-only');
+    expect(screen.queryByTitle('Danny')).not.toBeInTheDocument();
   });
 
   it('anchors the steer for the message-nav rail', () => {
@@ -143,6 +140,13 @@ describe('SteerPart presentation', () => {
     const part = screen.getByTestId('steer-part');
     expect(part).toHaveAttribute('id', 'steer-s1');
     expect(part).toHaveClass('steer-render');
+  });
+
+  it('stays on the message content edge instead of outdenting', () => {
+    renderPart();
+    const part = screen.getByTestId('steer-part');
+    expect(part).toHaveClass('w-full');
+    expect(part).not.toHaveClass('md:-ml-9', '-ml-9');
   });
 
   it('renders steer attachments', () => {

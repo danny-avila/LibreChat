@@ -6,9 +6,11 @@ import {
   OGDialog,
   OGDialogTrigger,
   Spinner,
+  InfoHoverCard,
   useOnClickOutside,
 } from '@librechat/client';
 import { useLocalize } from '~/hooks';
+import { ESide } from '~/common';
 
 export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
   const localize = useLocalize();
@@ -38,7 +40,10 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
 
   return (
     <div className="flex items-center justify-between">
-      <Label id="delete-cache-label">{localize('com_nav_delete_cache_storage')}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label id="delete-cache-label">{localize('com_nav_delete_cache_storage')}</Label>
+        <InfoHoverCard side={ESide.Top} text={localize('com_nav_delete_cache_storage_info')} />
+      </div>
       <OGDialog open={open} onOpenChange={setOpen}>
         <OGDialogTrigger asChild>
           <Button

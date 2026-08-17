@@ -59,6 +59,111 @@ jest.mock('@librechat/api', () => ({
   maybePrewarmCodeSandbox: jest.fn(),
 }));
 
+describe('AgentClient - label settlement', () => {
+  it('drains a trailing fill enqueued by an in-flight reasoning revision', async () => {
+    const client = Object.create(AgentClient.prototype);
+    const first = deferred();
+    const trailing = deferred();
+    const scope = { closed: false, abort: new AbortController(), detach: jest.fn() };
+    client.activityLabelScopes = [scope];
+    client.pendingActivityLabelFills = [
+      first.promise.finally(() => {
+        client.pendingActivityLabelFills.push(trailing.promise);
+      }),
+    ];
+
+    let settled = false;
+    const settlement = client.settleActivityLabels(1_000).then(() => {
+      settled = true;
+    });
+    first.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(settled).toBe(false);
+    trailing.resolve();
+    await settlement;
+
+    expect(scope.closed).toBe(false);
+    expect(scope.detach).toHaveBeenCalledTimes(1);
+    expect(client.pendingActivityLabelFills).toEqual([]);
+  });
+});
+
+describe('AgentClient - reasoning label accounting', () => {
+  function createReasoningLabelClient(generateReasoningLabel) {
+    const client = Object.create(AgentClient.prototype);
+    client.options = { req: { user: { id: 'user-123' } } };
+    client.conversationId = 'conversation-123';
+    client.parentMessageId = 'parent-123';
+    client.responseMessageId = 'response-123';
+    client.run = { generateReasoningLabel };
+    client.resolveReasoningLabelLLM = jest.fn(async () => ({
+      provider: Providers.OPENAI,
+      clientOptions: { model: 'reasoning-label-model' },
+      endpointTokenConfig: { input: 1, output: 2 },
+      sameEndpoint: false,
+    }));
+    client.recordActivityLabelUsage = jest.fn(async () => undefined);
+    return client;
+  }
+
+  it('estimates output tokens from the raw model completion before title normalization', async () => {
+    const rawCompletion = 'Inspecting the cache race\nThis extra explanation also consumed tokens.';
+    const client = createReasoningLabelClient(
+      jest.fn(async ({ chainOptions }) => {
+        const callback = chainOptions.callbacks[0];
+        callback.handleChatModelStart(undefined, [[{ content: 'captured SDK prompt' }]]);
+        callback.handleLLMEnd({
+          generations: [
+            [
+              {
+                text: rawCompletion,
+                message: { content: [{ type: 'text', text: rawCompletion }] },
+              },
+            ],
+          ],
+        });
+        return { label: 'Inspecting the cache race' };
+      }),
+    );
+
+    const generated = await client.generateReasoningLabelViaRun({
+      visibleReasoning: 'x'.repeat(500),
+      reasoningStepId: 'reasoning-1',
+      revision: 1,
+      status: 'streaming',
+      signal: new AbortController().signal,
+    });
+    await generated.collectUsage(generated.label);
+
+    const usageCall = client.recordActivityLabelUsage.mock.calls[0];
+    expect(usageCall[6]()).toEqual({
+      promptText: 'captured SDK prompt',
+      completionText: rawCompletion,
+    });
+    expect(usageCall[7]).toBe('reasoning-label');
+  });
+
+  it('falls back to the returned label when no raw completion callback is available', async () => {
+    const client = createReasoningLabelClient(
+      jest.fn(async () => ({ label: 'Inspecting the cache race' })),
+    );
+
+    const generated = await client.generateReasoningLabelViaRun({
+      visibleReasoning: 'x'.repeat(500),
+      reasoningStepId: 'reasoning-1',
+      revision: 1,
+      status: 'streaming',
+      signal: new AbortController().signal,
+    });
+    await generated.collectUsage(generated.label);
+
+    expect(client.recordActivityLabelUsage.mock.calls[0][6]()).toMatchObject({
+      completionText: 'Inspecting the cache race',
+    });
+  });
+});
+
 describe('AgentClient - interrupt discovery persistence', () => {
   beforeEach(async () => {
     await GenerationJobManager.destroy();
@@ -142,7 +247,7 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
   const textPart = (text) => ({ type: ContentTypes.TEXT, text });
   const toolCallPart = (id) => ({ type: ContentTypes.TOOL_CALL, tool_call: { id } });
 
-  it('keeps only the last part + tool_call parts when hide_sequential_outputs is on', () => {
+  it('keeps only the last non-label part + tool_call parts when filtering is on', () => {
     const ctx = {
       options: { agent: { hide_sequential_outputs: true } },
       contentParts: [
@@ -154,6 +259,58 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
     };
     AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
     expect(ctx.contentParts).toEqual([toolCallPart('tc1'), textPart('final')]);
+  });
+
+  it('keeps the final text when a parent phase marker is appended after it', () => {
+    const tool = toolCallPart('tc1');
+    const final = textPart('final');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Completed the investigation',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+    };
+    const ctx = {
+      options: { agent: { hide_sequential_outputs: true } },
+      contentParts: [textPart('intermediate'), tool, final, phase],
+    };
+    const previousParts = [...ctx.contentParts];
+
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(ctx.contentParts).toEqual([tool, final, phase]);
+    expect(phase.activity_start_index).toBe(0);
+    expect(phase.activity_end_index).toBe(1);
+  });
+
+  it('keeps an appended phase before the final text when all phase children are filtered', () => {
+    const final = textPart('final');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Completed both reasoning activities',
+      activity_label_type: 'phase',
+      activity_start_index: 0,
+      activity_end_index: 2,
+    };
+    const ctx = {
+      options: { agent: { hide_sequential_outputs: true } },
+      contentParts: [
+        { type: ContentTypes.THINK, think: 'first' },
+        { type: ContentTypes.THINK, think: 'second' },
+        final,
+        phase,
+      ],
+    };
+    const previousParts = [...ctx.contentParts];
+
+    AgentClient.prototype.applyHideSequentialOutputsFilter.call(ctx);
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(ctx.contentParts).toEqual([final, phase]);
+    expect(phase.activity_start_index).toBe(0);
+    expect(phase.activity_end_index).toBe(0);
   });
 
   it('is a no-op when hide_sequential_outputs is off', () => {
@@ -171,6 +328,7 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
       activity_label: 'Resolved the session issue',
       activity_label_type: 'phase',
       activity_start_index: 0,
+      activity_end_index: 2,
     };
     const final = textPart('final');
     const previousParts = [reasoning, activityTool, phase, final];
@@ -185,6 +343,7 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
 
     expect(ctx.contentParts).toEqual([skillCard, activityTool, phase, final]);
     expect(phase.activity_start_index).toBe(1);
+    expect(phase.activity_end_index).toBe(2);
   });
 
   it('rebases phase bounds over reshaped sparse content without retaining holes', () => {
@@ -209,6 +368,26 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
       AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts),
     ).not.toThrow();
     expect(phase.activity_start_index).toBe(0);
+  });
+
+  it('rebases explicit bounds using only defined sparse slots', () => {
+    const toolCall = toolCallPart('tc-large-sparse');
+    const phase = {
+      type: ContentTypes.ACTIVITY_LABEL,
+      activity_label: 'Searched the sparse transcript',
+      activity_label_type: 'phase',
+      activity_start_index: 5,
+      activity_end_index: 999_999,
+    };
+    const previousParts = [];
+    previousParts[5] = toolCall;
+    previousParts[999_999] = phase;
+    const ctx = { options: { agent: {} }, contentParts: [toolCall, phase] };
+
+    AgentClient.prototype.rebaseActivityPhaseBounds.call(ctx, previousParts);
+
+    expect(phase.activity_start_index).toBe(0);
+    expect(phase.activity_end_index).toBe(1);
   });
 
   it('preserves a sparse phase reservation when completion does not reshape content', () => {
@@ -253,6 +432,28 @@ describe('AgentClient - applyHideSequentialOutputsFilter', () => {
       'tool-1',
       'tool-2',
     ]);
+  });
+});
+
+describe('AgentClient - activity phase completion', () => {
+  it('completes an uninterrupted root run', () => {
+    const complete = jest.fn();
+    AgentClient.prototype.completeActivityPhase.call(
+      {},
+      { getInterrupt: () => undefined },
+      { complete },
+    );
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains phase state when the root run pauses for HITL', () => {
+    const complete = jest.fn();
+    AgentClient.prototype.completeActivityPhase.call(
+      {},
+      { getInterrupt: () => ({ payload: { type: 'tool_approval' } }) },
+      { complete },
+    );
+    expect(complete).not.toHaveBeenCalled();
   });
 });
 

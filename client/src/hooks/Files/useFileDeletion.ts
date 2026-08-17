@@ -5,6 +5,7 @@ import type { UseMutateAsyncFunction } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import type { ExtendedFile, GenericSetter } from '~/common';
 import useSetFilesToDelete from './useSetFilesToDelete';
+import { clearUploadRecovery } from './useFileHandling';
 import { deletePreview } from '~/utils';
 
 type FileMapSetter = GenericSetter<Map<string, ExtendedFile>>;
@@ -67,6 +68,11 @@ const useFileDeletion = ({
         attached = false,
       } = _file as t.TFile & { attached?: boolean };
 
+      clearUploadRecovery(file_id);
+      if (temp_file_id) {
+        clearUploadRecovery(temp_file_id);
+      }
+
       const progress = _file['progress'] ?? 1;
 
       if (progress < 1) {
@@ -124,6 +130,11 @@ const useFileDeletion = ({
           filepath = '',
           source = FileSources.local,
         } = _file;
+
+        clearUploadRecovery(file_id);
+        if (temp_file_id) {
+          clearUploadRecovery(temp_file_id);
+        }
 
         batchFiles.push({
           source,

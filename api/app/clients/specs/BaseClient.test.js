@@ -691,6 +691,53 @@ describe('BaseClient', () => {
       );
     });
 
+    it('applies edited reasoning content from its typed payload before regeneration', async () => {
+      const responseMessageId = 'response-with-reasoning';
+      const newHistory = [
+        ...messageHistory,
+        {
+          role: 'assistant',
+          isCreatedByUser: false,
+          messageId: responseMessageId,
+          parentMessageId: '3',
+          content: [
+            {
+              type: ContentTypes.THINK,
+              think: 'Original reasoning',
+              phase: 'analysis',
+              reasoning_label: 'Inspecting the original path',
+              reasoning_label_step_id: 'old-step',
+              reasoning_label_attempts: 2,
+              reasoning_label_submitted_chars: 18,
+              reasoning_label_revision: 2,
+              reasoning_label_status: 'complete',
+            },
+            { type: ContentTypes.TEXT, text: 'Original response' },
+          ],
+        },
+      ];
+
+      TestClient = initializeFakeClient(apiKey, options, newHistory);
+      await TestClient.sendMessage('test message', {
+        isEdited: true,
+        overrideParentMessageId: 'user-message-id',
+        parentMessageId: '3',
+        responseMessageId,
+        editedContent: {
+          index: 0,
+          type: ContentTypes.THINK,
+          [ContentTypes.THINK]: 'Updated reasoning',
+        },
+      });
+
+      const editedResponse = TestClient.currentMessages[TestClient.currentMessages.length - 1];
+      expect(editedResponse.content[0]).toEqual({
+        type: ContentTypes.THINK,
+        think: 'Updated reasoning',
+        phase: 'analysis',
+      });
+    });
+
     test('setOptions is called with the correct arguments only when replaceOptions is set to true', async () => {
       TestClient.setOptions = jest.fn();
       const opts = { conversationId: '123', parentMessageId: '456', replaceOptions: true };
@@ -837,6 +884,40 @@ describe('BaseClient', () => {
         } else {
           process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
         }
+      }
+    });
+
+    test('persists the Langfuse sampling decision for agent clients using a provider endpoint', async () => {
+      const previousSampleRate = process.env.LANGFUSE_SAMPLE_RATE;
+      const previousClientName = TestClient.clientName;
+      const previousEndpoint = TestClient.options.endpoint;
+      process.env.LANGFUSE_SAMPLE_RATE = '0';
+      TestClient.clientName = 'agents';
+      TestClient.options.endpoint = 'bedrock';
+      const saveSpy = jest.spyOn(TestClient, 'saveMessageToDatabase');
+
+      try {
+        const response = await TestClient.sendMessage('Hello, world!', { user: {} });
+
+        expect(response.langfuseSampled).toBe(false);
+        expect(response.langfuseDestinationIds).toEqual([]);
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            endpoint: 'bedrock',
+            langfuseSampled: false,
+            langfuseDestinationIds: [],
+          }),
+          expect.any(Object),
+          expect.any(Object),
+        );
+      } finally {
+        if (previousSampleRate == null) {
+          delete process.env.LANGFUSE_SAMPLE_RATE;
+        } else {
+          process.env.LANGFUSE_SAMPLE_RATE = previousSampleRate;
+        }
+        TestClient.clientName = previousClientName;
+        TestClient.options.endpoint = previousEndpoint;
       }
     });
 
@@ -1235,6 +1316,80 @@ describe('BaseClient', () => {
       expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
         expect.objectContaining({
           model: instanceModel,
+        }),
+      );
+    });
+  });
+
+  /**
+   * The `transactions.enabled` guard lives in `createTransaction`, which reads it off
+   * the object it is handed. Dropping the config anywhere between here and there
+   * silently re-enables the writes rather than failing, so pin the wiring itself.
+   */
+  describe('recordTokenUsage transactions config', () => {
+    let priorEndpoint;
+    let priorEndpointType;
+
+    const arrangeFallbackPath = () => {
+      TestClient.getTokenCountForResponse = jest.fn().mockReturnValue(50);
+      TestClient.recordTokenUsage = jest.fn().mockResolvedValue(undefined);
+      TestClient.buildMessages.mockReturnValue({
+        prompt: [],
+        tokenCountMap: { res: 50 },
+      });
+    };
+
+    /** `options` is shared across this file's tests, so an endpoint left behind by an earlier
+     * case would route the balance-enabled arrangement into `checkBalance`. */
+    beforeEach(() => {
+      priorEndpoint = TestClient.options.endpoint;
+      priorEndpointType = TestClient.options.endpointType;
+      delete TestClient.options.endpoint;
+      delete TestClient.options.endpointType;
+    });
+
+    afterEach(() => {
+      delete TestClient.options.req;
+      TestClient.options.endpoint = priorEndpoint;
+      TestClient.options.endpointType = priorEndpointType;
+    });
+
+    test('should forward the resolved transactions config to recordTokenUsage', async () => {
+      TestClient.options.req = { config: { transactions: { enabled: false } } };
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: false },
+        }),
+      );
+    });
+
+    test('should default to enabled transactions when no app config is present', async () => {
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: true },
+        }),
+      );
+    });
+
+    test('should forward transactions as enabled when balance tracking overrides the setting', async () => {
+      TestClient.options.req = {
+        config: { transactions: { enabled: false }, balance: { enabled: true } },
+      };
+      arrangeFallbackPath();
+
+      await TestClient.sendMessage('Hello', {});
+
+      expect(TestClient.recordTokenUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          transactions: { enabled: true },
         }),
       );
     });
@@ -1799,6 +1954,71 @@ describe('BaseClient', () => {
   });
 
   describe('mergeEditedContent phase boundaries', () => {
+    test('carries the new reasoning label when adjacent THINK parts merge', () => {
+      const existing = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Retained reasoning. ',
+          reasoning_label: 'Inspecting the old path',
+          reasoning_label_step_id: 'old-step',
+          reasoning_label_attempts: 1,
+          reasoning_label_submitted_chars: 18,
+          reasoning_label_revision: 1,
+          reasoning_label_status: 'complete',
+        },
+      ];
+      const completion = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Continued reasoning.',
+          reasoning_label: 'Tracing the regenerated path',
+          reasoning_label_step_id: 'new-step',
+          reasoning_label_attempts: 3,
+          reasoning_label_submitted_chars: 20,
+          reasoning_label_revision: 2,
+          reasoning_label_status: 'streaming',
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.THINK)).toEqual([
+        {
+          ...completion[0],
+          think: 'Retained reasoning. Continued reasoning.',
+        },
+      ]);
+    });
+
+    test('clears a retained reasoning label when the merged THINK has no label', () => {
+      const existing = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Retained reasoning. ',
+          agentId: 'agent-1',
+          reasoning_label: 'Inspecting the old path',
+          reasoning_label_step_id: 'old-step',
+          reasoning_label_attempts: 3,
+          reasoning_label_submitted_chars: 18,
+          reasoning_label_revision: 2,
+          reasoning_label_status: 'complete',
+        },
+      ];
+      const completion = [
+        {
+          type: ContentTypes.THINK,
+          think: 'Continued without a generated title.',
+          agentId: 'agent-1',
+        },
+      ];
+
+      expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.THINK)).toEqual([
+        {
+          type: ContentTypes.THINK,
+          think: 'Retained reasoning. Continued without a generated title.',
+          agentId: 'agent-1',
+        },
+      ]);
+    });
+
     test('does not merge commentary into a final answer', () => {
       const existing = [
         { type: ContentTypes.TEXT, text: 'Checked the deployment. ', phase: 'commentary' },
@@ -1809,6 +2029,7 @@ describe('BaseClient', () => {
           type: ContentTypes.ACTIVITY_LABEL,
           activity_label_type: 'phase',
           activity_start_index: 0,
+          activity_end_index: 1,
           activity_label: 'Verified deployment health',
         },
       ];
@@ -1816,7 +2037,7 @@ describe('BaseClient', () => {
       expect(TestClient.mergeEditedContent(existing, completion, ContentTypes.TEXT)).toEqual([
         existing[0],
         completion[0],
-        { ...completion[1], activity_start_index: 1 },
+        { ...completion[1], activity_start_index: 1, activity_end_index: 2 },
       ]);
     });
 

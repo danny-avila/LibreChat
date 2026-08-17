@@ -96,7 +96,7 @@ export default function AskUserQuestions({
                 minRows={1}
                 maxRows={6}
                 placeholder={otherLabel ?? localize('com_ui_your_answer')}
-                className="mt-2 w-full resize-none rounded-md border border-border-light bg-surface-primary p-2 text-sm"
+                className="mt-2 w-full resize-none rounded-md border border-border-light bg-surface-primary p-2 text-sm text-text-primary"
                 aria-label={`${question.question} ${localize('com_ui_your_answer')}`}
               />
             </fieldset>

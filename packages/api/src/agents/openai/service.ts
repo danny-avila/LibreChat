@@ -20,6 +20,7 @@
  */
 import { nanoid } from 'nanoid';
 import { AgentCapabilities } from 'librechat-data-provider';
+import type { StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
   ChatCompletionResponse,
@@ -155,6 +156,8 @@ interface InitializeAgentParams {
    * in-repo controllers; absent / `undefined` disables the feature.
    */
   statefulSessionsAvailable?: boolean;
+  /** Deployment allowlist carried explicitly because this route's Request has no req.config. */
+  allowedStatefulCodeEnvironments?: readonly StatefulCodeEnvironment[];
   /**
    * Whether the admin-level `run_in_background` capability is enabled.
    * Gates `applyBackgroundToolCalls` in `initializeAgent` (the injected
@@ -471,12 +474,20 @@ export async function createAgentChatCompletion(
         ? ((agentsConfig as { capabilities?: string[] }).capabilities ?? []).includes(capability)
         : undefined;
     const codeEnvAvailable = capabilityEnabled(AgentCapabilities.execute_code);
-    /** Mirror `codeEnvAvailable` for the stateful-session gate so an agent with
-     *  `execute_code`, the app `stateful_code_sessions` capability, and its own
-     *  builder opt-in resolves stateful sessions on this route too — otherwise
-     *  `statefulCodeSessions` stays false and `createRun` never sends
-     *  `toolExecution.sandbox`. */
+    /** Mirror `codeEnvAvailable` for the stateful-session gate so this route
+     *  also carries each agent's trusted stateful endpoint/profile selection
+     *  into tool loading and prewarming. */
     const statefulSessionsAvailable = capabilityEnabled(AgentCapabilities.stateful_code_sessions);
+    const allowedStatefulCodeEnvironments =
+      agentsConfig != null && typeof agentsConfig === 'object'
+        ? (
+            agentsConfig as {
+              statefulCodeSessions?: {
+                allowedEnvironments?: readonly StatefulCodeEnvironment[];
+              };
+            }
+          ).statefulCodeSessions?.allowedEnvironments
+        : undefined;
     /** Same gate as the in-repo controllers: without it, agents that opted
      *  tools in via tool_options.run_in_background silently lose the
      *  background param + poll tool on this route. */
@@ -500,6 +511,7 @@ export async function createAgentChatCompletion(
       isInitialAgent: true,
       codeEnvAvailable,
       statefulSessionsAvailable,
+      allowedStatefulCodeEnvironments,
       backgroundToolsAvailable,
       toolIntentsAvailable,
     });
@@ -639,7 +651,27 @@ export async function createAgentChatCompletion(
       writeSSE(res, '[DONE]');
       res.end();
     } else {
-      sendErrorResponse(res, 500, errorMessage, 'server_error');
+      const candidateStatus =
+        error != null && typeof error === 'object'
+          ? ((error as { status?: unknown; statusCode?: unknown }).status ??
+            (error as { statusCode?: unknown }).statusCode)
+          : undefined;
+      const statusCode =
+        typeof candidateStatus === 'number' &&
+        Number.isInteger(candidateStatus) &&
+        candidateStatus >= 400 &&
+        candidateStatus < 600
+          ? candidateStatus
+          : 500;
+      const errorType =
+        statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';
+      const errorCode =
+        error != null &&
+        typeof error === 'object' &&
+        typeof (error as { code?: unknown }).code === 'string'
+          ? (error as { code: string }).code
+          : null;
+      sendErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
     }
   }
 }

@@ -1,5 +1,5 @@
 jest.mock('~/models', () => ({
-  getConvo: jest.fn(),
+  getConvoOwnership: jest.fn(),
 }));
 
 jest.mock('@librechat/api', () => ({
@@ -18,7 +18,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 const validateMessageReq = require('../validateMessageReq');
-const { getConvo } = require('~/models');
+const { getConvoOwnership } = require('~/models');
 const { GenerationJobManager } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 
@@ -52,7 +52,7 @@ describe('validateMessageReq', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: 'Conversation ID mismatch' });
-    expect(getConvo).not.toHaveBeenCalled();
+    expect(getConvoOwnership).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -69,7 +69,7 @@ describe('validateMessageReq', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: 'Conversation ID mismatch' });
-    expect(getConvo).not.toHaveBeenCalled();
+    expect(getConvoOwnership).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
 
@@ -81,11 +81,11 @@ describe('validateMessageReq', () => {
     };
     const res = createResponse();
     const next = jest.fn();
-    getConvo.mockResolvedValue({ conversationId: 'convo-owned', user: userId });
+    getConvoOwnership.mockResolvedValue({ conversationId: 'convo-owned', user: userId });
 
     await validateMessageReq(req, res, next);
 
-    expect(getConvo).toHaveBeenCalledWith(userId, 'convo-owned');
+    expect(getConvoOwnership).toHaveBeenCalledWith(userId, 'convo-owned');
     expect(next).toHaveBeenCalledTimes(1);
   });
 
@@ -98,7 +98,7 @@ describe('validateMessageReq', () => {
     };
     const res = createResponse();
     const next = jest.fn();
-    getConvo.mockResolvedValue(null);
+    getConvoOwnership.mockResolvedValue(null);
     GenerationJobManager.getJob.mockResolvedValue({
       status: 'running',
       metadata: { userId, tenantId: 'tenant-a' },
@@ -120,7 +120,7 @@ describe('validateMessageReq', () => {
     };
     const res = createResponse();
     const next = jest.fn();
-    getConvo.mockResolvedValue(null);
+    getConvoOwnership.mockResolvedValue(null);
     GenerationJobManager.getJob.mockResolvedValue({
       status: 'running',
       metadata: { userId },
@@ -141,7 +141,7 @@ describe('validateMessageReq', () => {
     };
     const res = createResponse();
     const next = jest.fn();
-    getConvo.mockResolvedValue(null);
+    getConvoOwnership.mockResolvedValue(null);
     GenerationJobManager.getJob.mockResolvedValue({
       status: 'running',
       metadata: { userId: 'another-user' },
@@ -163,7 +163,7 @@ describe('validateMessageReq', () => {
     };
     const res = createResponse();
     const next = jest.fn();
-    getConvo.mockResolvedValue(null);
+    getConvoOwnership.mockResolvedValue(null);
     GenerationJobManager.getJob.mockResolvedValue({
       status: 'running',
       metadata: { userId, tenantId: 'tenant-b' },
@@ -185,7 +185,7 @@ describe('validateMessageReq', () => {
     };
     const res = createResponse();
     const next = jest.fn();
-    getConvo.mockResolvedValue(null);
+    getConvoOwnership.mockResolvedValue(null);
 
     await validateMessageReq(req, res, next);
 
@@ -205,7 +205,7 @@ describe('validateMessageReq', () => {
     const res = createResponse();
     const next = jest.fn();
     const error = new Error('job store unavailable');
-    getConvo.mockResolvedValue(null);
+    getConvoOwnership.mockResolvedValue(null);
     GenerationJobManager.getJob.mockRejectedValue(error);
 
     await validateMessageReq(req, res, next);
@@ -229,7 +229,7 @@ describe('validateMessageReq', () => {
     };
     const res = createResponse();
     const next = jest.fn();
-    getConvo.mockResolvedValue(null);
+    getConvoOwnership.mockResolvedValue(null);
 
     await validateMessageReq(req, res, next);
 

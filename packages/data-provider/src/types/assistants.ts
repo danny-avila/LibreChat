@@ -1,9 +1,16 @@
 import type { OpenAPIV3 } from 'openapi-types';
 import type { AssistantsEndpoint, AgentProvider, MemoryScope } from 'src/schemas';
+import type { StatefulCodeEnvironment } from '../stateful-code';
 import type { Agents, GraphEdge } from './agents';
 import type { ContentTypes } from './runs';
 import type { TFile } from './files';
 import { ArtifactModes } from 'src/artifacts';
+export {
+  STATEFUL_CODE_ENVIRONMENTS,
+  resolveStatefulCodeEnvironment,
+  resolveAllowedStatefulCodeEnvironments,
+} from '../stateful-code';
+export type { StatefulCodeEnvironment } from '../stateful-code';
 
 export type Schema = OpenAPIV3.SchemaObject & { description?: string };
 export type Reference = OpenAPIV3.ReferenceObject & { description?: string };
@@ -301,6 +308,8 @@ export type Agent = {
   hide_sequential_outputs?: boolean;
   /** Per-agent opt-in for stateful code sessions (requires the app-level capability). */
   stateful_code_sessions?: boolean;
+  /** Stateful workspace sharing scope. Defaults to one workspace per user. */
+  stateful_code_environment?: StatefulCodeEnvironment;
   artifacts?: ArtifactModes;
   recursion_limit?: number;
   isPublic?: boolean;
@@ -353,6 +362,7 @@ export type AgentCreateParams = {
   | 'end_after_tools'
   | 'hide_sequential_outputs'
   | 'stateful_code_sessions'
+  | 'stateful_code_environment'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -382,6 +392,7 @@ export type AgentUpdateParams = {
   | 'end_after_tools'
   | 'hide_sequential_outputs'
   | 'stateful_code_sessions'
+  | 'stateful_code_environment'
   | 'artifacts'
   | 'recursion_limit'
   | 'category'
@@ -573,6 +584,33 @@ export type PartMetadata = {
   agentId?: string;
   /** Group ID for parallel content - parts with same groupId are displayed in columns */
   groupId?: number;
+  /**
+   * Terminal lifecycle status of the run step that produced this part, from
+   * `on_run_step_closed`. Distinct from `status`, which is already claimed by
+   * activity-label and question-form parts. Absent on parts predating the
+   * event or from endpoints that do not emit it, in which case renderers fall
+   * back to inferring "stopped" from `progress` and `isSubmitting`.
+   */
+  runStepStatus?: Agents.RunStepClosedStatus;
+  /**
+   * Wall-clock milliseconds the run step took, derived from the same
+   * `on_run_step_closed` event as {@link runStepStatus} via
+   * `getRunStepDurationMs`. Only written when the event carried both
+   * timestamps and they agree in order — so its absence means "not
+   * derivable", never "instant". The raw value is persisted unfiltered;
+   * whether it is worth showing (`isReportableRunStepDuration`) is decided
+   * at render time.
+   */
+  runStepDurationMs?: number;
+  /**
+   * Stamped by the background harvester when a detached task's final output
+   * replaces the dispatch handle in `tool_call.output`. The handle JSON and
+   * the live status-marker attachment are both transient, so after the patch
+   * (or a reload) this is the only signal that the call ran in the
+   * background — renderers use it to keep treating {@link runStepDurationMs}
+   * as dispatch time rather than the task's runtime.
+   */
+  backgrounded?: boolean;
 };
 
 /** Metadata for parallel content rendering - subset of PartMetadata */
@@ -630,7 +668,22 @@ export type TMessageContentParts =
       text?: string | TextData;
       error?: string;
     } & ContentMetadata)
-  | ({ type: ContentTypes.THINK; think?: string | TextData } & ContentMetadata)
+  | ({
+      type: ContentTypes.THINK;
+      think?: string | TextData;
+      /** Generated orientation for this user-visible reasoning step. */
+      reasoning_label?: string;
+      /** Stable SDK run-step identity used to correlate live revisions. */
+      reasoning_label_step_id?: string;
+      /** Durable provider-call count used to enforce the per-run cost cap across resumes. */
+      reasoning_label_attempts?: number;
+      /** Visible reasoning length included in this step's latest provider call. */
+      reasoning_label_submitted_chars?: number;
+      /** Monotonic provider-call revision; gaps are allowed after unsuccessful attempts. */
+      reasoning_label_revision?: number;
+      /** Whether the reasoning step can still produce a newer label. */
+      reasoning_label_status?: 'streaming' | 'complete';
+    } & ContentMetadata)
   | (SteerContentPart & ContentMetadata)
   | ({
       type: ContentTypes.TEXT;
@@ -662,6 +715,8 @@ export type TMessageContentParts =
       tool_call_ids?: string[];
       /** Parent phase bounds and telemetry. */
       activity_start_index?: number;
+      /** Exclusive end of the grouped content; may precede the marker itself. */
+      activity_end_index?: number;
       activity_count?: number;
       agent_ids?: string[];
       /** ok = all tools succeeded, failed = all failed, partial = mixed. */

@@ -16,6 +16,7 @@ jest.mock('~/hooks', () => ({
     style: { display: 'grid', gridTemplateRows: isExpanded ? '1fr' : '0fr' },
     ref: { current: null },
   }),
+  useLazyCollapseBody: jest.requireActual('~/hooks/Messages/useLazyCollapseBody').default,
   useProgress: (initial: number) => (initial >= 1 ? 1 : initial),
   scheduleMessageContentLayoutReconcile: jest.fn(() => jest.fn()),
 }));
@@ -78,7 +79,6 @@ jest.mock('../Parts', () => ({
   Reasoning: () => <div data-testid="reasoning" />,
   Summary: () => <div data-testid="summary" />,
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
-  EditTextPart: () => <div data-testid="edit-text" />,
 }));
 
 jest.mock('../MemoryArtifacts', () => ({
