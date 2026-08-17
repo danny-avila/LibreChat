@@ -9,7 +9,6 @@ import type {
 } from '~/types/schedule';
 import type { ScheduleMethods } from './schedule';
 import { createScheduleMethods } from './schedule';
-import { createUserMethods } from './user';
 import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
@@ -23,7 +22,6 @@ let mongoServer: MongoMemoryServer;
 let Schedule: Model<IScheduleDocument>;
 let ScheduleRun: Model<IScheduleRunDocument>;
 let methods: ScheduleMethods;
-let userMethods: ReturnType<typeof createUserMethods>;
 
 /** Standing up a real in-memory MongoDB plus index builds routinely outruns the
  *  15s default hook timeout when the suite runs alongside the rest of the package
@@ -41,7 +39,6 @@ beforeAll(async () => {
   await Schedule.init();
   await ScheduleRun.init();
   methods = createScheduleMethods(mongoose);
-  userMethods = createUserMethods(mongoose);
 }, DB_SETUP_TIMEOUT_MS);
 
 afterAll(async () => {
@@ -1113,135 +1110,6 @@ describe('claim-token fencing (stale worker cannot mutate an edited/deleted sche
   });
 });
 
-describe('deletion barrier fails closed on cache invalidation', () => {
-  const CACHE_MODE = process.env.AUTH_USER_CACHE_MODE;
-
-  afterEach(() => {
-    if (CACHE_MODE === undefined) {
-      delete process.env.AUTH_USER_CACHE_MODE;
-    } else {
-      process.env.AUTH_USER_CACHE_MODE = CACHE_MODE;
-    }
-  });
-
-  /**
-   * The barrier is only real once no cached PRE-barrier user document can still
-   * populate req.user. Swallowing the invalidation fault reports a barrier that was
-   * never raised, and the caller then starts the destructive cascade while stale
-   * requests are still admitted.
-   */
-  it('throws when the cached user document cannot be invalidated', async () => {
-    process.env.AUTH_USER_CACHE_MODE = 'on';
-    const failing = createUserMethods(mongoose, {
-      getCache: () =>
-        ({
-          get: async () => {
-            throw new Error('redis down');
-          },
-          delete: async () => undefined,
-        }) as never,
-    });
-    const user = await mongoose.models.User.create({
-      email: `barrier-fail-${Date.now()}@test.dev`,
-      name: 'B',
-    });
-
-    await expect(failing.markUserDeleting(user._id.toString())).rejects.toThrow(/redis down/);
-  });
-
-  it('throws when the cache is enabled but unavailable', async () => {
-    process.env.AUTH_USER_CACHE_MODE = 'on';
-    const noCache = createUserMethods(mongoose, { getCache: () => undefined });
-    const user = await mongoose.models.User.create({
-      email: `barrier-nocache-${Date.now()}@test.dev`,
-      name: 'B',
-    });
-
-    await expect(noCache.markUserDeleting(user._id.toString())).rejects.toThrow(/cannot confirm/i);
-  });
-
-  it('succeeds normally when the cache is disabled', async () => {
-    delete process.env.AUTH_USER_CACHE_MODE;
-    const user = await mongoose.models.User.create({
-      email: `barrier-ok-${Date.now()}@test.dev`,
-      name: 'B',
-    });
-    await expect(userMethods.markUserDeleting(user._id.toString())).resolves.toBeInstanceOf(Date);
-  });
-
-  it('writes the deletion tombstone BEFORE sweeping the cached keys', async () => {
-    process.env.AUTH_USER_CACHE_MODE = 'on';
-    const ops: string[] = [];
-    const tracking = createUserMethods(mongoose, {
-      getCache: () =>
-        ({
-          get: async () => undefined,
-          set: async (key: string) => {
-            ops.push(`set:${key}`);
-            return true;
-          },
-          delete: async (key: string) => {
-            ops.push(`delete:${key}`);
-            return true;
-          },
-        }) as never,
-    });
-    const user = await mongoose.models.User.create({
-      email: `barrier-tombstone-${Date.now()}@test.dev`,
-      name: 'B',
-    });
-
-    await tracking.markUserDeleting(user._id.toString());
-
-    // A fill racing this barrier checks the tombstone AFTER its own write. That
-    // only closes the race if the tombstone exists before the sweep begins: a
-    // sweep-first ordering leaves a window where the fill sees no tombstone and
-    // its entry was written after the sweep — surviving for the full TTL.
-    const tombstoneSet = ops.findIndex((op) => op.startsWith('set:auth-user-doc-tombstone:'));
-    const firstDelete = ops.findIndex((op) => op.startsWith('delete:'));
-    expect(tombstoneSet).toBeGreaterThanOrEqual(0);
-    expect(firstDelete).toBeGreaterThan(tombstoneSet);
-  });
-
-  it('establishes the cache tombstone BEFORE the durable deletion stamp', async () => {
-    process.env.AUTH_USER_CACHE_MODE = 'on';
-    const user = await mongoose.models.User.create({
-      email: `barrier-order-${Date.now()}@test.dev`,
-      name: 'B',
-    });
-    let stampAtTombstoneWrite: unknown = 'unchecked';
-    const tracking = createUserMethods(mongoose, {
-      getCache: () =>
-        ({
-          get: async () => undefined,
-          set: async (key: string) => {
-            if (key.startsWith('auth-user-doc-tombstone:')) {
-              const doc = await mongoose.models.User.findById(user._id)
-                .select('deletionRequestedAt')
-                .lean<{ deletionRequestedAt?: Date }>();
-              stampAtTombstoneWrite = doc?.deletionRequestedAt ?? null;
-            }
-            return true;
-          },
-          delete: async () => true,
-        }) as never,
-    });
-
-    await tracking.markUserDeleting(user._id.toString());
-
-    // A cached hit treats an ABSENT tombstone as a conclusive fence, so the
-    // tombstone must exist before the deletion becomes durable: a stamp-first
-    // ordering left a window where a hit between the two writes authenticated a
-    // user whose deletion had already durably begun — possibly after the quiesce
-    // pass that would have discovered that request's work.
-    expect(stampAtTombstoneWrite).toBeNull();
-    const after = await mongoose.models.User.findById(user._id)
-      .select('deletionRequestedAt')
-      .lean<{ deletionRequestedAt?: Date }>();
-    expect(after?.deletionRequestedAt).toBeInstanceOf(Date);
-  });
-});
-
 describe('schedule deletion is retryable', () => {
   /**
    * The mark is the FIRST of several teardown steps (read active runs, abort their
@@ -1778,81 +1646,6 @@ describe('deletion quiescing (soft-delete, drain, erase)', () => {
     // The deleting schedule no longer occupies the cap, so a replacement fits.
     const b = await methods.createScheduleWithSlot(scheduleData({ user }), 1);
     expect(b).not.toBe('limit');
-  });
-});
-
-describe('account-deletion barrier (delete vs create)', () => {
-  it('is one-way and monotonic under concurrent deletion requests', async () => {
-    const User = mongoose.models.User;
-    const user = await User.create({ email: `barrier-${Date.now()}@test.dev`, name: 'B' });
-
-    expect(await userMethods.isUserDeleting(user._id.toString())).toBe(false);
-
-    // Six concurrent deletion requests must agree on ONE timestamp: the barrier is
-    // stamped only when absent, so there is no un-delete race and no ABA window.
-    const stamps = await Promise.all(
-      Array.from({ length: 6 }, () => userMethods.markUserDeleting(user._id.toString())),
-    );
-    const unique = new Set(stamps.map((d) => d?.getTime()));
-    expect(unique.size).toBe(1);
-    expect(await userMethods.isUserDeleting(user._id.toString())).toBe(true);
-  });
-
-  it('fails CLOSED for an unknown user so admission never leaks', async () => {
-    // Refusing work for a live user is recoverable (the caller retries); admitting work
-    // for a deleting one is not, so an unresolvable lookup must report "deleting".
-    expect(await userMethods.isUserDeleting(new mongoose.Types.ObjectId().toString())).toBe(true);
-  });
-
-  it('surfaces unfinished COMMITTED cascades as a resumable work list', async () => {
-    const User = mongoose.models.User;
-    const pendingUser = await User.create({
-      email: `pending-${Date.now()}@test.dev`,
-      name: 'P',
-    });
-    await userMethods.markUserDeleting(pendingUser._id.toString());
-    await userMethods.markUserDeletionCommitted(pendingUser._id.toString());
-
-    // A deletion deferred on an unconfirmed quiesce (or crashed part-way) leaves the
-    // barrier up with the document still present — exactly what a later pass queries.
-    const pending = await userMethods.getUsersPendingDeletion(50);
-    expect(pending.some((u) => u._id.toString() === pendingUser._id.toString())).toBe(true);
-  });
-
-  it('never surfaces a barrier the CLI raised without committing', async () => {
-    const User = mongoose.models.User;
-    const refusedUser = await User.create({
-      email: `cli-refused-${Date.now()}@test.dev`,
-      name: 'R',
-    });
-    // config/delete-user.js raises the admission barrier, then can REFUSE (active
-    // runs) and exit. The sweep auto-completing that barrier would delete an account
-    // — and transactions the operator chose to retain — after the CLI reported the
-    // deletion as refused.
-    await userMethods.markUserDeleting(refusedUser._id.toString());
-
-    const pending = await userMethods.getUsersPendingDeletion(50);
-    expect(pending.some((u) => u._id.toString() === refusedUser._id.toString())).toBe(false);
-  });
-
-  it('rotates the pending-deletion window past cascades that keep deferring', async () => {
-    const User = mongoose.models.User;
-    const suffix = Date.now();
-    const first = await User.create({ email: `rot-a-${suffix}@test.dev`, name: 'A' });
-    const second = await User.create({ email: `rot-b-${suffix}@test.dev`, name: 'B' });
-    await userMethods.markUserDeleting(first._id.toString());
-    await userMethods.markUserDeletionCommitted(first._id.toString());
-    await userMethods.markUserDeleting(second._id.toString());
-    await userMethods.markUserDeletionCommitted(second._id.toString());
-
-    const window = await userMethods.getUsersPendingDeletion(1);
-    expect(window).toHaveLength(1);
-    await userMethods.markDeletionSweepAttempted([window[0]._id.toString()]);
-
-    // Same rotation discipline as every other bounded recovery window: a quiesce
-    // that keeps deferring must not pin the window and starve deletions behind it.
-    const rotated = await userMethods.getUsersPendingDeletion(1);
-    expect(rotated[0]._id.toString()).not.toBe(window[0]._id.toString());
   });
 });
 

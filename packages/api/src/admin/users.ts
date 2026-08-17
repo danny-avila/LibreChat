@@ -54,23 +54,6 @@ export interface AdminUsersDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<void>;
-  /**
-   * Stops the user's scheduled work and confirms the drain. Unlike the rest of the
-   * cascade this endpoint defers, scheduled runs are ACTIVE: a fire already generating
-   * keeps persisting messages (and billing) after the user document is gone, and the
-   * engine keeps claiming occurrences. Returns false when the drain could not be
-   * confirmed, in which case deletion must be refused rather than proceed.
-   */
-  quiesceUserSchedules: (userId: string) => Promise<boolean>;
-  /** Raises the durable, one-way account-deletion barrier. Must run BEFORE the quiesce:
-   *  the quiesce is a one-shot scan, and only the barrier refuses admission to work
-   *  created after it. */
-  markUserDeleting: (userId: string) => Promise<Date | null>;
-  /** Commits the deletion to automatic completion; only committed rows are swept. */
-  markUserDeletionCommitted: (userId: string) => Promise<void>;
-  /** Hard-deletes the user's Schedule/ScheduleRun rows. Not left to the reconciler's
-   *  `deleting` sweep, which the clustered entrypoint never runs. */
-  deleteSchedulesByUser: (userId: string) => Promise<void>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps): {

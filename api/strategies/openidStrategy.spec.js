@@ -265,7 +265,7 @@ describe('setupOpenId', () => {
     });
 
     // By default, assume that no user is found, so createUser will be called
-    findUser.mockImplementation(async (query) => (query?._id != null ? { _id: query._id } : null));
+    findUser.mockResolvedValue(null);
     createUser.mockImplementation(async (userData) => {
       // simulate created user with an _id property
       return { _id: 'newUserId', ...userData };
@@ -405,39 +405,6 @@ describe('setupOpenId', () => {
     });
   });
 
-  it('refuses when the deletion barrier rose during the login flow', async () => {
-    const existingUser = {
-      _id: 'existing-user-id',
-      provider: 'openid',
-      email: tokenset.claims().email,
-      openidId: tokenset.claims().sub,
-    };
-    findUser
-      // Pre-barrier snapshot at the openidId lookup.
-      .mockResolvedValueOnce(existingUser)
-      // The boundary recheck, sequenced after avatar/role sync, observes the barrier.
-      .mockResolvedValueOnce({ _id: 'existing-user-id', deletionRequestedAt: new Date() });
-
-    const { user } = await validate(tokenset);
-
-    expect(user).toBe(false);
-  });
-
-  it('fails closed when the boundary recheck cannot see the identity', async () => {
-    findUser
-      .mockResolvedValueOnce({
-        _id: 'existing-user-id',
-        provider: 'openid',
-        email: tokenset.claims().email,
-        openidId: tokenset.claims().sub,
-      })
-      .mockResolvedValueOnce(null);
-
-    const { user } = await validate(tokenset);
-
-    expect(user).toBe(false);
-  });
-
   it('should create a new user with correct username when preferred_username claim exists', async () => {
     // Arrange – our userinfo already has preferred_username 'testusername'
     const userinfo = tokenset.claims();
@@ -561,9 +528,6 @@ describe('setupOpenId', () => {
       name: '',
     };
     findUser.mockImplementation(async (query) => {
-      if (query?._id != null) {
-        return { _id: query._id };
-      }
       if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
         return existingUser;
       }
@@ -599,9 +563,6 @@ describe('setupOpenId', () => {
       name: 'Existing User',
     };
     findUser.mockImplementation(async (query) => {
-      if (query?._id != null) {
-        return { _id: query._id };
-      }
       if (query.email === tokenset.claims().email && !query.provider) {
         return existingUser;
       }
@@ -628,9 +589,6 @@ describe('setupOpenId', () => {
       name: 'Existing User',
     };
     findUser.mockImplementation(async (query) => {
-      if (query?._id != null) {
-        return { _id: query._id };
-      }
       if (query.$or) {
         return null;
       }
@@ -1291,9 +1249,6 @@ describe('setupOpenId', () => {
       };
 
       findUser.mockImplementation(async (query) => {
-        if (query?._id != null) {
-          return { _id: query._id };
-        }
         if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
           return existingAdminUser;
         }
@@ -1738,9 +1693,6 @@ describe('setupOpenId', () => {
       };
 
       findUser.mockImplementation(async (query) => {
-        if (query?._id != null) {
-          return { _id: query._id };
-        }
         if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
           return existingAdminUser;
         }
@@ -1831,9 +1783,6 @@ describe('setupOpenId', () => {
       };
 
       findUser.mockImplementation(async (query) => {
-        if (query?._id != null) {
-          return { _id: query._id };
-        }
         if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
           return existingAdminUser;
         }
@@ -1867,9 +1816,6 @@ describe('setupOpenId', () => {
       const { tenantStorage } = require('@librechat/data-schemas');
 
       findUser.mockImplementation(async (query) => {
-        if (query?._id != null) {
-          return { _id: query._id };
-        }
         if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
           return existingUser;
         }
@@ -1903,9 +1849,6 @@ describe('setupOpenId', () => {
       const { isEmailDomainAllowed } = require('@librechat/api');
 
       findUser.mockImplementation(async (query) => {
-        if (query?._id != null) {
-          return { _id: query._id };
-        }
         if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
           return existingUser;
         }
@@ -1960,9 +1903,6 @@ describe('setupOpenId', () => {
       };
 
       findUser.mockImplementation(async (query) => {
-        if (query?._id != null) {
-          return { _id: query._id };
-        }
         if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
           return existingUser;
         }
@@ -1993,9 +1933,6 @@ describe('setupOpenId', () => {
     };
 
     findUser.mockImplementation(async (query) => {
-      if (query?._id != null) {
-        return { _id: query._id };
-      }
       if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
         return existingAdminUser;
       }
@@ -2047,9 +1984,6 @@ describe('setupOpenId', () => {
     };
 
     findUser.mockImplementation(async (query) => {
-      if (query?._id != null) {
-        return { _id: query._id };
-      }
       if (query.openidId === tokenset.claims().sub || query.email === tokenset.claims().email) {
         return existingAdminUser;
       }
@@ -2569,9 +2503,7 @@ describe('setupOpenId', () => {
     });
 
     it('should use baseConfig for new user without calling resolveAppConfigForUser', async () => {
-      findUser.mockImplementation(async (query) =>
-        query?._id != null ? { _id: query._id } : null,
-      );
+      findUser.mockResolvedValue(null);
 
       await validate(tokenset);
 

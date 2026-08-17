@@ -2,7 +2,6 @@ import { logger, runAsSystem, tenantStorage, isRuntimeDisabled } from '@librecha
 import { getRefillEligibilityDate, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { ScheduleMethods, AppConfig, IBalance } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
-import type { AddressInfo } from 'net';
 import type { Types } from 'mongoose';
 import type {
   ScheduleEngineDeps,
@@ -22,16 +21,14 @@ import {
   hasResumeHandoffInFlight,
   hasAbortInFlight,
 } from './types';
-import { generateShortLivedToken, SCHEDULE_FIRE_SCOPE, SCHEDULE_MANUAL_CLAIM } from '../crypto/jwt';
 import { deleteAgentCheckpoint, captureAgentCheckpointGeneration } from '../agents/checkpointer';
-import { fireSchedule, SCHEDULE_FIRE_TOKEN_TTL, BALANCE_SKIP_DISABLE_THRESHOLD } from './fire';
+import { fireSchedule, BALANCE_SKIP_DISABLE_THRESHOLD } from './fire';
 import { GenerationJobManager } from '../stream/GenerationJobManager';
 import { buildBalanceUpdateFields } from '../middleware/balance';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { isShutdownInProgress } from '../app/shutdown';
 import { startScheduleErasureSweep } from './erasure';
 import { getBalanceConfig } from '../app/config';
-import { selfOriginFromAddress } from './origin';
 import { startScheduleEngine } from './engine';
 import { withCapacitySlot } from './capacity';
 import { isEnabled } from '../utils/common';
@@ -85,6 +82,9 @@ function jobMatchesIdentity(
 export interface RecordScheduleOutcomeInput {
   scheduleId?: string;
   scheduledFor?: string | Date;
+  /** Exact generation whose terminal evidence is being persisted. */
+  streamId?: string;
+  jobCreatedAt?: number;
   status: ScheduleRunOutcomeStatus;
   conversationId?: string;
   /** Erase the row's reserved conversationId (pre-start abort: no conversation exists). */
@@ -95,8 +95,8 @@ export interface RecordScheduleOutcomeInput {
 /**
  * Api-side dependencies the schedules service needs injected: model methods,
  * config/balance access, and the owner-scoped agent access check. Everything
- * else (job store, tenant context, token minting) lives in `@librechat/api` and
- * is imported directly.
+ * else (job store and tenant context) lives in `@librechat/api` and is imported
+ * directly.
  */
 export interface SchedulesServiceDeps {
   methods: ScheduleMethods & {
@@ -143,6 +143,8 @@ export interface SchedulesServiceDeps {
   ) => Promise<'ok' | 'missing' | 'forbidden'>;
   /** Whether this user's account deletion has begun. Fail-closed (unknown == true). */
   isUserDeleting: (userId: string) => Promise<boolean>;
+  /** Shared durable trigger admission from the merged agent-trigger service. */
+  enqueueAgentTrigger: ScheduleEngineDeps['enqueueTrigger'];
 }
 
 export interface SchedulesService {
@@ -153,43 +155,6 @@ export interface SchedulesService {
     limits: ScheduleLimits,
   ) => Promise<FireResult | null>;
   recordScheduleOutcome: (input: RecordScheduleOutcomeInput) => Promise<boolean>;
-  /**
-   * Stamps a run abort-requested (source: the interactive Stop route) ahead of an
-   * abort this service does not signal. 'stamped' means the fence is durable and the
-   * abort may proceed; 'no_active_run' means the occurrence is already settled (no
-   * fence needed, nothing to settle); 'failed' means the stamp could not be made
-   * durable and the abort must NOT proceed — without it a concurrent
-   * account-deletion quiesce would read the post-abort job state as a settled
-   * generation and confirm its drain mid-write.
-   */
-  requestScheduledRunAbort: (
-    scheduleId: string,
-    scheduledFor: Date,
-  ) => Promise<'stamped' | 'no_active_run' | 'in_progress' | 'failed'>;
-  /**
-   * Stamped by the interactive Stop route once every write it makes (checkpoint prune,
-   * partial-response save) has landed; releases the generation owner's settlement
-   * barrier (see awaitStopAbortPersistence).
-   */
-  /** Stamps a paused run resume-claimed (re-pause hand-off fence). Best-effort. */
-  markScheduledRunResumeClaimed: (scheduleId: string, scheduledFor: Date) => Promise<void>;
-  markScheduledRunAbortPersisted: (scheduleId: string, scheduledFor: Date) => Promise<void>;
-  /**
-   * The generation owner's half of the abort-settlement barrier: when THIS run's abort
-   * came from the interactive Stop route (`abortSource: 'stop'`, stamped before the
-   * abort was signalled), waits — bounded — for the route to stamp
-   * `abortPersistedAt`, i.e. for its checkpoint prune and partial-response save to
-   * land. Settling before that lets the run leave the active set while the route is
-   * still persisting, so an account-deletion drain can confirm mid-write.
-   *
-   * FAILS CLOSED: returns true only when the barrier is genuinely clear (no stop
-   * attempt pending, or its persistence acknowledged, or the whole owner-death fence
-   * has lapsed). On timeout or unreadable state it returns false, and the caller must
-   * NOT settle — it leaves the run active for the reconciler, which finalizes it once
-   * the fence expires. Trivially true for deletion-sourced aborts (nothing is
-   * persisted after those) and for runs with no abort stamp.
-   */
-  awaitStopAbortPersistence: (scheduleId: string, scheduledFor: Date) => Promise<boolean>;
   /**
    * Whether a schedule is still live (exists and not soft-deleted). The loopback
    * chat controller calls this right after creating the generation job to re-fence
@@ -215,22 +180,13 @@ export interface SchedulesService {
    *  entrypoint does not start it. Returns undefined when index creation failed, or when
    *  the topology cannot be shown safe (process-local job store with no single-process
    *  assertion) — see isTopologySafeToArm. */
-  initializeScheduleEngine: (
-    options?: ScheduleEngineInitOptions,
-  ) => Promise<ReturnType<typeof startScheduleEngine> | undefined>;
-}
-
-export interface ScheduleEngineInitOptions {
-  /** The listener's own `server.address()`; see selfOriginFromAddress. */
-  address?: AddressInfo | string | null;
+  initializeScheduleEngine: () => Promise<ReturnType<typeof startScheduleEngine> | undefined>;
 }
 
 /** Test-only overrides for the service's bounded waits (drains, barriers). */
 export interface ScheduleServiceTimings {
   drainTimeoutMs?: number;
   drainPollMs?: number;
-  stopBarrierTimeoutMs?: number;
-  stopBarrierPollMs?: number;
 }
 
 /**
@@ -244,9 +200,6 @@ export function createSchedulesService(
 ): SchedulesService {
   const { methods } = deps;
 
-  /** Resolved from the listener at arm time; see getSelfUrl. */
-  let boundOrigin: string | undefined;
-
   // Fail LOUDLY at construction, not per-fire. The JS adapter (api/server/services/
   // Schedules) is not typechecked against SchedulesServiceDeps, so a missing dep would
   // otherwise surface only as a `deps.X is not a function` deep inside a live fire —
@@ -259,6 +212,7 @@ export function createSchedulesService(
     'upsertBalance',
     'resolveAgentFireAccess',
     'isUserDeleting',
+    'enqueueAgentTrigger',
   ];
   for (const key of REQUIRED_DEPS) {
     if (deps[key] == null) {
@@ -448,19 +402,7 @@ export function createSchedulesService(
         source: file.source,
       }));
     },
-    mintFireToken: (userId, options) =>
-      generateShortLivedToken(userId, SCHEDULE_FIRE_TOKEN_TTL, {
-        scope: SCHEDULE_FIRE_SCOPE,
-        // Signed, so the limiter can trust it: Run Now must not inherit the automatic
-        // occurrence's exemption from the interactive message limiters.
-        ...(options?.manual ? { [SCHEDULE_MANUAL_CLAIM]: '1' } : {}),
-      }),
-    // Operator override first (a proxy/TLS front door), then the address the server
-    // actually bound, and only then the historical guess.
-    getSelfUrl: () =>
-      process.env.SCHEDULES_SELF_URL ??
-      boundOrigin ??
-      `http://127.0.0.1:${process.env.PORT ?? 3080}`,
+    enqueueTrigger: deps.enqueueAgentTrigger,
     runInTenantContext: (user, fn) =>
       tenantStorage.run({ tenantId: user.tenantId, userId: user.id }, fn),
     getJobStatus: async (conversationId) => {
@@ -470,9 +412,11 @@ export function createSchedulesService(
       }
       return {
         status: job.status,
+        createdAt: job.createdAt,
         scheduleId: job.scheduleId,
         scheduledFor: job.scheduledFor,
         createdEventEmitted: job.createdEventEmitted === true,
+        preserveForScheduleReconcile: job.preserveForScheduleReconcile === true,
         ...(job.scheduleOutcome != null && { scheduleOutcome: job.scheduleOutcome }),
         ...(job.scheduleOutcomeError != null && {
           scheduleOutcomeError: job.scheduleOutcomeError,
@@ -491,59 +435,37 @@ export function createSchedulesService(
       if (job == null || !jobMatchesIdentity(job, identity)) {
         return false;
       }
-      // Already terminal — but `aborted` is NOT proof the stop was ever DELIVERED:
-      // the first abort flips the job before its cross-replica publication, so a
-      // failed publish leaves a peer generation running against a job every retry
-      // reads as terminal. Trusting the status here returned "delivered" without
-      // republishing, and after the owner-death fence lapsed the deletion path could
-      // settle a run whose live generation then persisted post-cascade. RE-SIGNAL on
-      // every retry instead; delivery stays ownership-honest, and the caller's
-      // bounded drain confirms on the owner's settle once the signal actually lands.
-      if (job.status === 'aborted') {
-        const resignal = await GenerationJobManager.resignalAbort(
+      if (options?.preserve !== false) {
+        await GenerationJobManager.updateMetadata(
           conversationId,
+          {
+            preserveForScheduleReconcile: true,
+            scheduleOutcome: 'interrupted',
+            scheduleOutcomeError: 'Schedule deleted',
+          },
           job.createdAt,
-        ).catch((err) => {
-          logger.warn('[schedules] failed to re-signal abort:', err);
-          return { delivered: false, published: false };
-        });
-        if (options?.preserve === false && resignal.delivered) {
-          // Only provably-quiet evidence is disposable (account deletion hard-deletes
-          // the run rows, so nothing would ever clear this job later). Undelivered:
-          // keep it — the drain stays unconfirmed and a later pass re-signals.
-          await store.deleteJob(conversationId, job.createdAt);
-        }
-        return resignal.delivered;
+        );
       }
-      // Finished naturally (`complete`/`error`): the generation persisted and stopped
-      // on its own — nothing to signal. For a per-schedule delete (preserve) leave the
-      // job as reconcile evidence; for account deletion (preserve:false) this may be a
-      // PRESERVED terminal job from a prior failed outcome write, and since its
-      // ScheduleRun rows are about to be hard-deleted no reconciler will ever clear
-      // it — delete it now so the job hash doesn't leak.
-      if (job.status !== 'running' && job.status !== 'requires_action') {
-        if (options?.preserve === false) {
-          // Generation-fenced for the same reason as clearReconciledJob: a replacement
-          // may have claimed this conversationId since the read above.
-          await store.deleteJob(conversationId, job.createdAt);
-        }
-        return true;
-      }
-      // Carry the stamp of the generation whose identity was just checked. The check
-      // above and the abort's side effects are separated by awaits, so without this an
-      // interactive turn replacing the job at this conversationId in that window would
-      // receive the abort signal, terminal event and cleanup meant for the scheduled
-      // run. A refused abort reports false, matching the unreachable-job case: the
-      // caller learns the abort was not delivered rather than assuming it landed.
+
+      // #14925's provider-drain contract is the authority here. It covers both
+      // locally owned and cross-replica generations and does not return until the
+      // exact provider segment can no longer persist user data. Calling abortJob on
+      // an already-terminal job is intentional: awaitProviderDrain still waits for
+      // trailing owner work even though no new abort transition is needed.
       const aborted = await GenerationJobManager.abortJob(conversationId, {
-        preserveForReconcile: options?.preserve ?? true,
         expectedCreatedAt: job.createdAt,
+        awaitProviderDrain: true,
       });
-      // DELIVERED means a live generation actually received the stop, not merely that
-      // the terminal CAS landed: a failed cross-replica publish leaves a peer worker
-      // generating against a job that already reads `aborted`, and reporting that as
-      // delivered would let a deletion drain confirm while it still persists.
-      return aborted.success && aborted.signalDelivered !== false;
+      if (
+        aborted.failureReason === 'generation_replaced' ||
+        aborted.failureReason === 'job_still_active'
+      ) {
+        return false;
+      }
+      if (options?.preserve === false) {
+        await store.deleteJob(conversationId, job.createdAt);
+      }
+      return true;
     },
     clearReconciledJob: async (conversationId, identity) => {
       const store = GenerationJobManager.getJobStore();
@@ -609,12 +531,9 @@ export function createSchedulesService(
     erasureSweep = startScheduleErasureSweep({ methods, getJobStatus: engineDeps.getJobStatus });
   }
 
-  async function initializeScheduleEngine(
-    options?: ScheduleEngineInitOptions,
-  ): Promise<ReturnType<typeof startScheduleEngine> | undefined> {
-    // Resolve the loopback target BEFORE any early return: Run Now fires through the
-    // same URL, and it must be right even on a process whose engine refused to arm.
-    boundOrigin = selfOriginFromAddress(options?.address) ?? boundOrigin;
+  async function initializeScheduleEngine(): Promise<
+    ReturnType<typeof startScheduleEngine> | undefined
+  > {
     if (engine != null) {
       return engine;
     }
@@ -715,6 +634,8 @@ export function createSchedulesService(
   async function recordScheduleOutcome({
     scheduleId,
     scheduledFor,
+    streamId,
+    jobCreatedAt,
     status,
     conversationId,
     clearConversationId,
@@ -722,6 +643,29 @@ export function createSchedulesService(
   }: RecordScheduleOutcomeInput): Promise<boolean> {
     if (!scheduleId || !scheduledFor) {
       return true;
+    }
+    const terminal = status !== 'requires_action';
+    if (terminal && streamId && jobCreatedAt != null) {
+      try {
+        await GenerationJobManager.updateMetadata(
+          streamId,
+          {
+            preserveForScheduleReconcile: true,
+            scheduleOutcome:
+              status === 'success' ||
+              status === 'error' ||
+              status === 'interrupted' ||
+              status === 'skipped_balance'
+                ? status
+                : 'error',
+            ...(error ? { scheduleOutcomeError: error } : {}),
+          },
+          jobCreatedAt,
+        );
+      } catch (err) {
+        logger.error('[schedules] failed to retain terminal outcome evidence:', err);
+        return false;
+      }
     }
     for (let attempt = 1; attempt <= OUTCOME_RETRY_ATTEMPTS; attempt++) {
       try {
@@ -751,6 +695,33 @@ export function createSchedulesService(
             logger.warn(`[schedules] erase-on-settle failed for ${scheduleId}:`, err);
           });
         }
+        if (terminal && streamId && jobCreatedAt != null) {
+          await GenerationJobManager.updateMetadata(
+            streamId,
+            { preserveForScheduleReconcile: false },
+            jobCreatedAt,
+          ).catch((err) => {
+            logger.warn('[schedules] failed to release terminal outcome evidence:', err);
+          });
+
+          // A paused occurrence can be aborted while its provider is already drained.
+          // In that case the manager's normal drain-time cleanup has already passed;
+          // reap the exact terminal job after the Mongo outcome becomes durable.
+          const store = GenerationJobManager.getJobStore();
+          const job = await store?.getJob(streamId).catch(() => null);
+          if (
+            job?.createdAt === jobCreatedAt &&
+            job.providerDrained !== false &&
+            job.terminalPersistencePending !== true &&
+            job.status !== 'running' &&
+            job.status !== 'requires_action' &&
+            job.preserveForScheduleReconcile !== true
+          ) {
+            await store?.deleteJob(streamId, jobCreatedAt).catch((err) => {
+              logger.warn('[schedules] failed to clear settled generation evidence:', err);
+            });
+          }
+        }
         return true;
       } catch (err) {
         logger.error(
@@ -760,88 +731,6 @@ export function createSchedulesService(
       }
     }
     return false;
-  }
-
-  /**
-   * Stamps a scheduled run as abort-REQUESTED with source 'stop', for an abort this
-   * service is not the one signalling (the interactive Stop route drives `abortJob`
-   * itself). Must run — and SUCCEED — before that abort: the stamp is what tells a
-   * concurrent account-deletion quiesce (and the reconciler) that the job state they
-   * are about to read is post-abort but pre-persistence, so they defer to the owner's
-   * settle instead of confirming a drain mid-write. A failed stamp therefore returns
-   * false and the caller must refuse the abort (retryable), not proceed unfenced.
-   */
-  async function requestScheduledRunAbort(
-    scheduleId: string,
-    scheduledFor: Date,
-  ): Promise<'stamped' | 'no_active_run' | 'in_progress' | 'failed'> {
-    try {
-      const stamped = await methods.requestRunAbort(scheduleId, scheduledFor, 'stop');
-      if (stamped === 'in_progress') {
-        return 'in_progress';
-      }
-      return stamped ? 'stamped' : 'no_active_run';
-    } catch (err) {
-      logger.error('[schedules] failed to record interactive abort request:', err);
-      return 'failed';
-    }
-  }
-
-  /** Stamps a paused run resume-claimed; see markRunResumeClaimed. Best-effort:
-   *  a failed stamp only narrows the re-pause hand-off fence, never blocks the resume. */
-  async function markScheduledRunResumeClaimed(
-    scheduleId: string,
-    scheduledFor: Date,
-  ): Promise<void> {
-    await methods.markRunResumeClaimed(scheduleId, scheduledFor).catch((err) => {
-      logger.warn('[schedules] failed to stamp resume claim:', err);
-    });
-  }
-
-  async function markScheduledRunAbortPersisted(
-    scheduleId: string,
-    scheduledFor: Date,
-  ): Promise<void> {
-    await methods.markRunAbortPersisted(scheduleId, scheduledFor);
-  }
-
-  const STOP_PERSISTENCE_WAIT_MS = timings?.stopBarrierTimeoutMs ?? 15_000;
-  const STOP_PERSISTENCE_POLL_MS = timings?.stopBarrierPollMs ?? 250;
-
-  async function awaitStopAbortPersistence(
-    scheduleId: string,
-    scheduledFor: Date,
-  ): Promise<boolean> {
-    const deadline = Date.now() + STOP_PERSISTENCE_WAIT_MS;
-    for (;;) {
-      let pending: boolean;
-      try {
-        const run = await methods.getScheduleRunAbortState(scheduleId, scheduledFor);
-        // Only a FRESH interactive-stop abort holds the barrier: deletion-sourced
-        // aborts persist nothing after signalling, an absent stamp means no abort
-        // actor is writing, and a stale one means the owner-death rules govern.
-        pending =
-          run != null &&
-          run.abortSource === 'stop' &&
-          run.abortPersistedAt == null &&
-          hasAbortInFlight(run, Date.now());
-      } catch (err) {
-        // FAIL CLOSED: an unreadable row proves nothing about the route's writes.
-        logger.warn('[schedules] abort-persistence barrier read failed:', err);
-        pending = true;
-      }
-      if (!pending) {
-        return true;
-      }
-      if (Date.now() >= deadline) {
-        logger.warn(
-          `[schedules] stop-abort persistence not confirmed for ${scheduleId} within ` +
-            `${STOP_PERSISTENCE_WAIT_MS}ms; leaving the run for the reconciler`,
-        );
-        return false;
-      }
-      await new Promise((resolve) => setTimeout(resolve, STOP_PERSISTENCE_POLL_MS));
-    }
   }
 
   async function isScheduleLive(
@@ -910,7 +799,7 @@ export function createSchedulesService(
   async function abortActiveRun(
     run: { scheduleId: string; scheduledFor: Date; conversationId?: string },
     preserve: boolean,
-    options?: { stampRenewal?: boolean },
+    options?: { stampRenewal?: boolean; settleAfterAbort?: boolean },
   ): Promise<boolean> {
     if (!run.conversationId) {
       return false;
@@ -936,7 +825,7 @@ export function createSchedulesService(
         return false;
       }
     }
-    return engineDeps
+    const stopped = await engineDeps
       .abortScheduledJob(
         run.conversationId,
         { scheduleId: run.scheduleId, scheduledFor: run.scheduledFor },
@@ -946,6 +835,30 @@ export function createSchedulesService(
         logger.warn('[schedules] failed to abort run job on quiesce:', err);
         return false;
       });
+    if (!stopped || options?.settleAfterAbort === false) {
+      return stopped;
+    }
+
+    // awaitProviderDrain in abortScheduledJob is the positive persistence fence:
+    // the exact provider owner has unwound, so this row can now leave the active
+    // set without racing a late message write.
+    const recorded = await recordScheduleOutcome({
+      scheduleId: run.scheduleId,
+      scheduledFor: run.scheduledFor,
+      status: 'interrupted',
+      conversationId: run.conversationId,
+      error: 'Schedule deleted while the run was active',
+    });
+    if (!recorded) {
+      return false;
+    }
+    await engineDeps
+      .clearReconciledJob(run.conversationId, {
+        scheduleId: run.scheduleId,
+        scheduledFor: run.scheduledFor,
+      })
+      .catch((err) => logger.warn('[schedules] failed to clear deleted run evidence:', err));
+    return true;
   }
 
   /** Resolve the owner's durable-checkpointer config (in their tenant context) so a
@@ -1072,7 +985,10 @@ export function createSchedulesService(
           // signalled, so the stamp is NOT renewed — re-arming the owner-death fence
           // on every delete retry would keep a dead owner's row from ever aging into
           // the reconciler's recovery.
-          await abortActiveRun(run, false, { stampRenewal: false });
+          await abortActiveRun(run, false, {
+            stampRenewal: false,
+            settleAfterAbort: false,
+          });
         } else {
           unconfirmed += 1;
         }
@@ -1143,7 +1059,10 @@ export function createSchedulesService(
       logger.warn(`[schedules] erase failed for ${scheduleId}:`, err);
       return false;
     });
-    return erased ? 'deleted' : 'draining';
+    if (erased) {
+      return 'deleted';
+    }
+    return (await methods.getScheduleById(scheduleId)) == null ? 'deleted' : 'draining';
   }
 
   /**
@@ -1246,7 +1165,10 @@ export function createSchedulesService(
         // or every quiesce retry would re-arm the owner-death fence and a dead owner's
         // row could never age into recovery.
         if (settled) {
-          await abortActiveRun(run, false, { stampRenewal: false });
+          await abortActiveRun(run, false, {
+            stampRenewal: false,
+            settleAfterAbort: false,
+          });
         }
         continue;
       }
@@ -1299,10 +1221,6 @@ export function createSchedulesService(
     engineDeps,
     fireScheduleNow,
     recordScheduleOutcome,
-    requestScheduledRunAbort,
-    markScheduledRunResumeClaimed,
-    markScheduledRunAbortPersisted,
-    awaitStopAbortPersistence,
     isScheduleLive,
     deleteScheduleForOwner,
     quiesceUserSchedules,

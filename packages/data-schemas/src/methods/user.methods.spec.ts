@@ -61,23 +61,6 @@ afterEach(() => {
   restoreAuthUserCacheEnv();
 });
 
-describe('generation-qualified deletion abort fences', () => {
-  test('clearing a predecessor generation leaves the replacement fence intact', async () => {
-    const user = await User.create({
-      email: 'abort-fence@example.com',
-      provider: 'local',
-    });
-
-    await methods.addUserAbortFence(user.id, 'shared-stream', 100);
-    await methods.addUserAbortFence(user.id, 'shared-stream', 200);
-    await methods.clearUserAbortFence(user.id, 'shared-stream', 100);
-
-    await expect(methods.getUserAbortFences(user.id)).resolves.toEqual([
-      { streamId: 'shared-stream', createdAt: 200 },
-    ]);
-  });
-});
-
 describe('User schema indexes', () => {
   test('should define an issuer-bound idOnTheSource lookup index', async () => {
     await User.syncIndexes();

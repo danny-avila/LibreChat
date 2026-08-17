@@ -2642,23 +2642,6 @@ export enum CacheKeys {
 export const AUTH_USER_DOC_BY_ID_PREFIX = 'auth-user-doc-byid';
 
 /**
- * Deletion-barrier tombstone for the auth user-doc cache. Written BEFORE the
- * barrier's key sweep so a cache fill racing the sweep (Mongo read pre-barrier,
- * cache write post-sweep) observes it after writing and deletes its own entry.
- */
-export const AUTH_USER_DOC_TOMBSTONE_PREFIX = 'auth-user-doc-tombstone';
-
-/**
- * Per-user invalidation epoch for the auth user-doc cache. Written FIRST by every
- * invalidation; reads reject any entry whose Mongo read predates it. This is the
- * correctness fence — the reverse index is only a cleanup optimization, so its
- * read-modify-write races (concurrent fills dropping each other's keys, an
- * invalidation landing between an entry write and its index write) can no longer
- * let an unindexed entry outlive a mutation.
- */
-export const AUTH_USER_DOC_EPOCH_PREFIX = 'auth-user-doc-epoch';
-
-/**
  * Enum for violation types, used to identify, log, and cache violations.
  */
 export enum ViolationTypes {

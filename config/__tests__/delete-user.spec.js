@@ -3,33 +3,50 @@ const mockModelFor = (name) => {
   if (!mockModelRegistry[name]) {
     mockModelRegistry[name] = {
       findOne: jest.fn(async () => null),
-      deleteOne: jest.fn(async () => ({ deletedCount: 1 })),
       deleteMany: jest.fn(async () => ({ deletedCount: 0 })),
-      updateOne: jest.fn(async () => ({ modifiedCount: 0 })),
       updateMany: jest.fn(async () => ({ modifiedCount: 0 })),
-      countDocuments: jest.fn(async () => 0),
     };
   }
   return mockModelRegistry[name];
 };
 
-const mockMarkUserDeleting = jest.fn(async () => new Date());
-const mockDisableUserSchedules = jest.fn(async () => undefined);
+const mockMethods = {
+  beginAgentTriggerUserDeletion: jest.fn(),
+  recoverStaleAgentTriggerUserDeletion: jest.fn(),
+  prepareAgentTriggerUserPurge: jest.fn(),
+  disableUserSchedulesForDeletion: jest.fn(),
+  countActiveAgentTriggerDeliveriesByUser: jest.fn(),
+  deleteSchedulesByUser: jest.fn(),
+  deleteUserById: jest.fn(),
+  deleteAgentTriggerDeliveriesByUser: jest.fn(),
+  cancelAgentTriggerUserPurge: jest.fn(),
+  cancelAgentTriggerUserDeletion: jest.fn(),
+};
+const mockGetCleanupBlockingJobIdsForUser = jest.fn();
+const mockAbortJob = jest.fn();
+const mockDestroy = jest.fn();
 const mockSilentExit = jest.fn();
 const mockAskQuestion = jest.fn();
 
-jest.mock('../connect', () => jest.fn(async () => {}));
-jest.mock('mongoose', () => ({ disconnect: jest.fn(async () => {}) }));
-// The real package cannot load here: this suite mocks mongoose to a bare stub, and
-// @librechat/api reads Types.ObjectId at import time. The live CLI harness exercises
-// the real wiring; this suite only needs the constant.
+jest.mock('../connect', () => jest.fn(async () => undefined));
+jest.mock('mongoose', () => ({ disconnect: jest.fn(async () => undefined) }));
 jest.mock('@librechat/data-schemas', () => ({
   createModels: () => new Proxy({}, { get: (_target, prop) => mockModelFor(prop) }),
+  createMethods: () => mockMethods,
+  runAsSystem: (operation) => operation(),
 }));
-jest.mock('~/models', () => ({
-  markUserDeleting: mockMarkUserDeleting,
-  disableUserSchedulesForDeletion: mockDisableUserSchedules,
+jest.mock('@librechat/api', () => ({
+  waitForKeyvRedisClient: jest.fn(async () => undefined),
+  createStreamServices: jest.fn(() => ({ isRedis: true })),
+  GenerationJobManager: {
+    configure: jest.fn(),
+    initialize: jest.fn(),
+    getCleanupBlockingJobIdsForUser: (...args) => mockGetCleanupBlockingJobIdsForUser(...args),
+    abortJob: (...args) => mockAbortJob(...args),
+    destroy: (...args) => mockDestroy(...args),
+  },
 }));
+jest.mock('~/cache/getLogStores', () => jest.fn());
 jest.mock('../helpers', () => ({
   ...jest.requireActual('../helpers'),
   askQuestion: mockAskQuestion,
@@ -38,15 +55,17 @@ jest.mock('../helpers', () => ({
 
 const USER_ID = 'user-being-deleted';
 
-/** Runs the CLI to completion, resolving with the exit code it passed to silentExit. */
 const runCli = () =>
   new Promise((resolve, reject) => {
     mockSilentExit.mockImplementation((code = 0) => resolve(code));
+    jest.spyOn(process, 'exit').mockImplementation((code) => {
+      resolve(code);
+    });
     jest.isolateModules(() => {
       try {
         require('../delete-user');
-      } catch (err) {
-        reject(err);
+      } catch (error) {
+        reject(error);
       }
     });
   });
@@ -56,23 +75,32 @@ describe('Delete user CLI', () => {
   let logSpy;
 
   beforeEach(() => {
-    delete process.env.AUTH_USER_CACHE_MODE;
     process.argv = ['node', 'delete-user.js', 'deleted@example.com'];
-    logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-    jest.spyOn(console, 'error').mockImplementation(() => {});
+    logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
     for (const model of Object.values(mockModelRegistry)) {
-      for (const fn of Object.values(model)) {
-        fn.mockClear();
+      for (const method of Object.values(model)) {
+        method.mockClear();
       }
     }
     mockModelFor('User').findOne.mockResolvedValue({
       _id: { toString: () => USER_ID },
       email: 'deleted@example.com',
+      tenantId: 'tenant-1',
     });
-    mockModelFor('ScheduleRun').countDocuments.mockResolvedValue(0);
-    mockMarkUserDeleting.mockReset().mockResolvedValue(new Date());
-    mockDisableUserSchedules.mockReset().mockResolvedValue(undefined);
-    // Confirm deletion, decline transaction history.
+    mockMethods.beginAgentTriggerUserDeletion.mockReset().mockResolvedValue('acquired');
+    mockMethods.recoverStaleAgentTriggerUserDeletion.mockReset().mockResolvedValue('acquired');
+    mockMethods.prepareAgentTriggerUserPurge.mockReset().mockResolvedValue(undefined);
+    mockMethods.disableUserSchedulesForDeletion.mockReset().mockResolvedValue(undefined);
+    mockMethods.countActiveAgentTriggerDeliveriesByUser.mockReset().mockResolvedValue(0);
+    mockMethods.deleteSchedulesByUser.mockReset().mockResolvedValue(undefined);
+    mockMethods.deleteUserById.mockReset().mockResolvedValue({ deletedCount: 1 });
+    mockMethods.deleteAgentTriggerDeliveriesByUser.mockReset().mockResolvedValue(undefined);
+    mockMethods.cancelAgentTriggerUserPurge.mockReset().mockResolvedValue(true);
+    mockMethods.cancelAgentTriggerUserDeletion.mockReset().mockResolvedValue(true);
+    mockGetCleanupBlockingJobIdsForUser.mockReset().mockResolvedValue([]);
+    mockAbortJob.mockReset().mockResolvedValue({ success: true });
+    mockDestroy.mockReset().mockResolvedValue(undefined);
     mockAskQuestion.mockReset().mockResolvedValueOnce('y').mockResolvedValueOnce('n');
   });
 
@@ -82,66 +110,75 @@ describe('Delete user CLI', () => {
     jest.restoreAllMocks();
   });
 
-  it('raises the barrier through markUserDeleting, never a raw update', async () => {
-    const code = await runCli();
+  it('fences triggers and schedules before inspecting active work', async () => {
+    expect(await runCli()).toBe(0);
 
-    expect(code).toBe(0);
-    expect(mockMarkUserDeleting).toHaveBeenCalledWith(USER_ID);
-    // A raw User.updateOne would stamp deletionRequestedAt without dropping the cached
-    // auth user document, so a live server keeps admitting requests with a pre-barrier
-    // req.user while the cascade below runs.
-    expect(mockModelFor('User').updateOne).not.toHaveBeenCalled();
-    expect(mockModelFor('User').deleteOne).toHaveBeenCalled();
+    expect(mockMethods.beginAgentTriggerUserDeletion).toHaveBeenCalledWith(
+      USER_ID,
+      expect.any(Date),
+    );
+    expect(mockMethods.prepareAgentTriggerUserPurge).toHaveBeenCalledWith(
+      USER_ID,
+      expect.any(Date),
+      'tenant-1',
+    );
+    expect(mockMethods.disableUserSchedulesForDeletion).toHaveBeenCalledWith(USER_ID);
+    expect(mockMethods.beginAgentTriggerUserDeletion.mock.invocationCallOrder[0]).toBeLessThan(
+      mockMethods.prepareAgentTriggerUserPurge.mock.invocationCallOrder[0],
+    );
+    expect(mockMethods.prepareAgentTriggerUserPurge.mock.invocationCallOrder[0]).toBeLessThan(
+      mockMethods.disableUserSchedulesForDeletion.mock.invocationCallOrder[0],
+    );
+    expect(mockMethods.disableUserSchedulesForDeletion.mock.invocationCallOrder[0]).toBeLessThan(
+      mockMethods.countActiveAgentTriggerDeliveriesByUser.mock.invocationCallOrder[0],
+    );
+    expect(
+      mockMethods.countActiveAgentTriggerDeliveriesByUser.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockGetCleanupBlockingJobIdsForUser.mock.invocationCallOrder[0]);
   });
 
-  it('raises the barrier before counting active scheduled runs', async () => {
-    await runCli();
+  it('aborts provider work before deleting account-owned records', async () => {
+    mockGetCleanupBlockingJobIdsForUser.mockResolvedValueOnce(['stream-1']);
 
-    const barrierAt = mockMarkUserDeleting.mock.invocationCallOrder[0];
-    const countAt = mockModelFor('ScheduleRun').countDocuments.mock.invocationCallOrder[0];
-    // The count only means anything once new fires are refused; otherwise a fire can be
-    // claimed and accepted between a zero result and the deletes.
-    expect(barrierAt).toBeLessThan(countAt);
+    expect(await runCli()).toBe(0);
+
+    expect(mockGetCleanupBlockingJobIdsForUser).toHaveBeenCalledWith(USER_ID, 'tenant-1');
+    expect(mockAbortJob).toHaveBeenCalledWith('stream-1', { awaitProviderDrain: true });
+    expect(mockAbortJob.mock.invocationCallOrder[0]).toBeLessThan(
+      mockModelFor('Message').deleteMany.mock.invocationCallOrder[0],
+    );
+    expect(mockMethods.deleteSchedulesByUser).toHaveBeenCalledWith(USER_ID);
+    expect(mockMethods.deleteSchedulesByUser.mock.invocationCallOrder[0]).toBeLessThan(
+      mockMethods.deleteUserById.mock.invocationCallOrder[0],
+    );
   });
 
-  it('deletes nothing when the barrier cannot be raised', async () => {
-    mockMarkUserDeleting.mockRejectedValue(
-      new Error('Auth user-doc cache is enabled but unavailable'),
+  it('deletes nothing and releases both fences when schedule quiescing fails', async () => {
+    mockMethods.disableUserSchedulesForDeletion.mockRejectedValueOnce(
+      new Error('schedule write failed'),
     );
 
-    const code = await runCli();
+    expect(await runCli()).toBe(1);
 
-    expect(code).toBe(1);
-    expect(mockModelFor('User').deleteOne).not.toHaveBeenCalled();
-    expect(mockModelFor('Schedule').deleteMany).not.toHaveBeenCalled();
-    expect(mockModelFor('ScheduleRun').deleteMany).not.toHaveBeenCalled();
     expect(mockModelFor('Message').deleteMany).not.toHaveBeenCalled();
+    expect(mockMethods.deleteSchedulesByUser).not.toHaveBeenCalled();
+    expect(mockMethods.deleteUserById).not.toHaveBeenCalled();
+    const deletionFence = mockMethods.beginAgentTriggerUserDeletion.mock.calls[0][1];
+    expect(mockMethods.cancelAgentTriggerUserPurge).toHaveBeenCalledWith(USER_ID, deletionFence);
+    expect(mockMethods.cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(USER_ID, deletionFence);
   });
 
-  it('fences in-flight fires before the count can mean anything', async () => {
-    // The barrier alone leaves a fire that passed the owner-deleting probe moments
-    // earlier still in preflight: invisible to the count, then free to reserve and
-    // dispatch, because every later fence revalidates the SCHEDULE, not the user.
-    // Disabling the schedules rotates each claim token, which is what those fences
-    // check — so it has to land before the count, not merely before the deletes.
-    await runCli();
+  it('deletes nothing and releases both fences when provider drain fails', async () => {
+    mockGetCleanupBlockingJobIdsForUser.mockResolvedValueOnce(['stream-1']);
+    mockAbortJob.mockRejectedValueOnce(new Error('provider drain failed'));
 
-    const disableAt = mockDisableUserSchedules.mock.invocationCallOrder[0];
-    const countAt = mockModelFor('ScheduleRun').countDocuments.mock.invocationCallOrder[0];
-    expect(mockDisableUserSchedules).toHaveBeenCalledWith(USER_ID);
-    expect(disableAt).toBeLessThan(countAt);
-  });
+    expect(await runCli()).toBe(1);
 
-  it('refuses while a scheduled run is still active', async () => {
-    mockModelFor('ScheduleRun').countDocuments.mockResolvedValue(2);
-
-    const code = await runCli();
-
-    expect(code).toBe(1);
-    expect(mockModelFor('User').deleteOne).not.toHaveBeenCalled();
-    expect(mockModelFor('Schedule').deleteMany).not.toHaveBeenCalled();
-    // The barrier stays up: it is one-way, and a live server must keep refusing fires
-    // for an account the operator has already committed to erasing.
-    expect(mockMarkUserDeleting).toHaveBeenCalledWith(USER_ID);
+    expect(mockModelFor('Message').deleteMany).not.toHaveBeenCalled();
+    expect(mockMethods.deleteSchedulesByUser).not.toHaveBeenCalled();
+    expect(mockMethods.deleteUserById).not.toHaveBeenCalled();
+    const deletionFence = mockMethods.beginAgentTriggerUserDeletion.mock.calls[0][1];
+    expect(mockMethods.cancelAgentTriggerUserPurge).toHaveBeenCalledWith(USER_ID, deletionFence);
+    expect(mockMethods.cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(USER_ID, deletionFence);
   });
 });

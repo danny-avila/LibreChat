@@ -8,6 +8,7 @@ const mockPrepareAgentTriggerUserPurge = jest.fn().mockResolvedValue(undefined);
 const mockCancelAgentTriggerUserPurge = jest.fn().mockResolvedValue(true);
 const mockPurgeAgentTriggerDeliveriesForUser = jest.fn().mockResolvedValue(undefined);
 const mockCancelAndDrainSubagentThreads = jest.fn().mockResolvedValue(undefined);
+const mockQuiesceUserSchedules = jest.fn().mockResolvedValue(true);
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -25,19 +26,12 @@ jest.mock('@librechat/data-schemas', () => {
 jest.mock('~/models', () => {
   const _mongoose = require('mongoose');
   return {
-    markUserDeleting: jest.fn().mockResolvedValue(new Date()),
-    markUserDeletionCommitted: jest.fn().mockResolvedValue(undefined),
-    getUsersPendingDeletion: jest.fn().mockResolvedValue([]),
-    markDeletionSweepAttempted: jest.fn().mockResolvedValue(undefined),
-    addUserAbortFence: jest.fn().mockResolvedValue(undefined),
-    clearUserAbortFence: jest.fn().mockResolvedValue(undefined),
-    getUserAbortFences: jest.fn().mockResolvedValue([]),
-    countUserFinalizationFallbackLeases: jest.fn().mockResolvedValue(0),
     deleteAllUserSessions: jest.fn().mockResolvedValue(undefined),
     deleteAllSharedLinks: jest.fn().mockResolvedValue(undefined),
     deleteAllAgentApiKeys: jest.fn().mockResolvedValue(undefined),
     deleteConversationTags: jest.fn().mockResolvedValue(undefined),
     deleteAllUserMemories: jest.fn().mockResolvedValue(undefined),
+    deleteSchedulesByUser: jest.fn().mockResolvedValue(undefined),
     deleteTransactions: jest.fn().mockResolvedValue(undefined),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
     updateUserPlugins: jest.fn(),
@@ -47,7 +41,6 @@ jest.mock('~/models', () => {
     cancelAgentTriggerUserDeletion: jest.fn().mockResolvedValue(true),
     deleteUserPrompts: jest.fn().mockResolvedValue(undefined),
     deleteUserSkills: jest.fn().mockResolvedValue(undefined),
-    deleteSchedulesByUser: jest.fn().mockResolvedValue(undefined),
     deleteMessages: jest.fn().mockResolvedValue(undefined),
     deleteBalances: jest.fn().mockResolvedValue(undefined),
     deleteActions: jest.fn().mockResolvedValue(undefined),
@@ -107,6 +100,10 @@ jest.mock('~/server/services/Agents/triggers', () => ({
 
 jest.mock('~/server/services/Endpoints/agents/subagentThreadStore', () => ({
   cancelAndDrainForOwner: (...args) => mockCancelAndDrainSubagentThreads(...args),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  quiesceUserSchedules: (...args) => mockQuiesceUserSchedules(...args),
 }));
 
 jest.mock('~/server/services/Files/process', () => ({
@@ -169,6 +166,7 @@ describe('verifyEmailController', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQuiesceUserSchedules.mockResolvedValue(true);
   });
 
   it('returns the generic verification error message from service failures', async () => {
@@ -348,11 +346,11 @@ describe('deleteUserController', () => {
     status: jest.fn().mockReturnThis(),
     send: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
-    set: jest.fn().mockReturnThis(),
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQuiesceUserSchedules.mockResolvedValue(true);
   });
 
   it('should return 200 on successful deletion', async () => {
@@ -460,6 +458,30 @@ describe('deleteUserController', () => {
       userId.toString(),
       expect.any(Date),
     );
+    expect(deleteUserById).not.toHaveBeenCalled();
+  });
+
+  it('fails closed and releases deletion fences when schedules cannot be quiesced', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const userIdString = userId.toString();
+    mockQuiesceUserSchedules.mockResolvedValueOnce(false);
+    const req = {
+      user: {
+        id: userIdString,
+        _id: userId,
+        email: 'scheduled@test.com',
+        tenantId: 'tenant-1',
+      },
+    };
+
+    await deleteUserController(req, mockRes);
+
+    expect(mockRes.status).toHaveBeenCalledWith(500);
+    expect(deleteMessages).not.toHaveBeenCalled();
+    expect(mockGetActiveJobIdsForUser).not.toHaveBeenCalled();
+    const deletionFence = beginAgentTriggerUserDeletion.mock.calls[0][1];
+    expect(mockCancelAgentTriggerUserPurge).toHaveBeenCalledWith(userIdString, deletionFence);
+    expect(cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(userIdString, deletionFence);
     expect(deleteUserById).not.toHaveBeenCalled();
   });
 

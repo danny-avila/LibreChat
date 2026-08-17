@@ -2,7 +2,6 @@ const express = require('express');
 const { createAdminUsersHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
-const { quiesceUserSchedules } = require('~/server/services/Schedules');
 const { requireJwtAuth } = require('~/server/middleware');
 const {
   drainAgentTriggerDeliveriesForUser,
@@ -30,10 +29,6 @@ const handlers = createAdminUsersHandlers({
   deleteUserById: db.deleteUserById,
   deleteConfig: db.deleteConfig,
   deleteAclEntries: db.deleteAclEntries,
-  quiesceUserSchedules,
-  markUserDeleting: db.markUserDeleting,
-  markUserDeletionCommitted: db.markUserDeletionCommitted,
-  deleteSchedulesByUser: db.deleteSchedulesByUser,
 });
 
 router.use(requireJwtAuth, requireAdminAccess);

@@ -1,10 +1,6 @@
 const mockGetMCPManager = jest.fn();
 const mockInvalidateCachedTools = jest.fn();
 
-jest.mock('~/server/services/Schedules', () => ({
-  quiesceUserSchedules: jest.fn().mockResolvedValue(undefined),
-}));
-
 jest.mock('~/config', () => ({
   getMCPManager: (...args) => mockGetMCPManager(...args),
   getFlowStateManager: jest.fn(),

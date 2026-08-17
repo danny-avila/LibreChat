@@ -75,29 +75,6 @@ export interface SerializableJobData {
   /** Response message ID for reconnection */
   responseMessageId?: string;
 
-  /** Schedule bookkeeping for a scheduled fire, so a HITL resume can record its outcome. */
-  scheduleId?: string;
-  scheduledFor?: string;
-  /** '1' when this fire was an explicit Run Now. A paused approval can be answered
-   *  long after the fire, so the resume needs the original classification to apply the
-   *  same admission rules the fire boundary did — an AUTOMATIC occurrence must not
-   *  resume onto a schedule that has since been auto-disabled. */
-  scheduleManual?: string;
-  /** The owner-config generation this fire was claimed under, so a resume can apply
-   *  the same revision fence the fire boundary did. Serialized as a string like every
-   *  other Redis hash field. */
-  scheduleConfigRevision?: string;
-  /** The schedule outcome the generation owner INTENDED to record, stamped onto a
-   *  RETAINED terminal job (`preserveForReconcile`) in the same transaction that wins
-   *  the terminal CAS. A terminal job status is generic — `complete` covers a clean
-   *  finish, a mid-run balance refusal, and a swallowed provider failure alike — so
-   *  without this the reconciler could only re-derive `success` for all three and a
-   *  transient outcome-write failure silently reset the balance/failure streaks that
-   *  drive auto-disable. Serialized as a string for the Redis hash. */
-  scheduleOutcome?: string;
-  /** Owner-intended failure message paired with `scheduleOutcome`. */
-  scheduleOutcomeError?: string;
-
   /**
    * Whether this run has activity labels enabled (per-endpoint
    * `activityLabel: true`). Set once at run start so the resume path can
@@ -145,6 +122,16 @@ export interface SerializableJobData {
 
   /** Whether sync has been sent to a client */
   syncSent: boolean;
+
+  /** Trusted schedule identity copied atomically into the generation job. */
+  scheduleId?: string;
+  scheduledFor?: string;
+  scheduleConfigRevision?: number;
+  scheduleManual?: boolean;
+  /** Terminal outcome evidence retained when the schedule row could not be updated. */
+  scheduleOutcome?: 'success' | 'error' | 'interrupted' | 'skipped_balance';
+  scheduleOutcomeError?: string;
+  preserveForScheduleReconcile?: boolean;
 
   /** Serialized final event for replay */
   finalEvent?: string;
@@ -300,16 +287,16 @@ export type JobMetadataPatch = Partial<
     | 'model'
     | 'agent_id'
     | 'isTemporary'
+    | 'scheduleId'
+    | 'scheduledFor'
+    | 'scheduleConfigRevision'
+    | 'scheduleManual'
+    | 'scheduleOutcome'
+    | 'scheduleOutcomeError'
+    | 'preserveForScheduleReconcile'
     | 'promptTokens'
     | 'discoveredTools'
     | 'activityPhaseSnapshot'
-    // Scheduled-fire identity. A run is attributed to its schedule through these, so
-    // omitting them here would let `updateMetadata({ scheduleId, scheduledFor })`
-    // compile and resolve while writing nothing (the call sites are untyped JS).
-    | 'scheduleId'
-    | 'scheduledFor'
-    | 'scheduleManual'
-    | 'scheduleConfigRevision'
     | 'preemptCapable'
     | 'providerExecutionId'
     | 'providerDrained'
@@ -323,27 +310,6 @@ export type JobMetadataPatch = Partial<
  * stores so an expired approval is kept out of active-job listings (the client
  * stops polling; cleanup/expiry finalizes it).
  */
-/** Lease-qualified finalization-marker field, shared by the stores. Generation
- *  qualification stops a late clear from generation A dropping generation B's marker
- *  on the same stream; the LEASE token goes further — completion and Stop (or two
- *  Stops) contend on the SAME generation, and a losing contender's cleanup must only
- *  ever release its own lease, never the winner's still-live one. Unqualified
- *  (legacy) callers fall back to the bare streamId. */
-export function finalizationField(
-  streamId: string,
-  generationId?: number,
-  leaseId?: string,
-): string {
-  let field = streamId;
-  if (generationId != null) {
-    field += `:${generationId}`;
-  }
-  if (leaseId != null) {
-    field += `:${leaseId}`;
-  }
-  return field;
-}
-
 export function isPendingActionExpired(job: Pick<SerializableJobData, 'pendingAction'>): boolean {
   const exp = job.pendingAction?.expiresAt;
   return exp != null && exp <= Date.now();
@@ -484,14 +450,6 @@ export interface JobStatusTransition {
    * resolve a job that has since paused for a different action.
    */
   expectActionId?: string;
-  /**
-   * The in-memory store parks the steer queue on terminal transitions as a backstop
-   * for callers that never drain it. A caller that WINS this transition and then
-   * drains/reports the queue itself (abortJob surfaces leftovers on its result and
-   * final event) sets this so the backstop doesn't consume the queue first —
-   * mutating it before the CAS was the race this ordering exists to prevent.
-   */
-  preserveSteerQueue?: boolean;
   /**
    * Additional guard: only fire if the job's creation epoch equals this value.
    * Prevents a stale owner from transitioning a replacement job that reuses
@@ -635,38 +593,16 @@ export interface UsageMetadata {
 export interface AbortResult {
   /** Whether the abort was successful */
   success: boolean;
-  /** Whether a live generation, if one exists, provably received the stop signal:
-   *  true only when THIS process owns the generation (`ownedJobs`) or the job was
-   *  paused (no generation loop to signal). A cross-replica publish is never proof
-   *  of consumption, so peer-owned aborts stay false — callers must treat the run
-   *  settling (leaving the active set) as the durable acknowledgement instead. */
-  signalDelivered?: boolean;
-  /** Whether the cross-replica abort publication left this replica: false when the
-   *  transport publish threw or timed out. Distinct from `signalDelivered` — a
-   *  successful publish to a peer-owned generation is still unconfirmed delivery,
-   *  but a FAILED publish is positive proof the stop never left this process. */
-  signalPublished?: boolean;
   /** Distinguishes an epoch-fenced abort from ordinary not-found/terminal
    * failures so an HTTP caller can return RUN_REPLACED instead of silently
-   * reporting success for a newer generation it deliberately did not stop.
-   * `fence_unavailable`: the pre-CAS finalization marker could not be made
-   * durable, so the abort was REFUSED before doing anything — retryable. */
-  failureReason?: 'generation_replaced' | 'job_still_active' | 'fence_unavailable';
+   * reporting success for a newer generation it deliberately did not stop. */
+  failureReason?: 'generation_replaced' | 'job_still_active';
   /** The generation was stopped, but the caller's required durable side
    * effects failed before normal FINAL publication. The manager emitted a
    * conservative reconciliation frame instead. */
   persistenceFailed?: boolean;
   /** The job data at time of abort */
   jobData: SerializableJobData | null;
-  /** The status the terminal CAS actually transitioned FROM, which is not always
-   *  `jobData.status`: an approval decision can move the same generation between
-   *  `running` and `requires_action` after the pre-abort read, and the abort retries
-   *  from the observed status. Consumers that key on "was it paused?" — vacuous
-   *  signal delivery (a pause has no generation loop), and the Stop route's
-   *  route-side settlement (only a paused run has no owner left to settle it) — must
-   *  read THIS, or a run resumed on a peer replica gets reported delivered and
-   *  settled while its new owner is still persisting. */
-  abortedFromStatus?: SerializableJobData['status'];
   /** Aggregated content from the stream */
   content: Agents.MessageContentComplex[];
   /** Final event to send to client */
@@ -794,44 +730,6 @@ export interface IJobStore {
   parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void>;
   claimParkedSteers(streamId: string, ownerFragment: string): Promise<string | undefined>;
   clearSteers(streamId: string): Promise<void>;
-
-  /**
-   * Register a pending user-visible FINALIZATION: persistence the generation owner
-   * still has to land (e.g. a deferred title's billed balance/transaction writes)
-   * AFTER its job leaves the active set. Account-deletion quiescing consults these
-   * — an empty active-set enumeration is not settlement while one is outstanding.
-   * TTL-bounded in the store so a crash between register and clear can only fence
-   * deletion for the TTL, never forever. (Unacknowledged deletion-side aborts are
-   * fenced durably on the user document instead, since those must outlive any TTL.)
-   *
-   * OPTIONAL, so stores written against the pre-marker contract keep compiling and
-   * validating. The manager degrades coherently when the trio is absent: registration
-   * REPORTS FAILURE (callers then run their billed post-terminal work synchronously,
-   * inside the active-set window, so the deletion guarantee holds without markers) and
-   * the count reads 0 (nothing can be deferred, so nothing is outstanding).
-   */
-  registerUserFinalization?(
-    userId: string,
-    streamId: string,
-    tenantId?: string,
-    generationId?: number,
-    leaseId?: string,
-  ): Promise<void>;
-
-  /** Clear a finalization registered by {@link registerUserFinalization}. Must be
-   *  called with the SAME generationId: entries are generation-qualified so a late
-   *  clear from generation A can never drop the marker generation B registered on
-   *  the same stream. */
-  clearUserFinalization?(
-    userId: string,
-    streamId: string,
-    tenantId?: string,
-    generationId?: number,
-    leaseId?: string,
-  ): Promise<void>;
-
-  /** Count live (unexpired) finalizations for a user. */
-  countUserFinalizations?(userId: string, tenantId?: string): Promise<number>;
 }
 
 /**
@@ -873,30 +771,6 @@ export interface IJobStoreV2 extends IJobStore {
 
   /** Get a job by streamId (streamId === conversationId) */
   getJob(streamId: string): Promise<SerializableJobData | null>;
-
-  /**
-   * The finalization-marker trio is OPTIONAL on the legacy public {@link IJobStore}
-   * type (source compatibility for pre-marker stores) but REQUIRED by the runtime
-   * contract: account deletion's quiesce keys its settlement on these markers, and
-   * a store that cannot record them silently reopens the terminal-CAS-to-persistence
-   * window the markers exist to fence. `assertJobStoreV2` rejects such a store at
-   * configure time.
-   */
-  registerUserFinalization(
-    userId: string,
-    streamId: string,
-    tenantId?: string,
-    generationId?: number,
-    leaseId?: string,
-  ): Promise<void>;
-  clearUserFinalization(
-    userId: string,
-    streamId: string,
-    tenantId?: string,
-    generationId?: number,
-    leaseId?: string,
-  ): Promise<void>;
-  countUserFinalizations(userId: string, tenantId?: string): Promise<number>;
 
   /**
    * Update job data. When `expectedCreatedAt` is supplied, apply the write only
@@ -1441,10 +1315,8 @@ export interface IEventTransport {
    * Enables cross-replica abort: user aborts on Replica B,
    * generating Replica A receives signal and stops.
    * Optional - only implemented in Redis transport.
-   * An async implementation must REJECT on a failed publish so the caller can report
-   * the abort as undelivered instead of silently stranding a peer-replica generation.
    */
-  emitAbort?(streamId: string, generationId?: number): void | Promise<void>;
+  emitAbort?(streamId: string, generationId?: number): void;
 
   /** Awaitable, generation-correlated abort handoff. Resolves true only after
    * the replica owning that generation processes the abort. */
@@ -1466,20 +1338,6 @@ export interface IEventTransport {
     providerExecutionId: string,
   ): Promise<boolean>;
 
-  /** Whether the durable owner acknowledgement proof exists for this exact
-   *  generation. Cross-process retention leases use it as their renewal predicate:
-   *  once the owner has acknowledged (and therefore holds its own lease), a remote
-   *  retainer stops renewing without clearing the shared owner field. */
-  hasAbortAcknowledgement?(streamId: string, generationId: number): Promise<boolean>;
-
-  /** Short-lived exact-generation proof that the owner finished every external
-   * persistence write. Failed-handoff retainers use it when a predecessor ends
-   * naturally and therefore never emits an abort acknowledgement. */
-  recordGenerationSettlement?(streamId: string, generationId: number): Promise<boolean>;
-
-  /** Whether exact-generation owner settlement proof is still available. */
-  hasGenerationSettlement?(streamId: string, generationId: number): Promise<boolean>;
-
   /** Publish a predecessor DONE only while the current job's opaque creation
    * attempt still carries that predecessor in its durable receipt chain. */
   emitReplacedDoneConfirmed?(
@@ -1499,9 +1357,8 @@ export interface IEventTransport {
    */
   onAbort?(
     streamId: string,
-    /** Resolve true only after this replica has durably fenced and stopped the
-     * tagged generation. A rejection suppresses the acknowledgement. */
-    callback: (generationId?: number) => void | boolean | Promise<void | boolean>,
+    /** Return true only when this replica owns and stopped the tagged generation. */
+    callback: (generationId?: number) => void | boolean,
   ): void | (() => void) | Promise<void | (() => void)>;
 
   /**

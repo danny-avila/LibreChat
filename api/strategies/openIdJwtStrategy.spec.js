@@ -39,7 +39,6 @@ jest.mock('@librechat/api', () => ({
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
   normalizeOpenIdIssuer: jest.requireActual('@librechat/api').normalizeOpenIdIssuer,
   buildAuthUserDocCacheKey: jest.fn(() => 'auth-user-doc-key'),
-  buildAuthUserDocTombstoneKey: jest.requireActual('@librechat/api').buildAuthUserDocTombstoneKey,
   getAuthUserDocCacheMode: jest.fn(() => 'off'),
   getCachedAuthUserDoc: jest.fn(),
   getValidOpenIdReuseUserId: jest.fn(),
@@ -495,9 +494,6 @@ describe('openIdJwtStrategy – auth user document cache', () => {
       mockAuthUserDocCacheStore,
       'auth-user-doc-key',
       expect.objectContaining({ id: 'user-abc' }),
-      // The fill stamps when the Mongo read STARTED so the epoch fence can
-      // reject entries whose read predates the user's latest invalidation.
-      expect.objectContaining({ readAt: expect.any(Number) }),
     );
     expect(invalidateCachedAuthUserDoc).not.toHaveBeenCalled();
   });
@@ -532,7 +528,6 @@ describe('openIdJwtStrategy – auth user document cache', () => {
       mockAuthUserDocCacheStore,
       'auth-user-doc-key',
       expect.objectContaining({ id: 'tenant-b-user', tenantId: 'tenant-b' }),
-      expect.objectContaining({ readAt: expect.any(Number) }),
     );
   });
 
@@ -702,36 +697,6 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
     });
   });
 
-  it('refuses authentication when the durable barrier rose after the lookup', async () => {
-    const existingUser = {
-      _id: 'user-id-1',
-      provider: 'openid',
-      openidId: payload.sub,
-      openidIssuer: 'https://issuer.example.com',
-      email: payload.email,
-      role: SystemRoles.USER,
-    };
-    findUser.mockImplementation(async (query) => {
-      if (query.openidId === payload.sub) {
-        // The lookup completed BEFORE markUserDeleting: the doc carries no barrier.
-        return existingUser;
-      }
-      if (query._id === 'user-id-1') {
-        // The recheck reads AFTER the barrier rose.
-        return { _id: 'user-id-1', deletionRequestedAt: new Date() };
-      }
-      return null;
-    });
-
-    const req = { headers: { authorization: 'Bearer tok' }, session: {} };
-    const { user, info } = await invokeVerify(req, payload);
-
-    // Without the recheck this request authenticated with the pre-barrier document
-    // and could recreate data during the destructive cascade.
-    expect(user).toBe(false);
-    expect(info?.message).toMatch(/deletion/i);
-  });
-
   it('should use OPENID_EMAIL_CLAIM when set for email lookup', async () => {
     process.env.OPENID_EMAIL_CLAIM = 'upn';
     findUser.mockResolvedValue(null);
@@ -847,18 +812,13 @@ describe('openIdJwtStrategy – OPENID_EMAIL_CLAIM', () => {
       if (query.email === 'legacy@corp.com') {
         return legacyUser;
       }
-      if (query._id === 'legacy-db-id') {
-        return legacyUser;
-      }
       return null;
     });
 
     const req = { headers: { authorization: 'Bearer tok' }, session: {} };
     const { user } = await invokeVerify(req, payloadNoEmail);
 
-    // openid lookup + email fallback + the deletion-barrier recheck (the migration
-    // branch invalidates rather than fills, so the fence is not conclusive there).
-    expect(findUser).toHaveBeenCalledTimes(3);
+    expect(findUser).toHaveBeenCalledTimes(2);
     expect(findUser.mock.calls[1][0]).toEqual({ email: 'legacy@corp.com' });
     expect(user).toBeTruthy();
     expect(updateUser).toHaveBeenCalledWith(

@@ -32,6 +32,7 @@ function makeService(base: Cfg, merged: Cfg = base) {
     upsertBalance: jest.fn(async () => null),
     resolveAgentFireAccess: jest.fn(async () => 'ok' as const),
     isUserDeleting: jest.fn(async () => false),
+    enqueueAgentTrigger: jest.fn(async () => undefined),
   } as unknown as SchedulesServiceDeps;
   return createSchedulesService(deps);
 }

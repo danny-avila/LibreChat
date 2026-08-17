@@ -1,12 +1,5 @@
 const mongoose = require('mongoose');
-const {
-  logger,
-  getTenantId,
-  webSearchKeys,
-  runAsSystem,
-  tenantStorage,
-  UNREADABLE_ABORT_FENCE,
-} = require('@librechat/data-schemas');
+const { logger, getTenantId, webSearchKeys } = require('@librechat/data-schemas');
 const {
   getNewS3URL,
   needsRefresh,
@@ -18,8 +11,6 @@ const {
   extractWebSearchEnvVars,
   deleteAgentCheckpoints,
   deleteAllSharedLinksWithCleanup,
-  registerShutdownTask,
-  GenerationJobManager,
 } = require('@librechat/api');
 const {
   Tools,
@@ -42,6 +33,7 @@ const {
   purgeAgentTriggerDeliveriesForUser,
 } = require('~/server/services/Agents/triggers');
 const { getAppConfig } = require('~/server/services/Config');
+const { quiesceUserSchedules } = require('~/server/services/Schedules');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -404,6 +396,9 @@ const deleteUserController = async (req, res) => {
     }
     await drainAgentTriggerDeliveriesForUser(user.id);
     await subagentThreadTaskStore.cancelAndDrainForOwner(user.id, user.tenantId);
+    if (!(await quiesceUserSchedules(user.id))) {
+      throw new Error('Scheduled executions could not be confirmed stopped');
+    }
     const activeAgentRuns = await GenerationJobManager.getCleanupBlockingJobIdsForUser(
       user.id,
       user.tenantId,
@@ -455,6 +450,7 @@ const deleteUserController = async (req, res) => {
     await db.deleteTokens({ userId: user.id });
     await db.removeUserFromAllGroups(user.id);
     await db.deleteAclEntries({ principalId: user._id });
+    await db.deleteSchedulesByUser(user.id);
     const deleteResult = await db.deleteUserById(user.id);
     if (deleteResult.deletedCount !== 1) {
       throw new Error('User disappeared before account deletion could commit');
@@ -482,437 +478,6 @@ const deleteUserController = async (req, res) => {
     logger.error('[deleteUserController]', err);
     return res.status(500).json({ message: 'Something went wrong.' });
   }
-};
-
-/**
- * Interactive-generation quiesce: aborts the user's active interactive jobs and
- * reports whether the cascade may proceed. Settlement is NOT provable within the
- * pass that aborts — a job leaves the active set the moment the abort CAS lands,
- * BEFORE the generation owner's asynchronous message/usage/balance writes drain —
- * so ANY discovered job (and any unreadable store: fail closed) defers the cascade
- * to a later pass. By the next pass the aborted owners have long unwound, and the
- * auth barrier guarantees nothing new started in between; an empty enumeration is
- * then a real settlement signal, not a race. Cross-replica delivery of the abort
- * remains unconfirmed by design (see FOLLOWUPS) — the deferral bounds that window
- * to the sweep interval instead of racing the cascade against it.
- */
-/**
- * Settlement attempt for one durable generation-qualified abort fence — a
- * deletion-side abort whose signal provably never left the aborting replica. The
- * shared job went terminal at the abort CAS, so the peer OWNER may still be generating
- * with nothing in the active set to show for it; the fence is the evidence, and it
- * clears only on an acknowledgeable outcome: the publish finally leaves this replica
- * (delivered or republished), or that exact generation is gone/reassigned/replaced.
- * Anything else keeps the fence and defers.
- */
-const settleAbortFence = async (user, fence) => {
-  const { streamId, createdAt } = fence;
-  if (streamId === UNREADABLE_ABORT_FENCE) {
-    return false;
-  }
-  let job;
-  try {
-    job = await GenerationJobManager.getJob(streamId);
-  } catch (error) {
-    logger.warn(`[quiesceInteractiveGenerations] Could not read job ${streamId}`, error);
-    return false;
-  }
-  // OWNERSHIP from the facade's metadata, not the top level: getJob returns a
-  // GenerationJob whose owner lives at `metadata.userId`, so comparing `job.userId`
-  // read undefined and cleared every fence as "reassigned" without ever re-signalling.
-  const ownerId = job?.metadata?.userId;
-  const ownerTenantId = job?.metadata?.tenantId;
-  if (
-    job == null ||
-    job.createdAt !== createdAt ||
-    ownerId !== user.id ||
-    (ownerTenantId ?? undefined) !== (user.tenantId ?? undefined)
-  ) {
-    await db.clearUserAbortFence(user.id, streamId, createdAt).catch((err) => {
-      logger.warn(
-        `[quiesceInteractiveGenerations] Failed to clear fence ${streamId}@${createdAt}`,
-        err,
-      );
-    });
-    return false;
-  }
-  // EVERY status whose owner is still persisting is unsettled — complete, error,
-  // AND aborted (the Stop route's checkpoint prune / partial save run behind the
-  // abort CAS), plus a barrier-held pause. Keep the fence and defer: the owner
-  // clears the flag when its writes land, and stale-owner recovery bounds the wait.
-  if (job.terminalPersistencePending === true) {
-    return false;
-  }
-  if (job.status === 'running' || job.status === 'requires_action') {
-    // Live again despite terminal-at-CAS bookkeeping: re-abort and keep the fence.
-    await GenerationJobManager.abortJob(streamId, { expectedCreatedAt: createdAt }).catch(
-      () => undefined,
-    );
-    return false;
-  }
-  if (job.status === 'complete' || job.status === 'error') {
-    // The generation reached its OWN terminal — the run ended by its own means, so
-    // there is no stop left to deliver and re-signalling (aborted-only) could never
-    // clear this fence; it would sit permanent, deferring deletion forever. Any
-    // post-terminal billed work is what the owner-finalization markers above fence.
-    await db.clearUserAbortFence(user.id, streamId, createdAt).catch((err) => {
-      logger.warn(
-        `[quiesceInteractiveGenerations] Failed to clear fence ${streamId}@${createdAt}`,
-        err,
-      );
-    });
-    return false;
-  }
-  const resignal = await GenerationJobManager.resignalAbort(streamId, createdAt).catch(() => ({
-    delivered: false,
-    published: false,
-  }));
-  if (!resignal.delivered && !resignal.published) {
-    return false;
-  }
-  try {
-    await db.clearUserAbortFence(user.id, streamId, createdAt);
-  } catch (error) {
-    // The signal left, but the fence is still durable: report unsettled so a later
-    // pass retries the clear rather than cascading on an unrecorded acknowledgement.
-    logger.warn(
-      `[quiesceInteractiveGenerations] Failed to clear fence ${streamId}@${createdAt}`,
-      error,
-    );
-    return false;
-  }
-  return true;
-};
-
-/**
- * Drains the user's in-flight interactive generations before the destructive cascade.
- *
- * SCOPE: this covers work enrolled in GenerationJobManager — the agents chat path and
- * scheduled fires. The remote OpenAI-compatible and Responses controllers run on
- * private per-request abort controllers this quiesce cannot see, so an
- * already-admitted request there (notably Responses `store: true`) can persist
- * conversations/messages/usage after the cascade. That gap predates this barrier
- * (those paths were never drainable) and is tracked as a follow-up (see issue 14594):
- * enrolling them in the job manager so deletion can fence them like everything else.
- */
-const quiesceInteractiveGenerations = async (user) => {
-  // MARKERS BEFORE THE ACTIVE SCAN — the read order is what makes the admission
-  // lease -> durable job handoff atomic from this side. Writers hold the lease
-  // strictly until the job is active-set visible, so with leases read FIRST, any
-  // interleaving either shows the lease here or the job below; jobs-first allowed
-  // a request to create its job after this scan and release its lease before the
-  // count, hiding both. The count itself gates settlement further down; this early
-  // read only has to ORDER before the job scan.
-  const earlyPendingOwnerWork = await GenerationJobManager.countUserFinalizations(
-    user.id,
-    user.tenantId,
-  );
-  // A writer whose replica temporarily loses the primary lease store promotes its
-  // hold into Mongo before the primary TTL can expire. Read that fallback before the
-  // active scan for the same lease-to-job handoff ordering used above.
-  const earlyFallbackOwnerWork = await db.countUserFinalizationFallbackLeases(user.id);
-  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(user.id, user.tenantId);
-  for (const streamId of activeJobIds ?? []) {
-    let observedJob;
-    try {
-      observedJob = await GenerationJobManager.getJob(streamId);
-    } catch (error) {
-      logger.warn(
-        `[quiesceInteractiveGenerations] Deferring ${user.id}: could not read ${streamId}`,
-        error,
-      );
-      return false;
-    }
-    const createdAt = observedJob?.createdAt;
-    if (
-      createdAt == null ||
-      observedJob?.metadata?.userId !== user.id ||
-      (observedJob?.metadata?.tenantId ?? undefined) !== (user.tenantId ?? undefined)
-    ) {
-      // The active index changed after enumeration. This pass already observed work,
-      // so defer and let the next pass enumerate its authoritative generation.
-      continue;
-    }
-    // FENCE BEFORE THE CAS. An abort transitions the shared job to terminal, which
-    // hides it from every later active-set scan; if the signal then turns out never
-    // to have left this replica, the only thing standing between a still-generating
-    // peer and the destructive cascade is this record. Stamping it first makes a
-    // write failure harmless — nothing has been aborted yet, so refusing simply
-    // defers. (Cleared below the moment the abort is acknowledged, so the common
-    // case leaves nothing behind.)
-    try {
-      await db.addUserAbortFence(user.id, streamId, createdAt);
-    } catch (error) {
-      logger.warn(
-        `[quiesceInteractiveGenerations] Deferring ${user.id}: could not fence abort of ${streamId}`,
-        error,
-      );
-      return false;
-    }
-    const result = await GenerationJobManager.abortJob(streamId, {
-      expectedCreatedAt: createdAt,
-    }).catch((err) => {
-      logger.warn(`[quiesceInteractiveGenerations] Failed to abort active job ${streamId}`, err);
-      return null;
-    });
-    // Clearing requires POSITIVE evidence — a won abort whose signal fields say the
-    // stop was delivered or at least left this replica. Everything else is
-    // inconclusive: a THROW can land after the terminal CAS (content refresh, required
-    // persistence, publication), and a `success: false` result carries NO signal
-    // fields at all (job already terminal — e.g. a concurrent Stop whose own publish
-    // failed — or a lost CAS), so testing `!== false` read those absent fields as
-    // acknowledgement and cleared the one record standing between a still-generating
-    // peer and the destructive cascade. Keep the fence: this pass defers on the
-    // active-set check below, and `settleAbortFence` re-signals and settles it on a
-    // later pass (or in the deferred-deletion sweep) — including clearing it for a
-    // run that reached its own complete/error terminal, so fences never go permanent.
-    const acknowledged =
-      result?.success === true &&
-      (result.signalDelivered !== false || result.signalPublished !== false);
-    if (acknowledged) {
-      await db.clearUserAbortFence(user.id, streamId, createdAt).catch((err) => {
-        logger.warn(
-          `[quiesceInteractiveGenerations] Failed to clear fence ${streamId}@${createdAt}`,
-          err,
-        );
-      });
-    } else {
-      await GenerationJobManager.resignalAbort(streamId, createdAt).catch(() => undefined);
-    }
-  }
-  if (activeJobIds?.length) {
-    return false;
-  }
-  // Settlement needs positive evidence, not an empty active set: the success path
-  // completes its job fire-and-forget and then runs the deferred title, whose billed
-  // balance/transaction writes land AFTER the job left the set, and a deletion-side
-  // abort can win its CAS without its signal ever leaving this replica. Two fences
-  // cover those: TTL-bounded job-store markers the OWNER clears once its writes land,
-  // and durable (TTL-free, so an outage can never read as settlement) abort fences on
-  // the user document. Multi-replica deployments require the Redis job store (see
-  // isTopologySafeToArm), where the owner markers are cross-replica visible.
-  const pendingOwnerWork =
-    earlyPendingOwnerWork > 0
-      ? earlyPendingOwnerWork
-      : await GenerationJobManager.countUserFinalizations(user.id, user.tenantId);
-  if (pendingOwnerWork > 0) {
-    logger.info(
-      `[quiesceInteractiveGenerations] ${pendingOwnerWork} owner finalization(s) still landing for ${user.id}`,
-    );
-    return false;
-  }
-  const fallbackOwnerWork =
-    earlyFallbackOwnerWork > 0
-      ? earlyFallbackOwnerWork
-      : await db.countUserFinalizationFallbackLeases(user.id);
-  if (fallbackOwnerWork > 0) {
-    logger.info(
-      `[quiesceInteractiveGenerations] ${fallbackOwnerWork} fallback finalization(s) still landing for ${user.id}`,
-    );
-    return false;
-  }
-  const fences = await db.getUserAbortFences(user.id);
-  if (fences.length === 0) {
-    return true;
-  }
-  let allSettled = true;
-  for (const fence of fences) {
-    const settled = await settleAbortFence(user, fence);
-    allSettled = allSettled && settled;
-  }
-  if (!allSettled) {
-    logger.info(
-      `[quiesceInteractiveGenerations] unacknowledged abort(s) still fencing ${user.id}; deferring`,
-    );
-  }
-  return allSettled;
-};
-
-/**
- * The destructive account-deletion cascade. Runs only AFTER the durable barrier is up
- * and BOTH quiesces (scheduled runs, interactive generations) confirmed settlement.
- * Shared by the interactive controller and the deferred-deletion sweep: a quiesce that
- * could not confirm defers with the barrier still raised, and authentication is
- * refused behind the barrier, so no client retry can ever arrive — the sweep is the
- * promised retry.
- */
-const executeUserDeletion = async (user, providedAppConfig) => {
-  const appConfig =
-    providedAppConfig ??
-    (await getAppConfig({
-      role: user.role,
-      userId: user.id,
-      tenantId: user.tenantId,
-    }));
-  /** Minimal request shim for the file-deletion service (reads user, config, body). */
-  const req = { user, config: appConfig, body: {} };
-  await db.deleteMessages({ user: user.id });
-  await db.deleteAllUserSessions({ userId: user.id });
-  await db.deleteTransactions({ user: user.id });
-  await db.deleteUserKey({ userId: user.id, all: true });
-  await db.deleteBalances({ user: user._id });
-  await db.deletePresets(user.id);
-  try {
-    const convoDeletion = await db.deleteConvos(user.id);
-    // HITL: prune the deleted conversations' durable checkpoints — a paused run's
-    // checkpoint would otherwise persist until the Mongo TTL. Never throws.
-    await deleteAgentCheckpoints(
-      convoDeletion?.conversationIds,
-      appConfig?.endpoints?.agents?.checkpointer,
-    );
-  } catch (error) {
-    logger.error('[executeUserDeletion] Error deleting user convos, likely no convos', error);
-  }
-  await deleteUserPluginAuth(user.id, null, true);
-  await db.deleteSchedulesByUser(user.id);
-  await deleteAllSharedLinksWithCleanup(user.id);
-  await deleteUserFiles(req);
-  await db.deleteFiles(null, user.id);
-  await db.deleteToolCalls(user.id);
-  await db.deleteUserAgents(user.id);
-  await db.deleteAllAgentApiKeys(user._id);
-  await db.deleteAssistants({ user: user.id });
-  await db.deleteConversationTags({ user: user.id });
-  await db.deleteAllUserMemories(user.id);
-  await db.deleteUserPrompts(user.id);
-  await db.deleteUserSkills(user.id);
-  await deleteUserMcpServers(user.id);
-  await db.deleteActions({ user: user.id });
-  await db.deleteTokens({ userId: user.id });
-  await db.removeUserFromAllGroups(user.id);
-  await db.deleteAclEntries({ principalId: user._id });
-  // The user document goes LAST: it is the retry marker. Every step above is an
-  // idempotent bulk delete, so an interruption (crash, SIGTERM mid-sweep) leaves the
-  // document and its deletion markers in place and the next pass re-runs the whole
-  // cascade; deleting the document earlier made everything after it unreachable —
-  // getUsersPendingDeletion could no longer rediscover the account, permanently
-  // orphaning shared links, files, agents, and the rest. Authentication is refused
-  // behind the barrier the whole time, so the surviving document admits nothing.
-  await db.deleteUserById(user.id);
-  logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
-};
-
-/** Deferred deletions retried per sweep pass; small — deferral is a rare race. */
-const PENDING_DELETION_BATCH = 5;
-/** Head start for the interactive request that raised the barrier (or a local-auth
- *  retry) before the sweep competes with it. */
-const PENDING_DELETION_MIN_AGE_MS = 60_000;
-
-/**
- * Finishes account deletions that deferred on an unconfirmed schedule quiesce. The
- * barrier is durable and blocks authentication, so without this pass a deferred
- * OpenID account stays locked-but-undeleted with no way to issue the promised retry.
- * Every step is idempotent and the window rotates, so concurrent workers are safe.
- */
-const processPendingUserDeletions = async () => {
-  // System context for the cross-tenant scan and stamp; strict tenant isolation
-  // would otherwise throw on this timer-driven pass (no request, no ALS context)
-  // and every deferred user would stay locked behind the barrier forever.
-  const pending = await runAsSystem(() => db.getUsersPendingDeletion(PENDING_DELETION_BATCH));
-  const due = pending.filter(
-    (user) =>
-      user.deletionRequestedAt != null &&
-      Date.now() - new Date(user.deletionRequestedAt).getTime() >= PENDING_DELETION_MIN_AGE_MS,
-  );
-  if (due.length === 0) {
-    return;
-  }
-  await runAsSystem(() =>
-    db.markDeletionSweepAttempted(due.map((user) => user._id.toString())),
-  ).catch((err) => logger.warn('[processPendingUserDeletions] Failed to stamp attempts', err));
-  for (const pendingUser of due) {
-    const user = { ...pendingUser, id: pendingUser._id.toString() };
-    // Each user's quiesce + cascade runs in THEIR tenant context, matching the
-    // interactive controller's request-scoped context.
-    await tenantStorage.run({ tenantId: user.tenantId, userId: user.id }, async () => {
-      try {
-        // RE-ESTABLISH the auth-cache fence before cascading. markUserDeleting can
-        // stamp Mongo and then throw on its REQUIRED invalidation; the controller
-        // 503s, but both markers already exist, so this sweep would otherwise run
-        // the cascade behind a fence that was never confirmed — a surviving cached
-        // document could admit a generation that outlives the sweep delay. The call
-        // is idempotent (monotonic stamp) and fail-closed; a throw defers this user
-        // to a later pass with the barrier still up.
-        try {
-          await db.markUserDeleting(user.id);
-        } catch (fenceError) {
-          logger.warn(
-            `[processPendingUserDeletions] Deferring ${user.id}: auth-cache fence could not be established`,
-            fenceError,
-          );
-          return;
-        }
-        const quiesced = await quiesceUserSchedules(user.id).catch((error) => {
-          logger.error(`[processPendingUserDeletions] Quiesce failed for ${user.id}`, error);
-          return false;
-        });
-        if (!quiesced) {
-          logger.warn(
-            `[processPendingUserDeletions] Deferring ${user.id} again: scheduled runs did not confirm settlement`,
-          );
-          return;
-        }
-        const interactiveSettled = await quiesceInteractiveGenerations(user).catch((error) => {
-          logger.error(
-            `[processPendingUserDeletions] Interactive quiesce failed for ${user.id}`,
-            error,
-          );
-          return false;
-        });
-        if (!interactiveSettled) {
-          logger.warn(
-            `[processPendingUserDeletions] Deferring ${user.id} again: interactive generations are still settling`,
-          );
-          return;
-        }
-        await executeUserDeletion(user);
-      } catch (error) {
-        logger.error(`[processPendingUserDeletions] Cascade failed for ${user.id}`, error);
-      }
-    });
-  }
-};
-
-const PENDING_DELETION_SWEEP_INTERVAL_MS = 5 * 60_000;
-let pendingDeletionSweepStarted = false;
-let pendingDeletionSweepStopped = false;
-/** The in-flight pass, so graceful shutdown can drain it instead of truncating a
- *  cascade mid-write. The user-document-last ordering makes even a hard kill
- *  recoverable; this keeps the ORDERLY path from relying on that backstop. */
-let activePendingDeletionPass = null;
-
-/** Idempotent per process; safe in every worker (the pass itself is idempotent). */
-const startPendingDeletionSweep = () => {
-  if (pendingDeletionSweepStarted) {
-    return;
-  }
-  pendingDeletionSweepStarted = true;
-  // Production disables Mongoose autoIndex, so the partial
-  // (deletionSweepAt, deletionRequestedAt) index the sweep scans on is never built
-  // there by schema declaration alone — build it explicitly, best-effort.
-  db.ensureUserDeletionIndexes?.().catch((err) =>
-    logger.warn('[startPendingDeletionSweep] Failed to ensure deletion indexes', err),
-  );
-  const run = () => {
-    if (pendingDeletionSweepStopped) {
-      return;
-    }
-    activePendingDeletionPass = processPendingUserDeletions()
-      .catch((err) => logger.error('[startPendingDeletionSweep] Sweep pass failed', err))
-      .finally(() => {
-        activePendingDeletionPass = null;
-      });
-  };
-  const timer = setInterval(run, PENDING_DELETION_SWEEP_INTERVAL_MS);
-  timer.unref?.();
-  setTimeout(run, PENDING_DELETION_MIN_AGE_MS).unref?.();
-  registerShutdownTask('pending deletion sweep', async () => {
-    pendingDeletionSweepStopped = true;
-    clearInterval(timer);
-    if (activePendingDeletionPass) {
-      await activePendingDeletionPass;
-    }
-  });
 };
 
 const verifyEmailController = async (req, res) => {
@@ -1146,8 +711,6 @@ const maybeUninstallOAuthMCP = async (userId, pluginKey, appConfig) => {
 };
 
 module.exports = {
-  processPendingUserDeletions,
-  startPendingDeletionSweep,
   getUserController,
   getTermsStatusController,
   acceptTermsController,

@@ -158,6 +158,7 @@ async function gracefulExit(code = 0) {
       await runAsSystem(() =>
         methods.prepareAgentTriggerUserPurge(uid, deletionFence, user.tenantId),
       );
+      await runAsSystem(() => methods.disableUserSchedulesForDeletion(uid));
       if (hasSharedGenerationStore) {
         const deadline = Date.now() + TRIGGER_DRAIN_TIMEOUT_MS;
         while (
@@ -214,6 +215,7 @@ async function gracefulExit(code = 0) {
     }
 
     await Promise.all(tasks);
+    await runAsSystem(() => methods.deleteSchedulesByUser(uid));
 
     // 6) Remove user from all groups
     await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });

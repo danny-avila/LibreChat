@@ -8,17 +8,6 @@ const mockLogger = {
 };
 
 const mockGenerationJobManager = {
-  // Owner-side finalization fence: the controller registers before its terminal
-  // CAS whenever post-terminal title work is possible, so the facade mock must
-  // mirror it or the turn stalls on an undefined call.
-  registerUserFinalization: jest.fn(async () => undefined),
-  releaseOwnerLease: jest.fn(async () => undefined),
-  holdUserFinalization: jest.fn(async (u, s2, t, g, leaseId) => ({
-    leaseId,
-    release: mockLeaseRelease,
-  })),
-  clearUserFinalization: jest.fn(async () => undefined),
-  countUserFinalizations: jest.fn(async () => 0),
   createJob: jest.fn(),
   getJob: jest.fn(),
   emitError: jest.fn(),
@@ -31,7 +20,6 @@ const mockGenerationJobManager = {
   beginProviderExecution: jest.fn(),
   markProviderExecutionDrained: jest.fn(),
   failPausePersistence: jest.fn(),
-  updateScheduleOutcome: jest.fn(async () => true),
   getResumeState: jest.fn(),
   updateMetadata: jest.fn(),
   claimGeneration: jest.fn(),
@@ -76,6 +64,10 @@ const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
 const mockIsAgentTriggerPrincipalActive = jest.fn();
+const mockIsScheduleFireRequest = jest.fn();
+const mockExemptFromConcurrencyLimiter = jest.fn();
+const mockRecordScheduleOutcome = jest.fn();
+const mockIsScheduleLive = jest.fn();
 const mockDeleteAgentCheckpoint = jest.fn();
 const mockStartupTelemetry = {
   mark: jest.fn(),
@@ -142,9 +134,10 @@ jest.mock('@librechat/data-schemas', () => ({
   logger: mockLogger,
 }));
 
-const mockLeaseRelease = jest.fn();
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
+  exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
   toPendingSteer: jest.fn((item) => item),
   /** Recorded onto the job so the steer route can honour the OWNING replica's
    *  seal capability rather than its own probe. */
@@ -163,9 +156,6 @@ jest.mock('@librechat/api', () => ({
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
-  // Real predicate, not a stub: it decides whether this request holds a concurrency
-  // slot, and a stub here would hide a drift between the acquire and release sites.
-  exemptFromConcurrencyLimiter: jest.requireActual('@librechat/api').exemptFromConcurrencyLimiter,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {
@@ -184,7 +174,6 @@ jest.mock('@librechat/api', () => ({
   decrementPendingRequest: (...args) => mockDecrementPendingRequest(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
   checkAndIncrementPendingRequest: (...args) => mockCheckAndIncrementPendingRequest(...args),
-  isScheduleFireRequest: jest.fn(() => false),
   getAgentStartupTelemetry: (...args) => mockGetAgentStartupTelemetry(...args),
   acceptAgentStartupTelemetry: (...args) => mockAcceptAgentStartupTelemetry(...args),
   isUnpersistedPreliminaryParent: async ({
@@ -224,21 +213,16 @@ jest.mock('~/cache', () => ({
   logViolation: jest.fn(),
 }));
 
-jest.mock('~/server/services/Schedules', () => ({
-  recordScheduleOutcome: jest.fn(() => Promise.resolve()),
-  // request.js destructures this at import time; omitting it makes the pre-start
-  // liveness re-check a call on undefined.
-  isScheduleLive: jest.fn(() => Promise.resolve(true)),
-  clearScheduledJob: jest.fn(() => Promise.resolve()),
-  awaitStopAbortPersistence: jest.fn(() => Promise.resolve(true)),
-}));
-
 jest.mock('~/models', () => ({
-  isUserDeleting: jest.fn(async () => false),
   saveMessage: (...args) => mockSaveMessage(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
+  isScheduleLive: (...args) => mockIsScheduleLive(...args),
 }));
 
 const AgentController = require('../request');
@@ -271,17 +255,18 @@ function nextTick() {
 describe('ResumableAgentController resume metadata', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGenerationJobManager.registerUserFinalization.mockResolvedValue(undefined);
-    mockGenerationJobManager.clearUserFinalization.mockResolvedValue(undefined);
-    mockGenerationJobManager.holdUserFinalization.mockImplementation(
-      async (u, s2, t, g, leaseId) => ({ leaseId, release: mockLeaseRelease }),
-    );
     mockMCPContexts = new WeakMap();
     mockCheckAndIncrementPendingRequest.mockResolvedValue({ allowed: true });
     mockDecrementPendingRequest.mockResolvedValue(undefined);
     mockGetConvo.mockResolvedValue({ createdAt: '2026-06-07T00:00:00.000Z' });
     mockGetMessages.mockResolvedValue([]);
     mockIsAgentTriggerPrincipalActive.mockResolvedValue(true);
+    mockIsScheduleFireRequest.mockImplementation((req) => req?._isScheduledFire === true);
+    mockExemptFromConcurrencyLimiter.mockImplementation(
+      (req) => req?._isScheduledFire === true && req?._isManualScheduledFire !== true,
+    );
+    mockRecordScheduleOutcome.mockResolvedValue(true);
+    mockIsScheduleLive.mockResolvedValue(true);
     mockGenerationJobManager.createJob.mockResolvedValue({
       createdAt: 1000,
       metadata: {
@@ -294,8 +279,6 @@ describe('ResumableAgentController resume metadata', () => {
       emitter: { on: jest.fn() },
     });
     mockGenerationJobManager.getResumeState.mockResolvedValue(null);
-    // No live record by default; suites that need one (the disconnect-partial save
-    // re-checks liveness before writing) arm it per test.
     mockGenerationJobManager.getJob.mockResolvedValue(undefined);
     mockGenerationJobManager.updateMetadata.mockResolvedValue(undefined);
     mockGenerationJobManager.emitChunk.mockResolvedValue(undefined);
@@ -320,7 +303,7 @@ describe('ResumableAgentController resume metadata', () => {
       }),
     );
     mockGenerationJobManager.finishTerminalJob.mockResolvedValue(undefined);
-    mockGenerationJobManager.completeJob.mockResolvedValue(undefined);
+    mockGenerationJobManager.completeJob.mockResolvedValue(true);
     mockGenerationJobManager.beginProviderExecution.mockResolvedValue(true);
     mockGenerationJobManager.markProviderExecutionDrained.mockResolvedValue(true);
     mockGenerationJobManager.failPausePersistence.mockResolvedValue(true);
@@ -717,6 +700,73 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
   });
 
+  it('rejects a superseded automatic occurrence after durable job creation and preserves its outcome', async () => {
+    const conversationId = 'scheduled-conversation-123';
+    mockGenerationJobManager.claimGeneration.mockResolvedValue(
+      wonGenerationClaim({ streamId: conversationId, conversationId }),
+    );
+    mockIsScheduleLive.mockResolvedValue(false);
+    const req = {
+      _isScheduledFire: true,
+      _isManualScheduledFire: false,
+      user: { id: 'user-123' },
+      body: {
+        text: 'Run the scheduled digest.',
+        messageId: 'scheduled-user-message',
+        clientRequestId: 'sched:schedule-1:2026-08-17T12:00:00-000Z',
+        conversationId: 'new',
+        newConversationId: conversationId,
+        scheduleId: 'schedule-1',
+        scheduledFor: '2026-08-17T12:00:00.000Z',
+        scheduleConfigRevision: 7,
+        endpointOption: { endpoint: 'agents', agent_id: 'agent-1' },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+    const initializeClient = jest.fn();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+
+    expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
+    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+      conversationId,
+      'user-123',
+      conversationId,
+      expect.objectContaining({
+        initialMetadata: expect.objectContaining({
+          scheduleId: 'schedule-1',
+          scheduledFor: '2026-08-17T12:00:00.000Z',
+          scheduleConfigRevision: 7,
+          preserveForScheduleReconcile: true,
+        }),
+      }),
+    );
+    expect(mockIsScheduleLive).toHaveBeenCalledWith('schedule-1', 7, {
+      automatic: true,
+      policy: true,
+    });
+    expect(initializeClient).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 409,
+      code: 'SCHEDULE_NO_LONGER_ACTIVE',
+      error: 'This scheduled occurrence is no longer active',
+      generationProtocolVersion: 1,
+    });
+    expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      streamId: conversationId,
+      jobCreatedAt: 1000,
+      status: 'interrupted',
+      conversationId,
+      clearConversationId: false,
+      error: 'This scheduled occurrence is no longer active',
+    });
+    expect(mockDecrementPendingRequest).not.toHaveBeenCalled();
+  });
+
   it('does not start a provider when account deletion or replacement wins the startup CAS', async () => {
     mockGenerationJobManager.beginProviderExecution.mockResolvedValue(false);
     const req = {
@@ -978,9 +1028,6 @@ describe('ResumableAgentController resume metadata', () => {
         }),
       },
     });
-    // The disconnect-partial save re-checks liveness before writing, so the store must
-    // still show this exact generation running for the write to be allowed.
-    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
     mockGenerationJobManager.getResumeState.mockResolvedValue({
       conversationId,
       responseMessageId: 'response-message',
@@ -1031,12 +1078,8 @@ describe('ResumableAgentController resume metadata', () => {
     const textPart = { type: 'text', text: 'Partial response...' };
 
     mockSaveMessage.mockResolvedValueOnce(undefined).mockResolvedValueOnce({});
-    // The handler dispatches the save asynchronously (assigning it synchronously to
-    // the settlement-awaited promise); drain the queue before asserting.
     await allSubscribersLeftHandler([oauthPart, textPart]);
-    await nextTick();
     await allSubscribersLeftHandler([oauthPart, textPart]);
-    await nextTick();
 
     expect(mockFilterPersistableAbortContent).toHaveBeenCalledWith([oauthPart, textPart]);
     expect(mockSaveMessage).toHaveBeenCalledWith(
@@ -1074,7 +1117,6 @@ describe('ResumableAgentController resume metadata', () => {
         }),
       },
     });
-    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
     mockGenerationJobManager.getResumeState.mockResolvedValue({
       conversationId,
       responseMessageId: 'response-message',
@@ -1128,7 +1170,6 @@ describe('ResumableAgentController resume metadata', () => {
 
     const textPart = { type: 'text', text: 'Partial response...' };
     await allSubscribersLeftHandler([textPart]);
-    await nextTick();
 
     expect(mockSaveMessage).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'user-123' }),
@@ -1855,78 +1896,6 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
   });
 
-  it('re-applies the live dispatch policy at the last gate before a billed generation', async () => {
-    // The claim -> loopback POST window is short but real, and an operator kill switch, a
-    // narrowed `interface.schedules`, or a revoked SCHEDULES:USE touches neither the row
-    // nor its configRevision — so without `policy`, this gate could only catch a delete
-    // or an edit, and an occurrence already in flight still ran one full billed turn.
-    // Both resume gates already ask for it; this one is the fire path's equivalent.
-    const schedules = require('~/server/services/Schedules');
-    mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
-    const req = {
-      user: { id: 'user-123' },
-      _isScheduledFire: true,
-      body: {
-        text: 'Scheduled prompt',
-        messageId: 'user-msg',
-        clientRequestId: 'req-policy',
-        conversationId: 'conversation-123',
-        scheduleId: 'sched-1',
-        scheduledFor: '2026-07-28T12:00:00.000Z',
-        scheduleConfigRevision: 3,
-        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
-      },
-      config: {},
-    };
-
-    await AgentController(req, createResumableResponse(), jest.fn(), jest.fn(), null);
-
-    expect(schedules.isScheduleLive).toHaveBeenCalledWith(
-      'sched-1',
-      3,
-      expect.objectContaining({ automatic: true, policy: true }),
-    );
-  });
-
-  it('releases the pending slot and idempotency claim when the pre-start fence aborts', async () => {
-    // Manual Run Now is NOT limiter-exempt, so the controller incremented the pending
-    // counter and claimed the clientRequestId. The fence abort skips the whole
-    // generation, so nothing downstream releases either — this exit must, or the
-    // user's next interactive messages 429 until the counter's TTL expires.
-    const schedules = require('~/server/services/Schedules');
-    schedules.isScheduleLive.mockResolvedValueOnce(false);
-    mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
-    mockGenerationJobManager.abortJob.mockResolvedValue({ success: true });
-    const req = {
-      user: { id: 'user-123' },
-      _isScheduledFire: true,
-      _isManualScheduledFire: true,
-      body: {
-        text: 'Scheduled prompt',
-        messageId: 'user-msg',
-        clientRequestId: 'req-abc',
-        conversationId: 'conversation-123',
-        scheduleId: 'sched-1',
-        scheduledFor: '2026-07-28T12:00:00.000Z',
-        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
-      },
-      config: {},
-    };
-    const res = createResumableResponse();
-
-    await AgentController(req, res, jest.fn(), jest.fn(), null);
-
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'aborted' }));
-    expect(mockCheckAndIncrementPendingRequest).toHaveBeenCalledWith('user-123');
-    expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
-    expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
-      'user-123',
-      'req-abc',
-      'conversation-123',
-      DEFAULT_OWNED_CLAIM,
-    );
-  });
-
   it('does not finalize an unscoped generation when job creation rejects before returning', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
     mockGenerationJobManager.createJob.mockRejectedValue(new Error('create failed before return'));
@@ -2025,7 +1994,6 @@ describe('ResumableAgentController resume metadata', () => {
         error: 'Attached resources could not be restored',
       }),
       1000,
-      { preserveForReconcile: false },
     );
   });
 
@@ -2063,7 +2031,6 @@ describe('ResumableAgentController resume metadata', () => {
         error: 'Stateful code environment is not allowed by this deployment: conversation',
       }),
       1000,
-      { preserveForReconcile: false },
     );
   });
 
@@ -2254,8 +2221,6 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'provider init failed',
       1000,
-      // Nothing to preserve: an unscheduled turn has no reconciler evidence to keep.
-      { preserveForReconcile: false },
     );
   });
 
@@ -2292,7 +2257,6 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'Recovered steer cannot skip user message persistence',
       1000,
-      { preserveForReconcile: false },
     );
   });
 
@@ -2787,7 +2751,6 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       expect.any(String),
       1000,
-      { preserveForReconcile: false },
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
       'user-123',
@@ -2854,7 +2817,6 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       'init boom after res.json',
       1000,
-      { preserveForReconcile: false },
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
       'user-123',
@@ -2970,234 +2932,12 @@ describe('ResumableAgentController resume metadata', () => {
       'conversation-123',
       generationError.message,
       1000,
-      { preserveForReconcile: false },
     );
     expect(mockGenerationJobManager.completeJob.mock.invocationCallOrder[0]).toBeLessThan(
       mockDecrementPendingRequest.mock.invocationCallOrder[0],
     );
     expect(mockDecrementPendingRequest).toHaveBeenCalledWith('user-123');
     expect(mockDisposeClient).toHaveBeenCalledWith(client);
-  });
-
-  it('retains a scheduled generation failure with its classified outcome on the claim', async () => {
-    const generationError = new Error('provider exploded');
-    const schedules = require('~/server/services/Schedules');
-    // The Mongo outcome write fails too: the claim's stamped classification is then
-    // the ONLY thing standing between the reconciler and a re-derived `success`.
-    schedules.recordScheduleOutcome.mockResolvedValueOnce(false);
-    mockGenerationJobManager.completeJob.mockResolvedValue(true);
-    const client = {
-      options: {},
-      sendMessage: jest.fn().mockRejectedValue(generationError),
-    };
-    const initializeClient = jest.fn().mockResolvedValue({ client });
-    const req = {
-      user: { id: 'user-123' },
-      _isScheduledFire: true,
-      body: {
-        text: 'Scheduled prompt',
-        messageId: 'user-msg',
-        conversationId: 'conversation-123',
-        scheduleId: 'sched-1',
-        scheduledFor: '2026-07-28T12:00:00.000Z',
-        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
-      },
-      config: {},
-    };
-
-    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
-    await nextTick();
-
-    expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
-      'conversation-123',
-      generationError.message,
-      1000,
-      {
-        preserveForReconcile: true,
-        scheduleOutcome: { status: 'error', error: generationError.message },
-      },
-    );
-    // The failed outcome write must NOT reap the only reconcile evidence.
-    expect(schedules.clearScheduledJob).not.toHaveBeenCalled();
-  });
-
-  it('registers the finalization marker before EVERY persistence-owning claim, titled or not', async () => {
-    // A follow-up turn (existing conversation, no title work) still moves the job
-    // terminal BEFORE saving the response — without the marker, a deletion quiesce
-    // in that window sees neither an active job nor a fence and can cascade while
-    // this request can still recreate messages.
-    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
-    mockGenerationJobManager.claimTerminalJob.mockResolvedValue({
-      streamId: 'conversation-123',
-      createdAt: 1000,
-      status: 'complete',
-      persistencePending: true,
-      drainedSteers: [],
-    });
-    const client = {
-      options: {},
-      sendMessage: jest.fn().mockResolvedValue({
-        userMessage: {
-          messageId: 'user-msg',
-          parentMessageId: 'parent-msg',
-          conversationId: 'conversation-123',
-          text: 'Follow up.',
-        },
-        responseMessage: { messageId: 'resp-msg', conversationId: 'conversation-123' },
-      }),
-    };
-    const initializeClient = jest.fn().mockResolvedValue({ client });
-    const req = {
-      user: { id: 'user-123' },
-      body: {
-        text: 'Follow up.',
-        messageId: 'user-msg',
-        parentMessageId: 'parent-msg',
-        conversationId: 'conversation-123',
-        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
-      },
-      config: {},
-    };
-
-    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
-    await nextTick();
-
-    // Generation- and lease-qualified HOLDS (heartbeat-renewed): a predecessor's (or
-    // a losing same-generation contender's) late clear must not drop this marker.
-    // The FIRST hold is the admission lease covering the auth-to-createJob window.
-    expect(mockGenerationJobManager.holdUserFinalization).toHaveBeenCalledWith(
-      'user-123',
-      'conversation-123',
-      undefined,
-      undefined,
-      expect.stringMatching(/^admission-/),
-    );
-    expect(mockGenerationJobManager.holdUserFinalization).toHaveBeenCalledWith(
-      'user-123',
-      'conversation-123',
-      undefined,
-      1000,
-      expect.any(String),
-    );
-    expect(mockGenerationJobManager.holdUserFinalization.mock.invocationCallOrder[0]).toBeLessThan(
-      mockGenerationJobManager.claimTerminalJob.mock.invocationCallOrder[0],
-    );
-  });
-
-  it('refuses admission when the deletion barrier is up, lease registered FIRST', async () => {
-    // The order is the fence: lease durable BEFORE the barrier reread, so either this
-    // request sees the barrier (and refuses) or the deletion quiesce sees the lease
-    // (and defers). Without it, a request authenticated before the barrier could
-    // create its job AFTER the cascade swept.
-    const models = require('~/models');
-    models.isUserDeleting.mockResolvedValueOnce(true);
-    const initializeClient = jest.fn();
-    const req = {
-      user: { id: 'user-123' },
-      body: {
-        text: 'Racing a deletion.',
-        messageId: 'user-msg',
-        conversationId: 'conversation-123',
-        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
-      },
-      config: {},
-    };
-    const res = createResumableResponse();
-
-    await AgentController(req, res, jest.fn(), initializeClient, null);
-
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
-    expect(initializeClient).not.toHaveBeenCalled();
-    const admissionRegister = mockGenerationJobManager.holdUserFinalization.mock.calls.find(
-      (call) => String(call[4]).startsWith('admission-'),
-    );
-    expect(admissionRegister).toBeDefined();
-    // Lease before barrier read.
-    expect(mockGenerationJobManager.holdUserFinalization.mock.invocationCallOrder[0]).toBeLessThan(
-      models.isUserDeleting.mock.invocationCallOrder[0],
-    );
-    // The refusal releases its own hold.
-    expect(mockLeaseRelease).toHaveBeenCalled();
-  });
-
-  it('releases the admission lease once createJob is durable', async () => {
-    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
-    const client = {
-      options: {},
-      sendMessage: jest.fn().mockResolvedValue({
-        userMessage: {
-          messageId: 'user-msg',
-          parentMessageId: 'parent-msg',
-          conversationId: 'conversation-123',
-          text: 'Follow up.',
-        },
-        responseMessage: { messageId: 'resp-msg', conversationId: 'conversation-123' },
-      }),
-    };
-    const initializeClient = jest.fn().mockResolvedValue({ client });
-    const req = {
-      user: { id: 'user-123' },
-      body: {
-        text: 'Follow up.',
-        messageId: 'user-msg',
-        parentMessageId: 'parent-msg',
-        conversationId: 'conversation-123',
-        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
-      },
-      config: {},
-    };
-
-    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
-    await nextTick();
-
-    const admissionRegister = mockGenerationJobManager.holdUserFinalization.mock.calls.find(
-      (call) => String(call[4]).startsWith('admission-'),
-    );
-    expect(admissionRegister).toBeDefined();
-    // Held exactly until the job is durable (active-set visible), then released.
-    expect(mockLeaseRelease).toHaveBeenCalled();
-  });
-
-  it('fails CLOSED when the finalization marker cannot be registered: no terminal CAS at all', async () => {
-    // A transient marker-store failure must not reopen the deletion race the marker
-    // fences: neither the complete-claim NOR the error-path completeJob may run
-    // unfenced. The job stays active — deletion-visible by itself — for the stale
-    // reaper to recover.
-    mockGenerationJobManager.holdUserFinalization
-      .mockResolvedValueOnce({ leaseId: 'admission-ok', release: mockLeaseRelease })
-      .mockRejectedValue(new Error('marker store down'));
-    mockGenerationJobManager.getJob.mockResolvedValue({ createdAt: 1000, status: 'running' });
-    const client = {
-      options: {},
-      sendMessage: jest.fn().mockResolvedValue({
-        userMessage: {
-          messageId: 'user-msg',
-          parentMessageId: 'parent-msg',
-          conversationId: 'conversation-123',
-          text: 'Follow up.',
-        },
-        responseMessage: { messageId: 'resp-msg', conversationId: 'conversation-123' },
-      }),
-    };
-    const initializeClient = jest.fn().mockResolvedValue({ client });
-    const req = {
-      user: { id: 'user-123' },
-      body: {
-        text: 'Follow up.',
-        messageId: 'user-msg',
-        parentMessageId: 'parent-msg',
-        conversationId: 'conversation-123',
-        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
-      },
-      config: {},
-    };
-
-    await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
-    await nextTick();
-
-    expect(mockGenerationJobManager.claimTerminalJob).not.toHaveBeenCalled();
-    expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
   });
 
   it('claims terminal ownership before FINAL and always finishes the winning claim', async () => {

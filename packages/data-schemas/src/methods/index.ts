@@ -1,11 +1,6 @@
 import type { RoleMethods, RoleDeps } from './role';
-import {
-  createUserMethods,
-  DEFAULT_SESSION_EXPIRY,
-  UNREADABLE_ABORT_FENCE,
-  type UserMethods,
-} from './user';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
+import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
 import { createRoleMethods, RoleConflictError } from './role';
@@ -98,6 +93,7 @@ import {
   type UpdateSkillResult,
   type ValidationIssue,
 } from './skill';
+import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
   createAgentTriggerDeliveryMethods,
   AgentTriggerDeliveryConflictError,
@@ -139,7 +135,6 @@ export {
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
   digestMCPAuthorityValue,
-  UNREADABLE_ABORT_FENCE,
 };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
 export { permissionBitSupersets };
@@ -195,6 +190,7 @@ export type AllMethods = UserMethods &
   SkillMethods &
   SkillSyncMethods &
   AgentTriggerDeliveryMethods &
+  ScheduleMethods &
   AgentMethods &
   ConfigMethods &
   MCPAuthorityMethods;
@@ -332,6 +328,7 @@ export function createMethods(
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
     ...createAgentTriggerDeliveryMethods(mongoose),
+    ...createScheduleMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */
@@ -390,6 +387,7 @@ export type {
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
   AgentTriggerDeliveryMethods,
+  ScheduleMethods,
   AgentMethods,
   ConfigMethods,
   MCPAuthorityMethods,

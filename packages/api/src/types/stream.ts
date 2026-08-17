@@ -31,16 +31,20 @@ export interface GenerationJobMetadata {
   agent_id?: string;
   /** Whether the originating turn was a temporary chat; a HITL resume keeps it so. */
   isTemporary?: boolean;
-  /** Schedule bookkeeping for a scheduled fire, so a HITL resume can record its outcome. */
+  /** Trusted scheduled-occurrence identity. These fields are accepted only from a
+   * verified agent-trigger request and let pause/resume/reconciliation keep the
+   * occurrence attached to the exact generation that owns it. */
   scheduleId?: string;
   scheduledFor?: string;
-  /** '1' when this fire was an explicit Run Now. A paused approval can be answered long
-   *  after the fire, so the resume needs the original classification to apply the same
-   *  admission rules the fire boundary did. */
-  scheduleManual?: string;
-  /** The owner-config generation this fire was claimed under; the resume applies the
-   *  same revision fence the fire boundary did. */
-  scheduleConfigRevision?: string;
+  scheduleConfigRevision?: number;
+  scheduleManual?: boolean;
+  /** Intended terminal classification retained when Mongo outcome persistence
+   * fails. The scheduler reconciler consumes this evidence before clearing the job. */
+  scheduleOutcome?: 'success' | 'error' | 'interrupted' | 'skipped_balance';
+  scheduleOutcomeError?: string;
+  /** Prevent normal terminal cleanup until schedule reconciliation has consumed
+   * the retained outcome evidence. */
+  preserveForScheduleReconcile?: boolean;
   /**
    * Deferred-tool names discovered (via `tool_search`) before a HITL pause. A resume
    * replays these into `createRun` because the rebuilt graph uses `messages: []`, so
@@ -78,10 +82,6 @@ export interface GenerationJob {
   status: GenerationJobStatus;
   createdAt: number;
   completedAt?: number;
-  /** A terminal status whose owner is still persisting (response save, FINAL
-   *  publication). Deletion-side consumers must treat such a job as unsettled:
-   *  its writes are still in flight even though it left the active set. */
-  terminalPersistencePending?: boolean;
   abortController: AbortController;
   error?: string;
   metadata: GenerationJobMetadata;

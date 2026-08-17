@@ -1,7 +1,6 @@
 export {
   GenerationJobManager,
   GenerationJobManagerClass,
-  USER_FINALIZATION_OWNER_LEASE,
   type CreateGenerationJobOptions,
   type GenerationJobManagerOptions,
   type TerminalJobClaim,
@@ -50,7 +49,6 @@ export {
 export type { RecoveredSteerPayload } from './SteerRecovery';
 
 export { createStreamServices } from './createStreamServices';
-export { configureGenerationStreams } from './startup';
 export type { StreamServicesConfig, StreamServices } from './createStreamServices';
 export { filterPersistableAbortContent, hasPersistableAbortContent } from './abortContent';
 

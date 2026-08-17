@@ -278,22 +278,15 @@ describe('Redis generation protocol rollout bridge', () => {
   });
 
   test('recovers a lost create reply, repairs membership, and stops the exact raced predecessor', async () => {
-    const abortHandlers = new Map<
-      string,
-      Set<(generationId?: number) => void | boolean | Promise<void | boolean>>
-    >();
+    const abortHandlers = new Map<string, Set<(generationId?: number) => void | boolean>>();
     const acknowledgedAborts = new Map<string, Set<number>>();
-    const confirmedAbortRequests: number[] = [];
     const eventTransport = Object.assign(new InMemoryEventTransport(), {
       emitAbort(streamId: string, generationId?: number) {
         for (const handler of abortHandlers.get(streamId) ?? []) {
           handler(generationId);
         }
       },
-      async onAbort(
-        streamId: string,
-        handler: (generationId?: number) => void | boolean | Promise<void | boolean>,
-      ) {
+      async onAbort(streamId: string, handler: (generationId?: number) => void) {
         let handlers = abortHandlers.get(streamId);
         if (handlers == null) {
           handlers = new Set();
@@ -303,10 +296,9 @@ describe('Redis generation protocol rollout bridge', () => {
         return () => handlers?.delete(handler);
       },
       async emitAbortConfirmed(streamId: string, generationId: number) {
-        confirmedAbortRequests.push(generationId);
         let acknowledged = acknowledgedAborts.get(streamId)?.has(generationId) === true;
         for (const handler of abortHandlers.get(streamId) ?? []) {
-          acknowledged = (await handler(generationId)) === true || acknowledged;
+          acknowledged = handler(generationId) === true || acknowledged;
         }
         if (acknowledged) {
           let generations = acknowledgedAborts.get(streamId);
@@ -393,8 +385,6 @@ describe('Redis generation protocol rollout bridge', () => {
       expect(racedPredecessor!.createdAt).toBeGreaterThan(stalePredecessor.createdAt);
       expect(replacement.createdAt).toBeGreaterThan(racedPredecessor!.createdAt);
       expect(racedPredecessor!.abortController.signal.aborted).toBe(true);
-      expect(confirmedAbortRequests).toContain(racedPredecessor!.createdAt);
-      expect(confirmedAbortRequests).not.toContain(stalePredecessor.createdAt);
       expect(doneEvents).toContainEqual({
         event: expect.objectContaining({
           final: true,
@@ -419,10 +409,7 @@ describe('Redis generation protocol rollout bridge', () => {
   });
 
   test('a superseded lost-reply helper delivers but does not acknowledge the crashed successor chain', async () => {
-    const abortHandlers = new Map<
-      string,
-      Set<(generationId?: number) => void | boolean | Promise<void | boolean>>
-    >();
+    const abortHandlers = new Map<string, Set<(generationId?: number) => void | boolean>>();
     const acknowledgedAborts = new Map<string, Set<number>>();
     const eventTransport = Object.assign(new InMemoryEventTransport(), {
       emitAbort(streamId: string, generationId?: number) {
@@ -430,10 +417,7 @@ describe('Redis generation protocol rollout bridge', () => {
           handler(generationId);
         }
       },
-      async onAbort(
-        streamId: string,
-        handler: (generationId?: number) => void | boolean | Promise<void | boolean>,
-      ) {
+      async onAbort(streamId: string, handler: (generationId?: number) => void) {
         let handlers = abortHandlers.get(streamId);
         if (handlers == null) {
           handlers = new Set();
@@ -445,7 +429,7 @@ describe('Redis generation protocol rollout bridge', () => {
       async emitAbortConfirmed(streamId: string, generationId: number) {
         let acknowledged = acknowledgedAborts.get(streamId)?.has(generationId) === true;
         for (const handler of abortHandlers.get(streamId) ?? []) {
-          acknowledged = (await handler(generationId)) === true || acknowledged;
+          acknowledged = handler(generationId) === true || acknowledged;
         }
         if (acknowledged) {
           let generations = acknowledgedAborts.get(streamId);

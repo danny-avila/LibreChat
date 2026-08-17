@@ -11,6 +11,7 @@ const {
   getLimits,
   fireScheduleNow,
   deleteScheduleForOwner,
+  isUserDeleting,
 } = require('~/server/services/Schedules');
 const { resolveAgentFireAccess } = require('~/server/services/Schedules/access');
 const methods = require('~/models');
@@ -77,7 +78,7 @@ const handlers = createSchedulesHandlers({
   deleteSchedule: deleteScheduleForOwner,
   // Durable account-deletion barrier. A one-shot disable scan cannot close the
   // create race, so every scheduling WRITE consults the user-level flag instead.
-  isUserDeleting: methods.isUserDeleting,
+  isUserDeleting,
 });
 
 router.get('/', checkSchedulesAccess, handlers.listSchedules);

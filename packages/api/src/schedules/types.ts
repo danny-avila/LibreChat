@@ -1,5 +1,6 @@
 import type { ScheduleMethods, ISchedule } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
+import type { AgentTriggerEnqueueOptions, AgentTriggerEnvelope } from '../agents/triggers';
 import type { SlotClaimResult } from './capacity';
 
 export interface ScheduleLimits {
@@ -131,10 +132,11 @@ export interface ScheduleEngineDeps {
   hasScheduleAccess: (user: ScheduleUserContext) => Promise<boolean>;
   /** Re-resolves stored file_ids to attachment payloads; missing files are simply absent. */
   resolveFiles: (fileIds: string[], user: ScheduleUserContext) => Promise<ScheduleFileRef[]>;
-  /** Mints the schedule-scoped short-lived JWT accepted by requireJwtAuth. */
-  mintFireToken: (userId: string, options?: { manual?: boolean }) => string;
-  /** Base URL of this server for the loopback fire POST. */
-  getSelfUrl: () => string;
+  /** Persists a trusted trigger delivery before this occurrence releases its claim. */
+  enqueueTrigger: (
+    envelope: AgentTriggerEnvelope,
+    options?: AgentTriggerEnqueueOptions,
+  ) => Promise<unknown>;
   /** Runs fn inside the owner's tenant ALS context. */
   runInTenantContext: <T>(user: ScheduleUserContext, fn: () => Promise<T>) => Promise<T>;
   /**
@@ -202,6 +204,7 @@ export interface JobIdentity {
 /** Job-store state plus the job's scheduled identity (absent on a replacement turn). */
 export interface JobState {
   status: string;
+  createdAt?: number;
   scheduleId?: string;
   scheduledFor?: string;
   /** Whether the generation ever emitted its created event — false means a
@@ -213,6 +216,7 @@ export interface JobState {
    *  owner left it. See SerializableJobData.scheduleOutcome. */
   scheduleOutcome?: string;
   scheduleOutcomeError?: string;
+  preserveForScheduleReconcile?: boolean;
 }
 
 export interface FireResult {

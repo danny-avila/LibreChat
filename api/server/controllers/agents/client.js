@@ -102,7 +102,6 @@ const {
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
-  exemptFromConcurrencyLimiter,
 } = require('@librechat/api');
 const {
   Run,
@@ -2883,19 +2882,11 @@ class AgentClient extends BaseClient {
     // teardown (request.js pause branch / resume.js finally) that would otherwise
     // release it, and `/resume` 429s under LIMIT_CONCURRENT_MESSAGES. Idempotent via
     // the flag; if it fails here, the teardown still releases (it checks the flag).
-    // An AUTOMATIC scheduled fire never acquired an interactive concurrency slot, so it
-    // must not release one on pause (that would clear a real user's counter). Mark it
-    // released so downstream teardown skips the decrement too.
-    //
-    // Run Now DOES acquire one — it is user-paced and no longer exempt — so it must
-    // release like any interactive turn. Mirrors `exemptFromConcurrency` at the
-    // increment site; treating it as exempt here leaked a slot on every paused manual
-    // fire, and the pause path returns before the teardown that was made manual-aware.
-    if (exemptFromConcurrencyLimiter(this.options.req)) {
-      this.pendingRequestReleased = true;
-    } else if (!this.pendingRequestReleased) {
+    if (!this.pendingRequestReleased) {
       try {
-        await decrementPendingRequest(this.options.req?.user?.id);
+        if (this.options.req?._scheduleConcurrencyExempt !== true) {
+          await decrementPendingRequest(this.options.req?.user?.id);
+        }
         this.pendingRequestReleased = true;
       } catch (err) {
         logger.error(`[AgentClient] Failed to release request slot on pause ${streamId}`, err);
@@ -3406,12 +3397,6 @@ class AgentClient extends BaseClient {
           '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
           err,
         );
-        // Surfaced to the controller WITHOUT rethrowing, same contract as
-        // `resumeError` below: the interactive UX finalizes with the error as content,
-        // but a scheduled fire's bookkeeping must still classify it — recorded as
-        // `success`, a run that dies on the provider call every time resets the
-        // consecutive-failure streak and never reaches `autoDisableAfterFailures`.
-        this.completionError = err;
         const videoError = resolveGoogleVideoError({
           error: err,
           provider: this.options.agent?.provider,
@@ -3753,11 +3738,6 @@ class AgentClient extends BaseClient {
           '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
           err,
         );
-        // Surfaced to the resume controller WITHOUT rethrowing: the interactive UX
-        // deliberately finalizes with the error as content, but a scheduled run's
-        // bookkeeping must still classify it (a balance refusal swallowed here was
-        // recorded as `success`, never reaching the insufficient_balance policy).
-        this.resumeError = err;
         this.contentParts.push({
           type: ContentTypes.ERROR,
           [ContentTypes.ERROR]: `An error occurred while resuming the request${err?.message ? `: ${err.message}` : ''}`,

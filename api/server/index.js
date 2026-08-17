@@ -20,8 +20,9 @@ const {
   memoryDiagnostics,
   performStartupChecks,
   handleJsonParseError,
-  QUERY_DEVTOOLS_HEADER,
   GenerationJobManager,
+  QUERY_DEVTOOLS_HEADER,
+  createStreamServices,
   agentStartupIngressMiddleware,
   agentStartupTelemetryMiddleware,
   initializeFileStorage,
@@ -50,16 +51,13 @@ const {
   sweepOrphanedPreviews,
   getRoleByName,
   seedDatabase,
-  renewUserFinalizationFallbackLease,
-  clearUserFinalizationFallbackLease,
-  addUserAbortFence,
-  clearUserAbortFence,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
+const { initializeScheduleEngine } = require('./services/Schedules');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { checkMigrations } = require('./services/start/migration');
@@ -90,8 +88,8 @@ let serverReady = false;
 let schedulesReady = false;
 
 const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
-const SCHEDULES_NOT_READY_CODE = 'SCHEDULES_NOT_READY';
 const CHAT_START_RETRY_AFTER_SECONDS = '1';
+const SCHEDULES_NOT_READY_CODE = 'SCHEDULES_NOT_READY';
 const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
 
 const rejectChatStartsUntilReady = (req, res, next) => {
@@ -106,21 +104,10 @@ const rejectChatStartsUntilReady = (req, res, next) => {
   });
 };
 
-/**
- * Reject schedule WRITES until the engine (and thus its unique idempotency + TTL
- * indexes) is up. With MONGO_AUTO_INDEX disabled those indexes are created only by
- * initializeScheduleEngine, which runs after the server starts listening — so a
- * create/run-now that lands in that window would persist without duplicate
- * protection. Reads stay open; writers get a 503 + Retry-After. DELETE stays open
- * too: erasure needs none of those indexes, and an engine that REFUSES to arm keeps
- * this gate closed forever — users must still be able to remove schedules (and their
- * stored prompts) they can see.
- */
 const rejectScheduleWritesUntilReady = (req, res, next) => {
   if (schedulesReady || SCHEDULE_ENGINE_OPTIONAL_METHODS.has(req.method)) {
     return next();
   }
-
   res.set('Retry-After', CHAT_START_RETRY_AFTER_SECONDS);
   return res.status(503).json({
     code: SCHEDULES_NOT_READY_CODE,
@@ -129,16 +116,12 @@ const rejectScheduleWritesUntilReady = (req, res, next) => {
 };
 
 const configureGenerationStreams = () => {
-  // Shared with the clustered entrypoint (experimental.js) so both topologies get the
-  // same stream services; returns whether the resulting store is genuinely shared.
-  const isShared = configureSharedGenerationStreams(
-    createUserFinalizationFallbackStore({
-      renewUserFinalizationFallbackLease,
-      clearUserFinalizationFallbackLease,
-      addUserAbortFence,
-      clearUserAbortFence,
-    }),
-  );
+  const streamServices = createStreamServices();
+  GenerationJobManager.configure({
+    ...streamServices,
+    cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
+  });
+  GenerationJobManager.initialize();
   // Stop active generations and close their SSE streams while the HTTP server drains.
   registerShutdownTask(
     'generation job manager prepare',
@@ -152,7 +135,6 @@ const configureGenerationStreams = () => {
   registerShutdownTask('generation job manager', () => GenerationJobManager.destroy(), {
     priority: 100,
   });
-  return isShared;
 };
 
 const startServer = async () => {
@@ -433,32 +415,11 @@ const startServer = async () => {
         memoryDiagnostics.start();
       }
       await initializeAgentTriggerService({ address: server.address() });
-      serverReady = true;
-      // Arm the scheduler only after readiness: an earlier tick could fire
-      // loopback chats at a server that is not yet listening/accepting starts,
-      // recording spurious errors that could auto-disable valid schedules.
-      // Ensures indexes before the first tick; failures are logged, not fatal.
-      // v1 is single-process: this entrypoint owns the scheduler outright.
-      // Pass the bound address so loopback fires target the listener that actually
-      // exists: `HOST=localhost` can bind v6-only, and PORT=0 only knows its port now.
-      const scheduleEngine = await initializeScheduleEngine({ address: server.address() });
-      // Only accept schedule writes once the engine actually armed. It refuses when its
-      // unique idempotency + TTL indexes could not be created, and when the topology
-      // cannot be shown safe — this entrypoint arms the scheduler in EVERY replica, which
-      // only works if replicas share a stream store or the operator asserts a single one.
-      // Either way a null engine means "not scheduling here", and the write gate follows
-      // it; the engine logs which case applies. The app otherwise runs normally.
-      schedulesReady = scheduleEngine != null;
+      schedulesReady = (await initializeScheduleEngine()) != null;
       if (!schedulesReady) {
-        logger.warn(
-          '[schedules] engine not initialized — schedule writes will be rejected with 503 ' +
-            'until an operator resolves the cause logged above and restarts.',
-        );
+        logger.warn('[schedules] write routes remain unavailable because the engine did not arm.');
       }
-      // Finishes account deletions deferred on an unconfirmed schedule quiesce. The
-      // durable barrier refuses authentication, so without this pass a deferred
-      // account stays locked-but-undeleted with no way to issue the promised retry.
-      startPendingDeletionSweep();
+      serverReady = true;
       logger.info('Server readiness checks passing.');
     } catch (initErr) {
       serverReady = false;

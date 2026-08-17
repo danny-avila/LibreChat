@@ -469,44 +469,6 @@ describe('createRemoteAgentAuth', () => {
   });
 
   describe('when OIDC verification succeeds', () => {
-    it('refuses when the deletion barrier rose during resolution', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', exp: 9999999999 });
-      const deps = makeDeps();
-      const resolved = makeUser();
-      // Pre-barrier snapshot at the lookup; the sequenced point-read (after
-      // tenant-policy resolution, role sync, and updateResolvedUser) observes the
-      // barrier that committed mid-flight.
-      deps.findUser = jest
-        .fn()
-        .mockResolvedValueOnce(resolved)
-        .mockResolvedValueOnce({ _id: resolved._id, deletionRequestedAt: new Date() }) as never;
-      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
-      const { res, status } = makeRes();
-
-      await createRemoteAgentAuth(asDeps(deps))(req as Request, res, mockNext);
-
-      expect(status).toHaveBeenCalledWith(401);
-      expect(req.user).toBeUndefined();
-      expect(mockNext).not.toHaveBeenCalled();
-    });
-
-    it('fails closed when the barrier point-read cannot see the identity', async () => {
-      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', exp: 9999999999 });
-      const deps = makeDeps();
-      const resolved = makeUser();
-      deps.findUser = jest
-        .fn()
-        .mockResolvedValueOnce(resolved)
-        .mockResolvedValueOnce(null) as never;
-      const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
-      const { res, status } = makeRes();
-
-      await createRemoteAgentAuth(asDeps(deps))(req as Request, res, mockNext);
-
-      expect(status).toHaveBeenCalledWith(401);
-      expect(mockNext).not.toHaveBeenCalled();
-    });
-
     it('sets req.user and calls next()', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', exp: 9999999999 });
       const deps = makeDeps();

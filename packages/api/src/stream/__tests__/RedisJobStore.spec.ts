@@ -333,6 +333,13 @@ describe('RedisJobStore', () => {
       model: 'test-model',
       agent_id: 'agent-1',
       isTemporary: false,
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      scheduleConfigRevision: 4,
+      scheduleManual: false,
+      scheduleOutcome: 'interrupted',
+      scheduleOutcomeError: 'Schedule deleted',
+      preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
       preemptCapable: true,
@@ -388,6 +395,13 @@ describe('RedisJobStore', () => {
       model: 'test-model',
       agent_id: 'agent-1',
       isTemporary: false,
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      scheduleConfigRevision: 4,
+      scheduleManual: false,
+      scheduleOutcome: 'interrupted',
+      scheduleOutcomeError: 'Schedule deleted',
+      preserveForScheduleReconcile: true,
       promptTokens: 0,
       discoveredTools: [],
       resolvedAskUserQuestions: [
@@ -411,6 +425,13 @@ describe('RedisJobStore', () => {
       responseMessageId: 'response-1',
       agent_id: 'agent-1',
       isTemporary: '0',
+      scheduleId: 'schedule-1',
+      scheduledFor: '2026-08-17T12:00:00.000Z',
+      scheduleConfigRevision: '4',
+      scheduleManual: '0',
+      scheduleOutcome: 'interrupted',
+      scheduleOutcomeError: 'Schedule deleted',
+      preserveForScheduleReconcile: '1',
       promptTokens: '0',
       discoveredTools: '[]',
       resolvedAskUserQuestions: JSON.stringify([
@@ -962,189 +983,5 @@ describe('RedisJobStore', () => {
 
     await expect(store.getContentParts('stream-memory-content')).resolves.toBeNull();
     expect(store.getCollectedUsage('stream-memory-content')).toEqual([]);
-  });
-
-  /**
-   * Schedule identity is the fence EVERY scheduled-run consumer keys off:
-   * reconcile's jobIdentityMatches, clearReconciledJob, abortScheduledJob and the
-   * abort route's preserve-for-reconcile decision. Dropping it on read makes a live
-   * Redis-backed run read as "gone", so the orphan sweep interrupts it.
-   */
-  test('round-trips schedule identity through the Redis hash', async () => {
-    const scheduledFor = '2026-07-26T12:00:00.000Z';
-    const hash: Record<string, string> = {
-      streamId: 'conv-sched',
-      userId: 'user-1',
-      status: 'running',
-      createdAt: '1000',
-      scheduleId: 'sched-1',
-      scheduledFor,
-    };
-    const redis = {
-      isCluster: false,
-      hgetall: jest.fn().mockResolvedValue(hash),
-    } as unknown as Cluster;
-    const store = new RedisJobStore(redis);
-
-    await expect(store.getJob('conv-sched')).resolves.toMatchObject({
-      scheduleId: 'sched-1',
-      scheduledFor,
-    });
-  });
-
-  /**
-   * deserializeJob is a hand-enumerated allowlist, so every schedule field added to
-   * SerializableJobData has to be added here too or it is silently dropped on read —
-   * which is exactly how scheduleId/scheduledFor regressed.
-   */
-  test('round-trips the Run Now classification', async () => {
-    const redis = {
-      isCluster: false,
-      hgetall: jest.fn().mockResolvedValue({
-        streamId: 'conv-manual',
-        userId: 'user-1',
-        status: 'requires_action',
-        createdAt: '1000',
-        scheduleId: 'sched-1',
-        scheduledFor: '2026-07-26T12:00:00.000Z',
-        scheduleManual: '1',
-      }),
-    } as unknown as Cluster;
-    const store = new RedisJobStore(redis);
-
-    // Dropping this makes an explicit Run Now read as automatic, so answering its
-    // approval on a disabled schedule would be refused when it should be allowed.
-    await expect(store.getJob('conv-manual')).resolves.toMatchObject({ scheduleManual: '1' });
-  });
-
-  test('round-trips the retained schedule outcome', async () => {
-    const redis = {
-      isCluster: false,
-      hgetall: jest.fn().mockResolvedValue({
-        streamId: 'conv-retained',
-        userId: 'user-1',
-        status: 'complete',
-        createdAt: '1000',
-        scheduleId: 'sched-1',
-        scheduledFor: '2026-07-26T12:00:00.000Z',
-        scheduleOutcome: 'skipped_balance',
-        scheduleOutcomeError: 'upstream 503',
-      }),
-    } as unknown as Cluster;
-    const store = new RedisJobStore(redis);
-
-    // Dropping these on read fed the reconciler a bare `complete`, converting every
-    // retained balance refusal / swallowed failure back into `success` under Redis —
-    // the exact misclassification the stamp exists to prevent.
-    await expect(store.getJob('conv-retained')).resolves.toMatchObject({
-      scheduleOutcome: 'skipped_balance',
-      scheduleOutcomeError: 'upstream 503',
-    });
-  });
-
-  test('registers a finalization marker in ONE atomic script, generation-qualified', async () => {
-    const evalFn = jest.fn().mockResolvedValue(1);
-    const hdel = jest.fn().mockResolvedValue(1);
-    const redis = { isCluster: false, eval: evalFn, hdel } as unknown as Cluster;
-    const store = new RedisJobStore(redis);
-
-    await store.registerUserFinalization('user-1', 'conv-1', 'tenant-a', 1000);
-
-    // HSET-then-EXPIRE as two commands loses the fresh marker when the key's old
-    // TTL lapses between them — the script carries both atomically.
-    expect(evalFn).toHaveBeenCalledTimes(1);
-    const [script, keyCount, key, field] = evalFn.mock.calls[0];
-    expect(String(script)).toContain('HSET');
-    expect(String(script)).toContain('EXPIRE');
-    expect(keyCount).toBe(1);
-    expect(String(key)).toContain('user-1');
-    expect(field).toBe('conv-1:1000');
-
-    await store.clearUserFinalization('user-1', 'conv-1', 'tenant-a', 1000);
-    expect(hdel).toHaveBeenCalledWith(expect.stringContaining('user-1'), 'conv-1:1000');
-  });
-
-  test('stale-pause cleanup retains a scheduled fire as stamped error evidence', async () => {
-    const now = Date.now();
-    const staleHash = {
-      streamId: 'conv-stale',
-      userId: 'user-1',
-      status: 'requires_action',
-      createdAt: '1000',
-      pendingActionId: 'pause-persistence:act-1',
-      terminalPersistencePending: '1',
-      terminalPersistenceStartedAt: String(now - 60_000),
-      scheduleId: 'sched-1',
-      scheduledFor: '2026-07-26T12:00:00.000Z',
-    };
-    const redis = {
-      isCluster: false,
-      smembers: jest.fn(async (key: string) =>
-        String(key).includes('requires_action') ? ['conv-stale'] : [],
-      ),
-      scard: jest.fn().mockResolvedValue(0),
-      hgetall: jest.fn().mockResolvedValue(staleHash),
-      expire: jest.fn().mockResolvedValue(1),
-      srem: jest.fn().mockResolvedValue(1),
-      sadd: jest.fn().mockResolvedValue(1),
-    } as unknown as Cluster;
-    const store = new RedisJobStore(redis);
-    const transition = jest.spyOn(store, 'transitionStatusAndDrainSteers').mockResolvedValue([]);
-
-    await store.cleanup();
-
-    // The retention signal must round-trip Redis exactly like the in-memory path:
-    // no completedAt (evidence TTL, not the short completed TTL) and the stamped
-    // outcome the reconciler prefers over a re-derived `interrupted`.
-    expect(transition).toHaveBeenCalledWith(
-      'conv-stale',
-      expect.objectContaining({
-        from: 'requires_action',
-        to: 'error',
-        patch: expect.objectContaining({ scheduleOutcome: 'error' }),
-      }),
-    );
-    const patch = transition.mock.calls[0][1].patch as Record<string, unknown>;
-    expect(patch.completedAt).toBeUndefined();
-  });
-
-  test('writes schedule identity into the created job hash', async () => {
-    const evalCreate = jest
-      .fn()
-      .mockImplementation((...args: unknown[]) => ['', '', args[Number(args[1]) + 3]]);
-    const redis = {
-      // Cluster mode, matching the sibling creation tests: membership reconciles
-      // through discrete sadd/srem calls rather than a pipeline.
-      isCluster: true,
-      eval: evalCreate,
-      // createJob reconciles cross-slot membership from the durable hash and
-      // verifies it, so echo the hash this creation wrote and answer the
-      // membership writes (the shape dev's own createJob tests use).
-      hgetall: jest.fn(() => jobHashFromCreationCall(evalCreate.mock.calls[0])),
-      sadd: jest.fn().mockResolvedValue(1),
-      srem: jest.fn().mockResolvedValue(1),
-      expire: jest.fn().mockResolvedValue(1),
-      smembers: jest.fn().mockResolvedValue([]),
-      // Single-node membership reconciliation batches through a pipeline.
-      pipeline: jest.fn(() => {
-        const chain: Record<string, jest.Mock> = {
-          exec: jest.fn().mockResolvedValue([]),
-        };
-        for (const method of ['sadd', 'srem', 'expire']) {
-          chain[method] = jest.fn(() => chain);
-        }
-        return chain;
-      }),
-    } as unknown as Cluster;
-    const store = new RedisJobStore(redis);
-
-    await store.createJob('conv-sched-create', 'user-1', 'conv-sched-create', undefined, {
-      scheduleId: 'sched-1',
-      scheduledFor: '2026-07-26T12:00:00.000Z',
-    });
-
-    const hash = jobHashFromCreationCall(evalCreate.mock.calls[0]);
-    expect(hash.scheduleId).toBe('sched-1');
-    expect(hash.scheduledFor).toBe('2026-07-26T12:00:00.000Z');
   });
 });

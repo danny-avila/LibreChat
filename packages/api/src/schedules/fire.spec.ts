@@ -1,5 +1,7 @@
 import type { ScheduleEngineDeps, ScheduleLimits, ScheduleUserContext } from './types';
 import type { FireableSchedule } from './types';
+import { AgentTriggerServiceUnavailableError } from '../agents/triggers/service';
+import { AgentTriggerDeliveryError } from '../agents/triggers/delivery';
 import { buildFireClientRequestId, fireSchedule } from './fire';
 import { withCapacitySlot } from './capacity';
 
@@ -171,8 +173,7 @@ function makeDeps(
     agentAccess: async () => 'ok',
     hasScheduleAccess: async () => true,
     resolveFiles: async () => [],
-    mintFireToken: () => 'tok',
-    getSelfUrl: () => 'http://self',
+    enqueueTrigger: jest.fn(async () => undefined),
     runInTenantContext: (_user, fn) => fn(),
     getJobStatus: async () => null,
     abortScheduledJob: async () => undefined,
@@ -200,14 +201,6 @@ const okResponse = (conversationId = 'convo-1') =>
     status: 200,
     // The accept path answers with JSON; fire reads the body as text and JSON-parses it.
     text: async () => JSON.stringify({ conversationId }),
-  }) as Response;
-
-// A 200 whose body is a denyRequest SSE stream (moderation/ban) rather than JSON.
-const sseDenyResponse = () =>
-  ({
-    ok: true,
-    status: 200,
-    text: async () => 'event: message\ndata: {"message":"denied"}\n\n',
   }) as Response;
 
 const dueAt = () => new Date(Date.now() - 60_000);
@@ -272,125 +265,115 @@ describe('fireSchedule', () => {
     expect([...runs.values()][0].status).toBe('started');
   });
 
-  it('mints a MANUAL fire token for Run Now', async () => {
+  it('marks a Run Now trigger as manual for downstream limiter policy', async () => {
     const { methods } = makeMethods();
-    mockFetch(async () => okResponse());
-    const mintFireToken = jest.fn(() => 'tok');
-    await fireSchedule(makeDeps(methods, { mintFireToken }), makeSchedule(), LIMITS, dueAt(), {
+    const enqueueTrigger = jest.fn<
+      ReturnType<ScheduleEngineDeps['enqueueTrigger']>,
+      Parameters<ScheduleEngineDeps['enqueueTrigger']>
+    >(async () => undefined);
+    await fireSchedule(makeDeps(methods, { enqueueTrigger }), makeSchedule(), LIMITS, dueAt(), {
       manual: true,
     });
-    // Run Now dispatches the same billed generation over the same scoped token but
-    // enforces no cadence floor and no per-user window, so it must NOT inherit the
-    // automatic occurrence's exemption from the interactive message limiters.
-    expect(mintFireToken).toHaveBeenCalledWith('user-1', { manual: true });
+    const envelope = enqueueTrigger.mock.calls[0][0];
+    expect(envelope).toMatchObject({
+      mode: 'fire',
+      principal: { userId: 'user-1', role: 'USER', tenantId: 't1' },
+      event: {
+        type: 'schedule.occurrence',
+        source: { id: 'sched-1', type: 'schedule' },
+      },
+      run: { metadata: { manual: true } },
+    });
+    expect(enqueueTrigger).toHaveBeenCalledWith(envelope, { orderingKey: 'sched-1' });
   });
 
-  it('mints a NON-manual token for an automatic occurrence', async () => {
+  it('marks an automatic occurrence as non-manual', async () => {
     const { methods } = makeMethods();
-    mockFetch(async () => okResponse());
-    const mintFireToken = jest.fn(() => 'tok');
-    await fireSchedule(makeDeps(methods, { mintFireToken }), makeSchedule(), LIMITS, dueAt());
-    // The scheduler's own caps govern these, which is what justifies the exemption.
-    expect(mintFireToken).toHaveBeenCalledWith('user-1', { manual: false });
+    const enqueueTrigger = jest.fn<
+      ReturnType<ScheduleEngineDeps['enqueueTrigger']>,
+      Parameters<ScheduleEngineDeps['enqueueTrigger']>
+    >(async () => undefined);
+    await fireSchedule(makeDeps(methods, { enqueueTrigger }), makeSchedule(), LIMITS, dueAt());
+
+    expect(enqueueTrigger.mock.calls[0][0]).toMatchObject({
+      run: { metadata: { manual: false } },
+    });
   });
 
-  it('carries the claimed config revision on the loopback POST', async () => {
+  it('carries the claimed config revision and fire inputs on the durable trigger', async () => {
     const { methods } = makeMethods();
-    mockFetch(async () => okResponse());
+    const enqueueTrigger = jest.fn<
+      ReturnType<ScheduleEngineDeps['enqueueTrigger']>,
+      Parameters<ScheduleEngineDeps['enqueueTrigger']>
+    >(async () => undefined);
     await fireSchedule(
-      makeDeps(methods),
-      makeSchedule({ configRevision: 7 } as never),
+      makeDeps(methods, {
+        enqueueTrigger,
+        resolveFiles: async () => [{ file_id: 'file-1' }],
+      }),
+      makeSchedule({ configRevision: 7, file_ids: ['file-1'] } as never),
       LIMITS,
       dueAt(),
     );
-    const body = JSON.parse((global.fetch as unknown as jest.Mock).mock.calls[0][1].body as string);
-    // The admission boundary revalidates this before persisting anything, so an owner
-    // edit landing in the claim -> persistence window is refused rather than written
-    // into the edited schedule's history.
-    expect(body.scheduleConfigRevision).toBe(7);
-  });
-
-  it('treats a pre-start controller abort as superseded, not a fault', async () => {
-    const { methods, calls } = makeMethods();
-    // The controller's own liveness/revision fence refused the fire and already recorded
-    // the occurrence. Its 200 body carries a conversationId, which previously made the
-    // parser count a never-started generation as a successful fire.
-    mockFetch(
-      async () =>
-        ({
-          ok: true,
-          status: 200,
-          text: async () => JSON.stringify({ conversationId: 'c1', status: 'aborted' }),
-        }) as Response,
-    );
-    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
-    expect(result.fired).toBe(false);
-    expect(result.skipped).toBe('superseded');
-    // A delete/edit is not a schedule FAULT: no error outcome, nothing toward auto-disable.
-    expect(calls.recordOutcome).toHaveLength(0);
-    // The occurrence is done, so the schedule still advances past it.
-    expect(calls.advance).toBe(1);
-    // The lease is handed back explicitly: an owner EDIT rotates the claim token (so the
-    // token-fenced advance no-ops) but never touches the lease fields — without this
-    // release, Run Now and the next claim of the recomputed occurrence stay blocked for
-    // the full 5-minute lease TTL.
-    expect(methods.releaseLeaseByHolder).toHaveBeenCalledWith('sched-1', 'inst-1');
-  });
-
-  it('treats a message-limiter 429 as a skip, not a schedule failure', async () => {
-    const { methods, runs } = makeMethods();
-    mockFetch(
-      async () =>
-        ({
-          ok: false,
-          status: 429,
-          text: async () => '{"message":"Too many requests"}',
-        }) as Response,
-    );
-    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt(), {
-      manual: true,
+    expect(enqueueTrigger.mock.calls[0][0]).toMatchObject({
+      input: 'Summarize',
+      target: { agentId: 'agent-1' },
+      run: {
+        timezone: 'America/New_York',
+        files: [{ file_id: 'file-1' }],
+        metadata: { manual: false, configRevision: 7 },
+      },
     });
-    expect(result.skipped).toBe('rate_limited');
-    // Counting this as a failure would let an owner merely over their message quota
-    // auto-disable a healthy schedule by clicking Run Now enough times.
-    expect(methods.recordRunOutcome).not.toHaveBeenCalled();
-    // Nothing reached the controller, so no outcome was recorded for the occurrence and
-    // the reservation must not be left holding its capacity slot.
-    expect([...runs.values()].filter((r) => r.status === 'started')).toHaveLength(0);
   });
 
-  it('records a definite HTTP rejection as error', async () => {
+  it('records a definite trigger admission rejection as an error', async () => {
     const { methods, calls } = makeMethods();
-    mockFetch(async () => ({ ok: false, status: 500, text: async () => 'boom' }) as Response);
-    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    const result = await fireSchedule(
+      makeDeps(methods, {
+        enqueueTrigger: async () => {
+          throw new AgentTriggerServiceUnavailableError('not initialized');
+        },
+      }),
+      makeSchedule(),
+      LIMITS,
+      dueAt(),
+    );
     expect(result.fired).toBe(false);
     expect(calls.recordOutcome).toEqual([{ status: 'error' }]);
   });
 
-  it('leaves an ambiguous network failure reconcilable (started, not terminalized)', async () => {
+  it('leaves an ambiguous persistence failure reconcilable', async () => {
     const { methods, runs, calls } = makeMethods();
-    mockFetch(async () => {
-      throw new Error('ECONNRESET');
-    });
-    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    const result = await fireSchedule(
+      makeDeps(methods, {
+        enqueueTrigger: async () => {
+          throw new Error('Mongo result unknown');
+        },
+      }),
+      makeSchedule(),
+      LIMITS,
+      dueAt(),
+    );
     expect(result.fired).toBe(false);
-    // Not terminalized — the run stays `started` for reconciliation.
     expect(calls.recordOutcome).toHaveLength(0);
     expect([...runs.values()][0].status).toBe('started');
     expect(calls.advance).toBe(1);
   });
 
-  it('records a pre-controller SSE denial as a definite error (not ambiguous)', async () => {
+  it('records an invalid durable delivery as a definite error', async () => {
     const { methods, runs, calls } = makeMethods();
-    // denyRequest (moderation/ban) streams an SSE error with HTTP 200 before the
-    // controller starts — a definite rejection with nothing billed/started. It must
-    // terminalize as `error` (so failures count toward auto-disable), NOT be left
-    // reconcilable and later swept to `interrupted`.
-    mockFetch(async () => sseDenyResponse());
-    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    const result = await fireSchedule(
+      makeDeps(methods, {
+        enqueueTrigger: async () => {
+          throw new AgentTriggerDeliveryError('invalid delivery');
+        },
+      }),
+      makeSchedule(),
+      LIMITS,
+      dueAt(),
+    );
     expect(result.fired).toBe(false);
     expect(calls.recordOutcome).toEqual([{ status: 'error' }]);
-    // The reserved run row is terminalized, not left `started` for the orphan sweep.
     expect([...runs.values()][0].status).toBe('error');
   });
 
@@ -495,22 +478,23 @@ describe('fireSchedule', () => {
     for (let i = 0; i < 5; i++) {
       runs.set(`other-${i}:x`, { status: 'started', capacitySlot: i });
     }
-    mockFetch(async () => okResponse());
+    const enqueueTrigger = jest.fn(async () => undefined);
+    const deps = makeDeps(methods, { enqueueTrigger });
     const schedule = makeSchedule();
     const when = dueAt();
     // Tick 1: every slot taken → refused before any insert.
-    const first = await fireSchedule(makeDeps(methods), schedule, LIMITS, when);
+    const first = await fireSchedule(deps, schedule, LIMITS, when);
     expect(first.skipped).toBe('capacity');
     // Capacity frees up before the next tick.
     runs.delete('other-0:x');
     // Tick 2: same occurrence re-claimed → now fires, exactly one live run.
-    const second = await fireSchedule(makeDeps(methods), schedule, LIMITS, when);
+    const second = await fireSchedule(deps, schedule, LIMITS, when);
     expect(second.fired).toBe(true);
     expect(methods.reserveStartedRun).toHaveBeenCalledTimes(1); // only the successful tick inserts
     expect(
       [...runs.entries()].filter(([k, r]) => k.startsWith('sched-1:') && r.status === 'started'),
     ).toHaveLength(1);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(enqueueTrigger).toHaveBeenCalledTimes(1);
   });
 
   it('does not reserve a run when the claim already lapsed during preflight', async () => {
@@ -626,16 +610,18 @@ describe('fireSchedule', () => {
     expect([...runs.entries()].some(([k]) => k.startsWith('sched-1:'))).toBe(false);
   });
 
-  it('records a pre-connect fetch failure (bad self URL) as a definite error', async () => {
+  it('records an unavailable trigger service as a definite error', async () => {
     const { methods, runs, calls } = makeMethods();
-    // A DNS/connection failure before the request reaches the server: nothing started,
-    // so it must terminalize as `error` (countable) rather than stay reconcilable.
-    mockFetch(async () => {
-      const err = new TypeError('fetch failed');
-      (err as unknown as { cause: { code: string } }).cause = { code: 'ECONNREFUSED' };
-      throw err;
-    });
-    const result = await fireSchedule(makeDeps(methods), makeSchedule(), LIMITS, dueAt());
+    const result = await fireSchedule(
+      makeDeps(methods, {
+        enqueueTrigger: async () => {
+          throw new AgentTriggerServiceUnavailableError('not ready');
+        },
+      }),
+      makeSchedule(),
+      LIMITS,
+      dueAt(),
+    );
     expect(result.fired).toBe(false);
     expect(calls.recordOutcome).toEqual([{ status: 'error' }]);
     expect([...runs.values()][0].status).toBe('error');

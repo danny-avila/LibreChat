@@ -437,7 +437,7 @@ async function fire(
 ): Promise<AgentTriggerFireResult> {
   const scope = abortScope(context.signal, timeoutMs);
   try {
-    const [token, timezone, baseUrl] = await Promise.all([
+    const [token, resolvedTimezone, baseUrl] = await Promise.all([
       setupValue(
         () => deps.mintToken(envelope.principal, envelope),
         'fire',
@@ -455,6 +455,7 @@ async function fire(
       scope.abort();
       throw error;
     });
+    const timezone = envelope.run?.timezone ?? resolvedTimezone;
     const url = fireUrl(baseUrl);
     const fetcher: AgentTriggerFetch = deps.fetch ?? globalThis.fetch;
     let response: Response;
@@ -480,6 +481,23 @@ async function fire(
           isRegenerate: false,
           clientRequestId: context.idempotencyKey,
           generationProtocolVersion: 2,
+          agentTrigger: {
+            version: envelope.version,
+            deliveryId: envelope.deliveryId,
+            event: {
+              id: envelope.event.id,
+              type: envelope.event.type,
+              occurredAt: envelope.event.occurredAt,
+              source: envelope.event.source,
+            },
+            ...(envelope.run?.metadata !== undefined && {
+              metadata: envelope.run.metadata,
+            }),
+          },
+          ...(envelope.run?.conversationId != null && {
+            newConversationId: envelope.run.conversationId,
+          }),
+          ...(envelope.run?.files != null && { files: envelope.run.files }),
           ...(typeof timezone === 'string' && timezone.trim().length > 0
             ? { timezone: timezone.trim() }
             : {}),

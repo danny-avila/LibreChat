@@ -64,18 +64,6 @@ export interface IUser extends Document {
   skillStates?: Record<string, boolean>;
   createdAt?: Date;
   updatedAt?: Date;
-  /** Set when account deletion begins; durably blocks all new scheduling for this user. */
-  deletionRequestedAt?: Date;
-  deletionSweepAt?: Date;
-  deletionCommittedAt?: Date;
-  /** Exact stream generations whose deletion-side abort has not been acknowledged;
-   *  durable and TTL-free so a publication outage can never be mistaken for
-   *  settlement. Generation qualification prevents a predecessor cleanup from
-   *  erasing a replacement generation's recovery evidence. */
-  deletionAbortFences?: Array<{ streamId: string; createdAt: number }>;
-  /** Expiring Mongo-backed leases used when the primary finalization lease store
-   *  cannot be renewed. Keys are pre-sanitized opaque lease identities. */
-  finalizationFallbackLeases?: Map<string, Date> | Record<string, Date>;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
   tenantId?: string;

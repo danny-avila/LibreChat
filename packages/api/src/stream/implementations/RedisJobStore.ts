@@ -34,7 +34,6 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
-  finalizationField,
 } from '~/stream/interfaces/IJobStore';
 import {
   MAX_COALESCED_BYTES,
@@ -1539,11 +1538,6 @@ const KEYS = {
   /** User's active jobs set, tenant-qualified when tenantId is available */
   userJobs: (userId: string, tenantId?: string) =>
     tenantId ? `stream:user:{${tenantId}:${userId}}:jobs` : `stream:user:{${userId}}:jobs`,
-  /** Hash of the user's owner finalizations still landing (field=streamId, value=expiry ms) */
-  userFinalizations: (userId: string, tenantId?: string) =>
-    tenantId
-      ? `stream:user:{${tenantId}:${userId}}:finalizing`
-      : `stream:user:{${userId}}:finalizing`,
   /** Idempotency claim for a start-generation request: stream:idem:{userId:clientRequestId} */
   idempotency: (key: string) => `stream:idem:${key}`,
 };
@@ -1552,10 +1546,6 @@ const KEYS = {
  * Default TTL values in seconds.
  * Can be overridden via constructor options.
  */
-/** Backstop for a finalization whose owner crashed between register and clear:
- *  deletion quiescing defers on live markers, so they must age out. */
-const USER_FINALIZATION_TTL_MS = 5 * 60 * 1000;
-
 const DEFAULT_TTL = {
   /** TTL for completed jobs (5 minutes) */
   completed: 300,
@@ -1575,16 +1565,6 @@ const DEFAULT_TTL = {
    * `expiresAt` extends beyond this (see pauseTtlSeconds).
    */
   requiresAction: 86400,
-  /**
-   * Retained reconciliation evidence (25 hours, matching the in-memory store's
-   * backstop). A terminal job kept WITHOUT completedAt is the only durable record
-   * of a scheduled run whose Mongo outcome write exhausted its retries; the
-   * 20-minute running TTL expired it BEFORE the reconciler's 30-minute orphan
-   * cutoff could read it, so an extended Mongo outage recorded real successes and
-   * failures as `interrupted`. The reconciler deletes the job after projecting it;
-   * this TTL is only the leak guard.
-   */
-  retainedEvidence: 90000,
 };
 
 /**
@@ -1621,8 +1601,6 @@ export interface RedisJobStoreOptions {
   userJobsSetTtl?: number;
   /** Backstop TTL for a paused (requires_action) job in seconds (default: 86400 = 24 hours). */
   requiresActionTtl?: number;
-  /** Leak-guard TTL for terminal jobs retained as reconciliation evidence (default: 90000 = 25 hours). */
-  retainedEvidenceTtl?: number;
 }
 
 interface LocalCacheEntry<T> {
@@ -1689,7 +1667,6 @@ export class RedisJobStore implements IJobStoreV2 {
       runStepsAfterComplete: options?.runStepsAfterCompleteTtl ?? DEFAULT_TTL.runStepsAfterComplete,
       userJobsSet: options?.userJobsSetTtl ?? DEFAULT_TTL.userJobsSet,
       requiresAction: options?.requiresActionTtl ?? DEFAULT_TTL.requiresAction,
-      retainedEvidence: options?.retainedEvidenceTtl ?? DEFAULT_TTL.retainedEvidence,
     };
     // Detect cluster mode using ioredis's isCluster property
     this.isCluster = (redis as Cluster).isCluster === true;
@@ -2127,13 +2104,6 @@ export class RedisJobStore implements IJobStoreV2 {
     }
 
     const terminal = requestedTerminal;
-    // A terminal write WITHOUT `completedAt` is the preserveForReconcile signal: the job
-    // is being RETAINED as the only evidence a scheduled run finished, because its inline
-    // outcome write exhausted its Mongo retries. Reaping it on the short completed TTL
-    // would destroy that evidence well before the reconciler's minimum run age, leaving
-    // the ScheduleRun `started` until the 30-minute orphan cutoff reports a success as
-    // interrupted. Hold it on the dedicated evidence TTL, which outlives that cutoff.
-    const preserveTerminal = terminal && updates.completedAt == null;
     const observedJob = terminal ? await this.getJob(streamId) : null;
     const completedTtl =
       updates.terminalPersistencePending === true ||
@@ -2150,7 +2120,7 @@ export class RedisJobStore implements IJobStoreV2 {
       KEYS.steers(streamId),
       expectedCreatedAt != null ? String(expectedCreatedAt) : '',
       terminal ? '1' : '0',
-      String(preserveTerminal ? Math.max(this.ttl.retainedEvidence, completedTtl) : completedTtl),
+      String(completedTtl),
       String(this.ttl.chunksAfterComplete),
       String(this.ttl.runStepsAfterComplete),
       ...fields,
@@ -2457,12 +2427,6 @@ export class RedisJobStore implements IJobStoreV2 {
     let ttl = terminal ? this.ttl.completed : this.runningStorageTtlSeconds();
     if (terminal && patch?.terminalPersistencePending === true) {
       ttl = Math.max(ttl, TERMINAL_PERSISTENCE_RETENTION_TTL_S);
-    }
-    // A terminal transition WITHOUT `completedAt` is the preserveForReconcile signal —
-    // see updateJob. Retained evidence has to outlive the short completed TTL or the
-    // reconciler finds nothing and reports a finished scheduled run as interrupted.
-    if (terminal && patch?.completedAt == null) {
-      ttl = Math.max(ttl, this.ttl.retainedEvidence);
     }
     if (to === 'requires_action') {
       // A paused job must outlive its approval window, even when that window is
@@ -2840,16 +2804,7 @@ export class RedisJobStore implements IJobStoreV2 {
               expectActionId: job.pendingActionId,
               expectCreatedAt: job.createdAt,
               patch: {
-                // A SCHEDULED fire is RETAINED (no completedAt, evidence TTL) with the
-                // outcome stamped, same as the expired-approval branch below: on the
-                // short completed TTL an outage erases the evidence and the run
-                // recovers as `interrupted`.
-                ...(job.scheduleId
-                  ? {
-                      scheduleOutcome: 'error',
-                      scheduleOutcomeError: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
-                    }
-                  : { completedAt: now }),
+                completedAt: now,
                 error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
               },
               clear: [
@@ -2882,11 +2837,7 @@ export class RedisJobStore implements IJobStoreV2 {
               clear: ['pendingAction', 'pendingActionId'],
               patch: {
                 error: 'Approval expired before a decision was made',
-                // A SCHEDULED fire omits completedAt so the aborted job is preserved for
-                // the schedules reconciler, which settles the requires_action run
-                // promptly and deletes the job afterward. Reaping it on the completed TTL
-                // instead would leave that run waiting out the 25-hour abandonment window.
-                ...(job.scheduleId ? {} : { completedAt: Date.now() }),
+                completedAt: Date.now(),
               },
               // Scope the CAS to the action we observed as stale: if the user resolved it
               // and the run re-paused on a fresh action between the read and here, the
@@ -3049,65 +3000,6 @@ export class RedisJobStore implements IJobStoreV2 {
     }
 
     return activeIds;
-  }
-
-  async registerUserFinalization(
-    userId: string,
-    streamId: string,
-    tenantId?: string,
-    generationId?: number,
-    leaseId?: string,
-  ): Promise<void> {
-    const key = KEYS.userFinalizations(userId, tenantId);
-    const expiresAt = Date.now() + USER_FINALIZATION_TTL_MS;
-    // ONE atomic script, not HSET-then-EXPIRE: with the user's existing marker hash
-    // near its key TTL, a crash (or failed EXPIRE) between the two commands lets the
-    // freshly registered marker evaporate almost immediately — exactly the fence the
-    // caller is about to rely on. Key-level TTL is the crash backstop; per-field
-    // expiry is enforced on read.
-    await this.redis.eval(
-      REGISTER_FINALIZATION_LUA,
-      1,
-      key,
-      finalizationField(streamId, generationId, leaseId),
-      String(expiresAt),
-      String(Math.ceil(USER_FINALIZATION_TTL_MS / 1000)),
-    );
-  }
-
-  async clearUserFinalization(
-    userId: string,
-    streamId: string,
-    tenantId?: string,
-    generationId?: number,
-    leaseId?: string,
-  ): Promise<void> {
-    await this.redis.hdel(
-      KEYS.userFinalizations(userId, tenantId),
-      finalizationField(streamId, generationId, leaseId),
-    );
-  }
-
-  async countUserFinalizations(userId: string, tenantId?: string): Promise<number> {
-    const key = KEYS.userFinalizations(userId, tenantId);
-    const entries = await this.redis.hgetall(key);
-    if (entries == null) {
-      return 0;
-    }
-    const now = Date.now();
-    let live = 0;
-    const stale: string[] = [];
-    for (const [streamId, expiresAt] of Object.entries(entries)) {
-      if (Number(expiresAt) > now) {
-        live++;
-      } else {
-        stale.push(streamId);
-      }
-    }
-    if (stale.length > 0) {
-      await this.redis.hdel(key, ...stale).catch(() => undefined);
-    }
-    return live;
   }
 
   async destroy(): Promise<void> {
@@ -4575,6 +4467,24 @@ export class RedisJobStore implements IJobStoreV2 {
       promptTokens: data.promptTokens ? parseInt(data.promptTokens, 10) : undefined,
       agent_id: data.agent_id || undefined,
       isTemporary: data.isTemporary != null ? data.isTemporary === '1' : undefined,
+      scheduleId: data.scheduleId || undefined,
+      scheduledFor: data.scheduledFor || undefined,
+      scheduleConfigRevision: data.scheduleConfigRevision
+        ? parseInt(data.scheduleConfigRevision, 10)
+        : undefined,
+      scheduleManual: data.scheduleManual != null ? data.scheduleManual === '1' : undefined,
+      scheduleOutcome:
+        data.scheduleOutcome === 'success' ||
+        data.scheduleOutcome === 'error' ||
+        data.scheduleOutcome === 'interrupted' ||
+        data.scheduleOutcome === 'skipped_balance'
+          ? data.scheduleOutcome
+          : undefined,
+      scheduleOutcomeError: data.scheduleOutcomeError || undefined,
+      preserveForScheduleReconcile:
+        data.preserveForScheduleReconcile != null
+          ? data.preserveForScheduleReconcile === '1'
+          : undefined,
       // Deferred tools discovered before a HITL pause; replayed into createRun on resume.
       discoveredTools: data.discoveredTools ? JSON.parse(data.discoveredTools) : undefined,
       activityPhaseSnapshot: data.activityPhaseSnapshot
@@ -4598,19 +4508,6 @@ export class RedisJobStore implements IJobStoreV2 {
       resolvedAskUserQuestions: this.parseResolvedAskUserQuestions(data.resolvedAskUserQuestions),
       pendingActionId: data.pendingActionId || undefined,
       lastActiveAt: data.lastActiveAt ? parseInt(data.lastActiveAt, 10) : undefined,
-      // The fence every scheduled-run consumer keys off (reconcile identity matching,
-      // clearReconciledJob, abortScheduledJob, the abort route's preserve decision).
-      // Dropping it here makes a live run read as gone and the orphan sweep interrupts it.
-      scheduleId: data.scheduleId || undefined,
-      scheduledFor: data.scheduledFor || undefined,
-      scheduleManual: data.scheduleManual || undefined,
-      scheduleConfigRevision: data.scheduleConfigRevision || undefined,
-      /** The owner's intended outcome for a RETAINED terminal (serializeJob writes it
-       *  generically, but this mapper is explicit): dropping these on read meant every
-       *  Redis deployment fed the reconciler a bare `complete`, converting retained
-       *  balance refusals and swallowed failures back into `success`. */
-      scheduleOutcome: data.scheduleOutcome || undefined,
-      scheduleOutcomeError: data.scheduleOutcomeError || undefined,
       /** `markActivityLabels` persists this, so it has to be read back:
        *  without it every Redis reload leaves the flag undefined and resume
        *  skips activity-label gap reconciliation, silently dropping a label

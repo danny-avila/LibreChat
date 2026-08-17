@@ -34,6 +34,35 @@ describe('InMemoryJobStore - stale running-job failsafe', () => {
     await store.destroy();
   });
 
+  it('retains a terminal schedule job until reconciliation releases it', async () => {
+    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
+    const store = new InMemoryJobStore({ ttlAfterComplete: 0 });
+
+    const job = await store.createJob('scheduled-run', 'u1', 'scheduled-run', undefined, {
+      scheduleId: 'schedule-1',
+      preserveForScheduleReconcile: true,
+    });
+    await store.updateJob(
+      job.streamId,
+      {
+        status: 'complete',
+        completedAt: Date.now(),
+        scheduleOutcome: 'success',
+      },
+      job.createdAt,
+    );
+
+    expect(await store.cleanup()).toBe(0);
+    expect(await store.hasJob(job.streamId)).toBe(true);
+
+    await store.updateJob(job.streamId, { preserveForScheduleReconcile: false }, job.createdAt);
+
+    expect(await store.cleanup()).toBe(1);
+    expect(await store.hasJob(job.streamId)).toBe(false);
+
+    await store.destroy();
+  });
+
   it('does not reap a running job with recent activity even if created long ago', async () => {
     const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
     const store = new InMemoryJobStore({ staleJobTimeout: 1000 });
@@ -201,57 +230,6 @@ describe('InMemoryJobStore - stale running-job failsafe', () => {
     expect(removed).toBe(1);
     expect(await store.hasJob('done')).toBe(false);
     expect(await store.hasJob('live')).toBe(true);
-
-    await store.destroy();
-  });
-
-  /**
-   * `completedAt` is what the TTL sweep keys off, and it is withheld ONLY to keep a
-   * scheduled run's evidence alive for the reconciler. An ordinary expired approval
-   * that never gets stamped is terminal but unreapable, so it sits in the bounded
-   * store until eviction.
-   */
-  it('stamps an ordinary expired approval so its TTL cleanup runs', async () => {
-    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-    const ttl = 5 * 60 * 1000;
-    const store = new InMemoryJobStore({ ttlAfterComplete: ttl, staleJobTimeout: 0 });
-    await store.initialize();
-
-    await store.createJob('approval', 'u1', 'approval');
-    await store.updateJob('approval', { status: 'requires_action' });
-
-    await store.cleanup();
-    const expired = await store.getJob('approval');
-    expect(expired?.status).toBe('aborted');
-    expect(typeof expired?.completedAt).toBe('number');
-
-    const now = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + ttl * 2);
-    try {
-      expect(await store.cleanup()).toBe(1);
-      expect(await store.hasJob('approval')).toBe(false);
-    } finally {
-      now.mockRestore();
-    }
-
-    await store.destroy();
-  });
-
-  it('withholds the stamp on a scheduled expired approval so reconcile can see it', async () => {
-    const { InMemoryJobStore } = await import('../implementations/InMemoryJobStore');
-    const store = new InMemoryJobStore({ ttlAfterComplete: 5 * 60 * 1000, staleJobTimeout: 0 });
-    await store.initialize();
-
-    await store.createJob('sched-approval', 'u1', 'sched-approval', undefined, {
-      scheduleId: 'sched-1',
-      scheduledFor: '2026-07-26T12:00:00.000Z',
-    });
-    await store.updateJob('sched-approval', { status: 'requires_action' });
-
-    await store.cleanup();
-
-    const expired = await store.getJob('sched-approval');
-    expect(expired?.status).toBe('aborted');
-    expect(expired?.completedAt).toBeUndefined();
 
     await store.destroy();
   });

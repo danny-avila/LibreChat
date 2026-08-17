@@ -14,7 +14,7 @@ interface:
   # `handlePlusCommand` returns before opening the popover.
   multiConvo: true
   # Scheduled chats are EXPERIMENTAL and default-off, so the e2e harness must opt in
-  # explicitly or the engine never arms and schedule writes return 503.
+  # explicitly before schedule writes and fires are accepted.
   # minIntervalMinutes is lowered so the spec can create a schedule without waiting
   # out the production 60-minute floor.
   schedules:

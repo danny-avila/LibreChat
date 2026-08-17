@@ -31,7 +31,6 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   PAUSE_PERSISTENCE_TIMEOUT_MS,
   isPendingActionStale,
-  finalizationField,
 } from '~/stream/interfaces/IJobStore';
 import {
   isRecoveredSteerPayload,
@@ -115,10 +114,6 @@ function isValidGenerationProtocolMarker(value: unknown): boolean {
   return value == null || value === 1 || value === 2;
 }
 
-/** Backstop for a finalization whose owner crashed between register and clear:
- *  deletion quiescing defers on live markers, so they must age out. */
-const USER_FINALIZATION_TTL_MS = 5 * 60 * 1000;
-
 /**
  * Content state for a job - volatile, in-memory only.
  * Uses WeakRef to allow garbage collection of graph when no longer needed.
@@ -145,8 +140,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
 
   /** Maps userId -> Set of streamIds (conversationIds) for active jobs */
   private userJobMap = new Map<string, Set<string>>();
-  /** userKey -> (streamId -> expiry ms) of owner finalizations still landing. */
-  private userFinalizations = new Map<string, Map<string, number>>();
 
   /**
    * Maps streamId -> last generation-activity timestamp. Refreshed via
@@ -154,16 +147,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
    * inactivity (a hung generation) rather than age (a long but live stream).
    */
   private lastActivity = new Map<string, number>();
-
-  /**
-   * Maps streamId -> last generation stamp minted for it. Deliberately OUTLIVES the
-   * job: deriving the next stamp from `jobs` alone made the fence monotonic only while
-   * the job existed, so a replacement created in the same millisecond as a DELETED
-   * generation was handed that generation's exact `createdAt`, and a stale fenced
-   * cleanup would then match and delete the live replacement. Delete-then-recreate is
-   * exactly what the fence guards, so the epoch has to survive the delete.
-   */
-  private lastGenerationStamp = new Map<string, number>();
 
   /** Maps streamId -> FIFO queue of pending steer messages. */
   private steerQueues = new Map<string, SteerQueueItem[]>();
@@ -216,19 +199,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
    * 0 disables the failsafe. Default: 20 minutes.
    */
   private staleJobTimeout = 1_200_000;
-
-  /**
-   * Backstop age (ms) for terminal jobs retained WITHOUT `completedAt` — the
-   * `preserveForReconcile` evidence the schedules reconciler normally deletes after
-   * settling their run. If that delete fails transiently AFTER the run terminalized,
-   * nothing ever rescans the run, so nothing else would reap the job; unbounded, it
-   * (and its content state) stays resident for the life of the process. The window
-   * sits far past every reconciler deadline (the 30-minute owner-death fence plus
-   * scan cadence) and matches the abandoned-pause sweep, so a job this old is
-   * unreachable evidence, never pending evidence. Redis mode needs no equivalent:
-   * its job keys carry TTLs.
-   */
-  private static readonly RETAINED_JOB_MAX_AGE_MS = 25 * 60 * 60_000;
 
   constructor(options?: { ttlAfterComplete?: number; maxJobs?: number; staleJobTimeout?: number }) {
     if (options?.ttlAfterComplete) {
@@ -775,7 +745,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
     if (args.expectCreatedAt != null && job.createdAt !== args.expectCreatedAt) {
       return false;
     }
-    if (['complete', 'error', 'aborted'].includes(args.to) && args.preserveSteerQueue !== true) {
+    if (['complete', 'error', 'aborted'].includes(args.to)) {
       if (!this.isParkedRecoveryCompatible(streamId, job)) {
         return false;
       }
@@ -982,9 +952,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
   }
 
   async deleteJob(streamId: string, expectedCreatedAt?: number): Promise<boolean> {
-    // Generation-fenced, and guarded BEFORE any teardown: a refused delete must leave
-    // the replacement generation's state completely untouched. `lastGenerationStamp` is
-    // deliberately NOT cleared below — the epoch has to outlive the job it belongs to.
     const job = this.jobs.get(streamId);
     if (!job || (expectedCreatedAt != null && job.createdAt !== expectedCreatedAt)) {
       return false;
@@ -1087,12 +1054,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
           expectActionId: job.pendingActionId,
           expectCreatedAt: job.createdAt,
           patch: {
-            // A SCHEDULED fire is RETAINED (no completedAt) with the outcome stamped,
-            // same as the expired-approval branch below: on the short completed TTL an
-            // outage erases the evidence and the run recovers as `interrupted`.
-            ...(job.scheduleId
-              ? { scheduleOutcome: 'error', scheduleOutcomeError: PAUSE_PERSISTENCE_TIMEOUT_ERROR }
-              : { completedAt: now }),
+            completedAt: now,
             error: PAUSE_PERSISTENCE_TIMEOUT_ERROR,
           },
           clear: [
@@ -1109,7 +1071,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
       }
 
       const isFinished = ['complete', 'error', 'aborted'].includes(job.status);
-      if (isFinished && job.completedAt) {
+      if (isFinished && job.completedAt && job.preserveForScheduleReconcile !== true) {
         // A pending final event is a persistence barrier, not an ordinary
         // completed row. Give its owner/recovery path a bounded window even
         // when normal terminal retention is configured to zero.
@@ -1118,14 +1080,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
             ? Math.max(this.ttlAfterComplete, TERMINAL_PERSISTENCE_RETENTION_MS)
             : this.ttlAfterComplete;
         if (terminalTtl === 0 || now - job.completedAt > terminalTtl) {
-          toDelete.push({ streamId, createdAt: job.createdAt });
-        }
-      } else if (isFinished) {
-        // Terminal WITHOUT completedAt: reconcile evidence whose consumer-side delete
-        // failed after the run settled (see RETAINED_JOB_MAX_AGE_MS). Bound it.
-        const basis = Math.max(job.lastActiveAt ?? 0, job.createdAt);
-        if (now - basis > InMemoryJobStore.RETAINED_JOB_MAX_AGE_MS) {
-          this.parkQueuedSteers(streamId, job, now);
           toDelete.push({ streamId, createdAt: job.createdAt });
         }
       } else if (job.status === 'requires_action' && isPendingActionStale(job)) {
@@ -1143,20 +1097,12 @@ export class InMemoryJobStore implements IJobStoreV2 {
         }
         this.parkQueuedSteers(streamId, job, now);
         job.status = 'aborted';
+        job.completedAt = now;
         job.error = 'Approval expired before a decision was made';
         delete job.pendingAction;
         delete job.pendingActionId;
-        // A SCHEDULED fire's expired approval is retained rather than reaped: the
-        // schedules reconciler observes this aborted job to settle the requires_action
-        // run promptly (deleting it afterward), and without it the run waits out the
-        // 25-hour abandonment window instead. Withholding `completedAt` is what keeps
-        // it alive, so an ORDINARY approval must still be stamped or the TTL sweep
-        // (which only reaps terminal jobs that have one) never reclaims it.
-        if (!job.scheduleId) {
-          job.completedAt = now;
-          if (this.ttlAfterComplete === 0) {
-            toDelete.push({ streamId, createdAt: job.createdAt });
-          }
+        if (this.ttlAfterComplete === 0) {
+          toDelete.push({ streamId, createdAt: job.createdAt });
         }
       } else if (this.staleJobTimeout > 0 && job.status === 'running') {
         // Failsafe: reap jobs stuck in "running" with no generation activity for
@@ -1307,8 +1253,7 @@ export class InMemoryJobStore implements IJobStoreV2 {
       if (job == null || jobUserKey !== userKey) {
         // A same-stream replacement may move from a legacy user scope into a
         // tenant-qualified scope. Never expose/count the replacement through
-        // stale predecessor membership (the previous owner's account deletion must
-        // not abort the new owner's live generation).
+        // stale predecessor membership.
         trackedIds.delete(streamId);
         continue;
       }
@@ -1341,62 +1286,6 @@ export class InMemoryJobStore implements IJobStoreV2 {
     }
 
     return activeIds;
-  }
-
-  async registerUserFinalization(
-    userId: string,
-    streamId: string,
-    tenantId?: string,
-    generationId?: number,
-    leaseId?: string,
-  ): Promise<void> {
-    const userKey = tenantId ? `${tenantId}:${userId}` : userId;
-    let entries = this.userFinalizations.get(userKey);
-    if (!entries) {
-      entries = new Map();
-      this.userFinalizations.set(userKey, entries);
-    }
-    entries.set(
-      finalizationField(streamId, generationId, leaseId),
-      Date.now() + USER_FINALIZATION_TTL_MS,
-    );
-  }
-
-  async clearUserFinalization(
-    userId: string,
-    streamId: string,
-    tenantId?: string,
-    generationId?: number,
-    leaseId?: string,
-  ): Promise<void> {
-    const userKey = tenantId ? `${tenantId}:${userId}` : userId;
-    const entries = this.userFinalizations.get(userKey);
-    if (!entries) {
-      return;
-    }
-    entries.delete(finalizationField(streamId, generationId, leaseId));
-    if (entries.size === 0) {
-      this.userFinalizations.delete(userKey);
-    }
-  }
-
-  async countUserFinalizations(userId: string, tenantId?: string): Promise<number> {
-    const userKey = tenantId ? `${tenantId}:${userId}` : userId;
-    const entries = this.userFinalizations.get(userKey);
-    if (!entries) {
-      return 0;
-    }
-    const now = Date.now();
-    for (const [streamId, expiresAt] of entries) {
-      if (expiresAt <= now) {
-        entries.delete(streamId);
-      }
-    }
-    if (entries.size === 0) {
-      this.userFinalizations.delete(userKey);
-      return 0;
-    }
-    return entries.size;
   }
 
   // ===== Content State Methods =====

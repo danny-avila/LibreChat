@@ -196,6 +196,17 @@ interface:
     create: true
     share: false
     public: false
+  # Scheduled chats are experimental and disabled unless explicitly enabled.
+  # A deployment with Redis-backed resumable streams can run this on every replica.
+  # A single-process deployment without Redis must also set
+  # `SCHEDULES_SINGLE_PROCESS=true`; unsafe multi-replica writes fail closed.
+  # schedules:
+  #   use: true
+  #   create: true
+  #   maxPerUser: 10
+  #   minIntervalMinutes: 60
+  #   autoDisableAfterFailures: 5
+  #   fireConcurrency: 5
   peoplePicker:
     users: true
     groups: true

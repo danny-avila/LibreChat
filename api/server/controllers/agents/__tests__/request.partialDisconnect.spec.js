@@ -22,19 +22,7 @@ const mockFilterPersistableAbortContent = jest.fn((content) => content);
 const mockCheckAndIncrementPendingRequest = jest.fn();
 const mockDecrementPendingRequest = jest.fn();
 const mockGenerationJobManager = {
-  // Owner-side finalization fence: the controller registers before its terminal
-  // CAS whenever post-terminal title work is possible, so the facade mock must
-  // mirror it or the turn stalls on an undefined call.
-  registerUserFinalization: jest.fn(async () => undefined),
-  releaseOwnerLease: jest.fn(async () => undefined),
-  holdUserFinalization: jest.fn(async () => ({ leaseId: 'held-lease', release: jest.fn() })),
-  clearUserFinalization: jest.fn(async () => undefined),
-  countUserFinalizations: jest.fn(async () => 0),
   createJob: jest.fn(),
-  // The disconnect-partial save re-reads the job and refuses to write unless THIS
-  // generation is still live — a replacement turn must not have its history
-  // overwritten by a predecessor's teardown. Armed live for these tests.
-  getJob: jest.fn(async () => ({ createdAt: 1000, status: 'running' })),
   emitError: jest.fn(),
   completeJob: jest.fn(),
   beginProviderExecution: jest.fn(),
@@ -58,13 +46,9 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
-  // Scheduled-fire classification helpers the controller consults on every turn
-  // (and on its disconnect/teardown paths): an ordinary chat is never a fire.
-  isScheduleFireRequest: jest.fn(() => false),
-  exemptFromIpLimiter: jest.fn(() => false),
-  exemptFromUserLimiter: jest.fn(() => false),
-  exemptFromConcurrencyLimiter: jest.fn(() => false),
   sendEvent: jest.fn(),
+  isScheduleFireRequest: jest.fn(() => false),
+  exemptFromConcurrencyLimiter: jest.fn(() => false),
   toPendingSteer: jest.fn((item) => item),
   isSteerPreemptSupported: jest.fn(() => true),
   buildRecoveredSteerPayload: jest.fn(() => null),
@@ -113,23 +97,11 @@ jest.mock('~/server/middleware', () => ({
   handleAbortError: jest.fn(() => Promise.resolve()),
 }));
 
-// The controller imports the schedules service, whose module graph builds the app
-// config service and its Keyv cache namespaces at import time from `@librechat/api`
-// factories this spec's partial mock does not provide. Nothing here exercises
-// scheduled runs, so stub the service the way the abort/resume suites do.
-jest.mock('~/server/services/Schedules', () => ({
-  recordScheduleOutcome: jest.fn(async () => true),
-  isScheduleLive: jest.fn(async () => true),
-  clearScheduledJob: jest.fn(async () => undefined),
-  awaitStopAbortPersistence: jest.fn(async () => true),
-}));
-
 jest.mock('~/cache', () => ({
   logViolation: jest.fn(),
 }));
 
 jest.mock('~/models', () => ({
-  isUserDeleting: jest.fn(async () => false),
   saveMessage: (...args) => mockSaveMessage(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
