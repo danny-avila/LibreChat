@@ -669,6 +669,56 @@ describe('generation protocol bridge for steering mutations', () => {
     ]);
   });
 
+  it('rejects a v1 job before enqueue when the caller requires idempotent delivery', async () => {
+    const streamId = 'steer-protocol-v1-idempotency-required';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: { generationProtocolVersion: 1 },
+    });
+    const receiptEnqueue = jest.spyOn(GenerationJobManager.steering, 'enqueueWithReceipt');
+    const legacyEnqueue = jest.spyOn(GenerationJobManager.steering, 'enqueueVersioned');
+
+    const result = await handleSteerRequest(
+      user,
+      {
+        conversationId: streamId,
+        clientSteerId: 'client-v1-requires-idempotency',
+        text: 'must not be injected without a receipt',
+      },
+      { generationProtocolVersion: 2, requireIdempotentDelivery: true },
+    );
+
+    expect(result).toEqual({
+      status: 409,
+      body: { code: 'STEER_IDEMPOTENCY_UNAVAILABLE', generationProtocolVersion: 1 },
+    });
+    expect(receiptEnqueue).not.toHaveBeenCalled();
+    expect(legacyEnqueue).not.toHaveBeenCalled();
+    await expect(GenerationJobManager.steering.peek(streamId)).resolves.toEqual([]);
+  });
+
+  it('keeps ownership rejection ahead of the strict idempotency capability gate', async () => {
+    const streamId = 'steer-protocol-v1-idempotency-foreign-owner';
+    await GenerationJobManager.createJob(streamId, 'someone-else', undefined, {
+      initialMetadata: { generationProtocolVersion: 1 },
+    });
+
+    const result = await handleSteerRequest(
+      user,
+      {
+        conversationId: streamId,
+        clientSteerId: 'client-v1-foreign-owner',
+        text: 'must remain unauthorized',
+      },
+      { generationProtocolVersion: 2, requireIdempotentDelivery: true },
+    );
+
+    expect(result).toEqual({
+      status: 403,
+      body: { code: 'UNAUTHORIZED', generationProtocolVersion: 1 },
+    });
+    await expect(GenerationJobManager.steering.peek(streamId)).resolves.toEqual([]);
+  });
+
   it('keeps v2 receipt replay and correlation broadcasts behind an exact v2 job marker', async () => {
     const streamId = 'steer-protocol-v2-job';
     await GenerationJobManager.createJob(streamId, user.id, undefined, {

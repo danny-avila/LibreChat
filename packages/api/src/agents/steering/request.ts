@@ -125,6 +125,10 @@ export interface SteerRequestDeps {
    * and its rollout gate. Direct package callers that omit it retain the
    * current-package (v2) behavior. */
   generationProtocolVersion?: GenerationProtocolVersion;
+  /** Refuse a legacy v1 enqueue that cannot persist `clientSteerId` receipts.
+   * Background/event deliveries use this to make retrying an ambiguous
+   * outcome safe instead of potentially injecting the same instruction twice. */
+  requireIdempotentDelivery?: boolean;
   /** Owner-scoped file fetch (`db.getFiles`-shaped). When present, every
    *  client-supplied ref must resolve to an owned DB doc at enqueue and the
    *  queued refs are replaced with DB-derived ones. */
@@ -482,6 +486,9 @@ async function handleSteerRequestInternal(
    *  no remaining run-end signal to ever drain it. */
   if (!isSteeringSupported()) {
     return { status: 501, body: { code: 'STEER_UNSUPPORTED' } };
+  }
+  if (deps.requireIdempotentDelivery === true && protocol.value !== 2) {
+    return { status: 409, body: { code: 'STEER_IDEMPOTENCY_UNAVAILABLE' } };
   }
 
   let queuedFiles = files;
