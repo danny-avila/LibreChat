@@ -10,4 +10,5 @@ export * from './invite';
 export * from './codeapi';
 export * from './openidRoleSync';
 export * from './userDocCache';
+export * from './email';
 export * from './reuse';

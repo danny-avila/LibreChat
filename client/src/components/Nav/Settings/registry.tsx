@@ -33,6 +33,7 @@ import ChatDirection from '../SettingsTabs/Chat/ChatDirection';
 import { DeleteCache } from '../SettingsTabs/Data/DeleteCache';
 import { ManageFiles } from '../SettingsTabs/Data/ManageFiles';
 import { smoothStreamingAtom } from '~/store/smoothStreaming';
+import ChangeEmail from '../SettingsTabs/Account/ChangeEmail';
 import { RevokeKeys } from '../SettingsTabs/Data/RevokeKeys';
 import { ClearChats } from '../SettingsTabs/Data/ClearChats';
 import { TokenCredits, AutoRefill } from './BillingControls';
@@ -599,6 +600,15 @@ export const registry: SettingEntry[] = [
     section: 'profile',
     labelKey: 'com_ui_settings_label_avatar',
     Component: Avatar,
+  },
+  {
+    id: 'changeEmail',
+    tab: ACCOUNT,
+    section: 'profile',
+    labelKey: 'com_ui_settings_label_change_email',
+    keywords: ['email', 'address', 'account'],
+    show: (ctx) => ctx.isLocalProvider && ctx.emailEnabled && ctx.allowEmailChange,
+    Component: ChangeEmail,
   },
   // Account · Security
   {

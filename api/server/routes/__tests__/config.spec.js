@@ -103,6 +103,7 @@ afterEach(() => {
   delete process.env.SAML_CERT;
   delete process.env.SAML_SESSION_SECRET;
   delete process.env.ALLOW_ACCOUNT_DELETION;
+  delete process.env.ALLOW_EMAIL_CHANGE;
   delete process.env.ADMIN_PANEL_URL;
   delete process.env.ANALYTICS_GTM_ID;
   delete process.env.CUSTOM_FOOTER;
@@ -194,6 +195,7 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('analyticsGtmId');
       expect(response.body).not.toHaveProperty('openidReuseTokens');
       expect(response.body).not.toHaveProperty('allowAccountDeletion');
+      expect(response.body).not.toHaveProperty('allowEmailChange');
       expect(response.body).not.toHaveProperty('customFooter');
       expect(response.body).not.toHaveProperty('adminPanelURL');
     });
@@ -216,6 +218,7 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('staticBundlerURL');
       expect(response.body).not.toHaveProperty('helpAndFaqURL');
       expect(response.body).not.toHaveProperty('allowAccountDeletion');
+      expect(response.body).not.toHaveProperty('allowEmailChange');
     });
 
     it('should include socialLogins and turnstile from base config', async () => {
@@ -605,6 +608,25 @@ describe('GET /api/config', () => {
 
       expect(response.body.allowAccountDeletion).toBe(false);
       expect(mockHasCapability).toHaveBeenCalled();
+    });
+
+    it('should enable email changes by default for authenticated users', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.allowEmailChange).toBe(true);
+    });
+
+    it('should disable email changes when ALLOW_EMAIL_CHANGE is false', async () => {
+      process.env.ALLOW_EMAIL_CHANGE = 'false';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.allowEmailChange).toBe(false);
     });
 
     it('should override allowAccountDeletion to true for users with ACCESS_ADMIN capability', async () => {

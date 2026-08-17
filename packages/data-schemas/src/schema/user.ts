@@ -45,6 +45,11 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       required: true,
       default: false,
     },
+    /** Set when a confirmed email change commits; password resets use it to refuse
+     * address-less legacy tokens that a mixed-version deployment could still mint. */
+    emailChangedAt: {
+      type: Date,
+    },
     password: {
       type: String,
       trim: true,

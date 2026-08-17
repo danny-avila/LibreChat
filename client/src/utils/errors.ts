@@ -19,3 +19,11 @@ export const getResponseStatus = (error: unknown): number | undefined => {
 };
 
 export const isNotFoundError = (error: unknown): boolean => getResponseStatus(error) === 404;
+
+export const getResponseErrorCode = <TCode extends string>(error: unknown): TCode | undefined => {
+  if (!axios.isAxiosError<{ code?: string }>(error)) {
+    return undefined;
+  }
+  const code = error.response?.data?.code;
+  return typeof code === 'string' ? (code as TCode) : undefined;
+};

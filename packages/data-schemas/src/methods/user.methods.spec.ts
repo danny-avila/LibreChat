@@ -347,6 +347,29 @@ describe('User Methods - Database Tests', () => {
       expect(updated?.expiresAt).toBeUndefined();
     });
 
+    test('should update only when the expected account state still matches', async () => {
+      const user = await User.create({
+        name: 'Conditional User',
+        email: 'original@example.com',
+        password: 'original-password-hash',
+        provider: 'local',
+      });
+
+      const staleUpdate = await methods.updateUser(
+        user._id?.toString() ?? '',
+        { email: 'stale@example.com' },
+        { email: 'different@example.com', password: 'original-password-hash' },
+      );
+      const currentUpdate = await methods.updateUser(
+        user._id?.toString() ?? '',
+        { email: 'current@example.com' },
+        { email: 'original@example.com', password: 'original-password-hash' },
+      );
+
+      expect(staleUpdate).toBeNull();
+      expect(currentUpdate?.email).toBe('current@example.com');
+    });
+
     test('should invalidate cached auth user documents on update', async () => {
       enableAuthUserDocCache();
       const user = await User.create({

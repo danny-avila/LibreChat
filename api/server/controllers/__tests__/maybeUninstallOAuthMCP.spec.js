@@ -29,6 +29,10 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => {
   return {
+    createEmailChangeService: jest.fn(() => ({
+      requestEmailChange: jest.fn(),
+      confirmEmailChange: jest.fn(),
+    })),
     MCPOAuthHandler: {
       revokeOAuthToken: (...args) => mockRevokeOAuthToken(...args),
       deleteFlowAndStateMapping: (...args) => mockDeleteFlowAndStateMapping(...args),

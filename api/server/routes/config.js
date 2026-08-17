@@ -1,6 +1,8 @@
 const express = require('express');
 const {
   isEnabled,
+  isEmailChangeAllowed,
+  checkEmailConfig,
   isLangfuseConnectionAvailable,
   isLangfuseFanoutEnabled,
   getBalanceConfig,
@@ -90,11 +92,7 @@ function buildPreLoginPayload() {
     emailLoginEnabled,
     registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
     socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
-    emailEnabled:
-      (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
-      !!process.env.EMAIL_USERNAME &&
-      !!process.env.EMAIL_PASSWORD &&
-      !!process.env.EMAIL_FROM,
+    emailEnabled: checkEmailConfig(),
     passwordResetEnabled,
   };
 
@@ -149,6 +147,7 @@ function buildPostLoginPayload() {
     allowAccountDeletion:
       process.env.ALLOW_ACCOUNT_DELETION === undefined ||
       isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
+    allowEmailChange: isEmailChangeAllowed(),
   };
 
   return payload;

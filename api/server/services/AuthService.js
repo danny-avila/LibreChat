@@ -47,6 +47,7 @@ const domains = {
 
 const AuthTokenTypes = Object.freeze({
   EMAIL_VERIFICATION: 'email_verification',
+  EMAIL_CHANGE: 'email_change',
   PASSWORD_RESET: 'password_reset',
 });
 
@@ -479,6 +480,7 @@ const requestPasswordReset = async (req) => {
 
   await createToken({
     userId: user._id,
+    email: user.email.toLowerCase(),
     type: AuthTokenTypes.PASSWORD_RESET,
     token: hash,
     createdAt: Date.now(),
@@ -535,8 +537,37 @@ const resetPassword = async (userId, token, password) => {
     return new Error('Invalid or expired password reset token');
   }
 
+  const currentUser = await getUserById(userId, 'email _id emailChangedAt');
+  /** Keyed on the token's address binding rather than its type, so the untyped legacy
+   * shape returned by `findPasswordResetToken`'s fallback is covered too. Address-less
+   * tokens stay usable so links from a not-yet-upgraded node keep working, but never for
+   * an account whose address has moved: they cannot be attributed to the current address
+   * and would otherwise outlive the change. */
+  if (
+    !currentUser ||
+    (passwordResetToken.email
+      ? passwordResetToken.email.toLowerCase() !== currentUser.email.toLowerCase()
+      : currentUser.emailChangedAt != null)
+  ) {
+    return new Error('Invalid or expired password reset token');
+  }
+
   const hash = bcrypt.hashSync(password, 10);
-  const user = await updateUser(userId, { password: hash });
+  const user = await updateUser(userId, { password: hash }, { email: currentUser.email });
+  if (!user) {
+    return new Error('Invalid or expired password reset token');
+  }
+
+  /** Runs immediately after the commit rather than after the notification: the delete is not
+   * scoped to the password the pending token was bound to, so every moment it is deferred is
+   * a moment an email change request can issue a link against the new password and have it
+   * revoked here. Confirmation independently refuses tokens bound to the old password, since
+   * it re-checks `passwordFingerprint` against the stored hash. */
+  try {
+    await deleteTokens({ userId, type: AuthTokenTypes.EMAIL_CHANGE });
+  } catch (error) {
+    logger.error('[resetPassword] Failed to clean up pending email changes', error);
+  }
 
   if (checkEmailConfig()) {
     await sendEmail({

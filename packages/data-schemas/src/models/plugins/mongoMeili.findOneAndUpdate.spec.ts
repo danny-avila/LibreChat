@@ -32,6 +32,23 @@ const waitForMock = async (mock: jest.Mock, timeoutMs = 2000): Promise<void> => 
   }
 };
 
+/**
+ * The indexing hook writes `_meiliIndex` only after `addDocuments` resolves, so
+ * polling for the persisted flag avoids racing the write on slower CI runners.
+ */
+const waitForCondition = async (
+  predicate: () => Promise<boolean>,
+  timeoutMs = 2000,
+): Promise<void> => {
+  const start = Date.now();
+  while (!(await predicate())) {
+    if (Date.now() - start > timeoutMs) {
+      return;
+    }
+    await wait(10);
+  }
+};
+
 const mockAddDocuments = jest.fn();
 const mockUpdateDocuments = jest.fn();
 const mockDeleteDocument = jest.fn();
@@ -144,7 +161,10 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
 
     await updateTitle(conversationId, user, 'Indexed Conversation');
     await waitForMock(mockAddDocuments);
-    await wait(50);
+    await waitForCondition(async () => {
+      const doc = await conversationModel.collection.findOne({ conversationId });
+      return doc?._meiliIndex === true;
+    });
 
     const storedDoc = await conversationModel.collection.findOne({ conversationId });
     expect(storedDoc?._meiliIndex).toBe(true);
@@ -164,6 +184,7 @@ describe('mongoMeili findOneAndUpdate with includeResultMetadata (saveConvo path
 
     await updateTitle(conversationId, user, 'Same Title');
 
+    await waitForMock(mockGetDocument);
     await wait(50);
     expect(mockGetDocument).toHaveBeenCalledWith(conversationId);
     expect(mockAddDocuments).not.toHaveBeenCalled();

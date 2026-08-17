@@ -10,6 +10,9 @@ const toolCallLimiter = require('./toolCallLimiter');
 const messageLimiters = require('./messageLimiters');
 const promptUsageLimiter = require('./promptUsageLimiter');
 const verifyEmailLimiter = require('./verifyEmailLimiter');
+const emailChangeLimiter = require('./emailChangeLimiter');
+const emailChangeSubmissionLimiter = require('./emailChangeSubmissionLimiter');
+const emailChangeSubmissionIpLimiter = require('./emailChangeSubmissionIpLimiter');
 const resetPasswordLimiter = require('./resetPasswordLimiter');
 const twoFactorTempLimiter = require('./twoFactorTempLimiter');
 const verifyEmailSubmissionLimiter = require('./verifyEmailSubmissionLimiter');
@@ -27,6 +30,9 @@ module.exports = {
   createTTSLimiters,
   createSTTLimiters,
   verifyEmailLimiter,
+  emailChangeLimiter,
+  emailChangeSubmissionLimiter,
+  emailChangeSubmissionIpLimiter,
   resetPasswordLimiter,
   verifyEmailSubmissionLimiter,
   resetPasswordSubmissionLimiter,

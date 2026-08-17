@@ -1,12 +1,14 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
+import { tenantStorage } from '~/config/tenantContext';
+import { createTokenModel } from '~/models/token';
 import { createTokenMethods } from './token';
-import tokenSchema from '~/schema/token';
 
 /** Mocking logger */
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
+  warn: jest.fn(),
   info: jest.fn(),
   debug: jest.fn(),
 }));
@@ -21,7 +23,7 @@ beforeAll(async () => {
   await mongoose.connect(mongoUri);
 
   /** Register models */
-  Token = mongoose.models.Token || mongoose.model<t.IToken>('Token', tokenSchema);
+  Token = createTokenModel(mongoose);
 
   /** Initialize methods */
   methods = createTokenMethods(mongoose);
@@ -34,6 +36,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
+  methods = createTokenMethods(mongoose);
 });
 
 describe('Token Methods - Detailed Tests', () => {
@@ -530,6 +533,218 @@ describe('Token Methods - Detailed Tests', () => {
       expect(updated).toBeDefined();
       expect(updated?.email).toBe('changed@example.com');
       expect(updated!.expiresAt.getTime()).toBe(originalExpiresAt);
+    });
+  });
+
+  describe('upsertToken', () => {
+    test('atomically keeps one pending email change token under concurrent replacement', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const scope = `email_change:${userId.toString()}`;
+      const results = await Promise.all([
+        methods.upsertToken(scope, {
+          userId,
+          type: 'email_change',
+          scope,
+          email: 'first@example.com',
+          token: 'first-token',
+          expiresIn: 900,
+        }),
+        methods.upsertToken(scope, {
+          userId,
+          type: 'email_change',
+          scope,
+          email: 'second@example.com',
+          token: 'second-token',
+          expiresIn: 900,
+        }),
+      ]);
+
+      expect(results).toHaveLength(2);
+      expect(await Token.countDocuments({ userId, type: 'email_change' })).toBe(1);
+      const pending = await Token.findOne({ userId, type: 'email_change' }).lean();
+      expect(['first-token', 'second-token']).toContain(pending?.token);
+      expect(await Token.collection.indexExists('unique_token_scope')).toBe(true);
+    });
+
+    test('preserves the tenant when replacing a scoped token', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const scope = `email_change:${userId.toString()}`;
+
+      await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.upsertToken(scope, {
+          userId,
+          type: 'email_change',
+          email: 'first@example.com',
+          token: 'first-token',
+          expiresIn: 900,
+        }),
+      );
+      await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.upsertToken(scope, {
+          userId,
+          type: 'email_change',
+          email: 'second@example.com',
+          token: 'second-token',
+          expiresIn: 900,
+        }),
+      );
+
+      const pending = await Token.findOne({ scope }).lean();
+      expect(pending?.tenantId).toBe('tenant-a');
+      expect(pending?.token).toBe('second-token');
+
+      const crossTenant = await tenantStorage.run({ tenantId: 'tenant-b' }, () =>
+        methods.findToken({ scope }),
+      );
+      expect(crossTenant).toBeNull();
+    });
+
+    test('does not collapse tokens outside the email change scope', async () => {
+      const userId = new mongoose.Types.ObjectId();
+
+      await Promise.all([
+        methods.createToken({
+          userId,
+          type: 'mcp_oauth',
+          identifier: 'first',
+          token: 'first-token',
+          expiresIn: 900,
+        }),
+        methods.createToken({
+          userId,
+          type: 'mcp_oauth',
+          identifier: 'second',
+          token: 'second-token',
+          expiresIn: 900,
+        }),
+      ]);
+
+      expect(await Token.countDocuments({ userId, type: 'mcp_oauth' })).toBe(2);
+    });
+
+    test('retries a deadlocked index build instead of failing the caller', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const scope = `email_change:${userId.toString()}`;
+      const createIndexes = jest
+        .spyOn(Token, 'createIndexes')
+        .mockRejectedValueOnce(new Error('deadlock detected while creating index'));
+
+      try {
+        const pending = await methods.upsertToken(scope, {
+          userId,
+          type: 'email_change',
+          scope,
+          email: 'retried@example.com',
+          token: 'retried-token',
+          expiresIn: 900,
+        });
+
+        expect(pending.token).toBe('retried-token');
+        expect(createIndexes.mock.calls.length).toBeGreaterThan(1);
+        expect(await Token.countDocuments({ userId, type: 'email_change' })).toBe(1);
+      } finally {
+        createIndexes.mockRestore();
+      }
+    });
+  });
+
+  describe('replaceTokenIfCurrent', () => {
+    test('allows only one concurrent insert into an empty scope', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const scope = `email_change:${userId.toString()}`;
+      const candidates = [
+        {
+          userId,
+          type: 'email_change',
+          email: 'first@example.com',
+          token: 'first-token',
+          expiresIn: 900,
+        },
+        {
+          userId,
+          type: 'email_change',
+          email: 'second@example.com',
+          token: 'second-token',
+          expiresIn: 900,
+        },
+      ];
+
+      const results = await Promise.all(
+        candidates.map((candidate) => methods.replaceTokenIfCurrent(scope, null, candidate)),
+      );
+
+      expect([...results].sort()).toEqual([false, true]);
+      const winner = candidates[results.indexOf(true)];
+      const pending = await Token.findOne({ scope }).lean();
+      expect(pending?.token).toBe(winner.token);
+      expect(pending?.email).toBe(winner.email);
+      expect(await Token.countDocuments({ scope })).toBe(1);
+    });
+
+    test('allows only one concurrent replacement of the observed token', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const scope = `email_change:${userId.toString()}`;
+      await methods.upsertToken(scope, {
+        userId,
+        type: 'email_change',
+        email: 'existing@example.com',
+        token: 'existing-token',
+        expiresIn: 900,
+      });
+
+      const candidates = [
+        {
+          userId,
+          type: 'email_change',
+          email: 'first@example.com',
+          token: 'first-token',
+          expiresIn: 900,
+        },
+        {
+          userId,
+          type: 'email_change',
+          email: 'second@example.com',
+          token: 'second-token',
+          expiresIn: 900,
+        },
+      ];
+      const results = await Promise.all(
+        candidates.map((candidate) =>
+          methods.replaceTokenIfCurrent(scope, 'existing-token', candidate),
+        ),
+      );
+
+      expect([...results].sort()).toEqual([false, true]);
+      const winner = candidates[results.indexOf(true)];
+      const pending = await Token.findOne({ scope }).lean();
+      expect(pending?.token).toBe(winner.token);
+      expect(pending?.email).toBe(winner.email);
+    });
+
+    test('preserves the current token when the expected token is stale', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const scope = `email_change:${userId.toString()}`;
+      await methods.upsertToken(scope, {
+        userId,
+        type: 'email_change',
+        email: 'current@example.com',
+        token: 'current-token',
+        expiresIn: 900,
+      });
+
+      await expect(
+        methods.replaceTokenIfCurrent(scope, 'stale-token', {
+          userId,
+          type: 'email_change',
+          email: 'replacement@example.com',
+          token: 'replacement-token',
+          expiresIn: 900,
+        }),
+      ).resolves.toBe(false);
+
+      const pending = await Token.findOne({ scope }).lean();
+      expect(pending?.token).toBe('current-token');
+      expect(pending?.email).toBe('current@example.com');
     });
   });
 
