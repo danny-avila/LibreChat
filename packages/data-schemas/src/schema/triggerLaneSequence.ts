@@ -15,4 +15,9 @@ const triggerLaneSequenceSchema: Schema<IAgentTriggerLaneSequenceDocument> = new
   { timestamps: true },
 );
 
+// Publisher fields exist only while a lane admission is in flight. The sparse
+// index keeps the periodic recovery scan proportional to abandoned publishers
+// instead of all retained lane history (and is supported by DocumentDB 3.6+).
+triggerLaneSequenceSchema.index({ publisherStartedAt: 1 }, { sparse: true });
+
 export default triggerLaneSequenceSchema;

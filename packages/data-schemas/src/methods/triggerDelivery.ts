@@ -190,6 +190,31 @@ export function createAgentTriggerDeliveryMethods(
     ]);
   }
 
+  async function abandonLanePublisher(lane: IAgentTriggerLaneSequence): Promise<boolean> {
+    const publisherDeliveryId = lane.publisherDeliveryId;
+    if (publisherDeliveryId == null) {
+      return false;
+    }
+    if (!Number.isSafeInteger(lane.value) || lane.value <= 0) {
+      throw new Error('Agent trigger lane publisher has an invalid sequence');
+    }
+    const publisherFence = {
+      _id: lane._id,
+      value: lane.value,
+      publisherDeliveryId,
+    };
+    if (lane.value === 1) {
+      const deleted = await LaneSequence().deleteOne(publisherFence);
+      return deleted.deletedCount === 1;
+    }
+    const released = await LaneSequence().updateOne(publisherFence, {
+      $inc: { value: -1 },
+      $set: { cleanupRequestedAt: new Date() },
+      $unset: { publisherDeliveryId: 1, publisherStartedAt: 1 },
+    });
+    return released.modifiedCount === 1;
+  }
+
   async function recoverLanePublisher(lane: IAgentTriggerLaneSequence): Promise<boolean> {
     const publisherDeliveryId = lane.publisherDeliveryId;
     if (publisherDeliveryId == null) {
@@ -236,16 +261,7 @@ export function createAgentTriggerDeliveryMethods(
     // reservation was acquired (or was removed by account cleanup). No later
     // reservation can exist while this fence is held, so the unused sequence
     // can be rolled back without creating a gap or regressing the lane tail.
-    if (lane.value === 1) {
-      const deleted = await LaneSequence().deleteOne(publisherFence);
-      return deleted.deletedCount === 1;
-    }
-    const released = await LaneSequence().updateOne(publisherFence, {
-      $inc: { value: -1 },
-      $set: { cleanupRequestedAt: new Date() },
-      $unset: { publisherDeliveryId: 1, publisherStartedAt: 1 },
-    });
-    return released.modifiedCount === 1;
+    return abandonLanePublisher(lane);
   }
 
   async function publishStagedDelivery(
@@ -265,9 +281,15 @@ export function createAgentTriggerDeliveryMethods(
       if (current.status !== 'staging') {
         return current;
       }
+      if ((await UserPurge().exists({ _id: current.user })) != null) {
+        return current;
+      }
 
       const lane = await LaneSequence().findById(orderingKey).lean<IAgentTriggerLaneSequence>();
       if (lane?.publisherDeliveryId != null) {
+        if ((await UserPurge().exists({ _id: lane.user })) != null) {
+          return current;
+        }
         await recoverLanePublisher(lane);
         continue;
       }
@@ -313,6 +335,14 @@ export function createAgentTriggerDeliveryMethods(
       }
       if (acquired == null) {
         continue;
+      }
+
+      // Account deletion creates this durable marker before it can delete
+      // rows or lanes. Recheck after acquisition to close the cross-collection
+      // race in which the marker appears between the first check and upsert.
+      if ((await UserPurge().exists({ _id: next.user })) != null) {
+        await abandonLanePublisher(acquired);
+        return current;
       }
 
       await recoverLanePublisher(acquired);
@@ -366,12 +396,18 @@ export function createAgentTriggerDeliveryMethods(
     }
     const boundedLimit = Math.min(limit, MAX_PURGE_RECOVERY_LIMIT);
     const lanes = await LaneSequence()
-      .find({ publisherDeliveryId: { $exists: true } })
-      .sort({ publisherStartedAt: 1, _id: 1 })
+      .find({
+        publisherDeliveryId: { $exists: true },
+        publisherStartedAt: { $exists: true },
+      })
+      .sort({ publisherStartedAt: 1 })
       .limit(boundedLimit)
       .lean<IAgentTriggerLaneSequence[]>();
     let recovered = 0;
     for (const lane of lanes) {
+      if ((await UserPurge().exists({ _id: lane.user })) != null) {
+        continue;
+      }
       if (await recoverLanePublisher(lane)) {
         recovered += 1;
       }
@@ -388,8 +424,10 @@ export function createAgentTriggerDeliveryMethods(
       .lean<IAgentTriggerDelivery[]>();
     for (const delivery of staged) {
       try {
-        await publishStagedDelivery(delivery);
-        recovered += 1;
+        const published = await publishStagedDelivery(delivery);
+        if (published.status !== 'staging') {
+          recovered += 1;
+        }
       } catch (error) {
         // Account deletion can remove a staged row while a replica is helping
         // it. Suppress only that confirmed race; operational failures remain

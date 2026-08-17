@@ -219,6 +219,94 @@ describe('agent trigger delivery methods', () => {
     await expect(LaneSequence.findById(orderingKey).lean()).resolves.toMatchObject({ value: 1 });
   });
 
+  it('leaves staging unpublished while its durable user purge marker exists', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'purge-fenced-staging';
+    await UserPurge.create({ _id: user, fenceStartedAt: START, tenantId: 'tenant-1' });
+    const staged = await Delivery.create({
+      ...enqueueInput({ user, orderingKey }),
+      laneSequence: 0,
+      status: 'staging',
+      attempts: 0,
+      requeueCount: 0,
+    });
+
+    await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(0);
+    await expect(Delivery.findById(staged._id).lean()).resolves.toMatchObject({
+      status: 'staging',
+      laneSequence: 0,
+    });
+    await expect(LaneSequence.findById(orderingKey)).resolves.toBeNull();
+  });
+
+  it('leaves an existing lane publisher fenced while its user purge marker exists', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'purge-fenced-publisher';
+    await UserPurge.create({ _id: user, fenceStartedAt: START, tenantId: 'tenant-1' });
+    const staged = await Delivery.create({
+      ...enqueueInput({ user, orderingKey }),
+      laneSequence: 0,
+      status: 'staging',
+      attempts: 0,
+      requeueCount: 0,
+    });
+    await LaneSequence.create({
+      _id: orderingKey,
+      value: 1,
+      user,
+      tailDeliveryId: staged._id,
+      publisherDeliveryId: staged._id,
+      publisherStartedAt: START,
+    });
+
+    await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(0);
+    await expect(Delivery.findById(staged._id).lean()).resolves.toMatchObject({
+      status: 'staging',
+      laneSequence: 0,
+    });
+    await expect(LaneSequence.findById(orderingKey).lean()).resolves.toMatchObject({
+      publisherDeliveryId: staged._id,
+      value: 1,
+    });
+  });
+
+  it('abandons a lane acquired concurrently with a new purge marker', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const orderingKey = 'purge-race-staging';
+    const staged = await Delivery.create({
+      ...enqueueInput({ user, orderingKey }),
+      laneSequence: 0,
+      status: 'staging',
+      attempts: 0,
+      requeueCount: 0,
+    });
+    const purgeExists = jest
+      .spyOn(UserPurge, 'exists')
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: user } as never);
+
+    try {
+      await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(0);
+    } finally {
+      purgeExists.mockRestore();
+    }
+    await expect(Delivery.findById(staged._id).lean()).resolves.toMatchObject({
+      status: 'staging',
+      laneSequence: 0,
+    });
+    await expect(LaneSequence.findById(orderingKey)).resolves.toBeNull();
+  });
+
+  it('builds a sparse index for the periodic publisher recovery scan', async () => {
+    const indexes = await LaneSequence.collection.indexes();
+
+    expect(indexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: { publisherStartedAt: 1 }, sparse: true }),
+      ]),
+    );
+  });
+
   it('publishes an idempotent replay on its persisted ordering lane', async () => {
     const user = new mongoose.Types.ObjectId();
     const input = enqueueInput({ user, orderingKey: 'original-lane' });
