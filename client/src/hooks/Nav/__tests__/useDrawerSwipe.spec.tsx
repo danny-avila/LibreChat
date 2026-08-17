@@ -1,5 +1,9 @@
 import { renderHook } from '@testing-library/react';
-import useDrawerSwipe, { findHorizontalScrollBlocker } from '../useDrawerSwipe';
+import useDrawerSwipe, {
+  findHorizontalScrollBlocker,
+  getPendingDrawerFlip,
+  kickDrawerAnimation,
+} from '../useDrawerSwipe';
 import { MOBILE_DRAWER_ID } from '~/components/UnifiedSidebar/constants';
 
 const DRAWER_WIDTH = 375;
@@ -428,6 +432,251 @@ describe('useDrawerSwipe — interruptions and re-arming', () => {
       { x: 220, y: 100, t: 250 },
     ]);
     expect(harness.onOpenChange).toHaveBeenCalledWith(true);
+    harness.unmount();
+  });
+});
+
+describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
+  it('slides both elements before the state flip runs, then hands off to classes', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    /** The sync rAF mock collapses the two-frame deferral, so capturing the
+     *  transform inside `applyState` proves the slide started first. */
+    const transformAtApply: string[] = [];
+    kickDrawerAnimation(true, () => {
+      transformAtApply.push(harness.drawer.style.transform);
+    });
+
+    expect(transformAtApply).toEqual(['translate3d(0, 0, 0)']);
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    expect(harness.drawer.style.willChange).toBe('transform');
+    expect(harness.onOpenChange).not.toHaveBeenCalled();
+
+    harness.rerender({ open: true, enabled: true });
+    expect(harness.drawer.style.transform).toBe('translate3d(0, 0, 0)');
+
+    jest.runAllTimers();
+    expect(harness.drawer.style.transform).toBe('');
+    expect(harness.drawer.style.willChange).toBe('');
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('applies state immediately when the hook is disabled (desktop width animation)', () => {
+    const harness = setup(false);
+    harness.rerender({ open: false, enabled: false });
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+
+    expect(applyState).toHaveBeenCalledTimes(1);
+    expect(harness.drawer.style.transform).toBe('');
+    harness.unmount();
+  });
+
+  it('applies state immediately after unmount', () => {
+    const harness = setup(false);
+    harness.unmount();
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+
+    expect(applyState).toHaveBeenCalledTimes(1);
+  });
+
+  it('retargets an in-flight slide when the user toggles back', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+
+    kickDrawerAnimation(true, jest.fn());
+    harness.rerender({ open: true, enabled: true });
+    kickDrawerAnimation(false, jest.fn());
+
+    expect(harness.drawer.style.transform).toBe('translate3d(-100%, 0, 0)');
+    expect(harness.pane.style.transform).toBe('translate3d(0, 0, 0)');
+
+    harness.rerender({ open: false, enabled: true });
+    jest.runAllTimers();
+    expect(harness.drawer.style.transform).toBe('');
+    expect(harness.pane.style.transform).toBe('');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('does not re-start a slide already heading to the same target', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+
+    kickDrawerAnimation(true, jest.fn());
+    harness.drawer.style.transform = 'translate3d(-10px, 0, 0)';
+    kickDrawerAnimation(true, jest.fn());
+
+    expect(harness.drawer.style.transform).toBe('translate3d(-10px, 0, 0)');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it('defers to a drag that owns the inline styles but still applies state', () => {
+    const harness = setup(false);
+    harness.swipe(
+      harness.pane,
+      [
+        { x: 20, y: 100, t: 0 },
+        { x: 120, y: 104, t: 50 },
+      ],
+      false,
+    );
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+
+    expect(harness.pane.style.transform).toBe('translate3d(100px, 0, 0)');
+    expect(applyState).toHaveBeenCalledTimes(1);
+    harness.pane.dispatchEvent(touchEvent('touchend', [], 400));
+    harness.unmount();
+  });
+
+  it('snaps without a transition under reduced motion', () => {
+    jest.useFakeTimers();
+    const harness = setup(false, true);
+
+    kickDrawerAnimation(true, jest.fn());
+
+    expect(harness.drawer.style.transition).toBe('none');
+    expect(harness.drawer.style.transform).toBe('');
+
+    harness.rerender({ open: true, enabled: true });
+    jest.runAllTimers();
+    expect(harness.drawer.style.transition).not.toBe('none');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /** Deferring past the 80ms transition-restore window would let the state
+   *  flip animate at full duration on a slow-frame device — for exactly the
+   *  users who opted out of motion. */
+  it('applies state synchronously under reduced motion, without frame deferral', () => {
+    const harness = setup(false, true);
+    (window.requestAnimationFrame as jest.Mock).mockImplementation(() => 0);
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+
+    expect(applyState).toHaveBeenCalledTimes(1);
+    harness.unmount();
+  });
+
+  it('drops a deferred state flip when the animator is torn down mid-deferral', () => {
+    const harness = setup(false);
+    const queued: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as jest.Mock).mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+    harness.rerender({ open: false, enabled: false });
+    while (queued.length) {
+      queued.shift()?.(0);
+    }
+
+    expect(applyState).not.toHaveBeenCalled();
+    expect(harness.drawer.style.transform).toBe('');
+    harness.unmount();
+  });
+
+  /** The release deadline must run on the same clock as the staged frame:
+   *  armed at kick time, a delayed first frame lets the wall-clock timeout
+   *  clear the settle first, and the frame then aborts the slide. */
+  it('waits for the staged frame before starting the release deadline', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    const queued: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as jest.Mock).mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+
+    kickDrawerAnimation(true, jest.fn());
+    jest.advanceTimersByTime(500);
+    queued.shift()?.(0);
+
+    expect(harness.drawer.style.transform).toBe('translate3d(0, 0, 0)');
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
+
+    harness.rerender({ open: true, enabled: true });
+    jest.advanceTimersByTime(400);
+    expect(harness.drawer.style.transform).toBe('');
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /** A superseded flip must never transiently commit the old direction —
+   *  its commit would re-register the animator and get the NEWER flip
+   *  dropped, stranding the drawer at the first intent. */
+  it('discards a superseded deferred flip so only the latest intent commits', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    const queued: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as jest.Mock).mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+
+    const applyOpen = jest.fn();
+    const applyClose = jest.fn();
+    kickDrawerAnimation(true, applyOpen);
+    kickDrawerAnimation(false, applyClose);
+    while (queued.length) {
+      queued.shift()?.(0);
+    }
+
+    expect(applyOpen).not.toHaveBeenCalled();
+    expect(applyClose).toHaveBeenCalledTimes(1);
+    jest.runAllTimers();
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /** A desktop toggle right after a breakpoint cross must invert the
+   *  committed value, not a leftover mobile intent. */
+  it('clears the pending flip target when the animator tears down', () => {
+    const harness = setup(false);
+    const queued: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as jest.Mock).mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+
+    kickDrawerAnimation(true, jest.fn());
+    expect(getPendingDrawerFlip()).toBe(true);
+    harness.rerender({ open: false, enabled: false });
+
+    expect(getPendingDrawerFlip()).toBeNull();
+    harness.unmount();
+  });
+
+  it('applies the deferred state flip when the animator is still live', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    const queued: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as jest.Mock).mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+
+    const applyState = jest.fn();
+    kickDrawerAnimation(true, applyState);
+    while (queued.length) {
+      queued.shift()?.(0);
+    }
+
+    expect(applyState).toHaveBeenCalledTimes(1);
+    jest.runAllTimers();
+    jest.useRealTimers();
     harness.unmount();
   });
 });

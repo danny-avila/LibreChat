@@ -23,6 +23,82 @@ const SETTLE_BUFFER_MS = 80;
 /** Surfaces where a horizontal drag means selection or caret work, never navigation. */
 const TEXT_SURFACE_SELECTOR = 'textarea, input, select, [contenteditable="true"]';
 
+let drawerAnimator: ((next: boolean) => void) | null = null;
+
+/** How a kicked toggle was handled: no animator (desktop/logged out — state
+ * applied immediately), reduced-motion snap (applied immediately, no slide
+ * frames), or a deferred slide. */
+export type DrawerKickMode = 'none' | 'snap' | 'slide';
+
+/** Target of a slide whose state flip is still deferred, or null when no
+ * flip is pending. Lets rapid toggles invert the LATEST intent instead of
+ * the stale committed atom value. */
+let pendingFlipTarget: boolean | null = null;
+
+export function getPendingDrawerFlip(): boolean | null {
+  return pendingFlipTarget;
+}
+
+/**
+ * Starts the drawer/pane slide imperatively and owns WHEN the caller's state
+ * flip runs. Wrapping the flip in `startTransition` is not enough: Recoil
+ * notifies subscribers outside the transition scope, so the commit — which a
+ * large conversation stretches to hundreds of ms of context re-renders plus
+ * the pane's `inert` recalc — flushes synchronously inside the tap's task and
+ * delays the slide's first frame (measured ~250ms on a 60-message thread at
+ * 4× throttle).
+ *
+ * So: start the slide imperatively, then run `applyState` three frames
+ * later — the animator writes the target transforms in frame 1, frame 2
+ * paints the first interpolated position, and by frame 3 the transform
+ * animation is compositor-driven (`willChange` is set in the tap's task), so
+ * the commit lands mid-slide without stuttering or delaying it. When the
+ * swipe hook is not active — desktop, logged out — `applyState` runs
+ * immediately and React animates the layout as before.
+ *
+ * Returns how the toggle was handled, so callers can keep affordances off
+ * the paths where they do not apply — e.g. the desktop focus timer only
+ * runs on 'none', and follow-up work defers only on 'slide'.
+ */
+export function kickDrawerAnimation(next: boolean, applyState: () => void): DrawerKickMode {
+  const animator = drawerAnimator;
+  if (animator == null) {
+    applyState();
+    return 'none';
+  }
+  animator(next);
+  /** Reduced motion snaps — there are no slide frames to protect, and
+   * deferring would let a slow-frame device outrun the 80ms window that
+   * restores transitions, turning the snap back into a full slide. The
+   * urgent commit runs inside this same task, which the restore timer
+   * cannot preempt. */
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    applyState();
+    return 'snap';
+  }
+  pendingFlipTarget = next;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        /** Applies only while still the LATEST un-superseded intent. A
+         * retarget hands the state to its own deferred flip — this one
+         * transiently committing the old direction would re-register the
+         * animator and get the newer flip judged stale. Teardown and
+         * re-registration (breakpoint cross, logout, route change) clear
+         * the pending target in the effect cleanup, so stale flips drop
+         * out here as well instead of toggling the DESKTOP sidebar or
+         * persisting drawer state past logout. */
+        if (pendingFlipTarget !== next) {
+          return;
+        }
+        pendingFlipTarget = null;
+        applyState();
+      });
+    });
+  });
+  return 'slide';
+}
+
 /**
  * Walks from `start` up to `boundary` looking for a horizontal scroller that
  * can still consume a pan in `direction` (1 = finger moving right, which
@@ -135,8 +211,10 @@ export default function useDrawerSwipe({
   onOpenChange,
 }: DrawerSwipeOptions) {
   const gestureRef = useRef<Gesture | null>(null);
+  /** `id` is null while a kicked settle waits for its staged frame — the
+   * release deadline runs on the frame clock, not the wall clock. */
   const settleRef = useRef<{
-    id: ReturnType<typeof setTimeout>;
+    id: ReturnType<typeof setTimeout> | null;
     target: boolean;
     drawer: HTMLElement;
     pane: HTMLElement;
@@ -152,7 +230,9 @@ export default function useDrawerSwipe({
      * AGREES with `open` keeps running so its handoff finishes undisturbed. */
     const pending = settleRef.current;
     if (pending != null && (!enabled || pending.target !== open)) {
-      clearTimeout(pending.id);
+      if (pending.id != null) {
+        clearTimeout(pending.id);
+      }
       settleRef.current = null;
       releaseInlineStyles(pending.drawer, pending.pane, enabled && open);
     }
@@ -187,6 +267,16 @@ export default function useDrawerSwipe({
       gestureRef.current = null;
     };
 
+    /** Arms the inline-style handoff: after the shared transition has played
+     * out, every transient property returns to what React/classes render. */
+    const scheduleRelease = (drawerEl: HTMLElement, paneEl: HTMLElement, next: boolean) => {
+      const id = setTimeout(() => {
+        settleRef.current = null;
+        releaseInlineStyles(drawerEl, paneEl, next);
+      }, TRANSITION_MS + SETTLE_BUFFER_MS);
+      settleRef.current = { id, target: next, drawer: drawerEl, pane: paneEl };
+    };
+
     /** Animates both elements to `next`, flips state, then returns ownership
      * of every inline property to what React/classes render for that state. */
     const settle = (gesture: Gesture, next: boolean) => {
@@ -215,17 +305,78 @@ export default function useDrawerSwipe({
       if (next !== open) {
         onOpenChangeRef.current(next);
       }
-      const id = setTimeout(() => {
-        settleRef.current = null;
-        drawerEl.style.transform = '';
-        drawerEl.style.willChange = '';
-        drawerEl.style.transition = SIDEBAR_TRANSITION;
-        paneEl.style.transform = next ? 'translateX(100%)' : 'none';
-        paneEl.style.willChange = '';
-        paneEl.style.transition = SIDEBAR_TRANSITION;
-      }, TRANSITION_MS + SETTLE_BUFFER_MS);
-      settleRef.current = { id, target: next, drawer: drawerEl, pane: paneEl };
+      scheduleRelease(drawerEl, paneEl, next);
     };
+
+    /** Imperative slide for button/keyboard toggles: same transforms and
+     * release lifecycle as a gesture settle, but the CALLER owns the state
+     * flip — nothing here calls `onOpenChange`. A drag in progress owns the
+     * inline styles, so it wins; an in-flight settle already heading to
+     * `next` needs no second start. */
+    const animateTo = (next: boolean) => {
+      /** The committed `open` goes stale while a flip is deferred — a rapid
+       * second toggle must compare against the in-flight settle's target or
+       * it early-returns and the visual never retargets (the state would
+       * still alternate, then snap at release). */
+      const effectiveTarget = settleRef.current?.target ?? open;
+      if (next === effectiveTarget || gestureRef.current != null) {
+        return;
+      }
+      const pending = settleRef.current;
+      if (pending != null) {
+        if (pending.id != null) {
+          clearTimeout(pending.id);
+        }
+        settleRef.current = null;
+      }
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        /** Snap: suppress the shared transition through the state flip the
+         * caller is about to make, then hand it back once committed. */
+        drawer.style.transition = 'none';
+        pane.style.transition = 'none';
+        const id = setTimeout(() => {
+          settleRef.current = null;
+          drawer.style.transition = SIDEBAR_TRANSITION;
+          pane.style.transition = SIDEBAR_TRANSITION;
+        }, SETTLE_BUFFER_MS);
+        settleRef.current = { id, target: next, drawer, pane };
+        return;
+      }
+      drawer.style.willChange = 'transform';
+      pane.style.willChange = 'transform';
+      /** Armed BEFORE the frame below (id: null — no deadline yet) so the
+       * staged write can verify its target is still wanted, and so a
+       * touchstart in between defers to the pending settle. A retarget or
+       * a reconciliation cancel clears/replaces the settle and thereby
+       * voids the write. */
+      settleRef.current = { id: null, target: next, drawer, pane };
+      /** The transforms are written in a FRESH frame task, not the tap's own
+       * task: a transition armed inside the click task is not reliably
+       * created for the offscreen drawer (observed via `transitionrun`
+       * firing only after the state-flip commit, ~270ms late, even with a
+       * forced reflow in-task), while the same write from a clean task
+       * starts interpolating by the following frame. The reflow then pins
+       * the transition-start recalc to this frame instead of 2–3 later.
+       * The release deadline starts HERE, with the transition itself — a
+       * wall-clock deadline armed at kick time can expire before a delayed
+       * first frame (backgrounded tab, long stall) and abort the slide. */
+      requestAnimationFrame(() => {
+        const armed = settleRef.current;
+        if (armed == null || armed.target !== next || armed.id != null) {
+          return;
+        }
+        drawer.style.transition = SIDEBAR_TRANSITION;
+        pane.style.transition = SIDEBAR_TRANSITION;
+        drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
+        pane.style.transform = next ? 'translateX(100%)' : 'translate3d(0, 0, 0)';
+        void drawer.getBoundingClientRect();
+        armed.id = setTimeout(() => {
+          settleRef.current = null;
+          releaseInlineStyles(drawer, pane, next);
+        }, TRANSITION_MS + SETTLE_BUFFER_MS);
+      });
+    };
+    drawerAnimator = animateTo;
 
     const onTouchStart = (event: TouchEvent) => {
       if (gestureRef.current != null || settleRef.current != null || event.touches.length !== 1) {
@@ -377,6 +528,12 @@ export default function useDrawerSwipe({
     surface.addEventListener('touchend', onTouchEnd, { passive: true });
     surface.addEventListener('touchcancel', onTouchCancel, { passive: true });
     return () => {
+      drawerAnimator = null;
+      /** A pending intent from the torn-down world must not leak into the
+       * next one — a desktop toggle right after a breakpoint cross has to
+       * invert the committed value, and the deferred flip that would have
+       * consumed this target now drops out of its superseded check. */
+      pendingFlipTarget = null;
       surface.removeEventListener('touchstart', onTouchStart);
       surface.removeEventListener('touchmove', onTouchMove);
       surface.removeEventListener('touchend', onTouchEnd);
@@ -395,7 +552,7 @@ export default function useDrawerSwipe({
 
   useEffect(
     () => () => {
-      if (settleRef.current != null) {
+      if (settleRef.current?.id != null) {
         clearTimeout(settleRef.current.id);
       }
     },

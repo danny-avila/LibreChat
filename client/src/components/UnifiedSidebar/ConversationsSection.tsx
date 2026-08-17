@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useMemo, memo, lazy, Suspense, useRef } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useMediaQuery } from '@librechat/client';
-import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { InfiniteQueryObserverResult } from '@tanstack/react-query';
 import type { ConversationListResponse } from 'librechat-data-provider';
@@ -20,6 +20,7 @@ import {
 import ProjectsSection from '~/components/Conversations/ProjectsSection';
 import PinnedSection from '~/components/Conversations/PinnedSection';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
+import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { Conversations } from '~/components/Conversations';
 import { collectPinnedConversations } from '~/utils';
 import SearchBar from '~/components/Nav/SearchBar';
@@ -30,7 +31,7 @@ const BookmarkNav = lazy(() => import('~/components/Nav/Bookmarks/BookmarkNav'))
 const ConversationsSection = memo(() => {
   const localize = useLocalize();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
-  const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
+  const { setSidebarOpen } = useSidebarToggle();
   const { isAuthenticated } = useAuthContext();
   useTitleGeneration(isAuthenticated);
 
@@ -97,11 +98,24 @@ const ConversationsSection = memo(() => {
     [pinnedData?.conversations, conversations],
   );
 
-  const toggleNav = useCallback(() => {
-    if (isSmallScreen) {
-      setSidebarExpanded(false);
-    }
-  }, [isSmallScreen, setSidebarExpanded]);
+  /**
+   * Selecting a conversation is the most common close path — it must take
+   * the animated route or the drawer stalls on the new conversation's
+   * commit before it starts sliding. `afterSlide` carries that navigation:
+   * run synchronously it would flush the conversation switch in the tap's
+   * task and stall the slide anyway; deferred, it lands mid-slide. Desktop
+   * runs it immediately (nothing slides).
+   */
+  const toggleNav = useCallback(
+    (afterSlide?: () => void) => {
+      if (isSmallScreen) {
+        setSidebarOpen(false, afterSlide);
+        return;
+      }
+      afterSlide?.();
+    },
+    [isSmallScreen, setSidebarOpen],
+  );
 
   const loadMoreConversations = useCallback(() => {
     if (isFetchingNextPage || !computedHasNextPage) {

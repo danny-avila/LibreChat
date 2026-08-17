@@ -19,7 +19,7 @@ import store from '~/store';
 interface ConversationProps {
   conversation: TConversation;
   retainView: () => void;
-  toggleNav: () => void;
+  toggleNav: (afterSlide?: () => void) => void;
   isGenerating?: boolean;
 }
 
@@ -159,12 +159,15 @@ function Conversation({
       return;
     }
 
-    toggleNav();
+    /** The navigation rides `afterSlide`: run synchronously it flushes the
+     * conversation-switch commit in the tap's task, stalling the drawer's
+     * first frame — the exact delay the animated toggle exists to avoid. */
+    toggleNav(() => {
+      setDocumentTitle(title);
 
-    setDocumentTitle(title);
-
-    navigateToConvo(conversation, {
-      currentConvoId,
+      navigateToConvo(conversation, {
+        currentConvoId,
+      });
     });
   };
 

@@ -17,6 +17,7 @@ type ButtonVariantOptions =
         | 'ghost'
         | 'row-action'
         | 'section-action'
+        | 'header-action'
         | null
         | undefined;
       size?: 'default' | 'icon' | 'icon-sm' | 'icon-xs' | 'sm' | 'lg' | 'theme' | null | undefined;
@@ -49,6 +50,16 @@ const buttonVariantRecipe = cva(
          */
         'section-action':
           'rounded-md text-text-secondary hover:bg-surface-active-alt hover:text-text-primary focus-visible:ring-inset focus-visible:ring-offset-0',
+        /**
+         * A control floating on the presentation surface — the sidebar
+         * toggle in the chat header and its mirror in the mobile drawer
+         * header, so the pair reads as one persistent button across views.
+         * `duration-0` makes the hover fill instant: these sit over a
+         * scrolling gradient, where the shared color transition reads as
+         * lag rather than polish.
+         */
+        'header-action':
+          'rounded-xl border border-border-light bg-presentation text-text-primary duration-0 hover:bg-surface-active-alt hover:text-text-primary',
       },
       size: {
         default: 'h-10 px-4 py-2',
