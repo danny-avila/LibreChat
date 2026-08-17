@@ -398,6 +398,43 @@ describe('healMcpToolNames', () => {
     expect(healed).toEqual([`search${Constants.mcp_delimiter}foo!`]);
   });
 
+  it('heals a pre-strip prefixed key to the stripped catalog key', async () => {
+    /** Catalog keys drop a redundant leading server-name prefix now; an
+     *  assistant saved before that resubmits the prefixed key and the exact
+     *  lookup would silently drop the tool. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { acme: {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ acme: {} });
+    const strippedKey = `search${Constants.mcp_delimiter}acme`;
+    const toolDefinitions = { [strippedKey]: { type: 'function' } };
+
+    const healed = await healMcpToolNames({
+      req,
+      tools: [`acme_search${Constants.mcp_delimiter}acme`],
+      toolDefinitions,
+    });
+
+    expect(healed).toEqual([strippedKey]);
+  });
+
+  it('keeps a prefixed key whose stripped spelling is not in the loaded definitions', async () => {
+    /** When the catalog kept the raw name (bare-sibling collision), the
+     *  prefixed key IS canonical and must not be rewritten into a key owned
+     *  by the bare tool. */
+    getAppConfig.mockResolvedValue({ mcpConfig: { acme: {} } });
+    mockRegistry.ensureConfigServers.mockResolvedValue({});
+    mockRegistry.getAllServerConfigs.mockResolvedValue({ acme: {} });
+    const prefixedKey = `acme_search${Constants.mcp_delimiter}acme`;
+    const toolDefinitions = {
+      [prefixedKey]: { type: 'function' },
+      [`search${Constants.mcp_delimiter}acme`]: { type: 'function' },
+    };
+
+    const healed = await healMcpToolNames({ req, tools: [prefixedKey], toolDefinitions });
+
+    expect(healed).toEqual([prefixedKey]);
+  });
+
   it('skips the config read entirely when every delimiter-bearing name resolves', async () => {
     const key = `search${Constants.mcp_delimiter}srv`;
     const healed = await healMcpToolNames({

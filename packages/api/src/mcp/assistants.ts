@@ -182,5 +182,21 @@ export async function getAssistantToolDefinitions(
       (serverName) => loadServerCatalog(userId, serverName, configs[serverName], deps, recover),
     ),
   );
-  return Object.assign({}, params.staticTools, ...serverCatalogs);
+  return Object.assign({}, params.staticTools, ...serverCatalogs.map(toProviderToolDefinitions));
+}
+
+/**
+ * Assistant writers submit these entries VERBATIM as provider tool definitions
+ * (`assistantData.tools` in the v1/v2 controllers), and providers reject
+ * unknown fields — the internal `serverToolName` mapping must never leave the
+ * catalog. Entries without it pass through by reference; the cached catalog
+ * keeps the mapping for the runtime call path.
+ */
+function toProviderToolDefinitions(catalog: LCAvailableTools): LCAvailableTools {
+  const sanitized: LCAvailableTools = {};
+  for (const [key, entry] of Object.entries(catalog)) {
+    sanitized[key] =
+      entry.serverToolName == null ? entry : { type: entry.type, ['function']: entry['function'] };
+  }
+  return sanitized;
 }

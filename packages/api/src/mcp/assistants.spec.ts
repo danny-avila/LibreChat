@@ -54,6 +54,32 @@ describe('getAssistantToolDefinitions', () => {
     expect(deps.getMCPServerTools).toHaveBeenCalledWith('user-1', 'app-server', serverConfig);
   });
 
+  it('strips the internal serverToolName mapping from provider-facing definitions', async () => {
+    /** Assistant writers submit these entries verbatim as provider tool
+     *  definitions; an unknown top-level field fails the create/update. */
+    const strippedKey = `search${Constants.mcp_delimiter}app-server`;
+    const strippedCatalog: LCAvailableTools = {
+      [strippedKey]: {
+        type: 'function',
+        serverToolName: 'app-server_search',
+        ['function']: {
+          name: strippedKey,
+          description: '',
+          parameters: { type: 'object', properties: {} },
+        },
+      },
+    };
+    const deps = createDeps({ getMCPServerTools: jest.fn().mockResolvedValue(strippedCatalog) });
+
+    const result = await getAssistantToolDefinitions(params, deps);
+
+    expect(result[strippedKey]).toEqual({
+      type: 'function',
+      ['function']: strippedCatalog[strippedKey]['function'],
+    });
+    expect(result[strippedKey]).not.toHaveProperty('serverToolName');
+  });
+
   it('reconnects a user server when neither cache nor local snapshot has a catalog', async () => {
     const recoveredCatalog = { ...catalog };
     const recoverServerTools = jest.fn().mockResolvedValue(recoveredCatalog);

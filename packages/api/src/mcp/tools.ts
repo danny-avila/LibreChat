@@ -3,7 +3,7 @@ import {
   Constants,
   buildServerNameAliases,
   normalizeServerName,
-  stripServerNamePrefix,
+  stripServerNamePrefixes,
 } from 'librechat-data-provider';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { JsonSchemaType } from '@librechat/agents';
@@ -239,9 +239,12 @@ export function createMCPToolCacheService(deps: MCPToolCacheDeps): MCPToolCacheS
        *  `normalizeServerName(serverName)`. The cache STORE itself stays keyed
        *  by the raw config name. */
       const keyServerName = normalizeServerName(serverName);
-      const rawToolNames = new Set(tools.map((tool) => tool.name));
+      const keyToolNames = stripServerNamePrefixes(
+        tools.map((tool) => tool.name),
+        keyServerName,
+      );
       for (const tool of tools) {
-        const keyToolName = stripServerNamePrefix(tool.name, keyServerName, rawToolNames);
+        const keyToolName = keyToolNames.get(tool.name) ?? tool.name;
         const name = `${keyToolName}${mcpDelimiter}${keyServerName}`;
         const entry: LCFunctionTool = {
           type: 'function',

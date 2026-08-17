@@ -5,6 +5,7 @@ import {
   normalizeMCPToolKey,
   buildServerNameAliases,
   stripServerNamePrefix,
+  stripServerNamePrefixes,
 } from './config';
 
 describe('splitMCPToolKey', () => {
@@ -235,13 +236,34 @@ describe('stripServerNamePrefix', () => {
     expect(stripServerNamePrefix('acme', 'acme')).toBe('acme');
     expect(stripServerNamePrefix('acme_', 'acme')).toBe('acme_');
   });
+});
 
-  it('keeps the prefixed name when stripping would collide with a sibling tool', () => {
-    /** A server exposing BOTH `foo` and `<server>_foo` must keep two distinct
-     *  keys — stripping would collapse them into one. */
-    expect(stripServerNamePrefix('acme_search', 'acme', new Set(['search', 'acme_search']))).toBe(
-      'acme_search',
-    );
-    expect(stripServerNamePrefix('acme_search', 'acme', new Set(['acme_search']))).toBe('search');
+describe('stripServerNamePrefixes', () => {
+  it('maps every raw name to its stripped model-facing name', () => {
+    const map = stripServerNamePrefixes(['acme_search', 'list_services'], 'acme');
+    expect(map.get('acme_search')).toBe('search');
+    expect(map.get('list_services')).toBe('list_services');
+  });
+
+  it('keeps the prefixed name when stripping would collide with a bare sibling', () => {
+    /** A server exposing BOTH `search` and `acme_search` must keep two
+     *  distinct keys — stripping would collapse them into one. */
+    const map = stripServerNamePrefixes(['search', 'acme_search'], 'acme');
+    expect(map.get('search')).toBe('search');
+    expect(map.get('acme_search')).toBe('acme_search');
+  });
+
+  it('keeps both raw names when case-variant prefixed siblings strip to the same result', () => {
+    /** The prefix match is case-insensitive, so `acme_Foo` and `Acme_Foo` are
+     *  distinct upstream tools with the SAME stripped remainder — both must
+     *  fall back to their raw names or one silently overwrites the other. */
+    const map = stripServerNamePrefixes(['acme_Foo', 'Acme_Foo'], 'acme');
+    expect(map.get('acme_Foo')).toBe('acme_Foo');
+    expect(map.get('Acme_Foo')).toBe('Acme_Foo');
+  });
+
+  it('collisions do not suppress stripping of unrelated siblings', () => {
+    const map = stripServerNamePrefixes(['search', 'acme_search', 'acme_trace'], 'acme');
+    expect(map.get('acme_trace')).toBe('trace');
   });
 });

@@ -1878,7 +1878,10 @@ describe('User parameter passing tests', () => {
         },
       );
 
-      expect(mcpTool.name).toBe(strippedKey);
+      /** The persisted spelling stays the instance name so `agent.tools` and
+       *  `tool_options` keyed by it keep applying; only the upstream call
+       *  uses the recorded raw name. */
+      expect(mcpTool.name).toBe(legacyKey);
       expect(callTool).toHaveBeenCalledWith(
         expect.objectContaining({
           serverName: 'acme',

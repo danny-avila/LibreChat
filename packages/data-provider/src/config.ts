@@ -3099,17 +3099,13 @@ export function normalizeMCPToolKey(toolKey: string, rawServerNames: readonly st
  * server twice (`acme_trace_..._mcp_acme`) and push long tool names
  * past provider function-name limits (64 chars). The match is case-insensitive
  * because display-cased server names ("Acme") conventionally prefix their
- * tools in lowercase. `siblingToolNames` guards a server exposing BOTH `foo`
- * and `<server>_foo`: stripping would collapse two distinct tools into one key,
- * so the prefixed name stays raw. Ingestion that strips must record the
- * original name (`serverToolName` on the cached definition) — tool calls send
- * THAT name back to the server, never the stripped one.
+ * tools in lowercase. Ingestion that strips must record the original name
+ * (`serverToolName` on the cached definition) — tool calls send THAT name back
+ * to the server, never the stripped one. Catalog producers must not call this
+ * directly: only {@link stripServerNamePrefixes} sees the whole sibling set and
+ * can keep colliding results apart.
  */
-export function stripServerNamePrefix(
-  toolName: string,
-  normalizedServerName: string,
-  siblingToolNames?: ReadonlySet<string>,
-): string {
+export function stripServerNamePrefix(toolName: string, normalizedServerName: string): string {
   const prefixLength = normalizedServerName.length + 1;
   if (toolName.length <= prefixLength) {
     return toolName;
@@ -3118,11 +3114,33 @@ export function stripServerNamePrefix(
   if (prefix !== `${normalizedServerName.toLowerCase()}_`) {
     return toolName;
   }
-  const stripped = toolName.slice(prefixLength);
-  if (siblingToolNames?.has(stripped)) {
-    return toolName;
+  return toolName.slice(prefixLength);
+}
+
+/**
+ * Maps every raw tool name in a server's catalog to its model-facing name,
+ * stripping redundant server-name prefixes collision-free: when two names
+ * yield the same result — a bare `foo` next to `<server>_foo`, or the
+ * case-variant pair `<server>_Foo` / `<Server>_Foo` under the case-insensitive
+ * prefix match — every collider keeps its raw name, so two distinct upstream
+ * tools can never collapse onto one key. Unprefixed names count against the
+ * result set through their identity mapping, which is what makes the bare-name
+ * case fall out of the same counter.
+ */
+export function stripServerNamePrefixes(
+  toolNames: readonly string[],
+  normalizedServerName: string,
+): Map<string, string> {
+  const stripped = toolNames.map(
+    (name) => [name, stripServerNamePrefix(name, normalizedServerName)] as const,
+  );
+  const counts = new Map<string, number>();
+  for (const [, result] of stripped) {
+    counts.set(result, (counts.get(result) ?? 0) + 1);
   }
-  return stripped;
+  return new Map(
+    stripped.map(([raw, result]) => [raw, (counts.get(result) ?? 0) > 1 ? raw : result]),
+  );
 }
 
 export function splitMCPToolKey(

@@ -11,6 +11,7 @@ const {
   normalizeServerName,
   normalizeMCPToolKey,
   stripServerNamePrefix,
+  stripServerNamePrefixes,
   buildServerNameAliases,
   findShadowedServerNames,
   getAssistantToolDefinitions: loadAssistantToolDefinitions,
@@ -295,6 +296,20 @@ async function healMcpToolNames({ req, tools, toolDefinitions }) {
         const healed = normalizeMCPToolKey(tool, rawServerNames);
         if (toolDefinitions[healed] != null) {
           healedTool = healed;
+        } else {
+          /** Catalog keys built after redundant-prefix stripping no longer
+           *  match a pre-strip persisted key — without this second candidate
+           *  the exact-lookup below silently drops the tool from the
+           *  assistant. The rewrite only lands when the stripped key actually
+           *  exists in the loaded definitions, so an unstripped catalog
+           *  (collision guard kept the raw name) never heals into a phantom. */
+          const keyServerName = normalizeServerName(parsedServerName);
+          const [healedToolName] = splitMCPToolKey(healed, [keyServerName]);
+          const strippedName = stripServerNamePrefix(healedToolName, keyServerName);
+          const strippedKey = `${strippedName}${Constants.mcp_delimiter}${keyServerName}`;
+          if (strippedName !== healedToolName && toolDefinitions[strippedKey] != null) {
+            healedTool = strippedKey;
+          }
         }
       }
     }
@@ -808,7 +823,10 @@ async function createMCPTools({
 
   const serverTools = [];
   const keyServerName = normalizeServerName(serverName);
-  const rawToolNames = new Set(result.tools.map((tool) => tool.name));
+  const keyToolNames = stripServerNamePrefixes(
+    result.tools.map((tool) => tool.name),
+    keyServerName,
+  );
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
       res,
@@ -823,7 +841,7 @@ async function createMCPTools({
       serverName,
       /** Model-facing key: matches the normalized `availableTools` keys and
        *  the instance name `createToolInstance` will assign. */
-      toolKey: `${stripServerNamePrefix(tool.name, keyServerName, rawToolNames)}${Constants.mcp_delimiter}${keyServerName}`,
+      toolKey: `${keyToolNames.get(tool.name) ?? tool.name}${Constants.mcp_delimiter}${keyServerName}`,
       requestBody,
       requestScopedConnections,
       config: serverConfig,
@@ -1023,11 +1041,16 @@ async function createMCPTool({
     requestBody,
     requestScopedConnections,
     provider,
-    /** A legacy pre-strip key resolves to the stripped entry — the instance
-     *  takes the CANONICAL (stripped) name so the model-facing name matches
-     *  the definition it was resolved from. */
-    toolName: matchedToolKey === strippedToolKey ? strippedToolName : toolName,
-    serverToolName: toolEntry.serverToolName,
+    /** A legacy pre-strip key that resolves to the stripped entry KEEPS its
+     *  persisted spelling as the instance name: `agent.tools` entries and
+     *  `tool_options` keys reference that spelling, and renaming the instance
+     *  would silently detach those per-tool settings. The upstream call name
+     *  still comes from the MATCHED entry — its recorded raw name, or the
+     *  matched key's own tool half when the entry was never stripped. */
+    toolName,
+    serverToolName:
+      toolEntry.serverToolName ??
+      (matchedToolKey === strippedToolKey ? strippedToolName : toolName),
     serverName,
     serverConfig,
     toolDefinition: toolEntry['function'],
