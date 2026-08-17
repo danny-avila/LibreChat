@@ -16,9 +16,13 @@ import {
 import type { Table as TTable } from '@tanstack/react-table';
 import { Table, TableRow, TableBody, TableCell, TableHead, TableHeader } from './Table';
 import { useMediaQuery, useLocalize, TranslationKeys } from '~/hooks';
+import useRemScale from '~/hooks/useRemScale';
 import AnimatedSearchInput from './AnimatedSearchInput';
 import { TrashIcon, Spinner } from '~/svgs';
 import { Skeleton } from './Skeleton';
+
+/** Matches the rem-based height of a rendered row at the 16px baseline. */
+const ROW_HEIGHT = 48;
 import { Checkbox } from './Checkbox';
 import { Button } from './Button';
 import { cn } from '~/utils';
@@ -284,12 +288,13 @@ export default function DataTable<TData, TValue>({
     onRowSelectionChange: setRowSelection,
   });
 
+  const remScale = useRemScale();
   const { rows } = table.getRowModel();
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => tableContainerRef.current,
-    estimateSize: useCallback(() => 48, []),
+    estimateSize: useCallback(() => ROW_HEIGHT * remScale, [remScale]),
     overscan: 10,
   });
 

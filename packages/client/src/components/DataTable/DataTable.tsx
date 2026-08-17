@@ -16,6 +16,7 @@ import {
 import type { DataTableProps, ProcessedDataRow } from './DataTable.types';
 import { SelectionCheckbox, MemoizedTableRow, SkeletonRows } from './DataTableComponents';
 import { Table, TableBody, TableHead, TableHeader, TableCell, TableRow } from '../Table';
+import useRemScale from '~/hooks/useRemScale';
 import { useDebounced, useOptimizedRowSelection } from './DataTable.hooks';
 import { useMediaQuery, useLocalize } from '~/hooks';
 import { DataTableSearch } from './DataTableSearch';
@@ -300,7 +301,10 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     (index: number) => getRowId(data[index] as TData, index),
     [data, getRowId],
   );
-  const estimateSize = useCallback(() => rowHeight, [rowHeight]);
+  /** Rows are laid out in rem, so the virtualizer must measure in the same units. */
+  const remScale = useRemScale();
+  const scaledRowHeight = rowHeight * remScale;
+  const estimateSize = useCallback(() => scaledRowHeight, [scaledRowHeight]);
 
   const rowVirtualizer = useVirtualizer({
     enabled: virtualizationActive,
@@ -332,7 +336,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
     tableBodyContent = (
       <SkeletonRows
         count={skeletonCount}
-        rowHeight={rowHeight}
+        rowHeight={scaledRowHeight}
         columns={tableColumns as ColumnDef<Record<string, unknown>>[]}
       />
     );
@@ -358,7 +362,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
               virtualIndex={virtualRow.index}
               selected={row.getIsSelected()}
               cellsVersion={cellsVersionRef.current}
-              style={{ height: rowHeight }}
+              style={{ height: scaledRowHeight }}
             />
           );
         })}
@@ -380,7 +384,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
         virtualIndex={row.index}
         selected={row.getIsSelected()}
         cellsVersion={cellsVersionRef.current}
-        style={{ height: rowHeight }}
+        style={{ height: scaledRowHeight }}
       />
     ));
   }

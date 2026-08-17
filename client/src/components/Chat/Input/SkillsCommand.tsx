@@ -3,7 +3,7 @@ import { ScrollText } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import { useSetAtom } from 'jotai';
 import { AutoSizer, List } from 'react-virtualized';
-import { Input, Spinner, useCombobox } from '@librechat/client';
+import { Input, Spinner, useCombobox, useRemScale } from '@librechat/client';
 import { SkillsScope, resolveAgentSkillsScope } from 'librechat-data-provider';
 import type { TSkillSummary } from 'librechat-data-provider';
 import type { MentionOption } from '~/common';
@@ -14,7 +14,6 @@ import { showSkillsPopoverFamily } from './skillsState';
 import { useAgentsMapContext } from '~/Providers';
 import { ephemeralAgentByConvoId } from '~/store';
 import { isEphemeralAgent } from '~/common';
-import useRemScale from '~/hooks/useRemScale';
 import MentionItem from './MentionItem';
 import store from '~/store';
 

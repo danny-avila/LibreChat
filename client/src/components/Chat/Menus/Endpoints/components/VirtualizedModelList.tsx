@@ -1,10 +1,10 @@
+import { useRemScale } from '@librechat/client';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { List } from 'react-virtualized';
 import * as Ariakit from '@ariakit/react';
 import type { ListRowProps } from 'react-virtualized';
 import type { Endpoint } from '~/common';
 import { EndpointModelItem } from './EndpointModelItem';
-import useRemScale from '~/hooks/useRemScale';
 
 /** Matches the rendered height of a `CustomMenuItem` row (px-2 py-1 around a py-1 body). */
 const ROW_HEIGHT = 36;
