@@ -3,6 +3,7 @@ const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
 const { agentSchema, aclEntrySchema, fileSchema, userSchema } = require('@librechat/data-schemas');
 const {
+  Tools,
   FileSources,
   PermissionBits,
   PrincipalModel,
@@ -871,6 +872,33 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.name).toBe('Still editable');
       expect(agentInDb.stateful_code_environment).toBe('conversation');
+    });
+
+    test('rejects reactivating code execution with a retained disallowed scope', async () => {
+      await Agent.updateOne(
+        { id: existingAgentId },
+        {
+          tools: [],
+          stateful_code_sessions: true,
+          stateful_code_environment: 'conversation',
+        },
+      );
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: {
+          agents: {
+            statefulCodeSessions: { allowedEnvironments: ['user'] },
+          },
+        },
+      };
+      mockReq.body = { tools: [Tools.execute_code] };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      const agentInDb = await Agent.findOne({ id: existingAgentId });
+      expect(agentInDb.tools).not.toContain(Tools.execute_code);
     });
 
     test('should sanitize corrupt numeric model_parameters on update', async () => {

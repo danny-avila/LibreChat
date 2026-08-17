@@ -1,3 +1,4 @@
+import { ErrorTypes } from 'librechat-data-provider';
 import type { ChatCompletionDependencies } from './service';
 import { createAgentChatCompletion } from './service';
 
@@ -160,5 +161,30 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
         allowedStatefulCodeEnvironments: ['user', 'agent-user'],
       }),
     );
+  });
+
+  it('preserves stateful scope policy status and code in an initialization error response', async () => {
+    const policyError = Object.assign(
+      new Error('Stateful code environment is not allowed by this deployment: conversation'),
+      {
+        code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+        status: 403,
+        statusCode: 403,
+      },
+    );
+    (deps.initializeAgent as jest.Mock).mockRejectedValueOnce(policyError);
+    const res = createMockRes();
+
+    await createAgentChatCompletion(createMockReq({ id: 'user-123' }), res, deps);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: {
+        message: policyError.message,
+        type: 'invalid_request_error',
+        param: null,
+        code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+      },
+    });
   });
 });

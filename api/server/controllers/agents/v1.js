@@ -717,7 +717,8 @@ const updateAgentHandler = async (req, res) => {
     const includesStatefulConfiguration =
       updateData.stateful_code_sessions !== undefined ||
       updateData.stateful_code_environment !== undefined;
-    if (includesStatefulConfiguration) {
+    const includesToolsConfiguration = Array.isArray(updateData.tools);
+    if (includesStatefulConfiguration || includesToolsConfiguration) {
       existingAgent = await db.getAgent({ id });
       if (!existingAgent) {
         return res.status(404).json({ error: 'Agent not found' });
@@ -730,7 +731,11 @@ const updateAgentHandler = async (req, res) => {
         (updateData.stateful_code_environment !== undefined &&
           (updateData.stateful_code_environment ?? 'user') !==
             (existingAgent.stateful_code_environment ?? 'user'));
-      if (statefulConfigurationChanged) {
+      const activatesCodeExecution =
+        includesToolsConfiguration &&
+        updateData.tools.includes(Tools.execute_code) &&
+        existingAgent.tools?.includes(Tools.execute_code) !== true;
+      if (statefulConfigurationChanged || activatesCodeExecution) {
         const effectiveStatefulSessions =
           updateData.stateful_code_sessions ?? existingAgent.stateful_code_sessions;
         const effectiveStatefulEnvironment =
