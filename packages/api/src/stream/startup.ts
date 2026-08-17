@@ -14,11 +14,13 @@ export interface UserFinalizationFallbackStore {
     userId: string,
     tenantId: string | undefined,
     streamId: string,
+    createdAt: number,
   ): Promise<void>;
   clearAbortDelivery?(
     userId: string,
     tenantId: string | undefined,
     streamId: string,
+    createdAt: number,
   ): Promise<void>;
 }
 

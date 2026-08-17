@@ -322,6 +322,14 @@ describe('deleteUserController - 2FA enforcement', () => {
 describe('deleteUserController - interactive generation quiesce', () => {
   const { GenerationJobManager } = require('@librechat/api');
 
+  beforeEach(() => {
+    GenerationJobManager.getJob.mockResolvedValue({
+      status: 'running',
+      createdAt: 1000,
+      metadata: { userId: 'user1' },
+    });
+  });
+
   it('aborts discovered generations and defers the cascade instead of racing their unwind', async () => {
     const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
     const res = createRes();
@@ -334,7 +342,9 @@ describe('deleteUserController - interactive generation quiesce', () => {
     // asynchronous message/usage/balance writes. Cascading in the same pass would
     // let those writes recreate rows for the deleted account, so the cascade is
     // deferred to the sweep — the barrier and commitment are already durable.
-    expect(GenerationJobManager.abortJob).toHaveBeenCalledWith('conv-live');
+    expect(GenerationJobManager.abortJob).toHaveBeenCalledWith('conv-live', {
+      expectedCreatedAt: 1000,
+    });
     expect(res.set).toHaveBeenCalledWith('Retry-After', '30');
     expect(res.status).toHaveBeenCalledWith(503);
     expect(mockDeleteMessages).not.toHaveBeenCalled();
@@ -388,14 +398,14 @@ describe('deleteUserController - interactive generation quiesce', () => {
     // Without the marker, the next pass sees no active job and no fence — the
     // cascade would run while the peer recreates messages/usage/balances.
     const db = require('~/models');
-    expect(db.addUserAbortFence).toHaveBeenCalledWith('user1', 'conv-peer');
+    expect(db.addUserAbortFence).toHaveBeenCalledWith('user1', 'conv-peer', 1000);
     // The fence is durable BEFORE the CAS, so a write failure would have refused
     // the abort while it was still side-effect free.
     expect(db.addUserAbortFence.mock.invocationCallOrder[0]).toBeLessThan(
       GenerationJobManager.abortJob.mock.invocationCallOrder[0],
     );
     expect(db.clearUserAbortFence).not.toHaveBeenCalled();
-    expect(GenerationJobManager.resignalAbort).toHaveBeenCalledWith('conv-peer');
+    expect(GenerationJobManager.resignalAbort).toHaveBeenCalledWith('conv-peer', 1000);
     expect(res.status).toHaveBeenCalledWith(503);
     expect(mockDeleteUserById).not.toHaveBeenCalled();
   });
@@ -414,10 +424,10 @@ describe('deleteUserController - interactive generation quiesce', () => {
     await deleteUserController(req, res);
 
     const db = require('~/models');
-    expect(db.addUserAbortFence).toHaveBeenCalledWith('user1', 'conv-peer');
+    expect(db.addUserAbortFence).toHaveBeenCalledWith('user1', 'conv-peer', 1000);
     expect(db.clearUserAbortFence).not.toHaveBeenCalled();
     // Inconclusive, so it is re-driven rather than assumed delivered.
-    expect(GenerationJobManager.resignalAbort).toHaveBeenCalledWith('conv-peer');
+    expect(GenerationJobManager.resignalAbort).toHaveBeenCalledWith('conv-peer', 1000);
     expect(res.status).toHaveBeenCalledWith(503);
     expect(mockDeleteUserById).not.toHaveBeenCalled();
   });
@@ -461,7 +471,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     await deleteUserController(req, res);
 
     expect(db.clearUserAbortFence).not.toHaveBeenCalled();
-    expect(GenerationJobManager.resignalAbort).toHaveBeenCalledWith('conv-peer');
+    expect(GenerationJobManager.resignalAbort).toHaveBeenCalledWith('conv-peer', 1000);
     expect(res.status).toHaveBeenCalledWith(503);
     expect(mockDeleteUserById).not.toHaveBeenCalled();
   });
@@ -471,7 +481,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
     const db = require('~/models');
-    db.getUserAbortFences.mockResolvedValueOnce(['conv-peer']);
+    db.getUserAbortFences.mockResolvedValueOnce([{ streamId: 'conv-peer', createdAt: 1000 }]);
     // The generation ended by its own means: no stop is left to deliver, and
     // resignalAbort (aborted-only) could never clear this fence — it would sit
     // permanent and defer the deletion forever. Post-terminal billed work is what
@@ -484,9 +494,54 @@ describe('deleteUserController - interactive generation quiesce', () => {
 
     await deleteUserController(req, res);
 
-    expect(db.clearUserAbortFence).toHaveBeenCalledWith('user1', 'conv-peer');
+    expect(db.clearUserAbortFence).toHaveBeenCalledWith('user1', 'conv-peer', 1000);
     expect(GenerationJobManager.resignalAbort).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(503);
+  });
+
+  it('clears only a stale predecessor fence when the stream now belongs to a replacement', async () => {
+    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    const db = require('~/models');
+    db.getUserAbortFences.mockResolvedValueOnce([{ streamId: 'conv-replaced', createdAt: 1000 }]);
+    GenerationJobManager.getJob.mockResolvedValueOnce({
+      status: 'aborted',
+      createdAt: 2000,
+      metadata: { userId: 'user1' },
+    });
+
+    await deleteUserController(req, res);
+
+    expect(db.clearUserAbortFence).toHaveBeenCalledWith('user1', 'conv-replaced', 1000);
+    expect(GenerationJobManager.resignalAbort).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+  });
+
+  it('generation-fences a live abort-fence retry against a same-stream replacement', async () => {
+    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    const db = require('~/models');
+    db.getUserAbortFences.mockResolvedValueOnce([{ streamId: 'conv-replacing', createdAt: 1000 }]);
+    GenerationJobManager.getJob.mockResolvedValueOnce({
+      status: 'running',
+      createdAt: 1000,
+      metadata: { userId: 'user1' },
+    });
+    GenerationJobManager.abortJob.mockResolvedValueOnce({
+      success: false,
+      failureReason: 'generation_replaced',
+    });
+
+    await deleteUserController(req, res);
+
+    expect(GenerationJobManager.abortJob).toHaveBeenCalledWith('conv-replacing', {
+      expectedCreatedAt: 1000,
+    });
+    expect(db.clearUserAbortFence).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(mockDeleteUserById).not.toHaveBeenCalled();
   });
 
   it('reads finalization leases BEFORE the active-job scan', async () => {
@@ -528,7 +583,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
     const db = require('~/models');
-    db.getUserAbortFences.mockResolvedValueOnce(['conv-peer']);
+    db.getUserAbortFences.mockResolvedValueOnce([{ streamId: 'conv-peer', createdAt: 1000 }]);
     // Terminal at the CAS, but the owner's response save / FINAL publication are
     // still in flight: settled it is not, and clearing here would let the cascade
     // race writes that recreate messages for the deleted account.
@@ -551,7 +606,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
     const db = require('~/models');
-    db.getUserAbortFences.mockResolvedValueOnce(['conv-peer']);
+    db.getUserAbortFences.mockResolvedValueOnce([{ streamId: 'conv-peer', createdAt: 1000 }]);
     // The Stop route's checkpoint prune / partial save run BEHIND the abort CAS:
     // resignal answering 'delivered' is not settlement while those writes are in
     // flight, and clearing here would let the cascade race them.
@@ -585,7 +640,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     await deleteUserController(req, res);
 
     // The common case leaves no fence behind for later passes to settle.
-    expect(db.clearUserAbortFence).toHaveBeenCalledWith('user1', 'conv-live');
+    expect(db.clearUserAbortFence).toHaveBeenCalledWith('user1', 'conv-live', 1000);
     expect(res.status).toHaveBeenCalledWith(503);
   });
 
@@ -594,7 +649,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
     const db = require('~/models');
-    db.getUserAbortFences.mockResolvedValueOnce(['conv-peer']);
+    db.getUserAbortFences.mockResolvedValueOnce([{ streamId: 'conv-peer', createdAt: 1000 }]);
     GenerationJobManager.getJob.mockResolvedValueOnce(undefined);
 
     await deleteUserController(req, res);
@@ -602,7 +657,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     // Job absent means the owner finished (or cleaned up): its writes are done, so
     // the fence clears. The pass still defers — settlement is only claimed once a
     // LATER pass sees no fences at all.
-    expect(db.clearUserAbortFence).toHaveBeenCalledWith('user1', 'conv-peer');
+    expect(db.clearUserAbortFence).toHaveBeenCalledWith('user1', 'conv-peer', 1000);
     expect(res.status).toHaveBeenCalledWith(503);
   });
 
@@ -611,7 +666,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
     const db = require('~/models');
-    db.getUserAbortFences.mockResolvedValueOnce(['conv-peer']);
+    db.getUserAbortFences.mockResolvedValueOnce([{ streamId: 'conv-peer', createdAt: 1000 }]);
     GenerationJobManager.getJob.mockResolvedValueOnce({
       status: 'aborted',
       createdAt: 1000,
@@ -638,7 +693,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     const res = createRes();
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
     const db = require('~/models');
-    db.getUserAbortFences.mockResolvedValueOnce(['conv-peer']);
+    db.getUserAbortFences.mockResolvedValueOnce([{ streamId: 'conv-peer', createdAt: 1000 }]);
     GenerationJobManager.getJob.mockResolvedValueOnce({
       status: 'aborted',
       createdAt: 1000,
@@ -649,7 +704,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     await deleteUserController(req, res);
 
     expect(GenerationJobManager.resignalAbort).toHaveBeenCalledWith('conv-peer', 1000);
-    expect(db.clearUserAbortFence).toHaveBeenCalledWith('user1', 'conv-peer');
+    expect(db.clearUserAbortFence).toHaveBeenCalledWith('user1', 'conv-peer', 1000);
     // The acknowledged fence is the last one, so this pass settles and cascades.
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mockDeleteUserById).toHaveBeenCalled();
@@ -661,7 +716,7 @@ describe('deleteUserController - interactive generation quiesce', () => {
     mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
     const db = require('~/models');
     // getUserAbortFences fails closed with a sentinel when the document cannot be read.
-    db.getUserAbortFences.mockResolvedValueOnce(['__unreadable__']);
+    db.getUserAbortFences.mockResolvedValueOnce([{ streamId: '__unreadable__', createdAt: -1 }]);
 
     await deleteUserController(req, res);
 

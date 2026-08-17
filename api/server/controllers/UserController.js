@@ -499,15 +499,16 @@ const deleteUserController = async (req, res) => {
  * to the sweep interval instead of racing the cascade against it.
  */
 /**
- * Settlement attempt for one durable abort fence — a deletion-side abort whose signal
- * provably never left the aborting replica. The shared job went terminal at the abort
- * CAS, so the peer OWNER may still be generating with nothing in the active set to
- * show for it; the fence is the evidence, and it clears only on an acknowledgeable
- * outcome: the publish finally leaves this replica (delivered or republished), or the
- * job is gone/reassigned (the owner finished and cleaned up, so its writes are done).
+ * Settlement attempt for one durable generation-qualified abort fence — a
+ * deletion-side abort whose signal provably never left the aborting replica. The
+ * shared job went terminal at the abort CAS, so the peer OWNER may still be generating
+ * with nothing in the active set to show for it; the fence is the evidence, and it
+ * clears only on an acknowledgeable outcome: the publish finally leaves this replica
+ * (delivered or republished), or that exact generation is gone/reassigned/replaced.
  * Anything else keeps the fence and defers.
  */
-const settleAbortFence = async (user, streamId) => {
+const settleAbortFence = async (user, fence) => {
+  const { streamId, createdAt } = fence;
   if (streamId === UNREADABLE_ABORT_FENCE) {
     return false;
   }
@@ -525,11 +526,15 @@ const settleAbortFence = async (user, streamId) => {
   const ownerTenantId = job?.metadata?.tenantId;
   if (
     job == null ||
+    job.createdAt !== createdAt ||
     ownerId !== user.id ||
     (ownerTenantId ?? undefined) !== (user.tenantId ?? undefined)
   ) {
-    await db.clearUserAbortFence(user.id, streamId).catch((err) => {
-      logger.warn(`[quiesceInteractiveGenerations] Failed to clear fence ${streamId}`, err);
+    await db.clearUserAbortFence(user.id, streamId, createdAt).catch((err) => {
+      logger.warn(
+        `[quiesceInteractiveGenerations] Failed to clear fence ${streamId}@${createdAt}`,
+        err,
+      );
     });
     return false;
   }
@@ -542,7 +547,9 @@ const settleAbortFence = async (user, streamId) => {
   }
   if (job.status === 'running' || job.status === 'requires_action') {
     // Live again despite terminal-at-CAS bookkeeping: re-abort and keep the fence.
-    await GenerationJobManager.abortJob(streamId).catch(() => undefined);
+    await GenerationJobManager.abortJob(streamId, { expectedCreatedAt: createdAt }).catch(
+      () => undefined,
+    );
     return false;
   }
   if (job.status === 'complete' || job.status === 'error') {
@@ -550,12 +557,15 @@ const settleAbortFence = async (user, streamId) => {
     // there is no stop left to deliver and re-signalling (aborted-only) could never
     // clear this fence; it would sit permanent, deferring deletion forever. Any
     // post-terminal billed work is what the owner-finalization markers above fence.
-    await db.clearUserAbortFence(user.id, streamId).catch((err) => {
-      logger.warn(`[quiesceInteractiveGenerations] Failed to clear fence ${streamId}`, err);
+    await db.clearUserAbortFence(user.id, streamId, createdAt).catch((err) => {
+      logger.warn(
+        `[quiesceInteractiveGenerations] Failed to clear fence ${streamId}@${createdAt}`,
+        err,
+      );
     });
     return false;
   }
-  const resignal = await GenerationJobManager.resignalAbort(streamId, job.createdAt).catch(() => ({
+  const resignal = await GenerationJobManager.resignalAbort(streamId, createdAt).catch(() => ({
     delivered: false,
     published: false,
   }));
@@ -563,11 +573,14 @@ const settleAbortFence = async (user, streamId) => {
     return false;
   }
   try {
-    await db.clearUserAbortFence(user.id, streamId);
+    await db.clearUserAbortFence(user.id, streamId, createdAt);
   } catch (error) {
     // The signal left, but the fence is still durable: report unsettled so a later
     // pass retries the clear rather than cascading on an unrecorded acknowledgement.
-    logger.warn(`[quiesceInteractiveGenerations] Failed to clear fence ${streamId}`, error);
+    logger.warn(
+      `[quiesceInteractiveGenerations] Failed to clear fence ${streamId}@${createdAt}`,
+      error,
+    );
     return false;
   }
   return true;
@@ -602,6 +615,26 @@ const quiesceInteractiveGenerations = async (user) => {
   const earlyFallbackOwnerWork = await db.countUserFinalizationFallbackLeases(user.id);
   const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(user.id, user.tenantId);
   for (const streamId of activeJobIds ?? []) {
+    let observedJob;
+    try {
+      observedJob = await GenerationJobManager.getJob(streamId);
+    } catch (error) {
+      logger.warn(
+        `[quiesceInteractiveGenerations] Deferring ${user.id}: could not read ${streamId}`,
+        error,
+      );
+      return false;
+    }
+    const createdAt = observedJob?.createdAt;
+    if (
+      createdAt == null ||
+      observedJob?.metadata?.userId !== user.id ||
+      (observedJob?.metadata?.tenantId ?? undefined) !== (user.tenantId ?? undefined)
+    ) {
+      // The active index changed after enumeration. This pass already observed work,
+      // so defer and let the next pass enumerate its authoritative generation.
+      continue;
+    }
     // FENCE BEFORE THE CAS. An abort transitions the shared job to terminal, which
     // hides it from every later active-set scan; if the signal then turns out never
     // to have left this replica, the only thing standing between a still-generating
@@ -610,7 +643,7 @@ const quiesceInteractiveGenerations = async (user) => {
     // defers. (Cleared below the moment the abort is acknowledged, so the common
     // case leaves nothing behind.)
     try {
-      await db.addUserAbortFence(user.id, streamId);
+      await db.addUserAbortFence(user.id, streamId, createdAt);
     } catch (error) {
       logger.warn(
         `[quiesceInteractiveGenerations] Deferring ${user.id}: could not fence abort of ${streamId}`,
@@ -618,7 +651,9 @@ const quiesceInteractiveGenerations = async (user) => {
       );
       return false;
     }
-    const result = await GenerationJobManager.abortJob(streamId).catch((err) => {
+    const result = await GenerationJobManager.abortJob(streamId, {
+      expectedCreatedAt: createdAt,
+    }).catch((err) => {
       logger.warn(`[quiesceInteractiveGenerations] Failed to abort active job ${streamId}`, err);
       return null;
     });
@@ -637,11 +672,14 @@ const quiesceInteractiveGenerations = async (user) => {
       result?.success === true &&
       (result.signalDelivered !== false || result.signalPublished !== false);
     if (acknowledged) {
-      await db.clearUserAbortFence(user.id, streamId).catch((err) => {
-        logger.warn(`[quiesceInteractiveGenerations] Failed to clear fence ${streamId}`, err);
+      await db.clearUserAbortFence(user.id, streamId, createdAt).catch((err) => {
+        logger.warn(
+          `[quiesceInteractiveGenerations] Failed to clear fence ${streamId}@${createdAt}`,
+          err,
+        );
       });
     } else {
-      await GenerationJobManager.resignalAbort(streamId).catch(() => undefined);
+      await GenerationJobManager.resignalAbort(streamId, createdAt).catch(() => undefined);
     }
   }
   if (activeJobIds?.length) {
@@ -680,8 +718,8 @@ const quiesceInteractiveGenerations = async (user) => {
     return true;
   }
   let allSettled = true;
-  for (const streamId of fences) {
-    const settled = await settleAbortFence(user, streamId);
+  for (const fence of fences) {
+    const settled = await settleAbortFence(user, fence);
     allSettled = allSettled && settled;
   }
   if (!allSettled) {

@@ -147,9 +147,9 @@ export function createUserMethods(
   markDeletionSweepAttempted: (userIds: string[]) => Promise<void>;
   /** Commits a deletion to automatic completion; only these are swept. */
   markUserDeletionCommitted: (userId: string) => Promise<void>;
-  addUserAbortFence: (userId: string, streamId: string) => Promise<void>;
-  clearUserAbortFence: (userId: string, streamId: string) => Promise<void>;
-  getUserAbortFences: (userId: string) => Promise<string[]>;
+  addUserAbortFence: (userId: string, streamId: string, createdAt: number) => Promise<void>;
+  clearUserAbortFence: (userId: string, streamId: string, createdAt: number) => Promise<void>;
+  getUserAbortFences: (userId: string) => Promise<Array<{ streamId: string; createdAt: number }>>;
   renewUserFinalizationFallbackLease: (
     userId: string,
     safeLeaseKey: string,
@@ -476,17 +476,22 @@ export function createUserMethods(
   }
 
   /**
-   * Records a stream id whose deletion-side abort is not yet acknowledged. Stamped
+   * Records an exact stream generation whose deletion-side abort is not yet
+   * acknowledged. Stamped
    * BEFORE the abort transitions the shared job, so a failure here refuses the abort
    * while it is still side-effect free — the inverse ordering left the job terminal
    * (invisible to the next pass's active-set scan) with no durable fence. Idempotent
    * via $addToSet. THROWS on failure: the caller must not proceed.
    */
-  async function addUserAbortFence(userId: string, streamId: string): Promise<void> {
+  async function addUserAbortFence(
+    userId: string,
+    streamId: string,
+    createdAt: number,
+  ): Promise<void> {
     const User = mongoose.models.User;
     await User.updateOne(
       { _id: userId },
-      { $addToSet: { deletionAbortFences: streamId } },
+      { $addToSet: { deletionAbortFences: { streamId, createdAt } } },
       { timestamps: false },
     );
     // Every user-document mutation invalidates the auth user-doc cache, or a cached
@@ -494,12 +499,16 @@ export function createUserMethods(
     await invalidateAuthUserDocCache(userId);
   }
 
-  /** Clears an acknowledged abort fence (signal left the replica, or the job is gone). */
-  async function clearUserAbortFence(userId: string, streamId: string): Promise<void> {
+  /** Atomically clears only the acknowledged generation's abort fence. */
+  async function clearUserAbortFence(
+    userId: string,
+    streamId: string,
+    createdAt: number,
+  ): Promise<void> {
     const User = mongoose.models.User;
     await User.updateOne(
       { _id: userId },
-      { $pull: { deletionAbortFences: streamId } },
+      { $pull: { deletionAbortFences: { streamId, createdAt } } },
       { timestamps: false },
     );
     await invalidateAuthUserDocCache(userId);
@@ -511,7 +520,9 @@ export function createUserMethods(
    * missing document is not that case: the fences live ON the document, so its
    * absence means no fence was ever recorded and there is nothing to settle.
    */
-  async function getUserAbortFences(userId: string): Promise<string[]> {
+  async function getUserAbortFences(
+    userId: string,
+  ): Promise<Array<{ streamId: string; createdAt: number }>> {
     const User = mongoose.models.User;
     try {
       const user = await User.findById(userId)
@@ -519,7 +530,7 @@ export function createUserMethods(
         .lean<Pick<IUser, 'deletionAbortFences'>>();
       return user?.deletionAbortFences ?? [];
     } catch {
-      return [UNREADABLE_ABORT_FENCE];
+      return [{ streamId: UNREADABLE_ABORT_FENCE, createdAt: -1 }];
     }
   }
 
