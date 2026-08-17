@@ -34,7 +34,7 @@ export interface AgentTriggerDispatchHandlers<FireResult, SteerResult> {
 
 /** Routes a normalized trigger without coupling its source to an execution transport. */
 export function dispatchAgentTrigger<FireResult, SteerResult>(
-  envelope: AgentTriggerEnvelope,
+  envelope: unknown,
   handlers: AgentTriggerDispatchHandlers<FireResult, SteerResult>,
   options?: { signal?: AbortSignal },
 ): Promise<FireResult | SteerResult> {

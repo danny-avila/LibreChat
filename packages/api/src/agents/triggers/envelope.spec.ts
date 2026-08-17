@@ -104,10 +104,23 @@ describe('createAgentTriggerEnvelope', () => {
       ...createFireInput(),
       deliveryId: 'subscription-2:event-1',
     });
+    const anotherSource = createAgentTriggerEnvelope({
+      ...createFireInput(),
+      event: {
+        ...createFireInput().event,
+        source: { id: 'source-2', type: 'webhook' },
+      },
+    });
+    const anotherEvent = createAgentTriggerEnvelope({
+      ...createFireInput(),
+      event: { ...createFireInput().event, id: 'event-2' },
+    });
 
     const firstKey = getAgentTriggerIdempotencyKey(first);
     expect(getAgentTriggerIdempotencyKey(retry)).toBe(firstKey);
     expect(getAgentTriggerIdempotencyKey(anotherDelivery)).not.toBe(firstKey);
+    expect(getAgentTriggerIdempotencyKey(anotherSource)).not.toBe(firstKey);
+    expect(getAgentTriggerIdempotencyKey(anotherEvent)).not.toBe(firstKey);
     expect(firstKey).toMatch(/^trigger_[a-f0-9]{64}$/);
     expect(firstKey).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(firstKey.length).toBeLessThanOrEqual(128);
