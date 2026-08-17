@@ -48,6 +48,7 @@ export interface CodeHarvestDeps {
   preflightCodeOutputBatch: (params: {
     req: ServerRequest;
     artifact: HarvestArtifact;
+    codeExecutionContext?: CodeExecutionContext;
   }) => Promise<PreparedCodeOutputEntry[]>;
   /** Host file service: downloads and persists one code output file. */
   processCodeOutput: (params: {
@@ -166,7 +167,11 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
      *  not overwrite it with stale bytes, no matter how late it settles. */
     const freshClaimAfter = dispatchedAt ?? Date.now();
     const codeArtifact = (artifact ?? {}) as HarvestArtifact;
-    const preparedEntries = await preflightCodeOutputBatch({ req, artifact: codeArtifact });
+    const preparedEntries = await preflightCodeOutputBatch({
+      req,
+      artifact: codeArtifact,
+      codeExecutionContext,
+    });
     for (const { file, sessionId, preparedBuffer, downloadFallback } of preparedEntries) {
       try {
         const result = await processCodeOutput({

@@ -727,64 +727,43 @@ async function reconnectServer({
     serverName,
   });
 
-  // Set up abort handler to clean up OAuth flows if request is aborted
-  const tenantId = user?.tenantId ?? getTenantId();
-  const oauthFlowId = getOAuthFlowId(user.id, serverName, tenantId);
-  const abortHandler = () => {
-    logger.info(`[MCP][User: ${user.id}] Tool loading aborted; cleaning up OAuth flows`);
-    // Clean up both mcp_oauth and mcp_get_tokens flows
-    flowManager.failFlow(oauthFlowId, 'mcp_oauth', new Error('Tool loading aborted'));
-    flowManager.failFlow(oauthFlowId, 'mcp_get_tokens', new Error('Tool loading aborted'));
-  };
-
-  if (signal) {
-    signal.addEventListener('abort', abortHandler, { once: true });
-  }
-
-  try {
-    const runStepEmitter = createRunStepEmitter({
-      res,
-      index,
-      runId,
-      stepId,
-      toolCall,
-      streamId,
-      jobCreatedAt,
-    });
-    const runStepDeltaEmitter = createRunStepDeltaEmitter({
-      res,
-      stepId,
-      toolCall,
-      streamId,
-      jobCreatedAt,
-    });
-    const callback = createOAuthCallback({ runStepEmitter, runStepDeltaEmitter });
-    const oauthStart = createOAuthStart({
-      res,
-      flowId,
-      callback,
-      flowManager,
-    });
-    return await reinitMCPServer({
-      user,
-      signal,
-      serverName,
-      configServers,
-      oauthStart,
-      flowManager,
-      userMCPAuthMap,
-      requestBody,
-      requestScopedConnections,
-      forceNew: true,
-      returnOnOAuth: false,
-      connectionTimeout: Time.THIRTY_SECONDS,
-    });
-  } finally {
-    // Clean up abort handler to prevent memory leaks
-    if (signal) {
-      signal.removeEventListener('abort', abortHandler);
-    }
-  }
+  const runStepEmitter = createRunStepEmitter({
+    res,
+    index,
+    runId,
+    stepId,
+    toolCall,
+    streamId,
+    jobCreatedAt,
+  });
+  const runStepDeltaEmitter = createRunStepDeltaEmitter({
+    res,
+    stepId,
+    toolCall,
+    streamId,
+    jobCreatedAt,
+  });
+  const callback = createOAuthCallback({ runStepEmitter, runStepDeltaEmitter });
+  const oauthStart = createOAuthStart({
+    res,
+    flowId,
+    callback,
+    flowManager,
+  });
+  return await reinitMCPServer({
+    user,
+    signal,
+    serverName,
+    configServers,
+    oauthStart,
+    flowManager,
+    userMCPAuthMap,
+    requestBody,
+    requestScopedConnections,
+    forceNew: true,
+    returnOnOAuth: false,
+    connectionTimeout: Time.THIRTY_SECONDS,
+  });
 }
 
 /**

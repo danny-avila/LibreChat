@@ -15,6 +15,12 @@ const params = {
     session_id: 'artifact-session',
     files: [{ id: 'file-1', name: 'output.txt', storage_session_id: 'storage-session' }],
   },
+  codeExecutionContext: {
+    baseUrl: 'https://code-stateful.example.com',
+    codeSessionKey: 'execute_code:stateful:test',
+    executionProfile: 'stateful' as const,
+    statefulSessions: true,
+  },
 };
 
 describe('createBackgroundCodeResultHandler generated-file preflight', () => {
@@ -47,6 +53,7 @@ describe('createBackgroundCodeResultHandler generated-file preflight', () => {
     expect(preflightCodeOutputBatch).toHaveBeenCalledWith({
       req,
       artifact: params.artifact,
+      codeExecutionContext: params.codeExecutionContext,
     });
     expect(processCodeOutput).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -54,6 +61,8 @@ describe('createBackgroundCodeResultHandler generated-file preflight', () => {
         id: 'file-1',
         name: 'output.txt',
         session_id: 'storage-session',
+        codeApiBaseUrl: 'https://code-stateful.example.com',
+        executionProfile: 'stateful',
         preparedBuffer,
       }),
     );

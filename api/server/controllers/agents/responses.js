@@ -111,8 +111,8 @@ const filterFilesByRemoteAgentAccess = (params) =>
   filterFilesByAgentAccess({ ...params, resourceType: ResourceType.REMOTE_AGENT });
 const GENERIC_PROVIDER_ERROR = 'An error occurred while processing the request';
 
-function getUserFacingProviderError(error, appConfig) {
-  if (hasModelBoundContentProtection(appConfig?.filters, appConfig?.messageFilter?.pii)) {
+function getUserFacingProviderError(error, protectionEnabled) {
+  if (protectionEnabled) {
     return GENERIC_PROVIDER_ERROR;
   }
   return error instanceof Error ? error.message : 'An error occurred';
@@ -1383,7 +1383,11 @@ const executeResponse = async (envelope, { req, res }) => {
     }
   } catch (error) {
     logger.error('[Responses API] Error:', getSafeErrorMetadata(error));
-    const errorMessage = getUserFacingProviderError(error, appConfig);
+    const protectionEnabled = hasModelBoundContentProtection(
+      appConfig?.filters,
+      appConfig?.messageFilter?.pii,
+    );
+    const errorMessage = getUserFacingProviderError(error, protectionEnabled);
 
     // Check if we already started streaming (headers sent)
     if (res.headersSent) {
@@ -1406,7 +1410,8 @@ const executeResponse = async (envelope, { req, res }) => {
           ? error.status
           : 500;
       const errorType = statusCode >= 400 && statusCode < 500 ? 'invalid_request' : 'server_error';
-      const errorCode = typeof error?.code === 'string' ? error.code : undefined;
+      const errorCode =
+        !protectionEnabled && typeof error?.code === 'string' ? error.code : undefined;
       if (errorCode === undefined) {
         sendResponsesErrorResponse(res, statusCode, errorMessage, errorType);
       } else {

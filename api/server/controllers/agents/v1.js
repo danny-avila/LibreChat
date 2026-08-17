@@ -699,6 +699,12 @@ const pruneToolResourceFileIdsForAgent = async ({
  */
 const createAgentHandler = async (req, res) => {
   try {
+    /**
+     * Hydrated resource records are a client transport shape, not a persisted
+     * Agent shape. Canonicalize them before the strict IDs-only schema strips
+     * `files`, then let the schema validate the resulting `file_ids`.
+     */
+    normalizeToolResourceFiles(req.body?.tool_resources);
     const validatedData = agentCreateSchema.parse(req.body);
     const { tools = [], ...agentData } = removeNullishValues(validatedData);
 
@@ -726,8 +732,6 @@ const createAgentHandler = async (req, res) => {
         true,
       );
     }
-    normalizeToolResourceFiles(agentData.tool_resources);
-
     const { id: userId, role: userRole } = req.user;
     agentData.id = `agent_${nanoid()}`;
     agentData.edges = replaceEdgeSourceId(agentData.edges, '', agentData.id);
@@ -989,6 +993,8 @@ const getAgentVersionsHandler = async (req, res) => {
 const updateAgentHandler = async (req, res) => {
   try {
     const id = req.params.id;
+    /** See the create path: retain hydrated file IDs through validation. */
+    normalizeToolResourceFiles(req.body?.tool_resources);
     const validatedData = agentUpdateSchema.parse(req.body);
     // Preserve explicit null for avatar to allow resetting the avatar
     const { avatar: avatarField, _id, ...rest } = validatedData;
@@ -1057,8 +1063,6 @@ const updateAgentHandler = async (req, res) => {
         true,
       );
     }
-    normalizeToolResourceFiles(updateData.tool_resources);
-
     if (avatarField === null) {
       updateData.avatar = avatarField;
     }

@@ -149,6 +149,7 @@ describe('Memory attachment generation fencing', () => {
       memoryMethods: {
         setMemory: jest.fn(),
         deleteMemory: jest.fn(),
+        getUserMemories: jest.fn().mockResolvedValue([]),
         getFormattedMemories: jest.fn().mockResolvedValue({
           withKeys: '',
           withoutKeys: '',

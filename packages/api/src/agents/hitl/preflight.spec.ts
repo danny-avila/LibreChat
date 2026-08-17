@@ -174,6 +174,46 @@ describe('preflightResumeContent', () => {
     ]);
   });
 
+  it('does not attribute an ID-less current answer to an older unanswered ask', () => {
+    const pendingAction: Agents.PendingAction = {
+      actionId: 'action-legacy',
+      streamId: 'conversation-1',
+      createdAt: 1,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Which environment?' },
+      },
+    };
+    const content = [
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'ask-1',
+          name: 'ask_user_question',
+          args: JSON.stringify({ question: 'Earlier question?' }),
+          output: '',
+        },
+      },
+      {
+        type: 'tool_call',
+        tool_call: {
+          id: 'ask-2',
+          name: 'ask_user_question',
+          args: JSON.stringify({ question: 'Which environment?' }),
+          output: 'production',
+        },
+      },
+    ];
+
+    expect(
+      getResumeProvenance({
+        content,
+        pendingAction,
+        body: { answer: 'production' },
+      }).userSubmittedMessageFieldPaths,
+    ).toEqual([{ path: '/content/1/tool_call/output', field: 'answer' }]);
+  });
+
   it('deduplicates accumulated edit, response, reject, and steer provenance', () => {
     const content = [
       { type: 'tool_call', tool_call: { id: 'edit-1', name: 'edit_tool', args: '{}' } },

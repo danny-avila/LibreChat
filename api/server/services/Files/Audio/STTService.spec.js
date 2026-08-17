@@ -35,6 +35,8 @@ jest.mock('@librechat/api', () => ({
     ...(Number.isInteger(error?.response?.status) && { status: error.response.status }),
   })),
   applyAxiosProxyConfig: jest.fn(),
+  resolveConfigSecret: jest.fn((value) => value),
+  applySSRFSafeAgentIfDirect: jest.fn(),
   contentFilterBlockResponse: jest.fn((finding) => ({
     error: 'content_filter_block',
     message: 'Submitted content contains a protected value. Remove it and try again.',

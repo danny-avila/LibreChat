@@ -1053,9 +1053,10 @@ export function getResumeUserSubmittedMessageFieldPaths(
         }
         continue;
       }
-      if (!(typeof toolCall.output === 'string' && toolCall.output.length > 0)) {
-        return [{ path: `/content/${index}/tool_call/output`, field: 'answer' }];
-      }
+      // Provenance can be recomputed after the current answer is stamped. The
+      // newest ask is still the current legacy interrupt; skipping its output
+      // would incorrectly attribute the answer to an older unanswered ask.
+      return [{ path: `/content/${index}/tool_call/output`, field: 'answer' }];
     }
     return [];
   }

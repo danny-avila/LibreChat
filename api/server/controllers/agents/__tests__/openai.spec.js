@@ -898,11 +898,17 @@ describe('OpenAIChatCompletionController', () => {
     it('preserves the legacy provider error when protection is inactive', async () => {
       const api = require('@librechat/api');
       const rawValue = 'LEGACY-OPENAI-PROVIDER-ERROR';
-      mockProcessStream.mockRejectedValueOnce(new Error(rawValue));
+      mockProcessStream.mockRejectedValueOnce(
+        Object.assign(new Error(rawValue), { code: 'ERR_LEGACY_REMOTE' }),
+      );
 
       await OpenAIChatCompletionController(req, res);
 
-      expect(api.createErrorResponse).toHaveBeenCalledWith(rawValue, 'server_error', null);
+      expect(api.createErrorResponse).toHaveBeenCalledWith(
+        rawValue,
+        'server_error',
+        'ERR_LEGACY_REMOTE',
+      );
     });
 
     it.each([

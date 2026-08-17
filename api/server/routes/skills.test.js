@@ -459,7 +459,7 @@ describe('Skill routes', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).not.toBe('content_filter_uninspectable');
       expect(res.body.issues).toEqual(
-        expect.arrayContaining([expect.objectContaining({ code: 'UNKNOWN_KEY' })]),
+        expect.arrayContaining([expect.objectContaining({ code: 'INVALID_SHAPE' })]),
       );
       expect(await Skill.countDocuments()).toBe(0);
     });

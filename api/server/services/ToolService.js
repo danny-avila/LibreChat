@@ -33,6 +33,7 @@ const {
   extractToolArgumentContent,
   contentFilterModelBoundBlockResponse,
   getSafeErrorMetadata,
+  isContentFilterError,
   isFileAuthoringToolDefinition,
   ASK_USER_QUESTION_TOOL_NAME,
   splitMCPToolKey,
@@ -1502,7 +1503,11 @@ async function loadAgentTools({
         accessibleMcpServerNames,
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error) || !agent.tools?.some(isExpectedMCPTool)) {
+      if (
+        isFatalAgentInitializationError(error) ||
+        isContentFilterError(error) ||
+        !agent.tools?.some(isExpectedMCPTool)
+      ) {
         throw error;
       }
       throw createExpectedMCPToolsUnavailableError(agent.name, error);

@@ -615,7 +615,7 @@ describe('extractCodeArtifactInspectionText', () => {
       Buffer.from('PK'),
       'slides.pptx',
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      'pptx',
+      'presentation',
     );
 
     expect(result.complete).toBe(false);

@@ -7,7 +7,7 @@ const {
 } = require('librechat-data-provider');
 const { prepareCodeOutputForInspection } = require('./process');
 
-const preflightCodeOutputBatch = async ({ req, artifact }) => {
+const preflightCodeOutputBatch = async ({ req, artifact, codeExecutionContext }) => {
   const mergedFileConfig = mergeFileConfig(req.config?.fileConfig);
   const endpointFileConfig = getEndpointFileConfig({
     fileConfig: mergedFileConfig,
@@ -32,6 +32,8 @@ const preflightCodeOutputBatch = async ({ req, artifact }) => {
         session_id: sessionId,
         maxBytes,
         inspectContent,
+        codeApiBaseUrl: codeExecutionContext?.baseUrl,
+        executionProfile: codeExecutionContext?.executionProfile,
       }),
     onInspectionUnavailable: (index) => {
       logger.warn(

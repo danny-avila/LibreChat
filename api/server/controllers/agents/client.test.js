@@ -5,6 +5,7 @@ const mockIsHITLEnabled = jest.fn().mockReturnValue(false);
 const mockRecordCollectedUsage = jest.fn();
 const mockDetachedUsageRecorder = jest.fn();
 const mockCreateDetachedSubagentUsageRecorder = jest.fn(() => mockDetachedUsageRecorder);
+const mockGetAgentCheckpointer = jest.fn();
 const mockBuildAgentScopedContext = jest.fn((...args) =>
   jest.requireActual('@librechat/api').buildAgentScopedContext(...args),
 );
@@ -19,7 +20,6 @@ const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint } = require('librechat-data-provider');
 const { GenerationJobManager, createStreamServices } = require('@librechat/api');
 const BaseClient = require('~/app/clients/BaseClient');
-const mockGetAgentCheckpointer = jest.fn();
 const AgentClient = require('./client');
 const { resolveConfigServers } = require('~/server/services/MCP');
 
@@ -4919,6 +4919,7 @@ describe('AgentClient - resumeCompletion content protection', () => {
     handleRunInterrupt: jest.fn().mockResolvedValue(undefined),
     applyHideSequentialOutputsFilter: jest.fn(),
     finalizeSubagentContent: jest.fn(),
+    settleActivityLabels: jest.fn().mockResolvedValue(undefined),
     recordCollectedUsage: jest.fn().mockResolvedValue(undefined),
   });
 
