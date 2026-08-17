@@ -145,12 +145,17 @@ class ImportBatchBuilder {
       const promises = [];
       promises.push(bulkSaveConvos(this.conversations));
       promises.push(bulkSaveMessages(this.messages, true));
-      promises.push(
-        bulkIncrementTagCounts(
-          this.requestUserId,
-          this.conversations.flatMap((convo) => convo.tags),
-        ),
-      );
+      /** Forced-temporary records are excluded from every bookmark-filtered
+       *  conversation query and are removed by TTL without a matching decrement,
+       *  so counting their tags would leave permanent phantom totals. */
+      if (!isForcedTemporaryRetention(this.interfaceConfig?.retentionMode)) {
+        promises.push(
+          bulkIncrementTagCounts(
+            this.requestUserId,
+            this.conversations.flatMap((convo) => convo.tags),
+          ),
+        );
+      }
       await Promise.all(promises);
       logger.debug(
         `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,

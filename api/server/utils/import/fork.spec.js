@@ -306,6 +306,18 @@ describe('duplicateConversation', () => {
     );
   });
 
+  test('does not increment tag counts for forced-temporary duplicates', async () => {
+    getConvo.mockResolvedValue({ ...mockConversation, tags: ['important', 'work'] });
+
+    await duplicateConversation({
+      userId: 'user1',
+      conversationId: 'abc123',
+      interfaceConfig: { retentionMode: RetentionMode.EPHEMERAL, temporaryChatRetention: 1 },
+    });
+
+    expect(bulkIncrementTagCounts).not.toHaveBeenCalled();
+  });
+
   test('should duplicate conversation and increment tag counts', async () => {
     const mockConvoWithTags = {
       ...mockConversation,
