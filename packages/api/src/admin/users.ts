@@ -24,11 +24,19 @@ export interface AdminUsersDeps {
     options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
   ) => Promise<IUser[]>;
   countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
+  beginAgentTriggerUserDeletion: (
+    userId: string,
+    startedAt: Date,
+  ) => Promise<'acquired' | 'in_progress' | 'missing'>;
+  cancelAgentTriggerUserDeletion: (userId: string, startedAt: Date) => Promise<boolean>;
+  drainAgentTriggerDeliveriesForUser: (userId: string) => Promise<void>;
+  purgeAgentTriggerDeliveriesForUser: (userId: string) => Promise<void>;
   /**
    * Thin data-layer delete — removes the User document only.
    * Full cascade of user-owned resources (conversations, messages, files, tokens, etc.)
    * is handled by `UserController.deleteUserController` in the self-delete flow.
-   * This admin endpoint currently cascades Config and AclEntries.
+   * This admin endpoint fences durable triggers around the user commit and currently
+   * cascades Config and AclEntries.
    * A future iteration should consolidate the full cascade into a shared service function.
    */
   deleteUserById: (userId: string) => Promise<UserDeleteResult>;
@@ -47,7 +55,17 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
   searchUsers: (req: ServerRequest, res: Response) => Promise<Response>;
   deleteUser: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
-  const { findUsers, countUsers, deleteUserById, deleteConfig, deleteAclEntries } = deps;
+  const {
+    findUsers,
+    countUsers,
+    beginAgentTriggerUserDeletion,
+    cancelAgentTriggerUserDeletion,
+    drainAgentTriggerDeliveriesForUser,
+    purgeAgentTriggerDeliveriesForUser,
+    deleteUserById,
+    deleteConfig,
+    deleteAclEntries,
+  } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
     try {
@@ -126,8 +144,13 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
   }
 
   async function deleteUserHandler(req: ServerRequest, res: Response) {
+    let targetUserId: string | undefined;
+    let triggerDeletionFence: Date | undefined;
+    let userDeleted = false;
+
     try {
       const { id } = req.params as { id: string };
+      targetUserId = id;
 
       if (!isValidObjectIdString(id)) {
         return res.status(400).json({ error: 'Invalid user ID format' });
@@ -146,11 +169,27 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         }
       }
 
+      triggerDeletionFence = new Date();
+      const fenceState = await beginAgentTriggerUserDeletion(id, triggerDeletionFence);
+      if (fenceState === 'in_progress') {
+        triggerDeletionFence = undefined;
+        return res.status(409).json({ error: 'User deletion is already in progress' });
+      }
+      if (fenceState === 'missing') {
+        triggerDeletionFence = undefined;
+        return res.status(404).json({ error: 'User not found' });
+      }
+      await drainAgentTriggerDeliveriesForUser(id);
+
       const result = await deleteUserById(id);
 
       if (result.deletedCount === 0) {
+        await cancelAgentTriggerUserDeletion(id, triggerDeletionFence);
+        triggerDeletionFence = undefined;
         return res.status(404).json({ error: 'User not found' });
       }
+      userDeleted = true;
+      await purgeAgentTriggerDeliveriesForUser(id);
 
       if (targetUser?.role === SystemRoles.ADMIN) {
         const remaining = await countUsers({ role: SystemRoles.ADMIN });
@@ -175,6 +214,13 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
 
       return res.status(200).json({ message: result.message || 'User deleted successfully' });
     } catch (error) {
+      if (targetUserId != null && triggerDeletionFence != null && !userDeleted) {
+        try {
+          await cancelAgentTriggerUserDeletion(targetUserId, triggerDeletionFence);
+        } catch (fenceError) {
+          logger.error('[adminUsers] failed to release trigger deletion fence:', fenceError);
+        }
+      }
       logger.error('[adminUsers] deleteUser error:', error);
       return res.status(500).json({ error: 'Failed to delete user' });
     }

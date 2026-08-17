@@ -53,6 +53,10 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
   return {
     findUsers: jest.fn().mockResolvedValue([]),
     countUsers: jest.fn().mockResolvedValue(0),
+    beginAgentTriggerUserDeletion: jest.fn().mockResolvedValue('acquired'),
+    cancelAgentTriggerUserDeletion: jest.fn().mockResolvedValue(true),
+    drainAgentTriggerDeliveriesForUser: jest.fn().mockResolvedValue(undefined),
+    purgeAgentTriggerDeliveriesForUser: jest.fn().mockResolvedValue(undefined),
     deleteUserById: jest
       .fn()
       .mockResolvedValue({ deletedCount: 1, message: 'User was deleted successfully.' }),
@@ -340,6 +344,13 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ message: 'User was deleted successfully.' });
+      expect(deps.beginAgentTriggerUserDeletion).toHaveBeenCalledWith(
+        validUserId,
+        expect.any(Date),
+      );
+      expect(deps.drainAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(validUserId);
+      expect(deps.purgeAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(validUserId);
+      expect(deps.cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
     });
 
     it('returns fallback message when result.message is empty', async () => {
@@ -464,6 +475,11 @@ describe('createAdminUsersHandlers', () => {
       expect(status).toHaveBeenCalledWith(404);
       expect(deps.deleteConfig).not.toHaveBeenCalled();
       expect(deps.deleteAclEntries).not.toHaveBeenCalled();
+      expect(deps.purgeAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
+      expect(deps.cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(
+        validUserId,
+        expect.any(Date),
+      );
     });
 
     it('returns 400 for invalid ObjectId', async () => {
@@ -500,6 +516,77 @@ describe('createAdminUsersHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(500);
       expect(json).toHaveBeenCalledWith({ error: 'Failed to delete user' });
+      expect(deps.cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(
+        validUserId,
+        expect.any(Date),
+      );
+      expect(deps.purgeAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
+    });
+
+    it('does not delete while another deletion owns the trigger fence', async () => {
+      const deps = createDeps({
+        beginAgentTriggerUserDeletion: jest.fn().mockResolvedValue('in_progress'),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(409);
+      expect(json).toHaveBeenCalledWith({ error: 'User deletion is already in progress' });
+      expect(deps.drainAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
+      expect(deps.cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
+    });
+
+    it('returns not found without draining when the trigger fence principal is missing', async () => {
+      const deps = createDeps({
+        beginAgentTriggerUserDeletion: jest.fn().mockResolvedValue('missing'),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(json).toHaveBeenCalledWith({ error: 'User not found' });
+      expect(deps.drainAgentTriggerDeliveriesForUser).not.toHaveBeenCalled();
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
+      expect(deps.cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
+    });
+
+    it('drains before commit and purges only after the user is deleted', async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      const beginOrder = (deps.beginAgentTriggerUserDeletion as jest.Mock).mock
+        .invocationCallOrder[0];
+      const drainOrder = (deps.drainAgentTriggerDeliveriesForUser as jest.Mock).mock
+        .invocationCallOrder[0];
+      const deleteOrder = (deps.deleteUserById as jest.Mock).mock.invocationCallOrder[0];
+      const purgeOrder = (deps.purgeAgentTriggerDeliveriesForUser as jest.Mock).mock
+        .invocationCallOrder[0];
+      expect(beginOrder).toBeLessThan(drainOrder);
+      expect(drainOrder).toBeLessThan(deleteOrder);
+      expect(deleteOrder).toBeLessThan(purgeOrder);
+    });
+
+    it('keeps the fence after commit when trigger purge fails', async () => {
+      const deps = createDeps({
+        purgeAgentTriggerDeliveriesForUser: jest.fn().mockRejectedValue(new Error('db down')),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to delete user' });
+      expect(deps.deleteUserById).toHaveBeenCalledWith(validUserId);
+      expect(deps.cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
     });
   });
 });
