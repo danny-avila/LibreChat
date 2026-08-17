@@ -1,7 +1,7 @@
 const {
   resolveUploadedImageArguments: resolveUploadedImageArgumentsInApi,
 } = require('@librechat/api');
-const { mergeFileConfig, getEndpointFileConfig } = require('librechat-data-provider');
+const { mergeFileConfig, getEndpointFileConfig, VisionModes } = require('librechat-data-provider');
 
 function getMcpImageSizeLimit(request) {
   const fileConfig = mergeFileConfig(request?.config?.fileConfig);
@@ -24,7 +24,7 @@ function getDependencies() {
         return { image_urls: [] };
       }
 
-      const { image_urls } = await encodeAndFormat(request, imageFiles, {});
+      const { image_urls } = await encodeAndFormat(request, imageFiles, {}, VisionModes.mcp);
       return { image_urls };
     },
   };

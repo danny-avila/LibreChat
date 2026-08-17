@@ -43,11 +43,20 @@ export interface ImageToolFileQuery {
 
 export interface ImageToolEncoding {
   image_urls?: Array<{
+    /** Present only in the MCP-specific encoder result. */
     file_id: string;
     image_url?: {
       url?: string;
     };
   }>;
+}
+
+/** Signals that an opted-in upload placeholder was not resolved safely. */
+export class UnresolvedUploadedImageError extends Error {
+  constructor() {
+    super('Unable to resolve referenced uploaded image.');
+    this.name = 'UnresolvedUploadedImageError';
+  }
 }
 
 export interface ImageToolDependencies {
@@ -220,55 +229,77 @@ export async function resolveUploadedImageArguments({
 
   const requestImageFiles = getRequestImageFiles(request);
   if (!user?.id || requestImageFiles.length === 0) {
-    return toolArguments;
+    throw new UnresolvedUploadedImageError();
   }
 
+  const orderedPlaceholders = [...referencedPlaceholders.values()].sort(
+    (left, right) => left.index - right.index,
+  );
+  const referencedFilesByPlaceholder = new Map<string, ImageToolRequestFile>();
+  for (const placeholder of orderedPlaceholders) {
+    const placeholderKey = getUploadPlaceholderKey(placeholder);
+    const requestFile = requestImageFiles[placeholder.index];
+    if (
+      !requestFile?.file_id ||
+      normalizeImageMimeType(requestFile.type) !== placeholder.mimeType ||
+      referencedFilesByPlaceholder.has(placeholderKey)
+    ) {
+      throw new UnresolvedUploadedImageError();
+    }
+    referencedFilesByPlaceholder.set(placeholderKey, requestFile);
+  }
   const referencedFileIds = [
-    ...new Set(
-      [...referencedPlaceholders.values()]
-        .sort((left, right) => left.index - right.index)
-        .flatMap(({ index }) => {
-          const fileId = requestImageFiles[index]?.file_id;
-          return fileId ? [fileId] : [];
-        }),
-    ),
+    ...new Set([...referencedFilesByPlaceholder.values()].map((file) => file.file_id!)),
   ];
-  if (referencedFileIds.length === 0) {
-    return toolArguments;
+  if (referencedFileIds.length !== referencedFilesByPlaceholder.size) {
+    throw new UnresolvedUploadedImageError();
   }
 
   const foundFiles = await dependencies.findFiles({
     file_id: { $in: referencedFileIds },
     user: user.id,
   });
-  const filesById = new Map((foundFiles ?? []).map((file) => [file.file_id, file]));
-  const imageFiles = referencedFileIds
-    .map((fileId) => filesById.get(fileId))
-    .filter((file): file is ImageToolFile => file !== undefined);
-  if (imageFiles.length === 0) {
-    return toolArguments;
+  const filesById = new Map<string, ImageToolFile>();
+  for (const file of foundFiles ?? []) {
+    if (!referencedFileIds.includes(file.file_id) || filesById.has(file.file_id)) {
+      throw new UnresolvedUploadedImageError();
+    }
+    filesById.set(file.file_id, file);
   }
+  if (filesById.size !== referencedFileIds.length) {
+    throw new UnresolvedUploadedImageError();
+  }
+  const imageFiles = referencedFileIds.map((fileId) => filesById.get(fileId)!);
 
   const { image_urls: imageUrls } = await dependencies.encodeImages(request, imageFiles);
-  const imageUrlsByFileId = new Map(
-    (imageUrls ?? []).flatMap((image) => {
-      const dataUrl = parseImageDataUrl(image.image_url?.url);
-      return dataUrl ? [[image.file_id, dataUrl] as const] : [];
-    }),
-  );
+  const imageUrlsByFileId = new Map<string, { mimeType: SupportedImageMime; url: string }>();
+  for (const image of imageUrls ?? []) {
+    const dataUrl = parseImageDataUrl(image.image_url?.url);
+    if (
+      !dataUrl ||
+      !referencedFileIds.includes(image.file_id) ||
+      imageUrlsByFileId.has(image.file_id)
+    ) {
+      throw new UnresolvedUploadedImageError();
+    }
+    imageUrlsByFileId.set(image.file_id, dataUrl);
+  }
+  if (imageUrlsByFileId.size !== referencedFileIds.length) {
+    throw new UnresolvedUploadedImageError();
+  }
   const imageUrlsByPlaceholder = new Map(
-    [...referencedPlaceholders.values()].flatMap((placeholder) => {
-      const { index, mimeType: placeholderMimeType } = placeholder;
-      const requestFile = requestImageFiles[index];
-      const fileId = requestFile?.file_id;
-      const file = fileId ? filesById.get(fileId) : undefined;
-      const requestMimeType = normalizeImageMimeType(requestFile?.type);
-      const dataUrl = fileId ? imageUrlsByFileId.get(fileId) : undefined;
-      return requestMimeType === placeholderMimeType &&
-        normalizeImageMimeType(file?.type) === placeholderMimeType &&
-        dataUrl?.mimeType === placeholderMimeType
-        ? [[getUploadPlaceholderKey(placeholder), dataUrl.url] as const]
-        : [];
+    orderedPlaceholders.map((placeholder) => {
+      const placeholderKey = getUploadPlaceholderKey(placeholder);
+      const requestFile = referencedFilesByPlaceholder.get(placeholderKey)!;
+      const file = filesById.get(requestFile.file_id!)!;
+      const dataUrl = imageUrlsByFileId.get(requestFile.file_id!)!;
+      if (
+        normalizeImageMimeType(file.type) !== placeholder.mimeType ||
+        dataUrl.mimeType !== placeholder.mimeType
+      ) {
+        throw new UnresolvedUploadedImageError();
+      }
+      return [placeholderKey, dataUrl.url] as const;
     }),
   );
 

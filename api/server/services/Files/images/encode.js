@@ -226,7 +226,10 @@ async function encodeAndFormat(req, files, params, mode) {
       },
     };
 
-    if (mode === VisionModes.agents) {
+    if (mode === VisionModes.agents || mode === VisionModes.mcp) {
+      if (mode === VisionModes.mcp) {
+        imagePart.file_id = file.file_id;
+      }
       result.image_urls.push({ ...imagePart });
       result.files.push({ ...fileMetadata });
       continue;

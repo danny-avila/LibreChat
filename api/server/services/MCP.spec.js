@@ -1,5 +1,7 @@
 // Mock all dependencies - define mocks before imports
 const mockGetTenantId = jest.fn();
+const mockGetFiles = jest.fn();
+const mockPrepareImagePayload = jest.fn();
 const mockResolveUploadedImageArguments = jest.fn(({ toolArguments }) =>
   Promise.resolve(toolArguments),
 );
@@ -83,7 +85,15 @@ jest.mock('~/models', () => ({
   createToken: jest.fn(),
   updateToken: jest.fn(),
   deleteTokens: jest.fn(),
+  getFiles: (...args) => mockGetFiles(...args),
   getRoleByName: jest.fn(),
+}));
+
+jest.mock('~/server/services/Files/strategies', () => ({
+  getStrategyFunctions: jest.fn(() => ({
+    prepareImagePayload: (...args) => mockPrepareImagePayload(...args),
+    getDownloadStream: jest.fn(),
+  })),
 }));
 
 jest.mock('./Tools/mcp', () => ({
@@ -2159,6 +2169,144 @@ describe('User parameter passing tests', () => {
           },
         }),
       );
+    });
+
+    it.each([
+      ['png', 'image/png'],
+      ['jpeg', 'image/jpeg'],
+      ['webp', 'image/webp'],
+    ])(
+      'forwards a real production-encoded %s through the adapter to the MCP manager',
+      async (format, mimeType) => {
+        const sharp = require('sharp');
+        const imageBuffer = await sharp({
+          create: { width: 1, height: 1, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 1 } },
+        })
+          [format]()
+          .toBuffer();
+        const encodedImage = imageBuffer.toString('base64');
+        const uploadedFile = {
+          file_id: `upload-${format}`,
+          source: 'local',
+          type: mimeType,
+          height: 1,
+          width: 1,
+          bytes: imageBuffer.length,
+          filepath: `/uploads/${format}`,
+          filename: `upload.${format}`,
+        };
+        const mockUser = { id: `image-user-${format}`, role: 'USER' };
+        const request = {
+          body: { files: [{ file_id: uploadedFile.file_id, type: mimeType }] },
+          config: {},
+        };
+        const toolArguments = { image: `/mnt/data/0.${format}`, prompt: 'keep this field' };
+        const { getRoleByName } = require('~/models');
+        const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+        getRoleByName.mockResolvedValue({
+          permissions: { [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true } },
+        });
+        mockGetFiles.mockResolvedValue([uploadedFile]);
+        mockPrepareImagePayload.mockResolvedValue([uploadedFile, encodedImage]);
+        mockGetMCPManager.mockReturnValue({ callTool: mockCallTool });
+        mockResolveUploadedImageArguments.mockImplementationOnce((params) =>
+          jest.requireActual('./MCP/images').resolveUploadedImageArguments(params),
+        );
+
+        const mcpTool = await createMCPTool({
+          config: { forwardUploadedImages: true, type: 'stdio', command: 'node' },
+          request,
+          user: mockUser,
+          toolKey: `custom_edit${D}arbitrary-image-server`,
+          provider: 'openai',
+          userMCPAuthMap: {},
+          availableTools: {
+            [`custom_edit${D}arbitrary-image-server`]: {
+              function: {
+                description: 'Edit image',
+                parameters: { type: 'object', properties: {} },
+              },
+            },
+          },
+        });
+
+        await expect(
+          mcpTool.invoke(toolArguments, {
+            configurable: { user: mockUser },
+            metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+            toolCall: {},
+          }),
+        ).resolves.toBe('ok');
+
+        expect(mockGetFiles).toHaveBeenCalledWith({
+          file_id: { $in: [uploadedFile.file_id] },
+          user: mockUser.id,
+        });
+        expect(mockCallTool).toHaveBeenCalledWith(
+          expect.objectContaining({
+            toolArguments: {
+              image: `data:${mimeType};base64,${encodedImage}`,
+              prompt: 'keep this field',
+            },
+          }),
+        );
+      },
+    );
+
+    it('does not invoke the MCP manager when a zero-byte upload yields no usable encoder output', async () => {
+      const mockUser = { id: 'zero-byte-image-user', role: 'USER' };
+      const uploadedFile = {
+        file_id: 'zero-byte-upload',
+        source: 'local',
+        type: 'image/png',
+        height: 1,
+        width: 1,
+        bytes: 0,
+        filepath: '/uploads/empty.png',
+        filename: 'empty.png',
+      };
+      const request = {
+        body: { files: [{ file_id: uploadedFile.file_id, type: uploadedFile.type }] },
+        config: {},
+      };
+      const { getRoleByName } = require('~/models');
+      const mockCallTool = jest.fn().mockResolvedValue(['ok', null]);
+      getRoleByName.mockResolvedValue({
+        permissions: { [PermissionTypes.MCP_SERVERS]: { [Permissions.USE]: true } },
+      });
+      mockGetFiles.mockResolvedValue([uploadedFile]);
+      mockPrepareImagePayload.mockResolvedValue([uploadedFile, '']);
+      mockGetMCPManager.mockReturnValue({ callTool: mockCallTool });
+      mockResolveUploadedImageArguments.mockImplementationOnce((params) =>
+        jest.requireActual('./MCP/images').resolveUploadedImageArguments(params),
+      );
+
+      const mcpTool = await createMCPTool({
+        config: { forwardUploadedImages: true, type: 'stdio', command: 'node' },
+        request,
+        user: mockUser,
+        toolKey: `custom_edit${D}arbitrary-image-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        availableTools: {
+          [`custom_edit${D}arbitrary-image-server`]: {
+            function: { description: 'Edit image', parameters: { type: 'object', properties: {} } },
+          },
+        },
+      });
+
+      await expect(
+        mcpTool.invoke(
+          { image: '/mnt/data/0.png' },
+          {
+            configurable: { user: mockUser },
+            metadata: { provider: 'openai', thread_id: 'thread-1', run_id: 'run-1' },
+            toolCall: {},
+          },
+        ),
+      ).rejects.toThrow('Unable to resolve referenced uploaded image.');
+
+      expect(mockCallTool).not.toHaveBeenCalled();
     });
 
     it('passes original tool arguments through when the MCP server has not opted in', async () => {

@@ -7,6 +7,7 @@ jest.mock('~/server/services/Files/images/encode', () => ({
 }));
 
 const { resolveUploadedImageArguments } = require('./images');
+const { VisionModes } = require('librechat-data-provider');
 
 const mib = 1024 * 1024;
 
@@ -24,7 +25,13 @@ describe('MCP uploaded-image encoding', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockEncodeAndFormat.mockResolvedValue({
-      image_urls: [{ file_id: 'image', image_url: { url: 'data:image/png;base64,aW1hZ2U=' } }],
+      image_urls: [
+        {
+          type: 'image_url',
+          file_id: 'image',
+          image_url: { url: 'data:image/png;base64,aW1hZ2U=', detail: 'auto' },
+        },
+      ],
     });
   });
 
@@ -53,19 +60,21 @@ describe('MCP uploaded-image encoding', () => {
       body: { files: [{ file_id: file.file_id, type: file.type }] },
     };
 
-    const result = await resolveUploadedImageArguments({
+    const resolution = resolveUploadedImageArguments({
       forwardUploadedImages: true,
       request,
       toolArguments: { source: '/mnt/data/0.png' },
       user: { id: 'user-1' },
     });
 
+    if (expectedEncodeCalls === 1) {
+      await expect(resolution).resolves.toEqual({ source: 'data:image/png;base64,aW1hZ2U=' });
+    } else {
+      await expect(resolution).rejects.toThrow('Unable to resolve referenced uploaded image.');
+    }
     expect(mockEncodeAndFormat).toHaveBeenCalledTimes(expectedEncodeCalls);
     if (expectedEncodeCalls === 1) {
-      expect(mockEncodeAndFormat).toHaveBeenCalledWith(request, [file], {});
-      expect(result).toEqual({ source: 'data:image/png;base64,aW1hZ2U=' });
-    } else {
-      expect(result).toEqual({ source: '/mnt/data/0.png' });
+      expect(mockEncodeAndFormat).toHaveBeenCalledWith(request, [file], {}, VisionModes.mcp);
     }
   });
 });

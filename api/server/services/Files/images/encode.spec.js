@@ -22,7 +22,7 @@ jest.mock('~/server/services/Files/strategies', () => ({
 }));
 
 const axios = require('axios');
-const { FileSources } = require('librechat-data-provider');
+const { FileSources, VisionModes } = require('librechat-data-provider');
 const { encodeAndFormat } = require('./encode');
 
 const makeReq = () => ({ body: {}, config: {} });
@@ -107,5 +107,29 @@ describe('encodeAndFormat - request memory guard', () => {
     expect(mockRunGuardedEncode).not.toHaveBeenCalled();
     expect(result.image_urls).toHaveLength(1);
     expect(result.image_urls[0].image_url.url).toBe(`data:image/png;base64,${localBase64}`);
+  });
+
+  it('returns an image URL with the persisted file identity only for MCP forwarding', async () => {
+    const localBase64 = Buffer.from('mcp-image').toString('base64');
+    const file = {
+      source: FileSources.local,
+      height: 10,
+      width: 10,
+      type: 'image/png',
+      file_id: 'mcp-file',
+      filepath: 'local/mcp.png',
+      filename: 'mcp.png',
+      bytes: 555,
+    };
+    mockPrepareImagePayload.mockResolvedValue([file, localBase64]);
+
+    const result = await encodeAndFormat(makeReq(), [file], {}, VisionModes.mcp);
+
+    expect(result.image_urls).toEqual([
+      expect.objectContaining({
+        file_id: file.file_id,
+        image_url: { url: `data:image/png;base64,${localBase64}`, detail: 'auto' },
+      }),
+    ]);
   });
 });

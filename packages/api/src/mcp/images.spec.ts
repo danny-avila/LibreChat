@@ -11,7 +11,7 @@ const imageUrls = {
 
 function createDependencies(overrides = {}) {
   return {
-    findFiles: jest.fn().mockResolvedValue([first, second, third]),
+    findFiles: jest.fn().mockResolvedValue([first]),
     encodeImages: jest.fn().mockResolvedValue({
       image_urls: [
         { file_id: first.file_id, image_url: { url: imageUrls.first } },
@@ -103,18 +103,9 @@ describe('resolveUploadedImageArguments', () => {
     expect(dependencies.encodeImages).toHaveBeenCalledTimes(1);
   });
 
-  it.each([
-    [
-      ['/mnt/data/0.jpg', '/mnt/data/0.png'],
-      ['/mnt/data/0.jpg', imageUrls.first],
-    ],
-    [
-      ['/mnt/data/0.png', '/mnt/data/0.jpg'],
-      [imageUrls.first, '/mnt/data/0.jpg'],
-    ],
-  ])(
-    'does not cross-rewrite conflicting extensions for the same index: %p',
-    async (values, expected) => {
+  it.each([[['/mnt/data/0.jpg', '/mnt/data/0.png']], [['/mnt/data/0.png', '/mnt/data/0.jpg']]])(
+    'fails closed for conflicting extensions at the same request index: %p',
+    async (values) => {
       const dependencies = createDependencies({
         findFiles: jest.fn().mockResolvedValue([first]),
         encodeImages: jest.fn().mockResolvedValue({
@@ -130,11 +121,11 @@ describe('resolveUploadedImageArguments', () => {
           user: { id: 'user-1' },
           dependencies,
         }),
-      ).resolves.toEqual({ values: expected });
+      ).rejects.toThrow('Unable to resolve referenced uploaded image.');
     },
   );
 
-  it('queries only referenced current-request image IDs and preserves foreign or sparse placeholders', async () => {
+  it('fails closed for foreign or sparse current-request upload placeholders', async () => {
     const owned = { file_id: 'owned', filepath: '/images/user-1/owned.png', type: 'image/png' };
     const dependencies = createDependencies({
       findFiles: jest.fn().mockResolvedValue([owned]),
@@ -160,15 +151,10 @@ describe('resolveUploadedImageArguments', () => {
         user: { id: 'effective-user' },
         dependencies,
       }),
-    ).resolves.toEqual({
-      values: ['/mnt/data/0.png', imageUrls.first, '/mnt/data/2.png'],
-    });
+    ).rejects.toThrow('Unable to resolve referenced uploaded image.');
 
-    expect(dependencies.findFiles).toHaveBeenCalledWith({
-      file_id: { $in: ['missing-or-foreign', owned.file_id] },
-      user: 'effective-user',
-    });
-    expect(dependencies.encodeImages).toHaveBeenCalledWith(isolatedRequest, [owned]);
+    expect(dependencies.findFiles).not.toHaveBeenCalled();
+    expect(dependencies.encodeImages).not.toHaveBeenCalled();
   });
 
   it('does not look up hostile, generated, URL, existing data, invalid, or out-of-range values', async () => {
@@ -187,7 +173,6 @@ describe('resolveUploadedImageArguments', () => {
         '/mnt/data/0.gif',
         '/mnt/data/0.svg',
         '/mnt/data/0.PNG',
-        '/mnt/data/9.png',
       ],
     };
 
@@ -205,7 +190,7 @@ describe('resolveUploadedImageArguments', () => {
     expect(dependencies.encodeImages).not.toHaveBeenCalled();
   });
 
-  it('preserves placeholders without a data URL and surfaces encoder failures without logging payloads', async () => {
+  it('fails closed for an unresolved data URL and surfaces encoder failures without logging payloads', async () => {
     const nonDataDependencies = createDependencies({
       encodeImages: jest.fn().mockResolvedValue({
         image_urls: [
@@ -223,7 +208,7 @@ describe('resolveUploadedImageArguments', () => {
         user: { id: 'user-1' },
         dependencies: nonDataDependencies,
       }),
-    ).resolves.toBe(toolArguments);
+    ).rejects.toThrow('Unable to resolve referenced uploaded image.');
 
     const failingDependencies = createDependencies({
       encodeImages: jest.fn().mockRejectedValue(new Error('encoder unavailable')),
@@ -299,15 +284,18 @@ describe('resolveUploadedImageArguments', () => {
       });
       const currentRequest = { body: { files: [{ file_id: file.file_id, type: requestType }] } };
 
-      await expect(
-        resolveUploadedImageArguments({
-          forwardUploadedImages: true,
-          toolArguments: { source: placeholder },
-          request: currentRequest,
-          user: { id: 'user-1' },
-          dependencies,
-        }),
-      ).resolves.toEqual({ source: expected });
+      const resolution = resolveUploadedImageArguments({
+        forwardUploadedImages: true,
+        toolArguments: { source: placeholder },
+        request: currentRequest,
+        user: { id: 'user-1' },
+        dependencies,
+      });
+      if (expected === placeholder) {
+        await expect(resolution).rejects.toThrow('Unable to resolve referenced uploaded image.');
+      } else {
+        await expect(resolution).resolves.toEqual({ source: expected });
+      }
     },
   );
 });
