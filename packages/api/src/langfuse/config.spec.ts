@@ -739,6 +739,32 @@ describe('buildLangfuseConfig', () => {
     delete process.env.LANGFUSE_PROXY_TOKEN;
   });
 
+  it('does not re-expand a placeholder that a resolved credential contains', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    process.env.LANGFUSE_EMBEDDED_NAME = 'SHOULD-NOT-APPEAR';
+    process.env.LANGFUSE_PROXY_TOKEN = 'abc${LANGFUSE_EMBEDDED_NAME}ghi';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: { headers: { 'X-Proxy-Token': '${LANGFUSE_PROXY_TOKEN}' } },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** The embedded name is *set* here, so a second expansion pass would
+     *  rewrite the credential rather than leave it — the earlier test only
+     *  covered an unset name and could not catch that. */
+    expect(built.additionalHeaders).toEqual({
+      'X-Proxy-Token': 'abc${LANGFUSE_EMBEDDED_NAME}ghi',
+    });
+    delete process.env.LANGFUSE_EMBEDDED_NAME;
+    delete process.env.LANGFUSE_PROXY_TOKEN;
+  });
+
   it('drops headers referencing infrastructure secrets', async () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';

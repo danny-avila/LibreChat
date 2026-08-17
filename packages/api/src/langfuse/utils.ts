@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { isSensitiveEnvVar } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { encodeHeaderValue, resolveHeaders } from '~/utils/env';
+import { encodeHeaderValue, stripUnresolvedPlaceholders } from '~/utils/env';
 import { decryptConfigSecret } from '~/admin/secrets';
 import { normalizeString } from '~/utils/text';
 
@@ -136,15 +136,15 @@ export function redirectPolicyFor(headers?: Record<string, string>): {
 }
 
 /**
- * Resolves the deployment's custom Langfuse headers through the same pipeline
- * as endpoint headers — `${ENV_VAR}` interpolation and header-safe encoding of
- * non-ASCII values.
+ * Resolves the deployment's custom Langfuse headers: `${ENV_VAR}` interpolation
+ * and header-safe encoding, matching what endpoint headers get.
  *
- * No user or request body is supplied: one exporter serves every user's spans,
- * so per-user placeholders have no meaning here. `stripUnresolved` empties them
- * instead of forwarding template syntax upstream, and empty values are then
- * dropped so a misconfigured header is absent rather than blank — a proxy
- * rejecting a blank credential is far harder to diagnose than a missing one.
+ * No user or request body is involved — one exporter serves every user's spans,
+ * so per-user placeholders have no meaning here and are stripped rather than
+ * forwarded as template syntax. Anything that cannot be sent safely (unset
+ * reference, illegal name, framing header, unencodable value) is dropped with a
+ * warning rather than sent malformed: a proxy rejecting a broken credential is
+ * far harder to diagnose than a missing one.
  *
  * @returns the resolved headers, or `undefined` when none survive.
  */
@@ -184,31 +184,30 @@ export function resolveLangfuseHeaders(
   }
 
   const collapsed = collapseHeaderNameVariants(declared);
-  /** References are expanded here so only fully literal values reach
-   *  `resolveHeaders`, which still strips `{{...}}` placeholders. */
-  const expanded: Record<string, string> = {};
-  for (const [name, value] of Object.entries(collapsed)) {
-    const unresolved = unresolvableEnvRefs(value);
+  const entries: Array<[string, string]> = [];
+  for (const [name, configured] of Object.entries(collapsed)) {
+    const unresolved = unresolvableEnvRefs(configured);
     if (unresolved.length > 0) {
       warnDroppedHeader(name, `${unresolved.join(', ')} is not set in the environment.`);
       continue;
     }
-    expanded[name] = expandEnvRefs(value);
-  }
 
-  const resolved = resolveHeaders({ headers: expanded, stripUnresolved: true });
-  const entries: Array<[string, string]> = [];
-  for (const [name, value] of Object.entries(resolved)) {
+    /** Expanded exactly once. Handing the result back to `resolveHeaders`
+     *  would run `extractEnvVariable` over the *credential*, so a token
+     *  containing `${PATH}` — a name that happens to be set — would be
+     *  silently rewritten. Only the user-placeholder strip is still wanted,
+     *  and no user is supplied, so it is applied directly. */
+    const value = stripUnresolvedPlaceholders(expandEnvRefs(configured));
+
     /** Trimmed because a credential read from a file or `$(...)` commonly
      *  carries a trailing newline, which would otherwise fail validation. */
     const trimmed = value.trim();
     if (trimmed === '') {
       continue;
     }
-    /** `resolveHeaders` only encodes values it substitutes a user field into,
-     *  and no user is supplied here — so a literal or interpolated character
-     *  above U+00FF would reach `Headers` unencoded and throw, taking down
-     *  export, verification, and feedback alike. */
+    /** Nothing else encodes these values, so a literal or interpolated
+     *  character above U+00FF would reach `Headers` unencoded and throw,
+     *  taking down export, verification, and feedback alike. */
     const encoded = encodeHeaderValue(trimmed);
     /** `encodeHeaderValue` only encodes above U+00FF, so control bytes below it
      *  still reach `Headers` and throw — an embedded CR/LF would also be a
