@@ -14,7 +14,10 @@ import {
   resolveTenantCredentials,
   toBasicAuthorization,
 } from './utils';
-import { resolveLangfuseTenantDestination } from './tenantDestinations';
+import {
+  allowsLangfuseCustomHeaders,
+  resolveLangfuseTenantDestination,
+} from './tenantDestinations';
 import { mergeHeaders } from '~/utils/headers';
 import { normalizeString } from '~/utils/text';
 import { traceIdForMessage } from './trace';
@@ -47,6 +50,19 @@ export type LangfuseScoreDestinationOptions = {
    */
   centralTraceExportEnabled?: boolean;
 };
+
+/** Drops the deployment's headers unless this destination is an origin the
+ *  operator explicitly configured — a run can resolve to several destinations,
+ *  and only the intended one should receive the gateway credential. */
+export function scopeHeadersToDestination(
+  headers: Record<string, string> | undefined,
+  baseUrl: string,
+): Record<string, string> | undefined {
+  if (headers == null) {
+    return undefined;
+  }
+  return allowsLangfuseCustomHeaders(baseUrl) ? headers : undefined;
+}
 
 export function getLangfuseDestinationId(baseUrl: string, projectId: string): string {
   return createHash('sha256')
@@ -151,19 +167,20 @@ async function getCentralScoreDestination(
   }
 
   const baseUrl = getCentralEnvBaseUrl();
+  const scopedHeaders = scopeHeadersToDestination(headers, baseUrl);
   const projectId = await resolveCentralProjectId(
     baseUrl,
     publicKey,
     secretKey,
     waitForProjectId,
-    headers,
+    scopedHeaders,
   );
   return {
     id: projectId ? getLangfuseDestinationId(baseUrl, projectId) : undefined,
     name: 'central',
     baseUrl,
     authorization: toBasicAuthorization(publicKey, secretKey),
-    ...(headers ? { headers } : {}),
+    ...(scopedHeaders ? { headers: scopedHeaders } : {}),
   };
 }
 
@@ -196,6 +213,7 @@ function getTenantScoreDestination(
     return undefined;
   }
 
+  const scopedHeaders = scopeHeadersToDestination(headers, destination.baseUrl);
   return {
     id: config?.projectId
       ? getLangfuseDestinationId(destination.baseUrl, config.projectId)
@@ -203,7 +221,7 @@ function getTenantScoreDestination(
     name: 'tenant',
     baseUrl: destination.baseUrl,
     authorization: toBasicAuthorization(tenantCredentials.publicKey, tenantCredentials.secretKey),
-    ...(headers ? { headers } : {}),
+    ...(scopedHeaders ? { headers: scopedHeaders } : {}),
   };
 }
 
@@ -222,6 +240,7 @@ function getConfiguredScoreDestination(
     return undefined;
   }
 
+  const scopedHeaders = scopeHeadersToDestination(headers, destination.baseUrl);
   return {
     id: config?.projectId
       ? getLangfuseDestinationId(destination.baseUrl, config.projectId)
@@ -229,7 +248,7 @@ function getConfiguredScoreDestination(
     name: 'connection',
     baseUrl: destination.baseUrl,
     authorization: toBasicAuthorization(credentials.publicKey, credentials.secretKey),
-    ...(headers ? { headers } : {}),
+    ...(scopedHeaders ? { headers: scopedHeaders } : {}),
   };
 }
 

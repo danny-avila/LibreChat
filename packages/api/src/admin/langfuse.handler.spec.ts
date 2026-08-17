@@ -959,6 +959,7 @@ describe('createAdminLangfuseHandlers', () => {
     });
 
     it('sends the deployment headers on both verification requests', async () => {
+      process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://eu.langfuse.internal';
       global.fetch = jest
         .fn()
         .mockResolvedValueOnce(projectResponse())
@@ -981,6 +982,29 @@ describe('createAdminLangfuseHandlers', () => {
       const [, ingestionInit] = (global.fetch as unknown as jest.Mock).mock.calls[1];
       expect(ingestionInit.headers['CF-Access-Client-Id']).toBe('proxy-client');
       expect(ingestionInit.headers.Authorization).toBe('Bearer pk');
+      delete process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL;
+    });
+
+    it('withholds deployment headers when verifying an unconfigured destination', async () => {
+      global.fetch = jest
+        .fn()
+        .mockResolvedValueOnce(projectResponse())
+        .mockResolvedValueOnce({ ok: true, status: 207 }) as unknown as typeof fetch;
+      const { handlers } = createHandlers();
+      const res = mockRes();
+
+      await handlers.testConnection(
+        mockReq({
+          body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
+          config: { langfuse: { headers: { 'CF-Access-Client-Id': 'internal-gateway' } } },
+        }),
+        res,
+      );
+
+      /** `eu` here is the built-in Langfuse Cloud default; an admin selecting it
+       *  must not ship the internal gateway credential to that origin. */
+      const calls = (global.fetch as unknown as jest.Mock).mock.calls;
+      expect(JSON.stringify(calls)).not.toContain('internal-gateway');
     });
 
     it.each(['Authorization', 'authorization'])(
@@ -993,6 +1017,7 @@ describe('createAdminLangfuseHandlers', () => {
         const { handlers } = createHandlers();
         const res = mockRes();
 
+        process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL = 'https://eu.langfuse.internal';
         await handlers.testConnection(
           mockReq({
             body: { destination: 'eu', publicKey: 'pk', secretKey: 'sk' },
@@ -1000,6 +1025,7 @@ describe('createAdminLangfuseHandlers', () => {
           }),
           res,
         );
+        delete process.env.LANGFUSE_FANOUT_TENANT_EU_BASE_URL;
 
         const [, projectsInit] = (global.fetch as unknown as jest.Mock).mock.calls[0];
         const headers = projectsInit.headers as Record<string, string>;

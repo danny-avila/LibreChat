@@ -18,8 +18,8 @@ import {
   getLangfuseTenantDestinations,
   resolveLangfuseTenantDestination,
 } from '~/langfuse/tenantDestinations';
+import { getLangfuseDestinationId, scopeHeadersToDestination } from '~/langfuse/destinations';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
-import { getLangfuseDestinationId } from '~/langfuse/destinations';
 import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
 import { resolveLangfuseHeaders } from '~/langfuse/utils';
 import { mergeHeaders } from '~/utils/headers';
@@ -377,7 +377,10 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
           tenantDestination,
           publicKey,
           secretKey,
-          resolveLangfuseHeaders(req.config?.langfuse?.headers),
+          scopeHeadersToDestination(
+            resolveLangfuseHeaders(req.config?.langfuse?.headers),
+            tenantDestination.baseUrl,
+          ),
         );
         if (!verification.success) {
           return res
@@ -473,7 +476,10 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         tenantDestination,
         publicKey,
         secretKey,
-        resolveLangfuseHeaders(req.config?.langfuse?.headers),
+        scopeHeadersToDestination(
+          resolveLangfuseHeaders(req.config?.langfuse?.headers),
+          tenantDestination.baseUrl,
+        ),
       );
       const response: TLangfuseConnectionTestResponse = result.success
         ? { success: true }

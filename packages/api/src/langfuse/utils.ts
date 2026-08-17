@@ -10,6 +10,11 @@ type LangfuseAppConfig = NonNullable<AppConfig['langfuse']>;
 const ENV_PLACEHOLDER_PATTERN = /\$\{([^}]+)\}/g;
 /** RFC 7230 token characters — the only bytes legal in an HTTP field name. */
 const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+/** Legal field-value bytes: visible ASCII, space/tab, and obs-text. A newline,
+ *  carriage return, or NUL is both rejected by `Headers` and a request-splitting
+ *  vector, so such a value is dropped rather than sanitized. */
+
+const HEADER_VALUE_PATTERN = /^[\t\x20-\x7e\x80-\xff]*$/;
 
 /** Header names already reported, so a per-run resolution cannot spam the log.
  *  Bounded by the deployment's configured header names. */
@@ -134,14 +139,25 @@ export function resolveLangfuseHeaders(
       warnDroppedHeader(name, `${unresolved.join(', ')} is not set in the environment.`);
       continue;
     }
-    if (value.trim() === '') {
+    /** Trimmed because a credential read from a file or `$(...)` commonly
+     *  carries a trailing newline, which would otherwise fail validation. */
+    const trimmed = value.trim();
+    if (trimmed === '') {
       continue;
     }
     /** `resolveHeaders` only encodes values it substitutes a user field into,
      *  and no user is supplied here — so a literal or interpolated character
      *  above U+00FF would reach `Headers` unencoded and throw, taking down
      *  export, verification, and feedback alike. */
-    entries.push([name, encodeHeaderValue(value)]);
+    const encoded = encodeHeaderValue(trimmed);
+    /** `encodeHeaderValue` only encodes above U+00FF, so control bytes below it
+     *  still reach `Headers` and throw — an embedded CR/LF would also be a
+     *  request-splitting attempt, so this drops rather than strips. */
+    if (!HEADER_VALUE_PATTERN.test(encoded)) {
+      warnDroppedHeader(name, 'its value contains characters not allowed in an HTTP header.');
+      continue;
+    }
+    entries.push([name, encoded]);
   }
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }

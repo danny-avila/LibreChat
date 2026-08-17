@@ -501,6 +501,7 @@ describe('buildLangfuseConfig', () => {
 
   it('sends configured headers with a stored tenant connection', async () => {
     delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_FANOUT_TENANT_US_BASE_URL = 'https://us.langfuse.internal';
     const { encryptV3 } = await import('@librechat/data-schemas');
     const { buildLangfuseConfig } = await import('./config');
 
@@ -521,9 +522,61 @@ describe('buildLangfuseConfig', () => {
       deterministicTraceId: true,
       publicKey: 'pk-stored',
       secretKey: 'sk-stored',
-      baseUrl: 'https://us.cloud.langfuse.com',
+      baseUrl: 'https://us.langfuse.internal',
       additionalHeaders: { 'X-Proxy-Token': 'tenant-token' },
     });
+    delete process.env.LANGFUSE_FANOUT_TENANT_US_BASE_URL;
+  });
+
+  it('withholds headers from an origin the deployment never configured', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    const { encryptV3 } = await import('@librechat/data-schemas');
+    const { buildLangfuseConfig } = await import('./config');
+
+    /** The destination here is the built-in Langfuse Cloud default. A proxy
+     *  credential meant for an internal gateway must not be disclosed to a
+     *  third-party origin the operator never pointed at. */
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          enabled: true,
+          publicKey: 'pk-stored',
+          secretKey: encryptV3('sk-stored'),
+          destination: 'us',
+          headers: { 'X-Proxy-Token': 'internal-gateway-token' },
+        },
+      } as unknown as AppConfig,
+    });
+
+    expect(built).not.toHaveProperty('additionalHeaders');
+    expect(JSON.stringify(built)).not.toContain('internal-gateway-token');
+  });
+
+  it('withholds headers from central cloud export while the collector still receives them', async () => {
+    process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+    process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://collector:4318';
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const appConfig = {
+      langfuse: { headers: { 'X-Gateway-Key': 'gateway' } },
+    } as unknown as AppConfig;
+
+    expect(buildLangfuseConfig({ tenantId: 'tenant-1', appConfig })).toMatchObject({
+      baseUrl: 'http://collector:4318',
+      additionalHeaders: { 'X-Gateway-Key': 'gateway' },
+    });
+
+    /** Without fanout the same config exports straight to Langfuse Cloud, which
+     *  must not receive the collector's credential. */
+    delete process.env.LANGFUSE_FANOUT_ENABLED;
+    delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+    delete process.env.TENANT_ISOLATION_STRICT;
+    const direct = buildLangfuseConfig({ runId: 'run-1', appConfig });
+    expect(direct).toMatchObject({ baseUrl: 'https://cloud.langfuse.com' });
+    expect(direct).not.toHaveProperty('additionalHeaders');
   });
 
   it('sends configured headers to the fanout collector', async () => {
@@ -548,6 +601,7 @@ describe('buildLangfuseConfig', () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
     process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
     process.env.LANGFUSE_PROXY_TOKEN = 'resolved-token';
     const { buildLangfuseConfig } = await import('./config');
 
@@ -572,6 +626,7 @@ describe('buildLangfuseConfig', () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
     process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
     const { buildLangfuseConfig } = await import('./config');
 
     const built = buildLangfuseConfig({
@@ -601,6 +656,7 @@ describe('buildLangfuseConfig', () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
     process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
     process.env.LANGFUSE_TEAM_HEADER = 'Marić';
     const { buildLangfuseConfig } = await import('./config');
 
@@ -630,6 +686,7 @@ describe('buildLangfuseConfig', () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
     process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
     const { buildLangfuseConfig } = await import('./config');
 
     const built = buildLangfuseConfig({
@@ -659,6 +716,7 @@ describe('buildLangfuseConfig', () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
     process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
     process.env.LANGFUSE_PROXY_TOKEN = 'abc${def}ghi';
     const { buildLangfuseConfig } = await import('./config');
 
@@ -697,6 +755,36 @@ describe('buildLangfuseConfig', () => {
 
     expect(built).not.toHaveProperty('additionalHeaders');
     expect(JSON.stringify(built)).not.toContain('super-secret-jwt');
+  });
+
+  it('drops header values carrying bytes illegal in an HTTP header', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
+    const { buildLangfuseConfig } = await import('./config');
+
+    const built = buildLangfuseConfig({
+      runId: 'run-1',
+      appConfig: {
+        langfuse: {
+          headers: {
+            'X-Injected': 'token\r\nX-Evil: injected',
+            'X-Nul': 'tok en',
+            'X-Trailing-Newline': 'token\n',
+            'X-Clean': 'token',
+          },
+        },
+      } as unknown as AppConfig,
+    }) as { additionalHeaders?: Record<string, string> };
+
+    /** A trailing newline is the common `$(cat secret)` case and is trimmed;
+     *  an embedded CRLF is a request-splitting attempt and is dropped. */
+    expect(built.additionalHeaders).toEqual({
+      'X-Trailing-Newline': 'token',
+      'X-Clean': 'token',
+    });
+    expect(() => new Headers(built.additionalHeaders)).not.toThrow();
   });
 
   it('omits headers entirely when none are configured', async () => {

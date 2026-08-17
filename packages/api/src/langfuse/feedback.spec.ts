@@ -1286,6 +1286,7 @@ describe('Langfuse feedback scores', () => {
   });
 
   it('sends configured headers with score creation', async () => {
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -1297,7 +1298,7 @@ describe('Langfuse feedback scores', () => {
     });
 
     expect(getFetchMock()).toHaveBeenCalledWith(
-      'https://cloud.langfuse.com/api/public/scores',
+      'https://langfuse.internal/api/public/scores',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
@@ -1309,7 +1310,26 @@ describe('Langfuse feedback scores', () => {
     );
   });
 
+  it('withholds configured headers from an unconfigured origin', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+
+    await sendFeedbackScore({
+      traceId: '86d413435f8b0d7f32d4d010ce769e2e',
+      feedback: { rating: 'thumbsUp' },
+      appConfig: appConfigWithLangfuse({
+        headers: { 'CF-Access-Client-Id': 'internal-gateway-token' },
+      }),
+    });
+
+    /** Default central export is Langfuse Cloud, which the operator never
+     *  pointed at — a gateway credential must not be disclosed to it. */
+    const [url, init] = getFetchMock().mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://cloud.langfuse.com/api/public/scores');
+    expect(JSON.stringify(init.headers)).not.toContain('internal-gateway-token');
+  });
+
   it('sends configured headers with score deletion', async () => {
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
     const { sendFeedbackScore } = await loadFeedback();
 
     await sendFeedbackScore({
@@ -1359,6 +1379,7 @@ describe('Langfuse feedback scores', () => {
 
   it('sends configured headers with the central project identity lookup', async () => {
     delete process.env.LANGFUSE_PROJECT_ID;
+    process.env.LANGFUSE_BASE_URL = 'https://langfuse.internal';
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ data: [{ id: 'discovered-project' }] }), { status: 200 }),
     );
@@ -1373,7 +1394,7 @@ describe('Langfuse feedback scores', () => {
     });
 
     expect(getFetchMock()).toHaveBeenCalledWith(
-      'https://cloud.langfuse.com/api/public/projects',
+      'https://langfuse.internal/api/public/projects',
       expect.objectContaining({
         headers: expect.objectContaining({
           'CF-Access-Client-Id': 'proxy-client',

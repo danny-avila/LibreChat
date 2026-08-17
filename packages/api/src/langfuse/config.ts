@@ -9,8 +9,11 @@ import {
   isLangfuseTracingEnabled,
   usesLangfuseMultiTenantRouting,
 } from './policy';
+import {
+  allowsLangfuseCustomHeaders,
+  resolveLangfuseTenantDestination,
+} from './tenantDestinations';
 import { normalizeBoolean, resolveLangfuseHeaders, resolveTenantCredentials } from './utils';
-import { resolveLangfuseTenantDestination } from './tenantDestinations';
 import { normalizeString } from '~/utils/text';
 import { traceIdForMessage } from './trace';
 
@@ -76,6 +79,29 @@ function applyCentralEnvConfig(langfuse: LangfuseRunConfigWithTraceAttributes): 
       normalizeString(process.env.LANGFUSE_BASEURL) ??
       DEFAULT_BASE_URL;
   }
+}
+
+/**
+ * Attaches the deployment's headers only once the export branch has settled on
+ * a `baseUrl`, and only when that origin is one the operator configured.
+ *
+ * A run resolves to a single destination, but which one depends on the branch —
+ * attaching earlier would send a gateway credential to whatever endpoint the
+ * config happened to fall through to, including Langfuse Cloud.
+ */
+function applyCustomHeaders(
+  langfuse: LangfuseRunConfigWithTraceAttributes,
+  additionalHeaders?: Record<string, string>,
+): LangfuseRunConfigWithTraceAttributes {
+  if (
+    additionalHeaders != null &&
+    langfuse.enabled !== false &&
+    langfuse.baseUrl != null &&
+    allowsLangfuseCustomHeaders(langfuse.baseUrl)
+  ) {
+    langfuse.additionalHeaders = additionalHeaders;
+  }
+  return langfuse;
 }
 
 function disableCentralExport(langfuse: LangfuseRunConfigWithTraceAttributes): void {
@@ -167,13 +193,7 @@ export function buildLangfuseConfig({
     return langfuse;
   }
 
-  /** Applied before the export branches so every destination this config can
-   *  resolve to — central, tenant, or collector — carries the deployment's
-   *  proxy headers. Branches that end up disabling export leave them inert. */
   const additionalHeaders = resolveLangfuseHeaders(config?.headers);
-  if (additionalHeaders) {
-    langfuse.additionalHeaders = additionalHeaders;
-  }
 
   const tenantLangfuseEnabled = normalizeBoolean(config?.enabled) === true;
   if (!centralTraceExportEnabled) {
@@ -199,7 +219,7 @@ export function buildLangfuseConfig({
     } else if (config != null) {
       langfuse.enabled = false;
     }
-    return langfuse;
+    return applyCustomHeaders(langfuse, additionalHeaders);
   }
 
   const exportPlan = resolveLangfuseExportPlan({
@@ -251,5 +271,5 @@ export function buildLangfuseConfig({
       break;
   }
 
-  return langfuse;
+  return applyCustomHeaders(langfuse, additionalHeaders);
 }

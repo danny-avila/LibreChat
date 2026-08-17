@@ -50,6 +50,28 @@ function isLangfuseHeadersFieldPath(fieldPath: string): boolean {
   return fieldPath === 'langfuse.headers' || fieldPath.startsWith('langfuse.headers.');
 }
 
+/**
+ * Whether an overrides payload carries Langfuse headers under any spelling.
+ *
+ * `overrides` is a Mixed document written wholesale, so a dotted property name
+ * survives verbatim: `{ langfuse: { "headers.X-Token": "..." } }` and
+ * `{ "langfuse.headers": {...} }` both persist a credential that the nested-map
+ * redactor never walks, and a later read returns it unchanged.
+ */
+function hasLangfuseHeadersOverride(rawOverrides: Record<string, unknown>): boolean {
+  for (const key of Object.keys(rawOverrides)) {
+    if (key === 'langfuse.headers' || key.startsWith('langfuse.headers.')) {
+      return true;
+    }
+  }
+
+  const rawLangfuse = rawOverrides.langfuse;
+  if (rawLangfuse == null || typeof rawLangfuse !== 'object' || Array.isArray(rawLangfuse)) {
+    return false;
+  }
+  return Object.keys(rawLangfuse).some((key) => key === 'headers' || key.startsWith('headers.'));
+}
+
 export function isValidFieldPath(path: string): boolean {
   return (
     typeof path === 'string' &&
@@ -540,13 +562,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
       }
 
-      const rawLangfuse = rawOverrides.langfuse;
-      if (
-        rawLangfuse != null &&
-        typeof rawLangfuse === 'object' &&
-        !Array.isArray(rawLangfuse) &&
-        'headers' in rawLangfuse
-      ) {
+      if (hasLangfuseHeadersOverride(rawOverrides)) {
         return res.status(400).json({ error: LANGFUSE_HEADERS_CONFIG_ERROR });
       }
 
