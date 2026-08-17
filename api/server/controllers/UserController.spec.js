@@ -395,6 +395,11 @@ describe('deleteUserController', () => {
     const activeSpy = jest
       .spyOn(GenerationJobManager, 'getActiveJobIdsForUser')
       .mockResolvedValueOnce(['conv-live']);
+    const jobSpy = jest.spyOn(GenerationJobManager, 'getJob').mockResolvedValueOnce({
+      status: 'running',
+      createdAt: 1000,
+      metadata: { userId: userId.toString() },
+    });
     const abortSpy = jest
       .spyOn(GenerationJobManager, 'abortJob')
       .mockResolvedValue({ success: true });
@@ -405,7 +410,7 @@ describe('deleteUserController', () => {
     // job leaves the active set at its abort CAS while the generation owner's
     // message/usage/balance writes are still draining. Cascading now would let
     // those writes recreate rows for the deleted account.
-    expect(abortSpy).toHaveBeenCalledWith('conv-live');
+    expect(abortSpy).toHaveBeenCalledWith('conv-live', { expectedCreatedAt: 1000 });
     expect(db.deleteMessages).not.toHaveBeenCalled();
     expect(db.deleteUserById).not.toHaveBeenCalled();
 
@@ -417,6 +422,7 @@ describe('deleteUserController', () => {
 
     db.getUsersPendingDeletion.mockResolvedValue([]);
     activeSpy.mockRestore();
+    jobSpy.mockRestore();
     abortSpy.mockRestore();
   });
 
