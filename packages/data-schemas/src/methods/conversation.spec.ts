@@ -2405,6 +2405,59 @@ describe('Conversation Operations', () => {
       expect(refreshed?.conversationCount).toBe(0);
     });
 
+    it('repairs the project when the sweep lands while the pointer write is in flight', async () => {
+      const project = await ChatProject.create({ user: 'user123', name: 'Project' });
+      const projectId = project._id!.toString();
+      const conversationId = uuidv4();
+      const anchor = new Date('2026-01-01T00:00:00.000Z');
+      await Conversation.collection.insertOne({
+        conversationId,
+        user: 'user123',
+        title: 'chat being saved',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: projectId,
+        expiredAt: null,
+        isArchived: false,
+        createdAt: anchor,
+        updatedAt: anchor,
+      });
+      await ChatProject.findByIdAndUpdate(project._id, {
+        conversationCount: 1,
+        lastConversationAt: anchor,
+        lastConversationId: conversationId,
+      });
+
+      /** The sweep runs after the save has decided the chat is visible and immediately
+       * before its pointer write commits, which is the one window a check taken before
+       * that write cannot cover. */
+      const updateOne = ChatProject.updateOne.bind(ChatProject);
+      const updateOneSpy = jest.spyOn(ChatProject, 'updateOne').mockImplementationOnce((async (
+        filter,
+        update,
+        options,
+      ) => {
+        await archiveAllConvos('user123');
+        return await updateOne(filter, update, options);
+      }) as typeof ChatProject.updateOne);
+
+      try {
+        await saveConvo(
+          { userId: 'user123' },
+          { conversationId, chatProjectId: projectId, title: 'Renamed while the sweep ran' },
+          { noUpsert: true },
+        );
+      } finally {
+        updateOneSpy.mockRestore();
+      }
+
+      const archived = await Conversation.findOne({ conversationId }).lean<IConversation>();
+      expect(archived?.isArchived).toBe(true);
+      const refreshed = await ChatProject.findById(project._id).lean<IChatProject>();
+      expect(refreshed?.lastConversationId).toBeNull();
+      expect(refreshed?.lastConversationAt).toBeNull();
+      expect(refreshed?.conversationCount).toBe(0);
+    });
+
     it('returns zero when the user has no conversations', async () => {
       const result = await archiveAllConvos('user123');
       expect(result.archivedCount).toBe(0);

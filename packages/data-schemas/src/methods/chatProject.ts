@@ -277,24 +277,6 @@ export async function updateChatProjectLastConversationForUser(
     return;
   }
 
-  /**
-   * The chat can stop being visible between the write that persisted it and this pointer
-   * update: an archive-all sweep, a single archive from another tab, or a retention flip
-   * all land in that window, and each has already run its own stats refresh by the time
-   * this resumes. Writing the pointer then would leave the project advertising activity
-   * on a chat its workspace hides, so recompute the project instead of restoring it.
-   * The read is a point lookup on the unique `conversationId, user` index.
-   */
-  const Conversation = mongoose.models.Conversation as Model<IConversation>;
-  const stillVisible = await Conversation.exists({
-    ...visibleProjectConversationFilter(user, projectId),
-    conversationId: conversation.conversationId,
-  });
-  if (!stillVisible) {
-    await refreshChatProjectStatsForUser(mongoose, user, projectId);
-    return;
-  }
-
   const lastConversationAt = conversation.updatedAt ?? conversation.createdAt ?? new Date();
   const lastConversationFields = {
     lastConversationAt,
@@ -305,20 +287,39 @@ export async function updateChatProjectLastConversationForUser(
 
   if (!incrementCount) {
     await ChatProject.updateOne(projectFilter, { $set: lastConversationFields });
-    return;
+  } else {
+    /**
+     * Skip `$inc` when a concurrent refresh already recorded this conversation as
+     * `lastConversationId`. The conversation is visible to countDocuments as soon
+     * as it is persisted, so a later increment would double-count it.
+     */
+    const incremented = await ChatProject.updateOne(
+      { ...projectFilter, lastConversationId: { $ne: conversation.conversationId } },
+      { $set: lastConversationFields, $inc: { conversationCount: 1 } },
+    );
+    if ((incremented.matchedCount ?? 0) === 0) {
+      await ChatProject.updateOne(projectFilter, { $set: lastConversationFields });
+    }
   }
 
   /**
-   * Skip `$inc` when a concurrent refresh already recorded this conversation as
-   * `lastConversationId`. The conversation is visible to countDocuments as soon
-   * as it is persisted, so a later increment would double-count it.
+   * The chat can stop being visible while this pointer write is in flight: an archive-all
+   * sweep, a single archive from another tab, or a retention flip, each of which has
+   * already run its own stats refresh by the time this lands, leaving the project
+   * advertising activity on a chat its workspace hides. Checking first would only move
+   * that race earlier, so the pointer is verified after it is written and the project
+   * recomputed when the chat it names turns out to be hidden. A sweep that lands later
+   * still refreshes the project itself, and `refreshChatProjectStatsForUser` compare-and-
+   * sets, so it cannot commit a count it read before this write. The read is a point
+   * lookup on the unique `conversationId, user` index.
    */
-  const incremented = await ChatProject.updateOne(
-    { ...projectFilter, lastConversationId: { $ne: conversation.conversationId } },
-    { $set: lastConversationFields, $inc: { conversationCount: 1 } },
-  );
-  if ((incremented.matchedCount ?? 0) === 0) {
-    await ChatProject.updateOne(projectFilter, { $set: lastConversationFields });
+  const Conversation = mongoose.models.Conversation as Model<IConversation>;
+  const stillVisible = await Conversation.exists({
+    ...visibleProjectConversationFilter(user, projectId),
+    conversationId: conversation.conversationId,
+  });
+  if (!stillVisible) {
+    await refreshChatProjectStatsForUser(mongoose, user, projectId);
   }
 }
 
