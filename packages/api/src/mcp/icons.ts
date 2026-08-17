@@ -1,10 +1,10 @@
-import type createDOMPurify from 'dompurify';
 import {
   MAX_MCP_ICON_PATH_LENGTH,
   SVG_SANITIZE_CONFIG,
   restrictSvgReferences,
   restoreSvgTagCase,
 } from 'librechat-data-provider';
+import type createDOMPurify from 'dompurify';
 
 /**
  * Server-side sanitization for user-provided MCP server icons. The client
