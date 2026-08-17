@@ -401,6 +401,9 @@ describe('deleteScheduleForOwner', () => {
     // The run row is still active, so the erase declines; settlement (and the
     // erase-on-settle it triggers) belongs to the aborted generation's outcome write.
     methods.eraseScheduleIfDrained = jest.fn(async () => false);
+    // Public reads intentionally hide deleting rows. That absence must not turn a
+    // declined erasure into a false `deleted` response.
+    methods.getScheduleById.mockResolvedValue(null);
 
     await expect(service.deleteScheduleForOwner('s1', 'user-1')).resolves.toBe('draining');
   });
@@ -900,7 +903,13 @@ describe('global kill switch', () => {
 describe('scheduled resume capacity', () => {
   function makeResumeService(occupancy: { takenSlots: number[]; unslotted: number }) {
     const methods = {
-      getScheduleById: jest.fn(async () => ({ id: 's1', user: 'user-1' })),
+      getScheduleById: jest.fn(async () => ({
+        id: 's1',
+        user: 'user-1',
+        enabled: true,
+        configRevision: 3,
+      })),
+      getRoleByName: jest.fn(async () => ({ permissions: { SCHEDULES: { USE: true } } })),
       getCapacityOccupancy: jest.fn(async () => occupancy),
       markRunResumeClaimed: jest.fn(async (_id, _scheduledFor, capacitySlot) => ({
         capacitySlot,
@@ -958,6 +967,54 @@ describe('scheduled resume capacity', () => {
     await expect(service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z')).resolves.toEqual({
       conflict: 'capacity',
     });
+  });
+
+  it('refuses a resume whose schedule revision changed before the capacity handoff', async () => {
+    const { service, methods } = makeResumeService({ takenSlots: [], unslotted: 0 });
+
+    await expect(
+      service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z', {
+        expectedConfigRevision: 2,
+        automatic: true,
+      }),
+    ).resolves.toEqual({ conflict: 'inactive' });
+    expect(methods.markRunResumeClaimed).not.toHaveBeenCalled();
+  });
+
+  it('refuses a disabled automatic resume but preserves explicit Run Now semantics', async () => {
+    const { service, methods } = makeResumeService({ takenSlots: [], unslotted: 0 });
+    methods.getScheduleById.mockResolvedValue({
+      id: 's1',
+      user: 'user-1',
+      enabled: false,
+      configRevision: 3,
+    });
+
+    await expect(
+      service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z', {
+        expectedConfigRevision: 3,
+        automatic: true,
+      }),
+    ).resolves.toEqual({ conflict: 'inactive' });
+    await expect(
+      service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z', {
+        expectedConfigRevision: 3,
+        automatic: false,
+      }),
+    ).resolves.toEqual({ capacitySlot: 0 });
+  });
+
+  it('refuses a resume when the owner lost schedule access before the capacity handoff', async () => {
+    const { service, methods } = makeResumeService({ takenSlots: [], unslotted: 0 });
+    methods.getRoleByName.mockResolvedValue({ permissions: { SCHEDULES: { USE: false } } });
+
+    await expect(
+      service.claimScheduleResume('s1', '2026-08-17T12:00:00.000Z', {
+        expectedConfigRevision: 3,
+        automatic: true,
+      }),
+    ).resolves.toEqual({ conflict: 'inactive' });
+    expect(methods.markRunResumeClaimed).not.toHaveBeenCalled();
   });
 });
 

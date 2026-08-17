@@ -164,6 +164,7 @@ export interface SchedulesService {
   claimScheduleResume: (
     scheduleId: string,
     scheduledFor: string | Date,
+    options?: { expectedConfigRevision?: number; automatic?: boolean },
   ) => Promise<ScheduleResumeClaimResult>;
   /** Guarded rollback when the approval CAS did not consume the paused action. */
   releaseScheduleResumeClaim: (
@@ -819,9 +820,20 @@ export function createSchedulesService(
   async function claimScheduleResume(
     scheduleId: string,
     scheduledFor: string | Date,
+    options?: { expectedConfigRevision?: number; automatic?: boolean },
   ): Promise<ScheduleResumeClaimResult> {
     const schedule = await methods.getScheduleById(scheduleId);
     if (schedule == null) {
+      return { conflict: 'inactive' };
+    }
+    if (options?.automatic !== false && schedule.enabled === false) {
+      return { conflict: 'inactive' };
+    }
+    if (
+      options?.expectedConfigRevision != null &&
+      typeof schedule.configRevision === 'number' &&
+      schedule.configRevision !== options.expectedConfigRevision
+    ) {
       return { conflict: 'inactive' };
     }
     const owner = await engineDeps.getUserContext(schedule.user);
@@ -829,12 +841,13 @@ export function createSchedulesService(
       return { conflict: 'inactive' };
     }
     return engineDeps.runInTenantContext(owner, async () => {
-      const [ownerLimits, deploymentLimits, globallyDisabled] = await Promise.all([
+      const [ownerLimits, deploymentLimits, globallyDisabled, hasAccess] = await Promise.all([
         getLimits(owner),
         getLimits(),
         engineDeps.isGloballyDisabled(),
+        engineDeps.hasScheduleAccess(owner),
       ]);
-      if (!ownerLimits.enabled || globallyDisabled) {
+      if (!ownerLimits.enabled || globallyDisabled || !hasAccess) {
         return { conflict: 'inactive' };
       }
       const allocation = await engineDeps.withGlobalCapacitySlot(
@@ -1143,7 +1156,10 @@ export function createSchedulesService(
     if (erased) {
       return 'deleted';
     }
-    return (await methods.getScheduleById(scheduleId)) == null ? 'deleted' : 'draining';
+    // eraseScheduleIfDrained already returns true when the row was concurrently
+    // erased or is absent. A false result therefore means the deleting row is still
+    // protected by a live lease/run, or the erase could not be confirmed.
+    return 'draining';
   }
 
   /**

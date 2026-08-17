@@ -23,6 +23,16 @@ describe('Experimental server configuration', () => {
     expect(source).toMatch(/if \(shuttingDown\) \{[\s\S]*?return;[\s\S]*?Starting a new worker/);
   });
 
+  it('starts approval expiry after installing the scheduled-run callback', () => {
+    const handlerIndex = source.indexOf(
+      'GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);',
+    );
+    const initializeIndex = source.indexOf('GenerationJobManager.initialize();');
+
+    expect(handlerIndex).toBeGreaterThan(-1);
+    expect(initializeIndex).toBeGreaterThan(handlerIndex);
+  });
+
   it('runs cross-tenant startup work in the system context', () => {
     expect(source).toContain('await runAsSystem(seedDatabase);');
     expect(source).toMatch(

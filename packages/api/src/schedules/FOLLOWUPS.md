@@ -22,8 +22,6 @@ Scheduled chats remain experimental and default-off.
 - The standard server supports multi-replica scheduling only with a confirmed Redis-backed
   `GenerationJobManager`; in-memory mode requires `SCHEDULES_SINGLE_PROCESS`. The legacy
   `experimental.js` clustered entrypoint does not arm the engine and rejects schedule writes.
-- Scheduled HITL resumes are durably fenced, but user-driven resumes do not reserve scheduler
-  `fireConcurrency` capacity.
 - Deferred account deletion blocks new remote API admission but cannot yet drain already-admitted
   OpenAI-compatible or Responses requests; see
   [#14594](https://github.com/danny-avila/LibreChat/issues/14594).

@@ -280,6 +280,7 @@ if (cluster.isMaster) {
   // but an already-fired scheduled generation can still reach HITL here. Settle
   // its durable run when the generic approval runtime expires it.
   GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
+  GenerationJobManager.initialize();
   /**
    * The master may assign the sweep worker before or after this worker has
    * loaded app config. These flags join the IPC assignment with config

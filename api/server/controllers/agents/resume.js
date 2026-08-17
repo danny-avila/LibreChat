@@ -810,7 +810,10 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   if (scheduleId) {
     let scheduleClaim;
     try {
-      scheduleClaim = await claimScheduleResume(scheduleId, scheduledFor);
+      scheduleClaim = await claimScheduleResume(scheduleId, scheduledFor, {
+        expectedConfigRevision: job.metadata?.scheduleConfigRevision,
+        automatic: job.metadata?.scheduleManual !== true,
+      });
     } catch (err) {
       await decrementPendingRequest(userId);
       logger.error('[ResumeAgentController] Failed to claim scheduled resume capacity', err);

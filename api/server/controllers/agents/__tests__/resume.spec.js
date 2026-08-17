@@ -389,7 +389,10 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(res.status).toBe(200);
       await settled;
 
-      expect(mockClaimScheduleResume).toHaveBeenCalledWith('schedule-1', scheduledFor);
+      expect(mockClaimScheduleResume).toHaveBeenCalledWith('schedule-1', scheduledFor, {
+        expectedConfigRevision: 4,
+        automatic: true,
+      });
 
       expect(mockRecordScheduleOutcome).toHaveBeenCalledWith({
         scheduleId: 'schedule-1',
