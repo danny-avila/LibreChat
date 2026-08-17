@@ -690,13 +690,17 @@ async function steer(
 
     const payload = parseJson(boundedBody.text);
     if (response.status !== 202) {
-      const code = errorCode(payload) ?? 'STEER_REJECTED';
+      const responseCode = errorCode(payload);
+      const routeUnavailable = response.status === 404 && responseCode == null;
+      const code = routeUnavailable
+        ? 'STEER_ADMISSION_UNAVAILABLE'
+        : (responseCode ?? 'STEER_REJECTED');
       throw executionError(
         `Agent trigger steer was rejected (${response.status}): ${errorMessage(payload) ?? code}`,
         {
           mode: 'steer',
           certainty: 'definite',
-          retryable: isRetryableStatus(response.status),
+          retryable: routeUnavailable || isRetryableStatus(response.status),
           code,
           status: response.status,
           ...(response.headers.get('retry-after') != null && {

@@ -480,6 +480,23 @@ describe('createAgentTriggerExecutionHost steer adapter', () => {
     });
   });
 
+  it('retries a missing strict route during a rolling deployment without mutating legacy state', async () => {
+    expect.hasAssertions();
+    const host = createAgentTriggerExecutionHost(
+      deps(fetchMock(async () => response('Not Found', { status: 404 }))),
+    );
+
+    await host.dispatch(createSteerEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'steer',
+        certainty: 'definite',
+        retryable: true,
+        code: 'STEER_ADMISSION_UNAVAILABLE',
+        status: 404,
+      });
+    });
+  });
+
   it('classifies a reset during steer admission as ambiguous and safe to retry', async () => {
     expect.hasAssertions();
     const host = createAgentTriggerExecutionHost(
