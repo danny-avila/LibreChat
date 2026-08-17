@@ -914,6 +914,22 @@ router.post(
 );
 
 /**
+ * @route POST /chat/steer/deliver
+ * @desc Strict, idempotent steer admission for trusted event-delivery hosts
+ * @access Private
+ * @description Uses the same text-admission chain as an interactive steer,
+ * then requires a v2 durable receipt and exact originating-agent identity.
+ */
+router.post(
+  '/chat/steer/deliver',
+  configMiddleware,
+  ...steerLimiters,
+  createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }),
+  moderateText,
+  SteerController.SteerDeliveryController,
+);
+
+/**
  * @route POST /chat/steer/cancel
  * @desc Remove a still-queued steer before injection (no model-bound content,
  * so no PII/moderation pass — just the shared rate limiters)

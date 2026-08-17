@@ -1,11 +1,5 @@
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import { getRequestId, getTenantId, getUserId } from '@librechat/data-schemas';
-import type {
-  SteerRequestBody,
-  SteerRequestDeps,
-  SteerRequestResult,
-  SteerRequestUser,
-} from '../steering';
 import type { AgentTriggerExecutionHostDeps, AgentTriggerFetch } from './host';
 import { createAgentTriggerEnvelope, getAgentTriggerIdempotencyKey } from './envelope';
 import { AgentTriggerExecutionError, createAgentTriggerExecutionHost } from './host';
@@ -69,7 +63,6 @@ function deps(
   return {
     getBaseUrl: () => 'http://127.0.0.1:3080',
     mintToken: () => 'signed-token',
-    checkAgentAccess: async () => true,
     fetch: fetcher,
     ...overrides,
   };
@@ -238,20 +231,18 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
     expect.hasAssertions();
     const fetcher = fetchMock(async (_input, init) => {
       const signal = init?.signal;
-      return {
-        ok: true,
-        status: 200,
-        headers: new Headers(),
-        text: () =>
-          new Promise<string>((_resolve, reject) => {
-            const abort = () => reject(new Error('body aborted'));
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            const abort = () => controller.error(new Error('body aborted'));
             if (signal?.aborted === true) {
               abort();
             } else {
               signal?.addEventListener('abort', abort, { once: true });
             }
-          }),
-      } as Response;
+          },
+        }),
+      );
     });
     const host = createAgentTriggerExecutionHost(deps(fetcher, { timeoutMs: 10 }));
 
@@ -260,6 +251,85 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
         certainty: 'ambiguous',
         retryable: true,
         code: 'TIMEOUT',
+        status: 200,
+      });
+    });
+  });
+
+  it('applies the timeout while asynchronous setup is still pending', async () => {
+    expect.hasAssertions();
+    const fetcher = fetchMock(async () => response({}));
+    const host = createAgentTriggerExecutionHost(
+      deps(fetcher, {
+        mintToken: () => new Promise<string>(() => undefined),
+        timeoutMs: 10,
+      }),
+    );
+
+    await host.dispatch(createFireEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'fire',
+        certainty: 'definite',
+        retryable: true,
+        code: 'TIMEOUT',
+      });
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('observes caller cancellation while asynchronous setup is pending', async () => {
+    expect.hasAssertions();
+    const fetcher = fetchMock(async () => response({}));
+    const host = createAgentTriggerExecutionHost(
+      deps(fetcher, { mintToken: () => new Promise<string>(() => undefined) }),
+    );
+    const controller = new AbortController();
+    const pending = host.dispatch(createFireEnvelope(), { signal: controller.signal });
+    controller.abort();
+
+    await pending.catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'fire',
+        certainty: 'definite',
+        retryable: true,
+        code: 'ABORTED',
+      });
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('marks thrown setup dependency failures retryable without sending', async () => {
+    expect.hasAssertions();
+    const fetcher = fetchMock(async () => response({}));
+    const host = createAgentTriggerExecutionHost(
+      deps(fetcher, {
+        getTimezone: async () => Promise.reject(new Error('timezone store unavailable')),
+      }),
+    );
+
+    await host.dispatch(createFireEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'fire',
+        certainty: 'definite',
+        retryable: true,
+        code: 'SETUP_FAILED',
+      });
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('cancels an oversized success body instead of buffering it without a bound', async () => {
+    expect.hasAssertions();
+    const host = createAgentTriggerExecutionHost(
+      deps(fetchMock(async () => response({ padding: 'x'.repeat(70 * 1024) }))),
+    );
+
+    await host.dispatch(createFireEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'fire',
+        certainty: 'ambiguous',
+        retryable: true,
+        code: 'RESPONSE_TOO_LARGE',
         status: 200,
       });
     });
@@ -328,58 +398,34 @@ describe('createAgentTriggerExecutionHost fire adapter', () => {
 });
 
 describe('createAgentTriggerExecutionHost steer adapter', () => {
-  it('steers through the guarded v2 receipt path with target and tenant fences', async () => {
+  it('steers through the authenticated admission route with a strict v2 receipt', async () => {
     const envelope = createSteerEnvelope();
     const idempotencyKey = getAgentTriggerIdempotencyKey(envelope);
-    const checkAgentAccess = jest.fn(async () => {
+    const mintToken = jest.fn(() => {
       expect(getUserId()).toBe('user-1');
       expect(getTenantId()).toBe('tenant-1');
       expect(getRequestId()).toBe(idempotencyKey);
-      return true;
+      return 'signed-token';
     });
-    const steer = jest.fn(
-      async (
-        user: SteerRequestUser,
-        body: SteerRequestBody,
-        suppliedOptions?: SteerRequestDeps,
-      ): Promise<SteerRequestResult> => {
-        const options = suppliedOptions ?? {};
-        expect(user).toEqual({ id: 'user-1', tenantId: 'tenant-1' });
-        expect(body).toEqual({
+    const fetcher = fetchMock(async () =>
+      response(
+        {
+          status: 'queued',
           conversationId: 'conversation-1',
-          generationCreatedAt: 25,
-          text: envelope.input,
-          clientSteerId: idempotencyKey,
+          steerId: 'steer-1',
+          position: 1,
           preempt: true,
-        });
-        expect(options).toMatchObject({
+          preemptRevision: 4,
           generationProtocolVersion: 2,
-          requireIdempotentDelivery: true,
-        });
-        await expect(
-          options.checkAgentAccess?.({ agentId: 'agent-1', endpoint: 'agents' }),
-        ).resolves.toBe(true);
-        return {
-          status: 202,
-          body: {
-            status: 'queued',
-            conversationId: 'conversation-1',
-            steerId: 'steer-1',
-            position: 1,
-            preempt: true,
-            preemptRevision: 4,
-          },
-        };
-      },
+        },
+        { status: 202 },
+      ),
     );
     const host = createAgentTriggerExecutionHost(
-      deps(
-        fetchMock(async () => response({})),
-        {
-          checkAgentAccess,
-          steer,
-        },
-      ),
+      deps(fetcher, {
+        getBaseUrl: () => 'https://chat.example.test/base/',
+        mintToken,
+      }),
     );
 
     await expect(host.dispatch(envelope)).resolves.toEqual({
@@ -391,71 +437,35 @@ describe('createAgentTriggerExecutionHost steer adapter', () => {
       preempt: true,
       preemptRevision: 4,
     });
-    expect(checkAgentAccess).toHaveBeenCalledWith(envelope.principal, 'agent-1');
-  });
-
-  it.each([
-    [{ agentId: 'agent-other', endpoint: 'agents' }, 'a different agent'],
-    [{ agentId: 'agent-1', endpoint: 'openAI' }, 'a non-agent endpoint'],
-  ])('fails the access hook for %s (%s)', async (run) => {
-    const checkAgentAccess = jest.fn(async () => true);
-    const steer = jest.fn(
-      async (
-        _user: SteerRequestUser,
-        _body: SteerRequestBody,
-        options?: SteerRequestDeps,
-      ): Promise<SteerRequestResult> => {
-        const allowed = (await options?.checkAgentAccess?.(run)) === true;
-        return {
-          status: allowed ? 202 : 403,
-          body: allowed
-            ? {
-                status: 'queued',
-                conversationId: 'conversation-1',
-                steerId: 'steer-1',
-                position: 1,
-                preempt: false,
-              }
-            : { code: 'FORBIDDEN' },
-        };
-      },
-    );
-    const host = createAgentTriggerExecutionHost(
-      deps(
-        fetchMock(async () => response({})),
-        {
-          checkAgentAccess,
-          steer,
-        },
-      ),
-    );
-
-    await host.dispatch(createSteerEnvelope()).catch((error: unknown) => {
-      expectExecutionError(error, {
-        mode: 'steer',
-        certainty: 'definite',
-        retryable: false,
-        code: 'FORBIDDEN',
-        status: 403,
-      });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const [input, init] = fetcher.mock.calls[0];
+    expect(String(input)).toBe('https://chat.example.test/base/api/agents/chat/steer/deliver');
+    const headers = new Headers(init?.headers);
+    expect(headers.get('authorization')).toBe('Bearer signed-token');
+    expect(headers.get('x-request-id')).toBe(idempotencyKey);
+    expect(headers.get('x-librechat-generation-protocol')).toBe('2');
+    expect(JSON.parse(String(init?.body))).toEqual({
+      agentId: 'agent-1',
+      conversationId: 'conversation-1',
+      generationCreatedAt: 25,
+      text: envelope.input,
+      clientSteerId: idempotencyKey,
+      preempt: true,
+      generationProtocolVersion: 2,
     });
-    expect(checkAgentAccess).not.toHaveBeenCalled();
+    expect(mintToken).toHaveBeenCalledWith(envelope.principal, envelope);
   });
 
   it('surfaces temporary steer backpressure as a retryable definite rejection', async () => {
     expect.hasAssertions();
-    const steer = jest.fn(
-      async (): Promise<SteerRequestResult> => ({
-        status: 429,
-        body: { code: 'STEER_QUEUE_FULL' },
-      }),
-    );
     const host = createAgentTriggerExecutionHost(
       deps(
-        fetchMock(async () => response({})),
-        {
-          steer,
-        },
+        fetchMock(async () =>
+          response(
+            { code: 'STEER_QUEUE_FULL', generationProtocolVersion: 2 },
+            { status: 429, headers: { 'retry-after': '3' } },
+          ),
+        ),
       ),
     );
 
@@ -465,20 +475,15 @@ describe('createAgentTriggerExecutionHost steer adapter', () => {
         retryable: true,
         code: 'STEER_QUEUE_FULL',
         status: 429,
+        retryAfter: '3',
       });
     });
   });
 
-  it('classifies a thrown steer-store error as ambiguous and safe to retry', async () => {
+  it('classifies a reset during steer admission as ambiguous and safe to retry', async () => {
     expect.hasAssertions();
-    const steer = jest.fn(async () => Promise.reject(new Error('store unavailable')));
     const host = createAgentTriggerExecutionHost(
-      deps(
-        fetchMock(async () => response({})),
-        {
-          steer,
-        },
-      ),
+      deps(fetchMock(async () => Promise.reject(new Error('connection reset')))),
     );
 
     await host.dispatch(createSteerEnvelope()).catch((error: unknown) => {
@@ -486,7 +491,38 @@ describe('createAgentTriggerExecutionHost steer adapter', () => {
         mode: 'steer',
         certainty: 'ambiguous',
         retryable: true,
-        code: 'STEER_ERROR',
+        code: 'NETWORK_ERROR',
+      });
+    });
+  });
+
+  it('refuses to retry a success that lacks the v2 receipt guarantee', async () => {
+    expect.hasAssertions();
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response(
+            {
+              status: 'queued',
+              conversationId: 'conversation-1',
+              steerId: 'steer-1',
+              position: 1,
+              preempt: false,
+              generationProtocolVersion: 1,
+            },
+            { status: 202 },
+          ),
+        ),
+      ),
+    );
+
+    await host.dispatch(createSteerEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'steer',
+        certainty: 'ambiguous',
+        retryable: false,
+        code: 'STEER_IDEMPOTENCY_UNAVAILABLE',
+        status: 202,
       });
     });
   });

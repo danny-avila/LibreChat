@@ -732,6 +732,44 @@ describe('generation protocol bridge for steering mutations', () => {
     await expect(GenerationJobManager.steering.peek(streamId)).resolves.toEqual([]);
   });
 
+  it('observes delivery cancellation after async admission and before enqueue', async () => {
+    const streamId = 'steer-protocol-v2-aborted-admission';
+    await GenerationJobManager.createJob(streamId, user.id, undefined, {
+      initialMetadata: {
+        agent_id: 'agent-1',
+        endpoint: 'agents',
+        generationProtocolVersion: 2,
+      },
+    });
+    const controller = new AbortController();
+    const receiptEnqueue = jest.spyOn(GenerationJobManager.steering, 'enqueueWithReceipt');
+
+    const result = await handleSteerRequest(
+      user,
+      {
+        conversationId: streamId,
+        clientSteerId: 'client-v2-aborted-admission',
+        text: 'must not land after the worker lease is cancelled',
+      },
+      {
+        generationProtocolVersion: 2,
+        requireIdempotentDelivery: true,
+        signal: controller.signal,
+        checkAgentAccess: async () => {
+          controller.abort();
+          return true;
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      status: 499,
+      body: { code: 'STEER_ABORTED', generationProtocolVersion: 2 },
+    });
+    expect(receiptEnqueue).not.toHaveBeenCalled();
+    await expect(GenerationJobManager.steering.peek(streamId)).resolves.toEqual([]);
+  });
+
   it('keeps v2 receipt replay and correlation broadcasts behind an exact v2 job marker', async () => {
     const streamId = 'steer-protocol-v2-job';
     await GenerationJobManager.createJob(streamId, user.id, undefined, {

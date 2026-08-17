@@ -1,17 +1,16 @@
 import { tenantStorage } from '@librechat/data-schemas';
-import { Constants, EModelEndpoint, isAgentsEndpoint } from 'librechat-data-provider';
+import { Constants, EModelEndpoint } from 'librechat-data-provider';
 import type {
   AgentFireTriggerEnvelope,
   AgentSteerTriggerEnvelope,
   AgentTriggerEnvelope,
 } from './envelope';
-import type { SteerRequestResult, SteerRunContext } from '../steering';
 import type { AgentTriggerDispatchContext } from './dispatch';
 import type { AgentRunPrincipal } from '../envelope';
 import { dispatchAgentTrigger } from './dispatch';
-import { handleSteerRequest } from '../steering';
 
 const DEFAULT_FIRE_TIMEOUT_MS = 30_000;
+const MAX_RESPONSE_BODY_BYTES = 64 * 1024;
 const GENERATION_PROTOCOL_HEADER = 'x-librechat-generation-protocol';
 const TRIGGER_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
@@ -94,21 +93,15 @@ export interface AgentTriggerExecutionHostDeps {
   /** Trusted root URL for this LibreChat server. */
   getBaseUrl: () => string;
   /** Mint a short-lived token for the envelope's already-authenticated principal. */
-  mintToken: (
-    principal: AgentRunPrincipal,
-    envelope: AgentFireTriggerEnvelope,
-  ) => MaybePromise<string>;
-  /** Re-evaluate the principal's current role and per-agent ACL for a live steer. */
-  checkAgentAccess: (principal: AgentRunPrincipal, agentId: string) => Promise<boolean>;
+  mintToken: (principal: AgentRunPrincipal, envelope: AgentTriggerEnvelope) => MaybePromise<string>;
   /** Optional user-timezone resolver for dynamic date variables in a new run. */
   getTimezone?: (
     principal: AgentRunPrincipal,
     envelope: AgentFireTriggerEnvelope,
   ) => MaybePromise<string | undefined>;
   fetch?: AgentTriggerFetch;
+  /** Total bound for setup, admission, and the bounded response read. */
   timeoutMs?: number;
-  /** Test/embedding seam; production callers use the package steer guard ladder. */
-  steer?: typeof handleSteerRequest;
 }
 
 export interface AgentTriggerExecutionHost {
@@ -124,6 +117,11 @@ interface AbortScope {
   timedOut: () => boolean;
 }
 
+interface BoundedResponseBody {
+  text: string;
+  truncated: boolean;
+}
+
 function executionError(
   message: string,
   options: AgentTriggerExecutionErrorOptions,
@@ -134,7 +132,7 @@ function executionError(
 function requireTimeout(timeoutMs: number | undefined): number {
   const value = timeoutMs ?? DEFAULT_FIRE_TIMEOUT_MS;
   if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new TypeError('Agent trigger fire timeout must be a positive integer');
+    throw new TypeError('Agent trigger timeout must be a positive integer');
   }
   return value;
 }
@@ -160,6 +158,111 @@ function abortScope(parent: AbortSignal | undefined, timeoutMs: number): AbortSc
       parent?.removeEventListener('abort', onAbort);
     },
   };
+}
+
+function abortError(
+  mode: 'fire' | 'steer',
+  scope: AbortScope,
+  parent: AbortSignal | undefined,
+  stage: string,
+  certainty: AgentTriggerFailureCertainty,
+): AgentTriggerExecutionError {
+  const code = abortCode(scope, parent, 'ABORTED');
+  return executionError(
+    `Agent trigger ${mode} was ${code === 'TIMEOUT' ? 'timed out' : 'aborted'} ${stage}`,
+    {
+      mode,
+      certainty,
+      retryable: true,
+      code,
+    },
+  );
+}
+
+function observeAbort<T>(
+  operation: () => MaybePromise<T>,
+  mode: 'fire' | 'steer',
+  scope: AbortScope,
+  parent: AbortSignal | undefined,
+): Promise<T> {
+  if (scope.signal.aborted) {
+    return Promise.reject(abortError(mode, scope, parent, 'before dispatch', 'definite'));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      scope.signal.removeEventListener('abort', onAbort);
+      reject(abortError(mode, scope, parent, 'during setup', 'definite'));
+    };
+    scope.signal.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve()
+      .then(operation)
+      .then(
+        (value) => {
+          scope.signal.removeEventListener('abort', onAbort);
+          resolve(value);
+        },
+        (error: unknown) => {
+          scope.signal.removeEventListener('abort', onAbort);
+          reject(error);
+        },
+      );
+  });
+}
+
+async function setupValue<T>(
+  operation: () => MaybePromise<T>,
+  mode: 'fire' | 'steer',
+  scope: AbortScope,
+  parent: AbortSignal | undefined,
+): Promise<T> {
+  try {
+    return await observeAbort(operation, mode, scope, parent);
+  } catch (error) {
+    if (error instanceof AgentTriggerExecutionError) {
+      throw error;
+    }
+    throw executionError(
+      `Agent trigger ${mode} setup failed: ${error instanceof Error ? error.message : String(error)}`,
+      {
+        mode,
+        certainty: 'definite',
+        retryable: true,
+        code: 'SETUP_FAILED',
+      },
+    );
+  }
+}
+
+async function readResponseBody(response: Response): Promise<BoundedResponseBody> {
+  if (response.body == null) {
+    return { text: '', truncated: false };
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let size = 0;
+  let text = '';
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        text += decoder.decode();
+        return { text, truncated: false };
+      }
+      const remaining = MAX_RESPONSE_BODY_BYTES - size;
+      if (chunk.value.byteLength > remaining) {
+        if (remaining > 0) {
+          text += decoder.decode(chunk.value.subarray(0, remaining), { stream: true });
+        }
+        text += decoder.decode();
+        await reader.cancel().catch(() => undefined);
+        return { text, truncated: true };
+      }
+      size += chunk.value.byteLength;
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 function errorCode(value: unknown): string | undefined {
@@ -233,10 +336,10 @@ function abortCode(scope: AbortScope, parent: AbortSignal | undefined, fallback:
   return fallback;
 }
 
-function requireToken(value: unknown): string {
+function requireToken(value: unknown, mode: 'fire' | 'steer'): string {
   if (typeof value !== 'string' || value.length === 0 || /\s/.test(value)) {
     throw executionError('Agent trigger token mint returned an invalid token', {
-      mode: 'fire',
+      mode,
       certainty: 'definite',
       retryable: false,
       code: 'INVALID_TOKEN',
@@ -245,13 +348,13 @@ function requireToken(value: unknown): string {
   return value;
 }
 
-function fireUrl(baseUrl: string): string {
+function triggerUrl(baseUrl: string, path: string, mode: 'fire' | 'steer'): string {
   let url: URL;
   try {
     url = new URL(baseUrl);
   } catch {
     throw executionError('Agent trigger base URL is invalid', {
-      mode: 'fire',
+      mode,
       certainty: 'definite',
       retryable: false,
       code: 'INVALID_BASE_URL',
@@ -259,16 +362,24 @@ function fireUrl(baseUrl: string): string {
   }
   if ((url.protocol !== 'http:' && url.protocol !== 'https:') || url.username || url.password) {
     throw executionError('Agent trigger base URL must be an HTTP(S) URL without credentials', {
-      mode: 'fire',
+      mode,
       certainty: 'definite',
       retryable: false,
       code: 'INVALID_BASE_URL',
     });
   }
-  url.pathname = `${url.pathname.replace(/\/+$/, '')}/api/agents/chat/${EModelEndpoint.agents}`;
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}${path}`;
   url.search = '';
   url.hash = '';
   return url.toString();
+}
+
+function fireUrl(baseUrl: string): string {
+  return triggerUrl(baseUrl, `/api/agents/chat/${EModelEndpoint.agents}`, 'fire');
+}
+
+function steerUrl(baseUrl: string): string {
+  return triggerUrl(baseUrl, '/api/agents/chat/steer/deliver', 'steer');
 }
 
 function requireString(value: unknown): string | undefined {
@@ -318,260 +429,328 @@ async function fire(
   deps: AgentTriggerExecutionHostDeps,
   timeoutMs: number,
 ): Promise<AgentTriggerFireResult> {
-  if (context.signal?.aborted === true) {
-    throw executionError('Agent trigger fire was aborted before dispatch', {
-      mode: 'fire',
-      certainty: 'definite',
-      retryable: true,
-      code: 'ABORTED',
-    });
-  }
-
-  let token: string;
-  let timezone: string | undefined;
-  let url: string;
-  try {
-    token = requireToken(await deps.mintToken(envelope.principal, envelope));
-    timezone = await deps.getTimezone?.(envelope.principal, envelope);
-    url = fireUrl(deps.getBaseUrl());
-  } catch (error) {
-    if (error instanceof AgentTriggerExecutionError) {
-      throw error;
-    }
-    throw executionError(
-      `Agent trigger fire setup failed: ${error instanceof Error ? error.message : String(error)}`,
-      {
-        mode: 'fire',
-        certainty: 'definite',
-        retryable: false,
-        code: 'SETUP_FAILED',
-      },
-    );
-  }
-
   const scope = abortScope(context.signal, timeoutMs);
-  let response: Response;
   try {
-    const fetcher: AgentTriggerFetch = deps.fetch ?? globalThis.fetch;
-    response = await fetcher(url, {
-      method: 'POST',
-      signal: scope.signal,
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'User-Agent': TRIGGER_USER_AGENT,
-        'x-request-id': context.idempotencyKey,
-        [GENERATION_PROTOCOL_HEADER]: '2',
-      },
-      body: JSON.stringify({
-        text: envelope.input,
-        endpoint: EModelEndpoint.agents,
-        agent_id: envelope.target.agentId,
-        parentMessageId: Constants.NO_PARENT,
-        isContinued: false,
-        isRegenerate: false,
-        clientRequestId: context.idempotencyKey,
-        generationProtocolVersion: 2,
-        ...(typeof timezone === 'string' && timezone.trim().length > 0
-          ? { timezone: timezone.trim() }
-          : {}),
-      }),
-    });
-  } catch (error) {
-    scope.cleanup();
-    const definite = isDefiniteConnectFailure(error);
-    const message = error instanceof Error ? error.message : String(error);
-    throw executionError(
-      `Agent trigger fire ${definite ? 'could not connect' : 'has an unknown outcome'}: ${message}`,
-      {
-        mode: 'fire',
-        certainty: definite ? 'definite' : 'ambiguous',
-        retryable: true,
-        code: abortCode(scope, context.signal, 'NETWORK_ERROR'),
-      },
+    const token = requireToken(
+      await setupValue(
+        () => deps.mintToken(envelope.principal, envelope),
+        'fire',
+        scope,
+        context.signal,
+      ),
+      'fire',
     );
-  }
-
-  let raw = '';
-  try {
-    raw = await response.text();
-  } catch (error) {
-    if (response.ok) {
+    const timezone = await setupValue(
+      () => deps.getTimezone?.(envelope.principal, envelope),
+      'fire',
+      scope,
+      context.signal,
+    );
+    const baseUrl = await setupValue(() => deps.getBaseUrl(), 'fire', scope, context.signal);
+    const url = fireUrl(baseUrl);
+    const fetcher: AgentTriggerFetch = deps.fetch ?? globalThis.fetch;
+    let response: Response;
+    try {
+      response = await fetcher(url, {
+        method: 'POST',
+        signal: scope.signal,
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': TRIGGER_USER_AGENT,
+          'x-request-id': context.idempotencyKey,
+          [GENERATION_PROTOCOL_HEADER]: '2',
+        },
+        body: JSON.stringify({
+          text: envelope.input,
+          endpoint: EModelEndpoint.agents,
+          agent_id: envelope.target.agentId,
+          parentMessageId: Constants.NO_PARENT,
+          isContinued: false,
+          isRegenerate: false,
+          clientRequestId: context.idempotencyKey,
+          generationProtocolVersion: 2,
+          ...(typeof timezone === 'string' && timezone.trim().length > 0
+            ? { timezone: timezone.trim() }
+            : {}),
+        }),
+      });
+    } catch (error) {
+      const definite = isDefiniteConnectFailure(error);
+      const message = error instanceof Error ? error.message : String(error);
       throw executionError(
-        `Agent trigger fire response has an unknown outcome: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Agent trigger fire ${definite ? 'could not connect' : 'has an unknown outcome'}: ${message}`,
         {
           mode: 'fire',
-          certainty: 'ambiguous',
+          certainty: definite ? 'definite' : 'ambiguous',
           retryable: true,
-          code: abortCode(scope, context.signal, 'INVALID_RESPONSE'),
-          status: response.status,
+          code: abortCode(scope, context.signal, 'NETWORK_ERROR'),
         },
       );
     }
+
+    let boundedBody: BoundedResponseBody = { text: '', truncated: false };
+    try {
+      boundedBody = await readResponseBody(response);
+    } catch (error) {
+      if (response.ok) {
+        throw executionError(
+          `Agent trigger fire response has an unknown outcome: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          {
+            mode: 'fire',
+            certainty: 'ambiguous',
+            retryable: true,
+            code: abortCode(scope, context.signal, 'INVALID_RESPONSE'),
+            status: response.status,
+          },
+        );
+      }
+    }
+    const payload = parseJson(boundedBody.text);
+    if (!response.ok) {
+      const message =
+        errorMessage(payload) ?? (boundedBody.text.slice(0, 300) || 'request rejected');
+      throw executionError(`Agent trigger fire was rejected (${response.status}): ${message}`, {
+        mode: 'fire',
+        certainty: 'definite',
+        retryable: isRetryableStatus(response.status),
+        code: errorCode(payload) ?? 'FIRE_REJECTED',
+        status: response.status,
+        ...(response.headers.get('retry-after') != null && {
+          retryAfter: response.headers.get('retry-after') ?? undefined,
+        }),
+      });
+    }
+    if (boundedBody.truncated) {
+      throw executionError('Agent trigger fire returned an oversized success response', {
+        mode: 'fire',
+        certainty: 'ambiguous',
+        retryable: true,
+        code: 'RESPONSE_TOO_LARGE',
+        status: response.status,
+      });
+    }
+    if (
+      payload != null &&
+      typeof payload === 'object' &&
+      'status' in payload &&
+      payload.status === 'aborted'
+    ) {
+      throw executionError('Agent trigger fire was aborted before generation started', {
+        mode: 'fire',
+        certainty: 'definite',
+        retryable: false,
+        code: 'START_ABORTED',
+        status: response.status,
+      });
+    }
+    const result = parseFireResult(payload);
+    if (result == null) {
+      throw executionError('Agent trigger fire returned an invalid success response', {
+        mode: 'fire',
+        certainty: 'ambiguous',
+        retryable: true,
+        code: 'INVALID_RESPONSE',
+        status: response.status,
+      });
+    }
+    return result;
   } finally {
     scope.cleanup();
   }
-  const payload = parseJson(raw);
-  if (!response.ok) {
-    const message = errorMessage(payload) ?? (raw.slice(0, 300) || 'request rejected');
-    throw executionError(`Agent trigger fire was rejected (${response.status}): ${message}`, {
-      mode: 'fire',
-      certainty: 'definite',
-      retryable: isRetryableStatus(response.status),
-      code: errorCode(payload) ?? 'FIRE_REJECTED',
-      status: response.status,
-      ...(response.headers.get('retry-after') != null && {
-        retryAfter: response.headers.get('retry-after') ?? undefined,
-      }),
-    });
-  }
-  if (
-    payload != null &&
-    typeof payload === 'object' &&
-    'status' in payload &&
-    payload.status === 'aborted'
-  ) {
-    throw executionError('Agent trigger fire was aborted before generation started', {
-      mode: 'fire',
-      certainty: 'definite',
-      retryable: false,
-      code: 'START_ABORTED',
-      status: response.status,
-    });
-  }
-  const result = parseFireResult(payload);
-  if (result == null) {
-    throw executionError('Agent trigger fire returned an invalid success response', {
-      mode: 'fire',
-      certainty: 'ambiguous',
-      retryable: true,
-      code: 'INVALID_RESPONSE',
-      status: response.status,
-    });
-  }
-  return result;
 }
 
-function parseSteerResult(result: SteerRequestResult): AgentTriggerSteerResult | undefined {
-  const { body } = result;
-  if (result.status !== 202 || body.status !== 'queued') {
+function parseSteerResult(payload: unknown): AgentTriggerSteerResult | undefined {
+  if (payload == null || typeof payload !== 'object' || !('status' in payload)) {
     return undefined;
   }
-  const conversationId = requireString(body.conversationId);
-  const steerId = requireString(body.steerId);
-  const position = requireSafeInteger(body.position);
+  if (payload.status !== 'queued') {
+    return undefined;
+  }
+  const conversationId = requireString(
+    'conversationId' in payload ? payload.conversationId : undefined,
+  );
+  const steerId = requireString('steerId' in payload ? payload.steerId : undefined);
+  const position = requireSafeInteger('position' in payload ? payload.position : undefined);
   if (
     conversationId == null ||
     steerId == null ||
     position == null ||
-    typeof body.preempt !== 'boolean'
+    !('preempt' in payload) ||
+    typeof payload.preempt !== 'boolean'
   ) {
     return undefined;
   }
-  const preemptRevision = requireSafeInteger(body.preemptRevision);
+  const preemptRevision = requireSafeInteger(
+    'preemptRevision' in payload ? payload.preemptRevision : undefined,
+  );
   return {
     mode: 'steer',
     status: 'queued',
     conversationId,
     steerId,
     position,
-    preempt: body.preempt,
+    preempt: payload.preempt,
     ...(preemptRevision != null && { preemptRevision }),
-    ...(typeof body.replayed === 'boolean' && { replayed: body.replayed }),
-    ...(typeof body.settled === 'boolean' && { settled: body.settled }),
-    ...(typeof body.leftover === 'boolean' && { leftover: body.leftover }),
+    ...('replayed' in payload &&
+      typeof payload.replayed === 'boolean' && {
+        replayed: payload.replayed,
+      }),
+    ...('settled' in payload &&
+      typeof payload.settled === 'boolean' && {
+        settled: payload.settled,
+      }),
+    ...('leftover' in payload &&
+      typeof payload.leftover === 'boolean' && {
+        leftover: payload.leftover,
+      }),
   };
-}
-
-function matchesTarget(run: SteerRunContext, envelope: AgentSteerTriggerEnvelope): boolean {
-  return run.agentId === envelope.target.agentId && isAgentsEndpoint(run.endpoint);
 }
 
 async function steer(
   envelope: AgentSteerTriggerEnvelope,
   context: AgentTriggerDispatchContext,
   deps: AgentTriggerExecutionHostDeps,
+  timeoutMs: number,
 ): Promise<AgentTriggerSteerResult> {
-  if (context.signal?.aborted === true) {
-    throw executionError('Agent trigger steer was aborted before dispatch', {
-      mode: 'steer',
-      certainty: 'definite',
-      retryable: true,
-      code: 'ABORTED',
-    });
-  }
-
-  let response: SteerRequestResult;
+  const scope = abortScope(context.signal, timeoutMs);
   try {
-    response = await (deps.steer ?? handleSteerRequest)(
-      { id: envelope.principal.userId, tenantId: envelope.principal.tenantId },
-      {
-        conversationId: envelope.target.conversationId,
-        generationCreatedAt: envelope.target.generationCreatedAt,
-        text: envelope.input,
-        clientSteerId: context.idempotencyKey,
-        preempt: envelope.target.preempt === true,
-      },
-      {
-        generationProtocolVersion: 2,
-        requireIdempotentDelivery: true,
-        checkAgentAccess: async (run) =>
-          matchesTarget(run, envelope) &&
-          (await deps.checkAgentAccess(envelope.principal, envelope.target.agentId)),
-      },
+    const token = requireToken(
+      await setupValue(
+        () => deps.mintToken(envelope.principal, envelope),
+        'steer',
+        scope,
+        context.signal,
+      ),
+      'steer',
     );
-  } catch (error) {
-    throw executionError(
-      `Agent trigger steer has an unknown outcome: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-      {
+    const baseUrl = await setupValue(() => deps.getBaseUrl(), 'steer', scope, context.signal);
+    const url = steerUrl(baseUrl);
+    const fetcher: AgentTriggerFetch = deps.fetch ?? globalThis.fetch;
+    let response: Response;
+    try {
+      response = await fetcher(url, {
+        method: 'POST',
+        signal: scope.signal,
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': TRIGGER_USER_AGENT,
+          'x-request-id': context.idempotencyKey,
+          [GENERATION_PROTOCOL_HEADER]: '2',
+        },
+        body: JSON.stringify({
+          agentId: envelope.target.agentId,
+          conversationId: envelope.target.conversationId,
+          generationCreatedAt: envelope.target.generationCreatedAt,
+          text: envelope.input,
+          clientSteerId: context.idempotencyKey,
+          preempt: envelope.target.preempt === true,
+          generationProtocolVersion: 2,
+        }),
+      });
+    } catch (error) {
+      const definite = isDefiniteConnectFailure(error);
+      throw executionError(
+        `Agent trigger steer ${definite ? 'could not connect' : 'has an unknown outcome'}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        {
+          mode: 'steer',
+          certainty: definite ? 'definite' : 'ambiguous',
+          retryable: true,
+          code: abortCode(scope, context.signal, 'NETWORK_ERROR'),
+        },
+      );
+    }
+
+    let boundedBody: BoundedResponseBody = { text: '', truncated: false };
+    try {
+      boundedBody = await readResponseBody(response);
+    } catch (error) {
+      if (response.ok) {
+        throw executionError(
+          `Agent trigger steer response has an unknown outcome: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          {
+            mode: 'steer',
+            certainty: 'ambiguous',
+            retryable: true,
+            code: abortCode(scope, context.signal, 'INVALID_RESPONSE'),
+            status: response.status,
+          },
+        );
+      }
+    }
+
+    const payload = parseJson(boundedBody.text);
+    if (response.status !== 202) {
+      const code = errorCode(payload) ?? 'STEER_REJECTED';
+      throw executionError(
+        `Agent trigger steer was rejected (${response.status}): ${errorMessage(payload) ?? code}`,
+        {
+          mode: 'steer',
+          certainty: 'definite',
+          retryable: isRetryableStatus(response.status),
+          code,
+          status: response.status,
+          ...(response.headers.get('retry-after') != null && {
+            retryAfter: response.headers.get('retry-after') ?? undefined,
+          }),
+        },
+      );
+    }
+    if (boundedBody.truncated) {
+      throw executionError('Agent trigger steer returned an oversized success response', {
         mode: 'steer',
         certainty: 'ambiguous',
         retryable: true,
-        code: 'STEER_ERROR',
-      },
-    );
-  }
-
-  if (response.status !== 202) {
-    const code = errorCode(response.body) ?? 'STEER_REJECTED';
-    throw executionError(
-      `Agent trigger steer was rejected (${response.status}): ${
-        errorMessage(response.body) ?? code
-      }`,
-      {
-        mode: 'steer',
-        certainty: 'definite',
-        retryable: isRetryableStatus(response.status),
-        code,
+        code: 'RESPONSE_TOO_LARGE',
         status: response.status,
-      },
-    );
+      });
+    }
+    if (
+      payload == null ||
+      typeof payload !== 'object' ||
+      !('generationProtocolVersion' in payload) ||
+      payload.generationProtocolVersion !== 2
+    ) {
+      throw executionError('Agent trigger steer was accepted without a v2 receipt guarantee', {
+        mode: 'steer',
+        certainty: 'ambiguous',
+        retryable: false,
+        code: 'STEER_IDEMPOTENCY_UNAVAILABLE',
+        status: response.status,
+      });
+    }
+    const parsed = parseSteerResult(payload);
+    if (parsed == null) {
+      throw executionError('Agent trigger steer returned an invalid success response', {
+        mode: 'steer',
+        certainty: 'ambiguous',
+        retryable: true,
+        code: 'INVALID_RESPONSE',
+        status: response.status,
+      });
+    }
+    if (parsed.conversationId !== envelope.target.conversationId) {
+      throw executionError('Agent trigger steer returned a mismatched conversation', {
+        mode: 'steer',
+        certainty: 'ambiguous',
+        retryable: true,
+        code: 'INVALID_RESPONSE',
+        status: response.status,
+      });
+    }
+    return parsed;
+  } finally {
+    scope.cleanup();
   }
-  const parsed = parseSteerResult(response);
-  if (parsed == null) {
-    throw executionError('Agent trigger steer returned an invalid success response', {
-      mode: 'steer',
-      certainty: 'ambiguous',
-      retryable: true,
-      code: 'INVALID_RESPONSE',
-      status: response.status,
-    });
-  }
-  if (parsed.conversationId !== envelope.target.conversationId) {
-    throw executionError('Agent trigger steer returned a mismatched conversation', {
-      mode: 'steer',
-      certainty: 'ambiguous',
-      retryable: true,
-      code: 'INVALID_RESPONSE',
-      status: response.status,
-    });
-  }
-  return parsed;
 }
 
 function runAsPrincipal<T>(
@@ -607,7 +786,9 @@ export function createAgentTriggerExecutionHost(
             fire: (normalized, context) =>
               runAsPrincipal(normalized, context, () => fire(normalized, context, deps, timeoutMs)),
             steer: (normalized, context) =>
-              runAsPrincipal(normalized, context, () => steer(normalized, context, deps)),
+              runAsPrincipal(normalized, context, () =>
+                steer(normalized, context, deps, timeoutMs),
+              ),
           },
           options,
         ),

@@ -129,6 +129,8 @@ export interface SteerRequestDeps {
    * Background/event deliveries use this to make retrying an ambiguous
    * outcome safe instead of potentially injecting the same instruction twice. */
   requireIdempotentDelivery?: boolean;
+  /** Best-effort cancellation observed immediately before durable mutation. */
+  signal?: AbortSignal;
   /** Owner-scoped file fetch (`db.getFiles`-shaped). When present, every
    *  client-supplied ref must resolve to an owned DB doc at enqueue and the
    *  queued refs are replaced with DB-derived ones. */
@@ -158,6 +160,10 @@ function parseExpectedGenerationCreatedAt(value: unknown): { value?: number; inv
     return { invalid: true };
   }
   return { value };
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
 }
 
 /** Sanitizes client-supplied attachment refs via the shared ref picker;
@@ -541,12 +547,18 @@ async function handleSteerRequestInternal(
       ? { status: 409, body: { code: 'RUN_REPLACED' } }
       : { status: 404, body: { code: 'NO_ACTIVE_RUN' } };
   }
+  if (isAborted(deps.signal)) {
+    return { status: 499, body: { code: 'STEER_ABORTED' } };
+  }
   /** Normal sends make resolved uploads durable before model execution. Do
    * the same before enqueue: once a 202 is visible, neither an upload-window
    * sweep nor a process crash may turn the accepted steer into text-only
    * history. A failure here commits no fresh queue item, so retry is safe. */
   if (!(await markSteerFilesUsed(streamId, { files: queuedFiles }, user, deps))) {
     return { status: 503, body: { code: 'STEER_FILE_RETENTION_FAILED' } };
+  }
+  if (isAborted(deps.signal)) {
+    return { status: 499, body: { code: 'STEER_ABORTED' } };
   }
   const item: SteerQueueItem = {
     steerId: randomUUID(),
