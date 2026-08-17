@@ -10,6 +10,7 @@ import LangIcon from '~/components/Messages/Content/LangIcon';
 import { sandboxStartingByToolCallId } from '~/store';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
+import useFollowScroll from './useFollowScroll';
 import { ERROR_PATTERNS } from './ExecuteCode';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
@@ -52,6 +53,11 @@ export default function BashCall({
     useToolCallState(initialProgress, isSubmitting, output, !!command, onExpand, runStepStatus);
 
   const highlighted = useLazyHighlight(command || undefined, 'bash');
+  const { ref: commandPaneRef, onScroll: onCommandPaneScroll } = useFollowScroll<HTMLDivElement>(
+    highlighted ?? command,
+    progress < 1 && !cancelled,
+    showCode,
+  );
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
   /** A backgrounded call's persisted output stays the dispatch handle until
    *  the detached run settles and patches it; render a background state
@@ -144,7 +150,11 @@ export default function BashCall({
         <div className="overflow-hidden" ref={expandRef}>
           <div className="my-2 overflow-hidden rounded-lg border border-border-light">
             {command && (
-              <div className="relative max-h-[300px] overflow-auto bg-surface-tertiary dark:bg-gray-950">
+              <div
+                ref={commandPaneRef}
+                onScroll={onCommandPaneScroll}
+                className="relative max-h-[300px] overflow-auto bg-surface-tertiary dark:bg-gray-950"
+              >
                 <CopyButton
                   iconOnly
                   isCopied={isCopied}

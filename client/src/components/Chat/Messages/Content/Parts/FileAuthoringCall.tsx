@@ -6,6 +6,7 @@ import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
 import useToolCallState from './useToolCallState';
 import useLazyHighlight from './useLazyHighlight';
 import CodeWindowHeader from './CodeWindowHeader';
+import useFollowScroll from './useFollowScroll';
 import { AttachmentGroup } from './Attachment';
 import { langFromPath } from './ReadFileCall';
 import { useToolCallIntent } from './intent';
@@ -162,6 +163,11 @@ export default function FileAuthoringCall({
     );
 
   const highlighted = useLazyHighlight(preview || undefined, previewLang);
+  const { ref: previewPaneRef, onScroll: onPreviewPaneScroll } = useFollowScroll<HTMLPreElement>(
+    highlighted ?? preview,
+    progress < 1 && !cancelled,
+    showCode,
+  );
   const Icon = isCreate && !overwrote ? FilePlus2 : FilePenLine;
   let finishedKey: 'com_ui_created_file' | 'com_ui_updated_file' | 'com_ui_edited_file' =
     'com_ui_edited_file';
@@ -207,7 +213,11 @@ export default function FileAuthoringCall({
           {!!preview && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <CodeWindowHeader language={previewIsDiff ? 'diff' : fileName} code={preview} />
-              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
+              <pre
+                ref={previewPaneRef}
+                onScroll={onPreviewPaneScroll}
+                className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
+              >
                 <code className={`hljs language-${previewLang} !whitespace-pre`}>
                   {highlighted ?? preview}
                 </code>
