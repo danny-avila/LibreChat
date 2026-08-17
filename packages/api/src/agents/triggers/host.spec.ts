@@ -480,6 +480,27 @@ describe('createAgentTriggerExecutionHost steer adapter', () => {
     });
   });
 
+  it('retries a steer while the same generation is paused for human review', async () => {
+    expect.hasAssertions();
+    const host = createAgentTriggerExecutionHost(
+      deps(
+        fetchMock(async () =>
+          response({ code: 'RUN_PAUSED', generationProtocolVersion: 2 }, { status: 409 }),
+        ),
+      ),
+    );
+
+    await host.dispatch(createSteerEnvelope()).catch((error: unknown) => {
+      expectExecutionError(error, {
+        mode: 'steer',
+        certainty: 'definite',
+        retryable: true,
+        code: 'RUN_PAUSED',
+        status: 409,
+      });
+    });
+  });
+
   it('retries a missing strict route during a rolling deployment without mutating legacy state', async () => {
     expect.hasAssertions();
     const host = createAgentTriggerExecutionHost(

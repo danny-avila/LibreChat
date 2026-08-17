@@ -326,6 +326,10 @@ function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
+function isRetryableSteerRejection(status: number, code: string): boolean {
+  return code === 'RUN_PAUSED' || isRetryableStatus(status);
+}
+
 function abortCode(scope: AbortScope, parent: AbortSignal | undefined, fallback: string): string {
   if (scope.timedOut()) {
     return 'TIMEOUT';
@@ -700,7 +704,7 @@ async function steer(
         {
           mode: 'steer',
           certainty: 'definite',
-          retryable: routeUnavailable || isRetryableStatus(response.status),
+          retryable: routeUnavailable || isRetryableSteerRejection(response.status, code),
           code,
           status: response.status,
           ...(response.headers.get('retry-after') != null && {
