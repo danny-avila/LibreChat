@@ -162,6 +162,19 @@ async function submitAndCapture(page: Page, submit: Locator) {
 
 async function expectCompletedApprovalToolOutput(page: Page, toolCallId: string, output: string) {
   const view = messagesView(page);
+
+  // Wait for the terminal response before expanding the tool. The Redis-backed
+  // stream can replace the live message with its persisted FINAL after the
+  // completion card first appears; expanding before that replacement races a
+  // remount that collapses and lazy-unmounts the tool body again.
+  await expect(view.getByText(/^E2E approval outcomes:/).last()).toBeVisible({ timeout: 30000 });
+  await expect(page.getByRole('button', { name: 'Stop generating' })).toBeHidden({
+    timeout: 30000,
+  });
+
+  // Re-query the settled message after the terminal replacement so all
+  // disclosure state below belongs to the current card rather than its live
+  // predecessor.
   const groupToggle = view.getByRole('button', { name: /^Used \d+ tools$/ }).last();
   const toolCall = view.locator(`[data-testid="tool-call"][data-tool-call-id="${toolCallId}"]`);
 
@@ -188,9 +201,6 @@ async function expectCompletedApprovalToolOutput(page: Page, toolCallId: string,
   await expect(
     view.locator(`[data-tool-call-output-id="${toolCallId}"]`).getByText(output, { exact: true }),
   ).toBeVisible({ timeout: 30000 });
-  // The final model turn is the quiescence barrier: all parallel tool work
-  // has settled before invocation-count assertions inspect the audit.
-  await expect(view.getByText(/^E2E approval outcomes:/).last()).toBeVisible({ timeout: 30000 });
 }
 
 test.describe('tool approvals', () => {
@@ -644,6 +654,7 @@ test.describe('tool approvals', () => {
     try {
       agentId = await createAndSelectApprovalAgent(page);
       const card = await startApproval(page, label);
+      const conversationPath = new URL(page.url()).pathname;
       const submit = card.getByRole('button', { name: 'Submit' });
       await card.getByRole('button', { name: 'Approve' }).click();
       await expect(submit).toBeEnabled();
@@ -677,6 +688,15 @@ test.describe('tool approvals', () => {
       await expect(card.getByRole('button', { name: 'Approve' })).toBeDisabled();
       releaseResume();
 
+      await expectCompletedApprovalToolOutput(page, toolCallId, executedText);
+      await expectApprovalInvocationCount(originalValue, 1);
+      await expect(approvalCards(page)).toHaveCount(0);
+
+      // The double-submit guard must not merely render the live result once;
+      // verify that the same single execution survives the persisted-message
+      // reload as well.
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await expect.poll(() => new URL(page.url()).pathname).toBe(conversationPath);
       await expectCompletedApprovalToolOutput(page, toolCallId, executedText);
       await expectApprovalInvocationCount(originalValue, 1);
       await expect(approvalCards(page)).toHaveCount(0);
