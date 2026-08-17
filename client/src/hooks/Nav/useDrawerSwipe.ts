@@ -41,12 +41,16 @@ let drawerAnimator: ((next: boolean) => void) | null = null;
  * the commit lands mid-slide without stuttering or delaying it. When the
  * swipe hook is not active — desktop, logged out — `applyState` runs
  * immediately and React animates the layout as before.
+ *
+ * Returns whether the drawer animator handled the slide, so callers can keep
+ * affordances that only make sense outside the drawer (e.g. the desktop
+ * focus timer) off the animated path.
  */
-export function kickDrawerAnimation(next: boolean, applyState: () => void): void {
+export function kickDrawerAnimation(next: boolean, applyState: () => void): boolean {
   const animator = drawerAnimator;
   if (animator == null) {
     applyState();
-    return;
+    return false;
   }
   animator(next);
   /** Reduced motion snaps — there are no slide frames to protect, and
@@ -56,7 +60,7 @@ export function kickDrawerAnimation(next: boolean, applyState: () => void): void
    * cannot preempt. */
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     applyState();
-    return;
+    return true;
   }
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -72,6 +76,7 @@ export function kickDrawerAnimation(next: boolean, applyState: () => void): void
       });
     });
   });
+  return true;
 }
 
 /**

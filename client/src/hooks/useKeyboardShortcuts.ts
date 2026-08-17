@@ -15,6 +15,7 @@ import {
   parseBinding,
 } from '~/utils/shortcuts';
 import { mainTextareaId, NotificationSeverity } from '~/common';
+import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { useArchiveConvoMutation } from '~/data-provider';
 import { useHasAccess, useLocalize } from '~/hooks';
 import useNewChat from '~/hooks/Chat/useNewChat';
@@ -500,7 +501,8 @@ export function useShortcutActions(): ShortcutAction[] {
   const routeConvoId = routeMatch?.params.conversationId ?? null;
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
-  const [sidebarExpanded, setSidebarExpanded] = useRecoilState(store.sidebarExpanded);
+  const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  const setSidebarOpen = useSidebarToggle();
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const setIsTemporary = useSetRecoilState(store.isTemporary);
   const setDeleteTarget = useSetRecoilState(store.keyboardDeleteTarget);
@@ -531,9 +533,9 @@ export function useShortcutActions(): ShortcutAction[] {
   }, []);
 
   const handleToggleSidebar = useCallback(() => {
-    setSidebarExpanded((prev) => !prev);
+    setSidebarOpen(!sidebarExpanded);
     return true;
-  }, [setSidebarExpanded]);
+  }, [sidebarExpanded, setSidebarOpen]);
 
   const handleOpenModelSelector = useCallback(
     () => clickElement('[data-testid="model-selector-button"]'),
@@ -566,7 +568,7 @@ export function useShortcutActions(): ShortcutAction[] {
     }
 
     if (!sidebarExpanded) {
-      setSidebarExpanded(true);
+      setSidebarOpen(true);
     }
 
     if (!sidebarExpanded || switchedPanel) {
@@ -575,7 +577,7 @@ export function useShortcutActions(): ShortcutAction[] {
     }
 
     return focusSearchInput();
-  }, [sidebarExpanded, setSidebarExpanded]);
+  }, [sidebarExpanded, setSidebarOpen]);
 
   const handleCopyLastResponse = useCallback(() => {
     return clickLastElement('[data-testid="copy-response-button"]');
@@ -796,14 +798,14 @@ export function useShortcutActions(): ShortcutAction[] {
       }
 
       if (!sidebarExpanded) {
-        setSidebarExpanded(true);
+        setSidebarOpen(true);
         setTimeout(activatePanel, 350);
         return true;
       }
 
       return activatePanel();
     },
-    [sidebarExpanded, setSidebarExpanded],
+    [sidebarExpanded, setSidebarOpen],
   );
 
   const handleOpenAssistants = useCallback(() => handleOpenPanel('assistants'), [handleOpenPanel]);

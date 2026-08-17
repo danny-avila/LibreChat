@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect, useRef, memo, startTransition } from 'react';
+import { useCallback, useState, useEffect, useRef, memo } from 'react';
 import { useForm } from 'react-hook-form';
 import type { ReactNode } from 'react';
 import type { ChatFormValues } from '~/common';
@@ -14,7 +14,7 @@ import {
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
 import { MobileHeader, MobileBottomBar, MobileShortcutTargets } from './mobile';
 import useUnifiedSidebarLinks from '~/hooks/Nav/useUnifiedSidebarLinks';
-import { kickDrawerAnimation } from '~/hooks/Nav/useDrawerSwipe';
+import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { useChatHelpers, useLocalize } from '~/hooks';
 import SidePanelNav from '~/components/SidePanel/Nav';
@@ -44,7 +44,8 @@ function SidebarChatProvider({ children }: { children: ReactNode }) {
 
 function UnifiedSidebar() {
   const localize = useLocalize();
-  const { isSmallScreen, expanded, setExpanded } = useSidebarState();
+  const { isSmallScreen, expanded } = useSidebarState();
+  const setSidebarOpen = useSidebarToggle();
   const [sidebarWidth, setSidebarWidth] = useState(getInitialWidth);
   const [isResizing, setIsResizing] = useState(false);
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
@@ -52,24 +53,12 @@ function UnifiedSidebar() {
   const links = useUnifiedSidebarLinks();
 
   const handleCollapse = useCallback(() => {
-    /** Slide first, render second — on mobile the swipe hook animates the
-     * drawer imperatively and defers the state flip past the first frame;
-     * on desktop it applies immediately and the width transition animates
-     * as before. */
-    kickDrawerAnimation(false, () => {
-      startTransition(() => {
-        setExpanded(false);
-      });
-    });
-  }, [setExpanded]);
+    setSidebarOpen(false);
+  }, [setSidebarOpen]);
 
   const handleExpand = useCallback(() => {
-    kickDrawerAnimation(true, () => {
-      startTransition(() => {
-        setExpanded(true);
-      });
-    });
-  }, [setExpanded]);
+    setSidebarOpen(true);
+  }, [setSidebarOpen]);
 
   const handleResizeStart = useCallback(() => {
     setIsResizing(true);

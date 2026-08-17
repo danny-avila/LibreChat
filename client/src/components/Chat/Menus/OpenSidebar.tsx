@@ -1,10 +1,7 @@
-import { startTransition } from 'react';
-import { useSetRecoilState } from 'recoil';
 import { TooltipAnchor, Button, Sidebar } from '@librechat/client';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
-import { kickDrawerAnimation } from '~/hooks/Nav/useDrawerSwipe';
+import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 export const CLOSE_SIDEBAR_ID = 'close-sidebar-button';
 export const OPEN_SIDEBAR_ID = 'open-sidebar-button';
@@ -22,21 +19,21 @@ export default function OpenSidebar({
   testId?: string;
 }) {
   const localize = useLocalize();
-  const setSidebarExpanded = useSetRecoilState(store.sidebarExpanded);
+  const setSidebarOpen = useSidebarToggle();
   const tooltipDescription = useShortcutHint('toggleSidebar', localize('com_nav_open_sidebar'));
   const ariaKey = useShortcutAriaKey('toggleSidebar');
 
   const handleClick = () => {
-    /** Slide first, render second: the drawer must move on the next frame,
-     * not after a commit that can run long on large conversations. */
-    kickDrawerAnimation(true, () => {
-      startTransition(() => {
-        setSidebarExpanded(true);
-      });
-    });
-    setTimeout(() => {
-      document.getElementById(CLOSE_SIDEBAR_ID)?.focus();
-    }, 250);
+    const animated = setSidebarOpen(true);
+    if (!animated) {
+      /** Desktop only: the expanded panel claims `CLOSE_SIDEBAR_ID` and has
+       * no commit-driven handoff of its own. The mobile drawer focuses its
+       * toggle from the commit itself — a second timer there would steal
+       * focus back from a keyboard user who has already tabbed onward. */
+      setTimeout(() => {
+        document.getElementById(CLOSE_SIDEBAR_ID)?.focus();
+      }, 250);
+    }
   };
 
   return (
