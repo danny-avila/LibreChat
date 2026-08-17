@@ -5,7 +5,7 @@ import type { JsonPrimitive, JsonValue } from './json';
 import { AGENT_ENVELOPE_MAX_NESTING_DEPTH, cloneJsonValue } from './json';
 
 export const AGENT_RUN_ENVELOPE_VERSION = 1 as const;
-export const AGENT_RUN_ENVELOPE_MAX_NESTING_DEPTH = AGENT_ENVELOPE_MAX_NESTING_DEPTH;
+export const AGENT_RUN_ENVELOPE_MAX_NESTING_DEPTH: number = AGENT_ENVELOPE_MAX_NESTING_DEPTH;
 
 export type AgentRunProtocol = 'chat.completions' | 'responses';
 
