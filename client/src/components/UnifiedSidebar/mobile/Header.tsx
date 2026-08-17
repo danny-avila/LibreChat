@@ -1,4 +1,4 @@
-import { memo, lazy, Suspense } from 'react';
+import { memo, lazy, Suspense, useEffect, useRef } from 'react';
 import { Button, Sidebar, Skeleton } from '@librechat/client';
 import type { NavLink } from '~/common';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
@@ -27,10 +27,22 @@ function Header({
 }) {
   const localize = useLocalize();
   const toggleSidebarAriaKey = useShortcutAriaKey('toggleSidebar');
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  /** Opening makes the chat pane inert, so keyboard/AT focus must move into
+   * the drawer. The commit itself drives the handoff — every opener (button,
+   * swipe, shortcut) lands here, and a wall-clock timer would race the
+   * deferred state flip and silently miss whenever the flip outlasted it. */
+  useEffect(() => {
+    if (expanded) {
+      closeRef.current?.focus();
+    }
+  }, [expanded]);
 
   return (
     <div className="flex h-14 flex-shrink-0 items-center gap-2 border-b border-border-light px-2">
       <Button
+        ref={closeRef}
         /**
          * The drawer stays mounted while closed so it can slide, and a
          * translated element still counts as visible. Only claim the close

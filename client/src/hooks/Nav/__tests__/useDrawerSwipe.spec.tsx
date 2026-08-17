@@ -586,6 +586,33 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
     harness.unmount();
   });
 
+  /** The release deadline must run on the same clock as the staged frame:
+   *  armed at kick time, a delayed first frame lets the wall-clock timeout
+   *  clear the settle first, and the frame then aborts the slide. */
+  it('waits for the staged frame before starting the release deadline', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    const queued: FrameRequestCallback[] = [];
+    (window.requestAnimationFrame as jest.Mock).mockImplementation((callback) => {
+      queued.push(callback);
+      return queued.length;
+    });
+
+    kickDrawerAnimation(true, jest.fn());
+    jest.advanceTimersByTime(500);
+    queued.shift()?.(0);
+
+    expect(harness.drawer.style.transform).toBe('translate3d(0, 0, 0)');
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
+
+    harness.rerender({ open: true, enabled: true });
+    jest.advanceTimersByTime(400);
+    expect(harness.drawer.style.transform).toBe('');
+    expect(harness.pane.style.transform).toBe('translateX(100%)');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
   it('applies the deferred state flip when the animator is still live', () => {
     jest.useFakeTimers();
     const harness = setup(false);

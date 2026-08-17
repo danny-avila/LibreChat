@@ -1,3 +1,4 @@
+import React from 'react';
 import { render, screen } from '@testing-library/react';
 import type { NavLink } from '~/common';
 
@@ -10,9 +11,16 @@ jest.mock('~/hooks/useKeyboardShortcuts', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
-  Button: ({ children, ...props }: React.ComponentProps<'button'>) => (
-    <button {...props}>{children}</button>
-  ),
+  Button: jest
+    .requireActual<typeof import('react')>('react')
+    .forwardRef<
+      HTMLButtonElement,
+      React.ComponentProps<'button'>
+    >(({ children, ...props }, ref) => (
+      <button ref={ref} {...props}>
+        {children}
+      </button>
+    )),
   Sidebar: (props: React.ComponentProps<'svg'>) => <svg data-testid="sidebar-icon" {...props} />,
   Skeleton: () => <div data-testid="skeleton" />,
 }));
@@ -70,6 +78,27 @@ describe('mobile drawer header', () => {
     render(<Header links={links} expanded={false} onClose={jest.fn()} />);
 
     expect(screen.getByLabelText('com_nav_close_sidebar')).toHaveAttribute('tabindex', '-1');
+  });
+
+  /**
+   * Opening makes the chat pane inert, so keyboard/AT focus must move into
+   * the drawer. The commit itself drives the handoff — a wall-clock timer
+   * races the deferred state flip and silently misses when the flip
+   * outlasts it (the id does not exist until `expanded` commits).
+   */
+  it('moves focus to the toggle when the drawer opens', () => {
+    const { rerender } = render(<Header links={links} expanded={false} onClose={jest.fn()} />);
+    expect(document.activeElement).toBe(document.body);
+
+    rerender(<Header links={links} expanded={true} onClose={jest.fn()} />);
+
+    expect(document.activeElement).toBe(screen.getByTestId('close-sidebar-button'));
+  });
+
+  it('never steals focus while closed', () => {
+    render(<Header links={links} expanded={false} onClose={jest.fn()} />);
+
+    expect(document.activeElement).toBe(document.body);
   });
 
   /**

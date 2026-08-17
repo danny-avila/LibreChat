@@ -186,8 +186,10 @@ export default function useDrawerSwipe({
   onOpenChange,
 }: DrawerSwipeOptions) {
   const gestureRef = useRef<Gesture | null>(null);
+  /** `id` is null while a kicked settle waits for its staged frame — the
+   * release deadline runs on the frame clock, not the wall clock. */
   const settleRef = useRef<{
-    id: ReturnType<typeof setTimeout>;
+    id: ReturnType<typeof setTimeout> | null;
     target: boolean;
     drawer: HTMLElement;
     pane: HTMLElement;
@@ -203,7 +205,9 @@ export default function useDrawerSwipe({
      * AGREES with `open` keeps running so its handoff finishes undisturbed. */
     const pending = settleRef.current;
     if (pending != null && (!enabled || pending.target !== open)) {
-      clearTimeout(pending.id);
+      if (pending.id != null) {
+        clearTimeout(pending.id);
+      }
       settleRef.current = null;
       releaseInlineStyles(pending.drawer, pending.pane, enabled && open);
     }
@@ -293,7 +297,9 @@ export default function useDrawerSwipe({
         if (pending.target === next) {
           return;
         }
-        clearTimeout(pending.id);
+        if (pending.id != null) {
+          clearTimeout(pending.id);
+        }
         settleRef.current = null;
       }
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -311,19 +317,25 @@ export default function useDrawerSwipe({
       }
       drawer.style.willChange = 'transform';
       pane.style.willChange = 'transform';
-      /** Armed BEFORE the frame below so the staged write can verify its
-       * target is still wanted — a retarget or a reconciliation cancel in
-       * between clears/replaces the settle and thereby voids the write. */
-      scheduleRelease(drawer, pane, next);
+      /** Armed BEFORE the frame below (id: null — no deadline yet) so the
+       * staged write can verify its target is still wanted, and so a
+       * touchstart in between defers to the pending settle. A retarget or
+       * a reconciliation cancel clears/replaces the settle and thereby
+       * voids the write. */
+      settleRef.current = { id: null, target: next, drawer, pane };
       /** The transforms are written in a FRESH frame task, not the tap's own
        * task: a transition armed inside the click task is not reliably
        * created for the offscreen drawer (observed via `transitionrun`
        * firing only after the state-flip commit, ~270ms late, even with a
        * forced reflow in-task), while the same write from a clean task
        * starts interpolating by the following frame. The reflow then pins
-       * the transition-start recalc to this frame instead of 2–3 later. */
+       * the transition-start recalc to this frame instead of 2–3 later.
+       * The release deadline starts HERE, with the transition itself — a
+       * wall-clock deadline armed at kick time can expire before a delayed
+       * first frame (backgrounded tab, long stall) and abort the slide. */
       requestAnimationFrame(() => {
-        if (settleRef.current?.target !== next) {
+        const armed = settleRef.current;
+        if (armed == null || armed.target !== next || armed.id != null) {
           return;
         }
         drawer.style.transition = SIDEBAR_TRANSITION;
@@ -331,6 +343,10 @@ export default function useDrawerSwipe({
         drawer.style.transform = next ? 'translate3d(0, 0, 0)' : 'translate3d(-100%, 0, 0)';
         pane.style.transform = next ? 'translateX(100%)' : 'translate3d(0, 0, 0)';
         void drawer.getBoundingClientRect();
+        armed.id = setTimeout(() => {
+          settleRef.current = null;
+          releaseInlineStyles(drawer, pane, next);
+        }, TRANSITION_MS + SETTLE_BUFFER_MS);
       });
     };
     drawerAnimator = animateTo;
@@ -504,7 +520,7 @@ export default function useDrawerSwipe({
 
   useEffect(
     () => () => {
-      if (settleRef.current != null) {
+      if (settleRef.current?.id != null) {
         clearTimeout(settleRef.current.id);
       }
     },
